@@ -1,186 +1,10 @@
 //! Integration tests for the skill-trigger UserPromptSubmit hook.
 
 use loom::fs::permissions::constants::HOOK_SKILL_TRIGGER;
-use loom::process::sandbox_probe::skip_unless;
-use serde_json::{json, Value};
-use std::fs;
-use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
-use std::process::{Command, Stdio};
-use std::sync::OnceLock;
-use tempfile::TempDir;
 
-struct HookOutput {
-    code: i32,
-    stdout: String,
-    stderr: String,
-}
-
-struct FakeHome {
-    home: TempDir,
-    cwd: TempDir,
-}
-
-fn write_exec(path: &Path, content: &str) {
-    fs::create_dir_all(path.parent().expect("hook path has a parent")).expect("create hook dir");
-    fs::write(path, content).expect("write file");
-    fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod");
-}
-
-fn write_skill_md(path: &Path, name: &str) {
-    fs::create_dir_all(path.parent().expect("SKILL.md path has a parent"))
-        .expect("create skill dir");
-    fs::write(
-        path,
-        format!("---\nname: {name}\ndescription: {name} desc.\n---\n"),
-    )
-    .expect("write SKILL.md");
-}
-
-impl FakeHome {
-    fn new() -> Self {
-        let home = TempDir::new().expect("create fake HOME");
-        let cwd = TempDir::new().expect("create fake cwd");
-        let mut index = json!({
-            "react": ["loom-react", "loom-typescript"],
-            "typescript": ["loom-typescript"],
-            "docker": ["loom-docker"],
-            "context": ["loom-golang"],
-            "pointer": ["loom-golang"],
-            "refactor": ["loom-refactoring"],
-            "golang": ["loom-golang"],
-            "skill": ["loom-skills"],
-            "skills": ["loom-skills"],
-            "plan": ["loom-plan-writer"],
-        });
-        let index_obj = index.as_object_mut().expect("index is an object");
-        for i in 0..10 {
-            index_obj.insert(format!("alpha{i}"), json!([format!("loom-alpha{i}")]));
-        }
-        let index_path = home.path().join(".claude/hooks/loom/skill-keywords.json");
-        fs::create_dir_all(index_path.parent().expect("index path has a parent"))
-            .expect("create index dir");
-        fs::write(&index_path, index.to_string()).expect("write index");
-        let core_dir = home.path().join(".claude/skills");
-        for name in ["loom-skills", "loom-plan-writer"] {
-            write_skill_md(&core_dir.join(name).join("SKILL.md"), name);
-        }
-        let mut catalogued: Vec<String> = vec![
-            "loom-react".into(),
-            "loom-typescript".into(),
-            "loom-docker".into(),
-            "loom-golang".into(),
-            "loom-refactoring".into(),
-        ];
-        catalogued.extend((0..10).map(|i| format!("loom-alpha{i}")));
-        for name in &catalogued {
-            write_skill_md(
-                &home
-                    .path()
-                    .join(".claude/loom-skill-catalog")
-                    .join(name)
-                    .join("SKILL.md"),
-                name,
-            );
-        }
-        FakeHome { home, cwd }
-    }
-
-    fn home_path(&self) -> &Path {
-        self.home.path()
-    }
-
-    fn cwd_path(&self) -> &Path {
-        self.cwd.path()
-    }
-
-    fn add_go_project(&self) {
-        fs::write(self.cwd.path().join("go.mod"), "module example.com/test\n")
-            .expect("write Go module");
-    }
-}
-
-fn python3_available() -> bool {
-    static RESULT: OnceLock<bool> = OnceLock::new();
-    *RESULT.get_or_init(|| {
-        Command::new("python3")
-            .arg("--version")
-            .stdin(Stdio::null())
-            .stdout(Stdio::null())
-            .stderr(Stdio::null())
-            .status()
-            .map(|status| status.success())
-            .unwrap_or(false)
-    })
-}
-
-fn install_hook() -> (TempDir, PathBuf) {
-    let dir = TempDir::new().expect("create hook dir");
-    let path = dir.path().join("skill-trigger.sh");
-    write_exec(&path, HOOK_SKILL_TRIGGER);
-    (dir, path)
-}
-
-fn run_hook(
-    hook: &Path,
-    home: &FakeHome,
-    prompt: &str,
-    hash_seed: Option<&str>,
-    codex: bool,
-) -> HookOutput {
-    let payload = json!({
-        "session_id": "t",
-        "cwd": home.cwd_path().display().to_string(),
-        "prompt": prompt,
-    });
-    let mut cmd = Command::new("python3");
-    cmd.arg(hook)
-        .env("HOME", home.home_path())
-        .env("LOOM_BIN", env!("CARGO_BIN_EXE_loom"))
-        .env_remove("LOOM_SKILL_DEBUG")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    if codex {
-        cmd.arg("--codex")
-            .env("CODEX_HOME", home.home_path().join(".claude"));
-    }
-    match hash_seed {
-        Some(seed) => {
-            cmd.env("PYTHONHASHSEED", seed);
-        }
-        None => {
-            cmd.env_remove("PYTHONHASHSEED");
-        }
-    }
-    let mut child = cmd.spawn().expect("spawn python3 skill-trigger.sh");
-    if let Some(mut stdin) = child.stdin.take() {
-        stdin.write_all(payload.to_string().as_bytes()).ok();
-    }
-    let output = child.wait_with_output().expect("wait for hook");
-    HookOutput {
-        code: output.status.code().unwrap_or(-1),
-        stdout: String::from_utf8_lossy(&output.stdout).into_owned(),
-        stderr: String::from_utf8_lossy(&output.stderr).into_owned(),
-    }
-}
-
-fn additional_context(stdout: &str) -> String {
-    let v: Value = serde_json::from_str(stdout.trim()).expect("parse stdout json");
-    v["hookSpecificOutput"]["additionalContext"]
-        .as_str()
-        .expect("additionalContext present")
-        .to_string()
-}
-
-fn skip_unless_python3(test_name: &str) -> bool {
-    skip_unless(
-        python3_available(),
-        test_name,
-        "python3 must be spawnable to run the skill-trigger hook",
-    )
-}
+#[path = "hooks_skill_trigger_fixture.rs"]
+mod fixture;
+use fixture::*;
 
 #[test]
 fn every_qualifying_skill_is_listed() {
@@ -226,11 +50,15 @@ fn ranking_is_deterministic_across_hash_seeds() {
     if skip_unless_python3("hooks_skill_trigger::ranking_is_deterministic_across_hash_seeds") {
         return;
     }
-    let home = FakeHome::new();
     let (_hook_dir, hook) = install_hook();
     let prompt = "build a react form in typescript and ship it in docker";
     let mut outputs = Vec::new();
     for seed in ["0", "1", "2", "3"] {
+        // A fresh FakeHome (and so a fresh once-per-session ledger) per seed:
+        // this test is about sort-order determinism across hash seeds, not
+        // the ledger, and re-running the identical prompt against one ledger
+        // would suggest nothing from the second call on.
+        let home = FakeHome::new();
         let out = run_hook(&hook, &home, prompt, Some(seed), false);
         assert_eq!(out.code, 0, "seed {seed}: stderr={}", out.stderr);
         outputs.push((seed, out.stdout));
@@ -302,7 +130,16 @@ fn core_skill_is_never_in_combined_args() {
     }
     let home = FakeHome::new();
     let (_hook_dir, hook) = install_hook();
-    let out = run_hook(&hook, &home, "plan a react app in typescript", None, false);
+    // "plan" is a stopword, no longer a name match for loom-plan-writer on
+    // a mere prefix; "plan" and "writer" together are two distinct
+    // single-word hits, real evidence under the new rule.
+    let out = run_hook(
+        &hook,
+        &home,
+        "plan a writer app for react in typescript",
+        None,
+        false,
+    );
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     let ctx = additional_context(&out.stdout);
     assert!(
@@ -355,3 +192,6 @@ fn cap_limits_flood() {
 
 #[path = "hooks_skill_trigger_codex.rs"]
 mod codex;
+
+#[path = "hooks_skill_trigger_evidence.rs"]
+mod evidence;

@@ -67,10 +67,48 @@ loom_debug "=== no-preexisting-failures: tool=$TOOL_NAME ==="
 MATCHED=""
 FAILWORD='(fail|fails|failed|failing|failure|failures|broken|breakage|red|error|errors)'
 
+# _line_is_exempt <line> - True when a line that otherwise matches an excuse
+# pattern is still legitimate use: naming this hook's own file, writing out
+# the two spellings as a regex alternation, sitting in a Markdown table row
+# or blockquote (documenting the pattern, not invoking it), or explaining the
+# rule/hook itself. Mirrors the header's own carve-outs for a prevention
+# note, quoting the rule, or naming the anti-pattern in a review.
+_line_is_exempt() {
+	local line="$1" trimmed
+	if [[ "$line" == *"no-preexisting-failures.sh"* ]]; then
+		return 0
+	fi
+	if printf '%s' "$line" | grep -qiE 'pre-?existing[^A-Za-z0-9]{0,4}\|[^A-Za-z0-9]{0,4}pre-?existing'; then
+		return 0
+	fi
+	trimmed="${line#"${line%%[![:space:]]*}"}"
+	case "$trimmed" in
+	'|'* | '>'*) return 0 ;;
+	esac
+	if printf '%s' "$line" | grep -qiE 'Rule 15|hook'; then
+		return 0
+	fi
+	return 1
+}
+
+# check <excuse-pattern> <label> - Find every HAYSTACK line matching
+# <excuse-pattern>. Fire <label> only when at least one matching line is NOT
+# exempt (_line_is_exempt) - a line quoting this rule, this hook's filename,
+# a regex alternation, or a table/blockquote row never fires alone.
 check() {
-	[[ -n "$MATCHED" ]] && return 0
-	if echo "$HAYSTACK" | grep -qiE "$1"; then
-		MATCHED="$2"
+	if [[ -n "$MATCHED" ]]; then
+		return 0
+	fi
+	local pattern="$1" label="$2" line all_exempt=1
+	while IFS= read -r line; do
+		[[ -n "$line" ]] || continue
+		if ! _line_is_exempt "$line"; then
+			all_exempt=0
+			break
+		fi
+	done < <(printf '%s\n' "$HAYSTACK" | grep -iE "$pattern" || true)
+	if ((all_exempt == 0)); then
+		MATCHED="$label"
 	fi
 }
 
@@ -91,29 +129,11 @@ fi
 loom_debug "WARN: $MATCHED"
 
 read -r -d '' MSG <<'EOF' || true
-LOOM_HOOK_WARN: STOP - you are about to record a failure as somebody else's problem.
-
-CLAUDE.md rule 15: "Nothing is 'pre-existing' - every warning and failure you
-see is your responsibility." A red gate is red regardless of which commit
-turned it red. `git log main..HEAD` can prove you did not WRITE the bug; it
-cannot prove the bug is not real, and it never makes the gate green.
-
-Before using this phrasing, do the work it is standing in for:
-  1. Diagnose it to a ROOT CAUSE - an actual mechanism, not a category like
-     "environmental", "flaky", or "sandbox". If you cannot name the mechanism,
-     you have not finished investigating.
-  2. Reproduce it in isolation, minimally. A one-file or one-syscall repro
-     usually turns "flaky" into a specific race with a specific fix.
-  3. Fix it, or - if it is genuinely outside this stage - say precisely WHAT
-     is broken, WHY it is out of scope, and WHO should fix it. Never silence,
-     skip, or delete a test to get to green.
-
-Every failure filed under this excuse in this project so far has been genuine.
-The most recent was a spurious ENOENT from a racing O_CREAT, dismissed for
-weeks as environmental; it was corrupting concurrent log appends in production.
-
-If you are quoting this rule, writing a prevention note, or naming the
-anti-pattern in a review, carry on - this hook is advisory and blocks nothing.
+LOOM_HOOK_WARN: CLAUDE.md rule 15: "Nothing is 'pre-existing' - every failure you see is yours."
+1. Diagnose it to a ROOT CAUSE, not a category like "environmental" or "flaky".
+2. Reproduce it minimally, in isolation.
+3. Fix it, or say precisely what is broken, why it is out of scope, and who owns it.
+Quoting this rule or naming the anti-pattern in review is fine - this hook blocks nothing.
 EOF
 
 jq -nc --arg ctx "$MSG" \

@@ -2,8 +2,8 @@
 
 use crate::fs::permissions::constants::{
     HOOK_CODEX_FORWARD_COMMON, HOOK_CODEX_FORWARD_GUARD, HOOK_COMMON, HOOK_LIFECYCLE,
-    HOOK_POST_TOOL_HEARTBEAT, HOOK_POST_TOOL_USE, HOOK_PROGRESS_CLASSIFICATION, HOOK_READ_LEDGER,
-    HOOK_WORKTREE_FILE_GUARD,
+    HOOK_POST_TOOL_HEARTBEAT, HOOK_POST_TOOL_USE, HOOK_PROGRESS_CLASSIFICATION,
+    HOOK_READ_DISCIPLINE, HOOK_READ_LEDGER, HOOK_WORKTREE_FILE_GUARD,
 };
 use serde_json::{json, Value};
 use std::fs;
@@ -54,6 +54,7 @@ impl HookFixture {
         )
         .unwrap();
         fs::write(hooks.join("_read_ledger.sh"), HOOK_READ_LEDGER).unwrap();
+        fs::write(hooks.join("_read_discipline.sh"), HOOK_READ_DISCIPLINE).unwrap();
         fs::write(&outside, "outside").unwrap();
         fs::write(sibling.join("file.txt"), "sibling").unwrap();
         fs::create_dir_all(worktree.join(".loom")).unwrap();

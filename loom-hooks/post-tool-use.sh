@@ -21,6 +21,9 @@ source "$(dirname "$0")/_common.sh"
 source "$(dirname "$0")/_progress-classification.sh"
 source "$(dirname "$0")/_post-tool-heartbeat.sh"
 source "$(dirname "$0")/_read_ledger.sh"
+# _read_discipline.sh brings in _loom_ledger_file and _loom_sanitize_agent_id
+# for the large-output notice's "bigout" ledger below.
+source "$(dirname "$0")/_read_discipline.sh"
 
 # Fallbacks if the canonical resolver fails; in loom/src/models/constants.rs:
 # LOOM_DEFAULT_CONTEXT_CEILING_TOKENS mirrors DEFAULT_CONTEXT_CEILING_TOKENS.
@@ -168,6 +171,46 @@ _loom_ctx_check_subagent_ceiling() {
 	fi
 }
 
+# === LARGE BASH OUTPUT NOTICE ===
+# A Bash result whose stdout+stderr crosses this threshold is a long scroll
+# the agent will re-read from context instead of a file; Rule 14 asks for
+# verbose output to go through a file and a targeted tail/rg read instead.
+# Advisory only (never blocks), capped per session (ledger kind "bigout") so
+# it does not spam every big test run once the agent has already been told.
+readonly LOOM_BIGOUT_THRESHOLD_CHARS=20000
+readonly LOOM_BIGOUT_MAX_NOTICES=3
+
+# Sum `.tool_result`/`.tool_response` stdout and stderr character counts in
+# one jq call - `length` on a string, never on the raw payload through the
+# shell.
+_loom_bash_output_size() {
+	printf '%s' "$INPUT_JSON" | jq -r '
+	  ([.tool_result.stdout, .tool_response.stdout] | map(select(type == "string")) | join("") | length) +
+	  ([.tool_result.stderr, .tool_response.stderr] | map(select(type == "string")) | join("") | length)
+	' 2>/dev/null || true
+}
+
+_loom_bash_output_notice() {
+	[[ "$TOOL_NAME" == "Bash" ]] || return 0
+	command -v jq &>/dev/null || return 0
+
+	local size
+	size=$(_loom_bash_output_size)
+	[[ "$size" =~ ^[0-9]+$ ]] || return 0
+	((size > LOOM_BIGOUT_THRESHOLD_CHARS)) || return 0
+
+	local raw_agent_id agent_id ledger count
+	raw_agent_id=$(echo "$INPUT_JSON" | jq -r '.agent_id // empty' 2>/dev/null || true)
+	agent_id=$(_loom_sanitize_agent_id "$raw_agent_id")
+	ledger=$(_loom_ledger_file "bigout" "$agent_id" "${LOOM_SESSION_ID:-unknown}")
+	count=$(_loom_polls_count "$ledger" "notice")
+	((count < LOOM_BIGOUT_MAX_NOTICES)) || return 0
+
+	echo "This Bash result was ${size} characters (stdout+stderr) - send verbose output to a file and read the failing part (\`tail\`, \`rg -B2 -A5 'FAIL|error'\`)." >&2
+	_loom_ledger_append "$ledger" "notice"
+	return 0
+}
+
 # Bound stdin in case the hook runner leaves it open.
 INPUT_JSON=$(loom_run_bounded 1 cat 2>/dev/null || true)
 
@@ -287,6 +330,10 @@ if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Mult
 		LOOM_HOOK_CONTEXT=1 loom_run_bounded 3 "${LOOM_BIN:-loom}" context record-edit --stage "$LOOM_STAGE_ID" --path "$EDIT_PATH" >/dev/null 2>&1 || true
 	fi
 fi
+
+# The large-output notice runs after the heartbeat and before the ceiling
+# checks, and never exits - it must not disturb either.
+_loom_bash_output_notice
 
 # Context ceilings run last; PostToolUse exit 2 is agent guidance after the
 # completed tool call, not a block on that call.

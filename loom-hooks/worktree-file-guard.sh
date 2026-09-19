@@ -151,17 +151,48 @@ extract_path() {
 	esac
 }
 
+# owned_by_uid <path> - <path> exists, is not a symlink, and belongs to the current uid.
+owned_by_uid() {
+	local owner
+	[[ -e "$1" && ! -L "$1" ]] || return 1
+	owner=$(stat -c '%u' "$1" 2>/dev/null || stat -f '%u' "$1" 2>/dev/null || true)
+	[[ -n "$owner" && "$owner" == "$(id -u)" ]]
+}
+
 allow_background_output() {
 	local lexical="$1"
 	[[ "$TOOL_NAME" == "Read" ]] || return 1
 	[[ "$lexical" =~ ^/tmp/claude-[^/]+/[^/]+/[^/]+/tasks/[^/]+\.output$ ]] || return 1
 	[[ -f "$lexical" && ! -L "$lexical" ]] || return 1
 
-	local resolved owner
+	local resolved
 	resolved=$(canonical_existing "$lexical") || return 1
 	[[ "$resolved" =~ ^/tmp/claude-[^/]+/[^/]+/[^/]+/tasks/[^/]+\.output$ ]] || return 1
-	owner=$(stat -c '%u' "$resolved" 2>/dev/null || stat -f '%u' "$resolved" 2>/dev/null || true)
-	[[ -n "$owner" && "$owner" == "$(id -u)" ]]
+	owned_by_uid "$resolved"
+}
+
+# Any file tool may use the session's own harness scratchpad (/tmp/claude-<uid>/<project>/
+# <payload session_id>/scratchpad/) when it exists, the path is already canonical (no
+# symlink, `.` or `//` component), and each existing component from claude-<uid> is ours.
+allow_scratchpad() {
+	local lexical=${1%/} uid session re root dir rest resolved
+	uid=$(id -u) || return 1
+	session=$(printf '%s' "$INPUT_JSON" | jq -r '.session_id // empty' 2>/dev/null || true)
+	[[ "$session" =~ ^[A-Za-z0-9_-]+$ ]] || return 1
+	re="^((/private)?/tmp/claude-${uid})/([^/]+)/${session}/scratchpad(/.*)?\$"
+	[[ "$lexical" =~ $re ]] || return 1
+	root=${BASH_REMATCH[1]}
+	[[ -d "$root/${BASH_REMATCH[3]}/$session/scratchpad" ]] || return 1
+	resolved=$(canonical_target "$lexical" 2>/dev/null) || return 1
+	[[ "$resolved" == "$lexical" || "$resolved" == "/private$lexical" ]] || return 1
+	dir=$root rest=${lexical#"$root"/}
+	while owned_by_uid "$dir"; do
+		[[ -n "$rest" ]] || return 0
+		dir+="/${rest%%/*}"
+		[[ "$rest" == */* ]] && rest=${rest#*/} || rest=""
+		[[ -e "$dir" || -L "$dir" ]] || return 0
+	done
+	return 1
 }
 
 FILE_PATH=$(extract_path)
@@ -199,7 +230,7 @@ else
 	LEXICAL_PATH="$CURRENT_DIR/$FILE_PATH"
 fi
 
-if allow_background_output "$LEXICAL_PATH"; then
+if allow_background_output "$LEXICAL_PATH" || allow_scratchpad "$LEXICAL_PATH"; then
 	exit 0
 fi
 
@@ -307,7 +338,38 @@ Write | Edit | MultiEdit | NotebookEdit)
 	;;
 esac
 
+# Main-agent edit advisory: warn only, never deny. A stage's main agent makes a
+# change itself only when it passes the small-change test; on a code path (not
+# under doc/, not *.md, not a distill scratch file) warn, once per path, when one
+# call writes more than 20 lines or the path is a third or later distinct file.
+edit_advisory() {
+	local ledger state files seen warned lines reason="" flag=noted
+	[[ -n "${LOOM_STAGE_ID:-}" && "$TOOL_NAME" =~ ^(Write|Edit|MultiEdit|NotebookEdit)$ ]] || return 0
+	case "${RESOLVED_PATH##*/}" in *.md | .kb_tmp_* | .distill-body-*) return 0 ;; esac
+	! is_within "$RESOLVED_PATH" "$WORKTREE_PATH/doc" || return 0
+	[[ -z "$(printf '%s' "$INPUT_JSON" | jq -r '.agent_id // .agent_type // empty' 2>/dev/null)" ]] || return 0
+	! loom_is_subagent "$INPUT_JSON" || return 0
+	source "$(dirname "$0")/_read_discipline.sh" 2>/dev/null || return 0
+	ledger=$(_loom_ledger_file edits main "$(printf '%s' "$INPUT_JSON" | jq -r '.session_id // empty' 2>/dev/null)")
+	state=$([[ -f "$ledger" && ! -L "$ledger" ]] && P=$RESOLVED_PATH awk -F '\t' '!($1 in s) { s[$1]; n++ }
+		$1 == ENVIRON["P"] { seen = 1; if ($2 == "warned") w = 1 } END { print n + 0, seen + 0, w + 0 }' "$ledger" 2>/dev/null) || true
+	read -r files seen warned <<<"${state:-0 0 0}"
+	lines=$(printf '%s' "$INPUT_JSON" | jq -r --arg t "$TOOL_NAME" '.tool_input as $i
+		| if $t == "Write" then $i.content elif $t == "Edit" then $i.new_string
+		  elif $t == "MultiEdit" then ([$i.edits[]?.new_string | strings] | join("\n")) else $i.new_source end
+		| if type == "string" and . != "" then rtrimstr("\n") | split("\n") | length else 0 end' 2>/dev/null) || true
+	[[ "$lines" =~ ^[0-9]+$ ]] || lines=0
+	((warned || lines <= 20)) || reason="this $TOOL_NAME writes $lines lines to $RESOLVED_PATH"
+	((warned || seen || files < 2)) || reason=${reason:-"$RESOLVED_PATH is distinct file $((files + 1)) edited this session"}
+	((warned)) || [[ -n "$reason" ]] && flag=warned
+	_loom_ledger_append "$ledger" "$RESOLVED_PATH" "$flag"
+	[[ -n "$reason" ]] || return 0
+	loom_hook_note_warn "main-agent edit: ${reason}. A stage's main agent makes a change itself only when it is at most 20 changed lines in at most 2 files it has already read, needs no further exploration, and one command proves it; anything larger is delegated to a subagent."
+	loom_hook_emit_warns
+}
+
 if is_within "$RESOLVED_PATH" "$WORKTREE_PATH"; then
+	edit_advisory || true
 	exit 0
 fi
 

@@ -106,7 +106,9 @@ scan_completion_segment() {
 	return 0
 }
 
-is_completion_command() {
+# detect_completion <cmd> - Set ATTEMPT_* and return 0 when a command position of
+# <cmd> holds the completion shape; an untokenizable <cmd> takes the substring test.
+detect_completion() {
 	local cmd=$1 tokenized_cmd n i start
 	ATTEMPT_TOKENIZE_FAILED=false ATTEMPT_SEPARATOR=false ATTEMPT_SHELL=false
 	ATTEMPT_ASSIGN=false ATTEMPT_ENV=false ATTEMPT_BIN="" ATTEMPT_VERB=""
@@ -136,6 +138,83 @@ is_completion_command() {
 		start=$((i + 1))
 	done
 	return 1
+}
+
+# Heredoc bodies are data, so their prose must not read as a completion
+# attempt. strip_embedded_content does not parse shell, so a stripped body is
+# trusted only when every check below holds; in doubt the raw command decides.
+# strip_heredoc_bodies <cmd> - Print <cmd> without heredoc bodies. Fail when
+# nothing was stripped, a body swallowed the appended end line (it has no
+# terminator), or the quote-blind -m/--message rewrite fired.
+strip_heredoc_bodies() {
+	local out end='#loom-heredoc-end'
+	[[ "$1" == *'<<'* ]] || return 1
+	out=$(strip_embedded_content "$1"$'\n'"$end")
+	[[ "$out" == *$'\n'"$end" ]] || return 1
+	out=${out%$'\n'"$end"}
+	case "$out" in "$1" | *'-m ""'* | *"-m ''"* | *'--message'[=\ ]'""'* | *'--message'[=\ ]"''"*) return 1 ;; esac
+	printf '%s' "$out"
+}
+
+# heredoc_openers_are_plain <stripped> - A line with `<<` holds one unquoted opener,
+# <<'WORD' or <<"WORD" (literal body, ended where awk ends it), and ends unquoted.
+heredoc_openers_are_plain() {
+	local line prior="" pre post q="'" re
+	re="^(.*)<<[[:space:]]*(${q}[A-Za-z_][A-Za-z0-9_]*${q}|\"[A-Za-z_][A-Za-z0-9_]*\")([[:space:];&|)>].*)?\$"
+	while IFS= read -r line; do
+		if [[ "$line" =~ $re ]]; then
+			pre=${BASH_REMATCH[1]} post=${BASH_REMATCH[3]}
+			case "$pre" in *'<<'* | *'<' | *'\') return 1 ;; esac
+			[[ "$post" != *'<<'* ]] || return 1
+			loom_tokenize_command "$prior$pre" && loom_tokenize_command "$prior$line" || return 1
+		elif [[ "$line" == *'<<'* ]]; then
+			return 1
+		fi
+		prior+="$line"$'\n'
+	done <<<"$1"
+}
+
+# heredoc_readers_are_inert <stripped> - No command runs its input as code.
+# `<` `>` become blanks, so `cat > f <<'EOF'` is the one command `cat f EOF`.
+heredoc_readers_are_inert() {
+	local i tok at_cmd=1
+	loom_tokenize_command "${1//[<>]/ }" || return 1
+	for ((i = 0; i < ${#LOOM_TOKENS[@]}; i++)); do
+		tok=${LOOM_TOKENS[$i]}
+		[[ "$tok" == '%%SEP%%' ]] && at_cmd=1 && continue
+		((at_cmd)) && [[ ! "$tok" =~ ^[A-Za-z_][A-Za-z0-9_]*= ]] || continue
+		at_cmd=0
+		case "${tok##*/}:${LOOM_TOKENS[$((i + 1))]:-}" in
+		cat:* | tee:* | wc:* | head:* | tail:* | cd:* | mkdir:* | touch:* | echo:* | printf:* | true:* | ::*) ;;
+		loom:knowledge | loom:memory | git:commit) ;;
+		*) return 1 ;;
+		esac
+	done
+}
+
+# heredoc_bodies_are_inert <cmd> <stripped> - Nothing awk or the tokenizer misreads
+# (comment, backtick, $'', ${}, arithmetic, line splice) remains, and with $( <( >(
+# no stripped line holds `)` (bash ends a body at `EOF)`).
+heredoc_bodies_are_inert() {
+	local all=${1//[^)]/} kept=${2//[^)]/}
+	case "$2" in *'#'* | *'`'* | *"\$'"* | *'${'* | *'(('* | *'$['* | *'\'$'\n'* | *'\') return 1 ;; esac
+	case "$2" in *'$('* | *'<('* | *'>('*) ((${#all} == ${#kept})) || return 1 ;; esac
+	heredoc_openers_are_plain "$2" && heredoc_readers_are_inert "$2"
+}
+
+# is_completion_command <cmd> - Decide on <cmd> with inert heredoc bodies stripped. In
+# doubt the raw decision stands; if the stripped command feeds a shell, eval, source
+# or xargs (or will not tokenize), the raw substring test counts as well.
+is_completion_command() {
+	local cmd=$1 stripped fed=true
+	stripped=$(strip_heredoc_bodies "$cmd") || { detect_completion "$cmd"; return; }
+	detect_completion "$stripped" && return 0
+	heredoc_bodies_are_inert "$cmd" "$stripped" && return 1
+	loom_tokenize_command "$stripped" && ! loom_tokens_invoke '\.' &&
+		! loom_tokens_word_matches '^(.*/)?(bash|sh|zsh|dash|ksh|mksh|fish|csh|tcsh|busybox|eval|source|xargs)$' && fed=false
+	detect_completion "$cmd" && return 0
+	[[ "$fed" == true ]] && raw_has_completion_indicators "$cmd" || return 1
+	ATTEMPT_SHELL=true
 }
 
 completion_rejection_reason() {

@@ -180,3 +180,135 @@ fn preexisting_failures_hook_ignores_a_genuine_fix_description() {
     );
     assert!(!warned(&out), "describing an actual fix must not warn");
 }
+
+// =============================================================================
+// Exemptions - a line that otherwise matches an excuse pattern still does not
+// fire when it merely names this hook's file, spells out the excuse as a
+// regex alternation, sits in a Markdown table row/blockquote, or explains
+// the rule/hook itself. Each has a firing twin with the same excuse text
+// minus the exempting feature, proving the exemption - not the excuse
+// pattern - is what suppressed the warning.
+// =============================================================================
+
+#[test]
+fn preexisting_failures_hook_exempts_its_own_filename() {
+    let (_t, hook) = setup_hook();
+    let (_c, out) = run_write(
+        &hook,
+        "See no-preexisting-failures.sh - it warns when something is already broken on main.",
+    );
+    assert!(
+        !warned(&out),
+        "a line naming the hook's own file must not warn"
+    );
+}
+
+#[test]
+fn preexisting_failures_hook_fires_without_the_filename() {
+    let (_t, hook) = setup_hook();
+    let (_c, out) = run_write(&hook, "It was already broken on main.");
+    assert!(
+        warned(&out),
+        "the same excuse without the filename must still warn"
+    );
+}
+
+#[test]
+fn preexisting_failures_hook_exempts_a_regex_alternation() {
+    let (_t, hook) = setup_hook();
+    let (_c, out) = run_write(
+        &hook,
+        "Excuse patterns like pre-existing|preexisting failures should not trigger this warning.",
+    );
+    assert!(
+        !warned(&out),
+        "a line spelling out the regex alternation must not warn"
+    );
+}
+
+#[test]
+fn preexisting_failures_hook_fires_without_the_alternation() {
+    let (_t, hook) = setup_hook();
+    let (_c, out) = run_write(
+        &hook,
+        "This project has preexisting failures that need fixing.",
+    );
+    assert!(
+        warned(&out),
+        "the same excuse without the alternation text must still warn"
+    );
+}
+
+#[test]
+fn preexisting_failures_hook_exempts_a_markdown_table_row() {
+    let (_t, hook) = setup_hook();
+    let (_c, out) = run_write(
+        &hook,
+        "| Status | Notes |\n| --- | --- |\n| Legacy | These are pre-existing failures in the legacy suite |",
+    );
+    assert!(!warned(&out), "a Markdown table row must not warn");
+}
+
+#[test]
+fn preexisting_failures_hook_exempts_a_blockquote() {
+    let (_t, hook) = setup_hook();
+    let (_c, out) = run_write(&hook, "> This is a known failure, ignore it.");
+    assert!(!warned(&out), "a blockquote line must not warn");
+}
+
+#[test]
+fn preexisting_failures_hook_fires_without_table_or_blockquote_formatting() {
+    let (_t, hook) = setup_hook();
+    let (_c, out) = run_write(&hook, "This is a known failure, ignore it.");
+    assert!(
+        warned(&out),
+        "the same text without table/blockquote formatting must still warn"
+    );
+}
+
+#[test]
+fn preexisting_failures_hook_exempts_a_line_naming_the_rule_or_hook() {
+    let (_t, hook) = setup_hook();
+    let (_c, out) = run_write(
+        &hook,
+        "This hook exists because we used to call things pre-existing failures.",
+    );
+    assert!(
+        !warned(&out),
+        "a line mentioning 'hook' alongside the excuse must not warn"
+    );
+}
+
+#[test]
+fn preexisting_failures_hook_fires_without_naming_the_rule_or_hook() {
+    let (_t, hook) = setup_hook();
+    let (_c, out) = run_write(&hook, "We used to call things pre-existing failures.");
+    assert!(
+        warned(&out),
+        "the same excuse without naming the rule/hook must still warn"
+    );
+}
+
+// =============================================================================
+// Message shape - at most 6 lines: the rule, the three required steps, and
+// the carry-on sentence.
+// =============================================================================
+
+#[test]
+fn preexisting_failures_hook_message_is_short() {
+    let (_t, hook) = setup_hook();
+    let (_c, out) = run_bash(
+        &hook,
+        "loom memory note \"2 pre-existing failures, not mine\"",
+    );
+    assert!(warned(&out));
+    let value: serde_json::Value = serde_json::from_str(out.trim()).expect("valid JSON output");
+    let ctx = value["hookSpecificOutput"]["additionalContext"]
+        .as_str()
+        .expect("additionalContext string");
+    let line_count = ctx.lines().count();
+    assert!(
+        line_count <= 6,
+        "message should be at most 6 lines, got {line_count}: {ctx}"
+    );
+}

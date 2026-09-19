@@ -20,8 +20,10 @@ WORK_DIR="$TMP/repo/.loom/work"
 WORKTREE="$TMP/repo/.worktrees/build-api"
 LOG="$TMP/broker.log"
 mkdir -p "$TMP/bin" "$WORK_DIR" "$WORKTREE/bin" "$TMP/repo/bin" "$TMP/scratch/session-k"
+# The fake broker records its argv, drains the evidence on stdin, and answers
+# with the outcome line the hook requires.
 for bin in "$TMP/bin/loom" "$TMP/repo/bin/loom" "$WORKTREE/bin/loom"; do
-	printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"$BROKER_LOG"\n' >"$bin"
+	printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"$BROKER_LOG"\ncat >/dev/null\necho "LOOM_CONTROL_OUTCOME accepted"\n' >"$bin"
 	chmod +x "$bin"
 done
 
@@ -89,5 +91,24 @@ err=$(run_hook "$(pre 'loom stage complete kstage')" LOOM_WORKTREE_PATH="$WORKTR
 err=$(run_hook "$(pre 'loom stage complete kstage')" LOOM_WORKTREE_PATH="$WORKTREE" LOOM_BIN="$WORKTREE/bin/loom" 2>&1) &&
 	fail "stage: a refusal was expected with an untrusted LOOM_BIN"
 [[ "$err" != *"$WORKTREE/bin/loom"* ]] || fail "stage: a LOOM_BIN inside the worktree was trusted: $err"
+
+# 5. A heredoc body is data: a confined Knowledge session's replace-section whose
+# prose spells the completion shape and carries an apostrophe is no completion
+# attempt in either phase, while the same body fed to bash is still refused.
+rm -f "$LOG"
+IFS= read -r -d '' SECTION_CMD <<'CASE' || true
+loom knowledge replace-section doc/loom/knowledge/mistakes/finalize.md "Finalize guard" <<'EOF'
+The guard's prefilter used to scan this body; it's data.
+loom stage complete kstage
+EOF
+CASE
+SECTION_CMD=${SECTION_CMD%$'\n'}
+run_hook "$(pre "$SECTION_CMD")" "${CONFINED[@]}" >/dev/null 2>&1 || fail "knowledge: a heredoc replace-section was blocked"
+run_hook "$(post "$SECTION_CMD" 'section replaced')" "${CONFINED[@]}" >/dev/null 2>&1 ||
+	fail "knowledge: a heredoc replace-section failed PostToolUse"
+[[ "$(broker_calls)" == 0 ]] || fail "knowledge: a heredoc replace-section reached the broker"
+SHELL_CMD="bash <<'EOF'"$'\n'"${SECTION_CMD#*$'\n'}"
+err=$(run_hook "$(pre "$SHELL_CMD")" "${CONFINED[@]}" 2>&1) && fail "knowledge: a heredoc run by bash was not refused"
+[[ "$err" == *LOOM_CONTROL_ERROR:* ]] || fail "knowledge: wrong refusal for a heredoc run by bash: $err"
 
 echo "loom-control-complete knowledge admission: ok"

@@ -116,42 +116,44 @@ _loom_read_full_lines() {
 }
 
 # _loom_sanitize_agent_id <raw> - echo <raw> if it is a safe path component
-# ([A-Za-z0-9._-] only, non-empty), else "main". Applied to every agent id
-# AND every session id that becomes part of a ledger PATH - LOOM_SESSION_ID
-# (a directory component) and the payload's own `.session_id` used as a
-# fallback filename - so neither can ever escape the ledger directory. The
-# payload's session_id is agent-controlled: an unsanitized
-# "../../home/user/x" would walk `$TMPDIR/loom-reads` out to an arbitrary
-# path, creating parent directories on the way.
+# ([A-Za-z0-9._-] only, starting with a letter or digit), else "main".
+# Applied to every agent id AND every session id that becomes part of a
+# ledger PATH - both are directory or file components - so neither can ever
+# escape the ledger directory. The payload's session_id is agent-controlled:
+# an unsanitized "../../home/user/x" would walk `$TMPDIR/loom-reads` out to an
+# arbitrary path, creating parent directories on the way. The leading
+# character rule rejects "." and ".." and keeps "_"-prefixed names free for
+# session files such as _shared.tsv.
 _loom_sanitize_agent_id() {
 	local raw="${1:-}"
-	if [[ -z "$raw" ]] || [[ "$raw" =~ [^A-Za-z0-9._-] ]]; then
-		printf 'main'
-	else
+	if [[ "$raw" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ]]; then
 		printf '%s' "$raw"
+	else
+		printf 'main'
 	fi
 }
 
 # _loom_ledger_file <kind> <agent_id> <fallback_session_id> - echo the TSV
-# ledger path for one of loom's read-discipline counters.
-#   kind: "reads" (read-guard.sh Task C, and poll-guard.sh's Task D rule 3)
-#         or "polls" (poll-guard.sh's Task D rule 2).
-# In a stage session (LOOM_WORK_DIR/LOOM_SESSION_ID/LOOM_STAGE_ID all set and
-# LOOM_WORK_DIR a real directory): one file per agent -
-#   ${LOOM_WORK_DIR}/hooks/<kind>/${LOOM_SESSION_ID}/<agent_id>.tsv
-# Otherwise: a single per-session file under TMPDIR, keyed by the payload's
-# own session_id (there is no per-agent directory to shard into outside a
-# stage) -
-#   ${TMPDIR:-/tmp}/loom-<kind>/<fallback_session_id>.tsv
-# Both LOOM_SESSION_ID and fallback_session_id are run through
-# _loom_sanitize_agent_id before use - see that function's comment.
+# ledger path for one agent's hook counter of <kind> ("reads", "polls", or a
+# kind another guard adds). One directory per session, one file per agent,
+# so an agent's siblings sit beside it (the main agent is "main"):
+#   stage session (LOOM_WORK_DIR/LOOM_SESSION_ID/LOOM_STAGE_ID all set and
+#   LOOM_WORK_DIR a real directory), keyed by the parent session:
+#     ${LOOM_WORK_DIR}/hooks/<kind>/${LOOM_SESSION_ID}/<agent_id>.tsv
+#   otherwise, keyed by the payload's own session_id:
+#     ${TMPDIR:-/tmp}/loom-<kind>/<fallback_session_id>/<agent_id>.tsv
+# Every id is run through _loom_sanitize_agent_id - see that function's
+# comment. The reads session directory also holds _shared.tsv
+# (_read_ledger.sh's sibling-read receipts).
 _loom_ledger_file() {
-	local kind="$1" agent_id="$2" fallback_sid="$3"
+	local kind="$1" agent_id fallback_sid="$3" root sid
+	agent_id=$(_loom_sanitize_agent_id "$2")
 	if [[ -n "${LOOM_WORK_DIR:-}" && -n "${LOOM_SESSION_ID:-}" && -n "${LOOM_STAGE_ID:-}" && -d "${LOOM_WORK_DIR:-}" ]]; then
-		printf '%s/hooks/%s/%s/%s.tsv' "$LOOM_WORK_DIR" "$kind" "$(_loom_sanitize_agent_id "$LOOM_SESSION_ID")" "$agent_id"
+		root="${LOOM_WORK_DIR}/hooks/${kind}" sid="$LOOM_SESSION_ID"
 	else
-		printf '%s/loom-%s/%s.tsv' "${TMPDIR:-/tmp}" "$kind" "$(_loom_sanitize_agent_id "${fallback_sid:-unknown}")"
+		root="${TMPDIR:-/tmp}/loom-${kind}" sid="${fallback_sid:-unknown}"
 	fi
+	printf '%s/%s/%s.tsv' "$root" "$(_loom_sanitize_agent_id "$sid")" "$agent_id"
 }
 
 # _loom_outline_covered_rows <path> - echo `loom map --outline <path>`'s
@@ -327,6 +329,10 @@ _loom_read_discipline_verdict2() {
 #      generation. The TSV never qualifies the repeat by itself.
 #   3. A tier-1 knowledge file (other than INDEX.md) is warned with an
 #      unscoped knowledge query, and OVERRIDES rules 1 and 2 outright.
+#   4. A whole-file read that a sibling agent of this session already made
+#      of the unchanged file is recorded in the session's _shared.tsv and,
+#      when rules 1 and 2 are silent, advised once per agent and path
+#      (_loom_read_sibling_receipt in _read_ledger.sh).
 #
 # Rules 1 and 2 are both computed (verdict1/verdict2), then exactly ONE
 # decision is emitted - a deny beats a warn, and rule 1 wins a tie because
@@ -373,6 +379,11 @@ loom_read_discipline_check() {
 		loom_hook_note_warn "$LOOM_RD_V2_MSG"
 	fi
 
+	local sibling
+	if sibling=$(_loom_read_sibling_receipt "$path" "$kind" "$lines" "$ledger" "${ledger%/*}/_shared.tsv") &&
+		[[ "$LOOM_RD_V1_KIND$LOOM_RD_V2_KIND" == "nonenone" ]]; then
+		loom_hook_note_warn "$sibling"
+	fi
 	_loom_ledger_append "$ledger" "$path" "$kind" "$lines"
 	return 0
 }

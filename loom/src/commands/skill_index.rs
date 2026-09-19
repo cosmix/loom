@@ -31,13 +31,15 @@ struct SkillFrontmatter {
 
 /// Single-word keywords too generic to be useful as skill triggers.
 /// Multi-word keywords containing these are NOT filtered.
-const STOPWORDS: &[&str] = &[
+pub const STOPWORDS: &[&str] = &[
     "add", "build", "change", "check", "close", "copy", "create", "debug", "delete", "deploy",
     "find", "fix", "get", "help", "install", "list", "make", "move", "open", "pull", "push",
     "read", "remove", "run", "send", "set", "show", "start", "stop", "test", "update", "use",
     "write", "app", "bug", "class", "code", "config", "data", "error", "file", "function", "issue",
     "log", "method", "new", "old", "output", "plan", "project", "script", "setup", "tool", "type",
-    "value", "claude", "loom",
+    "value", "claude", "loom", "stage", "job", "state", "result", "backend", "event", "hook",
+    "option", "session", "token", "context", "sync", "agent", "model", "report", "graph",
+    "document", "prompt", "review", "comment",
 ];
 
 fn build_index(skills_dirs: &[&Path]) -> Result<(BTreeMap<String, Vec<String>>, usize)> {
@@ -269,13 +271,23 @@ fn is_stopword(normalized: &str, stopwords: &HashSet<&str>) -> bool {
 
 /// True when `keyword` strongly identifies `skill_name`.
 ///
-/// Mirrors the logic in loom-hooks/skill-trigger.sh so a stopword-exempt
-/// indexed keyword will also pick up the name-match weight boost at
-/// lookup time. Strips the `loom-` prefix every shipped skill uses.
+/// Mirrors `_is_name_match` in loom-hooks/skill-trigger.sh so a
+/// stopword-exempt indexed keyword will also pick up the name-match weight
+/// boost at lookup time. Strips the `loom-` prefix every shipped skill uses.
+///
+/// A stopword keyword (e.g. "model") is exempted from the stopword filter
+/// only on EXACT equality with the effective name - a mere prefix match
+/// would let a bare generic word solo-qualify a skill like
+/// `loom-model-evaluation` and stay in the index, the single-generic-word
+/// false positive the evidence rule exists to block. Non-stopword keywords
+/// keep the prefix-match behavior.
 fn is_skill_name_match(keyword: &str, skill_name: &str) -> bool {
     let effective = skill_name.strip_prefix("loom-").unwrap_or(skill_name);
     if keyword == effective {
         return true;
+    }
+    if STOPWORDS.contains(&keyword) {
+        return false;
     }
     keyword.len() >= 4 && effective.starts_with(keyword)
 }

@@ -3,9 +3,10 @@
 # discipline: CLAUDE.md rule 14 ("query before you read... read ranges, not
 # files") and rule 17's 400-line file-size ceiling.
 #
-# All three rules (unbounded read of a large file -> outline instead, repeat
-# reads of the same path, and a tier-1 knowledge read in a stage session)
-# live in the shared core loom-hooks/_read_discipline.sh, so this hook and
+# All four rules (unbounded read of a large file -> outline instead, repeat
+# reads of the same path, a tier-1 knowledge read in a stage session, and a
+# whole-file read a sibling agent of the same session already made) live in
+# the shared core loom-hooks/_read_discipline.sh, so this hook and
 # poll-guard.sh's Bash-side file reads can never drift apart - see that
 # file's header for the full rule description.
 #

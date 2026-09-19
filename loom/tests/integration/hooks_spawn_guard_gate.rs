@@ -79,27 +79,59 @@ fn assert_typed_spawn_updated_input(value: &Value, expected_prompt: &str) {
 }
 
 #[test]
-fn missing_rule5_preamble_warns_except_for_codex_forwarder() {
-    if skip_unless_gate_visible("gate::missing_rule5_preamble_warns_except_for_codex_forwarder") {
-        return;
-    }
-    let (_temp, hook) = setup_hook();
-    let (home, cwd, work) = (temp(), temp(), temp());
-    let no_preamble = "just do the task, no preamble here";
+fn unreadable_preamble_file_keeps_the_warning_and_changes_nothing() {
+    let (fixture, hook) = setup_hook();
+    fs::remove_file(fixture.path().join("_subagent-preamble.txt")).expect("remove preamble");
+    let (home, cwd) = (temp(), temp());
+    let no_preamble = json!({"subagent_type": "loom-software-engineer", "prompt": "no preamble"});
 
-    let warned = json!({"subagent_type": "loom-software-engineer", "prompt": no_preamble});
-    let out = gated_task(&hook, warned, cwd.path(), home.path(), work.path());
+    let out = run_hook(&hook, "Task", no_preamble, cwd.path(), home.path(), &[]);
+
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     assert!(
         out.stdout.contains("LOOM_HOOK_WARN:") && out.stdout.contains("Rule 5 preamble"),
         "stdout={}",
         out.stdout
     );
+    assert!(
+        !out.stdout.contains("updatedInput"),
+        "stdout={}",
+        out.stdout
+    );
+}
 
-    let exempt = json!({"subagent_type": "loom-codex-forwarder", "prompt": no_preamble});
-    let out = gated_task(&hook, exempt, cwd.path(), home.path(), work.path());
-    assert_eq!(out.code, 0, "stderr={}", out.stderr);
-    assert!(out.stdout.trim().is_empty(), "stdout={}", out.stdout);
+/// The advisory rides on the first spawn of a session only, both out of a
+/// stage (a TMPDIR ledger) and in one (`hooks/spawns/<session>/<agent>.tsv`).
+#[test]
+fn first_spawn_of_a_session_carries_the_skill_advisory_once() {
+    let (_temp, hook) = setup_hook();
+    let (home, cwd, work) = (temp(), temp(), temp());
+    let input = json!({"subagent_type": "Explore", "prompt": PREAMBLE_LINE});
+    let work_dir = work.path().to_string_lossy().into_owned();
+    let stage_env = [
+        ("LOOM_STAGE_ID", "test-stage"),
+        ("LOOM_WORK_DIR", work_dir.as_str()),
+        ("LOOM_SESSION_ID", "test-session"),
+    ];
+
+    for env in [&[][..], &stage_env[..]] {
+        let first = run_hook(&hook, "Task", input.clone(), cwd.path(), home.path(), env);
+        let second = run_hook(&hook, "Task", input.clone(), cwd.path(), home.path(), env);
+        assert!(
+            first.stdout.contains("loom-orchestration"),
+            "{}",
+            first.stdout
+        );
+        assert!(
+            !second.stdout.contains("loom-orchestration"),
+            "{}",
+            second.stdout
+        );
+    }
+    assert!(work
+        .path()
+        .join("hooks/spawns/test-session/main.tsv")
+        .is_file());
 }
 
 #[test]
@@ -185,10 +217,11 @@ fn brief_without_model_rewrite_updates_only_the_prompt() {
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     assert_eq!(out.stdout.lines().count(), 1, "stdout={}", out.stdout);
     let value: Value = serde_json::from_str(out.stdout.trim()).expect("parse hook output");
-    let expected_prompt = format!("{prompt}\n\n{BRIEF}");
+    let expected_prompt = format!("{}\n\n{BRIEF}", with_preamble(prompt));
+    // Claude Code discards an updatedInput that carries no permissionDecision.
     assert_eq!(
         get_str(&value, &["hookSpecificOutput", "permissionDecision"]),
-        None
+        Some("allow")
     );
     assert_eq!(
         get_str(&value, &["hookSpecificOutput", "updatedInput", "prompt"]),
@@ -221,7 +254,10 @@ fn typed_spawn_without_definition_or_model_receives_brief_without_model_key() {
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     let value: Value = serde_json::from_str(out.stdout.trim()).expect("parse hook output");
     let updated = &value["hookSpecificOutput"]["updatedInput"];
-    assert_eq!(updated["prompt"], format!("{prompt}\n\n{BRIEF}"));
+    assert_eq!(
+        updated["prompt"],
+        format!("{}\n\n{BRIEF}", with_preamble(prompt))
+    );
     assert!(updated.get("model").is_none(), "updated={updated}");
     assert_eq!(
         fs::read_to_string(stub_bin.join("calls")).expect("read calls"),
@@ -355,8 +391,9 @@ fn codex_forwarder_keeps_marker_first_without_navigation_kit() {
     assert_eq!(updated.lines().next(), Some("LOOM-CODEX-FORWARD-ONLY"));
     assert!(!updated.contains("=== LOOM CONTEXT"));
     assert!(!updated.contains("NAVIGATE WITH THE SOURCE GRAPH"));
+    assert!(!updated.contains(PREAMBLE_LINE));
     assert!(
-        get_str(&value, &["hookSpecificOutput", "additionalContext"]).is_none(),
+        !out.stdout.contains("LOOM_HOOK_WARN"),
         "stdout={}",
         out.stdout
     );

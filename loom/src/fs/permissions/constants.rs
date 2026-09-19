@@ -27,6 +27,11 @@ pub const HOOK_PROGRESS_CLASSIFICATION: &str =
 pub const HOOK_POST_TOOL_HEARTBEAT: &str =
     include_str!("../../../../loom-hooks/_post-tool-heartbeat.sh");
 
+/// The Rule 5 subagent preamble `spawn-guard.sh` prepends to a spawn prompt
+/// that lacks it. Data read from beside the hook, never registered as a hook.
+pub const HOOK_SUBAGENT_PREAMBLE: &str =
+    include_str!("../../../../loom-hooks/_subagent-preamble.txt");
+
 /// Commit guard hook - enforces commit and stage completion in loom worktrees
 /// Runs as a global Stop hook, blocks exit if uncommitted changes or stage incomplete
 pub const HOOK_COMMIT_GUARD: &str = include_str!("../../../../loom-hooks/commit-guard.sh");
@@ -183,6 +188,7 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("_read_ledger.sh", HOOK_READ_LEDGER),
     ("_progress-classification.sh", HOOK_PROGRESS_CLASSIFICATION),
     ("_post-tool-heartbeat.sh", HOOK_POST_TOOL_HEARTBEAT),
+    ("_subagent-preamble.txt", HOOK_SUBAGENT_PREAMBLE),
     // Session lifecycle hooks
     ("post-tool-use.sh", HOOK_POST_TOOL_USE),
     ("loom-control-complete.sh", HOOK_LOOM_CONTROL_COMPLETE),

@@ -3,18 +3,30 @@
 # must let the legacy command through with a "tool not installed" warning
 # instead of its usual STOP-and-redo guidance.
 set -euo pipefail
+# See prefer-modern-tools-grep.sh for why the live stage vars must be unset.
+# LOOM_HOOK_PATH must go too, specifically for this file: _read_discipline.sh
+# (sourced by the hook) does `PATH="${LOOM_HOOK_PATH:-$PATH}"`, so a live
+# stage's LOOM_HOOK_PATH would splice the real PATH - rg and fd included -
+# back in over the rg-less/fd-less PATH this test builds below.
+unset LOOM_WORK_DIR LOOM_SESSION_ID LOOM_STAGE_ID LOOM_SESSION_TYPE LOOM_HOOK_PATH
 HOOK="$(dirname "$0")/../prefer-modern-tools.sh"
 source "$(dirname "$0")/_path_without.sh"
 
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
-trap 'rm -rf "$TMP" "${NORG_PATH:-}" "${NOFD_PATH:-}"' EXIT
+# Fresh TMPDIR for the hook's own "tools" ledger: outside a loom stage it
+# falls back to ${TMPDIR:-/tmp}/loom-tools/<session>.tsv keyed only by
+# session id (absent here, so "unknown") - shared with every other test in
+# the same run unless isolated, which would silently suppress a warning
+# expected here as "already warned" by an earlier test.
+HOOK_TMPDIR=$(mktemp -d "${TMPDIR:-/tmp}/pmt-missing.XXXXXX")
+trap 'rm -rf "$TMP" "$HOOK_TMPDIR" "${NORG_PATH:-}" "${NOFD_PATH:-}"' EXIT
 
 # (a) rg missing: grep is allowed through with a "ripgrep is not installed"
 # warning, not the usual STOP guidance.
 NORG_PATH=$(path_without rg)
 INPUT_A='{"tool_name":"Bash","tool_input":{"command":"grep -rn foo src/"}}'
 set +e
-OUTPUT_A=$(printf '%s' "$INPUT_A" | PATH="$NORG_PATH" bash "$HOOK")
+OUTPUT_A=$(printf '%s' "$INPUT_A" | PATH="$NORG_PATH" TMPDIR="$HOOK_TMPDIR" bash "$HOOK")
 CODE_A=$?
 set -e
 
@@ -36,7 +48,7 @@ fi
 NOFD_PATH=$(path_without fd)
 INPUT_B="{\"tool_name\":\"Bash\",\"tool_input\":{\"command\":\"find . -name '*.rs'\"}}"
 set +e
-OUTPUT_B=$(printf '%s' "$INPUT_B" | PATH="$NOFD_PATH" bash "$HOOK")
+OUTPUT_B=$(printf '%s' "$INPUT_B" | PATH="$NOFD_PATH" TMPDIR="$HOOK_TMPDIR" bash "$HOOK")
 CODE_B=$?
 set -e
 

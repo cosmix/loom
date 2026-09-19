@@ -233,7 +233,7 @@ _loom_git_segment_is_pathless_show_diff() {
 	while ((i < n)) && [[ "${LOOM_TOKENS[$i]}" != "%%SEP%%" ]]; do
 		tok="${LOOM_TOKENS[$i]}"
 		case "$tok" in
-		-- | --stat | --name-only | --name-status) return 1 ;;
+		-- | -s | --no-patch | --stat | --name-only | --name-status) return 1 ;;
 		esac
 		_loom_git_arg_names_path "$tok" && return 1
 		i=$((i + 1))
