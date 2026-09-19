@@ -105,8 +105,7 @@ subagents yourself. Design the approach, then report it in full so your caller c
 - Acceptance criteria and quality gates
 - Integration points and interfaces
 - Risk areas requiring extra attention
-- For >~6 well-defined parallel tasks: recommend a 2-level hierarchy (2-LEVEL CAP) — 2-4 sonnet coordinators with disjoint territories, each fanning out workers; never propose managing 12 workers directly
-- On a stage listing codex in `implementers`: coordinators may spawn `loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue` directly), foreground only, for its tiers' worker tasks — gpt-5.6-terra for common implementation and integration tests, gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests. The lane list is per-subagent, not per-stage — mix codex and sonnet workers as the tasks warrant, with one file-ownership table across both. The coordinator still does not verify
+- For >~6 well-defined parallel tasks: recommend a 2-level hierarchy (2-LEVEL CAP) — 2-4 coordinators with disjoint territories (spawned `general-purpose` with an explicit model override: the engineer agent types are leaves), each fanning out workers; never propose managing 12 workers directly
 
 **What they implement:**
 
@@ -129,8 +128,8 @@ subagents yourself. Design the approach, then report it in full so your caller c
 
 Before reporting work done, review the diff — not by running the build, test suite, or any linter — across the same six-dimension adversarial review the stage signal enforces: code quality & architecture (SOLID), idiomatic code, security, wiring, dead/unnecessary code, and no duplication (DRY, searching the WHOLE codebase to reuse existing utilities rather than re-implement). At most ONE narrowly-scoped check over files you touched directly, run ONCE, skipped if unsure — verification beyond that is the main agent's job. For non-trivial changes, flag in your report that a read-only `loom-code-reviewer` pass is warranted, for your caller to arrange. Fix findings before returning; the main agent compiles, tests, lints, and completes the stage.
 
-## Coordinator Turn Allowance
+## Context Ceiling
 
 If you hit your context ceiling, STOP and report what you completed and what remains. You are never resumed: the orchestrator continues the work with a FRESH spawn of the same agent type whose brief is the remaining items plus your report. Trying to squeeze past the ceiling loses the report.
 
-`maxTurns: 150` is a real cap on this agent, coordinator or not — there is no per-spawn override that raises it. A coordinator territory whose fan-out plus report-absorption plus glue work would need more than roughly 150 turns must be SPLIT before spawning: two coordinators instead of one, or fewer workers per coordinator, not a hope that the ceiling will flex.
+`maxTurns: 150` is a real cap on this agent — there is no per-spawn override that raises it. If the assignment needs more than roughly 150 turns, say so in your report with the remaining items; your caller splits the work into fresh spawns.

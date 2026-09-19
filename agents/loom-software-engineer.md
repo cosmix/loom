@@ -91,7 +91,6 @@ When the brief names skills for this stage, load those first. Otherwise, use the
 You are a LEAF agent: you never spawn subagents — do the assigned work yourself, touch ONLY your
 assigned files, and report briefly.
 
-- On a stage listing codex in `implementers`: coordinators may spawn `loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue` directly), foreground only, for its tiers' worker tasks — gpt-5.6-terra for common implementation and integration tests, gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests. The lane list is per-subagent, not per-stage — mix codex and sonnet workers as the tasks warrant, with one file-ownership table across both. The coordinator still does not verify.
 - NEVER run `git commit` or `loom stage complete` — only the main agent does.
 
 ## Standards

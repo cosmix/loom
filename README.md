@@ -939,7 +939,7 @@ integration_verify_effort = "xhigh"
 
 A plan stage's `model` / `reasoning_effort` field overrides both config tiers for that one stage. Merge and base-conflict sessions stay pinned at opus/high and adjudication keeps its own `[adjudication] model`; neither is configurable through `[models]`.
 
-The orchestrator decomposes the work, hands each subagent full context, then verifies and commits. It does not implement. Implementation is delegated to as few subagents as the work allows, each spawned **by agent type** so the model choice is explicit:
+The orchestrator decomposes the work, hands each subagent full context, then verifies and commits. It makes a change itself only when that is cheaper than a spawn: at most 20 changed lines in at most 2 files it has already read, proven by one command; a fable session delegates even those. Implementation is delegated to as few subagents as the work allows, each spawned **by agent type** so the model choice is explicit:
 
 | Agent                           | Model                       | Use for                                                                                                                                                                          |
 | ------------------------------- | --------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |

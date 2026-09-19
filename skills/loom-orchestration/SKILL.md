@@ -131,7 +131,11 @@ and is rare.
 an explicit `model` override — the engineer agent types carry no Task tool and run as leaves, so
 they cannot coordinate. Spawn workers BY AGENT TYPE — untyped ones inherit the main session model.
 Coordinators delegate too (hard stop 6), going opus only when territory integration needs
-judgment. Mix lanes under ONE ownership table.
+judgment. Mix lanes under ONE ownership table. On a stage listing codex in `implementers`, a
+coordinator spawns `loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue`
+directly), foreground only: gpt-5.6-terra for common implementation and integration tests,
+gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests. The lane is chosen per subagent,
+never per stage; the coordinator still does not verify.
 
 With an `EXECUTION PLAN` block, parse ALL assignments and spawn ALL in ONE message; hierarchical
 plans spawn COORDINATORS, not workers. Every prompt carries the preamble, assignment, files
