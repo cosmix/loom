@@ -1,6 +1,6 @@
 ---
 name: loom-database-design
-description: Database schema and data model design for relational, NoSQL, time-series, and warehouse systems.
+description: "Database schema and data model design for relational, NoSQL, time-series, and warehouse systems. Not for: event messaging."
 allowed-tools:
   - Read
   - Grep

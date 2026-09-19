@@ -1,6 +1,6 @@
 ---
 name: loom-webhooks
-description: Webhook implementation and consumption patterns.
+description: "Webhook implementation and consumption patterns. Not for: an internal pub/sub event — see loom-event-driven."
 triggers:
   - webhook
   - webhooks

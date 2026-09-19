@@ -1,6 +1,6 @@
 ---
 name: loom-prompt-engineering
-description: Designs and optimizes prompts for large language models including system prompts, agent signals, and few-shot examples.
+description: "Designs and optimizes LLM prompts: system prompts, agent signals, few-shot examples. Not for: a shell/CLI prompt."
 allowed-tools:
   - Read
   - Grep
@@ -8,7 +8,6 @@ allowed-tools:
   - Edit
   - Write
 triggers:
-  - prompt
   - LLM
   - GPT
   - system prompt

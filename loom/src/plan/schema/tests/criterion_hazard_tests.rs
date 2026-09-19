@@ -64,6 +64,41 @@ fn masked_exit_inside_quoted_pattern_is_not_a_hazard() {
 }
 
 #[test]
+fn masked_exit_status_only_considers_the_final_statement() {
+    for command in [
+        "cargo test; true",
+        "cargo test\ntrue",
+        "cargo test || exit 0",
+        "(cargo test || true)",
+        "cargo test || true;",
+        "cargo build && cargo test || true",
+        "bash -c 'cargo test; true'",
+    ] {
+        assert_flags(command, Hazard::MaskedExit);
+    }
+}
+
+#[test]
+fn a_lone_no_op_is_not_a_masked_exit() {
+    for command in ["true", ":", "exit 0", "bash -c 'true'"] {
+        assert_clean(command);
+    }
+}
+
+#[test]
+fn masked_exit_status_ignores_earlier_guarded_statements() {
+    for command in [
+        "rm -rf target || true; cargo build --release",
+        "rm -rf target || true\ncargo test",
+        "bash -c 'rm -rf t || true'; cargo test",
+        "cargo test || exit 1",
+        "cargo test || true && cargo build",
+    ] {
+        assert_clean(command);
+    }
+}
+
+#[test]
 fn home_from_expansion_is_an_error() {
     assert_flags("HOME=$TMPDIR cargo test", Hazard::HomeFromExpansion);
     assert_flags(r#"export HOME="$(pwd)/h""#, Hazard::HomeFromExpansion);

@@ -1,6 +1,6 @@
 ---
 name: loom-istio
-description: Service mesh implementation with Istio for microservices traffic management, security, and observability.
+description: "Service mesh implementation with Istio: traffic management, security, observability. Not for: a non-mesh API gateway."
 allowed-tools:
   - Read
   - Grep
@@ -15,14 +15,12 @@ triggers:
   - sidecar
   - virtualservice
   - destinationrule
-  - gateway
   - mtls
   - peerauthentication
   - authorizationpolicy
   - serviceentry
   - traffic management
   - traffic splitting
-  - canary
   - blue-green
   - circuit breaker
   - retry

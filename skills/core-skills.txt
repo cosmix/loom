@@ -27,3 +27,4 @@ loom-md-tables
 loom-code-review
 loom-debugging
 loom-skills
+loom-orchestration

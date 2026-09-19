@@ -18,23 +18,31 @@ pub(super) const BLOCK_A: &str = "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOU
 
 /// BLOCK-B - the model playbook, verbatim.
 ///
-/// A raw literal: the block quotes the phrases an orchestrator uses to talk
-/// itself into implementing ("I have diagnosed it"), so it carries `"` inside.
-pub(super) const BLOCK_B: &str = r#"1. THE MAIN AGENT NEVER IMPLEMENTS — WHATEVER MODEL IT RUNS (hard stop 6).
-   Every stage's main agent is an orchestrator: it decomposes the work, hands
-   each subagent full context, then verifies and commits. That is all. This
-   holds identically for an opus session and a fable session; a session running
-   an expensive model is MORE obliged to delegate, not less.
-2. INVESTIGATION ENDS IN A BRIEF, NOT IN AN EDIT. The moment you finish reading
-   the code and know what the fix is, you are at the delegation boundary — that
-   understanding is exactly what makes a cheap subagent effective. Write it down
+/// A raw literal: point 4 quotes the phrase an orchestrator uses to talk
+/// itself into escalating ("This feels subtle"), so it carries `"` inside.
+pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIMES MODEL TIER (hard stop 6). A
+   stage's main agent decomposes the work, briefs subagents, verifies and
+   commits. A spawn costs a written brief, the subagent's boot (about 28,000
+   tokens before it reads anything) and a harvest turn. The main agent makes a
+   change itself only when ALL of these hold: at most 20 changed lines, in at
+   most 2 files it has already read this session, no further exploration, and
+   one command proves it. Anything larger is delegated. A main session running
+   FABLE delegates even those: a cheaper tier can do them, and every fable turn
+   costs more than the spawn.
+2. INVESTIGATION ENDS IN A BRIEF OR IN A SMALL CHANGE. The moment you finish
+   reading the code and know what the fix is, apply point 1's test. If it
+   fails, you are at the delegation boundary: write the understanding down
    (file:line, root cause, the change to make, signatures, patterns to match,
-   acceptance) and spawn. Do not slide from "I have diagnosed it" into "I will
-   just type it"; the diagnosis being yours does not make the typing yours.
-3. IMPLEMENTATION IS ALWAYS DELEGATED, to as FEW subagents as the work allows, at
-   the CHEAPEST tier that can do the piece. Pick PER SUBAGENT by what that piece
-   needs, never once for the whole stage, and default downward: codex
-   gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests; SONNET
+   acceptance) and spawn. The diagnosis being yours does not make a large
+   change yours.
+3. EVERYTHING BEYOND POINT 1 IS DELEGATED, to as FEW subagents as the work
+   allows, at the CHEAPEST tier that can do the piece. Size each assignment so
+   the subagent typically finishes under about 400,000 tokens, and never split
+   below what that needs: every extra spawn pays the boot cost again. Pick PER
+   SUBAGENT by what that piece needs, never once for the whole stage, and
+   default downward: HAIKU (`model: haiku` on loom-software-engineer) for
+   mechanical edits such as a rename or a config value; codex gpt-5.6-luna for
+   boilerplate, scaffolding, and simple unit tests; SONNET
    (loom-software-engineer) or codex gpt-5.6-terra for common implementation and
    integration tests — this is the default lane and most work belongs here; OPUS
    (loom-senior-software-engineer) for mainstream architecture and algorithm
@@ -57,19 +65,20 @@ pub(super) const BLOCK_B: &str = r#"1. THE MAIN AGENT NEVER IMPLEMENTS — WHATE
    writes. Its diagnosis then feeds a sonnet or opus implementer per point 2.
    Do not let an implementer thrash on the same failure twice."#;
 
-/// BLOCK-D - the subagent context-ceiling rule, verbatim. Unlike BLOCK-A/B/C,
-/// this one is pinned against BOTH a static surface (`CLAUDE.md.template`)
-/// and the emitted signal prefixes (`cache.rs::append_subagent_ceiling_block`)
-/// in the SAME test, because a subagent's route to it cannot rely on either
-/// alone: it may never see the literal prose the orchestrator was told to
-/// paste, so the signal-side copy is the fallback that reaches it anyway.
+/// BLOCK-D - the subagent context-ceiling rule, verbatim. Pinned against BOTH
+/// the subagent preamble (`loom-hooks/_subagent-preamble.txt`, which
+/// `spawn-guard.sh` prepends to a spawn prompt) and the emitted signal
+/// prefixes (`cache.rs::append_subagent_ceiling_block`) in the SAME test,
+/// because a subagent's route to it cannot rely on either alone: an untyped
+/// spawn never gets the preamble, so the signal-side copy the orchestrator
+/// pastes is the fallback that reaches it anyway.
 pub(super) const BLOCK_D: &str = "CONTEXT CEILING - HOOK-REPORTED ONLY:
 - Your ceiling is roughly 800,000 tokens, the same number your orchestrator gets - reading a handful of files never gets you close.
 - The hook line beginning `SUBAGENT CEILING REACHED:` in your own tool output is the sole evidence you reached it. Never estimate, infer, or assume one.
 - A turn that ends with zero files written, on a task that asked for files, counts as a FAILED unit of work even if the report reads well. If genuinely blocked, name the real blocker - the hook line above is the only thing that counts as a context blocker.";
 
-/// Phrasing RETIRED doctrines used, across the no-verify rule (BLOCK-A) and the
-/// subagent-waiting rule (BLOCK-C). Acceptance criteria only grep for the
+/// Phrasing RETIRED doctrines used, across the no-verify rule (BLOCK-A), the
+/// model playbook (BLOCK-B) and the subagent-waiting rule (BLOCK-C). Acceptance criteria only grep for the
 /// wording a doctrine INTRODUCES, so they cannot catch a surface that still
 /// carries the instruction it replaced - which is exactly how the enforcement
 /// layer once landed while three guidance files still told subagents to run
@@ -113,4 +122,8 @@ pub(super) const RETIRED_PHRASES: &[&str] = &[
     // - both are 800,000, told apart only by which hook line reports them.
     // Guards against the split creeping back in.
     concat!("600,", "000"),
+    // BLOCK-B point 1's old heading, retired when delegation became a cost
+    // decision: the main agent now makes a small change itself, so a surface
+    // still forbidding every edit contradicts the playbook.
+    concat!("THE MAIN AGENT NEVER ", "IMPLEMENTS"),
 ];

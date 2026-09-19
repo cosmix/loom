@@ -1,6 +1,6 @@
 ---
 name: loom-diagramming
-description: Create technical diagrams using Mermaid syntax for architecture, sequences, ERDs, flowcharts, and state machines.
+description: "Create technical diagrams (Mermaid): architecture, sequences, ERDs, state machines. Not for: app/stage state."
 triggers:
   - diagram
   - diagrams

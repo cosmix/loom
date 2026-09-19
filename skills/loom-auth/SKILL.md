@@ -1,6 +1,6 @@
 ---
 name: loom-auth
-description: Authentication and authorization patterns including OAuth2, JWT, RBAC/ABAC, session management, API keys, password hashing, and MFA.
+description: "Authentication and authorization: OAuth2, JWT, RBAC/ABAC, sessions, API keys, MFA. Not for: LLM tokens."
 triggers:
   - login
   - logout
@@ -11,7 +11,7 @@ triggers:
   - authorization
   - password
   - credential
-  - token
+  - jwt token
   - JWT
   - OAuth
   - OAuth2
@@ -19,7 +19,6 @@ triggers:
   - OpenID
   - SSO
   - SAML
-  - session
   - cookie
   - refresh token
   - access token

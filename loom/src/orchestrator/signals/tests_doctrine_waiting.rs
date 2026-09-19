@@ -10,28 +10,26 @@
 //! (`loom subagents watch --worker ... --timeout 3600` through the Bash tool's
 //! `run_in_background`, never re-armed or polled).
 //!
-//! It now lives on exactly ONE surface — `CLAUDE.md.template` Rule 6 — and is
-//! deliberately ABSENT from every generated signal (`generate_stable_prefix`,
-//! `generate_integration_verify_stable_prefix`, `generate_knowledge_stable_prefix`,
-//! `generate_knowledge_distill_stable_prefix`). It used to be pushed
-//! byte-identical into the signal as well, but a subagent already has
-//! CLAUDE.md in its own context in the same session: a second verbatim copy
-//! in the signal taught nothing new and paid its ~1KB in residency cost on
-//! every fresh spawn for the stage. Dropping the signal copy is safe because
-//! the doctrine now lives on exactly one surface. The CLAUDE.md.template copy
-//! below is still pinned so it cannot drift or silently vanish.
+//! It lives on exactly ONE surface — `skills/loom-orchestration/SKILL.md`
+//! Rule 6, which the stable prefix tells a stage's main agent to load first —
+//! and is deliberately ABSENT from every generated signal
+//! (`generate_stable_prefix`, `generate_integration_verify_stable_prefix`,
+//! `generate_knowledge_stable_prefix`, `generate_knowledge_distill_stable_prefix`).
+//! It used to live in `CLAUDE.md.template` Rule 6 and, before that, in the
+//! signal too; both copies paid residency cost in sessions that never spawn a
+//! subagent. The skill copy below is pinned so it cannot drift or vanish.
 
 use super::cache::{
     generate_integration_verify_stable_prefix, generate_knowledge_distill_stable_prefix,
     generate_knowledge_stable_prefix, generate_stable_prefix,
 };
 
-const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
+const ORCHESTRATION_SKILL: &str = include_str!("../../../../skills/loom-orchestration/SKILL.md");
 
 /// A stable-prefix generator, named for its failure message.
 type PrefixGenerator = fn() -> String;
 
-/// BLOCK-C, verbatim. `CLAUDE.md.template` must carry this text byte for byte.
+/// BLOCK-C, verbatim. `skills/loom-orchestration/SKILL.md` must carry this text byte for byte.
 const BLOCK_C: &str = "**Checking on subagents: use one owned `loom subagents` wait, never a hand-rolled poll loop.** Spawn every worker first and capture each worker ID: the Claude agent ID from the spawn result, or the Codex unit ID you assigned with `--unit-id`. Then run ONE `loom subagents watch --worker claude:<agent-id> --worker codex:<unit-id> --timeout 3600` through the Bash tool's `run_in_background`, with one `--worker` for every worker. It binds those workers once, holds one lease for the parent session, prints one initial record and one terminal record, then exits. Treat its exit distinctly:
 
 1. **Exit 0** — every bound worker has fresh, correlated success evidence.
@@ -44,15 +42,15 @@ const BLOCK_C: &str = "**Checking on subagents: use one owned `loom subagents` w
 Harvest each worker's terminal report exactly once. Never re-arm the watch and never poll with `loom subagents list`, `loom subagents harvest`, `git status`, `wc`, or `ls`; `list` and `harvest` remain one-shot diagnostics. Only exact authoritative terminal evidence permits completion. Exit 6 is the channel that reports a worker idle past the stage's `subagent_timeout_secs` budget with no transcript growth — the only positive evidence of death. `TaskStop` it, confirm it stopped, then RE-DELEGATE the remainder to a fresh subagent. Never absorb the work into yourself — the orchestrator decomposes, delegates, verifies, and commits; it does not implement (hard stop 6). Re-read the tree before writing the new brief: a stale brief is worse than no brief. Never complete the stage while any subagent is still out (Rule 4).";
 
 #[test]
-fn block_c_lives_in_claude_md_template() {
+fn block_c_lives_in_the_orchestration_skill() {
     assert!(
-        CLAUDE_MD_TEMPLATE.contains(BLOCK_C),
-        "CLAUDE.md.template does not carry BLOCK-C (the subagent-waiting \
+        ORCHESTRATION_SKILL.contains(BLOCK_C),
+        "skills/loom-orchestration/SKILL.md does not carry BLOCK-C (the subagent-waiting \
          doctrine) verbatim. Expected to find:\n{BLOCK_C}"
     );
 }
 
-/// BLOCK-C reaches an agent through CLAUDE.md in the same session; a second
+/// BLOCK-C reaches an agent through the `loom-orchestration` skill; a second
 /// verbatim copy in the signal is pure residency cost, not redundant safety.
 /// Pin its absence from every stable prefix so it cannot silently regrow.
 #[test]
@@ -78,7 +76,7 @@ fn block_c_absent_from_every_stable_prefix() {
         assert!(
             !prefix.contains(BLOCK_C),
             "{name} must not carry BLOCK-C: the subagent-waiting doctrine \
-             reaches the agent through CLAUDE.md in the same session, so a \
+             reaches the agent through the loom-orchestration skill, so a \
              second verbatim copy in the signal is pure residency cost"
         );
     }

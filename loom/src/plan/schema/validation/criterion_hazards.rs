@@ -13,7 +13,10 @@ use std::collections::BTreeSet;
 
 use super::super::types::{StageDefinition, ValidationError};
 use super::search_args::SearchArgs;
-use super::shell_lex::{lex, simple_commands, SimpleCommand, Token, Word};
+use super::shell_lex::{lex, simple_commands, SimpleCommand, Word};
+
+mod masked_exit;
+use masked_exit::masks_exit_status;
 
 /// How deep the scan follows command substitutions and `sh -c` scripts.
 const MAX_NESTING: usize = 4;
@@ -64,7 +67,8 @@ impl Hazard {
     pub(crate) fn message(self) -> String {
         let text = match self {
             Self::MaskedExit => {
-                "masks its exit status with `|| true` (or `|| :`), so it passes whatever happens"
+                "masks its exit status (a final `|| true`, `|| :`, `|| exit 0`, `; true` or \
+                 `; :`), so it passes whatever happens"
             }
             Self::HomeFromExpansion => {
                 "assigns HOME from a variable or command substitution, so tools that keep \
@@ -181,32 +185,37 @@ fn stage_commands(stage: &StageDefinition) -> Vec<(String, &str, bool)> {
 /// `sh -c` scripts.
 pub(crate) fn scan(command: &str, in_wiring_test: bool) -> BTreeSet<Hazard> {
     let mut found = BTreeSet::new();
-    scan_into(command, in_wiring_test, 0, &mut found);
+    scan_into(command, in_wiring_test, 0, true, &mut found);
     found
 }
 
-fn scan_into(command: &str, in_wiring_test: bool, depth: usize, found: &mut BTreeSet<Hazard>) {
+/// Scans one command, or a script nested inside it, for hazards. `tail`
+/// marks a script whose own exit status becomes the exit status of the
+/// criterion that ran it: the top-level command, or an `sh -c`/`bash -c`
+/// script that is the last simple command of its parent. Only there does a
+/// masked final statement change what the criterion reports.
+fn scan_into(
+    command: &str,
+    in_wiring_test: bool,
+    depth: usize,
+    tail: bool,
+    found: &mut BTreeSet<Hazard>,
+) {
     let tokens = lex(command);
-    if masks_exit_status(&tokens) {
+    if tail && masks_exit_status(&tokens) {
         found.insert(Hazard::MaskedExit);
     }
-    for simple in simple_commands(&tokens) {
-        scan_simple(&simple, in_wiring_test, found);
+    let simples = simple_commands(&tokens);
+    let last_index = simples.len().saturating_sub(1);
+    for (idx, simple) in simples.iter().enumerate() {
+        scan_simple(simple, in_wiring_test, found);
         if depth < MAX_NESTING {
-            for script in nested_scripts(&simple) {
-                scan_into(&script, in_wiring_test, depth + 1, found);
+            let script_tail = tail && idx == last_index;
+            for script in nested_scripts(simple) {
+                scan_into(&script, in_wiring_test, depth + 1, script_tail, found);
             }
         }
     }
-}
-
-fn masks_exit_status(tokens: &[Token]) -> bool {
-    tokens.windows(2).any(|pair| match pair {
-        [Token::Control("||"), Token::Word(word)] => {
-            !word.quoted && matches!(word.command_name(), "true" | ":")
-        }
-        _ => false,
-    })
 }
 
 fn scan_simple(simple: &SimpleCommand<'_>, in_wiring_test: bool, found: &mut BTreeSet<Hazard>) {

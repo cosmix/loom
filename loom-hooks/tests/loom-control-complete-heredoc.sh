@@ -290,6 +290,28 @@ EOF
 CASE
 expect_refused "a heredoc passed to perl"
 
+read_cmd <<'CASE' || true
+python3 - <<'EOF'
+import os
+os.system("loom stage complete some-stage")
+EOF
+CASE
+expect_refused "a heredoc passed to python3"
+
+read_cmd <<'CASE' || true
+perl5.36 - <<'EOF'
+system("loom stage complete some-stage");
+EOF
+CASE
+expect_refused "a heredoc passed to a versioned perl"
+
+read_cmd <<'CASE' || true
+python3 - <<'EOF'
+print("hello")
+EOF
+CASE
+expect_allowed "a heredoc passed to python3 without completion words"
+
 CMD="$PINNED <<'EOF'"$'\nx\nEOF'
 expect_refused "the pinned command with a heredoc"
 

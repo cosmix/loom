@@ -66,7 +66,7 @@ fn authoritative_ledger_type_wins_over_prompt_inference() {
 // --- Defect 1: agent-type classification ------------------------------
 
 /// The exact scenario that used to mislabel every senior-engineer spawn: the
-/// prompt carries CLAUDE.md's Rule 6c coordinator preamble, which writes
+/// prompt carries `skills/loom-orchestration/SKILL.md`'s Rule 6 coordinator preamble, which writes
 /// "(loom-software-engineer = sonnet)" into every coordinator prompt
 /// regardless of the coordinator's real type. That mention alone must never
 /// be reported as `loom-software-engineer`.

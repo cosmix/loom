@@ -1,35 +1,27 @@
 //! Cross-surface consistency tests for the shared agent-doctrine blocks.
 //!
-//! Two doctrines are duplicated across surfaces owned by DIFFERENT stages, in
-//! DIFFERENT languages, so no compiler or linter relates them: BLOCK-A (the
-//! no-verify rule) appears in the signal prefixes from `cache.rs`, in
-//! `CLAUDE.md.template` (Rule 5 and worker preambles), and in the stderr of
-//! `loom-hooks/subagent-verify-guard.sh`; BLOCK-B (the model playbook) appears in
-//! `CLAUDE.md.template` (Rule 7) and `skills/loom-plan-writer/SKILL.md`. If
-//! the copies drift, one surface teaches a rule the others contradict, and a
-//! subagent obeying the wrong copy is blocked by the hook with no allowed
-//! alternative.
+//! Doctrines duplicated across surfaces owned by DIFFERENT stages, in
+//! DIFFERENT languages, so no compiler or linter relates them. If the copies
+//! drift, one surface teaches a rule the others contradict, and a subagent
+//! obeying the wrong copy is blocked by a hook with no allowed alternative.
 //!
-//! A third, BLOCK-C (subagent-waiting), is pinned the same way in the sibling
-//! `tests_doctrine_waiting.rs`; the emitted STABLE PREFIX / SIGNAL text (rather
-//! than the static guidance surfaces BLOCK-A and BLOCK-B live on) is pinned in
-//! `tests_doctrine_prefixes.rs` instead - both splits keep files under budget.
+//! - BLOCK-A (the no-verify rule): the signal prefixes from `cache.rs`, the
+//!   subagent preamble `loom-hooks/_subagent-preamble.txt` that
+//!   `spawn-guard.sh` prepends to spawn prompts, and the stderr of
+//!   `loom-hooks/subagent-verify-guard.sh`.
+//! - BLOCK-B (the model playbook): `skills/loom-orchestration/SKILL.md`
+//!   (Rule 7) and `skills/loom-plan-writer/SKILL.md`.
+//! - BLOCK-C (subagent-waiting): pinned in the sibling
+//!   `tests_doctrine_waiting.rs`; emitted-signal doctrine is pinned in
+//!   `tests_doctrine_prefixes.rs` - both splits keep files under budget.
+//! - BLOCK-D (the subagent context-ceiling rule): the preamble file and the
+//!   emitted signal (`cache.rs`'s `append_subagent_ceiling_block`). Subagents
+//!   without the hook's literal `SUBAGENT CEILING REACHED` line were observed
+//!   confabulating a ceiling from prose alone.
 //!
-//! A fourth, BLOCK-D (the subagent context-ceiling rule), is pinned HERE
-//! rather than split out: it appears on both a static surface
-//! (`CLAUDE.md.template` Rule 5) and the emitted signal (`cache.rs`'s
-//! `append_subagent_ceiling_block`), unlike BLOCK-A/B (static-only, pinned in
-//! this file) or BLOCK-C (static-only, pinned in the sibling). It exists
-//! because a subagent that never sees the PostToolUse hook's literal
-//! `SUBAGENT CEILING REACHED` report has no falsifiable way to know it has
-//! NOT reached its ceiling, and was observed confabulating one from CLAUDE.md
-//! prose alone (five subagents, zero files written, real usage 34k-71k
-//! against a 120,000 ceiling - see `block_d_agrees_across_every_surface`).
-//!
-//! The two singular surfaces are embedded with `include_str!`, so moving either is a
-//! COMPILE error rather than a silently-skipped test; the `agents/` roster is scanned
-//! instead, because it grows. BLOCK-A's ABSENCE from the knowledge/knowledge-distill
-//! prefixes is pinned by `cache.rs`'s own unit tests, not here.
+//! Singular surfaces are embedded with `include_str!`, so moving one is a COMPILE
+//! error; the growing `agents/` roster is scanned. BLOCK-A's ABSENCE from the
+//! knowledge prefixes is pinned by `cache.rs`'s own tests.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -39,11 +31,15 @@ use super::cache::{
     generate_knowledge_stable_prefix, generate_stable_prefix,
 };
 use super::format::format_codex_implementers_section;
-use crate::fs::permissions::constants::{HOOK_CODEX_FORWARD, HOOK_SUBAGENT_VERIFY_GUARD};
+use crate::fs::permissions::constants::{
+    HOOK_CODEX_FORWARD, HOOK_SUBAGENT_PREAMBLE, HOOK_SUBAGENT_VERIFY_GUARD,
+};
 use crate::models::stage::{Implementer, Implementers};
 
 const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
 const PLAN_WRITER_SKILL: &str = include_str!("../../../../skills/loom-plan-writer/SKILL.md");
+const ORCHESTRATION_SKILL: &str = include_str!("../../../../skills/loom-orchestration/SKILL.md");
+const PREAMBLE_LABEL: &str = "loom-hooks/_subagent-preamble.txt";
 
 /// Repo root, resolved from the crate directory at compile time.
 fn repo_root() -> PathBuf {
@@ -100,6 +96,14 @@ fn guidance_surfaces() -> Vec<(String, String)> {
             "skills/loom-plan-writer/SKILL.md".to_string(),
             PLAN_WRITER_SKILL.to_string(),
         ),
+        (
+            "skills/loom-orchestration/SKILL.md".to_string(),
+            ORCHESTRATION_SKILL.to_string(),
+        ),
+        (
+            PREAMBLE_LABEL.to_string(),
+            HOOK_SUBAGENT_PREAMBLE.to_string(),
+        ),
     ];
     surfaces.extend(agent_definitions());
     surfaces
@@ -113,7 +117,7 @@ fn block_a_agrees_across_every_surface() {
     for (label, text) in [
         ("signal stable prefix", signal_prefix.as_str()),
         ("signal integration-verify prefix", iv_prefix.as_str()),
-        ("CLAUDE.md.template", CLAUDE_MD_TEMPLATE),
+        (PREAMBLE_LABEL, HOOK_SUBAGENT_PREAMBLE),
         (
             "loom-hooks/subagent-verify-guard.sh",
             HOOK_SUBAGENT_VERIFY_GUARD,
@@ -131,7 +135,7 @@ fn block_a_agrees_across_every_surface() {
 #[test]
 fn block_b_agrees_across_every_surface() {
     for (label, text) in [
-        ("CLAUDE.md.template", CLAUDE_MD_TEMPLATE),
+        ("skills/loom-orchestration/SKILL.md", ORCHESTRATION_SKILL),
         ("skills/loom-plan-writer/SKILL.md", PLAN_WRITER_SKILL),
     ] {
         assert!(
@@ -173,7 +177,7 @@ fn block_d_agrees_across_every_surface() {
     for (label, text) in [
         ("signal stable prefix", signal_prefix.as_str()),
         ("signal integration-verify prefix", iv_prefix.as_str()),
-        ("CLAUDE.md.template", CLAUDE_MD_TEMPLATE),
+        (PREAMBLE_LABEL, HOOK_SUBAGENT_PREAMBLE),
     ] {
         assert!(
             text.contains(BLOCK_D),
@@ -276,6 +280,7 @@ fn codex_forward_sentinel_agrees_across_surfaces() {
     // plugin wrapper directly (observed implementing instead, 2026-08-07).
     for (label, text) in [
         ("CLAUDE.md.template", CLAUDE_MD_TEMPLATE),
+        ("skills/loom-orchestration/SKILL.md", ORCHESTRATION_SKILL),
         ("skills/loom-plan-writer/SKILL.md", PLAN_WRITER_SKILL),
     ] {
         assert!(
@@ -334,15 +339,10 @@ fn codex_navigation_kit_wrapper_carries_and_delivers_the_preamble() {
     );
 }
 
-/// Pins the signal doctrine's SIGNAL half of the same pair: the text told to
-/// the orchestrator, not the wrapper it describes (that half is
-/// [`codex_navigation_kit_wrapper_carries_and_delivers_the_preamble`]). The
-/// signal doctrine tells the orchestrator that codex arrives at every prompt
-/// already carrying `loom map`/`loom knowledge context` anchors and the
-/// instruction not to read CLAUDE.md or sweep doc/loom/knowledge/ - so the
-/// orchestrator never repeats any of that itself. If this doctrine text
-/// stopped naming the kit, an orchestrator reading the signal would have no
-/// way to know the wrapper already supplies it, and would start re-pasting it.
+/// The SIGNAL half of the pair completed by
+/// [`codex_navigation_kit_wrapper_carries_and_delivers_the_preamble`]: the signal must name
+/// the kit the wrapper already gives codex (`loom map`/`loom knowledge context` anchors, the
+/// AGENTS.md instruction), or an orchestrator would start re-pasting it.
 #[test]
 fn codex_navigation_kit_signal_doctrine_names_the_kit() {
     let implementers = Implementers::new(vec![Implementer::Codex]);

@@ -1,6 +1,6 @@
 ---
 name: loom-data-visualization
-description: Build effective charts, dashboards, and reports across analytics, infrastructure monitoring, and ML domains.
+description: "Build effective charts, dashboards, and reports across analytics, infra, and ML. Not for: a status report."
 allowed-tools:
   - Read
   - Grep
@@ -10,10 +10,8 @@ allowed-tools:
   - Bash
 triggers:
   - chart
-  - graph
   - plot
   - dashboard
-  - report
   - visualization
   - matplotlib
   - seaborn
