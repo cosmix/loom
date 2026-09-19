@@ -17,7 +17,7 @@ use crate::models::session::Session;
 use crate::models::stage::{Stage, StageType};
 use crate::models::worktree::Worktree;
 use crate::plan::schema::CodeReviewConfig;
-use crate::skills::SkillIndex;
+use crate::skills::{SkillIndex, SkillMatch};
 
 use super::cache::SignalMetrics;
 use super::format::{format_signal_content, format_signal_with_metrics};
@@ -64,13 +64,8 @@ pub fn generate_signal_with_skills(
     let mut embedded_context = build_signal_context(session, stage, work_dir, handoff_file);
 
     if let Some(index) = skill_index {
-        embedded_context.skill_recommendations = crate::skills::recommend::for_files(
-            index,
-            &build_skill_match_text(stage),
-            &worktree.path,
-            &stage.files,
-            detected_languages,
-        );
+        embedded_context.skill_recommendations =
+            declared_and_recommended_skills(index, stage, worktree, detected_languages);
     }
 
     let mut content = format_signal_content(
@@ -110,6 +105,52 @@ pub(super) fn render_review_dimensions(config: &CodeReviewConfig) -> Option<Stri
         section.push_str(&format!("- [ ] **{dimension}**\n"));
     }
     Some(section)
+}
+
+/// Resolve `stage.skills` against the loaded index and put them first,
+/// ahead of the keyword/file-type recommendations `recommend::for_files`
+/// produces — a plan-declared skill is a requirement, not a guess, so it
+/// leads the list `format_skill_recommendations` renders. Marked with
+/// `"declared-for-stage"` so the formatter can give it directive wording
+/// distinct from a file-type detection. A name the index does not resolve
+/// (already reported by `check_declared_skills` at `loom plan verify` time)
+/// is silently skipped here rather than surfaced twice.
+fn declared_and_recommended_skills(
+    index: &SkillIndex,
+    stage: &Stage,
+    worktree: &Worktree,
+    detected_languages: &[DetectedLanguage],
+) -> Vec<SkillMatch> {
+    let declared_names: std::collections::HashSet<&str> =
+        stage.skills.iter().map(String::as_str).collect();
+
+    let mut skills: Vec<SkillMatch> = stage
+        .skills
+        .iter()
+        .filter_map(|name| index.get_by_name(name))
+        .map(|metadata| {
+            SkillMatch::new(
+                metadata.name.clone(),
+                metadata.description.clone(),
+                10.0,
+                vec!["declared-for-stage".to_string()],
+            )
+        })
+        .collect();
+
+    skills.extend(
+        crate::skills::recommend::for_files(
+            index,
+            &build_skill_match_text(stage),
+            &worktree.path,
+            &stage.files,
+            detected_languages,
+        )
+        .into_iter()
+        .filter(|recommended| !declared_names.contains(recommended.name.as_str())),
+    );
+
+    skills
 }
 
 /// Build text for skill matching from stage metadata
@@ -294,80 +335,9 @@ fn append_stage_feedback(content: &mut String, stage: &Stage, work_dir: &Path) {
 }
 
 #[cfg(test)]
-mod missing_allow_write_tests {
-    use super::*;
-    use crate::fs::work_dir::write_plan_sandbox;
-    use crate::models::stage::{FilesystemConfig, StageSandboxConfig, StageStatus};
-    use crate::plan::schema::SandboxConfig;
-    use tempfile::TempDir;
+#[path = "generate_declared_skills_tests.rs"]
+mod declared_skills_tests;
 
-    fn init_work(temp: &TempDir) -> PathBuf {
-        let work = temp.path().join(".loom").join("work");
-        std::fs::create_dir_all(&work).unwrap();
-        work
-    }
-
-    fn stage_with_sandbox(sandbox: StageSandboxConfig) -> Stage {
-        Stage {
-            id: "test-stage".to_string(),
-            name: "Test Stage".to_string(),
-            status: StageStatus::Queued,
-            stage_type: StageType::Standard,
-            sandbox,
-            ..Stage::default()
-        }
-    }
-
-    #[test]
-    fn missing_plan_level_grant_is_reported() {
-        let temp = TempDir::new().unwrap();
-        let work = init_work(&temp);
-        let missing_path = temp.path().join("does-not-exist").display().to_string();
-
-        let mut plan_sandbox = SandboxConfig::default();
-        plan_sandbox.filesystem.allow_write = vec![missing_path.clone()];
-        write_plan_sandbox(&work, &plan_sandbox).unwrap();
-
-        let stage = stage_with_sandbox(StageSandboxConfig::default());
-
-        assert_eq!(
-            missing_allow_write_from_merged(&work, &stage),
-            vec![missing_path]
-        );
-    }
-
-    #[test]
-    fn existing_plan_level_grant_is_not_reported() {
-        let temp = TempDir::new().unwrap();
-        let work = init_work(&temp);
-        let existing_path = temp.path().display().to_string();
-
-        let mut plan_sandbox = SandboxConfig::default();
-        plan_sandbox.filesystem.allow_write = vec![existing_path];
-        write_plan_sandbox(&work, &plan_sandbox).unwrap();
-
-        let stage = stage_with_sandbox(StageSandboxConfig::default());
-
-        assert!(missing_allow_write_from_merged(&work, &stage).is_empty());
-    }
-
-    #[test]
-    fn missing_stage_level_grant_is_reported_with_no_plan_sandbox() {
-        let temp = TempDir::new().unwrap();
-        let work = init_work(&temp);
-        let missing_path = temp.path().join("stage-missing").display().to_string();
-
-        let stage = stage_with_sandbox(StageSandboxConfig {
-            filesystem: Some(FilesystemConfig {
-                allow_write: vec![missing_path.clone()],
-                ..FilesystemConfig::default()
-            }),
-            ..StageSandboxConfig::default()
-        });
-
-        assert_eq!(
-            missing_allow_write_from_merged(&work, &stage),
-            vec![missing_path]
-        );
-    }
-}
+#[cfg(test)]
+#[path = "generate_missing_allow_write_tests.rs"]
+mod missing_allow_write_tests;

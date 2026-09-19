@@ -331,16 +331,8 @@ fn read_audit_rows(work_dir: &Path) -> Result<Vec<AuditRow>> {
             Ok(t) => t.with_timezone(&Utc),
             Err(_) => continue,
         };
-        let dispute_id = if cells[7].is_empty() {
-            None
-        } else {
-            Some(cells[7].to_string())
-        };
-        let reason = if cells[8].is_empty() {
-            None
-        } else {
-            Some(cells[8].to_string())
-        };
+        let dispute_id = (!cells[7].is_empty()).then(|| cells[7].to_string());
+        let reason = (!cells[8].is_empty()).then(|| cells[8].to_string());
         rows.push(AuditRow {
             version,
             stage_id,
@@ -1049,6 +1041,7 @@ mod tests {
             ultracode: false,
             implementers: Implementers::default(),
             subagent_timeout_secs: None,
+            skills: vec![],
         };
         assert_eq!(current_field_len(&def, AmendmentField::Acceptance), 2);
         assert_eq!(current_field_len(&def, AmendmentField::Wiring), 0);

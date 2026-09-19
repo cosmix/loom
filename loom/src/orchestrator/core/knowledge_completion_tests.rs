@@ -47,6 +47,7 @@ fn definition(
         ultracode: false,
         implementers: Implementers::default(),
         subagent_timeout_secs: None,
+        skills: vec![],
     }
 }
 

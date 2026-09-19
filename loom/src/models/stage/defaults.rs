@@ -71,6 +71,7 @@ impl Default for Stage {
             ultracode: false,
             implementers: Implementers::default(),
             subagent_timeout_secs: None,
+            skills: Vec::new(),
         }
     }
 }

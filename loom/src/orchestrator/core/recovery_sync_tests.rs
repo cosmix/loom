@@ -49,6 +49,7 @@ fn minimal_stage_definition(id: &str) -> StageDefinition {
         ultracode: false,
         implementers: Implementers::default(),
         subagent_timeout_secs: None,
+        skills: vec![],
     }
 }
 

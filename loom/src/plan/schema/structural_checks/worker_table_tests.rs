@@ -1,5 +1,6 @@
 use super::super::types::StageDefinition;
 use super::check_file_ownership;
+use super::worker_table::check_worker_granularity;
 
 fn stage(id: &str, files: &[&str], description: Option<&str>) -> StageDefinition {
     let mut stage = crate::plan::schema::tests::make_stage(id, id);
@@ -107,6 +108,79 @@ fn worker_table_wildcard_claim_inside_and_outside_declared_files() {
 
     assert_eq!(warnings.len(), 1, "{warnings:?}");
     assert!(warnings[0].contains("loom/src/context/*"));
+}
+
+#[test]
+fn trailing_new_annotation_is_stripped_from_path() {
+    let stages = vec![stage(
+        "context-admission",
+        &["loom/src/plan/schema/structural_checks/declared_skills.rs"],
+        Some(
+            "| Worker | Files owned |\n\
+             | --- | --- |\n\
+             | Terra | `loom/src/plan/schema/structural_checks/declared_skills.rs` (NEW) |",
+        ),
+    )];
+
+    assert!(
+        check_file_ownership(&stages).is_empty(),
+        "a (NEW) annotation must not become part of the claimed path"
+    );
+}
+
+#[test]
+fn four_or_more_single_path_rows_warn_on_granularity() {
+    let stages = vec![stage(
+        "context-admission",
+        &[],
+        Some(
+            "| Worker | Files owned |\n\
+             | --- | --- |\n\
+             | Terra | src/a.rs |\n\
+             | Sol | src/b.rs |\n\
+             | Luna | src/c.rs |\n\
+             | Nova | src/d.rs |",
+        ),
+    )];
+
+    let warnings = check_worker_granularity(&stages);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    assert!(warnings[0].contains("context-admission"));
+    assert!(
+        warnings[0].contains("group small tasks into one subagent: every spawn pays the boot cost")
+    );
+}
+
+#[test]
+fn fewer_than_four_single_path_rows_do_not_warn() {
+    let stages = vec![stage(
+        "context-admission",
+        &[],
+        Some(
+            "| Worker | Files owned |\n\
+             | --- | --- |\n\
+             | Terra | src/a.rs |\n\
+             | Sol | src/b.rs |\n\
+             | Luna | src/c.rs |",
+        ),
+    )];
+
+    assert!(check_worker_granularity(&stages).is_empty());
+}
+
+#[test]
+fn a_row_owning_multiple_paths_does_not_count_toward_granularity() {
+    let stages = vec![stage(
+        "context-admission",
+        &[],
+        Some(
+            "| Worker | Files owned |\n\
+             | --- | --- |\n\
+             | Terra | src/a.rs; src/b.rs; src/c.rs; src/d.rs |",
+        ),
+    )];
+
+    assert!(check_worker_granularity(&stages).is_empty());
 }
 
 #[test]

@@ -34,7 +34,8 @@ pub use index::SkillIndex;
 // `crate::assets::install` consumes the placement layout and catalog names;
 // other internal callers continue to use their local module paths.
 pub use index_catalog::{
-    catalog_dir_for, is_core_skill, load_with_catalog, skill_invocation, CATALOG_DIR_NAME,
+    catalog_dir_for, is_core_skill, load_from_roots, load_with_catalog, skill_invocation,
+    CATALOG_DIR_NAME,
 };
 // `#[cfg(test)] pub(crate)`, not `pub`: its only consumer is the
 // `#[cfg(test)]` check in `assets::tests_table` that every core skill name

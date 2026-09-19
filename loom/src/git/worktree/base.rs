@@ -184,82 +184,38 @@ pub fn resolve_base_branch(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::git::run_git;
     use crate::plan::graph::ExecutionGraph;
     use crate::plan::schema::{Implementers, StageDefinition, StageSandboxConfig};
-    use std::process::Command;
     use tempfile::TempDir;
 
     fn init_test_repo() -> TempDir {
         let temp_dir = TempDir::new().unwrap();
         let repo_root = temp_dir.path();
 
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.email", "test@test.com"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.name", "Test"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
+        run_git(&["init"], repo_root).unwrap();
+        run_git(&["config", "user.email", "test@test.com"], repo_root).unwrap();
+        run_git(&["config", "user.name", "Test"], repo_root).unwrap();
 
         // Create initial commit on main
         std::fs::write(repo_root.join("README.md"), "# Test").unwrap();
-        Command::new("git")
-            .args(["add", "."])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
+        run_git(&["add", "."], repo_root).unwrap();
+        run_git(&["commit", "-m", "Initial commit"], repo_root).unwrap();
 
         // Rename to main if needed (some git versions default to master)
-        Command::new("git")
-            .args(["branch", "-M", "main"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
+        run_git(&["branch", "-M", "main"], repo_root).unwrap();
 
         temp_dir
     }
 
     fn create_branch_with_commit(name: &str, file: &str, content: &str, repo_root: &Path) {
-        Command::new("git")
-            .args(["checkout", "-b", name])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
+        run_git(&["checkout", "-b", name], repo_root).unwrap();
 
         std::fs::write(repo_root.join(file), content).unwrap();
 
-        Command::new("git")
-            .args(["add", file])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["commit", "-m", &format!("Add {file}")])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["checkout", "main"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
+        run_git(&["add", file], repo_root).unwrap();
+        run_git(&["commit", "-m", &format!("Add {file}")], repo_root).unwrap();
+        run_git(&["checkout", "main"], repo_root).unwrap();
     }
 
     fn build_test_graph(stages: Vec<(&str, Vec<&str>)>) -> ExecutionGraph {
@@ -296,6 +252,7 @@ mod tests {
                 ultracode: false,
                 implementers: Implementers::default(),
                 subagent_timeout_secs: None,
+                skills: vec![],
             })
             .collect();
 
@@ -495,11 +452,7 @@ mod tests {
         let repo_root = temp_dir.path();
 
         // Create the feature branch so it exists
-        Command::new("git")
-            .args(["branch", "feat-my-feature"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
+        run_git(&["branch", "feat-my-feature"], repo_root).unwrap();
 
         let graph = build_test_graph(vec![("stage-1", vec![])]);
 
@@ -517,11 +470,7 @@ mod tests {
         let repo_root = temp_dir.path();
 
         // Create the feature branch so it exists
-        Command::new("git")
-            .args(["branch", "feat-my-feature"])
-            .current_dir(repo_root)
-            .output()
-            .unwrap();
+        run_git(&["branch", "feat-my-feature"], repo_root).unwrap();
 
         // With progressive merge, completed+merged deps should use init_base_branch
         let mut graph = build_test_graph(vec![("dep-1", vec![]), ("stage-1", vec!["dep-1"])]);

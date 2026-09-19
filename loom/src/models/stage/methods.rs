@@ -60,6 +60,7 @@ impl Stage {
         stage.ultracode = definition.ultracode;
         stage.implementers = definition.implementers.clone();
         stage.subagent_timeout_secs = definition.subagent_timeout_secs;
+        stage.skills = definition.skills.clone();
         stage
     }
 
@@ -539,6 +540,17 @@ mod tests {
     use crate::plan::schema::CodeReviewConfig;
     use chrono::{Duration, Utc};
 
+    fn truth_check(command: &str, description: &str) -> TruthCheck {
+        TruthCheck {
+            command: command.to_string(),
+            stdout_contains: vec![],
+            stdout_not_contains: vec![],
+            stderr_empty: Some(true),
+            exit_code: Some(0),
+            description: Some(description.to_string()),
+        }
+    }
+
     #[test]
     fn from_definition_copies_all_runtime_policy_fields() {
         let definition = StageDefinition {
@@ -573,22 +585,8 @@ mod tests {
                 fail_patterns: vec!["unused".to_string()],
                 ignore_patterns: vec!["fixture".to_string()],
             }),
-            before_stage: vec![TruthCheck {
-                command: "test ! -e target/policy".to_string(),
-                stdout_contains: vec![],
-                stdout_not_contains: vec![],
-                stderr_empty: Some(true),
-                exit_code: Some(0),
-                description: Some("absent before".to_string()),
-            }],
-            after_stage: vec![TruthCheck {
-                command: "test -e target/policy".to_string(),
-                stdout_contains: vec![],
-                stdout_not_contains: vec![],
-                stderr_empty: Some(true),
-                exit_code: Some(0),
-                description: Some("present after".to_string()),
-            }],
+            before_stage: vec![truth_check("test ! -e target/policy", "absent before")],
+            after_stage: vec![truth_check("test -e target/policy", "present after")],
             context_ceiling_tokens: Some(71),
             removed_context_budget: None,
             plan_overview: Some(true),
@@ -618,6 +616,7 @@ mod tests {
             ultracode: true,
             implementers: Implementers::new(vec![Implementer::Codex, Implementer::Claude]),
             subagent_timeout_secs: Some(900),
+            skills: vec!["loom-rust".to_string()],
         };
 
         let stage = Stage::from_definition(&definition, "plan-policy");
@@ -667,6 +666,7 @@ mod tests {
         assert!(stage.ultracode);
         assert_eq!(stage.implementers.preferred(), Implementer::Codex);
         assert_eq!(stage.subagent_timeout_secs, Some(900));
+        assert_eq!(stage.skills, definition.skills);
     }
 
     #[test]

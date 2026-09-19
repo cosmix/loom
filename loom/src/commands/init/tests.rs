@@ -40,17 +40,17 @@ fn create_test_plan(dir: &Path, stages: Vec<StageDefinition>) -> PathBuf {
     plan_path
 }
 
-#[test]
-fn test_create_stage_from_definition_no_dependencies() {
-    let stage_def = StageDefinition {
-        id: "stage-1".to_string(),
-        name: "Stage 1".to_string(),
-        description: Some("Test stage".to_string()),
+/// Helper to create a stage definition with every optional field left empty
+fn minimal_stage_definition(id: &str, name: &str) -> StageDefinition {
+    StageDefinition {
+        id: id.to_string(),
+        name: name.to_string(),
+        description: None,
         dependencies: vec![],
         parallel_group: None,
-        acceptance: vec![AcceptanceCriterion::Simple("cargo test".to_string())],
+        acceptance: vec![],
         setup: vec![],
-        files: vec!["src/*.rs".to_string()],
+        files: vec![],
         auto_merge: None,
         working_dir: ".".to_string(),
         stage_type: None,
@@ -73,6 +73,17 @@ fn test_create_stage_from_definition_no_dependencies() {
         ultracode: false,
         implementers: Implementers::default(),
         subagent_timeout_secs: None,
+        skills: vec![],
+    }
+}
+
+#[test]
+fn test_create_stage_from_definition_no_dependencies() {
+    let stage_def = StageDefinition {
+        description: Some("Test stage".to_string()),
+        acceptance: vec![AcceptanceCriterion::Simple("cargo test".to_string())],
+        files: vec!["src/*.rs".to_string()],
+        ..minimal_stage_definition("stage-1", "Stage 1")
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-001");
@@ -133,36 +144,10 @@ fn test_create_stage_from_definition_no_dependencies() {
 #[test]
 fn test_create_stage_from_definition_with_dependencies() {
     let stage_def = StageDefinition {
-        id: "stage-2".to_string(),
-        name: "Stage 2".to_string(),
-        description: None,
         dependencies: vec!["stage-1".to_string()],
         parallel_group: Some("core".to_string()),
-        acceptance: vec![],
         setup: vec!["cargo build".to_string()],
-        files: vec![],
-        auto_merge: None,
-        working_dir: ".".to_string(),
-        stage_type: None,
-        artifacts: vec![],
-        wiring: vec![],
-        wiring_tests: vec![],
-        dead_code_check: None,
-        before_stage: vec![],
-        after_stage: vec![],
-        context_ceiling_tokens: None,
-        removed_context_budget: None,
-        plan_overview: None,
-        sandbox: StageSandboxConfig::default(),
-        execution_mode: None,
-        bug_fix: None,
-        regression_test: None,
-        model: None,
-        reasoning_effort: None,
-        code_review: None,
-        ultracode: false,
-        implementers: Implementers::default(),
-        subagent_timeout_secs: None,
+        ..minimal_stage_definition("stage-2", "Stage 2")
     };
 
     let stage = create_stage_from_definition(&stage_def, "plan-002");
@@ -238,36 +223,8 @@ fn test_initialize_with_plan_creates_config() {
     let work_dir = WorkDir::new(temp_dir.path()).unwrap();
     work_dir.initialize().unwrap();
     let stage_def = StageDefinition {
-        id: "test-stage".to_string(),
-        name: "Test Stage".to_string(),
-        description: None,
-        dependencies: vec![],
-        parallel_group: None,
         acceptance: vec![AcceptanceCriterion::Simple("echo ok".to_string())],
-        setup: vec![],
-        files: vec![],
-        auto_merge: None,
-        working_dir: ".".to_string(),
-        stage_type: None,
-        artifacts: vec![],
-        wiring: vec![],
-        wiring_tests: vec![],
-        dead_code_check: None,
-        before_stage: vec![],
-        after_stage: vec![],
-        context_ceiling_tokens: None,
-        removed_context_budget: None,
-        plan_overview: None,
-        sandbox: StageSandboxConfig::default(),
-        execution_mode: None,
-        bug_fix: None,
-        regression_test: None,
-        model: None,
-        reasoning_effort: None,
-        code_review: None,
-        ultracode: false,
-        implementers: Implementers::default(),
-        subagent_timeout_secs: None,
+        ..minimal_stage_definition("test-stage", "Test Stage")
     };
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
     let preflighted = preflight_plan(&plan_path).unwrap();
@@ -294,68 +251,14 @@ fn test_initialize_with_plan_creates_stage_files() {
 
     let stages = vec![
         StageDefinition {
-            id: "stage-1".to_string(),
-            name: "Stage One".to_string(),
             description: Some("First stage".to_string()),
-            dependencies: vec![],
-            parallel_group: None,
             acceptance: vec![AcceptanceCriterion::Simple("cargo test".to_string())],
-            setup: vec![],
-            files: vec![],
-            auto_merge: None,
-            working_dir: ".".to_string(),
-            stage_type: None,
-            artifacts: vec![],
-            wiring: vec![],
-            wiring_tests: vec![],
-            dead_code_check: None,
-            before_stage: vec![],
-            after_stage: vec![],
-            context_ceiling_tokens: None,
-            removed_context_budget: None,
-            plan_overview: None,
-            sandbox: StageSandboxConfig::default(),
-            execution_mode: None,
-            bug_fix: None,
-            regression_test: None,
-            model: None,
-            reasoning_effort: None,
-            code_review: None,
-            ultracode: false,
-            implementers: Implementers::default(),
-            subagent_timeout_secs: None,
+            ..minimal_stage_definition("stage-1", "Stage One")
         },
         StageDefinition {
-            id: "stage-2".to_string(),
-            name: "Stage Two".to_string(),
-            description: None,
             dependencies: vec!["stage-1".to_string()],
-            parallel_group: None,
             acceptance: vec![AcceptanceCriterion::Simple("echo ok".to_string())],
-            setup: vec![],
-            files: vec![],
-            auto_merge: None,
-            working_dir: ".".to_string(),
-            stage_type: None,
-            artifacts: vec![],
-            wiring: vec![],
-            wiring_tests: vec![],
-            dead_code_check: None,
-            before_stage: vec![],
-            after_stage: vec![],
-            context_ceiling_tokens: None,
-            removed_context_budget: None,
-            plan_overview: None,
-            sandbox: StageSandboxConfig::default(),
-            execution_mode: None,
-            bug_fix: None,
-            regression_test: None,
-            model: None,
-            reasoning_effort: None,
-            code_review: None,
-            ultracode: false,
-            implementers: Implementers::default(),
-            subagent_timeout_secs: None,
+            ..minimal_stage_definition("stage-2", "Stage Two")
         },
     ];
 

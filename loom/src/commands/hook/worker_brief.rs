@@ -131,12 +131,13 @@ fn issue(raw: &str, config: &Config) -> Option<Envelope> {
     }
     let paths = declared_paths(&payload.tool_input.prompt);
     let pack = retrieve_pack(config, &payload, &paths)?;
-    if pack.items.is_empty() && pack.unmet_required.is_empty() {
+    // Declared skills must reach the worker even with an empty context pack.
+    if pack.items.is_empty() && pack.unmet_required.is_empty() && config.stage.skills.is_empty() {
         return None;
     }
 
     let nonce = Uuid::new_v4().simple().to_string();
-    let brief = render_brief(&pack, &config.stage.id, &nonce)?;
+    let brief = render_brief(&pack, &config.stage, &nonce)?;
     let envelope = Envelope { nonce, brief };
     let encoded = serde_json::to_string(&envelope).ok()?;
     if encoded.len() > config.retrieval.max_payload_bytes {
@@ -211,13 +212,30 @@ fn plan_document(path: &str) -> bool {
         .is_some_and(|name| !name.contains('/') && name.contains("PLAN-"))
 }
 
-fn render_brief(pack: &ContextPack, stage: &str, nonce: &str) -> Option<String> {
-    let rendered = format_knowledge_brief(pack, Some(stage), QUERY_INPUTS);
+fn render_brief(pack: &ContextPack, stage: &Stage, nonce: &str) -> Option<String> {
+    let rendered = format_knowledge_brief(pack, Some(&stage.id), QUERY_INPUTS);
     if rendered.lines().any(|line| marker_nonce(line).is_some()) {
         return None;
     }
+    let mut brief = format!("<!-- loom-worker-brief nonce={nonce} -->\n{rendered}");
+    if let Some(line) = skills_line(&stage.skills) {
+        brief.push_str(&line);
+    }
+    Some(brief)
+}
+
+/// Names the stage's plan-declared skills and how to load each; `None` when it declares none.
+fn skills_line(skills: &[String]) -> Option<String> {
+    if skills.is_empty() {
+        return None;
+    }
+    let calls: Vec<String> = skills
+        .iter()
+        .map(|name| crate::skills::skill_invocation(name))
+        .collect();
     Some(format!(
-        "<!-- loom-worker-brief nonce={nonce} -->\n{rendered}"
+        "\nRequired skills for this stage — invoke: {}\n",
+        calls.join(", ")
     ))
 }
 

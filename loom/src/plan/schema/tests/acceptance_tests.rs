@@ -2,7 +2,13 @@
 
 use super::make_stage;
 use crate::plan::schema::types::{AcceptanceCriterion, LoomConfig, LoomMetadata, SandboxConfig};
-use crate::plan::schema::validation::{validate, validate_acceptance_criterion};
+use crate::plan::schema::validation::acceptance_command::validate_acceptance_criterion;
+use crate::plan::schema::validation::validate;
+
+#[path = "base_tree_tests.rs"]
+mod base_tree_tests;
+#[path = "criterion_hazard_tests.rs"]
+mod criterion_hazard_tests;
 
 #[test]
 fn test_validate_acceptance_criterion_valid() {

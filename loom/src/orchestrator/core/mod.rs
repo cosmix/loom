@@ -110,6 +110,7 @@ mod tests {
             ultracode: false,
             implementers: Implementers::default(),
             subagent_timeout_secs: None,
+            skills: vec![],
         }];
 
         ExecutionGraph::build(stages).unwrap()

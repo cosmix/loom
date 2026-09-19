@@ -8,8 +8,8 @@
 # refactor it back. New violations must be refactored or explicitly recorded.
 
 file src/commands/graph/tests.rs 425
-file src/commands/init/tests.rs 570
-file src/commands/plan/verify.rs 599
+file src/commands/init/tests.rs 473
+file src/commands/plan/verify.rs 555
 file src/commands/stage/complete.rs 759
 file src/commands/stage/merge.rs 537
 file src/commands/stage/tests/complete.rs 534
@@ -20,10 +20,10 @@ file src/fs/permissions/settings.rs 457
 file src/fs/safe_fs.rs 1019
 file src/fs/work_dir.rs 433
 file src/fs/work_dir/tests.rs 873
-file src/git/worktree/base.rs 545
+file src/git/worktree/base.rs 494
 file src/git/worktree/settings.rs 462
 file src/models/stage/methods.rs 739
-file src/models/stage/types.rs 1110
+file src/models/stage/types.rs 1103
 file src/orchestrator/core/merge_handler.rs 1303
 file src/orchestrator/core/recovery.rs 1500
 file src/orchestrator/core/stage_executor.rs 780
@@ -35,11 +35,11 @@ file src/orchestrator/signals/tests_cache.rs 630
 file src/orchestrator/terminal/emulator.rs 611
 file src/orchestrator/terminal/native/pid_tracking.rs 452
 file src/orchestrator/terminal/native/window_ops.rs 575
-file src/plan/amendment.rs 1091
+file src/plan/amendment.rs 1084
 file src/plan/parser/extraction.rs 410
 file src/plan/schema/tests/validation_tests.rs 923
-file src/plan/schema/types.rs 466
-file src/plan/schema/validation.rs 1253
+file src/plan/schema/types.rs 465
+file src/plan/schema/validation.rs 1238
 file src/plan/tests/amendment.rs 605
 file src/remote_control.rs 598
 file src/sandbox/config.rs 822
@@ -66,13 +66,11 @@ function src/commands/graph/tree.rs build_tree_display 57
 function src/commands/init/execute.rs execute 130
 function src/commands/init/plan_setup.rs initialize_with_plan 206
 function src/commands/init/tests.rs test_cleanup_orphaned_sessions_reaps_live_only_in_clean_mode 76
-function src/commands/init/tests.rs test_create_stage_from_definition_no_dependencies 88
-function src/commands/init/tests.rs test_initialize_with_plan_creates_config 51
-function src/commands/init/tests.rs test_initialize_with_plan_creates_stage_files 90
+function src/commands/init/tests.rs test_create_stage_from_definition_no_dependencies 62
 function src/commands/knowledge/tests.rs test_knowledge_update_in_worktree_writes_to_worktree 74
 function src/commands/knowledge/tests.rs test_parse_file_type 70
-function src/commands/plan/verify.rs execute 272
-function src/commands/plan/verify.rs print_human 110
+function src/commands/plan/verify.rs execute 138
+function src/commands/plan/verify.rs print_human 98
 function src/commands/repair.rs execute 99
 function src/commands/repair/tests.rs repair_fixes_a_stale_knowledge_directory_deny_in_a_worktree 62
 function src/commands/resume.rs execute 57
@@ -129,8 +127,8 @@ function src/git/worktree/operations.rs create_worktree 115
 function src/git/worktree/settings.rs create_worktree_settings 115
 function src/git/worktree/tests_settings_env.rs test_worktree_gitignore_actually_hides_loom_runtime_paths 57
 function src/handoff/generator/formatter.rs format_handoff_markdown 112
-function src/models/stage/defaults.rs default 70
-function src/models/stage/methods.rs from_definition_copies_all_runtime_policy_fields 128
+function src/models/stage/defaults.rs default 71
+function src/models/stage/methods.rs from_definition_copies_all_runtime_policy_fields 116
 function src/models/stage/transitions.rs can_transition_to 74
 function src/models/stage/transitions.rs valid_transitions 58
 function src/orchestrator/auto_merge.rs attempt_auto_merge 63
@@ -183,15 +181,15 @@ function src/orchestrator/terminal/tmux/tests_discovery.rs live_tmux_sessions_or
 function src/orchestrator/terminal/tmux/tests_spawn.rs a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt 97
 function src/orchestrator/terminal/tmux/tests_viewer.rs pane_command_neutralises_hostile_session_ids 69
 function src/plan/amendment.rs apply_amendment 258
-function src/plan/amendment.rs read_audit_rows 67
+function src/plan/amendment.rs read_audit_rows 59
 function src/plan/amendment.rs verify_plan_versions_consistency 143
 function src/plan/graph/mod.rs build 57
 function src/plan/parser/extraction.rs extract_yaml_metadata_with_ranges 51
 function src/plan/parser/mod.rs test_parse_plan_with_all_fields 74
 function src/plan/schema/tests/security_policy_tests.rs rejects_misspelled_nested_sandbox_fields 58
 function src/plan/schema/validation.rs check_cross_stage_wiring_coverage 66
-function src/plan/schema/validation.rs validate 411
-function src/plan/schema/validation.rs validate_structural_preflight 232
+function src/plan/schema/validation.rs validate 410
+function src/plan/schema/validation.rs validate_structural_preflight 223
 function src/sandbox/settings.rs generate_settings_json 106
 function src/sandbox/settings/policy.rs filesystem_settings 52
 function src/sandbox/settings/tests.rs every_stage_type_can_write_the_knowledge_directory 56
@@ -221,7 +219,6 @@ function tests/completion_flow.rs test_completion_requires_merged_dependencies 7
 function tests/completion_flow.rs test_successful_completion_flow 55
 function tests/e2e/daemon_config/manual_mode.rs test_orchestrator_with_manual_mode 84
 function tests/e2e/daemon_config/parallel_sessions.rs test_orchestrator_respects_max_parallel_sessions 106
-function tests/e2e/daemon_config/tests.rs test_auto_merge_config_cascade 75
 function tests/e2e/daemon_config/tests.rs test_daemon_respects_auto_merge 62
 function tests/e2e/handoff/generation.rs test_handoff_generation 63
 function tests/e2e/parallel.rs test_diamond_dependency_pattern 75

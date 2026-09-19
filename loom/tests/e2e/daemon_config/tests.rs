@@ -57,80 +57,55 @@ fn test_orchestrator_creation_with_config() {
     assert_eq!(orchestrator.running_session_count(), 0);
 }
 
+/// Build a `StageDefinition` for the auto-merge cascade test below, varying
+/// only the field the test asserts on. All other fields are exhaustive
+/// defaults deliberately spelled out (no `..Default::default()` spread).
+fn stage_def(id: &str, name: &str, auto_merge: Option<bool>) -> StageDefinition {
+    StageDefinition {
+        id: id.to_string(),
+        name: name.to_string(),
+        description: None,
+        dependencies: vec![],
+        parallel_group: None,
+        acceptance: vec![],
+        setup: vec![],
+        files: vec![],
+        auto_merge,
+        working_dir: ".".to_string(),
+        sandbox: Default::default(),
+        stage_type: None,
+        artifacts: vec![],
+        wiring: vec![],
+        wiring_tests: vec![],
+        dead_code_check: None,
+        before_stage: vec![],
+        after_stage: vec![],
+        context_ceiling_tokens: None,
+        removed_context_budget: None,
+        plan_overview: None,
+        execution_mode: None,
+        bug_fix: None,
+        regression_test: None,
+        model: None,
+        reasoning_effort: None,
+        code_review: None,
+        ultracode: false,
+        implementers: Implementers::default(),
+        subagent_timeout_secs: None,
+        skills: vec![],
+    }
+}
+
 #[test]
 fn test_auto_merge_config_cascade() {
     // Test that auto_merge can be configured at different levels
 
     // Stage-level auto_merge overrides plan-level
-    let stage_with_auto_merge = StageDefinition {
-        id: "stage-override".to_string(),
-        name: "Override Stage".to_string(),
-        description: None,
-        dependencies: vec![],
-        parallel_group: None,
-        acceptance: vec![],
-        setup: vec![],
-        files: vec![],
-        auto_merge: Some(true), // Stage-level override
-        working_dir: ".".to_string(),
-        sandbox: Default::default(),
-        stage_type: None,
-        artifacts: vec![],
-        wiring: vec![],
-        wiring_tests: vec![],
-        dead_code_check: None,
-        before_stage: vec![],
-        after_stage: vec![],
-        context_ceiling_tokens: None,
-        removed_context_budget: None,
-        plan_overview: None,
-        execution_mode: None,
-        bug_fix: None,
-        regression_test: None,
-        model: None,
-        reasoning_effort: None,
-        code_review: None,
-        ultracode: false,
-        implementers: Implementers::default(),
-        subagent_timeout_secs: None,
-    };
-
+    let stage_with_auto_merge = stage_def("stage-override", "Override Stage", Some(true));
     assert_eq!(stage_with_auto_merge.auto_merge, Some(true));
 
     // Stage without override uses plan-level (represented as None)
-    let stage_without_override = StageDefinition {
-        id: "stage-default".to_string(),
-        name: "Default Stage".to_string(),
-        description: None,
-        dependencies: vec![],
-        parallel_group: None,
-        acceptance: vec![],
-        setup: vec![],
-        files: vec![],
-        auto_merge: None, // Uses plan default
-        working_dir: ".".to_string(),
-        sandbox: Default::default(),
-        stage_type: None,
-        artifacts: vec![],
-        wiring: vec![],
-        wiring_tests: vec![],
-        before_stage: vec![],
-        after_stage: vec![],
-        dead_code_check: None,
-        context_ceiling_tokens: None,
-        removed_context_budget: None,
-        plan_overview: None,
-        execution_mode: None,
-        bug_fix: None,
-        regression_test: None,
-        model: None,
-        reasoning_effort: None,
-        code_review: None,
-        ultracode: false,
-        implementers: Implementers::default(),
-        subagent_timeout_secs: None,
-    };
-
+    let stage_without_override = stage_def("stage-default", "Default Stage", None);
     assert_eq!(stage_without_override.auto_merge, None);
 }
 
