@@ -5,7 +5,9 @@
 //! own `tests_user_prompt_e2e.rs` child: no repeated `#[cfg(test)]`, since this
 //! whole file is already gated by it.
 
-use super::super::compose::{compose, compose_with_reason, would_emit, ComposeOutcome};
+use super::super::compose::{
+    compose, compose_with_reason, delivered as delivered_pack, ComposeOutcome,
+};
 use super::ContextItem;
 use super::{default_config, delivered, item, pack_of};
 use crate::context::schema::{ItemKind, SelectionReason};
@@ -280,11 +282,11 @@ fn a_graph_neighbour_is_admitted_only_alongside_an_exact_rung_item() {
 }
 
 #[test]
-fn would_emit_is_false_for_a_pack_with_only_lexical_items_below_the_floor() {
+fn delivered_is_none_for_a_pack_with_only_lexical_items_below_the_floor() {
     let pack = pack_of(vec![
         weak_source_item("src#weak-a#0"),
         weak_source_item("src#weak-b#0"),
     ]);
 
-    assert!(!would_emit(&pack, &default_config()));
+    assert!(delivered_pack(&pack, &default_config()).is_none());
 }

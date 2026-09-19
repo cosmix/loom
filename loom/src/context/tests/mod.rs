@@ -20,6 +20,7 @@ mod rank;
 mod rank_evidence;
 mod rank_fixtures;
 mod rank_ladder;
+mod rank_protected;
 mod rank_source;
 mod rank_source_candidacy;
 mod rank_source_expand;

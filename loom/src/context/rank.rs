@@ -8,6 +8,7 @@
 //! the same statistics and the same rung ladder; `ladder` is not, because it
 //! reads `KnowledgeChunk` fields a source node does not have.
 
+mod candidacy;
 mod corpus;
 mod ladder;
 mod rungs;
@@ -131,8 +132,8 @@ pub struct RankedCandidate {
     pub reasons: Vec<SelectionReason>,
     /// Estimated chunk token cost.
     pub token_count: usize,
-    /// Distinct query terms this candidate matched lexically. Feeds the hook's
-    /// emit floor through `ContextItem::matched_term_count`.
+    /// Distinct query terms naming this candidate (for a chunk, `candidacy::named_terms`).
+    /// Feeds the hook's emit floor through `ContextItem::matched_term_count`.
     pub matched_term_count: usize,
     /// Cap on the confidence the reasons alone would imply, when the rung
     /// ladder judged the evidence weaker than the reason names it. See
@@ -287,14 +288,15 @@ fn score_chunk(
         &corpus.explicit_files,
         gate,
     );
-    let (lexical_score, matched_term_count) = corpus.lexical.score(corpus_size, index);
-    if matched_term_count > 0 {
+    let (lexical_score, matched_terms) = corpus.lexical.score(corpus_size, index);
+    if matched_terms > 0 {
         rungs.reasons.push(SelectionReason::Lexical);
         rungs.score += lexical_score;
     }
     if rungs.is_empty() {
         return None;
     }
+    let matched_term_count = candidacy::named_terms(&corpus.lexical, chunk);
     // Read before `reasons` is moved out of `rungs` below.
     let confidence_ceiling = rungs.confidence_ceiling();
     Some(RankedCandidate {
@@ -360,6 +362,9 @@ pub fn rank_channel_cached(
     let corpus_size = chunks.len() as f32;
     let mut candidates = Vec::new();
     for (index, chunk) in chunks.iter().enumerate() {
+        if !candidacy::admits(query, chunk) {
+            continue;
+        }
         if let Some(mut candidate) =
             score_chunk(query, chunk, channel, &corpus, &gate, corpus_size, index)
         {

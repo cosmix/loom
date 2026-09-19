@@ -16,7 +16,7 @@ use super::source_fixtures::{full_node, graph};
 use crate::context::config::RetrievalConfig;
 use crate::context::graph_store::ResolvedGraph;
 use crate::context::lexical_index::{
-    source_layer_key, IndexChannel, LexicalCache, LexicalIndex, LEXICAL_RELATIVE_DIR,
+    source_layer_key, IndexChannel, LexicalCache, LexicalIndex, INDEX_VERSION, LEXICAL_RELATIVE_DIR,
 };
 use crate::context::rank::{ChannelRanking, RankQuery};
 use crate::context::rank_source::{rank_source_channel, rank_source_channel_cached};
@@ -36,7 +36,7 @@ fn a_version_mismatch_falls_back_to_the_scan_and_rewrites() {
     let (temp, graph, config, scanned) = warm_cache();
     let path = index_path(temp.path(), &graph);
     let mut stored = read_index(&path);
-    stored["version"] = json!(2);
+    stored["version"] = json!(INDEX_VERSION + 1);
     fs::write(&path, stored.to_string()).unwrap();
 
     let cache = LexicalCache::source(temp.path(), &graph);
@@ -45,7 +45,7 @@ fn a_version_mismatch_falls_back_to_the_scan_and_rewrites() {
     assert_identical(&scanned, &recovered, "version mismatch");
     assert_eq!(
         read_index(&path)["version"],
-        json!(1),
+        json!(INDEX_VERSION),
         "the miss must rewrite the index in the current schema"
     );
 }

@@ -19,7 +19,10 @@ fn chunk(id: &str, body: &str) -> KnowledgeChunk {
         id: id.to_string(),
         file: PathBuf::from(format!("{id}.md")),
         anchor: String::new(),
-        heading: String::new(),
+        // A headingless one-line chunk is a stub the ranker never admits
+        // (`rank/candidacy.rs`); punctuation keeps it a section without adding
+        // a term.
+        heading: "—".to_string(),
         body: body.to_string(),
         content_hash: String::new(),
         estimated_tokens: 1,

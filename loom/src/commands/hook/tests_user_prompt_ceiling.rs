@@ -78,5 +78,8 @@ fn an_oversized_pack_sheds_its_weakest_units_until_it_fits() {
     // The delivery record is written from `handed_over`, so it can only ever
     // list what was really emitted.
     assert_eq!(handed_over.omitted.omitted, 2);
-    assert!(brief_of(&line).contains("Omitted: 2 weaker matches."));
+    // The count reaches telemetry, never the unsolicited brief itself.
+    let brief = brief_of(&line);
+    assert!(!brief.contains("Omitted:"), "{brief}");
+    assert!(brief.contains("Pull more with:"), "{brief}");
 }

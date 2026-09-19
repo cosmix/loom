@@ -89,12 +89,20 @@ pub(super) fn compose_with_reason(
     }
 }
 
-/// Would a fresh session receive a hook payload for this pack?
-pub(crate) fn would_emit(pack: &ContextPack, config: &RetrievalConfig) -> bool {
-    matches!(
-        compose_with_reason(None, pack, &BTreeSet::new(), config),
-        ComposeOutcome::Emitted(_, _)
-    )
+/// The pack a fresh session would actually receive for `pack` — after the
+/// emit floor, the (empty, for a fresh session) per-epoch dedupe, and the
+/// byte ceiling — or `None` when the hook would stay silent for it.
+///
+/// Used both by the real hook path (indirectly, via [`compose_with_reason`])
+/// and by `loom knowledge eval`, which judges `mode: prompt` cases against
+/// what this returns rather than against the raw retrieved pack: a case
+/// scored on units the hook would never hand a session measures retrieval,
+/// not what a prompt actually delivers.
+pub(crate) fn delivered(pack: &ContextPack, config: &RetrievalConfig) -> Option<ContextPack> {
+    match compose_with_reason(None, pack, &BTreeSet::new(), config) {
+        ComposeOutcome::Emitted(_, handed_over) => Some(*handed_over),
+        ComposeOutcome::Abstained(_) => None,
+    }
 }
 
 /// True when `item` earns admission on its own, or is a graph neighbour of
@@ -127,21 +135,26 @@ fn admitted(pack: &ContextPack, config: &RetrievalConfig) -> Option<ContextPack>
 ///
 /// Only ONE item needs to clear the bar: an exact-rung [`SelectionReason`]
 /// (see [`is_exact_rung`] — these are post-gating reasons now, so a hit on one
-/// of them means something a bare lexical score does not), or a lexical match
-/// on at least `config.min_knowledge_terms` distinct query terms —
-/// `matched_term_count` is exactly that per-item strength signal, carried on
-/// the item for this reason.
+/// of them means something a bare lexical score does not), or a prompt that
+/// NAMED the item with at least `config.min_knowledge_terms` distinct query
+/// terms — `matched_term_count` is exactly that per-item strength signal,
+/// carried on the item for this reason.
+///
+/// For a knowledge chunk the ranker counts only the terms its heading or
+/// aliases carry (`context/rank/candidacy.rs::named_terms`), never a rescued
+/// term or a function word. A prompt that merely shares words with a section's
+/// body — "no, use the repository version of those files", "thanks, that is
+/// all for now" — shares them with hundreds of bodies, and a brief built on
+/// that says nothing; a prompt sharing two words with a heading has named the
+/// section. A prompt whose surviving terms were all put back by the rescue
+/// floor, or that matches no heading, therefore clears no lexical floor here.
 ///
 /// The term-count clause applies to ANY item, not just a `KnowledgeChunk` —
-/// deliberately, not as a loosening. `matched_term_count` counts DISTINCT
-/// SURVIVING query terms: corpus-ubiquitous terms are already gone, stripped
-/// by the stopwording pass in `context/rank/corpus/stopwords.rs`, so two
-/// surviving terms is genuine evidence whichever channel produced it. If
-/// anything the bar is HARDER for a source node than a knowledge chunk: its
-/// BM25 document is only its scope segments plus a one-line signature
-/// (`rank_source.rs::node_document`), a far smaller surface than a prose
-/// chunk's whole body, so matching two distinct surviving terms there is a
-/// stronger signal than the same count against a knowledge chunk.
+/// deliberately, not as a loosening. A source node counts every term it
+/// matched, and its BM25 document is only its scope segments plus a one-line
+/// signature (`rank_source.rs::node_document`); lexical admission already
+/// requires the prompt to have supplied every word of its multi-word name
+/// (`rank_source/candidacy.rs`), so two matched terms there is a name, too.
 ///
 /// A knowledge-only clause would silently blackout a real configuration: a
 /// checkout with a mapped source graph (`loom map`) but no curated knowledge
@@ -184,11 +197,12 @@ fn is_exact_rung(reason: &SelectionReason) -> bool {
     )
 }
 
-/// The single stdout line for `handed_over`: the shared brief wrapped in the
-/// hook's JSON envelope.
+/// The single stdout line for `handed_over`: the shared brief, less its
+/// omission count, wrapped in the hook's JSON envelope.
 fn render_payload(pull_stage: Option<&str>, handed_over: &ContextPack) -> Option<String> {
-    let brief =
+    let rendered =
         crate::orchestrator::signals::format_knowledge_brief(handed_over, pull_stage, QUERY_INPUTS);
+    let brief = without_omitted_line(rendered, handed_over.omitted.omitted);
     let payload = serde_json::json!({
         "hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit",
@@ -198,14 +212,31 @@ fn render_payload(pull_stage: Option<&str>, handed_over: &ContextPack) -> Option
     serde_json::to_string(&payload).ok()
 }
 
+/// `brief` without the shared renderer's `Omitted: N weaker matches.` line.
+///
+/// An unsolicited brief is read by a session that did not ask for it, and a
+/// count of what it was NOT given tells that session nothing the footer's pull
+/// command does not already offer. `loom knowledge context` and the stage
+/// briefs keep the line — the renderer is shared, so it comes off here. The
+/// LAST occurrence is the footer's: every excerpt is rendered before it, so an
+/// excerpt quoting the same words is left alone.
+fn without_omitted_line(mut brief: String, omitted: usize) -> String {
+    let line = format!("Omitted: {omitted} weaker matches.\n\n");
+    if let Some(start) = brief.rfind(&line) {
+        brief.replace_range(start..start + line.len(), "");
+    }
+    brief
+}
+
 /// `pack` minus every unit already delivered to this recipient this epoch, or
 /// `None` when nothing survives.
 ///
 /// A unit dropped here for dedupe is folded into `omitted` the same way
 /// [`without_weakest`] folds its own per-unit drops in: `pack.omitted` as
 /// retrieval built it describes only what did not fit the BUDGET, so left
-/// alone it would tell the reader they were handed everything retrieval found,
-/// when some of it was simply repeated from an earlier prompt this epoch.
+/// alone the `PromptBrief` telemetry would record that the session was handed
+/// everything retrieval found, when some of it was simply repeated from an
+/// earlier prompt this epoch.
 fn undelivered(pack: &ContextPack, delivered: &BTreeSet<(String, String)>) -> Option<ContextPack> {
     let (kept, dropped): (Vec<ContextItem>, Vec<ContextItem>) =
         pack.items.iter().cloned().partition(|item| {
@@ -253,8 +284,8 @@ fn without_weakest(pack: &ContextPack) -> Option<ContextPack> {
     items.remove(weakest);
     let mut narrowed = carrying(pack, items);
     // A unit dropped for size is a ranked candidate that did not fit, which is
-    // exactly what the brief's "Omitted: N weaker matches" line reports. Left
-    // alone it would tell the reader it had been given everything.
+    // exactly what the `PromptBrief` telemetry's omitted count reports. Left
+    // alone it would record that the session had been given everything.
     narrowed.omitted.omitted += 1;
     narrowed.omitted.weakest_included_score = narrowed
         .items

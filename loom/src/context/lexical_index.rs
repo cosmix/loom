@@ -38,6 +38,16 @@
 //! BM25's length normalization for every document, on cache hits only. Both are
 //! recomputed on load instead, by the same expressions the scan path uses.
 //!
+//! ## The naming terms are stored
+//!
+//! `naming_terms_of` — every term some document is named by (a heading, an alias) —
+//! is the one derived value that IS persisted, because it is not a function of
+//! the postings: a posting keeps a term's summed weight per document, and a sum
+//! of `3.0` cannot say whether it was one heading occurrence or three body
+//! ones. Stopwording reads the set to keep a corpus's own names from being
+//! dropped as ubiquitous (`rank/corpus/stopwords.rs`), so a cache hit without
+//! it would partition a query differently from the scan.
+//!
 //! ## Weights are stored as bits
 //!
 //! A posting's weight is the `f32` sum the scan path computes, written as its
@@ -60,7 +70,7 @@ use crate::context::lexical::{
 };
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Schema version of a persisted index file.
 ///
@@ -72,7 +82,9 @@ use std::collections::BTreeMap;
 ///
 /// A file carrying any other version is a miss, not an error: the reader falls
 /// back to the scan and rewrites the file in the current shape.
-pub(crate) const INDEX_VERSION: u32 = 1;
+///
+/// Version 2 added `naming_terms`.
+pub(crate) const INDEX_VERSION: u32 = 2;
 
 /// Identity of the field weights that produced a document's `(term, weight)`
 /// pairs.
@@ -132,6 +144,8 @@ pub(crate) struct LexicalIndex {
     /// `term -> postings`, each list ascending by document index and holding at
     /// most one entry per document.
     postings: BTreeMap<String, Vec<Posting>>,
+    /// [`naming_terms_of`] over the documents this file was built from.
+    naming_terms: BTreeSet<String>,
 }
 
 /// The postings for exactly one query's surviving terms, owned so that the
@@ -189,7 +203,13 @@ impl LexicalIndex {
             lengths: documents.iter().map(|terms| terms.len() as u32).collect(),
             doc_ids: doc_ids.iter().map(|id| (*id).to_string()).collect(),
             postings,
+            naming_terms: naming_terms_of(documents),
         }
+    }
+
+    /// Every term some document of this corpus is named by.
+    pub(crate) fn naming_terms(&self) -> &BTreeSet<String> {
+        &self.naming_terms
     }
 
     /// `Ok(())` when this file may be scored against the corpus identified by
@@ -300,6 +320,29 @@ impl LexicalIndex {
         }
         Ok(())
     }
+}
+
+/// Every term some document is NAMED by: a knowledge chunk's heading
+/// ([`WEIGHT_TITLE`]) or aliases ([`WEIGHT_ALIASES`]) — the only fields weighted
+/// above [`WEIGHT_HEADINGS`]. Read off the weights because the weights are what
+/// both corpora hand this module, and [`derivation`] already invalidates a
+/// persisted set when one of them is retuned.
+///
+/// The fields at [`WEIGHT_HEADINGS`] stay out on purpose. A chunk's symbols and
+/// paths are identifiers its body MENTIONS (`write`, `home`, `doc`), not what
+/// it is about, and its anchor repeats its heading. A source node's scope sits
+/// there too, so the source corpus names nothing: its only terms over the
+/// ubiquity floor are keywords and type names (`fn`, `pub`, `str`, `path`,
+/// `result`, `test`, `tests` — measured over this repository's 18,547 nodes),
+/// which protection would only put back.
+pub(crate) fn naming_terms_of(documents: &[Vec<(String, f32)>]) -> BTreeSet<String> {
+    let mut terms = BTreeSet::new();
+    for (term, weight) in documents.iter().flatten() {
+        if *weight > WEIGHT_HEADINGS && !terms.contains(term) {
+            terms.insert(term.clone());
+        }
+    }
+    terms
 }
 
 /// Sum each document's weights per term, in document order.
