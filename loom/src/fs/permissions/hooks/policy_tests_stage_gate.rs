@@ -12,9 +12,9 @@ use std::process::{Command, Output, Stdio};
 use tempfile::TempDir;
 
 // skip_reason - stage evidence can leak in from the test process's own
-// environment or from the sandbox itself, both of which would make this
-// "no evidence" test lie about what it exercised. Returns why to skip rather
-// than fake an absence that is not actually there.
+// environment, its ancestry, or the sandbox itself, all of which would make
+// this "no evidence" test lie about what it exercised. Returns why to skip
+// rather than fake an absence that is not actually there.
 fn skip_reason() -> Option<String> {
     for name in ["LOOM_STAGE_ID", "LOOM_SESSION_ID", "LOOM_WORK_DIR"] {
         if std::env::var_os(name).is_some() {
@@ -27,7 +27,59 @@ fn skip_reason() -> Option<String> {
     {
         return Some("running inside a bwrap sandbox, which is itself stage evidence".to_string());
     }
+    if let Some(reason) = ancestor_stage_evidence_reason() {
+        return Some(reason);
+    }
     None
+}
+
+// ancestor_stage_evidence_reason - mirrors _loom_ancestor_stage_evidence in
+// loom-hooks/_codex_forward.sh: the guard walks up to 12 ancestor pids
+// starting at its own process, and any ancestor whose /proc/<pid>/environ
+// carries LOOM_STAGE_ID/LOOM_SESSION_ID/LOOM_WORK_DIR counts as stage
+// evidence, even when the guard's own (and this test's) direct environment
+// was scrubbed. `loom stage complete`'s acceptance runner clears LOOM_* only
+// on the test process itself, so under it that evidence sits on an ancestor,
+// which the direct env check above cannot see.
+fn ancestor_stage_evidence_reason() -> Option<String> {
+    let mut pid = std::process::id();
+    for _ in 0..12 {
+        if pid_environ_has_stage_var(pid) {
+            return Some(format!(
+                "ancestor pid {pid} carries a LOOM_* stage variable"
+            ));
+        }
+        pid = match parent_pid(pid) {
+            Some(p) if p > 1 => p,
+            _ => break,
+        };
+    }
+    None
+}
+
+// pid_environ_has_stage_var - reads /proc/<pid>/environ (NUL-separated) for a
+// LOOM_STAGE_ID=, LOOM_SESSION_ID=, or LOOM_WORK_DIR= entry with a non-empty
+// value. Missing or unreadable (no /proc on macOS, or a pid owned by another
+// user) means "no evidence from this pid", never a panic.
+fn pid_environ_has_stage_var(pid: u32) -> bool {
+    let Ok(bytes) = fs::read(format!("/proc/{pid}/environ")) else {
+        return false;
+    };
+    bytes.split(|&b| b == 0).any(|entry| {
+        ["LOOM_STAGE_ID=", "LOOM_SESSION_ID=", "LOOM_WORK_DIR="]
+            .iter()
+            .any(|prefix| entry.len() > prefix.len() && entry.starts_with(prefix.as_bytes()))
+    })
+}
+
+// parent_pid - reads the ppid field from /proc/<pid>/stat. Parsing resumes
+// after the last ')' because the comm field it precedes can itself contain
+// spaces and parentheses; the field right after that is state, and the one
+// after state is ppid. Returns None when unreadable or unparsable.
+fn parent_pid(pid: u32) -> Option<u32> {
+    let stat = fs::read_to_string(format!("/proc/{pid}/stat")).ok()?;
+    let after_comm = stat.rsplit_once(')')?.1;
+    after_comm.split_whitespace().nth(1)?.parse().ok()
 }
 
 fn install_guard(dir: &Path) -> PathBuf {
