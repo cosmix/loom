@@ -436,6 +436,7 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
             // validate_config / validate_emittable), so a plan `loom init`
             // would refuse is not reported clean here. These are errors, not
             // warnings — init already rejects these plans outright.
+            use crate::plan::schema::stage_host_path_errors;
             for stage in &loom_metadata.loom.stages {
                 let merged = crate::sandbox::merge_config(
                     &loom_metadata.loom.sandbox,
@@ -443,18 +444,17 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
                     detect_stage_type(stage),
                     &stage.implementers,
                 );
+                let mut messages = stage_host_path_errors(stage, &merged.filesystem.allow_write);
                 if let Err(e) = crate::sandbox::validate_config(&merged) {
-                    hard_errors.push(JsonError {
-                        stage_id: Some(stage.id.clone()),
-                        message: e.to_string(),
-                    });
+                    messages.push(e.to_string());
                 }
                 if let Err(e) = crate::sandbox::validate_emittable(&merged) {
-                    hard_errors.push(JsonError {
-                        stage_id: Some(stage.id.clone()),
-                        message: e.to_string(),
-                    });
+                    messages.push(e.to_string());
                 }
+                hard_errors.extend(messages.into_iter().map(|message| JsonError {
+                    stage_id: Some(stage.id.clone()),
+                    message,
+                }));
             }
 
             // Soft checks (only when schema validation passes)

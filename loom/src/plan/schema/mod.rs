@@ -1,6 +1,7 @@
 //! Plan YAML schema definitions and validation
 
 mod detect;
+mod host_paths;
 mod structural_checks;
 mod types;
 mod validation;
@@ -10,6 +11,7 @@ mod validation_suite;
 mod tests;
 
 pub use detect::{detect_stage_type, detect_stage_type_from_id_name};
+pub use host_paths::stage_host_path_errors;
 pub(crate) use structural_checks::extract_brief_paths;
 pub use types::{
     AcceptanceCriterion, AdjudicationConfig, ChangeImpactConfig, ChangeImpactPolicy,
