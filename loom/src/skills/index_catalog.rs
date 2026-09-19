@@ -161,8 +161,8 @@ mod tests {
         let names: Vec<&str> = core_skill_names().collect();
         assert_eq!(
             names.len(),
-            9,
-            "manifest should list exactly 9 core skills, got {names:?}"
+            10,
+            "manifest should list exactly 10 core skills, got {names:?}"
         );
 
         for name in names {

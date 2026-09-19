@@ -211,7 +211,7 @@ loom stop
 | Location                     | Contents                                                  |
 | ---------------------------- | --------------------------------------------------------- |
 | `~/.claude/agents/loom-*.md` | 4 specialized subagents (per-item, non-destructive)       |
-| `~/.claude/skills/loom-*/`   | 9 core domain knowledge modules, always loaded (per-item, non-destructive) |
+| `~/.claude/skills/loom-*/`   | 10 core domain knowledge modules, always loaded (per-item, non-destructive) |
 | `~/.claude/loom-skill-catalog/loom-*/` | 53 more domain knowledge modules, loaded on demand (`--skills core`, the default) |
 | `~/.claude/commands/*.md`    | Loom slash commands (`/pressure`, `/address`, `/distill`) |
 | `~/.claude/hooks/loom/`      | Embedded lifecycle and guardrail hooks + shared libraries |

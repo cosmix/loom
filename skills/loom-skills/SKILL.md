@@ -15,7 +15,7 @@ triggers:
 
 ## Overview
 
-Nine loom mechanics skills stay installed into `~/.claude/skills/`, indexed by
+Ten loom mechanics skills stay installed into `~/.claude/skills/`, indexed by
 Claude Code with their `description:` kept resident in every request. The
 other fifty-three domain skills install instead into
 `~/.claude/loom-skill-catalog/<name>/SKILL.md` — a directory Claude Code does
