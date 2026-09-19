@@ -1,6 +1,6 @@
 //! Tests for hooks configuration.
 
-use crate::fs::permissions::constants::LOOM_HOOKS;
+use crate::fs::permissions::constants::{HOOK_SPAWN_GUARD, HOOK_SUBAGENT_PREAMBLE, LOOM_HOOKS};
 use crate::fs::permissions::hooks::loom_hooks_config;
 use crate::fs::permissions::settings::ensure_loom_permissions_to;
 use crate::hooks::HookEvent;
@@ -54,6 +54,7 @@ fn assert_sourced_libraries_not_registered(hooks: &Value) {
         "_read_ledger.sh",
         "_progress-classification.sh",
         "_post-tool-heartbeat.sh",
+        "_subagent-preamble.txt",
     ] {
         let registered_globally = hooks
             .as_object()
@@ -192,6 +193,21 @@ fn test_hook_event_scripts_are_all_embedded() {
             event.script_name()
         );
     }
+}
+
+/// `spawn-guard.sh` prepends `_subagent-preamble.txt` only to a prompt that
+/// lacks its `PREAMBLE_LINE`, so the file must open with that exact line or a
+/// prompt it already rewrote would be rewritten again. The file installs
+/// beside the hook, which reads it from its own directory.
+#[test]
+fn subagent_preamble_opens_with_spawn_guard_preamble_line() {
+    let line = HOOK_SPAWN_GUARD
+        .lines()
+        .find_map(|l| l.strip_prefix("PREAMBLE_LINE='")?.strip_suffix('\''))
+        .expect("spawn-guard.sh defines PREAMBLE_LINE");
+    assert_eq!(HOOK_SUBAGENT_PREAMBLE.lines().next(), Some(line));
+    assert!(HOOK_SPAWN_GUARD.contains("/_subagent-preamble.txt"));
+    assert!(LOOM_HOOKS.contains(&("_subagent-preamble.txt", HOOK_SUBAGENT_PREAMBLE)));
 }
 
 fn assert_lifecycle_hooks(hooks: &Value) {

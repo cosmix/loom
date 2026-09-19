@@ -1,7 +1,9 @@
 //! Spawn-guard integration coverage for rewrites, denials, warnings, and its ledger.
 
 use super::helpers::clear_relay_env;
-use loom::fs::permissions::constants::{HOOK_COMMON, HOOK_READ_LEDGER, HOOK_SPAWN_GUARD};
+use loom::fs::permissions::constants::{
+    HOOK_COMMON, HOOK_READ_DISCIPLINE, HOOK_READ_LEDGER, HOOK_SPAWN_GUARD, HOOK_SUBAGENT_PREAMBLE,
+};
 use loom::process::sandbox_probe::{process_tree_visible, skip_unless};
 use serde_json::{json, Value};
 use std::fs;
@@ -26,22 +28,31 @@ const SPAWN_KEYS: &[&str] = &[
     "\"description\"",
 ];
 
+/// Installs the hook beside every file it sources or reads, as the installer does.
 fn setup_hook() -> (TempDir, std::path::PathBuf) {
     let temp = TempDir::new().expect("create temp dir");
-
-    let common_path = temp.path().join("_common.sh");
-    fs::write(&common_path, HOOK_COMMON).expect("write _common.sh");
-    fs::set_permissions(&common_path, fs::Permissions::from_mode(0o755)).expect("chmod");
-
-    let ledger_path = temp.path().join("_read_ledger.sh");
-    fs::write(&ledger_path, HOOK_READ_LEDGER).expect("write _read_ledger.sh");
-    fs::set_permissions(&ledger_path, fs::Permissions::from_mode(0o755)).expect("chmod");
-
+    for (name, content) in [
+        ("_common.sh", HOOK_COMMON),
+        ("_read_discipline.sh", HOOK_READ_DISCIPLINE),
+        ("_read_ledger.sh", HOOK_READ_LEDGER),
+        ("_subagent-preamble.txt", HOOK_SUBAGENT_PREAMBLE),
+        ("spawn-guard.sh", HOOK_SPAWN_GUARD),
+    ] {
+        let path = temp.path().join(name);
+        fs::write(&path, content).unwrap_or_else(|e| panic!("write {name}: {e}"));
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("chmod");
+    }
     let hook_path = temp.path().join("spawn-guard.sh");
-    fs::write(&hook_path, HOOK_SPAWN_GUARD).expect("write hook");
-    fs::set_permissions(&hook_path, fs::Permissions::from_mode(0o755)).expect("chmod");
-
     (temp, hook_path)
+}
+
+/// `prompt` as the hook rewrites it: the preamble file, a blank line, then
+/// the prompt byte for byte.
+fn with_preamble(prompt: &str) -> String {
+    format!(
+        "{}\n\n{prompt}",
+        HOOK_SUBAGENT_PREAMBLE.trim_end_matches('\n')
+    )
 }
 
 fn temp() -> TempDir {
@@ -87,6 +98,8 @@ fn run_hook(
         .env_remove("LOOM_HOOK_DEBUG")
         .env_remove("COMMIT_FILTER_DEBUG")
         .env("HOME", home)
+        // Out of a stage the session ledgers live under TMPDIR: keep them per test.
+        .env("TMPDIR", home)
         .env("PATH", "/usr/bin:/bin")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
@@ -197,6 +210,18 @@ fn ungated_untyped_spawn_warns_instead_of_blocking() {
     let ctx = get_str(&v, &["hookSpecificOutput", "additionalContext"])
         .expect("additionalContext present");
     assert!(ctx.starts_with("LOOM_HOOK_WARN:"), "ctx={ctx}");
+
+    // An explicit model inherits nothing, so the message must not claim it does.
+    let with_model = json!({"subagent_type": "general-purpose", "model": "haiku"});
+    let out = run_hook(&hook, "Task", with_model, cwd.path(), home.path(), &[]);
+    let v: Value = serde_json::from_str(out.stdout.trim()).expect("parse stdout json");
+    let ctx = get_str(&v, &["hookSpecificOutput", "additionalContext"]).expect("context");
+    assert!(
+        ctx.contains("Generic agent type 'general-purpose' spawned with explicit model 'haiku'")
+            && ctx.contains("loom-software-engineer (sonnet, default)")
+            && !ctx.contains(UNTYPED_MSG_LEAD),
+        "ctx={ctx}"
+    );
 }
 
 #[test]
@@ -248,8 +273,8 @@ fn explicit_model_escalation_only_warns_above_defined_tier() {
     let out = gated_task(&hook, at_tier, cwd.path(), home.path(), work.path());
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     assert!(
-        out.stdout.trim().is_empty(),
-        "explicit model matching the defined tier must be a silent allow: stdout={}",
+        !out.stdout.contains("LOOM_HOOK_WARN") && !out.stdout.contains("updatedInput"),
+        "explicit model matching the defined tier must neither warn nor rewrite: stdout={}",
         out.stdout
     );
 
@@ -321,6 +346,53 @@ fn non_spawn_tool_is_ignored() {
 
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     assert!(out.stdout.trim().is_empty(), "stdout={}", out.stdout);
+}
+
+/// No `LOOM_*` variable is set: the prepend works in every session.
+#[test]
+fn prompt_without_preamble_gains_it_once_in_the_same_input_as_the_model() {
+    let (_temp, hook) = setup_hook();
+    let (home, cwd) = (temp(), temp());
+    write_agent_def(cwd.path(), "loom-software-engineer", "sonnet");
+    let prompt = "  keep: ' \" \\ $(x) `y` λ\n\ttab\n\n";
+    let input = json!({
+        "subagent_type": "loom-software-engineer", "description": "d", "prompt": prompt,
+    });
+
+    let out = run_hook(&hook, "Agent", input, cwd.path(), home.path(), &[]);
+
+    assert_eq!(out.code, 0, "stderr={}", out.stderr);
+    assert_eq!(out.stdout.lines().count(), 1, "stdout={}", out.stdout);
+    let v: Value = serde_json::from_str(out.stdout.trim()).expect("parse stdout json");
+    let updated = &v["hookSpecificOutput"]["updatedInput"];
+    assert_eq!(v["hookSpecificOutput"]["permissionDecision"], "allow");
+    assert_eq!(updated["model"], "sonnet");
+    assert_eq!(updated["description"], "d");
+    let rewritten = updated["prompt"].as_str().expect("rewritten prompt");
+    assert_eq!(rewritten, with_preamble(prompt));
+    assert_eq!(rewritten.matches(PREAMBLE_LINE).count(), 1);
+
+    // A prompt that already carries the line keeps it once, unchanged.
+    let again = json!({"subagent_type": "loom-software-engineer", "prompt": rewritten});
+    let out = run_hook(&hook, "Agent", again, cwd.path(), home.path(), &[]);
+    let v: Value = serde_json::from_str(out.stdout.trim()).expect("parse stdout json");
+    assert_eq!(v["hookSpecificOutput"]["updatedInput"]["prompt"], rewritten);
+}
+
+#[test]
+fn codex_bound_types_never_receive_the_preamble() {
+    let (_temp, hook) = setup_hook();
+    let (home, cwd) = (temp(), temp());
+    for subagent_type in ["loom-codex-forwarder", "codex:codex-rescue"] {
+        let input = json!({"subagent_type": subagent_type, "model": "sonnet", "prompt": "task"});
+        let out = run_hook(&hook, "Agent", input, cwd.path(), home.path(), &[]);
+        assert_eq!(out.code, 0, "stderr={}", out.stderr);
+        assert!(
+            !out.stdout.contains("updatedInput") && !out.stdout.contains("LOOM_HOOK_WARN"),
+            "{subagent_type}: stdout={}",
+            out.stdout
+        );
+    }
 }
 
 #[path = "hooks_spawn_guard_gate.rs"]

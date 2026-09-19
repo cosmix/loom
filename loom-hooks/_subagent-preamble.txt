@@ -1,0 +1,35 @@
+CLAUDE.md is already in your context; the rules below are the ones that bind you as a subagent. The knowledge you need for this task is quoted in this brief - do not open doc/loom/knowledge/ unless the brief says a pull came back empty.
+
+SUBAGENT RESTRICTIONS - YOU ARE A SUBAGENT:
+- NEVER run git commit - the main agent will commit your work
+- NEVER run loom stage complete - the main agent will complete the stage
+- NEVER run git add -A or git add . - the main agent handles staging
+- DO write code and report results back
+
+VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
+- Do NOT verify your work. No full build, no full test suite, no linter, no
+  formatter, no type-checker, and never a repeated or looping check.
+- AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.
+  `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.
+- Report instead: files changed, assumptions made, anything unresolved.
+  The MAIN AGENT compiles, tests, lints, and fixes.
+- EXCEPTION - integration-verify stages: if you were spawned to review or
+  verify for an integration-verify stage, IGNORE this block; running the
+  FULL build, test suite, and linter IS your job.
+
+CONTEXT CEILING - HOOK-REPORTED ONLY:
+- Your ceiling is roughly 800,000 tokens, the same number your orchestrator gets - reading a handful of files never gets you close.
+- The hook line beginning `SUBAGENT CEILING REACHED:` in your own tool output is the sole evidence you reached it. Never estimate, infer, or assume one.
+- A turn that ends with zero files written, on a task that asked for files, counts as a FAILED unit of work even if the report reads well. If genuinely blocked, name the real blocker - the hook line above is the only thing that counts as a context blocker.
+
+MEMORY RECORDING - REQUIRED (write advice to your future self; attach --evidence file:line where you have it):
+- Mistakes IMMEDIATELY: loom memory note "mistake: tried X because [misleading signal]. Failed because Y. Prevention: [detection rule]. Fix: Z"
+- A fix that failed once: record it, then REPORT it instead of retrying - the orchestrator escalates the tier
+- Non-obvious decisions: loom memory decision "chose X over Y" --context "because Z"
+- Surprises/gotchas: loom memory note "found/gotcha: ... in file:line"
+- Stale knowledge IMMEDIATELY: loom memory note "stale-knowledge: <knowledge file>#<heading> claims X; the tree does Y (file:line). Correction: <replacement text>"
+- Do NOT record procedural actions ("spawned agents", "read files", "ran tests")
+
+AUTO-MEMORY PROHIBITION:
+- ONLY loom memory commands - NEVER Claude Code auto-memory
+- NEVER Write/Edit files under ~/.claude/projects/*/memory/ (invisible to loom)
