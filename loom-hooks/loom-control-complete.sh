@@ -203,15 +203,16 @@ heredoc_bodies_are_inert() {
 }
 
 # is_completion_command <cmd> - Decide on <cmd> with inert heredoc bodies stripped. In
-# doubt the raw decision stands; if the stripped command feeds a shell, eval, source
-# or xargs (or will not tokenize), the raw substring test counts as well.
+# doubt the raw decision stands; if the stripped command feeds a shell, an
+# interpreter (python, perl, node, ...), eval, source or xargs (or will not
+# tokenize), the raw substring test counts as well.
 is_completion_command() {
 	local cmd=$1 stripped fed=true
 	stripped=$(strip_heredoc_bodies "$cmd") || { detect_completion "$cmd"; return; }
 	detect_completion "$stripped" && return 0
 	heredoc_bodies_are_inert "$cmd" "$stripped" && return 1
 	loom_tokenize_command "$stripped" && ! loom_tokens_invoke '\.' &&
-		! loom_tokens_word_matches '^(.*/)?(bash|sh|zsh|dash|ksh|mksh|fish|csh|tcsh|busybox|eval|source|xargs)$' && fed=false
+		! loom_tokens_word_matches '^(.*/)?(bash|sh|zsh|dash|ksh|mksh|fish|csh|tcsh|busybox|eval|source|xargs|python[0-9.]*|pypy[0-9.]*|perl[0-9.]*|ruby|node|nodejs|deno|bun|php[0-9.]*|lua[0-9.]*|tclsh|pwsh|osascript|Rscript)$' && fed=false
 	detect_completion "$cmd" && return 0
 	[[ "$fed" == true ]] && raw_has_completion_indicators "$cmd" || return 1
 	ATTEMPT_SHELL=true
