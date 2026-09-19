@@ -561,3 +561,32 @@ steps; a timed-out unit is re-split, never re-forwarded as is. `--stall-secs` ov
 **Fix:** stall detection in `loom/src/commands/subagents/wait/stall.rs` and
 `loom/src/codex_lifecycle/progress.rs`; the deadline path in `loom-hooks/codex-forward.sh`; the
 sizing doctrine in `loom/src/orchestrator/signals/format/codex.rs` and `CLAUDE.md.template`.
+
+## An Audit Proposed an Orchestrator Context Budget and a Hard Delegation Gate; Both Were Wrong (2026-09-18)
+
+**What happened:** a transcript audit (`doc/REPORT-loom-improvement-findings-2026-09-18.md`) read
+"keep the context per task under 250k" as a budget for the stage's main session and proposed a
+250k working budget that redirects the orchestrator, plus a hard deny on any main-agent source
+edit. It also blamed `commit-filter.sh` for the 62% verbatim-retry rate on attribution blocks and
+proposed weakening the hook. The operator rejected all three.
+
+**Why:** the audit optimised the number it could measure (main-session peak context) instead of
+asking what the target governs. The per-task target governs the size of the work handed to a
+SUBAGENT. The retry rate is the agent ignoring Rule 9 in favour of a harness reminder; the hook is
+the only reason attribution does not reach every commit.
+
+**Prevention:**
+
+- Task size is set by subagent granularity: a subagent should typically finish under about 400k
+  tokens, and every spawn pays a boot cost (median first request about 28k tokens in September
+  2026), so too-fine splitting is waste as well. Group small tasks.
+- Delegation is a cost decision, tokens times model tier. The main agent makes a very small edit
+  itself when a spawn would cost more; a simple task a cheaper tier can do is still delegated when
+  the orchestrator runs an expensive model.
+- When a guard's block is retried verbatim, fix the instruction the agent is following. Do not
+  loosen a guard that is catching real violations.
+- `CLAUDE.md.template` is also used outside loom plans. Any restructuring keeps all guidance
+  reachable in interactive sessions.
+- Opus stays the default main-session tier for standard stages; the operator overrides per stage.
+
+**Fix:** report sections 4.2, 4.6 and 4.7 rewritten to these decisions before the plan was authored.

@@ -128,7 +128,7 @@
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Stages flipped to waiting-for-input with no AskUserQuestion | 35 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Frame-overflow eviction and read-timeout desync in status broadcast | 74 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | A store that was written but never read - what happened, why it stayed… | 94 |
-| [subagent-orchestration](mistakes/subagent-orchestration.md) | Liveness signals: when a missing report is not a missing result | 563 |
+| [subagent-orchestration](mistakes/subagent-orchestration.md) | Liveness signals: when a missing report is not a missing result | 592 |
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline: --all-targets, --no-fail-fast, headless CI | 674 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass whether or not the bug they cover is present | 264 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn-failure exit codes and cleanup-on-error discipline | 136 |
