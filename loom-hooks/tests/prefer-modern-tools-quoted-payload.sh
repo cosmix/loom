@@ -6,16 +6,30 @@
 # check that real invocations (including through a wrapper or absolute path)
 # still warn, and that 'rg'/'fd' never do.
 set -euo pipefail
+# See prefer-modern-tools-grep.sh for why the live stage vars must be unset.
+unset LOOM_WORK_DIR LOOM_SESSION_ID LOOM_STAGE_ID LOOM_SESSION_TYPE
 HOOK="$(dirname "$0")/../prefer-modern-tools.sh"
 
 FAILED=0
 
+# run_hook <command> - Invoke the hook with a fresh TMPDIR per call. Outside
+# a loom stage the "tools" ledger falls back to a session-keyed file under
+# TMPDIR (session id absent here, so always "unknown"); several assertions
+# below expect a repeat "grep" warning, which a shared TMPDIR would silently
+# suppress as "already warned" after the first one.
+run_hook() {
+	local cmd="$1" input tmp out
+	input=$(jq -nc --arg c "$cmd" '{"tool_name":"Bash","tool_input":{"command":$c}}')
+	tmp=$(mktemp -d "${TMPDIR:-/tmp}/pmt-quoted.XXXXXX")
+	out=$(printf '%s' "$input" | TMPDIR="$tmp" bash "$HOOK")
+	rm -rf "$tmp"
+	printf '%s' "$out"
+}
+
 # assert_no_warning <label> <command>
 assert_no_warning() {
-	local label="$1" cmd="$2"
-	local input output
-	input=$(jq -nc --arg c "$cmd" '{"tool_name":"Bash","tool_input":{"command":$c}}')
-	output=$(echo "$input" | bash "$HOOK")
+	local label="$1" cmd="$2" output
+	output=$(run_hook "$cmd")
 	if [[ -n "$output" ]]; then
 		echo "FAIL: $label: expected no warning, got: $output"
 		FAILED=1
@@ -24,10 +38,8 @@ assert_no_warning() {
 
 # assert_warning <label> <command> <needle>
 assert_warning() {
-	local label="$1" cmd="$2" needle="$3"
-	local input output
-	input=$(jq -nc --arg c "$cmd" '{"tool_name":"Bash","tool_input":{"command":$c}}')
-	output=$(echo "$input" | bash "$HOOK")
+	local label="$1" cmd="$2" needle="$3" output
+	output=$(run_hook "$cmd")
 	if ! echo "$output" | grep -q "hookSpecificOutput" || ! echo "$output" | grep -q "$needle"; then
 		echo "FAIL: $label: expected warning containing '$needle', got: $output"
 		FAILED=1

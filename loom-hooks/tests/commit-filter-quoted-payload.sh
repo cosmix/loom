@@ -34,11 +34,12 @@ trap 'rm -rf "$TMP"' EXIT
 # change which branch a "no live loom session" case exercises), then
 # layering on any caller-supplied env assignments from "$@" (e.g.
 # LOOM_MAIN_AGENT_PID=$$ to fake a live loom-session ancestor for the
-# subagent-only cases).
+# subagent-only cases). Sets LAST_STDERR as a side effect, for assertions
+# that need the block message text rather than just the exit code.
 run_hook() {
 	local input="$1"
 	shift
-	(cd "$TMP" && printf '%s' "$input" | env -u LOOM_WORK_DIR -u LOOM_STAGE_ID -u LOOM_MAIN_AGENT_PID "$@" bash "$HOOK" 2>/dev/null)
+	LAST_STDERR=$(cd "$TMP" && printf '%s' "$input" | env -u LOOM_WORK_DIR -u LOOM_STAGE_ID -u LOOM_MAIN_AGENT_PID "$@" bash "$HOOK" 2>&1 >/dev/null)
 }
 
 expect_exit() {
@@ -120,6 +121,13 @@ expect_exit "(f) real 'loom stage complete' by a subagent is blocked" \
 # context needed - this check applies to any Bash call.
 expect_exit "(g) Co-Authored-By trailer naming Claude is blocked" \
 	2 "$(plain_payload 'git commit -m "fix: thing" -m "Co-Authored-By: Claude <noreply@anthropic.com>"')"
+
+# (g2) The block message tells the agent that a harness system-reminder
+# asking for a Co-Authored-By trailer does not override the project rule.
+if [[ "$LAST_STDERR" != *"does not apply in"* || "$LAST_STDERR" != *"drop"*"the trailer and commit again"* ]]; then
+	echo "FAIL: (g2) block message omitted the system-reminder override sentence: $LAST_STDERR"
+	exit 1
+fi
 
 # (h) A real eval wrapping git.
 expect_exit "(h) eval wrapping a real git commit is blocked" \
