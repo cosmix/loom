@@ -7,7 +7,7 @@ use std::env;
 use std::process::Command;
 use tempfile::TempDir;
 
-fn init_git_repo() -> TempDir {
+pub(super) fn init_git_repo() -> TempDir {
     let temp_dir = TempDir::new().unwrap();
     let run_git = |args: &[&str]| {
         Command::new("git")
@@ -22,14 +22,14 @@ fn init_git_repo() -> TempDir {
     temp_dir
 }
 
-struct EnvGuard {
+pub(super) struct EnvGuard {
     original_dir: std::path::PathBuf,
     original_stage_id: Option<String>,
     original_session_id: Option<String>,
 }
 
 impl EnvGuard {
-    fn new() -> Self {
+    pub(super) fn new() -> Self {
         Self {
             original_dir: env::current_dir().unwrap(),
             original_stage_id: env::var("LOOM_STAGE_ID").ok(),

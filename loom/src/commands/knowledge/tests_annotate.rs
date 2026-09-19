@@ -130,3 +130,106 @@ fn annotate_blurb_rewrites_the_index_description_line() {
     assert!(updated.contains("\n> Concise current description.\n"));
     assert!(!updated.contains("Old description."));
 }
+
+fn topic_with(
+    content: &str,
+) -> (
+    tempfile::TempDir,
+    crate::fs::knowledge::KnowledgeDir,
+    crate::fs::knowledge::KnowledgeTarget,
+) {
+    let temp = tempfile::tempdir().unwrap();
+    let knowledge = crate::fs::knowledge::KnowledgeDir::from_root(temp.path());
+    let target = crate::fs::knowledge::KnowledgeTarget::parse("architecture/topic").unwrap();
+    let path = knowledge.target_path(&target);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, content).unwrap();
+    (temp, knowledge, target)
+}
+
+#[test]
+fn section_state_writes_then_replaces_the_marker_under_the_heading() {
+    let (_temp, knowledge, target) =
+        topic_with("# T\n\n## Old episode\n\nbody\n\n## Current\n\nnow\n");
+
+    knowledge
+        .set_section_state_target(&target, "Old episode", LifecycleState::Deprecated)
+        .unwrap();
+    knowledge
+        .set_section_state_target(&target, "Old episode", LifecycleState::Historical)
+        .unwrap();
+
+    let text = fs::read_to_string(knowledge.target_path(&target)).unwrap();
+    assert_eq!(
+        text,
+        "# T\n\n## Old episode\n<!-- state: historical -->\n\nbody\n\n## Current\n\nnow\n"
+    );
+}
+
+#[test]
+fn section_state_refuses_a_missing_or_nested_heading() {
+    let original = "# T\n\n## Group\n\n### Nested\n\nx\n";
+    let (_temp, knowledge, target) = topic_with(original);
+
+    assert!(knowledge
+        .set_section_state_target(&target, "Absent", LifecycleState::Historical)
+        .is_err());
+    let nested = knowledge
+        .set_section_state_target(&target, "Nested", LifecycleState::Historical)
+        .unwrap_err();
+    assert!(nested.to_string().contains("level-3"), "{nested}");
+    assert_eq!(
+        fs::read_to_string(knowledge.target_path(&target)).unwrap(),
+        original
+    );
+}
+
+#[test]
+fn a_section_marker_overrides_the_file_state_and_is_not_part_of_the_body() {
+    let text = "---\nstate: active\n---\n# T\n\n## Old episode\n<!-- state: historical -->\n\nbody\n\n## Current\n\nnow\n";
+
+    let chunks =
+        crate::fs::knowledge::chunker::chunk_file(Path::new("architecture/t.md"), text.as_bytes())
+            .unwrap();
+
+    let old = chunks
+        .iter()
+        .find(|chunk| chunk.heading == "Old episode")
+        .unwrap();
+    assert_eq!(old.state, LifecycleState::Historical);
+    assert!(!old.body.contains("<!--"), "body: {:?}", old.body);
+    let current = chunks
+        .iter()
+        .find(|chunk| chunk.heading == "Current")
+        .unwrap();
+    assert_eq!(current.state, LifecycleState::Active);
+}
+
+#[test]
+fn a_historical_section_is_retrieved_only_under_the_historical_policy() {
+    use crate::context::retrieve::{retrieve_for_stage, StageQuery};
+    use crate::context::schema::LifecyclePolicy;
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(temp.path().join(".loom/work")).unwrap();
+    let topic = temp.path().join("doc/loom/knowledge/architecture/topic.md");
+    fs::create_dir_all(topic.parent().unwrap()).unwrap();
+    fs::write(
+        &topic,
+        "# Topic\n\n## Current notes\n\nunrelated present wording\n\n\
+         ## Old episode\n<!-- state: historical -->\n\nquokka-zebra archival wording\n",
+    )
+    .unwrap();
+    let is_old = |state: LifecycleState| state == LifecycleState::Historical;
+
+    let current = retrieve_for_stage(
+        &StageQuery::new(temp.path(), "quokka zebra archival"),
+        2_000,
+    )
+    .unwrap();
+    let mut query = StageQuery::new(temp.path(), "quokka zebra archival");
+    query.lifecycle = LifecyclePolicy::Historical;
+    let historical = retrieve_for_stage(&query, 2_000).unwrap();
+
+    assert!(!current.items.iter().any(|item| is_old(item.state)));
+    assert!(historical.items.iter().any(|item| is_old(item.state)));
+}

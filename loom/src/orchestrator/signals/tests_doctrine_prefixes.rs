@@ -225,6 +225,32 @@ fn integration_verify_prefix_assigns_one_canonical_gate_owner() {
     );
 }
 
+/// Step 1 of the distillation workflow must tell the agent to work the
+/// grouped pending list (`loom memory pending --group`) before it reaches
+/// step 2's loose `loom memory show --all` review, per the memory-grouping
+/// contract `append_pending_group_step` implements
+/// (`orchestrator/signals/cache/distill_ordering.rs`).
+#[test]
+fn knowledge_distill_prefix_runs_pending_group_before_step_two() {
+    let prefix = generate_knowledge_distill_stable_prefix();
+
+    let group_step = prefix.find("loom memory pending --group");
+    let step_two = prefix.find("RECORD your findings");
+
+    assert!(
+        group_step.is_some(),
+        "distill prefix must instruct the agent to run `loom memory pending --group`"
+    );
+    assert!(
+        step_two.is_some(),
+        "distill prefix must still contain step 2's RECORD your findings text"
+    );
+    assert!(
+        group_step.unwrap() < step_two.unwrap(),
+        "the pending-group step must appear before step 2, got prefix: {prefix}"
+    );
+}
+
 #[test]
 fn integration_verify_prefix_is_stable() {
     assert_eq!(

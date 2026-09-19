@@ -20,43 +20,136 @@
 //! contract that already ships; do not "simplify" it back into
 //! `context::resolve()`.
 
-use crate::context::untrusted::inline_safe;
-use crate::fs::knowledge::catalog::size::MAX_INDEX_BYTES;
-use crate::fs::knowledge::catalog::{self, Catalog, CatalogIssue};
-use crate::fs::knowledge::types::INDEX_FILENAME;
+use super::check_lines::{decorated_issue_line, issue_line};
+use crate::fs::knowledge::catalog::{
+    self, BaselineComparison, Catalog, CatalogIssue, CheckBaseline,
+};
 use crate::fs::knowledge::KnowledgeDir;
 use crate::fs::work_dir::WorkDir;
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use colored::Colorize;
-use std::path::Path;
+use std::path::{Path, PathBuf};
+
+/// Flags of `loom knowledge check`.
+#[derive(Debug, Default)]
+pub struct CheckOptions {
+    pub strict: bool,
+    pub strict_evidence: bool,
+    pub json: bool,
+    /// Structural issues recorded in this file do not fail `--strict`.
+    pub baseline: Option<PathBuf>,
+    /// Write the current structural issue set to this file and exit 0.
+    pub write_baseline: Option<PathBuf>,
+}
 
 /// Report the knowledge base's diagnostics. Resolves the knowledge root
 /// read-only (see the module doc) and never initializes or mutates it.
 ///
-/// `--strict` rejects structural diagnostics; `--strict-evidence` additionally
-/// rejects changed or unavailable declared source evidence.
-pub fn check(strict: bool, strict_evidence: bool, json: bool) -> Result<()> {
+/// `--strict` rejects structural diagnostics, or with `--baseline` only those
+/// the baseline does not record; `--strict-evidence` additionally rejects
+/// changed or unavailable declared source evidence.
+pub fn check(options: CheckOptions) -> Result<()> {
     let root = knowledge_root()?;
+    if let Some(path) = &options.write_baseline {
+        reject_write_baseline_conflicts(&options)?;
+        return write_baseline(&root, path);
+    }
     if !root.exists() {
-        report_missing_root(&root, json)?;
-        if strict_evidence {
+        report_missing_root(&root, options.json)?;
+        if options.strict_evidence {
             strict_failure(1, &root);
         }
         return Ok(());
     }
 
+    let baseline = match &options.baseline {
+        Some(path) => Some((path.as_path(), CheckBaseline::read(path)?)),
+        None => None,
+    };
     let catalog = catalog::build(&root)?;
-    if json {
-        print_json(&root, &catalog)?;
+    let comparison = baseline
+        .as_ref()
+        .map(|(path, baseline)| (*path, baseline.compare(&catalog.issues)));
+    if options.json {
+        print_json(&root, &catalog, comparison.as_ref())?;
     } else {
         print_human(&root, &catalog);
+        if let Some((path, comparison)) = &comparison {
+            print_baseline_report(path, comparison);
+        }
     }
 
-    let failure_count = strict_failure_count(strict, strict_evidence, &catalog.issues);
+    let structural = comparison.as_ref().map_or_else(
+        || strict_issue_count(&catalog.issues),
+        |(_, comparison)| comparison.new.len(),
+    );
+    let failure_count = strict_failure_count(
+        options.strict,
+        options.strict_evidence,
+        structural,
+        &catalog.issues,
+    );
     if failure_count > 0 {
         strict_failure(failure_count, &root);
     }
     Ok(())
+}
+
+/// `--write-baseline` writes and exits before any other flag is honoured, so
+/// combining it with a flag that changes what gets reported or how the run
+/// fails must error instead of silently ignoring that flag.
+fn reject_write_baseline_conflicts(options: &CheckOptions) -> Result<()> {
+    if options.strict || options.strict_evidence || options.json || options.baseline.is_some() {
+        bail!(
+            "--write-baseline cannot be combined with --strict, --strict-evidence, --json, or --baseline"
+        );
+    }
+    Ok(())
+}
+
+/// Record every structural issue of the current tree in `path`. A missing
+/// knowledge root records nothing.
+fn write_baseline(root: &Path, path: &Path) -> Result<()> {
+    let issues = if root.exists() {
+        catalog::build(root)?.issues
+    } else {
+        Vec::new()
+    };
+    let text = catalog::render_baseline(&issues);
+    std::fs::write(path, &text)
+        .with_context(|| format!("Failed to write baseline {}", path.display()))?;
+    let entries = text.lines().filter(|line| !line.starts_with('#')).count();
+    println!(
+        "{} Wrote {entries} structural issue(s) to {}",
+        "✓".green().bold(),
+        path.display()
+    );
+    Ok(())
+}
+
+/// One line per structural issue the baseline does not record, and one
+/// "baseline can be tightened" line when recorded issues are gone.
+fn baseline_report(path: &Path, comparison: &BaselineComparison<'_>) -> Vec<String> {
+    let mut lines: Vec<String> = comparison
+        .new
+        .iter()
+        .map(|issue| format!("new since baseline: {}", issue_line(issue)))
+        .collect();
+    if !comparison.tightenable.is_empty() {
+        lines.push(format!(
+            "baseline can be tightened: {} recorded issue(s) in {} no longer occur - regenerate with `loom knowledge check --write-baseline {}`",
+            comparison.tightenable.len(),
+            path.display(),
+            path.display()
+        ));
+    }
+    lines
+}
+
+fn print_baseline_report(path: &Path, comparison: &BaselineComparison<'_>) {
+    for line in baseline_report(path, comparison) {
+        println!("{line}");
+    }
 }
 
 fn strict_failure(count: usize, root: &Path) -> ! {
@@ -107,7 +200,7 @@ fn report_missing_root(root: &Path, json: bool) -> Result<()> {
 
 /// The JSON payload's shape. Issues are structured data a machine parses, so
 /// unlike [`issue_line`] this must NOT route any field through
-/// [`inline_safe`] — flattening is for the human-readable stdout line only.
+/// `inline_safe` — flattening is for the human-readable stdout line only.
 fn json_payload(root: &Path, catalog: &Catalog) -> serde_json::Value {
     let issues: Vec<_> = catalog
         .issues
@@ -135,11 +228,17 @@ fn strict_issue_count(issues: &[CatalogIssue]) -> usize {
         .count()
 }
 
-fn strict_failure_count(strict: bool, strict_evidence: bool, issues: &[CatalogIssue]) -> usize {
+/// Issues that fail the run: `structural` is every structural issue, or
+/// with a baseline only the unrecorded ones.
+fn strict_failure_count(
+    strict: bool,
+    strict_evidence: bool,
+    structural: usize,
+    issues: &[CatalogIssue],
+) -> usize {
     if !(strict || strict_evidence) {
         return 0;
     }
-    let structural = strict_issue_count(issues);
     if strict_evidence {
         structural + evidence_issue_count(issues)
     } else {
@@ -159,11 +258,20 @@ fn evidence_issue_count(issues: &[CatalogIssue]) -> usize {
         .count()
 }
 
-fn print_json(root: &Path, catalog: &Catalog) -> Result<()> {
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&json_payload(root, catalog))?
-    );
+fn print_json(
+    root: &Path,
+    catalog: &Catalog,
+    comparison: Option<&(&Path, BaselineComparison<'_>)>,
+) -> Result<()> {
+    let mut payload = json_payload(root, catalog);
+    if let Some((path, comparison)) = comparison {
+        payload["baseline"] = serde_json::json!({
+            "path": path,
+            "new": comparison.new,
+            "tightenable": comparison.tightenable,
+        });
+    }
+    println!("{}", serde_json::to_string_pretty(&payload)?);
     Ok(())
 }
 
@@ -207,131 +315,6 @@ fn human_report(root: &Path, catalog: &Catalog) -> String {
     lines.join("\n")
 }
 
-fn decorated_issue_line(issue: &CatalogIssue) -> String {
-    match issue {
-        CatalogIssue::EvidenceChanged { .. }
-        | CatalogIssue::EvidenceUnavailable { .. }
-        | CatalogIssue::UnverifiableReference { .. } => issue_line(issue),
-        _ => format!("{} {}", "!".yellow().bold(), issue_line(issue)),
-    }
-}
-
-/// One human-readable line per issue. Matched EXHAUSTIVELY — no `_ =>`
-/// catch-all — so a future `CatalogIssue` variant fails to compile here
-/// instead of silently printing nothing for it.
-///
-/// Every untrusted field — `heading`, `blurb`, `target`, `source_path`,
-/// `verified`, `kind`, and the file path itself — is routed through
-/// [`inline_safe`] before it
-/// reaches this line. These values come straight from unvalidated knowledge
-/// files: `validate_knowledge_content` (`validation.rs:129`) checks only
-/// emptiness and length, not control characters, so a heading or blurb can
-/// carry an ANSI escape sequence or a bidi override. This is stdout on an
-/// agent-facing surface — the same containment `map/views/mod.rs` applies to
-/// graph-derived text (`context/untrusted.rs`'s module doc names both
-/// surfaces). Do not strip the flattening back out to "simplify" this.
-fn issue_line(issue: &CatalogIssue) -> String {
-    match issue {
-        CatalogIssue::DuplicateHeading {
-            file,
-            heading,
-            occurrences,
-        } => format!(
-            "{}: heading \"{}\" repeated {occurrences} times",
-            safe_path(file),
-            inline_safe(heading)
-        ),
-        CatalogIssue::GenericBlurb { file, blurb } => format!(
-            "{}: still has the scaffold blurb \"{}\"",
-            safe_path(file),
-            inline_safe(blurb)
-        ),
-        CatalogIssue::BrokenLink { file, target } => format!(
-            "{}: link target \"{}\" does not resolve",
-            safe_path(file),
-            inline_safe(target)
-        ),
-        CatalogIssue::MissingSourceRef { file, source_path } => format!(
-            "{}: source reference \"{}\" does not exist",
-            safe_path(file),
-            inline_safe(source_path)
-        ),
-        CatalogIssue::EvidenceChanged { .. }
-        | CatalogIssue::EvidenceUnavailable { .. }
-        | CatalogIssue::UnverifiableReference { .. } => review_issue_line(issue),
-        CatalogIssue::OversizedSection {
-            file,
-            heading,
-            lines,
-        } => size_issue_line(&safe_path(file), Some(&inline_safe(heading)), *lines),
-        CatalogIssue::OversizedFile { file, lines } => {
-            size_issue_line(&safe_path(file), None, *lines)
-        }
-        CatalogIssue::OversizedIndex { bytes } => format!(
-            "{INDEX_FILENAME} is {bytes} bytes, over the {MAX_INDEX_BYTES}-byte budget - trim it"
-        ),
-    }
-}
-
-fn review_issue_line(issue: &CatalogIssue) -> String {
-    match issue {
-        CatalogIssue::EvidenceChanged {
-            file,
-            source_path,
-            verified,
-        } => format!(
-            "review: {}: {} changed since {} — re-verify or `loom knowledge annotate {} --verified HEAD`",
-            safe_path(file),
-            inline_safe(source_path),
-            inline_safe(&verified.chars().take(8).collect::<String>()),
-            safe_path(file)
-        ),
-        CatalogIssue::EvidenceUnavailable {
-            file,
-            source_path,
-            reason,
-        } => format!(
-            "review: {}: evidence for {} is unavailable ({})",
-            safe_path(file),
-            inline_safe(source_path),
-            reason.as_str()
-        ),
-        CatalogIssue::UnverifiableReference {
-            file,
-            source_path,
-            kind,
-        } => format!(
-            "note: {}: unresolved {} reference \"{}\"",
-            safe_path(file),
-            inline_safe(kind),
-            inline_safe(source_path)
-        ),
-        _ => unreachable!("review_issue_line only accepts review-only issues"),
-    }
-}
-
-/// Flatten a `CatalogIssue`'s relative file path the same way its content
-/// fields are flattened — the path is built from a directory walk over the
-/// knowledge tree, so it carries whatever bytes are in the file name on
-/// disk, same as any other field named in [`issue_line`]'s doc comment.
-fn safe_path(file: &Path) -> String {
-    inline_safe(&file.display().to_string())
-}
-
-/// Shared phrasing for the two tier-1 size issues that point at the same
-/// CLAUDE.md Rule 12 remedy — keeps `issue_line` well under the function
-/// size limit instead of inlining both messages there.
-fn size_issue_line(file: &str, heading: Option<&str>, lines: usize) -> String {
-    match heading {
-        Some(heading) => format!(
-            "{file}: section \"{heading}\" is {lines} lines - move the detail to a tier-2 topic file (CLAUDE.md Rule 12)"
-        ),
-        None => format!(
-            "{file}: tier-1 file is {lines} lines - split the detail into a tier-2 topic file (CLAUDE.md Rule 12)"
-        ),
-    }
-}
-
 #[cfg(test)]
 #[path = "tests_check.rs"]
 mod tests;
@@ -339,3 +322,7 @@ mod tests;
 #[cfg(test)]
 #[path = "tests_check_evidence.rs"]
 mod tests_evidence;
+
+#[cfg(test)]
+#[path = "tests_check_baseline.rs"]
+mod tests_baseline;

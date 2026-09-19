@@ -46,6 +46,15 @@ pub enum KnowledgeCommands {
         content: Option<String>,
     },
 
+    /// Delete a `#{2,6} <heading>` section and its nested subsections (errors if no heading matches)
+    DeleteSection {
+        /// Tier-1 file (entry-points, patterns, conventions, ...) or tier-2 topic (<category>/<slug>)
+        file: String,
+
+        /// Heading of the section to delete, with or without the leading `## `
+        heading: String,
+    },
+
     /// Annotate a knowledge target with lifecycle, evidence, aliases, verification, or a blurb
     Annotate(AnnotateArgs),
 
@@ -126,6 +135,12 @@ pub enum KnowledgeCommands {
         /// Machine-readable JSON output (suppresses human text)
         #[arg(long)]
         json: bool,
+        /// Baseline of tolerated structural issues: --strict fails only on issues it does not record (a missing file is empty)
+        #[arg(long)]
+        baseline: Option<PathBuf>,
+        /// Write every current structural issue to this baseline file and exit 0
+        #[arg(long)]
+        write_baseline: Option<PathBuf>,
     },
 }
 
@@ -137,6 +152,9 @@ pub struct AnnotateArgs {
     /// Lifecycle state: active, draft, deprecated, superseded, or historical
     #[arg(long)]
     pub state: Option<String>,
+    /// Apply --state to this `## ` section only, via a `<!-- state: ... -->` marker under its heading
+    #[arg(long, requires = "state")]
+    pub section: Option<String>,
     /// Repository source path supporting this knowledge; repeatable
     #[arg(long = "source")]
     pub source: Vec<String>,
@@ -251,6 +269,10 @@ pub enum MemoryCommands {
         /// Exit non-zero when any pending entry is found
         #[arg(long)]
         strict: bool,
+
+        /// Group pending entries by kind: corrections, mistakes, decisions, other
+        #[arg(long)]
+        group: bool,
     },
 
     /// Search memory entries

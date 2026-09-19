@@ -179,16 +179,11 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
     // Knowledge distillation workflow
     content.push_str("**Knowledge Distillation Workflow:**\n\n");
     append_memory_ordering_doctrine(&mut content);
-    content
-        .push_str("1. **RECORD your findings** — As you review code and verify, record your own\n");
-    content
-        .push_str("   discoveries to `loom memory` (bugs found, security issues, architectural\n");
+    content.push_str("1. Run `loom memory pending --group` and work the groups in order: corrections (apply\n   each with `replace-section` against the printed target), then mistakes, decisions,\n   other. When a mistake is a recurrence of one already in the tree, record a proposal\n   for a hook or a `loom plan verify` check in `concerns.md` instead of another\n   paragraph, and resolve the memory as `merged`.\n");
+    content.push_str("2. **RECORD your findings** — As you review code and verify, record your own\n   discoveries to `loom memory` (bugs found, security issues, architectural\n   insights, test gaps). These are just as valuable as implementation memories.\n");
+    content.push_str("3. Read ALL stage memories (including yours): `loom memory show --all`\n");
     content.push_str(
-        "   insights, test gaps). These are just as valuable as implementation memories.\n",
-    );
-    content.push_str("2. Read ALL stage memories (including yours): `loom memory show --all`\n");
-    content.push_str(
-        "3. Memories are CANDIDATE evidence, not proof — every stage was instructed to record its\n",
+        "4. Memories are CANDIDATE evidence, not proof — every stage was instructed to record its\n",
     );
     content.push_str(
         "   insights, but a memory is a claim until it is checked. Before writing any code-grounded\n",
@@ -203,7 +198,7 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
         "   just those lines — do NOT re-read the whole diff; that is what fills your context.\n",
     );
     content
-        .push_str("4. **DISTILL** all memories into `loom knowledge` — synthesize insights from\n");
+        .push_str("5. **DISTILL** all memories into `loom knowledge` — synthesize insights from\n");
     content.push_str("   ALL stages (implementation AND your own verification findings):\n");
     content.push_str("   - `architecture` — new components, data flows, integration points\n");
     content.push_str("   - `entry-points` — new files, commands, endpoints added\n");
@@ -215,14 +210,14 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
     content.push_str("   - `stack` — new dependencies, tooling changes\n");
     content.push_str("   - `concerns` — tech debt introduced, known issues\n");
     content.push_str("   **Tier routing:** tier-1 files are summaries, not archives. A section under ~40 lines goes inline; a longer one goes to a topic file (`loom knowledge update <category>/<slug> \"...\"`) with a 2-4 line summary plus link left behind. `INDEX.md` is regenerated automatically on every `loom knowledge update` — there is NO index step to run, so finish with your last write.\n");
-    content.push_str("5. DO NOT blindly copy memory entries — synthesize and curate\n");
-    content.push_str("6. **CORRECTIONS PASS — run it BEFORE the step-4 writes.** Sweep `loom memory show --all` for entries starting `stale-knowledge:` and apply EVERY one, plus anything else you find stale. An unapplied `stale-knowledge:` memory is a correction LOST when this plan completes, and the falsehood is quoted into every later Knowledge Brief. Correct IN PLACE with `loom knowledge replace-section <file> \"<heading>\" \"<corrected body>\"` (body WITHOUT its `## ` heading line) — never `loom knowledge update`, which APPENDS. When no heading matches, `replace-section` appends and SAYS so: read that line, or the stale text is still standing.\n");
-    content.push_str("7. **RECEIPT PROTOCOL — every memory event gets exactly one outcome:**\n");
+    content.push_str("6. DO NOT blindly copy memory entries — synthesize and curate\n");
+    content.push_str("7. **CORRECTIONS PASS — run it BEFORE the step-5 writes.** Sweep `loom memory show --all` for entries starting `stale-knowledge:` and apply EVERY one, plus anything else you find stale. An unapplied `stale-knowledge:` memory is a correction LOST when this plan completes, and the falsehood is quoted into every later Knowledge Brief. Correct IN PLACE with `loom knowledge replace-section <file> \"<heading>\" \"<corrected body>\"` (body WITHOUT its `## ` heading line) — never `loom knowledge update`, which APPENDS. When no heading matches, `replace-section` appends and SAYS so: read that line, or the stale text is still standing.\n");
+    content.push_str("8. **RECEIPT PROTOCOL — every memory event gets exactly one outcome:**\n");
     content.push_str("   a. `loom memory show --all --json` to get every entry's id.\n");
     content.push_str("   b. For EVERY Note/Decision/Question entry, record its outcome: `loom memory resolve <id> --outcome promoted --target <file#heading>` right after the `loom knowledge update`/`replace-section` call that used it; `merged` when it folded into an existing section instead of a new one; `discarded --reason \"...\"` when it is a duplicate, regenerable, or wrong; `deferred --reason \"...\"` when it needs evidence not available now.\n");
     content.push_str("   c. Run every `loom memory resolve` in the foreground with its stdout unfiltered: no `> file`, no `| tail`, no script file, no `run_in_background`. The relay hook records a resolve when it sees that command's `LOOM_RELAY_V1` line; one it missed is only picked up after the next foreground `loom memory` write command. A loop of resolves inside one Bash call is fine.\n   d. Finish with `loom memory pending --strict` and resolve whatever it lists — nothing may leave this stage unresolved.\n");
-    content.push_str("   e. This protocol runs AFTER step 6: the corrections pass stays first.\n");
-    content.push_str("8. Generate review document: `loom review`\n\n");
+    content.push_str("   e. This protocol runs AFTER step 7: the corrections pass stays first.\n");
+    content.push_str("9. Generate review document: `loom review`\n\n");
 
     // Distillation is single-agent work: the curator holds the whole picture.
     content.push_str("**Work single-agent — do NOT spawn subagents:**\n\n");

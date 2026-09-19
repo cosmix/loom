@@ -10,7 +10,9 @@
 //! check the wrong tree entirely.
 
 use super::*;
+use crate::fs::knowledge::catalog::size::MAX_INDEX_BYTES;
 use crate::fs::knowledge::catalog::EvidenceUnavailableReason;
+use crate::fs::knowledge::types::INDEX_FILENAME;
 use serial_test::serial;
 use std::fs;
 use std::path::PathBuf;
@@ -65,7 +67,7 @@ fn check_never_creates_a_loom_cache_directory() {
 
     let original_dir = std::env::current_dir().expect("failed to get current dir");
     std::env::set_current_dir(project_root).expect("failed to change dir");
-    let result = check(false, false, false);
+    let result = check(CheckOptions::default());
     std::env::set_current_dir(original_dir).expect("failed to restore dir");
 
     result.expect("check must succeed against a clean knowledge tree");
@@ -122,7 +124,7 @@ fn check_surfaces_a_duplicate_heading_and_still_returns_ok_without_strict() {
 
     let original_dir = std::env::current_dir().expect("failed to get current dir");
     std::env::set_current_dir(project_root).expect("failed to change dir");
-    let result = check(false, false, false);
+    let result = check(CheckOptions::default());
     std::env::set_current_dir(original_dir).expect("failed to restore dir");
 
     result.expect("check without --strict must still return Ok even with issues present");
@@ -149,7 +151,7 @@ fn check_on_a_missing_knowledge_root_returns_ok() {
 
     let original_dir = std::env::current_dir().expect("failed to get current dir");
     std::env::set_current_dir(project_root).expect("failed to change dir");
-    let result = check(false, false, false);
+    let result = check(CheckOptions::default());
     std::env::set_current_dir(original_dir).expect("failed to restore dir");
 
     result.expect("check must return Ok when the knowledge directory does not exist");

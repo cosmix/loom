@@ -30,7 +30,9 @@ fn build_chunk(
     frontmatter: &crate::fs::knowledge::frontmatter::Frontmatter,
     occurrences: &mut std::collections::BTreeMap<String, usize>,
 ) -> KnowledgeChunk {
-    let body = trim_trailing_blank_lines(section.body);
+    let (section_state, body) = split_state_marker(section.body);
+    let state = section_state.unwrap_or(state);
+    let body = trim_trailing_blank_lines(&body);
     let normalized_heading = normalize_heading(section.heading);
     let occurrence = occurrences.entry(normalized_heading.clone()).or_insert(0);
     let derived_id = format!("{relative_path}#{normalized_heading}#{occurrence}");
@@ -178,6 +180,61 @@ fn split_sections(content: &str) -> Vec<Section<'_>> {
         });
     }
     sections
+}
+
+/// Parse a lifecycle state name (`active`, `draft`, `deprecated`,
+/// `superseded`, `historical`), case-insensitively.
+pub(crate) fn parse_lifecycle_state(value: &str) -> Option<LifecycleState> {
+    match value.trim().to_lowercase().as_str() {
+        "active" => Some(LifecycleState::Active),
+        "draft" => Some(LifecycleState::Draft),
+        "deprecated" => Some(LifecycleState::Deprecated),
+        "superseded" => Some(LifecycleState::Superseded),
+        "historical" => Some(LifecycleState::Historical),
+        _ => None,
+    }
+}
+
+/// The `<!-- state: <value> -->` line that sets one section's state.
+pub(crate) fn state_marker(state: LifecycleState) -> String {
+    format!("<!-- state: {state} -->")
+}
+
+/// The state a `<!-- state: <value> -->` line declares, or `None` for any
+/// other line (an unknown value included).
+pub(crate) fn state_marker_of(line: &str) -> Option<LifecycleState> {
+    let inner = line
+        .trim()
+        .strip_prefix("<!--")?
+        .strip_suffix("-->")?
+        .trim()
+        .strip_prefix("state:")?;
+    parse_lifecycle_state(inner)
+}
+
+/// Remove a state marker that is the first non-blank line under a section's
+/// `## ` heading and return the state it declares. The marker is metadata,
+/// never part of the chunk body; a headingless preamble carries none.
+fn split_state_marker(section: &str) -> (Option<LifecycleState>, std::borrow::Cow<'_, str>) {
+    let Some((mut offset, heading)) = line_at(section, 0) else {
+        return (None, section.into());
+    };
+    if !heading.starts_with("## ") {
+        return (None, section.into());
+    }
+    while let Some((line_end, line)) = line_at(section, offset) {
+        if !line.trim().is_empty() {
+            return match state_marker_of(line) {
+                Some(state) => (
+                    Some(state),
+                    format!("{}{}", &section[..offset], &section[line_end..]).into(),
+                ),
+                None => (None, section.into()),
+            };
+        }
+        offset = line_end;
+    }
+    (None, section.into())
 }
 
 fn line_at(text: &str, start: usize) -> Option<(usize, &str)> {

@@ -14,6 +14,7 @@ use crate::relay::emit::{mode, EnvSnapshot, RelayContext, RelayMode, RelaySink, 
 use crate::relay::RequestKind;
 
 use super::super::formatters::format_record_success;
+use super::prefix::{validate_note_shape, NotePrefix};
 use super::work_dir::{get_or_create_work_dir, validate_stage_id, AD_HOC_STAGE_ID};
 
 /// Record a fully constructed entry through the shared direct/spool path.
@@ -94,6 +95,10 @@ fn record_kind(
     evidence: Vec<String>,
     stage_id: Option<String>,
 ) -> Result<()> {
+    if entry_type == MemoryEntryType::Note {
+        let prefix = NotePrefix::parse(&text);
+        validate_note_shape(&prefix, &text)?;
+    }
     let entry = match context {
         Some(context) => MemoryEntry::with_context(entry_type, text, context),
         None => MemoryEntry::new(entry_type, text),

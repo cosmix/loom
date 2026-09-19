@@ -32,22 +32,8 @@ pub(crate) fn splice_section(
     content: &str,
 ) -> (String, SectionOutcome) {
     let lines: Vec<&str> = base.lines().collect();
-    let in_fence = fence_mask(&lines);
-
-    let mut target: Option<(usize, usize)> = None;
-    for (i, line) in lines.iter().enumerate() {
-        if in_fence[i] {
-            continue;
-        }
-        if let Some(level) = heading_level_of(line, heading) {
-            target = Some((i, level));
-            break;
-        }
-    }
-
-    match target {
-        Some((start, level)) => {
-            let end = section_end(&lines, &in_fence, start, level);
+    match find_section(&lines, heading) {
+        Some(SectionSpan { start, end, level }) => {
             let replaced = assemble_replacement(&base, &lines, start, end, level, heading, content);
             (replaced, SectionOutcome::Replaced { level })
         }
@@ -56,6 +42,87 @@ pub(crate) fn splice_section(
             SectionOutcome::Appended,
         ),
     }
+}
+
+/// Why a section edit that requires an existing heading did not happen.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SectionEditError {
+    /// No heading at any level 2-6 matched.
+    NotFound,
+    /// The heading matched at this level, but the edit only applies to `## `
+    /// sections (the unit the chunker splits on).
+    NotLevelTwo { level: usize },
+}
+
+/// Remove the first heading (any level 2-6) matching `heading` together with
+/// its body and nested deeper headings, using the same span rules as
+/// [`splice_section`]. Returns the new text and the level that matched, or
+/// `None` when no heading matches: a delete never falls back to anything.
+pub(crate) fn delete_section(base: &str, heading: &str) -> Option<(String, usize)> {
+    let lines: Vec<&str> = base.lines().collect();
+    let SectionSpan { start, end, level } = find_section(&lines, heading)?;
+    let mut kept: Vec<&str> = lines[..start].to_vec();
+    while kept.last().is_some_and(|line| line.trim().is_empty()) {
+        kept.pop();
+    }
+    if !kept.is_empty() && end < lines.len() {
+        kept.push("");
+    }
+    kept.extend_from_slice(&lines[end..]);
+    Some((join_lines(&kept, base), level))
+}
+
+/// Write `marker` as the first line under the `## <heading>` section,
+/// replacing a state marker already sitting there (the first non-blank line
+/// under the heading, as the chunker reads it).
+pub(crate) fn set_section_marker(
+    base: &str,
+    heading: &str,
+    marker: &str,
+) -> Result<String, SectionEditError> {
+    let lines: Vec<&str> = base.lines().collect();
+    let span = find_section(&lines, heading).ok_or(SectionEditError::NotFound)?;
+    if span.level != 2 {
+        return Err(SectionEditError::NotLevelTwo { level: span.level });
+    }
+    let mut edited = lines.clone();
+    let existing = (span.start + 1..span.end)
+        .find(|&i| !lines[i].trim().is_empty())
+        .filter(|&i| super::chunker::state_marker_of(lines[i]).is_some());
+    match existing {
+        Some(i) => edited[i] = marker,
+        None => edited.insert(span.start + 1, marker),
+    }
+    Ok(join_lines(&edited, base))
+}
+
+/// Line range `[start, end)` and ATX level of a matched section.
+struct SectionSpan {
+    start: usize,
+    end: usize,
+    level: usize,
+}
+
+/// The first non-fenced heading (level 2-6) whose text is exactly `heading`,
+/// spanning up to the next heading of the same or shallower level, or EOF.
+fn find_section(lines: &[&str], heading: &str) -> Option<SectionSpan> {
+    let in_fence = fence_mask(lines);
+    let (start, level) = lines
+        .iter()
+        .enumerate()
+        .filter(|(i, _)| !in_fence[*i])
+        .find_map(|(i, line)| heading_level_of(line, heading).map(|level| (i, level)))?;
+    let end = section_end(lines, &in_fence, start, level);
+    Some(SectionSpan { start, end, level })
+}
+
+/// Join `lines` with `\n`, ending with a newline when `base` did.
+fn join_lines(lines: &[&str], base: &str) -> String {
+    let mut result = lines.join("\n");
+    if !result.is_empty() && base.ends_with('\n') {
+        result.push('\n');
+    }
+    result
 }
 
 /// If `line` (trailing whitespace ignored) is an ATX heading, returns its

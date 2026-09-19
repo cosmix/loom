@@ -21,8 +21,9 @@ fn strict_evidence_counts_review_only_evidence_but_strict_does_not() {
         issue(EvidenceUnavailableReason::MissingRevision),
     ];
 
-    assert_eq!(strict_failure_count(true, false, &issues), 0);
-    assert_eq!(strict_failure_count(false, true, &issues), 2);
+    let structural = strict_issue_count(&issues);
+    assert_eq!(strict_failure_count(true, false, structural, &issues), 0);
+    assert_eq!(strict_failure_count(false, true, structural, &issues), 2);
 }
 
 #[test]

@@ -3,7 +3,9 @@ description: Distill important session insights into doc/loom/knowledge
 ---
 Add any information that is deemed important for a future agent or human engineer working on this project to `doc/loom/knowledge`, focusing on architectural insights, conventions, and mistakes made (and their resolution if available).
 
-**Corrections first.** Sweep `loom memory show --all` for entries starting `stale-knowledge:` and apply EVERY one. Correct files IN PLACE with `loom knowledge replace-section <file> "<heading>" "<corrected body>"` (body WITHOUT its `##` heading line) — never `loom knowledge update` for an existing claim, which only adds to a file rather than fixing what is already there.
+**Start from the grouped worklist.** Run `loom memory pending --group` and work the groups in order: corrections (text starting `stale-knowledge:`, target printed as `<file>#<heading>`), then mistakes (`mistake:`), decisions, other. When a mistake is a recurrence of one already in the tree, record a proposal for a hook or a `loom plan verify` check in `concerns.md` instead of another paragraph, and resolve the memory as `merged`.
+
+**Corrections first.** Apply EVERY `corrections`-group entry. Correct files IN PLACE with `loom knowledge replace-section <file> "<heading>" "<corrected body>"` (body WITHOUT its `##` heading line) — never `loom knowledge update` for an existing claim, which only adds to a file rather than fixing what is already there.
 
 Route each new insight to the right file:
 

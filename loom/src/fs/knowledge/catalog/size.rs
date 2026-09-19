@@ -1,5 +1,5 @@
-//! These are the mechanical form of CLAUDE.md Rule 12's tier-1 size discipline,
-//! reported and never repaired.
+//! These are the mechanical form of CLAUDE.md Rule 12's size discipline for
+//! tier-1 summaries and tier-2 topics, reported and never repaired.
 
 use super::CatalogIssue;
 use crate::fs::knowledge::chunker::KnowledgeChunk;
@@ -12,35 +12,37 @@ use std::path::Path;
 const MAX_TIER_ONE_SECTION_LINES: usize = 40;
 /// Maximum line count for a tier-1 summary file.
 const MAX_TIER_ONE_FILE_LINES: usize = 250;
+/// Maximum tier-2 section lines: a section past this is several topics.
+const MAX_TIER_TWO_SECTION_LINES: usize = 80;
+/// Maximum line count for a tier-2 topic file.
+const MAX_TIER_TWO_FILE_LINES: usize = 400;
 /// Maximum byte size for the generated tier-0 index: roughly 4k tokens for
 /// the first read of every session — the ceiling the hierarchy repair keeps under.
 pub(crate) const MAX_INDEX_BYTES: u64 = 16_384;
 
-/// Flag a tier-1 section whose line count (its `## ` heading line included,
-/// trailing blank lines excluded) exceeds `MAX_TIER_ONE_SECTION_LINES`. A
-/// no-op for tier-2 topic files and for the file's headingless preamble.
+/// Flag a section whose line count (its `## ` heading line included,
+/// trailing blank lines excluded) exceeds its tier's section limit. A no-op
+/// for the file's headingless preamble.
 pub(super) fn oversized_section(
     relative_path: &Path,
     chunk: &KnowledgeChunk,
 ) -> Option<CatalogIssue> {
     let lines = chunk.body.lines().count();
-    (is_tier_one(relative_path) && !chunk.heading.is_empty() && lines > MAX_TIER_ONE_SECTION_LINES)
-        .then(|| CatalogIssue::OversizedSection {
+    (!chunk.heading.is_empty() && lines > section_limit(relative_path)).then(|| {
+        CatalogIssue::OversizedSection {
             file: relative_path.to_path_buf(),
             heading: chunk.heading.clone(),
             lines,
-        })
+        }
+    })
 }
 
-/// Flag a tier-1 file whose total line count exceeds
-/// `MAX_TIER_ONE_FILE_LINES`. A no-op for tier-2 topic files.
+/// Flag a file whose total line count exceeds its tier's file limit.
 pub(super) fn oversized_file(relative_path: &Path, content: &str) -> Option<CatalogIssue> {
     let lines = content.lines().count();
-    (is_tier_one(relative_path) && lines > MAX_TIER_ONE_FILE_LINES).then(|| {
-        CatalogIssue::OversizedFile {
-            file: relative_path.to_path_buf(),
-            lines,
-        }
+    (lines > file_limit(relative_path)).then(|| CatalogIssue::OversizedFile {
+        file: relative_path.to_path_buf(),
+        lines,
     })
 }
 
@@ -51,6 +53,26 @@ pub(super) fn oversized_index(root: &Path) -> Option<CatalogIssue> {
     (bytes > MAX_INDEX_BYTES).then_some(CatalogIssue::OversizedIndex { bytes })
 }
 
-fn is_tier_one(relative_path: &Path) -> bool {
+/// Section line limit for the tier `relative_path` belongs to.
+pub(crate) fn section_limit(relative_path: &Path) -> usize {
+    if is_tier_one(relative_path) {
+        MAX_TIER_ONE_SECTION_LINES
+    } else {
+        MAX_TIER_TWO_SECTION_LINES
+    }
+}
+
+/// File line limit for the tier `relative_path` belongs to.
+pub(crate) fn file_limit(relative_path: &Path) -> usize {
+    if is_tier_one(relative_path) {
+        MAX_TIER_ONE_FILE_LINES
+    } else {
+        MAX_TIER_TWO_FILE_LINES
+    }
+}
+
+/// A tier-1 summary sits directly in the knowledge root; a tier-2 topic sits
+/// in a category directory.
+pub(crate) fn is_tier_one(relative_path: &Path) -> bool {
     relative_path.components().count() == 1
 }
