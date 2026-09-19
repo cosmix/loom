@@ -84,7 +84,7 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, errors, size limits, docstrings | 273 |
-| [commits](conventions/commits.md) | Grouped Conventional Commits, no attribution, no trailers | 21 |
+| [commits](conventions/commits.md) | Grouped Conventional Commits, no attribution, no trailers | 25 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute file authority, adjudicator scope, budgets | 114 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git/worktree ops, cargo discipline, the maintainability ledger | 202 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance-channel choice, verification rule, plugin scope | 105 |

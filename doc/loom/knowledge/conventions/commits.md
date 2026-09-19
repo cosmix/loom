@@ -19,3 +19,7 @@ The harness attribution reminder asks for `Co-Authored-By` and `Claude-Session` 
 `loom-hooks/commit-filter.sh` hook blocks the WHOLE Bash call when a `Co-Authored-By` line names Claude or
 Anthropic, and a `git add` chained in the same call does not run either. This file's rule wins: write stage commit
 messages with no trailers and no attribution line.
+
+## Attribution Is Off in Project Settings
+
+`loom init` (`fs/permissions/settings/merge.rs::ensure_no_attribution`) writes `"attribution": {"commit": "", "pr": "", "sessionUrl": false}` into the repo's committed `.claude/settings.json`, and worktree settings inherit it. Claude Code then adds no Co-Authored-By trailer or PR footer, matching the no-attribution rule. It is inserted only when the key is absent: a repo that sets its own `attribution` keeps it. Owner decision (2026-09-19): project scope, not `~/.claude/settings.json`, which loom does not own.
