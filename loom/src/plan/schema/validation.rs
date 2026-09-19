@@ -4,6 +4,8 @@ use crate::models::constants::MIN_CONTEXT_CEILING_TOKENS;
 use crate::validation::validate_id;
 
 use super::detect::detect_stage_type;
+use super::structural_checks::declared_skills::check_declared_skills;
+use super::structural_checks::worker_table::check_worker_granularity;
 use super::structural_checks::{check_file_ownership, check_missing_brief_paths};
 use super::types::{
     FilesystemConfig, Implementer, LoomConfig, LoomMetadata, NetworkConfig, SandboxConfig,
@@ -11,8 +13,12 @@ use super::types::{
 };
 use super::validation_suite::warn_full_suite_outside_integration_verify;
 
-mod acceptance_command;
-pub(crate) use acceptance_command::validate_acceptance_criterion;
+pub(super) mod acceptance_command;
+pub(crate) mod base_tree;
+pub(super) mod criterion_hazards;
+mod search_args;
+mod shell_lex;
+use criterion_hazards::criterion_needs_ungrantable_resource;
 
 /// Reject commands listed in `excluded_commands`: command-prefix exclusions run
 /// outside the host sandbox and cannot safely authorize extensible executors,
@@ -362,15 +368,9 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
             }
         }
 
-        // Validate acceptance criteria
-        for (idx, criterion) in stage.acceptance.iter().enumerate() {
-            if let Err(e) = validate_acceptance_criterion(criterion) {
-                errors.push(ValidationError {
-                    message: format!("Invalid acceptance criterion #{}: {e}", idx + 1),
-                    stage_id: Some(stage.id.clone()),
-                });
-            }
-        }
+        // Validate acceptance criteria, then every stage command's sandbox hazards
+        acceptance_command::push_acceptance_errors(stage, &mut errors);
+        criterion_hazards::push_hazard_errors(stage, &mut errors);
 
         // Validate artifacts
         if stage.artifacts.len() > 100 {
@@ -630,6 +630,11 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
         }
     }
 
+    for (stage_id, message) in check_declared_skills(&metadata.loom.stages).errors {
+        let stage_id = Some(stage_id);
+        errors.push(ValidationError { message, stage_id });
+    }
+
     if errors.is_empty() {
         Ok(())
     } else {
@@ -707,34 +712,8 @@ fn resolve_build_tool_config_path(
     selector.unwrap_or_else(|| working_dir.join(config_file))
 }
 
-/// Check whether an acceptance criterion invokes a resource that a worktree
-/// session's sandboxed acceptance run cannot grant.
-///
-/// `loom map` and `loom knowledge context` both open `ContextStore`, which
-/// resolves its cache under the main project root — read-only from a
-/// worktree, and unreachable via `allow_write` since both settings emitters
-/// filter out `../` paths. `tmux`/`docker` are host daemons the sandbox does
-/// not expose. Returns the matched invocation for use in the warning
-/// message, or `None` if the criterion is clean.
-fn criterion_needs_ungrantable_resource(cmd: &str) -> Option<&'static str> {
-    if cmd.contains("loom map") {
-        return Some("loom map");
-    }
-    if cmd.contains("loom knowledge context") {
-        return Some("loom knowledge context");
-    }
-    for token in cmd.split_whitespace() {
-        if token == "tmux" || token.ends_with("/tmux") {
-            return Some("tmux");
-        }
-        if token == "docker" || token.ends_with("/docker") {
-            return Some("docker");
-        }
-    }
-    None
-}
-
-/// Warn about ungrantable-resource acceptance criteria, then delegate to the full-suite check.
+/// Warn about ungrantable-resource acceptance criteria and warning-level command hazards, then
+/// delegate to the full-suite check.
 ///
 /// `loom map` / `loom knowledge context` resolve the shared context-store cache under the main
 /// project root (reached through the `.loom/work` symlink, which no `allow_write` entry can
@@ -755,8 +734,20 @@ fn warn_ungrantable_acceptance(stage: &super::types::StageDefinition, warnings: 
             ));
         }
     }
+    criterion_hazards::push_hazard_warnings(stage, warnings);
     warn_full_suite_outside_integration_verify(stage, detect_stage_type(stage), warnings);
 }
+
+/// Build tool command patterns and their expected config files
+const BUILD_TOOL_CHECKS: &[(&str, &str)] = &[
+    ("cargo", "Cargo.toml"),
+    ("npm ", "package.json"),
+    ("bun ", "package.json"),
+    ("yarn ", "package.json"),
+    ("go ", "go.mod"),
+    ("pytest", "pyproject.toml"),
+    ("uv ", "pyproject.toml"),
+];
 
 /// Validate structural aspects of the plan before execution (pre-flight checks).
 ///
@@ -770,6 +761,9 @@ fn warn_ungrantable_acceptance(stage: &super::types::StageDefinition, warnings: 
 /// - Double-path artifacts and wiring sources
 /// - Acceptance criteria invoking resources the worktree sandbox cannot grant
 ///   (`loom map`, `loom knowledge context`, or a host daemon like tmux/docker)
+/// - Warning-level hazards in acceptance, setup and wiring-test commands
+/// - Worker tables that split small tasks one file per subagent, and declared
+///   skills the skill index cannot load
 pub fn validate_structural_preflight(
     stages: &[super::types::StageDefinition],
     repo_root: Option<&std::path::Path>,
@@ -897,17 +891,8 @@ pub fn validate_structural_preflight(
     warnings.extend(check_cross_stage_wiring_coverage(stages));
     warnings.extend(check_missing_brief_paths(stages, repo_root));
     warnings.extend(check_file_ownership(stages));
-
-    // Build tool command patterns and their expected config files
-    const BUILD_TOOL_CHECKS: &[(&str, &str)] = &[
-        ("cargo", "Cargo.toml"),
-        ("npm ", "package.json"),
-        ("bun ", "package.json"),
-        ("yarn ", "package.json"),
-        ("go ", "go.mod"),
-        ("pytest", "pyproject.toml"),
-        ("uv ", "pyproject.toml"),
-    ];
+    warnings.extend(check_worker_granularity(stages));
+    warnings.extend(check_declared_skills(stages).warnings);
 
     if let Some(root) = repo_root.filter(|r| !r.as_os_str().is_empty()) {
         for stage in stages {

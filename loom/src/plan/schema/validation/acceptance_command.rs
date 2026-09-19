@@ -1,6 +1,6 @@
 //! Acceptance criterion command validation.
 
-use super::super::types::AcceptanceCriterion;
+use super::super::types::{AcceptanceCriterion, StageDefinition, ValidationError};
 
 /// Maximum length, in characters, of a single acceptance criterion command.
 ///
@@ -41,4 +41,17 @@ pub(crate) fn validate_acceptance_criterion(criterion: &AcceptanceCriterion) -> 
     }
 
     Ok(())
+}
+
+/// Push a `ValidationError` for every acceptance criterion of `stage` that
+/// fails `validate_acceptance_criterion`.
+pub(super) fn push_acceptance_errors(stage: &StageDefinition, errors: &mut Vec<ValidationError>) {
+    for (idx, criterion) in stage.acceptance.iter().enumerate() {
+        if let Err(e) = validate_acceptance_criterion(criterion) {
+            errors.push(ValidationError {
+                message: format!("Invalid acceptance criterion #{}: {e}", idx + 1),
+                stage_id: Some(stage.id.clone()),
+            });
+        }
+    }
 }

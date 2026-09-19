@@ -18,6 +18,7 @@ pub use types::{
     RegressionTest, SandboxConfig, StageDefinition, StageSandboxConfig, StageType, SuccessCriteria,
     TruthCheck, ValidationError, WiringCheck, WiringTest, ALLOWED_REASONING_EFFORTS,
 };
+pub(crate) use validation::base_tree;
 pub use validation::{
     check_knowledge_recommendations, check_sandbox_recommendations, validate,
     validate_structural_preflight,

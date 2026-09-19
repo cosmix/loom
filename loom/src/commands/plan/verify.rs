@@ -10,7 +10,7 @@ use crate::commands::graph::colors::stage_color;
 use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::parser::{extract_plan_name, extract_yaml_metadata};
 use crate::plan::schema::{
-    check_knowledge_recommendations, check_sandbox_recommendations, detect_stage_type,
+    base_tree, check_knowledge_recommendations, check_sandbox_recommendations, detect_stage_type,
     validate_structural_preflight, LoomMetadata, StageDefinition, StageType,
 };
 
@@ -31,24 +31,29 @@ struct JsonError {
     message: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Default)]
 struct JsonWarnings {
     structural: Vec<String>,
     knowledge: Vec<String>,
     sandbox: Vec<String>,
+    /// Criteria that already pass on the untouched tree (see `base_tree`).
+    baseline: Vec<String>,
 }
 
 impl JsonWarnings {
-    fn empty() -> Self {
-        Self {
-            structural: vec![],
-            knowledge: vec![],
-            sandbox: vec![],
-        }
+    /// Every bucket with its human-output heading, in display order.
+    fn sections(&self) -> [(&'static str, &[String]); 4] {
+        [
+            ("Structural", self.structural.as_slice()),
+            ("Knowledge", self.knowledge.as_slice()),
+            ("Sandbox", self.sandbox.as_slice()),
+            ("Baseline", self.baseline.as_slice()),
+        ]
     }
 
+    /// Warnings across every bucket; `--strict` fails on any of them.
     fn total(&self) -> usize {
-        self.structural.len() + self.knowledge.len() + self.sandbox.len()
+        self.sections().iter().map(|(_, items)| items.len()).sum()
     }
 }
 
@@ -66,6 +71,8 @@ struct JsonOutput {
     valid: bool,
     errors: Vec<JsonError>,
     warnings: JsonWarnings,
+    /// Checks that were skipped, and why; never counted as warnings.
+    notes: Vec<String>,
     levels: Vec<Vec<JsonStageLevel>>,
 }
 
@@ -136,6 +143,72 @@ fn emit_json(output: &JsonOutput) {
     let _ = std::io::stdout().flush();
 }
 
+/// Report a failure that stops verification before validation runs: a JSON
+/// envelope and exit 1 under `--json`, an error otherwise.
+fn early_failure(json: bool, source: String, message: String) -> Result<()> {
+    if json {
+        emit_json(&JsonOutput {
+            plan: JsonPlan {
+                id: None,
+                name: None,
+                source,
+            },
+            valid: false,
+            errors: vec![JsonError {
+                stage_id: None,
+                message,
+            }],
+            warnings: JsonWarnings::default(),
+            notes: vec![],
+            levels: vec![],
+        });
+        std::process::exit(1);
+    }
+    bail!("{message}")
+}
+
+/// Sandbox policy hard errors: run the SAME merge + validation that
+/// `loom init` and stage spawn use (crate::sandbox::merge_config /
+/// validate_config / validate_emittable), so a plan `loom init` would refuse
+/// is not reported clean here. These are errors, not warnings — init already
+/// rejects these plans outright.
+fn sandbox_policy_errors(metadata: &LoomMetadata) -> Vec<JsonError> {
+    let mut errors = Vec::new();
+    for stage in &metadata.loom.stages {
+        let merged = crate::sandbox::merge_config(
+            &metadata.loom.sandbox,
+            &stage.sandbox,
+            detect_stage_type(stage),
+            &stage.implementers,
+        );
+        if let Err(e) = crate::sandbox::validate_config(&merged) {
+            errors.push(JsonError {
+                stage_id: Some(stage.id.clone()),
+                message: e.to_string(),
+            });
+        }
+        if let Err(e) = crate::sandbox::validate_emittable(&merged) {
+            errors.push(JsonError {
+                stage_id: Some(stage.id.clone()),
+                message: e.to_string(),
+            });
+        }
+    }
+    errors
+}
+
+/// DAG cycle detection, then the stages grouped by execution level.
+fn dag_levels(stages: &[StageDefinition]) -> Result<Vec<Vec<JsonStageLevel>>, JsonError> {
+    if let Err(e) = crate::plan::graph::ExecutionGraph::build(stages.to_vec()) {
+        return Err(JsonError {
+            stage_id: None,
+            message: e.to_string(),
+        });
+    }
+    let levels_map = compute_all_levels(stages, |s| s.id.as_str(), |s| &s.dependencies);
+    Ok(build_levels_output(stages, &levels_map))
+}
+
 // ── Human output ──────────────────────────────────────────────────────────
 
 struct HumanArgs<'a> {
@@ -144,6 +217,7 @@ struct HumanArgs<'a> {
     plan_name: &'a Option<String>,
     hard_errors: &'a [JsonError],
     warnings: &'a JsonWarnings,
+    notes: &'a [String],
     levels: &'a [Vec<JsonStageLevel>],
     total_errors: usize,
     total_warnings: usize,
@@ -157,6 +231,7 @@ fn print_human(args: HumanArgs<'_>) {
         plan_name,
         hard_errors,
         warnings,
+        notes,
         levels,
         total_errors,
         total_warnings,
@@ -182,33 +257,20 @@ fn print_human(args: HumanArgs<'_>) {
         println!();
     }
 
-    // Warnings sections
-    let has_structural = !warnings.structural.is_empty();
-    let has_knowledge = !warnings.knowledge.is_empty();
-    let has_sandbox = !warnings.sandbox.is_empty();
-
-    if has_structural || has_knowledge || has_sandbox {
-        if has_structural {
-            println!("{}", "Structural".yellow().bold());
-            for w in &warnings.structural {
-                println!("  {} {}", "⚠".yellow(), w);
-            }
-            println!();
+    // Warnings sections, then notes on checks that were skipped
+    for (title, items) in warnings.sections() {
+        if items.is_empty() {
+            continue;
         }
-        if has_knowledge {
-            println!("{}", "Knowledge".yellow().bold());
-            for w in &warnings.knowledge {
-                println!("  {} {}", "⚠".yellow(), w);
-            }
-            println!();
+        println!("{}", title.yellow().bold());
+        for w in items {
+            println!("  {} {}", "⚠".yellow(), w);
         }
-        if has_sandbox {
-            println!("{}", "Sandbox".yellow().bold());
-            for w in &warnings.sandbox {
-                println!("  {} {}", "⚠".yellow(), w);
-            }
-            println!();
-        }
+        println!();
+    }
+    for note in notes {
+        println!("{}", format!("Note: {note}").dimmed());
+        println!();
     }
 
     // Stages by level
@@ -272,25 +334,8 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
 
     // File existence check
     if !path.exists() || !path.is_file() {
-        let msg = format!("Plan file not found: {}", path.display());
-        if json {
-            emit_json(&JsonOutput {
-                plan: JsonPlan {
-                    id: None,
-                    name: None,
-                    source: source_str,
-                },
-                valid: false,
-                errors: vec![JsonError {
-                    stage_id: None,
-                    message: msg,
-                }],
-                warnings: JsonWarnings::empty(),
-                levels: vec![],
-            });
-            std::process::exit(1);
-        }
-        bail!("Plan file not found: {}", path.display());
+        let message = format!("Plan file not found: {}", path.display());
+        return early_failure(json, source_str, message);
     }
 
     // File size check
@@ -298,57 +343,17 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
         .with_context(|| format!("Failed to stat {}", path.display()))?
         .len();
     if file_len > MAX_FILE_BYTES {
-        let msg = format!(
-            "Plan file too large: {} bytes (limit: {} bytes)",
-            file_len, MAX_FILE_BYTES
-        );
-        if json {
-            emit_json(&JsonOutput {
-                plan: JsonPlan {
-                    id: None,
-                    name: None,
-                    source: source_str,
-                },
-                valid: false,
-                errors: vec![JsonError {
-                    stage_id: None,
-                    message: msg,
-                }],
-                warnings: JsonWarnings::empty(),
-                levels: vec![],
-            });
-            std::process::exit(1);
-        }
-        bail!(
-            "Plan file too large: {} bytes (limit: {} bytes)",
-            file_len,
-            MAX_FILE_BYTES
-        );
+        let message =
+            format!("Plan file too large: {file_len} bytes (limit: {MAX_FILE_BYTES} bytes)");
+        return early_failure(json, source_str, message);
     }
 
     // Read content
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) => {
-            let msg = format!("Failed to read {}: {e}", path.display());
-            if json {
-                emit_json(&JsonOutput {
-                    plan: JsonPlan {
-                        id: None,
-                        name: None,
-                        source: source_str,
-                    },
-                    valid: false,
-                    errors: vec![JsonError {
-                        stage_id: None,
-                        message: msg,
-                    }],
-                    warnings: JsonWarnings::empty(),
-                    levels: vec![],
-                });
-                std::process::exit(1);
-            }
-            bail!("Failed to read {}: {}", path.display(), e);
+            let message = format!("Failed to read {}: {e}", path.display());
+            return early_failure(json, source_str, message);
         }
     };
 
@@ -358,27 +363,7 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
     // Extract YAML block — failure means we can't confirm this is a loom plan
     let yaml = match extract_yaml_metadata(&content) {
         Ok(y) => y,
-        Err(e) => {
-            let msg = e.to_string();
-            if json {
-                emit_json(&JsonOutput {
-                    plan: JsonPlan {
-                        id: None,
-                        name: None,
-                        source: source_str,
-                    },
-                    valid: false,
-                    errors: vec![JsonError {
-                        stage_id: None,
-                        message: msg,
-                    }],
-                    warnings: JsonWarnings::empty(),
-                    levels: vec![],
-                });
-                std::process::exit(1);
-            }
-            bail!("{}", e);
-        }
+        Err(e) => return early_failure(json, source_str, e.to_string()),
     };
 
     // Derive plan ID from filename (available once we know it's a loom plan)
@@ -390,38 +375,18 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
     // Deserialize LoomMetadata
     let loom_metadata: LoomMetadata = match serde_yaml::from_str(&yaml) {
         Ok(m) => m,
-        Err(e) => {
-            let msg = format!("YAML parse error: {e}");
-            if json {
-                emit_json(&JsonOutput {
-                    plan: JsonPlan {
-                        id: None,
-                        name: None,
-                        source: source_str,
-                    },
-                    valid: false,
-                    errors: vec![JsonError {
-                        stage_id: None,
-                        message: msg,
-                    }],
-                    warnings: JsonWarnings::empty(),
-                    levels: vec![],
-                });
-                std::process::exit(1);
-            }
-            bail!("YAML parse error: {}", e);
-        }
+        Err(e) => return early_failure(json, source_str, format!("YAML parse error: {e}")),
     };
 
     // ── Validation ────────────────────────────────────────────────────────
 
-    let validation_result = crate::plan::schema::validate(&loom_metadata);
-
+    let stages = &loom_metadata.loom.stages;
+    let repo_root = find_repo_root(path);
     let mut hard_errors: Vec<JsonError> = Vec::new();
-    let mut soft_warnings = JsonWarnings::empty();
+    let mut soft_warnings = JsonWarnings::default();
     let mut levels: Vec<Vec<JsonStageLevel>> = Vec::new();
 
-    match validation_result {
+    match crate::plan::schema::validate(&loom_metadata) {
         Err(errs) => {
             for e in errs {
                 hard_errors.push(JsonError {
@@ -431,66 +396,31 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
             }
         }
         Ok(()) => {
-            // Sandbox policy hard errors: run the SAME merge + validation that
-            // `loom init` and stage spawn use (crate::sandbox::merge_config /
-            // validate_config / validate_emittable), so a plan `loom init`
-            // would refuse is not reported clean here. These are errors, not
-            // warnings — init already rejects these plans outright.
-            for stage in &loom_metadata.loom.stages {
-                let merged = crate::sandbox::merge_config(
-                    &loom_metadata.loom.sandbox,
-                    &stage.sandbox,
-                    detect_stage_type(stage),
-                    &stage.implementers,
-                );
-                if let Err(e) = crate::sandbox::validate_config(&merged) {
-                    hard_errors.push(JsonError {
-                        stage_id: Some(stage.id.clone()),
-                        message: e.to_string(),
-                    });
-                }
-                if let Err(e) = crate::sandbox::validate_emittable(&merged) {
-                    hard_errors.push(JsonError {
-                        stage_id: Some(stage.id.clone()),
-                        message: e.to_string(),
-                    });
-                }
-            }
-
+            hard_errors.extend(sandbox_policy_errors(&loom_metadata));
             // Soft checks (only when schema validation passes)
-            let repo_root_opt = find_repo_root(path);
             soft_warnings = JsonWarnings {
-                structural: validate_structural_preflight(
-                    &loom_metadata.loom.stages,
-                    repo_root_opt.as_deref(),
-                ),
-                knowledge: check_knowledge_recommendations(&loom_metadata.loom.stages),
+                structural: validate_structural_preflight(stages, repo_root.as_deref()),
+                knowledge: check_knowledge_recommendations(stages),
                 sandbox: check_sandbox_recommendations(&loom_metadata),
+                baseline: Vec::new(),
             };
-
-            // DAG cycle detection
-            match crate::plan::graph::ExecutionGraph::build(loom_metadata.loom.stages.clone()) {
-                Err(e) => {
-                    hard_errors.push(JsonError {
-                        stage_id: None,
-                        message: e.to_string(),
-                    });
-                }
-                Ok(_graph) => {
-                    let levels_map = compute_all_levels(
-                        &loom_metadata.loom.stages,
-                        |s| s.id.as_str(),
-                        |s| &s.dependencies,
-                    );
-                    levels = build_levels_output(&loom_metadata.loom.stages, &levels_map);
-                }
+            match dag_levels(stages) {
+                Ok(by_level) => levels = by_level,
+                Err(error) => hard_errors.push(error),
             }
         }
     }
 
+    // Base-tree evaluation runs whether or not the schema validates, so one
+    // pass reports a plan's hazard errors and its already-green criteria.
+    let baseline = base_tree::check_base_tree(stages, repo_root.as_deref());
+    soft_warnings.baseline = baseline.warnings;
+    let notes: Vec<String> = baseline.note.into_iter().collect();
+
     let total_errors = hard_errors.len();
     let total_warnings = soft_warnings.total();
     let valid = total_errors == 0;
+    let failed = should_fail(total_errors, total_warnings, strict);
 
     // ── Output ─────────────────────────────────────────────────────────────
 
@@ -504,13 +434,10 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
             valid,
             errors: hard_errors,
             warnings: soft_warnings,
+            notes,
             levels,
         });
-        std::process::exit(if should_fail(total_errors, total_warnings, strict) {
-            1
-        } else {
-            0
-        });
+        std::process::exit(i32::from(failed));
     }
 
     print_human(HumanArgs {
@@ -519,13 +446,14 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
         plan_name: &plan_name,
         hard_errors: &hard_errors,
         warnings: &soft_warnings,
+        notes: &notes,
         levels: &levels,
         total_errors,
         total_warnings,
         strict,
     });
 
-    if should_fail(total_errors, total_warnings, strict) {
+    if failed {
         bail!(
             "Plan validation failed ({} error(s), {} warning(s))",
             total_errors,
@@ -595,5 +523,33 @@ mod tests {
 
         let found = find_repo_root(&plan_path);
         assert_eq!(found.as_deref(), Some(root));
+    }
+
+    #[test]
+    fn baseline_warnings_count_toward_strict() {
+        let warnings = JsonWarnings {
+            baseline: vec!["criterion passes on the untouched tree".to_string()],
+            ..JsonWarnings::default()
+        };
+        assert_eq!(warnings.total(), 1);
+        assert!(should_fail(0, warnings.total(), true));
+        assert!(!should_fail(0, warnings.total(), false));
+        assert_eq!(warnings.sections()[3].0, "Baseline");
+    }
+
+    #[test]
+    fn verifies_a_plan_with_no_repository_root() {
+        let temp = TempDir::new().unwrap();
+        let plan_path = temp.path().join("PLAN-no-repo.md");
+        let plan = "# No Repo\n\n<!-- loom METADATA -->\n\n```yaml\nloom:\n  version: 1\n  \
+                    stages:\n    - id: stage-one\n      name: \"Stage One\"\n      \
+                    stage_type: standard\n      working_dir: \".\"\n      acceptance:\n        \
+                    - \"rg -q present notes.txt\"\n```\n\n<!-- END loom METADATA -->\n";
+        fs::write(&plan_path, plan).unwrap();
+
+        execute(&plan_path, false, false, false).unwrap();
+        let report = base_tree::check_base_tree(&[], None);
+        assert!(report.warnings.is_empty());
+        assert!(report.note.is_some_and(|note| note.contains("skipped")));
     }
 }
