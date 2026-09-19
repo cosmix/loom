@@ -146,6 +146,7 @@ fn build_full_stage_definition() -> StageDefinition {
         ultracode: true,
         implementers: Implementers::new(vec![Implementer::Codex, Implementer::Claude]),
         subagent_timeout_secs: Some(600),
+        skills: vec!["loom-rust".to_string()],
     }
 }
 
@@ -241,6 +242,7 @@ fn test_extract_stage_definition_round_trip_policy_fields() {
         round_tripped.subagent_timeout_secs,
         def.subagent_timeout_secs
     );
+    assert_eq!(round_tripped.skills, def.skills);
 }
 
 #[test]

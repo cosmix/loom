@@ -25,7 +25,7 @@ pub struct SandboxConfig {
     pub allow_unsandboxed_escape: bool,
 
     /// Commands excluded from sandboxing (e.g., "loom" CLI)
-    #[serde(default = "default_excluded_commands")]
+    #[serde(default)]
     pub excluded_commands: Vec<String>,
 
     /// Filesystem access restrictions
@@ -58,7 +58,7 @@ impl Default for SandboxConfig {
             enabled: default_sandbox_enabled(),
             auto_allow: default_auto_allow(),
             allow_unsandboxed_escape: false,
-            excluded_commands: default_excluded_commands(),
+            excluded_commands: Vec::new(),
             filesystem: FilesystemConfig::default(),
             network: NetworkConfig::default(),
             linux: LinuxConfig::default(),
@@ -105,10 +105,6 @@ fn default_sandbox_enabled() -> bool {
 
 fn default_auto_allow() -> bool {
     true
-}
-
-fn default_excluded_commands() -> Vec<String> {
-    Vec::new()
 }
 
 /// Configuration for structured code review in integration-verify stages.
@@ -322,6 +318,9 @@ pub struct StageDefinition {
     /// is ADVISORY: it reports a silent session, it never kills or retries one.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subagent_timeout_secs: Option<u64>,
+    /// Skills this stage's agents need, by catalog name; validated by `check_declared_skills`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<String>,
 }
 
 impl StageDefinition {

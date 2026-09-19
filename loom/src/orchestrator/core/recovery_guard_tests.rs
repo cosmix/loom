@@ -47,6 +47,7 @@ fn stage_definition(id: &str, dependencies: Vec<String>) -> StageDefinition {
         ultracode: false,
         implementers: Implementers::default(),
         subagent_timeout_secs: None,
+        skills: vec![],
     }
 }
 

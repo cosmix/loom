@@ -54,6 +54,7 @@ pub(crate) fn make_stage(id: &str, name: &str) -> StageDefinition {
         ultracode: false,
         implementers: Implementers::default(),
         subagent_timeout_secs: None,
+        skills: vec![],
     }
 }
 

@@ -84,6 +84,7 @@ fn definition_from_stage(stage: &Stage) -> StageDefinition {
         ultracode: stage.ultracode,
         implementers: stage.implementers.clone(),
         subagent_timeout_secs: stage.subagent_timeout_secs,
+        skills: stage.skills.clone(),
     }
 }
 

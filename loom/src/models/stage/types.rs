@@ -779,6 +779,9 @@ pub struct Stage {
     /// [`Stage::effective_subagent_timeout_secs`] rather than reading it directly.
     #[serde(default)]
     pub subagent_timeout_secs: Option<u64>,
+    /// Skills this stage's agents need, by catalog name. Copied from the plan's StageDefinition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub skills: Vec<String>,
 }
 
 /// Status of a stage in the execution lifecycle.
@@ -1096,15 +1099,5 @@ where
             );
             Ok(None)
         }
-    }
-}
-
-#[cfg(test)]
-mod network_config_tests {
-    use super::NetworkConfig;
-    #[test]
-    fn default_network_config_denies_unix_sockets_for_completion_broker_integrity() {
-        assert!(NetworkConfig::default().allow_unix_sockets.is_empty());
-        assert!(!NetworkConfig::default().allow_all_unix_sockets);
     }
 }

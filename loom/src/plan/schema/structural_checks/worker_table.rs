@@ -28,6 +28,41 @@ pub(super) fn check_worker_table_ownership(stages: &[StageDefinition]) -> Vec<St
     warnings
 }
 
+/// Warn when a stage's worker table over-fragments the work: four or more
+/// rows that each own exactly one path is a signal the plan is spawning one
+/// subagent per file instead of grouping small tasks — every spawn pays the
+/// boot cost regardless of how little work it does.
+///
+/// Reuses [`worker_claims`] rather than re-parsing the table (one malformed
+/// row already makes the whole table claim nothing, per `table_claims`).
+pub fn check_worker_granularity(stages: &[StageDefinition]) -> Vec<String> {
+    let mut warnings = Vec::new();
+
+    for stage in stages {
+        let claims = stage
+            .description
+            .as_deref()
+            .map(worker_claims)
+            .unwrap_or_default();
+
+        let mut paths_per_row: HashMap<usize, usize> = HashMap::new();
+        for claim in &claims {
+            *paths_per_row.entry(claim.row).or_insert(0) += 1;
+        }
+        let single_path_rows = paths_per_row.values().filter(|&&count| count == 1).count();
+
+        if single_path_rows >= 4 {
+            warnings.push(format!(
+                "Stage '{}': worker table has {single_path_rows} rows that each own exactly \
+                 one path — group small tasks into one subagent: every spawn pays the boot cost",
+                stage.id
+            ));
+        }
+    }
+
+    warnings
+}
+
 fn worker_claims(description: &str) -> Vec<WorkerClaim> {
     let lines: Vec<_> = description.lines().collect();
     let mut in_code_block = false;
@@ -130,6 +165,7 @@ fn table_claims(
 }
 
 fn normalize_path(path: &str) -> Option<String> {
+    let path = strip_trailing_annotation(path.trim());
     let path = path.trim().trim_matches('`').trim();
     let mut normalized = String::new();
 
@@ -148,6 +184,20 @@ fn normalize_path(path: &str) -> Option<String> {
     }
 
     (!normalized.is_empty()).then_some(normalized)
+}
+
+/// Strip a trailing parenthesised annotation like `` `path.rs` (new) `` or
+/// `` `path.rs` (NEW) `` — a worker table cell may append one after the
+/// path itself — before backticks are trimmed. Without this, the
+/// annotation's parentheses and text end up folded into the "path".
+fn strip_trailing_annotation(path: &str) -> &str {
+    let trimmed = path.trim_end();
+    if trimmed.ends_with(')') {
+        if let Some(open) = trimmed.rfind('(') {
+            return trimmed[..open].trim_end();
+        }
+    }
+    trimmed
 }
 
 fn append_component(path: &mut String, component: &str) {

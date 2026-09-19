@@ -225,6 +225,43 @@ fn oversized_envelope_fails_closed_without_a_pending_record() {
 }
 
 #[test]
+fn declared_skills_line_names_each_skill_with_its_invocation() {
+    let mut fixture = Fixture::new(true);
+    fixture.config.stage.skills = vec!["loom-rust".to_string()];
+    let prompt =
+        "Implement the scoped worker.\n\nFiles owned (write only these):\n- `src/scoped.rs`";
+
+    let envelope = issue(&payload(prompt), &fixture.config).expect("scoped source should match");
+
+    assert!(
+        envelope.brief.contains("Required skills for this stage"),
+        "{}",
+        envelope.brief
+    );
+    assert!(
+        envelope
+            .brief
+            .contains("Skill(skill=\"loom-skills\", args=\"loom-rust\")"),
+        "{}",
+        envelope.brief
+    );
+}
+
+#[test]
+fn declared_skills_reach_the_worker_even_with_an_empty_context_pack() {
+    let mut fixture = Fixture::new(false);
+    fixture.config.stage.skills = vec!["loom-rust".to_string()];
+
+    let envelope = issue(
+        &payload("Implement a topic absent from all indexes"),
+        &fixture.config,
+    )
+    .expect("declared skills alone should still emit a brief");
+
+    assert!(envelope.brief.contains("Required skills for this stage"));
+}
+
+#[test]
 fn task_scoped_brief_material_survives_worker_scope() {
     let mut pack = pack(
         "rev-a",
@@ -298,7 +335,7 @@ fn unmet_required_material_is_rendered_without_plan_or_navigation_doctrine() {
     });
 
     scope_pack(&mut pack, &[]);
-    let brief = render_brief(&pack, STAGE, NONCE_A).unwrap();
+    let brief = render_brief(&pack, &fixture.config.stage, NONCE_A).unwrap();
 
     assert!(brief.contains("required-large"));
     assert!(brief.contains("worker material"));

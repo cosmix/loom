@@ -13,6 +13,7 @@ mod can_transition_to;
 mod completed_with_failures;
 mod merge_blocked;
 mod merge_conflict;
+mod network_config;
 mod skipped;
 mod try_transition;
 mod valid_transitions;

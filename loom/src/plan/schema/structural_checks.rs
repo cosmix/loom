@@ -9,7 +9,8 @@ use std::path::Path;
 
 use super::types::StageDefinition;
 
-mod worker_table;
+pub(super) mod declared_skills;
+pub(super) mod worker_table;
 #[cfg(test)]
 mod worker_table_tests;
 

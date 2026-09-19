@@ -120,6 +120,7 @@ pub fn build_test_graph(stages: Vec<(&str, Vec<&str>)>) -> ExecutionGraph {
             ultracode: false,
             implementers: Implementers::default(),
             subagent_timeout_secs: None,
+            skills: vec![],
         })
         .collect();
 
