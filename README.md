@@ -52,16 +52,17 @@ claude  # start Claude Code CLI
 
 Inside the Claude Code session:
 
-1. Enter plan mode (`/plan`)
-2. Load the plan-writing skill by typing `/loom-plan-writer`
-3. Describe what you want to build and discuss with Claude
-4. Claude will write the plan to `doc/plans/PLAN-<name>.md`
+1. Load the plan-writing skill by typing `/loom-plan-writer` (or just mention that you're writing a loom plan).
+2. Describe what you want to build and discuss with Claude, as you would in plan mode.
+3. When done, Claude will write the plan to `doc/plans/PLAN-<name>.md`.
 
 Validate the draft before you spend anything on it:
 
 ```bash
 loom plan verify doc/plans/PLAN-<name>.md
 ```
+
+Then read it yourself and check that it captured your intent in enough detail. For longer plans, `loom pressure doc/plans/PLAN-<name>.md` has two model families (Claude and Codex) review it adversarially and harden it. Without the `codex` CLI, run `/pressure doc/plans/PLAN-<name>.md` inside a Claude Code session for a Claude-only pressure test.
 
 ### 3. Run it
 
@@ -72,7 +73,9 @@ loom status --live
 loom stop
 ```
 
-`loom init` parses the plan, creates stage state, and installs the project hook wiring. `loom run` starts the daemon and orchestrator, `loom status --live` follows the run in your terminal (`loom status --web` puts it in a browser), and `loom stop` halts it.
+`loom init` parses the plan, creates stage state, and installs the project hook wiring. `loom run` starts the daemon and orchestrator. `loom status --live` follows the run in your terminal, and `loom status --web` puts it in a browser. Add `--terminals` (tmux backend only) to watch or take over the Claude Code sessions from the browser. `--host <addr>` binds the dashboard to an address other than `127.0.0.1`; read [Web Dashboard Remote Access](#web-dashboard-remote-access) first, since a non-loopback bind serves plain HTTP.
+
+`loom stop` stops the daemon, and the orchestrator with it.
 
 Next: the two ideas loom is built on, [human expertise where it matters](#human-expertise-where-it-matters) and [learning from every plan](#it-learns-from-every-plan). Then [How It Works](#how-it-works) and the [Feature Tour](#feature-tour), a map of everything below.
 
@@ -257,8 +260,8 @@ Autonomous agent work fails in a small number of predictable ways. Loom answers 
 | **Instruction drift**                   | Rules decay the moment they scroll out of attention                                  | Shell hooks enforce the rules that matter deterministically — commit discipline, staging scope, worktree boundaries, subagent limits — outside the model's control.                                    |
 | **Amnesia**                             | Every session rediscovers the same architecture and repeats the same mistakes        | A per-stage memory journal feeds a distillation stage that curates permanent, tiered knowledge; later sessions read it before touching code.                                                           |
 | **Cost scaling with tokens, not value** | Expensive models doing cheap work; re-reading everything, every time                 | Judgment stays on an orchestrator; bulk implementation is delegated to cheap subagents. Signals are laid out for KV-cache reuse and knowledge is tiered, so agents load only what they need.           |
-| **Context exhaustion**                  | The session degrades into an expensive compaction loop                               | Context budgets are monitored per stage; a handoff is written *before* compaction and the resumed session is re-anchored to its assignment.                                                            |
-| **Lost runs**                           | A crashed or hung session takes the work with it                                     | All state is files under `.loom/work/`. The daemon detects dead and hung sessions, classifies the failure, and retries or escalates.                                                                        |
+| **Context exhaustion**                  | The session degrades into an expensive compaction loop                               | Context budgets are monitored per stage; a handoff is written _before_ compaction and the resumed session is re-anchored to its assignment.                                                            |
+| **Lost runs**                           | A crashed or hung session takes the work with it                                     | All state is files under `.loom/work/`. The daemon detects dead and hung sessions, classifies the failure, and retries or escalates.                                                                   |
 | **Serialization**                       | Multi-stage work runs one-at-a-time, or collides on the same files                   | A dependency DAG schedules independent stages concurrently in separate worktrees, with progressive auto-merge and dedicated conflict-resolution sessions.                                              |
 
 ## Key Capabilities
@@ -279,7 +282,7 @@ Subagent detection is a live process-tree ancestry check, not a PPID comparison.
 
 ### Verification that outlives the agent's opinion
 
-`loom stage complete` is not a self-report. Loom executes the stage's acceptance criteria in-process and refuses completion on failure, leaving the stage `Executing` so the agent must fix and retry. On top of that, goal-backward verification asks whether the *outcome* exists:
+`loom stage complete` is not a self-report. Loom executes the stage's acceptance criteria in-process and refuses completion on failure, leaving the stage `Executing` so the agent must fix and retry. On top of that, goal-backward verification asks whether the _outcome_ exists:
 
 - **`artifacts`** — files exist and contain real implementation (stub detection rejects `TODO`, `FIXME`, `unimplemented!`, `todo!`, `pass`, `NotImplementedError`)
 - **`wiring`** — regex proof that new code is actually referenced: module registered, route mounted, component rendered
@@ -293,7 +296,7 @@ The escape hatches (`--no-verify`, `--force-unsafe`, `--assume-merged`) require 
 
 Loom treats what agents learn as a durable artifact with a pipeline behind it, rather than a scratch file.
 
-1. **Capture** — during execution, agents record to a per-stage journal: `loom memory note` (gotchas, mistakes-with-prevention), `decision` (with rationale), `change`, `question`. The journal is injected into the *recitation* section at the end of the next signal, where model attention is highest.
+1. **Capture** — during execution, agents record to a per-stage journal: `loom memory note` (gotchas, mistakes-with-prevention), `decision` (with rationale), `change`, `question`. The journal is injected into the _recitation_ section at the end of the next signal, where model attention is highest.
 2. **Distill** — a `knowledge-distill` stage runs at the end of a plan, reads every stage memory, and curates it into permanent knowledge — mistakes rewritten as actionable prevention rules, decisions with their rationale, reusable patterns and conventions.
 3. **Retrieve** — the result is a **tiered** base under `doc/loom/knowledge/`: a generated `INDEX.md`, seven tier-1 summaries, and tier-2 topic files. Inside a stage, the per-stage Knowledge Brief comes first. Otherwise, agents read `INDEX.md` for orientation, then the tier-1 summary for their area, then only the topics they touch; a specific question is pulled with `loom knowledge context --query`, which returns the matching sections quoted — so the base can grow without every session paying to load it.
 
@@ -385,19 +388,19 @@ bash ./dev-install.sh
 
 ### What Gets Installed
 
-| Location                     | Contents                                                  |
-| ---------------------------- | --------------------------------------------------------- |
-| `~/.claude/agents/loom-*.md` | 5 specialized subagents (per-item, non-destructive)       |
-| `~/.claude/skills/loom-*/`   | 9 core domain knowledge modules, always loaded (per-item, non-destructive) |
+| Location                               | Contents                                                                          |
+| -------------------------------------- | --------------------------------------------------------------------------------- |
+| `~/.claude/agents/loom-*.md`           | 5 specialized subagents (per-item, non-destructive)                               |
+| `~/.claude/skills/loom-*/`             | 9 core domain knowledge modules, always loaded (per-item, non-destructive)        |
 | `~/.claude/loom-skill-catalog/loom-*/` | 53 more domain knowledge modules, loaded on demand (`--skills core`, the default) |
-| `~/.claude/commands/*.md`    | Loom slash commands (`/pressure`, `/address`, `/distill`) |
-| `~/.claude/hooks/loom/`      | Embedded lifecycle and guardrail hooks + shared libraries |
-| `~/.claude/CLAUDE.md`        | Orchestration rules                                       |
-| `~/.codex/skills/pressure/`  | Codex pressure-testing skill (`$pressure`)                |
-| `~/.codex/hooks/loom/`       | Loom hook assets used by Codex-native registrations      |
-| `~/.codex/hooks.json`        | Non-destructively merged Codex hook registrations        |
-| `~/.codex/AGENTS.md`         | Codex navigation and execution doctrine                   |
-| `~/.local/bin/loom`          | Loom CLI                                                  |
+| `~/.claude/commands/*.md`              | Loom slash commands (`/pressure`, `/address`, `/distill`)                         |
+| `~/.claude/hooks/loom/`                | Embedded lifecycle and guardrail hooks + shared libraries                         |
+| `~/.claude/CLAUDE.md`                  | Orchestration rules                                                               |
+| `~/.codex/skills/pressure/`            | Codex pressure-testing skill (`$pressure`)                                        |
+| `~/.codex/hooks/loom/`                 | Loom hook assets used by Codex-native registrations                               |
+| `~/.codex/hooks.json`                  | Non-destructively merged Codex hook registrations                                 |
+| `~/.codex/AGENTS.md`                   | Codex navigation and execution doctrine                                           |
+| `~/.local/bin/loom`                    | Loom CLI                                                                          |
 
 ## CLI Reference
 
@@ -406,7 +409,7 @@ bash ./dev-install.sh
 ```bash
 loom init <plan-path> [--clean] [--backend native|tmux]
 loom run [--manual] [--max-parallel N] [--foreground] [--watch] [--no-merge] [--backend native|tmux]
-loom status [--live] [--compact] [--verbose] [--web [PORT] [--host HOST]]
+loom status [--live] [--compact] [--verbose] [--web [PORT] [--host HOST] [--terminals]]
 loom stop
 loom resume <stage-id>
 loom check <stage-id> [--suggest] [--no-cache]
@@ -557,26 +560,26 @@ There are three ways to change a setting:
 
 The keys, with their built-in defaults:
 
-| Key                               | Default       | Values                                                    | Project tier |
-| --------------------------------- | ------------- | --------------------------------------------------------- | ------------ |
-| `update.check`                    | `true`        | `true`, `false`                                           | no           |
-| `update.check_interval_hours`     | `24`          | integer                                                   | no           |
-| `terminal.backend`                | `native`      | `native`, `tmux`                                          | whole section |
-| `context.ceiling_tokens`          | `800000`      | integer                                                   | whole section |
-| `pressure.claude_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
-| `pressure.claude_effort`          | `xhigh`       | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
-| `pressure.codex_model`            | `gpt-5.6-sol` | `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | per key  |
-| `pressure.codex_effort`           | `xhigh`       | `low`, `medium`, `high`, `xhigh`                          | per key      |
-| `pressure.address_model`          | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
-| `pressure.address_effort`         | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
-| `models.standard_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
-| `models.standard_effort`          | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
-| `models.knowledge_model`          | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
-| `models.knowledge_effort`         | `medium`      | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
-| `models.knowledge_distill_model`  | `sonnet`      | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
-| `models.knowledge_distill_effort` | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
-| `models.integration_verify_model` | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                        | per key      |
-| `models.integration_verify_effort` | `xhigh`      | `low`, `medium`, `high`, `xhigh`, `max`                   | per key      |
+| Key                                | Default       | Values                                                        | Project tier  |
+| ---------------------------------- | ------------- | ------------------------------------------------------------- | ------------- |
+| `update.check`                     | `true`        | `true`, `false`                                               | no            |
+| `update.check_interval_hours`      | `24`          | integer                                                       | no            |
+| `terminal.backend`                 | `native`      | `native`, `tmux`                                              | whole section |
+| `context.ceiling_tokens`           | `800000`      | integer                                                       | whole section |
+| `pressure.claude_model`            | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                            | per key       |
+| `pressure.claude_effort`           | `xhigh`       | `low`, `medium`, `high`, `xhigh`, `max`                       | per key       |
+| `pressure.codex_model`             | `gpt-5.6-sol` | `gpt-6-astra`, `gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna` | per key       |
+| `pressure.codex_effort`            | `xhigh`       | `low`, `medium`, `high`, `xhigh`                              | per key       |
+| `pressure.address_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                            | per key       |
+| `pressure.address_effort`          | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                       | per key       |
+| `models.standard_model`            | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                            | per key       |
+| `models.standard_effort`           | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                       | per key       |
+| `models.knowledge_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                            | per key       |
+| `models.knowledge_effort`          | `medium`      | `low`, `medium`, `high`, `xhigh`, `max`                       | per key       |
+| `models.knowledge_distill_model`   | `sonnet`      | `haiku`, `sonnet`, `opus`, `fable`                            | per key       |
+| `models.knowledge_distill_effort`  | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                       | per key       |
+| `models.integration_verify_model`  | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                            | per key       |
+| `models.integration_verify_effort` | `xhigh`       | `low`, `medium`, `high`, `xhigh`, `max`                       | per key       |
 
 "Whole section" means a project `[terminal]` or `[context]` section replaces the user tier's section outright, so a key it omits takes the built-in. "Per key" means a project `[pressure]` or `[models]` section overrides only the keys it names and the rest fall through to the user file. The `pressure.*` keys are explained under [Primary Commands](#primary-commands), the `models.*` keys under [Model Allocation](#model-allocation).
 
@@ -713,12 +716,12 @@ default ceiling for every stage that does not declare its own. Both are
 absolute resident-token counts with a minimum of 60000, and both are persisted
 into `.loom/work/config.toml`'s `[context]` section at `loom init`.
 
-| Field                     | Required | Notes                                                                                      |
-| ------------------------- | -------- | ------------------------------------------------------------------------------------------ |
-| `context_ceiling_tokens`  | No       | Default ceiling for a stage's main agent session (default 150000)                          |
-| `subagent_ceiling_tokens` | No       | Ceiling for subagents spawned by a stage session (default 120000); never read from a stage |
+| Field                     | Required | Notes                                                                                                                                                                                             |
+| ------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `context_ceiling_tokens`  | No       | Default ceiling for a stage's main agent session (default 150000)                                                                                                                                 |
+| `subagent_ceiling_tokens` | No       | Ceiling for subagents spawned by a stage session (default 120000); never read from a stage                                                                                                        |
 | `auto_merge`              | No       | Plan-wide default for automatic merge on completion; a stage's own `auto_merge` overrides it, and both fall back to the orchestrator's own setting (`loom run --no-merge` disables it) when unset |
-| `change_impact`           | No       | Nested block comparing before/after state; see [Change Impact](#change-impact)             |
+| `change_impact`           | No       | Nested block comparing before/after state; see [Change Impact](#change-impact)                                                                                                                    |
 
 ### Stage Fields
 
@@ -729,8 +732,8 @@ into `.loom/work/config.toml`'s `[context]` section at `loom init`.
 | `working_dir`                      | Yes                    | Relative execution directory (`.` allowed)                                                                                                                                                                                           |
 | `description`                      | No                     | Optional summary                                                                                                                                                                                                                     |
 | `dependencies`                     | No                     | Upstream stage IDs                                                                                                                                                                                                                   |
-| `parallel_group`                   | No                     | Optional label grouping related stages; the dependency graph alone still decides scheduling order                                                                                                                                   |
-| `auto_merge`                       | No                     | Per-stage override for automatic merge on completion; takes priority over the plan-level and orchestrator defaults                                                                                                                  |
+| `parallel_group`                   | No                     | Optional label grouping related stages; the dependency graph alone still decides scheduling order                                                                                                                                    |
+| `auto_merge`                       | No                     | Per-stage override for automatic merge on completion; takes priority over the plan-level and orchestrator defaults                                                                                                                   |
 | `acceptance`                       | Conditionally required | Shell criteria (strings or extended objects with stdout_contains etc.)                                                                                                                                                               |
 | `setup`                            | No                     | Setup commands                                                                                                                                                                                                                       |
 | `files`                            | No                     | File glob scope                                                                                                                                                                                                                      |
@@ -741,12 +744,12 @@ into `.loom/work/config.toml`'s `[context]` section at `loom init`.
 | `after_stage`                      | No                     | Post-acceptance checks (TruthCheck list); completion fails if any fail                                                                                                                                                               |
 | `code_review`                      | No                     | `integration-verify` only: `dimensions` (string list) and `require_all` (bool); rendered as checklist in agent signal                                                                                                                |
 | `bug_fix`                          | No                     | Marks this stage as a bug fix; requires `regression_test` ([Bug-Fix Stages](#bug-fix-stages))                                                                                                                                        |
-| `regression_test`                  | Conditionally required | Required when `bug_fix` is `true`: `file` (test path, relative to `working_dir`) plus optional `must_contain` patterns                                                                                                              |
+| `regression_test`                  | Conditionally required | Required when `bug_fix` is `true`: `file` (test path, relative to `working_dir`) plus optional `must_contain` patterns                                                                                                               |
 | `model`                            | No                     | Model for this stage's main agent; omit to use the stage type's configured default ([Model Allocation](#model-allocation)), overridable via `[models]` in either config file, or set here as a deliberate per-stage override         |
 | `reasoning_effort`                 | No                     | `low`, `medium`, `high`, `xhigh`, `max`; omit to use the stage type's configured default ([Model Allocation](#model-allocation)), overridable the same way                                                                           |
 | `implementers`                     | No                     | Licensed agent lanes as a list, first = preferred for routine work: `["codex", "claude"]`. Default `["claude"]`. Listing a lane makes it available, not mandatory — a stage mixes lanes per subagent                                 |
 | `ultracode`                        | No                     | License this stage for large multi-agent fan-out; per-stage opt-in (default `false`)                                                                                                                                                 |
-| `subagent_timeout_secs`            | No                     | Seconds of tool silence before the monitor warns `appears hung` (default 300); the advisory idle budget death is judged against — never the `--timeout` on the single owned `loom subagents watch --worker ... --timeout 3600` call |
+| `subagent_timeout_secs`            | No                     | Seconds of tool silence before the monitor warns `appears hung` (default 300); the advisory idle budget death is judged against — never the `--timeout` on the single owned `loom subagents watch --worker ... --timeout 3600` call  |
 | `context_ceiling_tokens`           | No                     | Absolute resident-token ceiling for this stage's session (minimum 60000). Resolved stage value → plan-level `context_ceiling_tokens` → 150000. The session hook warns at 80% and blocks at 100%; the daemon forces a handoff at 125% |
 | `plan_overview`                    | No                     | Set `false` to suppress the embedded plan overview in this stage's signal                                                                                                                                                            |
 | `sandbox`                          | No                     | Per-stage sandbox override                                                                                                                                                                                                           |
@@ -853,7 +856,7 @@ loom memory note "gotcha: worktree exclude lives at <worktree>/.git/info/exclude
 loom memory decision "centralized plan lookup in plan/parser" --context "avoids an orchestrator→commands layering violation"
 ```
 
-Entries are typed (`note`, `decision`, `change`, `question`). The most recent are embedded in the *recitation* section at the end of the next signal — the position with the highest model attention — so a later stage inherits the detail an earlier stage paid for instead of rediscovering it.
+Entries are typed (`note`, `decision`, `change`, `question`). The most recent are embedded in the _recitation_ section at the end of the next signal — the position with the highest model attention — so a later stage inherits the detail an earlier stage paid for instead of rediscovering it.
 
 Memory is deliberately cheap and disposable. It is a working journal, not the deliverable.
 
@@ -882,7 +885,7 @@ Knowledge lives in `doc/loom/knowledge/` and is **tiered**: a generated `INDEX.m
 
 There is **no aggregate line budget** across the knowledge base. What matters is per-file size — roughly 250 lines for a tier-1 summary and 500 for a tier-2 topic — because structure is what degrades retrieval, not size.
 
-**Retrieval is deterministic and offline.** `loom knowledge context --query <text>` returns a token-budgeted *context pack*: the tool chunks the curated prose, scores each chunk, fuses the per-channel rankings, and takes whole chunks in order until the budget is spent, always reporting what it left out. There is **no embedding model, no network call and no randomness** — a pack is a pure function of the bytes on disk and the query string, so the same query returns the same pack.
+**Retrieval is deterministic and offline.** `loom knowledge context --query <text>` returns a token-budgeted _context pack_: the tool chunks the curated prose, scores each chunk, fuses the per-channel rankings, and takes whole chunks in order until the budget is spent, always reporting what it left out. There is **no embedding model, no network call and no randomness** — a pack is a pure function of the bytes on disk and the query string, so the same query returns the same pack.
 
 ```bash
 loom knowledge context --query "how does merge cleanup order work" --budget-tokens 3000
@@ -1000,14 +1003,14 @@ loom:
         command_confinement: inherit # per-stage override
 ```
 
-| Level | Behavior |
-| ---------- | ------------------------------------------------------------------------------------ |
+| Level      | Behavior                                                                                 |
+| ---------- | ---------------------------------------------------------------------------------------- |
 | `confined` | **Default.** The child process environment is cleared and rebuilt from a fixed allowlist |
-| `inherit`  | The child inherits loom's ambient environment                                          |
+| `inherit`  | The child inherits loom's ambient environment                                            |
 
-Plans are trusted artifacts, but trusted is not privileged: under `confined`, a plan line cannot read `GITHUB_TOKEN`, `AWS_*` or `ANTHROPIC_API_KEY` merely because you started loom from a shell that had them. The allowlist carries what a build toolchain needs to find itself — `HOME`, `PATH`, `CARGO_HOME`, `RUSTUP_HOME`, locale and terminal variables, `TMPDIR`, the proxy variables and the CA-bundle *locations* (`SSL_CERT_FILE`, `SSL_CERT_DIR`, `NIX_SSL_CERT_FILE`). `SSH_AUTH_SOCK` is deliberately withheld, so an acceptance criterion that needs SSH auth fails by design rather than silently borrowing your agent.
+Plans are trusted artifacts, but trusted is not privileged: under `confined`, a plan line cannot read `GITHUB_TOKEN`, `AWS_*` or `ANTHROPIC_API_KEY` merely because you started loom from a shell that had them. The allowlist carries what a build toolchain needs to find itself — `HOME`, `PATH`, `CARGO_HOME`, `RUSTUP_HOME`, locale and terminal variables, `TMPDIR`, the proxy variables and the CA-bundle _locations_ (`SSL_CERT_FILE`, `SSL_CERT_DIR`, `NIX_SSL_CERT_FILE`). `SSH_AUTH_SOCK` is deliberately withheld, so an acceptance criterion that needs SSH auth fails by design rather than silently borrowing your agent.
 
-> **What confinement is not.** It is environment scrubbing — least-privilege hygiene, not a security boundary. Loom applies **no** namespace, seccomp, landlock, cgroup or network isolation to the commands it spawns: a confined command shares your network namespace, can read and write any path your user can, and can reach any Unix socket on the host. The `network:` settings above are emitted into the *agent session's* sandbox and do not restrict plan-authored commands. Use `confined` to keep ambient credentials out of plan commands; do not use it to run code you would not run yourself.
+> **What confinement is not.** It is environment scrubbing — least-privilege hygiene, not a security boundary. Loom applies **no** namespace, seccomp, landlock, cgroup or network isolation to the commands it spawns: a confined command shares your network namespace, can read and write any path your user can, and can reach any Unix socket on the host. The `network:` settings above are emitted into the _agent session's_ sandbox and do not restrict plan-authored commands. Use `confined` to keep ambient credentials out of plan commands; do not use it to run code you would not run yourself.
 
 ### Session State Confinement
 
@@ -1065,10 +1068,10 @@ Toggling `mode` takes effect on the next session spawn — no daemon restart nee
 
 Loom spawns each stage's Claude Code session through a terminal backend. Two are available.
 
-| Backend            | Default | Sessions run in                     | Needs a GUI? |
-| ------------------ | ------- | ----------------------------------- | ------------ |
-| `native`           | ✅ yes  | a host terminal emulator window     | yes          |
-| `tmux`             | opt-in  | a detached tmux server (no window)  | no           |
+| Backend  | Default | Sessions run in                    | Needs a GUI? |
+| -------- | ------- | ---------------------------------- | ------------ |
+| `native` | ✅ yes  | a host terminal emulator window    | yes          |
+| `tmux`   | opt-in  | a detached tmux server (no window) | no           |
 
 The `native` backend opens a real terminal window per session — you watch stages run in your own
 terminal emulator. It requires a detectable emulator, so it cannot run headless.
