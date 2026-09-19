@@ -9,26 +9,230 @@
   <strong>You write the plan. Loom runs it, verifies it, and keeps what it learned.</strong>
 </p>
 
-Loom is an agent orchestration system for Claude Code. Stages run in parallel across isolated git worktrees, completion is gated by checks loom runs itself rather than by the agent's own account of its work, and what each session learns is captured and distilled into a knowledge base the next session reads first.
+Loom turns a written plan into finished, verified, merged code. It runs Claude Code sessions in parallel across isolated git worktrees, checks their work itself, and hands what they learned to the next session. You watch from a terminal dashboard or a browser, and step in only when a stage asks for you.
 
 <p align="center">
-  <picture>
-    <source media="(prefers-color-scheme: dark)" srcset="doc/images/webui-overview-dark.png">
-    <img src="doc/images/webui-overview.png" alt="The loom web dashboard showing a plan as a dependency graph of stages" width="880">
-  </picture>
+  <img src="doc/images/loom-webui.gif" alt="A loom run in the web dashboard: the plan as a dependency graph, a stage's detail dialog, its live terminal with control taken over, the ledger, the settings, and a stage completing and freeing the stages that depend on it" width="880">
 </p>
 
 <p align="center">
-  <em><code>loom status --web</code>: the plan rendered as a dependency graph, colored by stage state.</em>
+  <em>A real run in <code>loom status --web</code>, sped up: watch a stage's session, take the keyboard, and see a finished stage merge and start the ones that depend on it.</em>
 </p>
+
+## Why Loom
+
+- **Your expertise where it counts, tokens everywhere else** — you put your judgment into the plan. Loom executes it unattended and comes back to you only when a stage needs a person. ([Human Expertise Where It Matters](#human-expertise-where-it-matters))
+- **It learns your project** — every session records what it got wrong and what it decided. Each plan ends by distilling that into a knowledge base in your repo, so every plan starts from what the earlier ones learned. ([It Learns From Every Plan](#it-learns-from-every-plan))
+- **Parallel by default** — stages form a dependency graph, everything independent runs at once in its own git worktree, and each stage merges back as it finishes. ([Parallel execution and progressive merge](#parallel-execution-and-progressive-merge))
+- **Done means verified** — loom runs the acceptance criteria itself and inspects the tree for stubs, unwired code, and code nothing calls. The agent's own account of its work does not count. ([Verification Model](#verification-model))
+- **Rules enforced by hooks** — commit discipline, worktree boundaries, and subagent limits fire from shell hooks, so they hold whatever the model intends. ([Deterministic guardrails](#deterministic-guardrails))
+- **Contained by default** — sessions run in a filesystem and network sandbox and cannot write loom's own state, hooks, or config. ([Sandbox Configuration](#sandbox-configuration))
+- **Expensive models only where judgment is needed** — the orchestrator plans and verifies; implementation goes to the cheapest subagent that can do the piece, Claude or Codex. ([Model Allocation](#model-allocation))
+- **Survives crashes and context limits** — all state is plain files. The daemon spots dead and hung sessions and retries them, and a handoff is written before a session runs out of context. ([Crash recovery and liveness](#crash-recovery-and-liveness))
+- **Watch it live, steer when you want** — `loom status --live` is a dashboard in your terminal. `loom status --web` is the same run in a browser: the plan as a dependency graph, a ledger of every stage, and terminals you can watch read-only or take over. ([Primary Commands](#primary-commands), [Web Dashboard](#web-dashboard))
+
+## Quick Start
+
+### 1. Install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cosmix/loom/main/install.sh | bash
+```
+
+You need `git`, the `claude` CLI, and `jq`. Signed binaries cover Linux x86_64 and macOS Apple Silicon; every other platform builds from source — see [Installation](#installation).
+
+### 2. Write a plan
+
+Plans are how loom knows what to build. Open Claude Code in your target project and use the `/loom-plan-writer` skill to create one:
+
+```bash
+cd /path/to/project
+claude  # start Claude Code CLI
+```
+
+Inside the Claude Code session:
+
+1. Enter plan mode (`/plan`)
+2. Load the plan-writing skill by typing `/loom-plan-writer`
+3. Describe what you want to build and discuss with Claude
+4. Claude will write the plan to `doc/plans/PLAN-<name>.md`
+
+Validate the draft before you spend anything on it:
+
+```bash
+loom plan verify doc/plans/PLAN-<name>.md
+```
+
+### 3. Run it
+
+```bash
+loom init doc/plans/PLAN-<name>.md
+loom run
+loom status --live
+loom stop
+```
+
+`loom init` parses the plan, creates stage state, and installs the project hook wiring. `loom run` starts the daemon and orchestrator, `loom status --live` follows the run in your terminal (`loom status --web` puts it in a browser), and `loom stop` halts it.
+
+Next: the two ideas loom is built on, [human expertise where it matters](#human-expertise-where-it-matters) and [learning from every plan](#it-learns-from-every-plan). Then [How It Works](#how-it-works) and the [Feature Tour](#feature-tour), a map of everything below.
+
+## Human Expertise Where It Matters
+
+The usual way to get autonomous agents to finish real work is to let them loop: try, fail, read the error, try again, until the checks pass. It works, and it is paid for in tokens. A frontier lab can afford that. Most organisations cannot, and much of what those tokens buy is the rediscovery of something a person on the team already knew.
+
+Loom trades tokens for human expertise at the points where expertise is worth the most:
+
+- **Up front, in the plan.** You decide what gets built, how it splits into stages, and what proves each stage is done. `loom plan verify` and `loom pressure` find the weak spots before anything is spent on execution. This is where an hour of your time saves the most tokens.
+- **During the run, only when needed.** A stage that needs a person says so: `WaitingForInput` when an agent asks a question, `NeedsHumanReview` when it is escalated, a criteria dispute when an agent believes a check is wrong. Everything else runs unattended.
+- **Whenever you choose to look.** The terminal dashboard (`loom status --live`) and the web dashboard (`loom status --web`) show every stage, what it is doing, which models it is running, and how much context it has used. You can open any session, from tmux with `loom attach` or from a terminal in the browser, and watch it or take the keyboard and steer it.
+
+Steering is also teaching. Agents record a human correction as a memory entry before they do anything else, so what you tell one session is distilled into the knowledge base and reaches every later one.
+
+Details: [Human-in-the-loop where it matters](#human-in-the-loop-where-it-matters), [Web Dashboard](#web-dashboard), [Terminal Backends](#terminal-backends).
+
+## It Learns From Every Plan
+
+Most agent setups start every session from zero. The same architecture is rediscovered, the same wrong turn is taken, and the same correction is given again. Loom keeps what each session learns and gives it to the next one.
+
+1. **Every session keeps a journal.** As they work, agents record mistakes with a prevention rule, decisions with their rationale, and whatever surprised them about the codebase (`loom memory note`, `decision`, `change`, `question`).
+2. **Every plan ends by distilling it.** The `knowledge-distill` stage reads every stage's journal and curates it into `doc/loom/knowledge/`: architecture, entry points, patterns, conventions, stack, concerns, and a mistakes file where each entry says what happened, why, how to prevent it, and how it was fixed.
+3. **Every later session starts from it.** A stage's signal carries a Knowledge Brief: the sections retrieval judged relevant to that stage, already quoted. Agents pull anything more with `loom knowledge context --query`, and look code up in a source graph (`loom map`) before they open files.
+4. **Wrong knowledge gets corrected.** When the code contradicts the knowledge base, the code wins. The agent records the contradiction and the next distillation applies it.
+
+The knowledge base is plain markdown in your repository, so it is reviewed, versioned, and shared with your team like any other file. It is tiered, so it can keep growing while each session loads only the part it needs.
+
+The effect compounds. The first plan on a project pays for discovery. After a few plans the knowledge base holds the project's structure, its conventions, and the mistakes already made on it, and later plans make far fewer of them: fewer failed verifications, fewer retries, fewer tokens.
+
+Details: [Knowledge System](#knowledge-system).
+
+## How It Works
+
+```mermaid
+flowchart LR
+    A[Plan] --> B[loom init]
+    B --> C[Stages run in parallel worktrees]
+    C --> D[Loom verifies]
+    D --> E[Merge]
+    E --> F[Distill knowledge]
+    F -. read first by the next plan .-> A
+```
+
+A plan is a markdown file holding a list of stages, each with its dependencies and the commands that prove it is done.
+
+1. **Init.** `loom init <plan-path>` parses the plan and creates the state for every stage under `.loom/work/`.
+2. **Schedule.** `loom run` starts a daemon and an orchestrator. Every stage whose dependencies are met gets its own worktree (`.worktrees/<stage-id>`, branch `loom/<stage-id>`) and its own Claude Code session, briefed by a signal file: the assignment, the relevant knowledge, and the memory of earlier sessions.
+3. **Work.** The session's main agent decomposes the stage, delegates implementation to cheaper subagents, and records what it learns with `loom memory`.
+4. **Verify.** `loom stage complete` runs the stage's acceptance criteria and the goal-backward checks. A failure leaves the stage `Executing`, and the agent has to fix the work and try again.
+5. **Merge.** A verified stage merges back to the target branch, which frees the stages that depend on it. A real conflict gets a dedicated resolution session.
+6. **Distill.** The plan's final `knowledge-distill` stage curates every stage's memory into `doc/loom/knowledge/`, which the next plan's sessions read first.
+
+You follow along with `loom status --live` or `loom status --web`, and step in only when a stage asks for a person: recover, verify, merge, or retry stages as needed with the [stage commands](#stage-commands).
+
+### Stage Lifecycle
+
+```text
+WaitingForDeps → Queued → Executing → Completed
+```
+
+Everything else is an explicit, inspectable outcome rather than a hang:
+
+| State                   | Meaning                                                                |
+| ----------------------- | ---------------------------------------------------------------------- |
+| `Blocked`               | A `before_stage` check or an explicit block stopped the stage          |
+| `NeedsHandoff`          | Context ceiling reached; a handoff was written                         |
+| `WaitingForInput`       | The agent asked a question (raised automatically by the AskUser hooks) |
+| `MergeConflict`         | Auto-merge hit a real conflict; a resolution session is spawned        |
+| `MergeBlocked`          | Merge cannot proceed (e.g. another merge is in progress)               |
+| `CompletedWithFailures` | Work finished but acceptance did not pass                              |
+| `NeedsHumanReview`      | Escalated to a person                                                  |
+| `NeedsAdjudication`     | A disputed acceptance criterion is awaiting a verdict                  |
+| `Skipped`               | Explicitly skipped                                                     |
+
+## Feature Tour
+
+Everything loom does, one line each, grouped by what you are doing at the time. Each line links to the section that documents it.
+
+**Plan**
+
+- Draft a plan interactively with the `/loom-plan-writer` skill. ([Write a plan](#2-write-a-plan))
+- Validate a plan with no side effects: schema, sandbox limits, and worker-ownership overlaps. ([Plan Commands](#plan-commands))
+- Harden a plan through adversarial review rounds from two model families. ([Primary Commands](#primary-commands))
+- Give each stage a type: `knowledge`, `standard`, `integration-verify`, or `knowledge-distill`, each with its own verification rules. ([Stage Type Behavior](#stage-type-behavior))
+- Amend a stage's criteria mid-run through an audited path that snapshots the plan and logs the change. ([Disputes, Adjudication, and Amendments](#disputes-adjudication-and-amendments))
+
+**Run**
+
+- Schedule independent stages across a dependency DAG, each in its own git worktree. ([Parallel execution and progressive merge](#parallel-execution-and-progressive-merge))
+- Merge finished stages back progressively, spawning a dedicated session on a real conflict. ([Parallel execution and progressive merge](#parallel-execution-and-progressive-merge))
+- Spawn sessions in a native terminal window or a headless tmux backend for SSH and WSL. ([Terminal Backends](#terminal-backends))
+- Delegate implementation to Claude or Codex subagent lanes, chosen per stage. ([Model Allocation](#model-allocation))
+- Use subagents for concrete file-level tasks and an agent team for work that needs discussion across agents. ([Agent Teams (Experimental)](#agent-teams-experimental))
+- Write a context handoff before a session's token ceiling forces a restart. ([Other Commands](#other-commands))
+- Detect crashed or hung sessions and retry or escalate them automatically. ([Crash recovery and liveness](#crash-recovery-and-liveness))
+- Complete a stage only on an attested evidence record that survives a handoff. ([Crash recovery and liveness](#crash-recovery-and-liveness))
+
+**Verify**
+
+- Run every acceptance criterion itself before letting a stage finish. ([Verification Is Enforced, Not Self-Reported](#verification-is-enforced-not-self-reported))
+- Check that the outcome actually exists: real artifacts, live wiring, passing wiring tests, no dead code. ([Verification Model](#verification-model))
+- Gate a stage before spawn and after acceptance with `before_stage`/`after_stage` checks. ([Verification Model](#verification-model))
+- Capture a baseline when a stage starts and charge the stage only for failures it introduced. ([Change Impact](#change-impact))
+- Require a regression test on any stage marked as a bug fix. ([Bug-Fix Stages](#bug-fix-stages))
+- Let an agent dispute a wrong criterion instead of weakening it, through adjudication to a verdict. ([Disputes, Adjudication, and Amendments](#disputes-adjudication-and-amendments))
+- Reserve the verification bypass flags for a one-time, operator-only proof. ([Verification Is Enforced, Not Self-Reported](#verification-is-enforced-not-self-reported))
+- Skip re-running a criterion whose pass is already cached for an identical tree. ([Verification Is Enforced, Not Self-Reported](#verification-is-enforced-not-self-reported))
+
+**Learn**
+
+- Journal notes, decisions, and mistakes to a per-stage memory as work happens. ([Knowledge System](#knowledge-system))
+- Distill every stage's memory into permanent, tiered knowledge at the end of a plan. ([Knowledge System](#knowledge-system))
+- Pull a token-budgeted, quoted context pack for one specific question on demand. ([Knowledge System](#knowledge-system))
+- Query a source graph of the code's own symbols for outlines, impact, and callers. ([Knowledge / Memory](#knowledge--memory))
+
+**Observe**
+
+- Follow the run in a live terminal dashboard, one row per stage with its state, models, activity, context use, and merge status. ([Primary Commands](#primary-commands))
+- Watch the same ledger and a dependency graph in the browser, with settings and remote access. ([Web Dashboard](#web-dashboard))
+- Take control of a stage's live session from a browser terminal. ([Web Dashboard Terminals](#web-dashboard-terminals))
+- See Claude and Codex quota bars with reset countdowns wherever the ledger renders. ([Web Dashboard](#web-dashboard))
+- Report what a run actually spent per provider, and compare a policy change against paired runs. ([Other Commands](#other-commands))
+- List and attach to any live session by stage or session ID. ([Other Commands](#other-commands))
+
+**Contain**
+
+- Confine each session's filesystem reads/writes and network domains by plan and per-stage rules. ([Sandbox Configuration](#sandbox-configuration))
+- Rebuild a minimal, allowlisted environment for every command loom runs from your plan. ([Command Confinement](#command-confinement))
+- Deny a session write access to loom's own state, hooks, and config, relaying the rare legitimate exception through the daemon. ([Session State Confinement](#session-state-confinement))
+- Enforce commit discipline, worktree boundaries, and subagent limits from shell hooks. ([Deterministic guardrails](#deterministic-guardrails))
+- Run stages in `auto` permission mode by default and tighten it per plan or per stage; `bypass-permissions` is rejected. ([Permission Mode](#permission-mode))
+- Enable Claude Code remote control on spawned sessions automatically when its prerequisites are met. ([Remote Control](#remote-control))
+
+**Operate**
+
+- Hold, release, skip, retry, reset, or hand a stuck stage to a human. ([Stage Commands](#stage-commands))
+- Diagnose and repair a broken install or missing hook wiring. ([Other Commands](#other-commands))
+- Clear worktrees, sessions, or state selectively without touching the rest. ([Other Commands](#other-commands))
+- Check for and install a newer loom release. ([Other Commands](#other-commands))
+- Install shell tab-completion for bash, zsh, or fish. ([Shell Completions](#shell-completions))
+
+**Spend**
+
+- Run each stage's main agent at its stage type's configured model and effort. ([Model Allocation](#model-allocation))
+- Override the model or effort for one stage explicitly, without touching the rest of the plan. ([Stage Fields](#stage-fields))
+- Keep each signal's prefix byte-identical across sessions, so the large doctrine block is a cache hit. ([Cost control by construction](#cost-control-by-construction))
+- Inject at most 5 matched skills per stage out of 62 installed; 9 core skills are always loaded and the other 53 load on demand. ([Cost control by construction](#cost-control-by-construction))
 
 ## Contents
 
+- [Why Loom](#why-loom)
+- [Quick Start](#quick-start)
+- [Human Expertise Where It Matters](#human-expertise-where-it-matters)
+- [It Learns From Every Plan](#it-learns-from-every-plan)
+- [How It Works](#how-it-works)
+- [Feature Tour](#feature-tour)
 - [What Loom Solves](#what-loom-solves)
 - [Key Capabilities](#key-capabilities)
-- [Platform Support](#platform-support)
-- [Quick Start](#quick-start)
-- [Core Workflow](#core-workflow)
+- [Installation](#installation)
 - [CLI Reference](#cli-reference)
 - [Configuration](#configuration)
 - [Web Dashboard](#web-dashboard)
@@ -103,7 +307,7 @@ Loom's savings come from **delegation, not downgrade**:
 - **Implementation is always delegated**, spawned by agent type so the choice is explicit rather than inherited: Fable for major bugs, visual/UI design, and extremely challenging algorithmic design (no agent type pins it — the model override is stated explicitly at spawn); Opus for mainstream architecture and algorithm implementation; Sonnet or Codex GPT-5.6 Terra for common implementation and integration tests; Codex GPT-5.6 Luna for boilerplate, scaffolding, and simple unit tests. The codex tiers are licensed only on stages listing codex in `implementers`, and additionally require the `codex` CLI and its plugin to be installed — when either is missing, `loom run` prints an advisory warning at startup (it never aborts) and terra-/luna-tier work falls back to Sonnet.
 - **Signals are built for cache reuse.** Each signal is a four-section layout with a per-stage-type stable prefix that is byte-identical across sessions, so the large doctrine block is a cache hit rather than a re-read.
 - **Context budgets prevent compaction**, which is the expensive failure: an uncached re-read that costs more and produces worse work.
-- **Tiered knowledge and a skill index** keep the working set small — at most 5 matched skills are injected per stage, out of 61 installed.
+- **Tiered knowledge and a skill index** keep the working set small — at most 5 matched skills are injected per stage, out of 62 installed.
 - **Waits and repeat reads are settled by receipts, not by polling.** An orchestrator waits on a backgrounded Codex forward by its exact receipt (`loom subagents wait --receipt <id>`), and repeated `loom subagents list` polling is counted by the poll guard. A repeated file read is warned or denied only when a transcript receipt proves the earlier result was delivered.
 - **Consumption is measured, not assumed.** `loom usage` reports Claude and Codex separately from provider-native telemetry, and `loom usage --compare` judges a candidate policy offline against paired runs. A token-proxy gain alone never counts as a subscription saving, and any quality or latency regression rejects the candidate; see [the evaluation protocol](doc/token-optimization-evaluation.md).
 
@@ -117,24 +321,17 @@ Stages form a dependency DAG; everything independent runs at once, each in its o
 
 All orchestration state is plain files in `.loom/work/`, so nothing is lost when a process dies. The daemon polls every 5s, tracks PID liveness and per-session heartbeats, flags hung sessions after 300s, and classifies failures across ten types into retryable (exponential backoff) and needs-diagnosis. Tool-call telemetry drives a stuck-session signal when a session's recent calls are overwhelmingly failures. Orphaned sessions are recovered on daemon restart.
 
+A stage completes only on an authenticated evidence record that survives handoffs, so a session that finished its work but died before the daemon observed it does not loop between retries. Each session records why it exited — completed, crashed, context ceiling, stalled, operator stop, criteria blocked, or replaced — and `loom status`, `loom status --live`, and the web dashboard surface a completion-pending or blocked state with that reason ahead of generic activity.
+
 ### Sandboxing and plan hardening
 
-Plan-level defaults and per-stage overrides control filesystem reads/writes, network domains, and permission mode for the agent session, and commands loom runs from your plan get a rebuilt, allowlisted environment so they cannot read ambient credentials ([Sandbox Configuration](#sandbox-configuration)). Before you spend anything, `loom plan verify` validates a plan with no side effects — running the same sandbox validation that would otherwise only fail at `loom init` — and `loom pressure` hardens it through adversarial review rounds run by two different model families.
+Plan-level defaults and per-stage overrides control filesystem reads/writes, network domains, and permission mode for the agent session, and commands loom runs from your plan get a rebuilt, allowlisted environment so they cannot read ambient credentials ([Sandbox Configuration](#sandbox-configuration)). Before you spend anything, `loom plan verify` validates a plan with no side effects — running the same sandbox validation that would otherwise only fail at `loom init` — and `loom pressure` hardens it through adversarial review rounds run by two different model families. A sandboxed session's own writes are confined the same way: it cannot touch loom's state, hooks, or config directly, and the handful of legitimate exceptions go through a one-shot request the daemon applies ([Session State Confinement](#session-state-confinement)).
 
 ### Human-in-the-loop where it matters
 
 Thirteen stage states make "needs a person" an explicit outcome rather than a hang: `WaitingForInput` (raised automatically when an agent asks a question), `NeedsHumanReview`, `Blocked`, `MergeConflict`. Operators get `loom stage hold/release/skip/retry/human-review`, and an agent that believes a criterion is wrong can escalate with `loom stage dispute-criteria` instead of quietly weakening it.
 
-## Platform Support
-
-- Linux x86_64: primary development and full CI test runs; signed release binary
-- macOS (Apple Silicon): supported for build/terminal integration, CI does build-only verification; signed release binary
-- macOS (Intel): builds from source; no release binary is published
-- Windows via WSL2: supported — WSL2 runs the Linux x86_64 binary unmodified. Use the tmux backend, since a stock WSL install has no GUI terminal emulator for the native backend to find — see [Running under WSL](#running-under-wsl). Native Windows, outside WSL, is unsupported.
-- Linux ARM64: builds from source; no release binary is published yet
-- Headless (SSH, no terminal emulator): supported via the tmux backend — see [Terminal Backends](#terminal-backends)
-
-## Quick Start
+## Installation
 
 Loom is under active development. Signed binaries are published for Linux x86_64 and macOS Apple Silicon; every other platform builds from source with the Rust toolchain installed.
 
@@ -151,7 +348,7 @@ Loom is under active development. Signed binaries are published for Linux x86_64
 | `sccache`                  | shared dependency compiles across stage worktrees                 | optional                                                                                |
 | `codex` CLI                | the codex implementer lane and `loom pressure`                    | optional                                                                                |
 
-### 1. Install Loom
+### Install script
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/cosmix/loom/main/install.sh | bash
@@ -159,7 +356,9 @@ curl -fsSL https://raw.githubusercontent.com/cosmix/loom/main/install.sh | bash
 
 This downloads the signed release binary for your platform to `~/.local/bin/loom`, then installs Loom's agents, skills, commands, hooks, and orchestration rules into `~/.claude/` and `~/.codex/` from the assets embedded in that binary. Codex asks you to review new or changed non-managed hooks with `/hooks` before they run.
 
-To build from source instead — required on Linux ARM64, and what you want when working on loom itself:
+### Build from source
+
+Required on Linux ARM64, and what you want when working on loom itself:
 
 ```bash
 git clone https://github.com/cosmix/loom.git
@@ -171,46 +370,24 @@ bash ./dev-install.sh
 
 `install.sh` takes an optional `--skills core|all` flag (default `core`): `core` installs a small set of always-loaded core skills to `~/.claude/skills/` and catalogs the rest under `~/.claude/loom-skill-catalog/`, loaded on demand; `all` installs every loom skill directly to `~/.claude/skills/`.
 
-### 2. Write a Plan
+### Project hook wiring
 
-Plans are how loom knows what to build. Open Claude Code in your target project and use the `/loom-plan-writer` skill to create one:
+`loom init` installs and configures project hook wiring automatically. For an existing repo that is missing Claude Code hook setup, run `loom repair --fix`.
 
-```bash
-cd /path/to/project
-claude  # start Claude Code CLI
-```
+### Platform Support
 
-Inside the Claude Code session:
-
-1. Enter plan mode (`/plan`)
-2. Load the plan-writing skill by typing `/loom-plan-writer`
-3. Describe what you want to build and discuss with Claude
-4. Claude will write the plan to `doc/plans/PLAN-<name>.md`
-
-To validate the draft before running it:
-
-```bash
-loom plan verify doc/plans/PLAN-<name>.md
-```
-
-### 3. Run Loom
-
-Once your plan is written:
-
-```bash
-loom init doc/plans/PLAN-<name>.md
-loom run
-loom status --live
-loom stop
-```
-
-`loom init` parses the plan, creates stage state, and installs/configures project hook wiring automatically. For an existing repo that is missing Claude Code hook setup, run `loom repair --fix`.
+- Linux x86_64: primary development and full CI test runs; signed release binary
+- macOS (Apple Silicon): supported for build/terminal integration, CI does build-only verification; signed release binary
+- macOS (Intel): builds from source; no release binary is published
+- Windows via WSL2: supported — WSL2 runs the Linux x86_64 binary unmodified. Use the tmux backend, since a stock WSL install has no GUI terminal emulator for the native backend to find — see [Running under WSL](#running-under-wsl). Native Windows, outside WSL, is unsupported.
+- Linux ARM64: builds from source; no release binary is published yet
+- Headless (SSH, no terminal emulator): supported via the tmux backend — see [Terminal Backends](#terminal-backends)
 
 ### What Gets Installed
 
 | Location                     | Contents                                                  |
 | ---------------------------- | --------------------------------------------------------- |
-| `~/.claude/agents/loom-*.md` | 4 specialized subagents (per-item, non-destructive)       |
+| `~/.claude/agents/loom-*.md` | 5 specialized subagents (per-item, non-destructive)       |
 | `~/.claude/skills/loom-*/`   | 9 core domain knowledge modules, always loaded (per-item, non-destructive) |
 | `~/.claude/loom-skill-catalog/loom-*/` | 53 more domain knowledge modules, loaded on demand (`--skills core`, the default) |
 | `~/.claude/commands/*.md`    | Loom slash commands (`/pressure`, `/address`, `/distill`) |
@@ -222,34 +399,6 @@ loom stop
 | `~/.codex/AGENTS.md`         | Codex navigation and execution doctrine                   |
 | `~/.local/bin/loom`          | Loom CLI                                                  |
 
-## Core Workflow
-
-1. Open Claude Code, enter plan mode (`/plan`), and use `/loom-plan-writer` to write a plan to `doc/plans/`.
-2. Run `loom init <plan-path>` to parse metadata and create stage state.
-3. Run `loom run` to start daemon + orchestrator.
-4. Track progress with `loom status --live`.
-5. Recover, verify, merge, or retry stages as needed.
-
-### Stage Lifecycle
-
-```text
-WaitingForDeps → Queued → Executing → Completed
-```
-
-Everything else is an explicit, inspectable outcome rather than a hang:
-
-| State                   | Meaning                                                                |
-| ----------------------- | ---------------------------------------------------------------------- |
-| `Blocked`               | A `before_stage` check or an explicit block stopped the stage          |
-| `NeedsHandoff`          | Context ceiling reached; a handoff was written                         |
-| `WaitingForInput`       | The agent asked a question (raised automatically by the AskUser hooks) |
-| `MergeConflict`         | Auto-merge hit a real conflict; a resolution session is spawned        |
-| `MergeBlocked`          | Merge cannot proceed (e.g. another merge is in progress)               |
-| `CompletedWithFailures` | Work finished but acceptance did not pass                              |
-| `NeedsHumanReview`      | Escalated to a person                                                  |
-| `NeedsAdjudication`     | A disputed acceptance criterion is awaiting a verdict                  |
-| `Skipped`               | Explicitly skipped                                                     |
-
 ## CLI Reference
 
 ### Primary Commands
@@ -260,7 +409,7 @@ loom run [--manual] [--max-parallel N] [--foreground] [--watch] [--no-merge] [--
 loom status [--live] [--compact] [--verbose] [--web [PORT] [--host HOST]]
 loom stop
 loom resume <stage-id>
-loom check <stage-id> [--suggest]
+loom check <stage-id> [--suggest] [--no-cache]
 loom pressure <plan-path> [--rounds N] [--claude-model M] [--claude-effort E] [--codex-model M] [--codex-effort E] [--address-model M] [--address-effort E] [--dry-run]
 ```
 
@@ -277,7 +426,7 @@ Each of the three steps spawns with an independently selectable model and reason
 | `pressure.address_model`  | `opus`        |
 | `pressure.address_effort` | `high`        |
 
-`loom status --live` renders a live ledger dashboard: one row per stage across eight columns (STATE, STAGE, DEPENDS ON, MODELS, ACTIVITY, CONTEXT, TIME, MERGE). MODELS lists the orchestrator's own model first, then the models any subagents it spawned ran on. Columns drop in priority order as the terminal narrows; below a 64x16 (columns x rows) terminal a notice replaces the dashboard entirely. Press `?` to toggle a legend overlay explaining every state icon.
+`loom status --live` renders a live ledger dashboard: one row per stage across eight columns (STATE, STAGE, DEPENDS ON, MODELS, ACTIVITY, CONTEXT, TIME, MERGE). MODELS lists the orchestrator's own model first, then the models any subagents it spawned ran on. Columns drop in priority order as the terminal narrows; below a 64x16 (columns x rows) terminal a notice replaces the dashboard entirely. Press `?` to toggle a legend overlay explaining every state icon. When Claude or Codex quota data is available, a footer line above the legend shows a percent bar and reset countdown for each.
 
 `loom status --web [PORT] [--host HOST] [--terminals]` serves the same ledger in the browser, alongside a dependency-graph view of the plan — see [Web Dashboard](#web-dashboard).
 
@@ -287,12 +436,12 @@ Each of the three steps spawns with an independently selectable model and reason
 loom plan verify <plan-path> [--strict] [--json] [--no-color]
 ```
 
-`loom plan verify` validates a plan file without touching `.loom/work/` or requiring a git repo. It runs the same fatal validation as `loom init` (schema errors, unknown or retired fields at every nested policy layer, duplicate IDs, unknown dependencies, path safety) plus advisory warnings (structural issues, missing knowledge-bootstrap stage, sandbox gaps). A retired top-level `truths` block is rejected; move behavioral commands to `acceptance`. It additionally rejects requirements a sandboxed stage cannot satisfy — an `allow_write` grant under `/tmp` or missing on the host, a `TMPDIR=<absolute path>` override, a hardcoded `/tmp/` path, and a `mkdir`, `touch` or output redirect aimed outside the worktree in `acceptance`, `setup`, `wiring_tests`, `before_stage` or `after_stage` commands — because the stage sandbox already provides a writable `$TMPDIR`. Exits 0 on success, non-zero on fatal errors; `--strict` promotes warnings to errors.
+`loom plan verify` validates a plan file without touching `.loom/work/` or requiring a git repo. It runs the same fatal validation as `loom init` (schema errors, unknown or retired fields at every nested policy layer, duplicate IDs, unknown dependencies, path safety) plus advisory warnings (structural issues, missing knowledge-bootstrap stage, sandbox gaps). A retired top-level `truths` block is rejected; move behavioral commands to `acceptance`. It additionally rejects requirements a sandboxed stage cannot satisfy — an `allow_write` grant under `/tmp` or missing on the host, a `TMPDIR=<absolute path>` override, a hardcoded `/tmp/` path, and a `mkdir`, `touch` or output redirect aimed outside the worktree in `acceptance`, `setup`, `wiring_tests`, `before_stage` or `after_stage` commands — because the stage sandbox already provides a writable `$TMPDIR`. It also warns when a stage description's worker/files-owned table claims overlapping paths between workers, or a claim outside the stage's declared `files`. Exits 0 on success, non-zero on fatal errors; `--strict` promotes warnings to errors.
 
 ### Stage Commands
 
 ```bash
-loom stage complete <stage-id> [--session <id>] [--no-verify] [--force-unsafe --assume-merged]
+loom stage complete <stage-id> [--session <id>] [--no-verify] [--force-unsafe --assume-merged] [--no-cache]
 loom stage block <stage-id> <reason>
 loom stage reset <stage-id> [--hard] [--kill-session]
 loom stage waiting <stage-id>
@@ -304,9 +453,12 @@ loom stage retry <stage-id> [--force] [--context <message>]
 loom stage merge [stage-id] [--resolved]
 loom stage human-review <stage-id> [--approve|--force-complete|--reject <reason>]
 loom stage dispute-criteria <stage-id> --criterion-index N --reason <text> [--evidence-commit <sha>] [--failure-output <path>]
+loom stage adjudicate --stage <stage-id> --dispute <n> --verdict-file <path>
+loom stage admin-proof [stage-id] [--daemon-stop] [--no-verify] [--force-unsafe] [--assume-merged]
+loom stage amend <stage-id> --field acceptance|wiring|wiring-tests --op replace|insert|delete --index N [--value <yaml>] [--reason <text>]
 ```
 
-`loom stage dispute-criteria` is the sanctioned way for an agent to challenge a criterion it believes is wrong or impossible, instead of quietly weakening it. The daemon writes `request.md` and moves the stage to `NeedsAdjudication`; the verdict is daemon-written and never authored by the agent.
+`loom stage dispute-criteria` is the sanctioned way for an agent to challenge a criterion it believes is wrong or impossible, instead of quietly weakening it. The daemon writes `request.md` and moves the stage to `NeedsAdjudication`; the verdict is daemon-written and never authored by the agent. `loom stage adjudicate` records that verdict from the adjudication session; `loom stage admin-proof` mints an operator's proof for a trusted broker; `loom stage amend` is the audited, operator-facing way to edit a stage's `acceptance`, `wiring`, or `wiring_tests` array directly. See [Disputes, Adjudication, and Amendments](#disputes-adjudication-and-amendments).
 
 ### Stage Outputs
 
@@ -356,7 +508,7 @@ loom usage [--since <duration|date>] [--until <rfc3339>] [--provider claude|code
 loom usage [--claude-root <dir>] [--codex-root <dir>] [--receipts-root <dir>] [--forward-receipts-root <dir>]
                                                                              # Read explicit telemetry roots; a supplied root never falls back
 loom usage --compare <artifact.json> [--json]                                # Offline paired evaluation: exit 0 supported, 1 rejected, 2 inconclusive (doc/token-optimization-evaluation.md)
-loom subagents list | harvest [--json]                                       # One-shot transcript diagnostics; harvest terminal reports once
+loom subagents list | harvest [--id <id>] [--json]                           # One-shot diagnostics only: list shows liveness, harvest prints a terminal report (optionally one agent's); watch/wait below are the blocking waits
 loom subagents watch --worker <kind>:<id> [--worker <kind>:<id> ...] [--session <claude-parent-uuid>] --timeout <secs> [--json]
                                                                              # One owned wait: exit 0 all bound workers have fresh correlated success; 2 deadline passed; 3 worker failed/cancelled
                                                                              # kind is claude (spawned agent ID) or codex (--unit-id); exit 4 AlreadyWaiting/Busy (no second monitor)
@@ -378,7 +530,7 @@ loom repair [--fix]
 loom clean [--all|--worktrees|--sessions|--state]
 loom update
 loom config [-k <key> [<value>] | --list | --print]                          # Read or write ~/.loom/config.toml; bare in a terminal it opens the settings screen (see Configuration)
-loom install-assets [--claude-dir <path>] [--codex-dir <path>] [--skills core|all]  # Install loom's agents, skills, commands, hooks and doctrine files
+loom install-assets [--claude-dir <path>] [--codex-dir <path>] [--skills core|all]  # Install loom's agents, skills, commands, hooks and doctrine files; see Install script below for what --skills core|all installs where
 loom completions [<shell>] [--install] [--migrate]
 ```
 
@@ -434,7 +586,16 @@ The keys, with their built-in defaults:
 loom status --web [PORT] [--host HOST] [--terminals]
 ```
 
-The dashboard binds to `127.0.0.1` by default and serves the live ledger over a WebSocket in the browser; see [Web Dashboard Remote Access](#web-dashboard-remote-access) for `--host`. Two views share the same data: the graph (shown at the top of this file) draws the plan as a dependency graph colored by stage state, and `/ledger` puts one row per stage in a table with the same columns as `loom status --live`. Both carry a "needs attention" panel naming the stages that need a person, with a suggested command for each.
+The dashboard binds to `127.0.0.1` by default and serves the live ledger over a WebSocket in the browser; see [Web Dashboard Remote Access](#web-dashboard-remote-access) for `--host`. Two views share the same data: the graph (below) draws the plan as a dependency graph colored by stage state, and `/ledger` puts one row per stage in a table with the same columns as `loom status --live`. Both carry a "needs attention" panel naming the stages that need a person, with a suggested command for each.
+
+A daemon poller checks Claude and Codex quota roughly every 180 seconds; whenever either has data, the dashboard's sticky footer shows a percent bar and reset countdown for each, the same meter drawn above the legend in `loom status --live`.
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="doc/images/webui-overview-dark.png">
+    <img src="doc/images/webui-overview.png" alt="The loom web dashboard showing a plan as a dependency graph of stages" width="880">
+  </picture>
+</p>
 
 <p align="center">
   <img src="doc/images/webui-ledger.png" alt="The loom web dashboard ledger view, one row per stage" width="880">
@@ -556,6 +717,8 @@ into `.loom/work/config.toml`'s `[context]` section at `loom init`.
 | ------------------------- | -------- | ------------------------------------------------------------------------------------------ |
 | `context_ceiling_tokens`  | No       | Default ceiling for a stage's main agent session (default 150000)                          |
 | `subagent_ceiling_tokens` | No       | Ceiling for subagents spawned by a stage session (default 120000); never read from a stage |
+| `auto_merge`              | No       | Plan-wide default for automatic merge on completion; a stage's own `auto_merge` overrides it, and both fall back to the orchestrator's own setting (`loom run --no-merge` disables it) when unset |
+| `change_impact`           | No       | Nested block comparing before/after state; see [Change Impact](#change-impact)             |
 
 ### Stage Fields
 
@@ -566,6 +729,8 @@ into `.loom/work/config.toml`'s `[context]` section at `loom init`.
 | `working_dir`                      | Yes                    | Relative execution directory (`.` allowed)                                                                                                                                                                                           |
 | `description`                      | No                     | Optional summary                                                                                                                                                                                                                     |
 | `dependencies`                     | No                     | Upstream stage IDs                                                                                                                                                                                                                   |
+| `parallel_group`                   | No                     | Optional label grouping related stages; the dependency graph alone still decides scheduling order                                                                                                                                   |
+| `auto_merge`                       | No                     | Per-stage override for automatic merge on completion; takes priority over the plan-level and orchestrator defaults                                                                                                                  |
 | `acceptance`                       | Conditionally required | Shell criteria (strings or extended objects with stdout_contains etc.)                                                                                                                                                               |
 | `setup`                            | No                     | Setup commands                                                                                                                                                                                                                       |
 | `files`                            | No                     | File glob scope                                                                                                                                                                                                                      |
@@ -575,6 +740,8 @@ into `.loom/work/config.toml`'s `[context]` section at `loom init`.
 | `before_stage`                     | No                     | Pre-spawn checks (TruthCheck list); stage → Blocked if any fail                                                                                                                                                                      |
 | `after_stage`                      | No                     | Post-acceptance checks (TruthCheck list); completion fails if any fail                                                                                                                                                               |
 | `code_review`                      | No                     | `integration-verify` only: `dimensions` (string list) and `require_all` (bool); rendered as checklist in agent signal                                                                                                                |
+| `bug_fix`                          | No                     | Marks this stage as a bug fix; requires `regression_test` ([Bug-Fix Stages](#bug-fix-stages))                                                                                                                                        |
+| `regression_test`                  | Conditionally required | Required when `bug_fix` is `true`: `file` (test path, relative to `working_dir`) plus optional `must_contain` patterns                                                                                                              |
 | `model`                            | No                     | Model for this stage's main agent; omit to use the stage type's configured default ([Model Allocation](#model-allocation)), overridable via `[models]` in either config file, or set here as a deliberate per-stage override         |
 | `reasoning_effort`                 | No                     | `low`, `medium`, `high`, `xhigh`, `max`; omit to use the stage type's configured default ([Model Allocation](#model-allocation)), overridable the same way                                                                           |
 | `implementers`                     | No                     | Licensed agent lanes as a list, first = preferred for routine work: `["codex", "claude"]`. Default `["claude"]`. Listing a lane makes it available, not mandatory — a stage mixes lanes per subagent                                 |
@@ -607,7 +774,7 @@ For `standard` and `integration-verify` stages, acceptance criteria or at least 
 
 ### Verification Is Enforced, Not Self-Reported
 
-`loom stage complete` is the only way a stage finishes, and it runs the acceptance criteria itself before doing anything else. If they fail, the stage stays `Executing` — the agent must fix the work and re-run, and `fix_attempts` is incremented so repeated failures surface rather than accumulate silently. `after_stage` checks then run post-acceptance, and goal-backward verification runs before the progressive merge.
+`loom stage complete` is the only way a stage finishes, and it runs the acceptance criteria itself before doing anything else. If they fail, the stage stays `Executing` — the agent must fix the work and re-run, and `fix_attempts` is incremented so repeated failures surface rather than accumulate silently. `after_stage` checks then run post-acceptance, and goal-backward verification runs before the progressive merge. A passing criterion is cached against an exact fingerprint of its command and the tree, so an unchanged criterion is not re-run on the next attempt; `--no-cache` on `loom check` or `loom stage complete` forces a real run regardless.
 
 Artifact verification treats a stub as a failure: a file that exists but contains `TODO`, `FIXME`, `unimplemented!`, `todo!`, a bare `pass`, or `raise NotImplementedError` does not count as delivered.
 
@@ -642,6 +809,36 @@ Two things worth knowing:
 
 - **`integration-verify` stages are carved out.** That stage type exists to run the complete suite, so its subagents may. The carve-out is read from the stage file and fails safe — an ambiguous or missing stage file means no relaxation.
 - **There is deliberately no opt-out environment variable.** The main agent is never affected, so an escape hatch would only serve to defeat the rule.
+
+### Bug-Fix Stages
+
+A stage with `bug_fix: true` requires a `regression_test` block naming the test that pins the fix: `file` (path to the test, relative to `working_dir`) and optional `must_contain` (patterns the file's content must include). Verification checks the file exists and carries those patterns, so a bug-fix stage cannot complete on a fix with no test guarding the regression.
+
+### Change Impact
+
+A plan-level `change_impact` block separates the failures a stage introduced from the ones it inherited. Loom runs `baseline_command` when a stage starts executing and saves the output; at `loom stage complete` it runs the command again and compares the lines matching `failure_patterns`:
+
+```yaml
+loom:
+  version: 1
+  change_impact:
+    baseline_command: "cargo test --no-fail-fast 2>&1 || true"
+    compare_command: "cargo test --no-fail-fast 2>&1 || true" # optional; defaults to baseline_command
+    failure_patterns:
+      - "FAILED"
+      - "error\\[E"
+    policy: fail # fail (default) | warn | skip
+```
+
+The comparison reports new failures and fixed failures. `policy` decides what a new failure does to the stage: `fail` blocks completion, `warn` reports it and continues, `skip` turns the check off. Failures already present in the baseline do not count against the stage.
+
+### Disputes, Adjudication, and Amendments
+
+`loom stage dispute-criteria` is how an agent challenges a criterion instead of quietly weakening it. The daemon moves the stage to `NeedsAdjudication` and spawns a real session — with the full tool surface, running the disputed criterion itself — to judge it; `loom stage adjudicate` records that session's verdict, and a stage's own worktree session is refused so it can never judge its own dispute.
+
+A verdict does one of three things: `Accept` patches `acceptance` or `wiring` and re-queues the stage; `NeedsMoreEvidence` appends the judge's questions to the next signal and re-queues, up to a capped number of rounds; `Reject` moves the stage to `NeedsHumanReview`. Every accepted amendment writes a numbered snapshot under `.loom/work/plan_versions/` plus an audit row.
+
+The plan-level `adjudication.max_amendments_per_stage` field bounds autonomous amendments per stage (default 10), so a multi-fix plan is not sent to a human part-way through. `loom stage amend` gives an operator the same audited path directly: it replaces, inserts, or deletes one element of a stage's `acceptance`, `wiring`, or `wiring_tests` array, snapshotting and logging the change the same way.
 
 ## Knowledge System
 
@@ -811,6 +1008,14 @@ loom:
 Plans are trusted artifacts, but trusted is not privileged: under `confined`, a plan line cannot read `GITHUB_TOKEN`, `AWS_*` or `ANTHROPIC_API_KEY` merely because you started loom from a shell that had them. The allowlist carries what a build toolchain needs to find itself — `HOME`, `PATH`, `CARGO_HOME`, `RUSTUP_HOME`, locale and terminal variables, `TMPDIR`, the proxy variables and the CA-bundle *locations* (`SSL_CERT_FILE`, `SSL_CERT_DIR`, `NIX_SSL_CERT_FILE`). `SSH_AUTH_SOCK` is deliberately withheld, so an acceptance criterion that needs SSH auth fails by design rather than silently borrowing your agent.
 
 > **What confinement is not.** It is environment scrubbing — least-privilege hygiene, not a security boundary. Loom applies **no** namespace, seccomp, landlock, cgroup or network isolation to the commands it spawns: a confined command shares your network namespace, can read and write any path your user can, and can reach any Unix socket on the host. The `network:` settings above are emitted into the *agent session's* sandbox and do not restrict plan-authored commands. Use `confined` to keep ambient credentials out of plan commands; do not use it to run code you would not run yourself.
+
+### Session State Confinement
+
+Every spawned session — stage, merge, base-conflict, adjudication — launches from a settings capsule that denies writes to `.loom/`, `.claude/`, `.worktrees/`, the hooks directories, and git hooks and config, regardless of the filesystem rules above.
+
+A handful of commands still need to reach that state from inside a sandboxed session: `loom memory ...`, `loom stage block`, `loom stage dispute-criteria`, `loom handoff`, `loom stage merge --resolved`, and `loom worktree remove`. Each writes a one-shot ticket instead, picked up by a `PostToolUse` relay hook and applied by the daemon at most once through a per-session ledger. `loom request status <id>` reports whether the daemon has applied a given ticket yet.
+
+The daemon also refuses to merge, or hand to a conflict-resolution session, any branch whose diff touches `.claude/`, `.mcp.json`, `.loom/`, or the in-repo hooks directory — the stage moves to `NeedsHumanReview` naming the offending paths instead.
 
 ### Permission Mode
 
