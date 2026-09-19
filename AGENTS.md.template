@@ -77,8 +77,32 @@ When authorized to commit outside a loom-orchestrated stage, use Conventional Co
 
 ## Memory and attribution
 
-For durable loom project knowledge, use `loom memory note` and `loom memory decision`. Never use
-an editor-managed auto-memory directory.
+When the user corrects or steers you, or you find a mistake in your own work, record it before
+anything else; record a major decision the same way. A correction that lives only in the
+conversation is lost next session. Never use an editor-managed auto-memory directory.
+
+Inside a loom stage, record to the stage memory and repeat it in your final report:
+
+    loom memory note "mistake: <what happened>. Why: <cause>. Prevention: <rule>"
+    loom memory decision "<choice>" --context "<why>"
+
+A fix that failed once is reported, never retried: the orchestrator moves it to a stronger worker.
+
+Outside a loom stage `loom memory` has no journal. In a repository that keeps
+`doc/loom/knowledge/`, write the knowledge files when the correction happens:
+
+1. Find the home in `INDEX.md`: the tier-2 topic whose blurb covers it, else a new
+   `<category>/<slug>`. Tier-1 files take summaries only. A mistake entry is a `## <short
+   description>` heading with **What happened**, **Why**, **Prevention**, **Fix**.
+2. Write through the CLI; every write regenerates `INDEX.md`. `loom knowledge update
+   <category>/<slug> "<entry>"` appends, scaffolding a new topic. Correct an existing section with
+   `loom knowledge replace-section <file> "<Heading>" "<body without the ## line>"`, never
+   `update`. On a non-matching heading it appends and says so; read that line, or the stale text
+   stands.
+3. A new topic also gets `loom knowledge annotate <category>/<slug> --blurb "<80 chars max>"` and
+   a 2-4 line summary plus link in its tier-1 file.
+4. A direct file edit leaves `INDEX.md` stale: run `loom knowledge sync` after it. End a batch
+   with `loom knowledge check`.
 
 Never add AI-system attribution or AI-generated boilerplate to code, commits, documentation, or
 comments.
