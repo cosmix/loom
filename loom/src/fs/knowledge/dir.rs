@@ -1,10 +1,12 @@
 //! Knowledge directory manager.
 
+use super::chunker;
 use super::index::{self, TopicEntry};
 use super::scaffold;
-use super::splice::{self, SectionOutcome};
+use super::splice::{self, SectionEditError, SectionOutcome};
 use super::templates;
 use super::types::{KnowledgeFile, KnowledgeLayout, KnowledgeTarget, INDEX_FILENAME};
+use crate::context::schema::LifecycleState;
 use anyhow::{Context, Result};
 use std::fs::{self, OpenOptions};
 use std::io::Write;
@@ -261,6 +263,59 @@ impl KnowledgeDir {
         Ok(outcome.expect("locked_read_modify_write always invokes its closure"))
     }
 
+    /// Delete a `#{2,6} <heading>` section, its nested deeper headings
+    /// included, from a tier-1 file or tier-2 topic. Returns the level the
+    /// heading matched at. A heading that matches nothing is an error, never
+    /// a silent no-op.
+    pub fn delete_section_target(&self, target: &KnowledgeTarget, heading: &str) -> Result<usize> {
+        let mut level = 0;
+        self.edit_existing_target(target, heading, |existing| {
+            let (result, matched) = splice::delete_section(&existing, heading)
+                .ok_or_else(|| missing_section(target, heading))?;
+            level = matched;
+            Ok(result)
+        })?;
+        Ok(level)
+    }
+
+    /// Set the lifecycle state of one `## <heading>` section by writing (or
+    /// replacing) the `<!-- state: <value> -->` marker directly under it. The
+    /// chunker gives that section's chunk this state instead of the file's.
+    pub fn set_section_state_target(
+        &self,
+        target: &KnowledgeTarget,
+        heading: &str,
+        state: LifecycleState,
+    ) -> Result<()> {
+        let marker = chunker::state_marker(state);
+        self.edit_existing_target(target, heading, |existing| {
+            splice::set_section_marker(&existing, heading, &marker).map_err(|error| match error {
+                SectionEditError::NotFound => missing_section(target, heading),
+                SectionEditError::NotLevelTwo { level } => anyhow::anyhow!(
+                    "\"{heading}\" in {} is a level-{level} heading; section state applies to `## ` sections only",
+                    target.display_name()
+                ),
+            })
+        })
+    }
+
+    /// Locked, fallible edit of a target that must already exist; the index
+    /// is refreshed after the lock is released, as for every knowledge write.
+    fn edit_existing_target(
+        &self,
+        target: &KnowledgeTarget,
+        heading: &str,
+        edit: impl FnOnce(String) -> Result<String>,
+    ) -> Result<()> {
+        let path = self.target_path(target);
+        if !path.is_file() {
+            return Err(missing_section(target, heading));
+        }
+        crate::fs::locking::locked_update(&path, edit)?;
+        self.refresh_index_if_hierarchical();
+        Ok(())
+    }
+
     /// List every tier-2 topic file under this knowledge directory.
     pub fn list_topics(&self) -> Result<Vec<TopicEntry>> {
         index::scan_topics(&self.root)
@@ -291,6 +346,13 @@ impl KnowledgeDir {
             }
         }
     }
+}
+
+fn missing_section(target: &KnowledgeTarget, heading: &str) -> anyhow::Error {
+    anyhow::anyhow!(
+        "No \"{heading}\" section in {} (any level from ## to ###### is matched)",
+        target.display_name()
+    )
 }
 
 #[cfg(test)]

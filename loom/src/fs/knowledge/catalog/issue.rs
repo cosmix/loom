@@ -73,6 +73,12 @@ pub enum CatalogIssue {
     OversizedIndex {
         bytes: u64,
     },
+    /// The same heading in two or more files: a topic kept in several places.
+    DuplicateHeadingAcrossFiles {
+        heading: String,
+        /// Sorted, at least two entries.
+        files: Vec<PathBuf>,
+    },
 }
 
 impl CatalogIssue {
@@ -83,6 +89,7 @@ impl CatalogIssue {
             Self::EvidenceChanged { .. }
                 | Self::EvidenceUnavailable { .. }
                 | Self::UnverifiableReference { .. }
+                | Self::DuplicateHeadingAcrossFiles { .. }
         )
     }
 }

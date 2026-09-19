@@ -3,10 +3,12 @@
 use crate::cli::AnnotateArgs;
 use crate::context::schema::LifecycleState;
 use crate::fs::knowledge::catalog::prose::project_root_of;
+use crate::fs::knowledge::chunker;
 use crate::fs::knowledge::frontmatter;
 use crate::fs::knowledge::index::MAX_BLURB_CHARS;
 use crate::git::runner::NO_HOOKS_ARGS;
 use anyhow::{bail, Context, Result};
+use colored::Colorize;
 use std::path::Path;
 use std::process::Command;
 
@@ -21,9 +23,13 @@ pub(super) struct Annotation {
 }
 
 pub(crate) fn annotate(args: AnnotateArgs) -> Result<()> {
+    if let Some(section) = &args.section {
+        return annotate_section(&args, section);
+    }
     let AnnotateArgs {
         target,
         state,
+        section: _,
         source: sources,
         clear_sources,
         verified,
@@ -55,6 +61,31 @@ pub(crate) fn annotate(args: AnnotateArgs) -> Result<()> {
     Ok(())
 }
 
+/// `annotate <target> --section <heading> --state <value>`: mark one `## `
+/// section's state with the marker the chunker reads, leaving the file's
+/// frontmatter alone. The file-level flags do not combine with `--section`.
+fn annotate_section(args: &AnnotateArgs, section: &str) -> Result<()> {
+    if !args.source.is_empty()
+        || args.clear_sources
+        || args.verified.is_some()
+        || !args.alias.is_empty()
+        || args.blurb.is_some()
+    {
+        bail!("--section combines with --state only; annotate file-level metadata separately");
+    }
+    let state = parse_state(args.state.as_deref().unwrap_or_default())?;
+    let heading = super::normalize_heading(section)?;
+    let knowledge = super::open_knowledge_dir()?;
+    let target = crate::fs::knowledge::KnowledgeTarget::parse(&args.target)?;
+    knowledge.set_section_state_target(&target, &heading, state)?;
+    println!(
+        "{} Marked \"## {heading}\" in {} as {state}",
+        "✓".green().bold(),
+        target.display_name()
+    );
+    Ok(())
+}
+
 pub(super) fn annotate_path(path: &Path, annotation: &Annotation) -> Result<String> {
     validate_annotation(annotation)?;
     let rendered = frontmatter::update_file(path, |metadata| {
@@ -78,16 +109,11 @@ pub(super) fn annotate_path(path: &Path, annotation: &Annotation) -> Result<Stri
 }
 
 pub(super) fn parse_state(state: &str) -> Result<LifecycleState> {
-    match state.trim().to_lowercase().as_str() {
-        "active" => Ok(LifecycleState::Active),
-        "draft" => Ok(LifecycleState::Draft),
-        "deprecated" => Ok(LifecycleState::Deprecated),
-        "superseded" => Ok(LifecycleState::Superseded),
-        "historical" => Ok(LifecycleState::Historical),
-        _ => bail!(
+    chunker::parse_lifecycle_state(state).with_context(|| {
+        format!(
             "Unknown knowledge state '{state}'; expected active, draft, deprecated, superseded, or historical"
-        ),
-    }
+        )
+    })
 }
 
 pub(super) fn resolve_revision(project_root: &Path, revision: &str) -> Result<String> {

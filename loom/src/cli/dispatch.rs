@@ -32,28 +32,11 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
             heading,
             content,
         } => knowledge::replace_section(file, heading, content),
+        KnowledgeCommands::DeleteSection { file, heading } => {
+            knowledge::delete_section(file, heading)
+        }
         KnowledgeCommands::Annotate(args) => knowledge::annotate::annotate(args),
-        KnowledgeCommands::Context {
-            stage,
-            query,
-            budget_tokens: budget, // bound short so the call below stays compact
-            scope,
-            require_id,
-            history,
-            require_compact,
-            explain,
-            json,
-        } => knowledge::context::context(
-            stage,
-            query,
-            budget,
-            scope,
-            require_id,
-            history,
-            require_compact,
-            explain,
-            json,
-        ),
+        context @ KnowledgeCommands::Context { .. } => dispatch_knowledge_context(context),
         KnowledgeCommands::Eval {
             cases,
             budget_tokens,
@@ -70,8 +53,46 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
             strict,
             strict_evidence,
             json,
-        } => knowledge::check::check(strict, strict_evidence, json),
+            baseline,
+            write_baseline,
+        } => knowledge::check::check(knowledge::check::CheckOptions {
+            strict,
+            strict_evidence,
+            json,
+            baseline,
+            write_baseline,
+        }),
     }
+}
+
+/// `loom knowledge context` dispatch, broken out to keep `dispatch_knowledge`
+/// under the line ceiling.
+fn dispatch_knowledge_context(command: KnowledgeCommands) -> Result<()> {
+    let KnowledgeCommands::Context {
+        stage,
+        query,
+        budget_tokens: budget, // bound short so the call below stays compact
+        scope,
+        require_id,
+        history,
+        require_compact,
+        explain,
+        json,
+    } = command
+    else {
+        unreachable!("dispatch_knowledge routes only Context here");
+    };
+    knowledge::context::context(
+        stage,
+        query,
+        budget,
+        scope,
+        require_id,
+        history,
+        require_compact,
+        explain,
+        json,
+    )
 }
 
 /// `loom plan <subcommand>` dispatch.
@@ -246,7 +267,8 @@ fn dispatch_memory(command: MemoryCommands) -> Result<()> {
             stage,
             json,
             strict,
-        } => memory::pending(stage, json, strict),
+            group,
+        } => memory::pending(stage, json, strict, group),
         MemoryCommands::Query { search, stage } => memory::query(search, stage),
         MemoryCommands::List {
             stage,

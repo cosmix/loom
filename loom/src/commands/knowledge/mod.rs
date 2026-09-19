@@ -1,6 +1,7 @@
 //! Knowledge command - manage curated codebase knowledge.
 pub mod annotate;
 pub mod check;
+mod check_lines;
 pub mod context;
 pub mod eval;
 pub mod sync;
@@ -153,6 +154,23 @@ pub fn replace_section(file: String, heading: String, content: Option<String>) -
     Ok(())
 }
 
+/// Delete a `#{2,6} <heading>` section with its nested deeper headings. A
+/// heading that matches nothing is an error, unlike `replace_section`'s
+/// append fallback: a typo must not look like a successful removal.
+pub fn delete_section(file: String, heading: String) -> Result<()> {
+    let heading = normalize_heading(&heading)?;
+    let knowledge = open_knowledge_dir()?;
+    let target = KnowledgeTarget::parse(&file)?;
+    let level = knowledge.delete_section_target(&target, &heading)?;
+    println!(
+        "{} Deleted \"{} {heading}\" from {}",
+        "✓".green().bold(),
+        "#".repeat(level),
+        target.display_name()
+    );
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests;
 
@@ -167,3 +185,7 @@ mod tests_replace_section_levels;
 #[cfg(test)]
 #[path = "tests_annotate.rs"]
 mod tests_annotate;
+
+#[cfg(test)]
+#[path = "tests_delete_section.rs"]
+mod tests_delete_section;

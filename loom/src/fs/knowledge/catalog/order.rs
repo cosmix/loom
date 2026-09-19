@@ -3,13 +3,28 @@
 use super::CatalogIssue;
 use crate::fs::knowledge::types::INDEX_FILENAME;
 use std::cmp::Ordering;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 pub(super) fn compare_issues(left: &CatalogIssue, right: &CatalogIssue) -> Ordering {
     issue_file(left)
         .cmp(issue_file(right))
         .then_with(|| issue_kind(left).cmp(&issue_kind(right)))
         .then_with(|| issue_payload(left).cmp(&issue_payload(right)))
+}
+
+/// The issue's identity as one line of a check baseline: kind name, file and
+/// payload, with the measured counts (occurrences, lines, bytes) left out so
+/// that a recorded issue stays recorded while its size moves.
+pub(super) fn baseline_key(issue: &CatalogIssue) -> String {
+    let file = issue_file(issue).to_string_lossy().replace('\\', "/");
+    let detail = match issue {
+        CatalogIssue::DuplicateHeading { heading, .. }
+        | CatalogIssue::OversizedSection { heading, .. } => heading.clone(),
+        CatalogIssue::OversizedFile { .. } | CatalogIssue::OversizedIndex { .. } => String::new(),
+        _ => issue_payload(issue),
+    };
+    let key = format!("{} {file} {detail}", issue_kind_name(issue));
+    key.trim_end().to_string()
 }
 
 fn issue_file(issue: &CatalogIssue) -> &Path {
@@ -24,6 +39,9 @@ fn issue_file(issue: &CatalogIssue) -> &Path {
         | CatalogIssue::OversizedSection { file, .. }
         | CatalogIssue::OversizedFile { file, .. } => file,
         CatalogIssue::OversizedIndex { .. } => Path::new(INDEX_FILENAME),
+        CatalogIssue::DuplicateHeadingAcrossFiles { files, .. } => {
+            files.first().map_or(Path::new(""), PathBuf::as_path)
+        }
     }
 }
 
@@ -39,6 +57,23 @@ fn issue_kind(issue: &CatalogIssue) -> u8 {
         CatalogIssue::OversizedSection { .. } => 7,
         CatalogIssue::OversizedFile { .. } => 8,
         CatalogIssue::OversizedIndex { .. } => 9,
+        CatalogIssue::DuplicateHeadingAcrossFiles { .. } => 10,
+    }
+}
+
+fn issue_kind_name(issue: &CatalogIssue) -> &'static str {
+    match issue {
+        CatalogIssue::DuplicateHeading { .. } => "duplicate-heading",
+        CatalogIssue::GenericBlurb { .. } => "generic-blurb",
+        CatalogIssue::BrokenLink { .. } => "broken-link",
+        CatalogIssue::MissingSourceRef { .. } => "missing-source-ref",
+        CatalogIssue::EvidenceChanged { .. } => "evidence-changed",
+        CatalogIssue::EvidenceUnavailable { .. } => "evidence-unavailable",
+        CatalogIssue::UnverifiableReference { .. } => "unverifiable-reference",
+        CatalogIssue::OversizedSection { .. } => "oversized-section",
+        CatalogIssue::OversizedFile { .. } => "oversized-file",
+        CatalogIssue::OversizedIndex { .. } => "oversized-index",
+        CatalogIssue::DuplicateHeadingAcrossFiles { .. } => "duplicate-heading-across-files",
     }
 }
 
@@ -68,5 +103,9 @@ fn issue_payload(issue: &CatalogIssue) -> String {
         CatalogIssue::OversizedSection { heading, lines, .. } => format!("{heading}:{lines}"),
         CatalogIssue::OversizedFile { lines, .. } => lines.to_string(),
         CatalogIssue::OversizedIndex { bytes } => bytes.to_string(),
+        CatalogIssue::DuplicateHeadingAcrossFiles { heading, files } => {
+            let files: Vec<_> = files.iter().map(|file| file.to_string_lossy()).collect();
+            format!("{heading}:{}", files.join(","))
+        }
     }
 }

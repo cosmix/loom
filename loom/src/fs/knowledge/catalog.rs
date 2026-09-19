@@ -4,12 +4,13 @@ use crate::fs::knowledge::chunker::{self, KnowledgeChunk};
 use anyhow::Context;
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
+mod baseline;
 mod evidence;
+mod headings;
 mod issue;
 mod order;
 pub(crate) mod prose;
@@ -18,7 +19,9 @@ mod source_roots;
 #[cfg(test)]
 mod tests_prose;
 
+pub use baseline::{render as render_baseline, BaselineComparison, CheckBaseline};
 pub use evidence::{evidence_summary, EvidenceSummary};
+use headings::HeadingTally;
 pub use issue::{CatalogIssue, EvidenceUnavailableReason};
 use order::compare_issues;
 use source_roots::{cargo_package_source_roots, ProjectFileIndex, SourceRefContext};
@@ -38,23 +41,17 @@ pub struct Catalog {
     pub issues: Vec<CatalogIssue>,
 }
 
-/// Update heading occurrence counts and collect any broken-link or
+/// Record the chunk's heading in `headings` and collect any broken-link or
 /// missing-source-ref issues for one chunk of an already-read file.
 fn collect_chunk_issues(
     root: &Path,
     relative_path: &Path,
     source_refs: &SourceRefContext,
     chunk: &KnowledgeChunk,
-    heading_counts: &mut BTreeMap<PathBuf, BTreeMap<String, usize>>,
+    headings: &mut HeadingTally,
     issues: &mut Vec<CatalogIssue>,
 ) -> anyhow::Result<()> {
-    if !chunk.heading.is_empty() {
-        *heading_counts
-            .entry(relative_path.to_path_buf())
-            .or_default()
-            .entry(chunk.anchor.clone())
-            .or_default() += 1;
-    }
+    headings.record(relative_path, chunk);
     if let Some(issue) = size::oversized_section(relative_path, chunk) {
         issues.push(issue);
     }
@@ -83,15 +80,15 @@ fn collect_chunk_issues(
 }
 
 /// Chunk one knowledge file and collect any generic-blurb, broken-link, or
-/// missing-source-ref issues it produces into `issues`. Heading occurrence
-/// counts feed `heading_counts`, which the caller uses for a separate
-/// duplicate-heading pass once every file has been processed.
+/// missing-source-ref issues it produces into `issues`. Headings feed
+/// `headings`, which the caller turns into duplicate-heading issues once
+/// every file has been processed.
 fn process_file(
     root: &Path,
     relative_path: &Path,
     source_refs: &SourceRefContext,
     evidence_collector: &mut evidence::EvidenceCollector,
-    heading_counts: &mut BTreeMap<PathBuf, BTreeMap<String, usize>>,
+    headings: &mut HeadingTally,
     issues: &mut Vec<CatalogIssue>,
 ) -> anyhow::Result<Vec<KnowledgeChunk>> {
     let absolute_path = root.join(relative_path);
@@ -114,14 +111,7 @@ fn process_file(
     }
 
     for chunk in &file_chunks {
-        collect_chunk_issues(
-            root,
-            relative_path,
-            source_refs,
-            chunk,
-            heading_counts,
-            issues,
-        )?;
+        collect_chunk_issues(root, relative_path, source_refs, chunk, headings, issues)?;
     }
     collect_unverifiable_references(relative_path, source_refs, &file_chunks, issues);
     evidence::changed_since_verified(evidence_collector, relative_path, &frontmatter);
@@ -158,28 +148,6 @@ fn collect_unverifiable_references(
     }
 }
 
-/// Turn the per-file heading tallies [`process_file`] accumulated into one
-/// [`CatalogIssue::DuplicateHeading`] per heading seen more than once.
-///
-/// A separate pass, not part of `process_file`: a duplicate is only knowable
-/// once every section of a file has been counted.
-fn push_duplicate_headings(
-    heading_counts: BTreeMap<PathBuf, BTreeMap<String, usize>>,
-    issues: &mut Vec<CatalogIssue>,
-) {
-    for (file, counts) in heading_counts {
-        for (heading, occurrences) in counts {
-            if occurrences > 1 {
-                issues.push(CatalogIssue::DuplicateHeading {
-                    file: file.clone(),
-                    heading,
-                    occurrences,
-                });
-            }
-        }
-    }
-}
-
 /// Build a deterministic catalog rooted at a knowledge directory, extended
 /// with every chunk indexed from the project's configured prose roots (see
 /// `prose`).
@@ -191,7 +159,7 @@ pub fn build(root: &Path) -> anyhow::Result<Catalog> {
     let mut evidence_collector = evidence::EvidenceCollector::new(project_root.as_deref());
     let mut chunks = Vec::new();
     let mut issues = Vec::new();
-    let mut heading_counts: BTreeMap<PathBuf, BTreeMap<String, usize>> = BTreeMap::new();
+    let mut headings = HeadingTally::default();
 
     for relative_path in files {
         let file_chunks = process_file(
@@ -199,13 +167,13 @@ pub fn build(root: &Path) -> anyhow::Result<Catalog> {
             &relative_path,
             &source_refs,
             &mut evidence_collector,
-            &mut heading_counts,
+            &mut headings,
             &mut issues,
         )?;
         chunks.extend(file_chunks);
     }
 
-    push_duplicate_headings(heading_counts, &mut issues);
+    headings.push_issues(&mut issues);
     issues.extend(evidence_collector.finish());
 
     if let Some(issue) = size::oversized_index(root) {
