@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+from datetime import datetime, timezone
 
 CODEX = "--codex" in sys.argv[1:]
 MAX_SUGGESTIONS = 5
@@ -30,7 +31,91 @@ STOPWORDS = frozenset({
     "app", "bug", "class", "code", "config", "data", "error", "file",
     "function", "issue", "log", "method", "new", "old", "output", "plan",
     "project", "script", "setup", "tool", "type", "value", "claude", "loom",
+    "stage", "job", "state", "result", "backend", "event", "hook", "option",
+    "session", "token", "context", "sync", "agent", "model", "report",
+    "graph", "document", "prompt", "review", "comment",
 })
+
+
+_AGENT_ID_RE = re.compile(r"^[A-Za-z0-9._-]+$")
+
+
+def _is_machine_generated(prompt):
+    """Mirror `is_machine_generated` (loom/src/commands/hook/user_prompt.rs):
+    task-notification XML, or one of the fixed sentences printed when a
+    background agent is stopped or a turn opens with a caveat. None of these
+    are a human asking a question, so retrieving skills against them is pure
+    noise."""
+    text = prompt.lstrip()
+    return (
+        text.startswith("<")
+        or text.startswith("Background agent ")
+        or text.startswith("Caveat: ")
+    )
+
+
+def _sanitize_agent_id(raw):
+    """Mirror `_loom_sanitize_agent_id` (_read_discipline.sh): an id outside
+    `[A-Za-z0-9._-]`, or a missing one, becomes "main" so it can never escape
+    the ledger directory it is used to name a file within."""
+    if raw and _AGENT_ID_RE.match(raw):
+        return raw
+    return "main"
+
+
+def _ledger_path(agent_id, fallback_sid):
+    """Ask `_loom_ledger_file skills <agent_id> <fallback_sid>` (shared with
+    the other read-discipline hooks, _read_discipline.sh:135-154) for this
+    session's "skills" ledger path. `$0` is set to the library's own path so
+    its internal `dirname "$0"` resolves the sibling _read_ledger.sh
+    correctly. None when the library is not installed beside this hook, bash
+    is unavailable, or the call fails - the ledger is advisory."""
+    hook_dir = os.path.dirname(os.path.abspath(__file__))
+    library = os.path.join(hook_dir, "_read_discipline.sh")
+    if not os.path.isfile(library):
+        return None
+    try:
+        result = subprocess.run(
+            ["bash", "-c", 'source "$0" >/dev/null 2>&1; _loom_ledger_file "$1" "$2" "$3"',
+             library, "skills", agent_id, fallback_sid or "unknown"],
+            capture_output=True, text=True, timeout=2, check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return None
+    path = result.stdout.strip()
+    return path or None
+
+
+def _ledger_seen(path):
+    seen = set()
+    try:
+        with open(path) as fh:
+            for line in fh:
+                name = line.split("\t", 1)[0].strip()
+                if name:
+                    seen.add(name)
+    except OSError:
+        pass
+    return seen
+
+
+def _ledger_record(path, names):
+    if not names:
+        return
+    try:
+        directory = os.path.dirname(path)
+        if directory:
+            if os.path.islink(directory):
+                return
+            os.makedirs(directory, exist_ok=True)
+        if os.path.islink(path):
+            return
+        stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.000Z")
+        with open(path, "a") as fh:
+            for name in names:
+                fh.write(f"{name}\t{stamp}\n")
+    except OSError:
+        pass
 
 
 def _agent_root():
@@ -60,8 +145,17 @@ def _debug(msg):
 
 
 def _is_name_match(keyword, skill_name):
+    """A stopword keyword (e.g. "model") only counts as a name match on EXACT
+    equality with the effective name - a mere prefix match would let a bare
+    generic word solo-qualify a skill like loom-model-evaluation, which is
+    the single-generic-word false positive the evidence rule exists to
+    block. Non-stopword keywords keep the prefix-match behavior."""
     effective = skill_name[5:] if skill_name.startswith("loom-") else skill_name
-    return keyword == effective or (len(keyword) >= 4 and effective.startswith(keyword))
+    if keyword == effective:
+        return True
+    if keyword in STOPWORDS:
+        return False
+    return len(keyword) >= 4 and effective.startswith(keyword)
 
 
 def _load_index():
@@ -170,8 +264,16 @@ def _add_project_matches(types, roots, scores, matched):
                 break
 
 
-def _rank(scores, matched):
-    qualified = {name: score for name, score in scores.items() if score >= MIN_SCORE}
+def _rank(scores, matched, keyword_scores):
+    """Qualify on prompt evidence alone: a phrase hit, a name match, or two
+    distinct single-word keyword hits (all folded into `keyword_scores`,
+    which is `scores` captured before the repo-type tie-breaker is added -
+    see `_add_project_matches`). The repo marker itself never appears there,
+    so it can order qualified skills below but never qualify one by itself."""
+    qualified = {
+        name: score for name, score in scores.items()
+        if keyword_scores.get(name, 0) >= MIN_SCORE
+    }
     if len(qualified) > 1:
         qualified.pop("loom-skills", None)
     return sorted(qualified.items(), key=lambda item: (
@@ -267,6 +369,8 @@ def main():
     if not isinstance(data, dict) or not isinstance(data.get("prompt"), str) or not data["prompt"]:
         return
     prompt = data["prompt"]
+    if _is_machine_generated(prompt):
+        return
     cwd = data.get("cwd") or os.getcwd()
     if not isinstance(cwd, str):
         return
@@ -277,8 +381,18 @@ def main():
     scores = {name: score for name, score in scores.items() if _locate_skill_md(name, roots)[0]}
     keyword_scores = dict(scores)
     _add_project_matches(types, roots, scores, matched)
-    context = _render(_rank(scores, matched), matched, roots, keyword_scores)
+    top = _rank(scores, matched, keyword_scores)
+    raw_agent_id = data.get("agent_id")
+    agent_id = _sanitize_agent_id(raw_agent_id if isinstance(raw_agent_id, str) else None)
+    session_id = data.get("session_id")
+    ledger = _ledger_path(agent_id, session_id if isinstance(session_id, str) else None)
+    if ledger:
+        seen = _ledger_seen(ledger)
+        top = [item for item in top if item[0] not in seen]
+    context = _render(top, matched, roots, keyword_scores)
     if context:
+        if ledger:
+            _ledger_record(ledger, [name for name, _score in top])
         print(json.dumps({"hookSpecificOutput": {
             "hookEventName": "UserPromptSubmit", "additionalContext": context,
         }}))

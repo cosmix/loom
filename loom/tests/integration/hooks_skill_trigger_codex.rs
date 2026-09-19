@@ -1,9 +1,9 @@
 use super::*;
 
 #[test]
-fn codex_keeps_generic_project_tiebreaker_conditional() {
+fn codex_generic_word_alone_with_repo_marker_stays_silent() {
     if skip_unless_python3(
-        "hooks_skill_trigger::codex_keeps_generic_project_tiebreaker_conditional",
+        "hooks_skill_trigger::codex_generic_word_alone_with_repo_marker_stays_silent",
     ) {
         return;
     }
@@ -11,26 +11,17 @@ fn codex_keeps_generic_project_tiebreaker_conditional() {
     home.add_go_project();
     let (_hook_dir, hook) = install_hook();
 
-    // `context` is the only matching generic keyword (score 1); project
-    // discovery contributes the second point needed to render loom-golang.
-    let generic = run_hook(&hook, &home, "context", None, true);
-    assert_eq!(generic.code, 0, "stderr={}", generic.stderr);
-    let generic_ctx = additional_context(&generic.stdout);
-    let generic_line = generic_ctx
-        .lines()
-        .find(|line| line.contains("loom-golang"))
-        .unwrap_or_else(|| panic!("missing Go skill: {generic_ctx}"));
+    // `context` is the only matching generic keyword (score 1, keyword-only).
+    // The Go project marker used to add the second point that cleared
+    // MIN_SCORE by itself; a repo marker is never evidence now, only an
+    // ordering tie-breaker among already-qualified skills, so a lone generic
+    // word plus it must stay silent (report section 4.4).
+    let out = run_hook(&hook, &home, "context", None, true);
+    assert_eq!(out.code, 0, "stderr={}", out.stderr);
     assert!(
-        generic_line.contains("repo:golang"),
-        "missing project match: {generic_line}"
-    );
-    assert!(
-        generic_line.contains("if the task touches golang"),
-        "should be conditional"
-    );
-    assert!(
-        !generic_line.contains("in full"),
-        "unexpected directive: {generic_line}"
+        out.stdout.trim().is_empty(),
+        "a lone generic keyword plus a repo marker should not qualify: {}",
+        out.stdout
     );
 }
 

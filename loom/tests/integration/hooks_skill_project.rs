@@ -41,7 +41,7 @@ impl Fixture {
             write(
                 &root,
                 "hooks/loom/skill-keywords.json",
-                r#"{"react":["loom-react","loom-typescript"],"typescript":["loom-typescript"],"rust":["loom-rust"]}"#,
+                r#"{"react":["loom-react","loom-typescript"],"typescript":["loom-typescript"],"frontend":["loom-typescript"],"rust":["loom-rust"]}"#,
             );
             for name in ["loom-react", "loom-typescript", "loom-rust"] {
                 write(
@@ -73,6 +73,9 @@ impl Fixture {
             .env("CODEX_HOME", self.agent_root(true))
             .env("LOOM_BIN", env!("CARGO_BIN_EXE_loom"))
             .env_remove("LOOM_SKILL_DEBUG")
+            .env_remove("LOOM_WORK_DIR")
+            .env_remove("LOOM_SESSION_ID")
+            .env_remove("LOOM_STAGE_ID")
             .current_dir(cwd)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
@@ -130,11 +133,15 @@ fn a_detected_repository_type_alone_recommends_nothing() {
 fn a_keyword_hit_plus_detection_qualifies_and_marks_the_repo_context() {
     let fixture = Fixture::new();
     for codex in [false, true] {
-        let output = fixture.run(codex, fixture.repo.path(), "build a react feature");
+        // "react" name-matches loom-react outright; "react" and "frontend"
+        // are two distinct single-word hits against loom-typescript, real
+        // prompt evidence under the new rule (detection alone no longer
+        // qualifies a skill - it only marks an already-qualified one).
+        let output = fixture.run(codex, fixture.repo.path(), "build a react frontend feature");
         assert!(output.contains("loom-react"), "{output}");
         assert!(
             output.contains("loom-typescript"),
-            "keyword hit (react) plus detection (typescript) should qualify: {output}"
+            "two distinct keyword hits (react, frontend) should qualify: {output}"
         );
         assert!(output.contains("repo:typescript"), "{output}");
         assert!(
@@ -147,7 +154,13 @@ fn a_keyword_hit_plus_detection_qualifies_and_marks_the_repo_context() {
 #[test]
 fn codex_rendering_says_read_in_full_only_for_keyword_matches() {
     let fixture = Fixture::new();
-    let output = fixture.run(true, fixture.repo.path(), "build a react feature");
+    // "react" is an exact name match for loom-react (high confidence). The
+    // two hits against loom-typescript ("react", "frontend") qualify it
+    // under the "two distinct single-word hits" rule but neither is a
+    // phrase or an exact name match, so it stays low-confidence and renders
+    // conditionally - the repo:typescript marker still supplies the "touches
+    // typescript" wording, but it is not what qualified the skill.
+    let output = fixture.run(true, fixture.repo.path(), "build a react frontend feature");
     let react_line = output
         .lines()
         .find(|l| l.contains("loom-react"))
@@ -162,11 +175,11 @@ fn codex_rendering_says_read_in_full_only_for_keyword_matches() {
         .unwrap_or_else(|| panic!("missing loom-typescript line: {output}"));
     assert!(
         typescript_line.contains("if the task touches typescript"),
-        "keyword+detection skill should render conditionally: {typescript_line}"
+        "low-confidence keyword-qualified skill should render conditionally: {typescript_line}"
     );
     assert!(
         !typescript_line.contains("in full"),
-        "keyword+detection skill must not claim full read: {typescript_line}"
+        "low-confidence keyword-qualified skill must not claim full read: {typescript_line}"
     );
 }
 
@@ -204,10 +217,13 @@ fn frontend_paths_and_nested_cwd_do_not_suggest_backend_skills() {
     let fixture = Fixture::new();
     for codex in [false, true] {
         for (cwd, prompt) in [
-            (fixture.repo.path().join("web/src"), "build a react feature"),
+            (
+                fixture.repo.path().join("web/src"),
+                "build a react frontend feature",
+            ),
             (
                 fixture.repo.path().to_path_buf(),
-                "build a react feature in web/src/new.tsx",
+                "build a react frontend feature in web/src/new.tsx",
             ),
         ] {
             let output = fixture.run(codex, &cwd, prompt);

@@ -18,13 +18,11 @@ fn strip_quotes_handles_single_quote_characters() {
 
 #[test]
 fn name_match_strips_loom_prefix() {
+    // Non-stopword keywords keep the prefix-match behavior.
     for (keyword, skill) in [
         ("rust", "loom-rust"),
         ("refactor", "loom-refactoring"),
         ("testing", "loom-testing"),
-        ("test", "loom-testing"),
-        ("debug", "loom-debugging"),
-        ("plan", "loom-plan-writer"),
         ("security", "loom-security-audit"),
     ] {
         assert!(is_skill_name_match(keyword, skill));
@@ -89,14 +87,50 @@ fn description_marker_variants_are_recognized() {
 }
 
 #[test]
-fn is_stopword_respects_name_match_exemption() {
+fn stopword_name_match_requires_exact_equality() {
+    // A stopword keyword is exempted from the stopword filter only on EXACT
+    // equality with the effective name - a mere prefix match must not let a
+    // bare generic word solo-qualify a skill (the loom-model-evaluation
+    // false positive the evidence rule targets).
     let stopwords: HashSet<&str> = STOPWORDS.iter().copied().collect();
+    assert!(is_stopword("model", &stopwords));
+    assert!(is_skill_name_match("model", "loom-model"));
+    assert!(!is_skill_name_match("model", "loom-model-evaluation"));
     assert!(is_stopword("test", &stopwords));
-    assert!(is_skill_name_match("test", "loom-testing"));
-    assert!(is_stopword("debug", &stopwords));
-    assert!(is_skill_name_match("debug", "loom-debugging"));
+    assert!(!is_skill_name_match("test", "loom-testing"));
+    assert!(is_stopword("plan", &stopwords));
+    assert!(!is_skill_name_match("plan", "loom-plan-writer"));
     assert!(is_stopword("build", &stopwords));
     assert!(!is_skill_name_match("build", "loom-auth"));
+}
+
+#[test]
+fn add_triggers_drops_stopword_prefix_match_but_keeps_exact_match() {
+    let stopwords: HashSet<&str> = STOPWORDS.iter().copied().collect();
+
+    let mut index: BTreeMap<String, Vec<String>> = BTreeMap::new();
+    add_triggers(
+        &mut index,
+        &stopwords,
+        "loom-model-evaluation",
+        vec!["model".to_string()],
+    );
+    assert!(
+        !index.contains_key("model"),
+        "stopword prefix match must not qualify the index: {index:?}"
+    );
+
+    let mut index = BTreeMap::new();
+    add_triggers(
+        &mut index,
+        &stopwords,
+        "loom-model",
+        vec!["model".to_string()],
+    );
+    assert_eq!(
+        index.get("model").map(Vec::as_slice),
+        Some(&["loom-model".to_string()][..])
+    );
 }
 
 #[test]
