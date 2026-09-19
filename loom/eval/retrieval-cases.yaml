@@ -17,11 +17,40 @@
 # The `expect` cases are wins that must NOT regress: a hit within the top 5,
 # most of them ranked 1st.
 #
-# pass_floor keeps Appendix A.20's original hit-rate meaning. True precision
-# starts as an observed metric with a zero floor; tune precision_floor only
-# after the checked-in judgments have established a useful baseline.
+# pass_floor keeps Appendix A.20's original hit-rate meaning.
+#
+# precision_at_5 and relevant_token_fraction are judged over different packs
+# depending on `mode`: a `mode: prompt` case (the default) is judged over the
+# pack the hook would actually hand a fresh session - 0.0 for either metric
+# when the hook would abstain - since that is what a prompt-triggered brief
+# actually delivers; a `mode: stage` case is judged over the raw retrieved
+# pack, since an autonomous stage spawn sees the best available retrieval
+# regardless of the hook's emit floor. hit@5, mrr, forbid checks, mandatory
+# recall, and rendered-token cost are always judged over the raw pack. See
+# `loom/src/commands/knowledge/eval/metrics.rs::score_case`/`judged_pack`.
+#
+# precision_floor = measured precision_at_5 on this checkout on 2026-09-19
+# (0.45) x 0.9, rounded down to two decimals = 0.40. Each case judges exactly
+# one relevant id, so the raw-pack metric this replaced for `mode: prompt`
+# caps every case's p@5 near 0.20 in a 5-item pack regardless of ranking
+# quality - the delivered-set metric does not have that ceiling, since the
+# hook narrows the pack to what actually cleared its emit floor before
+# judging. Before this stage's (already-in-tree) emit-floor change, the
+# delivered-set p@5 was 0.32.
+#
+# Per-case p@5 contributions behind the 0.45 mean (`--json`'s `cases[].precision_at_5`;
+# re-judge here if a case's ids change):
+#   genuine-win-phantom-merges                       0.20  (prompt)
+#   genuine-win-sandbox-settings-rules                0.25  (prompt)
+#   genuine-win-source-graph-honesty-contract         1.00  (prompt)
+#   genuine-win-delivery-epoch-suppression            1.00  (prompt)
+#   genuine-win-session-identity-env-staleness        0.50  (prompt)
+#   tier-twin-sandbox-contradictory-path-rules        0.50  (prompt)
+#   symbol-query-backticked-plan-key                  0.20  (prompt)
+#   symbol-query-snake-case-reconcile-source-graph    0.20  (prompt)
+#   genuine-win-stage-mode-source-node                0.20  (stage)
 pass_floor: 0.5
-precision_floor: 0.0
+precision_floor: 0.40
 
 cases:
   # --- Failure shape 1: prose words collide with symbol names (A.1) -------
@@ -119,12 +148,15 @@ cases:
     relevant:
       - "architecture/context-retrieval.md#delivery-records-and-epoch-suppression#0"
 
+  # The topic spilled into a tier-2 file that repeats the tier-1 heading, so the
+  # packer returns the detail and drops the summary (see the tier-twin case
+  # below); the tier-2 id is the one observed at rank 1 on 2026-09-19.
   - name: genuine-win-session-identity-env-staleness
     query: "per session identity persisted in settings env blocks goes stale"
     expect:
-      - "mistakes.md#per-session-identity-persisted-in-settings-env-blocks-goes-stale-and-shadows-the-wrapper-env-2026-07-22#0"
+      - "mistakes/session-identity-env.md#per-session-identity-persisted-in-settings-env-blocks-goes-stale-and-shadows-the-wrapper-env-2026-07-22#0"
     relevant:
-      - "mistakes.md#per-session-identity-persisted-in-settings-env-blocks-goes-stale-and-shadows-the-wrapper-env-2026-07-22#0"
+      - "mistakes/session-identity-env.md#per-session-identity-persisted-in-settings-env-blocks-goes-stale-and-shadows-the-wrapper-env-2026-07-22#0"
 
   # A tier-1 summary and the tier-2 topic it spilled share a heading verbatim
   # (`loom knowledge update` scaffolds the topic file with it), so they scored
