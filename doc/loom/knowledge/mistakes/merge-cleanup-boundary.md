@@ -167,5 +167,5 @@ committable `.loom/config.toml`.
 
 - `mistakes/phantom-merges.md` — the parent failure class, including the original
   "wrote merged=true without verifying ancestry" incidents.
-- `architecture/context-retrieval.md` — the overlay/base reconcile steps this
+- `architecture/context-retrieval-state.md` — the overlay/base reconcile steps this
   ordering interleaves, and why base publication requires a clean tree.

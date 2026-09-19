@@ -1,6 +1,6 @@
 # Codex Heartbeat Starvation
 
-> Heartbeat starvation from long codex runs; stale-badge constant mismatch
+> Heartbeat starvation from long codex runs
 
 ## Long Codex Runs Starve the Loom Heartbeat (2026-08-07)
 
@@ -35,7 +35,7 @@ act: `SessionCrashed` (`event_handler.rs:153`), `SessionNeedsHandoff` (kills + r
 warning is noise, not damage.
 
 **Mitigation is doctrine, not a monitor change.** Keep each codex task bounded, and set
-`subagent_timeout_secs` on stages that legitimately block for longer. CLAUDE.md Rule 6 ("Checking
+`subagent_timeout_secs` on stages that legitimately block for longer. The loom-orchestration skill's Rule 6 ("Checking
 on subagents") routes the check through the one-background-watch pattern — it blocks until
 every subagent settles or the timeout fires, exits 0 vs. 2, and states which branch fired, which
 alone satisfies the bounded-check rule — and tells the orchestrator to keep waiting while the subagent

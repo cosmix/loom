@@ -8,7 +8,7 @@ verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 ---
 # Signal Generation
 
-> Signal assembly: cache, append_* helpers, per-stage prefixes, hung escalation.
+> Signal assembly: cache, append_* helpers, stage prefixes
 
 ## Signal Generation Pipeline (orchestrator/signals/) [DETAILED]
 
@@ -74,57 +74,6 @@ All generators are composed from shared `append_*` helpers and produce immutable
 
 The full table lives in the `## Shared append_* Helpers (cache.rs:51-~180)` section below — an abridged copy that predated `append_anti_slop_guidance()` and `append_adversarial_review()` was deleted from this spot on 2026-07-30. Consult the one table; do not re-inline a second.
 
-### Semi-Stable Section (format/sections.rs:15-378)
-
-Changes per **stage type**, not per session. Key sub-sections:
-
-- **Knowledge reference box** (lines 22-32): the Knowledge Brief footer emits `loom knowledge context --stage <id> --query "<question>" --budget-tokens <n>` (`format/brief.rs::format_knowledge_brief`) when knowledge exists
-- **Stage-type-aware reminder box** (lines 35-140): Knowledge/IV/KnowledgeDistill → "KNOWLEDGE UPDATES REQUIRED"; Standard → "SESSION MEMORY REQUIRED"
-- **Knowledge management section** (lines 142-290): If knowledge empty → 4-step exploration order; if present → "Extend as you work"
-- ~~**Delegation Choices**~~ — REMOVED (doctrine-surfaces stage; it duplicated CLAUDE.md Rule 6). The semi-stable section carries no delegation guidance of its own any more; the signal points at `~/.claude/CLAUDE.md` instead
-- **Ultracode License** (lines 388-413): Gated on `embedded_context.ultracode`; now also states the Claude-only Workflow-fan-out rule — the codex lane (`gpt-5.6-terra`/`gpt-5.6-luna`) is not addressable from a Workflow script, so on a stage licensed for both, codex-tier work goes through normal `loom-codex-forwarder` Agent spawns outside the Workflow
-- **Sandbox Restrictions** (lines 417-419): Sandbox summary if present, rendered by `format_sandbox_section()` in `format/sandbox_section.rs` (moved out of `sections.rs` 2026-08-26 — `sections.rs` carries a maintainability-ledger FILE entry). When the sandbox is enabled, it always carries `append_package_cache_note()` — the package-manager-cache carve-out note — after the filesystem deny/allow-write block and before the network section
-- **Skill Recommendations** (lines 421-426): Skill index matches
-
-### Dynamic Section (format/sections.rs:382-661)
-
-Per-session content. Includes Target (session/stage/plan IDs, working_dir, execution path), Plan Overview, Assignment, Dependency Status + Outputs, Handoff Content, Acceptance Criteria, Goal-Backward Verification (artifacts, wiring, wiring_tests, dead_code).
-
-### Recitation Section (format/sections.rs:665-765)
-
-End of signal for maximum attention. Includes: a single `Context: {tokens} of {ceiling} tokens` line (absolute resident tokens against the resolved ceiling — replaces the old `Compaction Imminent warning (>=75% usage)` / `Context Budget Warning` pair, both deleted with `append_budget_exceeded_box`, their last caller), Immediate Tasks, Stage end sequence line (`append_stage_end_sequence()`, `format/helpers.rs` — recited right after the task list, before the trailing blank line), Stage Memory (with PROMINENT WARNING if empty).
-
-### EmbeddedContext Struct (types.rs:25-61)
-
-Single container flowing through all 4 sections. The struct is currently `types.rs:24-73`.
-
-```rust
-pub struct EmbeddedContext {
-    pub handoff_content: Option<String>,      // V1 prose handoff
-    pub parsed_handoff: Option<HandoffV2>,    // V2 structured handoff
-    pub plan_overview: Option<String>,
-    pub context_pack: Option<ContextPack>,    // types.rs:35 - this stage's retrieved brief, when retrieval selected anything
-    pub knowledge_tree_empty: bool,           // types.rs:45 - doc/loom/knowledge/ has no real content; distinct from context_pack (see doc comment at the field)
-    pub memory_content: Option<String>,       // Last 10 entries
-    pub skill_recommendations: Vec<SkillMatch>,
-    pub context_ceiling_tokens: Option<u32>,  // types.rs:51 - absolute resident-token ceiling, not a percentage
-    pub context_tokens: Option<u32>,          // types.rs:53 - absolute resident tokens read from the heartbeat
-    pub sandbox_summary: Option<SandboxSummary>,
-    pub cross_stage_summary: Option<String>,  // IV/KnowledgeDistill only
-    pub wiring_checklist: Option<String>,     // IV/KnowledgeDistill only
-    pub ultracode: bool,
-    pub implementers: Implementers,           // Licensed lanes, in preference order
-    pub codex_available: bool,                // codex CLI + plugin installed; resolved once at build time
-    pub subagent_timeout_secs: Option<u64>,   // Per-stage override; None emits nothing
-}
-```
-
-`context_budget: Option<f32>` and `context_usage: Option<f32>` were renamed to the two absolute-token fields above as part of the context-ceiling migration (see architecture.md "Context Budget Enforcement").
-
-### Caching
-
-SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_prefix_hash`. Cache invalidated whenever the stable prefix Rust code changes. Semi-stable, dynamic, recitation sections are always regenerated.
-
 ## Shared append_* Helpers (cache.rs:51-~180)
 
 | Helper                                 | Lines    | Content                                                                                                                                                                                            | Used By                                                                                                                                                                                                                                                                                                                               |
@@ -179,7 +128,7 @@ The JSONL-backed `possibly_stuck` soft-signal system this section used to descri
 One append-only JSON-lines file, `.loom/work/telemetry/events.jsonl`, recording five best-effort event
 kinds (`TelemetryEvent`, `telemetry/mod.rs`): `ContextDelivered`/`ContextUnavailable` for a spawned
 session's context brief, `PromptBrief`/`PromptAbstained` for the `UserPromptSubmit` hook's per-turn
-brief (see [Context Retrieval](context-retrieval.md#brief-delivery-sanitization-and-telemetry)), and
+brief (see [Context Retrieval](context-retrieval-state.md#brief-delivery-sanitization-and-telemetry)), and
 `ContextPulled` for a `loom knowledge context` retrieval. `emit` may never fail a spawn and
 `read_events` skips a malformed line rather than failing the file; every count is an item count,
 never a token saving.
@@ -194,3 +143,56 @@ generation already wrote — no second retrieval. `loom knowledge telemetry`
 (`commands/knowledge/telemetry.rs`) is `read_events`'s production caller: it summarizes every event
 kind per stage (briefs, prompt briefs emitted/abstained with the top abstain reason, pulls with
 average budget/items and unmet-required count, last event time).
+
+## Signal Sections: Semi-Stable, Dynamic, Recitation and EmbeddedContext
+
+### Semi-Stable Section (format/sections.rs:15-378)
+
+Changes per **stage type**, not per session. Key sub-sections:
+
+- **Knowledge reference box** (lines 22-32): the Knowledge Brief footer emits `loom knowledge context --stage <id> --query "<question>" --budget-tokens <n>` (`format/brief.rs::format_knowledge_brief`) when knowledge exists
+- **Stage-type-aware reminder box** (lines 35-140): Knowledge/IV/KnowledgeDistill → "KNOWLEDGE UPDATES REQUIRED"; Standard → "SESSION MEMORY REQUIRED"
+- **Knowledge management section** (lines 142-290): If knowledge empty → 4-step exploration order; if present → "Extend as you work"
+- ~~**Delegation Choices**~~ — REMOVED (doctrine-surfaces stage; it duplicated CLAUDE.md Rule 6). The semi-stable section carries no delegation guidance of its own any more; the signal points at `~/.claude/CLAUDE.md` instead
+- **Ultracode License** (lines 388-413): Gated on `embedded_context.ultracode`; now also states the Claude-only Workflow-fan-out rule — the codex lane (`gpt-5.6-terra`/`gpt-5.6-luna`) is not addressable from a Workflow script, so on a stage licensed for both, codex-tier work goes through normal `loom-codex-forwarder` Agent spawns outside the Workflow
+- **Sandbox Restrictions** (lines 417-419): Sandbox summary if present, rendered by `format_sandbox_section()` in `format/sandbox_section.rs` (moved out of `sections.rs` 2026-08-26 — `sections.rs` carries a maintainability-ledger FILE entry). When the sandbox is enabled, it always carries `append_package_cache_note()` — the package-manager-cache carve-out note — after the filesystem deny/allow-write block and before the network section
+- **Skill Recommendations** (lines 421-426): Skill index matches
+
+### Dynamic Section (format/sections.rs:382-661)
+
+Per-session content. Includes Target (session/stage/plan IDs, working_dir, execution path), Plan Overview, Assignment, Dependency Status + Outputs, Handoff Content, Acceptance Criteria, Goal-Backward Verification (artifacts, wiring, wiring_tests, dead_code).
+
+### Recitation Section (format/sections.rs:665-765)
+
+End of signal for maximum attention. Includes: a single `Context: {tokens} of {ceiling} tokens` line (absolute resident tokens against the resolved ceiling — replaces the old `Compaction Imminent warning (>=75% usage)` / `Context Budget Warning` pair, both deleted with `append_budget_exceeded_box`, their last caller), Immediate Tasks, Stage end sequence line (`append_stage_end_sequence()`, `format/helpers.rs` — recited right after the task list, before the trailing blank line), Stage Memory (with PROMINENT WARNING if empty).
+
+### EmbeddedContext Struct (types.rs:25-61)
+
+Single container flowing through all 4 sections. The struct is currently `types.rs:24-73`.
+
+```rust
+pub struct EmbeddedContext {
+    pub handoff_content: Option<String>,      // V1 prose handoff
+    pub parsed_handoff: Option<HandoffV2>,    // V2 structured handoff
+    pub plan_overview: Option<String>,
+    pub context_pack: Option<ContextPack>,    // types.rs:35 - this stage's retrieved brief, when retrieval selected anything
+    pub knowledge_tree_empty: bool,           // types.rs:45 - doc/loom/knowledge/ has no real content; distinct from context_pack (see doc comment at the field)
+    pub memory_content: Option<String>,       // Last 10 entries
+    pub skill_recommendations: Vec<SkillMatch>,
+    pub context_ceiling_tokens: Option<u32>,  // types.rs:51 - absolute resident-token ceiling, not a percentage
+    pub context_tokens: Option<u32>,          // types.rs:53 - absolute resident tokens read from the heartbeat
+    pub sandbox_summary: Option<SandboxSummary>,
+    pub cross_stage_summary: Option<String>,  // IV/KnowledgeDistill only
+    pub wiring_checklist: Option<String>,     // IV/KnowledgeDistill only
+    pub ultracode: bool,
+    pub implementers: Implementers,           // Licensed lanes, in preference order
+    pub codex_available: bool,                // codex CLI + plugin installed; resolved once at build time
+    pub subagent_timeout_secs: Option<u64>,   // Per-stage override; None emits nothing
+}
+```
+
+`context_budget: Option<f32>` and `context_usage: Option<f32>` were renamed to the two absolute-token fields above as part of the context-ceiling migration (see architecture.md "Context Budget Enforcement").
+
+### Caching
+
+SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_prefix_hash`. Cache invalidated whenever the stable prefix Rust code changes. Semi-stable, dynamic, recitation sections are always regenerated.

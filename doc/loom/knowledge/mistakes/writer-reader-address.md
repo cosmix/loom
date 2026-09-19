@@ -2,7 +2,7 @@
 ---
 # Writer/Reader Address
 
-> A layer written under a key its reader ignores looks identical to no-op.
+> A layer written under a key its reader ignores
 
 ## A Fallback That Writes Under a Key No Reader Consults
 
@@ -33,7 +33,7 @@ wall-clock producing the thing nobody reads.
    derivations that "should agree" is the same bug in a different costume; the
    earlier instance in this codebase is `delivery::plan_key`, where a hand-rolled
    second derivation read an empty directory rather than a missing record (see
-   *Delivery Records* in [Context Retrieval](../architecture/context-retrieval.md)).
+   *Delivery Records* in [Context Retrieval State](../architecture/context-retrieval-state.md)).
 2. An address derived from a path must be derived from the CANONICAL path.
    `file_name()` on a caller-supplied spelling is an identity bug, not a naming
    choice — and a comment asserting "every caller spells it the same way" is the

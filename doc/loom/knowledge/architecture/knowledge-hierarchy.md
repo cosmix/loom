@@ -4,11 +4,11 @@ sources:
 - loom/src/commands/knowledge/check.rs
 - loom/src/fs/knowledge/catalog/issue.rs
 - loom/src/fs/knowledge/catalog/evidence.rs
-verified: 499b09b6297aeee4896a66df3da86d00f652a618
+verified: 6bb1dfd01ccb8456c978e9d5812e1bb61543b8e2
 ---
 # Knowledge Hierarchy
 
-> Read before touching fs/knowledge: targets, INDEX.md, checks, size limits
+> fs/knowledge targets, INDEX.md, checks, size limits, baselines
 
 ## Module Layout (`fs/knowledge/`)
 
@@ -97,102 +97,26 @@ at `MAX_INDEX_BYTES = 16_384` bytes (`catalog/size.rs`, roughly 4k tokens for th
 first read of every session); exceeding it surfaces as an `OversizedIndex` issue
 from `loom knowledge check` rather than being repaired automatically.
 
-## Audit Rules — Nine Catalog Issue Kinds
-
-An earlier version of this doc described a `gc`-based system with two disagreeing
-link-form checks, and a later one listed four issue kinds plus an index-staleness
-text check. Neither matches the tree: there is no link-form rule and no
-index-staleness check. The heading's "Nine" is historical: `EvidenceUnavailable`
-(2026-09-13) made it ten, and the knowledge CLI cannot rename a heading.
-
-`fs::knowledge::catalog::build` walks every curated markdown file under the
-knowledge root (recursing into category directories, skipping `INDEX.md` and
-dotfiles) and reports ten `CatalogIssue` kinds (`catalog/issue.rs`), sorted
-deterministically by `catalog/order.rs`:
-
-- **`DuplicateHeading`** — the same normalized H2+ anchor occurs more than once in
-  one file.
-- **`GenericBlurb`** — a topic's first `>` line still equals
-  `templates::scaffold_blurb` for its category.
-- **`BrokenLink`** — a markdown link target does not resolve to a real file, by
-  lexical path resolution (`.` and `..` folded relative to the linking file,
-  `contained_link_target`). An absolute target, or one that folds outside the
-  knowledge root, is reported as broken without being probed on disk — an earlier
-  version of this section said such targets were skipped.
-- **`MissingSourceRef`** — a backticked source path classified live does not
-  resolve (see *Reference classification* below).
-- **`EvidenceChanged`** — a file's frontmatter declares `sources` and a `verified`
-  revision, and `git diff --name-only <verified>..HEAD -- <sources>` lists one of
-  them (`fs/knowledge/catalog/evidence.rs`). `EvidenceCollector` defers the git
-  work until every file is parsed, so files declaring the same `verified` and
-  sources share one bounded probe (`MAX_GIT_OUTPUT_BYTES`, 1 MiB). An earlier
-  version of this bullet said any git failure skips the check; it now reports
-  the next kind.
-- **`EvidenceUnavailable`** — declared evidence could not be assessed, with a
-  reason: `missing_revision`, `invalid_revision`, `missing_repository`,
-  `git_unavailable`, `command_failed` or `resource_limit` (`catalog/issue.rs`).
-- **`UnverifiableReference`** — a backticked path classified example, runtime,
-  external or historical that does not resolve; a note, since such a path is not
-  expected to exist.
-- **`OversizedSection`**, **`OversizedFile`**, **`OversizedIndex`** — the size
-  limits under *Thresholds* below.
-
-`EvidenceChanged`, `EvidenceUnavailable` and `UnverifiableReference` are review-only
-(`CatalogIssue::is_review_only`): they print as `review:` / `note:` lines, land in
-the JSON `review` array instead of `issues`, and never count toward `--strict`.
-`--strict-evidence` (`commands/knowledge/check.rs:36-58`) additionally counts
-`EvidenceChanged` and `EvidenceUnavailable`, and fails on a missing knowledge root.
-Stage gates use `--strict` alone: most pages were never assessed against their
-sources, so a corpus-wide `--strict-evidence` gate fails on unreviewed drift, not
-on a defect. Changed evidence stays a review signal until someone re-reads the
-sources and runs `loom knowledge annotate <target> --verified HEAD`.
-
-**Reference classification** (`chunker/references.rs::classify_reference`, applied
-to each backticked span ending in a source extension — rs, tsx, ts, py, go, sh, md,
-toml, yaml, yml — outside fenced blocks, using the text around it): *runtime* when
-the path starts with `.loom/`, `.loom/work/`, `target/`, `node_modules/`, `~`, `/tmp` or
-`$`, or contains an angle bracket; else *example* when the path or its sentence
-carries a placeholder marker (foo, bar, baz, an angle bracket, an ellipsis,
-path/to, slug, the words example or placeholder, and a few more); else
-*historical* when the sentence says the path does not exist, no longer, was
-removed or deleted, was renamed, used to, or "there is no" directly before it;
-else *external* on markers such as upstream or another project; otherwise *live*.
-A live path must exist at the project root, under a cargo package source root, as
-the unique project file with that path suffix, or — bare basename — as any file
-with that name (`catalog/source_roots.rs::repository_source_path_exists`). A live
-path containing a slash whose first component names nothing in this project
-becomes an external note instead of a `MissingSourceRef`
-(`push_source_ref_issue`).
-
-`catalog::build` never repairs anything (`context/ingest.rs` states it as a hard
-constraint) and reports on the curated tree only — chunks indexed from the
-configured prose roots contribute no issues.
-
-**Surfaces.** `loom knowledge check` (`commands/knowledge/check.rs`) resolves only
-the knowledge root — never the context store, so it writes nothing and is safe as a
-stage acceptance criterion — and prints one line per issue. It exits 0 unless
-`--strict` is set and at least one non-review issue exists, in which case it exits
-1 after printing. `--json` prints `root`, `issues`, `review` and `count`, where
-`count` is the strict count. `loom knowledge sync` also runs the build and prints
-the issue count, but gates nothing.
-
-There is no per-link form requirement — a human title pointing to a topic path is
-simply the house style (see `patterns.md`), not something an audit enforces.
-
 ## Thresholds
 
-The three size limits ARE enforced — as catalog issues, reported and never
+The five size limits ARE enforced — as catalog issues, reported and never
 repaired (`catalog/size.rs`, the mechanical form of CLAUDE.md Rule 12):
 
 | Constant | Value | Issue |
 | --- | --- | --- |
 | `MAX_TIER_ONE_SECTION_LINES` | 40 | `OversizedSection` — a tier-1 `##` section over 40 lines, heading line included and trailing blank lines excluded; the headingless preamble is exempt |
 | `MAX_TIER_ONE_FILE_LINES` | 250 | `OversizedFile` — a tier-1 file over 250 lines |
+| `MAX_TIER_TWO_SECTION_LINES` | 80 | `OversizedSection` — a tier-2 `##` section over 80 lines: a section past this is several topics |
+| `MAX_TIER_TWO_FILE_LINES` | 400 | `OversizedFile` — a tier-2 topic file over 400 lines |
 | `MAX_INDEX_BYTES` | 16 384 | `OversizedIndex` — a generated `INDEX.md` over 16 384 bytes |
 
 Tier-1 is decided by path depth alone (`is_tier_one`: one path component under the
-knowledge root), so tier-2 topic files are exempt from both line limits. All three
-count toward `loom knowledge check --strict`. The blurb cap (`MAX_BLURB_CHARS = 80`,
+knowledge root); every file in a category directory is tier-2 and takes the tier-2
+pair. An earlier version of this table said tier-2 topic files were exempt from both
+line limits; the knowledge-hygiene stage added the tier-2 pair (`catalog/size.rs`), and
+a tier-2 file that grows past it is split into narrower topics, not baselined. All five
+count toward `loom knowledge check --strict`; a tree that cannot clear them yet records
+them with `--write-baseline` (see the baseline section below). The blurb cap (`MAX_BLURB_CHARS = 80`,
 `index.rs`) is separate: it truncates in the index and makes `annotate --blurb`
 refuse, but raises no catalog issue.
 
@@ -212,8 +136,8 @@ parse coverage per file, which is unrelated to knowledge docs.) There is no
 `--min-coverage` gate either.
 
 `loom knowledge check` DOES exist (`commands/knowledge/check.rs`; see *Audit Rules*
-above). The `loom knowledge` CLI has eight subcommands, all dispatched from
-`cli/dispatch.rs::dispatch_knowledge`: `update`, `replace-section`, `annotate`
+above). The `loom knowledge` CLI has nine subcommands, all dispatched from
+`cli/dispatch.rs::dispatch_knowledge`: `update`, `replace-section`, `delete-section`, `annotate`
 (frontmatter lifecycle state, `--source` evidence paths, the `--verified` revision,
 aliases, and the topic blurb), `context`, `eval` (scores retrieval against a
 checked-in case file), `telemetry` (summarizes delivery and retrieval events),
@@ -248,3 +172,116 @@ returns — calling it inside the closure self-deadlocks on the same thread, bec
 per open file description. Tier-2 writes lock `<root>/<category>/` and therefore never collide
 with an index write. Refresh failures warn to stderr and return `Ok`, so that a successful
 content write is never retried into a double append.
+
+## Baselines, `delete-section`, `annotate --section` and `memory pending --group` (2026-09-19)
+
+- **`loom knowledge check --baseline <file>`** makes `--strict` fail only on structural issues the file does not
+  record (a missing file is an empty baseline), so a tree can adopt the size limits without a flag day.
+  `--write-baseline <file>` records every current structural issue and exits 0; it refuses `--strict`,
+  `--strict-evidence`, `--json` and `--baseline` in the same call (`commands/knowledge/check.rs`). One line per
+  issue, `<kind> <file> [<detail>]` (`fs/knowledge/catalog/baseline.rs`, key in `catalog/order.rs::baseline_key`);
+  `#` comments and blank lines are ignored and a repeated entry is rejected. The key DROPS the measured counts
+  (lines, occurrences, bytes) so a recorded issue stays recorded while its size moves, and the detail is the
+  heading for `DuplicateHeading` and `OversizedSection`, empty for `OversizedFile` and `OversizedIndex`, the
+  payload otherwise. Drift is one-directional: a recorded issue that no longer occurs only prints "baseline can be
+  tightened" and never fails.
+- **`delete-section <file> <heading>`** removes a `#{2,6}` section with its nested subsections and errors when no
+  heading matches. It closes the gap that no command could remove or rename a heading: a rename is
+  `delete-section` then `update`.
+- **`annotate --section <heading> --state <state>`** writes a `<!-- state: ... -->` marker under the heading; only
+  `##` headings are accepted (`fs/knowledge/splice.rs`).
+- **`loom memory pending --group`** prints four groups (corrections, mistakes, decisions, other); corrections are
+  sorted by target file then heading with the target in its own column, so a distiller works file by file, and
+  `--json --group` carries the same structure. `--strict` keeps its meaning. `loom memory note` rejects a
+  `mistake:` note without `Prevention:` and a `stale-knowledge:` note that does not parse as
+  `<file>#<heading> ... Correction: ...`, printing the expected shape and writing nothing
+  (`commands/memory/handlers/prefix.rs`).
+- **A backticked span that looks like a source path is checked** (`fs/knowledge/chunker/references.rs:44`,
+  `classify_reference`); a sentence quoting a path that does not exist reports `MissingSourceRef`, and
+  `annotate --clear-sources` cannot clear it because it comes from the body, not the frontmatter. Reword the
+  sentence so it carries an example marker (`<`, "example") or says "does not exist".
+
+## Audit Rules — the Catalog Issue Kinds
+
+Earlier versions of this doc described a `gc`-based system with two disagreeing link-form checks, and a
+four-kind list plus an index-staleness text check; neither matches the tree (no link-form rule, no
+index-staleness check). The heading of the old version said "Nine"; the count is eleven now, and
+delete-section plus update is how a heading gets renamed.
+
+`fs::knowledge::catalog::build` walks every curated markdown file under the
+knowledge root (recursing into category directories, skipping `INDEX.md` and
+dotfiles) and reports eleven `CatalogIssue` kinds (`catalog/issue.rs`), sorted
+deterministically by `catalog/order.rs`:
+
+- **`DuplicateHeading`** — the same normalized H2+ anchor occurs more than once in
+  one file.
+- **`DuplicateHeadingAcrossFiles`** — the same heading appears in several files
+  (`note: heading "X" appears in 2 files`); review-only.
+- **`GenericBlurb`** — a topic's first `>` line still equals
+  `templates::scaffold_blurb` for its category.
+- **`BrokenLink`** — a markdown link target does not resolve to a real file, by
+  lexical path resolution (`.` and `..` folded relative to the linking file,
+  `contained_link_target`). An absolute target, or one that folds outside the
+  knowledge root, is reported as broken without being probed on disk — an earlier
+  version of this section said such targets were skipped.
+- **`MissingSourceRef`** — a backticked source path classified live does not
+  resolve (see *Reference classification* below).
+- **`EvidenceChanged`** — a file's frontmatter declares `sources` and a `verified`
+  revision, and `git diff --name-only <verified>..HEAD -- <sources>` lists one of
+  them (`fs/knowledge/catalog/evidence.rs`). `EvidenceCollector` defers the git
+  work until every file is parsed, so files declaring the same `verified` and
+  sources share one bounded probe (`MAX_GIT_OUTPUT_BYTES`, 1 MiB). An earlier
+  version of this bullet said any git failure skips the check; it now reports
+  the next kind.
+- **`EvidenceUnavailable`** — declared evidence could not be assessed, with a
+  reason: `missing_revision`, `invalid_revision`, `missing_repository`,
+  `git_unavailable`, `command_failed` or `resource_limit` (`catalog/issue.rs`).
+- **`UnverifiableReference`** — a backticked path classified example, runtime,
+  external or historical that does not resolve; a note, since such a path is not
+  expected to exist.
+- **`OversizedSection`**, **`OversizedFile`**, **`OversizedIndex`** — the size
+  limits under *Thresholds* below (tier-1 AND tier-2).
+
+`EvidenceChanged`, `EvidenceUnavailable`, `UnverifiableReference` and `DuplicateHeadingAcrossFiles` are review-only
+(`CatalogIssue::is_review_only`): they print as `review:` / `note:` lines, land in
+the JSON `review` array instead of `issues`, and never count toward `--strict`.
+`--strict-evidence` (`commands/knowledge/check.rs:36-58`) additionally counts
+`EvidenceChanged` and `EvidenceUnavailable`, and fails on a missing knowledge root.
+Stage gates use `--strict` alone: most pages were never assessed against their
+sources, so a corpus-wide `--strict-evidence` gate fails on unreviewed drift, not
+on a defect. Changed evidence stays a review signal until someone re-reads the
+sources and runs `loom knowledge annotate <target> --verified HEAD`.
+
+## Reference Classification and the Check Surfaces
+
+**Reference classification** (`chunker/references.rs::classify_reference`, applied
+to each backticked span ending in a source extension — rs, tsx, ts, py, go, sh, md,
+toml, yaml, yml — outside fenced blocks, using the text around it): *runtime* when
+the path starts with `.loom/`, `.loom/work/`, `target/`, `node_modules/`, `~`, `/tmp` or
+`$`, or contains an angle bracket; else *example* when the path or its sentence
+carries a placeholder marker (foo, bar, baz, an angle bracket, an ellipsis,
+path/to, slug, the words example or placeholder, and a few more); else
+*historical* when the sentence says the path does not exist, no longer, was
+removed or deleted, was renamed, used to, or "there is no" directly before it;
+else *external* on markers such as upstream or another project; otherwise *live*.
+A live path must exist at the project root, under a cargo package source root, as
+the unique project file with that path suffix, or — bare basename — as any file
+with that name (`catalog/source_roots.rs::repository_source_path_exists`). A live
+path containing a slash whose first component names nothing in this project
+becomes an external note instead of a `MissingSourceRef`
+(`push_source_ref_issue`).
+
+`catalog::build` never repairs anything (`context/ingest.rs` states it as a hard
+constraint) and reports on the curated tree only — chunks indexed from the
+configured prose roots contribute no issues.
+
+**Surfaces.** `loom knowledge check` (`commands/knowledge/check.rs`) resolves only
+the knowledge root — never the context store, so it writes nothing and is safe as a
+stage acceptance criterion — and prints one line per issue. It exits 0 unless
+`--strict` is set and at least one non-review issue exists, in which case it exits
+1 after printing. `--json` prints `root`, `issues`, `review` and `count`, where
+`count` is the strict count. `loom knowledge sync` also runs the build and prints
+the issue count, but gates nothing.
+
+There is no per-link form requirement — a human title pointing to a topic path is
+simply the house style (see `patterns.md`), not something an audit enforces.

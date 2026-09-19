@@ -187,7 +187,7 @@ Foreground fan-out verified safe to 6 concurrent codex-companion tasks; backgrou
 
 Deterministic, model-free, network-free retrieval over the curated knowledge hierarchy: chunk the prose (curated plus indexed project prose under `doc/`), rank per channel, fuse by **two-tier fusion** (exact-rung candidates first by raw score, the lexical remainder by reciprocal-rank fusion — NOT plain RRF), pack to a token budget. One entry point — `context::retrieve_for_stage` — serves the `loom knowledge context`/`loom knowledge eval` commands, signal generation and the prompt hook alike. Two graphs exist — the knowledge-chunk catalog and the tree-sitter source graph — and both are ranked and fused into one pack, each through a persistent per-revision BM25 index behind the full scan (the scan stays the correctness oracle).
 
-Full detail, including the base/overlay layering rule and what is derived versus durable: [architecture/context-retrieval.md](architecture/context-retrieval.md).
+Full detail: [architecture/context-retrieval.md](architecture/context-retrieval.md); the base/overlay layering rule and what is derived versus durable are in [architecture/context-retrieval-state.md](architecture/context-retrieval-state.md), and the stopwording, BM25 index and prose corpus in [architecture/context-retrieval-corpus.md](architecture/context-retrieval-corpus.md).
 
 ## Source Graph (`loom/src/context/source_graph/`, `context/extract/`)
 

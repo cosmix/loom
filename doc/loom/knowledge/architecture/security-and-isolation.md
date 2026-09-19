@@ -2,7 +2,7 @@
 ---
 # Security And Isolation
 
-> 4-layer worktree defense, security model, settings.local.json sites.
+> 4-layer worktree defense, security model
 
 ## Worktree Isolation (4-Layer Defense)
 
@@ -190,4 +190,4 @@ operator's ungated path, by design.
 The hooks directory comes from a SCOPED read of `core.hooksPath` (local, then global, then system) —
 loom's own git runner prepends `-c core.hooksPath=/dev/null` to every git call it makes
 (`git/runner.rs`, owner decision 10), which silently wins over an UNSCOPED read of the same key. See
-[`-c core.hooksPath=/dev/null` Silently Overrides a Scoped Read](../mistakes/sandbox-and-settings.md#-c-corehookspathdevnull-silently-overrides-a-scoped-corehookspath-read-2026-09-13).
+[`-c core.hooksPath=/dev/null` Silently Overrides a Scoped Read](../mistakes/sandbox-tooling-and-network.md#-c-corehookspathdevnull-silently-overrides-a-scoped-corehookspath-read-2026-09-13).

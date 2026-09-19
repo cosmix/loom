@@ -1,6 +1,6 @@
 # Iterm2 Window Teardown
 
-> iTerm2 spawn never names its window, so teardown cannot find it to close
+> iTerm2 window never named, so teardown cannot close it
 
 ## iTerm2 Windows Survive Stage Completion — Spawn Never Names the Window (GitHub #7, 2026-08-29)
 

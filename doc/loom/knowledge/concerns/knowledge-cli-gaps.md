@@ -1,24 +1,6 @@
 # Knowledge Cli Gaps
 
-> Knowledge CLI gaps: no delete-section, CRLF, backlog
-
-## Knowledge Signals Never Teach Tier-2 (2026-07-28)
-
-`orchestrator/signals/` generates `loom knowledge update <tier-1-file>` guidance, but **no
-prefix teaches the `category/slug` tier-2 form**. Verified functionally: tier-2 works
-(`loom knowledge update patterns/lock-ordering` creates the file and `INDEX.md` picks it up on
-the next knowledge write) — it is simply never advertised to an orchestrated knowledge stage.
-
-Consequence: the hierarchy grows only through the interactive `bootstrap`/`gc` paths, not during
-`loom run`. Not a defect in what landed; follow-up stage material.
-
-## `loom knowledge` Has No Delete-Section Verb (2026-07-28)
-
-`update` appends and `replace-section` replaces, but nothing removes a section. Consolidating
-several tier-1 sections into one tier-2 topic therefore cannot be completed with the CLI alone —
-the migration in this plan replaced the lead section with a summary and had to strip the
-remaining N-1 headings with an external script. A `loom knowledge drop-section` (or a
-`replace-section --delete`) would close the gap.
+> Knowledge CLI gaps: heading rename, CRLF, fences, housekeeping
 
 ## `loom knowledge update` Cannot Set a Topic Blurb (2026-07-28)
 
@@ -31,28 +13,17 @@ own, so seeding and correcting the blurb are two calls, and a leading `>` line i
 content becomes a second, redundant blurb-shaped paragraph in the body rather than replacing the
 scaffold's.
 
-## GC Flags Tier-1 Files for Section Extraction With No Oversized Sections (2026-07-31)
-
-`analyze_gc_metrics` flags a tier-1 file whenever its **total** exceeds `DEFAULT_MAX_TIER1_LINES`
-(250), independently of whether any individual section exceeds the section threshold. All six
-tier-1 files here currently report `0 oversized sections` yet appear as extraction targets, and
-the GC system prompt's first instruction is "Extract oversized tier-1 sections into tier-2 topic
-files" — sections the analyzer itself says do not exist.
-
-The agent is left to invent a split with no guidance on where the seams are, which is exactly the
-condition under which a restructuring run drops content.
-
-**Fix:** when a file is over budget but has no oversized section, say so in the prompt and ask for
-a split proposal by topic cohesion instead of naming a section-extraction target that isn't there.
-
 ## `loom knowledge` Cannot Rename a Section Heading (2026-08-17)
 
 `loom knowledge replace-section <file> <heading> [content]` replaces a section's **body** and
-keeps the existing heading line. `splice_section` (`fs/knowledge/dir.rs:278`) matches the EXISTING heading and
-always re-emits that same heading text — there is no way to change the heading itself through
-the CLI, so marking an entry resolved in the repo's `~~strikethrough~~ (RESOLVED date)`
-convention still requires a direct file edit for the heading line, even though the body can now
-be corrected in place.
+keeps the existing heading line. `splice_section` (`fs/knowledge/splice.rs`) matches the EXISTING heading and
+always re-emits that same heading text, so a count or status carried in a heading ("Nine issue kinds",
+"~~strikethrough~~ (RESOLVED date)") goes stale in place.
+
+**Workaround since 2026-09-19:** `loom knowledge delete-section <file> <heading>` removes a heading and its nested
+subsections, so a rename is `delete-section` followed by `update` with the new heading (the section moves to the
+end of the file). The knowledge-hierarchy audit-rules section was renamed this way. An in-place rename is still
+missing.
 
 **Fix:** either accept a `--heading <new>` flag, or match the OLD heading and re-emit whatever
 heading line the content passed in.
@@ -89,53 +60,42 @@ two paths should agree.
 
 ## Tier-1 Knowledge Housekeeping Backlog
 
-`loom knowledge check --strict` enforces 250 lines per tier-1 file, 40 lines per tier-1
-section, and 12 KB for `INDEX.md` (`fs/knowledge/catalog/size.rs`). The remaining work is a
-dedicated knowledge-reorganization project, not part of token-governor correctness.
+**Closed by the 2026-09-19 cleanup.** `loom knowledge check --strict` exits 0 on this tree under the tier-1
+limits (250 lines per file, 40 per section) AND the tier-2 pair (400 lines per file, 80 per section,
+`fs/knowledge/catalog/size.rs`), with no `MissingSourceRef`. The earlier backlog (728 findings, six oversized tier-1
+files, bare-filename source references) was cleared by the knowledge-bootstrap stage, and this stage split the five
+tier-2 files and eleven sections that the new tier-2 limits flagged (context-retrieval, sandbox-and-settings,
+subagent-orchestration, testing-and-lint and codex-plugin, plus eleven sections in other topics).
 
-- **All six tier-1 files remain oversized.** Their individual sections are compact; the
-  overage is cumulative volume. Moving roughly 80-120 sections safely into tier-2 topics
-  should be done file-by-file, preserving links and checking for duplicate headings.
-- **`MissingSourceRef` remains the dominant finding.** Resolution needs the FULL path relative to a
-  package's src root (e.g. commands/status/data/collector.rs, loom-hooks/spawn-guard.sh) — a bare
-  filename (collector.rs) or a partial suffix (ledger/legend.rs, ui/tui/app.rs) fails even when
-  that suffix is unique in the tree; only the fully-qualified relative path resolves. The residual is
-  mostly bare filenames, hook filenames written without their `loom-hooks/` prefix, and genuinely stale
-  citations that cannot be assigned to one package root safely. Canonicalize them to the full
-  src-relative form; ambiguity must continue to fail closed.
-- **Tier-2 topics with generic blurbs are unfixable from inside a stage session.** A stage session's
-  `loom-hooks/worktree-file-guard.sh` hook denies Edit/Write on any path under `doc/loom/knowledge/`, and
-  there is no `loom knowledge` CLI verb for the blurb line specifically (only `update`, which appends,
-  and `replace-section`, which needs an existing `#{2,6}` heading — the blurb is a bare `>` line under
-  the H1). A knowledge-distill stage that creates a new tier-2 topic via
-  `loom knowledge update <category>/<slug>` therefore cannot repair its own auto-scaffolded "Topic
-  notes for the `<category>` knowledge area." blurb; that repair needs either a `--blurb` flag on
-  `update`/a dedicated verb, or a direct file edit from an interactive (non-stage) session.
-- **The generated index remains oversized.** This is low-priority navigation cleanup.
-- **2026-09-04 reconfirmation (web-dashboard plan's knowledge-distill stage):** the backlog is at
-  728 `MissingSourceRef`/oversized-file issues under `./doc/loom/knowledge` on a tree with none of
-  this plan's own additions applied (verified against the unmodified HEAD tree via a temporary
-  stash), essentially unchanged from prior counts. This plan's own new/edited knowledge content adds
-  ZERO net new issues (verified: every bare filename this stage introduced was corrected to its
-  fully-qualified src-relative path before completion). `loom knowledge check --strict` — the
-  canonical knowledge-distill acceptance criterion per `skills/loom-plan-writer/SKILL.md` — therefore
-  still fails on this tree for reasons entirely predating this plan; fixing the backlog itself needs
-  the dedicated reorganization project named above, not a per-plan knowledge-distill stage. A stage
-  hitting this should confirm (as here) that its own additions are clean, then treat the residual
-  count as this pre-existing, already-tracked concern rather than attempting to clear it inline.
+What remains is discipline, not backlog:
+
+- **A tier-2 file or section that grows past its limit is split, not baselined.** `--write-baseline` exists for
+  adopting a limit on a tree that cannot clear it yet; this tree can, so no baseline file is needed while
+  `--strict` stays green. After `./dev-install.sh`, run `loom knowledge check --strict`: exit 0 means no baseline
+  file to generate. If a newer binary reports issues this one does not, record them with
+  `loom knowledge check --write-baseline doc/loom/knowledge/check-baseline.txt` and gate with `--baseline`.
+- **Source references resolve only as a fully qualified path relative to a package's src root** (for example
+  `commands/status/data/collector.rs`, `loom-hooks/spawn-guard.sh`). A bare filename or a partial suffix fails even
+  when the suffix is unique, and a sentence quoting a path that does not exist reports `MissingSourceRef`; reword it
+  with an example marker or "does not exist".
+- **A topic's blurb is set with `loom knowledge annotate <target> --blurb "<text>"`** (at most 80 characters), which
+  works from inside a stage. `update` still cannot set it, so a new topic takes two calls.
+- **Moving a section between topics has no verb.** The split record used `update <dst>` then `delete-section <src>`. An
+  extractor that finds the section end MUST skip fenced code: a `# comment` line inside a fence is not a heading, and one
+  split truncated a section at such a line and left an unclosed fence that made the checker count 152 lines.
 
 ## File Tools Are Blocked on Knowledge Files, and No Command Renames a Heading (2026-09-13)
 
 The worktree file guard refuses Edit and Write under `doc/loom/knowledge/` ("knowledge files are
 recorded through `loom knowledge update`, not file tools"), in a knowledge-distill stage too. The
-only in-place channel is `replace-section`, which rewrites a whole section body and keeps its
-heading. Nothing renames or deletes a heading, so a count or status in a heading goes stale: the
-knowledge-hierarchy page still says "Nine" issue kinds, with a correction in its body. A surgical
-fix inside a long section means regenerating the whole body (extract it, apply exact-once
-substitutions, pipe the result to `replace-section` from a file). `loom-control-complete.sh` also
-rejects a Bash command line that merely resembles a completion command, so a long body belongs in a
-file fed on stdin, not an inline heredoc.
+in-place channels are `replace-section` (rewrites a section body, keeps its heading) and, since 2026-09-19,
+`delete-section` (removes a heading and its subsections); a heading rename is delete plus `update`. A surgical
+fix inside a long section means regenerating the whole body: extract it with a FENCE-AWARE scanner, apply
+exact-once substitutions, and pipe the result to `replace-section` from a file. `loom-control-complete.sh` strips
+inert heredoc bodies now (quoted delimiter, inert reader), but a long body still belongs in a file fed on
+stdin; name that file `.distill-body-*` so the main-agent edit advisory ignores it.
 
-`INDEX.md` sits at its 16 384-byte `OversizedIndex` budget: it was 1 byte over before the
-token-optimization distill wrote anything. Every new tier-2 topic adds a row, so each one has to be
-paid for with shorter blurbs (`loom knowledge annotate <target> --blurb`).
+`INDEX.md` has 108 bytes of headroom under its 16 384-byte `OversizedIndex` budget after the 2026-09-19 splits
+added seven topic rows and roughly sixty blurbs were shortened to pay for them. Every new tier-2 topic adds a row,
+so each one has to be paid for with shorter blurbs (`loom knowledge annotate <target> --blurb`). The next
+distillation should expect to shorten more blurbs before adding a topic, or drop rows by merging small topics.

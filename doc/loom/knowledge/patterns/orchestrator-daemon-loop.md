@@ -2,7 +2,7 @@
 ---
 # Orchestrator Daemon Loop
 
-> Signal gen, daemon IPC, poll loop, heartbeat, session backend, spool drain.
+> Signal gen, daemon IPC, poll loop, heartbeat, spool drain
 
 ## Signal Generation Pattern
 

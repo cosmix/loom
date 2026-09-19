@@ -227,56 +227,6 @@ Two more traps sit directly downstream of the fix itself:
   can fail before it persists `NeedsHandoff`, and an edge-triggered in-memory latch would otherwise
   suppress every later attempt. The handler's `NeedsHandoff` mark is idempotent for the same
   verified session; retries must not add attempt time again.
-- **Handoff idempotence needs a durable cause, not just session identity.** A Red-band snapshot for
-  `(stage_id, session_id)` may predate substantial work done before the 125% backstop. V2 handoffs
-  therefore persist an optional typed `origin` (`red_band` or `budget_exceeded`), and lookup scans
-  all numbered artifacts for the exact `(stage, session, origin)` tuple. Legacy/manual/malformed
-  files cannot suppress the first budget snapshot, while later retries and daemon restarts reuse
-  the tagged artifact. A cold-start Red observation reuses that advisory only when its resident-token
-  snapshot is identical; newer context or a known Green/Yellow-to-Red re-entry writes a fresh one.
-  Two genuine crossings are not retries of one event. Directory or file-read errors remain
-  uncertainty and fail the budget action closed.
-- **Continuation must validate authorship, and allocation must be serialized.** The highest numbered
-  filename may be malformed, manual, or written by another session. Select the newest valid V2
-  handoff for the exact outgoing `(stage, session)` pair; only a stage with no predecessor may use
-  the legacy latest-file fallback. Allocate the sequence number and crash-atomically write the file
-  under one handoff-directory lock, or concurrent daemon/CLI producers can choose and overwrite the
-  same name.
-- **The stage assignment is the final discovery witness.** Combining `active_sessions` with
-  persisted `Running`/`Spawning` records is not enough: after a restart, an assigned session with a
-  missing record could still be an untracked writer. Takedown must load the stage's exact assigned
-  session as a final check. Even an exact terminal record must be probed: `Completed` is persisted
-  before an agent necessarily finishes its merge/teardown path, so workflow state is not process
-  death evidence. A missing or mismatched record leaves the stage in `NeedsHandoff` rather than
-  treating an empty scan as permission to re-queue.
-- **Missing process identity is uncertainty, including after teardown.** Record whether PID
-  evidence was already absent before invoking the backend; removing files during teardown cannot
-  convert that pre-existing uncertainty into confirmed death. A tmux `kill-server` failure must
-  propagate and retain the socket and PID evidence, because unlinking the only control handle can
-  strand a live writer while making it look absent. Verified PID/start-time evidence must likewise
-  survive SIGTERM until confirmation observes definitive death: signal delivery is asynchronous,
-  and deleting the entry immediately makes a slow-exiting process look gone.
-- **Heartbeat persistence is an exact, locked read-modify-write.** A complete event session id must
-  address exactly `<session-id>.md`, match the stage, and still be `Running` under the same lock that
-  applies the heartbeat. Prefix lookup or an unlocked read followed by whole-record save can mutate
-  the wrong session or overwrite a concurrent terminal transition. Compare the complete heartbeat,
-  not only its whole-second timestamp: context can change twice in one second, especially across
-  native compaction.
-- **Manual resume queues work; it does not spawn it.** `loom resume` preserves the predecessor id
-  while moving `Blocked`/`NeedsHandoff` to `Queued`, then asks the operator to run `loom run`. Only
-  the orchestrator may perform predecessor liveness verification, write-ahead session assignment,
-  and successor spawn. Direct continuation auto-spawn is rejected so a CLI path cannot orphan or
-  double-spawn an agent.
-- **Advisory Red handoff readiness is separate from Red-band observation.** Record readiness only
-  after the artifact was successfully found or written. If transient I/O makes that operation fail,
-  an unchanged Red reading retries on the next poll; remembering only the band transition would
-  permanently disarm the handoff until the session left Red.
-
-**How to test a liveness-gated branch without risking the test runner:** write a PID file with NO
-start-time line. It verifies as `Unverifiable`, which counts as ALIVE for probing purposes, while
-the verified-kill path REFUSES to signal an unverifiable identity — so a test can point this at its
-own PID with zero risk of the test killing itself. `Some(u64::MAX)` as the start time gives the
-deterministic dead case for the opposite branch.
 
 ## The Judge-Close Path Persisted Its Record on an Unconfirmed Kill (2026-09-05)
 
@@ -342,3 +292,56 @@ persisting the session status; the judge test modules run under the flake-check 
 **Why:** Generated settings set `sandbox.failIfUnavailable: true` whenever the plan sandbox is enabled, and Claude Code refuses to start when its Linux sandbox cannot initialize (missing `bwrap`/`socat`, or WSL1). Nothing in `loom run` checked those prerequisites; the tmux backend captured no pane output; `loom-hooks/session-end.sh` discarded the SessionEnd `reason`; and the crash handler retried an exit that identical arguments could never fix.
 **Prevention:** `loom run` now refuses to start on Linux/WSL when `bwrap` or `socat` is missing or the kernel is WSL1 (`commands/run/sandbox_preflight.rs`); the wrapper tees Claude's stderr to `.loom/work/logs/<session>.stderr.log` and the crash report embeds its tail; a crash inside the fast-fail window with no remote-control fallback left to apply is a `StartupRefusal` and is never retried.
 **Fix:** On the host, `sudo apt install bubblewrap socat`, confirm `uname -r` contains `WSL2`, then `loom stage retry <stage-id>`. To see Claude's own error for any instant exit, run the stage's wrapper by hand: `bash .loom/work/wrappers/<pid-key>-wrapper.sh`.
+
+## Re-Queueing After a Kill (continued): Handoff Idempotence Through Test Design
+
+- **Handoff idempotence needs a durable cause, not just session identity.** A Red-band snapshot for
+  `(stage_id, session_id)` may predate substantial work done before the 125% backstop. V2 handoffs
+  therefore persist an optional typed `origin` (`red_band` or `budget_exceeded`), and lookup scans
+  all numbered artifacts for the exact `(stage, session, origin)` tuple. Legacy/manual/malformed
+  files cannot suppress the first budget snapshot, while later retries and daemon restarts reuse
+  the tagged artifact. A cold-start Red observation reuses that advisory only when its resident-token
+  snapshot is identical; newer context or a known Green/Yellow-to-Red re-entry writes a fresh one.
+  Two genuine crossings are not retries of one event. Directory or file-read errors remain
+  uncertainty and fail the budget action closed.
+- **Continuation must validate authorship, and allocation must be serialized.** The highest numbered
+  filename may be malformed, manual, or written by another session. Select the newest valid V2
+  handoff for the exact outgoing `(stage, session)` pair; only a stage with no predecessor may use
+  the legacy latest-file fallback. Allocate the sequence number and crash-atomically write the file
+  under one handoff-directory lock, or concurrent daemon/CLI producers can choose and overwrite the
+  same name.
+- **The stage assignment is the final discovery witness.** Combining `active_sessions` with
+  persisted `Running`/`Spawning` records is not enough: after a restart, an assigned session with a
+  missing record could still be an untracked writer. Takedown must load the stage's exact assigned
+  session as a final check. Even an exact terminal record must be probed: `Completed` is persisted
+  before an agent necessarily finishes its merge/teardown path, so workflow state is not process
+  death evidence. A missing or mismatched record leaves the stage in `NeedsHandoff` rather than
+  treating an empty scan as permission to re-queue.
+- **Missing process identity is uncertainty, including after teardown.** Record whether PID
+  evidence was already absent before invoking the backend; removing files during teardown cannot
+  convert that pre-existing uncertainty into confirmed death. A tmux `kill-server` failure must
+  propagate and retain the socket and PID evidence, because unlinking the only control handle can
+  strand a live writer while making it look absent. Verified PID/start-time evidence must likewise
+  survive SIGTERM until confirmation observes definitive death: signal delivery is asynchronous,
+  and deleting the entry immediately makes a slow-exiting process look gone.
+- **Heartbeat persistence is an exact, locked read-modify-write.** A complete event session id must
+  address exactly `<session-id>.md`, match the stage, and still be `Running` under the same lock that
+  applies the heartbeat. Prefix lookup or an unlocked read followed by whole-record save can mutate
+  the wrong session or overwrite a concurrent terminal transition. Compare the complete heartbeat,
+  not only its whole-second timestamp: context can change twice in one second, especially across
+  native compaction.
+- **Manual resume queues work; it does not spawn it.** `loom resume` preserves the predecessor id
+  while moving `Blocked`/`NeedsHandoff` to `Queued`, then asks the operator to run `loom run`. Only
+  the orchestrator may perform predecessor liveness verification, write-ahead session assignment,
+  and successor spawn. Direct continuation auto-spawn is rejected so a CLI path cannot orphan or
+  double-spawn an agent.
+- **Advisory Red handoff readiness is separate from Red-band observation.** Record readiness only
+  after the artifact was successfully found or written. If transient I/O makes that operation fail,
+  an unchanged Red reading retries on the next poll; remembering only the band transition would
+  permanently disarm the handoff until the session left Red.
+
+**How to test a liveness-gated branch without risking the test runner:** write a PID file with NO
+start-time line. It verifies as `Unverifiable`, which counts as ALIVE for probing purposes, while
+the verified-kill path REFUSES to signal an unverifiable identity — so a test can point this at its
+own PID with zero risk of the test killing itself. `Some(u64::MAX)` as the start time gives the
+deterministic dead case for the opposite branch.

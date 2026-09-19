@@ -19,7 +19,10 @@ Read `context/mod.rs` first for the module map. Its pipeline prose now describes
 both channels and two-tier fusion, so it is no longer the stale docstring an
 earlier version of this section warned about; its diagram still omits prose
 indexing, the lexical index, lifecycle filtering and source-lane expansion, which
-this file covers.
+this file and its two companions cover: [Context Retrieval Corpus](context-retrieval-corpus.md)
+(query stopwording and the rescue floor, the persistent BM25 index, indexed prose) and
+[Context Retrieval State](context-retrieval-state.md) (base vs overlay ownership, derived vs
+durable, delivery records, epoch suppression, brief delivery and telemetry).
 
 ## Two Graphs, Two Lanes, Both Wired
 
@@ -156,73 +159,6 @@ Measured, that let `fs/permissions/hooks.rs#function:configure_loom_hooks` win
 tier 2 of "how do I configure the hooks so sessions get the right settings" on
 `configure` and `hooks` alone.
 
-## Corpus-Derived Query Stopwording, With a Rescue Floor
-
-Query terms are stopworded against the SAME corpus the channel ranks against,
-not a fixed English list — a fixed list catches "the" and "is" and stops
-there, while the words that actually flood this retrieval are the project's
-own ("loom", "stage", "signal", "context"). A term is dropped when its
-document frequency exceeds `corpus_size * stop_df_ratio` (default `0.10`) or
-it is shorter than `min_query_token_len` (default `3`), UNLESS it occurs
-backticked in the raw prompt. A chunk or node is a candidate only if it earned
-a rung or matched a surviving term (`rank/corpus/stopwords.rs::partition_terms`).
-
-**The rescue floor exists because indexing prose changed what "ubiquitous"
-means.** Measured on this repository: on the curated-only corpus (658 docs,
-floor 65.8) the query "worktree claude code sandbox settings rules sessions"
-kept `settings`=57, `rules`=48, `sessions`=65 and returned a pack. Once A.15
-indexed project prose into the same corpus (904 docs, floor 90.4) those same
-terms inflated to 105, 93, 102 — prose is loom's own design docs, sharing the
-question's vocabulary — so EVERY term exceeded the floor and an ordinary
-question about the codebase returned an empty pack. Up to `RESCUE_LIMIT = 3`
-of the rarest dropped terms are put back, subject to a hard
-`stop_rescue_max_ratio` ceiling (default `0.25`): a term at 11% of the corpus
-comes back when the query needs it; a term at 90% never does, so a genuine
-stopword-only query still retrieves nothing. Rescued terms are removed from
-`dropped_terms`, which stays a truthful account of what was actually dropped
-(`stopwords.rs::rescue_rarest`).
-
-**The floor is under a THIN surviving set, not only an empty one**
-(`stopwords.rs::over_stopworded`). The first version fired only when
-stopwording dropped every term, which left the measured query "sandbox
-settings rules for claude code worktree sessions" answered on `rules` alone:
-seven of its eight content words were above the floor, the one generic word
-that survived counted as a survivor, and the expected chunk in
-[Sandbox and Settings](../mistakes/sandbox-and-settings.md) ("Worktree
-Settings Are a Whole-Object Rebuild") never says "rules", so it was not a
-candidate at all. The rescue now
-also fires when a query of at least `RESCUE_QUERY_MIN_TERMS = 4` distinct
-content terms kept fewer DISTINCT surviving terms than `min_knowledge_terms`
-(default `2`). Both constants are chosen, not tuned:
-
-- the survivor floor REUSES `min_knowledge_terms` because that is the prompt
-  hook's emit floor (`user_prompt_compose::clears_emit_floor`) — below it no
-  purely lexical item can ever be emitted, so a query reduced under it has
-  retrieved nothing whether or not one word is still standing. An operator who
-  lowers the floor to 1 therefore turns the thin-survivor rescue off;
-- `RESCUE_QUERY_MIN_TERMS` keeps short prompts out. "Honesty Contract" left
-  with one surviving term was served well — that survivor IS the lookup — and
-  putting its neighbours back would only add noise. Four or more content words
-  is a question, and a question reduced to one generic word was answered on
-  the least of what it asked.
-
-The cap stays flat at three on both paths; sizing it to the deficit instead
-(enough to reach `min_knowledge_terms`, no more) was measured and rejected,
-because on the case above it restores `sessions` alone rather than `sessions`,
-`settings` and `sandbox` together. Note what the fix does and does not buy:
-that chunk went from not-a-candidate to a candidate ranked around 28th, and
-the rescued `sandbox`/`settings` also feed the source channel's candidacy
-rule, so two `sandbox_settings` source nodes now enter the fused top 5. The
-`genuine-win-sandbox-settings-rules` eval case still misses at hit@5 — what is
-left there is a ranking question, not a candidacy one.
-
-One document-frequency map serves both stopwording (drops the ubiquitous) and
-`ExactGate::is_rare` (admits the rare) — deliberately: excluding prose from
-the frequency statistics was considered and rejected, because it would let a
-term be simultaneously "too common to score" and "rare enough to claim an
-exact symbol match" by two disagreeing counts. Dropped terms stay in the
-frequency map for exactly this reason.
-
 ## Two-Tier Fusion (Not Reciprocal-Rank Fusion Alone)
 
 `fuse` (`context/fuse.rs`) used to be plain reciprocal-rank fusion (RRF),
@@ -319,86 +255,6 @@ stays well-formed. `ContextItem::truncated` reports whether anything was cut.
 
 **Tier-1 summaries never ride along with their tier-2 detail.** A tier-1 file keeps a 2-8 line summary per topic ending in a link to the topic file under the tier-1 file's stem directory, and `loom knowledge update` scaffolds that topic file with the tier-1 heading verbatim, so the pair shares an anchor and scores nearly identically on the same terms. `pack::twins::tier1_twin` maps a tier-2 chunk id to its tier-1 twin, keying strictly on the tier-2 file's parent directory equalling the tier-1 file's stem, so an unrelated pair that merely shares an anchor is never collapsed. `prose:` ids, deeper paths, empty anchors and source-node ids have no twin. While packing, `details_before_summaries` walks a detail immediately before the summary it duplicates, and `select_optional` drops the summary once the detail is packed, counting it in `OmissionSummary::omitted`. When the detail does not fit the budget the summary is packed as before, which is what makes it a fallback rather than a deletion. A summary the caller named through `--require-id` is exempt from both halves: the request is answered literally, and its `ExplicitId` boost is not allowed to promote a weakly-ranked detail to the head of the pack.
 
-## Persistent BM25 Index (A.13)
-
-Every prompt used to re-tokenize the whole corpus from scratch — ~656
-knowledge chunks and ~7,900 source nodes on this repository — then scan it
-again per query term for document frequencies, inside a hook with a hard
-five-second ceiling. A persistent inverted index (`context/lexical_index.rs`)
-now makes a cache hit skip the tokenization entirely:
-
-- Keyed per channel: the knowledge index by the catalog revision, the source
-  index by `lexical_index::source_layer_key` — a hash of the resolved layer
-  actually being indexed (base revision plus each file's path, content hash
-  and parser version), NOT the overlay fingerprint, because the ranker never
-  receives that. A key/corpus mismatch is structurally impossible rather than
-  merely unlikely.
-- **The full scan stays the default and the correctness oracle.** Every
-  caller with no cache root — every existing test included — gets the scan;
-  `rank::corpus::score_terms` is the ONE arithmetic implementation both the
-  scanned and indexed representations route through, so a cache hit cannot
-  score differently from a miss. A property test asserts indexed scoring
-  equals scan scoring exactly (same scores, distinct-term counts, candidates,
-  order) across randomly generated corpora.
-- **Not stored:** `average_length` and the document-frequency map. Both are
-  exact functions of what IS stored (document lengths, postings) and a
-  persisted derived value is a second source of truth that can only be
-  wrong. Recomputed on load by the same expressions the scan uses.
-- **Weights are stored as raw IEEE-754 bits**, not decimal, so a round trip
-  cannot shift a score by an ULP.
-- The file hashes the `WEIGHT_*` constants (`derivation()`,
-  `lexical_index.rs:85-98`) and is rejected — falls back to the scan, then
-  rewrites — when they no longer match, so retuning a weight cannot leave a
-  warm cache scoring at the old value.
-- **`INDEX_VERSION` (currently `1`) must be bumped whenever `lexical::tokenize`
-  changes** — the one input to a document with no constant to hash. See
-  [conventions.md](../conventions.md).
-- Pruning (`lexical_index/cache.rs`) keeps a bounded number of index files per
-  channel (`KEEP_INDEXES = 6`) rather than unlinking every sibling revision:
-  parallel worktrees resolve different keys against one shared cache
-  directory, so unlink-all would have each stage evict every other stage's
-  index on every prompt.
-- Every write is best-effort and silent (`debug!`, never an error) — a
-  sandboxed or read-only caller still retrieves.
-
-## Indexed Prose: a Third Corpus Component (A.15)
-
-A file with no registered tree-sitter grammar produced only a whole-file
-node, and `rank_source` drops whole-file nodes — so design documents under
-`doc/` were unreachable by retrieval even though `context::extract`'s own
-docstring claimed otherwise. Every `*.md` under `config.prose_roots` (default
-`["doc"]`) is now chunked by the same heading chunker the curated tree uses,
-with every id PREFIXED `prose:` (`fs::knowledge::catalog::prose::PROSE_ID_PREFIX`)
-so it can never collide with a curated chunk id and the prefix itself signals
-origin. Completed plans (`DONE-` filenames under a `plans/` path segment) are
-excluded as history; the curated knowledge tree itself is skipped during the
-walk (it already has its own chunker) so `prose_roots = ["doc"]` does not
-double-index every curated chunk as its own prose clone.
-
-Prose participates in the structural (catalog) revision, so editing a design
-doc marks the catalog stale and it re-indexes on the next query — one
-function derives the prose source list for both the chunker and the
-fingerprinter, so the two halves of the freshness contract cannot disagree.
-
-**Curated knowledge keeps priority by DEMOTING prose, never by promoting
-curated.** `rank::prose_demotion` subtracts `config.knowledge_curated_prior`
-(default `5.0`, an increment applied after BM25 + rung scoring, not a
-multiplier) from a `prose:`-prefixed candidate's score. Promoting curated
-instead would have been equivalent for curated-vs-prose ordering but would
-also inflate the knowledge channel against the source channel and compress
-the within-channel normalized scores tier-2 fusion's tie-break depends on.
-The demotion is **clamped at zero** — left unclamped, a query answered only
-by prose gives the channel a negative maximum, and tier 2's
-`raw_score / channel_max` INVERTS the ordering (`-3.0/-1.0 = 3.0` outranks
-`-1.0/-1.0 = 1.0`), putting the worst match first. Applied AFTER the
-candidacy check, not inside the exact-match ladder, so it never turns "no
-rung fired" into a candidate — that would make every curated chunk a
-candidate on every query and undo the stopwording candidacy floor.
-
-The pack's `dropped_terms` is now the UNION of both channels' drops, not
-whichever channel was consulted first — with per-corpus ubiquity floors the
-two channels genuinely differ on what they drop.
-
 ## The Pipeline
 
 ```text
@@ -455,207 +311,10 @@ than rejected. `loom knowledge context --budget-tokens` defaults to 2000.
 
 **One entry point.** `retrieve::retrieve_for_stage` runs the whole pipeline
 and is the only way in — `loom knowledge context`, `loom knowledge eval`
-(the retrieval evaluation harness, below), signal generation and the prompt
+(the retrieval evaluation harness, next section), signal generation and the prompt
 hook all call it, so a brief rendered at spawn time and a brief pulled by
 hand are built the same way (the `context` module doc). Adding a fifth
 consumer means calling that function, not reimplementing the pipeline.
-
-**Retrieval evaluation harness (A.20).** `loom knowledge eval` (dispatched from
-`cli/dispatch.rs::dispatch_knowledge`, implemented in `commands/knowledge/eval.rs`)
-scores a checked-in case file (default `loom/eval/retrieval-cases.yaml`) through
-`retrieve_for_stage` against the LIVE on-disk index and reports per-case
-hit@5/MRR plus aggregate precision@5, exiting non-zero when aggregate
-precision falls below the file's `pass_floor` or any `forbid` id appears
-anywhere in a case's results. `forbid`-only cases are excluded from the
-precision denominator so a fixed regression case cannot cap the score
-forever, and a case with neither `expect` nor `forbid` fails construction —
-it could never fail the run. Deliberately NOT wired into `cargo test`: it
-reads the live index, which is not reproducible in CI. Its CLI help now also
-lists mandatory recall, abstention and rendered cost among the reported metrics
-(`commands/knowledge/eval/metrics.rs`); the metric description above predates that
-change. `scripts/harvest-eval-cases` drafts further cases from session transcripts
-for hand-labeling. `scripts/retrieval-ab` measures precision@5, injected tokens per
-brief and hook wall-time percentiles against a baseline binary, routed through one
-env-stripping helper so its "isolated" measure root cannot inherit the
-calling session's `LOOM_WORK_DIR` (see
-[Never Spawn a Surviving Process From a Test](../mistakes/detached-spawn-in-tests.md)
-for why an inherited env var made an "isolated" harness mutate the real
-checkout).
-
-## Base vs Overlay Ownership
-
-This is the rule that keeps parallel worktrees from corrupting each other (the
-`graph_store` module doc). Parallel stages run in separate worktrees off one
-repository; if they shared a mutable graph a stage would see HALF of a sibling's
-edits — worse than seeing none, because there is no way to tell which half.
-
-| Layer | Location | Keyed by | Mutability |
-| --- | --- | --- | --- |
-| **base** | `.loom/cache/context-v1/graph/base/<revision>.json` under the canonical MAIN project root, shared by every worktree | the commit it describes | written once, thereafter immutable; old bases are pruned only when a new one is published |
-| **overlay** | `graph.json` in `.loom/work/context/<plan>/<stage>/` | plan + stage — a real stage, or `_local` / `map-<dir>` for a checkout's working tree | rewritten by its owner; holds only the files that differ from the base |
-
-A read is `overlay ∪ (base − overlay's files)`. An overlay entry shadows the base
-entry for the same path **wholesale, never merges with it** — partial merges
-produce a graph that describes no revision that ever existed — and an overlay
-tombstone (`FileCoverage::Deleted`) removes the path from the view entirely. The
-known gap an earlier version of this section recorded, that an overlay could not
-express a deletion so a deleted file kept its base outline, is closed; see
-[Source Graph](source-graph.md) for how tombstones are built and filtered.
-
-`graph_store` owns only the layout, the layering rule and canonical
-serialization. It never builds a graph (`context::refresh` does) and never
-decides *when* to write one (`refresh::ensure_snapshot` and
-`reconcile_source_graph` do).
-
-**Which overlay a query reads** is an `OverlayScope`: the stage spawn brief reads
-its stage's own overlay (`OverlayScope::Stage`, plan from `delivery::plan_key`);
-the CLI reads `OverlayScope::Local`; the prompt hook reads whatever its
-`HookTarget` resolved — the stage overlay inside a stage, `Local` in a plain
-checkout.
-
-**A missing base is not automatically a degraded pack.** `GraphStore::resolved`
-substitutes an empty base when no base file exists for the recorded semantic
-revision. Bases are built from committed `HEAD` content even in a dirty checkout
-(`ensure_snapshot`), with working-tree changes carried by the `_local` overlay, so
-a missing base usually means nothing has published one for this `HEAD` yet.
-`ContextPack::degraded` (A.11) fires only for the narrower case: a non-empty
-semantic revision that NEITHER the base nor any overlay can back at all, so the
-resolved graph has no content whatsoever (`retrieve/graph.rs::degraded_reason`).
-Widening that predicate to "any missing base" was tried and reverted — it flagged
-every healthy checkout as degraded permanently, and
-`reconcile_graph::spawn_if_needed` triggers on `stale OR degraded`, so it also
-started a detached full-repository tree-sitter rebuild on every single prompt in
-every working checkout. See `degraded_reason`'s own doc comment for the
-reconcile-trigger consequence before widening this predicate again. Separately,
-the read marks the semantic layer stale — without degrading the pack — when the
-overlay's `generation` no longer matches the working tree, or the tree is dirty and
-no overlay exists; that too wakes the background reconcile.
-
-## Derived vs Durable
-
-Getting this wrong destroys work, so it is worth stating flatly:
-
-- **Derived / regenerable:** everything under `.loom/cache/context-v1/` (chunk
-  catalog, fingerprints, base graph layers, the persistent lexical index).
-  Safe to delete; `loom knowledge sync` rebuilds it. It is git-ignored.
-- **Durable within a run:** the per-stage overlay and the **delivery records**
-  under `.loom/work/context/<plan>/<stage>/`. These are NOT regenerable from the
-  repo alone — a delivery record states what a specific recipient was already
-  given.
-- **Durable forever:** only `doc/loom/knowledge/*.md`, the curated prose itself
-  (indexed prose under other `doc/` paths is durable too, but it is source
-  documentation with its own reason to exist, not knowledge-base content).
-
-The distinction has already caused one 100%-reproducible defect: a discard
-routine deleted delivery records out of a directory shared with the graph layer,
-so the dependency-ranking boost failed every time on the daemon path. The fix
-was to discard only the graph layer, not the shared directory (commit
-`7e35eef7`). Rule: **a "discard the derived layer" operation must name the layer,
-never the directory** — check what else writes into that directory first.
-
-## Delivery Records and Epoch Suppression
-
-`context/delivery.rs` answers "has this recipient already been given these exact
-bytes?", so a second retrieval in the same session can skip what the first
-already quoted instead of repeating it.
-
-- The record is an **optimisation, never state the run depends on**. Nothing in
-  it may fail a spawn or a hook: a missing directory reads as "nothing
-  delivered", and an unreadable or malformed file is skipped rather than
-  propagated (the `delivery` module doc).
-- Suppression is scoped to a **`context_epoch`**: once a derived layer is
-  rebuilt the same id may describe different bytes, so every record from an older
-  epoch is ignored and delivery re-opens.
-- `context_epoch` = first 8 bytes of `sha256(structural_revision \n
-  semantic_revision)`, hex-encoded (`retrieve.rs::context_epoch`). Note the **two
-  freshness axes**: structural (knowledge catalog) and semantic (source graph).
-- `delivery::plan_key` / `plan_key_from` is the ONE derivation of the plan
-  namespace and is the join key between the writer of a record and its readers.
-  A second, hand-rolled derivation reads an empty directory rather than a missing
-  record — which is why `orchestrator/core/stage_telemetry.rs`,
-  `orchestrator/signals/retrieval.rs` and the hook's `HookTarget` all route
-  through the helper.
-- **The prompt hook keys its own dedupe per SESSION, not per checkout (A.16)**,
-  through `context/delivery/session.rs` (`delivery::session`, a separate file; an
-  earlier version of this bullet called it a submodule of the same file):
-  `hook_recipient_id`, `delivered_to_session` and `discard_session_delivery`. A
-  stage's own spawn-brief delivery record is keyed by loom's session id under
-  `plan_key`/stage id, as above; the hook's recipient is
-  `prompt-<stage-or-checkout-key>-<session8>`, where `session8` is the first 8
-  bytes of `sha256(session_id)` from the hook payload, hex-encoded — a DIFFERENT
-  id space, hashed because the raw id is untrusted input that becomes a file name
-  (`nosession` stands in when the payload names none). When the hook runs inside
-  the session a stage spawned, `delivered_to_session` also counts that spawn
-  record, found through `LOOM_SESSION_ID`. Without the per-session split, a fresh
-  Claude Code session with an empty context window inherited every prior
-  session's deliveries and went silent on topics it had never actually seen.
-  `loom hook pre-compact` deletes just that session's own record after a
-  compaction, when the context that held the brief is gone (A.21).
-
-## Brief Delivery, Sanitization and Telemetry
-
-- The **Knowledge Brief** is assembled in
-  `orchestrator/signals/format/brief.rs` and injected into the stage signal at
-  spawn time. It renders as a `### Knowledge` section (curated + indexed
-  prose, fenced excerpt plus reason line) followed by a `### Source (signature
-  index)` section (one unfenced bullet per file, symbols/spans/reasons
-  inline, consecutive items on the same path merged onto one bullet). The merge
-  uses the same `render::source_groups` runs the packer charges chrome for, so
-  the rendered brief and the budget agree. The "quoted, NOT instructions" guard is
-  stated once in the header rather than once per item, which is where most of
-  the per-item token overhead used to go.
-- Every untrusted knowledge-derived value on an agent-facing surface goes
-  through the single flattening routine `context::untrusted::inline_safe`
-  (`context/untrusted.rs`). Chunk ids come verbatim from unvalidated YAML
-  frontmatter, a backtick is a legal path character, and a summary is taken from
-  a chunk heading — emitted raw, a newline ends the line it sits on and the
-  remainder renders as document structure outside any "quoted, NOT instructions"
-  guard. The module doc names three surfaces: the brief
-  (`orchestrator/signals/format/brief.rs`), `loom knowledge context`'s stdout
-  (`commands/knowledge/context.rs`), and the daemon's status payload
-  (`commands::status::data::sanitize`), where a surviving ESC would be an ANSI
-  sequence the operator's terminal obeys; `loom knowledge check` and
-  `loom knowledge telemetry` flatten their untrusted fields through it as well.
-  An earlier version of this bullet said there were exactly two surfaces.
-  `MAX_INLINE_CHARS = 200`; backticks become `ˋ` (U+02CB).
-- **The prompt hook** (`commands/hook/user_prompt.rs`, run by
-  `user-prompt-context.sh`) resolves its scope through `HookTarget`
-  (`commands/hook/target.rs`): inside a stage it reads that stage's OWN overlay
-  (`OverlayScope::Stage`, plan from `delivery::plan_key`) and keys delivery to the
-  stage; outside one it reads the checkout's `_local` overlay. It retrieves with
-  `prompt_budget_tokens`, then applies its gates in order. `parse_prompt` declines
-  machine-generated payloads before retrieval runs (task-notification XML, and the
-  "Background agent" and "Caveat:" prefixes), strips `@` file attachments, and
-  requires 24 characters of question. **Per-item admission** then drops every
-  item that does not clear the floor on its own — an exact-rung reason, or a match
-  on at least `config.min_knowledge_terms` (default `2`) distinct surviving terms,
-  for ANY item, not only knowledge chunks — except a `GraphNeighbor` item, which is
-  admitted while the retrieved pack still holds an exact-rung item; dropped items
-  fold into `omitted`. Next the session's per-epoch dedupe drops what this session
-  was already handed, and finally the payload must fit `config.max_payload_bytes`
-  (default `16384`), shedding the weakest item until it does. The hook
-  **abstains** — prints nothing — with reason `floor` (nothing admitted, or what
-  survives dedupe no longer clears the floor), `all-delivered`, or
-  `over-ceiling`; a retrieval error is `no-retrieval` and an unresolvable
-  environment `no-target`. The floor applies to UNSOLICITED injection only —
-  `loom knowledge context`, `loom knowledge eval` and the stage spawn brief are
-  deliberately not gated. After printing, or abstaining on a retrieved pack, the
-  hook nudges the detached source-graph reconcile when the pack is stale or
-  degraded.
-- **Telemetry** (`loom/src/telemetry/mod.rs`) appends one JSON line per event to
-  the state directory's `telemetry/events.jsonl`; a sandboxed session whose
-  direct write is denied spools to its worktree's `.loom/telemetry-spool.jsonl`,
-  which the daemon drains alongside the memory spool. Events: `context-delivered`
-  / `context-unavailable` (one per spawned session, from
-  `stage_telemetry::record_context_telemetry` after the stage executor spawns it),
-  `prompt-brief` / `prompt-abstained` (the prompt hook), and `context-pulled`
-  (`loom knowledge context`). Best-effort by contract — `emit` never fails a
-  caller, and `read_events` skips a malformed line. Counts are ITEM and
-  estimated-token counts, never a saving. `loom knowledge telemetry` reads them
-  back per stage (`telemetry::summary::summarize`), and `archive_run_state` copies
-  the telemetry directory under `.loom/memory/archive/` before a finished plan's
-  state directory is removed. An earlier version of this bullet said the events
-  had no reader and were deleted at plan finalization.
 
 ## Layering
 
@@ -672,3 +331,36 @@ and `crate::commands` appears only in doc comments. Verified with
 it that way: the orchestrator calls into `context`, never the reverse. An earlier
 version of this section put the single `git` edge in `refresh/source_graph.rs`
 itself.
+
+## Retrieval Evaluation Harness (A.20)
+
+`loom knowledge eval` (dispatched from
+`cli/dispatch.rs::dispatch_knowledge`, implemented in `commands/knowledge/eval.rs`)
+scores a checked-in case file (default `loom/eval/retrieval-cases.yaml`) through
+`retrieve_for_stage` against the LIVE on-disk index and reports per-case
+hit@5/MRR plus aggregate precision@5, exiting non-zero when the aggregate hit
+rate falls below the file's `pass_floor`, aggregate precision@5 falls below its
+`precision_floor` (0.40, set to 0.9 x the 0.45 measured on 2026-09-19), or any
+`forbid` id appears anywhere in a case's results (`eval/report.rs::exit_reason`).
+**Which pack is judged depends on the case `mode`** (`eval/metrics.rs::score_case` /
+`judged_pack`): `precision_at_5` and `relevant_token_fraction` are scored over the
+pack the prompt hook would actually deliver for `mode: prompt` cases (0.0 when the
+hook would abstain, computed through `commands/hook/user_prompt_compose.rs::delivered`)
+and over the raw retrieved pack for `mode: stage` cases; hit@5, MRR, forbid checks,
+mandatory recall and rendered cost always use the raw pack. The reason: each case
+judges exactly one relevant id (two for one case) and packs are budget-filled to five
+or more items, so raw-pack p@5 is capped near 1/min(5,len) per case and no ranking or
+floor change can move it; the delivered-set metric moved from 0.32 to 0.45 with the
+naming floor. Raising raw p@5 needs more relevance judgments. `forbid`-only cases are excluded from the
+precision denominator so a fixed regression case cannot cap the score
+forever, and a case with neither `expect` nor `forbid` fails construction —
+it could never fail the run. Deliberately NOT wired into `cargo test`: it
+reads the live index, which is not reproducible in CI. It also reports mandatory recall, abstention and rendered cost
+(`commands/knowledge/eval/metrics.rs`). `scripts/harvest-eval-cases` drafts further cases from session transcripts
+for hand-labeling. `scripts/retrieval-ab` measures precision@5, injected tokens per
+brief and hook wall-time percentiles against a baseline binary, routed through one
+env-stripping helper so its "isolated" measure root cannot inherit the
+calling session's `LOOM_WORK_DIR` (see
+[Never Spawn a Surviving Process From a Test](../mistakes/detached-spawn-in-tests.md)
+for why an inherited env var made an "isolated" harness mutate the real
+checkout).

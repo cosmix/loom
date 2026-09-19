@@ -1,6 +1,6 @@
 # Knowledge Write Channel
 
-> Why a distillation stage cannot write knowledge directly, the append-only-is-not-enough gap, and how doctrine baked into signals only reaches the next plan.
+> Why distillation cannot write knowledge directly
 
 ## The Distillation Stage Cannot Write Knowledge
 

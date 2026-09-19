@@ -2,7 +2,7 @@
 ---
 # Hooks Shell Portability
 
-> gawk/bash portability traps and heredoc-scanning gotchas in the repo's hooks.
+> gawk/bash portability, redirects, set -e, hook test env
 
 ## gawk vs POSIX awk (2026-03-31)
 
@@ -48,17 +48,25 @@ the SAME Bash invocation, tripped it regardless of what command wrapped the here
 both concepts on the command line itself also tripped it. (This note deliberately avoids writing
 the two trigger words themselves back-to-back in one sentence, for the obvious reason.)
 
-**Why:** the guard's tokenizer is meant to catch forged finalization commands at real command-start
-positions, but it scans the RAW command string including heredoc bodies and quoted arguments — it
-does not distinguish literal prose/data from live shell tokens once enough separator-like characters
-appear.
+**Why:** the guard tokenizer catches forged finalization commands at real command-start positions,
+but the original version scanned the RAW command string, heredoc bodies and quoted arguments
+included, and could not tell literal prose from live shell tokens.
 
-**Prevention:** when writing knowledge/mistake prose that must mention both concepts together (flag
-names, docs about the finalization command, "force-finish", "finalize"), avoid the combination in a
-single Bash-tool invocation. Two ways out: (1) rephrase to avoid the literal trigger words where the
-meaning survives, or (2) extract dynamic values (like an exact section heading containing the
-phrase) via a prior command substitution (`HEADING=$(rg ... )`) so the literal trigger text never
-appears in the Bash tool's own command argument — only the resolved variable does.
+**Status (2026-09-19):** the guard now strips heredoc bodies first (`is_completion_command`,
+`loom-hooks/loom-control-complete.sh:143-216`) and ignores a body only when it is provably inert:
+every body terminated, single fully quoted `<<'WORD'` openers, no comment, backtick, `$'`, `${`,
+arithmetic or line splice, no `)` in a stripped line when `$(`/`<(`/`>(` exists, and every command on
+an allowlist of inert readers (`cat tee wc head tail cd mkdir touch echo printf true :`, `loom
+knowledge`, `loom memory`, `git commit`). Anything else takes the raw decision, plus the raw
+substring test when the body is fed to a shell or an interpreter. Details and the residual cases:
+[hook-content-stripping](../patterns/hook-content-stripping.md).
+
+**Prevention:** prefer a quoted delimiter and an inert reader (`loom knowledge update|replace-section`,
+`loom memory`, `cat`, `tee`, `git commit -F -`). The workaround of avoiding the trigger words is needed
+only for unquoted delimiters, bodies inside `$( )` that contain a `)`, and commands outside the
+allowlist; there, either rephrase to avoid the literal trigger words or extract dynamic values via a
+prior command substitution so the trigger text never appears in the Bash command itself. A long body
+belongs in a file fed with `- < file`.
 
 ## Skill Trigger Ranking Depended on Python's Per-Process Hash Seed
 
@@ -100,3 +108,81 @@ file. `rg` is recursive by default; never pass `-r` unless you mean `--replace`.
 **Why**: A producer that writes after `head` exits gets SIGPIPE; `pipefail` turns that into the pipeline's status, and `set -e` turns an assignment from `$(...)` into an exit.
 **Prevention**: In any hook under `pipefail`, never pipe an external command directly into `head`/`sed -n 1p`/`grep -q`. Capture the full output into a variable first, then truncate with `head -n N <<<"$var"`, or append `|| true` to the producer when the exit status is not needed. A non-zero hook exit with empty stderr and exit code 141 is this bug.
 **Fix**: `get_uncommitted_changes` captures the status first and truncates from a here-string; regression test `loom-hooks/tests/commit-guard-sigpipe-many-dirty-files.sh`.
+
+## `cmd >>"$file" 2>/dev/null` Still Prints the Open Error (2026-09-19)
+
+Redirections apply left to right, so `printf ... >>"$file" 2>/dev/null` opens `$file` BEFORE stderr is
+silenced, and bash's own `Permission denied` reaches the terminal when the open fails. Write
+`{ cmd >>"$file"; } 2>/dev/null`, or put `2>/dev/null` before the file redirect. The reads-ledger append
+(`loom-hooks/_read_ledger.sh:126`) had this and was fixed.
+
+## A Bash Function Ending in `cond && action` Aborts a `set -e` Script (2026-09-19)
+
+**What happened:** `no-preexisting-failures.sh`'s `check()` was rewritten to end in `((all_exempt == 0)) &&
+MATCHED="$label"`. `check()` is called at top level, not inside an `if` or `while` condition, so under `set -e`
+a false `&&` list as the LAST statement makes the function itself return non-zero and aborts the sourced
+script: every excuse pattern after the first was silently skipped.
+**Prevention:** never end a bash function with a bare `cond && action` or `cond || action`; when the function
+is called from an unguarded context, wrap the tail in `if ...; then ...; fi` so a false condition still returns 0.
+**Fix:** `check()` and `_line_is_exempt` now end in `if`/`fi`.
+
+## Hook Tests Inherit the Live Session's Environment (2026-09-19)
+
+A hook test run from a stage session inherits `LOOM_WORK_DIR`, `LOOM_SESSION_ID`, `LOOM_STAGE_ID` and
+`LOOM_HOOK_PATH`, and each one silently changes what the hook does:
+
+- a hook that writes an in-stage ledger targets the live `.loom/work` (read-only in the stage sandbox), the
+  write fails, and a test that passed standalone fails under `run-all` (`prefer-modern-tools-warn-once.sh`).
+  Every ledger-exercising hook test unsets `LOOM_WORK_DIR LOOM_SESSION_ID LOOM_STAGE_ID` or points them at a
+  temp dir. `hooks_skill_trigger.rs::run_hook` does this with `env_remove` and a per-`FakeHome` `TMPDIR`;
+  without it the hook resolved `_loom_ledger_file`'s in-stage branch and touched the live `.loom/work` of the
+  session running the suite;
+- `loom-hooks/_read_discipline.sh:12` sets `PATH="${LOOM_HOOK_PATH:-$PATH}"`, so a test that builds a PATH
+  without `rg`/`fd` (`loom-hooks/tests/_path_without.sh`) must also unset `LOOM_HOOK_PATH`, or a live session's
+  value splices the real PATH back in and the "tool not installed" branch never runs;
+- a once-per-session ledger keyed on the fallback session id `t` was shared by every test in the process
+  through the ambient `TMPDIR`, and a test that reused one `FakeHome` for four `run_hook` calls saw seeds 1-3
+  filtered to empty output by the dedupe. Any test that calls the hook more than once with an overlapping skill
+  set uses a fresh `FakeHome` per call or expects the dedupe;
+- the Rust twin: `policy_tests_stage_gate.rs::skip_reason` checked only the test process's env and
+  `/proc/1/comm`, so inside a stage shell it skipped but under `loom stage complete` (env cleared, an ancestor
+  pid still carrying `LOOM_*`) it ran and failed, because `codex-forward-guard.sh` classifies the session from
+  ANCESTOR environ. A "no stage evidence" test skips on every evidence source the guard itself uses
+  (`ancestor_stage_evidence_reason`, commit `bd901ddf`).
+
+## Reads-Ledger Directories: Mode 0700 on Every Level, and the Owner Can Always `chmod` (2026-09-19)
+
+The out-of-stage reads ledger root `$TMPDIR/loom-reads` is shared with the Rust receipt store, which rejects it
+unless `mode & 077 == 0` (`loom/src/context/read_receipts.rs:369`). When the shell ledger layout made it an
+intermediate directory, `mkdir -p -m 700 <leaf>` would have created it with umask permissions and silently
+broken out-of-stage receipts, so `_loom_ledger_append` creates the parent 0700 too
+(`loom-hooks/_read_ledger.sh:106`). A test that `chmod 0500`s a ledger directory to make it unwritable fails
+for the same reason the design works: `_loom_ledger_append` runs `chmod 700` on its own directory and an owner
+can always `chmod`. To simulate an unwritable ledger, make the parent of a not-yet-created directory read-only or
+pre-create the ledger FILE read-only (`read-guard-session-ledgers.sh` case 6). The sibling-read scan is one
+POSIX awk pass over at most 20 ledgers instead of an `rg -F` prefilter.
+
+## A PreToolUse `updatedInput` Is Discarded Without a `permissionDecision` (2026-09-19)
+
+Claude Code silently discards a PreToolUse `updatedInput` that carries no `permissionDecision`
+(anthropics/claude-agent-sdk-python#381). `spawn-guard.sh` emitted the worker-brief-only rewrite without one,
+so that brief never reached the subagent. Every hook output carrying `updatedInput` also sets
+`permissionDecision: "allow"` (`loom-hooks/spawn-guard.sh:335`). Run a hook by its shebang, never `bash <hook>`
+without reading line 1: `skill-trigger.sh` is Python, and bash runs its `import os` lines as ImageMagick's
+`import`, which tries to screenshot the X display and, with a display, writes files named `os`, `json` and `re`
+into the working directory.
+
+## The Repo Pre-Commit Markdown Lint Silently Never Runs Inside a Stage (2026-09-19)
+
+The pre-commit hook's "Linting markdown files" step fetches from `registry.npmjs.org`. In a stage there is no
+network, the sandbox denies the fetch, and the commit still succeeds, so markdown lint never runs for `.md`
+commits made in a stage. Detection: a `<sandbox_violations>` deny for `registry.npmjs.org` right after
+`git commit`. Run the markdown lint from a networked session before merge.
+
+## zsh Reads `$VAR:path` as a Modifier, and `>` Truncates Before the Command Fails (2026-09-19)
+
+**What happened:** `git show "$T2:loom/maintainability-baseline.txt" > loom/maintainability-baseline.txt` in a zsh
+session: zsh read `:l` as the lowercase modifier, `git show` failed, and the `>` redirect had already truncated
+the tracked file (restored immediately from `git show HEAD:`).
+**Prevention:** brace a variable before a colon (`"${T2}:path"`), and never redirect onto a tracked file in a
+command that can fail; write to a scratch file and `mv` on success.

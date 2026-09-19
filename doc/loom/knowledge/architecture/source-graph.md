@@ -6,7 +6,7 @@ verified: e0baec38ddf35df499ac7eca828baed878ac671e
 ---
 # Source Graph
 
-> What the source graph is and is not, its honesty contract, extractor trait, node/edge and cache identity, and lifecycle.
+> Source graph honesty contract, extractor trait, limits
 
 ## What It Is, and What It Is Not
 

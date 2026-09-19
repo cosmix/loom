@@ -45,7 +45,7 @@ verified: 499b09b6297aeee4896a66df3da86d00f652a618
 ---
 # Token Accounting And Receipts
 
-> Usage ledger, --compare, criterion cache, receipts, exact waits
+> Usage ledger, --compare, criterion cache, receipts
 
 ## Scope and Evidence
 
@@ -230,7 +230,7 @@ are YAML-indented and have no Markdown divider row; the parser accepts that shap
 ## Signal Caps and the IV Canonical Verifier
 
 The plan changed no prompt budgets. `loom/src/orchestrator/signals/tests_size.rs` pins
-`CLAUDE_MD_TEMPLATE_MAX_BYTES` 29,696, `STABLE_PREFIX_MAX_BYTES` 7,168,
+`CLAUDE_MD_TEMPLATE_MAX_BYTES` 20,480 (lowered from 29,696 when the orchestrator-only rules moved to `skills/loom-orchestration/SKILL.md`), `STABLE_PREFIX_MAX_BYTES` 7,168,
 `STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` 10,240 and `PLAN_OVERVIEW_MAX_BYTES` 4,096, which
 mirrors `MAX_PLAN_OVERVIEW_BYTES` in `orchestrator/signals/generate/context.rs:98`. Trim doctrine
 before raising a cap.

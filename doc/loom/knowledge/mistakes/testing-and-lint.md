@@ -1,6 +1,6 @@
 # Testing And Lint
 
-> Lint/test discipline: --all-targets, --no-fail-fast, headless CI
+> Lint/test discipline: --all-targets, --no-fail-fast
 
 ## Test Code: Struct Init Without Default
 
@@ -95,28 +95,6 @@ Expect `Summary: 0 issues`. `.markdownlint.json` disables MD013/MD033/MD036/MD04
 
 **Push-time behaviour since 2026-08-31:** `.githooks/pre-push` now runs `markdownlint-cli2 --fix` before it reports, so only violations the fixer cannot repair (MD024 duplicate headings, MD025 multiple H1s) block a push; a run that changed files still stops the push and names them, because the commits being pushed still carry the unfixed markdown. It also stopped hiding the linter's output behind `2>/dev/null`, and treats a missing `markdownlint-cli2 v` banner in that output as "the linter never ran" rather than as a lint failure — `bunx` exits 1 for both, so the exit code alone cannot tell them apart.
 
-## Headless CI Has No Terminal Emulator — Pin `LOOM_TERMINAL` in Tests That Build an Orchestrator (2026-08-10)
-
-**What happened:** `merge_handler_attempt_tests::merge_probe_failure_does_not_consume_resolver_attempt_budget` passed on every dev box and failed in CI with `No terminal emulator found. Set TERMINAL environment variable or install one of: kitty, alacritty, ...`. It recurred on 2026-09-03 in five tests across `orchestrator/core/event_handler/verdict_retirement_tests.rs` and `orchestrator/core/stage_executor_tests.rs`.
-
-**Why:** `Orchestrator::new` builds the session backend from the persisted `[terminal]` config (`SessionBackend::from_config`, `orchestrator/terminal/backend.rs:96-112`). With `SessionBackendKind::Native` — which is what an absent config resolves to — it eagerly constructs a `NativeBackend`, and `detect_terminal` probes the host. A GitHub runner has no emulator installed, so construction fails and the `.unwrap()` panics: a pure state-machine assertion killed by the host environment.
-
-**Prevention — the heading above is stale.** `LOOM_TERMINAL` still works, but the mechanism the tree now uses is the config, not the env var: write a `TerminalConfig { backend: SessionBackendKind::Tmux }` into the work dir with `fs::work_dir::write_terminal_config` before calling `Orchestrator::new`. Tmux leaves the native lane unbuilt, so no detection runs (`backend.rs:99-102`, asserted by `backend::tests::from_config_tmux_leaves_the_native_lane_unbuilt`). No env var, no `#[serial]`. Working helpers: `event_handler/tests.rs::handoff_work_dir`, `stage_executor_tests.rs::work_dir`, `event_handler/stalled_judge_tests.rs::work_root`.
-
-**The trap that caused the recurrence: the helper and the test must name the SAME directory.** `write_terminal_config(dir)` and `read_terminal_config(dir)` both key off the directory handed to `OrchestratorConfig::work_dir`. `handoff_work_dir()` returns the `TempDir`, not the work path, so each test recomputes it — and five tests recomputed it as `temp.path().join(".work")` while the helper had written to `temp.path().join(".loom").join("work")`. No config there, so the native lane came back and detection ran. The mismatch is invisible on macOS, where detection succeeds. When adding a test to those files, copy the `.loom/work` join from a neighbouring test rather than inventing the path.
-
-**Detection rule:** to reproduce headless failures locally, build a `PATH` of symlinks that excludes every terminal binary and run the prebuilt test binaries with `DISPLAY`/`WAYLAND_DISPLAY`/`TERMINAL`/`LOOM_TERMINAL` unset. A fix verified only on a machine that has a terminal proves nothing.
-
-## An Inherited Descriptor Keeps an flock Alive After the Owner Releases It (2026-08-10)
-
-**What happened:** `daemon::server::lock::tests::held_and_free_lock_states_are_distinct` failed roughly one run in nine under full parallel load, and passed every time in isolation. After `drop(guard)`, `inspect_lock` occasionally still reported `Held`.
-
-**Why:** flock ownership belongs to the open file description, and `fork` duplicates it. Any _other_ test in the same binary that spawns a command inherits the lock descriptor for the window between fork and exec, and that inherited copy holds the lock alive even after the owner closes its own descriptor — `O_CLOEXEC` drops it at exec, not at fork. Demonstrated directly: a child that sleeps without exec'ing leaves the probe reading `HELD`; the same child with `execl` leaves it `FREE`.
-
-**Prevention:** a test asserting "released" against a flock cannot assume the next probe observes it. Poll to a deadline instead of probing once, and report the last observed state (`held` vs `indeterminate`) in the failure message so the next failure is diagnosable. More generally, treat single-probe assertions about process-global OS state as flaky-by-construction in a multithreaded test binary that also spawns processes.
-
-**Note for production:** the same window applies to the daemon singleton lock. A child forked during the microseconds `orchestrator.lock` is open can hold it past daemon exit until that child execs, so an immediate restart could briefly see "another daemon instance holds the singleton lock". Not observed in practice; recorded so the symptom is recognisable.
-
 ## Growing a Function That Carries a Maintainability Baseline Entry Breaks the Gate (2026-08-10)
 
 **What happened:** A five-line fix inside `generate_index` (`src/fs/knowledge/index.rs`) pushed it from 53 to 58 lines and failed `cargo test --test maintainability`, blocking the push.
@@ -207,78 +185,6 @@ than forcing a `Write`.
 be recorded). That rule still applies to your own violations here; this entry is only about
 correctly attributing which violations _are_ yours.
 
-## CI's Clippy Tracks Rustup `stable`, So a New Rust Release Breaks Main With No Code Change (2026-08-26)
-
-**What happened:** three consecutive pushes to main failed CI with only the `Clippy` job red —
-build, both test matrices, docs, fmt, maintainability, audit and deny all green, and the same
-`cargo clippy --all-targets -- -D warnings` passed locally. The first failure was on 2026-08-21;
-the last green run was 2026-08-20. Nothing in those commits touched Rust — they were
-`docs(knowledge)` commits. The real trigger was Rust **1.98.0**, released 2026-08-20, whose new
-`chunks_exact_to_as_chunks` (style, warn-by-default) fires on `ticks.chunks_exact(2)` in
-`src/context/lexical/evidence.rs`. The local toolchain was still 1.97.1, which has no such lint.
-
-**Why:** `.github/workflows/ci.yml` installs `dtolnay/rust-toolchain@stable` and the repo pins no
-toolchain file and no `rust-version`. CI therefore silently follows the newest stable, while
-a developer machine sits on whatever `rustup update` last fetched. Every six weeks a new stable can
-turn previously-clean code into `-D warnings` errors, and the offending commit will be whichever
-one happened to push next — usually one that changed nothing relevant.
-
-**Prevention:** when Clippy alone fails and the diff cannot explain it, check the toolchain gap
-first — do not read the diff for a cause it does not contain:
-
-```bash
-rustc --version                                                   # local
-curl -sS https://static.rust-lang.org/dist/channel-rust-stable.toml | rg -m1 '^version = "1\.'
-```
-
-If they differ, read the lint list for the intervening release before anything else — the
-`## Rust <version>` section of
-`https://raw.githubusercontent.com/rust-lang/rust-clippy/master/CHANGELOG.md` names every new lint
-and every widened one. Only `style`, `complexity`, `suspicious`, `correctness` and `perf` additions
-can break this gate; `pedantic` and `nursery` entries are allow-by-default and irrelevant here.
-
-**Reproducing the newer toolchain without touching `~/.rustup`:** the sandbox denies writes there,
-so `rustup update` fails with `Read-only file system`. Redirect all three homes into scratch space
-instead — the toolchain download and the crate re-fetch both go over the proxy fine:
-
-```bash
-export RUSTUP_HOME=$TMPDIR/rustup CARGO_HOME=$TMPDIR/cargo CARGO_TARGET_DIR=$TMPDIR/target198
-~/.cargo/bin/rustup toolchain install 1.98.0 --profile minimal --component clippy --no-self-update
-# rustup installs NO cargo/clippy proxies into a redirected CARGO_HOME - call the toolchain's own
-# binaries and put its bin dir on PATH so `cargo clippy` finds `cargo-clippy`:
-TC=$RUSTUP_HOME/toolchains/1.98.0-x86_64-unknown-linux-gnu
-PATH=$TC/bin:$PATH "$TC/bin/cargo" clippy --all-targets -- -D warnings
-```
-
-Use a separate `CARGO_TARGET_DIR`: sharing `loom/target/` between two toolchains invalidates every
-artifact on each switch.
-
-**The annotations workaround does not help for this failure mode.** The entry above recommends
-`gh api .../check-runs/<id>/annotations` when `--log-failed` returns 403. For a Clippy failure the
-only annotation is `Process completed with exit code 101` — no lint name, no file. Reproducing
-locally against the CI toolchain is the only route to the actual diagnosis.
-
-**Fix applied:** `backtick_spans` now uses `as_chunks::<2>().0.iter()` with a `&[open, close]`
-pattern. `as_chunks` is stable since 1.88 and discards a trailing odd element exactly as
-`chunks_exact` did, so the unpaired-backtick behaviour is unchanged. There is no `rust-toolchain.toml`
-in this repo — pinning one would trade these surprise breakages for silently ageing lint coverage,
-and that trade was deliberately rejected.
-
-## `install.sh` Aborts With No Controlling TTY, After All Real Work Already Succeeded (2026-08-30)
-
-**What happened:** `install.sh`'s `cleanup_backups()` does `read -r response </dev/tty`
-unconditionally. In a sandbox or CI with no controlling TTY this aborts the WHOLE script (`set
--e`) with a raw `No such device or address` error — even though every real installation step
-(skills, agents, hooks, `CLAUDE.md`, commands) had already completed successfully by that point.
-Pre-existing; not introduced by any specific stage.
-
-**Prevention:** to test `install.sh` non-interactively in a throwaway `HOME`, override
-`HOME=$TMPDIR/...` (`CLAUDE_DIR=$HOME/.claude` is computed at runtime from `HOME`, never
-hardcoded) and pipe `y` to stdin for `confirm_overwrites` (`install.sh:486`, which reads plain
-stdin, not the tty) — but the run will still abort at `cleanup_backups()`'s tty read at the very
-end unless a tty is attached, so treat a `No such device or address` failure AFTER the install
-steps' own success output as a harness artifact, not evidence the install failed.
-
 ## Sandbox-Sensitive Tests Carried a Skip List Into Every Plan Stage (2026-09-02)
 
 **What happened:** 22 tests cannot pass inside a Claude Code session sandbox for environmental reasons — 14 `hooks_*` integration tests whose deny branch needs `is_ancestor` to walk the process tree via `ps`, two `daemon::rpc` tests that bind an AF_UNIX socket, three that read process information, and two `fs::permissions` tests that need `dirs::home_dir()` to resolve. A plan carried `cargo test --all-targets -- --skip <22 names>` on every stage's acceptance criteria. Every stage still disputed the skip list, so each dispute cost a judge round and a full suite run, and the judges kept re-granting the same 22 names.
@@ -289,28 +195,6 @@ steps' own success output as a harness artifact, not evidence the install failed
 
 **Fix:** `src/process/sandbox_probe.rs` (`process_tree_visible`, `unix_socket_bindable`, `path_writable`, `home_dir_resolvable`, `skip_unless`; `LOOM_TEST_REQUIRE_SANDBOX_FREE=1` turns a skip into a failure) guards 21 of the 22 tests. The remaining one, `commands::attach::wait::tests::diagnose_sessions_names_the_work_dir_and_every_session`, passes in the sandbox and shows no environmental dependency, so it was left unguarded.
 
-## The Same Suite Ran Once Per Stage, Per Check, Per Judge (2026-09-02)
-
-**What happened:** five stages of one plan each carried the unfiltered `cargo test --all-targets` gate as an acceptance criterion. Each copy ran once in the agent's own `loom check`, again in `loom stage complete`, and again for every adjudication of that criterion; integration-verify then ran the whole suite once more.
-
-**Why:** the plan proved the entire repository at every stage instead of proving each stage's own code, and nothing remembered a pass already recorded against an unchanged tree.
-
-**Prevention:** run the full suite once, in integration-verify. A standard stage's acceptance criterion should be `cargo test --lib <module>::`, `cargo test --test <target>`, or an equivalent name filter. `loom plan verify` now warns on a full-suite run outside integration-verify (`plan/schema/validation_suite.rs::is_full_suite_run`), and the plan-writer skill states the rule as item 6 of its acceptance checklist.
-
-**Fix:** `verify/criteria/cache.rs` caches criterion passes under `<work_dir>/acceptance-cache/<sha256>.json`, keyed by the criterion text, the acceptance directory, `git rev-parse HEAD`, the raw `git status --porcelain=v2 --untracked-files=all -z` output, and the content hash of every listed path. Failures are never cached. A command mentioning `$HOME`, `~/`, `mktemp`, or `LOOM_HOME` is never cached. `loom check --no-cache`, `loom stage complete --no-cache`, or `LOOM_ACCEPTANCE_CACHE=0` bypass the cache; a cached pass prints as `✓ passed (cached)`. A command that references any git-ignored path (a built binary under target/, for instance) is never cached, because the digest covers the tracked tree only; cargo test and cargo build stay cacheable since they rebuild from that tree.
-
-## Every Stage Worktree Compiled Its Dependencies From Scratch (2026-09-02)
-
-**What happened:** each stage worktree has its own `target/` directory, so every stage spent minutes recompiling the same dependency crates before its first test ran.
-
-**Why:** a shared `CARGO_TARGET_DIR` across worktrees is unsafe here — parallel stages would overwrite each other's `debug/loom`, which acceptance criteria invoke by relative path — and nothing else shared compiled output between worktrees.
-
-**Prevention:** share rustc output through `sccache`, which caches per input hash and leaves every worktree its own `target/` untouched.
-
-**Fix:** `orchestrator/terminal/native/build_cache.rs` locates `sccache` (`LOOM_SCCACHE=0` disables it, `LOOM_SCCACHE=<path>` pins it, otherwise `which` then `~/.cargo/bin`, `~/.local/bin`, `/opt/homebrew/bin`, `/usr/local/bin`). The session wrapper exports `RUSTC_WRAPPER=<path>` for every session kind when found, and forwards an operator's own `RUSTC_WRAPPER`, `SCCACHE_DIR`, `SCCACHE_CACHE_SIZE`; the confined acceptance environment allows the same three. `loom run` and `loom doctor` print one line stating whether sccache was found.
-
-**2026-09-04 correction:** sccache IS installed on this machine (0.7.7 at `/usr/bin/sccache`) and IS exported into every session, but it fails closed inside the stage sandbox — see "The Sandbox's AF_UNIX Denial Also Kills sccache" in [sandbox-and-settings.md](sandbox-and-settings.md) for the root cause and the `env -u RUSTC_WRAPPER` / `LOOM_SCCACHE=0` workarounds. The prior "not installed" note was wrong and led two separate stages to misattribute the same failure.
-
 ## The Ledger Is Exact in Both Directions and Measured After rustfmt (2026-09-02)
 
 **What happened:** two subagents packed struct fields onto one line to hold a pinned maintainability-ledger count. `cargo fmt` re-expanded the lines on the next commit, and six ledger entries reported growth.
@@ -320,57 +204,6 @@ steps' own success output as a harness artifact, not evidence the install failed
 **Prevention:** `maintainability-baseline.txt` entries are exact in both directions — a shrink must be written back to the ledger, not left as a stale higher number, and growth is never recordable no matter how it was produced. Run `cargo fmt` before measuring a function or file for the ledger; packing arguments or fields onto one line to dodge a count does not survive the formatter.
 
 **Fix:** re-ran `cargo fmt`, remeasured the six affected entries, and wrote back their post-format line counts.
-
-## A Non-Serial Test Read an Env Var a `#[serial]` Sibling Mutates (2026-09-03)
-
-**What happened:** `verify::criteria::tests::runner_tests::test_run_acceptance_caches_pass_and_skips_second_execution` failed the pre-push gate on one machine at `assertion failed: second.results()[0].cached`, and passed on the same tree in another environment.
-
-**Why:** `cache_tests::cache_policy_bypass_from_env` sets `LOOM_ACCEPTANCE_CACHE=0` process-wide for its duration under `#[serial]`. The runner test was not `#[serial]`, so nothing kept the two apart, and it read the ambient value via `CriteriaConfig::default()` and `CachePolicy::from_env()`. Whether the two overlap depends on core count and scheduling, so the failure reproduces on one machine and never shows on another.
-
-**Prevention:** a test whose subject reads the process environment must either pin the value through the config surface (`with_cache_policy`) or be `#[serial]` alongside every test that mutates that variable. `#[serial]` only serialises against other `#[serial]` tests; it does nothing for a non-serial reader.
-
-**Fix:** the runner test pins `CachePolicy::Use` (`verify/criteria/tests/runner_tests.rs`), matching its bypass sibling, so it no longer reads the environment at all.
-
-## ETXTBSY Is a Fork/Exec Race Under Concurrent Tests, Not a Permissions Bug (2026-09-04)
-
-**What happened:** three independent test failures across two stages, all `Os { code: 26,
-kind: ExecutableFileBusy, message: "Text file busy" }`, all only under concurrent/
-`--all-targets` runs and never when the failing test ran alone:
-`orchestrator::terminal::native::wrapper::tests` (two exec sites, ~18% of 17 runs), and a
-hand-rolled subprocess test fixture in `quota/codex.rs`'s `poll_once` tests spawning a
-freshly-written+chmod'd script.
-
-**Why:** the classic Linux ETXTBSY fork/exec race — the kernel refuses `exec` while ANY
-process holds a write fd on that inode. In a multi-thousand-test multi-threaded binary,
-another thread's `fork`+`exec` of a just-written script can race a thread still holding the
-file open for write; the failure rate scales with concurrency.
-
-**Detection:** a test that passes alone and fails only under `--all-targets`, with error code
-26 naming the just-written executable, is this race — never a chmod/permissions problem, and
-never specific to one test's script (it hit two independent exec sites in different modules).
-
-**Prevention:** wrap `Command::spawn` in a bounded retry (5 attempts, ~20ms sleep) on
-`raw_os_error() == Some(libc::ETXTBSY)` — keep the retry in PRODUCTION code too if a real
-external tool self-updating mid-spawn is the same failure mode (`spawn_retrying_text_busy`).
-Verify a flake fix by REPETITION, not one green run: 0 failures in 11 full-suite runs after
-the fix, against ~18% before, is the only way to know it held — a single green gate run
-proves nothing about a flake.
-
-## A Test That "Kills" a Peer by Dropping an fd Is Racy Under Concurrent Process Spawns (2026-09-04)
-
-**What happened:** `daemon::server::broadcast::tests::a_dead_peer_is_evicted_while_a_live_one
-_is_kept` failed 2 of 10 full runs: the write to the supposedly-dead peer SUCCEEDED.
-
-**Why:** the test simulated a closed peer with `drop(dead_reader)`, but closing an fd only
-releases ONE reference to the socket. A concurrent `std::process::Command` fork in another
-test thread can inherit a duplicate of that fd and keep the socket alive until the child
-reaches its own exec — so `write_message()` on the "dead" peer doesn't return `EPIPE`. The
-production code was never wrong.
-
-**Prevention:** in a test binary that also spawns processes, any test simulating a closed
-peer by dropping an fd is racy. Assert on socket state instead: `dead_reader.shutdown
-(Shutdown::Both)` before the drop marks the SOCKET itself dead, which no forked fd copy can
-undo.
 
 ## An Acceptance Criterion That Greps a Colorized Tool Summary Fails Only Inside the Confined Runner (2026-09-04)
 
@@ -393,71 +226,6 @@ see the escapes a terminal hides.
 **Prevention for plan authors:** never grep a human-readable summary line for a count. Set
 `NO_COLOR=1` in the criterion, or assert against a JSON/basic reporter instead.
 
-## A Fixed Timestamp Checked Against a Now-Relative Window Expires (2026-09-13)
-
-**What happened:** `commands/usage/discovery_tests.rs::explicit_root_discovers_old_mtime_file_without_home_fallback` wrote a transcript line stamped `2026-09-12T20:00:00Z` and parsed it within `range()`, a window measured back from `Utc::now()`. It passed until 2026-09-13T20:00Z and failed on every run after, on main and on every branch, with no code change: two gate runs ten minutes apart gave opposite results.
-
-**Why:** a literal date compared against a sliding window encodes "recently" as a constant, so the test fails on a date nobody chose.
-
-**Prevention:** a fixture timestamp read by a now-relative filter is computed from `Utc::now()` (one hour ago, say). A literal date belongs only in a test that also pins the window, for example `time_range::parse_since_at(spec, fixed_now)`. When a test fails for the first time with no code change, compare its date literals with the clock before anything else.
-
-**Fix:** the fixture stamps its entry relative to `Utc::now()`; the old `UNIX_EPOCH` mtime, which is what the test is about, stays.
-
-## A Test That Calls a Hook's stdin Entry Point Hangs a Backgrounded Gate (2026-09-13)
-
-**What happened:** the state-confinement gate ran `cargo test --all-targets` from a background shell. `commands::hook::tests_pre_compact::pre_compact_always_returns_ok` calls `pre_compact()`, which reads the real process stdin to EOF (`commands/hook/pre_compact.rs:39-47`). The background shell's stdin was a pipe that never closed, so the test blocked, `cargo test` never exited, and the gate never reported. The orchestrator had told the user the gate was running and waited for a completion notice that could not come; the hang went unnoticed for more than four hours, until the user asked.
-
-**Why:** the test drives the stdin reader instead of the payload core the module already splits out for tests (`reset_for_payload`). It passes wherever stdin is `/dev/null` or a pipe that closes (CI, both git hooks), so nothing had flagged it. The gate script bounded no step, so a hang looked exactly like a slow run, and a background job notifies only when it exits.
-
-**Prevention:** a test drives a hook's payload core with a literal string, never an entry point that reads `std::io::stdin()`. The readers today are `commands/hook/{pre_compact,user_prompt,relay,project_types}.rs` and `commands/knowledge/mod.rs`. A verification script meant for the background starts with `exec </dev/null` and wraps every step in `timeout`. A gate still out past its expected duration gets its logs read, not more waiting.
-
-**Fix:** `pre_compact()` delegates to `pre_compact_from(input: impl Read)`, and the test calls `pre_compact_from(std::io::empty())`. The orchestrator's gate script now reads `/dev/null` and bounds every step.
-
-## A Backgrounded `cat` Never Drains a Fake Subprocess's stdin (2026-09-05)
-
-**What happened:** two subprocess-test gotchas in `quota/codex.rs`'s `poll_once` tests — and the
-first recorded prevention for one of them was itself wrong, which is how the flake reached CI.
-
-1. A fake script that never reads stdin and exits immediately races the parent's writes: if the
-   script exits first the parent gets `Broken pipe (os error 32)` rather than a clean write.
-   The prevention recorded here on 2026-09-04 — "background a stdin drain (`cat >/dev/null &`)"
-   — **does not drain anything**. POSIX assigns `/dev/null` to the standard input of an
-   asynchronous list in a shell without job control, before any explicit redirection, and
-   `/bin/sh` is `dash` on Ubuntu CI. The backgrounded `cat` reads `/dev/null`, exits at once,
-   and the script exits behind it. All it bought was the fork+exec delay, which hid the race
-   locally and left it live in CI: `the_child_exiting_without_ever_replying_is_reported_precisely`
-   failed 0/40 unloaded runs but 2/30 under 32 busy loops, asserting
-   `"failed to write to codex app-server stdin"` against
-   `"codex app-server closed without replying"`.
-2. Teardown always calls `child.wait_timeout(Duration::from_secs(2))` before killing, on every
-   exit path including shutdown; against a script that ignores stdin closing (e.g. `sleep 30`),
-   this adds a full ~2s to the test's elapsed time even after the reply-wait loop gave up early.
-
-**Why:** a fixture cannot paper over a production defect. `poll_once` treated any write failure
-as fatal, so a child that died before reading its request was reported as a loom-side write
-error instead of by what it printed — the same misreport a real `codex app-server` crashing on
-startup would produce. Every attempt to keep a reader alive in the fixture was working around
-that, and the cheapest-looking workaround happened not to work at all.
-
-**Prevention:** fix the code, not the fixture. A `BrokenPipe` on a request write to a child is
-not an outcome worth reporting: the child's stdout (a reply, a JSON-RPC error, or EOF) is.
-`poll_once` now reports only write errors whose `ErrorKind` is not `BrokenPipe` and otherwise
-falls through to `await_reply`, so both orderings of the race produce the same verdict.
-If a fixture genuinely must hold the read end open, the shell must save the descriptor before
-backgrounding — `exec 3<&0; cat <&3 >/dev/null &` — or stay alive itself (`sleep 30`).
-`cat <&0 >/dev/null &` fails too: fd 0 is already `/dev/null` by the time the duplication runs.
-Check any such claim with `printf 'x\n' | sh -c 'cat > out & wait'`; an empty `out` means the
-drain never ran. And any test asserting a tight "returns within Xs" bound on code with an
-unconditional teardown grace window must budget that grace on top of the deadline/shutdown
-latency.
-
-**Fix:** `loom/src/quota/codex.rs` — `write_requests` returns `std::io::Result<()>` and
-`poll_once` matches `Err(e) if e.kind() != ErrorKind::BrokenPipe` for the only fatal case; the
-five dead `cat >/dev/null &` drains are gone from `codex_tests.rs`. A race that only fires under
-load needs a loaded runner to catch: `scripts/flake-check.sh` re-runs `quota::`, `process::`,
-`verdict_apply_tests::` and `stalled_judge_tests::` under CPU contention, pinned to 4 CPUs where
-`taskset` exists, wired into CI, the release workflow's publish gate, and the pre-push hook.
-
 ## The Pre-Commit Hook Re-Adds Every Staged File, So Partial Staging Is Silently Undone (2026-09-06)
 
 **What happened:** a commit was meant to carry only this session's hunks of `loom/maintainability-baseline.txt` and `loom/src/models/stage/methods.rs`, staged with `git apply --cached`, while another session's uncommitted edits to the same two files stayed in the working tree. The commit that landed contained the other session's ledger entries too (`methods.rs 739`, `types.rs 1166`, a `defaults.rs` entry) with none of the code those entries describe, so the snapshot could not pass its own ledger gate.
@@ -467,46 +235,6 @@ load needs a loaded runner to catch: `scripts/flake-check.sh` re-runs `quota::`,
 **Prevention:** the hook now refuses a partially staged index outright and names each conflicting path before any formatter or `git add` runs, so this exact substitution can no longer happen through the normal commit path. When partial staging is deliberate — a file legitimately carries both the change to commit and someone else's separate edit — land the other work first, or commit with `--no-verify` after running the hook's own checks by hand (`cargo fmt --check`, `cargo test --test maintainability`, `RUSTDOCFLAGS="-D warnings" cargo doc --workspace --all-features --no-deps`, markdownlint on the touched files) and say so in the report.
 
 **Fix:** at the time, the affected commit was amended with the intended ledger content, and the follow-up commit was made with `--no-verify` after the hook's checks were run by hand. The systemic fix landed later: `loom/.githooks/pre-commit` now compares every staged ACMT path against the working tree and exits 1 naming each partially staged path before mutating anything (`loom/.githooks/pre-commit:19-44`). See [pre-commit hardening](pre-commit-hardening.md) for the guard's edge cases and the regression that pins it.
-
-## A Success-Path Deadline Tighter Than Production Is a Flake (2026-09-06)
-
-**What happened:** `quota::codex::tests::garbage_and_an_over_long_line_are_skipped_before_the_reply` failed the pre-push flake check with `codex app-server timed out`: the fake child had not written its reply within the 5 s the test gave `poll_once`. The `quota::` run took 8.30 s against a normal 3 s. The script itself takes under 0.1 s even under the check's pinned load, and 60 loaded re-runs (the default load, under a pty, and with 32 spinners) never reproduced it, so something on the runner held the child for more than 5 s.
-
-**Why:** the five reply-expecting tests passed a 5 s deadline for no reason. Production gives the exchange 15 s (`CODEX_DEADLINE`), and on the success path the deadline never fires; it only caps a broken exchange, so any value shorter than production's trades nothing for a flake the moment the runner stalls the child. The three timing tests carried the same shape, about 1 s of margin between the expected elapsed time and the assert bound.
-
-**Prevention:** in a subprocess test, a deadline the success path never reaches is not a timing assertion, so give it a generous value (`REPLY_DEADLINE`, 60 s). An elapsed-time bound proves one thing, that the code did not wait out the child's `sleep 30` or the deadline; set it well under that escape and well over the expected time, and say in the comment what it rules out. Build an over-long fixture line with a printf field width (`printf '%70000s\n' ''`) under `#!/bin/sh`; a 70000-element brace expansion needs bash and buys nothing.
-
-**Fix:** `loom/src/quota/codex_tests.rs`: `REPLY_DEADLINE` replaces the five 5 s deadlines, the elapsed bounds go from 4/5/3 s to 15/20/15 s with comments naming what each rules out, and the over-long-line fixture is plain sh.
-
-## One Panic Between set_current_dir and Its Restore Fails Sixty Unrelated Tests (2026-09-06)
-
-**What happened:** a full `cargo test --all-targets` reported 71 failures across memory, stage, stop, map and merge-lifecycle tests, all `Failed to get current dir: NotFound`. Only one test had a real defect: it asserted an `INDEX.md` row shape that had changed, panicked after `std::env::set_current_dir(&test_dir)` and before the restore, and its temp dir was then dropped — leaving the whole test process with a deleted cwd for every later test.
-
-**Why:** the cwd is process-global; a test that changes it and panics before restoring never runs the restore line, and `TempDir`'s drop removes the directory the process is still standing in. `#[serial]` does not help — it only orders the tests, it cannot restore the cwd.
-
-**Prevention:** when many unrelated tests fail with `current_dir` NotFound, run `cargo test --lib -- --test-threads=1` and fix the FIRST failure only; the rest are the cascade. Run a suspect module in isolation (`cargo test --lib <module>`) to separate a real failure from contamination. A new cwd-changing test should restore via a guard type (Drop) rather than a trailing statement.
-
-**Fix:** corrected the one assertion; the other 70 passed untouched.
-
-## Using npx Instead of bunx
-
-**Mistake:** Used npx instead of bunx during implementation.
-**Fix:** Always use `bun`/`bunx` per project conventions. Check CLAUDE.md tool preferences before running package managers.
-
-## toml_edit vs toml: Different Use Cases
-
-**Mistake:** Using `toml_edit Item -> serde` for reading nested config sections. `toml_edit` is designed for round-trip writes; its typed access silently drops nested sub-tables.
-
-**Why:** `toml_edit::Item` doesn't implement full `serde::Deserialize` for complex nested structures the same way `toml::Value` does.
-
-**Prevention:** Use `toml_edit` for writes (round-trip safe). Use `toml` (re-parse the full file with `toml::Value`, then `try_into::<T>()` on the section) for typed reads of nested structures.
-
-## CI Clippy Failures That Don't Reproduce Locally = Toolchain Drift (2026-07-22)
-
-**What happened:** CI's Clippy job failed on main while `cargo clippy --all-targets -- -D warnings` passed locally with zero warnings. Local toolchain was 1.95.0; CI installs latest stable via `dtolnay/rust-toolchain@stable`, which had moved to 1.97.1 and shipped new lints (`useless_borrows_in_formatting`, broader `question_mark`) that fired on 21 existing sites.
-**Why:** The workflow floats on `@stable` while local toolchains only move on explicit `rustup update`. Every ~6-week Rust release can introduce lints that break CI with `-D warnings` even though no code changed.
-**Prevention:** When a CI clippy failure doesn't reproduce locally, check `rustup check` FIRST — if stable has moved, `rustup update stable` and re-run before hunting for any other cause. Most new-lint fallout is machine-applicable: `cargo clippy --fix --all-targets --allow-dirty`, then review the diff (non-trivial rewrites like `question_mark` can leave awkward leftover blocks worth hand-cleaning).
-**Fix:** Updated local stable to 1.97.1, applied `cargo clippy --fix`, hand-simplified the `?`-operator rewrite in `fs/work_dir.rs`, verified clippy + fmt + full test suite green.
 
 ## Bash Tool CWD Persists — Never Bare-`cd` Into a Subdirectory Crate (2026-08-08)
 
@@ -520,24 +248,6 @@ the wrong bug. The other tell is `git status` printing `loom/src/...` prefixes i
 
 **Prevention:** never bare-`cd`. Prefix every command with its own `cd <dir> &&` so each call is
 self-contained and order-independent.
-
-## `libc::mode_t` Width Differs by Platform — `.into()` Is a Clippy Error on Linux (2026-08-10)
-
-`libc::mode_t` is `u32` on Linux and `u16` on macOS, while the std APIs we call
-(`DirBuilderExt::mode`, `PermissionsExt::from_mode`, our own `safe_fs::open_safely`) all take `u32`
-unconditionally. So `const MODE: libc::mode_t = 0o700; builder.mode(MODE.into())` compiles on macOS
-and fails on Linux with `useless_conversion`, which `-D warnings` promotes to an error — it blocked
-`git push` (`loom/src/daemon/server/storage.rs:14`). The same trap applies to any
-platform-width alias: `c_int`, `off_t`, `nlink_t`, `time_t`.
-
-**Prevention:** declare permission constants as `u32` (the type every Rust-side API wants) and cast
-at the raw-libc boundary only: `libc::fchmod(fd, MODE as libc::mode_t)`. A cast to an alias is exempt
-from `unnecessary_cast`, so it is lint-clean on both platforms, whereas `.into()`/`u32::from()` is
-lint-clean on exactly one.
-
-**Also:** the pre-push hook runs Clippy, the pre-commit hook does not. A lint-broken commit lands
-locally and only surfaces at push time. Run `cargo clippy --all-targets -- -D warnings` before
-committing, not after.
 
 ## A Test Substring That Crosses a `colored` Segment Boundary Passes Under a Pipe and Fails in the Pre-Push Hook
 
@@ -576,52 +286,6 @@ nothing.
 Prevention: before quoting a narrow test filter in a brief or acceptance criterion, run
 `cargo test --lib -- --list | rg <filter>` and confirm a non-zero match count.
 
-## `cargo audit` Git-Fetches Its Database First — It Cannot Pass in a No-Network Stage Sandbox (2026-09-12)
-
-**What happened:** a plan copied `cargo audit -f loom/Cargo.lock -d loom/target/advisory-db`
-verbatim from a sibling plan's pre-push gate into a stage whose sandbox declares "No
-network access." `cargo-audit` git-fetches the RustSec advisory database into that path
-before scanning anything; `loom/target/advisory-db` does not exist in a fresh worktree,
-so the fetch fails ("couldn't fetch advisory database: git operation failed") before the
-audit itself ever runs — the criterion fails regardless of whether the dependency tree
-has any advisories.
-
-**Why:** the criterion was copied from a plan whose stage DOES have network access,
-without checking the destination stage's own network policy.
-
-**Prevention:** a plan step that runs `cargo audit` inside a no-network stage must use
-`cargo audit --no-fetch -d "$HOME/.cargo/advisory-db"` against a database path already
-present on the machine (populated by an earlier `cargo audit` run outside a stage
-sandbox), never a fresh in-worktree path the offline run cannot populate itself. When
-copying a gate list between plans, re-check each criterion against the destination
-stage's own sandbox network policy — a criterion that passed in the source plan is not
-evidence it will pass in the copy.
-
-## `cargo audit` Also Cannot Pass Inside the Agent's Own Bash-Tool Sandbox (2026-09-13)
-
-A different failure mode from the one above: run interactively (not as a plan's acceptance
-criterion), `cargo audit` fails inside the Claude Code Bash sandbox with `~/.cargo/advisory-db`
-read-only, and `--db` fetch fails on host-key verification. The repo's pre-push hook runs `cargo
-audit` outside that sandbox; do not add it to a stage's own gate script or try to make it pass
-inside an agent session — treat a red `cargo audit` from inside the sandbox as expected, not a
-regression, and rely on the pre-push hook for the real check.
-
-## `pre_compact_always_returns_ok` Blocks When the Test Process Has an Open Stdin (2026-09-13)
-
-**What happened:** a full `cargo test --all-targets` run launched as a background shell job stopped
-making progress at `commands::hook::pre_compact::tests::pre_compact_always_returns_ok`, which
-libtest reported as running for over 60 seconds, and the run never finished. The test calls
-`pre_compact()` (`commands/hook/pre_compact.rs`), which reads stdin to end-of-file. That background
-job's stdin stayed open, so the read never returned. CI, the pre-commit hook and loom's acceptance
-runner start tests with stdin at end-of-file, where the same test returns at once.
-
-**Workaround:** from any harness whose stdin may stay open (a background job, an agent's shell, an
-interactive terminal), run the suite as `cargo test ... < /dev/null`.
-
-**Not fixed:** the test reads the real process stdin; `reset_for_payload` exists so tests can drive
-the hook without it, and this test could use it or be removed, since `pre_compact()` returns
-`Ok(())` by construction.
-
 ## Re-Verify a Test-Only Fix With Its Target, Not the Whole Suite (2026-09-13)
 
 **What happened:** a full `cargo test --all-targets --no-fail-fast` run failed on one integration
@@ -631,44 +295,3 @@ the operator stopped it, because every other target had just passed on the same 
 
 **Rule:** after a full run, a change confined to test code is verified by re-running the target
 that failed. Re-run the whole suite only when production code changed after that full run.
-
-## A Relay Test Feeding `scratch_root` a `$TMPDIR`-Based Path Fails by Design (2026-09-13)
-
-`relay::scratch::scratch_root` refuses any root under `/tmp`, and the sandbox's own `$TMPDIR` is
-under `/tmp` — so a test that feeds `scratch_root` a directory derived from `$TMPDIR` fails on the
-refusal, not on the code under test. `relay_e2e.rs` uses a directory outside `/tmp` instead
-(`target/relay-e2e-tmp`); write a new relay test the same way.
-
-## A `#[serial]` Test That Rewrote `PATH` Broke Unrelated Tests (2026-09-13)
-
-**What happened:** a test for the remote-control crash path installed a fake `claude` by setting the process-wide `PATH` to a single temp bin dir and pointing `HOME` at a fake home, restoring both on drop. It was marked `#[serial]`. In the full suite three unrelated, non-serial tests (`orchestrator::core::event_handler::recover_hung_tests::*`) failed with `failed to spawn a stand-in agent process: NotFound`; they passed in isolation. The same fake was also order-dependent: `remote_control::cached_preflight_enabled` memoizes the preflight in a process-lifetime `OnceLock`, so whichever test probed first fixed the answer for the rest of the run.
-
-**Why:** `#[serial]` orders a test only against other `#[serial]` tests. Every non-serial test in the binary kept running on other threads and resolved executables through the rewritten `PATH`.
-
-**Prevention:** a test never mutates process-wide environment (`PATH`, `HOME`, auth variables) to steer the code under test. Add an injectable seam instead, as `SessionBackend::tmux_available` does. Detection: a test that passes alone and fails in the full run with `NotFound` spawning a process means some other test rewrote `PATH`.
-
-**Fix:** the crash handler reads Remote Control activity through an injectable `Orchestrator` field; the test sets it instead of the environment.
-
-## `cfg(test)` Env-Snapshot Fakes Never Apply Inside a `loom/tests/*.rs` Integration Target (2026-09-14)
-
-`EnvSnapshot::from_process_env` (`loom/src/relay/emit.rs:79`) returns an empty, deterministic snapshot only under `cfg(test)` — a cfg that applies to unit tests compiled INTO the library crate, never to `loom/tests/*.rs` integration targets, which link the non-test lib and therefore always read the REAL process environment. An integration test that calls a public command reading `EnvSnapshot` (e.g. `worktree_cmd::remove`) takes the live `RelayMode::Relay` path inside any actual session and fails unpredictably (e.g. `worktree_remove_safety` 8/8). **Prevention:** integration tests must drive the explicit-mode seam directly (e.g. `remove_with_mode(.., RelayMode::Operator)`) rather than the env-reading wrapper — `cfg(test)` fakes are a unit-test-only convenience, never available to an integration target.
-
-## `tests/phantom_merge.rs` Ran `repair --fix` Against the Real Home Directory (2026-09-14)
-
-**What happened:** a loom stage edited `loom-hooks/*.sh`, then its `cargo test` run called `repair::execute(true)` in-process from `tests/phantom_merge.rs` with no `HOME` redirect. `--fix` reinstalled the worktree's hook scripts into the real `~/.claude/hooks/loom`, overwriting the copy the operator's already-running (older) daemon expected. That daemon then refused every subsequent spawn with `loom hook scripts in ~/.claude/hooks/loom are missing or differ from this loom build`. Running `loom repair --fix` from the old binary reverted the hooks, and the next stage that touched `loom-hooks/` repeated the cycle. This happened on 2026-09-14 for the integration-verify and knowledge-distill stages of PLAN-loop-recovery.
-
-**Why:** `repair::execute` resolves `dirs::home_dir()` to locate hook scripts, codex hooks, `settings.json`, and other home-relative assets (`commands/repair/settings_checks.rs::hook_scripts_issue`, `commands/repair/hooks.rs::check`, `home_assets::check`). The test isolated its working directory (`with_cwd`) but never isolated `HOME`, so every one of those checks read and wrote the developer's real home.
-
-**Prevention:** any test that calls `repair::execute`, `ensure_loom_permissions`, `install_loom_hooks`, or `install_codex_hooks` must redirect `HOME` and `LOOM_HOME` to a `TempDir` first. In the lib test binary, prefer the injectable `_to(dir)` variants (e.g. `install_loom_hooks_to`) over env mutation — `#[serial]` only orders serial tests against each other and does not fence the binary's non-serial tests, per "A `#[serial]` Test That Rewrote `PATH` Broke Unrelated Tests" above. Detection: an installed hook file under `~/.claude/hooks/loom` whose mtime falls inside a stage session and whose content matches the worktree rather than the currently-installed loom build.
-
-**Fix:** `tests/phantom_merge.rs` gained a local `HomeGuard`/`isolate_home()` helper that points `HOME` and `LOOM_HOME` at a scratch `TempDir` for the test's duration and restores both on drop, bound with `let _home = isolate_home();` in every test that calls `repair::execute`. This is safe there specifically because the file is its own standalone test binary and every affected test is already `#[serial]`.
-
-## A Test That Assumed a Dev Build Blocked the Release-Tag Push (2026-09-14)
-
-**What happened:** `tests/integration/update_notice.rs::test_dev_build_prints_no_update_notice_and_json_stdout_stays_pure` passed on every commit and in CI on `main`. After `v0.8.0` was tagged on that green HEAD, the pre-push hook of the tag push failed it: with `99.0.0` on record in the test's scratch `update-state.json`, the binary printed ``loom 0.8.0 is out of date (latest 99.0.0) - run `loom update` to upgrade.`` on stderr.
-
-**Why:** `loom/build.rs` derives `LOOM_VERSION` from `git describe --tags --exact-match`. Every untagged commit builds a `-dev` prerelease, which `update_check::decide` exempts from the notice; the commit a tag points at builds the bare release version, which gets the notice. The test assumed the binary under test is always a dev build. The first suite run against a tagged HEAD is the pre-push hook of the tag push itself (then `.github/workflows/release.yml`'s test job, which builds the tag ref), so CI on `main` cannot catch this class.
-
-**Prevention:** a test whose expected output depends on build identity reads it with `semver::Version::parse(loom::version::VERSION)` and asserts what each identity must do (`pre.is_empty()` means a release build). Never assume `-dev`, and never read `CARGO_PKG_VERSION`, which is `0.0.0-dev` in every build. A failure that appears only when a tag is pushed points at this class first.
-
-**Fix:** the test, renamed `test_update_notice_stays_off_json_stdout_and_dev_builds_print_none`, branches on `loom::version::VERSION`: a dev build must print no notice on either stream; a release build must print it on stderr, which also gives the stdout-purity assertion a notice to keep out. The dev-build exemption stays pinned independently of build identity by `update_check::tests::dev_build_is_never_notified_and_never_refreshes`.

@@ -1,6 +1,6 @@
 # Hook Command Matching
 
-> How a hook decides what a Bash command actually invokes: strip embedded content, tokenize into
+> How a hook decides what a Bash command invokes
 > argv, match command words and argument values — and fall back to the old regexes when the
 > command will not parse.
 
@@ -106,46 +106,54 @@ invocation.
 Writing this very section was blocked twice before the examples were replaced with
 placeholders. Render it as `loom stage <VERB> x` and name the verb in prose.
 
-### Path 2 - the tokenizer FAILS and the old glob returns
+### Path 2 - the heredoc body is not stripped, so the raw command text decides
 
-When `loom_tokenize_command` cannot tokenize, line 139 falls back to a raw
-substring glob over the lowercased command, matching `loom` followed anywhere by
-the verb - deliberately, so the gate is never weaker than it was before the
-tokenize fix. A heredoc body is scanned as ordinary command text, and **a bare
-apostrophe in English prose reads as an unterminated single quote**, which alone is
-enough to fail tokenization. The fallback then matches on mere co-occurrence of the
-two words, and every `loom knowledge update` call already supplies the first one
-from its own argv.
+`is_completion_command` (`loom-hooks/loom-control-complete.sh:143-216`) strips heredoc bodies
+through `strip_embedded_content` first, and a stripped body is ignored only when it is provably
+inert. The raw decision still stands (the old raw-substring glob over the lowercased command,
+matching `loom` followed anywhere by the verb) when any of these hold:
 
-Reproduced with a matched pair, both fed to a harmless `wc -c` and differing by one
-character: a body reading `loom<APOSTROPHE>s own docs say the word <verb> here` was
-BLOCKED, while the identical body with the apostrophe removed was allowed.
+- a body has no terminator, or the quote-blind `-m`/`--message` rewrite fired;
+- an opener is not a single fully quoted `<<'WORD'` / `<<"WORD"` at an unquoted position on a line
+  that ends unquoted (an unquoted delimiter, `<<-`, a here-string or a second opener on the line);
+- the stripped text holds a comment `#`, a backtick, `$'`, `${`, `((`, `$[` or a line splice;
+- `$(`, `<(` or `>(` exists and a stripped line held a `)` (bash 5.2 ends a body inside `$( )` at a
+  line reading `EOF)` and then runs the following lines; zsh rejects the same text);
+- any command in the stripped text is off the inert-reader allowlist (`cat tee wc head tail cd
+mkdir touch echo printf true :`, `loom knowledge`, `loom memory`, `git commit`).
 
-Balanced quotes are fine - with quoting intact the tokenizer succeeds and quoted
-prose is ignored entirely. This is the narrowed residual of the trap that hit the
-verification stage four times in one session.
+A body fed to a shell, `eval`, `source`, `xargs` or an interpreter (python, perl, node, ruby, bun
+and peers) also takes the raw substring test, so a quoted completion command hidden in a python
+heredoc is still caught. Tokenizer failure (a bare apostrophe in English prose reads as an
+unterminated single quote) falls back to the same raw glob, which matches on mere co-occurrence of
+`loom` and the verb; every `loom knowledge update` call already supplies `loom` from its own argv.
+
+Net effect in a knowledge stage: `loom knowledge update|replace-section - <<'EOF'` with a quoted
+delimiter and prose free of the constructs above passes; an unquoted `<<EOF` or a body containing a
+backtick or `${` does not, and the block message names no completion command you typed.
 
 ### Detection and what to do
 
-**Detection:** a hard block naming a finalize command you never typed, on a command
-that is obviously not a finalize attempt. Identify which path fired: does the text
-contain the three-token shape (path 1), or an apostrophe plus both words (path 2)?
+**Detection:** a hard block naming a finalize command you never typed, on a command that is
+obviously not a finalize attempt. Identify which path fired: does the text contain the three-token
+shape (path 1), or is the heredoc outside the trusted-inert conditions above (path 2)?
 
-**What to do:** write the prose so neither path fires - use a placeholder for the
-verb, and avoid apostrophes in any heredoc fed to a loom command (write "does not"
-rather than the contraction). Prefer several smaller `loom knowledge update` calls
-over one large one, so a block costs less to diagnose and redo.
+**What to do:** prefer a quoted delimiter and an inert reader, keep the body free of backticks,
+`${`, `$'` and comment-hash lines, and use a placeholder for the verb. When a long body still trips
+it, extract the section to a file inside the worktree and feed it with `- < file`: the file body is
+never part of the Bash command text. Several smaller `loom knowledge update` calls also cost less to
+diagnose than one large one.
 
-**What NOT to do.** Do not transform or re-encode the command text so the guard
-sees something different from what runs - that is hook evasion, it will be refused
-by the permission classifier, and it defeats a control that exists to prevent lost
-work. Do not route around it by writing the knowledge file with the Write tool from
-a path outside the worktree either: `worktree-file-guard.sh` blocks file tools
-outside the worktree, scratchpad directories included.
+**What NOT to do.** Do not transform or re-encode the command text so the guard sees something
+different from what runs - that is hook evasion, it will be refused by the permission classifier,
+and it defeats a control that exists to prevent lost work. Do not write the knowledge file with a
+file tool from a path outside the worktree either: `worktree-file-guard.sh` blocks file tools
+outside the worktree. The one exception is the session's own harness scratchpad
+(`/tmp/claude-<uid>/<project>/<session>/scratchpad/`), allowed by `allow_scratchpad`
+(`loom-hooks/worktree-file-guard.sh:174-196`) when the path is canonical and owned by the uid.
 
-**Do not "fix" path 2 by loosening the fallback.** A non-match on that branch exits
-0 and ALLOWS, so the fallback is fail-safe by construction, and narrowing it opens
-a bypass rather than merely reducing noise. The real fix is to strip heredoc bodies
-before matching - the stripping this topic file documents elsewhere - and it needs a
-threat analysis first, because quoting the verb inside an otherwise valid invocation
-still finalizes the stage while evading a naive quote-stripped matcher.
+**Do not "fix" the raw fallback by loosening it.** A non-match on that branch exits 0 and ALLOWS,
+so the fallback is fail-safe by construction, and narrowing it opens a bypass rather than merely
+reducing noise: quoting the verb inside an otherwise valid invocation still finalizes the stage
+while evading a naive quote-stripped matcher. The heredoc strip above is the narrowing that was
+threat-analysed, which is why it trusts a body only under the full list of conditions.

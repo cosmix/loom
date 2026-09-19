@@ -2,7 +2,7 @@
 ---
 # Dispute And Adjudication
 
-> Dispute file authority split, adjudicator scope, budgets, and transport
+> Dispute file authority, adjudicator scope, budgets
 
 ## Dispute File Ownership Convention
 

@@ -185,7 +185,7 @@ for f in loom/tests/integration/hooks_*.rs; do
 done
 ```
 
-Mirror the script's text into a `const` beside `PREAMBLE_LINE` (`hooks_spawn_guard.rs:30`) with a
+Mirror the script's text into a `const` beside `PREAMBLE_LINE` (`hooks_spawn_guard.rs:16`) with a
 doc comment naming the script and line, rather than inlining the literal at the assertion — the
 const gives the scan and the next reader one place to check. A few hits are legitimate (fixture
 symbol names such as `POLL_INTERVAL`, which is test data, not hook output).

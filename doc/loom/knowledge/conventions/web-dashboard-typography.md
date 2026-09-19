@@ -1,6 +1,6 @@
 # Web Dashboard Typography
 
-> Dashboard chrome type conventions and CSS gotchas for settings/graph views
+> Dashboard type conventions and CSS gotchas
 
 ## Dashboard chrome uses the body face, never all-caps monospace (2026-09-12)
 

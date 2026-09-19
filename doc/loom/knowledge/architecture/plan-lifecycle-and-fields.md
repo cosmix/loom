@@ -2,7 +2,7 @@
 ---
 # Plan Lifecycle And Fields
 
-> Plan field checklist, goal-backward layers, schema fields, amendment.
+> Plan fields, goal-backward layers, amendment, verify checks
 
 ## Adding New Plan Fields Checklist
 
@@ -105,3 +105,46 @@ The proposed value is deserialized into the **real** `AcceptanceCriterion` / `Wi
 ## Plan Immutability Invariant (Narrowed, Not Removed)
 
 Plans are loaded ONCE at daemon startup via `build_execution_graph()` -> `ExecutionGraph::build()`; there is no general reload mechanism, and the in-memory `graph: ExecutionGraph` on `Orchestrator` holds all state. Amendment is the one sanctioned mutation path and it is deliberately narrow: **only the `acceptance` and `wiring` arrays on a single stage**. Stage IDs, dependencies, `working_dir`, DAG topology, and plan structure are never amendable — so the graph the daemon loaded at startup stays topologically valid for the life of the run.
+
+## What `loom plan verify` Rejects Before a Stage Runs (2026-09-19)
+
+Four checks turn plan-authoring mistakes into an error or warning at `loom plan verify` time, before a
+stage session spends tokens on them. All run inside `validation.rs` (`validate` for errors,
+`validate_structural_preflight` for warnings).
+
+| Check | Severity | Source | Catches |
+| --- | --- | --- | --- |
+| Declared skills | error / warning | `structural_checks/declared_skills.rs` | a stage `skills:` list with an empty name, a duplicate, or a name absent from the skill index; a warning when no index can be loaded |
+| Host paths | error | `host_paths.rs`, `host_paths/commands.rs` | an ephemeral (`/tmp`) `allow_write` grant, an absolute grant missing on the host, a `setup` `mkdir`/`touch`/redirect aimed outside the worktree, a `TMPDIR=` override |
+| Criterion hazards | error / warning | `validation/criterion_hazards.rs` | see below |
+| Base-tree evaluation | warning (`baseline` bucket) | `validation/base_tree.rs` | a criterion that already passes at HEAD |
+
+**Declared skills.** `StageDefinition::skills` (`plan/schema/types.rs:321`) names the skills a stage's
+agents need. The signal renders them before detected ones (`signals/format/skills.rs`) and the worker-brief
+hook names them (`commands/hook/worker_brief.rs`), so a declared skill reaches a worker even with an empty
+context pack. `check_declared_skills(stages)` takes ONLY the stages and resolves `~/.claude/skills` plus its
+catalog, the way the orchestrator does at run time. An earlier draft also took a `repo_root` and preferred
+`<repo>/.claude/skills` exclusively; on this repository, which has project skills there, that reported
+catalogued names such as `loom-rust` as unknown.
+
+**Criterion hazards.** Error-level (`Hazard::is_error`): `MaskedExit`, `HomeFromExpansion` (HOME assigned
+from a variable or substitution, including `export HOME=$x`), `BareMktempDir`. Warning-level: `Network`,
+`PlanPath` (reads `doc/plans/`, which the lifecycle renames), `VitestNameFilter`, `PipeStatus`,
+`RgReplace` (`rg -r` is `--replace`), `TestRunnerInWiring`, `HardcodedTmp`. Commands are lexed
+(`shell_lex.rs`), so text inside a quoted `rg` pattern is data and never read as a hazard.
+
+**The masked-exit rule inspects the final top-level statement only** (`criterion_hazards/masked_exit.rs`):
+split on `;`, `;;` and `&` at paren depth 0, then flag a final `|| true`, `|| :` or `|| exit 0`, or a final
+bare `true`/`:`/`exit 0` when a real statement precedes it. So `rm -rf t || true; cargo build` is clean,
+`cargo test; true` is flagged, and a lone `true` is NOT flagged: 39 test fixtures use it as a placeholder
+criterion. Known limits, left in place because both shapes are rare: `strip_parens` strips a leading `(`
+and a trailing `)` independently, so `cargo build && (cargo test || true)` is flagged although a failing
+build still fails it, and redirects after the final `true` (`cmd || true 2>/dev/null`) are not flagged.
+
+**Base-tree evaluation** reproduces, without running it, the exit status of a single `rg` or `grep` over
+literal paths against HEAD and warns when it already meets the criterion's expectation, since such a
+criterion cannot tell a stage that did its work from one that did nothing. A file is read from the checkout
+when the changed-path probe does not list it, else through `git show HEAD:<path>`. The probe is the plumbing
+command `git diff-index --name-only -z HEAD --`, NOT porcelain `git diff`: porcelain opportunistically
+rewrites `.git/index`, and `plan verify` must have no side effects. Its tests build repositories through
+`crate::git::run_git` rather than hand-rolled `Command::new("git")` chains.

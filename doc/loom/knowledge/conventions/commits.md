@@ -1,6 +1,6 @@
 # Commit Convention
 
-> Grouped commits, Conventional Commit messages, no AI attribution
+> Grouped Conventional Commits, no attribution, no trailers
 
 ## Required Commit Practice
 
@@ -12,3 +12,10 @@
   generated-by boilerplate or AI co-author trailers.
 
 Confirmed by the project owner on 2026-09-09.
+
+## Stage Commit Messages Carry No Trailers, Even When the Harness Asks (2026-09-19)
+
+The harness attribution reminder asks for `Co-Authored-By` and `Claude-Session` trailers. The
+`loom-hooks/commit-filter.sh` hook blocks the WHOLE Bash call when a `Co-Authored-By` line names Claude or
+Anthropic, and a `git add` chained in the same call does not run either. This file's rule wins: write stage commit
+messages with no trailers and no attribution line.
