@@ -223,7 +223,7 @@ Everything loom does, one line each, grouped by what you are doing at the time. 
 - Run each stage's main agent at its stage type's configured model and effort. ([Model Allocation](#model-allocation))
 - Override the model or effort for one stage explicitly, without touching the rest of the plan. ([Stage Fields](#stage-fields))
 - Keep each signal's prefix byte-identical across sessions, so the large doctrine block is a cache hit. ([Cost control by construction](#cost-control-by-construction))
-- Inject at most 5 matched skills per stage out of 62 installed; 9 core skills are always loaded and the other 53 load on demand. ([Cost control by construction](#cost-control-by-construction))
+- Inject at most 5 matched skills per stage out of 63 installed; 10 core skills are always loaded and the other 53 load on demand. ([Cost control by construction](#cost-control-by-construction))
 
 ## Contents
 
@@ -310,7 +310,7 @@ Loom's savings come from **delegation, not downgrade**:
 - **Implementation is always delegated**, spawned by agent type so the choice is explicit rather than inherited: Fable for major bugs, visual/UI design, and extremely challenging algorithmic design (no agent type pins it — the model override is stated explicitly at spawn); Opus for mainstream architecture and algorithm implementation; Sonnet or Codex GPT-5.6 Terra for common implementation and integration tests; Codex GPT-5.6 Luna for boilerplate, scaffolding, and simple unit tests. The codex tiers are licensed only on stages listing codex in `implementers`, and additionally require the `codex` CLI and its plugin to be installed — when either is missing, `loom run` prints an advisory warning at startup (it never aborts) and terra-/luna-tier work falls back to Sonnet.
 - **Signals are built for cache reuse.** Each signal is a four-section layout with a per-stage-type stable prefix that is byte-identical across sessions, so the large doctrine block is a cache hit rather than a re-read.
 - **Context budgets prevent compaction**, which is the expensive failure: an uncached re-read that costs more and produces worse work.
-- **Tiered knowledge and a skill index** keep the working set small — at most 5 matched skills are injected per stage, out of 62 installed.
+- **Tiered knowledge and a skill index** keep the working set small — at most 5 matched skills are injected per stage, out of 63 installed.
 - **Waits and repeat reads are settled by receipts, not by polling.** An orchestrator waits on a backgrounded Codex forward by its exact receipt (`loom subagents wait --receipt <id>`), and repeated `loom subagents list` polling is counted by the poll guard. A repeated file read is warned or denied only when a transcript receipt proves the earlier result was delivered.
 - **Consumption is measured, not assumed.** `loom usage` reports Claude and Codex separately from provider-native telemetry, and `loom usage --compare` judges a candidate policy offline against paired runs. A token-proxy gain alone never counts as a subscription saving, and any quality or latency regression rejects the candidate; see [the evaluation protocol](doc/token-optimization-evaluation.md).
 
@@ -391,7 +391,7 @@ bash ./dev-install.sh
 | Location                               | Contents                                                                          |
 | -------------------------------------- | --------------------------------------------------------------------------------- |
 | `~/.claude/agents/loom-*.md`           | 5 specialized subagents (per-item, non-destructive)                               |
-| `~/.claude/skills/loom-*/`             | 9 core domain knowledge modules, always loaded (per-item, non-destructive)        |
+| `~/.claude/skills/loom-*/`             | 10 core domain knowledge modules, always loaded (per-item, non-destructive)       |
 | `~/.claude/loom-skill-catalog/loom-*/` | 53 more domain knowledge modules, loaded on demand (`--skills core`, the default) |
 | `~/.claude/commands/*.md`              | Loom slash commands (`/pressure`, `/address`, `/distill`)                         |
 | `~/.claude/hooks/loom/`                | Embedded lifecycle and guardrail hooks + shared libraries                         |

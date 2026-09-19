@@ -14,6 +14,7 @@ mod hooks;
 mod layout;
 #[path = "tests/placement.rs"]
 mod placement;
+mod skill_references;
 #[path = "tests/write_assets.rs"]
 mod write_assets;
 

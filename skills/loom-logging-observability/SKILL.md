@@ -1,6 +1,6 @@
 ---
 name: loom-logging-observability
-description: Logging and observability patterns for production systems.
+description: "Logging and observability patterns for production systems. Not for: a loom orchestration job — this is about logs, traces, and metrics."
 triggers:
   - log
   - logging

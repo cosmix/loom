@@ -1,6 +1,6 @@
 ---
 name: loom-search
-description: Full-text search and search engine implementation.
+description: "Full-text search and search engine implementation. Not for: an auth/JWT token or an LLM context token."
 triggers:
   - search
   - full-text search

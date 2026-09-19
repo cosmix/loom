@@ -1,6 +1,6 @@
 ---
 name: loom-rate-limiting
-description: API rate limiting and quota management.
+description: "API rate limiting and quota management. Not for: an auth/JWT token — see loom-auth."
 triggers:
   - rate limiting
   - rate limit

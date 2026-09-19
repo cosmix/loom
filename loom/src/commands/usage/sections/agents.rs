@@ -265,7 +265,7 @@ const KNOWN_AGENT_TYPES: [&str; 6] = [
 /// Plain substring matching against a fixed-order list used to pick
 /// whichever known name happened to be checked first, which broke two ways:
 /// `loom-software-engineer` was checked before `loom-senior-software-engineer`,
-/// and CLAUDE.md's own Rule 6c coordinator preamble writes
+/// and `skills/loom-orchestration/SKILL.md`'s own Rule 6 coordinator preamble writes
 /// "(loom-software-engineer = sonnet)" into virtually every coordinator
 /// prompt regardless of the coordinator's real type, so that boilerplate
 /// alone made every senior-engineer spawn get reported as the sonnet tier.

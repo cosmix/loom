@@ -16,9 +16,10 @@ use super::super::types::DependencyStatus;
 /// threshold death is judged against, while one identity-bound watch waits for
 /// 3600 seconds in the background. The full doctrine for what to DO with it is
 /// never generated into a signal: BLOCK-C is static-only, pinned byte-for-byte
-/// in `CLAUDE.md.template` Rule 6 by `tests_doctrine_waiting.rs`, and reaches
-/// the agent through `~/.claude/CLAUDE.md`, already resident in its context,
-/// so repeating it here would just duplicate it in the same signal.
+/// in `skills/loom-orchestration/SKILL.md` "## Rule 6 — Subagents" by
+/// `tests_doctrine_waiting.rs`, and reaches the agent through that skill,
+/// loaded when the orchestrator spawns its first subagent, so repeating it
+/// here would just duplicate it in the same signal.
 pub(crate) fn format_subagent_timeout_section(timeout_secs: u64) -> String {
     format!(
         "## Subagent Response Budget\n\n\

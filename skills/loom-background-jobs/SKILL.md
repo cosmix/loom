@@ -1,6 +1,6 @@
 ---
 name: loom-background-jobs
-description: Background job processing patterns including job queues, scheduled jobs, worker pools, retry strategies, and delivery guarantees.
+description: "Background job processing: job queues, scheduled jobs, worker pools, retries, delivery guarantees. Not for: a loom job."
 triggers:
   - async processing
   - job queue

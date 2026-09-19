@@ -1,6 +1,6 @@
 ---
 name: loom-model-evaluation
-description: Evaluates ML models for performance, fairness, and reliability.
+description: "Evaluates ML models for performance, fairness, and reliability. Not for: choosing which LLM tier runs a task."
 allowed-tools:
   - Read
   - Grep
@@ -43,7 +43,7 @@ triggers:
   - train-test split
   - learning curve
   - validation curve
-  - model selection
+  - ml model selection
   - error analysis
   - threshold selection
   - LLM evaluation

@@ -1,6 +1,6 @@
 ---
 name: loom-golang
-description: Go language expertise for idiomatic, production-quality code.
+description: "Go language expertise for idiomatic, production-quality code. Not for: an LLM's context window or a stage's context budget."
 triggers:
   - go
   - golang
@@ -12,7 +12,7 @@ triggers:
   - slice
   - map
   - defer
-  - context
+  - go context
   - error
   - gin
   - echo

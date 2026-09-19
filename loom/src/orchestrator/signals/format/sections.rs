@@ -244,8 +244,8 @@ pub(super) fn format_semi_stable_section(
     // The orchestrator measures the stage against this budget from the outside, so
     // the session has to be told the same number or it is held to a deadline it
     // cannot see. The general "how do I check on a subagent" doctrine (BLOCK-C) is
-    // NOT restated anywhere in the signal - it reaches the agent through
-    // `~/.claude/CLAUDE.md` Rule 6 in the same session; this block only layers the
+    // NOT restated anywhere in the signal - it reaches the agent through the
+    // `loom-orchestration` skill the stable prefix loads; this block only layers the
     // stage-specific number on top of that.
     if let Some(timeout_secs) = embedded_context.subagent_timeout_secs {
         content.push_str(&super::helpers::format_subagent_timeout_section(

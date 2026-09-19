@@ -1,6 +1,6 @@
 ---
 name: loom-terraform
-description: Infrastructure as Code with Terraform/OpenTofu.
+description: "Infrastructure as Code with Terraform/OpenTofu. Not for: app/UI state — see loom-react."
 allowed-tools:
   - Read
   - Grep
@@ -25,7 +25,6 @@ triggers:
   - k8s
   - module
   - provider
-  - state
   - backend
   - plan
   - apply

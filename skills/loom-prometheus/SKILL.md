@@ -1,6 +1,6 @@
 ---
 name: loom-prometheus
-description: Prometheus monitoring and alerting for cloud-native observability.
+description: "Prometheus monitoring and alerting for cloud-native observability. Not for: a loom orchestration job or CI pipeline job — see loom-ci-cd."
 allowed-tools:
   - Read
   - Grep

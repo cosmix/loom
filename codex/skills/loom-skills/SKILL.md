@@ -7,7 +7,7 @@ description: Loads a catalogued loom domain skill on demand; the argument is the
 
 ## Overview
 
-Nine loom mechanics skills stay installed into `~/.codex/skills/`, indexed by
+Ten loom mechanics skills stay installed into `~/.codex/skills/`, indexed by
 Codex with their `description:` kept resident in every request. The other
 fifty-three domain skills install instead into
 `~/.codex/loom-skill-catalog/<name>/SKILL.md` — a directory Codex does not scan,
@@ -79,7 +79,7 @@ task.
 | `loom-model-evaluation` | ML model evaluation: metrics, CV, drift monitoring |
 | `loom-performance-testing` | Load/perf testing with k6, locust, JMeter, Gatling |
 | `loom-prometheus` | PromQL, scrape configs, alerting/recording rules |
-| `loom-prompt-engineering` | LLM prompt design: few-shot, security |
+| `loom-prompt-engineering` | LLM prompt design: system prompts, few-shot, security |
 | `loom-python` | Idiomatic Python: FastAPI, Django, pandas, pytest |
 | `loom-rate-limiting` | Rate limiting: token/leaky bucket, quotas, Redis |
 | `loom-react` | React 19+ SPAs: hooks, Jotai, routing, Bun/Vite/Oxc |

@@ -9,7 +9,7 @@ mod blocks;
 use blocks::{
     append_adversarial_review, append_execution_rules_header, append_isolation_boundaries_simple,
     append_no_verify_block, append_path_boundaries, append_review_dimension_details,
-    append_subagent_ceiling_block,
+    append_subagent_ceiling_block, LOAD_ORCHESTRATION_SKILL,
 };
 mod distill_ordering;
 use distill_ordering::append_memory_ordering_doctrine;
@@ -69,10 +69,7 @@ pub fn compute_hash(content: &str) -> String {
 }
 
 // ── Shared content blocks ────────────────────────────────────────────
-//
-// The `append_*` block helpers and their supporting constants live in
-// `cache/blocks.rs` — see that module's doc comment. This section keeps only
-// what the generators below need directly.
+// The `append_*` helpers live in `cache/blocks.rs`; this keeps only what the generators need.
 
 /// Gate/review pairs interpolated into `append_commit_timing_rules` — one per
 /// stage family (code-producing vs. documentation) — so the argument strings
@@ -98,6 +95,7 @@ pub fn generate_stable_prefix() -> String {
     );
 
     append_execution_rules_header(&mut content);
+    content.push_str(LOAD_ORCHESTRATION_SKILL);
     append_no_verify_block(&mut content);
     append_subagent_ceiling_block(&mut content);
     append_adversarial_review(&mut content);
@@ -145,7 +143,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     append_path_boundaries(&mut content);
 
     append_execution_rules_header(&mut content);
-
+    content.push_str(LOAD_ORCHESTRATION_SKILL);
     append_no_verify_block(&mut content);
     content.push_str(INTEGRATION_VERIFY_OVERRIDE);
     append_subagent_ceiling_block(&mut content);
@@ -402,9 +400,11 @@ mod tests {
         // no-verify block and every implementation subagent is now wrongly told
         // to run full build/test/lint suites.
         assert!(!prefix.contains("INTEGRATION-VERIFY OVERRIDE"));
-        // Doctrine that reaches the session through ~/.claude/CLAUDE.md must not
-        // be restated here - the prefix points at it instead.
+        // Doctrine reaching the session via ~/.claude/CLAUDE.md is pointed at, not restated.
         assert!(prefix.contains("Binding rules: ~/.claude/CLAUDE.md"));
+        let skill = "Skill(skill=\"loom-orchestration\")";
+        assert!(prefix.contains(skill));
+        assert!(generate_integration_verify_stable_prefix().contains(skill));
         assert!(!prefix.contains("Agent Teams"));
         assert!(!prefix.contains("Subagent Hierarchies"));
         assert!(!prefix.contains("loom subagents watch"));
