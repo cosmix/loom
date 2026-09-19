@@ -27,9 +27,12 @@ use super::generate::{
 /// only ~26 bytes of headroom, too little for the addition. Raised again
 /// alongside the memory-events doctrine (receipts, `--evidence`): the prior
 /// ceiling (28,672) left only ~18 bytes of headroom by the time that change
-/// landed. Actual size is now 28,813 bytes, leaving ~880 bytes of buffer.
+/// landed. Raised a third time alongside the corrections doctrine (Discipline
+/// F's steering and repeat-mistake escalation, Rule 12's outside-stage write
+/// steps): the prior ceiling (29,696) had ~19 bytes of headroom left. Actual
+/// size is now 30,296 bytes, leaving ~420 bytes of buffer.
 /// Trim future doctrine additions rather than spending down that buffer.
-const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 29_696;
+const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 30_720;
 
 /// The KV-cache-stable prefix pasted into the first message of every fresh
 /// session spawned for a standard stage.

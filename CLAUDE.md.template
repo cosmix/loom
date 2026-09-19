@@ -50,7 +50,7 @@ Loom also indexes the repository's own source; query the graph before opening a 
 
 **E. Cheapest capable agent.** Delegate every piece to the smallest model that can do it (Rule 7).
 
-**F. Corrections become memory.** When the user corrects you, or you find a defect in your own work, record it before anything else — under loom, `loom memory note "mistake: <what happened>. Why: <cause>. Prevention: <rule>"`; interactively, a mistakes entry per Rule 12. A correction living only in conversation is lost next session.
+**F. Corrections become memory.** When the user corrects or steers you, or you find a mistake of yours or a subagent's, record it before anything else; a major decision likewise. In a stage: `loom memory note "mistake: <what happened>. Why: <cause>. Prevention: <rule>"` or `loom memory decision`. Outside one: the knowledge files, per Rule 12. A correction living only in conversation is lost next session. The same mistake made twice goes to a subagent one tier up — sonnet to opus, opus to fable — briefed with the task, both attempts, and their evidence (Rule 7).
 
 ---
 
@@ -291,7 +291,14 @@ Always use `loom` from PATH, never `target/debug/loom`. Never edit `.loom/work/`
 
 Tier-1 files in `doc/loom/knowledge/` — `architecture.md`, `entry-points.md`, `patterns.md`, `conventions.md`, `mistakes.md`, `stack.md`, `concerns.md` — are summaries plus pointers. A topic past ~40 lines moves to a tier-2 file `<category>/<slug>.md`, leaving a 2-4 line summary and link in tier-1.
 
-Record mistakes, decisions with rationale, reusable patterns, and conventions — never ephemera, procedural steps, or anything derivable from git history or code. Each mistake: a `## [Short description]` heading with **What happened**, **Why**, **Prevention**, **Fix**. Interactively, edit files directly; under loom, use `loom memory`/`loom knowledge` per signal — `loom knowledge update <category>/<slug>` writes a tier-2 file and regenerates `INDEX.md`. Where this directory exists, never use Claude Code auto-memory (`~/.claude/projects/*/memory/`, `MEMORY.md`, the memory tool); otherwise normal.
+Record mistakes, decisions with rationale, reusable patterns, and conventions — never ephemera, procedural steps, or anything derivable from git history or code. Each mistake: a `## [Short description]` heading with **What happened**, **Why**, **Prevention**, **Fix**. In a stage, use `loom memory` per signal; the knowledge-distill stage curates it. Where this directory exists, never use Claude Code auto-memory (`~/.claude/projects/*/memory/`, `MEMORY.md`, the memory tool); otherwise normal.
+
+**Outside a stage, write knowledge yourself, when the correction happens.** `loom memory` has no journal there; a subagent reports its mistakes and the main agent writes them.
+
+1. Find the home in `INDEX.md`: the tier-2 topic whose blurb covers it, else a new `<category>/<slug>`. Tier-1 files take summaries only.
+2. Write through the CLI; every write regenerates `INDEX.md`. `loom knowledge update <category>/<slug> "<entry>"` APPENDS, scaffolding a new topic. Correct a section with `loom knowledge replace-section <file> "<Heading>" "<body WITHOUT the ## line>"`, never `update`; on a non-matching heading it appends and SAYS so — read that line, or the stale text stands. Name the wrong claim in the replacement.
+3. A new topic also gets `loom knowledge annotate <category>/<slug> --blurb "<80 chars max>"` and a 2-4 line summary plus link in its tier-1 file.
+4. An Edit-tool fix leaves `INDEX.md` stale: run `loom knowledge sync` after it. End a batch with `loom knowledge check`.
 
 **Stale knowledge is a defect — fix it where you find it**:
 
@@ -299,15 +306,7 @@ Record mistakes, decisions with rationale, reusable patterns, and conventions �
 | --- | --- |
 | Executing a loom stage | `loom memory note "stale-knowledge: <file>#<heading> claims X; the tree does Y (file:line). Correction: <text>"`, then continue. Do NOT edit knowledge files (worktree guard blocks file tools) or run `loom knowledge update` unless yours is a knowledge stage. |
 | knowledge-distill stage | Apply EVERY `stale-knowledge:` memory BEFORE curating anything new — unapplied ones are LOST when the plan completes — confirm no heading got duplicated. |
-| Interactive / outside a plan | Fix it in place now: Edit the section, or `replace-section`. A NEW tier-2 file goes through `loom knowledge update <category>/<slug>`, which scaffolds it (Write may be denied). |
-
-**Correct in place with `replace-section`, never with `update`**, which APPENDS.
-
-```bash
-loom knowledge replace-section <file> "<Heading>" "<corrected body, WITHOUT the ## heading line>"
-```
-
-On a non-matching heading it appends and SAYS so — read that line, or the stale text stands. Name the wrong claim explicitly in the replacement.
+| Outside a stage | Fix it now, by the steps above. |
 
 In a knowledge-distill stage every memory ends with `loom memory resolve`; `loom memory pending` is the queue.
 
