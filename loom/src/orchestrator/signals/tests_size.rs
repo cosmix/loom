@@ -27,9 +27,13 @@ use super::generate::{
 /// only ~26 bytes of headroom, too little for the addition. Raised again
 /// alongside the memory-events doctrine (receipts, `--evidence`): the prior
 /// ceiling (28,672) left only ~18 bytes of headroom by the time that change
-/// landed. Actual size is now 28,813 bytes, leaving ~880 bytes of buffer.
+/// landed. Lowered to 20,480 when the orchestrator-only rules (Rule 5's
+/// preamble fence, Rule 6, Rule 7's playbook, the orchestration reference)
+/// moved to `skills/loom-orchestration/SKILL.md` and
+/// `loom-hooks/_subagent-preamble.txt`: they cost every session, most of them
+/// subagents that never spawn anything. Actual size is now about 16,400 bytes.
 /// Trim future doctrine additions rather than spending down that buffer.
-const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 29_696;
+const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 20_480;
 
 /// The KV-cache-stable prefix pasted into the first message of every fresh
 /// session spawned for a standard stage.

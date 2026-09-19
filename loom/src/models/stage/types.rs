@@ -100,10 +100,10 @@ impl PermissionMode {
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
 pub enum Implementer {
-    /// The Claude subagent lane (sonnet for common implementation and
-    /// integration tests, opus for architecture and algorithm implementation,
-    /// fable only for visual/UI design, a bug that survived a delegated fix
-    /// attempt, or extremely challenging algorithmic design).
+    /// The Claude subagent lane (haiku for mechanical edits such as a rename, sonnet for common
+    /// implementation and integration tests, opus for architecture and algorithm implementation,
+    /// fable only for visual/UI design, a bug that survived a delegated fix attempt, or extremely
+    /// challenging algorithmic design).
     #[default]
     Claude,
     /// The codex implementation lane: spawned as `loom-codex-forwarder`, a
