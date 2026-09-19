@@ -250,8 +250,16 @@ A path in `sandbox.filesystem.allow_write` is bound only if it already exists on
 session starts. A stage `setup` command such as `mkdir -p /tmp/<dir>` for that path runs inside the
 same sandbox: if the directory is missing it fails with `Read-only file system`, and if it exists
 it does nothing. The line can only hurt, and because setup is prepended to every criterion it takes
-all of them down with it. Create the directory on the host before the stage's session starts and
-record that prerequisite in the plan prose.
+all of them down with it.
+
+**Corrected 2026-09-19:** this section used to end "create the directory on the host before the
+stage's session starts and record that prerequisite in the plan prose". A prose prerequisite was
+missed by the next plan (`PLAN-loom-efficiency-and-acceptance`, four stalled stages), and the
+directory is never needed: the stage sandbox already sets `$TMPDIR` to a writable directory outside
+the repository. Drop the grant, the `TMPDIR=` override and the `setup` line. `loom plan verify`
+rejects all three, plus any absolute grant missing on the host and any `mkdir`, `touch` or output
+redirect aimed outside the worktree (`loom/src/plan/schema/host_paths.rs`,
+`loom/src/plan/schema/host_paths/commands.rs`).
 
 ## A Finished Plan Was Committed Under an Ignored `DONE-` Name (2026-09-13)
 

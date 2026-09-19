@@ -92,6 +92,8 @@ Key public functions for `loom plan verify` to call:
 
 `validate()` runs inside `parse_and_validate()` → called by `parse_plan_content()` → called by `parse_plan()`. Any new command that calls `parse_plan()` automatically gets fatal validation for free.
 
+`commands/plan/verify.rs` additionally runs a verify-only per-stage check, `plan/schema/host_paths.rs::stage_host_path_errors`, rejecting `allow_write` grants under `/tmp` or missing on the host, `TMPDIR=` overrides, hardcoded `/tmp/` paths, and `mkdir`/`touch`/output redirects aimed outside the worktree in stage commands — `loom init` and `loom run` do not run this check.
+
 ## Plan Parser Module (plan/parser/mod.rs)
 
 **Note:** `plan/parser` is a **subdirectory**, not a single file. Entry point is `plan/parser/mod.rs`.

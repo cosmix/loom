@@ -307,9 +307,9 @@ shared prefix and read the stage's `setup` first.
 
 **Why:** a tempdir nested inside the checkout sits under the real git root and the real `.loom/work`, so tests written for "no enclosing repository" or "no work dir" discover the live ones instead of a clean fixture. The per-test mechanism was not traced.
 
-**Prevention:** never point TMPDIR, or any test scratch dir, inside a checkout that has a live `.loom/work`. A host-created `/tmp/<name>` outside the repository, granted in `allow_write`, is the only safe layout; the sandbox cannot create it itself (see doctrine-and-acceptance's stage-setup mkdir lesson).
+**Prevention:** never point TMPDIR, or any test scratch dir, inside a checkout that has a live `.loom/work`. Leave `TMPDIR` alone: the stage sandbox already sets it to a writable directory outside the repository. **Corrected 2026-09-19 — this paragraph used to call a host-created `/tmp/<name>` granted in `allow_write` "the only safe layout". That was wrong:** the grant is bound only if the directory exists on the host at session start, a `setup` `mkdir` cannot create it, and `PLAN-loom-efficiency-and-acceptance` stalled four stages by following this advice. `loom plan verify` now rejects the `/tmp` grant, the `TMPDIR=` override and the `setup` `mkdir` (`loom/src/plan/schema/host_paths.rs`).
 
-**Fix:** reran with the harness TMPDIR outside the repo; the stray files are left for operator cleanup — agents never edit `.loom/work` directly. The plan records the host prerequisite.
+**Fix:** reran with the harness TMPDIR outside the repo; the stray files are left for operator cleanup — agents never edit `.loom/work` directly. The plan recorded a host prerequisite, which the 2026-09-19 correction above supersedes.
 
 TMPDIR placement is only one of two leaks into a live session: even with TMPDIR correctly outside the repo, hook tests (`codex-forward-guard-blocks-edit.sh` and siblings) still inherited `LOOM_STAGE_ID`/`LOOM_SESSION_ID`/`LOOM_WORK_DIR` from the running session and wrote fake forward records to that session's live `.loom/work/subagents/<stage>/codex.jsonl` — a second leak that survives a correct TMPDIR. Clear the `LOOM_*` session variables before running hook tests, the same way TMPDIR must point outside the repo.
 
