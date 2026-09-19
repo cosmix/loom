@@ -4,7 +4,7 @@
 use crate::commands::usage::accounting::Accounting;
 use crate::commands::usage::transcript::Transcript;
 
-use super::fmt::{format_f64, format_u64, heading, no_data};
+use super::fmt::{format_f64, format_u64, heading, no_data, percentile, share};
 
 #[derive(Debug, serde::Serialize)]
 pub struct SessionLengths {
@@ -183,22 +183,5 @@ fn peak_stats(transcripts: &[Transcript]) -> PeakResident {
         p90,
         p99,
         max,
-    }
-}
-
-fn percentile(values: &mut [u64], fraction: f64) -> u64 {
-    if values.is_empty() {
-        return 0;
-    }
-    values.sort_unstable();
-    let index = ((values.len() as f64 * fraction).ceil() as usize).saturating_sub(1);
-    values[index]
-}
-
-fn share(value: f64, total: f64) -> f64 {
-    if total == 0.0 {
-        0.0
-    } else {
-        value * 100.0 / total
     }
 }

@@ -24,6 +24,26 @@ pub fn no_data(label: &str) {
     println!("  {label}: no data");
 }
 
+/// Nearest-rank percentile: sorts `values` in place and returns the element at
+/// `ceil(len * fraction) - 1`. `0` (via `T::default()`) for an empty slice.
+pub(super) fn percentile<T: Copy + Ord + Default>(values: &mut [T], fraction: f64) -> T {
+    if values.is_empty() {
+        return T::default();
+    }
+    values.sort_unstable();
+    let index = ((values.len() as f64 * fraction).ceil() as usize).saturating_sub(1);
+    values[index]
+}
+
+/// `value` as a percentage of `total`, `0.0` when `total` is zero.
+pub(super) fn share(value: f64, total: f64) -> f64 {
+    if total == 0.0 {
+        0.0
+    } else {
+        value * 100.0 / total
+    }
+}
+
 fn grouped(raw: &str) -> String {
     let (sign, digits) = raw.strip_prefix('-').map_or(("", raw), |rest| ("-", rest));
     let mut output = String::with_capacity(raw.len() + raw.len() / 3);
