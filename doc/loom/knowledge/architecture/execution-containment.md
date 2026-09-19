@@ -289,3 +289,55 @@ Package-manager cache paths are not checked here; their own signal note covers t
 Running `loom status` FROM INSIDE a stage's own sandboxed session reports that stage's session as orphaned/dead (`session_alive` false, `render/graph.rs:133-137`), even though it is the live session asking the question. **Why:** bubblewrap's PID namespace hides the host PID from the sandboxed process, so the liveness check (which compares against a host PID) cannot see its own process as alive. This is a sandbox artifact of the caller inspecting itself from inside its own namespace, not evidence the session actually died — treat a self-reported "orphaned" from inside a stage sandbox as uninformative, never as a signal to intervene.
 
 **Sanctioned proxies for what a live-host smoke test cannot verify inside a stage sandbox:** a real daemon Unix-socket round trip is blocked (`socket(AF_UNIX)` is `EPERM`) — verify via an in-memory transport test instead (e.g. `completion_dispatch` tests) or a daemon-offline path (`completion_replay/hook_broker.rs`); a live Codex companion is unreachable — `codex_evidence` installs a fake companion; local TCP listeners for `loom status --web` are blocked (`allow_local_binding=false`) — drive the pure route directly instead (`web/tests/embedded.rs`); the tmux backend needs its own per-test `TmuxTmpDirGuard` workaround (see [Sandbox and Settings](../mistakes/sandbox-and-settings.md)).
+
+## macOS: the stage sandbox refuses a nested Seatbelt, so the wrapper runs codex exec directly (2026-09-02)
+
+**Symptom.** Five `loom-codex-forwarder` spawns in a stage session each reached gpt-5.6-terra and the
+companion exited 0, but zero files were written: every shell command codex ran, even `pwd`, died with
+`sandbox-exec: sandbox_apply: Operation not permitted`. The 67b97114 state-root redirect (previous
+section) had worked; this failure sits one layer below it.
+
+**Cause.** Stage Bash calls already run inside Claude Code's own Seatbelt sandbox on macOS. Codex's
+`workspace-write` and `read-only` modes wrap each command it runs in `sandbox-exec` too, and macOS
+refuses a second profile on an already-sandboxed process. Codex still exits 0 when the model's turn
+ends, whatever its tools did.
+
+```bash
+sandbox-exec -p '(version 1)(allow default)' /bin/pwd                # sandbox_apply: Operation not permitted, rc 71
+codex sandbox -- /bin/pwd                                            # same error
+codex sandbox -c sandbox_mode="danger-full-access" -- /bin/pwd       # prints the cwd
+```
+
+**Why no config knob helps.** The companion hardcodes
+`sandbox: request.write ? "workspace-write" : "read-only"` (`codex-companion.mjs:491`) into
+`thread/start`, overriding `~/.codex/config.toml`'s `sandbox_mode` with no flag or env override, and
+`read-only` seatbelts too. `dangerouslyDisableSandbox` is refused by the auto-mode classifier; there is
+no macOS equivalent of Linux's `exclude_slash_tmp` — the nesting itself is refused.
+
+**Fix.** `loom-hooks/codex-forward.sh` probes `sandbox-exec -p '(version 1)(allow default)' /usr/bin/true`
+(PATH lookup, so tests can stub it) and, only when refused, bypasses the companion and runs `codex exec
+--sandbox danger-full-access --skip-git-repo-check --model <model> -c
+model_reasoning_effort="<effort>" -- "<preamble + task>" </dev/null`. The `</dev/null` is required;
+see "Direct-lane runs" below. The outer stage sandbox — worktree plus granted write paths,
+domain allowlist, credential read denies — remains the boundary, same as a sonnet subagent's Bash call.
+
+The evidence trailer now always carries `exit:` and `mode:`. `mode: companion` lists the newest
+`state/*/jobs/*.json` records, globbed from the state root the companion actually used (including the
+redirected `~/.codex/plugin-data` — the earlier wrapper globbed the original root and printed `jobs:
+none found` on redirected machines). `mode: direct` lists the `session:` rollout path
+(`~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`) that `codex exec` writes.
+`signals/format/codex.rs` accepts either.
+
+| Platform | Where | Lane | Inner sandbox |
+| --- | --- | --- | --- |
+| Linux | inside a stage sandbox | companion | bubblewrap, nested; needs `exclude_slash_tmp` |
+| macOS | inside a stage sandbox | direct `codex exec` | none |
+| macOS | outside any sandbox | companion | codex's own Seatbelt applies |
+
+**Given up, deliberately.** No companion job record, so `/codex:status`/`/codex:result` cannot see
+direct runs. Codex's Seatbelt no longer masks `.git` on macOS, so the preamble's no-git rule and the
+orchestrator's post-run `git status --short` are the remaining guards. Codex's inner network cut-off is
+gone, but the stage sandbox's domain allowlist still applies.
+
+See [Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md) for the verification gap that
+let this ship.

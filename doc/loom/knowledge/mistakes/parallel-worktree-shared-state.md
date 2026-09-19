@@ -138,3 +138,13 @@ shares that index. A clean-index check goes stale as soon as anything else runs.
 `git add -- <paths> && git commit -- <paths>`. Given paths, git commits only those files and leaves
 anything else staged where it was. Afterwards compare `git show --stat HEAD` with the list you
 meant to commit.
+
+## `git stash push -- <file>` Discarded the Stage's Own Edits (2026-09-19)
+
+**What happened:** to check whether a test failure was pre-existing, `git stash push -u -m <tag> -- <single-file>`
+was run on a tracked file that already carried the stage's uncommitted edits. The file reverted to HEAD, taking
+the stage's in-progress work with it (recovered with `git stash apply <sha>` then `git stash drop <sha>`). The
+same slip was made twice in one stage.
+**Prevention:** never stash one file to ask "is this failure pre-existing". Read the old bytes with
+`git show HEAD:<path>` or a scratch copy. The stash stack is shared with every worktree, so stash only when the
+whole tree must be set aside, tag the entry, and restore it by SHA with `git stash apply`.

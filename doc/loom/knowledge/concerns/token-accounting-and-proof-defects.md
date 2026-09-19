@@ -18,7 +18,7 @@ verified: 499b09b6297aeee4896a66df3da86d00f652a618
 ---
 # Token Accounting Follow-Ups
 
-> Open follow-ups from the 2026-09-13 token-optimization plan
+> Open follow-ups from the token-optimization and efficiency plans
 
 ## Open Follow-Ups After the Token-Optimization Plan (2026-09-13)
 
@@ -51,7 +51,7 @@ Found during the plan's stages and integration-verify, verified against the tree
   per run, so a concurrent non-serial test
   that spawns a confined command could fingerprint the mutated value. Not observed failing; pass the
   allowlisted env explicitly in those fixtures.
-- **IV fence wording.** `CLAUDE.md.template`'s Rule 5 EXCEPTION still tells every IV review or
+- **IV fence wording.** the EXCEPTION line of `loom-hooks/_subagent-preamble.txt` (`:16`) still tells every IV review or
   verify subagent to run the full build, suite and linter, while the IV stable prefix assigns one
   canonical verifier (`orchestrator/signals/cache.rs:112-123`). The fence is byte-pinned by
   `tests_doctrine.rs`; a stage that owns the template must align both.
@@ -68,3 +68,25 @@ Found during the plan's stages and integration-verify, verified against the tree
 - **Operator cleanup.** Knowledge-bootstrap left stray fixture state and 11 fake forward records in
   the live `.loom/work` (recorded in [Verification Harness](../mistakes/verification-harness.md));
   agents never edit `.loom/work` directly.
+
+## Open Follow-Ups From the Efficiency-and-Acceptance Plan (2026-09-19)
+
+- **Knowledge check baseline.** After `./dev-install.sh`, run `loom knowledge check --strict`. It exits 0 on this tree,
+  so no baseline file is needed; if a newer binary reports issues, record them with
+  `loom knowledge check --write-baseline doc/loom/knowledge/check-baseline.txt`, commit the file and gate with
+  `--baseline` (see [knowledge-cli-gaps](knowledge-cli-gaps.md)).
+- **Confirm the retrieval precision floor.** Run `loom knowledge eval`: `precision_floor` is 0.40 against a measured
+  precision@5 of 0.45 on 2026-09-19, judged over the hook-delivered pack for prompt cases
+  ([context-retrieval](../architecture/context-retrieval.md)).
+- **Read the `peaks` section a week later.** `loom usage --since 7d` now prints peak resident context by scope
+  (`commands/usage/sections/peaks.rs`): main and subagent p50, p90 and max, the share of transcripts above 250k and
+  400k tokens, and for subagents the share whose peak never exceeded twice their first request (boot-dominated). The
+  plan set no orchestrator context budget and no separate worker-brief budget key on purpose ("precision first,
+  measure after"); this section is the measurement that decides whether either is needed.
+- **No bounded build/test output command was built.** The `post-tool-use.sh` large-output notice covers the behaviour
+  generally, and the by-command breakdown needed to design a dedicated command does not exist. Measure before adding.
+- **24 oversized skills keep their bodies.** They cost tokens only when loaded and 77% were never loaded in the audit
+  window; only their triggers and descriptions were in scope. Revisit if `loom usage` shows load cost.
+- **Declared skills resolve against the home catalog only.** `check_declared_skills` reads `~/.claude/skills` plus the
+  catalog, so a project-local skills directory is not consulted for a stage's `skills:` list
+  ([plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md)).

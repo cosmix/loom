@@ -139,6 +139,28 @@ matched positive/negative control pair
 [Execution Containment](../architecture/execution-containment.md) prescribes, or a green probe
 cannot distinguish "denied" from "the harness never ran".
 
+## What Hardening Cannot Fix
+
+Agent-written code reaches `main` through auto-merge and then runs unsandboxed on the operator's
+machine at the next build. That is the trust boundary of the whole design, and no sandbox change
+moves it. The achievable goal is narrower: containment that depends on nothing the agent can type,
+and rule-bending that fails loudly and stays visible.
+
+## Related
+
+- [Security and Isolation](../architecture/security-and-isolation.md) — capsules, the relay inbox,
+  the merge gate, spawn preflight
+- [Execution Containment](../architecture/execution-containment.md) — what confinement does and does
+  not guarantee, and the matched-control test pattern
+- [Stage-to-Daemon Channels](../patterns/stage-daemon-channels.md) — why the socket route is
+  unreachable from a sandbox and what replaces peer identity
+- [Session Identity Env](../mistakes/session-identity-env.md) — presence of a variable is not
+  membership; settings env shadows wrapper env
+- [Sandbox and Confinement Gaps](sandbox-and-confinement-gaps.md),
+  [State Confinement Gaps](state-confinement-gaps.md) — the gap inventory this entry extends
+
+## Gaps Found (continued): G4-G7
+
 ### G4 — Detection lags prevention
 
 The realistic failure is an overindulgent agent taking a shortcut, not an attacker. Such an agent
@@ -189,23 +211,3 @@ than only in `concerns/`.
   [Completion Recovery](../architecture/completion-recovery.md) warns the stage-sandbox read
   deny-list names only the tokens. Confirm with a probe rather than by reading — that file's
   confidentiality is what keeps forged completion evidence out.
-
-## What Hardening Cannot Fix
-
-Agent-written code reaches `main` through auto-merge and then runs unsandboxed on the operator's
-machine at the next build. That is the trust boundary of the whole design, and no sandbox change
-moves it. The achievable goal is narrower: containment that depends on nothing the agent can type,
-and rule-bending that fails loudly and stays visible.
-
-## Related
-
-- [Security and Isolation](../architecture/security-and-isolation.md) — capsules, the relay inbox,
-  the merge gate, spawn preflight
-- [Execution Containment](../architecture/execution-containment.md) — what confinement does and does
-  not guarantee, and the matched-control test pattern
-- [Stage-to-Daemon Channels](../patterns/stage-daemon-channels.md) — why the socket route is
-  unreachable from a sandbox and what replaces peer identity
-- [Session Identity Env](../mistakes/session-identity-env.md) — presence of a variable is not
-  membership; settings env shadows wrapper env
-- [Sandbox and Confinement Gaps](sandbox-and-confinement-gaps.md),
-  [State Confinement Gaps](state-confinement-gaps.md) — the gap inventory this entry extends

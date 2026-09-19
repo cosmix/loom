@@ -8,7 +8,7 @@
 
 ## Phantom Merges: merged=true Without Verification
 
-`merged=true` is a contract with the dependency scheduler — every phantom-merge incident came from writing it without verifying git ancestry. Eight related lessons (defensive "assume merged" branches, `--force-unsafe`, helpers that abort active merges, merge-probe preflight, merge-conflict session lifecycle, the silent `Completed + !merged` resting state). → [Phantom Merges](mistakes/phantom-merges.md)
+`merged=true` is a contract with the dependency scheduler — every phantom-merge incident came from writing it without verifying git ancestry. Ten related lessons (a retry that reset a completed stage's branch so nothing merged, git merge failing on sandbox bind mounts, defensive "assume merged" branches, `--force-unsafe`, helpers that abort active merges, merge-probe preflight, merge-conflict session lifecycle, the silent `Completed + !merged` resting state). → [Phantom Merges](mistakes/phantom-merges.md)
 
 ## File Locking: Writing to Locked Handles
 
@@ -22,15 +22,15 @@ Seven lessons on what a large removal or rename leaves behind — straggler init
 
 ## Sandbox: Contradictory Path Rules
 
-Sandbox path rules, permission sync, `excludedCommands` matching, settings env leaking between the main repo and its worktrees, a worktree-only escape rule applied at the repo root, a sandboxed `git merge` leaving stray untracked files, node_modules resolving from the MAIN repo in a fresh worktree, a directory literally named `hooks/` being sandbox-protected regardless of permission config, and `Write(path)` permission rules never enforcing (only `Edit(path)` does). Root cause: settings are _merged_ from several sources. → [Sandbox & Settings](mistakes/sandbox-and-settings.md), [Directory Named `hooks/`](mistakes/sandbox-protected-hooks-dir.md), [Sandbox Write Rules Inert](mistakes/sandbox-write-rules-inert.md)
+Sandbox path rules, permission sync, `excludedCommands` matching, settings env leaking between the main repo and its worktrees, a worktree-only escape rule applied at the repo root, a directory literally named `hooks/` being sandbox-protected regardless of permission config, and `Write(path)` permission rules never enforcing (only `Edit(path)` does). Root cause: settings are _merged_ from several sources. The tool and network failures (sccache, `cargo audit`, loopback TCP, bind-mounted files, macOS path aliases) and the `.loom/work` state channels (credentials, `loom memory`, handoff, daemon socket, ledgers) each have their own topic. → [Sandbox & Settings](mistakes/sandbox-and-settings.md), [Tooling & Network](mistakes/sandbox-tooling-and-network.md), [State Channels](mistakes/sandbox-state-channels.md), [Directory Named `hooks/`](mistakes/sandbox-protected-hooks-dir.md), [Sandbox Write Rules Inert](mistakes/sandbox-write-rules-inert.md)
 
 ## Test Code: Struct Init Without Default
 
-Lint and test-discipline lessons spanning `--all-targets`, `--no-fail-fast`, headless CI, ambient git config and inherited descriptors in tests, `bunx`/npx, `toml_edit` vs `toml`, CI toolchain drift, the maintainability ledger, `TODO` in string literals, platform-specific Bash/Rust traps. → [Testing & Lint](mistakes/testing-and-lint.md)
+Lint and test-discipline lessons spanning `--all-targets`, `--no-fail-fast`, ambient git config in tests, the maintainability ledger, `TODO` in string literals and platform-specific Bash/Rust traps. Racy tests (inherited descriptors, ETXTBSY, serial env, stdin hangs, real-home writes) and CI toolchain drift (clippy on rustup `stable`, offline `cargo audit`, `install.sh`, dependency build caches) have their own topics. → [Testing & Lint](mistakes/testing-and-lint.md), [Test Concurrency & Fixtures](mistakes/test-concurrency-and-fixtures.md), [CI Toolchain & Cargo](mistakes/ci-toolchain-and-cargo.md)
 
 ## gawk vs POSIX awk (2026-03-31)
 
-Cross-platform shell/hook portability traps: gawk extensions failing on macOS's BSD awk, hook integration tests missing a shared dependency, non-portable `timeout`, an empty-array guard that is a syntax error on a different bash, an unneeded chmod, a heredoc-scanning finalization guard, a Python hash-seed. → [Hooks: Shell Portability](mistakes/hooks-shell-portability.md)
+Cross-platform shell/hook portability traps: gawk extensions failing on macOS's BSD awk, hook integration tests missing a shared dependency, non-portable `timeout`, an empty-array guard that is a syntax error on a different bash, an unneeded chmod, a heredoc-scanning finalization guard, a Python hash-seed, redirect order, a `set -e` function tail, hook tests inheriting the live session's LOOM_* variables, and `updatedInput` without `permissionDecision`. → [Hooks: Shell Portability](mistakes/hooks-shell-portability.md)
 
 ## Session Identity: Backend Metadata Must Be Persisted
 
@@ -107,9 +107,9 @@ One question catches the class: **was this path resolved through `main_project_r
 
 ## A Missing Subagent Report Is Not a Missing Result
 
-Subagents can edit files correctly and never report. Verify the WORK (run the gate, `stat` the files), never wait on reports alone. Also covers interactive-Claude billing/capture traps, whole-file-write failures at scale, delegation-model tier discipline.
+Subagents can edit files correctly and never report. Verify the WORK (run the gate, `stat` the files), never wait on reports alone. Also covers interactive-Claude billing/capture traps and delegation-model tier discipline; brief-writing lessons (sizing, proving commands, file ownership, fixture sweeps, baseline pressure) live in their own topic.
 
-→ [Subagent Orchestration](mistakes/subagent-orchestration.md)
+→ [Subagent Orchestration](mistakes/subagent-orchestration.md), [Subagent Briefing](mistakes/subagent-briefing.md)
 
 ## Visibility Is Capped by Path Reachability
 

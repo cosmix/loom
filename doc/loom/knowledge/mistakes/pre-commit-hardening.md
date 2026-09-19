@@ -1,6 +1,6 @@
 # Pre Commit Hardening
 
-> Partial-staging guard decisions, edge cases, mutant-settled git defaults
+> Partial-staging guard decisions and edge cases
 
 Design decisions and edge cases behind the pre-commit partial-staging guard, and how the black-box regression settled disputed claims about git's defaults.
 

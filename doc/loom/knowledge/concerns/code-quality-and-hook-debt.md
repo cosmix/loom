@@ -1,6 +1,6 @@
 # Code Quality And Hook Debt
 
-> Code-quality/hook debt: oversized units, debug logging, duplicated tables
+> Oversized units, debug logging, duplicated tables, hook debt
 
 ## Oversized Rust Units Remain Controlled Debt (2026-08-09)
 
@@ -139,7 +139,7 @@ is self-contained and has its own tests.
 Not done as part of the sandbox bug fixes because a structural split is not a surgical change and
 would have collided with four agents working the same tree. Worth a dedicated stage; note that
 any file at or near its ledger cap must be refactored in the same change that grows it (see
-`mistakes/sandbox-and-settings.md`).
+`mistakes/testing-and-lint.md`).
 
 ## Ledger TUI: Tech Debt From the Live-Ledger-Dashboard Plan (2026-09-04)
 
@@ -171,3 +171,25 @@ any file at or near its ledger cap must be refactored in the same change that gr
 - **The ledger footer's error branch has zero test coverage.** `TuiApp.last_error` is wired end to end
   from daemon exit / `Response::Error` through to `panels::render_footer`, but no ledger test ever
   sets it non-`None` (`commands/status/ui/tui/ledger/tests.rs:189`, `commands/status/ui/tui/ledger/layout.rs:295` both pass `None`).
+
+## Efficiency-Plan Debt: Hook File Size, Unwired False Positives, Baseline Pressure, Criterion Rendering (2026-09-19)
+
+- **`loom-hooks/commit-filter.sh` is 494 lines** (491 before the hook-guards stage added one attribution sentence).
+  Rule 17's 400-line file cap is not enforced for `loom-hooks/*.sh`: `loom/tests/maintainability.rs`'s scanner walks
+  only the loom crate's `build`, `src` and `tests` Rust files, so no gate sees hook scripts. A refactor stage should
+  either split the script or extend the scanner to hooks.
+- **The stage-completion unwired-file detector does not follow `#[path]` test modules.** It flagged
+  `commands/knowledge/tests_check_baseline.rs` as unwired although `check.rs:327` compiles it through
+  `#[path = "tests_check_baseline.rs"] mod`; `signals/generate_declared_skills_tests.rs` and
+  `generate_missing_allow_write_tests.rs` are wired the same way from `generate.rs:338-343`. The detector
+  (`verify/wiring_detection.rs`) greps for the file's importable name, so a `#[path]` include declared outside a
+  `mod.rs` reads as unreferenced. Teach it the attribute or accept the false positive knowingly.
+- **Every new `Stage` field costs a baseline line.** `Stage::default` (`models/stage/defaults.rs:6`) is the single
+  exhaustive literal and its maintainability entry was raised from 70 to 71 by decision; the next field needs a
+  field-grouping refactor (nested structs) rather than another raise.
+- **The stage signal renders an acceptance criterion as its bare command** (`signals/format/sections.rs:485`), dropping
+  `exit_code`, so a criterion that must FAIL (`exit_code: 1`) reads as a positive check and misled two worker briefs.
+  Render the expected exit code beside the command.
+- **Two masked-exit shapes are still misjudged** (`criterion_hazards/masked_exit.rs:53`): `cargo build && (cargo test ||
+  true)` is flagged although a failing build still fails it, and `cmd || true 2>/dev/null` is not flagged. Both are rare;
+  they are recorded in [plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md).

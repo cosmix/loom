@@ -1,6 +1,6 @@
 # Sandbox And Confinement Gaps
 
-> Sandbox gaps: no E2E canary, diverging env allowlists, uncalled validators
+> Sandbox gaps: no E2E canary, diverging env allowlists
 
 ## Sandbox Denial Has No End-to-End CI Canary
 

@@ -1,6 +1,6 @@
 # Web Dashboard Latent Issues
 
-> Issues reviewed in commands/status/web/ during integration-verify
+> Latent issues found in commands/status/web/
 > deliberately left unchanged — recorded so a later reader does not mistake them for
 > oversights. See [architecture/web-dashboard.md](../architecture/web-dashboard.md) for
 > context.

@@ -2,7 +2,7 @@
 ---
 # Plan Yaml And Hooks
 
-> Plan YAML schema, hook stdin/stdout contract, skill format, additive fields
+> Plan YAML schema, hook stdin/stdout contract, skill format
 
 ## Plan YAML Schema
 

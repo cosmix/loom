@@ -1,10 +1,10 @@
 # Skill Catalog
 
-> The two skill roots and why 53 skills live outside ~/.claude/skills
+> The two skill roots; 53 catalogued skills
 
 ## Skill Catalog: Two Roots, and Why the Split
 
-Skills load from TWO roots, not one: `~/.claude/skills/` (9 CORE skills, named in
+Skills load from TWO roots, not one: `~/.claude/skills/` (10 CORE skills, named in
 `skills/core-skills.txt`, one bare name per line, no trailing comments — Rust and bash readers
 must agree byte-for-byte on the parsing rule: trim, skip blank/`#` lines) and
 `~/.claude/loom-skill-catalog/` (the other ~53 skills). `loom/src/skills/index_catalog.rs` holds
@@ -62,6 +62,29 @@ from `$HOME` (fail closed if `HOME` is unset) with the variable component constr
 segment, and canonicalize BOTH sides of any path comparison with the same helper before diffing
 them.
 
+**Adding a core skill touches the count in five places.** `loom/src/skills/index_catalog.rs`
+`every_core_skill_name_has_a_skill_directory` hardcodes the manifest length (10), and the prose
+count also lives in `README.md` (the cost-control line and the install table),
+`skills/loom-skills/SKILL.md` and `codex/skills/loom-skills/SKILL.md`. Adding `loom-orchestration`
+(2026-09-19) moved it from 9 to 10 and the test failed until all of them agreed; update them with
+`skills/core-skills.txt` in one change.
+
+**`skills/loom-plan-writer/` is a condensed `SKILL.md` plus `references/`.** The doctrine-surfaces
+stage moved more than its brief listed: the codex and sizing detail of Section 4, the hierarchy
+material of Section 5, the bookend long forms, and `references/authoring-detail.md`, which holds
+the verbatim text behind the condensed Sections 2, 4, 5, 6, 7, 9 and 10. `SKILL.md` still carries
+BLOCK-B and the skeleton the canonical plan template renders from; the other files are read on
+demand (`bookend-stages.md`, `codex-implementers.md`, `grounding-protocols.md`,
+`parallelization.md`, `sandbox.md`, `stage-sizing.md`, `verification-rules.md`).
+
+## Component Architecture (loom/src/skills/)
+
+Loads skill metadata from SKILL.md files across the two roots above, builds an inverted index of trigger keywords, and matches stage descriptions against it. Components: `types.rs` (`SkillMetadata`, `SkillMatch`), `matcher.rs` (keyword matching, phrase match = 2pts, word match = 1pt, threshold 2.0), `index.rs` (`SkillIndex`, `load_from_directory`, `match_skills` — visibility of `add_skill`/`parse_skill_file` widened to `pub(super)` for the catalog loader, otherwise unchanged), `index_catalog.rs` (the compiled-in core manifest via `include_str!` of `skills/core-skills.txt`, the two-root loader `load_with_catalog`, and `skill_invocation()` which renders the correct invocation form), `install_layout.rs` (reads `~/.claude/loom-install.toml` and re-places skills after a self-update). Up to 5 skill recommendations are embedded in agent signals.
+
+Map Module (`loom/src/map/`): automated codebase analysis that populates knowledge files. Detectors: project type, dependencies, entry points, structure, conventions, concerns. Features: `--deep` (3-level depth + concerns), `--focus` (filter entry points), `--overwrite`. CLI: `loom map`.
+
+## Skill Catalog Install and Migration Hazards, and Deliberate Cuts
+
 ### Install and Migration Hazards (recorded, some pre-existing)
 
 - **`cp -R "$dir/" dest/` copies the directory's CONTENTS on GNU coreutils but the DIRECTORY
@@ -101,9 +124,3 @@ rust+terraform returned `/loom-skills` as the third suggestion, DISPLACING a rea
 `apply_install_layout`) had any external caller. `pub` items in a lib crate are never
 dead-code-warned, so `cargo clippy` misses an unused re-export entirely — this class of debt needs
 a deliberate sweep (`rg` each re-exported name for callers outside its own module), not a linter.
-
-## Component Architecture (loom/src/skills/)
-
-Loads skill metadata from SKILL.md files across the two roots above, builds an inverted index of trigger keywords, and matches stage descriptions against it. Components: `types.rs` (`SkillMetadata`, `SkillMatch`), `matcher.rs` (keyword matching, phrase match = 2pts, word match = 1pt, threshold 2.0), `index.rs` (`SkillIndex`, `load_from_directory`, `match_skills` — visibility of `add_skill`/`parse_skill_file` widened to `pub(super)` for the catalog loader, otherwise unchanged), `index_catalog.rs` (the compiled-in core manifest via `include_str!` of `skills/core-skills.txt`, the two-root loader `load_with_catalog`, and `skill_invocation()` which renders the correct invocation form), `install_layout.rs` (reads `~/.claude/loom-install.toml` and re-places skills after a self-update). Up to 5 skill recommendations are embedded in agent signals.
-
-Map Module (`loom/src/map/`): automated codebase analysis that populates knowledge files. Detectors: project type, dependencies, entry points, structure, conventions, concerns. Features: `--deep` (3-level depth + concerns), `--focus` (filter entry points), `--overwrite`. CLI: `loom map`.

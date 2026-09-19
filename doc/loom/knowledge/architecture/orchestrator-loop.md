@@ -2,7 +2,7 @@
 ---
 # Orchestrator Loop
 
-> Daemon main-loop tick order, Monitor subsystem, heartbeat liveness.
+> Daemon tick order, Monitor subsystem, heartbeat liveness
 
 ## Orchestrator Main-Loop Tick Sequence (Exact Call Order)
 

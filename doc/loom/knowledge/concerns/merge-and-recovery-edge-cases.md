@@ -68,3 +68,15 @@ Found while fixing the silent `Completed + !merged` outcome (`mistakes/phantom-m
 - `verify_merged_true_or_revert` (`orchestrator/core/recovery.rs`) treats a git error from `verify_merge_succeeded` as "not verified" (`unwrap_or(false)`) and reverts `merged` to false, so a transient git failure can flip a merged stage to unmerged.
 - `merge_stage` (`git/merge/mod.rs`) checks out the target branch in the operator's main checkout and, on success, leaves it there; only the failure paths restore the original branch.
 - `try_auto_merge` is 228 lines against the 50-line function cap and is ledgered at that size.
+
+## A Retry Reset a Completed Stage's Branch, and the Stage Still Read `merged: true` (2026-09-19)
+
+The `doctrine-surfaces` stage (`PLAN-loom-efficiency-and-acceptance`) committed four commits, then hit a
+sandbox-setup-failure retry (stale installed hooks). The retry recreated `loom/doctrine-surfaces` at main's HEAD, and
+completion recorded `merged: true` with `completed_commit` equal to main's HEAD, so nothing merged and the daemon
+reported success. `git/worktree/operations.rs::create_worktree` reuses a branch with commits ahead of its base, so the
+reset happened on a path that guard does not cover (the retry recreation, or a merge probe that treats "no diff against
+main" as merged). The root cause was NOT identified in this plan. Until it is, a stage that read `merged: true` must be
+checked with `git merge-base --is-ancestor <stage tip> <target>` before dependants trust it, and the stage tip is
+recoverable from `git fsck --no-reflogs` (see [phantom-merges](../mistakes/phantom-merges.md)). A retry that starts from
+a completed stage should refuse when `commits_ahead_of(branch, base) > 0` and route to NeedsHandoff instead.

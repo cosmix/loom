@@ -1,6 +1,6 @@
 # Detached Spawn In Tests
 
-> Never spawn a process from a test that can outlive the test process.
+> No process from a test may outlive the test process
 
 ## Never Spawn a Surviving Process From a Test (2026-08-21)
 

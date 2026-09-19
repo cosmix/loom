@@ -1,6 +1,6 @@
 # Runtime And Session Safety
 
-> Runtime edge cases: tmux warning, attach lifetime, orphan adoption, guards
+> Runtime edge cases: tmux, attach lifetime, orphan adoption
 
 ## `evaluate_new_session` Fails a Working Spawn on a Benign `~/.tmux.conf` Warning (2026-08-08)
 

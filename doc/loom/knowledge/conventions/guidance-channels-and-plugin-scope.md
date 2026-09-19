@@ -54,10 +54,11 @@ Subagents do not verify. A subagent may run **at most one narrowly-scoped check*
 the files it just changed; project-wide builds, full test suites, and repo-wide lint or
 typecheck runs belong to the main agent, which is the only party that can see the whole tree.
 
-Enforced by `loom-hooks/subagent-verify-guard.sh` (PreToolUse:Bash), stated in the Rule 5 subagent
-preamble in `CLAUDE.md.template`, and injected into stage signals by
-`orchestrator/signals/cache.rs`. The three copies are pinned byte-for-byte by
-`orchestrator/signals/tests_doctrine.rs`.
+Enforced by `loom-hooks/subagent-verify-guard.sh` (PreToolUse:Bash), stated in the subagent preamble
+`loom-hooks/_subagent-preamble.txt` (which `loom-hooks/spawn-guard.sh` prepends to every typed spawn;
+`CLAUDE.md.template` Rule 5 says not to paste it), and injected into stage signals by
+`orchestrator/signals/cache.rs` (standard and integration-verify prefixes). The four copies are pinned
+byte-for-byte as `BLOCK_A` by `tests_doctrine.rs::block_a_agrees_across_every_surface`.
 
 **The one exception:** integration-verify subagents are carved out at the hook level
 (`subagent-verify-guard.sh`). An earlier version of this section said an IV stage "exists to run the
@@ -69,7 +70,7 @@ discriminating checks, which never substitute for the canonical gate. The carve-
 the stage file and **fails safe**: more than one glob match, a non-integration-verify stage type, or
 a missing file all mean "no relaxation".
 
-The Rule 5 fence's EXCEPTION line in `CLAUDE.md.template` still tells every IV review or verify
+The EXCEPTION line of the subagent preamble (`loom-hooks/_subagent-preamble.txt:16`) still tells every IV review or verify
 subagent to run the full build, suite and linter. It is byte-pinned by `tests_doctrine.rs` and has
 not been aligned with the one-canonical-verifier wording; see the open follow-ups in
 [Token Accounting Follow-Ups](../concerns/token-accounting-and-proof-defects.md).

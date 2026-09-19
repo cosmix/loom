@@ -1,6 +1,6 @@
 # Phantom Merges
 
-> Eight lessons on merge machinery: merged=true without verifying
+> Merge machinery lessons: merged=true without verifying
 
 ## Phantom Merges: merged=true Without Verification
 
@@ -139,3 +139,33 @@ failure budgets: `mistakes/merge-cleanup-boundary.md`.
 **Prevention:** A state the daemon can leave a stage in must be (1) visible in `loom status` with a reason and (2) actionable by the command the hint names. Check both when adding a failure arm: `commands/status/render/attention_model.rs` must produce an entry for the status, and the named command's preflight must accept it. A `return false` that only logs is a silent state. When a guard cites a reason ("avoid the respawn loop"), re-check the reason whenever the mechanism it names changes.
 
 **Fix:** `persist_merge_blocked` now applies to Completed stages, records the error in `failure_info` (`InfrastructureError`, evidence = the git error lines), forces `MergeBlocked`, and prints the `loom stage merge` hint; all failure arms route through it. The empty-branch guard routes to `NeedsHumanReview` with a `review_reason` via `route_to_human_review`. `require_merge_state` accepts `Completed + !merged` (the auto-merge-disabled resting state) and `try_complete_merge` tolerates an already-Completed stage. The sync's routine "not yet in target" line is `debug`. Tests: `orchestrator/core/merge_handler_attempt_tests.rs::failed_auto_merge_moves_completed_stage_to_merge_blocked` and `::empty_stage_branch_routes_to_human_review`.
+
+## `merged: true` on a Stage Whose Commits Never Reached the Target (2026-09-19)
+
+**What happened:** during `PLAN-loom-efficiency-and-acceptance`, the `doctrine-surfaces` stage file read
+`merged: true` with `completed_commit` equal to main's HEAD (`8f80f341`), but its four commits
+(`6d2989ad..2701c5d5`: the loom-orchestration skill, re-pinned doctrine blocks, the plan-writer split, the
+agent `Task` removal) were dangling: absent from main and from the integration-verify base. The stage had hit a
+sandbox-setup-failure retry (stale installed hooks) AFTER its session committed. The retry recreated the branch at
+main's HEAD, so completion merged nothing and reported success. `integration-verify` first verified a tree
+without the doctrine work.
+**Detection:** before trusting `merged: true`, run `git merge-base --is-ancestor <stage tip> <target>`; a lost tip
+shows in `git fsck --no-reflogs`.
+**Prevention:** a retry must never reset a branch that carries commits beyond its base.
+`git/worktree/operations.rs::create_worktree` already reuses a branch with commits ahead of its base and only
+`branch -D`s one with none, so the reset in this incident happened on a path that guard does not cover or ran
+before it; the root cause is recorded as open in
+[merge-and-recovery-edge-cases](../concerns/merge-and-recovery-edge-cases.md).
+**Fix:** the operator approved merging the lost tip into `loom/integration-verify` rather than verifying without it
+or blocking.
+
+## `git merge` Fails on Sandbox Bind-Mounted Files; Merge With `merge-tree` and `commit-tree` (2026-09-19)
+
+**What happened:** merging a stage that changed `CLAUDE.md.template`, `README.md` or
+`loom/maintainability-baseline.txt` inside a stage sandbox failed with `unable to unlink ... Device or resource
+busy`: the sandbox bind-mounts those paths, and git replaces a file by unlinking it. The merge result was built
+with `git merge-tree`, applied with `git apply --index` for every other file, the bind-mounted files were
+written in place, and the merge commit was created with `commit-tree`. Conflicts in that merge were
+`tests_size.rs` (the byte ceiling: kept 20,480) and the README counts (agents, core skills, installed skills).
+**Prevention:** treat that failure as a sandbox artefact, not a merge conflict. Write bind-mounted files in place
+and commit the tree with `commit-tree`.

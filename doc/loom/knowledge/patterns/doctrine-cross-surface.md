@@ -5,31 +5,31 @@
 ## Doctrine Block Cross-Surface Pinning
 
 A **doctrine block** is a fixed chunk of agent guidance that must appear byte-identically on
-several surfaces at once — a runtime signal prefix, a static template, and a hook's refusal
-message. loom carries **four** named, positively-pinned blocks. An earlier version of this
-section said there were three and that `BLOCK_D` did not exist; that was already wrong when
-written or went stale immediately after — `BLOCK_D` is defined at
-`orchestrator/signals/tests_doctrine_blocks.rs:65` and pinned by
-`tests_doctrine.rs::block_d_agrees_across_every_surface`. The same correction moved `BLOCK_A`
-and `BLOCK_B`: their constants live in `tests_doctrine_blocks.rs`, not in `tests_doctrine.rs`
-where this table used to point.
+several surfaces at once — a runtime signal prefix, a skill, a hook's preamble text. loom carries
+**four** named, positively-pinned blocks; the constants live in `orchestrator/signals/tests_doctrine_blocks.rs`
+(`BLOCK_A`, `BLOCK_B`, `BLOCK_D`) and `tests_doctrine_waiting.rs` (`BLOCK_C`), and the surface lists
+below are the ones the tests assert TODAY. The doctrine-surfaces stage (2026-09-19) moved the
+orchestrator-only rules out of `CLAUDE.md.template` into `skills/loom-orchestration/SKILL.md`, so every
+table row that used to name the template as a pinned surface changed.
 
-| Block     | Content                                                                          | Const location                                   | Pinning test(s)                                                                                              |
-| --------- | --------------------------------------------------------------------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- |
-| `BLOCK_A` | "VERIFICATION IS THE MAIN AGENT'S JOB — NOT YOURS" (subagent no-verify rule)      | `orchestrator/signals/tests_doctrine_blocks.rs:11` | `tests_doctrine.rs` asserts `text.contains(BLOCK_A)` on every guidance surface                                  |
-| `BLOCK_B` | Model allocation / delegation ladder, incl. `CODEX_IMPLEMENTER_MODEL_TERRA`/`_LUNA`/`_EFFORT` | `orchestrator/signals/tests_doctrine_blocks.rs:23` | same file; also asserts `BLOCK_B.contains(...)` for each codex identifier constant, so a renamed codex tier fails here first |
-| `BLOCK_C` | Subagent one-background-watch / bounded-wait doctrine ("Checking on subagents...")| `orchestrator/signals/tests_doctrine_waiting.rs:35` | `tests_doctrine_waiting.rs::block_c_names_only_the_frozen_subagents_cli_surface` and friends                    |
-| `BLOCK_D` | Subagent context-ceiling rule ("CONTEXT CEILING - HOOK-REPORTED ONLY")            | `orchestrator/signals/tests_doctrine_blocks.rs:65` | `tests_doctrine.rs::block_d_agrees_across_every_surface`                                                         |
+| Block     | Content                                                                          | Const location                                     | Surfaces pinned (test)                                                                                                                                     |
+| --------- | -------------------------------------------------------------------------------- | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BLOCK_A` | "VERIFICATION IS THE MAIN AGENT'S JOB — NOT YOURS" (subagent no-verify rule)     | `orchestrator/signals/tests_doctrine_blocks.rs:11` | standard and integration-verify stable prefixes, `loom-hooks/_subagent-preamble.txt`, `loom-hooks/subagent-verify-guard.sh` (`block_a_agrees_across_every_surface`) |
+| `BLOCK_B` | Model allocation / delegation ladder, incl. `CODEX_IMPLEMENTER_MODEL_TERRA`/`_LUNA`/`_EFFORT`. Point 1 is "DELEGATION IS A COST DECISION" | `orchestrator/signals/tests_doctrine_blocks.rs:23` | `skills/loom-orchestration/SKILL.md` and `skills/loom-plan-writer/SKILL.md` (`block_b_agrees_across_every_surface`); also asserts `BLOCK_B.contains(..)` for each codex identifier constant, so a renamed codex tier fails here first |
+| `BLOCK_C` | Subagent one-background-watch / bounded-wait doctrine ("Checking on subagents...") | `orchestrator/signals/tests_doctrine_waiting.rs:33` | `skills/loom-orchestration/SKILL.md` ONLY, and absent from every stable prefix (`block_c_lives_in_the_orchestration_skill`, `block_c_absent_from_every_stable_prefix`, `block_c_pins_the_owned_wait_contract`) |
+| `BLOCK_D` | Subagent context-ceiling rule ("CONTEXT CEILING - HOOK-REPORTED ONLY")           | `orchestrator/signals/tests_doctrine_blocks.rs:75` | standard and integration-verify stable prefixes and `loom-hooks/_subagent-preamble.txt` (`block_d_agrees_across_every_surface`)                            |
 
-`BLOCK_D` is pinned in `tests_doctrine.rs` rather than split into its own sibling because it is
-the only block spanning both kinds of surface: a static one (`CLAUDE.md.template` Rule 5) and the
-emitted signal (`cache.rs`'s `append_subagent_ceiling_block`). `BLOCK_A`/`BLOCK_B` are
-static-only and pinned in the same file; `BLOCK_C` is static-only and pinned in the sibling. It
-exists because a subagent that never sees the PostToolUse hook's literal `SUBAGENT CEILING
+`BLOCK_D` exists because a subagent that never sees the PostToolUse hook's literal `SUBAGENT CEILING
 REACHED` line has no falsifiable way to know it has NOT reached its ceiling, and was observed
-confabulating one from CLAUDE.md prose alone.
+confabulating one from CLAUDE.md prose alone. The preamble file is a pinned surface because
+`loom-hooks/spawn-guard.sh` prepends it to every typed spawn; the template's Rule 5 only tells the
+orchestrator not to paste it.
 
-`CLAUDE.md.template` is `include_str!`'d into both `tests_doctrine.rs` and `tests_doctrine_waiting.rs` (and `tests_doctrine_prefixes.rs`, which separately pins the four stable-prefix generators' byte ceilings — see [signal-generation.md](../architecture/signal-generation.md)) so a change to the template is checked against all four blocks and every generated signal in one pass.
+`CLAUDE.md.template` and `skills/loom-orchestration/SKILL.md` are `include_str!`'d into `tests_doctrine.rs`
+and `tests_doctrine_waiting.rs` (and `tests_doctrine_prefixes.rs`, which separately pins the stable-prefix
+generators' byte ceilings — see [signal-generation.md](../architecture/signal-generation.md)), so moving
+either file is a COMPILE error and a change to either is checked against every block in one pass.
+`tests_size.rs` caps the template at `CLAUDE_MD_TEMPLATE_MAX_BYTES` 20,480.
 
 The failure mode is drift, and it is invisible to ordinary acceptance criteria: greping each
 surface for an anchor phrase proves only that a substring exists on each, never that the
@@ -38,7 +38,7 @@ surfaces agree. Two independently-worded copies both pass.
 **The pattern:**
 
 1. **One authority, and the orchestrator writes the foundation text first.** Exactly one surface
-   is canonical — CLAUDE.md.template for a rule, or the stage's own brief for a stage-scoped
+   is canonical — `skills/loom-orchestration/SKILL.md` for an orchestrator rule, `CLAUDE.md.template` for a hard stop, or the stage's own brief for a stage-scoped
    change. When a new mandated rule directly contradicts an existing pinned block (real example:
    a stage brief mandated ONE background `loom subagents watch --timeout 3600`, which contradicted
    `BLOCK_C`'s old `(deadline <=300s ...)` parenthetical and its "re-arm and keep waiting" case),
@@ -58,7 +58,8 @@ surfaces agree. Two independently-worded copies both pass.
    byte-identical everywhere.
 5. **Sweep for retired phrasing with a NEGATIVE pin, not a memory of the grep.** `RETIRED_PHRASES`
    in `tests_doctrine.rs` is asserted absent from `guidance_surfaces()` — CLAUDE.md.template +
-   `skills/loom-plan-writer/SKILL.md` + every `agents/*.md` + `generate_stable_prefix()`'s
+   `skills/loom-plan-writer/SKILL.md` + `skills/loom-orchestration/SKILL.md` +
+   `loom-hooks/_subagent-preamble.txt` + every `agents/*.md` + `generate_stable_prefix()`'s
    generated text — so retiring a phrase from the canonical block is checked, not just remembered.
    `loom-hooks/` is NOT covered by `guidance_surfaces()` — a retired phrase can still live on in a hook's
    own prose (e.g. `loom-hooks/spawn-guard.sh`'s literal `PREAMBLE_LINE` constant), so a doctrine

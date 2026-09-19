@@ -1,6 +1,6 @@
 # Owned Waits
 
-> Worker-set waits: lease/engine, exit codes, unit-survival limit
+> Worker-set waits: lease/engine, exit codes
 
 ## Owned Subagent Waits (`loom subagents wait`/`watch`, 2026-09-13)
 

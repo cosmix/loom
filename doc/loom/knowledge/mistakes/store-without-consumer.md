@@ -1,6 +1,6 @@
 # Store Without Consumer
 
-> A store that was written but never read - what happened, why it stayed invisible, and the concrete trail.
+> A store written but never read
 
 ## What Happened
 

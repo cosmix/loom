@@ -6,7 +6,7 @@ verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 ---
 # Doctrine And Acceptance
 
-> Why a one-phrase grep proves presence but never agreement, and how doctrine drifts across surfaces unnoticed.
+> Doctrine grep traps, setup-line grants, completion rules
 
 ## An Acceptance Criterion That Greps One Phrase Proves Presence, Never Agreement (2026-07-28)
 
@@ -40,14 +40,20 @@ greps against your new file before assuming it is inert.
 
 **What happened:** the integration-verify carve-out was written into the signal-level override,
 which is addressed to the _main agent_ ("when you spawn a verifier, tell it to run the complete
-suite"). But what an integration-verify main agent actually pastes into its verifier subagent's
-prompt is the Rule 5 preamble from `CLAUDE.md.template` — which carried the doctrine with **no
+suite"). But what an integration-verify main agent actually pasted into its verifier subagent's
+prompt was the Rule 5 preamble from `CLAUDE.md.template` — which carried the doctrine with **no
 exception**. The verifier therefore received "no full build, no full test suite" as its most
 rule-shaped instruction.
 
 **Prevention:** for each rule, ask **which surface is pasted verbatim into a subagent prompt**,
 and check that the exception survives that paste. A doctrine's exception belongs in every block
 that is copied, not only in the prose that explains it.
+
+**Since 2026-09-19 the paste is a hook, not the orchestrator:** `loom-hooks/spawn-guard.sh` prepends
+`loom-hooks/_subagent-preamble.txt` to every typed spawn whose prompt lacks the `PREAMBLE_LINE` first line
+(loom-codex-forwarder and `codex:*` are excluded; an untyped spawn gets nothing), and the template
+says "do not paste it yourself". The question moves with it: the surface that reaches the subagent is
+now `_subagent-preamble.txt`, so an exception (integration-verify) must survive THERE.
 
 ## After Landing a Doctrine, Grep for the Phrasing It RETIRES (2026-07-28)
 
@@ -237,7 +243,7 @@ complete NOW"; CLAUDE.md Rule 6 said "on the deadline branch: take the work over
 said completion requires a settled stage or that completion is terminal.
 **Prevention:** `loom-hooks/stage-terminal-guard.sh` blocks Write/Edit/Task/Agent in a worktree whose
 stage is already completed/verified. Settled-state completion doctrine lives in
-CLAUDE.md.template (hard stop 3, Rule 4, Rule 6), `append_completion_rules()` in
+CLAUDE.md.template (hard stop 3, Rule 4), skills/loom-orchestration/SKILL.md (Rule 4, where the three commit conditions now live; template Rule 6 only points at the skill), `append_completion_rules()` in
 `signals/cache.rs`, the budget-exceeded recitation box, and the commit-guard message; retired
 takeover phrases are pinned in `tests_doctrine.rs::RETIRED_PHRASES`.
 **Fix:** Complete only a settled stage (subagents absorbed, defects fixed, tree clean) and run
@@ -260,6 +266,20 @@ the repository. Drop the grant, the `TMPDIR=` override and the `setup` line. `lo
 rejects all three, plus any absolute grant missing on the host and any `mkdir`, `touch` or output
 redirect aimed outside the worktree (`loom/src/plan/schema/host_paths.rs`,
 `loom/src/plan/schema/host_paths/commands.rs`).
+
+**Recurrence and the two fixes that shipped (2026-09-19):** four stages of one plan (`hook-guards`,
+`knowledge-hygiene`, `plan-verification`, `retrieval-and-measurement`) each started with every
+acceptance criterion failing `mkdir: Read-only file system` on a `TMPDIR=/tmp/loom-efficiency-checks`
+grant that did not exist on the host, and each spent a session diagnosing it. Detection is the same
+every time: every criterion fails at once with `Read-only file system` on the plan's own allow_write
+path. The fix lives in surfaces that ship, not in this repository's prose or in the daemon: `loom plan
+verify` rejects an absent or ephemeral absolute grant (`plan/schema/host_paths.rs`), and the stage
+signal's sandbox section lists each grant missing at spawn under "Missing on the host, so NOT
+writable this session" (`signals/generate.rs` `missing_allow_write_from_merged`,
+`signals/format/sandbox_section.rs`). Do NOT make the daemon create the missing directory: a
+fix for a loom behaviour must ship in the binary, `skills/`, `CLAUDE.md.template` or `loom-hooks/`
+(a rule in this repository's knowledge tree reaches only this repository, and loom's users build
+other projects), and it must not widen what the daemon writes on the host.
 
 ## A Finished Plan Was Committed Under an Ignored `DONE-` Name (2026-09-13)
 

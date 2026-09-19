@@ -1,6 +1,6 @@
 # Web Dashboard Server (loom status --web)
 
-> Concurrency, security and testing lessons from building the hand-rolled HTTP/WebSocket
+> Hand-rolled dashboard server: concurrency, security, tests
 > server under `loom/src/commands/status/web/` and its React frontend. See
 > [architecture/web-dashboard.md](../architecture/web-dashboard.md) for the shape of the
 > system these fixes apply to.

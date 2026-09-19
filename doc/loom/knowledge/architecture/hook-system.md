@@ -1,6 +1,6 @@
 # Hook System
 
-> Hook embedding/install, SessionStart contract, enforcement layers
+> Hook embedding, SessionStart contract, enforcement
 
 ## Hook System Architecture (loom/src/hooks/)
 
@@ -94,64 +94,9 @@ read and no shell TOML/YAML grammar to drift from Rust. Missing, failed, malform
 command output uses the shell fallback constants; a valid main zero is instead Rust's explicit
 disabled sentinel for a stage record it could not verify.
 
-### LOOM_* Env Vars Available to All Hooks
-
-Set by the wrapper script before `exec claude` (`orchestrator/terminal/native/wrapper.rs`: `kind_env`,
-`work_dir_env`, and `LOOM_SESSION_TYPE`; an earlier version of this line pointed at
-`pid_tracking.rs:463-479`):
-
-| Variable               | Purpose                                             |
-| ---------------------- | --------------------------------------------------- |
-| `LOOM_SESSION_ID`      | Current session ID                                  |
-| `LOOM_STAGE_ID`        | Current stage ID                                    |
-| `LOOM_SESSION_TYPE`    | Session kind (`stage`, `knowledge`, `merge`, `base_conflict`, `adjudication`), every kind |
-| `LOOM_WORK_DIR`        | Absolute path to the state directory (`.loom/work`) |
-| `LOOM_MAIN_AGENT_PID`  | Process PID (set dynamically, NOT in settings.json) |
-| `LOOM_WORKTREE_PATH`   | Absolute worktree path (worktree sessions only)     |
-| `LOOM_MERGE_SESSION=1` | Set for merge resolution sessions only              |
-
-**Per-session identity gotcha (LOOM_MAIN_AGENT_PID, LOOM_STAGE_ID, LOOM_SESSION_ID):** Must NOT be in ANY settings-file env block — settings `env` overrides the process environment, so a persisted value from an earlier session shadows the wrapper's fresh exports (wrong-stage `loom memory` entries, heartbeats for the wrong session, commit-filter misidentifying the main agent). The wrapper script is the ONLY writer; `fs/permissions/settings.rs::scrub_session_identity_env()` strips these keys wherever settings are generated, copied, or merged (`generate_hooks_settings`, `create_worktree_settings`, worktree settings.local.json copy, `refresh_worktree_settings_local`, `ensure_loom_hooks_local`). Only the stable `LOOM_WORK_DIR` is persisted in settings env. `refresh_worktree_settings_local` merges main-repo permissions INTO the worktree's own settings (worktree base wins for env/hooks/defaultMode). **Claude Code applies the MAIN repo's settings env to sessions in linked worktrees** (observed v2.1.217), so worktree-side scrubbing alone is insufficient — the run path heals the main files too: `scrub_main_repo_settings_identity()` at `loom run` startup (`prepare_repo_for_run`) and `scrub_session_identity_env()` inside the sync fold-back (`merge_permissions_with_lock`), which rewrites the main settings.local.json on every stage completion (see mistakes.md 2026-07-23).
-
-### Hook Embedding (constants.rs)
-
-`LOOM_HOOKS` (`fs/permissions/constants.rs`) holds **33 entries**, each embedded via
-`include_str!()` at compile time. `install_loom_hooks()` writes them to
-`~/.claude/hooks/loom/` with mode 0o755. Hooks are NOT read from disk by loom at
-runtime.
-
-**Do not read "33 entries" as "33 hooks."** The arithmetic, verified against
-`fd -t f -e sh . hooks --max-depth 1 | wc -l`,
-`rg -c '^    ("' loom/src/fs/permissions/constants.rs`, and the script names in
-`fs/permissions/hooks/config.rs`:
-
-```text
-34 top-level scripts in loom-hooks/
- −1  git-pre-commit-hook.sh    (excluded from LOOM_HOOKS; appended to .git/hooks/pre-commit by loom init)
- ───
- 33  LOOM_HOOKS entries installed to ~/.claude/hooks/loom/
- −3  _common.sh, _read_discipline.sh, _read_ledger.sh   (sourced libraries, not registered hooks)
- −1  codex-forward.sh          (wrapper the codex forwarding lane invokes directly)
- −1  codex-apply-patch.sh      (Codex apply_patch bridge, registered only by codex_hooks.rs)
- ───
- 28  Claude Code hooks: 21 global, registered in fs/permissions/hooks/config.rs,
-                        + 7 session hooks emitted from HookEvent
-```
-
-An earlier version of this section counted 32 entries and 33 scripts, and put all
-28 Claude Code hooks in `fs/permissions/hooks/config.rs`.
-
-One of the 21 global hooks is `knowledge-orient.sh`, the only hook registered
-**globally** on `SessionStart` (`fs/permissions/hooks/config.rs`) rather than
-per-session — it points a fresh non-stage session at `doc/loom/knowledge/INDEX.md`.
-It exits silently inside a stage, on `compact`/`resume`, and when no `INDEX.md`
-exists inside the git root.
-
-Re-derive these with the commands above rather than trusting the numbers here —
-they have gone stale before.
-
 ## Subagent Isolation
 
-Three-layer defense: documentation (CLAUDE.md Rule 5), signal injection (cache.rs prefix), and hook enforcement — which is now **two** hooks, not one:
+Three-layer defense: documentation (the subagent preamble `spawn-guard.sh` prepends to every typed spawn; CLAUDE.md Rule 5), signal injection (cache.rs prefix), and hook enforcement — which is now **two** hooks, not one:
 
 | Hook                       | Enforces                                                                                                                                                                                                                |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
@@ -255,3 +200,60 @@ reason — `floor`, `all-delivered`, `over-ceiling`, `no-retrieval` or `no-targe
 when it does not. Both are written only when the state directory already exists, so
 an unrelated repository never grows a `.loom/work/` tree. `loom knowledge telemetry`
 summarizes them per stage.
+
+## Hook Environment Variables and Embedding (constants.rs)
+
+### LOOM_* Env Vars Available to All Hooks
+
+Set by the wrapper script before `exec claude` (`orchestrator/terminal/native/wrapper.rs`: `kind_env`,
+`work_dir_env`, and `LOOM_SESSION_TYPE`; an earlier version of this line pointed at
+`pid_tracking.rs:463-479`):
+
+| Variable               | Purpose                                             |
+| ---------------------- | --------------------------------------------------- |
+| `LOOM_SESSION_ID`      | Current session ID                                  |
+| `LOOM_STAGE_ID`        | Current stage ID                                    |
+| `LOOM_SESSION_TYPE`    | Session kind (`stage`, `knowledge`, `merge`, `base_conflict`, `adjudication`), every kind |
+| `LOOM_WORK_DIR`        | Absolute path to the state directory (`.loom/work`) |
+| `LOOM_MAIN_AGENT_PID`  | Process PID (set dynamically, NOT in settings.json) |
+| `LOOM_WORKTREE_PATH`   | Absolute worktree path (worktree sessions only)     |
+| `LOOM_MERGE_SESSION=1` | Set for merge resolution sessions only              |
+
+**Per-session identity gotcha (LOOM_MAIN_AGENT_PID, LOOM_STAGE_ID, LOOM_SESSION_ID):** Must NOT be in ANY settings-file env block — settings `env` overrides the process environment, so a persisted value from an earlier session shadows the wrapper's fresh exports (wrong-stage `loom memory` entries, heartbeats for the wrong session, commit-filter misidentifying the main agent). The wrapper script is the ONLY writer; `fs/permissions/settings.rs::scrub_session_identity_env()` strips these keys wherever settings are generated, copied, or merged (`generate_hooks_settings`, `create_worktree_settings`, worktree settings.local.json copy, `refresh_worktree_settings_local`, `ensure_loom_hooks_local`). Only the stable `LOOM_WORK_DIR` is persisted in settings env. `refresh_worktree_settings_local` merges main-repo permissions INTO the worktree's own settings (worktree base wins for env/hooks/defaultMode). **Claude Code applies the MAIN repo's settings env to sessions in linked worktrees** (observed v2.1.217), so worktree-side scrubbing alone is insufficient — the run path heals the main files too: `scrub_main_repo_settings_identity()` at `loom run` startup (`prepare_repo_for_run`) and `scrub_session_identity_env()` inside the sync fold-back (`merge_permissions_with_lock`), which rewrites the main settings.local.json on every stage completion (see mistakes.md 2026-07-23).
+
+### Hook Embedding (constants.rs)
+
+`LOOM_HOOKS` (`fs/permissions/constants.rs`) holds **33 entries**, each embedded via
+`include_str!()` at compile time. `install_loom_hooks()` writes them to
+`~/.claude/hooks/loom/` with mode 0o755. Hooks are NOT read from disk by loom at
+runtime.
+
+**Do not read "33 entries" as "33 hooks."** The arithmetic, verified against
+`fd -t f -e sh . hooks --max-depth 1 | wc -l`,
+`rg -c '^    ("' loom/src/fs/permissions/constants.rs`, and the script names in
+`fs/permissions/hooks/config.rs`:
+
+```text
+34 top-level scripts in loom-hooks/
+ −1  git-pre-commit-hook.sh    (excluded from LOOM_HOOKS; appended to .git/hooks/pre-commit by loom init)
+ ───
+ 33  LOOM_HOOKS entries installed to ~/.claude/hooks/loom/
+ −3  _common.sh, _read_discipline.sh, _read_ledger.sh   (sourced libraries, not registered hooks)
+ −1  codex-forward.sh          (wrapper the codex forwarding lane invokes directly)
+ −1  codex-apply-patch.sh      (Codex apply_patch bridge, registered only by codex_hooks.rs)
+ ───
+ 28  Claude Code hooks: 21 global, registered in fs/permissions/hooks/config.rs,
+                        + 7 session hooks emitted from HookEvent
+```
+
+An earlier version of this section counted 32 entries and 33 scripts, and put all
+28 Claude Code hooks in `fs/permissions/hooks/config.rs`.
+
+One of the 21 global hooks is `knowledge-orient.sh`, the only hook registered
+**globally** on `SessionStart` (`fs/permissions/hooks/config.rs`) rather than
+per-session — it points a fresh non-stage session at `doc/loom/knowledge/INDEX.md`.
+It exits silently inside a stage, on `compact`/`resume`, and when no `INDEX.md`
+exists inside the git root.
+
+Re-derive these with the commands above rather than trusting the numbers here —
+they have gone stale before.

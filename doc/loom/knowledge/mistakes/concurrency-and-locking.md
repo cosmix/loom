@@ -2,7 +2,7 @@
 ---
 # Concurrency And Locking
 
-> Locked-handle writes and read-mutate-save races that lose concurrent updates.
+> Locked-handle writes and read-mutate-save races
 
 ## File Locking: Writing to Locked Handles
 

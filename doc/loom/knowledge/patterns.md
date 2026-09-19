@@ -140,7 +140,7 @@ instances of this in one stage.
 ## Offline File Harness for a Visual Review Under a No-Network Sandbox (2026-09-12)
 
 When a stage sandbox denies loopback TCP (see
-[mistakes/sandbox-and-settings.md](mistakes/sandbox-and-settings.md#a-stage-sandbox-can-deny-loopback-tcp-even-while-the-server-reports-listening-but-not-always-2026-09-12))
+[mistakes/sandbox-tooling-and-network.md](mistakes/sandbox-tooling-and-network.md#a-stage-sandbox-can-deny-loopback-tcp-even-while-the-server-reports-listening-but-not-always-2026-09-12))
 but a plan step needs a real browser render for review, build the harness as static
 files instead of a server: `vite build --base ./` produces a bundle loadable via
 `file://`; wire real routes with `createMemoryRouter` at the URL under review (e.g.

@@ -134,12 +134,13 @@ and process-global cwd mutation in memory tests.
 
 ## Tier-1 Knowledge Housekeeping Backlog
 
-`loom knowledge check --strict` enforces 250 lines per tier-1 file, 40 per section, and a 16 KB
-cap on `INDEX.md`; the remaining backlog is `MissingSourceRef` resolution (needs the full
-src-relative path) and generic tier-2 blurbs. This entry now also covers the CLI's own rough
-edges: knowledge signals never teaching the tier-2 form, no delete-section verb, `replace-section`'s
-CRLF/trailing-blank-line quirks, `update`'s stdin-vs-inline trim mismatch, no blurb flag on
-`update`, and no heading-rename support.
+`loom knowledge check --strict` exits 0 on this tree under the tier-1 limits (250 lines per file, 40 per
+section), the tier-2 limits (400 per file, 80 per section) and the 16 KB cap on `INDEX.md`, which has about 100
+bytes of headroom, so every new topic must be paid for with shorter blurbs. What remains is the CLI's own rough
+edges: `replace-section`'s CRLF/trailing-blank-line quirks, `update`'s stdin-vs-inline trim mismatch, no blurb flag on
+`update`, no in-place heading rename (delete-section plus update is the workaround), and the disagreement between the
+chunker's and the splicer's fenced-code models. `--baseline` and `--write-baseline` exist for adopting a limit on a
+tree that cannot clear it yet; none is needed while `--strict` stays green.
 
 → [Knowledge CLI Gaps](concerns/knowledge-cli-gaps.md)
 

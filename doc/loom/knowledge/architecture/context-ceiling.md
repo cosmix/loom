@@ -70,6 +70,18 @@ The 1.5x auto-compact env var is separately clamped to `AUTO_COMPACT_WINDOW_MAX_
 before export, since the installed binary re-clamps to `[1, 1_000_000]` and then again to the
 model's own context window.
 
+## Handoff System (Full Chain)
+
+Fully functional handoff chain, of which `loom-hooks/pre-compact.sh` (above) is one link:
+
+1. **`loom handoff create`** — CLI command accepting `--stage`, `--session`, `--trigger`, `--message` flags
+2. **`pre-compact.sh`** — two-phase block-then-allow pattern (see above); no longer creates a recovery marker file
+3. **`session-end.sh`** — uses glob `*-${LOOM_STAGE_ID}.md` for stage file lookup (handles depth prefixes)
+4. **Signals** — `cache.rs`'s `append_common_footer()` adds compaction recovery instructions to ALL signal types
+5. **`session-start.sh`** — on `SessionStart` with `.source == "compact"` or `"resume"`, emits `hookSpecificOutput` `additionalContext` re-anchor pointer so the agent finds its signal file after compaction
+
+## How the Ceiling Reaches the Shell Hook, and the Last Resort
+
 The shell hook never parses TOML or stage YAML. Its internal
 `loom hook context-ceilings` call (bounded to 3 s by `loom_run_bounded`) loads both through Rust and prints one validated
 `<main>:<subagent>` pair. `loom-hooks/post-tool-use.sh` caches that pair at
@@ -97,13 +109,3 @@ recitation-section context line) into Green `<60%`, Yellow `60-90%`, Red `>=90%`
 itself trigger anything; the 1.0x/1.25x/1.5x mechanisms above are independent of these display
 bands. See [architecture.md](../architecture.md) "Context Budget Enforcement" for the full
 field/resolver contract.
-
-## Handoff System (Full Chain)
-
-Fully functional handoff chain, of which `loom-hooks/pre-compact.sh` (above) is one link:
-
-1. **`loom handoff create`** — CLI command accepting `--stage`, `--session`, `--trigger`, `--message` flags
-2. **`pre-compact.sh`** — two-phase block-then-allow pattern (see above); no longer creates a recovery marker file
-3. **`session-end.sh`** — uses glob `*-${LOOM_STAGE_ID}.md` for stage file lookup (handles depth prefixes)
-4. **Signals** — `cache.rs`'s `append_common_footer()` adds compaction recovery instructions to ALL signal types
-5. **`session-start.sh`** — on `SessionStart` with `.source == "compact"` or `"resume"`, emits `hookSpecificOutput` `additionalContext` re-anchor pointer so the agent finds its signal file after compaction

@@ -205,7 +205,7 @@ dispatch path to whatever must still treat it as that language.
 
 ## Bump `INDEX_VERSION` Whenever `lexical::tokenize` Changes
 
-`context/lexical_index.rs::INDEX_VERSION` (currently `1`) has no compile-time
+`context/lexical_index.rs::INDEX_VERSION` (currently `2`) has no compile-time
 protection tying it to the tokenizer. The persisted index file already hashes
 the `WEIGHT_*` scoring constants (`derivation()`, `lexical_index.rs:85-98`) and
 is rejected on a mismatch, so retuning a weight cannot leave a warm cache
@@ -219,7 +219,7 @@ The failure mode is a divergence visible only on a cache HIT: a warm index
 built under the old tokenizer keeps serving old-tokenization postings, while a
 cold miss rebuilds under the new tokenizer and scores differently — same code,
 same corpus revision, two different answers depending on nothing but whether a
-cache file happened to survive. See [Context Retrieval](../architecture/context-retrieval.md)
+cache file happened to survive. See [Context Retrieval Corpus](../architecture/context-retrieval-corpus.md)
 for the rest of the index's invalidation contract (why `average_length` and
 the document-frequency map are recomputed rather than stored, and why weights
 are persisted as IEEE-754 bits).
@@ -262,3 +262,12 @@ found" on a filter that matches nothing). A narrowly-scoped check over web chang
 filename, e.g. `settings-model.test.ts`, `settings-cards.test.tsx`, `settings-dialog.test.tsx` —
 there is no one-test-file-per-component guarantee; a component file may have no matching test file
 at all.
+
+## Splitting a Test File That Sits at the 400-Line Cap (2026-09-19)
+
+A test file at `FILE_LINE_LIMIT` (400) cannot take a `#[path = "..."] mod x;` pair: the declaration alone pushes it
+to 401 lines. `loom/src/assets/tests.rs` avoided that with a bare `mod skill_references;`, which resolves to
+`assets/tests/skill_references.rs` because `tests.rs` is not a `mod.rs` file. Prefer the bare form for a child of a
+non-`mod.rs` parent, and reserve `#[path]` for a sibling that must keep its flat `tests_*.rs` name. The stage-completion
+unwired-file detector reads a `#[path]` include as unreferenced (see
+[code-quality-and-hook-debt](../concerns/code-quality-and-hook-debt.md)); the bare form does not have that problem.

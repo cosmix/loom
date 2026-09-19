@@ -115,3 +115,32 @@ A hook that Claude Code itself invokes (a `PreToolUse` guard, a global `UserProm
 `settings_checks.rs` renders `LOOM_HOOKS.len()` dynamically (`commands/repair/settings_checks.rs`), so it needs no edit when a hook is added — only the count assertions above do.
 
 **Worktree detection gotcha:** `_common.sh:loom_current_worktree()` decides membership by LOCATION, never by `LOOM_STAGE_ID`, which leaks into plain sessions from prior runs. A session counts as inside a worktree when EITHER the current directory is inside `.worktrees/<stage>/`, OR `LOOM_WORKTREE_PATH` points into `.worktrees/` and that directory still exists on disk (the on-disk check rejects a stale, leaked value). An earlier version of this note said both conditions were required.
+
+## Hook Behaviors Added by the Efficiency Plan (2026-09-19)
+
+- **`spawn-guard.sh` injects the subagent preamble.** A typed spawn whose prompt lacks `PREAMBLE_LINE` gets
+  `loom-hooks/_subagent-preamble.txt`, a blank line, then its own prompt byte for byte (`spawn-guard.sh:267-285`).
+  Excluded: `loom-codex-forwarder` and `codex:*` (codex reads its own agent-instructions file, and `codex-forward.sh` prepends its own
+  rules); an untyped spawn gets nothing. The rewrite output sets `permissionDecision: "allow"` beside
+  `updatedInput`, without which Claude Code discards it (see
+  [hooks-shell-portability](../mistakes/hooks-shell-portability.md)). The literal `PREAMBLE_LINE` is mirrored by
+  a const in `loom/tests/integration/hooks_spawn_guard.rs:16`. The file stays under 400 lines because its own
+  comments were condensed and stdin is read through `loom_run_bounded`, not because a sourced library was split off.
+- **`worktree-file-guard.sh::edit_advisory` warns a stage's main agent, never denies.** On a code path (not under
+  `doc/`, not `*.md`, not a `.kb_tmp_*` or `.distill-body-*` scratch file) it warns once per path when one call
+  writes more than 20 lines or the path is the third or later distinct file edited this session, tracked in an
+  `edits` ledger. It returns early for subagents (`agent_id`/`agent_type` in the payload, or `loom_is_subagent`).
+  It enforces the small-change test of BLOCK-B point 1. A distiller that stages long bodies in files inside the
+  worktree names them `.distill-body-*` to stay out of it.
+- **`skill-trigger.sh` (Python despite the name) qualifies on keywords only.** A detected repository type adds one
+  point as a tie-breaker and never qualifies a skill alone; the gate reads `keyword_scores`, captured before the
+  repo tie-breaker, rather than a separate evidence function. A prompt that `is_machine_generated` (leading `<`,
+  `Background agent `, `Caveat: `; mirrors `commands/hook/user_prompt.rs`) gets no output, and each suggestion is
+  shown once per session through the `skills` ledger. `model` joined `STOPWORDS` here and in `skill_index.rs`,
+  and the `model selection` phrase trigger still fires.
+- **`prefer-modern-tools.sh` scopes its `cat` redirection check with a raw-text regex**
+  (`_pmt_cat_operand_has_redirection`, `:225`), not a token-index range: the tokenizer folds `<` and `>` into the
+  same `%%SEP%%` sentinel as the hard separators, so only the raw text tells `cat a > b` (no warning) from
+  `cat a && make > out.log` (still warns, the `>` belongs to `make`).
+- **`loom-control-complete.sh` strips inert heredoc bodies** before deciding whether a command is a completion
+  attempt; see [hook-content-stripping](../patterns/hook-content-stripping.md).

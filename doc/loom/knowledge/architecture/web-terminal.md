@@ -1,6 +1,6 @@
 # Web Terminal
 
-> loom status --web --terminals: a browser terminal attached to a session
+> loom status --web --terminals: browser terminal
 
 ## Enablement and the port-scoped cookie token
 
