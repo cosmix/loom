@@ -287,7 +287,7 @@ Each of the three steps spawns with an independently selectable model and reason
 loom plan verify <plan-path> [--strict] [--json] [--no-color]
 ```
 
-`loom plan verify` validates a plan file without touching `.loom/work/` or requiring a git repo. It runs the same fatal validation as `loom init` (schema errors, unknown or retired fields at every nested policy layer, duplicate IDs, unknown dependencies, path safety) plus advisory warnings (structural issues, missing knowledge-bootstrap stage, sandbox gaps). A retired top-level `truths` block is rejected; move behavioral commands to `acceptance`. Exits 0 on success, non-zero on fatal errors; `--strict` promotes warnings to errors.
+`loom plan verify` validates a plan file without touching `.loom/work/` or requiring a git repo. It runs the same fatal validation as `loom init` (schema errors, unknown or retired fields at every nested policy layer, duplicate IDs, unknown dependencies, path safety) plus advisory warnings (structural issues, missing knowledge-bootstrap stage, sandbox gaps). A retired top-level `truths` block is rejected; move behavioral commands to `acceptance`. It additionally rejects requirements a sandboxed stage cannot satisfy — an `allow_write` grant under `/tmp` or missing on the host, a `TMPDIR=<absolute path>` override, a hardcoded `/tmp/` path, and a `mkdir`, `touch` or output redirect aimed outside the worktree in `acceptance`, `setup`, `wiring_tests`, `before_stage` or `after_stage` commands — because the stage sandbox already provides a writable `$TMPDIR`. Exits 0 on success, non-zero on fatal errors; `--strict` promotes warnings to errors.
 
 ### Stage Commands
 

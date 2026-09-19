@@ -664,7 +664,14 @@ command enters `acceptance`:
    assignment fails silently after `;`, and `HOME=""` resolves to the operator's REAL home — a
    criterion that "passes" by writing `~/.loom/config.toml` on the operator's machine did exactly
    that in this repo. Write `H=$(mktemp -d "${TMPDIR:-/tmp}/<name>.XXXXXX") && [ -n "$H" ] && ...`,
-   chain with `&&` only, and never place a possibly-empty variable in `HOME=`. The same rule
+   chain with `&&` only, and never place a possibly-empty variable in `HOME=`. Never override
+   `TMPDIR`, and never grant or name a path under `/tmp`: the stage sandbox already sets
+   `$TMPDIR` to a writable directory outside the repository. An `allow_write` path is bound only
+   if it exists on the host when the session starts, and a `setup` line such as `mkdir -p <path>`
+   runs inside the same sandbox, so it cannot create the path and takes every criterion down with
+   it. `loom plan verify` rejects a `TMPDIR=<absolute path>` override, a literal `/tmp/` path, a
+   grant under `/tmp`, an absolute grant missing on the host, and a `mkdir`, `touch` or output
+   redirect aimed outside the worktree; fix each before presenting the plan. The same rule
    applies to `wiring_tests` commands; both arrays can be repaired at run time with
    `loom stage amend --field acceptance|wiring|wiring-tests`.
 6. **The full suite runs once, in integration-verify.** A standard stage's acceptance proves the
