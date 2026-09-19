@@ -28,7 +28,7 @@ file src/orchestrator/core/merge_handler.rs 1303
 file src/orchestrator/core/recovery.rs 1500
 file src/orchestrator/core/stage_executor.rs 780
 file src/orchestrator/merge_attribution.rs 543
-file src/orchestrator/signals/cache.rs 529
+file src/orchestrator/signals/cache.rs 524
 file src/orchestrator/signals/format/sections.rs 641
 file src/orchestrator/signals/tests.rs 551
 file src/orchestrator/signals/tests_cache.rs 630
@@ -158,7 +158,7 @@ function src/orchestrator/monitor/detection.rs detect_stage_changes 56
 function src/orchestrator/monitor/tests/heartbeats.rs test_hung_detection_honors_per_stage_subagent_timeout 68
 function src/orchestrator/retry.rs classify_failure 64
 function src/orchestrator/retry.rs test_classify_failure 85
-function src/orchestrator/signals/cache.rs generate_knowledge_distill_stable_prefix 79
+function src/orchestrator/signals/cache.rs generate_knowledge_distill_stable_prefix 74
 function src/orchestrator/signals/cache.rs generate_knowledge_stable_prefix 66
 function src/orchestrator/signals/crud.rs update_signal 69
 function src/orchestrator/signals/format/helpers.rs format_structured_handoff 107

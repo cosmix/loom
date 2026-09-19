@@ -3,9 +3,10 @@
 //! Split out of `generate_knowledge_distill_stable_prefix` in the parent
 //! module: the one-way-door explanation for why memory recording must finish
 //! before distillation starts is a self-contained paragraph, not something
-//! that function needs inline to read.
-
-/// Append the CRITICAL ORDERING / one-way-door doctrine paragraph.
+//! that function needs inline to read. Step 1 of the workflow (`loom memory
+//! pending --group`) stays inline in the parent function instead, since the
+//! distill stage signal must start from the grouped worklist and that step
+//! text is checked for there directly.
 pub(super) fn append_memory_ordering_doctrine(content: &mut String) {
     content.push_str("**CRITICAL ORDERING — Record your OWN memories FIRST, then distill:**\n\n");
     content.push_str(
@@ -16,7 +17,7 @@ pub(super) fn append_memory_ordering_doctrine(content: &mut String) {
     content.push_str("later, in `loom clean` / `loom init --clean`. After this stage, `loom review` and that archive are\n");
     content.push_str("the only readers of anything recorded here. Therefore:\n\n");
     content.push_str(
-        "- Record ALL of your own findings to `loom memory` in step 1, BEFORE you begin step 4.\n",
+        "- Record ALL of your own findings to `loom memory` in step 2, BEFORE you begin step 5.\n",
     );
     content.push_str(
         "- Once you start distilling, STOP using `loom memory` entirely; anything discovered from then on goes\n",
