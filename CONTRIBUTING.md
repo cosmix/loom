@@ -113,6 +113,7 @@ CI (`.github/workflows/ci.yml`) runs when a push to `main` or a pull request tou
 - Comments: sparing, only for non-obvious reasons. Doc comments describe the current wiring, not the intended one.
 - Dependencies: add with `cargo add` / `bun add`; never hand-edit a manifest.
 - Version: the product version is the git tag. `loom/Cargo.toml` carries the placeholder `0.0.0-dev`, so `env!("CARGO_PKG_VERSION")` is `0.0.0-dev` in every build; use `crate::version::VERSION`. Never bump the Cargo.toml version.
+- Adding a field to `Stage` or `StageDefinition`: exhaustive struct literals also live under `loom/tests/` (search the whole `loom/` crate and gate with `--all-targets`, not `--lib`), and `Stage::default` (`models/stage/defaults.rs`) sits exactly at its maintainability baseline, so a new `Stage` field needs a recorded decision or a field-grouping refactor.
 - Follow the patterns of the surrounding code; no drive-by refactors or reformatting in unrelated files.
 
 ## Writing Tests
@@ -124,6 +125,7 @@ CI (`.github/workflows/ci.yml`) runs when a push to `main` or a pull request tou
 - Tests that shell out to `git` must assert every setup command's exit status and isolate ambient git config (`GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` pointed at nonexistent paths, `GIT_CONFIG_NOSYSTEM=1`).
 - CI runners have no terminal emulator; a test that builds an `Orchestrator` must configure the tmux backend so no terminal detection runs.
 - Build identity: every untagged commit builds a `-dev` prerelease; a commit a release tag points at builds the bare release version, so the suite also runs against a release build (the pre-push hook of a tag push, and the release workflow). A test whose expectation depends on this reads `loom::version::VERSION` instead of assuming `-dev`.
+- A validator that newly rejects a command shape must be checked against the repository's own fixtures first: a lone `true` is a placeholder criterion in dozens of tests, so `rg -n '"true"' loom/src loom/tests` before tightening a `loom plan verify` lint.
 - A test must be able to fail: drive the real entry point, assert on data production code produced, and when you cap something assert both the ceiling and a floor. Prove a fix by mutation — remove the fix, watch the test go red, restore it, watch it go green.
 - Don't make a success-path deadline tighter than production's; timing-sensitive tests are what `scripts/flake-check.sh` exists for.
 - Optional: `scripts/guarded-cargo.sh` runs a command in its own process group under a RAM watchdog and reports any `loom` process still alive afterwards, e.g. from `loom/`: `MIN_AVAIL_GB=8 ../scripts/guarded-cargo.sh cargo test --all-targets --no-fail-fast`. Its default floor is 32 GB of available memory, so lower `MIN_AVAIL_GB` on smaller machines.
@@ -132,13 +134,15 @@ CI (`.github/workflows/ci.yml`) runs when a push to `main` or a pull request tou
 
 - Hook scripts in `loom-hooks/` are bash, must work on Linux and macOS (POSIX `awk`, no GNU-only extensions), and parse their payload with `jq`. Blocking guards call `loom_require_jq` from `loom-hooks/_common.sh` (fails closed); advisory hooks call `loom_warn_no_jq`. Run `scripts/check-hook-syntax.sh` after editing one.
 - Hooks, agents, skills and the templates are embedded into the binary at build time: to try an edit in a real session, rebuild and run `dev-install.sh`.
-- Some guidance blocks must appear byte-identically on several surfaces (`CLAUDE.md.template`, generated signal files, hook messages). Equality tests in `loom/src/orchestrator/signals/tests_doctrine*.rs` pin them; change every surface together.
+- Some guidance blocks must appear byte-identically on several surfaces (`skills/loom-orchestration/SKILL.md`, `skills/loom-plan-writer/SKILL.md`, generated signal files, `loom-hooks/_subagent-preamble.txt`, hook messages). Equality tests in `loom/src/orchestrator/signals/tests_doctrine*.rs` pin them; change every surface together. `CLAUDE.md.template` keeps only the hard stops and pointers and is capped at 20,480 bytes by `tests_size.rs`; orchestrator-only rules belong in the `loom-orchestration` skill. `loom-hooks/spawn-guard.sh` prepends `_subagent-preamble.txt` to every typed spawn, so the preamble is edited in that one file.
+- Hook shell tests (`loom-hooks/tests/run-all.sh`) run inside stage sessions that carry `LOOM_WORK_DIR`, `LOOM_SESSION_ID`, `LOOM_STAGE_ID` and `LOOM_HOOK_PATH`; a test that exercises a ledger or builds a PATH without `rg`/`fd` must unset them, or the hook writes to the live `.loom/work` or finds the real tools. When a hook function ends in `cond && action` under `set -e`, wrap it in `if`.
 
 ## Project Knowledge
 
 - `doc/loom/knowledge/` holds curated knowledge: tier-1 summaries (`architecture.md`, `conventions.md`, `mistakes.md`, ...) and tier-2 topics under `<category>/<slug>.md`. Read `INDEX.md` first, then only the sections it points to. `loom knowledge context --query "<question>"` returns matching sections; `loom map --outline <file>`, `loom map --find-all <symbol>` and `loom map --impact <symbol|path>` query the source graph.
 - `mistakes/` records defects that already happened in this codebase; read the entries for a subsystem before changing it.
 - Record what you learn in the same change: a mistake gets a `## <Short description>` heading with **What happened**, **Why**, **Prevention**, **Fix**. `loom knowledge update <category>/<slug>` appends to (or creates) a topic and regenerates `INDEX.md`; `loom knowledge replace-section <file> "<Heading>" "<body>"` corrects a section in place (`update` only appends). Never hand-edit `INDEX.md`.
+- `loom knowledge check --strict` must exit 0. It enforces 250 lines per tier-1 file and 40 per tier-1 section, 400 per tier-2 file and 80 per tier-2 section, and 16 KB for `INDEX.md`; split a topic that outgrows its limit into narrower topics rather than baselining it (`loom knowledge check --write-baseline <file>` plus `--baseline <file>` exists to adopt a limit on a tree that cannot clear it yet). Every new topic adds an `INDEX.md` row, so shorten blurbs with `loom knowledge annotate <target> --blurb "<text>"` (80 characters at most). `loom knowledge delete-section <file> "<Heading>"` removes a section, and a heading rename is `delete-section` then `update`.
 - Knowledge is reference data. When it contradicts the code, the code wins — fix the knowledge in your change.
 
 ## Submitting Changes

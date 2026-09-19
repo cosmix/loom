@@ -7,6 +7,25 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added
+
+- **Plan verify catches criteria that cannot work in a stage sandbox** — `loom plan verify` now rejects a command whose exit status is masked by a final `|| true`, `|| :`, `|| exit 0` or `; true`, `HOME` assigned from a variable or substitution, and a bare `mktemp -d`, and warns on network tools, reads of `doc/plans/`, `rg -r` and hardcoded `/tmp/` paths. A single `rg` or `grep` acceptance criterion that already passes at `HEAD` earns a `baseline` warning, and `allow_write` grants that are ephemeral or missing on the host are errors.
+- **A stage `skills:` field** — a plan stage lists the skills its agents need; `loom plan verify` rejects an empty, duplicate or unknown name, the signal lists them ahead of detected skills, and a subagent's brief names them.
+- **A knowledge check baseline** — `loom knowledge check --write-baseline <file>` records every current structural issue and `--baseline <file>` makes `--strict` fail only on issues the file does not record. Tier-2 topics are now size-checked as well (400 lines per file, 80 per section).
+- **`loom knowledge delete-section` and `annotate --section`** — remove a section with its nested subsections, and set a lifecycle state on one `##` section through a marker under its heading.
+- **`loom memory pending --group`** — groups pending notes into corrections (sorted by target file and heading), mistakes, decisions and other, and `loom memory note` now refuses a `mistake:` note without `Prevention:` or a `stale-knowledge:` note that does not name `<file>#<heading>` and a `Correction:`.
+- **Peak resident context in `loom usage`** — a `peaks` section reports main and subagent p50, p90 and max by scope, the share above 250k and 400k tokens, and how many subagents never grew past their own boot cost.
+- **The `loom-orchestration` core skill** — delegation cost, briefs, file ownership, waiting on subagents and commit timing moved out of the always-loaded `CLAUDE.md` into a skill the orchestrator loads before it fans out; the installed `CLAUDE.md` keeps the hard stops and stays under 20 KB.
+- **Hook guards** — `spawn-guard.sh` prepends the subagent preamble to every typed spawn, the file guard warns a stage's main agent that edits past the small-change size, skill suggestions need a keyword hit and fire once per session, and read receipts are shared across a session tree.
+
+### Changed
+
+- **Delegation is a cost decision** — a stage's main agent may make a change of at most 20 lines in at most 2 files it has already read; anything larger is delegated to the cheapest capable tier, with a Haiku tier for mechanical edits, and a Fable main session delegates even small changes.
+- **Engineer agents are leaves** — `loom-software-engineer` and `loom-senior-software-engineer` no longer list the `Task` tool; a 2-level hierarchy spawns its coordinators as `general-purpose` with an explicit model.
+- **Retrieval protects naming terms** — a query term carried in a knowledge chunk's heading or aliases is never dropped as corpus-ubiquitous, stub chunks leave candidacy, the prompt hook's floor counts only terms that name an item, and the per-prompt brief drops its `Omitted` line. `loom knowledge eval` scores prompt-mode precision over the pack the hook would deliver, against a `precision_floor` of 0.40.
+- **Completion guard reads heredocs as data** — inert heredoc bodies (quoted delimiter, fed to `cat`, `tee`, `loom knowledge`, `loom memory` or `git commit`) no longer trip the stage-completion guard, while one fed to a shell or interpreter still does.
+- **Named Claude workers bind in `loom subagents watch`** — a harness id of the form `<name>@session-<hex>` resolves to its transcript.
+
 ## [0.8.x] - 2026-09-18
 
 ### Added
