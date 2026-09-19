@@ -57,7 +57,7 @@ pub fn build(transcripts: &[Transcript]) -> AgentReport {
     let parent_models = parent_models(transcripts);
     let subagents = transcripts
         .iter()
-        .filter(|item| item.scope == Scope::Subagent)
+        .filter(|item| item.scope == Scope::Subagent && item.requests().next().is_some())
         .collect::<Vec<_>>();
     let tiny_subagents = tiny_subagents(&subagents);
     let by_agent_model = by_agent_model(&subagents);

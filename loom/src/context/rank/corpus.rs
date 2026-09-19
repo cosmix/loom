@@ -24,7 +24,7 @@
 
 use super::{BM25_B, BM25_K1};
 use crate::context::config::RetrievalConfig;
-use crate::context::lexical_index::{LexicalCache, LexicalIndex, QueryPostings};
+use crate::context::lexical_index::{naming_terms_of, LexicalCache, LexicalIndex, QueryPostings};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// BM25 lexical score for the document at `index`, summed across query terms.
@@ -153,6 +153,8 @@ pub(crate) struct LexicalCorpus {
     /// Query terms dropped before scoring, deduplicated in first-seen order.
     /// Reported on [`crate::context::schema::ContextPack::dropped_terms`].
     pub(crate) dropped_terms: Vec<String>,
+    /// Scored terms only the rescue floor put back; see [`Self::naming_matches`].
+    rescued_terms: BTreeSet<String>,
 }
 
 impl LexicalCorpus {
@@ -166,6 +168,19 @@ impl LexicalCorpus {
     /// turn these into a number.
     pub(crate) fn surviving_terms(&self) -> &[String] {
         &self.query_terms
+    }
+
+    /// How many DISTINCT scored terms occur in `name_terms`, the tokens a
+    /// document is named by. Neither a function word (headings are phrased with
+    /// them; no prompt names a topic by one) nor a rescued term (ubiquitous by
+    /// construction) counts, so a prompt answered on rescued terms names nothing.
+    pub(crate) fn naming_matches(&self, name_terms: &BTreeSet<String>) -> usize {
+        name_terms
+            .iter()
+            .filter(|term| self.query_terms.contains(*term))
+            .filter(|term| !self.rescued_terms.contains(*term))
+            .filter(|term| !stopwords::is_function_word(term))
+            .count()
     }
 
     /// BM25 score and distinct-matched-term count for the document at `index`.
@@ -212,6 +227,19 @@ pub(crate) fn prepare_lexical(
     raw_query: &str,
     config: &RetrievalConfig,
 ) -> LexicalCorpus {
+    let naming_terms = naming_terms_of(&documents);
+    scan(query_terms, documents, &naming_terms, raw_query, config)
+}
+
+/// [`prepare_lexical`] once the naming terms are known: derived by the caller,
+/// or taken off the index a miss just built, so a miss derives them once.
+fn scan(
+    query_terms: &[String],
+    documents: Vec<Vec<(String, f32)>>,
+    naming_terms: &BTreeSet<String>,
+    raw_query: &str,
+    config: &RetrievalConfig,
+) -> LexicalCorpus {
     let lengths: Vec<usize> = documents.iter().map(Vec::len).collect();
 
     // Document frequency per query term is loop-invariant: it scans every
@@ -232,6 +260,7 @@ pub(crate) fn prepare_lexical(
         |_| LexicalDocuments::Scanned(documents),
         lengths,
         document_frequencies,
+        naming_terms,
         raw_query,
         config,
     )
@@ -265,10 +294,16 @@ where
         return from_index(query_terms, &index, raw_query, config);
     }
     let documents = build_documents();
-    if let Some(cache) = cache {
-        cache.save(&LexicalIndex::build(cache.revision(), doc_ids, &documents));
-    }
-    prepare_lexical(query_terms, documents, raw_query, config)
+    let Some(cache) = cache else {
+        return prepare_lexical(query_terms, documents, raw_query, config);
+    };
+    // Scoped so the postings are freed before scoring, as on the indexed path.
+    let naming_terms = {
+        let index = LexicalIndex::build(cache.revision(), doc_ids, &documents);
+        cache.save(&index);
+        index.naming_terms().clone()
+    };
+    scan(query_terms, documents, &naming_terms, raw_query, config)
 }
 
 /// Prepare a corpus from a warm index instead of from documents.
@@ -291,6 +326,7 @@ fn from_index(
         |surviving| LexicalDocuments::Indexed(index.project(surviving)),
         lengths,
         document_frequencies,
+        index.naming_terms(),
         raw_query,
         config,
     )
@@ -318,24 +354,27 @@ fn assemble(
     documents: impl FnOnce(&[String]) -> LexicalDocuments,
     lengths: Vec<usize>,
     document_frequencies: BTreeMap<String, usize>,
+    naming_terms: &BTreeSet<String>,
     raw_query: &str,
     config: &RetrievalConfig,
 ) -> LexicalCorpus {
-    let (surviving, dropped_terms) = stopwords::partition_terms(
+    let partition = stopwords::partition_terms(
         query_terms,
         &document_frequencies,
         lengths.len(),
+        naming_terms,
         raw_query,
         config,
     );
-    let documents = documents(&surviving);
+    let documents = documents(&partition.surviving);
     LexicalCorpus {
-        query_terms: surviving,
+        query_terms: partition.surviving,
         documents,
         average_length: mean_length(&lengths),
         lengths,
         document_frequencies,
-        dropped_terms,
+        dropped_terms: partition.dropped,
+        rescued_terms: partition.rescued,
     }
 }
 

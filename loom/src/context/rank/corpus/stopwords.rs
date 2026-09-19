@@ -1,20 +1,31 @@
-//! Which query terms are worth scoring: corpus-derived stopwording (A.2) and
-//! the rescue floor that keeps it from answering an ordinary question with
-//! nothing at all (A.16).
+//! Which query terms are worth scoring: corpus-derived stopwording (A.2), the
+//! protection that keeps a corpus's own names out of it, and the rescue floor
+//! that keeps it from answering an ordinary question with nothing at all
+//! (A.16).
 //!
 //! Corpus-derived rather than a fixed English list: a list would catch "the"
-//! and "is" and stop there, while the words that actually flood this retrieval
-//! are the project's own — "loom", "stage", "signal", "context" appear in most
-//! documents of a loom knowledge tree and discriminate nothing, and no English
-//! list contains them. Deriving the set from document frequency absorbs both
-//! classes at once, adapts to whatever corpus it is pointed at, and needs
-//! nobody to maintain it.
+//! and "is" and stop there, while plenty of the project's own words also sit
+//! in most documents of a loom knowledge tree. Deriving the set from document
+//! frequency absorbs both classes at once, adapts to whatever corpus it is
+//! pointed at, and needs nobody to maintain it.
+//!
+//! Frequency alone over-reaches, though. Measured on this repository, ten live
+//! queries lost `stage`, `merge`, `acceptance`, `worktree`, `context`, `codex`,
+//! `plan` and `session` — words the knowledge tree is ABOUT, frequent because
+//! so many sections are written on them. A term the corpus uses to NAME a
+//! document (a heading, an alias) is therefore protected: never dropped as
+//! ubiquitous. The corpus's naming vocabulary also holds every
+//! English function word a heading happens to be phrased with ("Why this class
+//! is hard to see"), and no statistic separates `the` from `stage` — both fill
+//! headings and bodies alike — so protection skips [`FUNCTION_WORDS`], the one
+//! place a fixed list is the right tool: that class is closed.
 //!
 //! Both of [`super`]'s corpus representations — the fresh scan and the warm
 //! index — reach [`partition_terms`] with the same document frequencies, the
-//! same corpus size and the same raw query, so a cache hit and a cache miss
-//! cannot disagree about which terms survived. That agreement is by
-//! construction, not by coincidence: there is one partition, called from both.
+//! same corpus size, the same naming terms and the same raw query, so a cache
+//! hit and a cache miss cannot disagree about which terms survived. That
+//! agreement is by construction, not by coincidence: there is one partition,
+//! called from both.
 
 use crate::context::config::RetrievalConfig;
 use crate::context::lexical::{backtick_spans, occurs_backticked};
@@ -29,11 +40,47 @@ use std::collections::{BTreeMap, BTreeSet};
 /// anything at all), and deliberately not a tunable — no property of a corpus
 /// makes four right.
 ///
-/// It does have to stay at or above `min_knowledge_terms` (2), though: the
-/// prompt hook only emits a pack when some knowledge item matched that many
-/// DISTINCT surviving terms (`commands/hook/user_prompt_compose.rs:104`), so a
-/// rescue of one term could restore candidates and still leave the hook silent.
+/// A rescued term ranks, but it never counts toward the prompt hook's emit
+/// floor ([`super::LexicalCorpus::naming_matches`]): it is ubiquitous and names
+/// nothing, so a prompt answered only on rescued terms gets candidates for
+/// `loom knowledge context` and a stage brief, and silence from the hook.
 const RESCUE_LIMIT: usize = 3;
+
+/// English function words: never protected, and never evidence that a prompt
+/// named a document.
+///
+/// Closed-class words only — determiners, pronouns, prepositions,
+/// conjunctions, auxiliaries and modals (with the stems the tokenizer leaves of
+/// their negated contractions: `doesn't` becomes `doesn`), negators, and the
+/// pro-form adverbs (`here`, `now`, `never`). A content word stays off this
+/// list however generic it is: whether `files` discriminates is the corpus's
+/// call, made by document frequency. Sorted, for [`is_function_word`]'s binary
+/// search; laid out by hand because one word per line would triple the file.
+#[rustfmt::skip]
+const FUNCTION_WORDS: &[&str] = &[
+    "a", "about", "above", "after", "again", "against", "all", "almost", "also", "although",
+    "always", "am", "among", "an", "and", "another", "any", "anybody", "anyone", "anything", "are",
+    "aren", "around", "as", "at", "be", "because", "been", "before", "being", "below", "beneath",
+    "beside", "besides", "between", "beyond", "both", "but", "by", "can", "cannot", "could",
+    "couldn", "did", "didn", "do", "does", "doesn", "doing", "don", "down", "during", "each",
+    "either", "else", "enough", "even", "ever", "every", "everybody", "everyone", "everything",
+    "except", "few", "for", "from", "further", "had", "hadn", "has", "hasn", "have", "haven",
+    "having", "he", "hence", "her", "here", "hers", "herself", "him", "himself", "his", "how",
+    "however", "i", "if", "in", "inside", "into", "is", "isn", "it", "its", "itself", "just",
+    "least", "less", "let", "many", "may", "me", "might", "more", "most", "much", "must", "mustn",
+    "my", "myself", "neither", "never", "no", "nobody", "none", "nor", "not", "nothing", "now",
+    "of", "off", "often", "on", "once", "only", "onto", "or", "other", "others", "otherwise",
+    "ought", "our", "ours", "ourselves", "out", "over", "own", "per", "perhaps", "quite", "rather",
+    "same", "several", "shall", "she", "should", "shouldn", "since", "so", "some", "somebody",
+    "someone", "something", "sometimes", "somewhat", "still", "such", "than", "that", "the",
+    "their", "theirs", "them", "themselves", "then", "there", "therefore", "these", "they", "this",
+    "those", "though", "through", "throughout", "thus", "to", "too", "toward", "towards", "under",
+    "underneath", "unless", "unlike", "until", "up", "upon", "us", "very", "via", "was", "wasn",
+    "we", "were", "weren", "what", "whatever", "when", "whenever", "where", "whereas", "wherever",
+    "whether", "which", "while", "who", "whoever", "whom", "whose", "why", "will", "with",
+    "within", "without", "won", "would", "wouldn", "yet", "you", "your", "yours", "yourself",
+    "yourselves",
+];
 
 /// How many distinct content terms a query must have before a thin surviving
 /// set counts as over-stopwording rather than as a precise question.
@@ -49,20 +96,45 @@ const RESCUE_LIMIT: usize = 3;
 /// operator the two knobs that decide what "generic" means here.
 const RESCUE_QUERY_MIN_TERMS: usize = 4;
 
+/// Whether `term` is an English function word (see [`FUNCTION_WORDS`]).
+pub(super) fn is_function_word(term: &str) -> bool {
+    FUNCTION_WORDS.binary_search(&term).is_ok()
+}
+
+/// Whether `term` names a document of this corpus, and so is scored however
+/// many documents repeat it. `naming_terms` is the corpus's own naming
+/// vocabulary (`lexical_index::naming_terms_of`), built once per index build.
+fn is_protected(term: &str, naming_terms: &BTreeSet<String>) -> bool {
+    naming_terms.contains(term) && !is_function_word(term)
+}
+
+/// What [`partition_terms`] decided about one query's terms.
+pub(super) struct Partition {
+    /// The terms to score, in query order. Repeats survive because BM25 sums a
+    /// repeated term twice and that weighting predates this filter.
+    pub(super) surviving: Vec<String>,
+    /// The terms not scored, deduplicated in first-seen order because they are
+    /// shown to a human, and because determinism over identical bytes is a hard
+    /// requirement of the whole pipeline.
+    pub(super) dropped: Vec<String>,
+    /// The surviving terms that only the rescue floor put back.
+    pub(super) rescued: BTreeSet<String>,
+}
+
 /// Split the tokenized query into the terms worth scoring and the terms that
-/// are not, returning `(surviving, dropped)`.
+/// are not.
 ///
-/// Repeats survive in `surviving` because BM25 sums a repeated term twice and
-/// that weighting predates this filter; `dropped` is deduplicated in first-seen
-/// order because it is shown to a human, and because determinism over identical
-/// bytes is a hard requirement of the whole pipeline.
+/// A long-enough term survives when it is rare in this corpus OR protected —
+/// one of the corpus's own names ([`is_protected`]); a backticked term
+/// survives whatever its length or frequency.
 pub(super) fn partition_terms(
     query_terms: &[String],
     document_frequencies: &BTreeMap<String, usize>,
     corpus_size: usize,
+    naming_terms: &BTreeSet<String>,
     raw_query: &str,
     config: &RetrievalConfig,
-) -> (Vec<String>, Vec<String>) {
+) -> Partition {
     let spans = backtick_spans(raw_query);
     let lower_query = raw_query.to_ascii_lowercase();
     let floor = ubiquity_floor(corpus_size, config);
@@ -77,23 +149,28 @@ pub(super) fn partition_terms(
         if backticked || long_enough {
             content_terms.insert(term);
         }
-        let keep = backticked || (long_enough && frequency as f32 <= floor);
-        if keep {
+        let discriminating = frequency as f32 <= floor || is_protected(term, naming_terms);
+        if backticked || (long_enough && discriminating) {
             surviving.push(term.clone());
         } else if !dropped.contains(term) {
             dropped.push(term.clone());
         }
     }
 
+    let mut rescued = BTreeSet::new();
     if over_stopworded(&surviving, content_terms.len(), config) {
-        let rescued = rescue_rarest(&dropped, document_frequencies, corpus_size, config);
+        rescued = rescue_rarest(&dropped, document_frequencies, corpus_size, config);
         surviving = readmit(query_terms, &surviving, &rescued);
         // A rescued term was not dropped, and `ContextPack::dropped_terms` is
         // observability an agent reads back — it must describe what this pass
         // actually scored, not what it nearly did.
         dropped.retain(|term| !rescued.contains(term));
     }
-    (surviving, dropped)
+    Partition {
+        surviving,
+        dropped,
+        rescued,
+    }
 }
 
 /// Whether stopwording left this query too thin to answer, and the rescue floor
@@ -102,21 +179,23 @@ pub(super) fn partition_terms(
 /// Two shapes qualify, and the second is the one measured after the first was
 /// fixed. An EMPTY surviving set is unanswerable by construction: nothing is
 /// scored, so nothing is a candidate. A surviving set holding fewer DISTINCT
-/// terms than `min_knowledge_terms` is unanswerable one step later — the prompt
-/// hook emits a pack only for an item that matched that many distinct surviving
-/// terms or carried an exact rung (`clears_emit_floor`), so on a purely lexical
-/// query no item can ever clear the floor and the pack is dropped whole. A
-/// query reduced below the floor has therefore retrieved nothing, whether or
-/// not the reduction left one word standing.
+/// terms than `min_knowledge_terms` is a question ranked on one word: every
+/// candidate is ordered by that word alone, and no item can match the
+/// `min_knowledge_terms` distinct terms the prompt hook's emit floor asks for
+/// (`clears_emit_floor`). The rescue puts the question's rarest words back so
+/// `loom knowledge context` and a stage brief rank on more of what was asked;
+/// the hook stays silent either way, because rescued terms never count toward
+/// its floor (see [`RESCUE_LIMIT`]).
 ///
 /// [`RESCUE_QUERY_MIN_TERMS`] is what keeps the second shape from swallowing
 /// the first's discipline: it applies only to a query long enough that a
 /// surviving set under the floor means the filter ate the question, never to a
 /// short precise lookup.
 /// Reusing `min_knowledge_terms` rather than a private constant is deliberate —
-/// the threshold this rescue exists to clear is that floor, so an operator who
-/// lowers the floor to 1 correctly turns the thin-survivor rescue off, and one
-/// who raises it gets a rescue that aims at the raised floor.
+/// it is the number of distinct terms this pipeline already treats as enough
+/// evidence to act on, so an operator who lowers it to 1 correctly turns the
+/// thin-survivor rescue off, and one who raises it gets a rescue that aims at
+/// the raised count.
 fn over_stopworded(surviving: &[String], content_terms: usize, config: &RetrievalConfig) -> bool {
     if surviving.is_empty() {
         return true;
@@ -232,4 +311,19 @@ fn rescue_rarest(
 /// two ends of one df map contradict each other.
 fn ubiquity_floor(corpus_size: usize, config: &RetrievalConfig) -> f32 {
     (corpus_size as f32 * config.stop_df_ratio).max(config.df_ident_max as f32)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::FUNCTION_WORDS;
+
+    /// `is_function_word` binary-searches the list, which silently misses
+    /// entries out of order rather than failing.
+    #[test]
+    fn function_words_are_sorted_unique_and_lowercase() {
+        assert!(FUNCTION_WORDS.windows(2).all(|pair| pair[0] < pair[1]));
+        assert!(FUNCTION_WORDS
+            .iter()
+            .all(|word| word.chars().all(|character| character.is_ascii_lowercase())));
+    }
 }

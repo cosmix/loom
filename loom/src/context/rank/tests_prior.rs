@@ -12,13 +12,15 @@ use super::*;
 use crate::context::schema::LifecycleState;
 
 /// Build a `KnowledgeChunk` with every field explicit but `body`/`id`, mirroring
-/// `context/tests/rank_fixtures.rs::chunk` so the two stay easy to compare.
+/// `context/tests/rank_fixtures.rs::chunk` so the two stay easy to compare —
+/// including its punctuation-only heading, which keeps the chunk from being a
+/// stub (`candidacy.rs`) without adding a term to the arithmetic pinned here.
 fn chunk(id: &str, body: &str) -> KnowledgeChunk {
     KnowledgeChunk {
         id: id.to_string(),
         file: PathBuf::from(format!("{id}.md")),
         anchor: String::new(),
-        heading: String::new(),
+        heading: "—".to_string(),
         body: body.to_string(),
         content_hash: String::new(),
         estimated_tokens: 1,

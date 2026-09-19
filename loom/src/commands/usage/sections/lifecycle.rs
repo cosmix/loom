@@ -7,7 +7,7 @@ use std::collections::BTreeMap;
 
 use crate::commands::usage::transcript::{Entry, Scope, Transcript};
 
-use super::fmt::{heading, no_data, row};
+use super::fmt::{heading, no_data, percentile, row};
 
 #[derive(Debug, serde::Serialize)]
 pub struct Lifecycle {
@@ -41,7 +41,7 @@ pub struct RequestDelay {
 pub fn build(transcripts: &[Transcript]) -> Lifecycle {
     let subagents = transcripts
         .iter()
-        .filter(|item| item.scope == Scope::Subagent)
+        .filter(|item| item.scope == Scope::Subagent && item.requests().next().is_some())
         .collect::<Vec<_>>();
     let classes = class_distribution(&subagents);
     let brief = brief_presence(&subagents);
@@ -191,10 +191,6 @@ fn is_edit(name: &str) -> bool {
     matches!(name, "Edit" | "Write" | "MultiEdit" | "NotebookEdit")
 }
 
-fn percentile(values: &mut [usize], fraction: f64) -> usize {
-    if values.is_empty() {
-        return 0;
-    }
-    values.sort_unstable();
-    values[((values.len() as f64 * fraction).ceil() as usize).saturating_sub(1)]
-}
+#[cfg(test)]
+#[path = "lifecycle_tests.rs"]
+mod tests;

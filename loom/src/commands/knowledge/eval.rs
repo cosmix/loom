@@ -6,10 +6,18 @@
 //! (`loom/eval/retrieval-cases.yaml` by default) pairs a query with relevant,
 //! required, forbidden, or deliberately abstaining outcomes.
 //!
-//! `mode: stage` differs from `mode: prompt` only in its default budget (3000
-//! vs 1500 tokens) and in that `stage_fields` lines are newline-joined onto
-//! `query` — the same shape `build_stage_query_text` assembles a real stage's
-//! metadata into, just supplied by the case instead of a `Stage` record.
+//! `mode: stage` differs from `mode: prompt` in its default budget (3000 vs
+//! 1500 tokens), in that `stage_fields` lines are newline-joined onto `query`
+//! — the same shape `build_stage_query_text` assembles a real stage's
+//! metadata into, just supplied by the case instead of a `Stage` record —
+//! and in which pack `precision_at_5`/`relevant_token_fraction` judge:
+//! `mode: stage` scores them over the raw retrieved pack, since an autonomous
+//! stage spawn sees the best available retrieval regardless of the hook's
+//! emit floor; `mode: prompt` scores them over the pack the hook would
+//! actually hand a fresh session (0.0 when it would abstain), since that is
+//! what a prompt-triggered brief actually delivers. hit@5, mrr, forbid
+//! checks, mandatory recall, and rendered-token cost are always judged over
+//! the raw pack — see `eval::metrics::score_case`.
 //!
 //! **This is a CLI gate, not a `cargo test`.** It reads the live on-disk
 //! index (whatever `loom knowledge sync` last built), which is not
@@ -88,3 +96,11 @@ fn run_case(
 #[cfg(test)]
 #[path = "tests_eval.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "eval/tests_abstention.rs"]
+mod tests_abstention;
+
+#[cfg(test)]
+#[path = "eval/tests_prompt_mode.rs"]
+mod tests_prompt_mode;

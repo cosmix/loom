@@ -211,3 +211,24 @@ fn tiny_subagents_model_skips_a_synthetic_first_request() {
     assert_eq!(tiny.len(), 1);
     assert_eq!(tiny[0].model, "claude-sonnet-5");
 }
+
+// --- Window-filtering defect: `build` must skip a window-emptied file -----
+
+/// A subagent transcript file the `--since` window filtered down to zero
+/// in-window requests must not be counted, even though the file itself is
+/// still present on disk.
+#[test]
+fn build_excludes_a_transcript_with_no_in_window_request() {
+    let empty = transcript(Scope::Subagent, "session-1", None, &[]);
+    let report = build(&[empty]);
+    assert_eq!(report.subagent_transcripts, 0);
+}
+
+/// A subagent transcript with at least one in-window request is still
+/// counted.
+#[test]
+fn build_counts_a_transcript_with_an_in_window_request() {
+    let present = transcript(Scope::Subagent, "session-1", None, &["claude-sonnet-5"]);
+    let report = build(&[present]);
+    assert_eq!(report.subagent_transcripts, 1);
+}

@@ -210,7 +210,13 @@ fn precision_at_5_counts_only_relevant_items_among_the_first_five() {
 
 #[test]
 fn hit_rate_and_precision_disagree_on_a_one_relevant_pack() {
-    let eval_case = case("one", "q", &["target"], &[]);
+    // Stage mode: precision@5 is judged over the raw pack, not the
+    // hook-delivered one. All five fixture items are plain-lexical with
+    // matched_term_count 0, so a prompt-mode case would have the hook
+    // abstain and would score precision@5 as 0.0 - see
+    // `eval/tests_prompt_mode.rs` for that behavior.
+    let mut eval_case = case("one", "q", &["target"], &[]);
+    eval_case.mode = EvalMode::Stage;
     let result = score_case(
         &eval_case,
         &pack(

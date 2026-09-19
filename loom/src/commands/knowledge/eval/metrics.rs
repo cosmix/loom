@@ -1,4 +1,4 @@
-use super::cases::EvalCase;
+use super::cases::{EvalCase, EvalMode};
 use crate::context::config::RetrievalConfig;
 use crate::context::schema::{estimate_tokens, ContextPack};
 use crate::orchestrator::signals::format_knowledge_brief;
@@ -47,25 +47,49 @@ pub(super) fn score_case(
     pack: &ContextPack,
     config: &RetrievalConfig,
 ) -> CaseResult {
-    let item_ids = item_ids(pack);
+    let raw_item_ids = item_ids(pack);
     let has_relevance = !case.expect.is_empty() || !case.relevant.is_empty();
-    let would_emit = crate::commands::hook::user_prompt::would_emit(pack, config);
+    let delivered = crate::commands::hook::user_prompt::delivered(pack, config);
+    let would_emit = delivered.is_some();
+    let judged = judged_pack(case, pack, delivered.as_ref());
+    let judged_ids = judged.map(item_ids).unwrap_or_default();
     CaseResult {
         name: case.name.clone(),
         counts_toward_hit_rate: !case.expect.is_empty(),
-        hit_at_5: hit_at_5(&case.expect, &item_ids),
-        mrr: mrr(&case.expect, &item_ids),
+        hit_at_5: hit_at_5(&case.expect, &raw_item_ids),
+        mrr: mrr(&case.expect, &raw_item_ids),
         precision_at_5: has_relevance
-            .then(|| precision_at_5(&case.expect, &case.relevant, &item_ids)),
-        relevant_token_fraction: has_relevance
-            .then(|| relevant_token_fraction(&case.expect, &case.relevant, pack)),
-        mandatory_recall: mandatory_recall(&case.require_ids, &item_ids),
+            .then(|| precision_at_5(&case.expect, &case.relevant, &judged_ids)),
+        relevant_token_fraction: has_relevance.then(|| {
+            judged.map_or(0.0, |judged| {
+                relevant_token_fraction(&case.expect, &case.relevant, judged)
+            })
+        }),
+        mandatory_recall: mandatory_recall(&case.require_ids, &raw_item_ids),
         unmet_required: pack.unmet_required.len(),
         would_emit,
         abstention_correct: case.abstain.then_some(!would_emit),
         rendered_tokens: estimate_tokens(&format_knowledge_brief(pack, None, "eval")),
         max_rendered_tokens: case.max_rendered_tokens,
-        forbid_violations: forbid_violations(&case.forbid, &item_ids),
+        forbid_violations: forbid_violations(&case.forbid, &raw_item_ids),
+    }
+}
+
+/// The pack `precision_at_5` and `relevant_token_fraction` are judged
+/// against: the raw retrieved `pack` for `mode: stage` (an autonomous stage
+/// spawn sees the best available retrieval, floor or not — see
+/// `user_prompt_compose.rs::clears_emit_floor`), or the pack a fresh session's
+/// hook would actually hand over for `mode: prompt` — `None` when it would
+/// abstain, which both metrics then score as 0.0 rather than judging a pack
+/// that was never delivered.
+fn judged_pack<'a>(
+    case: &EvalCase,
+    pack: &'a ContextPack,
+    delivered: Option<&'a ContextPack>,
+) -> Option<&'a ContextPack> {
+    match case.mode {
+        EvalMode::Stage => Some(pack),
+        EvalMode::Prompt => delivered,
     }
 }
 
@@ -92,7 +116,11 @@ pub(super) fn mrr(expect: &[String], item_ids: &[String]) -> f32 {
         .map_or(0.0, |index| 1.0 / (index + 1) as f32)
 }
 
-/// Fraction of the first five returned positions occupied by judged-relevant ids.
+/// Fraction of the first five positions of `item_ids` occupied by
+/// judged-relevant ids. The caller decides which set that is: [`score_case`]
+/// passes the raw pack's ids for `mode: stage` and the hook-delivered pack's
+/// ids (empty when the hook would abstain) for `mode: prompt` — see
+/// [`judged_pack`].
 pub(super) fn precision_at_5(expect: &[String], relevant: &[String], item_ids: &[String]) -> f32 {
     let relevant = relevant_ids(expect, relevant);
     let denominator = item_ids.len().min(5);
@@ -103,7 +131,9 @@ pub(super) fn precision_at_5(expect: &[String], relevant: &[String], item_ids: &
     top_five.intersection(&relevant).count() as f32 / denominator as f32
 }
 
-/// Fraction of the delivered pack estimate spent on judged-relevant items.
+/// Fraction of `pack`'s estimate spent on judged-relevant items. `pack` is
+/// already the judged one [`score_case`] chose via [`judged_pack`] — the raw
+/// pack for `mode: stage`, the hook-delivered pack for `mode: prompt`.
 pub(super) fn relevant_token_fraction(
     expect: &[String],
     relevant: &[String],

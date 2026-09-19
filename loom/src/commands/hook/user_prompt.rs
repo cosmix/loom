@@ -44,7 +44,7 @@ use super::target::{non_empty_env, HookTarget};
 #[path = "user_prompt_compose.rs"]
 mod compose;
 
-pub(crate) use compose::would_emit;
+pub(crate) use compose::delivered;
 
 #[path = "user_prompt_attachments.rs"]
 mod attachments;

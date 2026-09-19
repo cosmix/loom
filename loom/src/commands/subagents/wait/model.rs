@@ -1,7 +1,7 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::str::FromStr;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, ensure, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -41,7 +41,7 @@ impl FromStr for WorkerSpec {
             "codex" => WorkerKind::Codex,
             _ => bail!("worker kind must be 'claude' or 'codex'"),
         };
-        if !crate::models::forward_receipt::is_safe_id(id) {
+        if !claude_named_id_is_safe(kind, id) && !crate::models::forward_receipt::is_safe_id(id) {
             bail!("worker id is empty or unsafe");
         }
         Ok(Self {
@@ -49,6 +49,48 @@ impl FromStr for WorkerSpec {
             id: id.to_owned(),
         })
     }
+}
+
+/// A Claude worker id may be a harness-named `<name>@session-<hex>` pair
+/// (the harness gives a named agent that compound id, and its `agent_id` is
+/// recorded verbatim in loom's hook-side SubagentStart ledger). `@` is never
+/// a safe-id character on its own, so accepting it here can only ever mean
+/// this shape; each half must still independently pass `is_safe_id`, which
+/// is never loosened since it also guards file names elsewhere. A Codex id
+/// never gets this treatment.
+fn claude_named_id_is_safe(kind: WorkerKind, id: &str) -> bool {
+    kind == WorkerKind::Claude
+        && id.split_once('@').is_some_and(|(name, session)| {
+            crate::models::forward_receipt::is_safe_id(name)
+                && crate::models::forward_receipt::is_safe_id(session)
+        })
+}
+
+/// A plain id's transcript is `agent-<id>.jsonl`. A harness-named id
+/// (`<name>@session-<hex>`) instead carries an unrelated 16-hex suffix of
+/// its own (`agent-a<name>-<16 hex>.jsonl`), so it is found by listing the
+/// directory rather than built directly; zero or several matches is an
+/// error, never a silent guess at "the" transcript.
+pub fn resolve_claude_transcript(subagents_dir: &Path, id: &str) -> Result<PathBuf> {
+    let Some((name, _)) = id.split_once('@') else {
+        let path = subagents_dir.join(format!("agent-{id}.jsonl"));
+        return std::fs::canonicalize(&path).context("canonicalizing Claude transcript");
+    };
+    let prefix = format!("agent-a{name}-");
+    let matches: Vec<PathBuf> = std::fs::read_dir(subagents_dir)
+        .context("listing subagents directory")?
+        .filter_map(std::io::Result::ok)
+        .filter_map(|entry| {
+            let file = entry.file_name().to_str()?.to_owned();
+            (file.starts_with(&prefix) && file.ends_with(".jsonl")).then(|| entry.path())
+        })
+        .collect();
+    ensure!(
+        matches.len() == 1,
+        "named Claude worker '{name}' resolved to {} transcripts",
+        matches.len()
+    );
+    std::fs::canonicalize(&matches[0]).context("canonicalizing Claude transcript")
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

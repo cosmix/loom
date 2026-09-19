@@ -12,7 +12,8 @@ use crate::subagent_lifecycle::WorkerIdentity;
 use super::super::ledger::StartedAgentTypeIndex;
 use super::super::resolve::project_slug;
 use super::model::{
-    BoundWorker, CodexAuthority, EvidenceReference, WaitIdentity, WorkerKind, WorkerSpec,
+    resolve_claude_transcript, BoundWorker, CodexAuthority, EvidenceReference, WaitIdentity,
+    WorkerKind, WorkerSpec,
 };
 
 const MAX_PARENT_DIRS: usize = 512;
@@ -281,13 +282,12 @@ fn bind_claude(
     let start = starts
         .resolve_exact(&scope.stage_id, parent, &scope.loom_session_id, &spec.id)
         .context("missing or ambiguous exact SubagentStart row")?;
-    let transcript = scope
+    let subagents_dir = scope
         .projects_root
         .join(project_slug(&scope.canonical_worktree))
         .join(parent)
-        .join("subagents")
-        .join(format!("agent-{}.jsonl", spec.id));
-    let transcript = fs::canonicalize(&transcript).context("canonicalizing Claude transcript")?;
+        .join("subagents");
+    let transcript = resolve_claude_transcript(&subagents_dir, &spec.id)?;
     let identity = WorkerIdentity::ClaudeSubagent {
         stage_id: scope.stage_id.clone(),
         loom_session_id: scope.loom_session_id.clone(),

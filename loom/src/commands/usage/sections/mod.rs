@@ -4,6 +4,7 @@ pub mod edits;
 pub mod fmt;
 pub mod lengths;
 pub mod lifecycle;
+pub mod peaks;
 pub mod polling;
 pub mod reads;
 pub mod rewrites;
@@ -28,6 +29,7 @@ pub struct Report {
     pub polling: polling::Polling,
     pub rewrites: rewrites::CacheRewrites,
     pub lifecycle: lifecycle::Lifecycle,
+    pub peaks: peaks::Peaks,
     pub edits: edits::EditRequests,
     pub(crate) provider_ledger: super::provider_types::ProviderLedger,
 }
@@ -49,6 +51,7 @@ pub(crate) fn build(
         polling: polling::build(transcripts),
         rewrites: rewrites::build(transcripts),
         lifecycle: lifecycle::build(transcripts),
+        peaks: peaks::build(transcripts),
         edits: edits::build(transcripts),
         provider_ledger,
     }
@@ -66,6 +69,7 @@ pub fn render(report: &Report) {
     polling::render(&report.polling);
     rewrites::render(&report.rewrites);
     lifecycle::render(&report.lifecycle);
+    peaks::render(&report.peaks);
     edits::render(&report.edits);
     super::provider_report::render(&report.provider_ledger);
 }
