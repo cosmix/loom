@@ -1,12 +1,12 @@
 ---
 name: loom-react
-description: Modern client-side React development patterns.
+description: "Modern client-side React development patterns. Not for: a loom-hooks shell script or a stage's lifecycle state."
 triggers:
   - react
   - jsx
   - tsx
   - component
-  - hook
+  - react hook
   - useState
   - useEffect
   - useContext
@@ -15,7 +15,6 @@ triggers:
   - useCallback
   - useRef
   - props
-  - state
   - render
   - virtual DOM
   - reconciliation

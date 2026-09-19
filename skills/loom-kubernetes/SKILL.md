@@ -1,6 +1,6 @@
 ---
 name: loom-kubernetes
-description: Kubernetes deployment, cluster architecture, security, and operations.
+description: "Kubernetes deployment, cluster architecture, security, and operations. Not for: a loom orchestration job or CI pipeline job — see loom-ci-cd."
 allowed-tools:
   - Read
   - Grep
@@ -30,7 +30,6 @@ triggers:
   - podsecurity
   - operator
   - crd
-  - job
   - cronjob
   - hpa
   - pdb

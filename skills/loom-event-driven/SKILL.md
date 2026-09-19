@@ -1,8 +1,7 @@
 ---
 name: loom-event-driven
-description: Event-driven architecture patterns including message queues, pub/sub, event sourcing, CQRS, and sagas.
+description: "Event-driven architecture: message queues, pub/sub, event sourcing, CQRS, sagas. Not for: webhooks."
 triggers:
-  - event
   - message
   - messaging
   - pub/sub

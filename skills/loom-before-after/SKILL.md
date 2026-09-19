@@ -1,6 +1,6 @@
 ---
 name: loom-before-after
-description: Generates before/after verification pairs for loom plans.
+description: "Generates before/after verification pairs for loom plans. Not for: a stage's lifecycle state or a UI component's render state."
 allowed-tools:
   - Read
   - Grep

@@ -1,6 +1,6 @@
 ---
 name: loom-ci-cd
-description: Designs and implements CI/CD pipelines for automated testing, builds, deployment, and security scanning.
+description: "Designs and implements CI/CD pipelines: testing, builds, deployment, security scanning. Not for: a loom stage/job."
 allowed-tools:
   - Read
   - Grep
@@ -23,8 +23,7 @@ triggers:
   - deployment
   - release
   - artifact
-  - stage
-  - job
+  - ci pipeline stage
   - runner
   - action
   - automation
