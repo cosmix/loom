@@ -134,10 +134,10 @@ A hook that Claude Code itself invokes (a `PreToolUse` guard, a global `UserProm
   worktree names them `.distill-body-*` to stay out of it.
 - **`skill-trigger.sh` (Python despite the name) qualifies on keywords only.** A detected repository type adds one
   point as a tie-breaker and never qualifies a skill alone; the gate reads `keyword_scores`, captured before the
-  repo tie-breaker, rather than a separate evidence function. A prompt that `is_machine_generated` (leading `<`,
-  `Background agent`, `Caveat:`; mirrors `commands/hook/user_prompt.rs`) gets no output, and each suggestion is
-  shown once per session through the `skills` ledger. `model` joined `STOPWORDS` here and in `skill_index.rs`,
-  and the `model selection` phrase trigger still fires.
+  repo tie-breaker, rather than a separate evidence function. A prompt that `is_machine_generated` (leading `<`, or
+  `Background agent` or `Caveat:` each followed by a space; mirrors `commands/hook/user_prompt.rs`) gets no output,
+  and each suggestion is shown once per session through the `skills` ledger. `model` joined `STOPWORDS` here and
+  in `skill_index.rs`, and the `model selection` phrase trigger still fires.
 - **`prefer-modern-tools.sh` scopes its `cat` redirection check with a raw-text regex**
   (`_pmt_cat_operand_has_redirection`, `:225`), not a token-index range: the tokenizer folds `<` and `>` into the
   same `%%SEP%%` sentinel as the hard separators, so only the raw text tells `cat a > b` (no warning) from
