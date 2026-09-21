@@ -91,6 +91,10 @@ git ls-files '*.md' | grep -v '^doc/plans/' | grep -v '^loom/tests/fixtures/' | 
 
 and `cd web && bun run check` (typecheck, oxlint, oxfmt check, vitest) when you touch `web/`.
 
+When changing source extraction or a Tree-sitter grammar, also run `cargo build --no-default-features`. The default-on `source-graph` feature must degrade to file-level lexical nodes without a C toolchain. If you change a grammar pin, an embedded query, or the tree-sitter walk, bump `ExtractorIdentity` so cached extractions are not reused.
+
+When Loom drives the work, a subagent may run at most one narrowly scoped check over the files it changed. Whole-project verification belongs to the main agent; `integration-verify` stages are the exception. `loom-hooks/subagent-verify-guard.sh` enforces this rule. See [Verification Is the Main Agent's Job](README.md#verification-is-the-main-agents-job).
+
 Why the flags matter:
 
 - `cargo clippy` without `--all-targets` checks only the library and binary, skipping `#[cfg(test)]` modules and `loom/tests/`; CI lints them.
@@ -107,9 +111,10 @@ CI (`.github/workflows/ci.yml`) runs when a push to `main` or a pull request tou
 
 ## Code Guidelines
 
-- Size limits: file 400 lines, function 50 lines, impl block 300 lines. `cargo test --test maintainability` enforces file and function limits, measured after rustfmt. Legacy exceptions live in `loom/maintainability-baseline.txt`, an exact-match ledger: it fails when a listed item grows AND when it shrinks. Never add or raise an entry; extract into a new module instead. If a refactor brings a listed item under the limit, delete its entry. Before growing a function, `grep` for it in the baseline.
+- Size limits: file 400 lines, function 50 lines, impl block 300 lines. `cargo test --test maintainability` enforces file and function limits, measured after rustfmt. Legacy exceptions live in `loom/maintainability-baseline.txt`, an exact-match ledger: it fails when a listed item grows or shrinks. Never add or raise an entry; extract into a new module instead. If a refactor brings a listed item under the limit, delete its entry. Before growing a file or function, run `rg '<path-or-symbol>' loom/maintainability-baseline.txt`. The scanner parses every `.rs` file under the crate, including `tests/fixtures/`; a deliberately unparseable fixture must use an extension such as `.rs.broken`.
 - Splitting a file: use `<name>.rs` plus a `<name>/` directory; do not convert an existing `<name>.rs` into `<name>/mod.rs`.
 - Errors: application code returns `anyhow::Result` with context at layer boundaries; use a typed error only when callers branch on the variant; git errors include the command, directory, exit code, stdout and stderr.
+- Do not use `unwrap()` in production code; return or handle errors with context.
 - Comments: sparing, only for non-obvious reasons. Doc comments describe the current wiring, not the intended one.
 - Dependencies: add with `cargo add` / `bun add`; never hand-edit a manifest.
 - Version: the product version is the git tag. `loom/Cargo.toml` carries the placeholder `0.0.0-dev`, so `env!("CARGO_PKG_VERSION")` is `0.0.0-dev` in every build; use `crate::version::VERSION`. Never bump the Cargo.toml version.
@@ -129,6 +134,12 @@ CI (`.github/workflows/ci.yml`) runs when a push to `main` or a pull request tou
 - A test must be able to fail: drive the real entry point, assert on data production code produced, and when you cap something assert both the ceiling and a floor. Prove a fix by mutation — remove the fix, watch the test go red, restore it, watch it go green.
 - Don't make a success-path deadline tighter than production's; timing-sensitive tests are what `scripts/flake-check.sh` exists for.
 - Optional: `scripts/guarded-cargo.sh` runs a command in its own process group under a RAM watchdog and reports any `loom` process still alive afterwards, e.g. from `loom/`: `MIN_AVAIL_GB=8 ../scripts/guarded-cargo.sh cargo test --all-targets --no-fail-fast`. Its default floor is 32 GB of available memory, so lower `MIN_AVAIL_GB` on smaller machines.
+
+### Working in a Loom Worktree
+
+- Do not run `cargo fmt` while sibling agents are working: it ignores path arguments and formats the whole crate. Use `rustfmt --edition 2021 <file>` on files you own.
+- `cargo test` accepts one test-name filter and rejects extra positional filters. Use the fully qualified test name and confirm the filter matched tests.
+- `.loom/cache/` and paths reached through `.loom/work` (or a legacy `.work` symlink) resolve to the main project root and are shared across worktrees. Treat them as shared state.
 
 ## Hook Scripts and Agent Assets
 
@@ -173,7 +184,47 @@ CI (`.github/workflows/ci.yml`) runs when a push to `main` or a pull request tou
 
 ### Releases
 
-Maintainers cut a release by pushing a `v*.*.*` tag. `.github/workflows/release.yml` builds from the tag, runs the tests, and fails unless the binary's `loom -v` version equals the tag without its leading `v`.
+Maintainers cut a release by pushing a `v*.*.*` tag. `.github/workflows/release.yml` builds the Linux x86_64 and macOS ARM64 binaries, runs tests and flake checks, verifies `loom -v` against the tag without its leading `v`, signs each binary, generates `SHA256SUMS.txt`, and publishes the release. Do not sign or upload assets by hand.
+
+```bash
+git tag -a vX.Y.Z -m "loom X.Y.Z"
+git push origin vX.Y.Z
+```
+
+`loom/Cargo.toml`'s version is a placeholder. `loom/build.rs` derives the binary version from the tag, using `loom/src/version/derive.rs`; never bump the manifest version. To exercise build, signing, and signature verification without publishing, dispatch the Release workflow with `dry_run: true` (or `gh workflow run release.yml -f dry_run=true`). Release creation requires a tag ref.
+
+Published assets are `loom-linux-x86_64` for `x86_64-unknown-linux-gnu` and `loom-darwin-arm64` for `aarch64-apple-darwin`; each has a `.minisig`, and `SHA256SUMS.txt` covers them both. Adding a platform requires matching changes to the release workflow's build matrix and `files:` list, `install.sh`, and `RELEASE_ASSETS` in `loom/src/commands/self_update/mod.rs`. For an unpublished platform, `loom update` reports the unsupported target triple.
+
+#### Signing and Key Rotation
+
+Binaries use [minisign](https://jedisct1.github.io/minisign/) with the `MINISIGN_PRIVATE_KEY` repository secret. Store the complete, password-less secret-key file in that secret; generate one with:
+
+```bash
+minisign -G -W -p loom.pub -s loom.key
+```
+
+The matching public key is `MINISIGN_PUBLIC_KEY` in `loom/src/commands/self_update/signature.rs`. The workflow reads that source, verifies every signature against it, and includes it in the release notes; a secret from another keypair fails before publishing.
+
+The public key is compiled into released binaries, so rotating it prevents existing installations from accepting updates until users reinstall. Rotate only when the private key is lost or compromised, and change the repository secret and `MINISIGN_PUBLIC_KEY` together.
+
+Anyone can verify a release with minisign:
+
+```bash
+# macOS: brew install minisign
+# Linux: apt install minisign
+
+curl -LO https://github.com/cosmix/loom/releases/download/vX.Y.Z/loom-linux-x86_64
+curl -LO https://github.com/cosmix/loom/releases/download/vX.Y.Z/loom-linux-x86_64.minisig
+minisign -Vm loom-linux-x86_64 -P <public-key-from-release-notes>
+```
+
+`loom update` performs the same check against the public key embedded in the running binary.
+
+## Security
+
+- Report vulnerabilities privately through GitHub Security Advisories.
+- Known security limitations are tracked in `doc/loom/knowledge/concerns.md`.
+- The `sandbox:` block bounds an agent session. `command_confinement` scrubs commands Loom runs from a plan; it is not an isolation boundary. See [Sandbox Configuration](README.md#sandbox-configuration).
 
 ## Questions?
 

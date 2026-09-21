@@ -87,7 +87,7 @@
 | [commits](conventions/commits.md) | Grouped Conventional Commits, no attribution, no trailers | 25 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute file authority, adjudicator scope, budgets | 114 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git/worktree ops, cargo discipline, the maintainability ledger | 202 |
-| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance-channel choice, verification rule, plugin scope | 113 |
+| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance-channel choice, verification rule, plugin scope | 121 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [pressure]/[models] sections, precedence chain, value types | 69 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML schema, hook stdin/stdout contract, skill format | 135 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard type conventions and CSS gotchas | 30 |

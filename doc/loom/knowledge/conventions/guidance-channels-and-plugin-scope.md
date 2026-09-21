@@ -111,3 +111,11 @@ For LOOM_CODEX_INSTALL_DIR and LOOM_CLAUDECODE_INSTALL_DIR, the user explicitly 
 ## Custom install-root implementation approved (2026-09-21)
 
 The user approved the in-session plan for LOOM_CODEX_INSTALL_DIR and LOOM_CLAUDECODE_INSTALL_DIR. Use Terra for shell integration and documentation unless a Luna brief supplies complete context, including documentation requirements; default to Terra when that context is uncertain. Keep explicit install-assets flags above non-empty env overrides above standard roots. Preserve flagless installer delegation and completion refresh behavior. Scope is asset installation/update destinations, with runtime discovery relocation excluded. Finish with regression coverage, user documentation, curated knowledge updates, loom knowledge sync, and loom knowledge check.
+
+## Keep one contribution guide at the project root
+
+The root CONTRIBUTING.md is the canonical contribution guide. The former nested guide was folded into it and removed at the user’s direction. Preserve its useful release, signing, verification, security, and contributor instructions while resolving duplicates against current tooling. During consolidation, correct the stale test-filter advice: cargo test accepts one positional filter and rejects additional filters; a wrong single filter can still match zero tests.
+
+## Cumulative series changelog coverage
+
+The user requested all substantial user-facing 0.8.x work in the cumulative series section, including post-tag changes. Keep post-tag changes explicitly marked unreleased and preserve the last release date rather than inventing a release. Verify release membership with tag ancestry before labeling an entry unreleased: the changelog command commit d4078f31 is already in v0.8.7. Verify claims against focused source ranges: initialization recovery removes specific stale Git lock files and backs up unreadable configuration; it does not delete arbitrary .git files or directories.
