@@ -148,3 +148,13 @@ same slip was made twice in one stage.
 **Prevention:** never stash one file to ask "is this failure pre-existing". Read the old bytes with
 `git show HEAD:<path>` or a scratch copy. The stash stack is shared with every worktree, so stash only when the
 whole tree must be set aside, tag the entry, and restore it by SHA with `git stash apply`.
+
+## Do not reset a repository shared with active agents
+
+**What happened:** An isolated feature commit was attached to main with git reset --mixed. The user then explicitly prohibited repository resets because other agents were working concurrently.
+
+**Why:** The isolated checkout protected unrelated files from repository-wide commit hooks, but moving the primary branch and index with reset still affected shared Git state.
+
+**Prevention:** Never run git reset in this shared repository. Preserve other agents staging and branch state; coordinate before integrating an isolated commit when ordinary safe integration is unavailable.
+
+**Fix:** No further reset operations. The completed mixed reset preserved working files; the index had been checked empty before it ran. Feature commit: d2fed815.
