@@ -35,13 +35,33 @@ pub struct InstallReport {
     pub layout: SkillLayout,
 }
 
-/// Return the standard Claude and Codex configuration directories.
+/// Return the Claude and Codex installation directories.
+///
+/// `LOOM_CLAUDECODE_INSTALL_DIR` and `LOOM_CODEX_INSTALL_DIR` override their
+/// respective defaults when set to nonempty paths. Otherwise, the defaults are
+/// `~/.claude` and `~/.codex`.
 pub fn default_paths() -> Result<InstallPaths> {
-    let home = dirs::home_dir().context("Failed to determine home directory")?;
-    Ok(InstallPaths {
-        claude_dir: home.join(".claude"),
-        codex_dir: home.join(".codex"),
-    })
+    let claude_dir = install_dir_from_env("LOOM_CLAUDECODE_INSTALL_DIR");
+    let codex_dir = install_dir_from_env("LOOM_CODEX_INSTALL_DIR");
+    match (claude_dir, codex_dir) {
+        (Some(claude_dir), Some(codex_dir)) => Ok(InstallPaths {
+            claude_dir,
+            codex_dir,
+        }),
+        (claude_dir, codex_dir) => {
+            let home = dirs::home_dir().context("Failed to determine home directory")?;
+            Ok(InstallPaths {
+                claude_dir: claude_dir.unwrap_or_else(|| home.join(".claude")),
+                codex_dir: codex_dir.unwrap_or_else(|| home.join(".codex")),
+            })
+        }
+    }
+}
+
+fn install_dir_from_env(variable: &str) -> Option<PathBuf> {
+    std::env::var_os(variable)
+        .filter(|path| !path.is_empty())
+        .map(PathBuf::from)
 }
 
 /// Place every embedded asset into the supplied Claude and Codex directories.
@@ -104,7 +124,7 @@ fn ensure_distinct_dirs(claude_dir: &Path, codex_dir: &Path) -> Result<()> {
     };
     ensure!(
         !same,
-        "--claude-dir and --codex-dir both resolve to {}; each install tree needs its own directory",
+        "Claude and Codex installation directories both resolve to {}; each install tree needs its own directory",
         claude_dir.display()
     );
     Ok(())

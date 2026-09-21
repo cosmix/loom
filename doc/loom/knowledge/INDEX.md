@@ -59,7 +59,7 @@
 | --- | --- | --- |
 | [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch, plan parse/validate/graph, verification | 176 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) | Context retrieval pipeline, source-graph channel | 50 |
-| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs/work_dir, handoff, sandbox, remote control | 115 |
+| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs/work_dir, handoff, sandbox, remote control | 121 |
 | [hooks](entry-points/hooks.md) | Hook scripts, their events, command matching | 146 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Orchestrator loop, daemon, monitor, signals, merges | 224 |
 | [remote-control](entry-points/remote-control.md) | Remote-control capability detection call sites | 99 |
@@ -87,7 +87,7 @@
 | [commits](conventions/commits.md) | Grouped Conventional Commits, no attribution, no trailers | 25 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute file authority, adjudicator scope, budgets | 114 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git/worktree ops, cargo discipline, the maintainability ledger | 202 |
-| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance-channel choice, verification rule, plugin scope | 105 |
+| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance-channel choice, verification rule, plugin scope | 113 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [pressure]/[models] sections, precedence chain, value types | 69 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML schema, hook stdin/stdout contract, skill format | 135 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard type conventions and CSS gotchas | 30 |
@@ -110,7 +110,7 @@
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | No process from a test may outlive the test process | 45 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine grep traps, setup-line grants, completion rules | 337 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability, redirects, set -e, hook test env | 188 |
-| [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How the knowledge base goes stale: frozen plan notes, drift | 172 |
+| [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How the knowledge base goes stale: frozen plan notes, drift | 192 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants belong in the fs constructor, not the CLI handler | 139 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why distillation cannot write knowledge directly | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Ledger TUI wide-glyph padding, fan-out duplication, panics | 63 |
@@ -137,7 +137,7 @@
 | [subagent-briefing](mistakes/subagent-briefing.md) | Writing briefs, sizing waves, verifying delegations, file ownership | 229 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Liveness signals, fable-session lessons, watch traps | 376 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: inherited fds, ETXTBSY, serial env, stdin hangs | 208 |
-| [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline: --all-targets, --no-fail-fast | 297 |
+| [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline: --all-targets, --no-fail-fast | 307 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass whether or not the bug they cover is present | 264 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn-failure exit codes and cleanup-on-error discipline | 136 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Verification-brief, dev-server, plan-prose gotchas | 43 |

@@ -113,3 +113,9 @@ This is the pattern for loom's HTTP consumers (self-update). The adjudicator is 
 `loom knowledge sync`, or any `loom knowledge update`, regenerates `INDEX.md` — the index
 regenerates on every knowledge write — and on a flat directory creates it, which is what flips
 the layout to hierarchical. See [Knowledge Hierarchy](../architecture/knowledge-hierarchy.md).
+
+## Installation Asset Roots
+
+`assets::install::default_paths` is the shared embedded resolver for installation roots. A nonempty `LOOM_CLAUDECODE_INSTALL_DIR` or `LOOM_CODEX_INSTALL_DIR` selects its matching root; an empty or absent variable falls back to `~/.claude` or `~/.codex`. For `loom install-assets`, the matching explicit directory flag takes precedence over the environment value, then the default.
+
+The source and release installer scripts resolve the same environment variables for their messages and backup cleanup, but delegate to `install-assets` without `--claude-dir` or `--codex-dir`. Self-update follows that flagless path as well, which lets the shared resolver retain configured roots and leaves completion refresh enabled. These roots select where Loom installs managed assets only; they do not configure either client or relocate Loom runtime discovery paths.

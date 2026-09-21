@@ -16,6 +16,10 @@ use crate::fs::permissions::constants::{
 use crate::fs::permissions::hooks::loom_hooks_config;
 
 const INSTALL_SH: &str = include_str!("../../../../../install.sh");
+const DEV_INSTALL_SH: &str = include_str!("../../../../../dev-install.sh");
+
+#[path = "constants_tests/install_roots.rs"]
+mod install_roots;
 
 #[test]
 fn teammate_idle_hook_is_embedded() {
@@ -224,6 +228,9 @@ fn stage_install_sh_with_stub_binary() -> (TempDir, PathBuf, PathBuf, PathBuf) {
         &loom_bin,
         r#"#!/usr/bin/env bash
 echo "$@" >> "$LOOM_STUB_ARGV_LOG"
+if [[ -n "${LOOM_STUB_ENV_LOG:-}" ]]; then
+    printf '%s\n%s\n' "${LOOM_CLAUDECODE_INSTALL_DIR:-}" "${LOOM_CODEX_INSTALL_DIR:-}" > "$LOOM_STUB_ENV_LOG"
+fi
 "#,
     )
     .unwrap();

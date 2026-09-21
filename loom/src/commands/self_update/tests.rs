@@ -186,6 +186,48 @@ fn run_asset_install_invokes_install_assets() {
     );
 }
 
+/// Helper selected by `run_asset_install_inherits_asset_root_overrides`. It is
+/// inert in the ordinary test run; the parent test re-execs this test binary
+/// with a private environment so no process-global variable needs mutation.
+#[cfg(unix)]
+#[test]
+fn run_asset_install_inherits_asset_root_overrides_child() {
+    let Some(temp_dir) = std::env::var_os("LOOM_SELF_UPDATE_ENV_PROBE") else {
+        return;
+    };
+    let stub = PathBuf::from(temp_dir).join("loom-stub");
+    retry_past_etxtbsy(|| run_asset_install(&stub)).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn run_asset_install_inherits_asset_root_overrides() {
+    let temp_dir = TempDir::new().unwrap();
+    let log = temp_dir.path().join("inherited-env");
+    write_stub(
+        &temp_dir,
+        "printf '%s\\n%s\\n%s\\n' \"${LOOM_CLAUDECODE_INSTALL_DIR-}\" \"${LOOM_CODEX_INSTALL_DIR-}\" \"$*\" > \"$LOOM_SELF_UPDATE_ENV_LOG\"",
+    );
+    let output = std::process::Command::new(std::env::current_exe().unwrap())
+        .arg("run_asset_install_inherits_asset_root_overrides_child")
+        .arg("--nocapture")
+        .env("LOOM_SELF_UPDATE_ENV_PROBE", temp_dir.path())
+        .env("LOOM_SELF_UPDATE_ENV_LOG", &log)
+        .env("LOOM_CLAUDECODE_INSTALL_DIR", "/tmp/claude root")
+        .env("LOOM_CODEX_INSTALL_DIR", "/tmp/codex root")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "child test failed: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        fs::read_to_string(log).unwrap(),
+        "/tmp/claude root\n/tmp/codex root\ninstall-assets\n"
+    );
+}
+
 #[cfg(unix)]
 #[test]
 fn run_asset_install_reports_nonzero_exit() {

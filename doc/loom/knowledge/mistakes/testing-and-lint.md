@@ -295,3 +295,13 @@ the operator stopped it, because every other target had just passed on the same 
 
 **Rule:** after a full run, a change confined to test code is verified by re-running the target
 that failed. Re-run the whole suite only when production code changed after that full run.
+
+## Measure test function size after formatting
+
+**What happened:** A new installer regression test exceeded the 50-line function limit by one line after rustfmt expanded assertions.
+
+**Why:** The worker counted the unformatted source while formatting was deferred to the main agent.
+
+**Prevention:** Leave headroom for rustfmt expansion when writing test functions and run the maintainability gate after formatting.
+
+**Fix:** Simplified the repeated path assertions without changing test coverage; no baseline increase.

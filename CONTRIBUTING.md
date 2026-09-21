@@ -44,8 +44,8 @@ What this means in practice:
 | `loom/.githooks/` | The repo's `pre-commit` and `pre-push` hooks. |
 | `loom-hooks/` | The Claude Code hook scripts loom installs; embedded into the binary at build time. |
 | `web/` | The `loom status --web` dashboard (React + Vite, built with bun). The built `web/dist` is committed and embedded into the binary at build time. |
-| `agents/`, `skills/`, `commands/`, `codex/` | Agent assets that `install.sh` installs into `~/.claude/` and `~/.codex/`. |
-| `CLAUDE.md.template`, `AGENTS.md.template` | The orchestration rules installed as `~/.claude/CLAUDE.md` (and the Codex equivalent). Edit the template, never an installed copy. |
+| `agents/`, `skills/`, `commands/`, `codex/` | Agent assets that `install.sh` installs into the default `~/.claude/` and `~/.codex/` roots. See [custom asset roots](README.md#custom-asset-roots). |
+| `CLAUDE.md.template`, `AGENTS.md.template` | The orchestration rules installed by default as `~/.claude/CLAUDE.md` (and the Codex equivalent). Edit the template, never an installed copy. |
 | `doc/loom/knowledge/` | Curated project knowledge; start at `INDEX.md`. |
 | `doc/plans/` | Loom execution plans. |
 | `scripts/` | CI and developer scripts (`flake-check.sh`, `guarded-cargo.sh`, `check-hook-syntax.sh`, smoke tests). |
@@ -66,7 +66,7 @@ Enable the git hooks once, from the repo root:
 git config core.hooksPath loom/.githooks
 ```
 
-Build: `cd loom && cargo build`. To install your build as the `loom` on your `PATH` together with its hooks, agents and skills, run `bash ./dev-install.sh` from the repo root (it builds the release binary and runs `install.sh`). Use it instead of copying the binary by hand, so the installed hooks and assets match the binary.
+Build: `cd loom && cargo build`. To install your build as the `loom` on your `PATH` together with its hooks, agents and skills, run `bash ./dev-install.sh` from the repo root (it builds the release binary and runs `install.sh`). By default, it installs assets under `~/.claude/` and `~/.codex/`; see [custom asset roots](README.md#custom-asset-roots). Use it instead of copying the binary by hand, so the installed hooks and assets match the binary.
 
 Web dashboard: `cd web && bun install && bun run build`. Without `web/dist`, the build warns and `loom status --web` answers 503.
 

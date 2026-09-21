@@ -13,8 +13,9 @@ the compiled-in core manifest (`include_str!` of `skills/core-skills.txt`), the 
 `/loom-<name>` slash-form for a core skill (resolves directly), or
 `Skill(skill="loom-skills", args="<name>")` for a catalogued one (per
 `skills/index_catalog.rs::skill_invocation` — the catalog loader lives behind the `loom-skills`
-skill, not a direct slash command). `loom/src/skills/install_layout.rs` reads
-`~/.claude/loom-install.toml` and re-places skills into the correct root after a self-update.
+skill, not a direct slash command). `loom/src/skills/install_layout.rs` reads the saved skill layout only. Embedded
+`assets::install::install_all` performs non-destructive asset placement during installation and
+self-update.
 
 **Both new modules are genuinely new files, not extensions of `index.rs`/`self_update/mod.rs`.**
 Those two existing files are pinned at EXACT line counts in `loom/maintainability-baseline.txt`
@@ -79,7 +80,7 @@ demand (`bookend-stages.md`, `codex-implementers.md`, `grounding-protocols.md`,
 
 ## Component Architecture (loom/src/skills/)
 
-Loads skill metadata from SKILL.md files across the two roots above, builds an inverted index of trigger keywords, and matches stage descriptions against it. Components: `types.rs` (`SkillMetadata`, `SkillMatch`), `matcher.rs` (keyword matching, phrase match = 2pts, word match = 1pt, threshold 2.0), `index.rs` (`SkillIndex`, `load_from_directory`, `match_skills` — visibility of `add_skill`/`parse_skill_file` widened to `pub(super)` for the catalog loader, otherwise unchanged), `index_catalog.rs` (the compiled-in core manifest via `include_str!` of `skills/core-skills.txt`, the two-root loader `load_with_catalog`, and `skill_invocation()` which renders the correct invocation form), `install_layout.rs` (reads `~/.claude/loom-install.toml` and re-places skills after a self-update). Up to 5 skill recommendations are embedded in agent signals.
+Loads skill metadata from SKILL.md files across the two roots above, builds an inverted index of trigger keywords, and matches stage descriptions against it. Components: `types.rs` (`SkillMetadata`, `SkillMatch`), `matcher.rs` (keyword matching, phrase match = 2pts, word match = 1pt, threshold 2.0), `index.rs` (`SkillIndex`, `load_from_directory`, `match_skills` — visibility of `add_skill`/`parse_skill_file` widened to `pub(super)` for the catalog loader, otherwise unchanged), `index_catalog.rs` (the compiled-in core manifest via `include_str!` of `skills/core-skills.txt`, the two-root loader `load_with_catalog`, and `skill_invocation()` which renders the correct invocation form), `install_layout.rs` (reads the saved skill layout only). Embedded `assets::install::install_all` performs non-destructive asset placement during installation and self-update. Up to 5 skill recommendations are embedded in agent signals.
 
 Map Module (`loom/src/map/`): automated codebase analysis that populates knowledge files. Detectors: project type, dependencies, entry points, structure, conventions, concerns. Features: `--deep` (3-level depth + concerns), `--focus` (filter entry points), `--overwrite`. CLI: `loom map`.
 
@@ -97,11 +98,10 @@ Map Module (`loom/src/map/`): automated codebase analysis that populates knowled
   name from a `loom-*` entry and delete it as migration cleanup. Installation now replaces only
   Loom-prefixed destinations; legacy reference migration remains the explicit `loom repair`
   path. Behavior tests seed both bare and custom user entries and require them to survive.
-- **`self_update/mod.rs::download_verify_and_extract_zip` backs up `dest` to `dest.bak`, extracts
-  fresh, then DELETES the backup.** For `skills.zip`, `dest` is `~/.claude/skills`, so a
-  self-update wipes any NON-loom skill a user keeps there. Pre-existing, out of the catalog
-  stage's scope. If this function is ever touched: extract into a temp dir and merge, never
-  rename/replace a directory loom does not exclusively own.
+- **Asset placement preserves user-owned skills.** `install_layout.rs` only reads the recorded
+  layout; embedded `assets::install::install_all` places managed Loom assets individually during
+  installation and self-update. It does not replace `~/.claude/skills` wholesale, so non-Loom
+  skills remain in place.
 - **`repair.rs`'s `LOOM_SKILL_NAMES` is NOT an install manifest**, despite reading like one. Its
   only two call sites are the legacy unprefixed-to-prefixed `settings.json` reference migration
   (checking for `Skill(<bare-name>` and rewriting to `Skill(loom-name`) — it never installs,

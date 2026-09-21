@@ -170,3 +170,23 @@ quote documents has changed, correct the claim itself after checking the code, o
 `stale-knowledge` note.
 **Fix:** both quotes were restored verbatim. The two concerns still need a re-check against current
 code.
+
+## Preserve unrelated prose during section corrections
+
+**What happened:** An install-root documentation edit reflowed and lightly rewrote unrelated paragraphs while replacing sections with stale installer claims.
+
+**Why:** The replacement body was reconstructed instead of retaining the original section verbatim outside the corrected sentences.
+
+**Prevention:** Build replacement bodies from the existing section and replace only the verified stale text; preserve wrapping, subheadings, lists, and unrelated wording.
+
+**Fix:** Restore the original section bodies with only the targeted installer corrections retained.
+
+## Pass replacement prose as literal process arguments
+
+**What happened:** A knowledge correction command accidentally subjected Markdown backticks to shell substitution; the attempted lookups failed and the affected section was restored from its saved original.
+
+**Why:** Replacement prose crossed a shell quoting boundary while constructing the CLI command.
+
+**Prevention:** Invoke knowledge writes with subprocess argument arrays, or use literal quoted input; never interpolate Markdown into shell code.
+
+**Fix:** Replaced the section through safely quoted input and verified the final diff retained only the intended corrections.

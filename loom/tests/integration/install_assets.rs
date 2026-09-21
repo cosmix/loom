@@ -10,20 +10,22 @@ use tempfile::TempDir;
 
 use super::helpers::loom_cmd;
 
+#[path = "install_assets/custom_roots.rs"]
+mod custom_roots;
+
 #[test]
 fn install_assets_places_a_real_tree_under_explicit_directories() {
     let temp = TempDir::new().unwrap();
     let claude_dir = temp.path().join("claude");
     let codex_dir = temp.path().join("codex");
 
-    // Both directories must always be passed explicitly: `install_assets::execute`
-    // resolves an omitted `--claude-dir` or `--codex-dir` independently against
-    // the operator's real home, so passing only one here would write into the
-    // real `~/.codex` or `~/.claude`. `loom_cmd()` sets `LOOM_HOME` but not
-    // `HOME`; the explicit `HOME` override below makes that safety independent
-    // of `install_all`'s internals rather than relying solely on both flags.
+    // Scrub ambient install-root overrides even though both flags are explicit,
+    // and keep HOME private so later changes cannot redirect either omitted or
+    // auxiliary writes into the operator's real configuration trees.
     let output = loom_cmd()
         .env("HOME", temp.path())
+        .env_remove("LOOM_CLAUDECODE_INSTALL_DIR")
+        .env_remove("LOOM_CODEX_INSTALL_DIR")
         .arg("install-assets")
         .arg("--claude-dir")
         .arg(&claude_dir)
@@ -62,8 +64,8 @@ fn install_assets_places_a_real_tree_under_explicit_directories() {
 
 // `curl -fsSL .../install.sh | bash` feeds the script on stdin, so bash never
 // populates `BASH_SOURCE[0]`. This reproduces that without hitting the
-// network or the filesystem: `--help` exits inside `parse_args`, before
-// anything reads `$HOME`.
+// network or asset placement: `--help` exits inside `parse_args` after the
+// script has resolved its display-only directory variables from `$HOME`.
 #[test]
 fn install_sh_runs_when_piped_on_stdin() {
     let script_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -79,6 +81,8 @@ fn install_sh_runs_when_piped_on_stdin() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
+        .env_remove("LOOM_CLAUDECODE_INSTALL_DIR")
+        .env_remove("LOOM_CODEX_INSTALL_DIR")
         .spawn()
         .expect("failed to spawn bash");
 

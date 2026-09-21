@@ -15,8 +15,8 @@ SCRIPT_DIR=""
 if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
 	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
-CLAUDE_DIR="$HOME/.claude"
-CODEX_DIR="$HOME/.codex"
+CLAUDE_DIR="${LOOM_CLAUDECODE_INSTALL_DIR:-$HOME/.claude}"
+CODEX_DIR="${LOOM_CODEX_INSTALL_DIR:-$HOME/.codex}"
 
 GITHUB_REPO="cosmix/loom"
 GITHUB_RELEASES="https://github.com/${GITHUB_REPO}/releases/latest/download"
@@ -48,13 +48,17 @@ print_components() {
 }
 
 print_usage() {
-	cat <<'EOF'
+	cat <<EOF
 Usage: install.sh [--skills core|all]
 
 Options:
-  --skills core  Install core skills to ~/.claude/skills and catalog the rest (default)
-  --skills all   Install every loom skill to ~/.claude/skills
+  --skills core  Install core skills to $CLAUDE_DIR/skills and catalog the rest (default)
+  --skills all   Install every loom skill to $CLAUDE_DIR/skills
   -h, --help     Show this help message
+
+Environment:
+  LOOM_CLAUDECODE_INSTALL_DIR  Claude asset root (default: $HOME/.claude)
+  LOOM_CODEX_INSTALL_DIR       Codex asset root (default: $HOME/.codex)
 EOF
 }
 
@@ -171,22 +175,21 @@ check_requirements() {
 	[[ -d "$SCRIPT_DIR/loom" ]] || { err "loom/ not found"; exit 1; }
 }
 
-# shellcheck disable=SC2088  # display labels, not paths - tilde is intentional
 confirm_overwrites() {
 	local found=()
 
-	[[ -d "$CLAUDE_DIR/agents" ]] && found+=("~/.claude/agents/ (loom-* only)")
-	[[ -d "$CLAUDE_DIR/skills" ]] && found+=("~/.claude/skills/ (loom-* only)")
-	[[ -d "$CLAUDE_DIR/loom-skill-catalog" ]] && found+=("~/.claude/loom-skill-catalog/")
-	[[ -f "$CLAUDE_DIR/CLAUDE.md" ]] && found+=("~/.claude/CLAUDE.md")
-	[[ -f "$CLAUDE_DIR/loom-install.toml" ]] && found+=("~/.claude/loom-install.toml")
-	[[ -d "$CLAUDE_DIR/commands" ]] && found+=("~/.claude/commands/ (address.md, distill.md, pressure.md)")
-	[[ -d "$CLAUDE_DIR/hooks/loom" ]] && found+=("~/.claude/hooks/loom")
+	[[ -d "$CLAUDE_DIR/agents" ]] && found+=("$CLAUDE_DIR/agents/ (loom-* only)")
+	[[ -d "$CLAUDE_DIR/skills" ]] && found+=("$CLAUDE_DIR/skills/ (loom-* only)")
+	[[ -d "$CLAUDE_DIR/loom-skill-catalog" ]] && found+=("$CLAUDE_DIR/loom-skill-catalog/")
+	[[ -f "$CLAUDE_DIR/CLAUDE.md" ]] && found+=("$CLAUDE_DIR/CLAUDE.md")
+	[[ -f "$CLAUDE_DIR/loom-install.toml" ]] && found+=("$CLAUDE_DIR/loom-install.toml")
+	[[ -d "$CLAUDE_DIR/commands" ]] && found+=("$CLAUDE_DIR/commands/ (address.md, distill.md, pressure.md)")
+	[[ -d "$CLAUDE_DIR/hooks/loom" ]] && found+=("$CLAUDE_DIR/hooks/loom")
 
 	local found_other=()
-	[[ -f "$CODEX_DIR/AGENTS.md" ]] && found_other+=("~/.codex/AGENTS.md")
-	[[ -d "$CODEX_DIR/skills" ]] && found_other+=("~/.codex/skills")
-	[[ -d "$CODEX_DIR/loom-skill-catalog" ]] && found_other+=("~/.codex/loom-skill-catalog")
+	[[ -f "$CODEX_DIR/AGENTS.md" ]] && found_other+=("$CODEX_DIR/AGENTS.md")
+	[[ -d "$CODEX_DIR/skills" ]] && found_other+=("$CODEX_DIR/skills")
+	[[ -d "$CODEX_DIR/loom-skill-catalog" ]] && found_other+=("$CODEX_DIR/loom-skill-catalog")
 
 	if [[ ${#found[@]} -eq 0 ]] && [[ ${#found_other[@]} -eq 0 ]]; then
 		return 0
@@ -309,7 +312,7 @@ print_summary() {
 	echo ""
 	echo -e "   ${G}installed${N}"
 	echo ""
-	echo -e "   ${D}~/.claude/${N}"
+	echo -e "   ${D}$CLAUDE_DIR/${N}"
 	echo -e "     agents/     ${D}managed agents${N}"
 	echo -e "     skills/     ${D}managed skills${N}"
 	echo -e "     loom-skill-catalog/ ${D}catalogued skills${N}"
@@ -317,7 +320,7 @@ print_summary() {
 	echo -e "     commands/   ${D}managed slash commands${N}"
 	echo -e "     CLAUDE.md   ${D}orchestration rules${N}"
 	echo ""
-	echo -e "   ${D}~/.codex/${N}"
+	echo -e "   ${D}$CODEX_DIR/${N}"
 	echo -e "     skills/     ${D}managed skills${N}"
 	echo -e "     AGENTS.md   ${D}orchestration rules${N}"
 	echo ""

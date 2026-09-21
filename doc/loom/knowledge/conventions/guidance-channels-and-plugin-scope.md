@@ -103,3 +103,11 @@ Verify inside a worktree after a stage starts; never assume:
 rg -n "enabledPlugins" .claude/settings.local.json
 claude plugin list --json
 ```
+
+## Planning custom asset install roots (2026-09-21)
+
+For LOOM_CODEX_INSTALL_DIR and LOOM_CLAUDECODE_INSTALL_DIR, the user explicitly requested an in-session implementation plan followed by approval and implementation in the same conversation. Do not create a Loom execution plan, stage DAG, or orchestrated run. Investigate with GPT-5.6 Terra; after approval, allocate edits among Luna, Terra, and Sol. Completion includes user documentation, curated knowledge, and the appropriate knowledge/source-graph re-indexing commands.
+
+## Custom install-root implementation approved (2026-09-21)
+
+The user approved the in-session plan for LOOM_CODEX_INSTALL_DIR and LOOM_CLAUDECODE_INSTALL_DIR. Use Terra for shell integration and documentation unless a Luna brief supplies complete context, including documentation requirements; default to Terra when that context is uncertain. Keep explicit install-assets flags above non-empty env overrides above standard roots. Preserve flagless installer delegation and completion refresh behavior. Scope is asset installation/update destinations, with runtime discovery relocation excluded. Finish with regression coverage, user documentation, curated knowledge updates, loom knowledge sync, and loom knowledge check.

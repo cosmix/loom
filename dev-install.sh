@@ -5,12 +5,14 @@ set -euo pipefail
 # This compiles the release binary and runs install.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+CLAUDE_DIR="${LOOM_CLAUDECODE_INSTALL_DIR:-$HOME/.claude}"
+CODEX_DIR="${LOOM_CODEX_INSTALL_DIR:-$HOME/.codex}"
 
 cleanup_backups() {
     local backups=()
     local root file name response
 
-    for root in "$HOME/.claude" "$HOME/.codex"; do
+    for root in "$CLAUDE_DIR" "$CODEX_DIR"; do
         [[ -d "$root" ]] || continue
         while IFS= read -r -d '' file; do
             name="${file##*/}"
