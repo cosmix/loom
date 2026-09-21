@@ -5,10 +5,12 @@
 //! widgets. That split lets validation and disk writes have ordinary unit
 //! tests without putting a test terminal into raw mode.
 
-/// Draws immutable editor state with the shared status-screen palette.
+/// Draws immutable editor state with this screen's own palette.
 mod render;
 /// Owns navigation, validation, and writes without terminal dependencies.
 mod state;
+/// The palette and style constructors both tiers are drawn with.
+mod theme;
 
 /// Headless coverage for navigation, validation, and the real config write seam.
 #[cfg(test)]
@@ -153,33 +155,40 @@ fn dispatch_key(state: &mut ConfigState, key: KeyEvent) -> bool {
         return dispatch_edit_key(state, key.code);
     }
 
-    match key.code {
-        KeyCode::Char('q') | KeyCode::Esc => true,
-        KeyCode::Up | KeyCode::Char('k') => {
-            state.move_up();
-            false
-        }
-        KeyCode::Down | KeyCode::Char('j') => {
-            state.move_down();
-            false
-        }
-        KeyCode::Left | KeyCode::Char('h') => {
-            state.cycle(-1);
-            false
-        }
-        KeyCode::Right | KeyCode::Char('l') | KeyCode::Char(' ') => {
-            state.cycle(1);
-            false
-        }
-        KeyCode::Enter => {
-            state.activate();
-            false
-        }
-        KeyCode::Char('s') => {
-            state.save();
-            false
-        }
-        _ => false,
+    // Whether a quit may proceed is the state machine's decision, not this
+    // function's: it depends on what is staged on BOTH tabs, and it has to be
+    // testable without a terminal. `Esc` goes through its own entry point
+    // because dismissing an armed warning and confirming a discard are
+    // opposite outcomes that must not share one bool.
+    if key.code == KeyCode::Char('q') {
+        return state.request_quit();
+    }
+    if key.code == KeyCode::Esc {
+        return state.dismiss_or_request_quit();
+    }
+    dispatch_browse_key(state, key.code);
+    false
+}
+
+/// Move the selection, switch tier, or act on the focused row. Every key here
+/// keeps the editor open; quitting is decided by the caller, so no arm has to
+/// carry a `false` to say so.
+fn dispatch_browse_key(state: &mut ConfigState, code: KeyCode) {
+    // Any key that is not a second quit means the operator is still working,
+    // so a refused quit stops counting toward the next one.
+    state.disarm_quit();
+    match code {
+        KeyCode::Up | KeyCode::Char('k') => state.move_up(),
+        KeyCode::Down | KeyCode::Char('j') => state.move_down(),
+        KeyCode::Char('g') => state.move_to_first(),
+        KeyCode::Char('G') => state.move_to_last(),
+        KeyCode::Left | KeyCode::Char('h') => state.cycle(-1),
+        KeyCode::Right | KeyCode::Char('l') | KeyCode::Char(' ') => state.cycle(1),
+        KeyCode::Tab | KeyCode::BackTab => state.toggle_scope(),
+        KeyCode::Char('x') | KeyCode::Delete => state.stage_clear(),
+        KeyCode::Enter => state.activate(),
+        KeyCode::Char('s') => state.save(),
+        _ => {}
     }
 }
 

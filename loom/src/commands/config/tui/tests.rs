@@ -1,19 +1,94 @@
 //! Headless regression coverage for the config editor's state machine.
+//!
+//! Every fixture here runs against a scratch tree AND a redirected user
+//! config, so the suite can never read or write the operator's real
+//! `~/.loom/config.toml` — the same discipline
+//! `commands::status::web::config_api::tests` keeps, and for the same reason:
+//! `loom config` is the tool that creates that file.
 
 mod cycling;
+mod quit;
+mod rendering;
+mod save;
+mod scope;
 
-use super::state::ConfigState;
+use std::path::PathBuf;
+
+use tempfile::TempDir;
+
+use super::state::{ConfigState, Scope, Source};
+use crate::fs::work_dir::WorkDir;
 use crate::user_config::{
-    keys::KEYS, redirect_user_config, ConfigValue, Origin, UserConfig, UserConfigRedirect,
+    keys::KEYS, redirect_user_config, ConfigValue, UserConfig, UserConfigRedirect,
 };
 
-/// Install one temp-path redirect for the full lifetime of each editor state test.
-fn state() -> (tempfile::TempDir, UserConfigRedirect, ConfigState) {
-    let temp = tempfile::tempdir().unwrap();
-    let path = temp.path().join("config.toml");
-    let guard = redirect_user_config(path);
-    let state = ConfigState::load().unwrap();
-    (temp, guard, state)
+/// A scratch tree plus a user-config redirect, both inside one `TempDir`.
+struct Scratch {
+    /// Held for its `Drop`: the tree disappears with it.
+    _temp: TempDir,
+    /// The tree whose `.loom/work` supplies the project tier.
+    base: PathBuf,
+    /// Held for its `Drop`: the redirect lasts exactly as long as the tree.
+    _redirect: UserConfigRedirect,
+}
+
+impl Scratch {
+    /// The file the user scope writes to.
+    fn user_config(&self) -> PathBuf {
+        self.base.join("user-config.toml")
+    }
+
+    /// The file the project scope writes to.
+    fn project_config(&self) -> PathBuf {
+        self.base.join(".loom").join("work").join("config.toml")
+    }
+
+    /// A freshly loaded editor pointed at this tree.
+    fn state(&self) -> ConfigState {
+        ConfigState::load_from(&self.base).expect("load both config tiers")
+    }
+}
+
+fn scratch_tree() -> Scratch {
+    let temp = tempfile::tempdir().expect("create scratch tree");
+    let base = temp.path().to_path_buf();
+    // The recorded incident this guards against is a scratch root that came
+    // back empty and sent writes at the operator's real home.
+    assert!(
+        base.is_absolute() && base.components().count() > 2,
+        "scratch tree resolved to {}, which is not a temporary directory",
+        base.display()
+    );
+    let _redirect = redirect_user_config(base.join("user-config.toml"));
+    Scratch {
+        _temp: temp,
+        base,
+        _redirect,
+    }
+}
+
+/// A scratch tree with an initialized workspace, so both tiers exist.
+fn scratch() -> Scratch {
+    let scratch = scratch_tree();
+    WorkDir::new(&scratch.base)
+        .expect("build work dir")
+        .initialize()
+        .expect("initialize work dir");
+    scratch
+}
+
+/// A scratch tree with no workspace at all — the ordinary case for `loom
+/// config` run outside a repository.
+fn scratch_without_workspace() -> Scratch {
+    scratch_tree()
+}
+
+/// Install one temp-path redirect for the full lifetime of each editor state
+/// test, with no workspace: these cases are about the user tier.
+fn state() -> (Scratch, ConfigState) {
+    let scratch = scratch_without_workspace();
+    let state = scratch.state();
+    (scratch, state)
 }
 
 /// Focus the row for `name` by key rather than by position, so adding or
@@ -49,7 +124,7 @@ fn retype_focused_row(state: &mut ConfigState, replacement: &str) {
 /// Navigation clamps at both ends so repeated movement never changes focus unexpectedly.
 #[test]
 fn selection_movement_clamps_at_the_registry_ends() {
-    let (_temp, _guard, mut state) = state();
+    let (_scratch, mut state) = state();
     state.move_up();
     assert_eq!(state.selected(), 0);
 
@@ -61,11 +136,21 @@ fn selection_movement_clamps_at_the_registry_ends() {
     assert_eq!(state.selected(), KEYS.len() - 1);
 }
 
+/// `g` and `G` reach both ends of the registry without a key repeat.
+#[test]
+fn first_and_last_jump_to_the_registry_ends() {
+    let (_scratch, mut state) = state();
+    state.move_to_last();
+    assert_eq!(state.selected(), KEYS.len() - 1);
+    state.move_to_first();
+    assert_eq!(state.selected(), 0);
+}
+
 /// Escape only removes transient typing, leaving the selected row as it was.
 #[test]
 fn enter_seeds_the_edit_buffer_and_escape_restores_the_row() {
-    let (_temp, _guard, mut state) = state();
-    let original = state.selected_row().displayed_value().to_owned();
+    let (_scratch, mut state) = state();
+    let original = state.displayed_value();
 
     state.begin_edit();
     assert_eq!(state.edit_buffer(), Some(original.as_str()));
@@ -73,69 +158,78 @@ fn enter_seeds_the_edit_buffer_and_escape_restores_the_row() {
     state.cancel_edit();
 
     assert!(!state.is_editing());
-    assert_eq!(state.selected_row().displayed_value(), original);
-    assert!(!state.selected_row().is_modified());
+    assert_eq!(state.displayed_value(), original);
+    assert!(!state.is_modified());
 }
 
 /// A registry parse failure remains editable and makes no staged disk change.
 #[test]
 fn invalid_edit_stays_unmodified_and_names_its_key() {
-    let (_temp, _guard, mut state) = state();
+    let (_scratch, mut state) = state();
     focus_by_name(&mut state, "update.check_interval_hours");
     retype_focused_row(&mut state, "x");
     state.commit_edit();
 
     assert!(state.is_editing());
-    assert!(!state.selected_row().is_modified());
+    assert!(!state.is_modified());
     assert!(state.status().contains("update.check_interval_hours"));
 }
 
 /// A staged valid value is written through the shared setter and then refreshed as set.
 #[test]
 fn valid_edit_save_round_trips_through_a_fresh_strict_load() {
-    let (_temp, _guard, mut state) = state();
+    let (_scratch, mut state) = state();
     focus_by_name(&mut state, "update.check_interval_hours");
     retype_focused_row(&mut state, "6");
     state.commit_edit();
-    assert!(state.selected_row().is_modified());
+    assert!(state.is_modified());
 
     state.save();
     let fresh = UserConfig::load_strict().unwrap();
     let spec = crate::user_config::keys::spec("update.check_interval_hours").unwrap();
     assert_eq!(fresh.value_of(spec).0, ConfigValue::Number(6));
-    assert_eq!(state.selected_row().origin(), Origin::Set);
-    assert!(!state.selected_row().is_modified());
+    assert_eq!(state.selected_row().source(Scope::User), Source::Set);
+    assert!(!state.is_modified());
+    assert_eq!(state.status(), "1 key written · 1 user.");
 }
 
 /// A no-op save is explicit so operators know no config file write occurred.
 #[test]
 fn save_with_nothing_pending_reports_that_nothing_was_written() {
-    let (_temp, _guard, mut state) = state();
+    let (_scratch, mut state) = state();
     state.save();
     assert_eq!(state.status(), "0 keys written; nothing pending.");
 }
 
-/// A write that fails must not silently drop the edit the operator staged.
+/// Clearing a key the file does not set is a named no-op rather than a write.
 #[test]
-fn failed_write_reports_the_key_and_leaves_the_edit_staged() {
-    let (temp, _guard, mut state) = state();
+fn clearing_an_unset_key_stages_nothing_and_says_so() {
+    let (_scratch, mut state) = state();
+    focus_by_name(&mut state, "update.check_interval_hours");
+    state.stage_clear();
+
+    assert!(!state.is_modified());
+    assert!(state.status().contains("update.check_interval_hours"));
+    assert!(state.status().contains("nothing to clear"));
+}
+
+/// Clearing a set key reverts it to the built-in and removes it from the file.
+#[test]
+fn clearing_a_set_key_writes_the_key_out_of_the_file() {
+    let (scratch, mut state) = state();
     focus_by_name(&mut state, "update.check_interval_hours");
     retype_focused_row(&mut state, "6");
     state.commit_edit();
-    assert!(state.selected_row().is_modified());
+    state.save();
+    assert!(std::fs::read_to_string(scratch.user_config())
+        .unwrap()
+        .contains("check_interval_hours"));
 
-    // `[update]` already exists as a non-table value, so `set_in` errors
-    // with "is not a table" instead of writing `check_interval_hours`.
-    std::fs::write(
-        temp.path().join("config.toml"),
-        "update = \"not-a-table\"\n",
-    )
-    .unwrap();
-
+    state.stage_clear();
+    assert!(state.is_modified());
     state.save();
 
-    assert!(state.status_is_error());
-    assert!(state.status().contains("update.check_interval_hours"));
-    assert!(state.status().contains("0 keys written"));
-    assert!(state.selected_row().is_modified());
+    let saved = std::fs::read_to_string(scratch.user_config()).unwrap();
+    assert!(!saved.contains("check_interval_hours"), "{saved}");
+    assert_eq!(state.selected_row().source(Scope::User), Source::Default);
 }

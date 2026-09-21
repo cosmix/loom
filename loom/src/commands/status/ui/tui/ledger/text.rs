@@ -1,14 +1,20 @@
 //! Cell width and truncation helpers shared by the ledger's cell builders.
+//!
+//! `pub(crate)` rather than `pub(super)`: the config editor
+//! (`crate::commands::config::tui`) measures and pads its own cells through
+//! these exact functions. Three byte-identical copies of `cut_line` once
+//! existed in this tree, and the copies disagreed about wide characters —
+//! there is one implementation of display width in the crate, and this is it.
 
 use ratatui::text::{Line, Span};
 
-pub(super) fn padded(text: &str, width: u16) -> String {
+pub(crate) fn padded(text: &str, width: u16) -> String {
     let mut value = truncate(text, usize::from(width));
     value.push_str(&" ".repeat(usize::from(width).saturating_sub(text_width(&value))));
     value
 }
 
-pub(super) fn truncate(text: &str, width: usize) -> String {
+pub(crate) fn truncate(text: &str, width: usize) -> String {
     if text_width(text) <= width {
         return text.to_owned();
     }
@@ -33,14 +39,14 @@ pub(super) fn truncate(text: &str, width: usize) -> String {
 }
 
 /// Display width, not character count - unicode-width aware like `header::text_width`.
-pub(super) fn text_width(text: &str) -> usize {
+pub(crate) fn text_width(text: &str) -> usize {
     Span::raw(text.to_owned()).width()
 }
 
 /// Cut `line` to `width` display cells, dropping any spans (or partial spans) past the
 /// boundary. A span that straddles the boundary keeps its style but loses the characters
 /// that would overflow.
-pub(super) fn cut_line(line: Line<'static>, width: u16) -> Line<'static> {
+pub(crate) fn cut_line(line: Line<'static>, width: u16) -> Line<'static> {
     let mut remaining = width as usize;
     let mut spans = Vec::new();
     for span in line.spans {
@@ -64,7 +70,7 @@ pub(super) fn cut_line(line: Line<'static>, width: u16) -> Line<'static> {
 }
 
 /// Total display width of a list of spans.
-pub(super) fn spans_width(spans: &[Span<'static>]) -> usize {
+pub(crate) fn spans_width(spans: &[Span<'static>]) -> usize {
     spans.iter().map(Span::width).sum()
 }
 
