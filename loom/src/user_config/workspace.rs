@@ -1,4 +1,10 @@
-//! The workspace tier of a config key, read once per request.
+//! The workspace tier of a config key: `<repo>/.loom/work/config.toml` read as
+//! the fallback layer above `~/.loom/config.toml`.
+//!
+//! Lives beside [`UserConfig`] rather than under the dashboard that first
+//! needed it, because both editors of the project tier — the web config API and
+//! `loom config`'s screen — must resolve it identically. A second resolver
+//! would be a second opinion about which value is in force.
 //!
 //! # One shadowing rule: every workspace-backed key resolves per KEY
 //!
@@ -27,7 +33,8 @@
 //! force, while [`Workspace::shadows`] is what keeps the project tier out of
 //! `effective` in that case.
 //!
-//! `config_api::tests` pins all of this against the runtime readers —
+//! The config API's own tests (`commands::status::web::config_api::tests`) pin
+//! all of this against the runtime readers —
 //! [`crate::fs::work_dir::read_terminal_config`] and
 //! [`crate::fs::work_dir::resolve_context_ceiling_tokens`] for the two keys
 //! above, [`crate::fs::work_dir::read_pressure_config`] and
@@ -37,16 +44,18 @@
 
 use std::path::{Path, PathBuf};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{anyhow, bail, Context, Result};
 use toml_edit::DocumentMut;
 
-use crate::fs::work_dir::{read_config, ContextConfig, WorkDir};
+use crate::fs::work_dir::{
+    insert_key, read_config, remove_key, update_config, ContextConfig, WorkDir,
+};
 use crate::models::session::TerminalConfig;
 use crate::user_config::keys::{KeySpec, KEYS};
 use crate::user_config::{ConfigValue, UserConfig};
 
-/// A served tree's `.loom/work` and its parsed `config.toml`.
-pub(super) struct Workspace {
+/// A tree's `.loom/work` and its parsed `config.toml`.
+pub(crate) struct Workspace {
     /// The `.loom/work` directory itself — what the write path locks.
     root: PathBuf,
     /// The parsed config, an empty table when the file does not exist yet.
@@ -54,12 +63,12 @@ pub(super) struct Workspace {
 }
 
 impl Workspace {
-    /// The workspace under `base`, or `None` when the served tree has none.
+    /// The workspace under `base`, or `None` when the tree has none.
     ///
-    /// Absence is reported rather than created: a dashboard write must not
+    /// Absence is reported rather than created: an editor's write must not
     /// materialize a workspace the operator never ran `loom init` for, so a
-    /// project-scope write against `None` is a 409.
-    pub(super) fn open(base: &Path) -> Result<Option<Self>> {
+    /// project-scope write against `None` is refused by the caller instead.
+    pub(crate) fn open(base: &Path) -> Result<Option<Self>> {
         let root = WorkDir::new(base)
             .context("failed to resolve the work directory")?
             .root()
@@ -75,13 +84,13 @@ impl Workspace {
     }
 
     /// The `.loom/work` directory this workspace writes to.
-    pub(super) fn root(&self) -> &Path {
+    pub(crate) fn root(&self) -> &Path {
         &self.root
     }
 
     /// The same view over an in-flight document, so the write path can report
     /// the values either side of its own edit using this exact resolution.
-    pub(super) fn from_document(root: &Path, doc: &DocumentMut) -> Result<Self> {
+    pub(crate) fn from_document(root: &Path, doc: &DocumentMut) -> Result<Self> {
         Ok(Self {
             root: root.to_path_buf(),
             doc: parse(&doc.to_string())?,
@@ -89,7 +98,7 @@ impl Workspace {
     }
 
     /// Whether the file sets `spec`'s key itself.
-    pub(super) fn has_key(&self, spec: &KeySpec) -> bool {
+    pub(crate) fn has_key(&self, spec: &KeySpec) -> bool {
         self.doc
             .get(spec.section)
             .and_then(|section| section.get(spec.field))
@@ -100,7 +109,7 @@ impl Workspace {
     ///
     /// For a key the file does not supply, this is the user tier's value:
     /// that is what clearing the key (or never setting it) leaves in force.
-    pub(super) fn value_of(&self, spec: &KeySpec) -> Result<ConfigValue> {
+    pub(crate) fn value_of(&self, spec: &KeySpec) -> Result<ConfigValue> {
         match resolve(spec, self.doc.get(spec.section)) {
             Some(value) => Ok(value?.unwrap_or_else(|| UserConfig::load().value_of(spec).0)),
             None => bail!("{} has no project scope", spec.name),
@@ -108,10 +117,38 @@ impl Workspace {
     }
 
     /// Whether the project tier is the one in force for `spec`: the project
-    /// supplies the key itself (directly, or via `resolve`'s
+    /// supplies the key itself (directly, or via [`resolve`]'s
     /// `context.ceiling_tokens` qualification).
-    pub(super) fn shadows(&self, spec: &KeySpec) -> bool {
+    pub(crate) fn shadows(&self, spec: &KeySpec) -> bool {
         matches!(resolve(spec, self.doc.get(spec.section)), Some(Ok(Some(_))))
+    }
+
+    /// Write or clear `spec` in this workspace's `config.toml`, reporting what
+    /// the project tier resolved to either side of the edit, inside one lock
+    /// hold.
+    ///
+    /// `value` is `None` for a clear. The old/new pair is captured inside
+    /// [`update_config`]'s lock — the same discipline `user_config::write`'s
+    /// `locked_edit` keeps, and for the same reason: a pair read outside the
+    /// lock can describe a state that never existed.
+    pub(crate) fn write(
+        &self,
+        spec: &KeySpec,
+        value: Option<ConfigValue>,
+    ) -> Result<(ConfigValue, ConfigValue)> {
+        let root = self.root.clone();
+        let mut old_new: Option<(ConfigValue, ConfigValue)> = None;
+        update_config(&root, |doc| {
+            let old = Self::from_document(&root, doc)?.value_of(spec)?;
+            match value {
+                Some(value) => insert_key(doc, spec.section, spec.field, value.to_toml_edit())?,
+                None => remove_key(doc, spec.section, spec.field),
+            }
+            let new = Self::from_document(&root, doc)?.value_of(spec)?;
+            old_new = Some((old, new));
+            Ok(())
+        })?;
+        old_new.ok_or_else(|| anyhow!("update_config returned without a captured value"))
     }
 }
 
@@ -150,7 +187,7 @@ fn resolve(spec: &KeySpec, section: Option<&toml::Value>) -> Option<Result<Optio
 
 /// Whether the workspace tier resolves `spec` at all — see [`resolve`], which
 /// answers this by having an arm for the key or not.
-pub(super) fn backs(spec: &KeySpec) -> bool {
+pub(crate) fn backs(spec: &KeySpec) -> bool {
     resolve(spec, None).is_some()
 }
 

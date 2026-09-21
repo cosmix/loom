@@ -21,7 +21,6 @@ mod csrf;
 mod entries;
 mod request;
 mod wire;
-mod workspace;
 
 #[cfg(test)]
 mod tests;
@@ -31,12 +30,12 @@ use std::path::Path;
 use anyhow::{bail, Result};
 
 use crate::user_config::keys::{self, KeySpec};
+use crate::user_config::workspace::Workspace;
 use crate::user_config::{ConfigValue, UserConfig};
 
 pub(super) use request::{handle_post, serve_get};
 
 use wire::{error_body, ConfigPayload, ConfigUpdate, ConfigUpdated, ProjectScope};
-use workspace::Workspace;
 
 /// Where the project scope lives, as the payload reports it: a fixed relative
 /// path, never an absolute one. Any local process can read this dashboard, so

@@ -314,8 +314,8 @@ fn a_malformed_body_is_rejected_without_naming_a_path() {
 
 /// A project-scope write on a key-level key (`[models]`) creates the section
 /// from nothing and reports the pair the same way the section-level keys do —
-/// the write path is shared, only [`super::super::workspace`]'s shadowing
-/// rule differs.
+/// the write path is shared, only [`crate::user_config::workspace`]'s
+/// shadowing rule differs.
 #[test]
 fn a_project_scope_write_creates_a_key_level_section() {
     let scratch = scratch();

@@ -77,6 +77,9 @@ mod pressure;
 mod render;
 mod write;
 
+/// The project tier under this one: `<repo>/.loom/work/config.toml`.
+pub(crate) mod workspace;
+
 pub use write::{set, unset};
 /// The path-explicit write seams, for tests that must not touch a real
 /// `~/.loom/config.toml`. `set`/`unset` are the production entry points.

@@ -8,10 +8,10 @@
 use anyhow::Result;
 
 use crate::user_config::keys::{KeySpec, KEYS};
+use crate::user_config::workspace::{self, Workspace};
 use crate::user_config::{ConfigValue, Origin, UserConfig};
 
 use super::wire::{ConfigEntry, ConfigKind, EffectiveValue, ScopeValue, Source};
-use super::workspace::{self, Workspace};
 
 /// Whether `spec` accepts a project-scope write.
 ///
