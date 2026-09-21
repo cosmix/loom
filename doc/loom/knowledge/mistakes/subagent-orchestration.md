@@ -138,6 +138,29 @@ evidence of non-compliance and is not.
   repo-wide line-count gate because every agent added regression tests and comments in good faith.
   Check the gate BEFORE fanning out, or expect a second round purely to satisfy it.
 
+**Recurred 2026-09-21, with this entry already written.** A senior-engineer subagent was sent a
+design revision mid-task. It emitted an `idle_notification` carrying a full "Done, everything
+green" report — describing only its ORIGINAL brief. The orchestrator read that as terminal, grepped
+the tree once, found none of the revision's items, concluded the message had been ignored, and
+spawned a SECOND agent onto the same files. The first was mid-write the whole time: the second
+agent watched `state/mod.rs` grow from 242 to 309 lines between two of its own reads, and refused
+to write anything, which is the only reason nothing was lost. The orchestrator then compounded it
+by recording a fresh entry blaming the mailbox, which was false — the message had landed and was
+being applied.
+
+Two things this adds to the rules above. **A report and the mailbox are independent channels:** an
+agent can report on the brief it finished and keep working on one sent since, so a report is
+terminal only for the brief it names. And **`ListAgents` distinguishes `running` from `idle`** — it
+is the cheap second sample this entry already asks for, and it was available and not consulted.
+That it was documented here and still happened is the point: a rule only helps at the moment of
+decision, so the check belongs in the habit — before spawning onto any file set, confirm the
+previous owner has RETURNED, not merely gone quiet.
+
+One thing worth copying: the duplicate agent stopped, reported the collision, and read the tree
+instead of writing. Its reading caught two real defects in the revision brief (a column width one
+character too narrow, and a fix aimed at a function three other call sites depended on). A worker
+that refuses to race and reports why is doing its job.
+
 ## A Connection-Error Notice Is Not Proof of Death (2026-08-29)
 
 **What happened:** a subagent's idle notification arrived carrying
@@ -374,3 +397,25 @@ the only reason attribution does not reach every commit.
 - Opus stays the default main-session tier for standard stages; the operator overrides per stage.
 
 **Fix:** report sections 4.2, 4.6 and 4.7 rewritten to these decisions before the plan was authored.
+
+## `loom subagents watch` Is Stage-Only, and Says So With Exit 0 (2026-09-21)
+
+**What happened:** a main session working a plain interactive request (not a loom stage) spawned one
+subagent and armed the mandated wait: `loom subagents watch --worker claude:<agent-id> --timeout
+3600` in the background. It returned immediately, printing `unknown: LOOM_STAGE_ID is required` and
+**exiting 0**. Nothing was being watched.
+
+**Why:** the owned-waits lease is keyed on a stage; outside `loom run` there is no
+`LOOM_STAGE_ID` in the environment, so the command refuses before binding any worker. The refusal
+is reported on stderr with a success exit code, which is exactly the Rule 13 shape — an
+orchestrator that checked only the exit code would have believed its worker was settled and gone on
+to verify and commit an empty tree.
+
+**Prevention:** Rule 6's "one background `loom subagents watch`" applies **inside a stage**.
+Outside one, the harness's own task notification is the wait channel: spawn, then stop and wait to
+be re-invoked. Do not substitute a poll loop over `git status`, `loom subagents list` or the
+filesystem. And read the watch's stdout even when it exits 0 — a zero here means "the command
+declined", not "the workers finished".
+
+(An entry that stood here, "An Idle Report Is Not Completion", was a near-duplicate of the
+2026-08-27 section above and has been folded into it as a recurrence. See that section.)

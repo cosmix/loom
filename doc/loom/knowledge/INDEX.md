@@ -113,11 +113,11 @@
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How the knowledge base goes stale: frozen plan notes, drift | 192 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants belong in the fs constructor, not the CLI handler | 139 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why distillation cannot write knowledge directly | 100 |
-| [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Ledger TUI wide-glyph padding, fan-out duplication, panics | 63 |
+| [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Ledger TUI wide-glyph padding, fan-out duplication, panics | 83 |
 | [live-state-pollution](mistakes/live-state-pollution.md) | A stage test run rewrote live .loom/work state | 33 |
 | [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay tickets leaked when their line missed the hook | 34 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | A cleanup-boundary bug and its fix | 171 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races: diagnostic question, cases, fix | 150 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races: diagnostic question, cases, fix | 160 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merge machinery lessons: merged=true without verifying | 171 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match trap and wiring-check pinning | 291 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions and edge cases | 53 |
@@ -134,8 +134,8 @@
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Stages flipped to waiting-for-input with no AskUserQuestion | 35 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Frame-overflow eviction, read-timeout desync in status | 74 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | A store written but never read | 94 |
-| [subagent-briefing](mistakes/subagent-briefing.md) | Writing briefs, sizing waves, verifying delegations, file ownership | 229 |
-| [subagent-orchestration](mistakes/subagent-orchestration.md) | Liveness signals, fable-session lessons, watch traps | 376 |
+| [subagent-briefing](mistakes/subagent-briefing.md) | Writing briefs, sizing waves, verifying delegations, file ownership | 265 |
+| [subagent-orchestration](mistakes/subagent-orchestration.md) | Liveness signals, fable-session lessons, watch traps | 421 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: inherited fds, ETXTBSY, serial env, stdin hangs | 208 |
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline: --all-targets, --no-fail-fast | 307 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass whether or not the bug they cover is present | 264 |

@@ -227,3 +227,39 @@ more work, so it was live again.
 ITS LATEST assignment and diff the file sets. **Asking a finished agent for one more thing
 makes it live again and re-arms the conflict.** Detection used: grep the specific wiring
 line the earlier agent added, both before AND after the later agent finishes.
+
+## Three of Four Review Findings Were Specification Gaps, Not Implementation Errors (2026-09-21)
+
+**What happened:** an adversarial review of a finished TUI feature returned four defects. Only one
+was the implementer departing from its brief. The other three traced back to the brief itself:
+
+- The brief said the inspector strip must drop segments "from the right" and "never drop the
+  `s → path` segment" — two rules that contradict each other, because that segment IS the
+  rightmost. The implementer built it last from leftover width, making it the only droppable one.
+- The brief said to dim a row that is "`Unbacked` under Project scope". Two distinct states make a
+  row untouchable (`Unbacked`, and `NoWorkspace`); naming one variant produced a screen that dims
+  for one reason and not the other.
+- The brief specified a quit guard as "press q again" without saying which keys count as the
+  confirming second press. `q` and `Esc` were already aliased at the dispatch site, so `Esc` —
+  which cancels an edit three lines away in the same file — became a confirm.
+
+**Why:** each gap has the same shape. A rule was written as prose about the COMMON case and left
+the boundary unstated: which element is exempt when the exemption is positional, which states the
+predicate covers when more than one qualifies, which inputs a two-step confirmation accepts. An
+implementer resolves an unstated boundary the cheapest way, and the cheapest way is usually the
+literal reading.
+
+**Prevention:** when a brief states a rule with an exception, an ordering, or a confirmation step,
+write the boundary as well as the rule:
+
+1. **An exemption that is positional contradicts an ordering.** "Drop from the right, but never drop
+   X" needs to say X is reserved FIRST and the others laid out in what remains.
+2. **Name the predicate, not one variant.** "Dim a row the active scope cannot touch, derived from
+   whether it has a value here" survives a third variant; "dim `Unbacked`" does not.
+3. **A confirmation step names its accepted keys and its cancel key.** Otherwise whatever alias
+   already exists at the dispatch site inherits the meaning.
+
+Also worth keeping: the defect the review ranked worst existed BECAUSE its test could not fail for
+it — the quit-guard test only ever pressed genuine non-quit keys as the second key. A brief that
+adds a guard should require the test to be shown failing against the old behaviour, which is the
+only thing that proves it reaches the path. See [[tests-that-cannot-fail]].

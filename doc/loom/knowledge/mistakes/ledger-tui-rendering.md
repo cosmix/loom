@@ -61,3 +61,23 @@ for the whole of that work, and an `Option` fallback chain rescues nothing when 
 attempt (`now - attempt_started_at`, falling back to `started_at`) on top of the banked total, for
 `Executing` stages only, and `build_stage_summary` calls it, so every status surface fed by
 `collect_status_data` ticks.
+
+## ratatui 0.30: `Wrap { trim: true }` Strips Leading Whitespace From EVERY Line (2026-09-21)
+
+**What happened:** the config editor's inspector panel was specified as one `Paragraph` with
+`Wrap { trim: true }`, rendering help text followed by three indented tier lines whose leading
+`▸` / `  ` marks which tier is active. The indents would have been silently eaten, collapsing
+the marker column and making the active tier unidentifiable.
+
+**Why:** `trim: true` is not "trim wrapped continuations" — it strips leading whitespace from every
+line it emits, the crate's own doc example included. Any layout that carries meaning in a leading
+space cannot share a `Paragraph` with wrapping turned on.
+
+**Prevention:** wrap ONLY prose. Lines whose indentation is semantic — tier markers, tree glyphs,
+aligned label columns — go in their own unwrapped area. In the config inspector the block's inner
+area splits `[Min(0), Length(4), Length(2)]`: wrapped summary, then the unwrapped tier lines, then
+the write-target line.
+
+**Also in 0.30:** `Paragraph::line_count` is private (it was public in 0.29), so nothing public
+reports how tall a wrapped paragraph came out. A layout that needs to know must reserve fixed rows
+rather than measure after the fact.
