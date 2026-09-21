@@ -5,17 +5,12 @@ All notable changes to loom are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
-
 ## [0.8.x] - 2026-09-19
-
-Entries marked *(unreleased)* postdate the latest 0.8.x tag.
 
 ### Added
 
-- **Custom Claude and Codex asset roots** *(unreleased)* — set `LOOM_CLAUDECODE_INSTALL_DIR` or `LOOM_CODEX_INSTALL_DIR` to relocate either install tree for the source installer, `loom install-assets`, and asset refreshes after `loom update`; explicit `--claude-dir` and `--codex-dir` flags still take precedence.
-- **A two-scope interactive config editor** *(unreleased)* — bare `loom config` now edits both `~/.loom/config.toml` and the current repository's `.loom/work/config.toml`, shows which tier supplies the effective value, stages changes independently per scope, and preserves failed writes for retry.
-- **Cumulative changelog command** — the installed `/changelog <next-version>` command audits every commit since the previous release tag for substantial user-facing changes and updates the cumulative minor-series section; release extraction accepts headings such as `0.8.x` when packaging a patch release.
+- **Custom Claude and Codex asset roots** — set `LOOM_CLAUDECODE_INSTALL_DIR` or `LOOM_CODEX_INSTALL_DIR` to relocate either install tree for the source installer, `loom install-assets`, and asset refreshes after `loom update`; explicit `--claude-dir` and `--codex-dir` flags still take precedence.
+- **A two-scope interactive config editor** — bare `loom config` now edits both `~/.loom/config.toml` and the current repository's `.loom/work/config.toml`, shows which tier supplies the effective value, stages changes independently per scope, and preserves failed writes for retry.
 - **State confinement and the session relay** — every session kind now launches from its own settings capsule that denies writes to `.loom/`, `.claude/`, `.worktrees/`, the hooks directories, git hooks and config; a sandboxed agent's `loom memory`, `loom stage block`, `loom stage dispute-criteria`, `loom handoff`, `loom stage merge --resolved`, `loom worktree remove` and telemetry calls write a ticket that a `PostToolUse` relay hook hands to the daemon, which applies each request at most once through a per-session ledger. `loom request status <id>` reports where a relayed request stands, and the daemon refuses to merge or hand to a resolver any branch whose diff touches `.claude/`, `.mcp.json`, `.loom/` or the in-repo hooks directory, moving the stage to `NeedsHumanReview` naming the paths.
 - **Provider-aware usage reporting** — `loom usage` normalizes Claude transcripts, Codex rollouts and execution receipts into one versioned provider ledger that never sums the two providers, selected with `--provider claude|codex|all` and bounded with `--since`/`--until`; `--claude-root`, `--codex-root`, `--receipts-root` and `--forward-receipts-root` read explicit telemetry roots without falling back, and successful rate-limit polls now append a bounded 30-day quota history the report reads offline.
 - **Offline policy comparison** — `loom usage --compare <artifact.json>` evaluates baseline/candidate run pairs before any transcript discovery, reporting separate token-proxy and subscription verdicts, rejecting any quality or latency regression rather than averaging it away, and exiting 0 supported, 1 rejected, 2 inconclusive.
@@ -38,7 +33,7 @@ Entries marked *(unreleased)* postdate the latest 0.8.x tag.
 
 ### Changed
 
-- **Project settings suppress generated attribution** *(unreleased)* — Loom's project settings now add empty commit and pull-request attribution values, while preserving any explicit repository attribution block.
+- **Project settings suppress generated attribution** — Loom's project settings now add empty commit and pull-request attribution values, while preserving any explicit repository attribution block.
 - **Unconfined runs and spawns are refused** — `loom init` and `loom run` reject a plan that disables the sandbox, allows unsandboxed escape or requests bypass permissions, and `loom run` additionally refuses drifted hooks, a `LOOM_BIN` or hooks directory under a writable root, and loom hooks registered inside the repository; every spawn repeats the host checks and a refusal blocks the stage as a sandbox setup failure. Loom no longer writes the operator's `.claude/settings.local.json`, recording approvals in its own state instead, and the no-op `--allow-unsafe-plan` flag on `loom init` is removed.
 - **Pre-commit refuses partial staging** — a path with both staged and unstaged hunks is now named and rejected before any formatter runs, rather than silently committed with its full working-tree content.
 - **Stage-type model and effort defaults** — `standard` now runs at `high` effort and `knowledge` at `medium` rather than `xhigh`, and `knowledge-distill` runs on `sonnet` at `high` rather than `opus`; `integration-verify` stays `opus`/`xhigh`. Every one of these is overridable through `[models]`.
