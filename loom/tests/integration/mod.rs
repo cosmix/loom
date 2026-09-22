@@ -23,6 +23,8 @@ pub mod hooks_spawn_guard;
 pub mod hooks_subagent_verify_guard;
 pub mod implementer_defaults;
 pub mod install_assets;
+pub mod knowledge_bootstrap;
+pub mod knowledge_bootstrap_support;
 pub mod merge_conflict_recovery;
 pub mod plan_verify;
 pub mod relay_e2e;
