@@ -1,5 +1,6 @@
-//! Child-process construction, lifecycle management (foreground Claude,
-//! background Codex) and exit-code classification for the pressure pipeline.
+//! Argv construction and codex background lifecycle for the pressure
+//! pipeline. The foreground Claude driver itself lives in
+//! `crate::claude::session`, shared with `loom knowledge bootstrap`.
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -9,37 +10,10 @@ use std::process::{Child, Command, ExitStatus, Stdio};
 use std::thread;
 use std::time::Duration;
 
-use super::paths::{delete_file, ensure_marker_dir};
+use crate::claude::{classify_exit, ClaudeOutcome, ExitAction};
 
-/// What to do after a child process exits.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum ExitAction {
-    /// Exit 0 — proceed to the next step.
-    Continue,
-    /// User interrupt (130/2) or signal-killed child (no code) — abort cleanly.
-    Abort,
-    /// Other non-zero — warn and continue.
-    Warn,
-}
+pub(super) use crate::claude::AGENT_TEAMS_ENV;
 
-/// Outcome of a foreground Claude step.
-#[derive(Debug)]
-pub(super) enum ClaudeOutcome {
-    /// The agent signalled completion (the marker appeared) and the driver
-    /// terminated the idle session. Always treated as success.
-    Completed,
-    /// The process exited on its own — the user exited manually (typically
-    /// code 0) or Claude crashed/was interrupted. Classified via [`ExitAction`].
-    Exited(ExitStatus),
-}
-
-/// Environment variable enabling Claude Code's agent-teams feature.
-pub(super) const AGENT_TEAMS_ENV: &str = "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS";
-
-/// How often to poll for the completion marker / child exit.
-pub(super) const POLL_INTERVAL_MS: u64 = 300;
-/// Grace period after SIGTERM before escalating to SIGKILL.
-pub(super) const TERM_GRACE_MS: u64 = 4000;
 /// Bytes of the codex log tailed to the terminal when codex fails.
 pub(super) const TAIL_BYTES: usize = 2000;
 
@@ -97,28 +71,6 @@ pub(super) fn codex_args(repo_root: &Path, skill: &str, model: &str, effort: &st
     ]
 }
 
-/// Classify a finished child process for pipeline control.
-pub(super) fn classify_exit(status: ExitStatus) -> ExitAction {
-    classify_code(status.code())
-}
-
-/// Pure classification of a child exit code (`None` = killed by a signal).
-pub(super) fn classify_code(code: Option<i32>) -> ExitAction {
-    match code {
-        Some(0) => ExitAction::Continue,
-        // Ctrl+C (130/2) or signal-killed (no code) → abort the whole pipeline.
-        None | Some(130) | Some(2) => ExitAction::Abort,
-        Some(_) => ExitAction::Warn,
-    }
-}
-
-/// Send SIGTERM to a process, ignoring "already gone".
-pub(super) fn send_sigterm(pid: u32) {
-    use nix::sys::signal::{kill, Signal};
-    use nix::unistd::Pid;
-    let _ = kill(Pid::from_raw(pid as i32), Signal::SIGTERM);
-}
-
 /// Print the last `max_bytes` of a log file to stderr (for surfacing failures).
 pub(super) fn print_log_tail(log_path: &Path, max_bytes: usize) {
     if let Ok(bytes) = std::fs::read(log_path) {
@@ -140,59 +92,8 @@ pub(super) fn run_claude_foreground(
     model: &str,
     effort: &str,
 ) -> Result<ClaudeOutcome> {
-    // Clear any stale marker from a previous step before spawning. The parent
-    // dir (`.loom/work/pressure/`) may not exist yet in a repo without `loom init`;
-    // this driver runs unsandboxed, so it can create it.
-    ensure_marker_dir(marker)?;
-    delete_file(marker)?;
-
-    let mut cmd = Command::new(claude_path);
-    cmd.args(claude_args(slash, marker, model, effort));
-    cmd.env(AGENT_TEAMS_ENV, "1");
-    cmd.current_dir(repo_root);
-    cmd.stdin(Stdio::inherit());
-    cmd.stdout(Stdio::inherit());
-    cmd.stderr(Stdio::inherit());
-    let mut child = cmd.spawn().context("failed to spawn claude")?;
-
-    let outcome = loop {
-        // The agent exited on its own (manual exit, crash, or Ctrl-C).
-        if let Some(status) = child.try_wait().context("failed to poll claude")? {
-            break ClaudeOutcome::Exited(status);
-        }
-        // The agent signalled completion → terminate the idle session.
-        if marker.exists() {
-            terminate_idle_session(&mut child)?;
-            break ClaudeOutcome::Completed;
-        }
-        thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
-    };
-
-    delete_file(marker)?;
-    Ok(outcome)
-}
-
-/// Terminate an idle child: SIGTERM, then poll for up to [`TERM_GRACE_MS`] for
-/// it to exit on its own, falling back to SIGKILL — mirroring how the loom
-/// daemon terminates a session whose stage has completed. Split out of
-/// [`run_claude_foreground`] purely to keep that function under the
-/// maintainability line limit.
-fn terminate_idle_session(child: &mut Child) -> Result<()> {
-    send_sigterm(child.id());
-    let grace_polls = TERM_GRACE_MS / POLL_INTERVAL_MS;
-    let mut reaped = false;
-    for _ in 0..grace_polls {
-        thread::sleep(Duration::from_millis(POLL_INTERVAL_MS));
-        if child.try_wait().context("failed to poll claude")?.is_some() {
-            reaped = true;
-            break;
-        }
-    }
-    if !reaped {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-    Ok(())
+    let args = claude_args(slash, marker, model, effort);
+    crate::claude::run_foreground(claude_path, repo_root, &args, marker)
 }
 
 /// Spawn `codex exec` in the background with its (noisy) output captured to

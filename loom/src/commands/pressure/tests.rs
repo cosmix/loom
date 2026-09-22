@@ -132,25 +132,6 @@ fn test_claude_marker_path_is_inside_repo_not_temp_dir() {
     assert_eq!(marker.extension().unwrap(), "done");
 }
 
-#[test]
-fn test_ensure_marker_dir_creates_parent_and_is_idempotent() {
-    let temp = TempDir::new().unwrap();
-    let root = canonical(&temp);
-    let marker = root
-        .join(".loom")
-        .join("work")
-        .join("pressure")
-        .join("claude-1.done");
-    assert!(!marker.parent().unwrap().exists());
-
-    ensure_marker_dir(&marker).unwrap();
-    assert!(marker.parent().unwrap().is_dir());
-
-    // Idempotent: calling again on an already-existing dir is still Ok.
-    ensure_marker_dir(&marker).unwrap();
-    assert!(marker.parent().unwrap().is_dir());
-}
-
 fn default_models() -> PressureModels {
     PressureModels::resolve(
         crate::cli::types_pressure::PressureModelFlags::default(),
@@ -269,14 +250,4 @@ fn test_codex_args_shape() {
     assert!(args.contains(&"gpt-5.6-sol".to_string()));
     assert!(args.contains(&"model_reasoning_effort=high".to_string()));
     assert_eq!(args.last().unwrap(), "$pressure doc/plans/PLAN-foo.md");
-}
-
-#[test]
-fn test_classify_code_all_arms() {
-    assert_eq!(classify_code(Some(0)), ExitAction::Continue);
-    assert_eq!(classify_code(Some(130)), ExitAction::Abort);
-    assert_eq!(classify_code(Some(2)), ExitAction::Abort);
-    assert_eq!(classify_code(None), ExitAction::Abort); // signal-killed
-    assert_eq!(classify_code(Some(1)), ExitAction::Warn);
-    assert_eq!(classify_code(Some(42)), ExitAction::Warn);
 }

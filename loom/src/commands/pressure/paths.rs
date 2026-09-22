@@ -127,22 +127,3 @@ pub(super) fn claude_marker_path(repo_root: &Path) -> PathBuf {
         .join("pressure")
         .join(format!("claude-{}.done", std::process::id()))
 }
-
-/// Ensure the marker's parent directory exists so the agent's `touch` cannot
-/// fail on a missing directory.
-pub(super) fn ensure_marker_dir(marker: &Path) -> Result<()> {
-    match marker.parent() {
-        Some(parent) => std::fs::create_dir_all(parent)
-            .with_context(|| format!("failed to create marker dir {}", parent.display())),
-        None => Ok(()),
-    }
-}
-
-/// Delete a file, treating "not found" as success.
-pub(super) fn delete_file(path: &Path) -> Result<()> {
-    match std::fs::remove_file(path) {
-        Ok(()) => Ok(()),
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
-        Err(e) => Err(e).with_context(|| format!("failed to delete {}", path.display())),
-    }
-}
