@@ -937,6 +937,17 @@ Knowledge directories created before the hierarchy existed stay **flat** and kee
 
 Knowledge writes are protected by the sandbox defaults: agents update knowledge through `loom knowledge ...`, never by editing the files directly.
 
+### Bootstrapping a repo not managed by loom
+
+`loom knowledge bootstrap [--structural-only] [--refresh] [--dry-run] [--model M] [--effort E]` builds `doc/loom/knowledge/` from scratch for a repository that has no loom plans — retrieval needs the directory to exist before `sync`/`context` can do anything. It runs a deterministic host phase (scaffold the tree, rebuild the catalog and source graph, partition the repo into directory clusters with content digests) followed by an interactive foreground Claude session that writes knowledge only through `loom knowledge ...`, then a host finalization that refreshes the index and writes a receipt.
+
+- `--structural-only` stops after the deterministic phase — no model session is launched.
+- `--refresh` narrows the work to clusters whose digest changed since the last receipt, any removed cluster, and any tier-1 file still at its template content; with nothing changed it prints `knowledge is current` and spawns nothing.
+- `--dry-run` prints the work plan and the exact `claude` command it would run, without spawning anything.
+- `--model`/`--effort` pick the model and effort for the semantic session, same values as elsewhere in loom.
+
+The command refuses to run inside a stage session — stages write knowledge through `loom knowledge update` instead. The committed receipt `doc/loom/knowledge/.bootstrap-receipt.json` records one digest per cluster; commit it alongside the generated knowledge files so `--refresh` reports current across clones, not just locally.
+
 ## Model Allocation
 
 Every stage's main agent is an **orchestrator**; the model and effort it runs come from its stage type's default, which the operator can override:
