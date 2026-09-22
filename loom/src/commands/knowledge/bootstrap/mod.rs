@@ -20,6 +20,7 @@ mod tests_clusters;
 #[path = "tests_receipt.rs"]
 mod tests_receipt;
 
+use std::borrow::Cow;
 use std::fs::{File, OpenOptions};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
@@ -127,11 +128,10 @@ fn plan_and_run(
     launch(session, &clusters, args, &prompt::render_brief(&summary))
 }
 
-/// Refuse to run inside a stage session. Same test as
-/// `commands::hook::target::non_empty_env`, which is private to `hook`.
+/// Refuse to run inside a stage session, via the same check
+/// `commands::hook::target::non_empty_env` uses.
 fn guard_not_in_stage() -> Result<()> {
-    let in_stage = std::env::var("LOOM_STAGE_ID").is_ok_and(|value| !value.trim().is_empty());
-    if in_stage {
+    if crate::commands::hook::target::non_empty_env("LOOM_STAGE_ID").is_some() {
         bail!(STAGE_REFUSAL);
     }
     Ok(())
@@ -155,9 +155,19 @@ fn resolve_repo_root() -> Result<PathBuf> {
 /// Write `.loom/.gitignore` (`*`) when nothing under `.loom/` is tracked, the
 /// file does not exist, and the repository does not already ignore both
 /// `.loom/cache` and `.loom/work`. Never touches the repository's own
-/// `.gitignore`.
+/// `.gitignore`. Refuses outright when `.loom` itself is a symlink, since
+/// every write this command makes under `.loom/` (this file, the run lock,
+/// the brief) would otherwise go through it.
 fn ensure_loom_ignored(repo_root: &Path) -> Result<()> {
-    let ignore_file = repo_root.join(".loom").join(".gitignore");
+    let loom_dir = repo_root.join(".loom");
+    if std::fs::symlink_metadata(&loom_dir).is_ok_and(|meta| meta.file_type().is_symlink()) {
+        bail!(
+            "refusing to run: {} is a symlink; loom keeps its local state there and will not \
+             write through it",
+            loom_dir.display()
+        );
+    }
+    let ignore_file = loom_dir.join(".gitignore");
     let tracked = run_git_checked(&["ls-files", "-z", ".loom"], repo_root)?;
     // symlink_metadata: a dangling symlink counts as present, never written through.
     if !tracked.is_empty() || std::fs::symlink_metadata(&ignore_file).is_ok() {
@@ -167,7 +177,7 @@ fn ensure_loom_ignored(repo_root: &Path) -> Result<()> {
     if ignored(".loom/cache") && ignored(".loom/work") {
         return Ok(());
     }
-    std::fs::create_dir_all(repo_root.join(".loom")).context("failed to create .loom/")?;
+    std::fs::create_dir_all(&loom_dir).context("failed to create .loom/")?;
     std::fs::write(&ignore_file, "*\n")
         .with_context(|| format!("failed to write {}", ignore_file.display()))?;
     println!("wrote .loom/.gitignore so loom's cache and scratch files stay out of git");
@@ -278,11 +288,11 @@ fn launch(
     std::fs::write(&brief, brief_text)
         .with_context(|| format!("failed to write brief {}", brief.display()))?;
 
-    let (model, effort) = resolve_model_effort(args);
+    let (model, effort) = resolve_model_effort(args, &UserConfig::load());
     let argv = prompt::claude_args(&brief, &marker, &model, &effort);
     if args.dry_run {
         println!("brief: {}", brief.display());
-        println!("{AGENT_TEAMS_ENV}=1 claude {}", argv.join(" "));
+        println!("{AGENT_TEAMS_ENV}=1 claude {}", shell_quote_argv(&argv));
         return Ok(());
     }
 
@@ -293,9 +303,19 @@ fn launch(
     conclude(outcome, session, clusters, &model, &effort)
 }
 
-/// The `--model`/`--effort` flags, else the knowledge stage defaults.
-fn resolve_model_effort(args: &BootstrapArgs) -> (String, String) {
-    let user = UserConfig::load();
+/// `argv` shell-quoted and space-joined, so the multi-line
+/// `--append-system-prompt` value and the positional prompt can be pasted
+/// into a shell as one command.
+fn shell_quote_argv(argv: &[String]) -> String {
+    argv.iter()
+        .map(|arg| shell_escape::escape(Cow::from(arg.as_str())))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
+/// The `--model`/`--effort` flags, else the knowledge stage defaults from
+/// `user`.
+fn resolve_model_effort(args: &BootstrapArgs, user: &UserConfig) -> (String, String) {
     let model = args
         .model
         .clone()
@@ -313,6 +333,8 @@ fn spawn_session(repo_root: &Path, argv: &[String], marker: &Path) -> Result<Cla
     crate::claude::run_foreground(&claude_path, repo_root, argv, marker)
 }
 
+/// Best-effort: the brief is scratch under the gitignored
+/// `.loom/work/bootstrap/`, and a leftover never affects `--refresh`.
 fn remove_brief(brief: &Path) {
     if let Err(error) = remove_if_exists(brief) {
         eprintln!("warning: {error:#}");

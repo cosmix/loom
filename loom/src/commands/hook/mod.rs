@@ -11,6 +11,6 @@ pub mod project_types;
 pub mod read_receipt;
 pub mod reconcile_graph;
 pub mod relay;
-mod target;
+pub(crate) mod target;
 pub mod user_prompt;
 pub mod worker_brief;
