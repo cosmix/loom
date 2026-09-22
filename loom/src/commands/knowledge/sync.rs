@@ -70,7 +70,7 @@ pub fn sync(structural_only: bool, json: bool) -> Result<()> {
 /// path leaves a flat dir flat. It does NOT describe everything [`sync`]'s
 /// call site does on the `false` (already-hierarchical) branch — see
 /// [`refresh_index_best_effort`], which [`sync`] calls right after this one.
-fn upgrade_flat_layout(knowledge_root: &Path) -> Result<bool> {
+pub(super) fn upgrade_flat_layout(knowledge_root: &Path) -> Result<bool> {
     let knowledge = KnowledgeDir::from_root(knowledge_root);
     if knowledge.layout() == KnowledgeLayout::Hierarchical {
         return Ok(false);
@@ -98,7 +98,7 @@ fn upgrade_flat_layout(knowledge_root: &Path) -> Result<bool> {
 /// forever rather than erroring. `sync` never wraps this call in a lock of its
 /// own, so this is safe as written; a future caller must keep it that way
 /// (see `doc/loom/knowledge/mistakes/knowledge-cli-invariants.md`).
-fn refresh_index_best_effort(knowledge_root: &Path) {
+pub(super) fn refresh_index_best_effort(knowledge_root: &Path) {
     let knowledge = KnowledgeDir::from_root(knowledge_root);
     if let Err(error) = knowledge.write_index() {
         eprintln!("warning: failed to refresh {INDEX_FILENAME}: {error:#}");
@@ -189,7 +189,7 @@ fn semantic_json(semantic: &SemanticOutcome) -> serde_json::Value {
     })
 }
 
-fn print_human(outcome: &RefreshOutcome, upgraded: bool) {
+pub(super) fn print_human(outcome: &RefreshOutcome, upgraded: bool) {
     if upgraded {
         println!(
             "{} Upgraded the knowledge directory to the hierarchical layout (created {INDEX_FILENAME})",

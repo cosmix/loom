@@ -124,6 +124,11 @@ pub enum KnowledgeCommands {
         json: bool,
     },
 
+    /// Build the knowledge base for this repository: scaffold, index the source graph,
+    /// plan exploration by directory cluster, then run an interactive Claude session
+    /// that writes knowledge through the loom knowledge CLI
+    Bootstrap(BootstrapArgs),
+
     /// Report knowledge-base diagnostics (read-only; never opens the context store)
     Check {
         /// Exit non-zero when any non-review issue is reported
@@ -170,6 +175,26 @@ pub struct AnnotateArgs {
     /// One-line index blurb (at most 80 characters)
     #[arg(long)]
     pub blurb: Option<String>,
+}
+
+/// Flags for `loom knowledge bootstrap`.
+#[derive(Args, Debug)]
+pub struct BootstrapArgs {
+    /// Run no model: build the indexes and print coverage and the exploration plan
+    #[arg(long, conflicts_with_all = ["dry_run", "model", "effort"])]
+    pub structural_only: bool,
+    /// Explore only clusters changed since the committed receipt, plus template-only tier-1 files
+    #[arg(long)]
+    pub refresh: bool,
+    /// Print the plan, write the brief, and print the exact claude command without running it
+    #[arg(long)]
+    pub dry_run: bool,
+    /// Claude model for the session (default: the knowledge stage model from config)
+    #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(crate::claude::CLAUDE_MODELS))]
+    pub model: Option<String>,
+    /// Claude reasoning effort for the session (default: the knowledge stage effort from config)
+    #[arg(long, value_parser = clap::builder::PossibleValuesParser::new(crate::models::stage::ALLOWED_REASONING_EFFORTS))]
+    pub effort: Option<String>,
 }
 
 #[derive(Subcommand)]
