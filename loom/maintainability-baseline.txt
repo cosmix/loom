@@ -14,7 +14,6 @@ file src/commands/stage/complete.rs 759
 file src/commands/stage/merge.rs 537
 file src/commands/stage/tests/complete.rs 534
 file src/daemon/server/dispute.rs 510
-file src/fs/locking.rs 499
 file src/fs/permissions/hooks.rs 446
 file src/fs/permissions/settings.rs 422
 file src/fs/safe_fs.rs 1019
