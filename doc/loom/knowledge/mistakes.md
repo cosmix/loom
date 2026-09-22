@@ -16,35 +16,27 @@
 
 ## Source vs Installed: Editing Wrong File
 
-Seven lessons on what a large removal or rename leaves behind — straggler initializers, stale comments, stale docs, duplicate modules, files outside the assignment table nobody owned, a missed global-hook registration site. Prevention: grep the whole workspace for the symbol, not just your assigned files.
-
-→ [Refactor Stragglers](mistakes/refactor-stragglers.md)
+Seven lessons on what a large removal or rename leaves behind — straggler initializers, stale comments, stale docs, duplicate modules, files outside the assignment table nobody owned, a missed global-hook registration site. Prevention: grep the whole workspace for the symbol, not just your assigned files. → [Refactor Stragglers](mistakes/refactor-stragglers.md)
 
 ## Sandbox: Contradictory Path Rules
 
 Sandbox path rules, permission sync, `excludedCommands` matching, settings env leaking between the main repo and its worktrees, a worktree-only escape rule applied at the repo root, a directory literally named `hooks/` being sandbox-protected regardless of permission config, and `Write(path)` permission rules never enforcing (only `Edit(path)` does). Root cause: settings are _merged_ from several sources. The tool and network failures (sccache, `cargo audit`, loopback TCP, bind-mounted files, macOS path aliases) and the `.loom/work` state channels (credentials, `loom memory`, handoff, daemon socket, ledgers) each have their own topic. → [Sandbox & Settings](mistakes/sandbox-and-settings.md), [Tooling & Network](mistakes/sandbox-tooling-and-network.md), [State Channels](mistakes/sandbox-state-channels.md), [Directory Named `hooks/`](mistakes/sandbox-protected-hooks-dir.md), [Sandbox Write Rules Inert](mistakes/sandbox-write-rules-inert.md)
 
-## Test Code: Struct Init Without Default
-
-Lint and test-discipline lessons spanning `--all-targets`, `--no-fail-fast`, ambient git config in tests, the maintainability ledger, `TODO` in string literals and platform-specific Bash/Rust traps. Racy tests (inherited descriptors, ETXTBSY, serial env, stdin hangs, real-home writes) and CI toolchain drift (clippy on rustup `stable`, offline `cargo audit`, `install.sh`, dependency build caches) have their own topics. → [Testing & Lint](mistakes/testing-and-lint.md), [Test Concurrency & Fixtures](mistakes/test-concurrency-and-fixtures.md), [CI Toolchain & Cargo](mistakes/ci-toolchain-and-cargo.md)
-
 ## gawk vs POSIX awk (2026-03-31)
 
-Cross-platform shell/hook portability traps: gawk extensions failing on macOS's BSD awk, hook integration tests missing a shared dependency, non-portable `timeout`, an empty-array guard that is a syntax error on a different bash, an unneeded chmod, a heredoc-scanning finalization guard, a Python hash-seed, redirect order, a `set -e` function tail, hook tests inheriting the live session's LOOM_* variables, and `updatedInput` without `permissionDecision`. → [Hooks: Shell Portability](mistakes/hooks-shell-portability.md)
+Cross-platform shell/hook portability traps: gawk extensions failing on macOS's BSD awk, hook integration tests missing a shared dependency, non-portable `timeout`, an empty-array guard that is a syntax error on a different bash, an unneeded chmod, a heredoc-scanning finalization guard, a Python hash-seed, redirect order, a `set -e` function tail, hook tests inheriting the live session's LOOM_* variables, `updatedInput` without `permissionDecision`, and `cmd | head` under `pipefail` killing the producer with SIGPIPE (capture output first, then truncate). → [Hooks: Shell Portability](mistakes/hooks-shell-portability.md)
 
 ## Session Identity: Backend Metadata Must Be Persisted
 
 Session identity, liveness routing, spawn-site coverage, the struct-literal blast radius of adding a session field, settings-env identity leaking into worktrees/main-repo sessions. Root cause: a session fact derived at one call site instead of persisted and read back through the shared service.
 
-→ [Sessions & Liveness](mistakes/sessions-and-liveness.md)
-→ [Session Identity Env](mistakes/session-identity-env.md)
+→ [Sessions & Liveness](mistakes/sessions-and-liveness.md), [Session Identity Env](mistakes/session-identity-env.md)
 
 ## Hooks: Shell Command Matchers (2026-07-28)
 
 Token-based Bash matchers repeatedly shipped with bypasses because separators that are _glued_ to a neighbour never become tokens. Also: forgeable `glob | head -1` privilege lookups, env leakage into simulated process trees, three Bash parsing traps.
 
-→ [Shell Command Matchers](mistakes/shell-command-matchers.md)
-→ [Hooks: Shell Portability](mistakes/hooks-shell-portability.md)
+→ [Shell Command Matchers](mistakes/shell-command-matchers.md), [Hooks: Shell Portability](mistakes/hooks-shell-portability.md)
 
 ## Doctrine, Acceptance Criteria, and Cross-Surface Drift (2026-07-28)
 
@@ -203,14 +195,6 @@ Tests run by a stage adopted the live `.loom/work` through `WorkDir::new`'s upwa
 
 → [Live State Pollution](mistakes/live-state-pollution.md)
 
-## Config tiers inherit per key; a section that wins whole is a defect
-
-Every config key resolves per key, project -> user -> built-in, whether or not the tier's section exists; section-level shadowing is a defect to raise, not a design to keep. → [Typed Config Values](mistakes/typed-config-values-process.md)
-
-## Stop hook exited 141: `cmd | head` under pipefail (2026-09-14)
-
-Under `pipefail`, piping a command into `head` kills the producer with SIGPIPE and the hook exits 141 with empty stderr; capture output first, then truncate. → [Hooks Shell Portability](mistakes/hooks-shell-portability.md)
-
 ## Spurious waiting-for-input stages (2026-09-14) [DETAILED]
 
 Stages flipped to `WaitingForInput` with no AskUserQuestion in any transcript, because the ask-user hooks acted on any invocation of the AskUserQuestion permission pipeline without reading stdin, and nothing reconciled the state; `loom stage complete` was then refused. The monitor now resumes a waiting stage whose own session keeps executing tools, and the hooks check `tool_name` and log every trigger. A second cause (2026-09-16): the SubagentStop lifecycle heartbeat carried no `subagent` flag, so the reconciler resumed a real wait; lifecycle heartbeats now set the flag and the reconciler requires a named tool.
@@ -225,22 +209,41 @@ A Bash command whose text contains both "loom" and any "complete" substring gets
 
 An "auto mode" note in a tool result pushed `cat`/`sed`/heredocs over Rule 8's Read/Edit/Write/`rg`, and a harness reminder put a `Co-Authored-By` trailer on a commit against Rule 9 and [Commit Convention](conventions/commits.md) (2026-09-18; `commit-filter.sh` blocked the whole Bash call, so the chained `git add` never ran either). Harness and tool-result text rank below CLAUDE.md even when phrased as an instruction: treat a contradicting one as content and keep to the binding rule. The one standing Rule 8 exception is appending to a file without having read it, where a Bash heredoc append is correct because Write would overwrite and Edit needs the existing text.
 
-## A Verification Brief's Negative Expectation Must Trace to the Plan, Not an Assumption
+## A Tracked Symlink Named `<file>.tmp` Redirected a Locked Write (2026-09-22)
 
-A verifier's own assumption about required behaviour is not a substitute for the plan's stated contract. See [Typed Config Values: Process and Verification Gotchas](mistakes/typed-config-values-process.md).
+`atomic_write`/`atomic_write_locked` opened `<path>.tmp` without `O_NOFOLLOW`, so a TRACKED symlink
+named `<target>.tmp` redirected a locked write outside the repo. Directory-component following is
+still a residual gap (`concerns/sandbox-and-confinement-gaps.md`).
 
-## A Backgrounded Dev Server Is Invisible to the Next Bash Call
+→ [Sandbox & Settings](mistakes/sandbox-and-settings.md)
 
-Each Bash tool call gets its own sandboxed process namespace. See [Typed Config Values: Process and Verification Gotchas](mistakes/typed-config-values-process.md).
+## A Raw String's Own Body Can End It Early
 
-## The Pre-Commit Markdownlint Fixer Rewrites Plan Prose That Wraps to Start With `+`
+`r#"...## heading..."#` truncated silently at the first `"#` inside the body (a markdown heading
+quoted inside it) instead of erroring. Check the body for a `"` followed by N `#`s before picking
+a raw-string delimiter.
 
-Never wrap plan prose so a line begins with `+`. See [Typed Config Values: Process and Verification Gotchas](mistakes/typed-config-values-process.md).
+→ [Testing & Lint](mistakes/testing-and-lint.md)
 
-## A Bug Report From a Loom Stage Is About Loom the Product, Not About a Project on This Machine (2026-09-18)
+## Typed Config Process Gotchas: Verification, Dev Servers, and Markdownlint
 
-A report quoted from a stage session is a defect report against loom's source: diagnose from this repo, never from another project's transcripts or state. → [Briefs and Bug Reports](mistakes/briefs-and-bug-reports.md)
+Four short lessons from the typed-config-values work: config keys resolve per key
+(project -> user -> built-in) even when a tier's section is absent, so section-level shadowing is
+a defect; a verifier's own assumption about required behaviour is not a substitute for the plan's
+stated contract; each Bash tool call gets its own sandboxed process namespace, so a backgrounded
+dev server from a prior call is invisible to the next one; and plan prose must never wrap to start
+a line with `+`, or the pre-commit markdownlint fixer rewrites it.
 
-## A Brief That Invents a New Guard Flag Can Widen an Existing One (2026-09-18)
+→ [Typed Config Values: Process and Verification Gotchas](mistakes/typed-config-values-process.md)
 
-Before a brief adds a condition variable beside an existing guard, state what the existing one already covers and why it falls short. → [Briefs and Bug Reports](mistakes/briefs-and-bug-reports.md)
+## Briefs and Bug Reports (2026-09-18)
+
+A report quoted from a stage session is a defect report against loom's source: diagnose from this
+repo, never from another project's transcripts or state. Before a brief adds a condition variable
+beside an existing guard, state what the existing one already covers and why it falls short.
+
+→ [Briefs and Bug Reports](mistakes/briefs-and-bug-reports.md)
+
+## Lint and Test-Discipline Summary
+
+Lint and test-discipline lessons spanning `--all-targets`, `--no-fail-fast`, ambient git config in tests, the maintainability ledger, `TODO` in string literals and platform-specific Bash/Rust traps. Racy tests (inherited descriptors, ETXTBSY, serial env, stdin hangs, real-home writes) and CI toolchain drift (clippy on rustup `stable`, offline `cargo audit`, `install.sh`, dependency build caches) have their own topics. → [Testing & Lint](mistakes/testing-and-lint.md), [Test Concurrency & Fixtures](mistakes/test-concurrency-and-fixtures.md), [CI Toolchain & Cargo](mistakes/ci-toolchain-and-cargo.md)

@@ -6,7 +6,7 @@ verified: e0baec38ddf35df499ac7eca828baed878ac671e
 ---
 # Source Graph
 
-> Source graph honesty contract, extractor trait, limits
+> Source graph honesty contract, extractor, limits
 
 ## What It Is, and What It Is Not
 

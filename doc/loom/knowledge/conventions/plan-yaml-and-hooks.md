@@ -133,3 +133,13 @@ for any new field (`loom/tests/integration/implementer_defaults.rs`):
 
 Schema-only tests are not enough: they never touch the state files already on disk, which is exactly
 where a non-defaulted field breaks a running plan.
+
+## A Main-Agent Smoke Command Must Not Unset `LOOM_MAIN_AGENT_PID` (2026-09-22)
+
+A stage signal's smoke/acceptance command, run directly by the main agent's own Bash tool (not
+inside `wiring_tests`), is blocked by `commit-filter.sh` if it unsets `LOOM_MAIN_AGENT_PID` — that
+variable identifies the calling agent to the hook. `tests/integration/helpers.rs::RELAY_ENV_VARS_TO_CLEAR`
+(:225-238) is a template for scratch-repo smoke tests generally, but a plan author copying it into
+a main-agent command must drop that one variable (every other `RELAY_ENV_VARS_TO_CLEAR` entry is
+still safe to unset). `wiring_tests` entries run by `loom check` are a different execution path and
+are unaffected.

@@ -156,3 +156,13 @@ switched off by `disableAllHooks` and shares the check-then-open race noted unde
 Guards Cannot Eliminate Path-Swap Races"; that is the accepted trade for a prompt-free auto mode.
 Never reintroduce a `Read(...)` deny of any shape, and never emit a `denyRead` glob whose
 wildcard-free prefix lies above the project or above a small home subdirectory.
+
+## Locked-Write Symlink Fix Was File-Only, Not Directory-Component (2026-09-22)
+
+`fs/locking.rs` now opens `<path>.tmp` with `O_NOFOLLOW`, closing the specific
+`<file>.tmp`-as-tracked-symlink redirect found during `knowledge-bootstrap-command` integration
+(`mistakes.md`, "A Tracked Symlink Named `<file>.tmp` Redirected a Locked Write"). Directory
+components of the target path are not similarly checked anywhere in the crate: a tracked
+symlinked `doc/loom/knowledge` or `.loom` directory is still followed and written through by
+`locked_write`, `loom map`'s overlay, and any other writer that resolves a path under it.
+**Open:** no component-wise no-follow check exists for directories, only the final path segment.

@@ -6,7 +6,7 @@ verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 ---
 # Doctrine And Acceptance
 
-> Doctrine grep traps, setup-line grants, completion rules
+> Doctrine drift, setup-line grants, completion rules
 
 ## An Acceptance Criterion That Greps One Phrase Proves Presence, Never Agreement (2026-07-28)
 

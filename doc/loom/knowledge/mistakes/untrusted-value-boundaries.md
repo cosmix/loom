@@ -1,6 +1,6 @@
 # Untrusted Value Boundaries
 
-> Enumerate every producer of a rendered field, not just it
+> Enumerate every producer of a rendered field
 
 ## Enumerate Every PRODUCER of a Rendered Field, Not Every Field
 

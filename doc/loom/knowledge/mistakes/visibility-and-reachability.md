@@ -113,3 +113,11 @@ Related: when changing a fn signature under `src/commands/`, the call-site inven
 sibling `#[cfg(test)]` module. `src/commands/init/tests.rs` held a fifth `cleanup_orphaned_sessions()`
 call site beyond the four an `rg` for the primary feature symbol surfaced. `rg` the **exact fn name**
 across `src/` _and_ `tests/` before writing a subagent's step list.
+
+## Recurrence: `commands::hook::target::non_empty_env` (2026-09-22)
+
+Same trap as above, this time causing duplication rather than an inert feature:
+`commands/hook/mod.rs:14` declares `mod target;` private, so `knowledge bootstrap`'s
+`guard_not_in_stage` (`commands/knowledge/bootstrap/mod.rs:133`) could not call the existing
+`non_empty_env` and inlined its own copy of the same `LOOM_STAGE_ID` check instead. Widening
+the module (`pub(crate) mod target` or a re-export) to de-duplicate is tracked in `concerns.md`.

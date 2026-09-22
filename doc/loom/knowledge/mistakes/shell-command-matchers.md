@@ -1,6 +1,6 @@
 # Shell Command Matchers
 
-> Separators that never become tokens; forgeable glob lookups
+> Separators that never tokenize; forgeable glob lookups
 
 ## Token-Based Shell Matchers: Separators That Never Become Tokens (SYSTEMIC, 2026-07-28)
 

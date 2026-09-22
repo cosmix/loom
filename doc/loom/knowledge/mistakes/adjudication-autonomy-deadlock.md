@@ -1,6 +1,6 @@
 # Adjudication Autonomy Deadlock
 
-> Accepted-verdict deadlock: adoption, requeue, live dispute
+> Accepted-verdict deadlock: adoption, requeue
 
 ## Adoption Matched Sessions by stage_id Alone
 

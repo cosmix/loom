@@ -1,6 +1,6 @@
 # Sandbox Tooling And Network
 
-> Stage-sandbox tool failures: sccache, cargo audit, loopback
+> Stage-sandbox tool failures: sccache, audit, loopback
 
 ## The Sandbox's AF_UNIX Denial Also Kills sccache, Breaking Every Cargo Command (2026-09-04)
 

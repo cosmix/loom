@@ -1,6 +1,6 @@
 # Sessions And Liveness
 
-> Session identity, liveness routing, spawn-site coverage
+> Session identity, liveness routing, coverage
 
 ## Session Identity: Backend Metadata Must Be Persisted
 

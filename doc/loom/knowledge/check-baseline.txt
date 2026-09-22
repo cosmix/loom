@@ -1,0 +1,2 @@
+# Knowledge check baseline: structural issues `loom knowledge check --strict --baseline` tolerates.
+# One issue per line: <kind> <file> [<detail>]. Regenerate with `loom knowledge check --write-baseline <file>`.

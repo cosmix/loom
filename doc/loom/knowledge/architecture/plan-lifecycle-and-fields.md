@@ -2,7 +2,7 @@
 ---
 # Plan Lifecycle And Fields
 
-> Plan fields, goal-backward layers, amendment, verify checks
+> Plan fields, goal-backward layers, verify checks
 
 ## Adding New Plan Fields Checklist
 

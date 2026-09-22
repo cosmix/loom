@@ -305,3 +305,20 @@ that failed. Re-run the whole suite only when production code changed after that
 **Prevention:** Leave headroom for rustfmt expansion when writing test functions and run the maintainability gate after formatting.
 
 **Fix:** Simplified the repeated path assertions without changing test coverage; no baseline increase.
+
+**Recurrence (2026-09-22), knowledge-bootstrap-command W3:** the stage's own gate (build, test,
+clippy, fmt) was green, but the pre-commit hook's rustdoc `-D warnings` step rejected private
+intra-doc links in `commands/knowledge/bootstrap/mod.rs`'s module docs — the mechanical fix above
+(pre-commit runs the rustdoc gate itself since 2026-09-05) caught it exactly as designed, since
+the stage gate itself still omits `cargo doc`. No action needed beyond what is already fixed;
+recorded to keep the recurrence count accurate.
+
+## A Raw String's Own Body Can End It Early
+
+`r#"...## heading..."#` in `tests/integration/knowledge_bootstrap_support.rs` ended at the first
+`"#` sequence inside the body (a markdown heading quoted inside it), truncating the string
+silently rather than erroring at that point.
+
+**Prevention:** before choosing a raw-string delimiter, check the body for a `"` followed by that
+many `#`; content with markdown headings or code fences quoted inside needs `r###"..."###` (or
+higher) to be safe.

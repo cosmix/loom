@@ -1,6 +1,6 @@
 # Tests That Cannot Fail
 
-> Tests that pass whether or not the bug they cover is present
+> Tests that pass whether the bug is present
 
 ## A Test Named for a Property Is Not Evidence the Property Is Pinned
 
@@ -262,3 +262,13 @@ briefs never said existing assertions stay.
 - A doctrine test pins the instruction around a keyword, never the bare keyword.
 - Fix briefs say "keep every existing assertion; add, never replace". When a test moves, diff the
   old and new assertion sets needle by needle.
+
+## A Negative Test Asserting Only `is_err()` Can Pass For the Wrong Reason (2026-09-22)
+
+`load_oversized_receipt_gives_err` fed `Receipt::load` `'a'` repeated `cap + 1` times — invalid
+JSON — and asserted only `.is_err()`. The parse error fired before the size cap was ever checked,
+so the test passed unchanged with the size cap removed entirely.
+
+**Prevention:** a negative test must isolate its cause. Feed input valid in every OTHER respect —
+here, valid receipt JSON padded with whitespace past `MAX_RECEIPT_BYTES` — and assert the specific
+error text (`"byte verification limit"`), not just `is_err()`.

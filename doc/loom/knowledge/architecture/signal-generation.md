@@ -8,7 +8,7 @@ verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 ---
 # Signal Generation
 
-> Signal assembly: cache, append_* helpers, stage prefixes
+> Signal assembly: cache, append helpers, prefixes
 
 ## Signal Generation Pipeline (orchestrator/signals/) [DETAILED]
 

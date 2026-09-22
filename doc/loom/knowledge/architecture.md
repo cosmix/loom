@@ -24,10 +24,6 @@ Full `loom/src/` module tree, `.loom/work/` state layout, repo-root asset direct
 
 → [Worktree Isolation & Security](architecture/security-and-isolation.md)
 
-## Layering Violations (Known Issues)
-
-→ [Core Abstractions § Layering Violations](architecture/core-abstractions.md)
-
 ## Context Budget Enforcement
 
 `context_ceiling_tokens` — an ABSOLUTE resident-token ceiling, resolved stage -> project `[context]` -> user `~/.loom/config.toml` `[context]` -> default, enforced at three independent thresholds (1.0x hook, 1.25x daemon, 1.5x native compaction).
@@ -38,23 +34,13 @@ Full `loom/src/` module tree, `.loom/work/` state layout, repo-root asset direct
 
 → [Worktree Isolation & Security](architecture/security-and-isolation.md)
 
-## Merge Lock (git/merge/lock.rs)
-
-→ [Merge Flow § Merge Lock](architecture/merge-flow.md)
-
 ## Merge Flow (post-completion auto-merge) [DETAILED]
 
 → [Merge Flow](architecture/merge-flow.md)
 
 ## Skills Module (loom/src/skills/)
 
-→ [Skill Catalog](architecture/skill-catalog.md)
-
-## Diagnosis Module (loom/src/diagnosis/)
-
-→ [Skill Catalog § Component Architecture](architecture/skill-catalog.md)
-
-## Map Module (loom/src/map/)
+Also covers the Diagnosis (`loom/src/diagnosis/`) and Map (`loom/src/map/`) modules.
 
 → [Skill Catalog § Component Architecture](architecture/skill-catalog.md)
 
@@ -63,10 +49,6 @@ Full `loom/src/` module tree, `.loom/work/` state layout, repo-root asset direct
 → [Context Ceiling § Handoff System](architecture/context-ceiling.md)
 
 ## macOS Terminal Detection Priority
-
-→ [Terminal Backends](architecture/terminal-backends.md)
-
-## find_claude_path() (src/claude.rs)
 
 → [Terminal Backends](architecture/terminal-backends.md)
 
@@ -146,11 +128,9 @@ Durable artifact chain under `.loom/work/disputes/`, materialization into stage 
 
 ## before_stage / after_stage / code_review Schema Fields — Execution Status
 
+Also covers `load_stage_definition_from_plan` — the centralized plan lookup.
+
 → [Plan Lifecycle & Fields § before_stage / after_stage / code_review](architecture/plan-lifecycle-and-fields.md)
-
-## load_stage_definition_from_plan — Centralized Plan Lookup
-
-→ [Plan Lifecycle & Fields § load_stage_definition_from_plan](architecture/plan-lifecycle-and-fields.md)
 
 ## `loom pressure` Command (Plan Pressure-Testing Driver)
 
@@ -164,6 +144,15 @@ target parsing, index generation, the `catalog::build` diagnostics (duplicate he
 blurb, broken link, missing source ref), opt-in migration, and lock ordering.
 
 → [Knowledge Hierarchy](architecture/knowledge-hierarchy.md)
+
+## `loom knowledge bootstrap` (Operator Command)
+
+Rebuilds `doc/loom/knowledge/` from scratch in a repo not managed by loom plans: a deterministic
+host phase (scaffold, refresh, directory clusters with content digests) followed by an
+interactive Claude session that writes only through `loom knowledge`, then a committed receipt
+(`doc/loom/knowledge/.bootstrap-receipt.json`) that makes `--refresh` incremental and idempotent.
+
+→ [Knowledge Bootstrap](architecture/knowledge-bootstrap.md)
 
 ## Codex Plugin (openai-codex) [DETAILED]
 
@@ -240,10 +229,6 @@ A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoi
 ## Owned Subagent Waits
 
 `loom subagents watch/wait` bind an explicit `--worker claude:<id>`/`--worker codex:<unit-id>` set once per session, replacing an unbound `--timeout`-only poll. Trusted completion writers separately HMAC-sign completion evidence with a host-only key, closing a forgery path through sandbox-writable `handoffs/`; `Session.exit_reason` is independent from `SessionStatus`. See [Owned Waits](architecture/owned-waits.md) and [Completion Recovery](architecture/completion-recovery.md).
-
-## Completion Evidence Attestation and Session Exit Reasons
-
-Folded into [Owned Subagent Waits](#owned-subagent-waits) above.
 
 ## Typed Config Values (`ConfigValue` Read-Path Seam)
 
