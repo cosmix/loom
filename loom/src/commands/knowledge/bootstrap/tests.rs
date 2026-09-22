@@ -9,10 +9,15 @@ use super::clusters::Cluster;
 use super::graph::require_snapshot;
 use super::prompt::{self, PlanSummary};
 use super::receipt::{ClusterStatus, RefreshPlan};
-use super::{acquire_run_lock, ensure_loom_ignored, scaffold, tier1_gaps, work_set, WorkItem};
+use super::{
+    acquire_run_lock, ensure_loom_ignored, resolve_model_effort, scaffold, tier1_gaps, work_set,
+    WorkItem,
+};
+use crate::cli::BootstrapArgs;
 use crate::context::refresh::{SnapshotAction, SnapshotOutcome, SourceGraphCounters};
 use crate::fs::knowledge::templates::default_content;
 use crate::fs::knowledge::{KnowledgeDir, KnowledgeFile, KnowledgeTarget};
+use crate::user_config::parse_document;
 
 fn cluster(id: &str, files: usize) -> Cluster {
     Cluster {
@@ -72,6 +77,8 @@ fn claude_args_keep_disallowed_tools_before_the_prompt() {
     assert!(append > tools + 1);
     assert_eq!(args.last(), Some(&prompt::initial_prompt(brief)));
     assert!(args.last().unwrap().contains("brief-1.md"));
+    // Interactive session: no flag forces print/non-interactive mode.
+    assert!(!args.iter().any(|a| a == "-p" || a == "--print"));
 }
 
 #[test]
@@ -79,6 +86,7 @@ fn system_prompt_names_the_marker_touch() {
     let marker = Path::new("/repo/.loom/work/bootstrap/claude-7.done");
     let text = prompt::system_prompt(marker);
     assert!(text.contains("touch /repo/.loom/work/bootstrap/claude-7.done"));
+    assert!(text.contains("Write knowledge ONLY with `loom knowledge update`"));
 }
 
 #[test]
@@ -146,6 +154,17 @@ fn ensure_loom_ignored_writes_when_only_work_is_ignored() {
     let repo = git_repo(Some(".loom/work/\n"));
     ensure_loom_ignored(repo.path()).unwrap();
     assert!(repo.path().join(".loom/.gitignore").exists());
+}
+
+#[test]
+fn ensure_loom_ignored_refuses_a_symlinked_loom_dir() {
+    let repo = git_repo(None);
+    let target = TempDir::new().unwrap();
+    std::os::unix::fs::symlink(target.path(), repo.path().join(".loom")).unwrap();
+
+    let error = ensure_loom_ignored(repo.path()).unwrap_err().to_string();
+    assert!(error.contains("is a symlink"), "{error}");
+    assert!(!target.path().join(".gitignore").exists());
 }
 
 #[test]
@@ -235,4 +254,40 @@ fn structural_only_conflicts_with_model() {
     };
     assert!(!parses(&["--model", "opus"]));
     assert!(parses(&["--refresh"]));
+}
+
+fn bootstrap_args(model: Option<&str>, effort: Option<&str>) -> BootstrapArgs {
+    BootstrapArgs {
+        structural_only: false,
+        refresh: false,
+        dry_run: false,
+        model: model.map(str::to_string),
+        effort: effort.map(str::to_string),
+    }
+}
+
+#[test]
+fn resolve_model_effort_falls_back_to_the_config_stage_defaults() {
+    let args = bootstrap_args(None, None);
+    let user =
+        parse_document("[models]\nknowledge_model = \"fable\"\nknowledge_effort = \"low\"\n")
+            .unwrap();
+
+    assert_eq!(
+        resolve_model_effort(&args, &user),
+        ("fable".to_string(), "low".to_string())
+    );
+}
+
+#[test]
+fn resolve_model_effort_prefers_explicit_flags_over_the_config() {
+    let args = bootstrap_args(Some("sonnet"), Some("high"));
+    let user =
+        parse_document("[models]\nknowledge_model = \"fable\"\nknowledge_effort = \"low\"\n")
+            .unwrap();
+
+    assert_eq!(
+        resolve_model_effort(&args, &user),
+        ("sonnet".to_string(), "high".to_string())
+    );
 }

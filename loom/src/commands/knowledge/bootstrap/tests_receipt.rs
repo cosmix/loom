@@ -1,6 +1,7 @@
 use super::clusters::Cluster;
 use super::receipt::{
-    refresh_plan, ClusterStatus, Receipt, ReceiptCluster, RECEIPT_FILENAME, RECEIPT_VERSION,
+    refresh_plan, ClusterStatus, Receipt, ReceiptCluster, MAX_RECEIPT_BYTES, RECEIPT_FILENAME,
+    RECEIPT_VERSION,
 };
 
 fn test_cluster(id: &str, digest: &str) -> Cluster {
@@ -78,6 +79,41 @@ fn load_unknown_field_gives_err_naming_path() {
 
     let error = Receipt::load(temp.path()).unwrap_err();
     assert!(error.to_string().contains(&path.display().to_string()));
+}
+
+#[test]
+fn load_oversized_receipt_gives_err() {
+    let temp = tempfile::tempdir().unwrap();
+    let path = temp.path().join(RECEIPT_FILENAME);
+    // Valid JSON padded past the cap: only the size check can reject it.
+    let mut json = serde_json::to_string(&test_receipt(vec![])).unwrap();
+    json.push_str(&" ".repeat(MAX_RECEIPT_BYTES));
+    std::fs::write(&path, json).unwrap();
+
+    let error = format!("{:#}", Receipt::load(temp.path()).unwrap_err());
+    assert!(error.contains("byte verification limit"), "{error}");
+}
+
+#[test]
+fn save_refuses_a_symlinked_tmp_file() {
+    let temp = tempfile::tempdir().unwrap();
+    let outside = tempfile::tempdir().unwrap();
+    let outside_file = outside.path().join("real.json");
+    std::fs::write(&outside_file, "outside content").unwrap();
+
+    let tmp_path = temp.path().join(format!("{RECEIPT_FILENAME}.tmp"));
+    std::os::unix::fs::symlink(&outside_file, &tmp_path).unwrap();
+
+    let receipt = test_receipt(vec![ReceiptCluster {
+        id: ".".to_string(),
+        digest: "sha256:aaa".to_string(),
+        files: 1,
+    }]);
+    assert!(receipt.save(temp.path()).is_err());
+    assert_eq!(
+        std::fs::read_to_string(&outside_file).unwrap(),
+        "outside content"
+    );
 }
 
 #[test]

@@ -23,7 +23,7 @@ pub(super) const RECEIPT_VERSION: u32 = 1;
 
 /// Cap on the receipt file's size; well past any real receipt, small enough
 /// that a planted huge file is rejected rather than read.
-const MAX_RECEIPT_BYTES: usize = 1 << 20;
+pub(super) const MAX_RECEIPT_BYTES: usize = 1 << 20;
 
 /// The record of a completed bootstrap run.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
