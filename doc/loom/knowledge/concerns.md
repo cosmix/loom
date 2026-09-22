@@ -224,3 +224,23 @@ own dependency list.
 - The Rust test `forward_guard_allows_when_no_stage_evidence_exists` (`loom/src/fs/permissions/hooks/policy_tests_stage_gate.rs`) skips only on LOOM_*in its own env or `/proc/1/comm == bwrap`. Under a macOS Seatbelt with no LOOM_* it would FAIL instead of skipping; add a Seatbelt skip if that combination occurs in practice.
 
 **Known limits, all platforms:** a nested `claude` whose launcher controls its environment can set `BASH_ENV` or a config directory with no hooks, which no hook can police (sandbox policy's job); a plain session inside the user's own bubblewrap or Seatbelt wrapper counts as confined and stays blocked.
+
+## Knowledge Bootstrap Follow-Ups (2026-09-22)
+
+- **Guard duplication:** `commands/knowledge/bootstrap/mod.rs::guard_not_in_stage` inlines its own
+  `LOOM_STAGE_ID` check instead of calling `commands::hook::target::non_empty_env`, because
+  `commands/hook/mod.rs:14` declares `mod target;` private (`mistakes/visibility-and-reachability.md`).
+  Widen the module (`pub(crate) mod target` or a re-export) to de-duplicate.
+- **Dry-run argv quoting:** `knowledge bootstrap --dry-run` prints the `claude` argv with
+  `argv.join(" ")` (no shell quoting), copied from `pressure::render_dry_run_step` whose output is
+  pinned by tests. The multi-line `--append-system-prompt` value and the positional prompt run
+  together, so the printed line cannot be pasted into a shell. A shared quoting helper would fix
+  both call sites.
+
+## Markdown Lint Silently Skipped in a No-Network Stage Sandbox (2026-09-22)
+
+The pre-commit hook's markdown-lint step reaches out to `registry.npmjs.org:443`; in a no-network
+stage sandbox that connection is denied and the hook lets the commit proceed anyway (exit 0, no
+lint ran). A stage committing `.md` files inside a no-network sandbox gets no markdown lint and no
+warning that it was skipped. Not yet reproduced with `.md` files actually staged (observed on
+commits `da7c5439`/`5ae15790`, which staged none).

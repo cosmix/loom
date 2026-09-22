@@ -155,3 +155,11 @@ under `node_modules/` — the Read tool's worktree guard opens images by path, a
 ## Draining a Stuck `loom-relay` Ticket Backlog
 
 A relay ticket whose `LOOM_RELAY_V1` line never reached `loom-hooks/loom-relay.sh` (stdout redirected or piped through `tail`, a script file, a background call, more than 16 lines in one output) stays in `$LOOM_SCRATCH_DIR`. Since 2026-09-18 `loom hook relay` sweeps leftover `memory` and `telemetry` tickets on the next foreground `loom memory` write command, so the backlog drains by running `loom memory note --help` on its own with its output unfiltered; it records nothing. An earlier version of this section said `memory:resolve` was missing from the hook's pattern match: that gap was closed on 2026-09-16 and was only one instance of the leak. Manual recovery for sessions on a pre-fix binary, and the root cause: [Memory Relay Drain Gap](mistakes/memory-relay-drain-gap.md).
+
+## One Canonical NotFound-Tolerant Delete Helper
+
+`claude::session::remove_if_exists` is the crate's single NotFound-tolerant file delete (added
+during `knowledge-bootstrap-command`, replacing the now-removed `pressure::paths::delete_file`).
+Callers that want delete-if-present, warn-don't-fail semantics (e.g. `bootstrap::remove_brief`)
+wrap it rather than hand-rolling an `fs::remove_file` + `ErrorKind::NotFound` match. Reach for it
+before writing a new one.

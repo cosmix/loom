@@ -1,6 +1,6 @@
 # Test Concurrency And Fixtures
 
-> Racy tests: inherited fds, ETXTBSY, serial env, stdin hangs
+> Racy tests: fds, ETXTBSY, serial env, stdin hangs
 
 ## An Inherited Descriptor Keeps an flock Alive After the Owner Releases It (2026-08-10)
 

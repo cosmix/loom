@@ -10,7 +10,7 @@ verified: 499b09b6297aeee4896a66df3da86d00f652a618
 ---
 # Context Ceiling
 
-> Resident-token ceiling: resolution tiers and three thresholds
+> Resident-token ceiling: tiers and thresholds
 
 ## The Context Ceiling: Three Independent Thresholds, One Number
 

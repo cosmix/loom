@@ -1,6 +1,6 @@
 # Sandbox And Settings
 
-> Sandbox path rules, permission sync, settings merge traps
+> Sandbox path rules, permission sync, merge traps
 
 ## Sandbox: Contradictory Path Rules
 
@@ -279,3 +279,15 @@ bit is the boundary, not group membership.
 **Corrected 2026-09-19:** this section used to say the guard also blocks the session's own scratchpad. It does not any more: `allow_scratchpad` (`loom-hooks/worktree-file-guard.sh:174-196`) lets every file tool use `/tmp/claude-<uid>/<project>/<session>/scratchpad/` when the directory exists, the path is already canonical (no symlink, `.` or `//` component) and each existing component from `claude-<uid>` is owned by the uid. Read-back of a file written there was re-verified in this stage. Only the scratchpad is exempt; `$TMPDIR` itself and the tool-result cache stay blocked.
 
 **Prevention:** for an intermediate file a worktree/stage session must write and then read back (a reformatted dump of `loom memory show --all --json`, a debug reproduction, a large payload), use the session scratchpad, or write INSIDE the worktree and remove it before the final commit. In a distill stage name such files `.distill-body-*` or `.kb_tmp_*` so the main-agent edit advisory ignores them. Debug hooks specifically should reproduce inline under `/tmp/loom-loop-checks` with `LOOM_HOOK_DEBUG=1` rather than editing a scratch copy at all.
+
+## A Tracked Symlink Named `<file>.tmp` Redirected a Locked Write (2026-09-22)
+
+`fs/locking.rs`'s `atomic_write`/`atomic_write_locked` opened `<path>.tmp` without `O_NOFOLLOW`, so
+a TRACKED symlink named exactly `<target>.tmp` in a cloned repo (e.g.
+`doc/loom/knowledge/.bootstrap-receipt.json.tmp`) redirected every locked write through it, outside
+the repo. Fixed by adding `O_NOFOLLOW` (fail closed when a symlink sits where a real file is
+expected).
+
+**Residual, not fixed here:** directory components of the target path are still followed
+crate-wide — a tracked symlinked `doc/loom/knowledge` or `.loom` is written through by other
+commands (e.g. `loom map`'s overlay). See `concerns/sandbox-and-confinement-gaps.md`.

@@ -8,7 +8,7 @@ verified: 6bb1dfd01ccb8456c978e9d5812e1bb61543b8e2
 ---
 # Knowledge Hierarchy
 
-> fs/knowledge targets, INDEX.md, checks, size limits, baselines
+> fs/knowledge targets, INDEX.md, checks, baselines
 
 ## Module Layout (`fs/knowledge/`)
 

@@ -104,10 +104,14 @@ Three consequences a plan author has to design around:
    hold the ledger.
 3. **When a refactor drops an entry under the limit, DELETE the entry rather than
    lowering it.** Lowering keeps a permanent claim on a function that no longer needs
-   one.
+   one. This applies to FILE-path entries too, not just function entries: splitting a
+   file's tests into a new file (e.g. `fs/locking.rs` -> `fs/locking/tests.rs`) leaves
+   the original's baseline line stale once it shrinks below its limit, and
+   `tests/maintainability.rs` fails with "stale entry ... no longer violates its
+   limit; remove it" until that line is deleted in the same change (2026-09-22).
 
 Before adding lines to any function: `rg '<fn name>' loom/maintainability-baseline.txt`.
-If it is listed, refactor rather than extend.
+If it is listed, refactor rather than extend. After any file split: `rg '<path>' loom/maintainability-baseline.txt`.
 
 ## Working Directory
 

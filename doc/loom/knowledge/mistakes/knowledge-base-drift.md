@@ -1,6 +1,6 @@
 # Knowledge Base Drift
 
-> How the knowledge base goes stale: frozen plan notes, drift
+> How the knowledge base goes stale: frozen notes, drift
 
 The knowledge base is written by agents mid-plan and is not covered by any test. It drifts in
 four specific, recognisable ways. All four were found and repaired on 2026-07-30 during a README

@@ -1,6 +1,6 @@
 # Context Retrieval State
 
-> Base/overlay graph layers, delivery records, brief delivery
+> Base/overlay graph layers, delivery records
 
 ## Base vs Overlay Ownership
 
