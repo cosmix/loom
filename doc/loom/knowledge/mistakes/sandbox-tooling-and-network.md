@@ -210,3 +210,13 @@ must use a scoped read (`git config --local/--global/--system --get`), which `-c
 **Fix:** read local, then global, then system scope explicitly and use the first that resolves. A
 relative global `core.hooksPath` (e.g. `.githooks`) resolves inside every repository, so a future
 cleanup pass should also check that scope, not just local.
+
+## Every Stage Bash Call Fails Under Ubuntu/Pop 26.04's bwrap AppArmor Profile (2026-09-22)
+
+**What happened:** after an upgrade from Pop!_OS 24.04 to 26.04, every Bash call in a stage session failed with exit 1: `apply-seccomp: write /proc/self/setgroups (nested userns is capability-restricted; caller must provide CAP_SYS_ADMIN): Permission denied`. Plain Claude Code sessions were unaffected.
+
+**Why:** 26.04's `apparmor` package ships and enables `/etc/apparmor.d/bwrap-userns-restrict`. It declares a profile named `bwrap` for `/usr/bin/bwrap`, which replaces a hand-written unconfined `bwrap` profile of the same name, and moves every bwrap child to `bwrap//&unpriv_bwrap`, which carries `audit deny capability`. Claude Code's sandbox runs `apply-seccomp` inside bwrap, and that helper creates a nested user namespace; mapping IDs there needs a capability the profile denies. Plain sessions do not hit it because only the stage capsule enables `sandbox` (with `failIfUnavailable: true`).
+
+**Prevention:** reproduce without Claude Code: `bwrap --ro-bind / / --dev /dev --proc /proc --unshare-user --unshare-pid unshare -U -r true` must exit 0, and `bwrap ... cat /proc/self/attr/apparmor/current` must not print `unpriv_bwrap`.
+
+**Fix:** host configuration, root required: link `bwrap-userns-restrict` into `/etc/apparmor.d/disable/`, remove it with `apparmor_parser -R`, then reload the unconfined `bwrap` profile with `apparmor_parser -r /etc/apparmor.d/bwrap`. Loom has no preflight for this yet.

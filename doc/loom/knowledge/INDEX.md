@@ -125,7 +125,7 @@
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync, settings merge traps | 281 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | A directory named hooks/ is sandbox write-protected. | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers vs .loom/work state: memory, handoff, socket | 252 |
-| [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Stage-sandbox tool failures: sccache, cargo audit, loopback | 212 |
+| [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Stage-sandbox tool failures: sccache, cargo audit, loopback | 222 |
 | [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) | Only Edit(path) rules are enforced; Write(path) is ignored | 57 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) | deny_unknown_fields with two deserialization sources | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | LOOM_* wrapper exports: a contract for hooks, CLI, daemon | 104 |
