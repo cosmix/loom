@@ -7,22 +7,17 @@ use std::path::{Path, PathBuf};
 pub const CODEX_IMPLEMENTER_MODEL_TERRA: &str = "gpt-5.6-terra";
 
 /// Codex model for boilerplate, scaffolding, and simple unit tests.
-pub const CODEX_IMPLEMENTER_MODEL_LUNA: &str = "gpt-5.6-luna";
+pub const CODEX_IMPLEMENTER_MODEL_LUNA: &str = "gpt-6-luna";
 
 /// Reasoning effort used for Codex implementation runs.
 pub const CODEX_IMPLEMENTER_EFFORT: &str = "xhigh";
 
 /// Codex models `loom pressure` accepts. Kept in step with the forwarding
 /// hooks' allowlist (loom-hooks/codex-forward.sh).
-pub const CODEX_MODELS: &[&str] = &[
-    "gpt-6-astra",
-    "gpt-5.6-sol",
-    "gpt-5.6-terra",
-    "gpt-5.6-luna",
-];
+pub const CODEX_MODELS: &[&str] = &["gpt-6-astra", "gpt-6-sol", "gpt-5.6-terra", "gpt-6-luna"];
 
 /// Codex model the pressure run defaults to.
-pub const DEFAULT_PRESSURE_CODEX_MODEL: &str = "gpt-5.6-sol";
+pub const DEFAULT_PRESSURE_CODEX_MODEL: &str = "gpt-6-sol";
 
 /// Reasoning efforts the Codex CLI accepts, cheapest first. `loom pressure`
 /// validates `--codex-effort` and `pressure.codex_effort` against this list
@@ -265,13 +260,13 @@ mod tests {
         let path = dir.path().join("config.toml");
         std::fs::write(
             &path,
-            "# user comment\nmodel = \"gpt-5.6-sol\"\n\n[mcp_servers.vnkt]\nurl = \"https://vnkt.org/mcp\"\n",
+            "# user comment\nmodel = \"gpt-6-sol\"\n\n[mcp_servers.vnkt]\nurl = \"https://vnkt.org/mcp\"\n",
         )
         .unwrap();
         assert!(ensure_codex_config_excludes_slash_tmp(&path).unwrap());
         let written = std::fs::read_to_string(&path).unwrap();
         assert!(written.contains("# user comment"));
-        assert!(written.contains("model = \"gpt-5.6-sol\""));
+        assert!(written.contains("model = \"gpt-6-sol\""));
         assert!(written.contains("[mcp_servers.vnkt]"));
         assert!(codex_config_excludes_slash_tmp(&path));
     }

@@ -367,7 +367,7 @@ fn codex_forwarder_keeps_marker_first_without_navigation_kit() {
     let (fixture, hook) = setup_hook();
     let (home, cwd, work) = (temp(), temp(), temp());
     let stub_bin = install_worker_brief_stub(fixture.path());
-    let prompt = "LOOM-CODEX-FORWARD-ONLY\n--model gpt-5.6-sol --effort xhigh\ntask text";
+    let prompt = "LOOM-CODEX-FORWARD-ONLY\n--model gpt-6-sol --effort xhigh\ntask text";
     let tool_input = json!({
         "subagent_type": "loom-codex-forwarder",
         "model": "sonnet",

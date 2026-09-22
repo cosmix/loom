@@ -41,7 +41,7 @@ pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIM
    below what that needs: every extra spawn pays the boot cost again. Pick PER
    SUBAGENT by what that piece needs, never once for the whole stage, and
    default downward: HAIKU (`model: haiku` on loom-software-engineer) for
-   mechanical edits such as a rename or a config value; codex gpt-5.6-luna for
+   mechanical edits such as a rename or a config value; codex gpt-6-luna for
    boilerplate, scaffolding, and simple unit tests; SONNET
    (loom-software-engineer) or codex gpt-5.6-terra for common implementation and
    integration tests — this is the default lane and most work belongs here; OPUS

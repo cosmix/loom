@@ -162,7 +162,7 @@ fn test_render_dry_run_shows_real_argv() {
     assert!(out.contains("--append-system-prompt"));
     assert!(out.contains("/pressure doc/plans/PLAN-foo.md"));
     assert!(out.contains(
-        "codex exec --sandbox workspace-write -m gpt-5.6-sol -c model_reasoning_effort=xhigh \
+        "codex exec --sandbox workspace-write -m gpt-6-sol -c model_reasoning_effort=xhigh \
          -C /repo $pressure doc/plans/PLAN-foo.md"
     ));
     assert!(out.contains("/address doc/plans/PLAN-foo.md"));
@@ -174,7 +174,7 @@ fn test_render_dry_run_shows_real_argv() {
     assert!(out.contains(".loom/work/pressure/claude-1.done"));
     // The resolved model+effort selection is surfaced in the header.
     assert!(out.contains(
-        "Models:                  claude=opus/xhigh  codex=gpt-5.6-sol/xhigh  address=opus/high"
+        "Models:                  claude=opus/xhigh  codex=gpt-6-sol/xhigh  address=opus/high"
     ));
 }
 
@@ -240,14 +240,9 @@ fn test_claude_args_shape() {
 #[test]
 fn test_codex_args_shape() {
     let repo = Path::new("/repo");
-    let args = codex_args(
-        repo,
-        "$pressure doc/plans/PLAN-foo.md",
-        "gpt-5.6-sol",
-        "high",
-    );
+    let args = codex_args(repo, "$pressure doc/plans/PLAN-foo.md", "gpt-6-sol", "high");
     assert_eq!(args[0], "exec");
-    assert!(args.contains(&"gpt-5.6-sol".to_string()));
+    assert!(args.contains(&"gpt-6-sol".to_string()));
     assert!(args.contains(&"model_reasoning_effort=high".to_string()));
     assert_eq!(args.last().unwrap(), "$pressure doc/plans/PLAN-foo.md");
 }

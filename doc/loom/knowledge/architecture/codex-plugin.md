@@ -229,7 +229,7 @@ Three moving parts:
    (`cache.rs`). The recovery path emits it too (`recovery_format.rs`), which was a real gap fixed
    by `d1530e0c`; without it a recovered or retried codex stage loses its whole doctrine block.
    Model/effort are interpolated from `CODEX_IMPLEMENTER_MODEL_TERRA = "gpt-5.6-terra"`,
-   `CODEX_IMPLEMENTER_MODEL_LUNA = "gpt-5.6-luna"`, and `CODEX_IMPLEMENTER_EFFORT = "xhigh"`
+   `CODEX_IMPLEMENTER_MODEL_LUNA = "gpt-6-luna"`, and `CODEX_IMPLEMENTER_EFFORT = "xhigh"`
    (`loom/src/codex.rs`) rather than hardcoded, and `tests_doctrine.rs` asserts BLOCK-B contains
    all three — so changing `codex.rs` without updating the prose surfaces fails the build. Terra is
    the tier for common implementation and integration tests; luna is for boilerplate, scaffolding,
@@ -237,8 +237,8 @@ Three moving parts:
 4. **Settings carry-forward.** `PRESERVED_SETTINGS_KEYS` / `preserve_unowned_keys`
    (`sandbox/settings.rs:580,587`) — see the scope section below.
 
-Do NOT confuse the two implementer-lane tiers — `gpt-5.6-terra` and `gpt-5.6-luna` (both
-`codex.rs`) — with `gpt-5.6-sol` (`commands/pressure/mod.rs:245`, the `loom pressure` review
+Do NOT confuse the two implementer-lane tiers — `gpt-5.6-terra` and `gpt-6-luna` (both
+`codex.rs`) — with `gpt-6-sol` (`commands/pressure/mod.rs:245`, the `loom pressure` review
 driver). Three models, three purposes; a grep for `gpt-5` returns all three.
 
 ## Install scope: user or project, not local
@@ -264,7 +264,7 @@ requirement. See [Sandbox & Settings](../mistakes/sandbox-and-settings.md) for t
 ## What Codex Actually Reads (verified 2026-08-29)
 
 Codex loads a project doc file named AGENTS.md from its working directory and never reads
-`CLAUDE.md`. Probed both directions with `codex exec -m gpt-5.6-luna` in a scratch repo: a
+`CLAUDE.md`. Probed both directions with `codex exec -m gpt-6-luna` in a scratch repo: a
 passphrase planted in a file named AGENTS.md came back verbatim; the identical file renamed
 `CLAUDE.md` produced `UNKNOWN`.
 `loom install-assets` now writes `~/.codex/AGENTS.md` from the repo-root AGENTS.md.template file
@@ -297,7 +297,7 @@ all usable from any directory in the tree:
 | `loom map --impact <symbol\|path>` | what reaches it, with path confidence |
 | `loom knowledge context --query "<q>" --budget-tokens <n>` | ranked knowledge plus matching source |
 
-Verified: given only the first two, `gpt-5.6-luna` answered a two-part structural question - where a
+Verified: given only the first two, `gpt-6-luna` answered a two-part structural question - where a
 constant is defined, and how many functions its file holds - in two commands and ~10k tokens, with
 no file reads at all.
 
@@ -332,7 +332,7 @@ hostnames or editing `~/.codex/config.toml` fixes nothing.
 
 **Detection rule.** Judge a forwarded run by the evidence trailer and the files, never by stderr: `exit:
 0` in the `--- LOOM-CODEX-EVIDENCE ---` trailer, a `session:` rollout newer than the spawn, and the
-task's files present and correct. Two spawns on 2026-09-02 (gpt-5.6-luna and gpt-5.6-terra, effort
+task's files present and correct. Two spawns on 2026-09-02 (gpt-6-luna and gpt-5.6-terra, effort
 xhigh) printed the pair throughout and wrote both files byte-exact.
 
 **Stdin.** The same runs printed `Reading additional input from stdin...`. `codex exec` treats an open

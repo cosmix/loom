@@ -20,7 +20,7 @@ pub const AGENT_ID: &str = "worker-a";
 pub const AGENT_TYPE: &str = "loom-software-engineer";
 pub const UNIT_ID: &str = "unit-a";
 const INVOCATION: &str = "inv-0123456789abcdef0123456789abcdef";
-const MODEL: &str = "gpt-5.6-sol";
+const MODEL: &str = "gpt-6-sol";
 const EFFORT: &str = "xhigh";
 const JOB_ID: &str = "job-owned-wait";
 

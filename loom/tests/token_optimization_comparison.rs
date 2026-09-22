@@ -321,7 +321,7 @@ fn mutate_cross_provider(artifact: &mut Value) {
     ]);
     let assignment = &mut candidate(artifact)["assignments"][0];
     assignment["provider"] = json!("codex");
-    assignment["model"] = json!("gpt-5.6-sol");
+    assignment["model"] = json!("gpt-6-sol");
     candidate(artifact)["provider_tokens"] = json!({
         "codex": {
             "input_tokens": 90,

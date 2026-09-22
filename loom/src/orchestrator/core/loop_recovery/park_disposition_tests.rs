@@ -14,7 +14,7 @@ use std::path::Path;
 fn child_evidence(evidence_kind: CodexEvidenceKind, terminal: bool) -> CodexEvidence {
     CodexEvidence {
         evidence_kind,
-        requested_model: "gpt-5.6-sol".into(),
+        requested_model: "gpt-6-sol".into(),
         requested_effort: "high".into(),
         invocation_id: "invocation-child".into(),
         job_id: Some("job-child".into()),

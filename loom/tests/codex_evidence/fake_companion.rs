@@ -52,7 +52,7 @@ function terminal(status) {
 
 function buildJob() {
   const status = process.env.FAKE_CODEX_STATUS ?? "running";
-  const model = option("--model", "gpt-5.6-sol");
+  const model = option("--model", "gpt-6-sol");
   const effort = option("--effort", "xhigh");
   const prompt = argv[1] ?? "fixture prompt";
   const isTerminal = terminal(status);

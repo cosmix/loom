@@ -4,7 +4,7 @@ Read when: the user may want routine implementation routed to codex, or a stage 
 
 BEFORE writing any stage YAML, ask the user ONCE with AskUserQuestion: "Route routine
 implementation to Codex (gpt-5.6-terra for common implementation and integration tests,
-gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests, both xhigh) instead of
+gpt-6-luna for boilerplate, scaffolding, and simple unit tests, both xhigh) instead of
 Claude subagents?" with options "Codex implementers" and "Claude implementers (sonnet)".
 Never assume — the default is Claude.
 
@@ -39,7 +39,7 @@ If the user picks Codex:
    stages — preflight warns if codex appears on any of those.
 5. In those stages' descriptions, name the subagent and the fan-out explicitly, e.g. "Spawn N
    `loom-codex-forwarder` subagents in the FOREGROUND, each with the tier-appropriate model —
-   `--model gpt-5.6-terra` (common implementation, integration tests) or `--model gpt-5.6-luna`
+   `--model gpt-5.6-terra` (common implementation, integration tests) or `--model gpt-6-luna`
    (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`, an explicit Bash
    timeout of 600000 ms (the Bash tool's maximum), and a DISJOINT file set; verify and commit yourself." (The forwarder is
    loom's own shim; never spawn the plugin's `codex:codex-rescue`
@@ -59,7 +59,7 @@ If the user picks Codex:
    that cannot be cut this small belongs to a Claude subagent.
 
    **⚠️ CODEX UNITS NAME ANCHORS, NOT EXHAUSTIVE DETAIL.** A codex subagent is `gpt-5.6-terra` or
-   `gpt-5.6-luna` with a shell, and no Read tool — but it is not blind: loom's forwarding wrapper
+   `gpt-6-luna` with a shell, and no Read tool — but it is not blind: loom's forwarding wrapper
    hands every codex prompt the source-graph navigation kit (`loom map --find-all`, `--outline`,
    `--impact`, `loom knowledge context --query`), each answering in under a second. It looks up a
    signature, a call site, or a surrounding pattern itself, so the plan does not paste them. In a
@@ -96,5 +96,5 @@ If the user picks Codex:
 ```text
 □ Codex opt-in asked and answered; `implementers:` lists codex only where routine implementation is delegated, only if the plugin is installed, and never on bookend stages; every list is a non-empty YAML sequence with no repeated lane
 □ Every codex unit fits the 540 s wrapper deadline (one file or a file plus its test, at most three steps, shared interfaces pinned verbatim) and names its anchors — files owned/read, entry points by symbol name, done-condition and proof command, and any constraint the graph can't show. An unanchored codex block ("refactor the merge path") is underspecified regardless of length: codex has the source-graph navigation kit (`loom map`, `loom knowledge context`) but not your intent
-□ Every codex subagent prompt states an explicit Bash timeout (600000 ms, the tool's maximum) alongside the tier-appropriate model — `--model gpt-5.6-terra` (common implementation, integration tests) or `--model gpt-5.6-luna` (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`; without it the wrapper's single Bash call hits the 120s default and the harness backgrounds the run
+□ Every codex subagent prompt states an explicit Bash timeout (600000 ms, the tool's maximum) alongside the tier-appropriate model — `--model gpt-5.6-terra` (common implementation, integration tests) or `--model gpt-6-luna` (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`; without it the wrapper's single Bash call hits the 120s default and the harness backgrounds the run
 ```

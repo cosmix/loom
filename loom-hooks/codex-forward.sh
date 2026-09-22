@@ -35,7 +35,7 @@ if [[ ! "$stage_id" =~ ^[A-Za-z0-9][A-Za-z0-9._-]*$ ||
 fi
 export CODEX_COMPANION_SESSION_ID="loom.v1:${stage_id}:${loom_session_id}:${unit_id}:${invocation_id}"
 case "$model" in
-gpt-6-astra | gpt-5.6-sol | gpt-5.6-terra | gpt-5.6-luna) ;;
+gpt-6-astra | gpt-6-sol | gpt-5.6-terra | gpt-6-luna) ;;
 *)
 	printf 'Unsupported forwarding model: %s\n' "$model" >&2
 	exit 2

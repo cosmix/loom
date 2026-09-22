@@ -20,7 +20,7 @@
         "implementation_revision": "base-rev",
         "assignments": [
           {"provider": "claude", "model": "claude-opus", "effort": "high"},
-          {"provider": "codex", "model": "gpt-5.6-sol", "effort": "high"}
+          {"provider": "codex", "model": "gpt-6-sol", "effort": "high"}
         ],
         "accepted": true,
         "required_checks": [{"command_id": "cargo-test", "contract_id": "tests-v1", "verdict": "passed"}],
@@ -74,7 +74,7 @@
         "implementation_revision": "candidate-rev",
         "assignments": [
           {"provider": "claude", "model": "claude-opus", "effort": "high"},
-          {"provider": "codex", "model": "gpt-5.6-sol", "effort": "high"}
+          {"provider": "codex", "model": "gpt-6-sol", "effort": "high"}
         ],
         "accepted": true,
         "required_checks": [{"command_id": "cargo-test", "contract_id": "tests-v1", "verdict": "passed"}],

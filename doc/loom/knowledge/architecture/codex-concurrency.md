@@ -22,7 +22,7 @@ The real constraint is on **background** mode, not on parallelism — see Doctri
 
 ## Measured
 
-2026-08-06, plugin 1.0.6, `--write --model gpt-5.6-luna --effort xhigh`, throwaway git repo, each task
+2026-08-06, plugin 1.0.6, `--write --model gpt-6-luna --effort xhigh`, throwaway git repo, each task
 assigned a **different** file (disjoint sets — the case that matters for subagent fan-out).
 
 | Concurrency | Runs | File edits  | Wrong file touched | Foreground stdout | `state.json` job records                    |
@@ -97,8 +97,8 @@ carry no `implementer` key, so the lane went to merge without ever being dogfood
 
 - Still the only multi-run evidence: the 2026-08-06 spike table above.
 - Added by integration-verify: a **single** live round trip proving the constant names a real model —
-  `codex exec -m gpt-5.6-luna -c model_reasoning_effort=xhigh --sandbox read-only` exited 0 and echoed
-  `model: gpt-5.6-luna`. Reachability, not concurrency.
+  `codex exec -m gpt-6-luna -c model_reasoning_effort=xhigh --sandbox read-only` exited 0 and echoed
+  `model: gpt-6-luna`. Reachability, not concurrency.
 - NOT observed anywhere yet: several `codex:codex-rescue` **subagents** running concurrently inside a
   real loom stage. The spike drove `codex-companion` directly, one level below the subagent wrapper.
 

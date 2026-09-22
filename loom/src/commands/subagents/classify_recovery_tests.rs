@@ -327,7 +327,7 @@ fn codex_record(
         } else {
             CodexEvidenceKind::Authorization
         },
-        requested_model: "gpt-5.6-sol".into(),
+        requested_model: "gpt-6-sol".into(),
         requested_effort: "xhigh".into(),
         invocation_id: "invocation-a".into(),
         job_id: Some("job-a".into()),

@@ -76,7 +76,7 @@ has. Machines where the default works are untouched, so the plugin's own `/codex
 `/codex:result` keep finding their records.
 
 Verified A/B on macOS 2026-09-02: the unmodified wrapper exits 1 on EPERM; with the redirect all
-three tiers (`gpt-5.6-sol`, `gpt-5.6-terra`, `gpt-5.6-luna`) reach the model and exit 0. That check
+three tiers (`gpt-6-sol`, `gpt-5.6-terra`, `gpt-6-luna`) reach the model and exit 0. That check
 stopped one layer too high: the same runs could not execute a single shell command (next entry).
 
 **Platform note.** This is not simply 'macOS is stricter'. The 2026-08-10 entry recorded the

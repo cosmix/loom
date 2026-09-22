@@ -133,20 +133,20 @@
       "help": "Codex model loom pressure uses for the $pressure step",
       "kind": {
         "type": "enum",
-        "variants": ["gpt-6-astra", "gpt-5.6-sol", "gpt-5.6-terra", "gpt-5.6-luna"]
+        "variants": ["gpt-6-astra", "gpt-6-sol", "gpt-5.6-terra", "gpt-6-luna"]
       },
       "scopes": ["user", "project"],
-      "default": "gpt-5.6-sol",
+      "default": "gpt-6-sol",
       "user": {
-        "value": "gpt-5.6-sol",
+        "value": "gpt-6-sol",
         "set": false
       },
       "project": {
-        "value": "gpt-5.6-sol",
+        "value": "gpt-6-sol",
         "set": false
       },
       "effective": {
-        "value": "gpt-5.6-sol",
+        "value": "gpt-6-sol",
         "source": "default"
       }
     },

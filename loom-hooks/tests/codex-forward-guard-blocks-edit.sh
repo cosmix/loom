@@ -7,7 +7,7 @@ trap 'rm -rf "$d"' EXIT
 TMP="$d"
 mkdir -p "$TMP/subagents"
 TRANSCRIPT="$TMP/subagents/agent-aForwarder-abc123.jsonl"
-printf '%s\n' '{"message":{"role":"user","content":"LOOM-CODEX-FORWARD-ONLY\n--model gpt-5.6-luna --effort xhigh\ntask text"}}' >"$TRANSCRIPT"
+printf '%s\n' '{"message":{"role":"user","content":"LOOM-CODEX-FORWARD-ONLY\n--model gpt-6-luna --effort xhigh\ntask text"}}' >"$TRANSCRIPT"
 INPUT=$(printf '{"tool_name":"Edit","tool_input":{"file_path":"/tmp/x.rs","old_string":"a","new_string":"b"},"transcript_path":"%s"}' "$TRANSCRIPT")
 # LOOM_SESSION_ID is the guard's stage evidence: the forwarding policy applies
 # only inside a stage, and the sentinel in the transcript is not evidence of

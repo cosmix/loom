@@ -20,7 +20,7 @@ a project config.
 ## `[pressure]` Keys and Defaults
 
 `pressure.claude_model` opus, `pressure.claude_effort` xhigh, `pressure.codex_model`
-gpt-5.6-sol, `pressure.codex_effort` xhigh, `pressure.address_model` opus,
+gpt-6-sol, `pressure.codex_effort` xhigh, `pressure.address_model` opus,
 `pressure.address_effort` high.
 
 ## `[models]` Keys and Defaults

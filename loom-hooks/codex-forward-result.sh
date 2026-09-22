@@ -22,7 +22,7 @@ parse_forward_command() {
 		"${PARSED_WORDS[3]}" == --model && "${PARSED_WORDS[5]}" == --effort &&
 		"${PARSED_WORDS[7]}" == --write && "${PARSED_WORDS[8]}" == --unit-id &&
 		"${PARSED_WORDS[10]}" == --invocation-id ]] || return 1
-	case "${PARSED_WORDS[4]}" in gpt-6-astra | gpt-5.6-sol | gpt-5.6-terra | gpt-5.6-luna) ;; *) return 1 ;; esac
+	case "${PARSED_WORDS[4]}" in gpt-6-astra | gpt-6-sol | gpt-5.6-terra | gpt-6-luna) ;; *) return 1 ;; esac
 	case "${PARSED_WORDS[6]}" in low | medium | high | xhigh | max | ultra) ;; *) return 1 ;; esac
 	loom_lifecycle_safe_id "${PARSED_WORDS[9]}" && [[ ${#PARSED_WORDS[9]} -le 64 ]] || return 1
 	[[ "${PARSED_WORDS[11]}" =~ ^inv-[0-9a-f]{32}$ ]]

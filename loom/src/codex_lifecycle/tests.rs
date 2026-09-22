@@ -38,7 +38,7 @@ fn exact_join_handles_two_units_and_duplicate_restart_replay() -> Result<()> {
         "task-newer",
         "running",
         "loom.v1:stage-1:session-1:unrelated:inv-aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-        "gpt-5.6-sol",
+        "gpt-6-sol",
         &fixture.workspace,
     )?;
 
@@ -92,7 +92,7 @@ fn running_then_completed_appends_exact_observations() -> Result<()> {
     let display_work_dir = WorkDir::new(&fixture.work_dir)?;
     assert_eq!(
         execution_models_for_stage(&display_work_dir, STAGE),
-        ["gpt-5.6-sol (requested)"]
+        ["gpt-6-sol (requested)"]
     );
 
     fixture.write_job(&authorization, "task-a", "completed")?;
@@ -118,7 +118,7 @@ fn assert_completed_evidence(
         .context("completed observation")?;
     let evidence: CodexEvidence = serde_json::from_value(terminal.evidence.clone())?;
     assert_eq!(evidence.evidence_kind, CodexEvidenceKind::Observation);
-    assert_eq!(evidence.requested_model, "gpt-5.6-sol");
+    assert_eq!(evidence.requested_model, "gpt-6-sol");
     assert_eq!(evidence.requested_effort, "xhigh");
     assert_eq!(evidence.thread_id.as_deref(), Some("thread-1"));
     assert_eq!(evidence.turn_id.as_deref(), Some("turn-1"));
@@ -247,7 +247,7 @@ fn write_mismatched_jobs(
         "task-worktree",
         "running",
         &cases[2].1.encoded_session_id(),
-        "gpt-5.6-sol",
+        "gpt-6-sol",
         &other_workspace,
     )?;
     fixture.write_custom_job(
@@ -255,7 +255,7 @@ fn write_mismatched_jobs(
         "task-session",
         "running",
         "loom.v1:stage-1:wrong-session:unit-4:inv-00000000000000000000000000000004",
-        "gpt-5.6-sol",
+        "gpt-6-sol",
         &fixture.workspace,
     )?;
     fixture.write_custom_job(
@@ -263,7 +263,7 @@ fn write_mismatched_jobs(
         "task-unit",
         "running",
         "loom.v1:stage-1:session-1:wrong-unit:inv-00000000000000000000000000000005",
-        "gpt-5.6-sol",
+        "gpt-6-sol",
         &fixture.workspace,
     )?;
     fixture.write_custom_job(

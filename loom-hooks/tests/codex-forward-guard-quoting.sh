@@ -98,7 +98,7 @@ expect_allow "$CMD" dollar-tool 'backslash-escaped dollar'
 CMD='~/.claude/hooks/loom/codex-forward.sh task "say \"hi\" then \\ done" --model gpt-5.6-terra --effort xhigh --write'
 expect_allow "$CMD" double-quote-tool 'double-quoted escapes'
 
-CMD="$HOME_DIR/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-luna --effort xhigh --write"
+CMD="$HOME_DIR/.claude/hooks/loom/codex-forward.sh task hello --model gpt-6-luna --effort xhigh --write"
 expect_allow "$CMD" expanded-home-tool 'HOME-expanded wrapper path'
 
 # Unquoted operators, incomplete escaping, wrong arity, and another path stay blocked.

@@ -208,7 +208,7 @@ mod tests {
                 "\n",
                 r#"{"model":"gpt-5.6-terra"}"#,
                 "\n",
-                r#"{"model":"gpt-5.6-luna"}"#,
+                r#"{"model":"gpt-6-luna"}"#,
                 "\n",
             ),
         )
@@ -220,7 +220,7 @@ mod tests {
                 "sonnet",
                 "opus",
                 "gpt-5.6-terra (requested)",
-                "gpt-5.6-luna (requested)"
+                "gpt-6-luna (requested)"
             ]
         );
     }
@@ -233,7 +233,7 @@ mod tests {
         std::fs::write(
             stage_dir.join("codex.jsonl"),
             concat!(
-                r#"{"model":"gpt-5.6-sol"}"#,
+                r#"{"model":"gpt-6-sol"}"#,
                 "\n",
                 r#"{"model":"gpt-6-astra"}"#,
                 "\n",
@@ -248,7 +248,7 @@ mod tests {
         assert_eq!(
             execution_models_for_stage(&work_dir, "s1"),
             [
-                "gpt-5.6-sol (requested)",
+                "gpt-6-sol (requested)",
                 "gpt-6-astra (requested)",
                 "gpt-7-orbit (requested)"
             ]

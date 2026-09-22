@@ -134,7 +134,7 @@ Coordinators delegate too (hard stop 6), going opus only when territory integrat
 judgment. Mix lanes under ONE ownership table. On a stage listing codex in `implementers`, a
 coordinator spawns `loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue`
 directly), foreground only: gpt-5.6-terra for common implementation and integration tests,
-gpt-5.6-luna for boilerplate, scaffolding, and simple unit tests. The lane is chosen per subagent,
+gpt-6-luna for boilerplate, scaffolding, and simple unit tests. The lane is chosen per subagent,
 never per stage; the coordinator still does not verify.
 
 With an `EXECUTION PLAN` block, parse ALL assignments and spawn ALL in ONE message; hierarchical
@@ -195,7 +195,7 @@ Fable-tier work has no pinned agent type; pass the model override explicitly at 
    below what that needs: every extra spawn pays the boot cost again. Pick PER
    SUBAGENT by what that piece needs, never once for the whole stage, and
    default downward: HAIKU (`model: haiku` on loom-software-engineer) for
-   mechanical edits such as a rename or a config value; codex gpt-5.6-luna for
+   mechanical edits such as a rename or a config value; codex gpt-6-luna for
    boilerplate, scaffolding, and simple unit tests; SONNET
    (loom-software-engineer) or codex gpt-5.6-terra for common implementation and
    integration tests — this is the default lane and most work belongs here; OPUS

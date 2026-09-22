@@ -43,7 +43,7 @@ fn v1_0_6_job(temp: &TempDir) -> serde_json::Value {
         "result": {"text": "done"},
         "request": {
             "cwd": temp.path(),
-            "model": "gpt-5.6-sol",
+            "model": "gpt-6-sol",
             "effort": "xhigh",
             "prompt": "Implement the adapter",
             "write": true,

@@ -273,7 +273,7 @@ pub(super) fn format_semi_stable_section(
             "Workflow fan-out spawns CLAUDE subagents only: the codex lane (gpt-5.6-terra /\n",
         );
         content.push_str(
-            "gpt-5.6-luna) is NOT addressable from a Workflow script. On a stage licensed for\n",
+            "gpt-6-luna) is NOT addressable from a Workflow script. On a stage licensed for\n",
         );
         content.push_str(
             "both, codex work goes through normal `loom-codex-forwarder` Agent spawns, outside\n",

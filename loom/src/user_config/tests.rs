@@ -100,7 +100,7 @@ fn defaults_when_the_file_is_absent() {
     assert_eq!(config.context_ceiling_tokens_set(), None);
     assert_eq!(config.pressure_claude_model(), "opus");
     assert_eq!(config.pressure_claude_effort(), "xhigh");
-    assert_eq!(config.pressure_codex_model(), "gpt-5.6-sol");
+    assert_eq!(config.pressure_codex_model(), "gpt-6-sol");
     assert_eq!(config.pressure_codex_effort(), "xhigh");
     assert_eq!(config.pressure_address_model(), "opus");
     assert_eq!(config.pressure_address_effort(), "high");
@@ -178,11 +178,11 @@ fn a_type_mismatched_field_in_the_document_is_an_error() {
 
 #[test]
 fn pressure_keys_reject_an_unknown_model_variant() {
-    let err = parse_document("[pressure]\nclaude_model = \"gpt-5.6-sol\"\n")
+    let err = parse_document("[pressure]\nclaude_model = \"gpt-6-sol\"\n")
         .unwrap_err()
         .to_string();
     assert!(err.contains("pressure.claude_model"), "{err}");
-    assert!(err.contains("gpt-5.6-sol"), "{err}");
+    assert!(err.contains("gpt-6-sol"), "{err}");
 
     let err = parse_document("[pressure]\ncodex_model = \"opus\"\n")
         .unwrap_err()
@@ -210,11 +210,11 @@ fn pressure_and_models_keys_reject_an_unknown_effort_variant() {
 
 #[test]
 fn models_keys_reject_an_unknown_model_variant() {
-    let err = parse_document("[models]\nknowledge_distill_model = \"gpt-5.6-sol\"\n")
+    let err = parse_document("[models]\nknowledge_distill_model = \"gpt-6-sol\"\n")
         .unwrap_err()
         .to_string();
     assert!(err.contains("models.knowledge_distill_model"), "{err}");
-    assert!(err.contains("gpt-5.6-sol"), "{err}");
+    assert!(err.contains("gpt-6-sol"), "{err}");
 }
 
 #[test]
@@ -246,7 +246,7 @@ fn origin_of_pressure_keys_reflects_set_versus_unset() {
     assert_eq!(origin, Origin::Set);
 
     let (value, origin) = config.value_of(spec("pressure.codex_model").unwrap());
-    assert_eq!(value.to_string(), "gpt-5.6-sol");
+    assert_eq!(value.to_string(), "gpt-6-sol");
     assert_eq!(origin, Origin::Default);
 
     let (value, origin) = config.value_of(spec("pressure.codex_effort").unwrap());
@@ -335,7 +335,7 @@ fn value_of_has_an_arm_for_every_registered_key() {
             }
             "pressure.claude_model" => assert_eq!(value, "opus"),
             "pressure.claude_effort" => assert_eq!(value, "xhigh"),
-            "pressure.codex_model" => assert_eq!(value, "gpt-5.6-sol"),
+            "pressure.codex_model" => assert_eq!(value, "gpt-6-sol"),
             "pressure.codex_effort" => assert_eq!(value, "xhigh"),
             "pressure.address_model" => assert_eq!(value, "opus"),
             "pressure.address_effort" => assert_eq!(value, "high"),

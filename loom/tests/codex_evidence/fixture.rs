@@ -16,7 +16,7 @@ use crate::fixture_support::{
 
 pub const STAGE: &str = "codex-stage";
 pub const LOOM_SESSION: &str = "loom-session-a";
-pub const MODEL: &str = "gpt-5.6-sol";
+pub const MODEL: &str = "gpt-6-sol";
 pub const EFFORT: &str = "xhigh";
 
 #[derive(Clone)]

@@ -112,7 +112,7 @@ Check skills and agents before implementing; the prompt-submit hook surfaces mat
 | `loom-code-reviewer` | — | Read-only code/security/architecture review |
 | `Explore` | — | Codebase exploration |
 | `loom-advisor` | Fable | Read-only advisory for debugging and repeated failures — receives full detail, returns a diagnosis and next step, writes nothing |
-| `loom-codex-forwarder` | gpt-5.6-terra / gpt-5.6-luna | Codex lane on stages listing codex in `implementers`; state `--model <tier> --effort xhigh` in the prompt; write-capable, foreground only, never verifies; a unit is one file (or a file plus its test), at most three steps, sized for the wrapper's 540 s deadline; an overrun exits 124 `timed_out` — re-split, never re-forward as is |
+| `loom-codex-forwarder` | gpt-5.6-terra / gpt-6-luna | Codex lane on stages listing codex in `implementers`; state `--model <tier> --effort xhigh` in the prompt; write-capable, foreground only, never verifies; a unit is one file (or a file plus its test), at most three steps, sized for the wrapper's 540 s deadline; an overrun exits 124 `timed_out` — re-split, never re-forward as is |
 
 Fable-tier work has no pinned agent type; pass the model override explicitly at spawn.
 

@@ -95,7 +95,7 @@ mod tests {
             PressureModels::resolve(flags(), &PressureConfig::default(), &UserConfig::default());
         assert_eq!(models.claude, "opus");
         assert_eq!(models.claude_effort, "xhigh");
-        assert_eq!(models.codex, "gpt-5.6-sol");
+        assert_eq!(models.codex, "gpt-6-sol");
         assert_eq!(models.codex_effort, "xhigh");
         assert_eq!(models.address, "opus");
         assert_eq!(models.address_effort, "high");
@@ -118,11 +118,11 @@ mod tests {
         let project = PressureConfig::from_section_toml("claude_model = \"haiku\"\n").unwrap();
         let mut f = flags();
         f.claude_model = Some("opus".to_string());
-        f.codex_model = Some("gpt-5.6-luna".to_string());
+        f.codex_model = Some("gpt-6-luna".to_string());
         f.address_model = Some("opus".to_string());
         let models = PressureModels::resolve(f, &project, &user);
         assert_eq!(models.claude, "opus");
-        assert_eq!(models.codex, "gpt-5.6-luna");
+        assert_eq!(models.codex, "gpt-6-luna");
         assert_eq!(models.address, "opus");
     }
 
@@ -186,7 +186,7 @@ mod tests {
         assert_eq!(models.address_effort, "low");
         // ...while every model slot is untouched, still on the built-in.
         assert_eq!(models.claude, "opus");
-        assert_eq!(models.codex, "gpt-5.6-sol");
+        assert_eq!(models.codex, "gpt-6-sol");
         assert_eq!(models.address, "opus");
     }
 }
