@@ -15,10 +15,6 @@ User-provided regex patterns in plan files (failure_patterns, wiring patterns) a
 
 Files: src/verify/baseline/capture.rs:76-79, src/verify/baseline/compare.rs:155-158
 
-## Bootstrap Settings Backup Risk
-
-`bootstrap.rs:write_bootstrap_sandbox()` keeps the settings.local.json backup in memory only (`Option<String>`). If the process is killed between writing sandbox settings and restoring the original, user settings are permanently lost. Low probability since bootstrap is interactive, but a disk-based temp backup would be more robust.
-
 ## Two Diverging Copies of the Stage Environment Allowlist (2026-08-17)
 
 The host env allowlist exists twice, and the copies have **already** diverged:

@@ -43,8 +43,11 @@ and states plainly which channel is wired. Then the file for what you touch:
 | `criterion_needs_ungrantable_resource` | `plan/schema/validation.rs:647` | plan-time warning when a criterion needs `loom map`, `loom knowledge context`, `tmux` or `docker` — resources a worktree sandbox cannot grant |
 | memory spool | `fs/memory/spool.rs:33,59,191` + `orchestrator/core/spool_drain.rs:38` + `git/cleanup/batch.rs:67` | see the spool-and-drain pattern |
 
-`loom map` is now three read-only flags and nothing else: `--outline <PATH>`,
-`--find-all <SYMBOL>`, `--impact <SYMBOL_OR_PATH>` (`commands/map.rs:17-28`). `--deep`
+`loom map` is five read-only view flags and nothing else: `--outline <PATH>`,
+`--find-all <SYMBOL>`, `--impact <SYMBOL_OR_PATH>`, `--callers <SYMBOL>`, `--callees <SYMBOL>`
+(`MapArgs`, `commands/map.rs`), plus the shared modifiers `--depth`, `--kinds`, `--limit`,
+`--path`, `--min-confidence`, `--json`. At least one view is required; no mode writes
+Markdown. The earlier "three flags" claim here predates `--callers`/`--callees`. `--deep`
 and `--focus` are gone, along with `map/{analyzer,detectors,knowledge_sync}.rs`. Note
 that the GLOBAL agent doctrine file still documents `loom map [--deep] [--focus <area>]`
 — that text is stale against this repo.

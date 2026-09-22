@@ -46,7 +46,7 @@
 | [security-and-isolation](architecture/security-and-isolation.md) | 4-layer worktree defense, security model | 193 |
 | [signal-generation](architecture/signal-generation.md) | Signal assembly: cache, append_* helpers, stage prefixes | 198 |
 | [skill-catalog](architecture/skill-catalog.md) | The two skill roots; 53 catalogued skills | 126 |
-| [source-graph](architecture/source-graph.md) | Source graph honesty contract, extractor trait, limits | 329 |
+| [source-graph](architecture/source-graph.md) | Source graph honesty contract, extractor trait, limits | 330 |
 | [status-data-model](architecture/status-data-model.md) | Where each loom status field comes from | 196 |
 | [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends, lane resolution | 285 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, --compare, criterion cache, receipts | 254 |
@@ -58,7 +58,7 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch, plan parse/validate/graph, verification | 176 |
-| [context-and-source-graph](entry-points/context-and-source-graph.md) | Context retrieval pipeline, source-graph channel | 50 |
+| [context-and-source-graph](entry-points/context-and-source-graph.md) | Context retrieval pipeline, source-graph channel | 53 |
 | [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs/work_dir, handoff, sandbox, remote control | 121 |
 | [hooks](entry-points/hooks.md) | Hook scripts, their events, command matching | 146 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Orchestrator loop, daemon, monitor, signals, merges | 224 |
@@ -159,7 +159,7 @@
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps: heading rename, CRLF, fences, housekeeping | 101 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry/completion edge cases | 82 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Runtime edge cases: tmux, attach lifetime, orphan adoption | 139 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: no E2E canary, diverging env allowlists | 162 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: no E2E canary, diverging env allowlists | 158 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package-manager caches stay session-writable. | 9 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Open follow-ups from the token-optimization and efficiency plans | 92 |
 | [typed-config-values](concerns/typed-config-values.md) | Accepted gaps in the config read-path | 27 |

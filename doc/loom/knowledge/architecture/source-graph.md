@@ -228,9 +228,10 @@ drives the same builder.
   `enumerate_ms` / `hash_ms` / `parse_ms` / `persist_ms`.
   `SnapshotOutcome::describe` prints the parsed, reused and deleted counts on its
   advisory line.
-- `EXCLUDED_ROOTS` = `.loom`, `.loom/work`, `.worktrees`, `target`, `node_modules`, `.git`
-  (`refresh/source_graph.rs`), applied to enumerated, untracked and dirty paths
-  alike.
+- `EXCLUDED_ROOTS` = `.loom`, `.work`, `.worktrees`, `target`, `node_modules`, `.git`
+  (`refresh/source_graph.rs`), matched against the FIRST path segment only, applied to
+  enumerated, untracked and dirty paths alike. (An earlier version of this entry listed a
+  compound `.loom/work`; the list has two separate top-level entries, `.loom` and `.work`.)
 - `context` reaches `git` only through `git::runner::run_git_checked`, from
   `enumerate.rs`, `generation.rs` and `layer.rs` under `refresh/source_graph/`. That
   is a deliberate downward edge, not a layering violation.
