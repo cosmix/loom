@@ -1,7 +1,12 @@
-//! Shared Claude binary resolution utilities.
+//! Shared Claude binary resolution and foreground-session driving.
 
 use anyhow::{bail, Result};
 use std::path::PathBuf;
+
+mod session;
+pub(crate) use session::{
+    classify_exit, remove_if_exists, run_foreground, ClaudeOutcome, ExitAction, AGENT_TEAMS_ENV,
+};
 
 /// Claude model aliases `loom pressure` accepts for its foreground steps,
 /// cheapest tier first (mirrors loom-hooks/spawn-guard.sh's tier ranking). The

@@ -81,7 +81,7 @@ impl StageQuery {
 }
 
 /// Message for a caller that cannot proceed without a knowledge tree.
-const NO_KNOWLEDGE_DIR: &str = "Knowledge directory not found. Run 'loom init' to create it.";
+const NO_KNOWLEDGE_DIR: &str = "Knowledge directory not found. Run 'loom knowledge bootstrap' (or 'loom init <plan>') to create it.";
 
 /// Structural freshness detail for a project that has no knowledge tree.
 ///

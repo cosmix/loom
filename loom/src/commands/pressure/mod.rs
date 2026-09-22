@@ -43,8 +43,7 @@ mod spawn;
 
 use models::PressureModels;
 use paths::{
-    claude_marker_path, codex_log_path, codex_report_path, delete_file, resolve_plan_path,
-    resolve_repo_root,
+    claude_marker_path, codex_log_path, codex_report_path, resolve_plan_path, resolve_repo_root,
 };
 use spawn::{
     claude_args, claude_should_stop, codex_args, run_claude_foreground, should_stop,
@@ -257,7 +256,7 @@ fn run_pipeline(ctx: &StepContext, rounds: u32, invocation: &str, report: &Path)
     for step in plan_steps(rounds, invocation, report) {
         let stop = match step {
             Step::DeleteReport(path) => {
-                delete_file(&path)?;
+                crate::claude::remove_if_exists(&path)?;
                 false
             }
             Step::Pressure { claude, codex } => run_pressure_step(ctx, &claude, &codex)?,

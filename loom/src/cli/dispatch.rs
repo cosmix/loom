@@ -49,6 +49,7 @@ fn dispatch_knowledge(command: KnowledgeCommands) -> Result<()> {
             structural_only,
             json,
         } => knowledge::sync::sync(structural_only, json),
+        KnowledgeCommands::Bootstrap(args) => knowledge::bootstrap::execute(args),
         KnowledgeCommands::Check {
             strict,
             strict_evidence,

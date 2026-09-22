@@ -53,22 +53,20 @@ fn test_complete_subcommands_knowledge() {
     // `check` is the read-only diagnostics command (`commands/knowledge/check.rs`),
     // not the long-deleted subcommand that once bore the name — it belongs with
     // the live subcommands below, not on the `gone` list.
-    for present in ["update", "replace-section", "context", "sync", "check"] {
+    for present in [
+        "update",
+        "replace-section",
+        "context",
+        "sync",
+        "check",
+        "bootstrap",
+    ] {
         assert!(
             results.contains(&present.to_string()),
             "knowledge must still complete `{present}`"
         );
     }
-    for gone in [
-        "show",
-        "init",
-        "index",
-        "list",
-        "audit",
-        "gc",
-        "bootstrap",
-        "status",
-    ] {
+    for gone in ["show", "init", "index", "list", "audit", "gc", "status"] {
         assert!(
             !results.contains(&gone.to_string()),
             "knowledge must not complete the deleted `{gone}`"
