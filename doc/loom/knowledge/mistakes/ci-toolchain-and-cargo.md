@@ -173,3 +173,10 @@ committing, not after.
 **Why:** `toml_edit::Item` doesn't implement full `serde::Deserialize` for complex nested structures the same way `toml::Value` does.
 
 **Prevention:** Use `toml_edit` for writes (round-trip safe). Use `toml` (re-parse the full file with `toml::Value`, then `try_into::<T>()` on the section) for typed reads of nested structures.
+
+## Rustc 1.98 Flags Redundant Glob Imports in Test Modules (2026-09-23)
+
+**What happened:** CI's Build job (`cargo build --all-targets`, `RUSTFLAGS=-Dwarnings`) failed on rustc 1.98.1 with `unused import` on `use super::paths::*;` and `use super::spawn::*;` in `commands/pressure/tests.rs`. Local 1.97.1 built clean. Clippy and test jobs were skipped, so the Build job hid any further fallout.
+**Why:** Same toolchain drift as above, this time in rustc's own `unused_imports` lint. The file also had `use super::*`, and the parent's named `use paths::{..}` / `use spawn::{..}` imports already supplied every name the tests used. 1.98 counts a glob that contributes no name as unused.
+**Prevention:** In a `tests.rs` child module, use `use super::*` alone, and name a submodule item explicitly only when the parent does not import it. To reproduce CI without moving the default toolchain: `rustup toolchain install <ver> --profile minimal -c clippy -c rustfmt`, then `cargo +<ver> build/clippy/test`. Keep `CARGO_TARGET_DIR` out of `/tmp`. `tmux::tests_spawn::a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt` rejects a `LOOM_BIN` under `/tmp` as session-writable and fails with a false positive.
+**Fix:** Dropped the two redundant globs. Build, clippy, fmt, doc, and the full test suite (5842 tests) all passed on 1.98.1.

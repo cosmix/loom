@@ -100,7 +100,7 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock: adoption, requeue | 188 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | Why a .git directory is not evidence of a real repository | 146 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Stage bug reports; guard flags in briefs | 85 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI clippy drift, offline cargo audit, install.sh | 175 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI clippy drift, offline cargo audit, install.sh | 182 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | A wrapper implemented the task instead of forwarding it | 156 |
 | [codex-navigation](mistakes/codex-navigation.md) | Forbidding reads instead of fixing a slow reader | 32 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls: braces, placeholders, path reuse | 70 |
