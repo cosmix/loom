@@ -1,5 +1,3 @@
-use super::paths::*;
-use super::spawn::*;
 use super::*;
 use std::fs;
 use tempfile::TempDir;
