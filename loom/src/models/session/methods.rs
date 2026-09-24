@@ -65,6 +65,18 @@ impl Session {
         session
     }
 
+    /// Create a new contract session: the agent that writes a v2 stage's
+    /// failing contract tests in the stage worktree before its `Stage`
+    /// session starts. The `stage_id` is required so the `tracking_key` can
+    /// be derived up-front (see [`Session::derive_tracking_key`]).
+    pub fn new_contract(stage_id: &str) -> Self {
+        let mut session = Self::new();
+        session.session_type = SessionType::Contract;
+        session.stage_id = Some(stage_id.to_string());
+        session.tracking_key = Self::derive_tracking_key(stage_id, SessionType::Contract);
+        session
+    }
+
     /// Derive the canonical tracking key for a session.
     ///
     /// The tracking key is used to find OS-level resources owned by this
@@ -80,6 +92,7 @@ impl Session {
             SessionType::BaseConflict => format!("loom-base-conflict-{stage_id}"),
             SessionType::Knowledge => format!("loom-knowledge-{stage_id}"),
             SessionType::Adjudication => format!("loom-adjudication-{stage_id}"),
+            SessionType::Contract => format!("loom-contract-{stage_id}"),
         }
     }
 

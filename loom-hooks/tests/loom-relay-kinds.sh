@@ -129,6 +129,10 @@ expect handoff 'loom handoff --stage stage-a --session s --trigger ceiling'
 expect merge-resolved 'loom stage merge stage-a --resolved'
 expect '' 'loom stage merge stage-a'
 expect verdict 'loom stage adjudicate --stage stage-a --dispute 1'
+expect freeze-contracts 'loom stage contracts freeze stage-a'
+expect '' 'loom stage contracts show stage-a'
+expect '' 'loom stage contracts restore stage-a --contract rejects-x'
+expect '' 'loom stage contracts show freeze'
 expect telemetry 'loom knowledge context --query "x" --budget-tokens 800'
 expect memory 'cd loom && loom memory note x'
 expect memory 'FOO=1 loom memory note x'
@@ -144,6 +148,7 @@ expect '' 'rg -n loom memory'
 expect '' $'cat <<\'EOF\'\nloom memory note x\nEOF'
 # A subagent never relays a control kind; its memory and telemetry still flow.
 expect '' 'loom stage block stage-a --reason r' general-purpose
+expect '' 'loom stage contracts freeze stage-a' general-purpose
 expect memory 'loom memory note x; loom handoff --trigger ceiling' general-purpose
 expect telemetry 'loom knowledge context --query x' general-purpose
 

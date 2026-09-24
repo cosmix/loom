@@ -38,11 +38,12 @@ pub enum RequestPayload {
     MergeResolved,
     Verdict(VerdictRequest),
     Telemetry(TelemetryEvent),
+    FreezeContracts(StageRequest),
 }
 
-/// Decode `payload` under the shape `kind` promises. `block` and `dispute`
-/// share `StageRequest`'s wire shape, so a payload tagged for the other one
-/// is refused even though it would otherwise parse.
+/// Decode `payload` under the shape `kind` promises. `block`, `dispute` and
+/// `freeze-contracts` share `StageRequest`'s wire shape, so a payload tagged
+/// for another one is refused even though it would otherwise parse.
 pub fn decode_payload(kind: RequestKind, payload: &Value) -> Result<RequestPayload> {
     match kind {
         RequestKind::Memory => Ok(RequestPayload::Memory(decode(payload, "memory")?)),
@@ -59,6 +60,10 @@ pub fn decode_payload(kind: RequestKind, payload: &Value) -> Result<RequestPaylo
         }
         RequestKind::Verdict => Ok(RequestPayload::Verdict(decode(payload, "verdict")?)),
         RequestKind::Telemetry => Ok(RequestPayload::Telemetry(decode_telemetry(payload)?)),
+        RequestKind::FreezeContracts => Ok(RequestPayload::FreezeContracts(decode_stage_request(
+            payload,
+            "freeze_contracts",
+        )?)),
     }
 }
 
@@ -189,6 +194,28 @@ mod tests {
             "items": 1,
         });
         assert!(decode_payload(RequestKind::Telemetry, &delivered).is_err());
+    }
+
+    #[test]
+    fn decodes_freeze_contracts_and_refuses_it_under_dispute() {
+        let freeze = serde_json::json!({
+            "request": "freeze_contracts",
+            "reports": [{
+                "contract_id": "rejects-x",
+                "adapter": "cargo-test",
+                "outcome": "failed",
+                "exit_code": 101,
+            }],
+        });
+        assert!(matches!(
+            decode_payload(RequestKind::FreezeContracts, &freeze).unwrap(),
+            RequestPayload::FreezeContracts(StageRequest::FreezeContracts { reports })
+                if reports.len() == 1
+        ));
+        assert!(decode_payload(RequestKind::Dispute, &freeze).is_err());
+        assert!(
+            decode_payload(RequestKind::FreezeContracts, &stage_request_json("block")).is_err()
+        );
     }
 
     #[test]

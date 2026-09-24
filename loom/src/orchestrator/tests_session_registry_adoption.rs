@@ -150,3 +150,22 @@ fn a_merge_agents_tracking_key_survives_adoption() {
     assert_eq!(adopted.tracking_key, "loom-merge-alpha");
     assert_eq!(adopted.session_type, SessionType::Merge);
 }
+
+/// A contract session is the stage's agent while it runs, so a daemon that
+/// died before writing its record must still find it by its tracking key.
+#[test]
+fn a_recordless_contract_agent_is_found_by_its_tracking_key() {
+    let temp = work_dir();
+    let work = temp.path();
+
+    stage_at(work, "alpha", StageStatus::Executing);
+    let mut orphan = Session::new_contract("alpha");
+    orphan.status = SessionStatus::Running;
+    spawn_a_live_agent(work, &orphan);
+
+    let evidence = orphan_evidence(work);
+    assert_eq!(evidence.len(), 1, "unexpected evidence: {evidence:?}");
+    assert_eq!(evidence[0].session_id, orphan.id);
+    assert_eq!(evidence[0].tracking_key, "loom-contract-alpha");
+    assert_eq!(evidence[0].session_type, SessionType::Contract);
+}

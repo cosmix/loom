@@ -240,21 +240,17 @@ impl NativeBackend {
         Some((title, pid_key))
     }
 
+    /// Spawn a session that runs in the stage worktree: the stage's own
+    /// agent, or the contract writer that precedes it.
     pub fn spawn_session(
         &self,
+        kind: SessionType,
         stage: &Stage,
         worktree: &Worktree,
         session: Session,
         signal_path: &Path,
     ) -> Result<Session> {
-        self.spawn(
-            SessionType::Stage,
-            stage,
-            session,
-            signal_path,
-            &worktree.path,
-            true,
-        )
+        self.spawn(kind, stage, session, signal_path, &worktree.path, true)
     }
 
     /// Spawn a session that runs in the MAIN REPOSITORY rather than in a
@@ -284,9 +280,10 @@ impl NativeBackend {
     ///
     /// * `kind` — selects the prompt and the model/effort policy.
     /// * `cwd` — the directory the wrapper `cd`s into and the terminal spawns
-    ///   from (the worktree for stage sessions, the repo root otherwise).
-    /// * `set_worktree_path` — only stage sessions record a worktree path; the
-    ///   others run in the main repo.
+    ///   from (the worktree for stage and contract sessions, the repo root
+    ///   otherwise).
+    /// * `set_worktree_path` — only worktree sessions record a worktree path;
+    ///   the others run in the main repo.
     fn spawn(
         &self,
         kind: SessionType,

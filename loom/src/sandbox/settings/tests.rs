@@ -232,29 +232,29 @@ fn test_generate_settings_with_filesystem() {
     assert_eq!(deny.len(), 1);
     assert_eq!(deny[0], "Edit(.loom/work/**)");
 
-    // allow_write paths come first, then the narrowly-scoped state
-    // reads agents need (signals/handoffs/disputes/memory), emitted in
-    // both layout spellings: the nested `.loom/work/...` five, then the
-    // legacy `.work/...` five. A workspace that resolved to a legacy
-    // `<repo>/.work/` root stays legacy forever, and this function cannot
-    // see which layout it is emitting for, so it emits both; on either
-    // layout the other spelling matches nothing and costs nothing. The set
-    // is deliberately scoped to subdirs an agent touches — never bare
-    // `.loom/work/**` / `.work/**`, which would also expose
-    // `admin.token` / `user.token` (S-1).
+    // allow_write paths come first, then the narrowly-scoped state reads agents need
+    // (config.toml, signals/handoffs/disputes/memory/contracts), in both layout spellings: the
+    // nested `.loom/work/...` six, then the legacy `.work/...` six. A workspace that resolved to
+    // a legacy `<repo>/.work/` root stays legacy forever, and this function cannot see which
+    // layout it is emitting for, so it emits both; on either layout the other spelling matches
+    // nothing and costs nothing. The set is deliberately scoped to subdirs an agent touches —
+    // never bare `.loom/work/**` / `.work/**`, which would also expose `admin.token` /
+    // `user.token` (S-1).
     let allow = json["permissions"]["allow"].as_array().unwrap();
-    assert_eq!(allow.len(), 11);
+    assert_eq!(allow.len(), 13);
     assert_eq!(allow[0], "Edit(src/**)");
     assert_eq!(allow[1], "Read(.loom/work/config.toml)");
     assert_eq!(allow[2], "Read(.loom/work/signals/**)");
     assert_eq!(allow[3], "Read(.loom/work/handoffs/**)");
     assert_eq!(allow[4], "Read(.loom/work/disputes/**)");
     assert_eq!(allow[5], "Read(.loom/work/memory/**)");
-    assert_eq!(allow[6], "Read(.work/config.toml)");
-    assert_eq!(allow[7], "Read(.work/signals/**)");
-    assert_eq!(allow[8], "Read(.work/handoffs/**)");
-    assert_eq!(allow[9], "Read(.work/disputes/**)");
-    assert_eq!(allow[10], "Read(.work/memory/**)");
+    assert_eq!(allow[6], "Read(.loom/work/contracts/**)");
+    assert_eq!(allow[7], "Read(.work/config.toml)");
+    assert_eq!(allow[8], "Read(.work/signals/**)");
+    assert_eq!(allow[9], "Read(.work/handoffs/**)");
+    assert_eq!(allow[10], "Read(.work/disputes/**)");
+    assert_eq!(allow[11], "Read(.work/memory/**)");
+    assert_eq!(allow[12], "Read(.work/contracts/**)");
 }
 
 fn assert_filesystem_sandbox(json: &Value) {
@@ -693,10 +693,10 @@ fn test_allow_write_trims_whitespace_and_drops_empty() {
     let allow = json["permissions"]["allow"].as_array().unwrap();
 
     // The padded entry is trimmed and emitted; the whitespace-only entry
-    // contributes nothing - allow.len() is 1 (allow_write) + 5 (.loom/work/ state
-    // permissions) + 5 (legacy .work/ state permissions), same as a single
+    // contributes nothing - allow.len() is 1 (allow_write) + 6 (.loom/work/ state
+    // permissions) + 6 (legacy .work/ state permissions), same as a single
     // ordinary entry would produce.
-    assert_eq!(allow.len(), 11, "got: {allow:?}");
+    assert_eq!(allow.len(), 13, "got: {allow:?}");
     assert_eq!(allow[0], "Edit(loom/src/**)");
 }
 

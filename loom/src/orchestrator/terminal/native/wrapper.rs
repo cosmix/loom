@@ -193,9 +193,9 @@ cd {dir_escaped} || {{ echo "Failed to cd to working directory"; exit 1; }}
 ///   without a commit. Keyed on the kind, never on a `merge-` prefix in
 ///   `stage_id`: that id is the plain plan stage id for every kind, and a plan
 ///   is free to name a stage `merge-anything`.
-/// * `LOOM_WORKTREE_PATH` — only `Stage`, the one kind that runs inside a loom
-///   worktree. Merge, knowledge and base-conflict sessions `cd` into the main
-///   repo; exporting the var for them makes presence-based gates
+/// * `LOOM_WORKTREE_PATH` — only `Stage` and `Contract`, the kinds that run
+///   inside a loom worktree. Merge, knowledge and base-conflict sessions `cd`
+///   into the main repo; exporting the var for them makes presence-based gates
 ///   (`sandbox_control_session`, `loom-control-complete.sh`) misread a
 ///   main-repo agent as a sandboxed worktree agent, which is what once made
 ///   knowledge stages impossible to complete.
@@ -205,7 +205,8 @@ fn kind_env(kind: SessionType, working_dir: Option<&Path>) -> (String, String) {
     } else {
         String::new()
     };
-    let worktree = match working_dir.filter(|_| kind == SessionType::Stage) {
+    let in_worktree = matches!(kind, SessionType::Stage | SessionType::Contract);
+    let worktree = match working_dir.filter(|_| in_worktree) {
         Some(dir) => {
             let assignment = format!("LOOM_WORKTREE_PATH={}", absolute(dir).display());
             format!("    {} {CONTINUATION}", escape(assignment.into()))

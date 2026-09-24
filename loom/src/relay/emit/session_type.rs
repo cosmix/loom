@@ -17,6 +17,7 @@ pub(super) fn parse(raw: &str) -> Result<SessionType> {
         "base_conflict" => Ok(SessionType::BaseConflict),
         "knowledge" => Ok(SessionType::Knowledge),
         "adjudication" => Ok(SessionType::Adjudication),
+        "contract" => Ok(SessionType::Contract),
         other => bail!("LOOM_SESSION_TYPE '{other}' is not a known session type"),
     }
 }
@@ -33,6 +34,7 @@ mod tests {
             SessionType::BaseConflict,
             SessionType::Knowledge,
             SessionType::Adjudication,
+            SessionType::Contract,
         ] {
             assert_eq!(parse(&session_type.to_string()).unwrap(), session_type);
         }

@@ -93,21 +93,17 @@ impl TmuxBackend {
         Ok(session)
     }
 
+    /// Spawn a session that runs in the stage worktree (stage or contract),
+    /// mirroring [`native::NativeBackend::spawn_session`].
     pub fn spawn_session(
         &self,
+        kind: SessionType,
         stage: &Stage,
         worktree: &Worktree,
         session: Session,
         signal_path: &Path,
     ) -> Result<Session> {
-        self.spawn(
-            SessionType::Stage,
-            stage,
-            session,
-            signal_path,
-            &worktree.path,
-            true,
-        )
+        self.spawn(kind, stage, session, signal_path, &worktree.path, true)
     }
 
     /// Spawn a session that runs in the MAIN REPOSITORY rather than in a

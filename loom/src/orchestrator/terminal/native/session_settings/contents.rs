@@ -109,16 +109,19 @@ fn add_scratch_grant(settings: &mut Value, scratch_dir: &Path) -> Result<()> {
 }
 
 /// The kind's `hooks` block: loom's global guard set for every kind (the
-/// completion broker's hook only for Stage and Knowledge), every session hook
-/// event for Stage and Knowledge but only the PostToolUse heartbeat for the
-/// others, and the relay hook for every kind.
+/// completion broker's hook only for Stage, Contract and Knowledge), every
+/// session hook event for those three but only the PostToolUse heartbeat for
+/// the others, and the relay hook for every kind.
 fn capsule_hooks(
     kind: SessionType,
     hooks_dir: &Path,
     python3: Option<&Path>,
     python_hooks: &[PathBuf],
 ) -> Value {
-    let brokered = matches!(kind, SessionType::Stage | SessionType::Knowledge);
+    let brokered = matches!(
+        kind,
+        SessionType::Stage | SessionType::Contract | SessionType::Knowledge
+    );
     let mut hooks = crate::fs::permissions::guard_hooks_config(&hooks_dir.display().to_string());
     if !brokered {
         drop_script(&mut hooks, CONTROL_COMPLETE_SCRIPT);

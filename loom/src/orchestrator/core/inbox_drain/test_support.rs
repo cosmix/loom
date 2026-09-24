@@ -230,5 +230,6 @@ pub(super) fn payload_for(kind: RequestKind) -> Value {
             "estimated_tokens": 20,
             "unmet_required": 0,
         }),
+        RequestKind::FreezeContracts => json!({"request": "freeze_contracts", "reports": []}),
     }
 }

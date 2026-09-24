@@ -22,6 +22,25 @@ fn tracking_key_matrix() {
         Session::derive_tracking_key("auth", SessionType::Knowledge),
         "loom-knowledge-auth"
     );
+    assert_eq!(
+        Session::derive_tracking_key("auth", SessionType::Contract),
+        "loom-contract-auth"
+    );
+}
+
+#[test]
+fn contract_constructor_derives_tracking_key() {
+    let session = Session::new_contract("parse-args");
+    assert_eq!(session.session_type, SessionType::Contract);
+    assert_eq!(session.stage_id.as_deref(), Some("parse-args"));
+    assert_eq!(session.tracking_key, "loom-contract-parse-args");
+}
+
+#[test]
+fn contract_session_assign_keeps_contract_prefix() {
+    let mut session = Session::new_contract("parse-args");
+    session.assign_to_stage("parse-args".to_string());
+    assert_eq!(session.tracking_key, "loom-contract-parse-args");
 }
 
 #[test]

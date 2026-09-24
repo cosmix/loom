@@ -2,8 +2,11 @@
 
 use serde::{Deserialize, Serialize};
 
-/// One queued stage-control request, mirroring the `Request::BlockStage` and
-/// `Request::DisputeCriteria` RPCs field for field.
+use crate::daemon::ContractRunReport;
+
+/// One queued stage-control request, mirroring the `Request::BlockStage`,
+/// `Request::DisputeCriteria` and `Request::FreezeContracts` RPCs field for
+/// field.
 ///
 /// The RPC variants carry `stage_id` and `session_id`; these deliberately do
 /// not. Over the socket those fields are checked against the connection's peer
@@ -25,6 +28,8 @@ pub enum StageRequest {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         failure_output: Option<String>,
     },
+    /// `loom stage contracts freeze <id>`.
+    FreezeContracts { reports: Vec<ContractRunReport> },
 }
 
 impl StageRequest {
@@ -35,6 +40,7 @@ impl StageRequest {
         match self {
             StageRequest::Block { .. } => "block",
             StageRequest::Dispute { .. } => "dispute",
+            StageRequest::FreezeContracts { .. } => "freeze_contracts",
         }
     }
 }

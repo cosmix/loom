@@ -276,6 +276,26 @@ warn_with_reason() {
 	exit 0
 }
 
+# Contract-phase reminder, printed in place of the commit-and-complete
+# checklist, then allow stop
+# Args: $1 = stage ID
+remind_contract_freeze() {
+	local stage_id="$1"
+
+	printf '\n' >&2
+	printf '%s\n' "================================================================" >&2
+	printf '%s\n' "  LOOM CONTRACT REMINDER (advisory)" >&2
+	printf '%s\n' "================================================================" >&2
+	printf '%s\n' "Contract session for stage '$stage_id':" >&2
+	printf '%s\n' "  - finish with: loom stage contracts freeze $stage_id" >&2
+	printf '%s\n' "  - do not commit" >&2
+	printf '%s\n' "  - do not complete the stage" >&2
+	printf '%s\n' "Stop after a successful freeze; loom ends this session." >&2
+	printf '%s\n' "================================================================" >&2
+
+	exit 0
+}
+
 # Non-blocking reminder about knowledge capture
 # Called after blocking checks pass, outputs to stderr
 remind_knowledge_capture() {
@@ -367,6 +387,12 @@ main() {
 	if [ "${LOOM_MERGE_SESSION:-}" = "1" ]; then
 		debug_log "Merge session detected (LOOM_MERGE_SESSION=1) - allowing stop"
 		exit 0
+	fi
+
+	# Contract sessions write a stage's failing contract tests and hand over
+	# through the freeze; committing or completing is the stage session's job
+	if [ "${LOOM_SESSION_TYPE:-}" = "contract" ]; then
+		remind_contract_freeze "${LOOM_STAGE_ID:-<stage-id>}"
 	fi
 
 	# Check if we're in a loom worktree

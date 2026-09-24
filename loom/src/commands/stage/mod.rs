@@ -10,6 +10,7 @@ pub mod complete;
 pub mod completion_evidence;
 #[path = "completion_evidence/producer.rs"]
 mod completion_producer;
+mod contracts;
 mod criterion_output;
 mod dispute_criteria;
 mod human_review;
@@ -31,6 +32,9 @@ mod tests;
 pub use adjudicate::{adjudicate, record_verdict, AdjudicateOutcome};
 pub use amend::amend;
 pub use complete::complete;
+pub use contracts::{
+    freeze as contracts_freeze, restore as contracts_restore, show as contracts_show,
+};
 pub use dispute_criteria::dispute_criteria;
 pub use human_review::human_review;
 pub use merge::merge;

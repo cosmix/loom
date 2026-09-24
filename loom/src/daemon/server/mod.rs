@@ -5,6 +5,7 @@ mod broadcast;
 mod client;
 mod completion_dispatch;
 mod completion_evidence;
+mod contracts;
 mod control_block;
 mod control_complete;
 mod core;
@@ -24,6 +25,7 @@ mod tokens;
 #[cfg(test)]
 mod tests;
 
+pub(crate) use contracts::handle_freeze_contracts;
 pub(crate) use control_block::handle_block_stage;
 pub use core::{DaemonServer, DaemonStatus};
 pub use dispute::handle_dispute_criteria;

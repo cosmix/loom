@@ -1,18 +1,24 @@
 //! Applying drained requests, through the daemon's own handlers.
 //!
 //! Nothing here reimplements a state transition. A spooled block goes through
-//! the same `handle_block_stage` the `BlockStage` RPC calls, and a spooled
+//! the same `handle_block_stage` the `BlockStage` RPC calls, a spooled
 //! dispute through the same `handle_dispute_criteria` the `DisputeCriteria`
-//! RPC calls, so the two ways a request can arrive cannot disagree about what
-//! it does - including the refusals, the budget check, the id allocation and
-//! the `validate_id` guard on the stage id.
+//! RPC calls, and a spooled contract freeze through the same
+//! `handle_freeze_contracts` the `FreezeContracts` RPC calls, so the two ways a
+//! request can arrive cannot disagree about what it does - including the
+//! refusals, the budget check, the id allocation and the `validate_id` guard on
+//! the stage id.
 
 use anyhow::Result;
 use std::path::Path;
 
 use super::spool::{drain_spool, DrainOutcome};
 use super::types::StageRequest;
-use crate::daemon::{handle_block_stage, handle_dispute_criteria, Response};
+use crate::daemon::{
+    handle_block_stage, handle_dispute_criteria, handle_freeze_contracts, ContractRunReport,
+    Response,
+};
+use crate::verify::transitions::load_stage;
 
 /// Apply every request pending in `worktree_root`'s spool to `stage_id`, then
 /// empty the spool.
@@ -65,9 +71,31 @@ fn apply_request(
             evidence_commit.clone(),
             failure_output.clone(),
         )?,
+        StageRequest::FreezeContracts { reports } => {
+            freeze_as_current_session(work_dir, stage_id, reports)?
+        }
     };
     record_response(stage_id, request, response, refused);
     Ok(())
+}
+
+/// A spool names no session, so a spooled freeze speaks for the session the
+/// stage runs now; the handler refuses it unless that is the stage's running
+/// contract session.
+fn freeze_as_current_session(
+    work_dir: &Path,
+    stage_id: &str,
+    reports: &[ContractRunReport],
+) -> Result<Response> {
+    let session = match load_stage(stage_id, work_dir) {
+        Ok(stage) => stage.session.unwrap_or_default(),
+        Err(error) => {
+            return Ok(Response::Error {
+                message: format!("{error:#}"),
+            })
+        }
+    };
+    handle_freeze_contracts(work_dir, stage_id, &session, reports)
 }
 
 /// Log what the daemon did with one drained request, and count the refusals.
@@ -91,6 +119,11 @@ fn record_response(
             stage_id = %stage_id,
             dispute_id = id,
             "Filed a spooled dispute"
+        ),
+        Response::ContractsFrozen { files } => tracing::info!(
+            stage_id = %stage_id,
+            files,
+            "Froze a spooled contract set"
         ),
         Response::Error { message } => {
             *refused += 1;

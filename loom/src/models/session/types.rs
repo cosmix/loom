@@ -21,6 +21,10 @@ pub enum SessionType {
     /// Adjudication session for one disputed acceptance criterion (runs in
     /// main repo, no worktree). Tracking key: `loom-adjudication-{stage_id}`.
     Adjudication,
+    /// Contract test writer that runs in the stage worktree before the
+    /// `Stage` session of a v2 stage with contracts. It is the stage's agent
+    /// while it runs. Tracking key: `loom-contract-{stage_id}`.
+    Contract,
 }
 
 impl std::fmt::Display for SessionType {
@@ -31,6 +35,7 @@ impl std::fmt::Display for SessionType {
             SessionType::BaseConflict => write!(f, "base_conflict"),
             SessionType::Knowledge => write!(f, "knowledge"),
             SessionType::Adjudication => write!(f, "adjudication"),
+            SessionType::Contract => write!(f, "contract"),
         }
     }
 }

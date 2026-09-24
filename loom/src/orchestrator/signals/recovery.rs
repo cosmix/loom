@@ -43,7 +43,11 @@ pub fn generate_recovery_signal(
     embedded_context.context_pack = super::helpers::retrieve_stage_pack(work_dir, stage);
     embedded_context.knowledge_tree_empty = super::helpers::knowledge_tree_is_empty(work_dir);
 
-    let signal_content = format_recovery_signal(content, stage, &embedded_context);
+    let mut signal_content = format_recovery_signal(content, stage, &embedded_context);
+    // A recovery signal briefs an implementation session, which `start_stage`
+    // spawns only once a v2 stage's contracts are frozen: it needs the same
+    // frozen-contracts block a fresh implementation signal carries.
+    super::v2_section::append_v2_section(&mut signal_content, stage, work_dir);
 
     // Same contract as both fresh-spawn paths (`generate.rs`): the delivery
     // record goes down BEFORE the signal that quotes it, so a resumed session
@@ -234,6 +238,42 @@ mod tests {
         let signal_content = fs::read_to_string(&path)?;
         assert!(!signal_content.contains("Mini Adversarial Code Review"));
 
+        Ok(())
+    }
+
+    /// `loom stage retry` on a v2 stage whose contracts are frozen: the
+    /// implementation session it briefs must see the frozen contracts, as a
+    /// fresh implementation signal shows them; a v1 stage's signal is unchanged.
+    #[test]
+    fn recovery_signal_carries_frozen_contracts_for_v2_stage() -> Result<()> {
+        use crate::orchestrator::signals::recovery_types::RecoverySignalContent;
+        use crate::verify::contracts::test_support::{contract, write_test_freeze};
+        let tmp = TempDir::new()?;
+        let work_dir = tmp.path();
+        fs::create_dir_all(work_dir.join("signals"))?;
+        write_test_freeze(work_dir, "test-stage", "session-contract");
+        let v2 = Stage {
+            plan_version: 2,
+            contracts: vec![contract()],
+            ..create_test_stage()
+        };
+        let content = RecoverySignalContent::for_crash(
+            "session-recovery".to_string(),
+            "test-stage".to_string(),
+            "session-crashed".to_string(),
+            None,
+            1,
+        );
+
+        let path = generate_recovery_signal(&content, &v2, work_dir)?;
+        assert!(fs::read_to_string(&path)?.contains("## Frozen Contracts"));
+
+        let v1 = Stage {
+            plan_version: 1,
+            ..v2
+        };
+        let path = generate_recovery_signal(&content, &v1, work_dir)?;
+        assert!(!fs::read_to_string(&path)?.contains("## Frozen Contracts"));
         Ok(())
     }
 }

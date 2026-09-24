@@ -9,6 +9,7 @@ use chrono::Utc;
 
 use crate::models::failure::FailureType;
 use crate::models::stage::StageStatus;
+use crate::orchestrator::coherence::live_worker_sessions;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
@@ -23,20 +24,17 @@ impl Orchestrator {
     /// live session instead of spawning a duplicate.
     ///
     /// Only considers sessions of the stage's own WORKER kind (`Stage` for a
-    /// standard stage, `Knowledge` for a knowledge stage): an adjudication
-    /// session carries the stage's own `stage_id` and is not the agent doing
-    /// the work, so it must never be adopted into the worker slot.
+    /// standard stage, `Knowledge` for a knowledge stage, falling back to
+    /// `Contract` on a v2 standard stage in its contract phase): an
+    /// adjudication session carries the stage's own `stage_id` and is not the
+    /// agent doing the work, so it must never be adopted into the worker slot.
     ///
     /// Returns `Ok(true)` if a live session was found (and the spawn attempt
     /// should stop here, whether or not the adoption itself fully
     /// succeeded), `Ok(false)` if there is no live session to adopt.
     pub(super) fn adopt_live_session_if_present(&mut self, stage_id: &str) -> Result<bool> {
         let stage = self.load_stage(stage_id)?;
-        let live_sessions = crate::orchestrator::session_registry::live_sessions_for_stage_of_type(
-            &self.config.work_dir,
-            stage_id,
-            crate::orchestrator::coherence::worker_session_type(&stage),
-        )?;
+        let live_sessions = live_worker_sessions(&self.config.work_dir, &stage)?;
         let Some(newest) = live_sessions.into_iter().max_by_key(|s| s.created_at) else {
             return Ok(false);
         };
@@ -134,3 +132,7 @@ impl Orchestrator {
         true
     }
 }
+
+#[cfg(test)]
+#[path = "session_adoption_tests.rs"]
+mod session_adoption_tests;

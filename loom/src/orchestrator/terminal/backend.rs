@@ -148,10 +148,35 @@ impl SessionBackend {
         session: Session,
         signal_path: &Path,
     ) -> Result<Session> {
+        self.spawn_worktree_session(SessionType::Stage, stage, worktree, session, signal_path)
+    }
+
+    /// Spawn the agent that writes a v2 stage's contract tests. It runs in
+    /// the stage worktree, exactly where the `Stage` session that follows it
+    /// will run.
+    pub fn spawn_contract_session(
+        &self,
+        stage: &Stage,
+        worktree: &Worktree,
+        session: Session,
+        signal_path: &Path,
+    ) -> Result<Session> {
+        self.spawn_worktree_session(SessionType::Contract, stage, worktree, session, signal_path)
+    }
+
+    /// Lane dispatch for every session kind that runs in the stage worktree.
+    fn spawn_worktree_session(
+        &self,
+        kind: SessionType,
+        stage: &Stage,
+        worktree: &Worktree,
+        session: Session,
+        signal_path: &Path,
+    ) -> Result<Session> {
         self.dispatch_spawn(
             session,
-            |native, s| native.spawn_session(stage, worktree, s, signal_path),
-            |tmux, s| tmux.spawn_session(stage, worktree, s, signal_path),
+            |native, s| native.spawn_session(kind, stage, worktree, s, signal_path),
+            |tmux, s| tmux.spawn_session(kind, stage, worktree, s, signal_path),
         )
     }
 

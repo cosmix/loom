@@ -5,8 +5,8 @@
 
 use super::*;
 
-/// Transcribed independently from the plan's section 5 table (not
-/// derived from `MATRIX` above), so a copy/paste mistake in the
+/// Transcribed independently from the plan's section 5 table and DESIGN D8
+/// (not derived from `MATRIX` above), so a copy/paste mistake in the
 /// production table cannot pass by construction.
 const EXPECTED: &[(SessionType, RequestKind, MatrixVerdict)] = &[
     (
@@ -180,11 +180,76 @@ const EXPECTED: &[(SessionType, RequestKind, MatrixVerdict)] = &[
         RequestKind::Telemetry,
         MatrixVerdict::Apply,
     ),
+    (
+        SessionType::Stage,
+        RequestKind::FreezeContracts,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Knowledge,
+        RequestKind::FreezeContracts,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Merge,
+        RequestKind::FreezeContracts,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::BaseConflict,
+        RequestKind::FreezeContracts,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Adjudication,
+        RequestKind::FreezeContracts,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::Memory,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::Block,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::Dispute,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::Handoff,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::MergeResolved,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::Verdict,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::Telemetry,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::FreezeContracts,
+        MatrixVerdict::Apply,
+    ),
 ];
 
 #[test]
-fn matches_the_full_five_by_seven_writer_matrix() {
-    assert_eq!(EXPECTED.len(), 35, "5 session types x 7 kinds");
+fn matches_the_full_six_by_eight_writer_matrix() {
+    assert_eq!(EXPECTED.len(), 48, "6 session types x 8 kinds");
     for (session, kind, expected_verdict) in EXPECTED {
         assert_eq!(
             verdict(*session, *kind),

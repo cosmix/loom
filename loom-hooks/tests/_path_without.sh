@@ -3,20 +3,18 @@
 # the current PATH as a symlink, minus the named binaries. Tests set
 # PATH="$(path_without jq)" to simulate a machine without jq without
 # touching the real installation. The caller removes the directory.
+#
+# One `ln` per PATH directory, in PATH order: ln refuses a name that already
+# exists, so the first directory to provide a name wins, as in a PATH lookup.
+# Linking per file forked thousands of processes and took ~40 s per call.
 path_without() {
-	local dir d f n skip x
+	local dir d x
 	dir=$(mktemp -d "${TMPDIR:-/tmp}/loom-pathwithout.XXXXXX")
 	local IFS=':'
 	for d in $PATH; do
 		[[ -d "$d" ]] || continue
-		for f in "$d"/*; do
-			[[ -x "$f" ]] || continue
-			n=$(basename "$f")
-			skip=0
-			for x in "$@"; do [[ "$n" == "$x" ]] && skip=1; done
-			[[ $skip -eq 1 ]] && continue
-			[[ -e "$dir/$n" ]] || ln -s "$f" "$dir/$n"
-		done
+		ln -s "$d"/* "$dir"/ 2>/dev/null || true
 	done
+	for x in "$@"; do rm -f "$dir/$x"; done
 	printf '%s\n' "$dir"
 }

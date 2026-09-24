@@ -42,6 +42,7 @@ fn remote_control_session_name(kind: SessionType, stage: &Stage) -> String {
         SessionType::BaseConflict => format!("Base conflict: {base}"),
         SessionType::Knowledge => format!("Knowledge: {base}"),
         SessionType::Adjudication => format!("Adjudication: {base}"),
+        SessionType::Contract => format!("Contract: {base}"),
     }
 }
 
@@ -103,7 +104,7 @@ fn resolve_prompt_cache_split_prefix_file(work_dir: &Path, stage: &Stage) -> Opt
 ///   and running it on the disputing stage's model would let a plan pick its
 ///   own judge — so it uses the adjudicator's own model
 ///   (`.loom/work/config.toml::[adjudication] model`, default `opus`).
-/// * Stage and knowledge sessions resolve through the four-tier chain in
+/// * Stage, contract and knowledge sessions resolve through the four-tier chain in
 ///   `crate::fs::work_dir::resolve_stage_model_effort`: the stage's own plan
 ///   fields, then `.loom/work/config.toml`'s `[models]`, then
 ///   `~/.loom/config.toml`'s `[models]`, then the stage type's built-in.
@@ -114,7 +115,7 @@ fn model_and_effort(kind: SessionType, stage: &Stage, work_dir: &Path) -> (Strin
             crate::orchestrator::adjudication::resolve_model(work_dir),
             "high".to_string(),
         ),
-        SessionType::Stage | SessionType::Knowledge => {
+        SessionType::Stage | SessionType::Contract | SessionType::Knowledge => {
             crate::fs::work_dir::resolve_stage_model_effort(
                 work_dir,
                 stage.stage_type,
@@ -162,6 +163,12 @@ fn initial_prompt(kind: SessionType, stage: &Stage, signal_path: &Path) -> Strin
             "Read the adjudication signal file at {signal_path_str} and judge the disputed \
              acceptance criterion. This file contains the dispute, the evidence available to \
              you, and the command that records your verdict. Judge the dispute; change nothing."
+        ),
+        SessionType::Contract => format!(
+            "You are the contract test writer for stage {}. Read your signal file at \
+             {signal_path_str}: it lists the contracts to write, the rules, and the \
+             command that freezes them. Write only contract and harness files; implement nothing.",
+            stage.id
         ),
     }
 }

@@ -84,6 +84,7 @@ run_test "stage-terminal-guard: blocks completed/verified, allows others" "$SCRI
 run_test "stage-terminal-guard: blocks MultiEdit once the stage is terminal" "$SCRIPT_DIR/stage-terminal-guard-multiedit.sh"
 run_test "commit-guard: a nested worktree resolves to its innermost stage" "$SCRIPT_DIR/commit-guard-nested-worktree.sh"
 run_test "commit-guard: many dirty files never raise SIGPIPE through pipefail" "$SCRIPT_DIR/commit-guard-sigpipe-many-dirty-files.sh"
+run_test "commit-guard: a contract session gets the freeze reminder, not the checklist" "$SCRIPT_DIR/commit-guard-contract-session.sh"
 run_test "user-prompt-context: short prompt produces no output" "$SCRIPT_DIR/user-prompt-context-short-prompt.sh"
 run_test "user-prompt-context: no LOOM_WORK_DIR exits silently" "$SCRIPT_DIR/user-prompt-context-no-workdir.sh"
 run_test "user-prompt-context: malformed JSON fails open" "$SCRIPT_DIR/user-prompt-context-malformed-json.sh"

@@ -16,6 +16,7 @@ use chrono::Utc;
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::orchestrator::session_registry::live_sessions_for_stage_of_type;
 
 /// The session kind that works a stage of this type.
 pub fn worker_session_type(stage: &Stage) -> SessionType {
@@ -23,6 +24,30 @@ pub fn worker_session_type(stage: &Stage) -> SessionType {
         StageType::Knowledge => SessionType::Knowledge,
         _ => SessionType::Stage,
     }
+}
+
+/// Whether `stage` runs a contract phase, whose `Contract` session works the
+/// stage before its `Stage` session does: v2 standard stages only.
+fn has_contract_phase(stage: &Stage) -> bool {
+    stage.plan_version == 2 && stage.stage_type == StageType::Standard
+}
+
+/// Whether a session of `kind` is one that works `stage`: its worker kind,
+/// or its contract writer when it has a contract phase.
+pub fn is_worker_session_type(stage: &Stage, kind: SessionType) -> bool {
+    kind == worker_session_type(stage)
+        || (kind == SessionType::Contract && has_contract_phase(stage))
+}
+
+/// Live sessions of `stage`'s worker kind. A stage with a contract phase and
+/// no live worker session is in that phase, so its live contract writers are
+/// returned instead.
+pub fn live_worker_sessions(work_dir: &Path, stage: &Stage) -> Result<Vec<Session>> {
+    let live = live_sessions_for_stage_of_type(work_dir, &stage.id, worker_session_type(stage))?;
+    if !live.is_empty() || !has_contract_phase(stage) {
+        return Ok(live);
+    }
+    live_sessions_for_stage_of_type(work_dir, &stage.id, SessionType::Contract)
 }
 
 /// Why an `Executing` stage does not describe a working agent, if it does
@@ -53,9 +78,9 @@ pub fn executing_stage_incoherence(stage: &Stage, assigned: Option<&Session>) ->
         ));
     }
 
-    let expected = worker_session_type(stage);
     let kind = session.session_type;
-    if kind != expected {
+    if !is_worker_session_type(stage, kind) {
+        let expected = worker_session_type(stage);
         return Some(format!(
             "session '{session_id}' is of kind {kind}, not the stage's worker kind {expected}"
         ));
@@ -169,5 +194,40 @@ mod tests {
         let standard = stage_with(StageStatus::Executing, None, StageType::Standard);
         assert_eq!(worker_session_type(&knowledge), SessionType::Knowledge);
         assert_eq!(worker_session_type(&standard), SessionType::Stage);
+    }
+
+    /// The contract writer is a v2 standard stage's agent for its first
+    /// phase; the per-tick watchdog must not block the stage for running it.
+    #[test]
+    fn executing_v2_standard_stage_naming_its_contract_session_is_coherent() {
+        let session = session_of("alpha", SessionType::Contract);
+        let mut stage = stage_with(
+            StageStatus::Executing,
+            Some(session.id.as_str()),
+            StageType::Standard,
+        );
+        stage.plan_version = 2;
+        assert!(executing_stage_incoherence(&stage, Some(&session)).is_none());
+    }
+
+    /// v1 stages and non-standard stages have no contract phase, so a
+    /// contract session there is as foreign as any other kind.
+    #[test]
+    fn a_contract_session_is_incoherent_without_a_contract_phase() {
+        let session = session_of("alpha", SessionType::Contract);
+        for (plan_version, stage_type) in [
+            (1, StageType::Standard),
+            (2, StageType::Knowledge),
+            (2, StageType::IntegrationVerify),
+        ] {
+            let mut stage = stage_with(
+                StageStatus::Executing,
+                Some(session.id.as_str()),
+                stage_type,
+            );
+            stage.plan_version = plan_version;
+            let reason = executing_stage_incoherence(&stage, Some(&session));
+            assert!(reason.is_some(), "v{plan_version} {stage_type:?}");
+        }
     }
 }

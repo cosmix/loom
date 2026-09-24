@@ -13,6 +13,7 @@ use super::heartbeat_apply::HeartbeatApply;
 use super::persistence::Persistence;
 use super::Orchestrator;
 
+mod contract_phase;
 mod handoff_state;
 mod human_review;
 #[path = "loop_recovery/mod.rs"]
@@ -50,6 +51,15 @@ fn event_targets_current_session(stage: &Stage, session_id: &str) -> bool {
          stage's active session"
     );
     false
+}
+
+/// Print a session's crossing into the Yellow ("Warning") or Red ("Critical")
+/// context band.
+fn announce_context_band(band: &str, session_id: &str, context_tokens: u32, ceiling_tokens: u32) {
+    clear_status_line();
+    eprintln!(
+        "{band}: Session '{session_id}' context at {context_tokens} of {ceiling_tokens} tokens"
+    );
 }
 
 /// Trait for handling monitor events
@@ -166,27 +176,15 @@ impl Orchestrator {
                 self.graph.mark_status(&stage_id, StageStatus::Blocked)?;
             }
             MonitorEvent::SessionContextWarning {
-                session_id,
-                context_tokens,
-                ceiling_tokens,
-            } => {
-                clear_status_line();
-                eprintln!(
-                    "Warning: Session '{session_id}' context at {context_tokens} \
-                     of {ceiling_tokens} tokens"
-                );
-            }
+                session_id: id,
+                context_tokens: used,
+                ceiling_tokens: max,
+            } => announce_context_band("Warning", &id, used, max),
             MonitorEvent::SessionContextCritical {
-                session_id,
-                context_tokens,
-                ceiling_tokens,
-            } => {
-                clear_status_line();
-                eprintln!(
-                    "Critical: Session '{session_id}' context at {context_tokens} \
-                     of {ceiling_tokens} tokens"
-                );
-            }
+                session_id: id,
+                context_tokens: used,
+                ceiling_tokens: max,
+            } => announce_context_band("Critical", &id, used, max),
             MonitorEvent::SessionCrashed {
                 session_id,
                 stage_id,
@@ -267,6 +265,18 @@ impl Orchestrator {
             event @ MonitorEvent::CompletionPending { .. }
             | event @ MonitorEvent::CompletionBlocked { .. } => {
                 self.handle_loop_recovery_event(event)?;
+            }
+            MonitorEvent::ContractPhaseFinished {
+                stage_id,
+                session_id,
+            } => {
+                self.on_contract_phase_finished(&stage_id, &session_id)?;
+            }
+            MonitorEvent::ContractSessionEnded {
+                stage_id,
+                session_id,
+            } => {
+                self.on_contract_session_ended(&stage_id, &session_id)?;
             }
         }
         Ok(())

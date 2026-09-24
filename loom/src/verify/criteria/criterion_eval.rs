@@ -1,26 +1,58 @@
 //! Full evaluation of simple and extended acceptance assertions.
 
+use std::path::Path;
 use std::time::Duration;
 
 use super::cache_contract::{AssertionVerdict, CriterionContract};
 use super::result::CriterionResult;
+use super::zero_tests::{tests_executed, zero_test_failure};
 use crate::models::stage::AcceptanceCriterion;
 
-pub(super) fn check_criterion(
+/// A criterion's command as the plan wrote it, which failures name, and as the
+/// zero-test guard recognises it: variables expanded, setup left out, run in
+/// `cwd`.
+pub(super) struct CriterionCommand<'a> {
+    pub(super) written: &'a str,
+    pub(super) expanded: &'a str,
+    pub(super) cwd: &'a Path,
+}
+
+/// The verdict on one run and the failures it reports. Under the zero-test
+/// guard the verdict also counts the tests the run executed.
+pub(super) fn evaluate(
     criterion: &AcceptanceCriterion,
     contract: &CriterionContract,
     result: &CriterionResult,
-    command: &str,
+    command: &CriterionCommand<'_>,
+) -> (AssertionVerdict, Vec<String>) {
+    let executed = (contract.guards_zero_tests() && !result.timed_out)
+        .then(|| tests_executed(command.expanded, command.cwd, result))
+        .flatten();
+    let verdict = contract.verdict_with_tests(result, executed);
+    let failures = check_criterion(criterion, contract, result, command, &verdict);
+    (verdict, failures)
+}
+
+fn check_criterion(
+    criterion: &AcceptanceCriterion,
+    contract: &CriterionContract,
+    result: &CriterionResult,
+    command: &CriterionCommand<'_>,
     verdict: &AssertionVerdict,
 ) -> Vec<String> {
-    match criterion {
+    let mut failures = match criterion {
         AcceptanceCriterion::Simple(_) => {
-            check_simple(result, command, contract.timeout(), verdict)
+            check_simple(result, command.written, contract.timeout(), verdict)
         }
         AcceptanceCriterion::Extended(_) => {
-            check_extended_criterion(contract, result, command, verdict)
+            check_extended_criterion(contract, result, command.written, verdict)
         }
+    };
+    if contract.rejects_zero_tests(verdict.tests_executed) {
+        let failure = zero_test_failure(command.expanded, command.cwd, result);
+        failures.extend(failure.map(|reason| format!("Command '{}': {reason}", command.written)));
     }
+    failures
 }
 
 fn check_simple(
@@ -139,8 +171,13 @@ mod tests {
             false,
         );
         let verdict = contract.verdict(&result);
+        let command = CriterionCommand {
+            written: "probe",
+            expanded: "probe",
+            cwd: Path::new("."),
+        };
 
-        let failures = check_criterion(&criterion, &contract, &result, "probe", &verdict);
+        let failures = check_criterion(&criterion, &contract, &result, &command, &verdict);
 
         assert!(!verdict.passed && !verdict.exit_code_matched);
         assert_eq!(

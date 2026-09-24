@@ -12,6 +12,7 @@ use crate::fs::session_files::mark_session_terminal_reason;
 use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::adjudication::AdjudicatorRegistry;
+use crate::verify::contracts::store::load_freeze;
 
 use super::detection::Detection;
 use super::events::MonitorEvent;
@@ -212,6 +213,7 @@ impl Detection {
         }
         self.finished_merge_session(session, stages, handlers)
             .or_else(|| self.finished_adjudication_session(session, stages, handlers))
+            .or_else(|| self.ended_contract_session(session, stages, handlers))
             .or_else(|| self.exited_after_stage_finished(session, stages, handlers))
             .or_else(|| Some(self.record_crash(session, stages, handlers)))
     }
@@ -266,6 +268,41 @@ impl Detection {
         Some(SessionStatusEvents::terminal(Vec::new()))
     }
 
+    /// A contract session (`session_type == Contract`) whose process is gone.
+    /// Its exit is never filed as a crash. With the stage's freeze record on
+    /// disk it finished its job, and `ContractPhaseFinished` (raised from the
+    /// same poll, see `detection.rs`) hands the stage on. Without one, and
+    /// while the stage still names it, `ContractSessionEnded` asks the
+    /// orchestrator for a fresh contract writer. The record is persisted as
+    /// `Crashed`, the truth about its process, but no crash report is written
+    /// and no `SessionCrashed` is raised.
+    fn ended_contract_session(
+        &mut self,
+        session: &Session,
+        stages: &[Stage],
+        handlers: &Handlers,
+    ) -> Option<SessionStatusEvents> {
+        if session.session_type != SessionType::Contract {
+            return None;
+        }
+        let stage_id = session.stage_id.as_ref()?;
+        if matches!(load_freeze(handlers.work_dir(), stage_id), Ok(Some(_))) {
+            self.mark_finished(session, stages, handlers);
+            return Some(SessionStatusEvents::terminal(Vec::new()));
+        }
+        let events = if is_stage_active_session(session, stages) {
+            vec![MonitorEvent::ContractSessionEnded {
+                stage_id: stage_id.clone(),
+                session_id: session.id.clone(),
+            }]
+        } else {
+            Vec::new()
+        };
+        let reason = SessionExitReason::Crashed;
+        self.mark_terminal(session, stages, handlers, SessionStatus::Crashed, reason);
+        Some(SessionStatusEvents::terminal(events))
+    }
+
     /// The session exited normally after its stage already reached a terminal
     /// state. Without this the ordinary exit would be filed as a crash.
     fn exited_after_stage_finished(
@@ -288,20 +325,31 @@ impl Detection {
 
     /// Persist a normal completion and drop the session's heartbeat.
     fn mark_finished(&mut self, session: &Session, stages: &[Stage], handlers: &Handlers) {
-        if let Err(e) = mark_session_terminal_reason(
-            handlers.work_dir(),
-            &session.id,
-            SessionStatus::Completed,
-            SessionExitReason::Completed,
-        ) {
+        let reason = SessionExitReason::Completed;
+        self.mark_terminal(session, stages, handlers, SessionStatus::Completed, reason);
+    }
+
+    /// Persist `status` for a session whose process is gone, drop its
+    /// heartbeat, and remember the status so the next poll does not report
+    /// the same exit again.
+    fn mark_terminal(
+        &mut self,
+        session: &Session,
+        stages: &[Stage],
+        handlers: &Handlers,
+        status: SessionStatus,
+        reason: SessionExitReason,
+    ) {
+        if let Err(e) =
+            mark_session_terminal_reason(handlers.work_dir(), &session.id, status.clone(), reason)
+        {
             eprintln!(
                 "Failed to persist session status for '{}': {}",
                 session.id, e
             );
         }
         cleanup_heartbeat_for_session(handlers.work_dir(), session, stages);
-        self.last_session_states
-            .insert(session.id.clone(), SessionStatus::Completed);
+        self.last_session_states.insert(session.id.clone(), status);
     }
 
     /// The process is gone with no benign explanation: file a crash.
@@ -317,22 +365,10 @@ impl Detection {
             "Session no longer running"
         };
         let crash_report_path = handlers.handle_session_crash(session, reason);
-        if let Err(e) = mark_session_terminal_reason(
-            handlers.work_dir(),
-            &session.id,
-            SessionStatus::Crashed,
-            SessionExitReason::Crashed,
-        ) {
-            eprintln!(
-                "Failed to persist session status for '{}': {}",
-                session.id, e
-            );
-        }
-        // Remove the now-dead session's heartbeat so it can't later flag a
-        // fresh session reusing this stage as hung.
-        cleanup_heartbeat_for_session(handlers.work_dir(), session, stages);
-        self.last_session_states
-            .insert(session.id.clone(), SessionStatus::Crashed);
+        // Also removes the now-dead session's heartbeat so it can't later
+        // flag a fresh session reusing this stage as hung.
+        let exit = SessionExitReason::Crashed;
+        self.mark_terminal(session, stages, handlers, SessionStatus::Crashed, exit);
         SessionStatusEvents::terminal(vec![MonitorEvent::SessionCrashed {
             session_id: session.id.clone(),
             stage_id: session.stage_id.clone(),

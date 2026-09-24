@@ -1,6 +1,7 @@
 pub mod baseline;
 pub mod before_after;
 pub mod context;
+pub mod contracts;
 pub mod criteria;
 pub mod duplicate_detection;
 pub mod goal_backward;

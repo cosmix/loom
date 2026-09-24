@@ -1,5 +1,6 @@
 mod adjudication;
 mod cache;
+mod contract;
 mod crud;
 mod format;
 mod generate;
@@ -15,6 +16,7 @@ mod recovery_types;
 mod retrieval;
 mod section_formatters;
 mod types;
+mod v2_section;
 
 #[cfg(test)]
 mod tests;
@@ -67,6 +69,7 @@ pub use format::{
 // path uses (`commands::hook::user_prompt`) rather than a second copy.
 pub use adjudication::generate_adjudication_signal;
 pub(crate) use cache::stable_prefix_for;
+pub use contract::generate_contract_signal;
 pub(crate) use format::format_knowledge_brief;
 pub use generate::{
     build_embedded_context_with_stage, generate_signal, generate_signal_with_metrics,
