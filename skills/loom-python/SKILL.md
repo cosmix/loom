@@ -273,6 +273,35 @@ def test_env(monkeypatch):
     assert load_config().key == "test"
 ```
 
+## Loom Test Runner Adapter
+
+**Adapter.** `pytest` when the package has a `pytest.ini`, a `conftest.py`, `[tool.pytest.ini_options]` in `pyproject.toml`, or `pytest` among its requirements/pyproject dependencies; otherwise `unittest`. `loom project detect` prints the adapter per package; a contract's optional `runner:` field names an adapter and overrides detection.
+
+**Single-test command**, run with the package directory as cwd:
+
+```bash
+uv run pytest '{file}::{test}' -q          # pytest, uv.lock in the package directory
+python3 -m pytest '{file}::{test}' -q      # pytest, no uv.lock
+python3 -m unittest {test} -v              # unittest; uv run python -m unittest {test} -v with uv.lock
+```
+
+**The `test` field.** For `pytest`, the node id after `::`: `test_alpha_passes`, or `TestSuite::test_alpha_passes` for a method on a test class. A parametrized function's name selects every case; `test_email[bad-False]` selects one. For `unittest`, the dotted `module.Class.method`, importable from the package directory: `tests.test_spool.SpoolTests.test_rejects_symlinked_spool`.
+
+**No match.** Both runners exit non-zero when the name matches nothing: `pytest` exits 4 (`ERROR: not found`, `no tests ran`); `unittest` exits 1 and reports the missing name as an `ERROR` from `unittest.loader._FailedTest` under `Ran 1 test`, which reads like a red test. Loom classifies the run from the runner's summary as `NotSelected`, so a contract whose `test` does not match fails the freeze ("the runner did not select the test").
+
+**Writing contract tests.** Test files match `**/test_*.py`, `**/*_test.py` and `**/tests/**/*.py`. One contract, one test function (pytest) or method (unittest), named after what it rejects.
+
+```yaml
+contracts:
+  - id: rejects-symlinked-spool
+    file: tests/test_spool.py
+    test: test_rejects_symlinked_spool
+    scenario: makes the spool directory a symlink into tmp_path, then calls open_spool()
+    rejects: an open_spool() that follows the symlink and writes into the link target
+```
+
+**Import failures.** Python has no compile step; the equivalent is a contract module importing a name the stage has not written yet. Under `pytest` that is a collection error, which counts as red at freeze time. `unittest` reports a test module that fails to import through the same `unittest.loader._FailedTest` entry it uses for a missing name, so under `unittest` import new names inside the test method and let the contract fail as an ordinary test error.
+
 ## Anti-Patterns
 
 The two that survive linting and cause real bugs:

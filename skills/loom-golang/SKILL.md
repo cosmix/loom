@@ -285,6 +285,33 @@ func BenchmarkSort(b *testing.B) {
 }
 ```
 
+## Loom Test Runner Adapter
+
+**Adapter.** `go-test`, for every Go package; `loom project detect` prints it per package.
+
+**Single-test command**, run with the package directory as cwd; `{file_dir}` is the contract file's directory:
+
+```bash
+go test ./{file_dir}/ -run '^{test}$' -v
+```
+
+**The `test` field** is the test function name, e.g. `TestAlphaPasses`. The pattern is anchored, so `TestSpool` does not also select `TestSpoolOpen`. A case inside a table-driven `t.Run` is not a contract target: give each contract its own `TestXxx` function.
+
+**No match.** `go test` exits 0 when `-run` matches nothing (`testing: warning: no tests to run`, then `ok ... [no tests to run]`). Loom classifies the run from the `-v` output: zero executed tests is `NotSelected` whatever the exit code, so a contract whose `test` does not match fails the freeze ("the runner did not select the test").
+
+**Writing contract tests.** Test files match `**/*_test.go`. Put the contract file in the directory of the package it tests (internal `package spool` or external `package spool_test`), one `TestXxx` function per contract, named after what it rejects.
+
+```yaml
+contracts:
+  - id: rejects-symlinked-spool
+    file: internal/spool/spool_test.go
+    test: TestRejectsSymlinkedSpool
+    scenario: makes the spool directory a symlink into t.TempDir(), then calls spool.Open
+    rejects: an Open that follows the symlink and writes into the link target
+```
+
+**Build failures.** `go test` compiles the package together with its test files; a contract test that calls a function the stage has not written yet fails with `FAIL <pkg> [build failed]` (`[setup failed]` for a syntax error), which loom classifies as `BuildFailed` and counts as red at freeze time. No other test in that package runs until the stage adds the function.
+
 ## Expert Practices: Idioms, Anti-Patterns & Gotchas
 
 ### Design

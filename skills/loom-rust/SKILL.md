@@ -160,7 +160,7 @@ enum Status { Active, Inactive, Pending }
 | Adjacently tagged | `#[serde(tag = "t", content = "c")]` | `{"t": "Text", "c": {...}}` |
 | Untagged | `#[serde(untagged)]` | bare value, variant inferred |
 
-⚠ **`#[serde(untagged)]` silently matches the FIRST variant that deserializes** — declaration order is load-bearing. An earlier variant with an overlapping shape wins with no ambiguity error; failures produce the useless `data did not match any variant`; it is slow in index formats (bincode). Order variants **most-specific first** and add per-variant round-trip tests. Internally tagged also can't represent newtype-of-non-struct variants. Prefer a real tag whenever you control the format.
+⚠ **`#[serde(untagged)]` silently matches the FIRST variant that deserializes** — declaration order decides which variant wins. An earlier variant with an overlapping shape wins with no ambiguity error; failures produce the useless `data did not match any variant`; it is slow in index formats (bincode). Order variants **most-specific first** and add per-variant round-trip tests. Internally tagged also can't represent newtype-of-non-struct variants. Prefer a real tag whenever you control the format.
 
 - Custom (de)serialize: `#[serde(with = "module")]`, or `serialize_with`/`deserialize_with` per field; whole-type via `impl Serialize`/`Deserialize`. `chrono` ships helpers (`chrono::serde::ts_seconds`).
 - **`serde_yaml` is DEPRECATED** (archived at 0.9.34, 2024-03-25; its `yaml-rust` dep is RUSTSEC-2024-0320). The `serde_yml` fork has an unsoundness advisory (RUSTSEC-2025-0068, ≤0.0.12). Prefer TOML/JSON for Rust-native config; if YAML is mandatory use the maintained `yaml-rust2`, and verify the API (`serde-saphyr` does not implement serde's traits — not a drop-in).
@@ -382,6 +382,34 @@ let cfg = Config { name: "x".into(), ..Default::default() }; // future fields au
 - Property tests: `proptest!` (shrinks failing cases) for round-trips/invariants over generated input. `mockall` for trait mocks; `insta` for snapshot tests.
 - Integration tests live in `tests/` (each file is a separate crate, sees only the public API). Doctests in `///` run under `cargo test` — mark non-compiling examples ```` ```no_run ```` or ```` ```ignore ````.
 - Loom note: many tests use `serial_test`'s `#[serial]` because they touch shared `.loom/work/` (or legacy `.work/`) state — they can't run in parallel.
+
+## Loom Test Runner Adapter
+
+**Adapter.** `cargo-test`, or `cargo-nextest` when `.config/nextest.toml` exists at the package or checkout root. `loom project detect` prints the adapter per package (in the loom repository: `loom` ⇒ `cargo-test`). A contract's optional `runner:` field names an adapter and overrides detection.
+
+**Single-test command**, run with the package directory as cwd:
+
+```bash
+cargo test {test} -- --exact           # cargo-test
+cargo nextest run -E 'test(={test})'   # cargo-nextest
+```
+
+**The `test` field** is the full libtest path as `cargo test -- --list` prints it, minus the trailing `: test`: e.g. `plan::schema::tests::v2_tests::rejects_x`. Both commands match it exactly, so a bare function name selects nothing. Copy the path from `--list`; a function at the top level of `tests/foo.rs` has the path `fn_name` alone.
+
+**No match.** `cargo test` exits 0 when the filter matches nothing (`running 0 tests` is success). `cargo-nextest` has no captured fixture: its no-match behaviour is documented, and loom's parser for it was written from nextest's documented output. Loom classifies the run from the runner's summary: zero executed tests is `NotSelected` whatever the exit code, so a contract whose `test` does not match fails the freeze ("the runner did not select the test").
+
+**Writing contract tests.** Loom's rust profile treats `**/tests/**/*.rs`, `**/tests.rs`, `**/*_tests.rs`, `**/tests_*.rs` and `**/*_test.rs` as test files: put the contract in a `tests.rs` beside the module (`#[cfg(test)] mod tests;`) or in an integration test under `tests/`. One contract, one `#[test]` function, named after what it rejects.
+
+```yaml
+contracts:
+  - id: rejects-symlinked-spool
+    file: src/spool/tests.rs
+    test: spool::tests::rejects_symlinked_spool
+    scenario: creates the spool directory as a symlink into a TempDir, then calls Spool::open
+    rejects: a Spool::open that follows the symlink and writes into the link target
+```
+
+**Build failures.** A contract test that calls an item the stage has not written yet does not compile; loom classifies that as `BuildFailed`, which counts as red at freeze time. `cargo test` builds every test target before running any, so until the stage adds the item no other test in the package runs either.
 
 ## Patterns
 
