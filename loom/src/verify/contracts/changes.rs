@@ -87,7 +87,7 @@ pub fn harness_files(
         .collect())
 }
 
-fn git(worktree_root: &Path, args: &[&str]) -> Result<Vec<u8>> {
+pub(in crate::verify) fn git(worktree_root: &Path, args: &[&str]) -> Result<Vec<u8>> {
     let argv: Vec<&str> = READ_ONLY.iter().chain(args).copied().collect();
     let output = run_git(&argv, worktree_root)?;
     if !output.status.success() {

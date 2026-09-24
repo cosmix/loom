@@ -18,7 +18,7 @@ use glob::{MatchOptions, Pattern};
 use std::path::{Component, Path};
 
 use crate::plan::schema::ContractSpec;
-use crate::skills::project::ProjectProfile;
+use crate::skills::project::{PackageDetail, ProjectProfile};
 use crate::testrun::{registry, TestRunnerAdapter};
 
 /// The outcomes a contract may be frozen with: it has to fail first.
@@ -76,12 +76,19 @@ fn detected_runner(package_dir: &Path, file: &str) -> Option<&'static str> {
     let profile = ProjectProfile::discover(package_dir);
     let target = package_dir.canonicalize().ok()?.join(normalize(file));
     let owned = target.strip_prefix(&profile.root).ok()?;
-    profile
-        .package_details()
-        .into_iter()
-        .filter(|package| owned.starts_with(&package.path))
+    let packages = profile.package_details();
+    owning_package(&packages, owned).and_then(|package| package.runner)
+}
+
+/// The innermost package containing `path` (relative to the checkout root).
+pub(in crate::verify) fn owning_package<'p>(
+    packages: &'p [PackageDetail],
+    path: &Path,
+) -> Option<&'p PackageDetail> {
+    packages
+        .iter()
+        .filter(|package| path.starts_with(&package.path))
         .max_by_key(|package| package.path.components().count())
-        .and_then(|package| package.runner)
 }
 
 /// The shell command that runs `contract` from `package_dir`: the adapter's

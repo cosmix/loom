@@ -188,5 +188,6 @@ fn dispatch_stage_contracts(command: ContractsCommands) -> Result<()> {
 fn dispatch_stage_review(command: ReviewCommands) -> Result<()> {
     match command {
         ReviewCommands::Status { stage_id } => stage::review_status(stage_id),
+        ReviewCommands::Integrity { stage_id } => stage::review_integrity(stage_id),
     }
 }

@@ -54,6 +54,7 @@ mod config;
 mod confine;
 mod criterion_eval;
 mod executor;
+mod probe;
 mod result;
 mod runner;
 mod zero_tests;
@@ -68,5 +69,6 @@ pub use confine::{plan_confinement, resolve_confinement, spawn_confined, Command
 pub use executor::{
     run_single_criterion, run_single_criterion_with_timeout, run_spec_with_timeout,
 };
+pub(in crate::verify) use probe::{CriteriaProbe, ProbeRun, ProbeRunner};
 pub use result::{AcceptanceResult, CriterionResult};
 pub use runner::{run_acceptance, run_acceptance_with_config};

@@ -4,7 +4,7 @@
 
 use anyhow::{Context, Result};
 use std::collections::BTreeMap;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::Stage;
@@ -38,13 +38,24 @@ pub fn review_status(stage_id: String) -> Result<()> {
 
 /// The worktree's change fingerprint against the base the review gate uses.
 fn current_fingerprint(work_dir: &Path, stage: &Stage) -> Result<ChangeFingerprint> {
+    let (worktree, target) = stage_worktree_and_target(work_dir, stage)?;
+    fingerprint::compute(&worktree, &target)
+}
+
+/// The stage's worktree and the target branch the completion gates diff it
+/// against, resolved from the CWD's repository root as `loom stage complete`
+/// resolves it, so the `loom stage review` commands and completion agree.
+pub(super) fn stage_worktree_and_target(
+    work_dir: &Path,
+    stage: &Stage,
+) -> Result<(PathBuf, String)> {
     let worktree = resolve_stage_execution_paths(stage)?
         .worktree_root
         .with_context(|| format!("stage '{}' has no worktree", stage.id))?;
     let cwd = std::env::current_dir().context("Failed to get current directory")?;
     let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or(cwd);
     let target = crate::fs::resolve_target_branch_from_config(work_dir, &repo_root)?;
-    fingerprint::compute(&worktree, &target)
+    Ok((worktree, target))
 }
 
 fn print_rounds(stage_id: &str, rounds: &[ReviewRound]) {

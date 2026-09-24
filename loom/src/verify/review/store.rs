@@ -326,7 +326,7 @@ fn round_file(number: u32) -> String {
     format!("round-{number}.json")
 }
 
-fn load_optional<T: DeserializeOwned>(
+pub(in crate::verify) fn load_optional<T: DeserializeOwned>(
     work_dir: &Path,
     stage_id: &str,
     file: &str,
@@ -343,7 +343,7 @@ fn load_optional<T: DeserializeOwned>(
         .with_context(|| format!("invalid {file} for stage '{stage_id}'"))
 }
 
-fn check_version(version: u32, record: &str) -> Result<()> {
+pub(in crate::verify) fn check_version(version: u32, record: &str) -> Result<()> {
     if version != RECORD_VERSION {
         bail!("{record} has unsupported version {version}");
     }

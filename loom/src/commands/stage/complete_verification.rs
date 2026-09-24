@@ -10,9 +10,11 @@ use crate::verify::baseline::{compare_to_baseline, ChangeImpact};
 use crate::verify::criteria::{plan_confinement, resolve_confinement};
 use crate::verify::duplicate_detection::detect_duplicate_symbols;
 use crate::verify::wiring_detection::{detect_unwired_files, UnwiredFile};
-use crate::verify::{contracts::completion, review::gate};
 use anyhow::{bail, Context, Result};
 use std::path::Path;
+
+#[path = "complete_verification_v2.rs"]
+mod complete_verification_v2;
 
 pub(super) struct VerificationChecks<'a> {
     pub stage: &'a Stage,
@@ -41,7 +43,9 @@ pub(super) fn run(checks: &VerificationChecks<'_>) -> Result<()> {
     let stage_def = load_stage_definition_from_plan(checks.stage_id, checks.work_dir)?;
 
     run_goal_checks(checks, stage_def.as_ref())?;
-    run_v2_checks(checks, &base_branch)?;
+    if checks.stage.plan_version == 2 {
+        complete_verification_v2::run_v2(checks, &base_branch)?;
+    }
     run_after_checks(checks, stage_def.as_ref())?;
     run_unwired_check(checks, &base_branch)?;
     run_duplicate_check(checks, &base_branch)?;
@@ -77,21 +81,6 @@ fn run_goal_checks(
         "Goal-backward verification failed for stage '{}'",
         checks.stage_id
     )
-}
-
-/// DESIGN D9 and D12: a v2 standard stage's frozen contracts are intact and pass,
-/// then the recorded review gate.
-fn run_v2_checks(checks: &VerificationChecks<'_>, base_branch: &str) -> Result<()> {
-    let (stage, work_dir, root) = (checks.stage, checks.work_dir, checks.worktree_root);
-    let has_contracts = stage.stage_type == StageType::Standard && !stage.contracts.is_empty();
-    if stage.plan_version == 2 && has_contracts {
-        let Some(worktree_root) = root else {
-            bail!("Stage '{}': no worktree to check contracts in", stage.id);
-        };
-        let acceptance_dir = checks.acceptance_dir.unwrap_or(Path::new("."));
-        completion::check(stage, work_dir, acceptance_dir, worktree_root)?;
-    }
-    gate::check_at_completion(stage, work_dir, root, base_branch)
 }
 
 fn run_after_checks(
@@ -209,30 +198,9 @@ fn run_aggregated_check(checks: &VerificationChecks<'_>) -> Result<()> {
 /// Re-verify the wiring of every completed stage. Every stage of one plan
 /// shares `plan_version`, so the finishing stage's version applies to all.
 fn aggregated_wiring(worktree_root: &Path, work_dir: &Path, plan_version: u32) -> Result<()> {
-    let stages = crate::verify::transitions::list_all_stages(work_dir)?;
-    let Some(plan) = load_parsed_plan(work_dir)? else {
-        bail!("Could not load plan for aggregated wiring verification");
-    };
     let mut all_gaps = Vec::new();
-    for stage in stages
-        .iter()
-        .filter(|stage| stage.status == StageStatus::Completed)
-    {
-        let Some(definition) = plan
-            .metadata
-            .loom
-            .stages
-            .iter()
-            .find(|item| item.id == stage.id)
-        else {
-            continue;
-        };
-        all_gaps.extend(stage_wiring_gaps(
-            stage.id.as_str(),
-            definition,
-            worktree_root,
-            plan_version,
-        )?);
+    for definition in completed_definitions(work_dir)? {
+        all_gaps.extend(stage_wiring_gaps(&definition, worktree_root, plan_version)?);
     }
     if !all_gaps.is_empty() {
         bail!(
@@ -244,8 +212,21 @@ fn aggregated_wiring(worktree_root: &Path, work_dir: &Path, plan_version: u32) -
     Ok(())
 }
 
+/// The plan definition of every `Completed` stage, in stage-list order.
+fn completed_definitions(work_dir: &Path) -> Result<Vec<StageDefinition>> {
+    let stages = crate::verify::transitions::list_all_stages(work_dir)?;
+    let Some(plan) = load_parsed_plan(work_dir)? else {
+        bail!("Could not load plan for aggregated re-verification");
+    };
+    let definitions = &plan.metadata.loom.stages;
+    Ok(stages
+        .iter()
+        .filter(|stage| stage.status == StageStatus::Completed)
+        .filter_map(|stage| definitions.iter().find(|item| item.id == stage.id).cloned())
+        .collect())
+}
+
 fn stage_wiring_gaps(
-    stage_id: &str,
     definition: &StageDefinition,
     worktree_root: &Path,
     plan_version: u32,
@@ -253,6 +234,7 @@ fn stage_wiring_gaps(
     if definition.wiring.is_empty() {
         return Ok(Vec::new());
     }
+    let stage_id = &definition.id;
     println!("  Re-verifying wiring from stage '{stage_id}'...");
     let working_dir = if definition.working_dir == "." {
         worktree_root.to_path_buf()
