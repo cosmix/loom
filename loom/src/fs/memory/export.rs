@@ -1,10 +1,14 @@
 //! Export and formatting functions for memory journal content.
 
-use super::query::get_recent_entries;
+use super::query::{entries_of_type, get_recent_entries};
 use super::storage::read_journal;
 use super::types::{MemoryEntry, MemoryEntryType};
 use crate::utils::truncate_for_display;
 use std::path::Path;
+
+#[path = "export_suggestions.rs"]
+mod suggestions;
+pub(super) use suggestions::push_suggestions_section;
 
 /// Format memory entries for embedding in a signal
 pub fn format_memory_for_signal(
@@ -26,22 +30,10 @@ pub fn format_memory_for_signal(
     let mut output = String::new();
 
     // Group by type for better organization
-    let notes: Vec<_> = recent
-        .iter()
-        .filter(|e| e.entry_type == MemoryEntryType::Note)
-        .collect();
-    let decisions: Vec<_> = recent
-        .iter()
-        .filter(|e| e.entry_type == MemoryEntryType::Decision)
-        .collect();
-    let questions: Vec<_> = recent
-        .iter()
-        .filter(|e| e.entry_type == MemoryEntryType::Question)
-        .collect();
-    let changes: Vec<_> = recent
-        .iter()
-        .filter(|e| e.entry_type == MemoryEntryType::Change)
-        .collect();
+    let notes = entries_of_type(recent.iter().copied(), MemoryEntryType::Note);
+    let decisions = entries_of_type(recent.iter().copied(), MemoryEntryType::Decision);
+    let questions = entries_of_type(recent.iter().copied(), MemoryEntryType::Question);
+    let changes = entries_of_type(recent.iter().copied(), MemoryEntryType::Change);
 
     if !notes.is_empty() {
         output.push_str("### Notes\n\n");
@@ -85,6 +77,8 @@ pub fn format_memory_for_signal(
         output.push('\n');
     }
 
+    push_suggestions_section(&mut output, recent.iter().copied(), 150);
+
     if !changes.is_empty() {
         output.push_str("### Changes\n\n");
         for entry in changes {
@@ -121,22 +115,10 @@ pub fn format_memory_for_handoff(work_dir: &Path, stage_id: &str) -> Option<Stri
         entries.len()
     ));
 
-    // Include all decisions, questions, and changes (they're important for handoffs)
-    let decisions: Vec<_> = entries
-        .iter()
-        .copied()
-        .filter(|e| e.entry_type == MemoryEntryType::Decision)
-        .collect();
-    let questions: Vec<_> = entries
-        .iter()
-        .copied()
-        .filter(|e| e.entry_type == MemoryEntryType::Question)
-        .collect();
-    let changes: Vec<_> = entries
-        .iter()
-        .copied()
-        .filter(|e| e.entry_type == MemoryEntryType::Change)
-        .collect();
+    // Include all decisions, questions, suggestions and changes (they're important for handoffs)
+    let decisions = entries_of_type(entries.iter().copied(), MemoryEntryType::Decision);
+    let questions = entries_of_type(entries.iter().copied(), MemoryEntryType::Question);
+    let changes = entries_of_type(entries.iter().copied(), MemoryEntryType::Change);
 
     if !decisions.is_empty() {
         output.push_str("### Decisions Made\n\n");
@@ -165,6 +147,8 @@ pub fn format_memory_for_handoff(work_dir: &Path, stage_id: &str) -> Option<Stri
         output.push('\n');
     }
 
+    push_suggestions_section(&mut output, entries.iter().copied(), 200);
+
     if !changes.is_empty() {
         output.push_str("### Files Changed\n\n");
         for entry in &changes {
@@ -184,11 +168,7 @@ pub fn format_memory_for_handoff(work_dir: &Path, stage_id: &str) -> Option<Stri
 
 /// Append the "Recent Notes" section: the last 5 note entries, most recent first.
 fn append_recent_notes(output: &mut String, entries: &[&MemoryEntry]) {
-    let notes: Vec<_> = entries
-        .iter()
-        .copied()
-        .filter(|e| e.entry_type == MemoryEntryType::Note)
-        .collect();
+    let notes = entries_of_type(entries.iter().copied(), MemoryEntryType::Note);
     if !notes.is_empty() {
         output.push_str("### Recent Notes\n\n");
         for entry in notes.iter().rev().take(5) {

@@ -102,6 +102,7 @@ run_test "post-tool-use: large Bash output gets one advisory, capped per session
 run_test "post-tool-use: subagent ceiling ignores the stage's own context_ceiling_tokens" "$SCRIPT_DIR/post-tool-use-subagent-ceiling.sh"
 run_test "subagent-stop: heartbeat refresh is serialized and cannot roll parent tokens back" "$SCRIPT_DIR/subagent-stop-heartbeat-lock.sh"
 run_test "subagent-stop: lifecycle heartbeat tags subagent:true with no last_tool" "$SCRIPT_DIR/subagent-stop-heartbeat-subagent-flag.sh"
+run_test "subagent-stop: only a loom-code-reviewer stop reaches review-harvest, silently" "$SCRIPT_DIR/subagent-stop-review-harvest.sh"
 run_test "heartbeat protocol: ownership, SessionStart lock, abandoned recovery, atomic JSON" "$SCRIPT_DIR/heartbeat-protocol.sh"
 run_test "heartbeat protocol: subagent tool calls are tagged, main-agent calls are not" "$SCRIPT_DIR/heartbeat-subagent-flag.sh"
 run_test "post-tool-use: resident-token arithmetic (last record wins, torn line survives)" "$SCRIPT_DIR/post-tool-use-resident-tokens.sh"

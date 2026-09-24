@@ -155,6 +155,12 @@ pub enum HookCommands {
         #[arg(long)]
         allowed_kinds: String,
     },
+
+    /// SubagentStop helper behind `subagent-stop.sh`: record a
+    /// `loom-code-reviewer`'s final report as a review round. Not a
+    /// user-facing command.
+    #[command(hide = true)]
+    ReviewHarvest,
 }
 
 #[derive(Subcommand)]

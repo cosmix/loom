@@ -6,8 +6,38 @@ set -uo pipefail
 umask 077
 
 source "$(dirname "${BASH_SOURCE[0]}")/_lifecycle.sh"
+source "$(dirname "${BASH_SOURCE[0]}")/_read_ledger.sh"
 
 HOOK_NAME="subagent-stop"
+REVIEWER_AGENT_TYPE="loom-code-reviewer"
+
+# Hand a code reviewer's stop event to `loom hook review-harvest`, which records
+# its final report as a review round (DESIGN D12). Best effort: the delegate's
+# output and exit status never reach this hook's own; failures are logged only
+# under LOOM_HOOK_DEBUG=1.
+loom_subagent_stop_review_harvest() {
+	local input="" output="" status=0
+	command -v "${LOOM_BIN:-loom}" &>/dev/null || {
+		loom_debug "$HOOK_NAME: review harvest skipped - loom is not on PATH"
+		return 0
+	}
+	input=$(jq -nc --arg stage_id "$LOOM_STAGE_ID" --arg session_id "$PARENT_SESSION_ID" \
+		--arg agent_id "$AGENT_ID" --arg transcript_path "$WORKER_TRANSCRIPT" \
+		'{stage_id:$stage_id,session_id:$session_id,agent_id:$agent_id,
+		  transcript_path:$transcript_path}' 2>/dev/null) || status=$?
+	if ((status != 0)) || [[ -z "$input" ]]; then
+		loom_lifecycle_log_jq_failure "$HOOK_NAME" "constructing the review harvest input" "$status"
+		return 0
+	fi
+	output=$(printf '%s' "$input" | LOOM_HOOK_CONTEXT=1 LOOM_WORK_DIR="$WORK_DIR" \
+		loom_run_bounded 10 "${LOOM_BIN:-loom}" hook review-harvest 2>&1 >/dev/null) || status=$?
+	if ((status != 0)); then
+		loom_debug "$HOOK_NAME: review harvest failed (exit $status): $output"
+	elif [[ -n "$output" ]]; then
+		loom_debug "$HOOK_NAME: review harvest: $output"
+	fi
+	return 0
+}
 
 if [[ -z "${LOOM_STAGE_ID:-}" ]]; then
 	loom_debug "$HOOK_NAME: skipping - LOOM_STAGE_ID unset (not a loom session)"
@@ -151,4 +181,7 @@ fi
 loom_lifecycle_append "$WORK_DIR" "$LOOM_STAGE_ID" "$LOOM_SESSION_ID" "$RECORD" "$HOOK_NAME" || true
 loom_lifecycle_refresh_heartbeat "$WORK_DIR" "$LOOM_STAGE_ID" "$LOOM_SESSION_ID" \
 	"progress" "subagent ${AGENT_ID} finished" "$HOOK_NAME" || true
+if [[ "$AGENT_TYPE" == "$REVIEWER_AGENT_TYPE" ]]; then
+	loom_subagent_stop_review_harvest
+fi
 exit 0

@@ -9,6 +9,7 @@ mod parser;
 mod persistence;
 mod query;
 mod spool;
+mod staged;
 mod storage;
 mod types;
 
@@ -22,6 +23,8 @@ pub use storage::{
 };
 
 pub use query::{generate_summary, get_recent_entries, query_entries};
+
+pub use staged::{read_staged_entries, settled_ids};
 
 pub use export::{format_memory_for_handoff, format_memory_for_signal};
 

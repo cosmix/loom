@@ -10,12 +10,18 @@ use crate::verify::contracts::store::load_freeze;
 
 use super::contract::table_cell;
 
+#[path = "v2_section_review.rs"]
+mod review;
+
 /// Append every v2 block that applies to `stage`. A no-op for v1 stages.
 pub(super) fn append_v2_section(content: &mut String, stage: &Stage, work_dir: &Path) {
     if stage.plan_version != 2 {
         return;
     }
     append_frozen_contracts(content, stage, work_dir);
+    review::append_review_gate(content, stage, work_dir);
+    review::append_reviewer_suggestions(content, stage, work_dir);
+    review::append_unimplemented_suggestions(content, stage);
 }
 
 /// A standard stage's frozen contracts: what they are, that they are not to
@@ -66,49 +72,5 @@ fn append_frozen_contracts(content: &mut String, stage: &Stage, work_dir: &Path)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::verify::contracts::test_support::{contract, write_test_freeze};
-
-    fn v2_stage() -> Stage {
-        Stage {
-            id: "s1".to_string(),
-            plan_version: 2,
-            stage_type: StageType::Standard,
-            contracts: vec![contract()],
-            harness: vec!["tests/fixtures/**".to_string()],
-            ..Stage::default()
-        }
-    }
-
-    #[test]
-    fn frozen_contracts_block_names_contracts_and_commands() {
-        let temp = tempfile::tempdir().unwrap();
-        write_test_freeze(temp.path(), "s1", "session-1");
-        let mut content = String::new();
-        append_v2_section(&mut content, &v2_stage(), temp.path());
-
-        assert!(content.contains("## Frozen Contracts"));
-        assert!(content.contains("| `rejects-x` | `tests/x_contract.rs` | `tests::rejects_x` |"));
-        assert!(content.contains("`tests/fixtures/**`"));
-        assert!(content.contains("Never edit a frozen file"));
-        assert!(content.contains("loom stage contracts show s1"));
-        assert!(content.contains("loom stage contracts restore s1"));
-    }
-
-    #[test]
-    fn v1_and_unfrozen_stages_get_no_v2_section() {
-        let temp = tempfile::tempdir().unwrap();
-        let mut content = String::new();
-        append_v2_section(&mut content, &v2_stage(), temp.path());
-        assert!(content.is_empty(), "nothing is frozen yet");
-
-        write_test_freeze(temp.path(), "s1", "session-1");
-        let v1 = Stage {
-            plan_version: 1,
-            ..v2_stage()
-        };
-        append_v2_section(&mut content, &v1, temp.path());
-        assert!(content.is_empty(), "a v1 stage never gets the v2 section");
-    }
-}
+#[path = "v2_section_tests.rs"]
+mod tests;

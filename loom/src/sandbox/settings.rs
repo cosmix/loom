@@ -6,9 +6,8 @@ use anyhow::Result;
 use serde_json::{json, Value};
 use std::path::Path;
 
-// Only the tests exercise `build_settings` end to end from a real worktree
-// layout on disk (`build_settings_for` in `tests.rs`); the file-writing entry
-// point that used to need these in production, `write_settings`, is gone.
+// Only the tests exercise `build_settings` end to end from a real worktree layout on disk
+// (`build_settings_for` in `tests.rs`); `write_settings`, which needed these, is gone.
 #[cfg(test)]
 use crate::fs::permissions::state_root::resolve_state_root;
 #[cfg(test)]
@@ -36,7 +35,8 @@ pub fn apply_default_mode(settings: &mut Value, mode: PermissionMode) -> Result<
 }
 
 /// State-root subdirectories every session may read.
-const STATE_READ_DIRS: [&str; 5] = ["signals", "handoffs", "disputes", "memory", "contracts"];
+#[rustfmt::skip]
+const STATE_READ_DIRS: [&str; 6] = ["signals", "handoffs", "disputes", "memory", "contracts", "reviews"];
 
 /// Detect whether a settings target is a loom worktree (vs. the main repo root).
 ///

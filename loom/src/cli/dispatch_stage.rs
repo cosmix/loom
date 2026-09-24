@@ -11,7 +11,7 @@ use anyhow::Result;
 
 use super::dispatch::{print_minted_proof, resolve_completion_proof};
 use super::types::{OutputCommands, StageCommands};
-use super::types_stage::ContractsCommands;
+use super::types_stage::{ContractsCommands, ReviewCommands};
 use crate::commands::stage;
 
 /// `loom stage {block,reset,waiting,resume,hold,release,skip}` dispatch.
@@ -153,6 +153,7 @@ pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
         | StageCommands::Amend { .. }) => dispatch_stage_criteria(cmd),
         StageCommands::Output { command } => dispatch_stage_output(command),
         StageCommands::Contracts { command } => dispatch_stage_contracts(command),
+        StageCommands::Review { command } => dispatch_stage_review(command),
     }
 }
 
@@ -180,5 +181,12 @@ fn dispatch_stage_contracts(command: ContractsCommands) -> Result<()> {
         ContractsCommands::Restore { stage_id, contract } => {
             stage::contracts_restore(stage_id, contract)
         }
+    }
+}
+
+/// `loom stage review <subcommand>` dispatch.
+fn dispatch_stage_review(command: ReviewCommands) -> Result<()> {
+    match command {
+        ReviewCommands::Status { stage_id } => stage::review_status(stage_id),
     }
 }

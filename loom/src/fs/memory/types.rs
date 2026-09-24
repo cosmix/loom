@@ -18,6 +18,8 @@ pub enum MemoryEntryType {
     Change,
     /// Processing outcome for a previously captured memory event
     Receipt,
+    /// Reviewer suggestion, pending until a receipt settles it
+    Suggestion,
 }
 
 impl MemoryEntryType {
@@ -29,6 +31,7 @@ impl MemoryEntryType {
             MemoryEntryType::Question => "Question",
             MemoryEntryType::Change => "Change",
             MemoryEntryType::Receipt => "Receipt",
+            MemoryEntryType::Suggestion => "Suggestion",
         }
     }
 
@@ -40,6 +43,7 @@ impl MemoryEntryType {
             MemoryEntryType::Question => "❓",
             MemoryEntryType::Change => "🔧",
             MemoryEntryType::Receipt => "🧾",
+            MemoryEntryType::Suggestion => "💡",
         }
     }
 
@@ -51,6 +55,7 @@ impl MemoryEntryType {
             MemoryEntryType::Question,
             MemoryEntryType::Change,
             MemoryEntryType::Receipt,
+            MemoryEntryType::Suggestion,
         ]
     }
 }
@@ -63,6 +68,7 @@ impl std::fmt::Display for MemoryEntryType {
             MemoryEntryType::Question => write!(f, "question"),
             MemoryEntryType::Change => write!(f, "change"),
             MemoryEntryType::Receipt => write!(f, "receipt"),
+            MemoryEntryType::Suggestion => write!(f, "suggestion"),
         }
     }
 }
@@ -77,8 +83,10 @@ impl std::str::FromStr for MemoryEntryType {
             "question" | "questions" => Ok(MemoryEntryType::Question),
             "change" | "changes" => Ok(MemoryEntryType::Change),
             "receipt" | "receipts" => Ok(MemoryEntryType::Receipt),
+            "suggestion" | "suggestions" => Ok(MemoryEntryType::Suggestion),
             _ => anyhow::bail!(
-                "Invalid entry type: {s}. Use: note, decision, question, change, receipt"
+                "Invalid entry type: {s}. \
+                 Use: note, decision, question, change, receipt, suggestion"
             ),
         }
     }
@@ -91,6 +99,7 @@ pub enum ReceiptOutcome {
     Merged,
     Discarded,
     Deferred,
+    Implemented,
 }
 
 impl std::fmt::Display for ReceiptOutcome {
@@ -100,6 +109,7 @@ impl std::fmt::Display for ReceiptOutcome {
             ReceiptOutcome::Merged => "merged",
             ReceiptOutcome::Discarded => "discarded",
             ReceiptOutcome::Deferred => "deferred",
+            ReceiptOutcome::Implemented => "implemented",
         };
         f.write_str(outcome)
     }
@@ -114,6 +124,7 @@ impl std::str::FromStr for ReceiptOutcome {
             "merged" => Ok(Self::Merged),
             "discarded" => Ok(Self::Discarded),
             "deferred" => Ok(Self::Deferred),
+            "implemented" => Ok(Self::Implemented),
             _ => anyhow::bail!("Invalid receipt outcome: {s}"),
         }
     }

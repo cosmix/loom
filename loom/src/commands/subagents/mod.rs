@@ -29,6 +29,10 @@ pub(crate) mod resolve;
 mod summary;
 mod table;
 
+// `commands::hook::review_harvest` reads a reviewer's final text with the same
+// transcript-entry rules `classify` applies.
+pub(crate) use classify::{is_assistant, text_blocks};
+
 use std::path::PathBuf;
 
 use anyhow::Result;

@@ -7,9 +7,12 @@ use clap::Subcommand;
 mod amend;
 #[path = "types_stage_contracts.rs"]
 mod contracts;
+#[path = "types_stage_review.rs"]
+mod review;
 
 pub use amend::{AmendField, AmendOp};
 pub use contracts::ContractsCommands;
+pub use review::ReviewCommands;
 
 #[derive(Subcommand)]
 pub enum StageCommands {
@@ -295,6 +298,12 @@ pub enum StageCommands {
     Contracts {
         #[command(subcommand)]
         command: ContractsCommands,
+    },
+
+    /// Show a stage's recorded code reviews
+    Review {
+        #[command(subcommand)]
+        command: ReviewCommands,
     },
 }
 
