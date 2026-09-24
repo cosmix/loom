@@ -39,6 +39,9 @@ mod tests_doctrine;
 #[path = "tests_doctrine_prefixes.rs"]
 mod tests_doctrine_prefixes;
 #[cfg(test)]
+#[path = "tests_doctrine_v2.rs"]
+mod tests_doctrine_v2;
+#[cfg(test)]
 #[path = "tests_doctrine_waiting.rs"]
 mod tests_doctrine_waiting;
 

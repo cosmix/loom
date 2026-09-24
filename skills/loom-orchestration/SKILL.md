@@ -50,8 +50,9 @@ work it to completion.
 The commit is legitimate only once all three hold: (1) every subagent, coordinator, team, and
 Workflow returned and was absorbed; (2) the full gate (build, tests, lint, format, acceptance) is
 green on the complete tree; (3) the mini adversarial code review returned, every finding fixed,
-gate green again. A handoff is no reason to commit unverified work — record uncommitted files
-there instead.
+gate green again. In a plan version 2 stage `loom stage complete` enforces condition (3): it fails
+until a recorded review round matches the worktree and no finding is open. A handoff is no reason
+to commit unverified work — record uncommitted files there instead.
 
 **Complete ONLY a settled stage; completion is the session's LAST act.** All three conditions still
 hold (an abandoned subagent counts as returned only if you recorded why), every defect fixed and
@@ -224,6 +225,71 @@ context headroom. The cheaper the tier, the fuller the brief: paths, `file:line`
 signatures, patterns, steps, per-step acceptance, decisions settled, traps named. Never paste code
 the worker can open; it reads the ranges at its own rate. Plan authors: rubric in
 `/loom-plan-writer`.
+
+## Plan version 2 stages
+
+A stage of a version 2 plan must satisfy more than its acceptance criteria. Its signal names the
+stage's frozen contracts, the review gate and any findings carried in from an earlier stage; this
+section is the flow around them.
+
+**Contracts** (standard stages with `contracts`). Loom ran a contract session before yours: it
+wrote each contract test and the harness files, confirmed every contract test fails, and froze
+them. Never edit a frozen file, and name the frozen files read-only in every brief.
+`loom stage contracts show <stage-id>` prints the freeze record and the frozen files;
+`loom stage contracts restore <stage-id> [--contract <id>]` copies the frozen content back into
+the worktree. A contract that is itself wrong is disputed, never edited:
+`loom stage dispute-contract <stage-id> --contract <id> --reason "..."`.
+
+**The review loop** (standard and integration-verify stages):
+
+1. Spawn a `loom-code-reviewer` BY AGENT TYPE for the stage diff. Only that type is recorded:
+   when it stops, a hook records the `loom-review` block ending its final message as the next
+   review round. A final message without a valid block records a malformed round, which counts
+   for nothing.
+2. Brief every re-review with the output of `loom stage review status <stage-id>`: the rounds,
+   every open finding (own and carried) with its id, whether the latest round matches the
+   worktree, and the files changed since that round. A re-review covers those files plus the open
+   findings, and the reviewer lists each open id under `resolved` or `unresolved`.
+3. Every finding blocks completion, whatever its severity; suggestions never do. Each finding is
+   either fixed and re-reviewed, or disputed. It closes when a later round lists it under
+   `resolved`, or when the judge rules it `dismiss` or `defer`; `uphold` leaves it open.
+4. Dispute a round's findings in one command:
+   `loom stage dispute-findings <stage-id> --finding <id> ... --reason "..."`. Every dispute
+   sends the stage to adjudication and ends your session. A stage may file 3 disputes of each
+   kind (findings, contract, integrity); one more escalates it to `NeedsHumanReview`.
+
+**Review order (plan v2):** fix every finding, run the full gate, then run the final review round, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.
+
+**Test integrity** (standard and integration-verify stages). Completion compares the stage's test
+files with the base. Fewer test declarations or assertions in a language, assertion lines removed
+or changed in a test file that existed at base (a moved line does not count), or a changed
+`ratchet_files` entry each raise an event; `loom stage review integrity <stage-id>` lists them.
+Revert the change behind each event, or dispute them together:
+`loom stage dispute-integrity <stage-id> --event <id> ... --reason "..."`. An accepted event stays
+accepted while it gets no worse.
+
+**What `loom stage complete` checks, in order.** It stops at the first check that fails.
+
+1. The acceptance criteria. A criterion whose test runner selected zero tests fails.
+2. The goal-backward checks: `artifacts`, `wiring`, `wiring_tests`, the dead-code check and
+   `reachable`. A stage whose only goal-backward check is `reachable` skips this step.
+3. Standard stages with contracts: every frozen file matches its frozen hash, and every contract
+   test passes.
+4. Test integrity (standard and integration-verify).
+5. Standard stages: the tests that reach the stage's changed code pass. A test loom cannot select
+   or run only prints a note.
+6. Integration-verify: every completed stage's `reachable` checks, re-run on the merged tree.
+7. The review gate (standard and integration-verify): the latest well-formed round matches the
+   current change fingerprint, and no finding, own or carried, is open.
+8. The checks every stage gets: `after_stage` commands, unwired files, duplicate symbols and
+   change impact. Integration-verify also re-runs every completed stage's `wiring` checks.
+
+**Integration-verify.** Its signal lists every pending reviewer suggestion of the plan's stages,
+with its id. Consider each one: implement it, or leave it pending for knowledge-distill to record.
+Resolve each one you implement with
+`loom memory resolve <id> --outcome implemented --reason "<what changed>"`. Integration-verify
+never defers a finding: fix it or dispute it. A `defer` ruling on its dispute is turned into a
+request for more evidence.
 
 ## Reference
 

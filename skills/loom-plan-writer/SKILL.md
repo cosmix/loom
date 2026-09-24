@@ -50,6 +50,7 @@ Where other doctrine already governs something, this skill points at it: subagen
 | `references/verification-rules.md` | Writing any `acceptance` or `wiring_tests` entry, or a criterion about an artifact the stage will produce |
 | `references/sandbox.md` | Configuring `sandbox`, or a criterion writes files or needs a host resource, network, or `HOME` |
 | `references/authoring-detail.md` | A short form in Sections 2, 4, 5, 6, 7, 9 or 10 leaves a question open |
+| `references/v2-contracts.md` | Writing a `version: 2` plan: contracts, harness, reachable, ratchet files, the review gate |
 
 ---
 
@@ -88,6 +89,7 @@ Skipping exploration causes duplicate code, poor reuse, AND the #1 failure above
 2. Read `doc/loom/knowledge/INDEX.md` and the sections it points to — learn past mistakes.
 3. Have each explorer return, for every symbol the plan will CHANGE, its full importer/consumer list flagged compiler-caught vs SILENT; and for every behavior the plan will ASSERT, the quoted implementation. Flag any claim that could NOT be verified.
 4. In a multi-plan program, read the sibling plans and the COMMITTED code of merged ones first (Cross-Plan Contract Protocol).
+5. Run `loom project detect` and load the language skill it names for every package the plan touches; each skill's `## Loom Test Runner Adapter` section gives the adapter and the `test` format of that package's contracts (`references/v2-contracts.md` Section 1).
 
 ### Output location
 
@@ -133,8 +135,8 @@ Include a Mermaid execution diagram (`&` = concurrent), as in the canonical temp
 
 - **knowledge-bootstrap** — `stage_type: knowledge`, may write `doc/loom/knowledge/**`. Runs `loom knowledge sync`, then parallel `Explore` subagents returning `loom knowledge update` commands; it writes CONTENT (the scaffold is created at `loom init`). Acceptance: `loom knowledge check --strict --baseline doc/loom/knowledge/check-baseline.txt`. **Skip ONLY if** the tier-1 files already describe this codebase AND `loom knowledge sync` runs clean.
 - **Tier routing (bootstrap & distill)** — a finding of about 40 lines or fewer goes inline in its tier-1 file; larger goes to `loom knowledge update <category>/<slug>` with a 2-4 line tier-1 summary plus link. `INDEX.md` regenerates on every knowledge write.
-- **integration-verify** — ⚠️ **TESTS PASSING ≠ FEATURE WORKING.** Runs after all feature stages: full build and test with ZERO tolerance, parallel `loom-code-reviewer` subagents (findings fixed by an engineer agent), and functional proof that the feature is WIRED IN (CLI registered, endpoint mounted, component rendered) with an end-to-end smoke test. Records discoveries to `loom memory`; no knowledge curation.
-- **knowledge-distill** — single-agent, NO subagents. Starts from `loom memory pending --group`, applies every `stale-knowledge:` correction with `loom knowledge replace-section` FIRST, curates the rest, gives every entry a `loom memory resolve` receipt, and ends with `loom knowledge check --write-baseline doc/loom/knowledge/check-baseline.txt` when it removed structural issues. Acceptance: the bootstrap's check line plus `loom memory pending --strict`.
+- **integration-verify** — ⚠️ **TESTS PASSING ≠ FEATURE WORKING.** Runs after all feature stages: full build and test with ZERO tolerance, parallel `loom-code-reviewer` subagents (findings fixed by an engineer agent), and functional proof that the feature is WIRED IN (CLI registered, endpoint mounted, component rendered) with an end-to-end smoke test. Records discoveries to `loom memory`; no knowledge curation. In a `version: 2` plan its acceptance lists the full test command, it fixes or disputes every review finding and never defers one, and it weighs every pending reviewer suggestion.
+- **knowledge-distill** — single-agent, NO subagents. Starts from `loom memory pending --group`, applies every `stale-knowledge:` correction with `loom knowledge replace-section` FIRST, curates the rest, gives every entry a `loom memory resolve` receipt, and ends with `loom knowledge check --write-baseline doc/loom/knowledge/check-baseline.txt` when it removed structural issues. Acceptance: the bootstrap's check line plus `loom memory pending --strict`. In a `version: 2` plan it also records every unimplemented reviewer suggestion in knowledge before resolving it.
 
 Never give a knowledge stage a heading-presence grep on a tier-1 file: the scaffold already has `##` headings, so the criterion passes at base and cannot fail. Full bookend text: `references/bookend-stages.md`; full YAML: Section 10.
 
@@ -288,15 +290,23 @@ Every stage description MUST include the line **`Use parallel subagents and skil
 | `wiring` | Static integration point present (regex in a file) | `source` + `pattern` + `description` |
 | `wiring_tests` | Runtime integration: command output matches criteria | `name` + `command` + `success_criteria` |
 | `dead_code_check` | No orphaned code | `command` + `fail_patterns` + `ignore_patterns` (see `/loom-dead-code-check`) |
+| `contracts` (v2) | Behaviour: named tests, written and frozen before implementation, that fail on a named wrong implementation | `id` + `file` + `test` + `scenario` + `rejects` (+ optional `runner`; `harness` globs on the stage) |
+| `reachable` (v2) | The new unit is reached from an entry point through the source graph | `symbol` + `from` + `description` |
+| `wiring` `literal` (v2) | `pattern` matched as plain text | `literal: true` |
+| glob `source` (v2) | `wiring` over every file a glob matches | `source: "src/**/*.rs"` |
+| `ratchet_files` (v2, plan level) | Baseline and ledger files change only through an accepted integrity dispute | `ratchet_files: ["loom/maintainability-baseline.txt"]` |
 
-**⛔ `wiring` MUST target the CONSUMER, not the PRODUCER.** A pattern on where a symbol is DECLARED / EXPORTED / IMPORTED passes while the feature is unwired. Grep the call / mount / render / dispatch site (`source: "src/cli.rs", pattern: "NewCommand =>"`, not `pattern: "mod new_command"`). Pair every `wiring` entry with a behavioral `acceptance` command or `wiring_tests` entry where one exists.
+The v2 rows need `version: 2`; a v1 plan using one is rejected. In a v2 plan every `standard` stage carries at least one contract, and knowledge, knowledge-distill and integration-verify stages carry none. Choosing contracts (the risk checklist), writing them, and what completion then enforces: `references/v2-contracts.md`.
 
-**⛔ Prose promises MUST land in the YAML — a deliverable named only in prose is built by NOBODY.** (Logged: an uploader called "load-bearing" in prose, assigned to no stage; the plan closed green and its consumer plan stalled at zero code.) Write the overview LAST, derived from the stage graph. Every capability the prose names appears in exactly ONE stage's `artifacts:` AND is proven by a `wiring:` pattern or behavioral `acceptance`. If a stage's acceptance can only be met by editing file X, X belongs in that stage's `files:`.
+**⛔ `wiring` MUST target the CONSUMER, not the PRODUCER.** A pattern on where a symbol is DECLARED / EXPORTED / IMPORTED passes while the feature is unwired. Grep the call / mount / render / dispatch site (`source: "src/cli.rs", pattern: "NewCommand =>"`, not `pattern: "mod new_command"`). Pair every `wiring` entry with a behavioral `acceptance` command or `wiring_tests` entry where one exists. In v2 a pattern that matches only a definition is a gap, and `reachable` proves entry-point wiring through the source graph.
+
+**⛔ Prose promises MUST land in the YAML — a deliverable named only in prose is built by NOBODY.** (Logged: an uploader called "load-bearing" in prose, assigned to no stage; the plan closed green and its consumer plan stalled at zero code.) Write the overview LAST, derived from the stage graph. Every capability the prose names appears in exactly ONE stage's `artifacts:` AND is proven by a `wiring:` pattern or behavioral `acceptance` (in v2 also a `reachable` check or a contract). If a stage's acceptance can only be met by editing file X, X belongs in that stage's `files:`.
 
 **Checks `loom plan verify` enforces — run it with `--strict` and fix every finding.** Each is one logged incident; the check replaces the argument:
 
 - Errors: `|| true` / `|| :` masking an exit status; `HOME=` assigned from a variable or substitution (logged: `HOME=""` wrote the operator's real `~/.loom/config.toml`); a bare `mktemp -d` (denied in the sandbox; write `mktemp -d "${TMPDIR:-/tmp}/<name>.XXXXXX"`); a `TMPDIR=` override, a `/tmp/` path, or a write aimed outside the worktree.
 - Warnings: a network binary in a criterion (`curl`, `wget`, `gh`, `npm install`, `bun install`, `cargo install`, `cargo audit` without `--no-fetch`); a read of a `doc/plans/` path, which the plan lifecycle renames; `vitest -t`, whose unmatched filter exits 0; `PIPESTATUS` (criteria run under `sh -c`); `rg -r` (it means `--replace`); a test runner inside `wiring_tests`; a simple `rg`/`grep` criterion that already passes at HEAD, so it cannot tell a stage that did its work from one that did nothing.
+- Plan-version lints, errors in a `version: 2` plan and warnings in v1: a `loom` subcommand the CLI lacks; a wiring regex, or an `rg`/`grep` pattern without `-F`, that does not compile or would be read as a flag; a network binary while the stage allows no network domain; a resource no sandbox grant reaches (`tmux`, `docker`, `loom map`, `loom knowledge context`); a knowledge check that cannot pass without `--baseline`; a contract `runner` no adapter answers to; an integration-verify stage with no full test command. Warnings in both: `[[` in a pattern, a Rust test filter that matches no module, a contract whose runner cannot be detected.
 - **The full suite runs once, in integration-verify.** A standard stage's acceptance proves its own code (`cargo test --lib <module>::`, `--test <target>`, a name filter), plus build and lint; `loom plan verify` warns on an unfiltered run elsewhere.
 
 **Three rules no check enforces:**
@@ -318,7 +328,8 @@ Realizability (expressible, executes the code, right strength, actually selected
 
 ```yaml
 loom:
-  version: 1
+  version: 2                       # default for new plans; `version: 1` keeps the v1 rules (no contracts, reachable, ratchet_files or review gate)
+  ratchet_files: []                # v2 OPTIONAL - every baseline/ledger file a stage could loosen (references/v2-contracts.md)
   stages:
     - id: stage-id                 # unique kebab-case
       name: "Stage Name"
@@ -343,6 +354,12 @@ loom:
         - source: "src/cli.rs"
           pattern: "NewCommand =>"   # CONSUMER (dispatch arm), not `mod new_command`
           description: "Command registered in CLI dispatch"
+      contracts:                   # v2 - REQUIRED (>=1) on standard stages, none on other types
+        - id: new-cmd-rejects-missing-arg
+          file: tests/new_cmd_contracts.rs    # holds only contract tests
+          test: new_cmd_rejects_missing_arg   # form from the language skill's adapter section
+          scenario: "runs `myapp new-cmd` with no argument"
+          rejects: "a new-cmd that falls back to a default target and exits 0"
 ```
 
 <!-- END loom METADATA -->
@@ -416,7 +433,7 @@ Per-stage `sandbox:` overrides are allowed. **Acceptance runs INSIDE the stage's
 
 `loom plan verify` passing means STRUCTURE is valid — never that claims are TRUE. Exit code 0 ≠ success: sandbox blocks, dep-fetch failures, and write denials can all exit 0. Read stderr — "blocked", "denied", "connection refused", "failed to download" mean investigate.
 
-A criterion that FAILS for a reason the stage's diff cannot touch is a PLANNING defect, found by a finished, committed stage that cannot authorize its own bypass. Its sanctioned move is `loom stage dispute-criteria <stage-id> --criterion-index <n> --reason "..."` (operator-side, `loom stage amend`), for IMPOSSIBLE criteria only. The plan is where this is prevented; a dispute is the recovery.
+A criterion that FAILS for a reason the stage's diff cannot touch is a PLANNING defect, found by a finished, committed stage that cannot authorize its own bypass. Its sanctioned move is `loom stage dispute-criteria <stage-id> --criterion-index <n> --reason "..."` (operator-side, `loom stage amend`), for IMPOSSIBLE criteria only. In a `version: 2` plan a wrong contract, review finding or test-integrity event has its own dispute (`dispute-contract`, `dispute-findings`, `dispute-integrity`; `references/v2-contracts.md` Section 5). The plan is where this is prevented; a dispute is the recovery.
 
 ---
 
@@ -447,13 +464,13 @@ graph LR
 Explore codebase, populate `doc/loom/knowledge/`. Acceptance: the knowledge check passes against the committed baseline.
 
 ### 2–N. [Feature stages]
-Purpose, dependencies, tasks (with subagent assignments + file ownership), files, acceptance, verification.
+Purpose, dependencies, tasks (with subagent assignments + file ownership), files, acceptance, verification, and the risk-checklist walk: the areas that apply and the contract covering each.
 
 ### Integration Verification
-Build/test/lint (zero tolerance), parallel code-review subagents (fix all findings), functional smoke test. Depends on all feature stages.
+Full test command, lint and build (zero tolerance), parallel code-review subagents (fix or dispute every finding, never defer one), reviewer suggestions weighed, functional smoke test. Depends on all feature stages.
 
 ### Knowledge Distillation
-Curate memories → knowledge; update README/CONTRIBUTING. Depends on integration-verify.
+Curate memories → knowledge, unimplemented reviewer suggestions included; update README/CONTRIBUTING. Depends on integration-verify.
 
 ---
 
@@ -461,7 +478,7 @@ Curate memories → knowledge; update README/CONTRIBUTING. Depends on integratio
 
 ```yaml
 loom:
-  version: 1
+  version: 2
   stages:
     - id: knowledge-bootstrap
       name: "Bootstrap Knowledge Base"
@@ -498,14 +515,23 @@ loom:
       description: |
         Implement feature A. [Exact paths, signatures, patterns to follow,
         step-by-step subtasks, wiring, error handling — see Section 4.]
+        [Name the public surface the contracts call, e.g.
+        feature_a::create(name: &str) -> Result<Record, CreateError>: the
+        contract session writes them from this description before any code.]
         Use parallel subagents and skills to maximize performance.
         MEMORY: record mistakes/decisions/surprises via loom memory immediately;
         NEVER loom knowledge (implementation stage); NEVER auto-memory.
       dependencies: ["knowledge-bootstrap"]
       acceptance: ["cargo test --lib feature_a::"]
-      files: ["src/feature_a/**"]
+      files: ["src/feature_a/**", "tests/feature_a_contracts.rs"]
       working_dir: "."
       artifacts: ["src/feature_a/mod.rs"]
+      contracts:                   # risk area: untrusted input
+        - id: rejects-empty-name
+          file: tests/feature_a_contracts.rs
+          test: rejects_empty_name
+          scenario: "calls feature_a::create with an empty name"
+          rejects: "a create that stores the empty name instead of returning CreateError"
 
     - id: stage-b
       name: "Feature B"
@@ -516,9 +542,15 @@ loom:
         Use parallel subagents and skills to maximize performance.
       dependencies: ["knowledge-bootstrap"]
       acceptance: ["cargo test --lib feature_b::"]
-      files: ["src/feature_b/**"]
+      files: ["src/feature_b/**", "tests/feature_b_contracts.rs"]
       working_dir: "."
       artifacts: ["src/feature_b/mod.rs"]
+      contracts:                   # risk area: lifecycle (retry)
+        - id: second-sync-writes-once
+          file: tests/feature_b_contracts.rs
+          test: second_sync_writes_once
+          scenario: "runs feature_b::sync twice against one TempDir"
+          rejects: "a sync that appends its record again on the second run"
 
     - id: integration-verify
       name: "Integration Verification"
@@ -532,13 +564,17 @@ loom:
         lint as errors, build.
         CODE REVIEW: spawn parallel loom-code-reviewer subagents (security,
         architecture, test coverage); fix ALL findings with an engineer agent.
+        Every finding is fixed or disputed, never deferred.
+        SUGGESTIONS: weigh every pending reviewer suggestion the signal lists;
+        resolve each one implemented with loom memory resolve <id>
+        --outcome implemented --reason <what changed>; leave the rest pending.
         FUNCTIONAL: prove features are WIRED IN (CLI/API/UI reachable); run a
         smoke test of the primary use case end-to-end.
         Record discoveries to loom memory for knowledge-distill, including any
         knowledge file contradicted by the tree: loom memory note "stale-knowledge: ...".
       dependencies: ["stage-a", "stage-b"]
       acceptance:
-        - "cargo test"
+        - "cargo test"             # the full test command: required on integration-verify in v2
         - "cargo clippy -- -D warnings"
         - "cargo build"
         - "myapp --help"           # functional smoke (was `truths`)
@@ -576,6 +612,9 @@ loom:
         stale entries.
         Update README/CONTRIBUTING for changed behavior (relevant sections only);
         if nothing user-facing changed, skip but record WHY in memory.
+        SUGGESTIONS: record every unimplemented reviewer suggestion (listed
+        under suggestions by loom memory pending --group) in concerns or the
+        topic it belongs to, then resolve it promoted, merged or discarded.
         RECEIPTS: every Note/Decision/Question taken into knowledge gets
         loom memory resolve <id> --outcome promoted|merged|discarded|deferred
         right after the write that used it (--target/--reason as appropriate);
@@ -611,6 +650,9 @@ loom:
 □ Every stage names the skills its agents need in `skills:` (full catalog names)
 □ Codex opt-in asked and answered; codex units pass the checks in references/codex-implementers.md
 □ Standard/IV stages: acceptance OR ≥1 goal-backward check; wiring targets the CONSUMER; no leftover `truths:` block
+□ v2: `loom project detect` run; every touched package's language skill loaded and in `skills:`; each contract's `test` in the form its adapter section gives
+□ v2: every standard stage walked the risk checklist and carries its contracts; each `rejects` names a plausible wrong implementation; `harness` names test-only files
+□ v2: integration-verify's acceptance lists the full test command; `ratchet_files` lists every baseline or ledger file a stage could loosen
 □ Every stage's acceptance covers its OWN files (full suite only in integration-verify); no criterion's paths are disjoint from its stage's `files:`
 □ Every acceptance command was RUN at HEAD, from a worktree under the stage's sandbox, and OBSERVED green; baseline recorded in the prose
 □ Every criterion about a to-be-PRODUCED artifact dry-run against a good and a broken fixture; numbers are invariants or measured constants with provenance
