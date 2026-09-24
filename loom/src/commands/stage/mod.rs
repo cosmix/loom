@@ -13,6 +13,8 @@ mod completion_producer;
 mod contracts;
 mod criterion_output;
 mod dispute_criteria;
+mod dispute_kinds;
+mod dispute_transport;
 mod human_review;
 mod integrity_status;
 mod knowledge_complete;
@@ -38,6 +40,7 @@ pub use contracts::{
     freeze as contracts_freeze, restore as contracts_restore, show as contracts_show,
 };
 pub use dispute_criteria::dispute_criteria;
+pub use dispute_kinds::{file_dispute, DisputeFiling, DisputeTarget};
 pub use human_review::human_review;
 pub use integrity_status::review_integrity;
 pub use merge::merge;

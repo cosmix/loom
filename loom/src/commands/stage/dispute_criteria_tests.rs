@@ -1,4 +1,6 @@
 use super::*;
+use crate::fs::stage_request::StageRequest;
+use crate::relay::RequestKind;
 use std::io::Write;
 use tempfile::NamedTempFile;
 
@@ -125,6 +127,59 @@ fn an_adjudication_session_is_refused_before_any_ticket_is_written() {
     .unwrap_err();
 
     assert!(error.to_string().contains("may not relay"));
+    assert_eq!(
+        fs::read_dir(&fixture.context.scratch_dir).unwrap().count(),
+        0
+    );
+}
+
+fn contract_dispute() -> Dispute {
+    let kind = crate::models::dispute::DisputeKind::Contract {
+        contract_id: "rejects-x".to_string(),
+    };
+    Dispute::of_kind("stage-a".to_string(), kind, "wrong error".to_string(), None)
+}
+
+#[test]
+fn a_file_dispute_relays_one_ticket_under_its_own_kind() {
+    use crate::models::session::SessionType;
+    use crate::relay::emit::test_support::context_for;
+    use std::fs;
+
+    let fixture = context_for(SessionType::Stage);
+    let mut sink = VecSink::default();
+    let relay = RelayMode::Relay(fixture.context.clone());
+
+    send(contract_dispute(), relay, &fixture.cwd, &mut sink).unwrap();
+
+    let tickets: Vec<_> = fs::read_dir(&fixture.context.scratch_dir)
+        .unwrap()
+        .map(|e| e.unwrap().path())
+        .collect();
+    assert_eq!(tickets.len(), 1);
+    let ticket = crate::relay::Ticket::decode(&fs::read(&tickets[0]).unwrap()).unwrap();
+    assert_eq!(ticket.kind, RequestKind::FileDispute);
+    let decoded: StageRequest = serde_json::from_value(ticket.payload).unwrap();
+    assert!(
+        matches!(decoded, StageRequest::FileDispute { ref reason, .. } if reason == "wrong error"),
+        "{decoded:?}"
+    );
+}
+
+/// A knowledge session may relay a criterion dispute but not a plan v2 one.
+#[test]
+fn a_knowledge_session_may_not_relay_a_file_dispute() {
+    use crate::models::session::SessionType;
+    use crate::relay::emit::test_support::context_for;
+    use std::fs;
+
+    let fixture = context_for(SessionType::Knowledge);
+    let mut sink = VecSink::default();
+    let relay = RelayMode::Relay(fixture.context.clone());
+
+    let error = send(contract_dispute(), relay, &fixture.cwd, &mut sink).unwrap_err();
+
+    assert!(error.to_string().contains("may not relay"), "{error}");
     assert_eq!(
         fs::read_dir(&fixture.context.scratch_dir).unwrap().count(),
         0

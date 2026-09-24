@@ -7,10 +7,6 @@ use crate::plan::schema::{detect_stage_type, StageDefinition};
 use super::checks::{AcceptanceCriterion, PlanIdentity};
 use super::types::{Stage, StageOutput, StageStatus};
 
-/// Maximum disputes a single stage may file before further requests
-/// are refused (escalation goes through `NeedsHumanReview`).
-const MAX_DISPUTES_PER_STAGE: u32 = 3;
-
 impl Stage {
     pub fn new(name: String, description: Option<String>) -> Self {
         Self {
@@ -395,18 +391,6 @@ impl Stage {
             self.review_reason = Some(r);
         }
         Ok(())
-    }
-
-    /// Maximum number of disputes a stage may file before further
-    /// dispute requests are refused. See
-    /// `dispute_budget_exhausted`.
-    pub fn max_disputes_per_stage(&self) -> u32 {
-        MAX_DISPUTES_PER_STAGE
-    }
-
-    /// True when `dispute_count` has reached `max_disputes_per_stage`.
-    pub fn dispute_budget_exhausted(&self) -> bool {
-        self.dispute_count >= self.max_disputes_per_stage()
     }
 
     /// Increment the fix attempt counter and return the new count.

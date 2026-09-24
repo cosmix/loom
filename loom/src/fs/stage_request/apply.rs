@@ -2,8 +2,8 @@
 //!
 //! Nothing here reimplements a state transition. A spooled block goes through
 //! the same `handle_block_stage` the `BlockStage` RPC calls, a spooled
-//! dispute through the same `handle_dispute_criteria` the `DisputeCriteria`
-//! RPC calls, and a spooled contract freeze through the same
+//! dispute through the same `handle_dispute_criteria` or `handle_file_dispute`
+//! its RPC calls, and a spooled contract freeze through the same
 //! `handle_freeze_contracts` the `FreezeContracts` RPC calls, so the two ways a
 //! request can arrive cannot disagree about what it does - including the
 //! refusals, the budget check, the id allocation and the `validate_id` guard on
@@ -15,8 +15,8 @@ use std::path::Path;
 use super::spool::{drain_spool, DrainOutcome};
 use super::types::StageRequest;
 use crate::daemon::{
-    handle_block_stage, handle_dispute_criteria, handle_freeze_contracts, ContractRunReport,
-    Response,
+    handle_block_stage, handle_dispute_criteria, handle_file_dispute, handle_freeze_contracts,
+    ContractRunReport, Response,
 };
 use crate::verify::transitions::load_stage;
 
@@ -74,6 +74,17 @@ fn apply_request(
         StageRequest::FreezeContracts { reports } => {
             freeze_as_current_session(work_dir, stage_id, reports)?
         }
+        StageRequest::FileDispute {
+            kind,
+            reason,
+            evidence_commit,
+        } => handle_file_dispute(
+            work_dir,
+            stage_id,
+            kind.clone(),
+            reason.clone(),
+            evidence_commit.clone(),
+        )?,
     };
     record_response(stage_id, request, response, refused);
     Ok(())

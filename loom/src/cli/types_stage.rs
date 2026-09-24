@@ -7,11 +7,14 @@ use clap::Subcommand;
 mod amend;
 #[path = "types_stage_contracts.rs"]
 mod contracts;
+#[path = "types_stage_disputes.rs"]
+mod disputes;
 #[path = "types_stage_review.rs"]
 mod review;
 
 pub use amend::{AmendField, AmendOp};
 pub use contracts::ContractsCommands;
+pub use disputes::{DisputeContractArgs, DisputeFindingsArgs, DisputeIntegrityArgs};
 pub use review::ReviewCommands;
 
 #[derive(Subcommand)]
@@ -230,6 +233,15 @@ pub enum StageCommands {
         failure_output: Option<std::path::PathBuf>,
     },
 
+    /// Dispute open review findings of a plan v2 stage, in one request.
+    DisputeFindings(DisputeFindingsArgs),
+
+    /// Dispute a frozen contract of a plan v2 stage.
+    DisputeContract(DisputeContractArgs),
+
+    /// Dispute test-integrity events of a plan v2 stage, in one request.
+    DisputeIntegrity(DisputeIntegrityArgs),
+
     /// Record an adjudication session's verdict on a dispute.
     ///
     /// Run by the adjudication session the orchestrator spawns for a dispute,
@@ -253,7 +265,7 @@ pub enum StageCommands {
         verdict_file: std::path::PathBuf,
     },
 
-    /// Amend a stage's acceptance, wiring, or wiring_tests array in place
+    /// Amend a stage's acceptance, wiring, wiring_tests or contracts array in place
     /// (operator repair).
     ///
     /// Routes through the audited plan-amendment path: writes a numbered

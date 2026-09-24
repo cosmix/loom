@@ -15,11 +15,13 @@ use tempfile::TempDir;
 use crate::fs::inbox::{read_ledger, write_entry, LedgerOutcome, LedgerRecord, WriteOutcome};
 use crate::fs::memory::{MemoryEntry, MemoryEntryType};
 use crate::fs::session_files::save_session;
-use crate::models::dispute::{request_file, DisputeRequest};
+use crate::models::dispute::{request_file, DisputeKind, DisputeRequest};
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::schema::AcceptanceCriterion;
 use crate::relay::{new_request_id, AgentRole, InboxEntry, RequestKind};
+use crate::verify::contracts::store::{write_freeze, FreezeRecord, FrozenContract};
+use crate::verify::contracts::test_support::{contract_stage, red_reports, CONTRACT_ID};
 use crate::verify::transitions::save_stage;
 
 use super::{InboxHost, Settle, Tick};
@@ -128,7 +130,7 @@ impl Fixture {
         let request = DisputeRequest {
             id: dispute_id,
             stage_id: STAGE.to_string(),
-            criterion_index: 0,
+            kind: DisputeKind::Criterion { criterion_index: 0 },
             reason: "impossible".to_string(),
             evidence_commit: None,
             failure_output: None,
@@ -137,6 +139,22 @@ impl Fixture {
         };
         let yaml = serde_yaml::to_string(&request).unwrap();
         std::fs::write(path, format!("---\n{yaml}---\n\n# Dispute\n")).unwrap();
+    }
+
+    /// [`STAGE`] as an executing v2 stage owned by `owner`, its one contract
+    /// frozen.
+    pub fn frozen_contract_stage(&self, owner: &str) {
+        save_stage(&contract_stage(STAGE, owner), &self.work_dir).unwrap();
+        let record = FreezeRecord {
+            version: crate::verify::contracts::store::FREEZE_RECORD_VERSION,
+            stage_id: STAGE.to_string(),
+            session_id: owner.to_string(),
+            frozen_at: Utc::now(),
+            base: "main".to_string(),
+            files: Vec::new(),
+            contracts: red_reports().iter().map(FrozenContract::from).collect(),
+        };
+        write_freeze(&self.work_dir, &record, &[]).unwrap();
     }
 
     /// Relay one request through the relay hook's own writer.
@@ -231,5 +249,10 @@ pub(super) fn payload_for(kind: RequestKind) -> Value {
             "unmet_required": 0,
         }),
         RequestKind::FreezeContracts => json!({"request": "freeze_contracts", "reports": []}),
+        RequestKind::FileDispute => json!({
+            "request": "file_dispute",
+            "kind": {"kind": "contract", "contract_id": CONTRACT_ID},
+            "reason": "the contract asserts the wrong error",
+        }),
     }
 }

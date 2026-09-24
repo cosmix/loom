@@ -17,6 +17,8 @@ pub enum AmendField {
     Wiring,
     /// Mutate the `wiring_tests` array.
     WiringTests,
+    /// Mutate the `contracts` array.
+    Contracts,
 }
 
 /// What to do at `--index` within the field targeted by `loom stage amend`.
@@ -40,6 +42,7 @@ impl AmendField {
             AmendField::Acceptance => AmendmentField::Acceptance,
             AmendField::Wiring => AmendmentField::Wiring,
             AmendField::WiringTests => AmendmentField::WiringTests,
+            AmendField::Contracts => AmendmentField::Contracts,
         }
     }
 }

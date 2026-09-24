@@ -18,19 +18,17 @@
 //!    transitions the stage to `NeedsAdjudication`, saves the stage
 //! 7. responds `Response::DisputeCreated { id }`
 //!
-//! See `models/dispute.rs` for the on-disk schema.
+//! See `models/dispute.rs` for the on-disk schema; `dispute_store.rs` holds
+//! the lock, id allocation, `request.md` write and escalation every dispute
+//! kind shares, and `dispute_kinds.rs` files the plan v2 kinds.
 
-use anyhow::{anyhow, bail, Result};
+use anyhow::Result;
 use chrono::Utc;
-use std::fs::File;
-use std::os::fd::OwnedFd;
-use std::os::unix::io::AsRawFd;
 use std::path::Path;
 
+use super::dispute_store::{escalate_to_human_review, lock_stage_disputes, write_request};
 use crate::daemon::protocol::Response;
-use crate::fs::safe_fs::safe_create_new_in_workdir;
-use crate::fs::work_dir::WorkDir;
-use crate::models::dispute::DisputeRequest;
+use crate::models::dispute::{DisputeKind, DisputeRequest};
 use crate::verify::transitions::{load_stage, update_stage};
 
 const FAILURE_OUTPUT_MAX_BYTES: usize = 4096;
@@ -54,48 +52,12 @@ pub fn handle_dispute_criteria(
         });
     }
 
-    // Resolve canonical .loom/work path. Worktrees use a `.loom/work` symlink
-    // to ../../../.loom/work; canonicalize so the dirfd-relative writes land
-    // in the real directory and so the per-stage lock paths align.
-    let work_canonical = work_dir.canonicalize().map_err(|e| {
-        anyhow!(
-            "Failed to canonicalize work_dir {}: {e}",
-            work_dir.display()
-        )
-    })?;
-
-    let wd = WorkDir::new(&work_canonical).map_err(|e| {
-        anyhow!(
-            "Failed to load WorkDir at {}: {e}",
-            work_canonical.display()
-        )
-    })?;
-    // Note: WorkDir::new may search upward — for an already-canonical
-    // state-root path it returns that path. Use the canonical work path for
-    // disputes_dir() so all writes land beneath it deterministically.
-    let disputes_root = wd.disputes_dir();
-    let stage_disputes = disputes_root.join(stage_id);
-    std::fs::create_dir_all(&stage_disputes)?;
-
     // Per-stage lock — serialises concurrent dispute filings for the
     // same stage (id allocation + state transition).
-    let lock_path = stage_disputes.join(".lock");
-    let lock_file: File = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(&lock_path)?;
-    let lock_fd = lock_file.as_raw_fd();
-    // SAFETY: `lock_fd` belongs to the live `lock_file`, and `LOCK_EX` is a
-    // valid flock operation for the duration of this call.
-    let rc = unsafe { libc::flock(lock_fd, libc::LOCK_EX) };
-    if rc != 0 {
-        bail!("Failed to acquire dispute lock at {}", lock_path.display());
-    }
-    // Lock guard: dropped at end of scope releases via close.
+    let locked = lock_stage_disputes(work_dir, stage_id)?;
+    let work_canonical = &locked.work_dir;
 
-    let stage = load_stage(stage_id, &work_canonical)?;
+    let stage = load_stage(stage_id, work_canonical)?;
 
     if criterion_index >= stage.acceptance.len() {
         return Ok(Response::Error {
@@ -106,131 +68,61 @@ pub fn handle_dispute_criteria(
         });
     }
     if stage.dispute_budget_exhausted() {
-        // Escalate the stage to NeedsHumanReview so the agent does not loop
-        // futilely retrying the same failure. The state-machine permits
-        // this transition from both `CompletedWithFailures` (the typical
-        // entry point) and `NeedsAdjudication`; if the stage happens to be
-        // in some other status we still return the error to the caller
-        // and let an operator intervene.
-        //
-        // Re-read under the stages-dir lock and mutate only the review/status
-        // fields this operation owns, so a concurrent orchestrator/CLI write to
-        // other fields is preserved (A-5). The budget re-check inside the
-        // closure is against the fresh on-disk count.
+        // The state-machine permits the escalation from both
+        // `CompletedWithFailures` (the typical entry point) and
+        // `NeedsAdjudication`; if the stage happens to be in some other status
+        // we still return the error to the caller and let an operator
+        // intervene. The count in the review reason is the fresh on-disk one.
         let count = stage.dispute_count;
         let max = stage.max_disputes_per_stage();
-        let escalate = update_stage(stage_id, &work_canonical, |s| {
-            s.try_request_human_review(format!(
+        escalate_to_human_review(stage_id, work_canonical, |s| {
+            format!(
                 "Dispute budget exhausted ({} of {} disputes filed)",
                 s.dispute_count,
                 s.max_disputes_per_stage()
-            ))
+            )
         });
-        if let Err(e) = escalate {
-            tracing::warn!(
-                target: "loom::dispute",
-                stage = %stage_id,
-                error = %e,
-                "dispute budget exhausted but stage could not be escalated to NeedsHumanReview",
-            );
-        }
         return Ok(Response::Error {
             message: format!("Dispute budget exhausted ({count} disputes filed; max is {max}).",),
         });
     }
-
-    // Allocate the next id. Read the immediate child entries of
-    // .loom/work/disputes/<stage>/ and pick max numeric+1; if none, id = 1.
-    let next_id = next_dispute_id(&stage_disputes)?;
 
     // Truncate failure_output to 4KB on a char boundary (defensive even
     // though the CLI is expected to pre-truncate).
     let failure_output =
         failure_output.map(|s| truncate_to_byte_limit(&s, FAILURE_OUTPUT_MAX_BYTES));
 
+    // Materialise the dispute directory under the next sequential id and
+    // write request.md; the id is allocated by `write_request`.
+    let dispute_reason = reason.clone();
     let record = DisputeRequest {
-        id: next_id,
+        id: 0,
         stage_id: stage_id.to_string(),
-        criterion_index,
+        kind: DisputeKind::Criterion { criterion_index },
         reason,
         evidence_commit,
         failure_output,
         fix_attempts_at_dispute: stage.fix_attempts,
         created_at: Utc::now(),
     };
-
-    // Materialise the dispute directory and write request.md. Retry id
-    // allocation on EEXIST up to 3 times to handle the rare case where
-    // a concurrent caller (under a different lock domain) snuck a dir
-    // in between our enumeration and create.
-    let mut id = next_id;
-    let mut attempts = 0;
-    let dispute_dir = loop {
-        let dir = stage_disputes.join(id.to_string());
-        match std::fs::create_dir(&dir) {
-            Ok(_) => break dir,
-            Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists && attempts < 3 => {
-                attempts += 1;
-                id = next_dispute_id(&stage_disputes)?;
-                continue;
-            }
-            Err(e) => bail!("Failed to create dispute directory {}: {e}", dir.display()),
-        }
-    };
-
-    // Serialize the request as YAML frontmatter + markdown body.
-    let mut record_to_write = record.clone();
-    record_to_write.id = id;
-    let yaml = serde_yaml::to_string(&record_to_write)?;
-    let content = format!("---\n{yaml}---\n\n# Dispute request {id} for stage {stage_id}\n");
-
-    // Use safe_create_new_in_workdir for the actual write. dirfd is the
-    // dispute_dir we just created; relpath is "request.md".
-    let dirfd = open_dir_fd(&dispute_dir)?;
-    safe_create_new_in_workdir(
-        dirfd.as_raw_fd(),
-        Path::new("request.md"),
-        content.as_bytes(),
-    )?;
+    let id = write_request(&locked.stage_dir, record)?;
 
     // Update stage state and persist. Re-read under the stages-dir lock and
     // mutate only the dispute-owned fields (`dispute_count`, `evidence_rounds`,
     // status/close_reason via the transition helper) on the fresh on-disk state,
     // so a concurrent orchestrator/CLI write to unrelated fields is not reverted
     // (A-5). `dispute_count` is incremented from the current persisted value.
-    let dispute_reason = record_to_write.reason.clone();
-    update_stage(stage_id, &work_canonical, |s| {
+    update_stage(stage_id, work_canonical, |s| {
         s.dispute_count = s.dispute_count.saturating_add(1);
-        s.evidence_rounds = 0;
+        s.tally.evidence_rounds = 0;
         // Transition (handles both Executing and CompletedWithFailures via the helper).
         s.try_request_adjudication(Some(dispute_reason))
     })?;
 
-    // Lock will release when lock_file drops at end of scope.
-    drop(lock_file);
+    // The lock releases when `locked` drops.
+    drop(locked);
 
     Ok(Response::DisputeCreated { id })
-}
-
-fn next_dispute_id(stage_disputes: &Path) -> Result<u32> {
-    let mut max_id: u32 = 0;
-    if !stage_disputes.exists() {
-        return Ok(1);
-    }
-    for entry in std::fs::read_dir(stage_disputes)? {
-        let entry = entry?;
-        let name = entry.file_name();
-        let name = match name.to_str() {
-            Some(n) => n,
-            None => continue,
-        };
-        if let Ok(id) = name.parse::<u32>() {
-            if id > max_id {
-                max_id = id;
-            }
-        }
-    }
-    Ok(max_id + 1)
 }
 
 fn truncate_to_byte_limit(s: &str, max_bytes: usize) -> String {
@@ -248,24 +140,6 @@ fn truncate_to_byte_limit(s: &str, max_bytes: usize) -> String {
         acc.push(ch);
     }
     acc
-}
-
-fn open_dir_fd(path: &Path) -> Result<OwnedFd> {
-    use std::os::fd::FromRawFd;
-    let c_path = std::ffi::CString::new(path.as_os_str().as_encoded_bytes())?;
-    // SAFETY: `c_path` is NUL-terminated and the flags request a read-only
-    // directory descriptor without transferring any Rust-owned pointer.
-    let fd = unsafe { libc::open(c_path.as_ptr(), libc::O_DIRECTORY | libc::O_RDONLY) };
-    if fd < 0 {
-        bail!(
-            "Failed to open dispute directory {} for dirfd: {}",
-            path.display(),
-            std::io::Error::last_os_error()
-        );
-    }
-    // SAFETY: a non-negative `open` result is a fresh descriptor whose
-    // ownership is transferred exactly once to `OwnedFd`.
-    Ok(unsafe { OwnedFd::from_raw_fd(fd) })
 }
 
 #[cfg(test)]

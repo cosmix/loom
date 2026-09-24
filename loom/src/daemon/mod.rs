@@ -13,6 +13,7 @@ pub use server::{
     read_user_token, DaemonServer, DaemonStatus,
 };
 pub(crate) use server::{
-    caller_is_inside_session, handle_block_stage, handle_freeze_contracts, DaemonUnavailable,
+    caller_is_inside_session, handle_block_stage, handle_file_dispute, handle_freeze_contracts,
+    DaemonUnavailable,
 };
 pub use wire::{MAX_CREDENTIAL_BYTES, MAX_REQUEST_BYTES};

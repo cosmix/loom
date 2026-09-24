@@ -1,6 +1,7 @@
 //! The one full `Stage` literal; every other constructor starts from it.
 
 use super::checks::default_plan_version;
+use super::dispute_budgets::DisputeTally;
 use super::types::{Implementers, Stage, StageStatus, StageType};
 
 impl Default for Stage {
@@ -58,8 +59,7 @@ impl Default for Stage {
             code_review: None,
             fix_attempts: 0,
             dispute_count: 0,
-            evidence_rounds: 0,
-            amendments_applied: 0,
+            tally: DisputeTally::default(),
             stall_recoveries: 0,
             sandbox: Default::default(),
             execution_mode: None,

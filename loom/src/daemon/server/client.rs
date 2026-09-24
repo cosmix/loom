@@ -2,10 +2,11 @@
 
 use super::super::protocol::{
     read_request_body, read_request_length, read_request_preface, write_message, Capability,
-    ContractRunReport, Request, RequestPreface, Response,
+    Request, RequestPreface, Response,
 };
 use super::admission::{ByteBudget, DeadlineReader};
 use super::self_service;
+use super::stage_control::serve_stage_control;
 use super::tokens::verify_user_token;
 use anyhow::Result;
 use std::os::unix::net::UnixStream;
@@ -154,91 +155,6 @@ fn authorize_body(
     Ok(peer_pid)
 }
 
-/// Serve one `DisputeCriteria`.
-///
-/// The handler owns `request.md` persistence and the transition to
-/// `NeedsAdjudication`. Authorization and stage ownership are settled before
-/// it runs; the handler additionally validates `criterion_index` and the
-/// stage's dispute budget.
-fn serve_dispute_criteria(
-    work_dir: &Path,
-    stage_id: &str,
-    criterion_index: usize,
-    reason: String,
-    evidence_commit: Option<String>,
-    failure_output: Option<String>,
-) -> Response {
-    super::dispute::handle_dispute_criteria(
-        work_dir,
-        stage_id,
-        criterion_index,
-        reason,
-        evidence_commit,
-        failure_output,
-    )
-    .unwrap_or_else(|error| Response::Error {
-        message: format!("Dispute persistence failed: {error:#}"),
-    })
-}
-
-/// Serve one `BlockStage`. A transition the state machine refuses comes back
-/// from the handler as `Response::Error`, not as an `Err`.
-fn serve_block_stage(work_dir: &Path, stage_id: &str, reason: &str) -> Response {
-    super::control_block::handle_block_stage(work_dir, stage_id, reason).unwrap_or_else(|error| {
-        Response::Error {
-            message: format!("Block transition failed: {error:#}"),
-        }
-    })
-}
-
-/// Serve one `FreezeContracts`. Every refusal comes back from the handler as
-/// `Response::Error`; an `Err` means the freeze itself could not be written.
-fn serve_freeze_contracts(
-    work_dir: &Path,
-    stage_id: &str,
-    session_id: &str,
-    reports: &[ContractRunReport],
-) -> Response {
-    super::contracts::handle_freeze_contracts(work_dir, stage_id, session_id, reports)
-        .unwrap_or_else(|error| Response::Error {
-            message: format!("Contract freeze failed: {error:#}"),
-        })
-}
-
-/// Serve one of the requests a stage agent makes about its own stage, once
-/// authorization and ownership are settled.
-fn serve_stage_control(work_dir: &Path, request: Request) -> Response {
-    match request {
-        Request::DisputeCriteria {
-            stage_id,
-            criterion_index,
-            reason,
-            evidence_commit,
-            failure_output,
-            ..
-        } => serve_dispute_criteria(
-            work_dir,
-            &stage_id,
-            criterion_index,
-            reason,
-            evidence_commit,
-            failure_output,
-        ),
-        Request::BlockStage {
-            stage_id, reason, ..
-        } => serve_block_stage(work_dir, &stage_id, &reason),
-        Request::FreezeContracts {
-            stage_id,
-            session_id,
-            reports,
-            ..
-        } => serve_freeze_contracts(work_dir, &stage_id, &session_id, &reports),
-        other => Response::Error {
-            message: format!("{other:?} is not a stage-control request"),
-        },
-    }
-}
-
 /// Clone a client stream for use as a broadcast subscriber, applying a write
 /// timeout so a stalled subscriber cannot freeze the broadcaster (O-15).
 ///
@@ -322,9 +238,7 @@ pub fn handle_client_connection(
         };
 
         match request {
-            Request::Ping { .. } => {
-                write_message(&mut stream, &Response::Pong)?;
-            }
+            Request::Ping { .. } => write_message(&mut stream, &Response::Pong)?,
             Request::Stop { .. } => {
                 // Capability::Admin already verified above — stop the daemon.
                 write_message(&mut stream, &Response::Ok)?;
@@ -342,6 +256,7 @@ pub fn handle_client_connection(
                 break;
             }
             request @ (Request::DisputeCriteria { .. }
+            | Request::FileDispute { .. }
             | Request::BlockStage { .. }
             | Request::FreezeContracts { .. }) => {
                 write_message(&mut stream, &serve_stage_control(work_dir, request))?;

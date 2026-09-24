@@ -29,6 +29,9 @@ pub enum MatrixVerdict {
 /// Verification v2 (DESIGN D8) adds the `Contract` session and the
 /// `freeze-contracts` kind. `Contract` follows `Stage` except that it may not
 /// dispute or record a verdict, and `freeze-contracts` is its alone.
+///
+/// `file-dispute` (DESIGN D15) disputes a plan v2 stage's findings, contract
+/// or integrity events; only a `Stage` session may relay it.
 const MATRIX: &[(SessionType, RequestKind, MatrixVerdict)] = &[
     (
         SessionType::Stage,
@@ -265,6 +268,36 @@ const MATRIX: &[(SessionType, RequestKind, MatrixVerdict)] = &[
         SessionType::Contract,
         RequestKind::FreezeContracts,
         MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Stage,
+        RequestKind::FileDispute,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Knowledge,
+        RequestKind::FileDispute,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Merge,
+        RequestKind::FileDispute,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::BaseConflict,
+        RequestKind::FileDispute,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Adjudication,
+        RequestKind::FileDispute,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::FileDispute,
+        MatrixVerdict::Refuse,
     ),
 ];
 

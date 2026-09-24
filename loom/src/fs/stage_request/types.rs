@@ -3,10 +3,11 @@
 use serde::{Deserialize, Serialize};
 
 use crate::daemon::ContractRunReport;
+use crate::models::dispute::DisputeKind;
 
 /// One queued stage-control request, mirroring the `Request::BlockStage`,
-/// `Request::DisputeCriteria` and `Request::FreezeContracts` RPCs field for
-/// field.
+/// `Request::DisputeCriteria`, `Request::FileDispute` and
+/// `Request::FreezeContracts` RPCs field for field.
 ///
 /// The RPC variants carry `stage_id` and `session_id`; these deliberately do
 /// not. Over the socket those fields are checked against the connection's peer
@@ -14,7 +15,7 @@ use crate::daemon::ContractRunReport;
 /// no connection to check against, so the fields are simply absent and the
 /// daemon attributes the request to the worktree it found it in — see the
 /// module documentation.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "request", rename_all = "snake_case")]
 pub enum StageRequest {
     /// `loom stage block <id> "<reason>"`.
@@ -30,6 +31,13 @@ pub enum StageRequest {
     },
     /// `loom stage contracts freeze <id>`.
     FreezeContracts { reports: Vec<ContractRunReport> },
+    /// `loom stage dispute-findings|dispute-contract|dispute-integrity <id> ...`.
+    FileDispute {
+        kind: DisputeKind,
+        reason: String,
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        evidence_commit: Option<String>,
+    },
 }
 
 impl StageRequest {
@@ -41,6 +49,7 @@ impl StageRequest {
             StageRequest::Block { .. } => "block",
             StageRequest::Dispute { .. } => "dispute",
             StageRequest::FreezeContracts { .. } => "freeze_contracts",
+            StageRequest::FileDispute { .. } => "file_dispute",
         }
     }
 }
