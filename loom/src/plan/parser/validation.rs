@@ -143,7 +143,7 @@ loom:
     fn test_validate_unsupported_version() {
         let yaml = r#"
 loom:
-  version: 2
+  version: 3
   stages:
     - id: stage-1
       name: "Stage One"

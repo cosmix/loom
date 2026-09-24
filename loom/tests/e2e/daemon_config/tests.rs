@@ -6,7 +6,6 @@
 use loom::models::stage::Stage;
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
 use loom::plan::graph::ExecutionGraph;
-use loom::plan::schema::Implementers;
 use loom::plan::schema::SandboxConfig;
 use loom::plan::schema::StageDefinition;
 use serial_test::serial;
@@ -64,35 +63,9 @@ fn stage_def(id: &str, name: &str, auto_merge: Option<bool>) -> StageDefinition 
     StageDefinition {
         id: id.to_string(),
         name: name.to_string(),
-        description: None,
-        dependencies: vec![],
-        parallel_group: None,
-        acceptance: vec![],
-        setup: vec![],
-        files: vec![],
         auto_merge,
         working_dir: ".".to_string(),
-        sandbox: Default::default(),
-        stage_type: None,
-        artifacts: vec![],
-        wiring: vec![],
-        wiring_tests: vec![],
-        dead_code_check: None,
-        before_stage: vec![],
-        after_stage: vec![],
-        context_ceiling_tokens: None,
-        removed_context_budget: None,
-        plan_overview: None,
-        execution_mode: None,
-        bug_fix: None,
-        regression_test: None,
-        model: None,
-        reasoning_effort: None,
-        code_review: None,
-        ultracode: false,
-        implementers: Implementers::default(),
-        subagent_timeout_secs: None,
-        skills: vec![],
+        ..Default::default()
     }
 }
 

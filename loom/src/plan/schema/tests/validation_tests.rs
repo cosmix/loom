@@ -24,14 +24,9 @@ fn test_validate_unsupported_version() {
 
     let metadata = LoomMetadata {
         loom: LoomConfig {
-            version: 2, // Invalid version
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
+            version: 3, // Invalid version
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -47,13 +42,8 @@ fn test_validate_empty_stages() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![],
+            ..Default::default()
         },
     };
 
@@ -72,13 +62,8 @@ fn test_validate_empty_stage_id() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -97,13 +82,8 @@ fn test_validate_empty_stage_name() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -123,13 +103,8 @@ fn test_validate_unknown_dependency() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -150,13 +125,8 @@ fn test_validate_self_dependency() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -176,21 +146,17 @@ fn test_validate_multiple_errors() {
 
     let metadata = LoomMetadata {
         loom: LoomConfig {
-            version: 2,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
+            version: 3,
             stages: vec![stage1, stage2],
+            ..Default::default()
         },
     };
 
     let result = validate(&metadata);
     assert!(result.is_err());
     let errors = result.unwrap_err();
-    // Should have multiple errors: unsupported version, empty ID, empty name, self-dependency, unknown dependency
+    // Four errors: unsupported version, empty ID (which skips the empty-name check),
+    // self-dependency, unknown dependency
     assert!(errors.len() >= 4);
 }
 
@@ -248,13 +214,8 @@ fn test_complex_dependency_chain() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage1, stage2, stage3],
+            ..Default::default()
         },
     };
 
@@ -269,13 +230,8 @@ fn test_validate_duplicate_stage_ids() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage1, stage2],
+            ..Default::default()
         },
     };
 
@@ -295,13 +251,8 @@ fn test_validate_working_dir_path_traversal() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -319,13 +270,8 @@ fn test_validate_working_dir_absolute_path() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -346,13 +292,8 @@ fn test_validate_working_dir_valid_subdirectory() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -372,13 +313,8 @@ fn test_integration_verify_requires_goal_backward() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -399,13 +335,8 @@ fn test_integration_verify_with_artifacts_passes() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -426,13 +357,8 @@ fn test_integration_verify_with_wiring_tests_passes() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -447,18 +373,14 @@ fn test_integration_verify_with_wiring_passes() {
         source: "src/main.rs".to_string(),
         pattern: "feature_function".to_string(),
         description: "Feature is wired".to_string(),
+        literal: false,
     }];
 
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -474,13 +396,8 @@ fn test_knowledge_stage_exempt_from_goal_backward() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -529,6 +446,7 @@ fn test_preflight_warns_on_short_wiring_pattern() {
         source: "src/main.rs".to_string(),
         pattern: "fn".to_string(), // Too short
         description: "Test wiring".to_string(),
+        literal: false,
     }];
     stage.artifacts = vec!["README.md".to_string()];
 
@@ -546,6 +464,7 @@ fn test_preflight_warns_on_wildcard_pattern() {
         source: "src/main.rs".to_string(),
         pattern: ".*".to_string(), // Matches everything
         description: "Test wiring".to_string(),
+        literal: false,
     }];
     stage.artifacts = vec!["README.md".to_string()];
 
@@ -561,6 +480,7 @@ fn test_preflight_warns_on_single_char_pattern() {
         source: "src/main.rs".to_string(),
         pattern: "x".to_string(), // Single character
         description: "Test wiring".to_string(),
+        literal: false,
     }];
     stage.artifacts = vec!["README.md".to_string()];
 
@@ -578,6 +498,7 @@ fn test_preflight_warns_on_generic_keyword() {
         source: "src/main.rs".to_string(),
         pattern: "import".to_string(), // Common keyword (6 chars to pass length check)
         description: "Test wiring".to_string(),
+        literal: false,
     }];
     stage.artifacts = vec!["README.md".to_string()];
 
@@ -593,6 +514,7 @@ fn test_preflight_no_warning_for_specific_pattern() {
         source: "src/main.rs".to_string(),
         pattern: "validate_structural_preflight".to_string(), // Specific enough
         description: "Pre-flight validation exists".to_string(),
+        literal: false,
     }];
     stage.artifacts = vec!["README.md".to_string()];
 
@@ -696,13 +618,8 @@ fn test_knowledge_distill_exempt_from_goal_backward() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -724,13 +641,8 @@ fn test_knowledge_distill_with_acceptance_passes() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -752,7 +664,6 @@ fn test_check_sandbox_recommendations_warns_on_plan_level_knowledge_deny_write()
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
             sandbox: SandboxConfig {
                 filesystem: FilesystemConfig {
                     deny_write: vec!["doc/loom/knowledge/**".to_string()],
@@ -760,11 +671,8 @@ fn test_check_sandbox_recommendations_warns_on_plan_level_knowledge_deny_write()
                 },
                 ..SandboxConfig::default()
             },
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -791,13 +699,8 @@ fn test_check_sandbox_recommendations_warns_on_stage_level_knowledge_deny_write(
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 

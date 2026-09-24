@@ -10,7 +10,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use loom::fs::work_dir::ContextConfig;
-use loom::models::stage::{AcceptanceCriterion, Stage, TruthCheck};
+use loom::models::stage::{AcceptanceCriterion, PlanIdentity, Stage, TruthCheck};
 use loom::orchestrator::monitor::ContextHealth;
 use loom::parser::frontmatter::extract_yaml_frontmatter;
 use loom::plan::parser::parse_plan_content;
@@ -230,7 +230,7 @@ loom:
     )
     .expect("parse explicit integration-verify contract");
     let definition = &plan.stages[0];
-    let runtime = Stage::from_definition(definition, &plan.id);
+    let runtime = Stage::from_definition(definition, &PlanIdentity::from(&plan));
 
     assert_eq!(runtime.files, definition.files);
     assert_eq!(runtime.plan_overview, Some(false));

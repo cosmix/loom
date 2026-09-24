@@ -1,7 +1,7 @@
 //! Stage ID validation tests
 
 use super::make_stage;
-use crate::plan::schema::types::{LoomConfig, LoomMetadata, SandboxConfig};
+use crate::plan::schema::types::{LoomConfig, LoomMetadata};
 use crate::plan::schema::validation::validate;
 
 #[test]
@@ -11,13 +11,8 @@ fn test_validate_stage_id_path_traversal() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -36,13 +31,8 @@ fn test_validate_stage_id_with_slashes() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -61,13 +51,8 @@ fn test_validate_stage_id_with_dots() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -86,13 +71,8 @@ fn test_validate_stage_id_reserved_name_dotdot() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -107,13 +87,8 @@ fn test_validate_stage_id_reserved_name_con() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -131,13 +106,8 @@ fn test_validate_dependency_id_path_traversal() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -157,13 +127,8 @@ fn test_validate_stage_id_too_long() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -180,13 +145,8 @@ fn test_validate_stage_id_with_spaces() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 

@@ -3,7 +3,9 @@ use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value;
 
 use crate::models::failure::FailureInfo;
-use crate::plan::schema::CodeReviewConfig;
+use crate::plan::schema::{CodeReviewConfig, ContractSpec, ReachableCheck};
+
+use super::checks::{default_plan_version, AcceptanceCriterion, TruthCheck, WiringCheck};
 
 /// Type of stage for specialized handling.
 ///
@@ -41,21 +43,6 @@ pub enum ExecutionMode {
     Single,
     /// Coordinated multi-agent team execution
     Team,
-}
-
-/// Wiring check to verify component connections.
-///
-/// Used in goal-backward verification to ensure critical connections
-/// between components are in place.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct WiringCheck {
-    /// Source file path (relative to working_dir)
-    pub source: String,
-    /// What to check for (grep pattern)
-    pub pattern: String,
-    /// Human-readable description of what this verifies
-    pub description: String,
 }
 
 /// Claude Code permission mode controlling default tool-approval behavior.
@@ -385,71 +372,6 @@ fn default_deny_write() -> Vec<String> {
     // enforced by `loom-hooks/worktree-file-guard.sh`, which can block file tools
     // without blocking the CLI subprocess.
     vec!["../../**".to_string()]
-}
-
-/// Enhanced truth check with extended success criteria beyond exit code.
-///
-/// All extended fields are optional for backward compatibility.
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct TruthCheck {
-    /// Shell command to execute
-    pub command: String,
-    /// Strings that must appear in stdout
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub stdout_contains: Vec<String>,
-    /// Strings that must NOT appear in stdout
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub stdout_not_contains: Vec<String>,
-    /// Whether stderr must be empty (default: false, meaning stderr is ignored)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub stderr_empty: Option<bool>,
-    /// Expected exit code (default: 0)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub exit_code: Option<i32>,
-    /// Human-readable description of what this truth verifies
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub description: Option<String>,
-}
-
-/// Unified acceptance criterion - either a simple shell command or an extended check.
-///
-/// In YAML, simple criteria are plain strings, extended criteria are objects:
-/// ```yaml
-/// acceptance:
-///   - "cargo test"                           # Simple
-///   - command: "loom --help"                  # Extended
-///     stdout_contains: ["Usage:"]
-///     exit_code: 0
-/// ```
-#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(untagged)]
-pub enum AcceptanceCriterion {
-    /// Simple shell command - succeeds if exit code is 0
-    Simple(String),
-    /// Extended check with output validation (reuses TruthCheck structure)
-    Extended(TruthCheck),
-}
-
-impl AcceptanceCriterion {
-    /// Get the shell command string for this criterion
-    pub fn command(&self) -> &str {
-        match self {
-            AcceptanceCriterion::Simple(cmd) => cmd,
-            AcceptanceCriterion::Extended(check) => &check.command,
-        }
-    }
-
-    /// Whether this is an extended criterion with output validation
-    pub fn is_extended(&self) -> bool {
-        matches!(self, AcceptanceCriterion::Extended(_))
-    }
-}
-
-impl std::fmt::Display for AcceptanceCriterion {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.command())
-    }
 }
 
 /// Success criteria for wiring tests.
@@ -782,6 +704,22 @@ pub struct Stage {
     /// Skills this stage's agents need, by catalog name. Copied from the plan's StageDefinition.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<String>,
+    /// The plan's `loom.version`; every v2 behaviour is gated on `plan_version == 2`.
+    /// A stage file written before the field existed reads as 1.
+    #[serde(default = "default_plan_version")]
+    pub plan_version: u32,
+    /// Behavioural contracts. Copied from the plan's StageDefinition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contracts: Vec<ContractSpec>,
+    /// Globs the contract session may also edit. Copied from the plan's StageDefinition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub harness: Vec<String>,
+    /// Reachability checks. Copied from the plan's StageDefinition.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reachable: Vec<ReachableCheck>,
+    /// Files changed only through an accepted integrity review. Copied from `loom.ratchet_files`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ratchet_files: Vec<String>,
 }
 
 /// Status of a stage in the execution lifecycle.

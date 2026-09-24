@@ -32,7 +32,7 @@ loom:
     )
 }
 
-/// Plan with version 2 (unsupported).
+/// Plan with version 3 (unsupported).
 fn invalid_version_plan() -> &'static str {
     r#"# Bad Version Plan
 
@@ -40,7 +40,7 @@ fn invalid_version_plan() -> &'static str {
 
 ```yaml
 loom:
-  version: 2
+  version: 3
   stages:
     - id: stage-one
       name: "Stage One"
@@ -353,7 +353,7 @@ fn test_invalid_version() {
         String::from_utf8_lossy(&out.stderr)
     );
     assert!(
-        combined.contains("Unsupported version") || combined.contains("unsupported version"),
+        combined.contains("Unsupported version: 3. Supported versions: 1, 2"),
         "combined output: {combined}"
     );
 }

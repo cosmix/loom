@@ -9,7 +9,7 @@ use super::structural_checks::worker_table::check_worker_granularity;
 use super::structural_checks::{check_file_ownership, check_missing_brief_paths};
 use super::types::{
     FilesystemConfig, Implementer, LoomConfig, LoomMetadata, NetworkConfig, SandboxConfig,
-    StageSandboxConfig, ValidationError,
+    StageSandboxConfig, TruthCheck, ValidationError,
 };
 use super::validation_suite::warn_full_suite_outside_integration_verify;
 
@@ -18,6 +18,8 @@ pub(crate) mod base_tree;
 pub(super) mod criterion_hazards;
 mod search_args;
 pub(crate) mod shell_lex;
+pub(super) mod v2_fields;
+pub(crate) mod v2_lints;
 use criterion_hazards::criterion_needs_ungrantable_resource;
 
 /// Reject commands listed in `excluded_commands`: command-prefix exclusions run
@@ -231,19 +233,55 @@ fn check_plan_ceiling_minimums(config: &LoomConfig, errors: &mut Vec<ValidationE
     );
 }
 
+/// Validate a stage's `before_stage` or `after_stage` truth checks (`field`
+/// names which): at most 20, each command non-empty and at most 500 characters.
+fn push_truth_check_errors(
+    field: &str,
+    checks: &[TruthCheck],
+    stage_id: &str,
+    errors: &mut Vec<ValidationError>,
+) {
+    let stage_id = Some(stage_id.to_string());
+    if checks.len() > 20 {
+        errors.push(ValidationError {
+            message: format!("Too many {field} checks ({}, max 20)", checks.len()),
+            stage_id: stage_id.clone(),
+        });
+    }
+    for (idx, check) in checks.iter().enumerate() {
+        if check.command.trim().is_empty() {
+            errors.push(ValidationError {
+                message: format!("{field} check #{} command cannot be empty", idx + 1),
+                stage_id: stage_id.clone(),
+            });
+        }
+        if check.command.len() > 500 {
+            errors.push(ValidationError {
+                message: format!(
+                    "{field} check #{} command too long ({} chars, max 500)",
+                    idx + 1,
+                    check.command.len()
+                ),
+                stage_id: stage_id.clone(),
+            });
+        }
+    }
+}
+
 pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
     let mut errors = Vec::new();
 
     // Check version
-    if metadata.loom.version != 1 {
+    if !matches!(metadata.loom.version, 1 | 2) {
         errors.push(ValidationError {
             message: format!(
-                "Unsupported version: {}. Only version 1 is supported.",
+                "Unsupported version: {}. Supported versions: 1, 2.",
                 metadata.loom.version
             ),
             stage_id: None,
         });
     }
+    v2_fields::push_v2_field_errors(metadata, &mut errors);
 
     // Validate plan-level sandbox configuration
     validate_sandbox_config(&metadata.loom.sandbox, &mut errors);
@@ -416,8 +454,8 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
                     stage_id: Some(stage.id.clone()),
                 });
             }
-            // Validate pattern is valid regex
-            if let Err(e) = regex::Regex::new(&wiring.pattern) {
+            // Validate pattern is valid regex; a `literal` pattern is matched as written
+            if let (false, Err(e)) = (wiring.literal, regex::Regex::new(&wiring.pattern)) {
                 errors.push(ValidationError {
                     message: format!("Wiring #{} has invalid regex pattern: {}", idx + 1, e),
                     stage_id: Some(stage.id.clone()),
@@ -432,63 +470,9 @@ pub fn validate(metadata: &LoomMetadata) -> Result<(), Vec<ValidationError>> {
             }
         }
 
-        // Validate before_stage truth checks
-        if stage.before_stage.len() > 20 {
-            errors.push(ValidationError {
-                message: format!(
-                    "Too many before_stage checks ({}, max 20)",
-                    stage.before_stage.len()
-                ),
-                stage_id: Some(stage.id.clone()),
-            });
-        }
-        for (idx, check) in stage.before_stage.iter().enumerate() {
-            if check.command.trim().is_empty() {
-                errors.push(ValidationError {
-                    message: format!("before_stage check #{} command cannot be empty", idx + 1),
-                    stage_id: Some(stage.id.clone()),
-                });
-            }
-            if check.command.len() > 500 {
-                errors.push(ValidationError {
-                    message: format!(
-                        "before_stage check #{} command too long ({} chars, max 500)",
-                        idx + 1,
-                        check.command.len()
-                    ),
-                    stage_id: Some(stage.id.clone()),
-                });
-            }
-        }
-
-        // Validate after_stage truth checks
-        if stage.after_stage.len() > 20 {
-            errors.push(ValidationError {
-                message: format!(
-                    "Too many after_stage checks ({}, max 20)",
-                    stage.after_stage.len()
-                ),
-                stage_id: Some(stage.id.clone()),
-            });
-        }
-        for (idx, check) in stage.after_stage.iter().enumerate() {
-            if check.command.trim().is_empty() {
-                errors.push(ValidationError {
-                    message: format!("after_stage check #{} command cannot be empty", idx + 1),
-                    stage_id: Some(stage.id.clone()),
-                });
-            }
-            if check.command.len() > 500 {
-                errors.push(ValidationError {
-                    message: format!(
-                        "after_stage check #{} command too long ({} chars, max 500)",
-                        idx + 1,
-                        check.command.len()
-                    ),
-                    stage_id: Some(stage.id.clone()),
-                });
-            }
-        }
+        // Validate before_stage and after_stage truth checks
+        push_truth_check_errors("before_stage", &stage.before_stage, &stage.id, &mut errors);
+        push_truth_check_errors("after_stage", &stage.after_stage, &stage.id, &mut errors);
 
         // Require goal-backward checks for Standard and IntegrationVerify stages
         // Knowledge and KnowledgeDistill stages are exempt (different purposes).

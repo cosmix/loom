@@ -1,6 +1,8 @@
 //! Plan YAML schema type definitions
 
-use serde::{Deserialize, Deserializer, Serialize};
+use serde::{Deserialize, Serialize};
+
+use super::types_v2::deserialize_reasoning_effort;
 
 /// Claude Code permission mode controlling default tool-approval behavior.
 ///
@@ -145,7 +147,7 @@ pub struct LoomMetadata {
 }
 
 /// Main loom configuration
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct LoomConfig {
     pub version: u32,
@@ -165,6 +167,9 @@ pub struct LoomConfig {
     pub context_ceiling_tokens: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub subagent_ceiling_tokens: Option<u32>,
+    /// Files a stage changes only through an accepted integrity review; copied onto every `Stage`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ratchet_files: Vec<String>,
     pub stages: Vec<StageDefinition>,
 }
 
@@ -195,7 +200,7 @@ fn default_max_amendments_per_stage() -> u32 {
 }
 
 /// Stage definition from plan metadata
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct StageDefinition {
     pub id: String,
@@ -321,6 +326,15 @@ pub struct StageDefinition {
     /// Skills this stage's agents need, by catalog name; validated by `check_declared_skills`.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub skills: Vec<String>,
+    /// Behavioural contracts the contract phase writes before implementation.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub contracts: Vec<ContractSpec>,
+    /// Globs (relative to `working_dir`) the contract session may also edit.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub harness: Vec<String>,
+    /// Units that must be reachable from an entry point in the code graph.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub reachable: Vec<ReachableCheck>,
 }
 
 impl StageDefinition {
@@ -381,6 +395,10 @@ pub use crate::models::stage::DeadCodeCheck;
 /// The canonical definition is in crate::models::stage::RegressionTest.
 pub use crate::models::stage::RegressionTest;
 
+/// Contract and reachability specs a `version: 2` stage declares.
+/// The canonical definitions are in `types_v2.rs`.
+pub use super::types_v2::{ContractSpec, ReachableCheck};
+
 /// Policy for handling change impact failures.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
 #[serde(rename_all = "kebab-case")]
@@ -418,32 +436,6 @@ pub struct ChangeImpactConfig {
 /// Re-exported from models::stage for backward compatibility.
 /// The canonical definition is in crate::models::stage::ALLOWED_REASONING_EFFORTS.
 pub use crate::models::stage::ALLOWED_REASONING_EFFORTS;
-
-/// Serde deserializer for [`StageDefinition::reasoning_effort`].
-///
-/// Accepts the allowed set verbatim; rejects anything else (including values
-/// containing whitespace, semicolons, shell metacharacters). Returns
-/// `Ok(None)` when the field is omitted.
-fn deserialize_reasoning_effort<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
-where
-    D: Deserializer<'de>,
-{
-    use serde::de::Error as _;
-    let opt = <Option<String>>::deserialize(deserializer)?;
-    match opt {
-        None => Ok(None),
-        Some(s) => {
-            if ALLOWED_REASONING_EFFORTS.contains(&s.as_str()) {
-                Ok(Some(s))
-            } else {
-                Err(D::Error::custom(format!(
-                    "invalid reasoning_effort '{s}'. Allowed values: {}",
-                    ALLOWED_REASONING_EFFORTS.join(", ")
-                )))
-            }
-        }
-    }
-}
 
 /// Validation error with context
 #[derive(Debug)]

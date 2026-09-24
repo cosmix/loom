@@ -62,8 +62,7 @@ pub(super) fn setup_env_with_plan(plan_text: &str) -> TestEnv {
     fs::write(work_dir.join("config.toml"), cfg).unwrap();
 
     // Write the matching stage file.
-    let stage = make_stage("stage-a");
-    save_stage(&stage, &work_dir).unwrap();
+    save_stage(&make_stage("stage-a"), &work_dir).unwrap();
 
     TestEnv {
         _tmp: tmp,
@@ -85,6 +84,7 @@ pub(super) fn make_stage(id: &str) -> Stage {
             source: "src/lib.rs".to_string(),
             pattern: "pub fn foo".to_string(),
             description: "foo is exported".to_string(),
+            literal: false,
         }],
         wiring_tests: vec![crate::models::stage::WiringTest {
             name: "smoke test".to_string(),

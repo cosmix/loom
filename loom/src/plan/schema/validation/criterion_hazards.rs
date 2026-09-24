@@ -19,7 +19,7 @@ mod masked_exit;
 use masked_exit::masks_exit_status;
 
 /// How deep the scan follows command substitutions and `sh -c` scripts.
-const MAX_NESTING: usize = 4;
+pub(super) const MAX_NESTING: usize = 4;
 
 /// Words that put the word after them in command position.
 const KEYWORDS: [&str; 11] = [
@@ -298,7 +298,7 @@ fn argv_hazard(argv: &[&Word], in_wiring_test: bool) -> Vec<Hazard> {
 
 /// Index of the word that runs as the command, past assignments, keywords
 /// and wrappers such as `env` or `timeout 60`.
-fn command_start(words: &[&Word]) -> usize {
+pub(super) fn command_start(words: &[&Word]) -> usize {
     let mut idx = 0;
     let mut in_env = false;
     while let Some(word) = words.get(idx) {
@@ -364,7 +364,7 @@ fn filters_vitest_by_name(argv: &[&Word]) -> bool {
 
 /// Scripts nested in a simple command: its command substitutions, and the
 /// script of an `sh -c` / `bash -c`.
-fn nested_scripts(simple: &SimpleCommand<'_>) -> Vec<String> {
+pub(super) fn nested_scripts(simple: &SimpleCommand<'_>) -> Vec<String> {
     let mut scripts: Vec<String> = simple
         .words
         .iter()

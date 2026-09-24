@@ -3,9 +3,7 @@
 
 use crate::fs::work_dir::WorkDir;
 use crate::models::stage::Stage;
-use crate::plan::schema::{
-    Implementers, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition, StageSandboxConfig,
-};
+use crate::plan::schema::{LoomConfig, LoomMetadata, StageDefinition, StageSandboxConfig};
 use crate::verify::serialize_stage_to_markdown;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -31,13 +29,8 @@ fn create_test_plan(dir: &Path, stages: Vec<StageDefinition>) -> PathBuf {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages,
+            ..Default::default()
         },
     };
 
@@ -58,37 +51,11 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
     let stage_def = StageDefinition {
         id: "test-stage".to_string(),
         name: "Test Stage".to_string(),
-        description: None,
-        dependencies: vec![],
-        parallel_group: None,
         acceptance: vec![crate::plan::schema::AcceptanceCriterion::Simple(
             "echo ok".to_string(),
         )],
-        setup: vec![],
-        files: vec![],
-        auto_merge: None,
         working_dir: ".".to_string(),
-        stage_type: None,
-        artifacts: vec![],
-        wiring: vec![],
-        wiring_tests: vec![],
-        dead_code_check: None,
-        before_stage: vec![],
-        after_stage: vec![],
-        context_ceiling_tokens: None,
-        removed_context_budget: None,
-        plan_overview: None,
-        sandbox: StageSandboxConfig::default(),
-        execution_mode: None,
-        bug_fix: None,
-        regression_test: None,
-        model: None,
-        reasoning_effort: None,
-        code_review: None,
-        ultracode: false,
-        implementers: Implementers::default(),
-        subagent_timeout_secs: None,
-        skills: vec![],
+        ..Default::default()
     };
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);

@@ -11,7 +11,8 @@ use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::parser::{extract_plan_name, extract_yaml_metadata};
 use crate::plan::schema::{
     base_tree, check_knowledge_recommendations, check_sandbox_recommendations, detect_stage_type,
-    validate_structural_preflight, LoomMetadata, StageDefinition, StageType,
+    split_lint_findings, v2_lints, validate_structural_preflight, LoomMetadata, StageDefinition,
+    StageType, ValidationError,
 };
 
 const MAX_FILE_BYTES: u64 = 1_048_576; // 1 MiB
@@ -29,6 +30,15 @@ struct JsonPlan {
 struct JsonError {
     stage_id: Option<String>,
     message: String,
+}
+
+impl From<ValidationError> for JsonError {
+    fn from(error: ValidationError) -> Self {
+        Self {
+            stage_id: error.stage_id,
+            message: error.message,
+        }
+    }
 }
 
 #[derive(Serialize, Default)]
@@ -94,16 +104,11 @@ fn stage_type_label(st: StageType) -> &'static str {
 /// Walk up from plan_path.parent() looking for a directory containing `.git`.
 /// Handles both `.git` directories and `.git` files (worktrees).
 fn find_repo_root(plan_path: &Path) -> Option<PathBuf> {
-    let mut dir = plan_path.parent()?;
-    loop {
-        if dir.join(".git").exists() {
-            return Some(dir.to_path_buf());
-        }
-        match dir.parent() {
-            Some(parent) if parent != dir => dir = parent,
-            _ => return None,
-        }
-    }
+    plan_path
+        .parent()?
+        .ancestors()
+        .find(|dir| dir.join(".git").exists())
+        .map(Path::to_path_buf)
 }
 
 fn build_levels_output(
@@ -367,10 +372,7 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
     };
 
     // Derive plan ID from filename (available once we know it's a loom plan)
-    let plan_id = path
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .map(|s| s.to_string());
+    let plan_id = path.file_stem().and_then(|s| s.to_str()).map(String::from);
 
     // Deserialize LoomMetadata
     let loom_metadata: LoomMetadata = match serde_yaml::from_str(&yaml) {
@@ -385,18 +387,19 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
     let mut hard_errors: Vec<JsonError> = Vec::new();
     let mut soft_warnings = JsonWarnings::default();
     let mut levels: Vec<Vec<JsonStageLevel>> = Vec::new();
+    let mut notes: Vec<String> = Vec::new();
 
     match crate::plan::schema::validate(&loom_metadata) {
-        Err(errs) => {
-            for e in errs {
-                hard_errors.push(JsonError {
-                    stage_id: e.stage_id,
-                    message: e.message,
-                });
-            }
-        }
+        Err(errs) => hard_errors.extend(errs.into_iter().map(JsonError::from)),
         Ok(()) => {
             hard_errors.extend(sandbox_policy_errors(&loom_metadata));
+            let context = v2_lints::LintContext {
+                metadata: &loom_metadata,
+                repo_root: repo_root.as_deref(),
+            };
+            let lints = v2_lints::run(&context, &mut notes);
+            let (lint_errs, lint_warns) = split_lint_findings(loom_metadata.loom.version, lints);
+            hard_errors.extend(lint_errs.into_iter().map(JsonError::from));
             // Soft checks (only when schema validation passes)
             soft_warnings = JsonWarnings {
                 structural: validate_structural_preflight(stages, repo_root.as_deref()),
@@ -404,6 +407,7 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
                 sandbox: check_sandbox_recommendations(&loom_metadata),
                 baseline: Vec::new(),
             };
+            soft_warnings.structural.extend(lint_warns);
             match dag_levels(stages) {
                 Ok(by_level) => levels = by_level,
                 Err(error) => hard_errors.push(error),
@@ -415,7 +419,7 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
     // pass reports a plan's hazard errors and its already-green criteria.
     let baseline = base_tree::check_base_tree(stages, repo_root.as_deref());
     soft_warnings.baseline = baseline.warnings;
-    let notes: Vec<String> = baseline.note.into_iter().collect();
+    notes.extend(baseline.note);
 
     let total_errors = hard_errors.len();
     let total_warnings = soft_warnings.total();
@@ -454,11 +458,7 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
     });
 
     if failed {
-        bail!(
-            "Plan validation failed ({} error(s), {} warning(s))",
-            total_errors,
-            total_warnings
-        );
+        bail!("Plan validation failed ({total_errors} error(s), {total_warnings} warning(s))");
     }
 
     Ok(())

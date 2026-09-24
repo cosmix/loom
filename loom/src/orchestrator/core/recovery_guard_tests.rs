@@ -11,7 +11,7 @@ use crate::fs::work_dir::write_terminal_config;
 use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::StageType;
 use crate::orchestrator::core::OrchestratorConfig;
-use crate::plan::schema::{Implementers, StageDefinition, StageSandboxConfig};
+use crate::plan::schema::StageDefinition;
 use crate::plan::ExecutionGraph;
 use crate::verify::transitions::save_stage;
 
@@ -19,35 +19,9 @@ fn stage_definition(id: &str, dependencies: Vec<String>) -> StageDefinition {
     StageDefinition {
         id: id.to_string(),
         name: id.to_string(),
-        description: None,
         dependencies,
-        parallel_group: None,
-        acceptance: vec![],
-        setup: vec![],
-        files: vec![],
-        auto_merge: None,
         working_dir: ".".to_string(),
-        stage_type: None,
-        artifacts: vec![],
-        wiring: vec![],
-        wiring_tests: vec![],
-        dead_code_check: None,
-        before_stage: vec![],
-        after_stage: vec![],
-        context_ceiling_tokens: None,
-        removed_context_budget: None,
-        plan_overview: None,
-        sandbox: StageSandboxConfig::default(),
-        execution_mode: None,
-        bug_fix: None,
-        regression_test: None,
-        model: None,
-        reasoning_effort: None,
-        code_review: None,
-        ultracode: false,
-        implementers: Implementers::default(),
-        subagent_timeout_secs: None,
-        skills: vec![],
+        ..Default::default()
     }
 }
 

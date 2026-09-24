@@ -4,7 +4,8 @@ use chrono::{DateTime, Utc};
 use crate::orchestrator::monitor::heartbeat::DEFAULT_HUNG_TIMEOUT_SECS;
 use crate::plan::schema::{detect_stage_type, StageDefinition};
 
-use super::types::{AcceptanceCriterion, Stage, StageOutput, StageStatus};
+use super::checks::{AcceptanceCriterion, PlanIdentity};
+use super::types::{Stage, StageOutput, StageStatus};
 
 /// Maximum disputes a single stage may file before further requests
 /// are refused (escalation goes through `NeedsHumanReview`).
@@ -25,7 +26,7 @@ impl Stage {
     /// Runtime-only fields retain [`Stage::new`] defaults. Every plan field
     /// represented by `Stage` is copied here so initialization and any recovery
     /// path cannot silently diverge as policy fields are added.
-    pub fn from_definition(definition: &StageDefinition, plan_id: &str) -> Self {
+    pub fn from_definition(definition: &StageDefinition, plan: &PlanIdentity<'_>) -> Self {
         let mut stage = Self::new(definition.name.clone(), definition.description.clone());
         stage.id = definition.id.clone();
         stage.status = if definition.dependencies.is_empty() {
@@ -39,7 +40,9 @@ impl Stage {
         stage.setup = definition.setup.clone();
         stage.files = definition.files.clone();
         stage.stage_type = detect_stage_type(definition);
-        stage.plan_id = Some(plan_id.to_string());
+        stage.plan_id = Some(plan.id.to_string());
+        stage.plan_version = plan.version;
+        stage.ratchet_files = plan.ratchet_files.to_vec();
         stage.auto_merge = definition.auto_merge;
         stage.working_dir = Some(definition.working_dir.clone());
         stage.context_ceiling_tokens = definition.context_ceiling_tokens;
@@ -61,6 +64,9 @@ impl Stage {
         stage.implementers = definition.implementers.clone();
         stage.subagent_timeout_secs = definition.subagent_timeout_secs;
         stage.skills = definition.skills.clone();
+        stage.contracts = definition.contracts.clone();
+        stage.harness = definition.harness.clone();
+        stage.reachable = definition.reachable.clone();
         stage
     }
 
@@ -538,7 +544,12 @@ mod tests {
         WiringCheck, WiringTest,
     };
     use crate::plan::schema::CodeReviewConfig;
-    use chrono::{Duration, Utc};
+
+    const POLICY_PLAN: PlanIdentity<'static> = PlanIdentity {
+        id: "plan-policy",
+        version: 1,
+        ratchet_files: &[],
+    };
 
     fn truth_check(command: &str, description: &str) -> TruthCheck {
         TruthCheck {
@@ -570,6 +581,7 @@ mod tests {
                 source: "src/lib.rs".to_string(),
                 pattern: "policy".to_string(),
                 description: "policy is exported".to_string(),
+                literal: false,
             }],
             wiring_tests: vec![WiringTest {
                 name: "runtime policy".to_string(),
@@ -595,11 +607,9 @@ mod tests {
                 auto_allow: Some(false),
                 allow_unsandboxed_escape: Some(false),
                 excluded_commands: vec!["danger".to_string()],
-                filesystem: None,
-                network: None,
-                linux: None,
                 permission_mode: Some(PermissionMode::Plan),
                 command_confinement: Some(CommandConfinement::Inherit),
+                ..StageSandboxConfig::default()
             },
             execution_mode: Some(ExecutionMode::Team),
             bug_fix: Some(true),
@@ -617,9 +627,10 @@ mod tests {
             implementers: Implementers::new(vec![Implementer::Codex, Implementer::Claude]),
             subagent_timeout_secs: Some(900),
             skills: vec!["loom-rust".to_string()],
+            ..Default::default()
         };
 
-        let stage = Stage::from_definition(&definition, "plan-policy");
+        let stage = Stage::from_definition(&definition, &POLICY_PLAN);
 
         assert_eq!(stage.id, definition.id);
         assert_eq!(stage.name, definition.name);
@@ -668,72 +679,12 @@ mod tests {
         assert_eq!(stage.subagent_timeout_secs, Some(900));
         assert_eq!(stage.skills, definition.skills);
     }
-
-    #[test]
-    fn test_begin_attempt_initializes_execution_secs() {
-        let mut stage = Stage::default();
-        assert!(stage.execution_secs.is_none());
-        assert!(stage.attempt_started_at.is_none());
-
-        let now = Utc::now();
-        stage.begin_attempt(now);
-
-        assert_eq!(stage.execution_secs, Some(0));
-        assert_eq!(stage.attempt_started_at, Some(now));
-    }
-
-    #[test]
-    fn test_begin_attempt_preserves_existing_execution_secs() {
-        let mut stage = Stage {
-            execution_secs: Some(60),
-            ..Stage::default()
-        };
-
-        let now = Utc::now();
-        stage.begin_attempt(now);
-
-        assert_eq!(stage.execution_secs, Some(60)); // Preserved
-        assert_eq!(stage.attempt_started_at, Some(now));
-    }
-
-    #[test]
-    fn test_accumulate_attempt_time() {
-        let mut stage = Stage::default();
-        let start = Utc::now() - Duration::seconds(30);
-        stage.attempt_started_at = Some(start);
-        stage.execution_secs = Some(0);
-
-        stage.accumulate_attempt_time(Utc::now());
-
-        assert!(stage.execution_secs.unwrap() >= 29); // Allow for timing variance
-        assert!(stage.attempt_started_at.is_none()); // Cleared
-    }
-
-    #[test]
-    fn test_accumulate_attempt_time_adds_to_existing() {
-        let start = Utc::now() - Duration::seconds(50);
-        let mut stage = Stage {
-            execution_secs: Some(100),
-            attempt_started_at: Some(start),
-            ..Stage::default()
-        };
-
-        stage.accumulate_attempt_time(Utc::now());
-
-        assert!(stage.execution_secs.unwrap() >= 149); // 100 + ~50
-        assert!(stage.attempt_started_at.is_none());
-    }
-
-    #[test]
-    fn test_accumulate_attempt_time_noop_without_started() {
-        let mut stage = Stage {
-            execution_secs: Some(100),
-            ..Stage::default()
-        };
-        // attempt_started_at is None
-
-        stage.accumulate_attempt_time(Utc::now());
-
-        assert_eq!(stage.execution_secs, Some(100)); // Unchanged
-    }
 }
+
+#[cfg(test)]
+#[path = "methods_attempt_tests.rs"]
+mod methods_attempt_tests;
+
+#[cfg(test)]
+#[path = "methods_v2_tests.rs"]
+mod methods_v2_tests;

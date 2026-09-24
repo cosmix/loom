@@ -4,11 +4,8 @@ use super::cleanup::{cleanup_work_directory, prune_stale_worktrees};
 use super::plan_setup::{create_stage_from_definition, initialize_with_plan, preflight_plan};
 use crate::fs::work_dir::WorkDir;
 use crate::models::session::SessionBackendKind;
-use crate::models::stage::{Implementer, Implementers, Stage, StageStatus};
-use crate::plan::schema::{
-    AcceptanceCriterion, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition,
-    StageSandboxConfig,
-};
+use crate::models::stage::{Implementer, Implementers, PlanIdentity, Stage, StageStatus};
+use crate::plan::schema::{AcceptanceCriterion, LoomConfig, LoomMetadata, StageDefinition};
 use crate::verify::serialize_stage_to_markdown;
 use serial_test::serial;
 use std::fs;
@@ -20,13 +17,10 @@ fn create_test_plan(dir: &Path, stages: Vec<StageDefinition>) -> PathBuf {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
             context_ceiling_tokens: Some(160_000),
             subagent_ceiling_tokens: Some(110_000),
             stages,
+            ..Default::default()
         },
     };
 
@@ -45,35 +39,17 @@ fn minimal_stage_definition(id: &str, name: &str) -> StageDefinition {
     StageDefinition {
         id: id.to_string(),
         name: name.to_string(),
-        description: None,
-        dependencies: vec![],
-        parallel_group: None,
-        acceptance: vec![],
-        setup: vec![],
-        files: vec![],
-        auto_merge: None,
         working_dir: ".".to_string(),
-        stage_type: None,
-        artifacts: vec![],
-        wiring: vec![],
-        wiring_tests: vec![],
-        dead_code_check: None,
-        before_stage: vec![],
-        after_stage: vec![],
-        context_ceiling_tokens: None,
-        removed_context_budget: None,
-        plan_overview: None,
-        sandbox: StageSandboxConfig::default(),
-        execution_mode: None,
-        bug_fix: None,
-        regression_test: None,
-        model: None,
-        reasoning_effort: None,
-        code_review: None,
-        ultracode: false,
-        implementers: Implementers::default(),
-        subagent_timeout_secs: None,
-        skills: vec![],
+        ..Default::default()
+    }
+}
+
+/// Identity of a v1 plan with no ratchet files
+fn v1_plan(id: &str) -> PlanIdentity<'_> {
+    PlanIdentity {
+        id,
+        version: 1,
+        ratchet_files: &[],
     }
 }
 
@@ -86,7 +62,7 @@ fn test_create_stage_from_definition_no_dependencies() {
         ..minimal_stage_definition("stage-1", "Stage 1")
     };
 
-    let stage = create_stage_from_definition(&stage_def, "plan-001");
+    let stage = create_stage_from_definition(&stage_def, &v1_plan("plan-001"));
 
     assert_eq!(stage.id, "stage-1");
     assert_eq!(stage.name, "Stage 1");
@@ -101,7 +77,7 @@ fn test_create_stage_from_definition_no_dependencies() {
         ultracode: true,
         ..stage_def.clone()
     };
-    let ultracode_stage = create_stage_from_definition(&ultracode_def, "plan-001");
+    let ultracode_stage = create_stage_from_definition(&ultracode_def, &v1_plan("plan-001"));
     assert!(ultracode_stage.ultracode);
 
     // The implementer lanes propagate from the definition to the stage model,
@@ -118,7 +94,7 @@ fn test_create_stage_from_definition_no_dependencies() {
         implementers: Implementers::new(vec![Implementer::Codex, Implementer::Claude]),
         ..stage_def.clone()
     };
-    let mixed_stage = create_stage_from_definition(&mixed_def, "plan-001");
+    let mixed_stage = create_stage_from_definition(&mixed_def, &v1_plan("plan-001"));
     assert!(
         mixed_stage.implementers.is_mixed(),
         "a mixed lane list must survive definition → stage"
@@ -137,7 +113,7 @@ fn test_create_stage_from_definition_no_dependencies() {
         subagent_timeout_secs: Some(1800),
         ..stage_def
     };
-    let budgeted_stage = create_stage_from_definition(&budgeted_def, "plan-001");
+    let budgeted_stage = create_stage_from_definition(&budgeted_def, &v1_plan("plan-001"));
     assert_eq!(budgeted_stage.subagent_timeout_secs, Some(1800));
 }
 
@@ -150,7 +126,7 @@ fn test_create_stage_from_definition_with_dependencies() {
         ..minimal_stage_definition("stage-2", "Stage 2")
     };
 
-    let stage = create_stage_from_definition(&stage_def, "plan-002");
+    let stage = create_stage_from_definition(&stage_def, &v1_plan("plan-002"));
 
     assert_eq!(stage.id, "stage-2");
     assert_eq!(stage.status, StageStatus::WaitingForDeps);

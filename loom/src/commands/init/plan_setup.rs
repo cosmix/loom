@@ -4,7 +4,7 @@ use crate::fs::stage_files::stage_file_path;
 use crate::fs::work_dir::{self, WorkDir};
 use crate::git::branch::current_branch;
 use crate::models::session::{SessionBackendKind, TerminalConfig};
-use crate::models::stage::Stage;
+use crate::models::stage::{PlanIdentity, Stage};
 use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::parser::{parse_plan, ParsedPlan};
 use crate::plan::schema::{
@@ -57,10 +57,11 @@ pub fn preflight_plan(plan_path: &Path) -> Result<PreflightedPlan> {
         .with_context(|| format!("Failed to parse plan file: {}", canonical_path.display()))?;
 
     let plan_sandbox = &parsed_plan.metadata.loom.sandbox;
+    let plan = PlanIdentity::from(&parsed_plan);
     let stages: Vec<Stage> = parsed_plan
         .stages
         .iter()
-        .map(|stage_def| create_stage_from_definition(stage_def, &parsed_plan.id))
+        .map(|stage_def| create_stage_from_definition(stage_def, &plan))
         .collect();
     refuse_unconfined_sandbox(plan_sandbox, &stages)?;
 
@@ -285,7 +286,7 @@ pub fn initialize_with_plan(
     let max_id_len = stages.iter().map(|s| s.id.len()).max().unwrap_or(0);
 
     for stage_def in &stages {
-        let stage = create_stage_from_definition(stage_def, &parsed_plan.id);
+        let stage = create_stage_from_definition(stage_def, &PlanIdentity::from(parsed_plan));
         let depth = depths.get(&stage.id).copied().unwrap_or(0);
         let stage_path = stage_file_path(&stages_dir, depth, &stage.id);
 
@@ -330,8 +331,11 @@ fn require_utf8_plan_path(path: &Path) -> Result<&str> {
 }
 
 /// Create a Stage from a StageDefinition
-pub(crate) fn create_stage_from_definition(stage_def: &StageDefinition, plan_id: &str) -> Stage {
-    Stage::from_definition(stage_def, plan_id)
+pub(crate) fn create_stage_from_definition(
+    stage_def: &StageDefinition,
+    plan: &PlanIdentity<'_>,
+) -> Stage {
+    Stage::from_definition(stage_def, plan)
 }
 
 #[cfg(all(test, unix))]

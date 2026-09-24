@@ -8,7 +8,7 @@
 # refactor it back. New violations must be refactored or explicitly recorded.
 
 file src/commands/graph/tests.rs 425
-file src/commands/init/tests.rs 473
+file src/commands/init/tests.rs 449
 file src/commands/plan/verify.rs 555
 file src/commands/stage/complete.rs 759
 file src/commands/stage/merge.rs 537
@@ -19,10 +19,10 @@ file src/fs/permissions/settings.rs 422
 file src/fs/safe_fs.rs 1019
 file src/fs/work_dir.rs 433
 file src/fs/work_dir/tests.rs 873
-file src/git/worktree/base.rs 494
+file src/git/worktree/base.rs 469
 file src/git/worktree/settings.rs 462
-file src/models/stage/methods.rs 739
-file src/models/stage/types.rs 1103
+file src/models/stage/methods.rs 690
+file src/models/stage/types.rs 1041
 file src/orchestrator/core/merge_handler.rs 1303
 file src/orchestrator/core/recovery.rs 1500
 file src/orchestrator/core/stage_executor.rs 780
@@ -34,11 +34,11 @@ file src/orchestrator/signals/tests_cache.rs 630
 file src/orchestrator/terminal/emulator.rs 611
 file src/orchestrator/terminal/native/pid_tracking.rs 452
 file src/orchestrator/terminal/native/window_ops.rs 575
-file src/plan/amendment.rs 1084
+file src/plan/amendment.rs 1059
 file src/plan/parser/extraction.rs 410
-file src/plan/schema/tests/validation_tests.rs 923
-file src/plan/schema/types.rs 465
-file src/plan/schema/validation.rs 1238
+file src/plan/schema/tests/validation_tests.rs 826
+file src/plan/schema/types.rs 457
+file src/plan/schema/validation.rs 1222
 file src/plan/tests/amendment.rs 605
 file src/remote_control.rs 598
 file src/sandbox/config.rs 822
@@ -68,7 +68,7 @@ function src/commands/init/tests.rs test_cleanup_orphaned_sessions_reaps_live_on
 function src/commands/init/tests.rs test_create_stage_from_definition_no_dependencies 62
 function src/commands/knowledge/tests.rs test_knowledge_update_in_worktree_writes_to_worktree 74
 function src/commands/knowledge/tests.rs test_parse_file_type 70
-function src/commands/plan/verify.rs execute 138
+function src/commands/plan/verify.rs execute 133
 function src/commands/plan/verify.rs print_human 98
 function src/commands/repair.rs execute 99
 function src/commands/repair/tests.rs repair_fixes_a_stale_knowledge_directory_deny_in_a_worktree 62
@@ -95,7 +95,7 @@ function src/commands/status/render/completion.rs render_completion_screen 84
 function src/commands/status/render/graph.rs format_stage_annotations 78
 function src/commands/status/render/graph.rs render_graph 66
 function src/commands/status/ui/tui/renderer.rs render_completion 128
-function src/commands/verify.rs execute 89
+function src/commands/verify.rs execute 72
 function src/completions/dynamic/mod.rs complete_after_subcommand 56
 function src/completions/install.rs install 52
 function src/context/refresh/tests_source_graph/enumeration.rs an_unreadable_file_survives_as_a_reported_lexical_only_entry 62
@@ -126,7 +126,7 @@ function src/git/worktree/operations.rs create_worktree 115
 function src/git/worktree/settings.rs create_worktree_settings 115
 function src/git/worktree/tests_settings_env.rs test_worktree_gitignore_actually_hides_loom_runtime_paths 57
 function src/handoff/generator/formatter.rs format_handoff_markdown 112
-function src/models/stage/defaults.rs default 71
+function src/models/stage/defaults.rs default 76
 function src/models/stage/methods.rs from_definition_copies_all_runtime_policy_fields 116
 function src/models/stage/transitions.rs can_transition_to 74
 function src/models/stage/transitions.rs valid_transitions 58
@@ -187,7 +187,7 @@ function src/plan/parser/extraction.rs extract_yaml_metadata_with_ranges 51
 function src/plan/parser/mod.rs test_parse_plan_with_all_fields 74
 function src/plan/schema/tests/security_policy_tests.rs rejects_misspelled_nested_sandbox_fields 58
 function src/plan/schema/validation.rs check_cross_stage_wiring_coverage 66
-function src/plan/schema/validation.rs validate 410
+function src/plan/schema/validation.rs validate 357
 function src/plan/schema/validation.rs validate_structural_preflight 223
 function src/sandbox/settings.rs generate_settings_json 106
 function src/sandbox/settings/policy.rs filesystem_settings 52
@@ -207,7 +207,6 @@ function src/verify/goal_backward/artifacts.rs verify_artifacts 67
 function src/verify/goal_backward/artifacts.rs verify_regression_test 52
 function src/verify/goal_backward/dead_code.rs run_dead_code_check 66
 function src/verify/goal_backward/truths.rs verify_truth_checks 117
-function src/verify/goal_backward/wiring.rs verify_wiring 65
 function src/verify/goal_backward/wiring_tests.rs verify_wiring_tests 111
 function src/verify/transitions/state.rs are_all_dependencies_satisfied 67
 function src/verify/transitions/state.rs describe_dependency_block 95

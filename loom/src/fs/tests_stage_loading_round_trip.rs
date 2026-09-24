@@ -20,13 +20,15 @@
 
 use crate::fs::stage_loading::extract_stage_definition;
 use crate::models::stage::{
-    DeadCodeCheck, ExecutionMode, Implementer, RegressionTest, Stage, StageType, SuccessCriteria,
-    TruthCheck, WiringCheck, WiringTest,
+    DeadCodeCheck, ExecutionMode, Implementer, PlanIdentity, RegressionTest, Stage, StageType,
+    SuccessCriteria, TruthCheck, WiringCheck, WiringTest,
 };
 use crate::plan::schema::{
-    AcceptanceCriterion, CodeReviewConfig, Implementers, StageDefinition, StageSandboxConfig,
+    AcceptanceCriterion, CodeReviewConfig, ContractSpec, Implementers, ReachableCheck,
+    StageDefinition, StageSandboxConfig,
 };
 use crate::verify::serialize_stage_to_markdown;
+use crate::verify::transitions::parse_stage_from_markdown;
 
 fn sample_acceptance_criteria() -> Vec<AcceptanceCriterion> {
     vec![
@@ -60,6 +62,7 @@ fn sample_wiring_check() -> WiringCheck {
         source: "src/main.rs".to_string(),
         pattern: "fn main".to_string(),
         description: "entry point exists".to_string(),
+        literal: true,
     }
 }
 
@@ -110,6 +113,26 @@ fn sample_code_review_config() -> CodeReviewConfig {
     }
 }
 
+fn sample_contract() -> ContractSpec {
+    ContractSpec {
+        id: "parses-plan".to_string(),
+        file: "tests/contract.rs".to_string(),
+        test: "parses_plan".to_string(),
+        runner: Some("cargo".to_string()),
+        scenario: "a v2 plan with one standard stage".to_string(),
+        rejects: "a parser that drops the stage's contracts".to_string(),
+    }
+}
+
+fn sample_reachable_check() -> ReachableCheck {
+    ReachableCheck {
+        symbol: "run_contracts".to_string(),
+        from: "main".to_string(),
+        min_confidence: Some(0.5),
+        description: "the contract runner is reached from the CLI".to_string(),
+    }
+}
+
 /// Builds a `StageDefinition` with every field set to a non-default value,
 /// so the round trip in [`round_tripped_stage_definition`] exercises all of
 /// them. Nested composite fields come from the small `sample_*` helpers
@@ -147,18 +170,57 @@ fn build_full_stage_definition() -> StageDefinition {
         implementers: Implementers::new(vec![Implementer::Codex, Implementer::Claude]),
         subagent_timeout_secs: Some(600),
         skills: vec!["loom-rust".to_string()],
+        contracts: vec![sample_contract()],
+        harness: vec!["tests/fixtures/**".to_string()],
+        reachable: vec![sample_reachable_check()],
     }
 }
 
-/// Runs [`build_full_stage_definition`] through `Stage::from_definition` ->
-/// `serialize_stage_to_markdown` -> `extract_stage_definition` and returns
-/// `(original, round_tripped)`.
-fn round_tripped_stage_definition() -> (StageDefinition, StageDefinition) {
+/// Saves [`build_full_stage_definition`] as a stage file of `plan` through
+/// `Stage::from_definition` -> `serialize_stage_to_markdown` and returns
+/// `(original, stage file content)`.
+fn saved_stage_file(plan: &PlanIdentity<'_>) -> (StageDefinition, String) {
     let def = build_full_stage_definition();
-    let stage = Stage::from_definition(&def, "plan-id");
+    let stage = Stage::from_definition(&def, plan);
     let content = serialize_stage_to_markdown(&stage).expect("serialize");
+    (def, content)
+}
+
+/// Round-trips [`build_full_stage_definition`] through a v1 stage file and
+/// `extract_stage_definition`, returning `(original, round_tripped)`.
+fn round_tripped_stage_definition() -> (StageDefinition, StageDefinition) {
+    let plan = PlanIdentity {
+        id: "plan-id",
+        version: 1,
+        ratchet_files: &[],
+    };
+    let (def, content) = saved_stage_file(&plan);
     let round_tripped = extract_stage_definition(&content).expect("round trip should parse");
     (def, round_tripped)
+}
+
+#[test]
+fn v2_fields_survive_stage_file_round_trip() {
+    let ratchet_files = vec!["loom/tests/ratchet.rs".to_string()];
+    let plan = PlanIdentity {
+        id: "plan-v2",
+        version: 2,
+        ratchet_files: &ratchet_files,
+    };
+    let (def, content) = saved_stage_file(&plan);
+
+    let round_tripped = extract_stage_definition(&content).expect("round trip should parse");
+    assert_eq!(round_tripped.contracts, def.contracts);
+    assert_eq!(round_tripped.harness, def.harness);
+    assert_eq!(round_tripped.reachable, def.reachable);
+    assert!(
+        round_tripped.wiring[0].literal,
+        "WiringCheck.literal must survive"
+    );
+
+    let saved = parse_stage_from_markdown(&content).expect("stage frontmatter should re-parse");
+    assert_eq!(saved.plan_version, 2);
+    assert_eq!(saved.ratchet_files, ratchet_files);
 }
 
 #[test]

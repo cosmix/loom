@@ -1,5 +1,6 @@
 //! The one full `Stage` literal; every other constructor starts from it.
 
+use super::checks::default_plan_version;
 use super::types::{Implementers, Stage, StageStatus, StageType};
 
 impl Default for Stage {
@@ -72,6 +73,11 @@ impl Default for Stage {
             implementers: Implementers::default(),
             subagent_timeout_secs: None,
             skills: Vec::new(),
+            plan_version: default_plan_version(),
+            contracts: Vec::new(),
+            harness: Vec::new(),
+            reachable: Vec::new(),
+            ratchet_files: Vec::new(),
         }
     }
 }

@@ -13,14 +13,9 @@ use loom::plan::schema::{
 fn test_unsupported_version_rejected() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
-            version: 2,
-            sandbox: Default::default(),
-            auto_merge: None,
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
+            version: 3,
             stages: vec![create_valid_stage("stage-1", "Test")],
+            ..Default::default()
         },
     };
 
@@ -39,13 +34,8 @@ fn test_empty_stages_rejected() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            sandbox: Default::default(),
-            auto_merge: None,
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![],
+            ..Default::default()
         },
     };
 
@@ -100,13 +90,7 @@ fn test_complex_dependency_chain_validated() {
 fn test_multiple_errors_accumulated() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
-            version: 2,
-            sandbox: Default::default(),
-            auto_merge: None,
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
+            version: 3,
             stages: vec![create_valid_stage("", ""), {
                 let mut s = create_valid_stage("stage-2", "Stage Two");
                 s.dependencies.push("nonexistent".to_string());
@@ -115,6 +99,7 @@ fn test_multiple_errors_accumulated() {
                     .push(AcceptanceCriterion::Simple("".to_string()));
                 s
             }],
+            ..Default::default()
         },
     };
 
