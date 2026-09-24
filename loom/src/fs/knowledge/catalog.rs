@@ -82,12 +82,13 @@ fn collect_chunk_issues(
 /// Chunk one knowledge file and collect any generic-blurb, broken-link, or
 /// missing-source-ref issues it produces into `issues`. Headings feed
 /// `headings`, which the caller turns into duplicate-heading issues once
-/// every file has been processed.
+/// every file has been processed. Without an `evidence_collector` the file's
+/// declared sources are not registered for the git freshness checks.
 fn process_file(
     root: &Path,
     relative_path: &Path,
     source_refs: &SourceRefContext,
-    evidence_collector: &mut evidence::EvidenceCollector,
+    evidence_collector: Option<&mut evidence::EvidenceCollector>,
     headings: &mut HeadingTally,
     issues: &mut Vec<CatalogIssue>,
 ) -> anyhow::Result<Vec<KnowledgeChunk>> {
@@ -114,7 +115,9 @@ fn process_file(
         collect_chunk_issues(root, relative_path, source_refs, chunk, headings, issues)?;
     }
     collect_unverifiable_references(relative_path, source_refs, &file_chunks, issues);
-    evidence::changed_since_verified(evidence_collector, relative_path, &frontmatter);
+    if let Some(collector) = evidence_collector {
+        evidence::changed_since_verified(collector, relative_path, &frontmatter);
+    }
 
     Ok(file_chunks)
 }
@@ -152,35 +155,7 @@ fn collect_unverifiable_references(
 /// with every chunk indexed from the project's configured prose roots (see
 /// `prose`).
 pub fn build(root: &Path) -> anyhow::Result<Catalog> {
-    let files = markdown_files(root)?;
-    let (project_root, cargo_source_roots, project_files) = source_ref_inputs(root);
-    let source_refs =
-        SourceRefContext::new(project_root.as_deref(), &cargo_source_roots, &project_files);
-    let mut evidence_collector = evidence::EvidenceCollector::new(project_root.as_deref());
-    let mut chunks = Vec::new();
-    let mut issues = Vec::new();
-    let mut headings = HeadingTally::default();
-
-    for relative_path in files {
-        let file_chunks = process_file(
-            root,
-            &relative_path,
-            &source_refs,
-            &mut evidence_collector,
-            &mut headings,
-            &mut issues,
-        )?;
-        chunks.extend(file_chunks);
-    }
-
-    headings.push_issues(&mut issues);
-    issues.extend(evidence_collector.finish());
-
-    if let Some(issue) = size::oversized_index(root) {
-        issues.push(issue);
-    }
-
-    issues.sort_by(compare_issues);
+    let (mut chunks, issues) = build_curated(root, true)?;
 
     // Prose is appended to the SAME chunk list the curated tree produced, so
     // one BM25 corpus covers both and `revision_for` below folds prose edits
@@ -197,6 +172,59 @@ pub fn build(root: &Path) -> anyhow::Result<Catalog> {
         chunks,
         issues,
     })
+}
+
+/// The issues `loom knowledge check --strict` fails on — [`build`]'s issues
+/// that are not [`CatalogIssue::is_review_only`] — for a reader that must stay
+/// free of side effects (`loom plan verify`). Skips the two parts of `build`
+/// that cannot add one: the evidence pass, which runs `git` and reports only
+/// review-only issues, and prose indexing, which reports none. Reads the tree;
+/// runs no process and writes nothing.
+pub(crate) fn structural_issues(root: &Path) -> anyhow::Result<Vec<CatalogIssue>> {
+    let (_, mut issues) = build_curated(root, false)?;
+    issues.retain(|issue| !issue.is_review_only());
+    Ok(issues)
+}
+
+/// The curated tree's chunks and its sorted issues. `collect_evidence` runs
+/// the git-backed verification-point checks over declared frontmatter sources.
+fn build_curated(
+    root: &Path,
+    collect_evidence: bool,
+) -> anyhow::Result<(Vec<KnowledgeChunk>, Vec<CatalogIssue>)> {
+    let files = markdown_files(root)?;
+    let (project_root, cargo_source_roots, project_files) = source_ref_inputs(root);
+    let source_refs =
+        SourceRefContext::new(project_root.as_deref(), &cargo_source_roots, &project_files);
+    let mut evidence_collector =
+        collect_evidence.then(|| evidence::EvidenceCollector::new(project_root.as_deref()));
+    let mut chunks = Vec::new();
+    let mut issues = Vec::new();
+    let mut headings = HeadingTally::default();
+
+    for relative_path in files {
+        let file_chunks = process_file(
+            root,
+            &relative_path,
+            &source_refs,
+            evidence_collector.as_mut(),
+            &mut headings,
+            &mut issues,
+        )?;
+        chunks.extend(file_chunks);
+    }
+
+    headings.push_issues(&mut issues);
+    if let Some(collector) = evidence_collector {
+        issues.extend(collector.finish());
+    }
+
+    if let Some(issue) = size::oversized_index(root) {
+        issues.push(issue);
+    }
+
+    issues.sort_by(compare_issues);
+    Ok((chunks, issues))
 }
 
 fn source_ref_inputs(root: &Path) -> (Option<PathBuf>, Vec<PathBuf>, ProjectFileIndex) {

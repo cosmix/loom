@@ -12,12 +12,13 @@ mod stage_id_tests;
 mod stage_type_tests;
 mod subagent_timeout_tests;
 mod ultracode_tests;
+mod v2_lint_tests;
+mod v2_tests;
 mod validation_suite_tests;
 mod validation_tests;
 
 use super::types::{
-    AcceptanceCriterion, Implementers, LoomConfig, LoomMetadata, SandboxConfig, StageDefinition,
-    StageSandboxConfig,
+    AcceptanceCriterion, ContractSpec, LoomConfig, LoomMetadata, StageDefinition, StageType,
 };
 
 /// Create a minimal StageDefinition for tests with only required fields
@@ -26,35 +27,8 @@ pub(crate) fn make_stage(id: &str, name: &str) -> StageDefinition {
     StageDefinition {
         id: id.to_string(),
         name: name.to_string(),
-        description: None,
-        dependencies: vec![],
-        parallel_group: None,
-        acceptance: vec![],
-        setup: vec![],
-        files: vec![],
-        auto_merge: None,
         working_dir: ".".to_string(),
-        stage_type: None,
-        artifacts: vec![],
-        wiring: vec![],
-        wiring_tests: vec![],
-        dead_code_check: None,
-        before_stage: vec![],
-        after_stage: vec![],
-        context_ceiling_tokens: None,
-        removed_context_budget: None,
-        plan_overview: None,
-        sandbox: StageSandboxConfig::default(),
-        execution_mode: None,
-        bug_fix: None,
-        regression_test: None,
-        model: None,
-        reasoning_effort: None,
-        code_review: None,
-        ultracode: false,
-        implementers: Implementers::default(),
-        subagent_timeout_secs: None,
-        skills: vec![],
+        ..Default::default()
     }
 }
 
@@ -74,13 +48,31 @@ pub(crate) fn create_valid_metadata() -> LoomMetadata {
     LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage1, stage2],
+            ..Default::default()
+        },
+    }
+}
+
+/// A valid `version: 2` plan: one standard stage with one contract.
+pub(crate) fn create_valid_metadata_v2() -> LoomMetadata {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.stage_type = Some(StageType::Standard);
+    stage.acceptance = vec![AcceptanceCriterion::Simple("cargo test".to_string())];
+    stage.contracts = vec![ContractSpec {
+        id: "parses-v2-plan".to_string(),
+        file: "tests/plan_v2.rs".to_string(),
+        test: "parses_v2_plan".to_string(),
+        runner: Some("cargo-test".to_string()),
+        scenario: "a plan file declaring version 2 is parsed".to_string(),
+        rejects: "a parser that still accepts only version 1".to_string(),
+    }];
+
+    LoomMetadata {
+        loom: LoomConfig {
+            version: 2,
+            stages: vec![stage],
+            ..Default::default()
         },
     }
 }
