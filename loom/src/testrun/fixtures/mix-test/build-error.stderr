@@ -1,0 +1,2 @@
+== Compilation error in file test/broken_test.exs ==
+** (CompileError) test/broken_test.exs:3: undefined function invalid/0 (expected BrokenTest to define such a function or for it to be imported)

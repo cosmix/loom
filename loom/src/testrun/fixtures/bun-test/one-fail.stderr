@@ -1,0 +1,22 @@
+
+fixture.test.js:
+ 7 | test('alpha_passes', () => {
+ 8 |   expect(add(2, 2)).toBe(4);
+ 9 | });
+10 | 
+11 | test('beta_fails', () => {
+12 |   expect(add(2, 2)).toBe(5);
+                         ^
+error: expect(received).toBe(expected)
+
+Expected: 5
+Received: 4
+
+      at <anonymous> (/tmp/claude-1000/-home-dkaponis-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/bun-test/fixture.test.js:12:21)
+(fail) beta_fails [0.34ms]
+
+ 0 pass
+ 2 filtered out
+ 1 fail
+ 1 expect() calls
+Ran 1 test across 1 file. [9.00ms]

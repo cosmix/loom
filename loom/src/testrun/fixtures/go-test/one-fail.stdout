@@ -1,0 +1,6 @@
+=== RUN   TestBetaFails
+    add_test.go:13: Add(2, 2) = 4, want 5 (deliberate failure)
+--- FAIL: TestBetaFails (0.00s)
+FAIL
+FAIL	fixturego	0.002s
+FAIL

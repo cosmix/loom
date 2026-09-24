@@ -1,0 +1,9 @@
+[INFO] --- surefire:test (default-test) @ fixture-maven ---
+[INFO] Running example.AlphaTest
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0, Time elapsed: 0.031 s -- in example.AlphaTest
+[INFO]
+[INFO] Results:
+[INFO]
+[INFO] Tests run: 1, Failures: 0, Errors: 0, Skipped: 0
+[INFO]
+[INFO] BUILD SUCCESS

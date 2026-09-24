@@ -1,0 +1,3 @@
+command: vendor/bin/phpunit
+exit: 1
+cwd: .

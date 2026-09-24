@@ -1,0 +1,7 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s
+    Starting 3 tests across 1 binary
+        PASS [   0.010s] fixture tests::alpha_passes
+        FAIL [   0.011s] fixture tests::beta_fails
+        PASS [   0.012s] fixture tests::gamma_passes
+────────────
+     Summary [   0.012s] 3 tests run: 2 passed, 1 failed, 0 skipped

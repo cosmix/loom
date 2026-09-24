@@ -1,0 +1,3 @@
+command: dotnet test --filter "FullyQualifiedName=FixtureDotnet.FixtureTests.DeltaMissing"
+exit: 0
+cwd: .

@@ -1,0 +1,3 @@
+command: mix test test/alpha_test.exs --only 'test:test alpha passes'
+exit: 0
+cwd: .

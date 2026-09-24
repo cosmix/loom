@@ -1,0 +1,3 @@
+command: vendor/bin/pest --filter 'missing name' tests/Feature/ExampleTest.php
+exit: 0
+cwd: .

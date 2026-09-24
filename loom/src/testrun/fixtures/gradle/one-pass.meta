@@ -1,0 +1,3 @@
+command: ./gradlew test --tests 'sample.AlphaTest.passes'
+exit: 0
+cwd: .

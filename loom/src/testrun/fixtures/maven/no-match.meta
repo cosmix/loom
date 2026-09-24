@@ -1,0 +1,3 @@
+command: mvn test -Dtest=MissingTest#absent
+exit: 1
+cwd: .

@@ -1,0 +1,16 @@
+
+   PASS  Tests\Unit\ExampleTest
+  ✓ alpha passes
+  ✓ gamma passes
+
+   FAIL  Tests\Feature\ExampleTest
+  ⨯ beta fails
+
+  ────────────────────────────────────────────────────────────────────────────
+   FAILED  Tests\Feature\ExampleTest > beta fails
+  Failed asserting that 1 is identical to 2.
+
+  at tests/Feature/ExampleTest.php:12
+
+  Tests:    1 failed, 2 passed (3 assertions)
+  Duration: 0.20s

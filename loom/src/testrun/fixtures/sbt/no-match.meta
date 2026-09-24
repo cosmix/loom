@@ -1,0 +1,3 @@
+command: sbt 'testOnly example.MissingSpec'
+exit: 0
+cwd: .

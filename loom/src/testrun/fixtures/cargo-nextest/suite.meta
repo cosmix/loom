@@ -1,0 +1,3 @@
+command: cargo nextest run --no-fail-fast
+exit: 100
+cwd: .

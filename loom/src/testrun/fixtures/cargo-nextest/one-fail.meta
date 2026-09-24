@@ -1,0 +1,3 @@
+command: cargo nextest run -E 'test(=tests::beta_fails)'
+exit: 100
+cwd: .

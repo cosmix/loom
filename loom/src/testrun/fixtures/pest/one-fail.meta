@@ -1,0 +1,3 @@
+command: vendor/bin/pest --filter 'beta fails' tests/Feature/ExampleTest.php
+exit: 1
+cwd: .

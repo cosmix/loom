@@ -1,0 +1,17 @@
+TAP version 13
+1..0
+# Subtest: fixture.test.js
+ok 1 - fixture.test.js
+  ---
+  duration_ms: 31.763649
+  type: 'test'
+  ...
+1..1
+# tests 1
+# suites 0
+# pass 1
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 37.474877

@@ -1,0 +1,8 @@
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':test'.
+> No tests found for given includes: [sample.AlphaTest.missing](--tests filter)
+
+BUILD FAILED in 1s
+3 actionable tasks: 3 executed

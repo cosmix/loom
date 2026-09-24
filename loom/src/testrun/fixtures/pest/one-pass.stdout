@@ -1,0 +1,6 @@
+
+   PASS  Tests\Unit\ExampleTest
+  ✓ alpha passes
+
+  Tests:    1 passed (1 assertion)
+  Duration: 0.12s

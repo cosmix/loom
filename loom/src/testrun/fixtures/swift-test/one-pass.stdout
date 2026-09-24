@@ -1,0 +1,13 @@
+Building for debugging...
+Build complete! (0.34s)
+Test Suite 'All tests' started at 2026-09-24 12:00:00.000
+Test Suite 'ModuleTests.xctest' started at 2026-09-24 12:00:00.000
+Test Suite 'ModuleTests.FooTests' started at 2026-09-24 12:00:00.000
+Test Case 'ModuleTests.FooTests.testBar' started.
+Test Case 'ModuleTests.FooTests.testBar' passed (0.001 seconds).
+Test Suite 'ModuleTests.FooTests' passed at 2026-09-24 12:00:00.001
+	Executed 1 test, with 0 failures (0 unexpected) in 0.001 seconds
+Test Suite 'ModuleTests.xctest' passed at 2026-09-24 12:00:00.001
+	Executed 1 test, with 0 failures (0 unexpected) in 0.001 seconds
+Test Suite 'All tests' passed at 2026-09-24 12:00:00.001
+	Executed 1 test, with 0 failures (0 unexpected) in 0.001 seconds

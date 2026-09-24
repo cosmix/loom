@@ -1,0 +1,8 @@
+   Compiling fixture v0.1.0 (/tmp/fixture)
+error[E0425]: cannot find value `missing` in this scope
+ --> src/lib.rs:4:5
+  |
+4 |     missing;
+  |     ^^^^^^^ not found in this scope
+
+error: could not compile `fixture` (lib test) due to 1 previous error

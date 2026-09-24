@@ -1,0 +1,3 @@
+command: bunx jest fixture.test.js -t 'beta_fails'
+exit: 1
+cwd: .

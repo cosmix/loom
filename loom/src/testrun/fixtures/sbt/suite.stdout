@@ -1,0 +1,9 @@
+[info] welcome to sbt
+[info] PassSpec:
+[info] - alpha passes
+[info] FailSpec:
+[info] - beta fails *** FAILED ***
+[info] AlsoPassSpec:
+[info] - gamma passes
+[error] Failed: Total 3, Failed 1, Errors 0, Passed 2
+[error] Total time: 1 s, completed Sep 24, 2026

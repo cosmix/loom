@@ -1,0 +1,3 @@
+command: swift test --filter 'ModuleTests.FooTests/testMissing'
+exit: 0
+cwd: .

@@ -1,0 +1,3 @@
+command: vendor/bin/pest
+exit: 1
+cwd: .

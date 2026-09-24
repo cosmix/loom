@@ -1,0 +1,5 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.01s
+    Starting 1 test across 1 binary (2 tests skipped)
+        FAIL [   0.011s] fixture tests::beta_fails
+────────────
+     Summary [   0.011s] 1 test run: 0 passed, 1 failed, 2 skipped

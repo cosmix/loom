@@ -1,0 +1,9 @@
+Run options: -n "/^test_alpha_passes$/" --seed 13489
+
+# Running:
+
+.
+
+Finished in 0.001468s, 681.1989 runs/s, 681.1989 assertions/s.
+
+1 runs, 1 assertions, 0 failures, 0 errors, 0 skips

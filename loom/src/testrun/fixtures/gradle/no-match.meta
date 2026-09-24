@@ -1,0 +1,3 @@
+command: ./gradlew test --tests 'sample.AlphaTest.missing'
+exit: 1
+cwd: .

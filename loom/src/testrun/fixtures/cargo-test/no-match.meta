@@ -1,0 +1,3 @@
+command: cargo test tests::delta_missing -- --exact
+exit: 0
+cwd: .

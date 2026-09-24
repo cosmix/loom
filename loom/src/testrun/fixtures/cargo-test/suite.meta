@@ -1,0 +1,3 @@
+command: cargo test
+exit: 101
+cwd: .

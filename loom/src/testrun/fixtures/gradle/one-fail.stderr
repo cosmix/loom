@@ -1,0 +1,8 @@
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':test'.
+> There were failing tests. See the report at: build/reports/tests/test/index.html
+
+BUILD FAILED in 1s
+3 actionable tasks: 3 executed

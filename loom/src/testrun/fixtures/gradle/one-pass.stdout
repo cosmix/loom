@@ -1,0 +1,9 @@
+> Task :compileJava
+> Task :processResources NO-SOURCE
+> Task :classes
+> Task :compileTestJava
+> Task :processTestResources NO-SOURCE
+> Task :test
+
+BUILD SUCCESSFUL in 1s
+3 actionable tasks: 3 executed

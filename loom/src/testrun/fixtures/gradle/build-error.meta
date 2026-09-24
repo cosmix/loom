@@ -1,0 +1,3 @@
+command: ./gradlew test
+exit: 1
+cwd: .
