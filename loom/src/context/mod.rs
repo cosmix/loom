@@ -79,6 +79,7 @@ pub mod schema;
 pub mod source_graph;
 pub mod store;
 pub(crate) mod untrusted;
+pub mod worktree_graph;
 
 pub use config::RetrievalConfig;
 pub use coverage::CoverageReport;
