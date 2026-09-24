@@ -128,4 +128,20 @@ pub enum MonitorEvent {
         stage_id: String,
         review_reason: Option<String>,
     },
+    /// A v2 stage's contract writer has frozen its contracts: the stage is
+    /// `Executing`, still names this `Contract` session, and has a freeze
+    /// record. The writer idles at its prompt instead of exiting, so this is
+    /// raised on every poll until the orchestrator hands the stage to its
+    /// `Stage` session.
+    ContractPhaseFinished {
+        stage_id: String,
+        session_id: String,
+    },
+    /// The process of a v2 stage's current `Contract` session is gone and no
+    /// freeze record exists. Never a crash: the orchestrator hands the job to
+    /// a fresh contract writer within the stage's attempt budget.
+    ContractSessionEnded {
+        stage_id: String,
+        session_id: String,
+    },
 }

@@ -32,6 +32,7 @@ mod spawn_setup;
 mod spool_drain;
 mod stage_executor;
 mod stage_handoff;
+mod stage_spawn;
 mod stage_telemetry;
 pub mod state_identity;
 mod verdict_apply;

@@ -78,6 +78,7 @@ pub fn generate_signal_with_skills(
         &embedded_context,
     );
 
+    super::v2_section::append_v2_section(&mut content, stage, work_dir);
     append_stage_feedback(&mut content, stage, work_dir);
 
     super::helpers::persist_delivery(work_dir, stage, &session.id, &embedded_context);
@@ -115,7 +116,7 @@ pub(super) fn render_review_dimensions(config: &CodeReviewConfig) -> Option<Stri
 /// distinct from a file-type detection. A name the index does not resolve
 /// (already reported by `check_declared_skills` at `loom plan verify` time)
 /// is silently skipped here rather than surfaced twice.
-fn declared_and_recommended_skills(
+pub(super) fn declared_and_recommended_skills(
     index: &SkillIndex,
     stage: &Stage,
     worktree: &Worktree,

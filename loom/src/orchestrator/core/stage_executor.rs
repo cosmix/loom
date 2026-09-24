@@ -6,12 +6,10 @@ use chrono::Utc;
 use crate::git;
 use crate::hooks::find_hooks_dir;
 use crate::models::failure::{FailureInfo, FailureType};
+use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus, StageType};
-use crate::orchestrator::merge_lifecycle::MergeLifecycle;
 use crate::orchestrator::scheduling_report::{self, BlockReason, BlockedStage, SchedulingReport};
-use crate::orchestrator::signals::{
-    generate_knowledge_signal, generate_signal_with_skills, DependencyStatus,
-};
+use crate::orchestrator::signals::{generate_knowledge_signal, DependencyStatus};
 
 use super::persistence::Persistence;
 use super::Orchestrator;
@@ -265,9 +263,9 @@ impl StageExecutor for Orchestrator {
 
         // Knowledge stages run in main repo without a worktree.
         // `start_knowledge_stage` itself resolves the session, writes the
-        // write-ahead record, and marks the stage Executing (mirroring the
-        // worktree spawn path below), so this branch only dispatches and
-        // contains a failure.
+        // write-ahead record, and marks the stage Executing (mirroring
+        // `spawn_stage_agent`, the worktree spawn path), so this branch only
+        // dispatches and contains a failure.
         if stage.stage_type == StageType::Knowledge {
             // Wrap the spawn so a failure does not strand the stage in
             // Executing state. Propagating the error here causes the
@@ -303,231 +301,23 @@ impl StageExecutor for Orchestrator {
             return Ok(());
         }
 
-        // Honor a pending recovery signal (C-5) and resolve the session id up
-        // front. `loom stage retry --context` (and crash/hung auto-recovery)
-        // writes a `recovery-<...>` signal file keyed to a new session ID and
-        // stores that ID in `stage.session`. If such a signal exists, reuse
-        // its session ID (and, once the signal path is resolved further
-        // below, its signal file) so the new agent actually receives the
-        // recovery context, instead of overwriting it with a freshly
-        // generated signal.
-        //
-        // Also writes the session record BEFORE the stage is marked
-        // Executing (see `write_ahead_session`'s invariant doc): a daemon
-        // crash must never produce a live, unreachable agent with no record
-        // on disk at all.
-        let outgoing_session_id = stage.session.clone();
-        let Some((session, recovery_signal)) = self.write_ahead_session(&stage, stage_id) else {
+        // A v2 standard stage writes and freezes its contract tests before
+        // anything implements them (DESIGN D8).
+        let Some(kind) = self.first_agent_kind(&stage) else {
             return Ok(());
         };
-
-        // Worktree created successfully - NOW mark as Executing, linked to
-        // the session record written above, in ONE locked update so
-        // "Executing" and "session assigned" can never be observed apart.
-        let session_id = session.id.clone();
-        stage = match self.update_stage(stage_id, |current| {
-            current.try_mark_executing()?;
-            current.begin_attempt(Utc::now());
-            current.assign_session(session_id.clone());
-            Ok(())
-        }) {
-            Ok(stage) => stage,
-            Err(e) => {
-                self.block_and_undo_session(
-                    stage_id,
-                    &session.id,
-                    FailureType::InfrastructureError,
-                    format!("Failed to mark stage executing: {e:#}"),
-                );
-                return Ok(());
-            }
-        };
-        self.graph
-            .mark_executing(stage_id)
-            .context("Failed to mark stage as executing in graph")?;
-
-        if !self.validate_stage_sandbox(&stage, stage_id, &session.id) {
-            return Ok(());
-        }
-
-        // Refresh the stage's source-graph overlay BEFORE the signal is
-        // generated below: the Knowledge Brief embedded in the signal is
-        // built from the overlay, so a stale overlay would brief the agent
-        // from the pre-stage tree. This mirrors the reconcile
-        // `merge_handler.rs` already does before a merge.
-        //
-        // `start_knowledge_stage` (above) deliberately does not get this
-        // call: it runs in the main repo with no worktree, so
-        // `reconcile_overlay` would early-return at merge_lifecycle.rs:76-79
-        // anyway - adding it there would just add a pointless full walk of
-        // the main repo on every knowledge stage.
-        //
-        // `reconcile_source_graph` is incremental (it reuses a cached entry
-        // whenever `body_hash` matches, see refresh/source_graph.rs:212-245),
-        // so steady-state cost is proportional to changed files; only the
-        // first call on a fresh worktree pays a full walk.
-        MergeLifecycle::new(stage_id, &self.config.repo_root, &self.config.work_dir)
-            .reconcile_overlay();
-
-        if !self.require_stage_hooks(stage_id, &session.id) {
-            return Ok(());
-        }
-
-        let signal_path = if let Some((_, recovery_path)) = recovery_signal {
-            // Reuse the pre-written recovery signal.
-            recovery_path
-        } else {
-            let deps = get_dependency_status(&stage, &self.graph);
-
-            let Some(handoff_file) = self.continuation_handoff_or_block(
-                &stage.id,
-                outgoing_session_id.as_deref(),
-                &session.id,
-            ) else {
-                return Ok(());
-            };
-
-            // Generating the signal can fail (e.g. unwritable signals dir).
-            // Contain it: mark Blocked rather than propagating and killing the
-            // daemon while the stage is Executing with no session yet (O-11).
-            match generate_signal_with_skills(
-                &session,
-                &stage,
-                &worktree,
-                &deps,
-                handoff_file.as_deref(),
-                None, // git_history will be extracted from worktree in future enhancement
-                &self.config.work_dir,
-                self.skill_index.as_ref(),
-                &self.detected_languages,
-            ) {
-                Ok(path) => path,
-                Err(e) => {
-                    self.block_and_undo_session(
-                        stage_id,
-                        &session.id,
-                        FailureType::InfrastructureError,
-                        format!("Failed to generate signal file: {e:#}"),
-                    );
-                    return Ok(());
-                }
-            }
-        };
-
-        // Stale recovery signals from earlier attempts must not accumulate.
-        self.cleanup_stale_recovery_signals(stage_id, &session.id);
-
-        // Store original session ID to verify consistency after spawn
-        let original_session_id = session.id.clone();
-
-        let spawned_session = if !self.config.manual_mode {
-            // Wrap spawn so failure transitions the stage to Blocked rather
-            // than propagating to the orchestrator loop and killing the
-            // daemon. Without this, a transient spawn error strands the
-            // stage in Executing on disk; subsequent `loom run` invocations
-            // poll forever because Executing stages are never re-spawned.
-            match self
-                .backend
-                .spawn_session(&stage, &worktree, session, &signal_path)
-            {
-                Ok(spawned) => {
-                    println!("  Started: {stage_id}");
-                    spawned
-                }
-                Err(spawn_err) => {
-                    let err_msg =
-                        format!("Failed to spawn session for stage {stage_id}: {spawn_err:#}");
-                    // Remove orphan resources so a retry can start clean.
-                    // Worktree — best-effort force-removal; ignore "not found" etc.
-                    let _ = git::remove_worktree(stage_id, &self.config.repo_root, true);
-                    // Branch — force-delete so the next retry can recreate
-                    // it from the correct base.
-                    let branch = git::branch_name_for_stage(stage_id);
-                    let _ = git::delete_branch(&branch, true, &self.config.repo_root);
-                    self.block_and_undo_session(
-                        stage_id,
-                        &original_session_id,
-                        super::crash_classification::spawn_failure_type(&spawn_err),
-                        err_msg,
-                    );
-                    return Ok(());
-                }
-            }
-        } else {
-            println!("Manual mode: Session setup for stage '{stage_id}'");
-            println!("  Worktree: {}", worktree.path.display());
-            println!("  Signal: {}", signal_path.display());
-            // Identity env vars are normally exported by the wrapper script;
-            // in manual mode the user must provide them so hooks and
-            // `loom memory` attribute work to the right stage/session.
-            let absolute_work_dir = self
-                .config
-                .work_dir
-                .canonicalize()
-                .unwrap_or_else(|_| self.config.work_dir.clone());
-            println!(
-                "  To start: cd {} && LOOM_STAGE_ID={} LOOM_SESSION_ID={} LOOM_WORK_DIR={} claude \"Read the signal file at {} and execute the assigned stage work.\"",
-                worktree.path.display(),
-                stage_id,
-                session.id,
-                absolute_work_dir.display(),
-                signal_path.display()
-            );
-            session
-        };
-
-        // Verify session ID consistency (signal file uses this ID)
-        debug_assert_eq!(
-            original_session_id, spawned_session.id,
-            "Session ID mismatch: signal file created with '{}' but saving session with '{}'",
-            original_session_id, spawned_session.id
-        );
-
-        // Persisting the update (pid, Running status) can fail even though a
-        // real agent is now running: the write-ahead `save_session` above
-        // already created the record and linked `stage.session` to it, so
-        // orphan recovery and `loom attach` can still find the session even
-        // if this particular update is lost. Contain the failure: mark
-        // Blocked + InfrastructureError so a retry can clean up, rather than
-        // propagating and killing the daemon (O-11).
-        if let Err(e) = self.save_session(&spawned_session) {
-            let err_msg = format!("Failed to save session for stage {stage_id}: {e:#}");
-            self.block_stranded_stage(stage_id, err_msg);
-            return Ok(());
-        }
-
-        super::stage_telemetry::record_context_telemetry(self, &stage, &spawned_session.id);
-        // Merge only executor-owned fields into the fresh record under lock,
-        // so the slow spawn cannot clobber a concurrent CLI update (O-22).
-        // Session assignment already happened before the spawn (write-ahead,
-        // above); only the worktree/base fields the spawn just learned land
-        // here.
-        let worktree_id = worktree.id.clone();
-        let resolved_base = resolved.branch_name().to_string();
-        if let Err(e) = self.update_stage(stage_id, |current| {
-            current.set_worktree(Some(worktree_id));
-            current.set_resolved_base(Some(resolved_base));
-            Ok(())
-        }) {
-            let err_msg = format!("Failed to save stage after spawn for {stage_id}: {e:#}");
-            self.block_stranded_stage(stage_id, err_msg);
-            return Ok(());
-        }
-
-        self.insert_active_session(stage_id, spawned_session);
-        self.active_worktrees.insert(stage_id.to_string(), worktree);
-
-        Ok(())
+        let base = resolved.branch_name().to_string();
+        self.spawn_stage_agent(stage, worktree, Some(base), kind)
     }
 
     fn start_knowledge_stage(&mut self, stage: Stage) -> Result<()> {
         let stage_id = stage.id.clone();
 
         // Resolve the session and persist a write-ahead record BEFORE the
-        // stage is marked Executing, mirroring the worktree spawn path above:
-        // a daemon crash between "Executing" and a live agent must never
-        // leave the stage pointing at a session record that does not exist
-        // on disk.
+        // stage is marked Executing, mirroring the worktree spawn path
+        // (`spawn_stage_agent`): a daemon crash between "Executing" and a
+        // live agent must never leave the stage pointing at a session record
+        // that does not exist on disk.
         let Some(session) = self.write_ahead_knowledge_session(&stage_id)? else {
             return Ok(());
         };
@@ -623,8 +413,8 @@ impl StageExecutor for Orchestrator {
 
 /// Helpers shared by the worktree spawn path. Write-ahead session handling,
 /// live-session adoption, and Blocked-transition cleanup live in
-/// `session_lifecycle.rs`; this impl keeps what is specific to the spawn
-/// sequence itself.
+/// `session_lifecycle.rs`, and the spawn tail that calls these in
+/// `stage_spawn.rs`; this impl keeps what is specific to the spawn sequence.
 impl Orchestrator {
     /// Merge, validate and expand this stage's sandbox config at spawn time.
     /// Mirrors `spawn_setup.rs::validate_knowledge_sandbox`. Writes nothing:
@@ -632,7 +422,12 @@ impl Orchestrator {
     /// settings into the session, not `T/.claude/settings.local.json`.
     ///
     /// Returns `false` if the stage was blocked instead (invalid config).
-    fn validate_stage_sandbox(&mut self, stage: &Stage, stage_id: &str, session_id: &str) -> bool {
+    pub(super) fn validate_stage_sandbox(
+        &mut self,
+        stage: &Stage,
+        stage_id: &str,
+        session_id: &str,
+    ) -> bool {
         let mut merged_sandbox = crate::sandbox::merge_config(
             &self.config.sandbox_config,
             &stage.sandbox,
@@ -660,7 +455,7 @@ impl Orchestrator {
     /// capsule already embeds the hooks configuration itself.
     ///
     /// Returns `false` if the stage was blocked instead (hook install failure).
-    fn require_stage_hooks(&mut self, stage_id: &str, session_id: &str) -> bool {
+    pub(super) fn require_stage_hooks(&mut self, stage_id: &str, session_id: &str) -> bool {
         if let Err(e) = install_required_hooks(find_hooks_dir(), stage_id) {
             self.block_and_undo_session(
                 stage_id,
@@ -671,6 +466,28 @@ impl Orchestrator {
             return false;
         }
         true
+    }
+
+    /// Write ahead the record of a v2 stage's `Contract` session, mirroring
+    /// `write_ahead_session` for the `Stage` session (see its invariant doc).
+    ///
+    /// Returns `None` if the write-ahead failed; the stage has already been
+    /// marked Blocked and the caller should return without spawning.
+    pub(super) fn write_ahead_contract_session(&mut self, stage_id: &str) -> Option<Session> {
+        let mut session = Session::new_contract(stage_id);
+        session.backend = self.backend.resolve_lane();
+        if let Err(e) = self.save_session(&session) {
+            let err_msg = format!(
+                "Failed to write contract session record ahead of spawn for {stage_id}: {e:#}"
+            );
+            let _ = self.persist_blocked_stage(
+                stage_id,
+                FailureType::InfrastructureError,
+                vec![err_msg],
+            );
+            return None;
+        }
+        Some(session)
     }
 
     /// Run the stage's `before_stage` pre-condition gate before spawning.
@@ -751,7 +568,7 @@ impl Orchestrator {
 }
 
 /// Get dependency status for signal generation
-fn get_dependency_status(
+pub(super) fn get_dependency_status(
     stage: &Stage,
     graph: &crate::plan::ExecutionGraph,
 ) -> Vec<DependencyStatus> {

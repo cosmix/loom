@@ -1,15 +1,17 @@
 //! Change detection for stages and sessions
 
 use std::collections::{HashMap, HashSet};
+use std::path::Path;
 
 use crate::fs::work_dir::ContextConfig;
-use crate::models::session::{Session, SessionStatus};
+use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
 // `check_session_alive` below routes through the `LivenessService`
 // attached to the monitor's handlers. Imported for documentation and
 // to make the wiring discoverable via grep.
 #[allow(unused_imports)]
 use crate::orchestrator::liveness::LivenessService;
+use crate::verify::contracts::store::load_freeze;
 
 use super::ceiling::resolve_ceiling_tokens;
 use super::config::MonitorConfig;
@@ -133,6 +135,7 @@ impl Detection {
         for session in sessions {
             let status = self.detect_session_status(session, stages, handlers);
             events.extend(status.events);
+            events.extend(contract_phase_event(session, stages, handlers.work_dir()));
             if !self.judgeable(session, stages, status.terminal) {
                 continue;
             }
@@ -306,6 +309,53 @@ impl Detection {
         }
 
         events
+    }
+}
+
+/// How a v2 stage's contract phase stands, for a `Contract` session its
+/// `Executing` stage still names: `ContractPhaseFinished` once the stage's
+/// freeze record exists, `ContractSessionEnded` when the session's record is
+/// terminal and nothing is frozen.
+///
+/// Checked on every poll: a Claude session idles at its prompt once its work
+/// is done, so no process exit announces the freeze. It also re-raises what a
+/// handler has not settled yet: a handover deferred because the contract
+/// agent outlived its kill, or a replacement that failed after
+/// `session_events` first reported the exit.
+fn contract_phase_event(
+    session: &Session,
+    stages: &[Stage],
+    work_dir: &Path,
+) -> Option<MonitorEvent> {
+    if session.session_type != SessionType::Contract {
+        return None;
+    }
+    let stage_id = session.stage_id.as_deref()?;
+    let stage = stages.iter().find(|stage| stage.id == stage_id)?;
+    if stage.status != StageStatus::Executing
+        || stage.session.as_deref() != Some(session.id.as_str())
+    {
+        return None;
+    }
+    let (stage_id, session_id) = (stage_id.to_string(), session.id.clone());
+    match load_freeze(work_dir, &stage_id) {
+        Ok(Some(_)) => Some(MonitorEvent::ContractPhaseFinished {
+            stage_id,
+            session_id,
+        }),
+        Ok(None) if session.status.is_terminal() => Some(MonitorEvent::ContractSessionEnded {
+            stage_id,
+            session_id,
+        }),
+        Ok(None) => None,
+        Err(error) => {
+            tracing::warn!(
+                stage_id = %stage_id,
+                %error,
+                "Cannot read the contract freeze record; the contract phase stays open"
+            );
+            None
+        }
     }
 }
 
