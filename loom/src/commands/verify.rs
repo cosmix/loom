@@ -74,27 +74,10 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
             .context("No working directory available for goal-backward verification")?;
 
         // Use shared helper for verification
-        let goal_result = run_and_verify_stage_goal(stage_id, verify_dir, &work_dir)?;
+        let goal_result =
+            run_and_verify_stage_goal(stage_id, verify_dir, &work_dir, stage.plan_version)?;
         print_goal_result(&goal_result, suggest);
-
-        // Final summary
-        println!();
-        if acceptance_passed && goal_result.is_passed() {
-            println!("{} All verifications passed!", "✓".green().bold());
-        } else {
-            let acceptance_ok = if acceptance_passed { "✓" } else { "✗" };
-            let goal_ok = if goal_result.is_passed() {
-                "✓"
-            } else {
-                "✗"
-            };
-            println!(
-                "{} Acceptance: {} | Goal-backward: {}",
-                "Summary:".bold(),
-                acceptance_ok,
-                goal_ok
-            );
-        }
+        print_summary(acceptance_passed, goal_result.is_passed());
     } else {
         println!("\n{}", "Goal-Backward Verification:".dimmed());
         println!("  {} No artifacts or wiring defined", "−".dimmed());
@@ -132,17 +115,37 @@ fn print_goal_result(result: &GoalBackwardResult, suggest: bool) {
     }
 }
 
+/// Print the final acceptance and goal-backward summary
+fn print_summary(acceptance_passed: bool, goal_passed: bool) {
+    println!();
+    if acceptance_passed && goal_passed {
+        println!("{} All verifications passed!", "✓".green().bold());
+        return;
+    }
+    let mark = |passed: bool| if passed { "✓" } else { "✗" };
+    println!(
+        "{} Acceptance: {} | Goal-backward: {}",
+        "Summary:".bold(),
+        mark(acceptance_passed),
+        mark(goal_passed)
+    );
+}
+
 /// Shared helper: Load plan, find stage definition, run goal-backward verification
 ///
 /// This helper encapsulates the common pattern used across:
 /// - `loom stage complete` (with verification)
 /// - `loom check` (standalone verification command)
 ///
+/// `plan_version` is the runtime stage's plan version, which selects the
+/// wiring rules.
+///
 /// Returns Ok(result) on successful verification run, Err if plan/stage not found.
 pub fn run_and_verify_stage_goal(
     stage_id: &str,
     verification_dir: &Path,
     work_dir: &Path,
+    plan_version: u32,
 ) -> Result<GoalBackwardResult> {
     let plan_path = crate::fs::resolve_source_path(work_dir)?
         .context("No plan source path configured in config.toml")?;
@@ -165,5 +168,5 @@ pub fn run_and_verify_stage_goal(
     );
 
     // Run goal-backward verification
-    run_goal_backward_verification(stage_def, verification_dir, confinement)
+    run_goal_backward_verification(stage_def, verification_dir, confinement, plan_version)
 }

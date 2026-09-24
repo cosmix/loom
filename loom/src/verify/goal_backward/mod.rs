@@ -10,6 +10,7 @@ pub mod result;
 pub mod truths;
 pub mod wiring;
 pub mod wiring_tests;
+mod wiring_v2;
 
 pub use artifacts::{verify_artifacts, verify_regression_test};
 pub use dead_code::run_dead_code_check;
@@ -25,11 +26,13 @@ use std::path::Path;
 /// Run complete goal-backward verification for a stage
 ///
 /// `confinement` is the stage's resolved level for the plan-authored commands
-/// this runs (truth checks, wiring tests, dead-code checks).
+/// this runs (truth checks, wiring tests, dead-code checks). `plan_version`
+/// is the plan's `loom.version`, which selects the wiring rules.
 pub fn run_goal_backward_verification(
     stage_def: &StageDefinition,
     working_dir: &Path,
     confinement: CommandConfinement,
+    plan_version: u32,
 ) -> Result<GoalBackwardResult> {
     let mut gaps = Vec::new();
 
@@ -40,7 +43,7 @@ pub fn run_goal_backward_verification(
 
     // 2. Verify wiring (connections between components)
     if !stage_def.wiring.is_empty() {
-        gaps.extend(verify_wiring(&stage_def.wiring, working_dir)?);
+        gaps.extend(verify_wiring(&stage_def.wiring, working_dir, plan_version)?);
     }
 
     // 3. Verify wiring tests (command-based integration verification)

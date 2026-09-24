@@ -6,7 +6,7 @@ use std::path::Path;
 
 use super::result::{GapType, VerificationGap};
 
-const MAX_VERIFICATION_FILE_BYTES: usize = 10 * 1024 * 1024;
+pub(super) const MAX_VERIFICATION_FILE_BYTES: usize = 10 * 1024 * 1024;
 
 /// Patterns that indicate a file is a stub
 const STUB_PATTERNS: &[&str] = &[

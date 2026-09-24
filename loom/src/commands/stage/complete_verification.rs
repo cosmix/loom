@@ -61,6 +61,7 @@ fn run_goal_checks(
         checks.stage_id,
         verification_dir,
         checks.work_dir,
+        checks.stage.plan_version,
     )?;
     if result.is_passed() {
         println!("Goal-backward verification passed!");
@@ -185,10 +186,12 @@ fn run_aggregated_check(checks: &VerificationChecks<'_>) -> Result<()> {
         return Ok(());
     };
     println!("Running aggregated wiring re-verification...");
-    aggregated_wiring(worktree_root, checks.work_dir)
+    aggregated_wiring(worktree_root, checks.work_dir, checks.stage.plan_version)
 }
 
-fn aggregated_wiring(worktree_root: &Path, work_dir: &Path) -> Result<()> {
+/// Re-verify the wiring of every completed stage. Every stage of one plan
+/// shares `plan_version`, so the finishing stage's version applies to all.
+fn aggregated_wiring(worktree_root: &Path, work_dir: &Path, plan_version: u32) -> Result<()> {
     let stages = crate::verify::transitions::list_all_stages(work_dir)?;
     let Some(plan) = load_parsed_plan(work_dir)? else {
         bail!("Could not load plan for aggregated wiring verification");
@@ -211,6 +214,7 @@ fn aggregated_wiring(worktree_root: &Path, work_dir: &Path) -> Result<()> {
             stage.id.as_str(),
             definition,
             worktree_root,
+            plan_version,
         )?);
     }
     if !all_gaps.is_empty() {
@@ -227,6 +231,7 @@ fn stage_wiring_gaps(
     stage_id: &str,
     definition: &StageDefinition,
     worktree_root: &Path,
+    plan_version: u32,
 ) -> Result<Vec<crate::verify::goal_backward::VerificationGap>> {
     if definition.wiring.is_empty() {
         return Ok(Vec::new());
@@ -237,7 +242,11 @@ fn stage_wiring_gaps(
     } else {
         worktree_root.join(&definition.working_dir)
     };
-    let gaps = crate::verify::goal_backward::verify_wiring(&definition.wiring, &working_dir)?;
+    let gaps = crate::verify::goal_backward::verify_wiring(
+        &definition.wiring,
+        &working_dir,
+        plan_version,
+    )?;
     for gap in &gaps {
         eprintln!("    ✗ {stage_id}: {}", gap.description);
     }
