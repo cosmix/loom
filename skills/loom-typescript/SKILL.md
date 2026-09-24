@@ -305,6 +305,49 @@ Bundle published packages with `tsdown` (Rolldown under the hood): `tsdown.confi
 
 `bun run src/x.ts` and `bun test` transpile TypeScript themselves — no build step, no `ts-node`/`tsx` loader. Bun strips types without checking them, exactly like Vite, so `tsc --noEmit` is still the gate. Use `bun test` for Node/Bun-target code and Vitest (which runs on Vite's Oxc transform) for browser-target code.
 
+## Loom Test Runner Adapter
+
+**Adapter.** One of `vitest`, `jest`, `mocha`, `bun-test`, `node-test`, picked per package in this order: `vitest`, then `jest`, then `mocha`, by presence in `dependencies`/`devDependencies`; else `bun-test` when `bun.lock`/`bun.lockb` exists or `scripts.test` starts with `bun test`; else `node-test` when `scripts.test` contains `node --test`; else none (`loom project detect` prints `runner=unsupported`). Plain JavaScript packages (`package.json` without `tsconfig.json`) get the same order and this skill. A package that lists `vitest` gets `vitest` even where some files use `bun:test` (the split above); a contract on a `bun test` file sets `runner: bun-test`, which overrides detection.
+
+**Single-test command**, run with the package directory as cwd:
+
+```bash
+bunx vitest run {file} -t '{test}'                  # vitest; npx without a bun lockfile
+bunx jest {file} -t '{test}'                        # jest; npx without a bun lockfile
+bunx mocha {file} --grep '{test}'                   # mocha; npx without a bun lockfile
+bun test {file} -t '{test}'                         # bun-test
+node --test --test-name-pattern='^{test}$' {file}   # node-test
+```
+
+**The `test` field** is the test's full name: the enclosing `describe` titles and the test title, joined by single spaces (mocha calls it the full title). For this test it is `spool rejects a symlinked spool directory`:
+
+```typescript
+import * as spool from "./spool";
+
+describe("spool", () => {
+  it("rejects a symlinked spool directory", async () => {
+    await expect(spool.openSpool(linkedDir)).rejects.toThrow(/symlink/);
+  });
+});
+```
+
+Every one of these filters is a regular expression, and only the `node-test` command anchors it. Title contract tests in plain words: no `'` (the command single-quotes the value), no regex metacharacters (`( ) [ ] { } . ? + * ^ $ | \`), and no full name that is a substring of another full name in the same file, or the filter selects both.
+
+**No match.** `vitest`, `jest`, `mocha` and `node-test` exit 0 when the filter matches nothing (vitest and jest report every test skipped, mocha prints `0 passing`); `bun-test` exits 1 (`regex "..." matched 0 tests`). Loom classifies the run from the runner's summary: zero executed tests is `NotSelected` whatever the exit code, so a contract whose `test` does not match fails the freeze ("the runner did not select the test").
+
+**Writing contract tests.** Test files match `*.test.*` and `*.spec.*` (`.js`, `.jsx`, `.ts`, `.tsx`, `.mjs`, `.cjs`) in any directory, plus anything under `__tests__/`. One contract, one `it`/`test`, titled after what it rejects.
+
+```yaml
+contracts:
+  - id: rejects-symlinked-spool
+    file: src/spool/spool.test.ts
+    test: spool rejects a symlinked spool directory
+    scenario: points the spool path at a symlink into a temp dir, then calls openSpool()
+    rejects: an openSpool() that follows the symlink and writes into the link target
+```
+
+**Type errors are not red.** Vitest, Bun and Node strip types without checking them, as does Jest under Babel or SWC, so a contract test has to fail when it runs: on an assertion, or on a `TypeError` from calling what does not exist yet. Keep the file loadable so that failure happens inside the test: Bun and Node link ES modules strictly, and a named import of an export that does not exist yet fails the whole file before any test runs. Reach new exports through a namespace import, as in the example above. `tsc --noEmit` stays the type gate.
+
 ## Modules & Declaration Merging
 
 ### Type-only imports
