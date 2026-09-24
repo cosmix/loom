@@ -14,6 +14,7 @@ mod contracts;
 mod criterion_output;
 mod dispute_criteria;
 mod human_review;
+mod integrity_status;
 mod knowledge_complete;
 mod merge;
 mod merge_resolver;
@@ -38,6 +39,7 @@ pub use contracts::{
 };
 pub use dispute_criteria::dispute_criteria;
 pub use human_review::human_review;
+pub use integrity_status::review_integrity;
 pub use merge::merge;
 pub use output::{
     get as output_get, list as output_list, remove as output_remove, set as output_set,
