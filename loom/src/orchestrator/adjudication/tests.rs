@@ -8,8 +8,8 @@ use super::scan::{parse_yaml_frontmatter, scan_pending_requests};
 use super::session::{attempt_count, MAX_ADJUDICATION_ATTEMPTS};
 use super::{feedback, AdjudicatorRegistry, MAX_EVIDENCE_ROUNDS};
 use crate::models::dispute::{
-    request_file, verdict_file, Citation, DisputeRequest, DisputeVerdict, DisputeVerdictRecord,
-    PlanPatch,
+    request_file, verdict_file, Citation, DisputeKind, DisputeRequest, DisputeVerdict,
+    DisputeVerdictRecord, PlanPatch,
 };
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::amendment::{AmendmentField, AmendmentPatch};
@@ -35,13 +35,23 @@ pub(super) fn write_dispute_request(
     id: u32,
     criterion_index: usize,
 ) {
+    write_request(
+        work_dir,
+        stage_id,
+        id,
+        DisputeKind::Criterion { criterion_index },
+    );
+}
+
+/// Write `request.md` for a dispute of `kind`.
+pub(super) fn write_request(work_dir: &Path, stage_id: &str, id: u32, kind: DisputeKind) {
     let disputes_root = work_dir.join("disputes");
     std::fs::create_dir_all(disputes_root.join(stage_id).join(id.to_string())).unwrap();
     let req = DisputeRequest {
         id,
         stage_id: stage_id.to_string(),
-        criterion_index,
-        reason: "criterion impossible".to_string(),
+        kind,
+        reason: "disputed".to_string(),
         evidence_commit: None,
         failure_output: None,
         fix_attempts_at_dispute: 1,
@@ -179,7 +189,7 @@ fn evidence_cap_escalates_before_a_session_is_offered() {
     let work = tmp.path();
     std::fs::create_dir_all(work.join("stages")).unwrap();
     let mut stage = make_stage("s1");
-    stage.evidence_rounds = MAX_EVIDENCE_ROUNDS;
+    stage.tally.evidence_rounds = MAX_EVIDENCE_ROUNDS;
     write_stage(work, &stage);
     write_dispute_request(work, "s1", 1, 0);
 
@@ -249,7 +259,7 @@ fn parse_yaml_frontmatter_round_trips() {
     let req = DisputeRequest {
         id: 7,
         stage_id: "x".to_string(),
-        criterion_index: 0,
+        kind: DisputeKind::Criterion { criterion_index: 0 },
         reason: "r".to_string(),
         evidence_commit: None,
         failure_output: None,

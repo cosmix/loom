@@ -20,6 +20,8 @@ use std::path::{Path, PathBuf};
 
 #[path = "adjudication_e2e/amendment.rs"]
 mod amendment;
+#[path = "adjudication_e2e/kinds.rs"]
+mod kinds;
 
 fn write_stage(work_dir: &Path, stage: &Stage) {
     std::fs::create_dir_all(work_dir.join("stages")).unwrap();
@@ -69,7 +71,7 @@ fn write_dispute(work_dir: &Path, stage_id: &str, id: u32) {
     let req = DisputeRequest {
         id,
         stage_id: stage_id.to_string(),
-        criterion_index: 0,
+        kind: loom::models::dispute::DisputeKind::Criterion { criterion_index: 0 },
         reason: "criterion impossible".to_string(),
         evidence_commit: None,
         failure_output: Some("err: something".to_string()),
@@ -79,6 +81,15 @@ fn write_dispute(work_dir: &Path, stage_id: &str, id: u32) {
     let yaml = serde_yaml::to_string(&req).unwrap();
     let path = request_file(&disputes_root, stage_id, id);
     std::fs::write(&path, format!("---\n{yaml}---\n\n# Dispute\n")).unwrap();
+}
+
+/// Point `config.toml`'s plan source at `plan`, where the adjudicator reads it.
+fn write_config(work_dir: &Path, plan: &Path) {
+    let cfg = format!(
+        "[plan]\nsource_path = \"{}\"\nplan_id = \"x\"\nplan_name = \"x\"\nbase_branch = \"main\"\n",
+        plan.display()
+    );
+    std::fs::write(work_dir.join("config.toml"), cfg).unwrap();
 }
 
 fn write_plan(work_dir: &Path) {
@@ -91,11 +102,7 @@ fn write_plan(work_dir: &Path) {
         "# Plan\n\n```yaml\nloom:\n  version: 1\n  stages:\n    - id: s1\n      name: s1\n      working_dir: .\n      acceptance:\n        - cargo test\n```\n",
     )
     .unwrap();
-    let cfg = format!(
-        "[plan]\nsource_path = \"{}\"\nplan_id = \"x\"\nplan_name = \"x\"\nbase_branch = \"main\"\n",
-        plan.display()
-    );
-    std::fs::write(work_dir.join("config.toml"), cfg).unwrap();
+    write_config(work_dir, &plan);
 }
 
 /// Write a plan file with the full `<!-- loom METADATA -->` markers
@@ -128,11 +135,7 @@ loom:
 Trailing prose section.
 ";
     std::fs::write(&plan, content).unwrap();
-    let cfg = format!(
-        "[plan]\nsource_path = \"{}\"\nplan_id = \"x\"\nplan_name = \"x\"\nbase_branch = \"main\"\n",
-        plan.display()
-    );
-    std::fs::write(work_dir.join("config.toml"), cfg).unwrap();
+    write_config(work_dir, &plan);
     plan
 }
 
@@ -405,13 +408,13 @@ fn dispute_amendment_is_idempotent_under_repeat_apply() {
     let reg = AdjudicatorRegistry::new();
     drive_dispute(&reg, work, "s1", 1, &verdict_accept_delete_first());
     let mid = loom::verify::transitions::load_stage("s1", work).unwrap();
-    assert_eq!(mid.amendments_applied, 1);
+    assert_eq!(mid.tally.amendments_applied, 1);
 
     // Second apply: applied.marker exists, so the call must be a no-op.
     reg.apply_pending_verdicts(work).unwrap();
     let after = loom::verify::transitions::load_stage("s1", work).unwrap();
     assert_eq!(
-        after.amendments_applied, 1,
+        after.tally.amendments_applied, 1,
         "second apply must NOT double-count amendments_applied",
     );
     // Only one snapshot, only one audit row.
@@ -444,11 +447,7 @@ loom:\n  version: 1\n  adjudication:\n    max_amendments_per_stage: {max_amendme
 Trailing prose section.\n",
     );
     std::fs::write(&plan, content).unwrap();
-    let cfg = format!(
-        "[plan]\nsource_path = \"{}\"\nplan_id = \"x\"\nplan_name = \"x\"\nbase_branch = \"main\"\n",
-        plan.display()
-    );
-    std::fs::write(work_dir.join("config.toml"), cfg).unwrap();
+    write_config(work_dir, &plan);
     plan
 }
 
@@ -504,7 +503,7 @@ fn amendment_cap_exceeded_escalates_to_human_review() {
     file_and_drive_dispute(&reg, work, "s1", 2, &accept);
 
     let after_two = loom::verify::transitions::load_stage("s1", work).unwrap();
-    assert_eq!(after_two.amendments_applied, 2);
+    assert_eq!(after_two.tally.amendments_applied, 2);
     assert_eq!(after_two.status, StageStatus::Queued);
 
     // Third dispute: the cap blocks the amendment.
@@ -526,7 +525,7 @@ fn amendment_cap_exceeded_escalates_to_human_review() {
         after_three.review_reason,
     );
     assert_eq!(
-        after_three.amendments_applied, 2,
+        after_three.tally.amendments_applied, 2,
         "amendments_applied must NOT increment past the cap",
     );
     assert!(
@@ -537,7 +536,7 @@ fn amendment_cap_exceeded_escalates_to_human_review() {
     // A subsequent tick must be a no-op.
     reg.apply_pending_verdicts(work).unwrap();
     let after_replay = loom::verify::transitions::load_stage("s1", work).unwrap();
-    assert_eq!(after_replay.amendments_applied, 2);
+    assert_eq!(after_replay.tally.amendments_applied, 2);
 }
 
 /// End-to-end coverage of the evidence-rounds escalation path. Every verdict
@@ -566,7 +565,7 @@ fn evidence_rounds_exhausted_escalates_to_human_review() {
             dispute_id < 10,
             "did not escalate after 10 rounds; got status {:?}, evidence_rounds {}",
             s.status,
-            s.evidence_rounds
+            s.tally.evidence_rounds
         );
         dispute_id += 1;
         file_and_drive_dispute(&reg, work, "s1", dispute_id, &needs_more);

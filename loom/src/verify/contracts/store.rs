@@ -3,12 +3,13 @@
 //!
 //! | Path | Written by |
 //! | --- | --- |
-//! | `freeze.json` | the daemon's freeze handler, once; never replaced |
+//! | `freeze.json` | the daemon's freeze handler; rewritten only by an accepted contract dispute |
 //! | `files/<path>` | the same handler, before `freeze.json` |
 //! | `attempts` | the daemon, when it hands out a contract session |
 //!
 //! `freeze.json` is written last and atomically: its presence is what ends the
 //! contract phase, so it must never describe copies that are not on disk yet.
+//! A re-freeze follows the same order: copies first, then the record.
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -22,6 +23,7 @@ use crate::fs::safe_fs::{
     safe_create_dir_all_in_workdir, safe_locked_write_in_workdir, safe_open_dirfd,
 };
 use crate::fs::safe_read::{is_not_found, read_bounded};
+use crate::relay::sha256_hex;
 
 pub const FREEZE_RECORD_VERSION: u32 = 1;
 /// The largest file a freeze copies, and so the largest a completion re-reads.
@@ -142,6 +144,39 @@ pub fn write_freeze(
         }
         copy_files(&dir, files)?;
         atomic_write_locked(&freeze_path, &json)
+    })
+}
+
+/// Re-freeze `files` (path relative to the working directory, content) at the
+/// given content: replace their frozen copies, then rewrite `freeze.json` with
+/// their new hashes, adding a path the record did not list. The adjudication
+/// of an accepted contract dispute is the only caller; the stage must already
+/// be frozen.
+pub fn refreeze(work_dir: &Path, stage_id: &str, files: &[(String, Vec<u8>)]) -> Result<()> {
+    let root = canonical_work_dir(work_dir, stage_id)?;
+    for (path, _) in files {
+        validate_relative(path)?;
+    }
+    let dir = stage_dir(&root, stage_id);
+    locked_dir_update(&dir, || {
+        let Some(mut record) = load_freeze(&root, stage_id)? else {
+            bail!("the contracts of stage '{stage_id}' were never frozen");
+        };
+        copy_files(&dir, files)?;
+        for (path, bytes) in files {
+            let sha256 = sha256_hex(bytes);
+            match record.files.iter_mut().find(|file| file.path == *path) {
+                Some(file) => file.sha256 = sha256,
+                None => record.files.push(FrozenFile {
+                    path: path.clone(),
+                    sha256,
+                }),
+            }
+        }
+        atomic_write_locked(
+            &dir.join(FREEZE_FILE),
+            &serde_json::to_string_pretty(&record)?,
+        )
     })
 }
 

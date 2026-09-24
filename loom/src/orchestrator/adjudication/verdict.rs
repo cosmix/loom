@@ -16,13 +16,17 @@
 //! - Empty questions on NeedsMoreEvidence → escalate via
 //!   [`ValidationOutcome::Escalate`] — pathological LLM output that
 //!   would loop forever if re-prompted.
+//!
+//! Which verdicts a dispute takes depends on its kind: the rules above are
+//! those of a criterion dispute; `verdict_kinds` holds the findings,
+//! contract and integrity rules, built from the same parts.
 
 use serde::Deserialize;
 use serde_json::Value;
 
-use crate::models::dispute::{Citation, DisputeVerdict, PlanPatch};
+use crate::models::dispute::{Citation, DisputeKind, DisputeVerdict, PlanPatch};
 
-use super::plan_patch;
+use super::{plan_patch, verdict_kinds};
 
 /// Result of parsing + validating raw JSON from the model.
 ///
@@ -36,20 +40,36 @@ pub enum ValidationOutcome {
     Escalate { reason: String },
 }
 
-/// Parse `raw` and either return a usable verdict (possibly coerced) or
-/// signal that the stage must be escalated to human review.
+/// Parse `raw` as the verdict on a criterion dispute and either return a
+/// usable verdict (possibly coerced) or signal that the stage must be
+/// escalated to human review. Only a `needs-more-evidence` verdict can
+/// escalate, under the same rule for every kind, so the relay's pre-check in
+/// `loom stage adjudicate` uses this whatever the dispute's kind.
 pub fn parse_and_validate(raw: &str) -> ValidationOutcome {
-    let json: Value = match parse_json_lenient(raw) {
-        Ok(v) => v,
-        Err(e) => {
-            return ValidationOutcome::Verdict(DisputeVerdict::NeedsMoreEvidence {
-                questions: vec![format!(
-                    "Adjudicator output was not valid JSON: {e}. Re-emit a single JSON object matching the schema."
-                )],
-            });
-        }
-    };
-    classify_and_validate(json)
+    match parse_json_object(raw) {
+        Ok(json) => classify_and_validate(json),
+        Err(coerced) => coerced,
+    }
+}
+
+/// [`parse_and_validate`] for a dispute of `kind`.
+pub fn parse_and_validate_for(raw: &str, kind: &DisputeKind) -> ValidationOutcome {
+    match (parse_json_object(raw), kind) {
+        (Ok(json), DisputeKind::Criterion { .. }) => classify_and_validate(json),
+        (Ok(json), _) => verdict_kinds::classify_for_kind(&json, kind),
+        (Err(coerced), _) => coerced,
+    }
+}
+
+/// The JSON in `raw`, or the question asking for it again.
+fn parse_json_object(raw: &str) -> Result<Value, ValidationOutcome> {
+    parse_json_lenient(raw).map_err(|e| {
+        ValidationOutcome::Verdict(DisputeVerdict::NeedsMoreEvidence {
+            questions: vec![format!(
+                "Adjudicator output was not valid JSON: {e}. Re-emit a single JSON object matching the schema."
+            )],
+        })
+    })
 }
 
 /// Permissive JSON parser: tries the input verbatim, then strips a
@@ -120,15 +140,11 @@ fn extract_first_object(s: &str) -> Option<&str> {
 }
 
 fn classify_and_validate(json: Value) -> ValidationOutcome {
-    let verdict_tag = match json.get("verdict").and_then(|v| v.as_str()) {
-        Some(t) => t.to_string(),
-        None => {
-            return needs_more_evidence(
-                "Adjudicator output missing required 'verdict' field. Must be one of: accept, reject, needs-more-evidence.",
-            );
-        }
+    let Some(normalized) = verdict_tag(&json) else {
+        return needs_more_evidence(
+            "Adjudicator output missing required 'verdict' field. Must be one of: accept, reject, needs-more-evidence.",
+        );
     };
-    let normalized = verdict_tag.to_lowercase().replace('_', "-");
     match normalized.as_str() {
         "accept" => validate_accept(&json),
         "reject" => validate_reject(&json),
@@ -139,22 +155,40 @@ fn classify_and_validate(json: Value) -> ValidationOutcome {
     }
 }
 
-fn validate_accept(json: &Value) -> ValidationOutcome {
+/// The `verdict` tag, lower-cased with `_` read as `-`.
+pub(super) fn verdict_tag(json: &Value) -> Option<String> {
+    let tag = json.get("verdict").and_then(|v| v.as_str())?;
+    Some(tag.to_lowercase().replace('_', "-"))
+}
+
+/// The non-empty `reasoning` and the citations, at least one, that an
+/// `accept` or `reject` (named by `verdict`) must be grounded in.
+pub(super) fn grounding(
+    json: &Value,
+    verdict: &str,
+) -> Result<(String, Vec<Citation>), ValidationOutcome> {
     let reasoning = match json.get("reasoning").and_then(|v| v.as_str()) {
         Some(s) if !s.trim().is_empty() => s.to_string(),
         _ => {
-            return needs_more_evidence("Accept verdict missing non-empty 'reasoning' string.");
+            return Err(needs_more_evidence(format!(
+                "{verdict} verdict missing non-empty 'reasoning' string."
+            )));
         }
     };
-    let citations = match parse_citations(json.get("citations")) {
-        Ok(c) => c,
-        Err(e) => return needs_more_evidence(e),
-    };
+    let citations = parse_citations(json.get("citations")).map_err(needs_more_evidence)?;
     if citations.is_empty() {
-        return needs_more_evidence(
-            "Accept verdict must include at least one citation grounding the decision.",
-        );
+        return Err(needs_more_evidence(format!(
+            "{verdict} verdict must include at least one citation grounding the decision."
+        )));
     }
+    Ok((reasoning, citations))
+}
+
+fn validate_accept(json: &Value) -> ValidationOutcome {
+    let (reasoning, citations) = match grounding(json, "Accept") {
+        Ok(grounded) => grounded,
+        Err(coerced) => return coerced,
+    };
     let plan_patch_raw = match json.get("plan_patch") {
         Some(v) if !v.is_null() => v.clone(),
         _ => {
@@ -183,29 +217,17 @@ fn validate_accept(json: &Value) -> ValidationOutcome {
     })
 }
 
-fn validate_reject(json: &Value) -> ValidationOutcome {
-    let reasoning = match json.get("reasoning").and_then(|v| v.as_str()) {
-        Some(s) if !s.trim().is_empty() => s.to_string(),
-        _ => {
-            return needs_more_evidence("Reject verdict missing non-empty 'reasoning' string.");
-        }
-    };
-    let citations = match parse_citations(json.get("citations")) {
-        Ok(c) => c,
-        Err(e) => return needs_more_evidence(e),
-    };
-    if citations.is_empty() {
-        return needs_more_evidence(
-            "Reject verdict must include at least one citation grounding the decision.",
-        );
+pub(super) fn validate_reject(json: &Value) -> ValidationOutcome {
+    match grounding(json, "Reject") {
+        Ok((reasoning, citations)) => ValidationOutcome::Verdict(DisputeVerdict::Reject {
+            citations,
+            reasoning,
+        }),
+        Err(coerced) => coerced,
     }
-    ValidationOutcome::Verdict(DisputeVerdict::Reject {
-        citations,
-        reasoning,
-    })
 }
 
-fn validate_needs_more(json: &Value) -> ValidationOutcome {
+pub(super) fn validate_needs_more(json: &Value) -> ValidationOutcome {
     let arr = match json.get("questions").and_then(|v| v.as_array()) {
         Some(a) => a.clone(),
         None => {
@@ -231,7 +253,7 @@ fn validate_needs_more(json: &Value) -> ValidationOutcome {
     ValidationOutcome::Verdict(DisputeVerdict::NeedsMoreEvidence { questions })
 }
 
-fn parse_citations(v: Option<&Value>) -> Result<Vec<Citation>, String> {
+pub(super) fn parse_citations(v: Option<&Value>) -> Result<Vec<Citation>, String> {
     let Some(v) = v else {
         return Err("missing 'citations' array".to_string());
     };
@@ -268,7 +290,7 @@ fn parse_citations(v: Option<&Value>) -> Result<Vec<Citation>, String> {
     Ok(out)
 }
 
-fn needs_more_evidence(reason: impl Into<String>) -> ValidationOutcome {
+pub(super) fn needs_more_evidence(reason: impl Into<String>) -> ValidationOutcome {
     ValidationOutcome::Verdict(DisputeVerdict::NeedsMoreEvidence {
         questions: vec![reason.into()],
     })

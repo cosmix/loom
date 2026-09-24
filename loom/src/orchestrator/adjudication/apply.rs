@@ -15,15 +15,18 @@
 //!   impossible and the adjudicator has now upheld it, so re-queueing would
 //!   loop the same disagreement. It escalates to `NeedsHumanReview` — the one
 //!   outcome of adjudication that is designed to need a human.
+//!
+//! These are a criterion dispute's verdicts; `apply_kinds.rs` routes by kind.
 
 use anyhow::{Context, Result};
 use std::path::Path;
 
-use crate::models::dispute::{applied_marker, dispute_dir, DisputeVerdict, DisputeVerdictRecord};
+use crate::models::dispute::{applied_marker, dispute_dir};
 use crate::models::stage::{Stage, StageStatus};
-use crate::plan::amendment::apply_amendment;
+use crate::plan::amendment::{apply_amendment, AmendmentRequest};
 use crate::verify::transitions::{load_stage, update_stage};
 
+use super::apply_kinds::apply_by_kind;
 use super::plan_patch::build_amendment_request;
 use super::scan::read_verdict_record;
 use super::{feedback, resolve_plan_path, AdjudicatorRegistry, MAX_EVIDENCE_ROUNDS};
@@ -95,33 +98,13 @@ impl AdjudicatorRegistry {
         }
         let _ = std::fs::write(&applying, b"");
 
-        let result = self.apply_verdict_inner(work_dir, &mut stage, &record);
+        let result = apply_by_kind(work_dir, &mut stage, &record);
         let final_result = persist_verdict_result(work_dir, stage_id, &stage, &applied, result);
         // Always remove the .applying marker — success means the
         // applied.marker now exists, failure means we'll retry on
         // the next tick and re-write the marker.
         let _ = std::fs::remove_file(&applying);
         final_result
-    }
-
-    fn apply_verdict_inner(
-        &self,
-        work_dir: &Path,
-        stage: &mut Stage,
-        record: &DisputeVerdictRecord,
-    ) -> Result<()> {
-        match &record.verdict {
-            DisputeVerdict::Accept { plan_patch, .. } => {
-                apply_accept(work_dir, stage, plan_patch, record.id)
-            }
-            DisputeVerdict::Reject {
-                reasoning,
-                citations,
-            } => apply_reject(work_dir, stage, record.id, reasoning, citations),
-            DisputeVerdict::NeedsMoreEvidence { questions } => {
-                apply_needs_more_evidence(work_dir, stage, questions)
-            }
-        }
     }
 }
 
@@ -159,8 +142,8 @@ fn persist_verdict_result(
     inner_result?;
     let verdict_status = stage.status.clone();
     let verdict_review_reason = stage.review_reason.clone();
-    let verdict_evidence_rounds = stage.evidence_rounds;
-    let verdict_amendments_applied = stage.amendments_applied;
+    let verdict_evidence_rounds = stage.tally.evidence_rounds;
+    let verdict_amendments_applied = stage.tally.amendments_applied;
     let verdict_acceptance = stage.acceptance.clone();
     let verdict_wiring = stage.wiring.clone();
     update_stage(stage_id, work_dir, |s| {
@@ -172,8 +155,8 @@ fn persist_verdict_result(
             }
         }
         s.review_reason = verdict_review_reason.clone();
-        s.evidence_rounds = verdict_evidence_rounds;
-        s.amendments_applied = verdict_amendments_applied;
+        s.tally.evidence_rounds = verdict_evidence_rounds;
+        s.tally.amendments_applied = verdict_amendments_applied;
         s.acceptance = verdict_acceptance.clone();
         s.wiring = verdict_wiring.clone();
         Ok(())
@@ -188,29 +171,43 @@ fn persist_verdict_result(
 }
 
 /// The criterion was wrong: amend the plan and re-queue the stage.
-fn apply_accept(
+pub(super) fn apply_accept(
     work_dir: &Path,
     stage: &mut Stage,
     plan_patch: &crate::models::dispute::PlanPatch,
     dispute_id: u32,
 ) -> Result<()> {
-    let plan_path =
-        resolve_plan_path(work_dir).ok_or_else(|| anyhow::anyhow!("plan source_path missing"))?;
     let request = build_amendment_request(stage.id.clone(), plan_patch, dispute_id)?;
-    match apply_amendment(&plan_path, work_dir, request) {
-        Ok(_) => {}
-        Err(e) if crate::plan::amendment::is_amendment_cap_error(&e) => {
-            escalate_amendment_cap(work_dir, stage, &e);
-            return Ok(());
-        }
-        Err(e) => return Err(e).context("apply plan amendment from accept verdict"),
+    if !amend_plan(work_dir, stage, request)? {
+        return Ok(());
     }
-    resync_after_amendment(work_dir, stage);
     // Accept verdict closes the evidence loop: clear feedback and re-queue
     // the stage so the agent can retry (unless another dispute is still
     // unanswered).
     let _ = feedback::clear_feedback(work_dir, &stage.id);
     requeue_or_hold_for_remaining_disputes(work_dir, stage)
+}
+
+/// Apply an accepted verdict's amendment and resync the stage from it.
+/// `false` means the amendment cap was reached and the stage escalated
+/// instead, so the caller applies nothing more.
+pub(super) fn amend_plan(
+    work_dir: &Path,
+    stage: &mut Stage,
+    request: AmendmentRequest,
+) -> Result<bool> {
+    let plan_path =
+        resolve_plan_path(work_dir).ok_or_else(|| anyhow::anyhow!("plan source_path missing"))?;
+    match apply_amendment(&plan_path, work_dir, request) {
+        Ok(_) => {}
+        Err(e) if crate::plan::amendment::is_amendment_cap_error(&e) => {
+            escalate_amendment_cap(work_dir, stage, &e);
+            return Ok(false);
+        }
+        Err(e) => return Err(e).context("apply plan amendment from accept verdict"),
+    }
+    resync_after_amendment(work_dir, stage);
+    Ok(true)
 }
 
 /// Cap exceeded: a further accepted dispute would exceed the per-stage
@@ -237,18 +234,19 @@ fn resync_after_amendment(work_dir: &Path, stage: &mut Stage) {
     };
     stage.acceptance = reloaded.acceptance;
     stage.wiring = reloaded.wiring;
+    stage.contracts = reloaded.contracts;
     // Derive amendments_applied from the audit log (the source of truth used
     // by the cap check). Bumping the in-memory field by +1 here would
     // double-count on a crash-mid-apply retry: apply_amendment is idempotent
     // (returns the prior result), but the increment-on-reload would have
     // re-bumped each pass.
-    stage.amendments_applied =
+    stage.tally.amendments_applied =
         crate::plan::amendment::count_amendments_for_stage(work_dir, &stage.id)
-            .unwrap_or_else(|_| reloaded.amendments_applied.saturating_add(1));
+            .unwrap_or_else(|_| reloaded.tally.amendments_applied.saturating_add(1));
 }
 
 /// The criterion stands and the implementation is wrong — the deadlock case.
-fn apply_reject(
+pub(super) fn apply_reject(
     work_dir: &Path,
     stage: &mut Stage,
     dispute_id: u32,
@@ -288,17 +286,17 @@ fn apply_reject(
 
 /// Undecidable on the evidence supplied: ask the agent the questions, unless
 /// the evidence loop is spent.
-fn apply_needs_more_evidence(
+pub(super) fn apply_needs_more_evidence(
     work_dir: &Path,
     stage: &mut Stage,
     questions: &[String],
 ) -> Result<()> {
     feedback::append_questions(work_dir, &stage.id, questions)?;
-    stage.evidence_rounds = stage.evidence_rounds.saturating_add(1);
-    if stage.evidence_rounds >= MAX_EVIDENCE_ROUNDS {
+    stage.tally.evidence_rounds = stage.tally.evidence_rounds.saturating_add(1);
+    if stage.tally.evidence_rounds >= MAX_EVIDENCE_ROUNDS {
         let reason = format!(
             "Adjudicator evidence loop exhausted ({} rounds)",
-            stage.evidence_rounds
+            stage.tally.evidence_rounds
         );
         stage.try_request_human_review(reason).ok();
         Ok(())
@@ -348,7 +346,10 @@ fn transition_to_queued(stage: &mut Stage) -> Result<()> {
 /// unanswered dispute is judged; only that verdict re-queues it. The
 /// dispute currently being applied already has its `verdict.md` on disk, so
 /// `scan_pending_requests` does not count it among the remainder.
-fn requeue_or_hold_for_remaining_disputes(work_dir: &Path, stage: &mut Stage) -> Result<()> {
+pub(super) fn requeue_or_hold_for_remaining_disputes(
+    work_dir: &Path,
+    stage: &mut Stage,
+) -> Result<()> {
     if stage.status == StageStatus::NeedsHumanReview {
         // A Reject verdict on a sibling dispute already escalated this stage;
         // a later Accept/NeedsMoreEvidence verdict must not re-queue over it.

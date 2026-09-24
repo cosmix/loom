@@ -112,6 +112,7 @@ fn stage_def_field_matches(
             serde_yaml::to_string(&live.wiring_tests).unwrap_or_default()
                 == serde_yaml::to_string(&snap.wiring_tests).unwrap_or_default()
         }
+        AmendmentField::Contracts => live.contracts == snap.contracts,
     }
 }
 
@@ -121,6 +122,7 @@ fn copy_field(dest: &mut StageDefinition, src: &StageDefinition, field: Amendmen
         AmendmentField::Acceptance => dest.acceptance = src.acceptance.clone(),
         AmendmentField::Wiring => dest.wiring = src.wiring.clone(),
         AmendmentField::WiringTests => dest.wiring_tests = src.wiring_tests.clone(),
+        AmendmentField::Contracts => dest.contracts = src.contracts.clone(),
     }
 }
 

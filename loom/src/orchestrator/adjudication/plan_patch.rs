@@ -55,7 +55,14 @@ pub(super) fn normalize(
         }
         None => return Err("plan_patch missing 'field' string".to_string()),
     };
+    let (patch, reason) = decode_patch(inner)?;
+    Ok((field, patch, reason))
+}
 
+/// Decode the patch and reason of `inner`, in either shape, leaving its
+/// `field` to the caller: a criterion dispute amends `acceptance` or `wiring`,
+/// a contract dispute `contracts`.
+pub(super) fn decode_patch(inner: &Value) -> Result<(AmendmentPatch, Option<String>), String> {
     let patch: AmendmentPatch = if let Some(patch_obj) = inner.get("patch") {
         serde_json::from_value(patch_obj.clone())
             .map_err(|e| format!("nested 'patch' object malformed: {e}"))?
@@ -89,7 +96,7 @@ pub(super) fn normalize(
         .and_then(|v| v.as_str())
         .map(|s| s.to_string());
 
-    Ok((field, patch, reason))
+    Ok((patch, reason))
 }
 
 /// Rebuild the canonical nested `{"field", "patch": {...}, "reason"}` object

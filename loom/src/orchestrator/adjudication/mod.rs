@@ -11,7 +11,8 @@
 //!   The daemon spawns the session; see `orchestrator/core/orchestrator.rs`.
 //! * [`AdjudicatorRegistry::apply_pending_verdicts`] scans for verdict
 //!   files that haven't been applied (no `applied.marker`) and mutates
-//!   stage state accordingly (see `apply.rs`).
+//!   stage state accordingly (see `apply.rs`, and `apply_kinds.rs` for the
+//!   routing by dispute kind).
 //!
 //! The adjudicator is a real loom session, not a subprocess the daemon waits
 //! on: it is spawned into a terminal inside the disputed stage's worktree when
@@ -27,6 +28,8 @@
 //! resets its budget.
 
 mod apply;
+mod apply_contract;
+mod apply_kinds;
 pub mod feedback;
 mod plan_patch;
 pub mod prompt;
@@ -34,7 +37,10 @@ pub mod record;
 mod scan;
 pub mod session;
 pub mod verdict;
+mod verdict_kinds;
 
+#[cfg(test)]
+mod apply_kinds_tests;
 #[cfg(test)]
 mod tests;
 #[cfg(test)]
@@ -149,7 +155,7 @@ impl AdjudicatorRegistry {
         if stage.status != StageStatus::NeedsAdjudication {
             return None;
         }
-        if stage.evidence_rounds >= MAX_EVIDENCE_ROUNDS {
+        if stage.tally.evidence_rounds >= MAX_EVIDENCE_ROUNDS {
             escalate_evidence_cap(work_dir, stage_id);
             return None;
         }

@@ -3,6 +3,7 @@
 
 use super::*;
 use crate::fs::session_files::save_session;
+use crate::fs::work_dir::WorkDir;
 use crate::models::session::{Session, SessionStatus};
 use crate::verify::contracts::store::{frozen_file_path, load_freeze};
 use crate::verify::contracts::test_support::{

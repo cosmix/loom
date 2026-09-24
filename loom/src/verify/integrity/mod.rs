@@ -19,7 +19,7 @@ use crate::verify::review::store::{self, RECORD_VERSION};
 
 pub use gate::{check, describe, shortfall};
 
-const ACCEPTED_FILE: &str = "integrity.json";
+pub(in crate::verify) const ACCEPTED_FILE: &str = "integrity.json";
 /// Directory names whose files are tests whatever their language.
 const TEST_DIRS: [&str; 4] = ["test", "tests", "__tests__", "spec"];
 

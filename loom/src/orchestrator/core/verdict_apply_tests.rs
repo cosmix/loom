@@ -10,7 +10,7 @@ use super::*;
 use crate::fs::session_files::save_session;
 use crate::fs::work_dir::write_terminal_config;
 use crate::models::dispute::{
-    applied_marker, request_file, verdict_file, DisputeRequest, DisputeVerdict,
+    applied_marker, request_file, verdict_file, DisputeKind, DisputeRequest, DisputeVerdict,
     DisputeVerdictRecord,
 };
 use crate::models::session::{SessionBackendKind, SessionExitReason, TerminalConfig};
@@ -81,7 +81,7 @@ fn write_dispute_request(work: &std::path::Path, stage_id: &str, id: u32) {
     let req = DisputeRequest {
         id,
         stage_id: stage_id.to_string(),
-        criterion_index: 0,
+        kind: DisputeKind::Criterion { criterion_index: 0 },
         reason: "criterion impossible".to_string(),
         evidence_commit: None,
         failure_output: None,

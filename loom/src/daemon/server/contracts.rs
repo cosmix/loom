@@ -35,16 +35,16 @@ use std::path::{Path, PathBuf};
 use super::self_service::session_owns_stage_as;
 use crate::daemon::protocol::{ContractRunReport, Response};
 use crate::fs::safe_read::{is_not_found, read_bounded};
-use crate::fs::work_dir::WorkDir;
 use crate::models::session::SessionType;
 use crate::models::stage::{Stage, StageStatus, StageType};
-use crate::models::worktree::Worktree;
 use crate::relay::sha256_hex;
 use crate::testrun::registry;
 use crate::verify::contracts::store::{
     self, FreezeRecord, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION, MAX_FROZEN_FILE_BYTES,
 };
-use crate::verify::contracts::{changes, is_contract_or_harness, normalize, RED_OUTCOMES};
+use crate::verify::contracts::{
+    changes, is_contract_or_harness, normalize, site::stage_site, RED_OUTCOMES,
+};
 use crate::verify::transitions::load_stage;
 
 /// Bounds on what one freeze copies into `.loom/work`: the harness globs
@@ -176,22 +176,7 @@ fn check_reports(stage: &Stage, reports: &[ContractRunReport]) -> Result<()> {
 }
 
 fn locate(work_dir: &Path, stage: &Stage) -> Result<Site> {
-    let workspace = WorkDir::new(work_dir)?;
-    let repo_root = workspace
-        .repo_root()
-        .context("cannot resolve the repository root of the state directory")?;
-    let worktree_id = stage.worktree.as_deref().unwrap_or(&stage.id);
-    crate::validation::validate_id(worktree_id).context("invalid worktree id")?;
-    let worktree_root = Worktree::worktree_path(repo_root, worktree_id)
-        .canonicalize()
-        .with_context(|| format!("stage '{}' has no worktree", stage.id))?;
-    let working_dir = worktree_root
-        .join(stage.working_dir.as_deref().unwrap_or("."))
-        .canonicalize()
-        .context("the stage's working directory does not exist")?;
-    if !working_dir.starts_with(&worktree_root) {
-        bail!("the stage's working directory is outside its worktree");
-    }
+    let (worktree_root, working_dir) = stage_site(work_dir, stage)?;
     Ok(Site {
         worktree_root,
         working_dir,
