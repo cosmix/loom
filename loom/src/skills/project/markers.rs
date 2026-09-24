@@ -1,7 +1,7 @@
 use std::collections::BTreeSet;
-use std::fs::File;
-use std::io::Read;
 use std::path::Path;
+
+use super::probe;
 
 const FILE_MARKERS: &[(&str, &[&str])] = &[
     ("rust", &["Cargo.toml"]),
@@ -17,6 +17,15 @@ const FILE_MARKERS: &[(&str, &[&str])] = &[
         ],
     ),
     ("typescript", &["tsconfig.json"]),
+    ("java", &["pom.xml", "build.gradle", "settings.gradle"]),
+    ("kotlin", &["build.gradle.kts", "settings.gradle.kts"]),
+    ("scala", &["build.sbt"]),
+    ("ruby", &["Gemfile"]),
+    ("php", &["composer.json"]),
+    ("swift", &["Package.swift"]),
+    ("elixir", &["mix.exs"]),
+    ("cpp", &["CMakeLists.txt"]),
+    ("dart", &["pubspec.yaml"]),
     (
         "react",
         &[
@@ -75,9 +84,12 @@ const FILE_MARKERS: &[(&str, &[&str])] = &[
 pub(super) fn detect(dir: &Path) -> BTreeSet<String> {
     let mut types = BTreeSet::new();
     for (kind, files) in FILE_MARKERS {
-        if files.iter().any(|name| regular_file(&dir.join(name))) {
+        if any_file(dir, files) {
             types.insert((*kind).to_string());
         }
+    }
+    if dotnet_project(dir) {
+        types.insert("csharp".to_string());
     }
     for (kind, names) in [
         ("ci-cd", &[".github/workflows"][..]),
@@ -90,51 +102,51 @@ pub(super) fn detect(dir: &Path) -> BTreeSet<String> {
         }
     }
     detect_dependencies(dir, &mut types);
+    // A `package.json` without TypeScript evidence (a `tsconfig.json` or a
+    // `typescript` dependency) is plain JavaScript; the two kinds never co-occur.
+    if regular_file(&dir.join("package.json")) && !types.contains("typescript") {
+        types.insert("javascript".to_string());
+    }
     types
 }
 
+/// .NET project and solution names vary, so they are matched by extension.
+fn dotnet_project(dir: &Path) -> bool {
+    probe::files_where(dir, |name| {
+        name.ends_with(".csproj") || name.ends_with(".sln")
+    })
+    .next()
+    .is_some()
+}
+
+/// `scan` passes no checkout root, so the read is anchored at `dir`: a
+/// symlinked `dir` or manifest reads as absent; ancestors of `dir` go unchecked.
 fn detect_dependencies(dir: &Path, types: &mut BTreeSet<String>) {
-    let path = dir.join("package.json");
-    if !regular_file(&path) {
-        return;
-    }
-    let Some(package) = read_json(&path) else {
+    let Some(package) = probe::read_json(dir, &dir.join("package.json")) else {
         return;
     };
-    for section in ["dependencies", "devDependencies", "peerDependencies"] {
-        let Some(deps) = package.get(section).and_then(serde_json::Value::as_object) else {
-            continue;
-        };
-        if deps.contains_key("typescript") {
-            types.insert("typescript".into());
-        }
-        if [
-            "react",
-            "react-dom",
-            "next",
-            "remix",
-            "@remix-run/react",
-            "@remix-run/node",
-        ]
-        .iter()
-        .any(|name| deps.contains_key(*name))
-        {
-            types.insert("react".into());
-        }
+    let sections = ["dependencies", "devDependencies", "peerDependencies"];
+    let depends_on = |name: &str| probe::has_dependency(&package, &sections, name);
+    if depends_on("typescript") {
+        types.insert("typescript".into());
+    }
+    if [
+        "react",
+        "react-dom",
+        "next",
+        "remix",
+        "@remix-run/react",
+        "@remix-run/node",
+    ]
+    .into_iter()
+    .any(depends_on)
+    {
+        types.insert("react".into());
     }
 }
 
-fn read_json(path: &Path) -> Option<serde_json::Value> {
-    let mut bytes = Vec::new();
-    File::open(path)
-        .ok()?
-        .take(256 * 1024 + 1)
-        .read_to_end(&mut bytes)
-        .ok()?;
-    if bytes.len() > 256 * 1024 {
-        return None;
-    }
-    serde_json::from_slice(&bytes).ok()
+pub(super) fn any_file(dir: &Path, names: &[&str]) -> bool {
+    names.iter().any(|name| regular_file(&dir.join(name)))
 }
 
 pub(super) fn regular_file(path: &Path) -> bool {
@@ -148,13 +160,14 @@ pub(super) fn plain_directory(path: &Path) -> bool {
 }
 
 pub(super) fn package_boundary(path: &Path) -> bool {
-    [
-        "Cargo.toml",
-        "package.json",
-        "pyproject.toml",
-        "go.mod",
-        "tsconfig.json",
-    ]
-    .iter()
-    .any(|name| regular_file(&path.join(name)))
+    any_file(
+        path,
+        &[
+            "Cargo.toml",
+            "package.json",
+            "pyproject.toml",
+            "go.mod",
+            "tsconfig.json",
+        ],
+    )
 }
