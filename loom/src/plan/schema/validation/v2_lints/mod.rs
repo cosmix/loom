@@ -15,6 +15,7 @@ use crate::plan::schema::{LoomMetadata, StageDefinition};
 use super::criterion_hazards::{command_start, nested_scripts, MAX_NESTING};
 use super::shell_lex::{lex, simple_commands, Word};
 
+mod contracts;
 mod knowledge_check;
 mod loom_subcommands;
 mod regex_patterns;
@@ -60,6 +61,7 @@ pub(crate) fn run(ctx: &LintContext<'_>, notes: &mut Vec<String>) -> Vec<LintFin
     regex_patterns::check(ctx, &mut out);
     sandbox_capability::check(ctx, &mut out);
     knowledge_check::check(ctx, &mut out);
+    contracts::check(ctx, &mut out);
     notes.extend(rust_filters::check(ctx, &mut out));
     out
 }

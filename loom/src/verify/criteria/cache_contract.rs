@@ -14,7 +14,7 @@ use super::result::CriterionResult;
 use crate::models::stage::CommandConfinement;
 use crate::plan::schema::AcceptanceCriterion;
 
-pub(super) const CACHE_RECORD_VERSION: u32 = 2;
+pub(super) const CACHE_RECORD_VERSION: u32 = 3;
 pub(super) const DIAGNOSTIC_TAIL_BYTES: usize = 4 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -43,6 +43,7 @@ pub(super) struct CriterionContract {
     timeout_secs: u64,
     timeout_nanos: u32,
     confinement: CommandConfinement,
+    zero_test_guard: bool,
 }
 
 impl CriterionContract {
@@ -81,7 +82,23 @@ impl CriterionContract {
             timeout_secs: timeout.as_secs(),
             timeout_nanos: timeout.subsec_nanos(),
             confinement,
+            zero_test_guard: false,
         }
+    }
+
+    /// Fail a run whose test runner selected zero tests (DESIGN D10; plan v2).
+    pub(super) fn with_zero_test_guard(mut self, enabled: bool) -> Self {
+        self.zero_test_guard = enabled;
+        self
+    }
+
+    pub(super) fn guards_zero_tests(&self) -> bool {
+        self.zero_test_guard
+    }
+
+    /// Whether the zero-test guard fails a run that executed `tests_executed`.
+    pub(super) fn rejects_zero_tests(&self, tests_executed: Option<u64>) -> bool {
+        self.zero_test_guard && tests_executed == Some(0)
     }
 
     pub(super) fn digest(&self) -> Option<String> {
@@ -134,7 +151,20 @@ impl CriterionContract {
             stdout_contains_matched,
             stdout_not_contains_matched,
             stderr_empty_matched,
+            tests_executed: None,
         }
+    }
+
+    /// [`Self::verdict`] for a run whose test runner reported `tests_executed`.
+    pub(super) fn verdict_with_tests(
+        &self,
+        result: &CriterionResult,
+        tests_executed: Option<u64>,
+    ) -> AssertionVerdict {
+        let mut verdict = self.verdict(result);
+        verdict.passed &= !self.rejects_zero_tests(tests_executed);
+        verdict.tests_executed = tests_executed;
+        verdict
     }
 }
 
@@ -149,6 +179,8 @@ pub(super) struct AssertionVerdict {
     pub(super) stdout_contains_matched: Vec<bool>,
     pub(super) stdout_not_contains_matched: Vec<bool>,
     pub(super) stderr_empty_matched: Option<bool>,
+    /// Tests the run executed, when the zero-test guard read a count.
+    pub(super) tests_executed: Option<u64>,
 }
 
 impl AssertionVerdict {
@@ -166,6 +198,7 @@ impl AssertionVerdict {
                 contract.stdout_not_contains.len(),
             )
             && self.stderr_empty_matched == contract.stderr_must_be_empty.then_some(true)
+            && !contract.rejects_zero_tests(self.tests_executed)
     }
 }
 

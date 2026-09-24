@@ -12,3 +12,4 @@ mod runner_tests;
 mod setup_tests;
 mod variable_tests;
 mod working_dir_tests;
+mod zero_test_tests;

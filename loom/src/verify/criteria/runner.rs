@@ -9,7 +9,7 @@ use super::cache_contract::{AssertionVerdict, CriterionContract};
 use super::cache_fingerprint::{self, ExecutionIdentity, InputFingerprint};
 use super::config::CriteriaConfig;
 use super::confine::{prepare_confined, resolve_confinement, CommandSpec, PreparedCommand};
-use super::criterion_eval::check_criterion;
+use super::criterion_eval::{evaluate, CriterionCommand};
 use super::executor::run_prepared_with_timeout;
 use super::result::{AcceptanceResult, CriterionResult};
 use crate::models::stage::{AcceptanceCriterion, CommandConfinement, Stage};
@@ -35,11 +35,18 @@ pub fn run_acceptance_with_config(
     let default_dir = PathBuf::from(".");
     let context = CriteriaContext::with_stage_id(working_dir.unwrap_or(&default_dir), &stage.id);
     let setup = expanded_setup(stage, &context);
+    let zero_test_guard = stage.plan_version == 2;
     let mut collected = CollectedResults::default();
 
     for criterion in &stage.acceptance {
-        let prepared =
-            prepare_criterion(criterion, setup.as_deref(), &context, config, confinement);
+        let prepared = prepare_criterion(
+            criterion,
+            setup.as_deref(),
+            &context,
+            config,
+            confinement,
+            zero_test_guard,
+        );
         let evaluated = run_criterion(prepared, working_dir, confinement, config)
             .with_context(|| format!("Failed to execute criterion: {}", criterion.command()))?;
         collected.push(evaluated);
@@ -62,6 +69,8 @@ fn expanded_setup(stage: &Stage, context: &CriteriaContext) -> Option<String> {
 struct PreparedCriterion<'a> {
     criterion: &'a AcceptanceCriterion,
     original_command: &'a str,
+    /// The criterion's command with variables expanded and no setup prefix.
+    expanded_command: String,
     spec: CommandSpec,
     timeout: Duration,
     contract: CriterionContract,
@@ -73,22 +82,25 @@ fn prepare_criterion<'a>(
     context: &CriteriaContext,
     config: &CriteriaConfig,
     confinement: CommandConfinement,
+    zero_test_guard: bool,
 ) -> PreparedCriterion<'a> {
     let original_command = criterion.command();
     let expanded = context.expand(original_command);
     let full_command = setup
         .map(|prefix| format!("{prefix} && {expanded}"))
-        .unwrap_or(expanded);
+        .unwrap_or_else(|| expanded.clone());
     let timeout = if criterion.is_extended() {
         Duration::from_secs(30)
     } else {
         config.command_timeout
     };
     let spec = CommandSpec::shell(full_command);
-    let contract = CriterionContract::new(&spec, criterion, timeout, confinement);
+    let contract = CriterionContract::new(&spec, criterion, timeout, confinement)
+        .with_zero_test_guard(zero_test_guard);
     PreparedCriterion {
         criterion,
         original_command,
+        expanded_command: expanded,
         spec,
         timeout,
         contract,
@@ -116,13 +128,16 @@ fn run_criterion(
             failures: Vec::new(),
         });
     }
-    let verdict = prepared.contract.verdict(&outcome.result);
-    let failures = check_criterion(
+    let command = CriterionCommand {
+        written: prepared.original_command,
+        expanded: &prepared.expanded_command,
+        cwd: working_dir.unwrap_or(Path::new(".")),
+    };
+    let (verdict, failures) = evaluate(
         prepared.criterion,
         &prepared.contract,
         &outcome.result,
-        prepared.original_command,
-        &verdict,
+        &command,
     );
     outcome.result.success = verdict.passed;
     if outcome.result.success {

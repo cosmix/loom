@@ -56,6 +56,7 @@ mod criterion_eval;
 mod executor;
 mod result;
 mod runner;
+mod zero_tests;
 
 #[cfg(test)]
 mod tests;
