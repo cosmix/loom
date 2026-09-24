@@ -3,10 +3,12 @@
 //! Validates OUTCOMES, not just task completion:
 //! - ARTIFACTS: Files that must exist with actual implementation (not stubs)
 //! - WIRING: Critical connections between components (grep patterns)
+//! - REACHABLE: Units the source graph must reach from an entry point (plan v2)
 
 pub mod artifacts;
 pub mod dead_code;
 mod definition_sites;
+pub mod reachable;
 pub mod result;
 pub mod truths;
 pub mod wiring;
@@ -20,8 +22,9 @@ pub use truths::verify_truth_checks;
 pub use wiring::verify_wiring;
 pub use wiring_tests::verify_wiring_tests;
 
+use crate::context::worktree_graph::build_for_worktree;
 use crate::plan::schema::{CommandConfinement, StageDefinition};
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::Path;
 
 /// Run complete goal-backward verification for a stage
@@ -73,5 +76,23 @@ pub fn run_goal_backward_verification(
         )?);
     }
 
+    // 6. Verify reachable units (plan version 2)
+    gaps.extend(reachable_gaps(stage_def, working_dir, plan_version)?);
+
     Ok(GoalBackwardResult::from_gaps(gaps))
+}
+
+/// Run a v2 stage's `reachable` checks against one worktree graph, built once
+/// for all of them. A graph that cannot be built is an error, never a pass.
+fn reachable_gaps(
+    stage_def: &StageDefinition,
+    working_dir: &Path,
+    plan_version: u32,
+) -> Result<Vec<VerificationGap>> {
+    if plan_version != 2 || stage_def.reachable.is_empty() {
+        return Ok(Vec::new());
+    }
+    let graph = build_for_worktree(working_dir)
+        .context("building the worktree source graph for reachable checks")?;
+    Ok(reachable::verify_reachable(&stage_def.reachable, &graph))
 }
