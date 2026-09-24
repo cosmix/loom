@@ -54,7 +54,10 @@ task.
 | `loom-ci-cd` | CI/CD pipelines across GitHub Actions, GitLab, Jenkins |
 | `loom-code-migration` | Safe code migrations, framework upgrades, codemods |
 | `loom-concurrency` | Concurrency/async patterns across Rust, Python, TS, Go |
+| `loom-cpp` | Idiomatic C++: CMake, RAII, C++20/23, sanitizers, CTest |
 | `loom-crossplane` | Crossplane infra-as-code on Kubernetes APIs |
+| `loom-csharp` | Idiomatic C#: dotnet CLI, LINQ, ASP.NET Core, xUnit/NUnit |
+| `loom-dart` | Idiomatic Dart: null safety, isolates, Flutter, package:test |
 | `loom-database-design` | Schema/data model design: relational, NoSQL, warehouse |
 | `loom-data-validation` | Schema validation, input sanitization, output encoding |
 | `loom-data-visualization` | Charts, dashboards, and reports across domains |
@@ -63,6 +66,7 @@ task.
 | `loom-docker` | Dockerfiles, compose, multi-stage builds, hardening |
 | `loom-documentation` | READMEs, architecture docs, changelogs, ADRs |
 | `loom-e2e-testing` | E2E testing with Playwright, Cypress, Selenium |
+| `loom-elixir` | Idiomatic Elixir: OTP, GenServer, Phoenix, Ecto, ExUnit |
 | `loom-error-handling` | Error handling: Result/Option, retries, circuit breakers |
 | `loom-event-driven` | Event-driven: queues, pub/sub, event sourcing, sagas |
 | `loom-feature-flags` | Feature flags: rollouts, A/B tests, kill switches |
@@ -72,24 +76,30 @@ task.
 | `loom-grafana` | Grafana dashboards, panels, LogQL/TraceQL queries |
 | `loom-i18n` | i18n/l10n: translations, locale formatting, RTL |
 | `loom-istio` | Istio service mesh: mTLS, routing, canary, Envoy |
+| `loom-java` | Idiomatic Java: JUnit 5, Gradle/Maven, Spring Boot, records |
 | `loom-karpenter` | Karpenter node autoscaling and cost optimization |
+| `loom-kotlin` | Idiomatic Kotlin: coroutines, null safety, Gradle KTS, Ktor |
 | `loom-kubernetes` | K8s manifests, Helm, RBAC, operators, troubleshooting |
 | `loom-kustomize` | Kustomize overlays, patches, ConfigMap/Secret gen |
 | `loom-logging-observability` | Structured logging, tracing, metrics, alerting |
 | `loom-model-evaluation` | ML model evaluation: metrics, CV, drift monitoring |
 | `loom-performance-testing` | Load/perf testing with k6, locust, JMeter, Gatling |
+| `loom-php` | Idiomatic PHP 8: Composer, Laravel/Symfony, PHPUnit, Pest |
 | `loom-prometheus` | PromQL, scrape configs, alerting/recording rules |
 | `loom-prompt-engineering` | LLM prompt design: system prompts, few-shot, security |
 | `loom-python` | Idiomatic Python: FastAPI, Django, pandas, pytest |
 | `loom-rate-limiting` | Rate limiting: token/leaky bucket, quotas, Redis |
 | `loom-react` | React 19+ SPAs: hooks, Jotai, routing, Bun/Vite/Oxc |
 | `loom-refactoring` | Restructures code without changing behavior |
+| `loom-ruby` | Idiomatic Ruby: Bundler, Rails, RSpec, Minitest |
 | `loom-rust` | Idiomatic Rust: ownership, async/tokio, cargo, serde |
+| `loom-scala` | Idiomatic Scala 3: sbt, ADTs, givens, cats-effect/ZIO |
 | `loom-search` | Full-text search: Elasticsearch, OpenSearch, Meilisearch |
 | `loom-security-audit` | Deep security audits: OWASP, compliance, hardening |
 | `loom-security-scan` | Quick security checks: secrets, deps, containers |
 | `loom-serialization` | Serialization: JSON, YAML, protobuf, schema evolution |
 | `loom-sql-optimization` | SQL query optimization, indexing, EXPLAIN analysis |
+| `loom-swift` | Idiomatic Swift: SwiftPM, async/await, actors, XCTest |
 | `loom-technical-writing` | Technical writing: READMEs, guides, changelogs |
 | `loom-terraform` | Terraform/OpenTofu IaC, modules, state, workspaces |
 | `loom-testing` | Test implementation: unit, integration, e2e, TDD/BDD |
