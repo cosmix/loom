@@ -13,7 +13,6 @@ file src/commands/plan/verify.rs 555
 file src/commands/stage/complete.rs 759
 file src/commands/stage/merge.rs 537
 file src/commands/stage/tests/complete.rs 534
-file src/daemon/server/dispute.rs 510
 file src/fs/permissions/hooks.rs 446
 file src/fs/permissions/settings.rs 422
 file src/fs/safe_fs.rs 1019
@@ -21,8 +20,8 @@ file src/fs/work_dir.rs 433
 file src/fs/work_dir/tests.rs 873
 file src/git/worktree/base.rs 469
 file src/git/worktree/settings.rs 462
-file src/models/stage/methods.rs 690
-file src/models/stage/types.rs 1041
+file src/models/stage/methods.rs 674
+file src/models/stage/types.rs 1012
 file src/orchestrator/core/merge_handler.rs 1303
 file src/orchestrator/core/recovery.rs 1500
 file src/orchestrator/core/stage_executor.rs 597
@@ -34,7 +33,7 @@ file src/orchestrator/signals/tests_cache.rs 630
 file src/orchestrator/terminal/emulator.rs 611
 file src/orchestrator/terminal/native/pid_tracking.rs 452
 file src/orchestrator/terminal/native/window_ops.rs 575
-file src/plan/amendment.rs 1059
+file src/plan/amendment.rs 1031
 file src/plan/parser/extraction.rs 410
 file src/plan/schema/tests/validation_tests.rs 826
 file src/plan/schema/types.rs 457
@@ -47,7 +46,7 @@ file src/sandbox/settings/tests.rs 1596
 file src/skills/index.rs 564
 file src/verify/duplicate_detection.rs 436
 file src/verify/transitions/state.rs 433
-file tests/adjudication_e2e.rs 586
+file tests/adjudication_e2e.rs 585
 file tests/e2e/tmux_backend.rs 588
 file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 412
@@ -99,8 +98,8 @@ function src/completions/dynamic/mod.rs complete_after_subcommand 56
 function src/completions/install.rs install 52
 function src/context/refresh/tests_source_graph/enumeration.rs an_unreadable_file_survives_as_a_reported_lexical_only_entry 62
 function src/daemon/server/broadcast.rs run_status_broadcaster 80
-function src/daemon/server/client.rs handle_client_connection 88
-function src/daemon/server/dispute.rs handle_dispute_criteria 176
+function src/daemon/server/client.rs handle_client_connection 87
+function src/daemon/server/dispute.rs handle_dispute_criteria 91
 function src/daemon/server/lifecycle.rs run_server 133
 function src/daemon/server/lifecycle.rs start 117
 function src/daemon/server/orchestrator.rs run_orchestrator 94
@@ -124,7 +123,7 @@ function src/git/worktree/operations.rs create_worktree 115
 function src/git/worktree/settings.rs create_worktree_settings 115
 function src/git/worktree/tests_settings_env.rs test_worktree_gitignore_actually_hides_loom_runtime_paths 57
 function src/handoff/generator/formatter.rs format_handoff_markdown 112
-function src/models/stage/defaults.rs default 76
+function src/models/stage/defaults.rs default 75
 function src/models/stage/methods.rs from_definition_copies_all_runtime_policy_fields 116
 function src/models/stage/transitions.rs can_transition_to 74
 function src/models/stage/transitions.rs valid_transitions 58
@@ -177,7 +176,7 @@ function src/orchestrator/terminal/native/detection.rs detect_terminal#2 65
 function src/orchestrator/terminal/tmux/tests_discovery.rs live_tmux_sessions_orders_by_created_at_then_id 60
 function src/orchestrator/terminal/tmux/tests_spawn.rs a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt 97
 function src/orchestrator/terminal/tmux/tests_viewer.rs pane_command_neutralises_hostile_session_ids 69
-function src/plan/amendment.rs apply_amendment 258
+function src/plan/amendment.rs apply_amendment 226
 function src/plan/amendment.rs read_audit_rows 59
 function src/plan/amendment.rs verify_plan_versions_consistency 143
 function src/plan/graph/mod.rs build 57
