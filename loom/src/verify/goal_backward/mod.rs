@@ -6,6 +6,7 @@
 
 pub mod artifacts;
 pub mod dead_code;
+mod definition_sites;
 pub mod result;
 pub mod truths;
 pub mod wiring;

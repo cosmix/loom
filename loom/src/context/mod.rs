@@ -83,6 +83,7 @@ pub mod worktree_graph;
 
 pub use config::RetrievalConfig;
 pub use coverage::CoverageReport;
+pub(crate) use lexical::whole_term_ranges;
 pub use rank_source::rank_source;
 pub use resolve::{impact, resolve_graph, ImpactHit, ResolutionStats, SymbolIndex};
 pub use retrieve::{retrieve_for_stage, StageQuery};
