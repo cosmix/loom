@@ -5,6 +5,8 @@ pub mod contracts;
 pub mod criteria;
 pub mod duplicate_detection;
 pub mod goal_backward;
+pub mod impact_tests;
+pub mod integrity;
 pub mod review;
 pub mod transitions;
 pub mod utils;
