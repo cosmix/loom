@@ -261,11 +261,11 @@ pub enum MemoryCommands {
 
     /// Record how a captured memory event was processed
     Resolve {
-        /// ID of the note, decision, question, or change being settled
+        /// ID of the note, decision, question, change, or suggestion being settled
         event_id: String,
 
         /// Processing outcome
-        #[arg(long, value_parser = ["promoted", "merged", "discarded", "deferred"])]
+        #[arg(long, value_parser = ["promoted", "merged", "discarded", "deferred", "implemented"])]
         outcome: String,
 
         /// Knowledge target for a promoted or merged event
@@ -281,7 +281,7 @@ pub enum MemoryCommands {
         stage: Option<String>,
     },
 
-    /// List notes, decisions, and questions that have no receipt
+    /// List notes, decisions, questions, and suggestions that have no receipt
     Pending {
         /// Stage ID to scope pending entries to
         #[arg(short = 'S', long, value_parser = clap_id_validator)]
@@ -295,7 +295,7 @@ pub enum MemoryCommands {
         #[arg(long)]
         strict: bool,
 
-        /// Group pending entries by kind: corrections, mistakes, decisions, other
+        /// Group pending entries by kind: corrections, mistakes, decisions, suggestions, other
         #[arg(long)]
         group: bool,
     },

@@ -60,7 +60,7 @@ fn resolution_details(
             let reason = reason.unwrap_or_else(|| format!("{outcome} into {target}"));
             Ok((Some(target), reason))
         }
-        ReceiptOutcome::Discarded | ReceiptOutcome::Deferred => {
+        ReceiptOutcome::Discarded | ReceiptOutcome::Deferred | ReceiptOutcome::Implemented => {
             let reason = reason
                 .filter(|value| !value.trim().is_empty())
                 .ok_or_else(|| anyhow::anyhow!("--reason is required for outcome {outcome}"))?;

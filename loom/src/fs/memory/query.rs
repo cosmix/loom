@@ -1,5 +1,6 @@
 //! Query and summarization functions for memory journals.
 
+use super::export::push_suggestions_section;
 use super::types::{MemoryEntry, MemoryEntryType, MemoryJournal};
 use crate::utils::truncate_for_display;
 
@@ -39,21 +40,9 @@ pub fn generate_summary(journal: &MemoryJournal, max_entries: usize) -> String {
     summary.push_str("## Summary\n\n");
     summary.push_str("Auto-generated summary at context threshold.\n\n");
 
-    let notes: Vec<_> = journal
-        .entries
-        .iter()
-        .filter(|e| e.entry_type == MemoryEntryType::Note)
-        .collect();
-    let decisions: Vec<_> = journal
-        .entries
-        .iter()
-        .filter(|e| e.entry_type == MemoryEntryType::Decision)
-        .collect();
-    let questions: Vec<_> = journal
-        .entries
-        .iter()
-        .filter(|e| e.entry_type == MemoryEntryType::Question)
-        .collect();
+    let notes = entries_of_type(&journal.entries, MemoryEntryType::Note);
+    let decisions = entries_of_type(&journal.entries, MemoryEntryType::Decision);
+    let questions = entries_of_type(&journal.entries, MemoryEntryType::Question);
 
     summary.push_str(&format!("- **Total entries**: {}\n", journal.entries.len()));
     summary.push_str(&format!("- **Notes**: {}\n", notes.len()));
@@ -84,5 +73,18 @@ pub fn generate_summary(journal: &MemoryJournal, max_entries: usize) -> String {
         summary.push('\n');
     }
 
+    push_suggestions_section(&mut summary, &journal.entries, 200);
+
     summary
+}
+
+/// The entries of one type, in journal order.
+pub(super) fn entries_of_type<'a>(
+    entries: impl IntoIterator<Item = &'a MemoryEntry>,
+    entry_type: MemoryEntryType,
+) -> Vec<&'a MemoryEntry> {
+    entries
+        .into_iter()
+        .filter(|entry| entry.entry_type == entry_type)
+        .collect()
 }
