@@ -54,7 +54,9 @@ pub(super) fn check_missing_brief_paths(
 ///
 /// A plain substring/token scan, not a markdown-link parser: split on
 /// whitespace and common delimiters, trim surrounding punctuation, and keep
-/// tokens that contain the brief-directory prefix.
+/// tokens that contain the brief-directory prefix. Templates such as
+/// `doc/plans/briefs/<plan>/<stage-id>/` name a layout, not a file, and are
+/// skipped.
 pub(crate) fn extract_brief_paths(text: &str) -> Vec<String> {
     const PREFIX: &str = "doc/plans/briefs/";
     let mut paths = Vec::new();
@@ -65,7 +67,7 @@ pub(crate) fn extract_brief_paths(text: &str) -> Vec<String> {
         let trimmed = token.trim_matches(|c: char| matches!(c, '.' | ',' | ':' | '`'));
         if let Some(idx) = trimmed.find(PREFIX) {
             let path = trimmed[idx..].split('#').next().unwrap_or_default();
-            if path.len() > PREFIX.len() {
+            if path.len() > PREFIX.len() && !path.contains(['<', '>']) {
                 paths.push(path.to_string());
             }
         }
@@ -275,6 +277,16 @@ mod tests {
     fn description_without_brief_reference_is_silent() {
         let stages = vec![stage("a", &[], &[], Some("Implement the thing."))];
         assert!(check_missing_brief_paths(&stages, Some(Path::new("/tmp"))).is_empty());
+    }
+
+    #[test]
+    fn placeholder_brief_paths_are_not_references() {
+        let text = "under `doc/plans/briefs/v2/<stage-id>/` and \
+                    (`doc/plans/briefs/v2/fixtures/<adapter>/`, see doc/plans/briefs/v2/NOTES.md)";
+        assert_eq!(
+            extract_brief_paths(text),
+            vec!["doc/plans/briefs/v2/NOTES.md"]
+        );
     }
 
     #[test]
