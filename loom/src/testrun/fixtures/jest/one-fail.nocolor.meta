@@ -1,0 +1,3 @@
+command: CI=1 bunx jest fixture.test.js -t 'beta_fails' --colors=false
+exit: 1
+cwd: .

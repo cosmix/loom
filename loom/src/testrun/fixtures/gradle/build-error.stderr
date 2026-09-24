@@ -1,0 +1,13 @@
+src/test/java/sample/AlphaTest.java:7: error: ';' expected
+        assertTrue(true)
+                        ^
+1 error
+
+FAILURE: Build failed with an exception.
+
+* What went wrong:
+Execution failed for task ':compileTestJava'.
+> Compilation failed; see the compiler error output for details.
+
+BUILD FAILED in 1s
+2 actionable tasks: 2 executed

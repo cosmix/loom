@@ -1,0 +1,3 @@
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.00s
+     Running unittests src/lib.rs (target/debug/deps/fixture_cargo-cfb5aa3b0157cb17)
+     Running tests/integration.rs (target/debug/deps/integration-30c0f7448c24dfd5)

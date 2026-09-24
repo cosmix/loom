@@ -1,6 +1,6 @@
 use crate::commands::{
     attach, clean, config, context, graph, handoff, hook, init, install_assets, knowledge, map,
-    memory, plan, pressure, repair, request, resume, review, run, self_update, sessions,
+    memory, plan, pressure, project, repair, request, resume, review, run, self_update, sessions,
     skill_index, status, stop, subagents, usage, verify, worktree_cmd,
 };
 use crate::completions::{complete_dynamic, generate_completions, CompletionContext, Shell};
@@ -12,7 +12,7 @@ use super::dispatch_admin;
 use super::dispatch_stage;
 use super::types::{
     Commands, ContextCommands, HookCommands, KnowledgeCommands, MemoryCommands, PlanCommands,
-    RequestCommands, SessionsCommands, WorktreeCommands,
+    ProjectCommands, RequestCommands, SessionsCommands, WorktreeCommands,
 };
 
 // `dispatch_stage` reaches these through `super::dispatch::{..}`; re-exporting
@@ -190,6 +190,12 @@ fn dispatch_completions(shell: Option<String>, install: bool, migrate: bool) -> 
     Ok(())
 }
 
+/// `loom complete` dispatch, extracted so the `loom project` arm fits in the
+/// top-level match without growing its ledgered line count.
+fn dispatch_complete(shell: &str, args: &[String]) -> Result<()> {
+    complete_dynamic(&CompletionContext::from_args(shell, args))
+}
+
 /// `loom check` dispatch, extracted so `--no-cache` can toggle the acceptance
 /// pass cache before running verification without growing the already
 /// oversized `dispatch` match arm.
@@ -347,6 +353,9 @@ pub fn dispatch(command: Commands) -> Result<()> {
         Commands::Pressure(args) => pressure::execute(args),
         Commands::Stop => stop::execute(),
         Commands::Plan { command } => dispatch_plan(command),
+        Commands::Project {
+            command: ProjectCommands::Detect { path, json },
+        } => project::execute(path, json),
         Commands::Check {
             stage_id,
             suggest,
@@ -360,9 +369,6 @@ pub fn dispatch(command: Commands) -> Result<()> {
         } => dispatch_completions(shell, install, migrate),
         Commands::Context { command } => dispatch_context(command),
         Commands::Hook { command } => dispatch_hook(command),
-        Commands::Complete { shell, args } => {
-            let ctx = CompletionContext::from_args(&shell, &args);
-            complete_dynamic(&ctx)
-        }
+        Commands::Complete { shell, args } => dispatch_complete(&shell, &args),
     }
 }

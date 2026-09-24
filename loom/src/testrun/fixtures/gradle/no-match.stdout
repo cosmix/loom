@@ -1,0 +1,3 @@
+> Task :compileJava
+> Task :compileTestJava
+> Task :test FAILED

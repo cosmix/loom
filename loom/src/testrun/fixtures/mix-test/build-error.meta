@@ -1,0 +1,3 @@
+command: mix test test/broken_test.exs
+exit: 1
+cwd: .

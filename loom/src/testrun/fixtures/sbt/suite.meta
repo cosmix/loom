@@ -1,0 +1,3 @@
+command: sbt test
+exit: 1
+cwd: .

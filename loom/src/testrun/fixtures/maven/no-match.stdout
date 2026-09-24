@@ -1,0 +1,3 @@
+[INFO] --- surefire:test (default-test) @ fixture-maven ---
+[INFO] BUILD FAILURE
+[ERROR] No tests matching pattern "MissingTest#absent" were executed! (Set -Dsurefire.failIfNoSpecifiedTests=false to ignore this error.)

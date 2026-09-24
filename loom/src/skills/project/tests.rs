@@ -97,15 +97,19 @@ fn plain_javascript_is_not_misclassified_as_typescript() {
     write(repo.path(), "bun.lock", "{}");
     assert_eq!(
         kinds(&ProjectProfile::discover(repo.path()).types),
-        BTreeSet::from(["react"])
+        BTreeSet::from(["javascript", "react"])
     );
 }
 
 #[test]
 fn discovery_refreshes_after_manifest_changes_and_tolerates_bad_json() {
     let repo = TempDir::new().unwrap();
+    // An unparseable manifest still marks a package, but yields no dependency kinds.
     write(repo.path(), "package.json", "{ invalid }");
-    assert!(ProjectProfile::discover(repo.path()).types.is_empty());
+    assert_eq!(
+        kinds(&ProjectProfile::discover(repo.path()).types),
+        BTreeSet::from(["javascript"])
+    );
     write(
         repo.path(),
         "package.json",
@@ -113,7 +117,7 @@ fn discovery_refreshes_after_manifest_changes_and_tolerates_bad_json() {
     );
     assert_eq!(
         kinds(&ProjectProfile::discover(repo.path()).types),
-        BTreeSet::from(["react"])
+        BTreeSet::from(["javascript", "react"])
     );
 }
 
@@ -162,14 +166,17 @@ fn depth_limit_is_visible_in_the_profile() {
 }
 
 #[test]
-fn unsupported_child_package_does_not_inherit_parent_workspace_language() {
+fn child_package_does_not_inherit_parent_workspace_language() {
     let repo = TempDir::new().unwrap();
     fs::create_dir(repo.path().join(".git")).unwrap();
     fs::write(repo.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
     write(repo.path(), "Cargo.toml", "[workspace]");
     write(repo.path(), "tools/package.json", r#"{"name":"plain-js"}"#);
     let profile = ProjectProfile::discover(repo.path());
-    assert!(profile.for_files(&["tools/index.js".into()]).is_empty());
+    assert_eq!(
+        kinds(&profile.for_files(&["tools/index.js".into()])),
+        BTreeSet::from(["javascript"])
+    );
 }
 
 #[test]

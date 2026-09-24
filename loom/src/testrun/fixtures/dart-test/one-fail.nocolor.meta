@@ -1,0 +1,3 @@
+command: dart test test/fixture_test.dart --plain-name 'beta_fails' --no-color
+exit: 1
+cwd: .

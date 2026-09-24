@@ -1,0 +1,3 @@
+command: bundle exec rspec spec/widget_spec.rb -e 'Widget rejects an invalid value'
+exit: 1
+cwd: .

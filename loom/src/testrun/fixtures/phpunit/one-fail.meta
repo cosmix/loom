@@ -1,0 +1,3 @@
+command: vendor/bin/phpunit --filter 'testBetaFails' tests/ExampleTest.php
+exit: 1
+cwd: .

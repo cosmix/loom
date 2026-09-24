@@ -1,0 +1,3 @@
+command: bundle exec rspec spec/widget_spec.rb -e 'Widget returns a value'
+exit: 0
+cwd: .

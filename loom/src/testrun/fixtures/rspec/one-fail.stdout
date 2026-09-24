@@ -1,0 +1,19 @@
+F
+
+Failures:
+
+  1) Widget rejects an invalid value
+     Failure/Error: expect(1).to eq(2)
+
+       expected: 2
+            got: 1
+
+       (compared using ==)
+     # ./spec/widget_spec.rb:12:in `block (2 levels) in <top (required)>'
+
+Finished in 0.00125 seconds (files took 0.08291 seconds to load)
+1 example, 1 failure
+
+Failed examples:
+
+rspec ./spec/widget_spec.rb:12 # Widget rejects an invalid value

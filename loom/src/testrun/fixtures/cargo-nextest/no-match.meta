@@ -1,0 +1,3 @@
+command: cargo nextest run -E 'test(=tests::missing)'
+exit: 4
+cwd: .

@@ -1,0 +1,24 @@
+test/fixture_test.dart:7:32: Error: Expected ';' after this.
+    expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                               ^
+test/fixture_test.dart:7:43: Error: 'a' isn't a type.
+    expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                          ^
+test/fixture_test.dart:7:35: Error: Expected identifier, but got 'this'.
+    expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                  ^^^^
+test/fixture_test.dart:7:43: Error: Expected ';' after this.
+    expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                          ^
+test/fixture_test.dart:7:45: Error: 'deliberate' isn't a type.
+    expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                            ^^^^^^^^^^
+test/fixture_test.dart:7:56: Error: Expected ';' after this.
+    expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                                       ^^^^^^
+test/fixture_test.dart:7:63: Error: Expected ';' after this.
+    expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                                              ^^^^^
+test/fixture_test.dart:7:63: Error: Undefined name 'error'.
+    expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                                              ^^^^^

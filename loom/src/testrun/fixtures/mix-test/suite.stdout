@@ -1,0 +1,15 @@
+Running ExUnit with seed: 193745, max_cases: 16
+
+.F.
+
+  1) test alpha fails (AlphaTest)
+     test/alpha_test.exs:10
+     Assertion with == failed
+     code:  assert 1 == 2
+     left:  1
+     right: 2
+     stacktrace:
+       test/alpha_test.exs:11: (test)
+
+Finished in 0.03 seconds (0.00s async, 0.03s sync)
+3 tests, 1 failure

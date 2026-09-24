@@ -1,0 +1,3 @@
+command: python3 -m pytest 'test_fixture.py::test_delta_missing' -q --color=no
+exit: 4
+cwd: .

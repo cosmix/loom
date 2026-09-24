@@ -28,6 +28,7 @@ pub mod sandbox;
 pub mod skills;
 pub mod subagent_lifecycle;
 pub mod telemetry;
+pub mod testrun;
 pub mod update_check;
 pub mod user_config;
 pub mod utils;

@@ -1,0 +1,6 @@
+   Compiling fixture v0.1.0 (/tmp/fixture)
+    Finished `test` profile [unoptimized + debuginfo] target(s) in 0.32s
+    Starting 1 test across 1 binary (2 tests skipped)
+        PASS [   0.012s] fixture tests::alpha_passes
+────────────
+     Summary [   0.012s] 1 test run: 1 passed, 0 failed, 2 skipped

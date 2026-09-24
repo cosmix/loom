@@ -1,0 +1,14 @@
+Building for debugging...
+Build complete! (0.34s)
+Test Suite 'All tests' started at 2026-09-24 12:01:00.000
+Test Suite 'ModuleTests.xctest' started at 2026-09-24 12:01:00.000
+Test Suite 'ModuleTests.FooTests' started at 2026-09-24 12:01:00.000
+Test Case 'ModuleTests.FooTests.testFails' started.
+Tests/FooTests.swift:18: error: ModuleTests.FooTests.testFails : XCTAssertEqual failed: ("1") is not equal to ("2")
+Test Case 'ModuleTests.FooTests.testFails' failed (0.001 seconds).
+Test Suite 'ModuleTests.FooTests' failed at 2026-09-24 12:01:00.001
+	Executed 1 test, with 1 failure (0 unexpected) in 0.001 seconds
+Test Suite 'ModuleTests.xctest' failed at 2026-09-24 12:01:00.001
+	Executed 1 test, with 1 failure (0 unexpected) in 0.001 seconds
+Test Suite 'All tests' failed at 2026-09-24 12:01:00.001
+	Executed 1 test, with 1 failure (0 unexpected) in 0.001 seconds

@@ -15,6 +15,10 @@ pub use super::types_stage::{OutputCommands, StageCommands};
 mod status_web;
 use status_web::StatusWebArgs;
 
+#[path = "types_project.rs"]
+mod project;
+pub use project::ProjectCommands;
+
 #[derive(Parser)]
 #[command(name = "loom")]
 #[command(about = "Agent orchestration CLI", long_about = None)]
@@ -258,6 +262,12 @@ pub enum Commands {
     Plan {
         #[command(subcommand)]
         command: PlanCommands,
+    },
+
+    /// Inspect the checkout: packages, test runners and language skills
+    Project {
+        #[command(subcommand)]
+        command: ProjectCommands,
     },
 
     /// Run goal-backward verification for a stage

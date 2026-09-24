@@ -1,0 +1,3 @@
+command: /usr/bin/ctest --test-dir build -R '^beta_fails$' --output-on-failure
+exit: 8
+cwd: .

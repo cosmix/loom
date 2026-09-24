@@ -1,0 +1,3 @@
+command: cargo nextest run -E 'test(=tests::alpha_passes)'
+exit: 0
+cwd: .

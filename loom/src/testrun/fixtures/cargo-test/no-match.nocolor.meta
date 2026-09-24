@@ -1,0 +1,3 @@
+command: cargo test tests::delta_missing --color=never -- --exact --color=never
+exit: 0
+cwd: .

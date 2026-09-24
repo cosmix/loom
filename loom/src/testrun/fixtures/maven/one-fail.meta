@@ -1,0 +1,3 @@
+command: mvn test -Dtest=AlphaTest#fails
+exit: 1
+cwd: .

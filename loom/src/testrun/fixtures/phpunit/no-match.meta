@@ -1,0 +1,3 @@
+command: vendor/bin/phpunit --filter 'testMissing' tests/ExampleTest.php
+exit: 1
+cwd: .

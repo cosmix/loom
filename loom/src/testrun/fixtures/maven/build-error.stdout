@@ -1,0 +1,9 @@
+[INFO] --- compiler:testCompile (default-testCompile) @ fixture-maven ---
+[INFO] Compiling 1 source file to target/test-classes
+[INFO] -------------------------------------------------------------
+[ERROR] COMPILATION ERROR :
+[INFO] -------------------------------------------------------------
+[ERROR] /project/src/test/java/example/AlphaTest.java:[12,18] ';' expected
+[INFO] 1 error
+[INFO] -------------------------------------------------------------
+[INFO] BUILD FAILURE

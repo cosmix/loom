@@ -1,0 +1,3 @@
+command: vendor/bin/pest --filter 'alpha passes' tests/Unit/ExampleTest.php
+exit: 0
+cwd: .

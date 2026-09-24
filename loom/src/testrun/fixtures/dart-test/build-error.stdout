@@ -1,0 +1,29 @@
+00:00 [32m+0[0m: [1m[90mloading test/fixture_test.dart[0m[0m                                                                                                                                                               00:00 [32m+0[0m[31m -1[0m: [1m[90mloading test/fixture_test.dart[0m [1m[31m[E][0m[0m                                                                                                                                                        
+  [31mFailed to load "test/fixture_test.dart":[0m
+  test/fixture_test.dart:7:32: Error: Expected ';' after this.
+      expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                 ^
+  test/fixture_test.dart:7:43: Error: 'a' isn't a type.
+      expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                            ^
+  test/fixture_test.dart:7:35: Error: Expected identifier, but got 'this'.
+      expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                    ^^^^
+  test/fixture_test.dart:7:43: Error: Expected ';' after this.
+      expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                            ^
+  test/fixture_test.dart:7:45: Error: 'deliberate' isn't a type.
+      expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                              ^^^^^^^^^^
+  test/fixture_test.dart:7:56: Error: Expected ';' after this.
+      expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                                         ^^^^^^
+  test/fixture_test.dart:7:63: Error: Expected ';' after this.
+      expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                                                ^^^^^
+  test/fixture_test.dart:7:63: Error: Undefined name 'error'.
+      expect(add(2, 2), equals(4))  this is a deliberate syntax error
+                                                                ^^^^^
+
+[1m[36mTo run this test again:[0m /home/dkaponis/dev/flutter/bin/cache/dart-sdk/bin/dart test test/fixture_test.dart -p vm --plain-name 'loading test/fixture_test.dart'
+00:00 [32m+0[0m[31m -1[0m: [31mSome tests failed.[0m                                                                                                                                                                        

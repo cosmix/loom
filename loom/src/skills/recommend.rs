@@ -4,7 +4,7 @@ use std::path::Path;
 
 use crate::language::DetectedLanguage;
 
-use super::project::ProjectProfile;
+use super::project::{self, ProjectProfile};
 use super::{SkillIndex, SkillMatch, SkillMetadata};
 
 pub const MAX_RECOMMENDATIONS: usize = 8;
@@ -61,6 +61,7 @@ fn promote(matches: &mut Vec<SkillMatch>, metadata: &SkillMetadata, marker: Stri
 }
 
 fn resolve_skill<'a>(index: &'a SkillIndex, base: &str) -> Option<&'a SkillMetadata> {
+    let base = project::skill_base(base);
     index
         .get_by_name(&format!("loom-{base}"))
         .or_else(|| index.get_by_name(base))

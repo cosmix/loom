@@ -17,7 +17,7 @@ pub(super) mod acceptance_command;
 pub(crate) mod base_tree;
 pub(super) mod criterion_hazards;
 mod search_args;
-mod shell_lex;
+pub(crate) mod shell_lex;
 use criterion_hazards::criterion_needs_ungrantable_resource;
 
 /// Reject commands listed in `excluded_commands`: command-prefix exclusions run

@@ -1,0 +1,23 @@
+
+
+  1) beta_fails
+
+  0 passing (3ms)
+  1 failing
+
+  1) beta_fails:
+
+      AssertionError [ERR_ASSERTION]: deliberate failure
+
+4 !== 5
+
+      + expected - actual
+
+      -4
+      +5
+      
+      at Context.<anonymous> (fixture.test.js:12:10)
+      at process.processImmediate (node:internal/timers:485:21)
+
+
+

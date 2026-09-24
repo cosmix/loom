@@ -1,0 +1,8 @@
+> Task :compileJava
+> Task :compileTestJava
+> Task :test FAILED
+
+AlphaTest > fails() FAILED
+    java.lang.AssertionError: expected true but was false
+
+1 test completed, 1 failed

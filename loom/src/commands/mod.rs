@@ -13,6 +13,7 @@ pub mod map;
 pub mod memory;
 pub mod plan;
 pub mod pressure;
+pub mod project;
 pub mod repair;
 pub mod request;
 pub mod resume;

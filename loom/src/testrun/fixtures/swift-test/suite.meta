@@ -1,0 +1,3 @@
+command: swift test
+exit: 1
+cwd: .
