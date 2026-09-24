@@ -21,6 +21,7 @@ pub mod merge_verify;
 mod output;
 mod progressive_complete;
 pub(crate) mod recover;
+mod review_status;
 pub(crate) mod session;
 mod skip_retry;
 mod state;
@@ -41,5 +42,6 @@ pub use merge::merge;
 pub use output::{
     get as output_get, list as output_list, remove as output_remove, set as output_set,
 };
+pub use review_status::review_status;
 pub use skip_retry::{retry, skip};
 pub use state::{block, hold, release, reset, resume_from_waiting, waiting};

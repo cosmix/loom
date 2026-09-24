@@ -35,11 +35,11 @@ pub(super) fn timestamp(entry: &Value) -> Option<DateTime<Utc>> {
         .map(|value| value.with_timezone(&Utc))
 }
 
-pub(super) fn is_assistant(entry: &Value) -> bool {
+pub(crate) fn is_assistant(entry: &Value) -> bool {
     entry_type(entry) == Some("assistant")
 }
 
-pub(super) fn text_blocks(entry: &Value) -> Vec<&str> {
+pub(crate) fn text_blocks(entry: &Value) -> Vec<&str> {
     message_content_blocks(entry)
         .into_iter()
         .filter(|block| block_type(block) == Some("text"))

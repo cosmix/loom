@@ -99,7 +99,8 @@ pub(super) fn plain_absolute(path: &Path) -> Result<PathBuf, ClaudeEvidenceError
     Ok(canonical)
 }
 
-fn reject_symlink_components(path: &Path) -> Result<(), ClaudeEvidenceError> {
+/// Fail on the first component of `path` that is a symlink.
+pub(crate) fn reject_symlink_components(path: &Path) -> Result<(), ClaudeEvidenceError> {
     let mut current = PathBuf::new();
     for component in path.components() {
         current.push(component.as_os_str());

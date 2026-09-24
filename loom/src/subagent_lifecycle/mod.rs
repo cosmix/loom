@@ -87,6 +87,8 @@ pub use model::{
     LifecycleRecord, LifecycleState, WorkerIdentity, WorkerOutcome, LIFECYCLE_VERSION,
 };
 pub use store::{replay, AppendOutcome, LifecycleIndex};
+// `commands::hook::review_harvest` checks a transcript path the same way.
+pub(crate) use claude_files::reject_symlink_components;
 
 #[cfg(test)]
 mod tests;

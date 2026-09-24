@@ -64,6 +64,8 @@ mod entry;
 pub(super) mod forward;
 pub(super) mod lifecycle;
 
+pub(crate) use entry::{is_assistant, text_blocks};
+
 pub(super) fn is_done_entry(entry: &Value) -> bool {
     entry::classify_last(entry) == SubagentState::Done
 }
