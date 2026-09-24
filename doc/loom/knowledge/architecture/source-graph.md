@@ -2,7 +2,7 @@
 sources:
 - loom/src/context/refresh/source_graph.rs
 - loom/src/context/graph_store/mod.rs
-verified: e0baec38ddf35df499ac7eca828baed878ac671e
+verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Source Graph
 
@@ -315,15 +315,18 @@ worktree directory.
 ## Stage Worktree Cache Is Read-Only — `ensure_snapshot` Needs a Host-Published Base (2026-09-10)
 
 Inside a sandboxed stage worktree the shared context cache (`<main>/.loom/cache/context-v1`)
-is read-only to the stage session. If the host has not yet published a base for the
-worktree's `HEAD` — e.g. a commit made directly in the main checkout with the daemon
-stopped, no merge lifecycle run — `ensure_snapshot` cannot create one: `loom map` used to
-fail outright with `Failed to write source graph ... Read-only file system` before this path
-was made to degrade to `SnapshotAction::Unavailable` instead. Consequence: a stage agent's
-`loom map`/`loom knowledge context` only answers fully when the host has already published a
-base for the exact `HEAD` the stage worktree carries; otherwise both degrade to an
-in-memory, base-less catalog (the same "DEGRADED: source graph base ... missing" state a
-Knowledge Brief can show at stage start).
+is read-only to the stage session. Earlier this made `ensure_snapshot` degrade the whole
+snapshot to `SnapshotAction::Unavailable` on a denied write; that is no longer true.
+`GraphStore::fall_back_to_memory` (`loom/src/context/graph_store/fallback.rs`, since
+`8d39ddcc`) treats a permission-denied or read-only-filesystem write as this call's success:
+the freshly built layer is kept in `GraphStore.memory_fallback` for the rest of the process,
+and `GraphStore::read_layer_or_memory` prefers it over disk. `publish_base` and
+`write_overlay` (`graph_store/mod.rs`) route their write failures through it, so
+`reconcile_with_working_tree` still returns a normal `Built`/`Reused` outcome — a stage
+session's `loom map`/`loom knowledge context` answer with the full graph even when the host
+never published a base for the worktree's `HEAD`, just without persisting it to disk; the
+next process starts over. Only a genuine bug (malformed path, serialization failure) still
+propagates and produces the "DEGRADED: source graph base ... missing" state.
 
 A from-scratch base build of this repo (1681 files parsed; 15063 nodes, 72540 edges as of
 2026-09-10) took ~35s — comfortably over the 15s `GIT_READ_TIMEOUT` for a single git call, but

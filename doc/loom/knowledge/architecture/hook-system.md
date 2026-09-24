@@ -1,3 +1,6 @@
+---
+verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
+---
 # Hook System
 
 > Hook embedding, SessionStart contract, enforcement
@@ -10,26 +13,10 @@ The `loom/src/hooks/` module provides Claude Code hooks integration for session 
 
 **Global vs session hooks distinction:**
 
-- **Global hooks** include commit filtering, Git-add protection, Bash isolation, the canonical five-tool file guard, plan-path protection, `prefer-modern-tools.sh`, and the forwarding guard. They are installed under `~/.claude/hooks/loom/` and registered by `fs/permissions/hooks.rs`, so they persist across sessions. `prefer-modern-tools.sh` lives here as a global `PreToolUse:Bash` hook (`fs/permissions/hooks/config.rs:25`) — there is no `PreferModernTools` `HookEvent` variant (deleted); it never was one of the session hooks below.
-- **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh, subagent-start.sh, subagent-stop.sh, teammate-idle.sh): generated fresh per-session by `loom/src/hooks/generator.rs:generate_hooks_settings()` from the **8** `HookEvent`s that `HooksConfig::to_settings_hooks()` (`loom/src/hooks/config.rs:183`) emits, derived by iterating `HookEvent::all()` rather than eight hand-written blocks. Merged into worktree's `settings.local.json` with duplicate detection. `TeammateIdle` (`teammate-idle.sh`) was added for agent-team teammates, which never fire `SubagentStop`; it writes nonterminal idle evidence through the same shared lifecycle-journal/heartbeat helpers (`loom-hooks/_lifecycle.sh`) that `subagent-stop.sh` uses.
+- **Global hooks** include commit filtering, Git-add protection, Bash isolation, the canonical five-tool file guard, plan-path protection, `prefer-modern-tools.sh`, and the forwarding guard. They are installed under `~/.claude/hooks/loom/` and registered by `fs/permissions/hooks.rs`, so they persist across sessions. `prefer-modern-tools.sh` lives here as a global `PreToolUse:Bash` hook (`fs/permissions/hooks/config.rs`) — there is no `PreferModernTools` `HookEvent` variant (deleted); it never was one of the session hooks below.
+- **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh, subagent-start.sh, subagent-stop.sh, teammate-idle.sh): generated fresh per-session by `loom/src/hooks/generator.rs:generate_hooks_settings()` from the **8** `HookEvent`s that `HooksConfig::to_settings_hooks()` (`loom/src/hooks/config.rs`) emits, derived by iterating `HookEvent::all()` rather than eight hand-written blocks. Merged into worktree's `settings.local.json` with duplicate detection. `TeammateIdle` (`teammate-idle.sh`) was added for agent-team teammates, which never fire `SubagentStop`; it writes nonterminal idle evidence through the same shared lifecycle-journal/heartbeat helpers (`loom-hooks/_lifecycle.sh`) that `subagent-stop.sh` uses.
 
-`LOOM_HOOKS` (the full inventory: session hooks, global `PreToolUse` guards, compatibility bridges, and sourced-library hooks like `_common.sh`/`_read_discipline.sh`/`_read_ledger.sh`/`_lifecycle.sh`) is 33 rows; Claude's global `PreToolUse` registration alone is 47 entries, including `spawn-guard.sh` (Task+Agent), `read-guard.sh` (Read), and `poll-guard.sh` (Bash). Installers iterate `LOOM_HOOKS`; trigger configuration and tests remain separate registration surfaces — see [Registration Sites for a New Hook](../entry-points/hooks.md).
-
-### Codex-native subset
-
-`install_codex_hooks_to` installs the same embedded asset inventory under
-`~/.codex/hooks/loom/` and non-destructively merges Loom-owned rules into
-`~/.codex/hooks.json`. User rules and top-level metadata survive; malformed JSON is refused rather
-than replaced. Codex registers `SessionStart:knowledge-orient`,
-`UserPromptSubmit:user-prompt-context`, the Bash-compatible guards, and an `apply_patch` bridge.
-The bridge presents each patch target to the canonical file guards as a synthetic `Write` or
-`Edit`, then records successful patch paths with `loom context record-edit` so the stage source
-overlay can be reconciled on the next prompt.
-
-The stage lifecycle hooks are intentionally absent from the Codex-global config. A Codex worker
-forwarded from a Loom stage inherits the parent `LOOM_*` variables; registering `session-start`,
-`pre-compact`, or `session-end` there would let the worker claim, hand off, or end its parent's
-session. Codex requires explicit trust for changed non-managed hooks, surfaced through `/hooks`.
+`LOOM_HOOKS` (the full inventory: session hooks, global `PreToolUse` guards, compatibility bridges, and sourced libraries `_common.sh`/`_lifecycle.sh`/`_codex_forward.sh`/`_read_discipline.sh`/`_read_ledger.sh`/`_progress-classification.sh`/`_post-tool-heartbeat.sh`/`_subagent-preamble.txt`) is 42 rows. Earlier text said 33; the array in `fs/permissions/constants.rs` has since gained four sourced libraries plus `loom-control-complete.sh`, `loom-relay.sh`, `codex-forward-result.sh` and `teammate-idle.sh`. Claude's global `PreToolUse` registration alone is 47 entries, including `spawn-guard.sh` (Task+Agent), `read-guard.sh` (Read), and `poll-guard.sh` (Bash). Installers iterate `LOOM_HOOKS`; trigger configuration and tests remain separate registration surfaces — see [Registration Sites for a New Hook](../entry-points/hooks.md).
 
 ## Hook System — Session-Start Behavior and hookSpecificOutput Pattern
 
@@ -223,37 +210,36 @@ Set by the wrapper script before `exec claude` (`orchestrator/terminal/native/wr
 
 ### Hook Embedding (constants.rs)
 
-`LOOM_HOOKS` (`fs/permissions/constants.rs`) holds **33 entries**, each embedded via
+`LOOM_HOOKS` (`fs/permissions/constants.rs`) holds **42 entries** (earlier text said 33), each embedded via
 `include_str!()` at compile time. `install_loom_hooks()` writes them to
 `~/.claude/hooks/loom/` with mode 0o755. Hooks are NOT read from disk by loom at
 runtime.
 
-**Do not read "33 entries" as "33 hooks."** The arithmetic, verified against
-`fd -t f -e sh . hooks --max-depth 1 | wc -l`,
-`rg -c '^    ("' loom/src/fs/permissions/constants.rs`, and the script names in
+**Do not read "42 entries" as "42 hooks."** The arithmetic, verified against
+`fd . loom-hooks --max-depth 1 -t f | wc -l`, the `LOOM_HOOKS` array in
+`loom/src/fs/permissions/constants.rs`, and the script names in
 `fs/permissions/hooks/config.rs`:
 
 ```text
-34 top-level scripts in loom-hooks/
+43 top-level files in loom-hooks/    (earlier text said 34)
  −1  git-pre-commit-hook.sh    (excluded from LOOM_HOOKS; appended to .git/hooks/pre-commit by loom init)
  ───
- 33  LOOM_HOOKS entries installed to ~/.claude/hooks/loom/
- −3  _common.sh, _read_discipline.sh, _read_ledger.sh   (sourced libraries, not registered hooks)
+ 42  LOOM_HOOKS entries installed to ~/.claude/hooks/loom/    (earlier text said 33)
+ −8  _common.sh, _lifecycle.sh, _codex_forward.sh, _read_discipline.sh, _read_ledger.sh,
+     _progress-classification.sh, _post-tool-heartbeat.sh, _subagent-preamble.txt
+     (sourced libraries, not registered hooks — earlier text listed only 3)
  −1  codex-forward.sh          (wrapper the codex forwarding lane invokes directly)
  −1  codex-apply-patch.sh      (Codex apply_patch bridge, registered only by codex_hooks.rs)
  ───
- 28  Claude Code hooks: 21 global, registered in fs/permissions/hooks/config.rs,
-                        + 7 session hooks emitted from HookEvent
+ 32  Claude Code hooks: 24 global, registered in fs/permissions/hooks/config.rs,
+                        + 8 session hooks emitted from HookEvent   (earlier text said 21 + 7)
 ```
 
-An earlier version of this section counted 32 entries and 33 scripts, and put all
-28 Claude Code hooks in `fs/permissions/hooks/config.rs`.
-
-One of the 21 global hooks is `knowledge-orient.sh`, the only hook registered
+One of the global hooks is `knowledge-orient.sh`, the only hook registered
 **globally** on `SessionStart` (`fs/permissions/hooks/config.rs`) rather than
 per-session — it points a fresh non-stage session at `doc/loom/knowledge/INDEX.md`.
 It exits silently inside a stage, on `compact`/`resume`, and when no `INDEX.md`
 exists inside the git root.
 
 Re-derive these with the commands above rather than trusting the numbers here —
-they have gone stale before.
+they have gone stale three times.

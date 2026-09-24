@@ -1,3 +1,6 @@
+---
+verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
+---
 # Sandbox State Channels
 
 > Sandboxed callers vs .loom/work state: memory, handoff, socket
@@ -90,10 +93,14 @@ real one. More generally: after removing a sandbox escape (here, the 2026-08-08
 complete` was given a broker, `loom memory` was not, and nothing failed loudly enough to
 notice.
 
-**Fix:** spool + drain. The sandboxed CLI appends to `<worktree>/.loom/memory-spool.jsonl`
-(inside the worktree, no new grant needed) and the daemon drains it. Attribution is by
-worktree location, not by any claim in the payload. See
-[architecture/memory-spool.md](../architecture/memory-spool.md).
+**Fix:** spool + drain, at the time. The sandboxed CLI appended to
+`<worktree>/.loom/memory-spool.jsonl` (inside the worktree, no new grant needed) and the daemon
+drained it, attributing by worktree location rather than any claim in the payload. That still
+holds for a `RelayMode::Legacy` session (no `LOOM_SCRATCH_DIR`), but the session-inbox relay
+(`relay/emit.rs`) has since become the default: `loom memory note` writes a ticket the daemon's
+inbox drain applies, never touching `.loom/work` from inside the sandbox, so this EROFS failure
+no longer reproduces on a current session. See
+[architecture/memory-spool.md](../architecture/memory-spool.md) for both paths.
 
 **Found alongside:** `validate_stage_id` rejects path separators but not a sibling stage's
 id, so `loom memory note --stage <other>` could write another stage's journal — and journals

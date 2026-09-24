@@ -1,4 +1,5 @@
 ---
+verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Stage Lifecycle And Verification
 
@@ -48,14 +49,25 @@ When adding new fields to StageDefinition: (1) plan/schema/types.rs, (2) models/
 
 ## NeedsHumanReview Orchestrator Handling Pattern
 
-For new `NeedsAdjudication` state, mirror the existing `NeedsHumanReview` pattern:
+Where the orchestrator handles `NeedsHumanReview`, and how `NeedsAdjudication` differs at each site.
+Earlier text framed this as a template ("add parallel handling for `NeedsAdjudication`") with line
+numbers that have since drifted; adjudication shipped, but it does NOT mirror human review at every
+site:
 
-1. `orchestrator/monitor/detection.rs:87-92` — emit `MonitorEvent::StageNeedsHumanReview` on transition detection
-2. `orchestrator/core/event_handler.rs:142-158` — print banner + notify
-3. `orchestrator/core/recovery.rs:814` — `StageStatus::NeedsHumanReview => continue` (skip auto-retry)
-4. `orchestrator/core/recovery.rs:515-526` — sync status to in-memory graph
+1. `orchestrator/monitor/detection.rs` — a transition to `NeedsHumanReview` pushes
+   `MonitorEvent::StageNeedsHumanReview`. `NeedsAdjudication` has no monitor event; the daemon's
+   adjudication path observes it directly (see `architecture/adjudication-lifecycle.md`).
+2. `orchestrator/core/event_handler.rs` — `MonitorEvent::StageNeedsHumanReview` prints the banner via
+   `announce_needs_human_review`.
+3. `orchestrator/core/recovery.rs::stage_file_is_terminal` — `NeedsHumanReview` is terminal;
+   `NeedsAdjudication` is never terminal, because the daemon must stay alive to spawn and watch the
+   adjudicator judge. No literal `NeedsHumanReview => continue` retry-skip arm exists; retry
+   eligibility comes from this function plus `should_auto_retry` on the failure type.
+4. `orchestrator/core/recovery.rs` (stage-file to in-memory graph sync) — each status has its own
+   `self.graph.mark_status(...)` arm; both count as `blocked` in the status tally.
 
-Add parallel handling for `NeedsAdjudication` that fires the worker thread instead of continuing.
+Adjudication liveness and respawn (attempt budget, session detection) live in
+`orchestrator/adjudication/`.
 
 ## Session Identity: Setter + Clearer Must Travel Together
 

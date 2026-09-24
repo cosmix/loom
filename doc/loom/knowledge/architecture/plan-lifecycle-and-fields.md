@@ -1,4 +1,5 @@
 ---
+verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Plan Lifecycle And Fields
 
@@ -40,30 +41,35 @@ Note: truths.rs module and verify_truth_checks() are retained for before_stage/a
 
 ## before_stage / after_stage / code_review Schema Fields — Execution Status
 
-**Status as of 2026-06-15 (verified against stage_executor.rs:219-256, plan/schema/types.rs:261, and orchestrator/signals/generate.rs):**
+**Status as of 2026-09-24 (verified against `stage_executor.rs::before_stage_gate_passed`,
+`models/stage/methods.rs::from_definition`, and `commands/stage/complete_verification.rs`).
+Earlier text cited `plan_setup.rs:280-281` for field storage and `complete.rs:847-866` for
+after-stage execution; both are stale -- `plan_setup.rs` no longer sets these fields, and
+`complete.rs` after-stage logic moved to a dedicated file.**
 
 | Field          | Schema Type                | Stored on Stage            | Executed   | Where                                             |
 | -------------- | --------------------------- | --------------------------- | ---------- | -------------------------------------------------- |
-| `before_stage` | `Vec<TruthCheck>`          | Yes (plan_setup.rs:280) | Yes     | stage_executor.rs:220-256 (pre-spawn)             |
-| `after_stage`  | `Vec<TruthCheck>`          | Yes (plan_setup.rs:281) | Yes     | commands/stage/complete.rs:847-866                |
-| `code_review`  | `Option<CodeReviewConfig>` | Yes                     | Signal  | signals/generate.rs renders it for IV signals     |
+| `before_stage` | `Vec<TruthCheck>`          | Yes (`models/stage/methods.rs::from_definition`) | Yes     | `orchestrator/core/stage_executor.rs::before_stage_gate_passed` (called pre-spawn) |
+| `after_stage`  | `Vec<TruthCheck>`          | Yes (`models/stage/methods.rs::from_definition`) | Yes     | `commands/stage/complete_verification.rs` (calls `verify::before_after::run_after_stage_checks`) |
+| `code_review`  | `Option<CodeReviewConfig>` | Yes (`models/stage/methods.rs::from_definition`) | Signal  | `orchestrator/signals/generate.rs` renders it for IV signals     |
 
 **`before_stage` execution (`stage_executor.rs::before_stage_gate_passed`):**
 
 - Runs after worktree creation, BEFORE session spawn
-- **Gated on a pristine workspace.** `verify::before_after::find_prior_stage_work(stage_branch, base_branch, repo_root, worktree_path)` runs first; if it finds commits on `loom/<stage-id>` beyond the resolved base, or non-scaffold changes in the worktree, the checks are SKIPPED (logged at `info`) and the spawn proceeds. `before_stage` is a delta-proof ("the feature does not exist yet"), which is only meaningful on the first attempt — re-running it on a re-spawn (orphan recovery, `loom stage retry`, crash retry) fails on the previous attempt's own work and blocks the stage before any session exists to finish it (unrecoverable loop; see mistakes.md 2026-07-27)
-- Loom's own worktree scaffolding (`.loom/work`, `.claude/`, root `CLAUDE.md`) is discounted via `git::worktree::is_worktree_scaffold_path` — it is present from the first spawn, and in repos that don't gitignore it, counting it would disable the gate entirely
+- **Gated on a pristine workspace.** `verify::before_after::find_prior_stage_work(stage_branch, base_branch, repo_root, worktree_path)` runs first; if it finds commits on `loom/<stage-id>` beyond the resolved base, or non-scaffold changes in the worktree, the checks are SKIPPED (logged at `info`) and the spawn proceeds. `before_stage` is a delta-proof ("the feature does not exist yet"), which is only meaningful on the first attempt -- re-running it on a re-spawn (orphan recovery, `loom stage retry`, crash retry) fails on the previous attempt's own work and blocks the stage before any session exists to finish it (unrecoverable loop; see mistakes.md 2026-07-27)
+- Loom's own worktree scaffolding (`.loom/work`, `.claude/`, root `CLAUDE.md`) is discounted via `git::worktree::is_worktree_scaffold_path` -- it is present from the first spawn, and in repos that don't gitignore it, counting it would disable the gate entirely
 - Calls `crate::verify::before_after::run_before_stage_checks(&stage.before_stage, &check_dir)`
-- On failure gaps: stage → `Blocked` (FailureType::TestFailure), session NOT spawned. `TestFailure` is not auto-retryable (`should_auto_retry`), so the stage rests Blocked until an operator runs `loom stage retry`
+- On failure gaps: stage becomes `Blocked` (FailureType::TestFailure), session NOT spawned. `TestFailure` is not auto-retryable (`should_auto_retry`), so the stage rests Blocked until an operator runs `loom stage retry`
 - On errors (infrastructure): prints warning, continues anyway (advisory)
 - TruthCheck timeout: 30 seconds (hardcoded in truths.rs:13)
 
-**`after_stage` execution (commands/stage/complete.rs:847-866):**
+**`after_stage` execution (`commands/stage/complete_verification.rs`, called from `loom stage complete`):**
 
 - Runs during `loom stage complete`, AFTER acceptance criteria pass
+- Skipped entirely when the stage definition's `after_stage` list is empty
 - On failure: stage stays Executing, no merge, agent must fix and re-run
 
-**`code_review` — PERSISTED AND WIRED FOR SIGNAL GENERATION:**
+**`code_review` -- PERSISTED AND WIRED FOR SIGNAL GENERATION:**
 
 - Parsed by serde at schema level and copied by `Stage::from_definition()` onto the runtime `Stage`
 - `orchestrator/signals/generate.rs` reads the persisted runtime field; it does not reparse the plan

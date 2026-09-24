@@ -41,7 +41,7 @@ sources:
 - loom-hooks/poll-guard.sh
 - loom-hooks/codex-forward-guard.sh
 - agents/loom-codex-forwarder.md
-verified: 499b09b6297aeee4896a66df3da86d00f652a618
+verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Token Accounting And Receipts
 
@@ -144,7 +144,9 @@ a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
   fields under the `loom.forward-receipt.v1` tag.
 - **File.** `.loom/work/subagents/<stage>/forward-receipts.jsonl`, one JSON observation per line,
   folded into a `ForwardReceipt`. States: `queued`, `running`, `succeeded`, `failed`, `canceled`,
-  `unknown`; the first three after `running` are terminal. Backends: `companion`, `direct`.
+  `timed_out`, `unknown` (`ForwardState`, since `ea6d3d32` added `TimedOut` for a wrapper-cancelled
+  companion job at its own deadline); `is_terminal()` is `succeeded`, `failed`, `canceled` or
+  `timed_out`. Backends: `companion`, `direct`.
 - **Writer.** `loom hook forward-receipt --transcript <path>`
   (`loom/src/commands/hook/forward_receipt.rs`) reads the forwarder transcript and the wrapper's
   markers, and appends under its own sidecar lock with an `O_NOFOLLOW` regular-file append, since
@@ -154,8 +156,8 @@ a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
 - **Wait.** `loom subagents wait --receipt <64 hex> [--timeout <secs>] [--json]`
   (`loom/src/commands/subagents/forward_jobs_wait.rs`) polls every 2 s, default timeout 300 s, and
   never starts, cancels or retries anything. The stage comes from `LOOM_STAGE_ID`, else from a scan
-  of `subagents/*/forward-receipts.jsonl` for the id. Exit 0 succeeded, 1 failed or canceled, 2
-  queued, running, unknown or timed out.
+  of `subagents/*/forward-receipts.jsonl` for the id. `wait_exit_code` (`forward_jobs_wait.rs:143`):
+  exit 0 succeeded, 1 failed, canceled or timed out, 2 queued, running or unknown.
 - **Who waits (owned-waits contract, 2026-09-13, supersedes the untimed-blob-scan and bare-timeout
   forms below).** The orchestrator, only, and only through one bound `loom subagents watch --worker
   claude:<agent-id> --worker codex:<unit-id> --timeout 3600` — one `--worker` per worker, `--session`
@@ -171,13 +173,17 @@ a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
   2 (deadline passed) is not proof any worker died — see
   [Subagent Hierarchy](../patterns/subagent-hierarchy.md).
 - **Status overlay.** For a `loom-codex-forwarder`, the daemon-reconciled Codex lifecycle outcome
-  alone decides `SubagentState`: `Active`->`ForwardWait`, `Unknown`->`ForwardUnknown`,
-  `Succeeded`->`Done`, `Failed`->`Failed`, `Cancelled`->`Cancelled`
-  (`loom/src/commands/subagents/classify_forward.rs:30`); the legacy receipt/marker overlay applied
-  after structural transcript classification survives only as the diagnostic `forward` field, and
-  does not decide state. A damaged receipt index is an unresolved observation, never a partial
-  success. Poll-guard counts repeated `loom subagents list` and names the exact wait when receipts
-  exist (`poll-guard.sh`).
+  alone decides `SubagentState`, via an intermediate `ForwardOverlay`
+  (`loom/src/commands/subagents/forward_jobs.rs::marker_overlay`/`overlay_from_state`):
+  `Queued`/`Running` -> `ForwardWait`; `Succeeded` -> `Done` if the transcript itself is done, else
+  `ForwardWait`; `Failed`, `Canceled` and `TimedOut` all collapse to one `ForwardFailed`; `Unknown`
+  -> `ForwardUnknown`. `classify_forward.rs::state_for` (`:79`) then maps that overlay 1:1 to
+  `SubagentState::{Done,ForwardWait,ForwardFailed,ForwardUnknown}` — there is no direct
+  `Failed->Failed`/`Cancelled->Cancelled` case. The legacy receipt/marker overlay applied after
+  structural transcript classification survives only as the diagnostic `forward` field, and does not
+  decide state. A damaged receipt index is an unresolved observation, never a partial success.
+  Poll-guard counts repeated `loom subagents list` and names the exact wait when receipts exist
+  (`poll-guard.sh`).
 
 ## Read Receipt Lifecycle
 

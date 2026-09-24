@@ -1,3 +1,6 @@
+---
+verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
+---
 # Adjudication Persistence and Stage Resumption
 
 > Dispute to durable verdict, and each verdict's effect

@@ -4,7 +4,7 @@ sources:
 - loom/src/telemetry/spool.rs
 - loom/src/commands/knowledge/telemetry.rs
 - loom/src/orchestrator/core/stage_telemetry.rs
-verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
+verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Signal Generation
 
@@ -133,9 +133,13 @@ brief (see [Context Retrieval](context-retrieval-state.md#brief-delivery-sanitiz
 `read_events` skips a malformed line rather than failing the file; every count is an item count,
 never a token saving.
 
-A sandboxed session cannot write through the worktree's state-root symlink, so a denied direct
-write falls back to a per-worktree spool (`telemetry/spool.rs`, `.loom/telemetry-spool.jsonl`) that
-the daemon later drains into the canonical event file.
+`emit` first checks the process's relay mode (`crate::relay::emit::mode`, since `dbec517c`). In
+`RelayMode::Relay` it never touches `.loom` at all: `relay_telemetry` writes a relay ticket through
+`RelayContext::emit_quiet`, and a relay `check` refusal or a serialization error is silently
+swallowed (still best-effort). In Legacy/Operator mode the earlier behavior applies: a sandboxed
+session cannot write through the worktree's state-root symlink, so a denied direct write falls back
+to a per-worktree spool (`telemetry/spool.rs`, `.loom/telemetry-spool.jsonl`) that the daemon later
+drains into the canonical event file.
 
 `ContextDelivered`/`ContextUnavailable` are written by `orchestrator/core/stage_telemetry.rs`
 (called from `stage_executor.rs:570`), deriving their fields from the `DeliveryRecord` signal

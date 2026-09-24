@@ -1,3 +1,6 @@
+---
+verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
+---
 # Skill Catalog
 
 > The two skill roots; 53 catalogued skills

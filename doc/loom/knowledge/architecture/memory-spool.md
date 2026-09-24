@@ -2,7 +2,7 @@
 sources:
 - loom/src/fs/memory/types.rs
 - loom/src/fs/memory/spool.rs
-verified: e0baec38ddf35df499ac7eca828baed878ac671e
+verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Memory Spool and Drain
 
@@ -45,7 +45,21 @@ in a stage session is a prompt-injection channel between stages.
 
 ## The Design
 
+Earlier text described direct-write-then-spool-fallback as the only path. Since the session-inbox
+relay (`relay/emit.rs`), that is the fallback for pre-relay sessions; the relay is the default.
+
 ```text
+RelayMode::Relay (default: LOOM_SESSION_ID + LOOM_SCRATCH_DIR set, no hook/control-broker)
+sandboxed agent      loom memory note "..."
+                     └─ writes a ticket to the session's scratch/inbox dir (relay/emit.rs::mode)
+                        — never touches .loom/work directly, so EROFS never triggers here
+
+daemon (outside the sandbox)
+  inbox drain         orchestrator/core/inbox_drain/apply.rs::memory() validates
+                       (spool.rs::validate_spooled_entry, pub(crate) for this reuse) and
+                       calls append_entry() straight into .loom/work/memory/<stage>.md
+
+RelayMode::Legacy (LOOM_SESSION_ID set, LOOM_SCRATCH_DIR absent — pre-relay-upgrade session)
 sandboxed agent      loom memory note "..."
                      ├─ try direct write to .loom/work/memory/<stage>.md
                      └─ on PermissionDenied/EROFS only:
@@ -56,14 +70,21 @@ daemon (outside the sandbox)
   at teardown        final drain in cleanup_after_merge, before removal
 ```
 
-**Attribution is by filesystem location.** The spool payload carries **no stage
-id** — the daemon attributes each entry to the stage that owns the worktree it
-drained from. An agent cannot forge which worktree it is running in, but could
-trivially forge a field.
+`RelayMode::Operator` (no session id, or a hook / control-broker process) writes directly.
+`commands/memory/handlers/record.rs::record_with_mode` makes the choice.
 
-Key modules: `fs/memory/spool.rs` (primitives plus the shared
-`drain_into_journal`), `orchestrator/core/spool_drain.rs` (per-tick drain),
-`git/cleanup/batch.rs` (teardown drain).
+**Attribution is by filesystem location** for the Legacy/spool path. The spool payload carries
+**no stage id** — the daemon attributes each entry to the stage that owns the worktree it drained
+from. An agent cannot forge which worktree it is running in, but could trivially forge a field.
+The Relay path's ticket does carry a `stage_id`, but `RelayContext::check` (`relay/emit.rs`)
+authorizes it against the session's own recorded stage before `apply` sees it, so the same
+non-forgeability holds.
+
+Key modules: `relay/emit.rs` (`mode`, `RelayContext`, ticket emission),
+`orchestrator/core/inbox_drain/apply.rs` (daemon-side handling per request kind),
+`fs/memory/spool.rs` (primitives plus the shared `drain_into_journal`, used by the Legacy path),
+`orchestrator/core/spool_drain.rs` (per-tick spool drain, Legacy path only),
+`git/cleanup/batch.rs` (teardown spool drain).
 
 ## Invariants That Are Easy To Break
 
