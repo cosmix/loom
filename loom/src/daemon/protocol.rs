@@ -78,13 +78,25 @@ impl Default for DaemonConfig {
     }
 }
 
+/// How one contract test ran when the contract session froze it.
+///
+/// `outcome` is `failed`, `build_failed` or `exit_nonzero_unverified`: a
+/// contract is frozen only while it fails.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ContractRunReport {
+    pub contract_id: String,
+    pub adapter: Option<String>,
+    pub outcome: String,
+    pub exit_code: Option<i32>,
+}
+
 /// Authorization capability required by a request.
 ///
 /// `User` requests are unprivileged RPCs (Ping, SubscribeStatus,
 /// SubscribeLogs, Unsubscribe, DisputeCriteria, BlockStage, CompleteStage,
-/// RecordCompletionEvidence). They use the user token. The stage self-service
-/// RPCs are additionally accepted only for the exact stage/session pair the
-/// caller names. State-transition requests carry no command, path, or
+/// RecordCompletionEvidence, FreezeContracts). They use the user token. The
+/// stage self-service RPCs are additionally accepted only for the exact
+/// stage/session pair the caller names. State-transition requests carry no command, path, or
 /// privileged flags; evidence is separately bounded and validated.
 ///
 /// `Admin` requests are privileged host-only operations (Stop). They require
@@ -162,6 +174,18 @@ pub enum Request {
         session_id: String,
         evidence: Box<CompletionAttemptEvidence>,
     },
+    /// Record the contract freeze that ends a stage's contract phase.
+    ///
+    /// Only the stage's running `Contract` session may send it; the daemon
+    /// re-checks the changed paths itself, hashes and copies the contract and
+    /// harness files, and writes `freeze.json`. `session_id` follows the rule of
+    /// [`Request::DisputeCriteria`].
+    FreezeContracts {
+        auth_token: String,
+        stage_id: String,
+        session_id: String,
+        reports: Vec<ContractRunReport>,
+    },
 }
 
 impl Request {
@@ -179,7 +203,8 @@ impl Request {
             | Request::DisputeCriteria { .. }
             | Request::BlockStage { .. }
             | Request::CompleteStage { .. }
-            | Request::RecordCompletionEvidence { .. } => Capability::User,
+            | Request::RecordCompletionEvidence { .. }
+            | Request::FreezeContracts { .. } => Capability::User,
         }
     }
 
@@ -196,7 +221,8 @@ impl Request {
             | Request::DisputeCriteria { auth_token, .. }
             | Request::BlockStage { auth_token, .. }
             | Request::CompleteStage { auth_token, .. }
-            | Request::RecordCompletionEvidence { auth_token, .. } => auth_token,
+            | Request::RecordCompletionEvidence { auth_token, .. }
+            | Request::FreezeContracts { auth_token, .. } => auth_token,
         }
     }
 }
@@ -226,6 +252,26 @@ fn debug_dispute(request: &Request, formatter: &mut fmt::Formatter<'_>) -> fmt::
         .field("reason", &"[REDACTED]")
         .field("evidence_commit", evidence_commit)
         .field("failure_output", &"[REDACTED]")
+        .finish()
+}
+
+/// Contract ids are agent-written, so only the number of reports is shown.
+fn debug_freeze(request: &Request, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+    let Request::FreezeContracts {
+        stage_id,
+        session_id,
+        reports,
+        ..
+    } = request
+    else {
+        unreachable!("debug_freeze called for another request variant")
+    };
+    formatter
+        .debug_struct("FreezeContracts")
+        .field("auth_token", &"[REDACTED]")
+        .field("stage_id", stage_id)
+        .field("session_id", session_id)
+        .field("reports", &reports.len())
         .finish()
 }
 
@@ -285,6 +331,7 @@ impl fmt::Debug for Request {
             Request::CompleteStage { .. } | Request::RecordCompletionEvidence { .. } => {
                 debug_completion(self, formatter)
             }
+            Request::FreezeContracts { .. } => debug_freeze(self, formatter),
         }
     }
 }
@@ -311,6 +358,10 @@ pub enum Response {
     /// Reply from a successful DisputeCriteria — carries the allocated dispute id.
     DisputeCreated {
         id: u32,
+    },
+    /// Reply from a successful FreezeContracts — the number of files frozen.
+    ContractsFrozen {
+        files: usize,
     },
 }
 

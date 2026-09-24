@@ -2,7 +2,7 @@
 
 use super::super::protocol::{
     read_request_body, read_request_length, read_request_preface, write_message, Capability,
-    Request, RequestPreface, Response,
+    ContractRunReport, Request, RequestPreface, Response,
 };
 use super::admission::{ByteBudget, DeadlineReader};
 use super::self_service;
@@ -141,8 +141,10 @@ fn authorize_body(
             return Err(refuse_unauthenticated(preface));
         }
     }
-    if let Some((stage_id, session_id)) = self_service::ownership_to_enforce(request) {
-        if let Err(error) = self_service::session_owns_stage(work_dir, stage_id, session_id) {
+    if let Some((stage_id, session_id, kinds)) = self_service::ownership_to_enforce(request) {
+        if let Err(error) =
+            self_service::session_owns_stage_as(work_dir, stage_id, session_id, kinds)
+        {
             eprintln!(
                 "Request refused: session '{session_id}' does not own stage '{stage_id}': {error:#}"
             );
@@ -187,6 +189,54 @@ fn serve_block_stage(work_dir: &Path, stage_id: &str, reason: &str) -> Response 
             message: format!("Block transition failed: {error:#}"),
         }
     })
+}
+
+/// Serve one `FreezeContracts`. Every refusal comes back from the handler as
+/// `Response::Error`; an `Err` means the freeze itself could not be written.
+fn serve_freeze_contracts(
+    work_dir: &Path,
+    stage_id: &str,
+    session_id: &str,
+    reports: &[ContractRunReport],
+) -> Response {
+    super::contracts::handle_freeze_contracts(work_dir, stage_id, session_id, reports)
+        .unwrap_or_else(|error| Response::Error {
+            message: format!("Contract freeze failed: {error:#}"),
+        })
+}
+
+/// Serve one of the requests a stage agent makes about its own stage, once
+/// authorization and ownership are settled.
+fn serve_stage_control(work_dir: &Path, request: Request) -> Response {
+    match request {
+        Request::DisputeCriteria {
+            stage_id,
+            criterion_index,
+            reason,
+            evidence_commit,
+            failure_output,
+            ..
+        } => serve_dispute_criteria(
+            work_dir,
+            &stage_id,
+            criterion_index,
+            reason,
+            evidence_commit,
+            failure_output,
+        ),
+        Request::BlockStage {
+            stage_id, reason, ..
+        } => serve_block_stage(work_dir, &stage_id, &reason),
+        Request::FreezeContracts {
+            stage_id,
+            session_id,
+            reports,
+            ..
+        } => serve_freeze_contracts(work_dir, &stage_id, &session_id, &reports),
+        other => Response::Error {
+            message: format!("{other:?} is not a stage-control request"),
+        },
+    }
 }
 
 /// Clone a client stream for use as a broadcast subscriber, applying a write
@@ -291,32 +341,10 @@ pub fn handle_client_connection(
                 write_message(&mut stream, &Response::Ok)?;
                 break;
             }
-            Request::DisputeCriteria {
-                stage_id,
-                criterion_index,
-                reason,
-                evidence_commit,
-                failure_output,
-                ..
-            } => {
-                let response = serve_dispute_criteria(
-                    work_dir,
-                    &stage_id,
-                    criterion_index,
-                    reason,
-                    evidence_commit,
-                    failure_output,
-                );
-                write_message(&mut stream, &response)?;
-                break;
-            }
-            Request::BlockStage {
-                stage_id, reason, ..
-            } => {
-                write_message(
-                    &mut stream,
-                    &serve_block_stage(work_dir, &stage_id, &reason),
-                )?;
+            request @ (Request::DisputeCriteria { .. }
+            | Request::BlockStage { .. }
+            | Request::FreezeContracts { .. }) => {
+                write_message(&mut stream, &serve_stage_control(work_dir, request))?;
                 break;
             }
             request

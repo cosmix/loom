@@ -1,14 +1,18 @@
-//! Section 5 of the plan, cell by cell, driven through the drain: each
-//! session kind relays each request kind, and the observed outcome — with the
-//! handler's effect checked — must equal the table.
+//! Section 5 of the plan, with DESIGN D8's contract row and freeze column,
+//! cell by cell, driven through the drain: each session kind relays each
+//! request kind, and the observed outcome — with the handler's effect
+//! checked — must equal the table.
 
 use chrono::Utc;
 
+use crate::fs::stage_request::StageRequest;
 use crate::models::dispute::verdict_file;
 use crate::models::session::{SessionStatus, SessionType};
 use crate::models::stage::StageStatus;
 use crate::relay::RequestKind;
-use crate::verify::transitions::load_stage;
+use crate::verify::contracts::store::load_freeze;
+use crate::verify::contracts::test_support::{contract_stage, contract_worktree, red_reports};
+use crate::verify::transitions::{load_stage, save_stage};
 
 use super::test_support::{fixture, payload_for, FakeHost, Fixture, STAGE};
 use super::{run_pass, Settle};
@@ -23,13 +27,14 @@ enum Cell {
 use Cell::{Apply as A, DocumentOnly as D, Refuse as R};
 
 /// In `RequestKind::all()` order: memory, block, dispute, handoff,
-/// merge-resolved, verdict, telemetry.
-const SECTION_5: [(SessionType, [Cell; 7]); 5] = [
-    (SessionType::Stage, [A, A, A, A, R, R, A]),
-    (SessionType::Knowledge, [A, A, A, A, R, R, A]),
-    (SessionType::Merge, [A, R, R, D, A, R, A]),
-    (SessionType::Adjudication, [R, R, R, R, R, A, A]),
-    (SessionType::BaseConflict, [A, R, R, D, R, R, A]),
+/// merge-resolved, verdict, telemetry, freeze-contracts.
+const SECTION_5: [(SessionType, [Cell; 8]); 6] = [
+    (SessionType::Stage, [A, A, A, A, R, R, A, R]),
+    (SessionType::Knowledge, [A, A, A, A, R, R, A, R]),
+    (SessionType::Merge, [A, R, R, D, A, R, A, R]),
+    (SessionType::Adjudication, [R, R, R, R, R, A, A, R]),
+    (SessionType::BaseConflict, [A, R, R, D, R, R, A, R]),
+    (SessionType::Contract, [A, A, R, A, R, R, A, A]),
 ];
 
 #[test]
@@ -54,9 +59,22 @@ fn run_cell(session_type: SessionType, kind: RequestKind) -> Cell {
             fx.file_dispute(1);
         }
         RequestKind::MergeResolved => fx.stage(StageStatus::MergeConflict, Some(&record.id)),
+        RequestKind::FreezeContracts => {
+            // Everything the freeze handler needs to succeed, so a refusal
+            // can only come from the matrix.
+            contract_worktree(&fx.repo_root, STAGE);
+            save_stage(&contract_stage(STAGE, &record.id), &fx.work_dir).unwrap();
+        }
         _ => fx.stage(StageStatus::Executing, Some(&record.id)),
     }
-    let entry = fx.relay(&record, kind, payload_for(kind));
+    let payload = match kind {
+        RequestKind::FreezeContracts => serde_json::to_value(StageRequest::FreezeContracts {
+            reports: red_reports(),
+        })
+        .unwrap(),
+        _ => payload_for(kind),
+    };
+    let entry = fx.relay(&record, kind, payload);
     let mut host = fx.host(true);
 
     let report = run_pass(&mut host, &fx.tick(Utc::now()));
@@ -100,6 +118,9 @@ fn classify_applied(fx: &Fixture, host: &FakeHost, kind: RequestKind) -> Cell {
                 1
             );
         }
+        RequestKind::FreezeContracts => {
+            assert!(load_freeze(&fx.work_dir, STAGE).unwrap().is_some());
+        }
     }
     Cell::Apply
 }
@@ -112,4 +133,5 @@ fn assert_no_effect(fx: &Fixture, host: &FakeHost) {
     assert!(crate::telemetry::read_events(&fx.work_dir)
         .unwrap()
         .is_empty());
+    assert!(load_freeze(&fx.work_dir, STAGE).unwrap().is_none());
 }

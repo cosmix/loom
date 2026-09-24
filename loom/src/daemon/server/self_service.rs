@@ -17,9 +17,9 @@
 //!   is refused by default rather than silently inheriting the peer-identity
 //!   path.
 //! * *Does the named session actually own the named stage?* —
-//!   [`session_owns_stage`], read from `.loom/work/`. Peer identity proves the
-//!   caller IS session A; only this proves stage X is A's to act on. Without
-//!   it, a live agent could reach across into another stage.
+//!   [`session_owns_stage_as`], read from `.loom/work/`. Peer identity proves
+//!   the caller IS session A; only this proves stage X is A's to act on.
+//!   Without it, a live agent could reach across into another stage.
 
 use std::path::{Path, PathBuf};
 
@@ -49,44 +49,50 @@ pub(super) fn self_service_session(request: &Request) -> Option<&str> {
         Request::CompleteStage { session_id, .. }
         | Request::RecordCompletionEvidence { session_id, .. }
         | Request::DisputeCriteria { session_id, .. }
-        | Request::BlockStage { session_id, .. } => Some(session_id),
+        | Request::BlockStage { session_id, .. }
+        | Request::FreezeContracts { session_id, .. } => Some(session_id),
         _ => None,
     }
 }
 
+/// Session kinds that may block their own stage over the socket: the stage's
+/// agent in either of its phases, the same kinds the relay matrix lets block.
+const BLOCK_KINDS: &[SessionType] = &[SessionType::Stage, SessionType::Contract];
+
+/// Disputing a criterion stays with the stage session; a contract session
+/// may not dispute.
+const DISPUTE_KINDS: &[SessionType] = &[SessionType::Stage];
+
 /// The stage/session pair whose ownership must be proven before the handler
-/// runs, or `None` when there is nothing to prove.
+/// runs, with the session kinds admitted, or `None` when there is nothing to
+/// prove.
 ///
 /// Completion and evidence requests are deliberately absent: their handlers re-validate the
 /// identical binding under the sessions-directory lock, together with the
 /// `Executing` requirement that only completion imposes. Checking it here too
 /// would report that failure as an authentication error and lose the handler's
-/// more precise message.
+/// more precise message. `FreezeContracts` is absent for the same reason: its
+/// handler proves the binding for a `Contract` session and says so.
 ///
 /// A request with an empty session id — an operator shell that authenticated
 /// with the user token — has no session whose ownership could be checked, and
 /// the token is what carries it.
-pub(super) fn ownership_to_enforce(request: &Request) -> Option<(&str, &str)> {
+pub(super) fn ownership_to_enforce(
+    request: &Request,
+) -> Option<(&str, &str, &'static [SessionType])> {
     match request {
         Request::DisputeCriteria {
             stage_id,
             session_id,
             ..
-        }
-        | Request::BlockStage {
+        } if !session_id.is_empty() => Some((stage_id, session_id, DISPUTE_KINDS)),
+        Request::BlockStage {
             stage_id,
             session_id,
             ..
-        } if !session_id.is_empty() => Some((stage_id, session_id)),
+        } if !session_id.is_empty() => Some((stage_id, session_id, BLOCK_KINDS)),
         _ => None,
     }
-}
-
-/// Whether `session_id` is the stage session currently assigned to
-/// `stage_id`: [`session_owns_stage_as`] admitting [`SessionType::Stage`]
-/// only, the rule block and dispute over the socket keep.
-pub(super) fn session_owns_stage(work_dir: &Path, stage_id: &str, session_id: &str) -> Result<()> {
-    session_owns_stage_as(work_dir, stage_id, session_id, &[SessionType::Stage])
 }
 
 /// Whether `session_id` is the session currently assigned to `stage_id`, and
@@ -148,6 +154,23 @@ mod tests {
     use crate::verify::transitions::save_stage;
     use tempfile::TempDir;
 
+    /// The rule a socket dispute keeps: the stage session only.
+    fn session_owns_stage(work_dir: &Path, stage_id: &str, session_id: &str) -> Result<()> {
+        session_owns_stage_as(work_dir, stage_id, session_id, DISPUTE_KINDS)
+    }
+
+    fn dispute(session_id: &str) -> Request {
+        Request::DisputeCriteria {
+            auth_token: "t".to_string(),
+            stage_id: "build-api".to_string(),
+            session_id: session_id.to_string(),
+            criterion_index: 0,
+            reason: "r".to_string(),
+            evidence_commit: None,
+            failure_output: None,
+        }
+    }
+
     fn active_pair(work_dir: &Path, stage_id: &str) -> Session {
         let mut session = Session::new();
         session.assign_to_stage(stage_id.to_string());
@@ -208,16 +231,14 @@ mod tests {
                 evidence_nonce: "fedcba9876543210fedcba9876543210".to_string(),
             })
         );
+        assert_eq!(Some("s3"), self_service_session(&dispute("s3")));
         assert_eq!(
-            Some("s3"),
-            self_service_session(&Request::DisputeCriteria {
+            Some("s4"),
+            self_service_session(&Request::FreezeContracts {
                 auth_token: "t".to_string(),
                 stage_id: "build-api".to_string(),
-                session_id: "s3".to_string(),
-                criterion_index: 0,
-                reason: "r".to_string(),
-                evidence_commit: None,
-                failure_output: None,
+                session_id: "s4".to_string(),
+                reports: Vec::new(),
             })
         );
 
@@ -251,11 +272,29 @@ mod tests {
         );
         assert_eq!(None, ownership_to_enforce(&evidence_request("s1")));
         assert_eq!(
-            Some(("build-api", "s1")),
+            Some(("build-api", "s1", BLOCK_KINDS)),
             ownership_to_enforce(&block("s1"))
+        );
+        assert_eq!(
+            Some(("build-api", "s1", DISPUTE_KINDS)),
+            ownership_to_enforce(&dispute("s1"))
         );
         // Nothing to prove when no session is named: the token carried it.
         assert_eq!(None, ownership_to_enforce(&block("")));
+    }
+
+    #[test]
+    fn a_contract_session_may_block_its_stage_but_not_dispute() {
+        let temp = TempDir::new().unwrap();
+        let mut session = active_pair(temp.path(), "build-api");
+        session.session_type = SessionType::Contract;
+        save_session(&session, temp.path()).unwrap();
+
+        for (request, admitted) in [(block(&session.id), true), (dispute(&session.id), false)] {
+            let (stage_id, session_id, kinds) = ownership_to_enforce(&request).unwrap();
+            let owns = session_owns_stage_as(temp.path(), stage_id, session_id, kinds);
+            assert_eq!(owns.is_ok(), admitted, "{request:?}");
+        }
     }
 
     #[test]

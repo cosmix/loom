@@ -7,7 +7,9 @@ use std::path::Path;
 
 use chrono::{DateTime, Utc};
 
-use crate::daemon::{handle_block_stage, handle_dispute_criteria, Response};
+use crate::daemon::{
+    handle_block_stage, handle_dispute_criteria, handle_freeze_contracts, Response,
+};
 use crate::fs::memory::{append_entry, validate_spooled_entry, MemoryEntry};
 use crate::fs::stage_request::StageRequest;
 use crate::handoff::session_content::{write_session_handoff, SessionHandoff, CEILING_TRIGGER};
@@ -56,7 +58,9 @@ pub(super) fn apply(host: &mut dyn InboxHost, record: &Session, admitted: Admitt
     let stage_id = admitted.stage_id.as_str();
     match admitted.payload {
         RequestPayload::Memory(entry) => memory(&work_dir, stage_id, &entry),
-        RequestPayload::Block(request) | RequestPayload::Dispute(request) => {
+        RequestPayload::Block(request)
+        | RequestPayload::Dispute(request)
+        | RequestPayload::FreezeContracts(request) => {
             stage_request(&work_dir, stage_id, record, request)
         }
         RequestPayload::Handoff(request) => {
@@ -117,19 +121,25 @@ fn stage_request(
             evidence_commit,
             failure_output,
         ),
+        StageRequest::FreezeContracts { reports } => {
+            handle_freeze_contracts(work_dir, stage_id, &record.id, &reports)
+        }
     };
     match response {
         Ok(Response::Ok) => Settle::Applied(None),
         Ok(Response::DisputeCreated { id }) => Settle::Applied(Some(format!("dispute {id} filed"))),
+        Ok(Response::ContractsFrozen { files }) => {
+            Settle::Applied(Some(format!("contracts frozen ({files} files)")))
+        }
         Ok(Response::Error { message }) => Settle::Refused(message),
         Ok(other) => Settle::Refused(format!("unexpected daemon answer: {other:?}")),
         Err(error) => failed(error),
     }
 }
 
-/// Block and dispute act on a stage only for the live session that owns it,
-/// the rule `daemon::server::self_service` enforces for the same requests over
-/// the socket.
+/// Block, dispute and freeze act on a stage only for the live session that
+/// owns it, the rule `daemon::server` enforces for the same requests over the
+/// socket. The freeze handler further requires a contract session.
 fn require_owner(work_dir: &Path, stage_id: &str, record: &Session) -> Result<(), String> {
     if record.status != SessionStatus::Running {
         return Err(format!("session '{}' is no longer running", record.id));

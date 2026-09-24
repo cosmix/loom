@@ -25,6 +25,10 @@ pub enum MatrixVerdict {
 /// `merge-resolved`, which it refuses: a base-conflict session resolves the
 /// *pre-stage* merge, so finalizing an unrelated stage merge from inside one
 /// would be a forgery.
+///
+/// Verification v2 (DESIGN D8) adds the `Contract` session and the
+/// `freeze-contracts` kind. `Contract` follows `Stage` except that it may not
+/// dispute or record a verdict, and `freeze-contracts` is its alone.
 const MATRIX: &[(SessionType, RequestKind, MatrixVerdict)] = &[
     (
         SessionType::Stage,
@@ -195,6 +199,71 @@ const MATRIX: &[(SessionType, RequestKind, MatrixVerdict)] = &[
     (
         SessionType::Adjudication,
         RequestKind::Telemetry,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Stage,
+        RequestKind::FreezeContracts,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Knowledge,
+        RequestKind::FreezeContracts,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Merge,
+        RequestKind::FreezeContracts,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::BaseConflict,
+        RequestKind::FreezeContracts,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Adjudication,
+        RequestKind::FreezeContracts,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::Memory,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::Block,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::Dispute,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::Handoff,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::MergeResolved,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::Verdict,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::Telemetry,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::FreezeContracts,
         MatrixVerdict::Apply,
     ),
 ];

@@ -1,4 +1,4 @@
-//! The seven request kinds a CLI invocation can relay to the daemon.
+//! The eight request kinds a CLI invocation can relay to the daemon.
 
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
@@ -17,12 +17,14 @@ pub enum RequestKind {
     MergeResolved,
     Verdict,
     Telemetry,
+    FreezeContracts,
 }
 
 impl RequestKind {
-    /// All seven kinds, in the per-writer matrix's order
-    /// (`doc/plans/PLAN-loom-state-confinement.md` section 5).
-    pub fn all() -> [RequestKind; 7] {
+    /// All eight kinds, in the per-writer matrix's order
+    /// (`doc/plans/PLAN-loom-state-confinement.md` section 5, then
+    /// `freeze-contracts` from verification v2's contract phase).
+    pub fn all() -> [RequestKind; 8] {
         [
             RequestKind::Memory,
             RequestKind::Block,
@@ -31,10 +33,11 @@ impl RequestKind {
             RequestKind::MergeResolved,
             RequestKind::Verdict,
             RequestKind::Telemetry,
+            RequestKind::FreezeContracts,
         ]
     }
 
-    /// The five kinds only a session's lead process may relay; the relay
+    /// The six kinds only a session's lead process may relay; the relay
     /// hook drops these from a teammate before an inbox entry is ever
     /// written.
     pub fn is_control(self) -> bool {
@@ -45,6 +48,7 @@ impl RequestKind {
                 | RequestKind::Handoff
                 | RequestKind::MergeResolved
                 | RequestKind::Verdict
+                | RequestKind::FreezeContracts
         )
     }
 
@@ -57,6 +61,7 @@ impl RequestKind {
             RequestKind::MergeResolved => "merge-resolved",
             RequestKind::Verdict => "verdict",
             RequestKind::Telemetry => "telemetry",
+            RequestKind::FreezeContracts => "freeze-contracts",
         }
     }
 }
@@ -103,7 +108,7 @@ mod tests {
     }
 
     #[test]
-    fn is_control_matches_the_five_control_kinds() {
+    fn is_control_matches_the_six_control_kinds() {
         let control: Vec<RequestKind> = RequestKind::all()
             .into_iter()
             .filter(|kind| kind.is_control())
@@ -116,8 +121,14 @@ mod tests {
                 RequestKind::Handoff,
                 RequestKind::MergeResolved,
                 RequestKind::Verdict,
+                RequestKind::FreezeContracts,
             ]
         );
+    }
+
+    #[test]
+    fn freeze_contracts_is_kebab_case_on_the_wire() {
+        assert_eq!(RequestKind::FreezeContracts.to_string(), "freeze-contracts");
     }
 
     #[test]
