@@ -27,6 +27,7 @@ pub mod knowledge_bootstrap;
 pub mod knowledge_bootstrap_support;
 pub mod merge_conflict_recovery;
 pub mod plan_verify;
+pub mod project_detect;
 pub mod relay_e2e;
 pub mod source_graph_fixtures;
 pub mod update_notice;
