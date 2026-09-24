@@ -4,7 +4,7 @@ mod detect;
 mod host_paths;
 mod structural_checks;
 mod types;
-mod validation;
+pub(crate) mod validation;
 mod validation_suite;
 
 #[cfg(test)]

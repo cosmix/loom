@@ -9,7 +9,7 @@
 
 /// A word after quote removal.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
-pub(super) struct Word {
+pub(crate) struct Word {
     /// The word as written, quotes included.
     pub raw: String,
     /// The word with quotes and escapes removed. Parameter expansions stay
@@ -26,7 +26,7 @@ pub(super) struct Word {
 
 impl Word {
     /// The variable name when this word is a `NAME=value` assignment.
-    pub(super) fn assignment_name(&self) -> Option<&str> {
+    pub(crate) fn assignment_name(&self) -> Option<&str> {
         let (name, _) = self.raw.split_once('=')?;
         let mut chars = name.chars();
         let starts_well = chars
@@ -43,7 +43,7 @@ impl Word {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub(super) enum Token {
+pub(crate) enum Token {
     Word(Word),
     /// `|`, `||`, `&&`, `;`, `;;`, `&`, `|&`, `(` or `)`; a newline lexes as `;`.
     Control(&'static str),
@@ -79,13 +79,13 @@ const OPERATORS: [(&str, bool); 21] = [
 
 /// One simple command: its words in order, and its redirection targets.
 #[derive(Debug, Default)]
-pub(super) struct SimpleCommand<'a> {
+pub(crate) struct SimpleCommand<'a> {
     pub words: Vec<&'a Word>,
     pub redirect_targets: Vec<&'a Word>,
 }
 
 /// Lex `command` into words and operators.
-pub(super) fn lex(command: &str) -> Vec<Token> {
+pub(crate) fn lex(command: &str) -> Vec<Token> {
     let mut lexer = Lexer {
         chars: command.chars().collect(),
         ..Lexer::default()
@@ -95,7 +95,7 @@ pub(super) fn lex(command: &str) -> Vec<Token> {
 }
 
 /// Split a token stream at its control operators into simple commands.
-pub(super) fn simple_commands(tokens: &[Token]) -> Vec<SimpleCommand<'_>> {
+pub(crate) fn simple_commands(tokens: &[Token]) -> Vec<SimpleCommand<'_>> {
     let mut commands = vec![SimpleCommand::default()];
     let mut expect_target = false;
     for token in tokens {
