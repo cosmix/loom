@@ -358,6 +358,7 @@ mod tests {
             source: "src/private.rs".to_string(),
             pattern: "INTERNAL_PATTERN".to_string(),
             description: "producer reaches consumer".to_string(),
+            literal: false,
         }];
 
         let text = StageQuery::build_stage_query_text(&stage);

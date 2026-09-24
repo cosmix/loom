@@ -52,7 +52,7 @@ pub(super) fn clear_status_line() {
 mod tests {
     use super::*;
     use crate::parser::frontmatter::extract_yaml_frontmatter;
-    use crate::plan::schema::{Implementers, SandboxConfig, StageDefinition, StageSandboxConfig};
+    use crate::plan::schema::{SandboxConfig, StageDefinition};
     use crate::plan::ExecutionGraph;
     use std::path::PathBuf;
     use std::time::Duration;
@@ -82,35 +82,8 @@ mod tests {
         let stages = vec![StageDefinition {
             id: "stage-1".to_string(),
             name: "Stage 1".to_string(),
-            description: None,
-            dependencies: vec![],
-            parallel_group: None,
-            acceptance: vec![],
-            setup: vec![],
-            files: vec![],
-            auto_merge: None,
             working_dir: ".".to_string(),
-            stage_type: None,
-            artifacts: vec![],
-            wiring: vec![],
-            wiring_tests: vec![],
-            dead_code_check: None,
-            before_stage: vec![],
-            after_stage: vec![],
-            context_ceiling_tokens: None,
-            removed_context_budget: None,
-            plan_overview: None,
-            sandbox: StageSandboxConfig::default(),
-            execution_mode: None,
-            bug_fix: None,
-            regression_test: None,
-            model: None,
-            reasoning_effort: None,
-            code_review: None,
-            ultracode: false,
-            implementers: Implementers::default(),
-            subagent_timeout_secs: None,
-            skills: vec![],
+            ..Default::default()
         }];
 
         ExecutionGraph::build(stages).unwrap()

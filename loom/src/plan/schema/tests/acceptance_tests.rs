@@ -1,7 +1,7 @@
 //! Acceptance criterion validation tests
 
 use super::make_stage;
-use crate::plan::schema::types::{AcceptanceCriterion, LoomConfig, LoomMetadata, SandboxConfig};
+use crate::plan::schema::types::{AcceptanceCriterion, LoomConfig, LoomMetadata};
 use crate::plan::schema::validation::acceptance_command::validate_acceptance_criterion;
 use crate::plan::schema::validation::validate;
 
@@ -84,13 +84,8 @@ fn test_validate_metadata_with_empty_acceptance() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -114,13 +109,8 @@ fn test_validate_metadata_with_valid_acceptance() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 
@@ -140,13 +130,8 @@ fn test_validate_metadata_multiple_invalid_acceptance() {
     let metadata = LoomMetadata {
         loom: LoomConfig {
             version: 1,
-            auto_merge: None,
-            sandbox: SandboxConfig::default(),
-            change_impact: None,
-            adjudication: None,
-            context_ceiling_tokens: None,
-            subagent_ceiling_tokens: None,
             stages: vec![stage],
+            ..Default::default()
         },
     };
 

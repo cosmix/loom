@@ -4,6 +4,7 @@ mod detect;
 mod host_paths;
 mod structural_checks;
 mod types;
+mod types_v2;
 mod validation;
 mod validation_suite;
 
@@ -15,12 +16,13 @@ pub use host_paths::stage_host_path_errors;
 pub(crate) use structural_checks::extract_brief_paths;
 pub use types::{
     AcceptanceCriterion, AdjudicationConfig, ChangeImpactConfig, ChangeImpactPolicy,
-    CodeReviewConfig, CommandConfinement, DeadCodeCheck, FilesystemConfig, Implementer,
-    Implementers, LinuxConfig, LoomConfig, LoomMetadata, NetworkConfig, PermissionMode,
-    RegressionTest, SandboxConfig, StageDefinition, StageSandboxConfig, StageType, SuccessCriteria,
-    TruthCheck, ValidationError, WiringCheck, WiringTest, ALLOWED_REASONING_EFFORTS,
+    CodeReviewConfig, CommandConfinement, ContractSpec, DeadCodeCheck, FilesystemConfig,
+    Implementer, Implementers, LinuxConfig, LoomConfig, LoomMetadata, NetworkConfig,
+    PermissionMode, ReachableCheck, RegressionTest, SandboxConfig, StageDefinition,
+    StageSandboxConfig, StageType, SuccessCriteria, TruthCheck, ValidationError, WiringCheck,
+    WiringTest, ALLOWED_REASONING_EFFORTS,
 };
-pub(crate) use validation::base_tree;
+pub(crate) use validation::{base_tree, v2_fields::split_lint_findings, v2_lints};
 pub use validation::{
     check_knowledge_recommendations, check_sandbox_recommendations, validate,
     validate_structural_preflight,

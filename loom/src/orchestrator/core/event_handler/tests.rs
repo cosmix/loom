@@ -4,10 +4,10 @@ use super::*;
 use crate::fs::session_files::save_session;
 use crate::fs::work_dir::write_terminal_config;
 use crate::models::session::{SessionBackendKind, SessionStatus, TerminalConfig};
-use crate::models::stage::{Implementers, Stage, StageStatus};
+use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
-use crate::plan::schema::{StageDefinition, StageSandboxConfig};
+use crate::plan::schema::StageDefinition;
 use crate::plan::ExecutionGraph;
 use crate::verify::transitions::{create_stage, load_stage, update_stage};
 use std::path::Path;
@@ -17,35 +17,8 @@ pub(super) fn create_test_graph() -> ExecutionGraph {
     let stages = vec![StageDefinition {
         id: "test-stage".to_string(),
         name: "Test Stage".to_string(),
-        description: None,
-        dependencies: vec![],
-        parallel_group: None,
-        acceptance: vec![],
-        setup: vec![],
-        files: vec![],
-        auto_merge: None,
         working_dir: ".".to_string(),
-        stage_type: None,
-        artifacts: vec![],
-        wiring: vec![],
-        wiring_tests: vec![],
-        dead_code_check: None,
-        before_stage: vec![],
-        after_stage: vec![],
-        context_ceiling_tokens: None,
-        removed_context_budget: None,
-        plan_overview: None,
-        sandbox: StageSandboxConfig::default(),
-        execution_mode: None,
-        bug_fix: None,
-        regression_test: None,
-        model: None,
-        reasoning_effort: None,
-        code_review: None,
-        ultracode: false,
-        implementers: Implementers::default(),
-        subagent_timeout_secs: None,
-        skills: vec![],
+        ..Default::default()
     }];
     ExecutionGraph::build(stages).unwrap()
 }

@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 use tempfile::TempDir;
 
 use loom::plan::graph::ExecutionGraph;
-use loom::plan::schema::{Implementers, StageDefinition};
+use loom::plan::schema::StageDefinition;
 
 /// Test helper: Create a temporary git repository with initial commit
 pub fn init_test_repo() -> TempDir {
@@ -94,33 +94,8 @@ pub fn build_test_graph(stages: Vec<(&str, Vec<&str>)>) -> ExecutionGraph {
             name: id.to_string(),
             description: Some(format!("Test stage {id}")),
             dependencies: deps.into_iter().map(String::from).collect(),
-            acceptance: vec![],
-            setup: vec![],
-            files: vec![],
-            parallel_group: None,
-            auto_merge: None,
             working_dir: ".".to_string(),
-            sandbox: Default::default(),
-            stage_type: None,
-            artifacts: vec![],
-            wiring: vec![],
-            wiring_tests: vec![],
-            dead_code_check: None,
-            before_stage: vec![],
-            after_stage: vec![],
-            context_ceiling_tokens: None,
-            removed_context_budget: None,
-            plan_overview: None,
-            execution_mode: None,
-            bug_fix: None,
-            regression_test: None,
-            model: None,
-            reasoning_effort: None,
-            code_review: None,
-            ultracode: false,
-            implementers: Implementers::default(),
-            subagent_timeout_secs: None,
-            skills: vec![],
+            ..Default::default()
         })
         .collect();
 

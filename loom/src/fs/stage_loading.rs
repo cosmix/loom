@@ -85,6 +85,9 @@ fn definition_from_stage(stage: &Stage) -> StageDefinition {
         implementers: stage.implementers.clone(),
         subagent_timeout_secs: stage.subagent_timeout_secs,
         skills: stage.skills.clone(),
+        contracts: stage.contracts.clone(),
+        harness: stage.harness.clone(),
+        reachable: stage.reachable.clone(),
     }
 }
 

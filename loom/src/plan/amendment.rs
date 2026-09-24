@@ -952,7 +952,7 @@ mod tests {
     //! exercise the full `apply_amendment` flow live under
     //! `plan::tests::amendment`.
     use super::*;
-    use crate::plan::schema::{Implementers, StageDefinition};
+    use crate::plan::schema::StageDefinition;
 
     #[test]
     fn audit_row_round_trip_via_markdown() {
@@ -1010,38 +1010,12 @@ mod tests {
         let mut def = StageDefinition {
             id: "s".to_string(),
             name: "S".to_string(),
-            description: None,
-            dependencies: vec![],
-            parallel_group: None,
             acceptance: vec![
                 AcceptanceCriterion::Simple("cargo test".to_string()),
                 AcceptanceCriterion::Simple("cargo clippy".to_string()),
             ],
-            setup: vec![],
-            files: vec![],
-            auto_merge: None,
             working_dir: ".".to_string(),
-            stage_type: Default::default(),
-            artifacts: vec![],
-            wiring: vec![],
-            wiring_tests: vec![],
-            dead_code_check: None,
-            before_stage: vec![],
-            after_stage: vec![],
-            context_ceiling_tokens: None,
-            removed_context_budget: None,
-            plan_overview: None,
-            sandbox: Default::default(),
-            execution_mode: None,
-            bug_fix: None,
-            regression_test: None,
-            model: None,
-            reasoning_effort: None,
-            code_review: None,
-            ultracode: false,
-            implementers: Implementers::default(),
-            subagent_timeout_secs: None,
-            skills: vec![],
+            ..Default::default()
         };
         assert_eq!(current_field_len(&def, AmendmentField::Acceptance), 2);
         assert_eq!(current_field_len(&def, AmendmentField::Wiring), 0);
@@ -1049,6 +1023,7 @@ mod tests {
             source: "x".to_string(),
             pattern: "y".to_string(),
             description: "z".to_string(),
+            literal: false,
         });
         assert_eq!(current_field_len(&def, AmendmentField::Wiring), 1);
     }
