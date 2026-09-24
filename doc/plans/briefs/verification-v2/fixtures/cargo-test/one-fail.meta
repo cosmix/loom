@@ -1,0 +1,3 @@
+command: cargo test tests::beta_fails -- --exact
+exit: 101
+cwd: .

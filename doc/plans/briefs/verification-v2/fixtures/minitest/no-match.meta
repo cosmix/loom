@@ -1,0 +1,3 @@
+command: ruby fixture_test.rb -n '/^test_delta_missing$/'
+exit: 0
+cwd: .

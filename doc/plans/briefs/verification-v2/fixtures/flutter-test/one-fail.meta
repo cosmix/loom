@@ -1,0 +1,3 @@
+command: flutter test test/fixture_test.dart --plain-name 'beta_fails'
+exit: 1
+cwd: .

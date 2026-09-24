@@ -1,0 +1,7 @@
+/tmp/claude-1000/-home-dkaponis-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/ctest/alpha_passes.c: In function ‘main’:
+/tmp/claude-1000/-home-dkaponis-src-loom/99212933-6012-4c4f-a6a4-f4e7f5668350/scratchpad/runner-projects/ctest/alpha_passes.c:8:29: error: expected ‘;’ before ‘this’
+    8 |     assert(add(2, 2) == 4)  this is a deliberate syntax error
+      |                             ^~~~
+gmake[2]: *** [CMakeFiles/alpha_passes.dir/build.make:79: CMakeFiles/alpha_passes.dir/alpha_passes.c.o] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:93: CMakeFiles/alpha_passes.dir/all] Error 2
+gmake: *** [Makefile:101: all] Error 2

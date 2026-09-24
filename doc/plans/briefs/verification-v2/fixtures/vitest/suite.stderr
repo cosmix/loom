@@ -1,0 +1,22 @@
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  fixture.test.js > beta_fails
+AssertionError: expected 4 to be 5 // Object.is equality
+
+- Expected
++ Received
+
+- 5
++ 4
+
+ ❯ fixture.test.js:12:21
+     10|
+     11| test('beta_fails', () => {
+     12|   expect(add(2, 2)).toBe(5);
+       |                     ^
+     13| });
+     14|
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+

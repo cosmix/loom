@@ -1,0 +1,3 @@
+command: python3 -m pytest test_fixture.py -q -k test_alpha_passes
+exit: 0
+cwd: .

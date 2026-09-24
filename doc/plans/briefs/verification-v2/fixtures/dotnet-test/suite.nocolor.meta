@@ -1,0 +1,3 @@
+command: DOTNET_NOLOGO=1 NO_COLOR=1 dotnet test
+exit: 1
+cwd: .

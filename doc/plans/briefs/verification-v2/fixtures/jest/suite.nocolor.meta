@@ -1,0 +1,3 @@
+command: CI=1 bunx jest fixture.test.js --colors=false
+exit: 1
+cwd: .
