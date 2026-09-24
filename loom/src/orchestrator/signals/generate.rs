@@ -312,7 +312,7 @@ fn missing_allow_write_from_merged(work_dir: &Path, stage: &Stage) -> Vec<String
 fn append_stage_feedback(content: &mut String, stage: &Stage, work_dir: &Path) {
     // Adjudicator feedback (disputed stages only), appended last so it sits
     // where the agent's recitation attention is highest.
-    if stage.dispute_count > 0 {
+    if has_disputes(stage) {
         if let Ok(Some(text)) =
             crate::orchestrator::adjudication::feedback::read_feedback(work_dir, &stage.id)
         {
@@ -335,9 +335,26 @@ fn append_stage_feedback(content: &mut String, stage: &Stage, work_dir: &Path) {
     }
 }
 
+/// Whether a dispute of any kind was ever filed for `stage`, so adjudicator
+/// feedback may be waiting for it.
+fn has_disputes(stage: &Stage) -> bool {
+    [
+        stage.dispute_count,
+        stage.tally.finding_disputes,
+        stage.tally.contract_disputes,
+        stage.tally.integrity_disputes,
+    ]
+    .iter()
+    .any(|&count| count > 0)
+}
+
 #[cfg(test)]
 #[path = "generate_declared_skills_tests.rs"]
 mod declared_skills_tests;
+
+#[cfg(test)]
+#[path = "generate_feedback_tests.rs"]
+mod feedback_tests;
 
 #[cfg(test)]
 #[path = "generate_missing_allow_write_tests.rs"]

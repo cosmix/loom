@@ -22,9 +22,17 @@ pub struct ExecutionSite {
     /// False when the stage's worktree is gone, in which case `path` falls
     /// back to the repository root — a different tree from the disputed one.
     pub worktree_present: bool,
+    /// The tree `path` sits in: the stage's worktree root, or the repository
+    /// root once the worktree is gone.
+    pub root: PathBuf,
 }
 
 impl ExecutionSite {
+    /// The stage's worktree root; `None` once it is gone from disk.
+    pub fn worktree(&self) -> Option<&Path> {
+        self.worktree_present.then_some(self.root.as_path())
+    }
+
     pub(super) fn resolve(work_dir: &Path, stage: &Stage) -> Self {
         // The hop count from the state root to the repo root is layout-dependent
         // (two for `.loom/work`, one for a legacy `.work`) and lives in exactly
@@ -47,7 +55,7 @@ impl ExecutionSite {
         };
         let working_dir = stage.working_dir.clone().unwrap_or_else(|| ".".to_string());
         let path = if working_dir == "." {
-            root
+            root.clone()
         } else {
             root.join(&working_dir)
         };
@@ -55,6 +63,7 @@ impl ExecutionSite {
             path,
             working_dir,
             worktree_present,
+            root,
         }
     }
 }
@@ -86,6 +95,7 @@ mod tests {
         assert_eq!(site.path, repo.join(".worktrees/s1/loom"));
         assert_eq!(site.working_dir, "loom");
         assert!(site.worktree_present);
+        assert_eq!(site.worktree(), Some(repo.join(".worktrees/s1").as_path()));
     }
 
     #[test]
@@ -113,6 +123,7 @@ mod tests {
         let site = ExecutionSite::resolve(&work, &stage_in(None, None));
         assert_eq!(site.path, repo);
         assert!(!site.worktree_present);
+        assert_eq!(site.worktree(), None);
     }
 
     #[test]

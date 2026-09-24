@@ -66,7 +66,9 @@ fn append_frozen_contracts(content: &mut String, stage: &Stage, work_dir: &Path)
          frozen hash and fails on any change.\n\
          - `loom stage contracts show {id}` prints the freeze record and the frozen files.\n\
          - `loom stage contracts restore {id}` copies the frozen content back into the \
-         worktree (`--contract <id>` for one contract).\n",
+         worktree (`--contract <id>` for one contract).\n\
+         - `loom stage dispute-contract {id} --contract <contract-id> --reason \"...\"` files a \
+         dispute when the frozen contract itself is wrong.\n",
         id = stage.id
     ));
 }

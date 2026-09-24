@@ -89,6 +89,10 @@ fn completion_fails_when_frozen_contract_changed() {
 
     assert!(error.contains(CONTRACT_FILE), "{error}");
     assert!(error.contains("loom stage contracts restore s1"), "{error}");
+    assert!(
+        error.contains("loom stage dispute-contract s1 --contract <id> --reason ..."),
+        "{error}"
+    );
 }
 
 #[test]
