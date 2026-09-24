@@ -36,7 +36,7 @@ pub fn apply_default_mode(settings: &mut Value, mode: PermissionMode) -> Result<
 }
 
 /// State-root subdirectories every session may read.
-const STATE_READ_DIRS: [&str; 4] = ["signals", "handoffs", "disputes", "memory"];
+const STATE_READ_DIRS: [&str; 5] = ["signals", "handoffs", "disputes", "memory", "contracts"];
 
 /// Detect whether a settings target is a loom worktree (vs. the main repo root).
 ///

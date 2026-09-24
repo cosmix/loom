@@ -11,6 +11,7 @@ use anyhow::Result;
 
 use super::dispatch::{print_minted_proof, resolve_completion_proof};
 use super::types::{OutputCommands, StageCommands};
+use super::types_stage::ContractsCommands;
 use crate::commands::stage;
 
 /// `loom stage {block,reset,waiting,resume,hold,release,skip}` dispatch.
@@ -150,16 +151,34 @@ pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
         cmd @ (StageCommands::DisputeCriteria { .. }
         | StageCommands::Adjudicate { .. }
         | StageCommands::Amend { .. }) => dispatch_stage_criteria(cmd),
-        StageCommands::Output { command } => match command {
-            OutputCommands::Set {
-                stage_id,
-                key,
-                value,
-                description,
-            } => stage::output_set(stage_id, key, value, description),
-            OutputCommands::Get { stage_id, key } => stage::output_get(stage_id, key),
-            OutputCommands::List { stage_id } => stage::output_list(stage_id),
-            OutputCommands::Remove { stage_id, key } => stage::output_remove(stage_id, key),
-        },
+        StageCommands::Output { command } => dispatch_stage_output(command),
+        StageCommands::Contracts { command } => dispatch_stage_contracts(command),
+    }
+}
+
+/// `loom stage output <subcommand>` dispatch, broken out of `dispatch_stage`
+/// to pay for the `contracts` arm without growing the parent match.
+fn dispatch_stage_output(command: OutputCommands) -> Result<()> {
+    match command {
+        OutputCommands::Set {
+            stage_id,
+            key,
+            value,
+            description,
+        } => stage::output_set(stage_id, key, value, description),
+        OutputCommands::Get { stage_id, key } => stage::output_get(stage_id, key),
+        OutputCommands::List { stage_id } => stage::output_list(stage_id),
+        OutputCommands::Remove { stage_id, key } => stage::output_remove(stage_id, key),
+    }
+}
+
+/// `loom stage contracts <subcommand>` dispatch.
+fn dispatch_stage_contracts(command: ContractsCommands) -> Result<()> {
+    match command {
+        ContractsCommands::Freeze { stage_id } => stage::contracts_freeze(stage_id),
+        ContractsCommands::Show { stage_id } => stage::contracts_show(stage_id),
+        ContractsCommands::Restore { stage_id, contract } => {
+            stage::contracts_restore(stage_id, contract)
+        }
     }
 }
