@@ -136,6 +136,10 @@ fn gate_fails_with_open_finding() {
         error.contains("fix them and run a re-review, or dispute them"),
         "{error}"
     );
+    assert!(
+        error.contains("loom stage dispute-findings s1 --finding <id> ... --reason ..."),
+        "{error}"
+    );
     assert!(error.contains("loom stage review status s1"), "{error}");
     assert!(!error.contains(" saw "), "the review is current: {error}");
 }

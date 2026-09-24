@@ -101,7 +101,7 @@ fn needs_more_evidence_writes_feedback_and_increments_round() {
 
     let after = crate::verify::transitions::load_stage("s1", work).unwrap();
     assert_eq!(after.status, StageStatus::Queued);
-    assert_eq!(after.evidence_rounds, 1);
+    assert_eq!(after.tally.evidence_rounds, 1);
     let fb = feedback::read_feedback(work, "s1").unwrap().unwrap();
     assert!(fb.contains("1. why?"));
 }
@@ -113,7 +113,7 @@ fn evidence_loop_exhausts_to_human_review() {
     std::fs::create_dir_all(work.join("stages")).unwrap();
     let mut stage = make_stage("s1");
     stage.dispute_count = 3;
-    stage.evidence_rounds = MAX_EVIDENCE_ROUNDS - 1;
+    stage.tally.evidence_rounds = MAX_EVIDENCE_ROUNDS - 1;
     write_stage(work, &stage);
     write_dispute_request(work, "s1", 1, 0);
     write_verdict(
@@ -131,7 +131,7 @@ fn evidence_loop_exhausts_to_human_review() {
 
     let after = crate::verify::transitions::load_stage("s1", work).unwrap();
     assert_eq!(after.status, StageStatus::NeedsHumanReview);
-    assert_eq!(after.evidence_rounds, MAX_EVIDENCE_ROUNDS);
+    assert_eq!(after.tally.evidence_rounds, MAX_EVIDENCE_ROUNDS);
 }
 
 /// Two unanswered disputes on one stage: applying the verdict for the first

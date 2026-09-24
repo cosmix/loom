@@ -87,6 +87,14 @@ pub fn append_questions(work_dir: &Path, stage_id: &str, questions: &[String]) -
     Ok(())
 }
 
+/// Write feedback the caller composed: the outcome of a findings, contract or
+/// integrity dispute. Overwrites any prior content.
+pub fn write_notice(work_dir: &Path, stage_id: &str, body: &str) -> Result<()> {
+    let path = feedback_path(work_dir, stage_id);
+    ensure_parent(&path)?;
+    fs::write(&path, body).with_context(|| format!("Failed to write {}", path.display()))
+}
+
 /// Read the current feedback for a stage, if any. Returns `Ok(None)`
 /// when no file exists.
 pub fn read_feedback(work_dir: &Path, stage_id: &str) -> Result<Option<String>> {

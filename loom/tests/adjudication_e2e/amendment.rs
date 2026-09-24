@@ -74,7 +74,7 @@ fn assert_amendment_applied(work: &Path, plan: &Path, shape: &str) {
         other => panic!("expected Simple criterion, got {other:?}"),
     }
     assert_eq!(
-        after.amendments_applied, 1,
+        after.tally.amendments_applied, 1,
         "stage.amendments_applied must increment to 1 ({shape})",
     );
 

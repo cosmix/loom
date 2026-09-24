@@ -37,12 +37,17 @@ pub fn check(stage: &Stage, work_dir: &Path, worktree: &Path, target_branch: &st
     if blocking.is_empty() {
         return Ok(());
     }
-    bail!(
-        "test-integrity gate failed for stage '{id}':\n  - {}\n\
-         Revert the change behind each event, or dispute it.\n\
-         Run `loom stage review integrity {id}` for each event's detail.",
-        blocking.join("\n  - "),
-        id = stage.id
+    bail!("{}", failure_message(&stage.id, &blocking))
+}
+
+/// The gate's failure: every blocking event, and the two ways out of each.
+fn failure_message(stage_id: &str, blocking: &[String]) -> String {
+    format!(
+        "test-integrity gate failed for stage '{stage_id}':\n  - {}\n\
+         Revert the change behind each event, or dispute it with \
+         `loom stage dispute-integrity {stage_id} --event <id> ... --reason ...`.\n\
+         Run `loom stage review integrity {stage_id}` for each event's detail.",
+        blocking.join("\n  - ")
     )
 }
 
@@ -88,5 +93,29 @@ pub fn describe(event: &IntegrityEvent) -> String {
             event.detail.len()
         ),
         EventKind::Ratchet => format!("{id} (ratchet file differs from base)"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn failure_names_the_dispute_command() {
+        let blocking =
+            ["TI-decl-rust (test declarations 3 at base, 2 now): not accepted".to_string()];
+        let message = failure_message("s1", &blocking);
+        assert!(
+            message.contains("\n  - TI-decl-rust (test declarations"),
+            "{message}"
+        );
+        assert!(
+            message.contains("loom stage dispute-integrity s1 --event <id> ... --reason ..."),
+            "{message}"
+        );
+        assert!(
+            message.contains("loom stage review integrity s1"),
+            "{message}"
+        );
     }
 }

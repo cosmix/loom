@@ -26,7 +26,7 @@ fn write_request(work: &Path, dispute_id: u32) {
     let req = DisputeRequest {
         id: dispute_id,
         stage_id: "s1".to_string(),
-        criterion_index: 0,
+        kind: DisputeKind::Criterion { criterion_index: 0 },
         reason: "impossible".to_string(),
         evidence_commit: None,
         failure_output: None,

@@ -7,8 +7,8 @@
 //!
 //! This module provides exactly that, subject to a tight contract:
 //!
-//! - **Scope:** only `acceptance`, `wiring`, and `wiring_tests` arrays on a
-//!   single stage are mutable. Everything else (stage IDs, dependencies,
+//! - **Scope:** only `acceptance`, `wiring`, `wiring_tests` and `contracts`
+//!   arrays on a single stage are mutable. Everything else (stage IDs, dependencies,
 //!   working_dir, plan structure) is off-limits.
 //! - **Versioned + atomic:** under an `flock` on
 //!   `.loom/work/plan_versions/.lock`, the amendment writes a numbered
@@ -48,10 +48,10 @@ use crate::models::stage::{WiringCheck, WiringTest};
 use crate::plan::amendment_catch_up;
 use crate::plan::amendment_fields::{
     apply_patch_to_runtime_stage, apply_patch_to_stage_def, current_field_len,
-    persist_amended_stage, stage_field_matches, sync_stage_from_definition,
+    parse_amendment_value, persist_amended_stage, stage_field_matches, sync_stage_from_definition,
 };
 use crate::plan::parser::{extract_yaml_metadata_with_ranges, parse_and_validate};
-use crate::plan::schema::{AcceptanceCriterion, LoomMetadata};
+use crate::plan::schema::{AcceptanceCriterion, ContractSpec, LoomMetadata};
 use crate::verify::transitions::{load_stage, update_stage};
 
 /// Which field of a stage is being amended.
@@ -64,6 +64,8 @@ pub enum AmendmentField {
     Wiring,
     /// Mutate the `wiring_tests` array.
     WiringTests,
+    /// Mutate the `contracts` array (a v2 stage's behavioural contracts).
+    Contracts,
 }
 
 fn field_from_name(name: &str) -> Option<AmendmentField> {
@@ -267,6 +269,7 @@ impl AuditRow {
             AmendmentField::Acceptance => "acceptance",
             AmendmentField::Wiring => "wiring",
             AmendmentField::WiringTests => "wiring_tests",
+            AmendmentField::Contracts => "contracts",
         };
         format!(
             "| {} | {} | {} | {} | {} | {} | {} | {} |\n",
@@ -531,39 +534,7 @@ pub fn apply_amendment(
 
     // -- 3. Validate the patch shape by deserializing the proposed value
     //       into the REAL type (NOT a hand-rolled simplified shape).
-    let parsed_value = match (request.field, &request.patch) {
-        (AmendmentField::Acceptance, AmendmentPatch::Replace { value, .. })
-        | (AmendmentField::Acceptance, AmendmentPatch::Insert { value, .. }) => {
-            let v: AcceptanceCriterion = serde_yaml::from_str(value).with_context(|| {
-                format!(
-                    "Invalid AcceptanceCriterion in amendment for stage '{}'",
-                    request.stage_id
-                )
-            })?;
-            ParsedAmendmentValue::Acceptance(v)
-        }
-        (AmendmentField::Wiring, AmendmentPatch::Replace { value, .. })
-        | (AmendmentField::Wiring, AmendmentPatch::Insert { value, .. }) => {
-            let v: WiringCheck = serde_yaml::from_str(value).with_context(|| {
-                format!(
-                    "Invalid WiringCheck in amendment for stage '{}'",
-                    request.stage_id
-                )
-            })?;
-            ParsedAmendmentValue::Wiring(v)
-        }
-        (AmendmentField::WiringTests, AmendmentPatch::Replace { value, .. })
-        | (AmendmentField::WiringTests, AmendmentPatch::Insert { value, .. }) => {
-            let v: WiringTest = serde_yaml::from_str(value).with_context(|| {
-                format!(
-                    "Invalid WiringTest in amendment for stage '{}'",
-                    request.stage_id
-                )
-            })?;
-            ParsedAmendmentValue::WiringTest(v)
-        }
-        (_, AmendmentPatch::Delete { .. }) => ParsedAmendmentValue::None,
-    };
+    let parsed_value = parse_amendment_value(&request)?;
 
     // Bounds-check `index` against the CURRENT length of the targeted array.
     let current_len = current_field_len(&stage_def, request.field);
@@ -865,6 +836,7 @@ pub(super) enum ParsedAmendmentValue {
     Acceptance(AcceptanceCriterion),
     Wiring(WiringCheck),
     WiringTest(WiringTest),
+    Contract(ContractSpec),
     None,
 }
 

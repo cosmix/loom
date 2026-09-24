@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
-use std::fmt;
 
 use crate::handoff::CompletionAttemptEvidence;
+use crate::models::dispute::DisputeKind;
 use crate::models::stage::StageStatus;
+
+#[path = "protocol_debug.rs"]
+mod debug;
 
 /// Information about a single stage's completion status.
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -93,8 +96,8 @@ pub struct ContractRunReport {
 /// Authorization capability required by a request.
 ///
 /// `User` requests are unprivileged RPCs (Ping, SubscribeStatus,
-/// SubscribeLogs, Unsubscribe, DisputeCriteria, BlockStage, CompleteStage,
-/// RecordCompletionEvidence, FreezeContracts). They use the user token. The
+/// SubscribeLogs, Unsubscribe, DisputeCriteria, FileDispute, BlockStage,
+/// CompleteStage, RecordCompletionEvidence, FreezeContracts). They use the user token. The
 /// stage self-service RPCs are additionally accepted only for the exact
 /// stage/session pair the caller names. State-transition requests carry no command, path, or
 /// privileged flags; evidence is separately bounded and validated.
@@ -138,6 +141,19 @@ pub enum Request {
         reason: String,
         evidence_commit: Option<String>,
         failure_output: Option<String>, // pre-truncated to 4KB by the CLI
+    },
+    /// File a dispute against a plan v2 stage's review findings, frozen
+    /// contract or test-integrity events (DESIGN D15). The daemon checks every
+    /// id itself, spends the kind's budget, writes request.md and transitions
+    /// the stage to NeedsAdjudication; it replies with the assigned id.
+    /// `session_id` follows the rule of [`Request::DisputeCriteria`].
+    FileDispute {
+        auth_token: String,
+        stage_id: String,
+        session_id: String,
+        kind: DisputeKind,
+        reason: String,
+        evidence_commit: Option<String>,
     },
     /// Block a stage, recording why it cannot proceed.
     ///
@@ -201,6 +217,7 @@ impl Request {
             | Request::SubscribeLogs { .. }
             | Request::Unsubscribe { .. }
             | Request::DisputeCriteria { .. }
+            | Request::FileDispute { .. }
             | Request::BlockStage { .. }
             | Request::CompleteStage { .. }
             | Request::RecordCompletionEvidence { .. }
@@ -219,119 +236,11 @@ impl Request {
             | Request::Unsubscribe { auth_token }
             | Request::Ping { auth_token }
             | Request::DisputeCriteria { auth_token, .. }
+            | Request::FileDispute { auth_token, .. }
             | Request::BlockStage { auth_token, .. }
             | Request::CompleteStage { auth_token, .. }
             | Request::RecordCompletionEvidence { auth_token, .. }
             | Request::FreezeContracts { auth_token, .. } => auth_token,
-        }
-    }
-}
-
-/// Render a request whose only field is its credential: name it, redact that.
-fn credential_only(formatter: &mut fmt::Formatter<'_>, name: &str) -> fmt::Result {
-    write!(formatter, "{name} {{ auth_token: [REDACTED] }}")
-}
-
-fn debug_dispute(request: &Request, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-    let Request::DisputeCriteria {
-        stage_id,
-        session_id,
-        criterion_index,
-        evidence_commit,
-        ..
-    } = request
-    else {
-        unreachable!("debug_dispute called for another request variant")
-    };
-    formatter
-        .debug_struct("DisputeCriteria")
-        .field("auth_token", &"[REDACTED]")
-        .field("stage_id", stage_id)
-        .field("session_id", session_id)
-        .field("criterion_index", criterion_index)
-        .field("reason", &"[REDACTED]")
-        .field("evidence_commit", evidence_commit)
-        .field("failure_output", &"[REDACTED]")
-        .finish()
-}
-
-/// Contract ids are agent-written, so only the number of reports is shown.
-fn debug_freeze(request: &Request, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-    let Request::FreezeContracts {
-        stage_id,
-        session_id,
-        reports,
-        ..
-    } = request
-    else {
-        unreachable!("debug_freeze called for another request variant")
-    };
-    formatter
-        .debug_struct("FreezeContracts")
-        .field("auth_token", &"[REDACTED]")
-        .field("stage_id", stage_id)
-        .field("session_id", session_id)
-        .field("reports", &reports.len())
-        .finish()
-}
-
-fn debug_completion(request: &Request, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match request {
-        Request::CompleteStage {
-            stage_id,
-            session_id,
-            nonce,
-            evidence_nonce,
-            ..
-        } => formatter
-            .debug_struct("CompleteStage")
-            .field("auth_token", &"[REDACTED]")
-            .field("stage_id", stage_id)
-            .field("session_id", session_id)
-            .field("nonce", nonce)
-            .field("evidence_nonce", evidence_nonce)
-            .finish(),
-        Request::RecordCompletionEvidence {
-            stage_id,
-            session_id,
-            evidence,
-            ..
-        } => formatter
-            .debug_struct("RecordCompletionEvidence")
-            .field("auth_token", &"[REDACTED]")
-            .field("stage_id", stage_id)
-            .field("session_id", session_id)
-            .field("phase", &evidence.phase)
-            .field("evidence_nonce", &evidence.evidence_nonce)
-            .finish(),
-        _ => unreachable!("debug_completion called for another request variant"),
-    }
-}
-
-impl fmt::Debug for Request {
-    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Request::SubscribeStatus { .. } => credential_only(formatter, "SubscribeStatus"),
-            Request::SubscribeLogs { .. } => credential_only(formatter, "SubscribeLogs"),
-            Request::Stop { .. } => credential_only(formatter, "Stop"),
-            Request::Unsubscribe { .. } => credential_only(formatter, "Unsubscribe"),
-            Request::Ping { .. } => credential_only(formatter, "Ping"),
-            Request::DisputeCriteria { .. } => debug_dispute(self, formatter),
-            Request::BlockStage {
-                stage_id,
-                session_id,
-                ..
-            } => formatter
-                .debug_struct("BlockStage")
-                .field("auth_token", &"[REDACTED]")
-                .field("stage_id", stage_id)
-                .field("session_id", session_id)
-                .field("reason", &"[REDACTED]")
-                .finish(),
-            Request::CompleteStage { .. } | Request::RecordCompletionEvidence { .. } => {
-                debug_completion(self, formatter)
-            }
-            Request::FreezeContracts { .. } => debug_freeze(self, formatter),
         }
     }
 }
@@ -355,7 +264,7 @@ pub enum Response {
         line: String,
     },
     Pong,
-    /// Reply from a successful DisputeCriteria — carries the allocated dispute id.
+    /// Reply from a successful DisputeCriteria or FileDispute — the allocated dispute id.
     DisputeCreated {
         id: u32,
     },

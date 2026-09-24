@@ -10,6 +10,7 @@
 
 pub mod changes;
 pub mod completion;
+pub mod site;
 pub mod store;
 #[cfg(test)]
 pub(crate) mod test_support;

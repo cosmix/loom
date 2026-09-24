@@ -151,6 +151,9 @@ pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
         cmd @ (StageCommands::DisputeCriteria { .. }
         | StageCommands::Adjudicate { .. }
         | StageCommands::Amend { .. }) => dispatch_stage_criteria(cmd),
+        StageCommands::DisputeFindings(args) => stage::file_dispute(args.into()),
+        StageCommands::DisputeContract(args) => stage::file_dispute(args.into()),
+        StageCommands::DisputeIntegrity(args) => stage::file_dispute(args.into()),
         StageCommands::Output { command } => dispatch_stage_output(command),
         StageCommands::Contracts { command } => dispatch_stage_contracts(command),
         StageCommands::Review { command } => dispatch_stage_review(command),

@@ -20,7 +20,7 @@ pub struct HandoffRequest {
 }
 
 /// `{dispute_id, verdict}` for a `verdict` request. Validated again
-/// daemon-side by `verdict::parse_and_validate`.
+/// daemon-side by `verdict::parse_and_validate_for`.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct VerdictRequest {
@@ -39,11 +39,13 @@ pub enum RequestPayload {
     Verdict(VerdictRequest),
     Telemetry(TelemetryEvent),
     FreezeContracts(StageRequest),
+    FileDispute(StageRequest),
 }
 
-/// Decode `payload` under the shape `kind` promises. `block`, `dispute` and
-/// `freeze-contracts` share `StageRequest`'s wire shape, so a payload tagged
-/// for another one is refused even though it would otherwise parse.
+/// Decode `payload` under the shape `kind` promises. `block`, `dispute`,
+/// `freeze-contracts` and `file-dispute` share `StageRequest`'s wire shape, so
+/// a payload tagged for another one is refused even though it would otherwise
+/// parse.
 pub fn decode_payload(kind: RequestKind, payload: &Value) -> Result<RequestPayload> {
     match kind {
         RequestKind::Memory => Ok(RequestPayload::Memory(decode(payload, "memory")?)),
@@ -63,6 +65,10 @@ pub fn decode_payload(kind: RequestKind, payload: &Value) -> Result<RequestPaylo
         RequestKind::FreezeContracts => Ok(RequestPayload::FreezeContracts(decode_stage_request(
             payload,
             "freeze_contracts",
+        )?)),
+        RequestKind::FileDispute => Ok(RequestPayload::FileDispute(decode_stage_request(
+            payload,
+            "file_dispute",
         )?)),
     }
 }
@@ -216,6 +222,21 @@ mod tests {
         assert!(
             decode_payload(RequestKind::FreezeContracts, &stage_request_json("block")).is_err()
         );
+    }
+
+    #[test]
+    fn decodes_file_dispute_and_refuses_it_under_dispute() {
+        let file_dispute = serde_json::json!({
+            "request": "file_dispute",
+            "kind": {"kind": "contract", "contract_id": "rejects-x"},
+            "reason": "the contract tests the wrong error",
+        });
+        assert!(matches!(
+            decode_payload(RequestKind::FileDispute, &file_dispute).unwrap(),
+            RequestPayload::FileDispute(StageRequest::FileDispute { .. })
+        ));
+        assert!(decode_payload(RequestKind::Dispute, &file_dispute).is_err());
+        assert!(decode_payload(RequestKind::FileDispute, &stage_request_json("dispute")).is_err());
     }
 
     #[test]

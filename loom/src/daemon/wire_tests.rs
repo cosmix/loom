@@ -295,6 +295,32 @@ fn block_stage_debug_output_redacts_credential_and_reason() {
     assert!(output.contains("session-1"));
 }
 
+/// The disputed ids and their evidence are agent-written; the log line names
+/// only the kind.
+#[test]
+fn file_dispute_debug_output_redacts_credential_reason_and_ids() {
+    let request = Request::FileDispute {
+        auth_token: "user-secret".to_string(),
+        stage_id: "stage".to_string(),
+        session_id: "session-1".to_string(),
+        kind: crate::models::dispute::DisputeKind::Contract {
+            contract_id: "private-contract".to_string(),
+        },
+        reason: "private reason".to_string(),
+        evidence_commit: None,
+    };
+
+    let output = format!("{request:?}");
+    assert!(!output.contains("user-secret"));
+    assert!(!output.contains("private reason"));
+    assert!(!output.contains("private-contract"));
+    assert!(
+        output.contains("contract"),
+        "the kind stays legible: {output}"
+    );
+    assert!(output.contains("session-1"));
+}
+
 #[test]
 fn daemon_config_default_is_safe() {
     let config = DaemonConfig::default();

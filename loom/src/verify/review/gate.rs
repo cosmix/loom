@@ -118,7 +118,10 @@ fn failure_message(
         ));
     }
     if has_open {
-        message.push_str("\nOpen findings: fix them and run a re-review, or dispute them.");
+        message.push_str(&format!(
+            "\nOpen findings: fix them and run a re-review, or dispute them together with \
+             `loom stage dispute-findings {stage_id} --finding <id> ... --reason ...`."
+        ));
     }
     message.push_str(&format!(
         "\nRun `loom stage review status {stage_id}` for the rounds, the open findings and \

@@ -7,3 +7,4 @@ pub mod fingerprint;
 pub mod gate;
 pub mod report;
 pub mod store;
+pub mod verdict_records;

@@ -8,7 +8,8 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 
 use crate::daemon::{
-    handle_block_stage, handle_dispute_criteria, handle_freeze_contracts, Response,
+    handle_block_stage, handle_dispute_criteria, handle_file_dispute, handle_freeze_contracts,
+    Response,
 };
 use crate::fs::memory::{append_entry, validate_spooled_entry, MemoryEntry};
 use crate::fs::stage_request::StageRequest;
@@ -60,7 +61,8 @@ pub(super) fn apply(host: &mut dyn InboxHost, record: &Session, admitted: Admitt
         RequestPayload::Memory(entry) => memory(&work_dir, stage_id, &entry),
         RequestPayload::Block(request)
         | RequestPayload::Dispute(request)
-        | RequestPayload::FreezeContracts(request) => {
+        | RequestPayload::FreezeContracts(request)
+        | RequestPayload::FileDispute(request) => {
             stage_request(&work_dir, stage_id, record, request)
         }
         RequestPayload::Handoff(request) => {
@@ -124,6 +126,11 @@ fn stage_request(
         StageRequest::FreezeContracts { reports } => {
             handle_freeze_contracts(work_dir, stage_id, &record.id, &reports)
         }
+        StageRequest::FileDispute {
+            kind,
+            reason,
+            evidence_commit,
+        } => handle_file_dispute(work_dir, stage_id, kind, reason, evidence_commit),
     };
     match response {
         Ok(Response::Ok) => Settle::Applied(None),
@@ -137,7 +144,7 @@ fn stage_request(
     }
 }
 
-/// Block, dispute and freeze act on a stage only for the live session that
+/// Block, disputes and freeze act on a stage only for the live session that
 /// owns it, the rule `daemon::server` enforces for the same requests over the
 /// socket. The freeze handler further requires a contract session.
 fn require_owner(work_dir: &Path, stage_id: &str, record: &Session) -> Result<(), String> {

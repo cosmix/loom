@@ -63,9 +63,10 @@ fn check_with(
     }
     bail!(
         "contract check failed for stage '{id}':\n  - {}\n\
-         Frozen contract files must keep their frozen content: restore them with \
-         `loom stage contracts restore {id}`. A failing contract needs an implementation \
-         that passes it.",
+         Each frozen contract file must keep its frozen content: restore it with \
+         `loom stage contracts restore {id}` or dispute it with \
+         `loom stage dispute-contract {id} --contract <id> --reason ...`. A failing contract \
+         needs an implementation that passes it.",
         failures.join("\n  - "),
         id = stage.id
     )

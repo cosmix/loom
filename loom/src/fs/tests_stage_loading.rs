@@ -89,8 +89,8 @@ fn test_extract_stage_definition_parses_realistic_runtime_stage_file() {
         stage.worktree = Some(".worktrees/real-stage".to_string());
         stage.plan_id = Some("plan-1".to_string());
         stage.dispute_count = 1;
-        stage.evidence_rounds = 1;
-        stage.amendments_applied = 1;
+        stage.tally.evidence_rounds = 1;
+        stage.tally.amendments_applied = 1;
     });
 
     let result = extract_stage_definition(&content);

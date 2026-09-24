@@ -25,8 +25,8 @@ use crate::verify::contracts::store::canonical_work_dir;
 /// The `version` of every record in `reviews/<stage>/`.
 pub const RECORD_VERSION: u32 = 1;
 const REVIEWS_DIR: &str = "reviews";
-const RULINGS_FILE: &str = "rulings.json";
-const CARRIED_FILE: &str = "carried.json";
+pub(in crate::verify) const RULINGS_FILE: &str = "rulings.json";
+pub(in crate::verify) const CARRIED_FILE: &str = "carried.json";
 const MAX_RECORD_BYTES: usize = 4 * 1024 * 1024;
 
 /// `round-<n>.json`: one harvested review.
@@ -350,6 +350,6 @@ pub(in crate::verify) fn check_version(version: u32, record: &str) -> Result<()>
     Ok(())
 }
 
-fn stage_dir(work_dir: &Path, stage_id: &str) -> PathBuf {
+pub(in crate::verify) fn stage_dir(work_dir: &Path, stage_id: &str) -> PathBuf {
     work_dir.join(REVIEWS_DIR).join(stage_id)
 }

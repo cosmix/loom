@@ -1,10 +1,12 @@
 //! Adjudication signal generation.
 //!
-//! An adjudication session judges one disputed acceptance criterion. Unlike a
+//! An adjudication session judges one dispute: an acceptance criterion,
+//! review findings, a frozen contract or test-integrity events. Unlike a
 //! stage signal there is no assignment, no acceptance criteria of its own and
 //! no completion step: the whole job is stated by
-//! [`crate::orchestrator::adjudication::prompt`], and the session reports back
-//! by running `loom stage adjudicate`.
+//! [`crate::orchestrator::adjudication::prompt`], which briefs each kind of
+//! dispute with its own builder, and the session reports back by running
+//! `loom stage adjudicate`.
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
@@ -12,14 +14,14 @@ use std::path::{Path, PathBuf};
 use crate::models::dispute::DisputeRequest;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
-use crate::orchestrator::adjudication::{prompt, verdict_draft_file};
+use crate::orchestrator::adjudication::prompt;
 
 use super::helpers;
 
 /// Generate the signal file for an adjudication session.
 ///
-/// `plan_path` is the live plan markdown, so the briefing can quote the
-/// disputed criterion as the plan states it.
+/// `plan_path` is the live plan markdown, so a criterion briefing can quote
+/// the disputed criterion as the plan states it.
 pub fn generate_adjudication_signal(
     session: &Session,
     stage: &Stage,
@@ -27,8 +29,7 @@ pub fn generate_adjudication_signal(
     plan_path: &Path,
     work_dir: &Path,
 ) -> Result<PathBuf> {
-    let draft = verdict_draft_file(work_dir, &stage.id, dispute.id);
-    let briefing = prompt::build(plan_path, stage, dispute, work_dir, &draft);
+    let briefing = prompt::build(plan_path, stage, dispute, work_dir);
     let content = format_adjudication_signal_content(session, stage, dispute, &briefing.render());
     helpers::write_signal_file(&session.id, &content, work_dir)
 }
@@ -63,6 +64,7 @@ fn format_adjudication_signal_content(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::models::dispute::DisputeKind;
     use crate::models::stage::StageStatus;
     use crate::plan::schema::AcceptanceCriterion;
     use chrono::Utc;
@@ -81,7 +83,7 @@ mod tests {
         DisputeRequest {
             id: 2,
             stage_id: "s1".to_string(),
-            criterion_index: 0,
+            kind: DisputeKind::Criterion { criterion_index: 0 },
             reason: "criterion cannot pass".to_string(),
             evidence_commit: None,
             failure_output: Some("boom".to_string()),

@@ -1,12 +1,13 @@
-//! Section 5 of the plan, with DESIGN D8's contract row and freeze column,
-//! cell by cell, driven through the drain: each session kind relays each
+//! Section 5 of the plan, with DESIGN D8's contract row and freeze column and
+//! D15's file-dispute column, cell by cell, driven through the drain: each
+//! session kind relays each
 //! request kind, and the observed outcome — with the handler's effect
 //! checked — must equal the table.
 
 use chrono::Utc;
 
 use crate::fs::stage_request::StageRequest;
-use crate::models::dispute::verdict_file;
+use crate::models::dispute::{request_file, verdict_file};
 use crate::models::session::{SessionStatus, SessionType};
 use crate::models::stage::StageStatus;
 use crate::relay::RequestKind;
@@ -27,14 +28,14 @@ enum Cell {
 use Cell::{Apply as A, DocumentOnly as D, Refuse as R};
 
 /// In `RequestKind::all()` order: memory, block, dispute, handoff,
-/// merge-resolved, verdict, telemetry, freeze-contracts.
-const SECTION_5: [(SessionType, [Cell; 8]); 6] = [
-    (SessionType::Stage, [A, A, A, A, R, R, A, R]),
-    (SessionType::Knowledge, [A, A, A, A, R, R, A, R]),
-    (SessionType::Merge, [A, R, R, D, A, R, A, R]),
-    (SessionType::Adjudication, [R, R, R, R, R, A, A, R]),
-    (SessionType::BaseConflict, [A, R, R, D, R, R, A, R]),
-    (SessionType::Contract, [A, A, R, A, R, R, A, A]),
+/// merge-resolved, verdict, telemetry, freeze-contracts, file-dispute.
+const SECTION_5: [(SessionType, [Cell; 9]); 6] = [
+    (SessionType::Stage, [A, A, A, A, R, R, A, R, A]),
+    (SessionType::Knowledge, [A, A, A, A, R, R, A, R, R]),
+    (SessionType::Merge, [A, R, R, D, A, R, A, R, R]),
+    (SessionType::Adjudication, [R, R, R, R, R, A, A, R, R]),
+    (SessionType::BaseConflict, [A, R, R, D, R, R, A, R, R]),
+    (SessionType::Contract, [A, A, R, A, R, R, A, A, R]),
 ];
 
 #[test]
@@ -65,6 +66,9 @@ fn run_cell(session_type: SessionType, kind: RequestKind) -> Cell {
             contract_worktree(&fx.repo_root, STAGE);
             save_stage(&contract_stage(STAGE, &record.id), &fx.work_dir).unwrap();
         }
+        // A v2 stage with a frozen contract to dispute, so a refusal can only
+        // come from the matrix.
+        RequestKind::FileDispute => fx.frozen_contract_stage(&record.id),
         _ => fx.stage(StageStatus::Executing, Some(&record.id)),
     }
     let payload = match kind {
@@ -87,7 +91,7 @@ fn run_cell(session_type: SessionType, kind: RequestKind) -> Cell {
         .expect("every relayed entry is settled in one pass");
     match settled {
         Settle::Refused(_) => {
-            assert_no_effect(&fx, &host);
+            assert_no_effect(&fx, &host, kind);
             Cell::Refuse
         }
         Settle::Applied(_) => classify_applied(&fx, &host, kind),
@@ -100,7 +104,9 @@ fn classify_applied(fx: &Fixture, host: &FakeHost, kind: RequestKind) -> Cell {
     match kind {
         RequestKind::Memory => assert_eq!(fx.journal_len(), 1),
         RequestKind::Block => assert_eq!(stage.status, StageStatus::Blocked),
-        RequestKind::Dispute => assert_eq!(stage.status, StageStatus::NeedsAdjudication),
+        RequestKind::Dispute | RequestKind::FileDispute => {
+            assert_eq!(stage.status, StageStatus::NeedsAdjudication)
+        }
         RequestKind::Handoff => {
             assert!(fx.handoff_written());
             if stage.status == StageStatus::Executing {
@@ -125,7 +131,7 @@ fn classify_applied(fx: &Fixture, host: &FakeHost, kind: RequestKind) -> Cell {
     Cell::Apply
 }
 
-fn assert_no_effect(fx: &Fixture, host: &FakeHost) {
+fn assert_no_effect(fx: &Fixture, host: &FakeHost, kind: RequestKind) {
     assert_eq!(fx.journal_len(), 0);
     assert!(host.merges.is_empty());
     assert!(!fx.handoff_written());
@@ -133,5 +139,9 @@ fn assert_no_effect(fx: &Fixture, host: &FakeHost) {
     assert!(crate::telemetry::read_events(&fx.work_dir)
         .unwrap()
         .is_empty());
-    assert!(load_freeze(&fx.work_dir, STAGE).unwrap().is_none());
+    if kind == RequestKind::FileDispute {
+        assert!(!request_file(&fx.work_dir.join("disputes"), STAGE, 1).exists());
+    } else {
+        assert!(load_freeze(&fx.work_dir, STAGE).unwrap().is_none());
+    }
 }

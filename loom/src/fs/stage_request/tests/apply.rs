@@ -234,3 +234,31 @@ fn a_worktree_with_no_spool_is_a_silent_no_op() {
         StageStatus::Executing
     );
 }
+
+/// A plan v2 dispute a v1 stage cannot take is refused through the daemon
+/// handler and skipped, so it cannot wedge the spool.
+#[test]
+fn a_spooled_file_dispute_the_daemon_refuses_is_skipped() {
+    let (_temp, work_dir, worktree_root) = setup("build-api", StageStatus::Executing, 1);
+    let request = StageRequest::FileDispute {
+        kind: crate::models::dispute::DisputeKind::Contract {
+            contract_id: "rejects-x".to_string(),
+        },
+        reason: "the contract asserts the wrong error".to_string(),
+        evidence_commit: None,
+    };
+    append_to_spool(&worktree_root, &request).unwrap();
+
+    let outcome = drain_requests(&work_dir, "build-api", &worktree_root).unwrap();
+
+    assert_eq!(
+        outcome,
+        DrainOutcome {
+            applied: 0,
+            skipped: 1
+        }
+    );
+    let stage = load_stage("build-api", &work_dir).unwrap();
+    assert_eq!(stage.status, StageStatus::Executing);
+    assert!(read_pending(&worktree_root).unwrap().is_empty());
+}

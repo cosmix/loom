@@ -76,6 +76,7 @@ fn frozen_contracts_block_names_contracts_and_commands() {
     assert!(content.contains("Never edit a frozen file"));
     assert!(content.contains("loom stage contracts show s1"));
     assert!(content.contains("loom stage contracts restore s1"));
+    assert!(content.contains("loom stage dispute-contract s1 --contract <contract-id>"));
 }
 
 #[test]
@@ -124,6 +125,11 @@ fn review_gate_block_carries_block_e_verbatim() {
         assert!(content.contains("Every finding blocks completion"));
         assert!(content.contains("`loom-code-reviewer`"));
         assert!(content.contains("`loom stage review status s1`"));
+        assert!(
+            content.contains("`loom stage dispute-findings s1 --finding <id> ... --reason ...`")
+        );
+        assert!(content.contains("File every dispute from one review round in one command"));
+        assert!(content.contains("`loom stage dispute-integrity s1 --event <id> ... --reason ...`"));
         assert!(
             !content.contains("### Carried Findings"),
             "nothing is carried"
