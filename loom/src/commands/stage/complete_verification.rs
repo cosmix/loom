@@ -7,10 +7,10 @@ use crate::plan::schema::{
     ChangeImpactConfig, ChangeImpactPolicy, CommandConfinement, StageDefinition,
 };
 use crate::verify::baseline::{compare_to_baseline, ChangeImpact};
-use crate::verify::contracts::completion;
 use crate::verify::criteria::{plan_confinement, resolve_confinement};
 use crate::verify::duplicate_detection::detect_duplicate_symbols;
 use crate::verify::wiring_detection::{detect_unwired_files, UnwiredFile};
+use crate::verify::{contracts::completion, review::gate};
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
@@ -41,7 +41,7 @@ pub(super) fn run(checks: &VerificationChecks<'_>) -> Result<()> {
     let stage_def = load_stage_definition_from_plan(checks.stage_id, checks.work_dir)?;
 
     run_goal_checks(checks, stage_def.as_ref())?;
-    run_contract_check(checks)?;
+    run_v2_checks(checks, &base_branch)?;
     run_after_checks(checks, stage_def.as_ref())?;
     run_unwired_check(checks, &base_branch)?;
     run_duplicate_check(checks, &base_branch)?;
@@ -79,18 +79,19 @@ fn run_goal_checks(
     )
 }
 
-/// DESIGN D9: a v2 standard stage's frozen contracts are intact and pass.
-fn run_contract_check(checks: &VerificationChecks<'_>) -> Result<()> {
-    let stage = checks.stage;
+/// DESIGN D9 and D12: a v2 standard stage's frozen contracts are intact and pass,
+/// then the recorded review gate.
+fn run_v2_checks(checks: &VerificationChecks<'_>, base_branch: &str) -> Result<()> {
+    let (stage, work_dir, root) = (checks.stage, checks.work_dir, checks.worktree_root);
     let has_contracts = stage.stage_type == StageType::Standard && !stage.contracts.is_empty();
-    if stage.plan_version != 2 || !has_contracts {
-        return Ok(());
+    if stage.plan_version == 2 && has_contracts {
+        let Some(worktree_root) = root else {
+            bail!("Stage '{}': no worktree to check contracts in", stage.id);
+        };
+        let acceptance_dir = checks.acceptance_dir.unwrap_or(Path::new("."));
+        completion::check(stage, work_dir, acceptance_dir, worktree_root)?;
     }
-    let Some(worktree_root) = checks.worktree_root else {
-        bail!("Stage '{}': no worktree to check contracts in", stage.id);
-    };
-    let acceptance_dir = checks.acceptance_dir.unwrap_or(Path::new("."));
-    completion::check(stage, checks.work_dir, acceptance_dir, worktree_root)
+    gate::check_at_completion(stage, work_dir, root, base_branch)
 }
 
 fn run_after_checks(

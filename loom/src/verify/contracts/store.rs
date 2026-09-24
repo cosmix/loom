@@ -195,8 +195,8 @@ fn stage_dir(work_dir: &Path, stage_id: &str) -> PathBuf {
 
 /// Validate `stage_id` before it becomes a path, and resolve a worktree's
 /// `.loom/work` symlink so every dirfd-anchored access starts at the real
-/// directory.
-fn canonical_work_dir(work_dir: &Path, stage_id: &str) -> Result<PathBuf> {
+/// directory. The review store resolves its paths the same way.
+pub(in crate::verify) fn canonical_work_dir(work_dir: &Path, stage_id: &str) -> Result<PathBuf> {
     crate::validation::validate_id(stage_id).context("invalid stage id")?;
     work_dir
         .canonicalize()
