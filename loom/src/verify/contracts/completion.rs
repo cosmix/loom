@@ -12,50 +12,13 @@ use std::path::Path;
 use super::store::{self, FreezeRecord};
 use super::{contract_command, resolve_adapter};
 use crate::fs::safe_read::{is_not_found, read_bounded};
-use crate::models::stage::{AcceptanceCriterion, Stage};
+use crate::models::stage::Stage;
 use crate::plan::schema::ContractSpec;
 use crate::relay::sha256_hex;
 use crate::testrun::{classify, RunOutcome, RunOutput, TestRunnerAdapter};
-use crate::verify::criteria::{plan_confinement, run_acceptance_with_config, CriteriaConfig};
-
-/// What one contract run printed and how it ended.
-struct ContractRun {
-    stdout: String,
-    stderr: String,
-    exit_code: Option<i32>,
-    timed_out: bool,
-}
-
-/// Runs a contract's command from the stage's working directory.
-trait ContractRunner {
-    fn run(&self, command: &str, package_dir: &Path) -> Result<ContractRun>;
-}
-
-/// The acceptance-criteria runner, cache included.
-struct CriteriaRunner<'a> {
-    stage: &'a Stage,
-    config: CriteriaConfig,
-}
-
-impl ContractRunner for CriteriaRunner<'_> {
-    fn run(&self, command: &str, package_dir: &Path) -> Result<ContractRun> {
-        let probe = Stage {
-            acceptance: vec![AcceptanceCriterion::Simple(command.to_string())],
-            ..self.stage.clone()
-        };
-        let result = run_acceptance_with_config(&probe, Some(package_dir), &self.config)?;
-        let run = result
-            .results()
-            .first()
-            .context("the criteria runner returned no result")?;
-        Ok(ContractRun {
-            stdout: run.stdout.clone(),
-            stderr: run.stderr.clone(),
-            exit_code: run.exit_code,
-            timed_out: run.timed_out,
-        })
-    }
-}
+use crate::verify::criteria::{
+    plan_confinement, CriteriaConfig, CriteriaProbe, ProbeRun, ProbeRunner,
+};
 
 /// Fail unless every frozen file is unchanged and every contract passes.
 pub fn check(
@@ -64,7 +27,7 @@ pub fn check(
     acceptance_dir: &Path,
     worktree_root: &Path,
 ) -> Result<()> {
-    let runner = CriteriaRunner {
+    let runner = CriteriaProbe {
         stage,
         config: CriteriaConfig::default()
             .with_plan_confinement(plan_confinement(work_dir))
@@ -78,7 +41,7 @@ fn check_with(
     work_dir: &Path,
     acceptance_dir: &Path,
     worktree_root: &Path,
-    runner: &dyn ContractRunner,
+    runner: &dyn ProbeRunner,
 ) -> Result<()> {
     let Some(record) = store::load_freeze(work_dir, &stage.id)? else {
         bail!(
@@ -138,7 +101,7 @@ fn judge(
     contract: &ContractSpec,
     adapter: Option<&dyn TestRunnerAdapter>,
     command: &str,
-    run: &ContractRun,
+    run: &ProbeRun,
 ) -> Option<String> {
     let id = &contract.id;
     if run.timed_out {

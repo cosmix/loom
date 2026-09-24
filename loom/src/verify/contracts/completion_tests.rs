@@ -12,9 +12,9 @@ const NO_MATCH: &str = include_str!("../../testrun/fixtures/cargo-test/no-match.
 
 struct Replay(&'static str);
 
-impl ContractRunner for Replay {
-    fn run(&self, _command: &str, _package_dir: &Path) -> Result<ContractRun> {
-        Ok(ContractRun {
+impl ProbeRunner for Replay {
+    fn run(&self, _command: &str, _package_dir: &Path) -> Result<ProbeRun> {
+        Ok(ProbeRun {
             stdout: self.0.to_string(),
             stderr: String::new(),
             exit_code: Some(0),
@@ -66,7 +66,7 @@ fn fixture() -> Fixture {
     }
 }
 
-fn run_check(fx: &Fixture, runner: &dyn ContractRunner) -> Result<()> {
+fn run_check(fx: &Fixture, runner: &dyn ProbeRunner) -> Result<()> {
     check_with(&fx.stage, &fx.work_dir, &fx.worktree, &fx.worktree, runner)
 }
 

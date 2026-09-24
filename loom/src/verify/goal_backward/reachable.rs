@@ -16,7 +16,7 @@ use crate::plan::schema::ReachableCheck;
 use super::result::{GapType, VerificationGap};
 
 /// Edge kinds a reachable walk follows (DESIGN D11).
-const REACHABLE_KINDS: [SourceEdgeKind; 6] = [
+pub(in crate::verify) const REACHABLE_KINDS: [SourceEdgeKind; 6] = [
     SourceEdgeKind::Calls,
     SourceEdgeKind::References,
     SourceEdgeKind::Implements,
