@@ -289,3 +289,15 @@ produced enough distinct gate failures to be worth one consolidated lesson:
 - **Sequential codex units sharing one file must not have an earlier unit declare a `mod` line for
   a file a later unit creates** — that leaves a non-compiling tree between the two forwards. Order
   the `mod` declaration with the unit that also writes the file.
+
+## Regex Wiring Checks Are a Permanent Verification Layer
+
+Wiring checks catch correctly implemented new code that is wired wrongly or not at all, which no
+other check does. Their false alarms (pins that break on refactor, patterns that match their own
+file) are authoring defects: harden them with `plan verify` lints and with further wiring forms
+added beside the regex form, never by removing it.
+
+The repo CLAUDE.md rule against backward-compatibility and migration work governs how loom's own
+code is developed. Plan fields and verification layers are product surface for every project loom
+plans and maintains, and that rule never justifies removing one. A substantial plan-structure
+change bumps the plan `version` (conventions/plan-yaml-and-hooks).

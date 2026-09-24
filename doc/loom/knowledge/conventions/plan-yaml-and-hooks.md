@@ -32,6 +32,8 @@ Body sections: Overview, When to Use, Instructions.
 
 Seven files: architecture, entry-points, patterns, conventions, mistakes, stack (aliases: deps, tech), concerns (aliases: debt, issues)
 
+An entry states what is true and valid now: the rule, the fact, the fix to apply. It never narrates what an agent did, what was dropped, or what a session decided along the way; that history belongs to git and to the session, not to knowledge.
+
 ## Signal File Format
 
 Signal files at .loom/work/signals/{session-id}.md use markdown with structured sections. Knowledge/merge/recovery signals have distinct formats. All share .loom/work/signals/ directory.
@@ -143,3 +145,7 @@ variable identifies the calling agent to the hook. `tests/integration/helpers.rs
 a main-agent command must drop that one variable (every other `RELAY_ENV_VARS_TO_CLEAR` entry is
 still safe to unset). `wiring_tests` entries run by `loom check` are a different execution path and
 are unaffected.
+
+## A Substantial Plan-Structure Change Bumps `version` (2026-09-24)
+
+`loom.version` is checked in `plan/schema/validation.rs` (only 1 is accepted today). Operator rule: a substantial change to the structure of a loom plan (new verification sections, changed stage shape) ships as the next plan version, v2, with the version check, the plan-writer skill template and the parser changed together. Additive optional fields that leave every existing plan's meaning unchanged follow the `#[serde(default)]` convention above and do not need a bump.

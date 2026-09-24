@@ -83,3 +83,15 @@ the direction from the signal's bare command list. The rendering gap is recorded
 `loom-security-audit`, or read a diff itself.
 **Prevention:** the orchestrator runs the gate, writes each reviewer's diff to the session scratchpad, and names
 the skill's `SKILL.md` path so the reviewer can `Read` it. Do not brief a reviewer with commands it cannot run.
+
+## A Design Summary Offered for Agreement Separates Agreed From Proposed
+
+A design summary the operator is asked to approve lists what the operator agreed, and apart from
+it, what the agent proposes, each proposal labelled open. A source document's recommendations,
+such as a report's implications list, stay proposals until the operator accepts them. When the
+operator names a mechanism, the design works within it and never substitutes another. The
+operator's wording is kept exactly: a summary that paraphrases a decision can change it.
+
+## Brief Markdown Must Survive the Pre-Commit markdownlint Fix
+
+The pre-commit hook runs markdownlint with automatic fixes on every staged markdown file and re-stages the result. Two constructs come out damaged: a `##` heading wrapped onto a second line (the fix inserts a blank line, leaving the second half as a stray paragraph), and backslash-escaped backticks inside an inline code span (Markdown has no such escape, so the span boundaries shift and the fix deletes the spaces between later spans). Keep every heading on one line, write a code span that contains backticks with double-backtick delimiters, and escape `|` as `\|` inside table cells. Run `bunx markdownlint-cli2 <files>` before committing briefs and read what it would change.

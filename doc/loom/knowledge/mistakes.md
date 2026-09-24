@@ -240,7 +240,8 @@ a line with `+`, or the pre-commit markdownlint fixer rewrites it.
 
 A report quoted from a stage session is a defect report against loom's source: diagnose from this
 repo, never from another project's transcripts or state. Before a brief adds a condition variable
-beside an existing guard, state what the existing one already covers and why it falls short.
+beside an existing guard, state what the existing one already covers and why it falls short. A
+design summary offered for agreement labels what the agent proposes apart from what was agreed.
 
 → [Briefs and Bug Reports](mistakes/briefs-and-bug-reports.md)
 
