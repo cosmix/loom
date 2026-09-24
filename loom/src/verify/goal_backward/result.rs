@@ -17,6 +17,9 @@ pub enum GapType {
     WiringBroken,
     /// Dead code detected in output
     DeadCodeFound,
+    /// A `reachable` unit is missing from the source graph or has no path
+    /// from its entry point
+    Unreachable,
 }
 
 /// A gap between expected and actual verification state
