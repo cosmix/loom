@@ -23,11 +23,10 @@ Read first: `doc/plans/briefs/verification-v2/language-skills/SPEC.md` (the adap
 
    Edit nothing else in those skills.
 2. `skills/loom-skills/SKILL.md`: add a catalog table row for each of the ten new skills, in the
-   table's alphabetical position, in the table's `| \`name\` | description |` format with a
-   one-line description in the style of the neighbouring rows (for example
-   `| \`loom-java\` | Idiomatic Java: JUnit 5, Gradle/Maven, Spring Boot, records |`).
-   The ten names:`loom-java`,`loom-kotlin`,`loom-scala`,`loom-csharp`,`loom-cpp`,
-   `loom-ruby`,`loom-php`,`loom-elixir`,`loom-swift`,`loom-dart`.
+   table's alphabetical position and format, with a one-line description in the style of the
+   neighbouring rows. Example row: ``| `loom-java` | Idiomatic Java: JUnit 5, Gradle/Maven, Spring Boot, records |``.
+   The ten names: `loom-java`, `loom-kotlin`, `loom-scala`, `loom-csharp`, `loom-cpp`,
+   `loom-ruby`, `loom-php`, `loom-elixir`, `loom-swift`, `loom-dart`.
 
 ## Proof (one command, once)
 

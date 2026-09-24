@@ -41,7 +41,7 @@ the runner, the fixtures win.
 | CX-A1 | `go_test.rs` | `go-test` | count `--- PASS:` / `--- FAIL:` lines; `[no tests to run]` / `testing: warning: no tests to run` ⇒ executed 0; `build failed` / `[setup failed]` ⇒ build_failed |
 | CX-A2 | `pytest.rs` | `pytest` | summary line `N passed, M failed ... in Xs`; `no tests ran`; exit 4 with `ERROR: not found` ⇒ executed 0; collection `ERROR` ⇒ build_failed; handle both the `::` and the `.k` fixtures |
 | CX-A3 | `unittest.rs` | `unittest` | `Ran N tests`, `FAILED (failures=M)`; loader `AttributeError` before any run ⇒ executed 0 |
-| CX-A4 | `vitest.rs` | `vitest` | `Tests  N passed | M failed | K skipped (T)`; all skipped ⇒ executed 0 |
+| CX-A4 | `vitest.rs` | `vitest` | `Tests  N passed \| M failed \| K skipped (T)`; all skipped ⇒ executed 0 |
 | CX-A5 | `jest.rs` | `jest` | `Tests: ... passed, ... failed, ... skipped, T total` |
 | CX-A6 | `mocha.rs` | `mocha` | `N passing`, `M failing`, `K pending` |
 | CX-B1 | `bun_test.rs` | `bun-test` | `N pass`, `M fail`, `K skip` lines; `matched 0 tests` ⇒ executed 0 |

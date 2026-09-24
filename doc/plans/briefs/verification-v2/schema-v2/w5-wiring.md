@@ -36,9 +36,10 @@ Wave 2: W1's `WiringCheck.literal` and `Stage.plan_version` exist.
 
    Pay for lines added inside a ledgered function by extraction, and report the counts.
 
-## Named tests (binding), in `wiring_v2.rs`'s test module (declare it with `#[path]` if the file
+## Named tests (binding)
 
-would pass 400 lines)
+In `wiring_v2.rs`'s test module (a sibling file declared with `#[path]` if `wiring_v2.rs` would
+pass 400 lines):
 
 - `v2_glob_source_matches_any_file`: `source: "src/**/*.rs"` where only `src/a/b.rs` contains the
   pattern → no gap.

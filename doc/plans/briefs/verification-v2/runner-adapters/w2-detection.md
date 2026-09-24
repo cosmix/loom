@@ -31,9 +31,10 @@ Read first: `doc/plans/briefs/verification-v2/DESIGN.md` D0, D7. Code:
 4. `recommend.rs`: `resolve_skill` maps kind `javascript` to `loom-typescript`, so skill
    recommendation works for plain JavaScript packages.
 
-## Named tests (binding), in `project/runners_tests.rs` (declared from `project.rs` or
+## Named tests (binding)
 
-`runners.rs` with `#[cfg(test)] #[path = ...]`)
+In `project/runners_tests.rs`, declared from `project.rs` or `runners.rs` with
+`#[cfg(test)] #[path = ...]`:
 
 - `detects_runner_for_each_ecosystem`: one temp package per D7 row (minimal marker files) →
   the expected adapter name, including `cargo-nextest` with `.config/nextest.toml`, `pytest`
