@@ -10,8 +10,9 @@ use crate::sandbox::MergedSandboxConfig;
 use serde_json::{json, Value};
 use std::path::{Path, PathBuf};
 
-const ALL_KINDS: [SessionType; 5] = [
+const ALL_KINDS: [SessionType; 6] = [
     SessionType::Stage,
+    SessionType::Contract,
     SessionType::Knowledge,
     SessionType::Merge,
     SessionType::BaseConflict,
@@ -78,7 +79,7 @@ fn try_build(
     })
 }
 
-fn build(
+pub(super) fn build(
     kind: SessionType,
     config: &MergedSandboxConfig,
     approved: &[String],
@@ -91,10 +92,6 @@ fn build(
 /// The capsule for `kind` from where it runs, with nothing approved.
 fn plain(kind: SessionType) -> Value {
     build(kind, &sandbox(false), &[], None, kind == SessionType::Stage)
-}
-
-fn stage_with_checkout(config: &MergedSandboxConfig, checkout: &Value, rooted: bool) -> Value {
-    build(SessionType::Stage, config, &[], Some(checkout), rooted)
 }
 
 /// Every kind's capsule from both locations, with and without the codex lane.
@@ -112,7 +109,7 @@ fn every_capsule() -> Vec<(String, Value)> {
     capsules
 }
 
-fn strings(settings: &Value, pointer: &str) -> Vec<String> {
+pub(super) fn strings(settings: &Value, pointer: &str) -> Vec<String> {
     settings
         .pointer(pointer)
         .and_then(Value::as_array)
@@ -206,7 +203,11 @@ fn every_kind_registers_the_relay_hook_and_runs_every_hook_under_bin_bash() {
 
 #[test]
 fn stage_and_knowledge_get_every_session_hook_and_the_completion_broker() {
-    for kind in [SessionType::Stage, SessionType::Knowledge] {
+    for kind in [
+        SessionType::Stage,
+        SessionType::Contract,
+        SessionType::Knowledge,
+    ] {
         let settings = plain(kind);
         for (event, script) in [
             ("SessionStart", "session-start.sh"),
@@ -339,60 +340,4 @@ fn a_config_validate_config_refuses_is_refused_for_every_kind() {
             );
         }
     }
-}
-
-#[test]
-fn plugin_keys_follow_the_codex_license() {
-    let checkout = json!({
-        "enabledPlugins": {"codex@openai-codex": true},
-        "extraKnownMarketplaces": {"openai-codex": {}}
-    });
-    for worktree_rooted in [true, false] {
-        let licensed = stage_with_checkout(&sandbox(true), &checkout, worktree_rooted);
-        assert_eq!(licensed["enabledPlugins"], checkout["enabledPlugins"]);
-        assert_eq!(
-            licensed["extraKnownMarketplaces"],
-            checkout["extraKnownMarketplaces"]
-        );
-
-        let unlicensed = stage_with_checkout(&sandbox(false), &checkout, worktree_rooted);
-        assert!(unlicensed.get("enabledPlugins").is_none());
-        assert!(unlicensed.get("extraKnownMarketplaces").is_none());
-    }
-}
-
-#[test]
-fn the_checkouts_denies_are_carried_and_escape_rules_follow_the_location() {
-    let checkout = json!({"permissions": {"deny": [
-        "Bash(rm -rf:*)",
-        "Read(//secret/**)",
-        "Edit(doc/loom/knowledge/**)",
-        "Edit(.worktrees/other/**)"
-    ]}});
-    let mut config = sandbox(false);
-    config
-        .filesystem
-        .deny_write
-        .push(".worktrees/other/**".to_string());
-
-    let from_checkout = build(SessionType::Merge, &config, &[], Some(&checkout), false);
-    let deny = strings(&from_checkout, "/permissions/deny");
-    assert!(deny.contains(&"Bash(rm -rf:*)".to_string()), "{deny:?}");
-    assert!(
-        !deny.iter().any(|rule| rule.starts_with("Read(")
-            || rule.contains("doc/loom/knowledge")
-            || rule == "Edit(.worktrees/other/**)"),
-        "{deny:?}"
-    );
-    let deny_write = strings(&from_checkout, "/sandbox/filesystem/denyWrite");
-    assert!(
-        !deny_write.contains(&".worktrees/other/**".to_string()),
-        "{deny_write:?}"
-    );
-
-    let from_worktree = build(SessionType::Stage, &config, &[], Some(&checkout), true);
-    assert!(strings(&from_worktree, "/permissions/deny")
-        .contains(&"Edit(.worktrees/other/**)".to_string()));
-    assert!(strings(&from_worktree, "/sandbox/filesystem/denyWrite")
-        .contains(&".worktrees/other/**".to_string()));
 }

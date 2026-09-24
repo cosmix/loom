@@ -151,3 +151,31 @@ fn a_coherent_executing_stage_is_left_alone() {
     assert_eq!(after.status, StageStatus::Executing);
     assert_eq!(after.session.as_deref(), Some(stage_session.id.as_str()));
 }
+
+/// A v2 standard stage runs its contract writer before its `Stage` session;
+/// the watchdog must read that phase as coherent, not block or re-link it.
+#[test]
+fn an_executing_v2_stage_on_its_contract_session_is_left_alone() {
+    let temp = work_dir();
+    let work = temp.path().join(".work");
+
+    let mut contract = Session::new_contract("alpha");
+    contract.status = SessionStatus::Running;
+    spawn_a_live_agent(&work, &contract);
+    save_session(&contract, &work).unwrap();
+
+    stage_at(&work, "alpha", StageStatus::Executing);
+    crate::verify::transitions::update_stage("alpha", &work, |s| {
+        s.session = Some(contract.id.clone());
+        s.plan_version = 2;
+        Ok(())
+    })
+    .unwrap();
+
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    orchestrator.reconcile_executing_stages();
+
+    let after = load_stage("alpha", &work).unwrap();
+    assert_eq!(after.status, StageStatus::Executing);
+    assert_eq!(after.session.as_deref(), Some(contract.id.as_str()));
+}

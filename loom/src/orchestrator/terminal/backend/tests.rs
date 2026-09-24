@@ -150,6 +150,33 @@ fn tmux_configured_unavailable_returns_actionable_err_and_never_spawns() {
     );
 }
 
+/// The contract lane is the stage lane's dispatch with another kind, so the
+/// configured-tmux-missing refusal reaches it before anything is spawned.
+#[test]
+fn contract_spawn_goes_through_the_configured_lane_check() {
+    let temp = TempDir::new().unwrap();
+    let backend = test_backend(temp.path().to_path_buf(), SessionBackendKind::Tmux, || {
+        false
+    });
+    let worktree = Worktree::new(
+        "alpha".to_string(),
+        temp.path().join(".worktrees").join("alpha"),
+        "loom/alpha".to_string(),
+    );
+
+    let err = backend
+        .spawn_contract_session(
+            &Stage::default(),
+            &worktree,
+            Session::new_contract("alpha"),
+            &temp.path().join("signal.md"),
+        )
+        .expect_err("configured tmux with no tmux on PATH must fail");
+
+    assert!(err.to_string().contains("tmux is not on PATH"), "{err:#}");
+    assert!(std::fs::read_dir(temp.path()).unwrap().next().is_none());
+}
+
 #[test]
 fn tmux_lane_stamps_the_tmux_backend() {
     let temp = TempDir::new().unwrap();

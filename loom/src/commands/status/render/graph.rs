@@ -140,14 +140,18 @@ fn push_session_annotations(stage: &StageSummary, parts: &mut Vec<String>) {
 
     // The session speaking for this stage is not of its own worker kind
     // (e.g. an adjudication session adopted into the worker slot) —
-    // surface it before the stronger incoherence verdict below.
+    // surface it before the stronger incoherence verdict below. A contract
+    // writer on a standard stage is not tagged: the summary carries no plan
+    // version, and the plan-version-gated judgment is that verdict.
     if let Some(session_type) = stage.session_type {
         let worker_type = if matches!(stage.stage_type, StageType::Knowledge) {
             SessionType::Knowledge
         } else {
             SessionType::Stage
         };
-        if session_type != worker_type {
+        let contract_phase =
+            session_type == SessionType::Contract && stage.stage_type == StageType::Standard;
+        if session_type != worker_type && !contract_phase {
             parts.push(format!(
                 "{}",
                 format!("{session_type} session").yellow().bold()

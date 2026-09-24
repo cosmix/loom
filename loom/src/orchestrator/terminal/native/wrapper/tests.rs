@@ -152,7 +152,7 @@ fn merge_session_env_follows_kind_not_stage_id_prefix() {
     assert!(!regular_content.contains("LOOM_MERGE_SESSION"));
 }
 
-/// Only stage sessions own a worktree. Merge, knowledge, base-conflict and
+/// Only stage and contract sessions run in a worktree. Merge, knowledge, base-conflict and
 /// adjudication sessions `cd` into the main repo, so exporting
 /// `LOOM_WORKTREE_PATH` for them would make presence-based gates treat a
 /// main-repo agent as a sandboxed worktree agent — which used to make knowledge
@@ -190,20 +190,24 @@ fn worktree_path_is_exported_only_for_stage_sessions() {
         assert!(content.contains("cd /tmp/loom-main-repo"));
     }
 
-    let stage_wrapper = create_wrapper_script(
-        work_dir,
-        "loom-build-api-session-2",
-        "build-api",
-        "session-2",
-        "claude 'test'",
-        Some(Path::new("/tmp/repo/.worktrees/build-api")),
-        SessionType::Stage,
-        150_000,
-    )
-    .unwrap();
-    let stage_content = fs::read_to_string(&stage_wrapper).unwrap();
-    assert!(stage_content.contains("LOOM_WORKTREE_PATH"));
-    assert!(stage_content.contains("/tmp/repo/.worktrees/build-api"));
+    // A contract session writes its tests in the same worktree the stage
+    // session later works in.
+    for kind in [SessionType::Stage, SessionType::Contract] {
+        let wrapper = create_wrapper_script(
+            work_dir,
+            &format!("loom-{kind:?}-build-api-session-2"),
+            "build-api",
+            "session-2",
+            "claude 'test'",
+            Some(Path::new("/tmp/repo/.worktrees/build-api")),
+            kind,
+            150_000,
+        )
+        .unwrap();
+        let content = fs::read_to_string(&wrapper).unwrap();
+        assert!(content.contains("LOOM_WORKTREE_PATH"), "{kind:?}");
+        assert!(content.contains("/tmp/repo/.worktrees/build-api"));
+    }
 }
 
 /// A session that dies seconds after spawn takes its terminal pane — and every

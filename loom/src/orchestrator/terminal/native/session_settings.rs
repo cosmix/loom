@@ -267,6 +267,9 @@ pub(crate) fn cleanup_session_settings(work_dir: &Path, session_id: &str) {
 }
 
 #[cfg(test)]
+#[path = "tests_capsule_checkout.rs"]
+mod tests_capsule_checkout;
+#[cfg(test)]
 #[path = "tests_capsule_interpreters.rs"]
 mod tests_capsule_interpreters;
 #[cfg(test)]

@@ -37,9 +37,11 @@ pub use in_progress::in_progress_sessions_for_stage;
 
 /// Every session kind a spawned agent can carry. Each one derives a different
 /// tracking key from the same stage id ([`Session::derive_tracking_key`]), so
-/// a scan keyed on the stage alone has to try all four.
-const SESSION_KINDS: [SessionType; 4] = [
+/// a scan keyed on the stage alone has to try every one. `Contract` is here
+/// because it is the stage's agent while it runs.
+const SESSION_KINDS: [SessionType; 5] = [
     SessionType::Stage,
+    SessionType::Contract,
     SessionType::Merge,
     SessionType::Knowledge,
     SessionType::BaseConflict,

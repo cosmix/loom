@@ -189,6 +189,52 @@ fn remote_control_session_name_adjudication_is_prefixed() {
     );
 }
 
+#[test]
+fn remote_control_session_name_contract_is_prefixed() {
+    let stage = stage_named("my-stage", "My Stage");
+    assert_eq!(
+        remote_control_session_name(SessionType::Contract, &stage),
+        "Contract: My Stage"
+    );
+}
+
+/// The contract writer is the stage's own agent for its first phase, so it
+/// runs on whatever the stage would run on: the plan field, then the config
+/// tier, then the stage type's built-in.
+#[test]
+fn contract_sessions_resolve_model_and_effort_exactly_as_stage_sessions() {
+    let (_temp, work_dir) = work_dir_without_config();
+    let mut stage = stage_named("my-stage", "My Stage");
+    let same = |stage: &Stage| {
+        assert_eq!(
+            model_and_effort(SessionType::Contract, stage, &work_dir),
+            model_and_effort(SessionType::Stage, stage, &work_dir)
+        );
+    };
+    same(&stage);
+    std::fs::write(
+        work_dir.join("config.toml"),
+        "[models]\nstandard_model = \"sonnet\"\nstandard_effort = \"low\"\n",
+    )
+    .unwrap();
+    same(&stage);
+    stage.model = Some("haiku".to_string());
+    stage.reasoning_effort = Some("xhigh".to_string());
+    same(&stage);
+}
+
+#[test]
+fn contract_prompt_names_the_stage_and_its_signal_file() {
+    let stage = stage_named("parse-args", "Parse args");
+    let prompt = initial_prompt(
+        SessionType::Contract,
+        &stage,
+        Path::new("/work/signals/session-c.md"),
+    );
+    assert!(prompt.contains("contract test writer for stage parse-args"));
+    assert!(prompt.contains("/work/signals/session-c.md"));
+}
+
 /// The adjudicator must not run on the model the disputing plan chose — that
 /// would let a plan pick the judge of its own criteria — and it must honour the
 /// operator's `[adjudication] model` override.

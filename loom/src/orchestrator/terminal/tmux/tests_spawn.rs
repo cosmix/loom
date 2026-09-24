@@ -332,9 +332,9 @@ fn a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt() 
         format!("loom/{}", stage.id),
     );
     let socket = socket_name(&session);
-    let backend = TmuxBackend::new(work.path().to_path_buf());
-    let err = backend
-        .spawn_session(&stage, &worktree, session, &work.path().join("signal.md"))
+    let signal = work.path().join("signal.md");
+    let err = TmuxBackend::new(work.path().to_path_buf())
+        .spawn_session(SessionType::Stage, &stage, &worktree, session, &signal)
         .expect_err(
             "the spawn must fail: tmux cannot create its socket directory under a mode-0500 \
              TMUX_TMPDIR, and where it can (root) the claude stub exits immediately, so no \

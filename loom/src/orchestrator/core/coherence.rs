@@ -15,9 +15,9 @@ use colored::Colorize;
 use crate::models::session::Session;
 use crate::models::stage::StageStatus;
 use crate::orchestrator::coherence::{
-    block_incoherent_stage, executing_stage_incoherence, load_assigned_session, worker_session_type,
+    block_incoherent_stage, executing_stage_incoherence, live_worker_sessions,
+    load_assigned_session,
 };
-use crate::orchestrator::session_registry::live_sessions_for_stage_of_type;
 
 use super::persistence::Persistence;
 use super::recovery::{load_stage_at_path, scan_stage_paths, StageScanCounter};
@@ -103,9 +103,7 @@ impl Orchestrator {
             return;
         };
 
-        let live =
-            live_sessions_for_stage_of_type(work_dir, &stage.id, worker_session_type(&stage))
-                .unwrap_or_default();
+        let live = live_worker_sessions(work_dir, &stage).unwrap_or_default();
         match live.into_iter().max_by_key(|s| s.created_at) {
             Some(live_session) => self.repair_incoherent_stage(&stage.id, &reason, live_session),
             None => self.escalate_incoherent_stage(work_dir, &stage.id, &reason),
