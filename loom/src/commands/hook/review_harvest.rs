@@ -3,47 +3,44 @@
 //!
 //! `subagent-stop.sh` pipes `{stage_id, session_id, agent_id, transcript_path}`
 //! here once it has validated the stop event. For a v2 stage this reads the
-//! reviewer's final assistant text, parses its last `loom-review` block, and
-//! writes `reviews/<stage>/round-<n>.json` at the worktree's current change
-//! fingerprint; each suggestion becomes a `suggestion` entry in the stage's
-//! memory journal. A missing or unreadable block still records the round, with
-//! `malformed` set and no findings. The delegate always exits 0; a failure or a
-//! malformed report is one line on stderr.
+//! reviewer's report from the transcript tail, parses its last `loom-review`
+//! block, and writes `reviews/<stage>/round-<n>.json` at the worktree's
+//! current change fingerprint; each suggestion becomes a `suggestion` entry in
+//! the stage's memory journal. The report is read two ways, since a reviewer
+//! may hand its report back through a tool call instead of ending its turn
+//! with the report as plain text: the `message` input of the last
+//! `SubagentHandback` tool call in an assistant entry, and the text of the
+//! last assistant entry that has any. The hand-back is preferred; if both
+//! parse and disagree, the hand-back wins and the round records why. A
+//! missing or unreadable block still records the round, with `malformed` set
+//! and no findings. The delegate always exits 0; a failure or a malformed
+//! report is one line on stderr.
 //!
 //! Suggestions are journaled before the round is written, so if `write_round`
 //! then fails (a racing duplicate harvest took the same round number, say),
 //! those entries stay pending in the journal with no round naming them.
 
-use std::ffi::OsStr;
-use std::fs::OpenOptions;
-use std::io::{self, Read, Seek, SeekFrom};
-use std::os::unix::fs::OpenOptionsExt;
-use std::path::{Component, Path, PathBuf};
+use std::io::{self, Read};
+use std::path::{Path, PathBuf};
 
 use anyhow::{ensure, Context, Result};
 use chrono::Utc;
 use serde::Deserialize;
-use serde_json::Value;
 
-use crate::commands::subagents::{is_assistant, text_blocks};
+use crate::commands::hook::review_transcript::reviewer_review;
 use crate::fs::memory::{
     append_entry, validate_content, validate_evidence, MemoryEntry, MemoryEntryType,
 };
 use crate::fs::work_dir::WorkDir;
 use crate::git::get_worktree_path;
-use crate::models::forward_receipt::transcript::TranscriptIdentity;
 use crate::models::stage::Stage;
-use crate::subagent_lifecycle::reject_symlink_components;
 use crate::validation::validate_id;
 use crate::verify::review::fingerprint::{self, ChangeFingerprint};
-use crate::verify::review::report::{parse_review, single_line, ParsedReview, Suggestion};
+use crate::verify::review::report::{single_line, ParsedReview, Suggestion};
 use crate::verify::review::store::{self, RecordedFinding, ReviewRound, RECORD_VERSION};
 use crate::verify::transitions::load_stage;
 
 const MAX_INPUT_BYTES: u64 = 64 * 1024;
-/// The final message sits at the end of the transcript; only this much of the
-/// tail is read.
-const TRANSCRIPT_TAIL_BYTES: u64 = 4 * 1024 * 1024;
 /// `validate_content`'s limit on a memory entry.
 const MAX_ENTRY_BYTES: usize = 2000;
 
@@ -64,11 +61,14 @@ pub(crate) enum Harvest {
     /// Not a v2 stage: nothing is written.
     Skipped,
     /// Round `round` is written; `malformed` says why its block was unreadable,
-    /// `unjournaled` why some of its suggestions are not in the journal.
+    /// `unjournaled` why some of its suggestions are not in the journal, and
+    /// `discrepancy` why the hand-back and final text disagreed when both
+    /// parsed.
     Recorded {
         round: u32,
         malformed: Option<String>,
         unjournaled: Option<String>,
+        discrepancy: Option<String>,
     },
 }
 
@@ -81,6 +81,7 @@ pub fn review_harvest() -> Result<()> {
             round,
             malformed,
             unjournaled,
+            discrepancy,
         }) => {
             if let Some(reason) = malformed {
                 eprintln!(
@@ -89,6 +90,12 @@ pub fn review_harvest() -> Result<()> {
                 );
             }
             if let Some(reason) = unjournaled {
+                eprintln!(
+                    "loom hook review-harvest: review round {round}: {}",
+                    single_line(&reason)
+                );
+            }
+            if let Some(reason) = discrepancy {
                 eprintln!(
                     "loom hook review-harvest: review round {round}: {}",
                     single_line(&reason)
@@ -111,10 +118,7 @@ pub(crate) fn harvest(work_dir: &Path, input: &HarvestInput) -> Result<Harvest> 
     if stage.plan_version != 2 {
         return Ok(Harvest::Skipped);
     }
-    let parsed = match reviewer_final_text(input)? {
-        Some(text) => parse_review(&text),
-        None => Err("the reviewer's transcript has no final assistant text".to_string()),
-    };
+    let (parsed, discrepancy) = reviewer_review(input)?;
     let worktree = stage_worktree(work_dir, &stage)?;
     let target = crate::fs::resolve_target_branch_from_config(work_dir, &worktree)?;
     let current = fingerprint::compute(&worktree, &target)?;
@@ -129,6 +133,7 @@ pub(crate) fn harvest(work_dir: &Path, input: &HarvestInput) -> Result<Harvest> 
         round: number,
         malformed: round.malformed,
         unjournaled,
+        discrepancy,
     })
 }
 
@@ -250,71 +255,6 @@ fn clip(mut text: String, max: usize) -> String {
     }
     text.truncate(end);
     text
-}
-
-/// The reviewer's final assistant text, once the transcript is proven to be
-/// the stop event's own: an absolute, normalized, symlink-free regular file at
-/// `<project>/<session_id>/subagents/agent-<agent_id>.jsonl`.
-fn reviewer_final_text(input: &HarvestInput) -> Result<Option<String>> {
-    let path = input.transcript_path.as_path();
-    ensure_plain_path(path)?;
-    let identity = TranscriptIdentity::from_path(path)?;
-    ensure!(
-        path.extension() == Some(OsStr::new("jsonl"))
-            && identity.parent_session_id == input.session_id
-            && identity.agent_id == input.agent_id,
-        "the transcript path does not belong to the stop event's session and agent"
-    );
-    Ok(final_assistant_text(&read_tail(path)?))
-}
-
-fn ensure_plain_path(path: &Path) -> Result<()> {
-    ensure!(
-        path.is_absolute()
-            && path
-                .components()
-                .all(|part| matches!(part, Component::RootDir | Component::Normal(_))),
-        "the transcript path is not absolute and normalized"
-    );
-    reject_symlink_components(path).context("the transcript path is not symlink-free")
-}
-
-/// The complete rows in the last [`TRANSCRIPT_TAIL_BYTES`] of `path`.
-fn read_tail(path: &Path) -> Result<String> {
-    let mut file = OpenOptions::new()
-        .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
-        .open(path)
-        .with_context(|| format!("opening {}", path.display()))?;
-    let metadata = file
-        .metadata()
-        .context("reading the transcript's metadata")?;
-    ensure!(metadata.is_file(), "the transcript is not a regular file");
-    let start = metadata.len().saturating_sub(TRANSCRIPT_TAIL_BYTES);
-    file.seek(SeekFrom::Start(start))
-        .context("seeking to the transcript's tail")?;
-    let mut bytes = Vec::new();
-    file.take(TRANSCRIPT_TAIL_BYTES)
-        .read_to_end(&mut bytes)
-        .context("reading the transcript")?;
-    let text = String::from_utf8_lossy(&bytes);
-    // A tail that starts mid-row drops that partial row.
-    let rows = match start {
-        0 => &text[..],
-        _ => text.split_once('\n').map_or("", |(_, rest)| rest),
-    };
-    Ok(rows.to_owned())
-}
-
-/// The text blocks of the last assistant entry that has any, joined.
-fn final_assistant_text(transcript: &str) -> Option<String> {
-    transcript
-        .lines()
-        .rev()
-        .filter_map(|row| serde_json::from_str::<Value>(row).ok())
-        .filter(is_assistant)
-        .map(|entry| text_blocks(&entry).join("\n"))
-        .find(|text| !text.is_empty())
 }
 
 /// The stage's worktree in the project that holds `work_dir`.

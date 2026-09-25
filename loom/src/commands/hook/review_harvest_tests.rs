@@ -2,7 +2,7 @@ use super::*;
 
 use std::fs;
 
-use serde_json::json;
+use serde_json::{json, Value};
 use tempfile::TempDir;
 
 use crate::fs::memory::{memory_file_path, read_journal};
@@ -19,6 +19,17 @@ const REVIEW: &str = "One finding.\n\n```loom-review\n\
     \"suggestions\":[{\"file\":\"a.rs\",\"line\":2,\"text\":\"name the\\nhelper\"}],\
     \"resolved\":[],\"unresolved\":[]}\n```\n";
 
+/// A second well-formed block, distinct from `REVIEW`, for the tests that
+/// need two candidates which parse but disagree.
+const REVIEW_ALT: &str = "A different finding.\n\n```loom-review\n\
+    {\"findings\":[{\"severity\":\"minor\",\"file\":\"b.rs\",\"line\":9,\
+    \"claim\":\"b() ignores errors\",\"scenario\":\"call fails silently\",\"rule\":null}],\
+    \"suggestions\":[],\"resolved\":[],\"unresolved\":[]}\n```\n";
+
+/// Larger than `review_transcript::TRANSCRIPT_TAIL_BYTES`, so a row padded to
+/// this length forces `read_tail`'s window to start inside it.
+const PADDING_BYTES: usize = 5 * 1024 * 1024;
+
 struct Fixture {
     _temp: TempDir,
     work_dir: PathBuf,
@@ -30,6 +41,11 @@ struct Fixture {
 /// stage record at `plan_version`, and a reviewer transcript whose final
 /// assistant message is `final_text`.
 fn fixture(plan_version: u32, final_text: &str) -> Fixture {
+    fixture_with(plan_version, |path| write_transcript(path, final_text))
+}
+
+/// As `fixture`, but `write` builds the transcript file itself.
+fn fixture_with(plan_version: u32, write: impl FnOnce(&Path)) -> Fixture {
     let temp = TempDir::new().unwrap();
     let root = temp.path().canonicalize().unwrap();
     let project = root.join("project");
@@ -50,7 +66,7 @@ fn fixture(plan_version: u32, final_text: &str) -> Fixture {
         .join(PARENT)
         .join("subagents")
         .join(format!("agent-{AGENT}.jsonl"));
-    write_transcript(&transcript, final_text);
+    write(&transcript);
     let input = HarvestInput {
         stage_id: STAGE.to_string(),
         session_id: PARENT.to_string(),
@@ -77,6 +93,57 @@ fn write_transcript(path: &Path, final_text: &str) {
     fs::write(path, body).unwrap();
 }
 
+/// An assistant entry with only a `SubagentHandback` tool call whose
+/// `message` input is `handback_message`, followed by a final assistant text
+/// entry: the shape a real reviewer transcript takes today.
+fn write_handback_transcript(path: &Path, handback_message: &str, final_text: &str) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let assistant = |block: Value| json!({"type": "assistant", "message": {"content": [block]}});
+    let rows = [
+        json!({"type": "user", "message": {"content": "review the stage"}}),
+        assistant(handback_block(handback_message)),
+        assistant(json!({"type": "text", "text": final_text})),
+    ];
+    let body: String = rows.iter().map(|row| format!("{row}\n")).collect();
+    fs::write(path, body).unwrap();
+}
+
+/// A `SubagentHandback` tool call sitting in a `user` entry instead of an
+/// assistant one, as a tool result quoting it back would produce.
+fn write_transcript_with_handback_in_user_entry(
+    path: &Path,
+    handback_message: &str,
+    final_text: &str,
+) {
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let assistant = |block: Value| json!({"type": "assistant", "message": {"content": [block]}});
+    let rows = [
+        json!({"type": "user", "message": {"content": [handback_block(handback_message)]}}),
+        assistant(json!({"type": "text", "text": final_text})),
+    ];
+    let body: String = rows.iter().map(|row| format!("{row}\n")).collect();
+    fs::write(path, body).unwrap();
+}
+
+fn handback_block(message: &str) -> Value {
+    json!({
+        "type": "tool_use",
+        "id": "toolu_handback",
+        "name": "SubagentHandback",
+        "input": {"message": message},
+    })
+}
+
+/// A transcript whose real rows are preceded by a row padded past the tail
+/// window, so `read_tail` must seek into the middle of it and drop the
+/// fragment.
+fn write_padded_transcript(path: &Path, final_text: &str) {
+    write_transcript(path, final_text);
+    let body = fs::read_to_string(path).unwrap();
+    let padding = "#".repeat(PADDING_BYTES);
+    fs::write(path, format!("{padding}\n{body}")).unwrap();
+}
+
 fn reviews_dir(fixture: &Fixture) -> PathBuf {
     fixture.work_dir.join("reviews").join(STAGE)
 }
@@ -91,6 +158,7 @@ fn harvest_writes_round_and_suggestions() {
         round: 1,
         malformed: None,
         unjournaled: None,
+        discrepancy: None,
     };
     assert_eq!(outcome, expected);
     assert!(reviews_dir(&fixture).join("round-1.json").is_file());
@@ -150,6 +218,7 @@ fn harvest_records_a_malformed_round_without_a_review_block() {
         round: 1,
         malformed: Some("no loom-review block".to_string()),
         unjournaled: None,
+        discrepancy: None,
     };
     assert_eq!(outcome, expected);
     let rounds = store::load_rounds(&fixture.work_dir, STAGE).unwrap();
@@ -171,6 +240,7 @@ fn harvest_records_only_the_suggestion_ids_it_journaled() {
             round: 1,
             malformed: None,
             unjournaled: Some(reason),
+            discrepancy: None,
         } => reason,
         other => panic!("expected a round with unjournaled suggestions: {other:?}"),
     };
@@ -202,4 +272,78 @@ fn harvest_rejects_a_symlinked_transcript() {
 
     assert!(harvest(&fixture.work_dir, &fixture.input).is_err());
     assert!(!fixture.work_dir.join("reviews").exists());
+}
+
+#[test]
+fn harvest_reads_the_report_from_a_handback_tool_call() {
+    let fixture = fixture_with(2, |path| {
+        write_handback_transcript(path, REVIEW, "Report delivered.")
+    });
+
+    let outcome = harvest(&fixture.work_dir, &fixture.input).unwrap();
+
+    let expected = Harvest::Recorded {
+        round: 1,
+        malformed: None,
+        unjournaled: None,
+        discrepancy: None,
+    };
+    assert_eq!(outcome, expected);
+    let rounds = store::load_rounds(&fixture.work_dir, STAGE).unwrap();
+    assert_eq!(rounds[0].findings[0].finding.claim, "a() lost its body");
+}
+
+#[test]
+fn harvest_prefers_the_handback_over_a_disagreeing_final_text() {
+    let fixture = fixture_with(2, |path| {
+        write_handback_transcript(path, REVIEW, REVIEW_ALT)
+    });
+
+    let outcome = harvest(&fixture.work_dir, &fixture.input).unwrap();
+
+    let discrepancy = match outcome {
+        Harvest::Recorded {
+            round: 1,
+            malformed: None,
+            unjournaled: None,
+            discrepancy: Some(reason),
+        } => reason,
+        other => panic!("expected a round with a discrepancy: {other:?}"),
+    };
+    assert!(discrepancy.contains("disagree"), "{discrepancy}");
+    let rounds = store::load_rounds(&fixture.work_dir, STAGE).unwrap();
+    // The hand-back's finding, not the final text's ("b() ignores errors").
+    assert_eq!(rounds[0].findings[0].finding.claim, "a() lost its body");
+}
+
+#[test]
+fn harvest_ignores_a_handback_block_outside_an_assistant_entry() {
+    let fixture = fixture_with(2, |path| {
+        write_transcript_with_handback_in_user_entry(path, REVIEW, "Report delivered.")
+    });
+
+    let outcome = harvest(&fixture.work_dir, &fixture.input).unwrap();
+
+    let expected = Harvest::Recorded {
+        round: 1,
+        malformed: Some("no loom-review block".to_string()),
+        unjournaled: None,
+        discrepancy: None,
+    };
+    assert_eq!(outcome, expected);
+}
+
+#[test]
+fn harvest_parses_a_tail_that_starts_mid_row() {
+    let fixture = fixture_with(2, |path| write_padded_transcript(path, REVIEW));
+
+    let outcome = harvest(&fixture.work_dir, &fixture.input).unwrap();
+
+    let expected = Harvest::Recorded {
+        round: 1,
+        malformed: None,
+        unjournaled: None,
+        discrepancy: None,
+    };
+    assert_eq!(outcome, expected);
 }
