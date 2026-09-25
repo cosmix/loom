@@ -3,36 +3,51 @@
 //! pass. The CLI tree comes from `clap::CommandFactory`, the same source the
 //! shell completions read.
 
+use std::collections::HashMap;
+
 use clap::{Command, CommandFactory};
 
-use super::super::shell_lex::Word;
-use super::{plan_touches_dir, runs_loom, visit_stage_argvs, LintContext, LintFinding};
+use crate::plan::schema::structural_checks::transitive_dependencies;
 
-/// Directory a plan can add a subcommand under; a plan that touches it may be
-/// adding the very subcommand it later calls.
+use super::super::shell_lex::Word;
+use super::{runs_loom, stage_touches_dir, visit_stage_argvs, LintContext, LintFinding};
+
+/// Directory a plan can add a subcommand under; a stage that touches it, or
+/// depends (transitively) on one that does, may be adding the very
+/// subcommand it later calls.
 const CLI_DIR: &str = "loom/src/cli";
 
 pub(super) fn check(ctx: &LintContext<'_>, out: &mut Vec<LintFinding>) {
     let mut root = crate::cli::Cli::command();
     // Adds clap's generated `help` subcommand, which `loom help <cmd>` names.
     root.build();
-    // A plan whose stages add files under `loom/src/cli` may be adding the
-    // subcommand it later calls, so an unknown path there is only a warning:
-    // the verifying binary's CLI predates the change the plan makes.
-    let plan_adds_cli = plan_touches_dir(ctx.metadata, CLI_DIR);
-    for stage in &ctx.metadata.loom.stages {
+    let stages = &ctx.metadata.loom.stages;
+    let index_by_id: HashMap<&str, usize> = stages
+        .iter()
+        .enumerate()
+        .map(|(idx, stage)| (stage.id.as_str(), idx))
+        .collect();
+    for (idx, stage) in stages.iter().enumerate() {
+        // A stage runs on a base holding only its own changes and those of
+        // its (transitive) dependencies, so an unrelated stage's reach into
+        // `loom/src/cli` cannot excuse this stage's unknown subcommand - the
+        // base this stage actually runs on never sees that stage's files.
+        let adds_cli = stage_touches_dir(stage, CLI_DIR)
+            || transitive_dependencies(idx, stages, &index_by_id)
+                .into_iter()
+                .any(|dep| stage_touches_dir(&stages[dep], CLI_DIR));
         visit_stage_argvs(stage, &mut |command, argv| {
             if let Some(problem) = unknown_subcommand(&root, argv) {
-                let message = if plan_adds_cli {
+                let message = if adds_cli {
                     format!(
-                        "{} (the plan also changes `{CLI_DIR}`, so the subcommand may be one a \
-                         stage adds)",
+                        "{} (this stage or one it depends on changes `{CLI_DIR}`, so the \
+                         subcommand may be one it adds)",
                         command.describe(&problem)
                     )
                 } else {
                     command.describe(&problem)
                 };
-                out.push(LintFinding::in_stage(stage, message, !plan_adds_cli));
+                out.push(LintFinding::in_stage(stage, message, !adds_cli));
             }
         });
     }

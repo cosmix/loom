@@ -149,17 +149,16 @@ fn runs_loom(argv: &[&Word]) -> bool {
         .is_some_and(|word| word.command_name() == "loom")
 }
 
-/// Whether any stage in the plan lists a `files`/`artifacts` entry that could
-/// create or touch a path under `dir` (a `/`-separated path). Matched the
-/// same way `rust_filters::stage_could_create` matches a Rust module's
-/// directory against `files`/`artifacts` globs: a literal path at or under
-/// `dir`, or a glob whose literal prefix reaches into (or past) it.
-pub(super) fn plan_touches_dir(metadata: &LoomMetadata, dir: &str) -> bool {
-    metadata
-        .loom
-        .stages
+/// Whether `stage` lists a `files`/`artifacts` entry that could create or
+/// touch a path under `dir` (a `/`-separated path). Matched the same way
+/// `rust_filters::stage_could_create` matches a Rust module's directory
+/// against `files`/`artifacts` globs: a literal path at or under `dir`, or a
+/// glob whose literal prefix reaches into (or past) it.
+pub(super) fn stage_touches_dir(stage: &StageDefinition, dir: &str) -> bool {
+    stage
+        .files
         .iter()
-        .flat_map(|stage| stage.files.iter().chain(&stage.artifacts))
+        .chain(&stage.artifacts)
         .any(|entry| entry_touches_dir(entry, dir))
 }
 

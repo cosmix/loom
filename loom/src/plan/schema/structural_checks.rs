@@ -140,7 +140,10 @@ pub(super) fn check_file_ownership(stages: &[StageDefinition]) -> Vec<String> {
 
 /// BFS over `dependencies` to compute the set of stage indices `start`
 /// transitively depends on.
-fn transitive_dependencies(
+///
+/// `pub(super)` so `validation::v2_lints::loom_subcommands` (a descendant of
+/// `plan::schema`) can reuse the same BFS instead of writing a second one.
+pub(super) fn transitive_dependencies(
     start: usize,
     stages: &[StageDefinition],
     index_by_id: &HashMap<&str, usize>,
