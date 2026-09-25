@@ -31,7 +31,7 @@
 | [context-retrieval](architecture/context-retrieval.md) | Retrieval: graphs, lanes, gating, tiered packs | 366 |
 | [context-retrieval-corpus](architecture/context-retrieval-corpus.md) | Stopwording, rescue floor, BM25 index, indexed prose | 177 |
 | [context-retrieval-state](architecture/context-retrieval-state.md) | Base/overlay graph layers, delivery records | 192 |
-| [contract-phase](architecture/contract-phase.md) | Contract session, freeze, handover | 68 |
+| [contract-phase](architecture/contract-phase.md) | Contract session, freeze, handover | 126 |
 | [core-abstractions](architecture/core-abstractions.md) | ExecutionGraph, Stage, Session, data flow | 136 |
 | [directory-structure](architecture/directory-structure.md) | loom/src module tree, state layout, root assets | 49 |
 | [execution-containment](architecture/execution-containment.md) | Sandboxed command containment and its limits | 343 |
@@ -54,7 +54,7 @@
 | [test-runner-adapters](architecture/test-runner-adapters.md) | 23 adapters, profiles, quoting, detect | 49 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, --compare, criterion cache | 260 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 94 |
-| [web-dashboard](architecture/web-dashboard.md) | loom status --web: server, SPA, streaming | 79 |
+| [web-dashboard](architecture/web-dashboard.md) | loom status --web: server, SPA, streaming | 81 |
 | [web-terminal](architecture/web-terminal.md) | loom status --web --terminals: browser terminal | 169 |
 
 ### entry-points
@@ -118,10 +118,10 @@
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants live in the fs constructor | 139 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why distillation cannot write knowledge directly | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Ledger TUI padding, fan-out, panics | 83 |
-| [live-state-pollution](mistakes/live-state-pollution.md) | A stage test run rewrote live .loom/work state | 33 |
+| [live-state-pollution](mistakes/live-state-pollution.md) | Tests rewrote live .loom/work state and the real HOME's hooks | 43 |
 | [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay tickets leaked when their line missed the hook | 34 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | A cleanup-boundary bug and its fix | 171 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races: diagnosis, cases, fix | 160 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races: diagnosis, cases, fix | 194 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merge machinery lessons: merged=true without verifying | 171 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match trap and wiring-check pinning | 303 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions and edge cases | 53 |
@@ -150,7 +150,7 @@
 | [verification-harness](mistakes/verification-harness.md) | When checks fail at once, suspect the harness | 369 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate and proof misses in v2 | 172 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) visibility is capped by path | 123 |
-| [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server: concurrency, security, tests | 294 |
+| [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server: concurrency, security, tests | 316 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | A layer written under a key its reader ignores | 73 |
 
 ### concerns

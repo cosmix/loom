@@ -292,3 +292,25 @@ opens. Fixed by stubbing `HTMLCanvasElement.prototype.getContext` to return `nul
 `web/src/test/setup.ts` beside the other jsdom layout stubs. Any future test that mounts an
 xterm `Terminal` needs this stub already in place; it predates any specific plan and belongs
 in the shared setup file, not per-test.
+
+## `SessionType::Contract` Reached The Wire Before `schema.ts` Knew About It
+
+**What happened:** the `Contract` session type (the v2 contract-phase writer) was added on the
+Rust side without adding `"contract"` to `web/src/api/schema.ts`'s `sessionTypeSchema` zod enum.
+Every status frame carrying a contract-writer stage then failed zod parsing, so the dashboard
+rejected the WHOLE snapshot and showed "connection error" — not a missing tag on one stage, no
+page at all.
+
+**Why:** nothing tied the two together. `cargo build`/`cargo test` for `loom/src/models/session`
+has no dependency on a TypeScript file, so the new variant compiled and every Rust-side test
+passed while the TS schema went stale.
+
+**Prevention:** `loom/src/commands/status/web/schema_parity.rs` — one test per status-relevant
+enum (`SessionType`, `StageStatus`, `StageType`, `FailureType`, `SessionExitReason`), each opening
+with an exhaustive `match` over a placeholder value and no wildcard arm, so adding, removing, or
+renaming a variant fails that match to compile until the hand-maintained list right below it is
+updated; the test then asserts every serialized wire value appears as a quoted string literal in
+`schema.ts`. A future enum gaining status-relevant wire exposure needs the same treatment here.
+
+**Fix:** `"contract"` added to `sessionTypeSchema` in `web/src/api/schema.ts`;
+`schema_parity.rs` added so the next such omission also fails `cargo test`.

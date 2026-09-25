@@ -69,7 +69,7 @@ harness: ["tests/fixtures/spool/**"]
 The sequence loom runs:
 
 1. The contract session writes the contract tests and harness files and implements nothing. Every contract must fail now; a compile or collection failure counts as failing.
-2. `loom stage contracts freeze <stage-id>` refuses unless only contract and harness files changed, every contract file exists, and every contract is red. A contract that passes is refused because it "passes before implementation, so it cannot tell right from wrong"; one the runner does not select is refused as well.
+2. `loom stage contracts freeze <stage-id>` refuses unless only contract and harness files changed, every contract file exists, and every contract is red. A contract that passes is refused because it "passes before implementation, so it cannot tell right from wrong"; one the runner does not select is refused as well. A refusal parks the stage `WaitingForInput` with the problems as its reason; typing into the writer's session, `loom stage resume`, or a later accepted freeze all resume it.
 3. Loom stores a hash and a copy of every frozen file, ends the contract session, and starts the implementation session, whose signal lists the frozen contracts. That session never edits a frozen file. `loom stage contracts show <stage-id>` prints them; `loom stage contracts restore <stage-id> [--contract <id>]` puts the frozen content back.
 
 ## 4. The other v2 fields

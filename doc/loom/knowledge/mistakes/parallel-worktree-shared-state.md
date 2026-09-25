@@ -158,3 +158,37 @@ whole tree must be set aside, tag the entry, and restore it by SHA with `git sta
 **Prevention:** Never run git reset in this shared repository. Preserve other agents staging and branch state; coordinate before integrating an isolated commit when ordinary safe integration is unavailable.
 
 **Fix:** No further reset operations. The completed mixed reset preserved working files; the index had been checked empty before it ran. Feature commit: d2fed815.
+
+## Claude Code's Bash Sandbox Shows The Same Placeholders, In Its Own Namespace
+
+**What happened:** every `loom stage contracts freeze` a Claude Code contract writer attempted
+was refused: the freeze's changed-paths check saw eleven untracked dotfiles at the worktree root
+(`.bashrc .bash_profile .gitconfig .gitmodules .idea .mcp.json .profile .ripgreprc .vscode
+.zprofile .zshrc`) the writer never touched, so a v2 stage with contracts could never leave the
+contract phase.
+
+**Why:** Claude Code's `bwrap` Bash sandbox bind-mounts `/dev/null` over the same fixed set of
+worktree-root dotfiles the Codex sandbox does (above), visible only inside its own mount
+namespace — the host filesystem never has them. `git status` reads the DIRECTORY ENTRY at each
+path, which inside the sandbox's namespace is an ordinary mount point, so git reports it `??`
+(untracked) exactly as it would a file the writer actually created; `lstat`/`symlink_metadata` on
+that same path sees the character device the bind-mount put there — the dirent and the inode tell
+different stories, and only the inode check can tell them apart. Git itself never lists a real
+FIFO, socket, or device node a session might plant — none of those show up in `git status
+--porcelain` at all — so a FIFO fixture alone cannot reproduce this bug; only a genuine device
+node (the bind-mount itself, or `mknod`, which needs `CAP_MKNOD` no session has) does.
+
+**Prevention:** an in-session git-status reader that must treat "untracked" as "the writer created
+this" has to drop untracked DEVICE NODES specifically, never every unexpected untracked path —
+`git::branch::is_device_node` (`loom/src/git/branch/status.rs`) checks
+`symlink_metadata(root.join(path)).file_type().is_char_device() || .is_block_device()`, applied to
+`changes::changed_paths` (`verify/contracts/changes.rs`), `list_working_tree_changes`
+(`git/branch/status.rs`) and `fingerprint::compute` (`verify/review/fingerprint.rs`). The daemon's
+host-side `changes::special_files` walk is the counterpart: it refuses any FIFO, socket or device
+node, which cannot hide behind the filter because an agent cannot create a device node without
+CAP_MKNOD. Regression tests feed the parser a `?? .bashrc`-style line with the host's `/dev/null`,
+a real character device, standing in for the mount; a mkfifo fixture reproduces nothing, since git
+skips FIFOs on its own.
+
+**Fix:** `is_device_node` gate added to every in-session git-status reader that lists untracked
+paths for a contract freeze or a review fingerprint.

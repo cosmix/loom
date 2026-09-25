@@ -66,7 +66,7 @@ There are five distinct counters on `Stage` — retry_count, fix_attempts, dispu
 
 `SessionStatus` (`types.rs:38-49`): Spawning, Running, Paused, Completed, Crashed, ContextExhausted.
 
-`SessionType` (`types.rs:6-24`): Stage, Merge, BaseConflict, Knowledge, Adjudication.
+`SessionType` (`types.rs:7-28`): Stage, Merge, BaseConflict, Knowledge, Adjudication, Contract (the contract-writer phase's session kind, tracking key `loom-contract-{stage_id}`).
 
 `context_tokens: u32` is the resident token count as of the last heartbeat that carried a reading (`types.rs:104-108`); a heartbeat tick with no measurement leaves the previous value in place.
 

@@ -333,7 +333,7 @@ Plan-level defaults and per-stage overrides control filesystem reads/writes, net
 
 ### Human-in-the-loop where it matters
 
-Thirteen stage states make "needs a person" an explicit outcome rather than a hang: `WaitingForInput` (raised automatically when an agent asks a question), `NeedsHumanReview`, `Blocked`, `MergeConflict`. Operators get `loom stage hold/release/skip/retry/human-review`, and an agent that believes a criterion is wrong can escalate with `loom stage dispute-criteria` instead of quietly weakening it.
+Thirteen stage states make "needs a person" an explicit outcome rather than a hang: `WaitingForInput` (raised automatically when an agent asks a question, or when a v2 contract freeze is refused), `NeedsHumanReview`, `Blocked`, `MergeConflict`. Operators get `loom stage hold/release/skip/retry/human-review`, and an agent that believes a criterion is wrong can escalate with `loom stage dispute-criteria` instead of quietly weakening it.
 
 ## Installation
 
@@ -438,6 +438,8 @@ loom resume <stage-id>
 loom check <stage-id> [--suggest] [--no-cache]
 loom pressure <plan-path> [--rounds N] [--claude-model M] [--claude-effort E] [--codex-model M] [--codex-effort E] [--address-model M] [--address-effort E] [--dry-run]
 ```
+
+When `loom run` stops — every stage settled, or interrupted by `loom stop` — it prints stages by outcome: `Completed`; `Failed` (`Blocked`, `MergeConflict`, `CompletedWithFailures`, `MergeBlocked`, `NeedsHumanReview` — terminal, needing intervention); `Unfinished` (`WaitingForDeps`, `Queued`, `Executing`, `WaitingForInput`, `NeedsAdjudication` — still in progress when the run stopped); and `Needs Handoff`. The run succeeds only when `Failed`, `Unfinished`, and `Needs Handoff` are all empty.
 
 `loom pressure` hardens a plan before you run it by combining two external agents over `--rounds` rounds (default 2). Each round runs both pressure-tests in parallel: Claude `/pressure` edits the plan in place in the foreground (you watch it live), while Codex `$pressure` writes an independent review next to it (`codex-<plan>.md`) in the background (its output is captured to a temp log to keep the terminal clean). Once both finish, Claude `/address` folds the review back in. Claude stays interactive and auto-closes when done; Codex runs from the repo root. Requires both the `claude` and `codex` CLIs on PATH. `--dry-run` prints the exact commands without spawning anything.
 
@@ -827,6 +829,10 @@ loom:
 ```
 
 A v2 standard stage starts with a separate contract session that writes the contract tests, runs them red, and ends with `loom stage contracts freeze`; loom then hands the stage to the implementing session. `loom project detect` shows which test runner loom will use for each package. Runners without an adapter fall back to running the contract's `test` string and judging its exit code.
+
+The contract phase is visible wherever `loom status` renders: a magenta `contracts` tag next to the stage's `[model]` tag (added to the legend while such a stage exists), the live TUI's activity cell reading `writing contract tests` or, once stale, `contract writer idle <duration>`, and the web dashboard's violet `contracts` tag with a dashed node outline, the same activity text, a `... · contract phase` stage-strip label, and a `contract writer` row in the stage dialog's session type.
+
+A refused freeze — a file changed outside the contracts and harness globs, a contract not reported red, or (checked by the daemon) a FIFO, socket or device node left in the worktree — parks the stage `WaitingForInput` with the problems as its `review_reason`, the reason `loom status` shows for it. The daemon parks the stage as soon as it refuses a relayed freeze; a refusal from the writer's own pre-check parks it when the writer stops. Typing into the writer's session resumes it, and so do `loom stage resume <stage-id>` and a later freeze the daemon accepts; `loom stage retry` still refuses a stage in `WaitingForInput`. A writer that stops before its first freeze attempt is not parked.
 
 ## Verification Model
 

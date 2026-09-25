@@ -1,6 +1,6 @@
 # Live State Pollution
 
-> A stage test run rewrote live .loom/work state
+> Tests rewrote live .loom/work state and the real HOME's hooks
 
 ## A Stage's Test Run Rewrote the Live State Directory (2026-09-13)
 
@@ -31,3 +31,13 @@ alone is not evidence a test adopted the workspace.
 **Prevention:** tell an operator session's writes apart from a polluting test run by the telemetry
 entry's `kind` and `session_id`, not by the mere existence of the files, before calling something
 test pollution.
+
+## `cargo test` Rewrote the Real HOME and Broke a Live Daemon (2026-09-25)
+
+**What happened:** a full `cargo test` on the development machine installed the working tree's hook scripts into `~/.claude/hooks/loom` and `~/.codex/hooks/loom`, rewrote `~/.codex/hooks.json`, and added a `hasTrustDialogAccepted` entry to `~/.claude.json` for every temp worktree it created. 3,216 of 3,879 project entries in `~/.claude.json` were `/tmp/.tmp*` leftovers. The working tree's `commit-guard.sh` differed from the running daemon's build, so the daemon's hook integrity preflight (`sandbox/config/preflight.rs` `hook_script_refusals`) refused the next spawn and blocked a live stage: "loom hook scripts in ~/.claude/hooks/loom are missing or differ from this loom build: commit-guard.sh".
+
+**Why:** `install_loom_hooks()`, `install_codex_hooks()` and `trust_worktree` resolve `dirs::home_dir()` with no override. Tests reached them through `repair_workspace` (`commands/repair/workspace/tests.rs`, `commands/init/repair_tests.rs` via `startup_repairs`) and through in-process `loom::git::create_worktree` (`tests/integration/dependency_*.rs`). The repair tests only wrote when the real HOME's hooks were stale, so they looked clean in isolation and wrote only in a whole-binary run.
+
+**Prevention:** a test that can reach a HOME-resolving writer runs under a scratch HOME: `#[serial]` with an env guard, `startup_repairs_isolated`, or `helpers::create_worktree_isolated` in integration tests. To detect a leak, run `HOME=$(mktemp -d) CARGO_HOME=~/.cargo RUSTUP_HOME=~/.rustup cargo test --no-fail-fast` and list the scratch HOME afterwards; it must stay empty. `tests/integration/home_isolation.rs` pins the redirect.
+
+**Fix:** the tests above now run under a scratch HOME; `home_isolation.rs` asserts that `loom repair --fix` with `HOME` redirected installs into the scratch HOME. The existing `/tmp/.tmp*` entries in an operator's `~/.claude.json` are not removed automatically.
