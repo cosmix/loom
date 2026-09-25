@@ -170,7 +170,7 @@ Alongside it on the `Stage` struct (all shipped): `dispute_count` (600), `eviden
 
 | Location                                                        | Purpose                                                                                                                                                          |
 | ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `models/stage/types.rs:280-303`                                 | `TruthCheck` struct: `command`, `stdout_contains`, `stdout_not_contains`, `stderr_empty`, `exit_code`, `description`                                             |
+| `models/stage/checks.rs` | `TruthCheck` (`command`, `stdout_contains`, `stdout_not_contains`, `stderr_empty`, `exit_code`, `description`), `WiringCheck` (with `literal: bool`) and `AcceptanceCriterion`, moved out of `types.rs`; `crate::models::stage::*` paths are unchanged |
 | `plan/schema/types.rs:100-261`                                  | `StageDefinition`: `before_stage: Vec<TruthCheck>` (221), `after_stage: Vec<TruthCheck>` (226), `code_review: Option<CodeReviewConfig>` (261)                    |
 | `plan/schema/types.rs:100-111`                                  | `CodeReviewConfig`: `dimensions: Vec<String>`, `require_all: bool`                                                                                               |
 | `models/stage/methods.rs::Stage::from_definition`               | Canonically copies before/after checks, `code_review`, sandbox, and all execution policy into persisted Stage state                                              |

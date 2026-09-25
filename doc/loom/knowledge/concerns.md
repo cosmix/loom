@@ -239,8 +239,12 @@ own dependency list.
 
 ## Markdown Lint Silently Skipped in a No-Network Stage Sandbox (2026-09-22)
 
-The pre-commit hook's markdown-lint step reaches out to `registry.npmjs.org:443`; in a no-network
-stage sandbox that connection is denied and the hook lets the commit proceed anyway (exit 0, no
-lint ran). A stage committing `.md` files inside a no-network sandbox gets no markdown lint and no
-warning that it was skipped. Not yet reproduced with `.md` files actually staged (observed on
-commits `da7c5439`/`5ae15790`, which staged none).
+The pre-commit hook runs `bunx markdownlint-cli2 --fix 2>/dev/null || true` (`loom/.githooks/pre-commit:63`); with no
+network `bunx` cannot fetch transitive packages even for a cached tool, so `.md` files commit unlinted with exit 0
+(seen in three stages, 2026-09-24). It should fail loudly; see `mistakes/verification-v2-delivery.md`.
+
+## Verification v2 Follow-Ups (2026-09-25)
+
+Nine of the 23 test-runner adapters (cargo-nextest, gradle, maven, sbt, rspec, phpunit, pest, swift-test, mix-test) have
+fixtures written from documented output, not captured runs, so their parsers are unproven. Adapter gaps, contract-phase
+gaps and duplicated helpers: [verification-v2-followups](concerns/verification-v2-followups.md).

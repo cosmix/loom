@@ -18,7 +18,7 @@ verified: 499b09b6297aeee4896a66df3da86d00f652a618
 ---
 # Token Accounting Follow-Ups
 
-> Open follow-ups from the token-optimization and efficiency plans
+> Token-optimization and efficiency follow-ups
 
 ## Open Follow-Ups After the Token-Optimization Plan (2026-09-13)
 

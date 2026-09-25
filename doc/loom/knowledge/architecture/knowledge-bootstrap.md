@@ -1,6 +1,6 @@
 # Knowledge Bootstrap
 
-> Deterministic phase, cluster digest, receipt semantics, session contract
+> Deterministic phase, digest, receipts
 
 ## Deterministic Phase
 

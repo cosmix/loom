@@ -1,6 +1,6 @@
 # Daemon Singleton Incident
 
-> Two daemons once shared one .loom/work/; startup now flocks
+> Two daemons shared .loom/work/; now flocked
 
 ## Resolution
 

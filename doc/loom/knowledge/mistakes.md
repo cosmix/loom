@@ -227,24 +227,20 @@ a raw-string delimiter.
 
 ## Typed Config Process Gotchas: Verification, Dev Servers, and Markdownlint
 
-Four short lessons from the typed-config-values work: config keys resolve per key
-(project -> user -> built-in) even when a tier's section is absent, so section-level shadowing is
-a defect; a verifier's own assumption about required behaviour is not a substitute for the plan's
-stated contract; each Bash tool call gets its own sandboxed process namespace, so a backgrounded
-dev server from a prior call is invisible to the next one; and plan prose must never wrap to start
-a line with `+`, or the pre-commit markdownlint fixer rewrites it.
+Four lessons from the typed-config-values work: config keys resolve per key, so section-level shadowing is a defect; a verifier's own assumption is no substitute for the plan's stated contract; a backgrounded dev server is invisible to the next Bash call; plan prose must not wrap a line to start with `+`, or the markdownlint fixer rewrites it.
 
 → [Typed Config Values: Process and Verification Gotchas](mistakes/typed-config-values-process.md)
 
 ## Briefs and Bug Reports (2026-09-18)
 
-A report quoted from a stage session is a defect report against loom's source: diagnose from this
-repo, never from another project's transcripts or state. Before a brief adds a condition variable
-beside an existing guard, state what the existing one already covers and why it falls short. A
-design summary offered for agreement labels what the agent proposes apart from what was agreed.
+A report quoted from a stage session is a defect report against loom's source: diagnose from this repo, never from another project's transcripts. Before a brief adds a condition variable beside an existing guard, state what the guard covers and why it falls short. Label what the agent proposes apart from what was agreed.
 
 → [Briefs and Bug Reports](mistakes/briefs-and-bug-reports.md)
 
 ## Lint and Test-Discipline Summary
 
 Lint and test-discipline lessons spanning `--all-targets`, `--no-fail-fast`, ambient git config in tests, the maintainability ledger, `TODO` in string literals and platform-specific Bash/Rust traps. Racy tests (inherited descriptors, ETXTBSY, serial env, stdin hangs, real-home writes) and CI toolchain drift (clippy on rustup `stable`, offline `cargo audit`, `install.sh`, dependency build caches) have their own topics. → [Testing & Lint](mistakes/testing-and-lint.md), [Test Concurrency & Fixtures](mistakes/test-concurrency-and-fixtures.md), [CI Toolchain & Cargo](mistakes/ci-toolchain-and-cargo.md)
+
+## Verification v2 Delivery Mistakes
+
+Twelve prevention rules from the verification-v2 plan: wave-brief ownership gaps, truncated caller searches, worker sizing and `loom subagents watch` traps, rustfmt-before-measure, the pre-commit rustdoc gate, the silent markdown lint, unregistered hook tests, commit mechanics, gates on the wrong record, unverified reviews, fixtures that cannot fail. → [verification-v2-delivery](mistakes/verification-v2-delivery.md)

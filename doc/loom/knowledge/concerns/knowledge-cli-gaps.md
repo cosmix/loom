@@ -1,6 +1,6 @@
 # Knowledge Cli Gaps
 
-> Knowledge CLI gaps: heading rename, CRLF, fences, housekeeping
+> Knowledge CLI gaps and housekeeping
 
 ## `loom knowledge update` Cannot Set a Topic Blurb (2026-07-28)
 

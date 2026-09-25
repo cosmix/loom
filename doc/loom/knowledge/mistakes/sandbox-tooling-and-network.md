@@ -4,6 +4,10 @@
 
 ## The Sandbox's AF_UNIX Denial Also Kills sccache, Breaking Every Cargo Command (2026-09-04)
 
+**Current state (2026-09-25):** the export described below is now gated. `build_cache::sccache_usable_in` (`orchestrator/terminal/native/build_cache.rs:145`) is `!sandbox.enabled || network.allow_all_unix_sockets`; `launch.rs:337` and `wrapper.rs:308` withhold `RUSTC_WRAPPER` from a sandboxed session whose seccomp filter denies `AF_UNIX`, and `process/environment.rs` starts acceptance commands from `env_clear()`. The `env -u RUSTC_WRAPPER` workaround and the `LOOM_SCCACHE=0` restart are needed only for a sandbox that allows all unix sockets yet still breaks sccache, or if that gate is removed. Verification v2's D4 plan-verify "Rustc wrapper" lint was dropped for this reason: as specified it warned on every cargo plan whenever `/usr/bin/sccache` existed, so `plan verify --strict` failed for plans that could not hit the failure.
+
+The rest is the 2026-09-04 history, true of the tree before the gate.
+
 **What happened:** loom exports `RUSTC_WRAPPER=/usr/bin/sccache` into every stage session
 and into the confined acceptance environment (`process/environment.rs` allowlists
 `RUSTC_WRAPPER`) whenever sccache is found on the host. Every `cargo build`/`clippy`/`doc`/

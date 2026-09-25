@@ -1,6 +1,6 @@
 # Refactor Stragglers
 
-> What a large removal or rename leaves behind, uncleaned
+> What a large rename leaves behind
 
 ## Source vs Installed: Editing Wrong File
 

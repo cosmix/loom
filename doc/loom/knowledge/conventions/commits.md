@@ -1,6 +1,6 @@
 # Commit Convention
 
-> Grouped Conventional Commits, no attribution, no trailers
+> Grouped Conventional Commits, no trailers
 
 ## Required Commit Practice
 

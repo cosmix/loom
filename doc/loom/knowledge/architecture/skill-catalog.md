@@ -3,14 +3,14 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Skill Catalog
 
-> The two skill roots; 53 catalogued skills
+> The two skill roots; 63 catalogued skills
 
 ## Skill Catalog: Two Roots, and Why the Split
 
 Skills load from TWO roots, not one: `~/.claude/skills/` (10 CORE skills, named in
 `skills/core-skills.txt`, one bare name per line, no trailing comments — Rust and bash readers
 must agree byte-for-byte on the parsing rule: trim, skip blank/`#` lines) and
-`~/.claude/loom-skill-catalog/` (the other ~53 skills). `loom/src/skills/index_catalog.rs` holds
+`~/.claude/loom-skill-catalog/` (the other 63 skills; ten language skills joined in verification v2). `loom/src/skills/index_catalog.rs` holds
 the compiled-in core manifest (`include_str!` of `skills/core-skills.txt`), the two-root loader
 `load_with_catalog`, and `skill_invocation()`, which renders the CORRECT form per root: a bare
 `/loom-<name>` slash-form for a core skill (resolves directly), or
@@ -127,3 +127,22 @@ rust+terraform returned `/loom-skills` as the third suggestion, DISPLACING a rea
 `apply_install_layout`) had any external caller. `pub` items in a lib crate are never
 dead-code-warned, so `cargo clippy` misses an unused re-export entirely — this class of debt needs
 a deliberate sweep (`rg` each re-exported name for callers outside its own module), not a linter.
+
+## Ten Language Skills for the Adapter Set (verification v2)
+
+The `language-skills` stage added `loom-java`, `loom-kotlin`, `loom-scala`, `loom-csharp`, `loom-ruby`, `loom-php`,
+`loom-swift`, `loom-elixir`, `loom-cpp` and `loom-dart`, one per language profile with no skill. All ten are
+catalogued, none core: the catalog table in `skills/loom-skills/SKILL.md` now has 63 rows, and
+`codex/skills/loom-skills/SKILL.md` keeps the same 63 verbatim (the codex loader copies the table, so a row added
+to one file only leaves codex agents unable to find the skill). The core manifest stays at 10 and needs no count edit.
+
+Each new `SKILL.md` ends with a `## Loom Test Runner Adapter` section naming the adapter `loom project detect` picks,
+the single-test command (the D5 template line, verbatim) and how a contract author avoids the parser gaps listed in
+`concerns/verification-v2-followups.md`: import new names inside the test body (unittest, rspec), describe contract
+groups by string (rspec), use XCTest rather than Swift Testing (swift), avoid apostrophes and use unique names (dart),
+register tests from the top-level `CMakeLists.txt` (cpp). `languages::skill_for(profile)` maps `go` to `loom-golang`,
+`javascript` to `loom-typescript` and every other profile to `loom-<profile>`.
+
+Two traps when reviewing skill text: a proof `rg` for a defect pattern also matches legitimate example commands in the
+Tooling tables (scope it to the adapter section), and reviewers flagged correct library behaviour as defects
+(see `mistakes/verification-v2-delivery.md`).

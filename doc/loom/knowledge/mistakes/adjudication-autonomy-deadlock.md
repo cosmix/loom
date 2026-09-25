@@ -10,7 +10,9 @@
 
 **Prevention:** Wherever a stage's worker is looked up, filter by session kind. `stage_id` is not identity — a session belonging to a stage is not necessarily that stage's *worker*.
 
-**Fix:** Added a typed lookup, `live_sessions_for_stage_of_type` (`loom/src/orchestrator/session_registry.rs`), driven by `worker_session_type` (`loom/src/orchestrator/coherence.rs`), which names the `SessionType` that counts as a stage's worker. `session_is_current_for_stage` (`loom/src/orchestrator/core/orphan_adoption.rs`) now excludes `Adjudication` explicitly.
+**Fix:** Added a typed lookup, `live_sessions_for_stage_of_type` (`loom/src/orchestrator/session_registry.rs`), driven by `worker_session_type` (`loom/src/orchestrator/coherence.rs`), which names the `SessionType` that counts as a stage's worker. Adoption (`core/session_adoption.rs`) and the watchdog repair (`core/coherence.rs`) both call `coherence::live_worker_sessions`, which falls back to a live `Contract` session only for a v2 standard stage (`plan_version == 2`) with no live `Stage` session; `is_worker_session_type` gates the incoherence check the same way (`coherence.rs:37-53`). `session_is_current_for_stage` (`loom/src/orchestrator/core/orphan_adoption.rs`) excludes `Adjudication` explicitly.
+
+**Recurrence rule:** a second worker session kind breaks every filter keyed on one kind. The contract phase hit six such sites (see `architecture/contract-phase.md`); a new kind that owns an `Executing` stage must be accepted in `coherence.rs` first.
 
 ## A Verdict Re-queued the Stage While Another Dispute Was Unanswered
 

@@ -1,6 +1,6 @@
 # Codex Lane Rogue Wrapper
 
-> A wrapper implemented the task instead of forwarding it
+> A wrapper implemented instead of forwarding
 
 ## A forwarding wrapper implemented the task itself (2026-08-07)
 

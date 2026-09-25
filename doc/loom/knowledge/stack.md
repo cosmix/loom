@@ -1,6 +1,6 @@
 # Stack & Dependencies
 
-> Project technology stack, frameworks, and key dependencies.
+> Dependencies, frameworks, tooling
 > This file is append-only - agents add discoveries, never delete.
 >
 > **Related files:** [architecture.md](architecture.md) for how dependencies are used.
