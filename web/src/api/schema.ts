@@ -43,6 +43,7 @@ export const sessionTypeSchema = z.enum([
   "baseconflict",
   "knowledge",
   "adjudication",
+  "contract",
 ]);
 export const sessionBackendSchema = z.enum(["native", "tmux"]);
 export const outgoingSessionExitReasonSchema = z.enum([

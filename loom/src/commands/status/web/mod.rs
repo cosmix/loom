@@ -82,6 +82,8 @@ mod interfaces;
 mod limits;
 mod listener;
 pub mod model;
+#[cfg(test)]
+mod schema_parity;
 mod terminal;
 #[cfg(test)]
 mod tests;

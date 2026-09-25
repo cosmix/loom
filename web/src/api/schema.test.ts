@@ -170,4 +170,17 @@ describe("snapshot schema", () => {
 
     expect(snapshotSchema.safeParse(withoutCodex).success).toBe(true);
   });
+
+  it("parses a stage whose session_type is the contract-writer phase", () => {
+    const withContract = structuredClone(fixtureJson) as {
+      status: { stages: Array<Record<string, unknown>> };
+    };
+    withContract.status.stages[0].status = "executing";
+    withContract.status.stages[0].session_type = "contract";
+
+    const parsed = snapshotSchema.safeParse(withContract);
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && parsed.data.status.stages[0].session_type).toBe("contract");
+  });
 });
