@@ -116,6 +116,8 @@ run_test "session-start: heartbeat write escapes a quoted transcript_path via jq
 run_test "knowledge-orient: emits the INDEX.md pointer on startup" "$SCRIPT_DIR/knowledge-orient-emits.sh"
 run_test "knowledge-orient: silent without an index, inside a stage, on compact, past the git root" "$SCRIPT_DIR/knowledge-orient-silent.sh"
 run_test "post-tool-use: commit reminder is tokenized - heredoc body ignored, real commits fire" "$SCRIPT_DIR/post-tool-use-commit-reminder-tokenized.sh"
+run_test "loom-relay: kind derivation per loom command segment, no control kinds for subagents" "$SCRIPT_DIR/loom-relay-kinds.sh"
+run_test "loom-relay: fast path, jq and LOOM_HOOK_PATH gates, helper call contract" "$SCRIPT_DIR/loom-relay-gates.sh"
 
 echo ""
 echo "Results: $PASS passed, $FAIL failed"
