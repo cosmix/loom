@@ -179,16 +179,22 @@ FIFO, socket, or device node a session might plant — none of those show up in 
 node (the bind-mount itself, or `mknod`, which needs `CAP_MKNOD` no session has) does.
 
 **Prevention:** an in-session git-status reader that must treat "untracked" as "the writer created
-this" has to drop untracked DEVICE NODES specifically, never every unexpected untracked path —
-`git::branch::is_device_node` (`loom/src/git/branch/status.rs`) checks
-`symlink_metadata(root.join(path)).file_type().is_char_device() || .is_block_device()`, applied to
-`changes::changed_paths` (`verify/contracts/changes.rs`), `list_working_tree_changes`
-(`git/branch/status.rs`) and `fingerprint::compute` (`verify/review/fingerprint.rs`). The daemon's
-host-side `changes::special_files` walk is the counterpart: it refuses any FIFO, socket or device
-node, which cannot hide behind the filter because an agent cannot create a device node without
-CAP_MKNOD. Regression tests feed the parser a `?? .bashrc`-style line with the host's `/dev/null`,
-a real character device, standing in for the mount; a mkfifo fixture reproduces nothing, since git
-skips FIFOs on its own.
+this" has to drop untracked artifacts at the eleven protected root names specifically, never every
+unexpected untracked path — `verify::tool_artifacts::is_tool_artifact`
+(`loom/src/verify/tool_artifacts.rs`, replaces the removed `git::branch::is_device_node`) matches
+a listed name only when `symlink_metadata` finds it a char/block device, an empty regular file, an
+empty directory, or gone (the mount point seen from inside the sandbox, from the host, or after
+cleanup), applied to `changes::changed_paths`/`status_paths` (`verify/contracts/changes.rs`),
+`list_working_tree_changes` (`git/branch/status.rs`) and `fingerprint::compute_local`
+(`verify/review/fingerprint.rs`). The daemon's host-side `changes::special_files` walk
+(`verify/contracts/special_walk.rs`) is the counterpart: it refuses any FIFO, socket or device
+node found anywhere in the worktree, except a device-node placeholder at one of the same eleven
+root names (`sandbox_mount`, the same `is_tool_artifact` rule) — a FIFO or socket an agent plants
+at one of those names is still refused, since making a real device node needs CAP_MKNOD no session
+has. Regression tests feed the parser a `?? .bashrc`-style line with the host's `/dev/null`, a real
+character device, standing in for the mount, plus an empty file and an empty directory at other
+listed names; a mkfifo fixture at a listed name is kept, since git skips FIFOs on its own but a
+session-planted one must still count as a change.
 
-**Fix:** `is_device_node` gate added to every in-session git-status reader that lists untracked
-paths for a contract freeze or a review fingerprint.
+**Fix:** `is_tool_artifact` gate added to every in-session git-status reader that lists untracked
+paths for a contract freeze or a review fingerprint, and to the daemon's special-file walk.

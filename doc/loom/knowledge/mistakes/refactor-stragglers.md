@@ -104,3 +104,23 @@ only `cargo clippy --all-targets -D warnings` (`dead_code`) caught the stale met
 afterward — a passing scoped test suite proves the new code works, not that the old entry point is
 gone. `cargo clippy --all-targets -D warnings` over the full tree remains the orchestrator's job,
 never a subagent's, and it is the check that actually finds this class of straggler.
+
+## Removing a Now-Unused Import Can Break the `#[path]` Test Module That Relied On It (2026-09-25)
+
+**What happened:** a subagent moved `dispute_kinds.rs`'s integrity lookup to a shared
+`observer::integrity_events` call and, since nothing in the module's own code needed `WorkDir`
+anymore, dropped `use crate::fs::work_dir::WorkDir;` from its import list. `dispute_kinds_tests.rs`
+is that module's `#[path]` test child (`#[path = "dispute_kinds_tests.rs"] mod tests;`) and reaches
+every sibling name through `use super::*;` rather than its own explicit imports — including
+`WorkDir`, which its own test bodies construct directly. The test build broke.
+
+**Why:** a `#[path]` test module's `use super::*` makes it invisible to a plain grep for
+`WorkDir` inside the test file itself, and to a reviewer scanning only the parent module's own
+uses; the name is live only through the glob re-export, one file away.
+
+**Prevention:** before removing a `use` from a module that has a `#[path = "..._tests.rs"]` child,
+`rg` the test file for the name. If it appears, the test file needs its own explicit `use` for it
+before the parent's import can go.
+
+**Fix:** `dispute_kinds_tests.rs` gained its own `use crate::fs::work_dir::WorkDir;`
+(`daemon/server/dispute_kinds_tests.rs:11`), independent of whatever `dispute_kinds.rs` imports.

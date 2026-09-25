@@ -67,24 +67,38 @@ A relayed freeze is dropped unless `loom-hooks/loom-relay.sh` `relay_kind_at` ma
 `FreezeContracts` only when the token after `contracts` is `freeze`, and drops it for subagents
 (`is_control()`, `drop_control_kinds`).
 
-## Device Nodes Are Not Changes, and the Daemon Refuses Planted Ones
+## Sandbox Placeholders Are Not Changes, and the Daemon Refuses Planted Special Files
 
-Claude Code's Bash sandbox bind-mounts `/dev/null` over eleven worktree-root dotfiles, visible
-only inside its own mount namespace (see mistakes/parallel-worktree-shared-state.md, "Claude
-Code's Bash Sandbox..."). `git status` inside that namespace lists each mount point untracked,
-so every in-session freeze check must not treat it as the writer's own change.
-`changes::changed_paths` (`verify/contracts/changes.rs`) and
-`fingerprint::compute` (`verify/review/fingerprint.rs`) drop an untracked path when
-`git::branch::is_device_node` (`git/branch/status.rs`) confirms it via `symlink_metadata` — char
-or block device only, so a FIFO or socket a session could actually create is kept. Before this
-filter, every freeze a Claude Code contract writer attempted was refused on these placeholders,
-so a v2 stage with contracts could never leave the contract phase.
+Claude Code's Bash sandbox denies writes to eleven worktree-root names (`.bashrc`, `.gitconfig`,
+`.mcp.json`, `.vscode`, ...) and bind-mounts `/dev/null` over one that does not already exist,
+visible only inside its own mount namespace (see mistakes/parallel-worktree-shared-state.md,
+"Claude Code's Bash Sandbox..."). `git status` inside that namespace lists the mount point
+untracked; on the host the same name can be left behind as an empty regular file or directory.
+Every in-session freeze check must not treat any of these as the writer's own change.
+`changes::changed_paths`/`special_files` (`verify/contracts/changes.rs`) and
+`fingerprint::compute_local` (`verify/review/fingerprint.rs`) drop an untracked path at one of the
+eleven names when `verify::tool_artifacts::is_tool_artifact` (replaces the removed
+`git::branch::is_device_node`) finds it a device node, an empty regular file, an empty directory,
+or gone; a FIFO, a socket, or real content at that name is kept, and so is every path below the
+root or under another name. Before this filter, every freeze a Claude Code contract writer
+attempted was refused on these placeholders, so a v2 stage with contracts could never leave the
+contract phase.
+
+Git for every one of these checks runs through a `WorktreeGit` (`git/worktree/pinned.rs`). The
+writer's own freeze pre-check (`commands/stage/contracts/freeze.rs`) uses the worktree's own
+`.git` (`WorktreeGit::discovered`): it already runs inside the writer's own sandbox with the
+writer's own privileges. The daemon's re-check (`daemon/server/contracts.rs`) and the change
+fingerprint (`fingerprint::compute_local`) pin git to the worktree's git directory as registered
+in the main repository (`WorktreeGit::pinned`), so a `.git` file the writer rewrote to point
+elsewhere cannot choose which configuration git reads.
 
 The daemon's own check (`daemon/server/contracts.rs::check_changes`, calling
 `changes::special_files`, walk in `verify/contracts/special_walk.rs`) walks the worktree — skip
 `.git`, skip git-ignored — and refuses the freeze outright if it finds a FIFO, socket, or device
-node anywhere: git shows none of those, and leaving one where the implementer will write blocks
-its first `open()`. The writer can still act during the walk, so every directory is opened from
+node anywhere, except a device-node placeholder at one of the eleven protected root names
+(`special_walk::sandbox_mount`, the same `is_tool_artifact` rule): git shows none of the rest, and
+leaving one where the implementer will write blocks its first `open()`. The writer can still act
+during the walk, so every directory is opened from
 the worktree root fd through `fs::safe_read::list_dir_no_follow` (`openat2` with
 `RESOLVE_NO_SYMLINKS | RESOLVE_BENEATH` on Linux, per-component `O_NOFOLLOW` elsewhere). A
 directory swapped for a symlink mid-walk fails the open, and the freeze is refused; the walk

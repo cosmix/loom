@@ -243,9 +243,9 @@ the worktree. A contract that is itself wrong is disputed, never edited:
 **The review loop** (standard and integration-verify stages):
 
 1. Spawn a `loom-code-reviewer` BY AGENT TYPE for the stage diff. Only that type is recorded:
-   when it stops, a hook records the `loom-review` block ending its final message as the next
-   review round. A final message without a valid block records a malformed round, which counts
-   for nothing.
+   when it stops, a hook records the `loom-review` block from its `SubagentHandback` report, or
+   from its final message when it hands back nothing, as the next review round. Neither carrying a
+   valid block records a malformed round, which counts for nothing.
 2. Brief every re-review with the output of `loom stage review status <stage-id>`: the rounds,
    every open finding (own and carried) with its id, whether the latest round matches the
    worktree, and the files changed since that round. A re-review covers those files plus the open

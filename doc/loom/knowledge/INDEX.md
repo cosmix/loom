@@ -31,7 +31,7 @@
 | [context-retrieval](architecture/context-retrieval.md) | Retrieval: graphs, lanes, gating, tiered packs | 366 |
 | [context-retrieval-corpus](architecture/context-retrieval-corpus.md) | Stopwording, rescue floor, BM25 index, indexed prose | 177 |
 | [context-retrieval-state](architecture/context-retrieval-state.md) | Base/overlay graph layers, delivery records | 192 |
-| [contract-phase](architecture/contract-phase.md) | Contract session, freeze, handover | 126 |
+| [contract-phase](architecture/contract-phase.md) | Contract session, freeze, handover | 140 |
 | [core-abstractions](architecture/core-abstractions.md) | ExecutionGraph, Stage, Session, data flow | 136 |
 | [directory-structure](architecture/directory-structure.md) | loom/src module tree, state layout, root assets | 49 |
 | [execution-containment](architecture/execution-containment.md) | Sandboxed command containment and its limits | 343 |
@@ -53,7 +53,7 @@
 | [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends, lane resolution | 285 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) | 23 adapters, profiles, quoting, detect | 49 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, --compare, criterion cache | 260 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 94 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 124 |
 | [web-dashboard](architecture/web-dashboard.md) | loom status --web: server, SPA, streaming | 81 |
 | [web-terminal](architecture/web-terminal.md) | loom status --web --terminals: browser terminal | 169 |
 
@@ -78,7 +78,7 @@
 | [merge-and-recovery](patterns/merge-and-recovery.md) | Progressive merge, conflict recovery, attribution | 96 |
 | [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Signal gen, IPC, poll loop, spool drain | 107 |
 | [remote-control](patterns/remote-control.md) | Detect/preflight/resolve for external agents | 51 |
-| [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Hooks, input validation, sandbox config | 105 |
+| [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Hooks, input validation, sandbox config | 137 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) | How a stage agent reaches the daemon | 105 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage/session states, locked writes, verification | 182 |
 | [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out vs coordinators vs teams; model mix | 91 |
@@ -121,14 +121,14 @@
 | [live-state-pollution](mistakes/live-state-pollution.md) | Tests rewrote live .loom/work state and the real HOME's hooks | 43 |
 | [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay tickets leaked when their line missed the hook | 34 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | A cleanup-boundary bug and its fix | 171 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races: diagnosis, cases, fix | 194 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races: diagnosis, cases, fix | 200 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merge machinery lessons: merged=true without verifying | 171 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match trap and wiring-check pinning | 303 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions and edge cases | 53 |
-| [refactor-stragglers](mistakes/refactor-stragglers.md) | What a large rename leaves behind | 106 |
+| [refactor-stragglers](mistakes/refactor-stragglers.md) | What a large rename leaves behind | 126 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync, merge traps | 293 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | A directory named hooks/ is sandbox write-protected. | 37 |
-| [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers vs .loom/work state | 259 |
+| [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers vs .loom/work state | 288 |
 | [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Stage-sandbox tool failures: sccache, audit, loopback | 226 |
 | [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) | Only Edit(path) rules are enforced | 57 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) | deny_unknown_fields with two deserialization sources | 130 |

@@ -13,7 +13,10 @@ none of them.
 and duplicate checks, the aggregated check (integration-verify only) and change impact. Inside `run_v2`
 (`complete_verification_v2.rs`): contract check (standard stages with contracts), test integrity (standard and
 integration-verify), impact-selected tests (standard), reachable re-verification (integration-verify), and
-the review gate last. `complete_verification.rs` sits at 399 lines; new v2 calls go in `run_v2`, not in `run`.
+the review gate last. A stage session runs inside a sandbox that cannot reach the daemon's socket
+(`checks.control_session.is_some()`), so `run_v2` skips test integrity and the review gate there and returns;
+the daemon runs both (`daemon/server/observer.rs::check_completion_gates`) before it applies the
+`CompleteStage` transition — see "Review gate and harvest" below. `complete_verification.rs` sits at 399 lines, so new v2 calls go in `run_v2`.
 `complete_verification_v2` is a `#[path]` child of `complete_verification.rs`, so its tests run as
 `commands::stage::complete::complete_verification::complete_verification_v2::tests::*`; a filter
 `commands::stage::complete_verification_v2` selects zero tests.
@@ -70,14 +73,41 @@ extractor does not model macros (`context/extract/rust.rs:19`), so a test whose 
 sits inside `assert_eq!(...)` is not selected; write fixtures with the call outside the macro. No selection,
 a timeout or no `select_command` is a note, not a failure.
 
-**Review gate and harvest** (`verify/review/`, `commands/hook/review_harvest.rs`). The `loom-code-reviewer`
-ends its report with a fenced `loom-review` JSON block. `loom-hooks/subagent-stop.sh` pipes
-`{stage_id, session_id, agent_id, transcript_path}` to the hidden `loom hook review-harvest`, which for a v2
-stage parses the last block, computes the change fingerprint (sha256 over base sha plus sorted
-`<path>\t<sha256|deleted>` lines for every path changed versus the merge base; commits do not change it) and
-writes `.loom/work/reviews/<stage>/round-<n>.json`. Each suggestion becomes a `Suggestion` memory entry,
-written with `fs::memory::append_entry` against the explicit work dir. An unparseable block records the
-round as `malformed`. The gate passes when the latest WELL-FORMED round's fingerprint equals the current one
+**One observer for the change fingerprint** (`verify/review/observer.rs`, `verify/review/fingerprint.rs`,
+`daemon/server/observer.rs`). Both the review gate (comparing a round's fingerprint with the current one) and
+the test-integrity gate (comparing counts derived from it) need one value computed the same way at both ends.
+Before this design, a round's fingerprint came from the host `subagent-stop.sh` hook running
+`loom hook review-harvest`, while completion computed its own inside the agent's sandbox: a sandbox mounts
+`/dev/null` over root dotfiles the host does not have (`verify/tool_artifacts.rs`), masks git's global config,
+and runs with its own `HOME`, so the two processes' fingerprints for identical content differed and a round
+could never match — see mistakes/sandbox-state-channels.md, "The Same Value Computed in Two Filesystem Views
+Never Matches". Now the loom daemon that owns
+the worktree is the one observer: `fingerprint::compute` asks it over `Request::ObserveChanges` on
+`.loom/work/orchestrator.sock`, naming only the stage id, and the daemon resolves the worktree, target branch
+and fingerprint itself (`fingerprint::compute_local`, git pinned to the stage's registered git directory via
+`WorktreeGit::pinned` so the worktree's own `.git` file cannot pick the configuration). `compute` computes
+locally itself only when `worktree` names no stage worktree, or when nothing answers on the socket AND the
+daemon's singleton lock proves no daemon runs (`DaemonServer::proven_stopped`, an unheld `flock`-able regular
+lock file); every other outcome is the typed `DaemonUnreachable` error, and the caller fails closed rather
+than falling back to its own view. `loom stage review status`/`review integrity` may fall back to a locally
+computed value labelled as such, for display only, never for a value recorded or compared.
+
+A stage session's sandbox denies `AF_UNIX`, so a sandboxed `loom stage complete` cannot ask and runs neither
+gate locally (`complete_verification_v2.rs`, above); the daemon runs both
+(`daemon/server/observer.rs::check_completion_gates`) right before it applies the `CompleteStage` transition
+(`control_complete.rs`), outside the session lock since both gates only read.
+
+**Review gate and harvest** (`verify/review/`, `commands/hook/review_harvest.rs`,
+`commands/hook/review_transcript.rs`). The `loom-code-reviewer` ends its report with a fenced `loom-review`
+JSON block, in the `message` of its last `SubagentHandback` tool call or, if it hands back nothing, its final
+assistant text; if both parse and disagree, the hand-back wins and the disagreement is logged.
+`loom-hooks/subagent-stop.sh` pipes `{stage_id, session_id, agent_id, transcript_path}` to the hidden
+`loom hook review-harvest`, which for a v2 stage reads the block from the transcript tail, asks the daemon
+for the current fingerprint (sha256 over base sha plus sorted `<path>\t<sha256|deleted>` lines for every path
+changed versus the merge base; commits do not change it), and writes
+`.loom/work/reviews/<stage>/round-<n>.json`. Each suggestion becomes a `Suggestion` memory entry, written
+with `fs::memory::append_entry` against the explicit work dir. An unparseable block records the round as
+`malformed`. The gate passes when the latest WELL-FORMED round's fingerprint equals the daemon's current one
 and every finding and carried finding is closed (listed `resolved` by a later round, or ruled `dismiss` or
 `defer` in `rulings.json`; `uphold` does not close). A malformed round newer than a matching well-formed one
 does not fail the gate; it is quoted only when the gate fails for another reason. `loom stage review status`

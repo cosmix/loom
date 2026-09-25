@@ -93,6 +93,38 @@ Prevention: any new host-side read or write of a worktree-writable path goes thr
 `fs::safe_read`/`fs::safe_fs`, never `std::fs`/`OpenOptions` directly — the daemon trusts its
 own code, not the worktree's contents.
 
+## A Worktree's `.git` File Is Agent-Writable Too, So Daemon-Side Git Never Follows It (2026-09-25)
+
+A linked worktree's `.git` is a plain file naming its administrative directory; the stage agent
+that controls the worktree can rewrite it to name a directory of its own choosing, whose
+`config` could define a `filter.<name>.clean` git runs on every `diff`/`status` that re-hashes a
+file. Any git the daemon starts with default discovery in a stage worktree would run that filter
+outside the sandbox. `git/worktree/pinned.rs::WorktreeGit::pinned` closes this the same way
+`fs::safe_read::open_regular_no_follow` closes a symlinked spool path above: it never lets the
+worktree decide where its own configuration comes from. It resolves the worktree's registered
+entry under the main repository's `<common-dir>/worktrees/` itself, then sets `GIT_DIR`,
+`GIT_WORK_TREE` and `GIT_COMMON_DIR` from those resolved paths, so repository configuration comes
+from the main repository's `config` alone (plus the user's global and system files, keeping
+filters such as git-lfs working). `WorktreeGit::discovered` — trusting the worktree's own `.git` —
+stays correct only for a process that already runs with the writing agent's own privileges: the
+agent's own CLI inside its sandbox, never the daemon or a host-side hook.
+
+**Prevention:** any process outside a stage's sandbox that runs git in a stage worktree pins it
+(`WorktreeGit::pinned`/`pinned_in_project_of`), never discovers it; a stage's own process may
+discover, since it already has no more privilege than the worktree it would misconfigure.
+
+## A Local Fallback Needs Proof That No Daemon Runs (2026-09-25)
+
+`verify::review::observer::source` computes a stage's change fingerprint itself only when it holds
+POSITIVE evidence no daemon owns the project: nothing answers on `.loom/work/orchestrator.sock`
+(`DaemonReach::NotListening`) AND the daemon's singleton lock is a regular file this process can
+`flock` (`DaemonServer::proven_stopped`). A missing socket alone proves nothing — a sandbox can
+hide or deny the path of a socket that exists — and neither does a missing lock file, for the same
+reason. Every other outcome, including a permission error opening the socket, is the typed
+`DaemonUnreachable` error, and the caller fails closed rather than silently computing a value that
+could disagree with the daemon's. The same asymmetry as the credential-narrowing entries in
+`mistakes/sandbox-state-channels.md`: absence of evidence for a denial is not evidence of absence.
+
 ## Re-Export a `pub(crate)` Helper Into a New Caller Instead of Re-Encoding Its Logic (2026-09-13)
 
 `fs/permissions/drift.rs::flatten_hook_triples` already turned a hooks JSON value into the

@@ -257,3 +257,32 @@ RPCs" — and `daemon/protocol.rs` has no such RPC. `loom stage complete` got a 
 the `excluded_commands` escape was removed; `loom memory` did not, and nothing failed loudly.
 Verify an RPC exists before treating a missing write grant as deliberate, and after removing
 a sandbox escape, audit every operation that relied on it.
+
+## The Same Value Computed in Two Filesystem Views Never Matches (2026-09-25)
+
+**What happened:** the v2 review gate compared a stage's change fingerprint from the review
+round it recorded against the fingerprint it computed at completion, and the two could never be
+equal — every stage with contracts or review findings got stuck unable to complete however clean
+its diff was.
+
+**Why:** the round's fingerprint came from the host `subagent-stop.sh` hook running
+`loom hook review-harvest`, outside any sandbox; the completion fingerprint came from
+`loom stage complete` running inside the stage agent's own Bash sandbox. The sandbox mounts
+`/dev/null` over worktree-root dotfiles the host does not have, masks git's global config and
+`core.excludesFile`, and runs with its own `HOME` — two processes, two filesystem views, one
+nominally identical worktree. Filtering the placeholder dotfiles one name at a time
+(`is_device_node`, then `is_tool_artifact`) narrowed the gap but could not close it: any other
+difference between the two views — an empty directory left by cleanup, a masked git config
+setting — reopened it.
+
+**Prevention:** any value recorded at one time and compared at another is computed by one
+observer, never by whichever process happens to run at each end. Here that observer is the loom
+daemon that owns the worktree (`verify/review/observer.rs`, `daemon/server/observer.rs`): every
+caller asks it over `Request::ObserveChanges`, and a caller that cannot prove no daemon runs fails
+closed (`DaemonUnreachable`) rather than falling back to its own view. Do not chase this class of
+bug by patching view differences one artifact at a time.
+
+**Fix:** `fingerprint::compute` asks the daemon; only the daemon's own code
+(`fingerprint::compute_local`) computes directly, with git pinned to the stage's registered git
+directory. A sandboxed `loom stage complete` skips the test-integrity and review gates locally;
+the daemon runs both before it applies the `CompleteStage` transition.
