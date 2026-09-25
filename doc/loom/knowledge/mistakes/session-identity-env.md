@@ -1,6 +1,6 @@
 # Session Identity Env
 
-> LOOM_* wrapper exports: a contract for hooks, CLI, daemon
+> LOOM_* wrapper exports contract
 
 ## An OS-Resource Name Is Not an Identifier (2026-08-10)
 

@@ -1,6 +1,6 @@
 # Core Abstractions
 
-> ExecutionGraph, Stage, Session, Orchestrator, data flow
+> ExecutionGraph, Stage, Session, data flow
 
 ## Core Abstractions
 

@@ -1,6 +1,6 @@
 # Subagent Briefing
 
-> Writing briefs, sizing waves, delegation, file ownership
+> Briefs, wave sizing, file ownership
 
 ## Never Hand Over a Proving Command You Have Not Run
 

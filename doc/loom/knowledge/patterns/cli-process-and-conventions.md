@@ -2,7 +2,7 @@
 ---
 # Cli Process And Conventions
 
-> CLI registration, TUI, errors, process mgmt, config, HTTP
+> CLI registration, TUI, errors, config
 
 ## TUI Patterns
 

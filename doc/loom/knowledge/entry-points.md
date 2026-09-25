@@ -239,3 +239,7 @@ do not guarantee, which is narrower than the word "containment" suggests.
 - `handoff/completion/` — `attest.rs` (HMAC attestation), `checkpoint.rs`, `identity.rs` (`expected_stage_commit`, `stage_head_commit`), `mod.rs`. See [Completion Recovery](architecture/completion-recovery.md).
 - `models/session/methods.rs` — `Session.exit_reason: Option<SessionExitReason>`; `record_heartbeat` now takes `progress_at` first (monotonic `last_active`).
 - `loom-hooks/_lifecycle.sh` — shared lifecycle-journal/heartbeat helpers (`loom_lifecycle_refresh_heartbeat`) used by `subagent-stop.sh` and `teammate-idle.sh`; `loom_heartbeat_prior_progress_at` (in `_common.sh`) carries forward the last validated `progress_at` on an observation-only tool call.
+
+## Verification v2 Entry Points
+
+Contract, integrity, review and impact gates, the 23 test-runner adapters, `loom project detect`, review harvest and the dispute-kind handlers. Table of paths: [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md). Design: `doc/plans/briefs/verification-v2/DESIGN.md`.

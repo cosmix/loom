@@ -3,7 +3,7 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Plan Lifecycle And Fields
 
-> Plan fields, goal-backward layers, verify checks
+> Plan fields v1/v2, verify checks, lints
 
 ## Adding New Plan Fields Checklist
 
@@ -154,3 +154,63 @@ when the changed-path probe does not list it, else through `git show HEAD:<path>
 command `git diff-index --name-only -z HEAD --`, NOT porcelain `git diff`: porcelain opportunistically
 rewrites `.git/index`, and `plan verify` must have no side effects. Its tests build repositories through
 `crate::git::run_git` rather than hand-rolled `Command::new("git")` chains.
+
+## Plan Version 2: Fields, Validation, and `plan verify` Lints
+
+`loom.version` accepts `1` and `2`; anything else fails with `Unsupported version: <n>. Supported versions: 1, 2.`
+A v1 plan using a v2-only field gets one error per use, `` `<field>` requires `version: 2` `` (stage-scoped for a stage
+field). Tests that need an "unsupported" version use `3`. The runtime `Stage` carries `plan_version: u32` (serde
+default 1) and every v2 behaviour reads it; nothing reads the plan file at run time to learn the version.
+`Stage::from_definition(definition, &PlanIdentity)` takes the plan's id, version and `ratchet_files`;
+`PlanIdentity` is built through `From<&ParsedPlan>` (`models/stage/checks.rs`).
+
+**v2 fields** (types in `plan/schema/types_v2.rs`, re-exported through `plan/schema/mod.rs`'s explicit list):
+
+| Field | On | Meaning |
+| --- | --- | --- |
+| `contracts: [{id, file, test, runner?, scenario, rejects}]` | stage | tests written and frozen before implementation (`architecture/contract-phase.md`); `id` is `^[a-z0-9][a-z0-9-]*$` and unique in the stage |
+| `harness: [glob]` | stage | extra files the contract writer may edit; frozen with the contracts |
+| `reachable: [{symbol, from, min_confidence?, description}]` | stage | the new unit must be reached from an entry point (`architecture/verification-v2-gates.md`) |
+| `wiring[].literal: bool` | wiring check | escape the pattern before matching; `source` may be a glob |
+| `ratchet_files: [path]` | plan (`LoomConfig`), copied onto every `Stage` | exact checkout-relative baseline or ledger files; any change raises `TI-ratchet` |
+
+v2 validation, each an error: every `standard` stage has at least one contract and `knowledge`, `knowledge-distill`
+and `integration-verify` stages have none; contract `file`, `test`, `scenario`, `rejects` non-empty; `file`,
+`harness` and `ratchet_files` entries relative with no `..`; `reachable` fields non-empty and `min_confidence`
+within 0..=1. `validate()` skips the wiring regex-compile check for `literal: true` (a literal such as `run(`
+is not a valid regex). Adding any field to `Stage` grows the ledgered `Stage::default` literal; pay it with
+a flattened sub-struct or a moved unit, not a ledger raise (the dispute counters went to `stage.tally`).
+`TruthCheck`, `WiringCheck` and `AcceptanceCriterion` moved to `models/stage/checks.rs`.
+
+**Lints** (`plan/schema/validation/v2_lints/`, one entry `run(&LintContext, &mut notes)`, called from
+`commands/plan/verify.rs` and mapped through `v2_fields::split_lint_findings`). A finding is an error when the plan
+is v2 and the lint is `error_in_v2`, else a structural warning (so `--strict` fails on it). `plan verify` has no
+side effects: no cache or index writes, no builds. Commands are lexed with `validation/shell_lex.rs`.
+
+| Lint | Rule | Error in v2 |
+| --- | --- | --- |
+| unknown `loom` subcommand (`loom_subcommands.rs`) | argv[0] `loom` names a path absent from the compiled clap tree | yes, downgraded to a warning only when the calling stage or a transitive dependency touches `loom/src/cli` |
+| regex (`regex_patterns.rs`) | wiring pattern the 1 MiB-limit builder rejects; `[[`; a pattern read as a flag; `rg` (minus `-F`/`-P`/`--pcre2`/`--engine`) and `grep -E` patterns that do not compile in Rust syntax. grep BRE and PCRE are skipped: Rust syntax rejects valid BRE (`foo(`) | mixed |
+| sandbox capability (`sandbox_capability.rs`) | network binary without `allowed_domains`; a criterion needing `tmux`, `docker`, `loom map`, `loom knowledge context` | yes |
+| knowledge check (`knowledge_check.rs`) | `loom knowledge check --strict` without `--baseline` while the tree has structural issues; uses `catalog::structural_issues(root)` (`build_curated(root, false)`, evidence collector off, read-only) | yes |
+| rust filters (`rust_filters.rs`, G5) | a `cargo test` module filter whose every `::` segment is not present in the base graph (node name or path component) and that no `files:` entry could create; no base layer gives one note | no |
+| contracts (`contracts.rs`) | unknown `runner`; undetectable runner (warning: completion falls back to exit code); v2 integration-verify without an acceptance command an adapter recognises as a full run | mixed |
+
+**The unknown-subcommand lint and a plan that adds the subcommand.** The CLI tree is the verifying binary's, so
+a stage that adds `loom stage contracts` and a later stage that runs it fail `plan verify` before the first
+stage runs. The downgrade above resolves it; testing an independent stage's typo still errors. The installed
+`loom` on `PATH` can predate a merge: `loom project detect` printed "unrecognized subcommand" from a checkout
+that contains it.
+
+**The D4 "Rustc wrapper" lint was dropped.** It warned on every cargo plan whenever sccache was installed and
+`LOOM_SCCACHE` unset, but loom withholds `RUSTC_WRAPPER` from sandboxed sessions that cannot run it
+(`build_cache::sccache_usable_in`), so the lint fired for a failure that cannot occur and made
+`plan verify --strict loom/tests/fixtures/plans/v2-valid.md` fail on any host with `/usr/bin/sccache`.
+
+**Authoring rules learned from the merged tree** (also in `skills/loom-plan-writer/references/v2-contracts.md`):
+a contract with no adapter runs its `test` string as the command and only the exit code judges it; harness globs
+cover test-only files (a glob over `mod.rs` freezes the file the implementer must edit); prefer contract
+locations that need no new `mod` declaration; a stage whose only goal-backward check is `reachable` is now
+verified (the field is counted in `has_any_goal_checks`), but pair it with `artifacts` anyway; the integration-verify
+stage lists the full test command. The verification report document that two briefs cited as required reading was never tracked and is
+absent from every stage worktree: a plan whose briefs cite a doc commits it with the plan.

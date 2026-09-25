@@ -174,3 +174,19 @@ Plan YAML gained `command_confinement: confined | inherit` at plan level
 - `.loom/work/sessions/{session-id}.md` - Session tracking
 - `.loom/work/signals/{session-id}.md` - Agent instruction signals
 - `doc/plans/PLAN-*.md` - Plan definition files
+
+## Verification v2 Entry Points
+
+| Path | Role |
+| --- | --- |
+| `loom/src/commands/stage/complete_verification_v2.rs` | `run_v2`: contract check, integrity, impact tests, reachable re-check, review gate |
+| `loom/src/commands/stage/contracts/` | `loom stage contracts freeze\|show\|restore` |
+| `loom/src/orchestrator/core/event_handler/contract_phase.rs`, `core/contract_budget.rs`, `core/stage_spawn.rs` | contract-to-implementer handover, respawn budget, shared spawn tail |
+| `loom/src/verify/contracts/`, `verify/integrity/`, `verify/review/`, `verify/impact_tests.rs` | the v2 gates and their stores under `.loom/work/{contracts,reviews}/<stage>/` |
+| `loom/src/verify/goal_backward/{wiring_v2,definition_sites,reachable}.rs`, `context/worktree_graph.rs` | glob and literal wiring, definition-site exclusion, reachability |
+| `loom/src/testrun/` | 23 test-runner adapters, language profiles, shell quoting, zero-test recognition |
+| `loom/src/commands/project.rs`, `skills/project/{markers,runners,probe}.rs` | `loom project detect`, kind and runner detection |
+| `loom/src/commands/hook/review_harvest.rs` | `loom hook review-harvest`, called by `subagent-stop.sh` |
+| `loom/src/orchestrator/adjudication/{verdict_kinds,apply_kinds,prompt/*}.rs`, `daemon/server/{contracts,dispute_kinds}.rs` | dispute kinds: verdicts, apply, judge prompts, daemon handlers |
+| `loom/src/plan/schema/{types_v2.rs,validation/v2_lints/}` | v2 fields and `plan verify` lints |
+| `doc/plans/briefs/verification-v2/DESIGN.md` | the authoritative design (D0-D17) |

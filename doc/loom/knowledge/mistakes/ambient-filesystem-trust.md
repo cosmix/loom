@@ -1,6 +1,6 @@
 # Ambient Filesystem Trust
 
-> Why a .git directory is not evidence of a real repository
+> A .git dir is not evidence of a repo
 
 ## An Ancestor Named `.git` Is Not a Repository (2026-08-29)
 

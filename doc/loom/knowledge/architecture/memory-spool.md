@@ -6,7 +6,7 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Memory Spool and Drain
 
-> Read before touching loom memory: spool/drain, ids, receipts
+> Read before touching loom memory
 
 ## The Problem It Solves
 
@@ -142,8 +142,10 @@ the id minted inside the sandbox is the id the journal keeps; the drain never
 re-mints it.
 
 - **Entry types** (`MemoryEntryType`): `Note`, `Decision`, `Question`, `Change`,
-  `Receipt`. `loom memory note`, `decision`, `question` and `change` all accept
-  evidence.
+  `Receipt` and `Suggestion`. `loom memory note`, `decision`, `question` and `change`
+  all accept evidence. A `Suggestion` is a reviewer's proposal, written by the review
+  harvest hook (`commands/hook/review_harvest.rs`) through `fs::memory::append_entry`
+  against an explicit work dir, so the round's file can carry the entry ids.
 - **Evidence** is a list of paths, `path:line` spans or symbols the entry rests on.
   `validate_evidence` (`fs/memory/persistence.rs`) allows at most 16 references,
   each non-empty, at most 256 characters, with no backtick and no newline. `record`
@@ -151,10 +153,14 @@ re-mints it.
   evidence on the way out, so a poison entry is skipped rather than written or
   redelivered.
 - **Receipts** settle an earlier event. `loom memory resolve <event-id> --outcome
-  <promoted|merged|discarded|deferred>` builds a `Receipt` entry and writes it
+  <promoted|merged|discarded|deferred|implemented>` builds a `Receipt` entry and writes it
   through the same `record` path, so the stage-forgery check and the spool fallback
   apply to it too. `promoted` and `merged` require `--target` (the knowledge target
-  the event went into); `discarded` and `deferred` require `--reason`. The id must
+  the event went into); `discarded`, `deferred` and `implemented` require `--reason`
+  (`commands/memory/handlers/resolve.rs`). `implemented` is the outcome for a
+  `Suggestion` that a stage acted on; the clap `value_parser` on `--outcome`
+  (`cli/types_memory.rs`) lists it, and a handler-level test cannot catch a
+  parser that omits it. The id must
   name an existing non-receipt entry in some journal or in the current worktree's
   undrained spool, or the command fails with "Unknown memory event id". A journal
   entry is dropped on parse when it is typed `Receipt` without a receipt payload, or
@@ -163,11 +169,13 @@ re-mints it.
 ## Pending Events and the Run Archive
 
 `loom memory pending [--stage <id>] [--json] [--strict]`
-(`commands/memory/handlers/pending.rs`) lists every `Note`, `Decision` and
-`Question` whose id no receipt settles, across every journal plus the current
+(`commands/memory/handlers/pending.rs`) lists every `Note`, `Decision`,
+`Question` and `Suggestion` whose id no receipt settles, across every journal plus the current
 worktree's undrained spool, deduplicated by id. It also counts `Change` entries
 without a receipt and the receipts themselves. `--strict` exits 1 when anything is
-pending.
+pending. `--group` (`pending_groups.rs`) sorts the list into corrections, mistakes,
+decisions, suggestions and other; a `Suggestion` always lands in `suggestions`, whatever
+its text opens with.
 
 The journals live in the state directory, which is removed when a plan finishes.
 `archive_run_state` (`fs/memory/archive.rs`) first copies its `memory/` and

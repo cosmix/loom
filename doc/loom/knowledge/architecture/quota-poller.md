@@ -1,6 +1,6 @@
 # Quota Poller
 
-> Claude/Codex usage-quota polling, caching, and rendering
+> Usage-quota polling, caching, rendering
 
 ## Sources
 

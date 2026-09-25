@@ -223,7 +223,7 @@ Everything loom does, one line each, grouped by what you are doing at the time. 
 - Run each stage's main agent at its stage type's configured model and effort. ([Model Allocation](#model-allocation))
 - Override the model or effort for one stage explicitly, without touching the rest of the plan. ([Stage Fields](#stage-fields))
 - Keep each signal's prefix byte-identical across sessions, so the large doctrine block is a cache hit. ([Cost control by construction](#cost-control-by-construction))
-- Inject at most 5 matched skills per stage out of 63 installed; 10 core skills are always loaded and the other 53 load on demand. ([Cost control by construction](#cost-control-by-construction))
+- Inject at most 5 matched skills per stage out of 73 installed; 10 core skills are always loaded and the other 63 load on demand. ([Cost control by construction](#cost-control-by-construction))
 
 ## Contents
 
@@ -311,7 +311,7 @@ Loom's savings come from **delegation, not downgrade**:
 - **Signals are built for cache reuse.** Each signal is a four-section layout with a per-stage-type stable prefix that is byte-identical across sessions, so the large doctrine block is a cache hit rather than a re-read.
 - **The orchestrator's rulebook loads when it is needed.** Delegation, briefs, file ownership, waiting on subagents and commit timing live in the `loom-orchestration` core skill, which a session loads before it fans out; the installed `CLAUDE.md` keeps the hard stops and a pointer, under a 20 KB ceiling. `spawn-guard.sh` prepends the subagent preamble to every typed spawn, so an orchestrator no longer pastes it.
 - **Context budgets prevent compaction**, which is the expensive failure: an uncached re-read that costs more and produces worse work.
-- **Tiered knowledge and a skill index** keep the working set small — at most 5 matched skills are injected per stage, out of 63 installed.
+- **Tiered knowledge and a skill index** keep the working set small — at most 5 matched skills are injected per stage, out of 73 installed.
 - **Waits and repeat reads are settled by receipts, not by polling.** An orchestrator waits on a backgrounded Codex forward by its exact receipt (`loom subagents wait --receipt <id>`), and repeated `loom subagents list` polling is counted by the poll guard. A repeated file read is warned or denied only when a transcript receipt proves the earlier result was delivered.
 - **Consumption is measured, not assumed.** `loom usage` reports Claude and Codex separately from provider-native telemetry, and `loom usage --compare` judges a candidate policy offline against paired runs. A token-proxy gain alone never counts as a subscription saving, and any quality or latency regression rejects the candidate; see [the evaluation protocol](doc/token-optimization-evaluation.md).
 
@@ -415,7 +415,7 @@ bash ./dev-install.sh
 | -------------------------------------- | --------------------------------------------------------------------------------- |
 | `~/.claude/agents/loom-*.md`           | 5 specialized subagents (per-item, non-destructive)                               |
 | `~/.claude/skills/loom-*/`             | 10 core domain knowledge modules, always loaded (per-item, non-destructive)       |
-| `~/.claude/loom-skill-catalog/loom-*/` | 53 more domain knowledge modules, loaded on demand (`--skills core`, the default) |
+| `~/.claude/loom-skill-catalog/loom-*/` | 63 more domain knowledge modules, loaded on demand (`--skills core`, the default) |
 | `~/.claude/commands/*.md`              | Loom slash commands (`/pressure`, `/address`, `/distill`)                         |
 | `~/.claude/hooks/loom/`                | Embedded lifecycle and guardrail hooks + shared libraries                         |
 | `~/.claude/CLAUDE.md`                  | Orchestration rules                                                               |
@@ -479,9 +479,14 @@ loom stage retry <stage-id> [--force] [--context <message>]
 loom stage merge [stage-id] [--resolved]
 loom stage human-review <stage-id> [--approve|--force-complete|--reject <reason>]
 loom stage dispute-criteria <stage-id> --criterion-index N --reason <text> [--evidence-commit <sha>] [--failure-output <path>]
+loom stage dispute-findings <stage-id> --finding <id>... --reason <text>       # Plan version 2: challenge open review findings
+loom stage dispute-contract <stage-id> --contract <id> --reason <text>        # Plan version 2: challenge a frozen contract
+loom stage dispute-integrity <stage-id> --event <id>... --reason <text>       # Plan version 2: challenge a test-integrity event
 loom stage adjudicate --stage <stage-id> --dispute <n> --verdict-file <path>
+loom stage contracts freeze|show|restore <stage-id> [--contract <id>]         # Plan version 2: freeze (contract session), inspect, or restore frozen contract files
+loom stage review status|integrity <stage-id>                                 # Plan version 2: review rounds and open findings; test-integrity events
 loom stage admin-proof [stage-id] [--daemon-stop] [--no-verify] [--force-unsafe] [--assume-merged]
-loom stage amend <stage-id> --field acceptance|wiring|wiring-tests --op replace|insert|delete --index N [--value <yaml>] [--reason <text>]
+loom stage amend <stage-id> --field acceptance|wiring|wiring-tests|contracts --op replace|insert|delete --index N [--value <yaml>] [--reason <text>]
 ```
 
 `loom stage dispute-criteria` is the sanctioned way for an agent to challenge a criterion it believes is wrong or impossible, instead of quietly weakening it. The daemon writes `request.md` and moves the stage to `NeedsAdjudication`; the verdict is daemon-written and never authored by the agent. `loom stage adjudicate` records that verdict from the adjudication session; `loom stage admin-proof` mints an operator's proof for a trusted broker; `loom stage amend` is the audited, operator-facing way to edit a stage's `acceptance`, `wiring`, or `wiring_tests` array directly. See [Disputes, Adjudication, and Amendments](#disputes-adjudication-and-amendments).
@@ -550,6 +555,7 @@ loom handoff [--stage <id>] [--session <id>] [--trigger <type>] [--message <text
 loom worktree list
 loom worktree remove <stage-id>
 loom graph
+loom project detect [PATH] [--json]                                          # Per package: language kinds, the test runner loom would use (or unsupported), and the matching skills
 loom context record-edit --stage <id> --path <path> [--path <path>...]       # Keep a stage's context overlay current
 loom hook user-prompt                                                        # UserPromptSubmit entry point; invoked by loom's hooks
 loom request status <id> [--session <id>]                                    # Plumbing: has the daemon applied a request relayed through the sandbox? <id> is printed after the originating command
@@ -789,6 +795,39 @@ into `.loom/work/config.toml`'s `[context]` section at `loom init`.
 - `integration-verify`: final quality gate combining code review and functional verification; must define goal-backward checks. Define `code_review.dimensions` to render a checklist of review dimensions in the agent's signal.
 - `knowledge-distill`: final stage; curates stage memories into permanent knowledge files
 
+### Plan Version 2
+
+`version: 2` turns on stricter verification; `version: 1` keeps the rules above unchanged, and a v1 plan that uses a v2-only field is rejected (`` `<field>` requires `version: 2` ``). The v2 fields:
+
+| Field | On | Notes |
+| ----- | -- | ----- |
+| `contracts` | stage | Tests written and frozen before implementation: `id`, `file`, `test`, optional `runner`, `scenario`, and `rejects` (the plausible wrong implementation the test must fail on). Every `standard` stage of a v2 plan needs at least one; `knowledge`, `knowledge-distill` and `integration-verify` stages take none |
+| `harness` | stage | Globs of extra test-only files the contract writer may edit. Every matched file is frozen with the contracts, so do not glob production files |
+| `reachable` | stage | `symbol`, `from`, `description`, optional `min_confidence`: the new unit must be reachable from an entry point in the source graph |
+| `literal: true`, glob `source` | `wiring` entry | Match the pattern as literal text; let `source` be a glob (`*`, `?`, `[`). A pattern that matches only a definition of a name defined in that file is rejected, so point it at a consumer |
+| `ratchet_files` | plan | Exact paths of baseline or ledger files a stage could loosen; any change to one raises a test-integrity event |
+
+```yaml
+loom:
+  version: 2
+  ratchet_files: ["loom/maintainability-baseline.txt"]
+  stages:
+    - id: implement-api
+      stage_type: standard
+      contracts:
+        - id: rejects-empty-name
+          file: "tests/api_contract.rs"
+          test: "rejects_empty_name"
+          scenario: "POST /users with an empty name"
+          rejects: "an implementation that stores the empty name"
+      reachable:
+        - symbol: "create_user"
+          from: "main"
+          description: "the handler is reachable from main"
+```
+
+A v2 standard stage starts with a separate contract session that writes the contract tests, runs them red, and ends with `loom stage contracts freeze`; loom then hands the stage to the implementing session. `loom project detect` shows which test runner loom will use for each package. Runners without an adapter fall back to running the contract's `test` string and judging its exit code.
+
 ## Verification Model
 
 `loom check <stage-id>` validates outcomes, not just compilation/tests:
@@ -800,6 +839,8 @@ into `.loom/work/config.toml`'s `[context]` section at `loom init`.
 - `dead_code_check`: detect unused code via command output patterns
 
 For `standard` and `integration-verify` stages, acceptance criteria or at least one goal-backward check must be defined.
+
+In a version 2 plan, `loom stage complete` also runs, in order: the contract check (every frozen contract file unchanged, every contract test passing), test integrity (fewer test declarations or assertions, removed or changed assertion lines, or a changed `ratchet_files` entry each raise an event that must be fixed or accepted through an adjudicated dispute), the tests reached from the changed code in the source graph, and the review gate. A criterion that runs a recognised test runner and selects zero tests fails. The gate needs a `loom-code-reviewer` round on the final change fingerprint with every finding fixed or ruled on; editing any file after the last round, formatting included, needs another round, while committing does not. Integration-verify re-checks every stage's `reachable` and wiring on the merged tree and lists the full test command.
 
 ### Verification Is Enforced, Not Self-Reported
 
@@ -866,6 +907,8 @@ The comparison reports new failures and fixed failures. `policy` decides what a 
 `loom stage dispute-criteria` is how an agent challenges a criterion instead of quietly weakening it. The daemon moves the stage to `NeedsAdjudication` and spawns a real session — with the full tool surface, running the disputed criterion itself — to judge it; `loom stage adjudicate` records that session's verdict, and a stage's own worktree session is refused so it can never judge its own dispute.
 
 A verdict does one of three things: `Accept` patches `acceptance` or `wiring` and re-queues the stage; `NeedsMoreEvidence` appends the judge's questions to the next signal and re-queues, up to a capped number of rounds; `Reject` moves the stage to `NeedsHumanReview`. Every accepted amendment writes a numbered snapshot under `.loom/work/plan_versions/` plus an audit row.
+
+Version 2 plans add three more dispute kinds, each filed once per review round with several ids: `dispute-findings` (a judge rules each finding `uphold`, `dismiss` or `defer` to a dependent stage that is not yet finished; integration-verify never defers), `dispute-contract` (`Accept` re-freezes the contract and may amend `contracts`; `Reject` sends the agent to `loom stage contracts restore`) and `dispute-integrity` (`Accept` records the event as accepted at its current count or hash). Each kind has its own budget of three disputes per stage.
 
 The plan-level `adjudication.max_amendments_per_stage` field bounds autonomous amendments per stage (default 10), so a multi-fix plan is not sent to a human part-way through. `loom stage amend` gives an operator the same audited path directly: it replaces, inserts, or deletes one element of a stage's `acceptance`, `wiring`, or `wiring_tests` array, snapshotting and logging the change the same way.
 

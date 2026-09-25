@@ -2,7 +2,7 @@
 ---
 # Plan Yaml And Hooks
 
-> Plan YAML schema, hook stdin/stdout contract, skill format
+> Plan YAML schema, hook I/O, skill format
 
 ## Plan YAML Schema
 
@@ -149,3 +149,20 @@ are unaffected.
 ## A Substantial Plan-Structure Change Bumps `version` (2026-09-24)
 
 `loom.version` is checked in `plan/schema/validation.rs` (only 1 is accepted today). Operator rule: a substantial change to the structure of a loom plan (new verification sections, changed stage shape) ships as the next plan version, v2, with the version check, the plan-writer skill template and the parser changed together. Additive optional fields that leave every existing plan's meaning unchanged follow the `#[serde(default)]` convention above and do not need a bump.
+
+## Verification v2 Conventions
+
+- **Plans:** `version: 2` on new plans; every `standard` stage has contracts, one contract per behaviour, each with a
+  `scenario` and the `rejects` wrong implementation; `harness` globs cover test-only files; `wiring` pins the entry
+  module or uses `reachable`; `ratchet_files` lists every baseline or ledger file a stage could loosen (this repo:
+  `loom/maintainability-baseline.txt`); integration-verify lists the full test command. Detail:
+  [plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md).
+- **Adapter commands:** every `{test}` and `{file}` is shell-quoted through `testrun/command.rs`, regex-escaped where
+  the runner's filter is a regex; a fixture is captured from a real run or carries a `PROVENANCE.md`.
+- **New relay `RequestKind`:** a `relay_kind_at` case, a `drop_control_kinds` entry when `is_control()`, and a
+  `loom-hooks/tests/*.sh` test with its `run_test` line in the same change.
+- **Worker briefs for a wave:** shared declaration sites owned by one worker, at most about 30 files per worker, no
+  `name` parameter on stage workers, `cargo fmt` by the main agent before the maintainability test. Detail:
+  [verification-v2-delivery](../mistakes/verification-v2-delivery.md).
+- **Pre-commit gate:** build, `cargo clippy --all-targets -D warnings`, `cargo fmt --check`,
+  `RUSTDOCFLAGS='-D warnings' cargo doc --no-deps`, full `cargo test`.

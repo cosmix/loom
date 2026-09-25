@@ -3,7 +3,7 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Sandbox State Channels
 
-> Sandboxed callers vs .loom/work state: memory, handoff, socket
+> Sandboxed callers vs .loom/work state
 
 ## A Credential That Must Be Read Cannot Express a Narrow Capability (2026-08-11)
 

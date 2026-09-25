@@ -190,3 +190,18 @@ code.
 **Prevention:** Invoke knowledge writes with subprocess argument arrays, or use literal quoted input; never interpolate Markdown into shell code.
 
 **Fix:** Replaced the section through safely quoted input and verified the final diff retained only the intended corrections.
+
+## A Large Distillation Trips the INDEX Byte Budget and the Tier-1 Line Cap (2026-09-25)
+
+**What happened:** the verification-v2 distillation added five tier-2 topics and a summary to each of five tier-1 files.
+`loom knowledge check --strict --baseline` then failed on `INDEX.md` (16,788 bytes against a 16,384-byte budget), on four
+tier-1 files at 251 to 258 lines (cap 250, `fs/knowledge/catalog/size.rs`), on a tier-2 section of 88 lines (cap 80), and on
+dangling references: a backticked file name that matches no path in the repository counts as a source reference, and a relative link inside a tier-2 file must start with `../`.
+
+**Prevention:** budget before writing. Each tier-2 topic costs about 110 bytes of `INDEX.md`; when the index is within a few
+hundred bytes of the budget, shorten other blurbs (`loom knowledge annotate <topic> --blurb`, also accepts a tier-1 file
+name) instead of skipping the topic. A tier-1 summary is 3 to 5 lines with a link; when a tier-1 file sits at its cap,
+move an existing section's detail into its tier-2 topic first. Split a tier-2 section at a natural paragraph before it
+reaches 80 lines. Write prose without file-name-shaped tokens that do not exist. Feed long bodies to `loom knowledge update
+<topic> -` from a scratch file rather than a heredoc: `loom-control-complete.sh` blocks a Bash command whose text names
+`loom` and the stage-completion path.

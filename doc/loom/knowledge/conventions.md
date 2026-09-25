@@ -237,3 +237,7 @@ If the configuration chain (project `.loom/work/config.toml`, then `~/.loom/conf
 ## README Covers Current Behavior Only (2026-09-15)
 
 The README documents what loom does now. A fixed bug gets no warning box, mechanism write-up, or workaround recipe there; that history belongs in `mistakes/` and the commit log. A cost or limit that was expected but never materialized is deleted, not hedged: the `claude -p` billing warning went on 2026-09-15 after the owner confirmed `-p` usage is not charged separately.
+
+## Verification v2 Conventions
+
+Plan authoring for `version: 2`, shell-quoting adapter commands, relay `RequestKind` additions, wave briefs and the pre-commit gate: [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md).

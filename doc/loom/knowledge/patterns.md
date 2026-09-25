@@ -163,3 +163,24 @@ during `knowledge-bootstrap-command`, replacing the now-removed `pressure::paths
 Callers that want delete-if-present, warn-don't-fail semantics (e.g. `bootstrap::remove_brief`)
 wrap it rather than hand-rolling an `fs::remove_file` + `ErrorKind::NotFound` match. Reach for it
 before writing a new one.
+
+## Verification v2 Patterns
+
+- **Freeze what an agent authored, re-run it later.** Contract tests are hashed and copied at freeze; completion checks
+  the hashes and re-runs each through the certified criteria cache. The daemon never executes agent-written tests.
+  Detail: [contract-phase](architecture/contract-phase.md).
+- **Level-triggered monitor events that carry the session id.** `ContractPhaseFinished` and `ContractSessionEnded` are
+  re-raised each tick while the stage still names that session, so a failed handler retries and a stale event cannot
+  act on a successor.
+- **A daemon handler returns `Response::Error` for a permanent refusal and `Err` only for a retryable failure.** The
+  spool drain retries an `Err` each tick without truncating; a permanent refusal returned as `Err` wedges it.
+- **A gate anchors on the latest well-formed record** (review round, integrity acceptance), never on `last()`, and its
+  failure message quotes the malformed neighbour. Acceptance stores are upserts by event id.
+- **Pay for ledgered growth by moving a unit, not raising the ledger.** A new `Stage` field grows the one full
+  `Stage::default` literal; group counters in a `#[serde(flatten)]` struct (`stage.tally`), move tests to a sibling
+  test module file, or extract a helper. Pin the accepted shape with a test.
+- **Git reads inside gates use plumbing** (`diff-index -z`, `ls-files`, `cat-file`, `merge-base`), never porcelain that
+  can refresh the index, and take the merge base with the configured target so the base's later commits are not
+  counted as stage changes.
+- **Degraded modes are reported.** No base graph layer, an unchecked file in definition-site exclusion and a language
+  without an extractor each produce a note or stderr warning and never a false gap.

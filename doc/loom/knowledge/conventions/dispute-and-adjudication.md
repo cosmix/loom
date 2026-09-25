@@ -38,6 +38,7 @@ The adjudicator amends ONLY:
 
 - `acceptance: Vec<AcceptanceCriterion>` (plan/schema/types.rs:316)
 - `wiring: Vec<WiringCheck>` (plan/schema/types.rs:336)
+- `contracts: Vec<ContractSpec>` on a v2 contract dispute (`AmendmentField::Contracts`; `loom stage amend` takes it too)
 
 Never amends: `before_stage`, `after_stage`, `artifacts`, `dependencies`, `id`, `working_dir`, `model`, `sandbox`, `execution`. Use `AmendmentField` enum to enforce this at the type level.
 
@@ -49,6 +50,8 @@ Per-stage caps to bound the autonomy loop:
 - `evidence_rounds` (NeedsMoreEvidence iterations): max 2 before escalation to NeedsHumanReview
 - `amendments_applied`: max 3 per stage (absolute, not percentage)
 - `adjudicator_attempt_count` (worker crash retries): max 3
+- `finding_disputes`, `contract_disputes`, `integrity_disputes`: max 3 each (`MAX_DISPUTES_PER_KIND`), kept beside `evidence_rounds` and `amendments_applied` in `stage.tally`; see `architecture/adjudication-lifecycle.md`
+- contract writer respawns: max 3 (`MAX_CONTRACT_RESPAWNS`, `.loom/work/contracts/<stage>/attempts`), spent when a replacement writer is handed out; see `architecture/contract-phase.md`
 
 ## Adjudication Attempt Budget Convention
 

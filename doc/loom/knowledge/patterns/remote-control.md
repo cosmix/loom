@@ -1,6 +1,6 @@
 # Remote Control
 
-> Detect-capability/preflight/resolve shape for external agents
+> Detect/preflight/resolve for external agents
 
 ## Remote Control Capability/Preflight/Resolve Pattern (2026-05-14, extended 2026-08-08)
 

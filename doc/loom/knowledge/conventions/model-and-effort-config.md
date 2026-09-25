@@ -1,6 +1,6 @@
 # Model And Effort Config
 
-> [pressure]/[models] sections, precedence chain, value types
+> [pressure]/[models], precedence, value types
 
 ## Two Configurable Sections
 

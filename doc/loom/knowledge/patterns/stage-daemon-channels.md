@@ -1,6 +1,6 @@
 # Stage-to-Daemon Channels
 
-> How a stage agent reaches the daemon to change its own state
+> How a stage agent reaches the daemon
 > routes rather than one.
 
 ## Three Routes, Chosen by What the Caller Can Actually Do
