@@ -15,6 +15,7 @@ pub(super) fn collect_result(
     let mut result = OrchestratorResult {
         completed_stages: Vec::new(),
         failed_stages: Vec::new(),
+        unfinished_stages: Vec::new(),
         needs_handoff: Vec::new(),
         total_sessions_spawned: spawned,
         started_at,
@@ -27,11 +28,25 @@ pub(super) fn collect_result(
             StageStatus::Completed => result.completed_stages.push(stage.id),
             StageStatus::Skipped => {}
             StageStatus::NeedsHandoff => result.needs_handoff.push(stage.id),
-            _ => result.failed_stages.push(stage.id),
+            // Terminal failures: the run cannot proceed on these without
+            // intervention (retry, merge resolution, human review).
+            StageStatus::Blocked
+            | StageStatus::MergeConflict
+            | StageStatus::CompletedWithFailures
+            | StageStatus::MergeBlocked
+            | StageStatus::NeedsHumanReview => result.failed_stages.push(stage.id),
+            // Merely mid-flight: the run stopped (e.g. `loom stop`) before
+            // these reached a terminal status, not because anything failed.
+            StageStatus::WaitingForDeps
+            | StageStatus::Queued
+            | StageStatus::Executing
+            | StageStatus::WaitingForInput
+            | StageStatus::NeedsAdjudication => result.unfinished_stages.push(stage.id),
         }
     }
     result.completed_stages.sort();
     result.failed_stages.sort();
+    result.unfinished_stages.sort();
     result.needs_handoff.sort();
     Ok(result)
 }
@@ -81,10 +96,53 @@ mod tests {
     fn unfinished_or_unreadable_stage_cannot_report_success() {
         let (dir, graph) = fixture();
         write_status(dir.path(), StageStatus::Queued);
-        assert!(!collect_result(dir.path(), &graph, 0, Utc::now())
-            .unwrap()
-            .is_success());
+        let result = collect_result(dir.path(), &graph, 0, Utc::now()).unwrap();
+        assert!(!result.is_success());
+        // A merely mid-flight status is not a failure: it belongs in
+        // `unfinished_stages`, not `failed_stages`.
+        assert_eq!(result.unfinished_stages, ["test"]);
+        assert!(result.failed_stages.is_empty());
+
         fs::write(dir.path().join("stages/test.md"), "broken").unwrap();
         assert!(collect_result(dir.path(), &graph, 0, Utc::now()).is_err());
+    }
+
+    #[test]
+    fn only_unfinished_stages_is_not_success() {
+        let (dir, graph) = fixture();
+        for status in [
+            StageStatus::WaitingForDeps,
+            StageStatus::Queued,
+            StageStatus::Executing,
+            StageStatus::WaitingForInput,
+            StageStatus::NeedsAdjudication,
+        ] {
+            let label = format!("{status:?}");
+            write_status(dir.path(), status);
+            let result = collect_result(dir.path(), &graph, 0, Utc::now()).unwrap();
+            assert!(result.failed_stages.is_empty(), "status {label}");
+            assert!(result.needs_handoff.is_empty(), "status {label}");
+            assert_eq!(result.unfinished_stages, ["test"], "status {label}");
+            assert!(!result.is_success(), "status {label}");
+        }
+    }
+
+    #[test]
+    fn terminal_failure_statuses_populate_failed_not_unfinished() {
+        let (dir, graph) = fixture();
+        for status in [
+            StageStatus::Blocked,
+            StageStatus::MergeConflict,
+            StageStatus::CompletedWithFailures,
+            StageStatus::MergeBlocked,
+            StageStatus::NeedsHumanReview,
+        ] {
+            let label = format!("{status:?}");
+            write_status(dir.path(), status);
+            let result = collect_result(dir.path(), &graph, 0, Utc::now()).unwrap();
+            assert_eq!(result.failed_stages, ["test"], "status {label}");
+            assert!(result.unfinished_stages.is_empty(), "status {label}");
+            assert!(!result.is_success(), "status {label}");
+        }
     }
 }

@@ -14,7 +14,7 @@ use crate::fs::mark_plan_done_if_all_merged;
 use crate::fs::parse_base_branch_from_config;
 use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::core::state_identity::LockIdentity;
-use crate::orchestrator::{Orchestrator, OrchestratorConfig};
+use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
 use crate::plan::graph::ExecutionGraph;
 use crate::plan::schema::SandboxConfig;
 
@@ -96,12 +96,7 @@ fn run_orchestrator(
 
     match result {
         Ok(result) => {
-            if !result.completed_stages.is_empty() {
-                println!("Completed stages: {}", result.completed_stages.join(", "));
-            }
-            if !result.failed_stages.is_empty() {
-                println!("Failed stages: {}", result.failed_stages.join(", "));
-            }
+            log_stage_lists(&result);
             if result.is_success() {
                 println!("All stages completed successfully");
 
@@ -130,6 +125,20 @@ fn run_orchestrator(
     crate::fs::tmux_tmpdir::remove_tmux_tmpdir_record(work_dir);
 
     Ok(())
+}
+
+/// Log the completed/failed/unfinished stage id lists from a finished
+/// orchestrator run, one line each, skipping any list that is empty.
+fn log_stage_lists(result: &OrchestratorResult) {
+    if !result.completed_stages.is_empty() {
+        println!("Completed stages: {}", result.completed_stages.join(", "));
+    }
+    if !result.failed_stages.is_empty() {
+        println!("Failed stages: {}", result.failed_stages.join(", "));
+    }
+    if !result.unfinished_stages.is_empty() {
+        println!("Unfinished stages: {}", result.unfinished_stages.join(", "));
+    }
 }
 
 /// Build the `OrchestratorConfig` for a daemon-spawned orchestrator run.

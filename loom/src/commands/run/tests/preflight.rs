@@ -113,6 +113,7 @@ fn test_orchestrator_result_success() {
     let result = OrchestratorResult {
         completed_stages: vec!["stage-1".to_string(), "stage-2".to_string()],
         failed_stages: vec![],
+        unfinished_stages: vec![],
         needs_handoff: vec![],
         total_sessions_spawned: 2,
         started_at: chrono::Utc::now(),
@@ -127,6 +128,7 @@ fn test_orchestrator_result_with_failures() {
     let result = OrchestratorResult {
         completed_stages: vec!["stage-1".to_string()],
         failed_stages: vec!["stage-2".to_string()],
+        unfinished_stages: vec![],
         needs_handoff: vec![],
         total_sessions_spawned: 2,
         started_at: chrono::Utc::now(),
@@ -141,7 +143,23 @@ fn test_orchestrator_result_with_handoffs() {
     let result = OrchestratorResult {
         completed_stages: vec![],
         failed_stages: vec![],
+        unfinished_stages: vec![],
         needs_handoff: vec!["stage-1".to_string()],
+        total_sessions_spawned: 1,
+        started_at: chrono::Utc::now(),
+        completed_at: chrono::Utc::now(),
+    };
+
+    assert!(!result.is_success());
+}
+
+#[test]
+fn test_orchestrator_result_with_unfinished() {
+    let result = OrchestratorResult {
+        completed_stages: vec![],
+        failed_stages: vec![],
+        unfinished_stages: vec!["stage-1".to_string()],
+        needs_handoff: vec![],
         total_sessions_spawned: 1,
         started_at: chrono::Utc::now(),
         completed_at: chrono::Utc::now(),

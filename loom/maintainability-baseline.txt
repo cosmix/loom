@@ -71,7 +71,6 @@ function src/commands/plan/verify.rs print_human 98
 function src/commands/repair.rs execute 99
 function src/commands/repair/tests.rs repair_fixes_a_stale_knowledge_directory_deny_in_a_worktree 62
 function src/commands/resume.rs execute 57
-function src/commands/run/foreground.rs print_result 58
 function src/commands/self_update/install.rs install_binary 52
 function src/commands/sessions.rs kill 54
 function src/commands/sessions.rs kill_single_session 51
@@ -102,7 +101,7 @@ function src/daemon/server/client.rs handle_client_connection 87
 function src/daemon/server/dispute.rs handle_dispute_criteria 91
 function src/daemon/server/lifecycle.rs run_server 133
 function src/daemon/server/lifecycle.rs start 117
-function src/daemon/server/orchestrator.rs run_orchestrator 94
+function src/daemon/server/orchestrator.rs run_orchestrator 89
 function src/daemon/server/status.rs collect_completion_summary 97
 function src/daemon/server/tests.rs test_collect_status_with_stages 77
 function src/fs/knowledge/templates.rs default_content 62

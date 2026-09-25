@@ -1,7 +1,7 @@
 //! Foreground execution mode for the orchestrator.
 
 use anyhow::{bail, Context, Result};
-use colored::Colorize;
+use colored::{Color, Colorize};
 use std::time::Duration;
 
 use super::checks::prepare_repo_for_run;
@@ -163,33 +163,30 @@ fn announce_run_mode(watch: bool) {
     }
 }
 
+/// Print a titled, divider-underlined list of stage ids, each prefixed with
+/// `icon` in `color`. No-op when `items` is empty.
+fn print_stage_list(title: &str, color: Color, icon: &str, items: &[String]) {
+    if items.is_empty() {
+        return;
+    }
+    println!(
+        "\n{} {}",
+        title.color(color).bold(),
+        format!("({})", items.len()).dimmed()
+    );
+    println!("{}", "─".repeat(40).dimmed());
+    for item in items {
+        println!("  {} {}", icon.color(color).bold(), item);
+    }
+}
+
 /// Print orchestrator result summary (fallback for when completion summary fails)
 fn print_result(result: &OrchestratorResult) {
     crate::utils::print_logo_header("Orchestration Complete");
 
-    if !result.completed_stages.is_empty() {
-        println!(
-            "\n{} {}",
-            "Completed".green().bold(),
-            format!("({})", result.completed_stages.len()).dimmed()
-        );
-        println!("{}", "─".repeat(40).dimmed());
-        for stage in &result.completed_stages {
-            println!("  {} {}", "✓".green().bold(), stage);
-        }
-    }
-
-    if !result.failed_stages.is_empty() {
-        println!(
-            "\n{} {}",
-            "Failed".red().bold(),
-            format!("({})", result.failed_stages.len()).dimmed()
-        );
-        println!("{}", "─".repeat(40).dimmed());
-        for stage in &result.failed_stages {
-            println!("  {} {}", "✗".red().bold(), stage);
-        }
-    }
+    print_stage_list("Completed", Color::Green, "✓", &result.completed_stages);
+    print_stage_list("Failed", Color::Red, "✗", &result.failed_stages);
+    print_stage_list("Unfinished", Color::Cyan, "○", &result.unfinished_stages);
 
     if !result.needs_handoff.is_empty() {
         println!(
