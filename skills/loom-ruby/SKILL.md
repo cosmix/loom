@@ -348,7 +348,7 @@ contracts:
     rejects: a writer that resolves the symlink and writes job-1 into the link target
 ```
 
-The Minitest form of the same contract uses `file: test/spool/writer_test.rb` and `test: test_rejects_symlinked_spool_directory`. Quote YAML values that contain `: ` or ` #`.
+The Minitest form of the same contract uses `file: test/spool/writer_test.rb` and `test: test_rejects_symlinked_spool_directory`. Quote YAML values that contain `:` or `#`.
 
 **Build failures.** Ruby has no compile step, so a contract never reports `BuildFailed`; it must fail inside the test at freeze time (see the load-error rule above). A Minitest file that cannot load prints no summary: loom treats the run as unparsed and requires a non-zero exit.
 

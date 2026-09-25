@@ -277,7 +277,7 @@ contracts:
     rejects: a writer that follows the symlink and writes job-1 into the link target
 ```
 
-Quote the YAML value; descriptions often contain `: ` or ` #`.
+Quote the YAML value; descriptions often contain `:` or `#`.
 
 **Build failures.** `mix test` compiles the project and then the test files. A contract that does not compile yet counts as red at freeze time: a struct literal (`%Spool.Writer{}`), an `import`, or a macro from a module that does not exist yet fails compilation before any test runs. A remote call to a function that does not exist yet compiles with a warning and fails inside the test (`UndefinedFunctionError`), which is also red. At completion the test must compile and pass.
 
@@ -372,6 +372,6 @@ Quick swaps:
 
 **Contract tests for loom:**
 
-- [ ] `test` value is the full ExUnit name, `test ` prefix and `describe` text included, with no single quotes
+- [ ] `test` value is the full ExUnit name, `test` prefix and `describe` text included, with no single quotes
 - [ ] Contract file ends in `_test.exs` under `test/`
 - [ ] The contract fails (or fails to compile) before the implementation for the reason its `rejects` field names

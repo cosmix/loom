@@ -50,8 +50,8 @@ Open parser and command gaps found while writing the language skills, checked ag
 - **Target-branch resolution differs.** `commands/hook/review_harvest.rs:119` resolves from the stage worktree, completion
   and both `loom stage review` commands from the CWD repo root. They agree while the CWD is inside the repo; share
   `commands/stage/review_status.rs::stage_worktree_and_target`.
-- **Journal splitting.** `fs/memory/parser.rs:30` treats any line starting `### ` as an entry header and `validate_content`
-  checks length only, so a note or suggestion whose text starts with `### ` splits the journal. Review harvest flattens
+- **Journal splitting.** `fs/memory/parser.rs:30` treats any line starting `###` as an entry header and `validate_content`
+  checks length only, so a note or suggestion whose text starts with `###` splits the journal. Review harvest flattens
   suggestions to one line but does not escape a leading `###`.
 - **Impact selection misses macro-only use** (`context/extract/rust.rs:19`) and skips every test in a contract file.
 - **Reachable by bare name** passes when any symbol of that name is reached from any `from` node; common names (`run`,

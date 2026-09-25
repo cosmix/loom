@@ -53,7 +53,7 @@ replacement contradicted itself.
 **Why:** Explore has Bash, so "read-only" is an instruction, not a limit.
 
 **Prevention:** diff the knowledge files after every harvest before trusting a "verified" or "applied" report.
-A body that starts with `- ` needs `replace-section --`. Distillation runs single-agent for this reason.
+A body that starts with `-` needs `replace-section --`. Distillation runs single-agent for this reason.
 
 ## Workers and Codex Units Measured Sizes Before rustfmt (2026-09-24)
 

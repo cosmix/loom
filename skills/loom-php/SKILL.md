@@ -326,7 +326,7 @@ vendor/bin/phpunit --filter '{test}' {file}
 vendor/bin/pest --filter '{test}' {file}
 ```
 
-**The `test` field.** The test method name for `phpunit` (`testRejectsSymlinkedSpoolDirectory`), or the Pest description (`rejects a symlinked spool directory`; an `it()` test's description starts with `it `).
+**The `test` field.** The test method name for `phpunit` (`testRejectsSymlinkedSpoolDirectory`), or the Pest description (`rejects a symlinked spool directory`; an `it()` test's description starts with `it`).
 
 **No-match behaviour.** Both runners are documented: no fixture was captured, and loom's parsers were written from each runner's documented output (PHPUnit: `OK (N tests, A assertions)`, `Tests: N, Assertions: A, Failures: F`, `No tests executed!`; Pest: `Tests:  F failed, P passed (A assertions)`, `No tests found`). PHPUnit's exit code for an empty run depends on the version and on `--fail-on-empty-test-suite`. Loom reads the runner's summary, so zero executed tests is `NotSelected` whatever the exit code: a contract whose `test` value does not match fails the freeze ("the runner did not select the test").
 
@@ -350,7 +350,7 @@ contracts:
     rejects: a writer that follows the symlink and writes job-1 into the link target
 ```
 
-The Pest form of the same contract uses `test: "rejects a symlinked spool directory"`. Quote YAML values that contain `: ` or ` #`.
+The Pest form of the same contract uses `test: "rejects a symlinked spool directory"`. Quote YAML values that contain `:` or `#`.
 
 **Build failures.** PHP has no separate build step, so a contract never reports `BuildFailed`. A parse error in the test file stops the run before any summary; loom then treats the run as unparsed and requires a non-zero exit. Keep contract files syntactically valid and let them fail inside the test.
 
