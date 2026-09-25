@@ -4,6 +4,8 @@ use anyhow::{Context, Result};
 use regex::{Regex, RegexBuilder};
 use std::collections::HashSet;
 
+use super::goal_backward::wiring::PATTERN_SIZE_LIMIT;
+
 /// Extract lines from output that match any of the given patterns.
 ///
 /// Each pattern is treated as a regex. Lines are deduplicated while preserving order.
@@ -24,7 +26,7 @@ pub fn extract_matching_lines(output: &str, patterns: &[String]) -> Result<Vec<S
         .iter()
         .map(|p| {
             RegexBuilder::new(p)
-                .size_limit(1 << 20) // 1MB compiled size limit (matches verify/goal_backward/wiring.rs)
+                .size_limit(PATTERN_SIZE_LIMIT)
                 .build()
                 .with_context(|| format!("Invalid pattern: {p}"))
         })
