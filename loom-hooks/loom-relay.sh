@@ -62,6 +62,7 @@ relay_kind_at() {
 	memory:note | memory:decision | memory:change | memory:question | memory:resolve) echo memory ;;
 	stage:block) echo block ;;
 	stage:dispute-criteria) echo dispute ;;
+	stage:dispute-findings | stage:dispute-contract | stage:dispute-integrity) echo file-dispute ;;
 	stage:merge) segment_has_arg "$j" --resolved && echo merge-resolved ;;
 	stage:adjudicate) echo verdict ;;
 	stage:contracts) [[ "${LOOM_TOKENS[$((j + 3))]:-}" == freeze ]] && echo freeze-contracts ;;
@@ -101,7 +102,7 @@ drop_control_kinds() {
 	local kind kept="" IFS=,
 	for kind in $1; do
 		case "$kind" in
-		block | dispute | handoff | merge-resolved | verdict | freeze-contracts) ;;
+		block | dispute | handoff | merge-resolved | verdict | freeze-contracts | file-dispute) ;;
 		*) kept=${kept:+$kept,}$kind ;;
 		esac
 	done

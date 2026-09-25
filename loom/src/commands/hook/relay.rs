@@ -331,11 +331,16 @@ impl Request<'_> {
     /// did not run the writer for is not relayed.
     fn admit(&self, kind: RequestKind) -> Result<(), String> {
         if self.agent == AgentRole::Subagent && kind.is_control() {
-            return Err(
-                "control requests (block, dispute, handoff, merge-resolved, verdict) \
-                        are never relayed from a subagent. Ask the main agent to run the command"
-                    .to_string(),
-            );
+            let control_kinds = RequestKind::all()
+                .into_iter()
+                .filter(|control_kind| control_kind.is_control())
+                .map(|control_kind| control_kind.to_string())
+                .collect::<Vec<_>>()
+                .join(", ");
+            return Err(format!(
+                "control requests ({control_kinds}) are never relayed from a subagent. Ask \
+                 the main agent to run the command"
+            ));
         }
         if !self.allowed.contains(&kind) {
             return Err(format!(
