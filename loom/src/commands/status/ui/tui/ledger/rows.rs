@@ -34,6 +34,7 @@ mod tests {
     use super::*;
     use crate::{
         commands::status::{data::ActivityStatus, ui::tui::ledger::columns::columns_for_width},
+        models::session::SessionType,
         models::stage::{StageStatus, StageType},
     };
 
@@ -194,6 +195,51 @@ mod tests {
         "dispute 0 · judge stale",
         judge: Some(301)
     );
+
+    #[test]
+    fn contract_phase_activity_shows_writing_contract_tests() {
+        let mut stage = summary(StageStatus::Executing);
+        stage.session_type = Some(SessionType::Contract);
+        stage.activity_status = ActivityStatus::Working;
+        assert_eq!(activity_cell(&stage, 40).text, "writing contract tests");
+    }
+
+    #[test]
+    fn contract_phase_activity_stale_shows_contract_writer_idle() {
+        let mut stage = summary(StageStatus::Executing);
+        stage.session_type = Some(SessionType::Contract);
+        stage.activity_status = ActivityStatus::Stale;
+        stage.staleness_secs = Some(61);
+        assert_eq!(activity_cell(&stage, 40).text, "contract writer idle 1m1s");
+    }
+
+    #[test]
+    fn contract_phase_activity_orphaned_shows_orphaned() {
+        let mut stage = summary(StageStatus::Executing);
+        stage.session_type = Some(SessionType::Contract);
+        stage.activity_status = ActivityStatus::Orphaned;
+        assert_eq!(activity_cell(&stage, 40).text, "orphaned");
+    }
+
+    #[test]
+    fn contract_phase_activity_error_shows_crashed() {
+        let mut stage = summary(StageStatus::Executing);
+        stage.session_type = Some(SessionType::Contract);
+        stage.activity_status = ActivityStatus::Error;
+        assert_eq!(activity_cell(&stage, 40).text, "crashed");
+    }
+
+    #[test]
+    fn contract_session_on_non_standard_stage_is_not_contract_phase() {
+        // The contract-writer phase only exists for Standard stages; a
+        // Contract session found on a Knowledge stage falls back to the
+        // ordinary activity wording instead.
+        let mut stage = summary(StageStatus::Executing);
+        stage.stage_type = StageType::Knowledge;
+        stage.session_type = Some(SessionType::Contract);
+        stage.activity_status = ActivityStatus::Working;
+        assert_eq!(activity_cell(&stage, 40).text, "working");
+    }
 
     #[test]
     fn activity_formats_tools_and_staleness() {

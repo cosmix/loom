@@ -43,6 +43,7 @@
   --tone-dimmed: oklch(0.6 0.015 100);
   --tone-control: oklch(0.55 0.21 27);
   --tone-neutral: var(--foreground);
+  --tone-contract: oklch(0.53 0.18 300);
   --hairline: color-mix(in oklch, var(--border) 85%, transparent);
   /* The accent marks the current thing: on paper a highlighter fill under
    * ink, in the dark the ink itself. */
@@ -66,6 +67,7 @@
   --tone-merged: oklch(0.7 0.07 155);
   --tone-dimmed: oklch(0.55 0.025 325);
   --tone-control: oklch(0.72 0.17 25);
+  --tone-contract: oklch(0.75 0.14 300);
   --highlight: color-mix(in oklch, var(--primary) 18%, transparent);
   --highlight-foreground: var(--primary);
   --logo: oklch(1 0 0);
@@ -146,6 +148,10 @@
   }
   .tone-neutral {
     --tone: var(--tone-neutral);
+    color: var(--tone);
+  }
+  .tone-contract {
+    --tone: var(--tone-contract);
     color: var(--tone);
   }
 

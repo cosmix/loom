@@ -14,6 +14,9 @@ impl StatusColors {
     pub const QUEUED: Color = Color::Cyan;
     pub const WARNING: Color = Color::Yellow;
     pub const MERGED: Color = Color::Rgb(100, 180, 100); // Lighter green for merged
+    /// The contract-writer phase of a v2 stage with `contracts`: kept off
+    /// yellow (warnings) and red (errors) so it never reads as trouble.
+    pub const CONTRACT: Color = Color::Magenta;
 
     // Context bar colors from ContextHealth.
     pub const CONTEXT_LOW: Color = Color::Green;
@@ -72,6 +75,12 @@ impl Theme {
 
     pub fn status_warning() -> Style {
         Style::default().fg(StatusColors::WARNING)
+    }
+
+    pub fn status_contract() -> Style {
+        Style::default()
+            .fg(StatusColors::CONTRACT)
+            .add_modifier(Modifier::BOLD)
     }
 
     pub fn context_style(tokens: u32, ceiling: u32) -> Style {

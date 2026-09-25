@@ -18,7 +18,7 @@ use crate::orchestrator::{context_health, ContextHealth};
 use crate::plan::graph::levels;
 use crate::utils::format_elapsed;
 
-use super::attention_model::failure_label;
+use super::attention_model::{failure_label, is_contract_phase};
 use super::render_orphaned_warning;
 
 /// All `StageStatus` variants in display order for legend generation.
@@ -141,17 +141,15 @@ fn push_session_annotations(stage: &StageSummary, parts: &mut Vec<String>) {
     // The session speaking for this stage is not of its own worker kind
     // (e.g. an adjudication session adopted into the worker slot) —
     // surface it before the stronger incoherence verdict below. A contract
-    // writer on a standard stage is not tagged: the summary carries no plan
-    // version, and the plan-version-gated judgment is that verdict.
+    // writer on a standard stage is not tagged here: it already got the
+    // magenta `contracts` tag right after the model label, above.
     if let Some(session_type) = stage.session_type {
         let worker_type = if matches!(stage.stage_type, StageType::Knowledge) {
             SessionType::Knowledge
         } else {
             SessionType::Stage
         };
-        let contract_phase =
-            session_type == SessionType::Contract && stage.stage_type == StageType::Standard;
-        if session_type != worker_type && !contract_phase {
+        if session_type != worker_type && !is_contract_phase(stage) {
             parts.push(format!(
                 "{}",
                 format!("{session_type} session").yellow().bold()
@@ -175,6 +173,17 @@ fn cleanup_annotation(stage: &StageSummary) -> Option<String> {
 /// 3-space indent applied to every dashboard row so the tree visually aligns
 /// with the surrounding header / progress / legend sections.
 const ROW_INDENT: &str = "   ";
+
+/// The `[model]` tag, plus a magenta `contracts` tag when the stage is in
+/// its contract-writing phase.
+fn stage_tags(stage: &StageSummary) -> String {
+    let model_tag = format!(" {}", format!("[{}]", stage.model).dimmed());
+    if is_contract_phase(stage) {
+        format!("{model_tag} {}", "contracts".magenta().bold())
+    } else {
+        model_tag
+    }
+}
 
 /// Render execution graph with tree display
 pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<()> {
@@ -219,15 +228,15 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
         let deps = format_dep_annotation(&stage.dependencies, &color_map);
         let color = color_by_index(global_index);
         let colored_id = stage.id.color(color);
-        let model_tag = format!(" {}", format!("[{}]", stage.model).dimmed());
+        let tags = stage_tags(stage);
         let annotations = format_stage_annotations(stage);
 
-        // Layout: <indent> <connector> <indicator>  <id> <model> <deps> <annotations>
+        // Layout: <indent> <connector> <indicator>  <id> <model> <contracts> <deps> <annotations>
         // Two spaces between indicator and id give room to breathe; deps and
         // annotations sit inline (no fragile column padding).
         writeln!(
             w,
-            "{ROW_INDENT}{connector}{indicator}  {colored_id}{model_tag}{deps}{annotations}"
+            "{ROW_INDENT}{connector}{indicator}  {colored_id}{tags}{deps}{annotations}"
         )?;
 
         write_orphaned_hint(w, stage, &connector)?;
@@ -239,7 +248,7 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
     }
 
     writeln!(w)?;
-    render_legend(w)?;
+    render_legend(w, &sorted_stages)?;
 
     Ok(())
 }
@@ -306,12 +315,17 @@ fn write_cleanup_hint<W: Write>(
 /// Generated from `LEGEND_STATUSES` so no variant is ever omitted and icons /
 /// colors stay in sync with the canonical `StageStatus` methods automatically.
 /// Items separated by a dimmed middle dot, indented to match the dashboard.
-fn render_legend<W: Write>(w: &mut W) -> std::io::Result<()> {
+/// Appends a magenta `contracts` entry when any rendered stage is in the
+/// contract-writer phase, since that tag is not one of `StageStatus`.
+fn render_legend<W: Write>(w: &mut W, stages: &[&StageSummary]) -> std::io::Result<()> {
     let dot = format!(" {} ", "·".dimmed());
-    let parts: Vec<String> = LEGEND_STATUSES
+    let mut parts: Vec<String> = LEGEND_STATUSES
         .iter()
         .map(|s| format!("{} {}", status_indicator(s), s.label()))
         .collect();
+    if stages.iter().any(|stage| is_contract_phase(stage)) {
+        parts.push(format!("{}", "contracts".magenta()));
+    }
     writeln!(w, "{ROW_INDENT}{}", parts.join(&dot))?;
     Ok(())
 }

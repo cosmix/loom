@@ -15,7 +15,8 @@ export type Tone =
   | "warning"
   | "merged"
   | "dimmed"
-  | "neutral";
+  | "neutral"
+  | "contract";
 
 export interface StateMeta {
   tone: Tone;
@@ -71,6 +72,21 @@ export function hazardTone(status: StageStatus): "error" | "warning" | null {
   }
 }
 
+/// A v2 standard stage's contract-writer phase: a "stage" session status but
+/// spawned to write and freeze failing contract tests before the
+/// implementing session starts. The wire status stays "executing" through
+/// this phase; only `session_type` tells the two apart.
+export function isContractPhase(stage: StageSummary): boolean {
+  return stage.status === "executing" && stage.session_type === "contract";
+}
+
+/// `session_type` as the raw wire value except "contract", which reads as
+/// what it spawns rather than the phase it belongs to.
+export function sessionTypeLabel(type: StageSummary["session_type"]): string | null {
+  if (type === null) return null;
+  return type === "contract" ? "contract writer" : type;
+}
+
 export function failureLabel(type: FailureType): string {
   const labels: Record<FailureType, string> = {
     "session-crash": "crash",
@@ -97,6 +113,14 @@ function retryText(stage: StageSummary, label: string): { text: string; tone: To
 }
 
 function executingActivity(stage: StageSummary): { text: string; tone: Tone } {
+  if (isContractPhase(stage)) {
+    if (stage.activity_status === "Stale") {
+      return stalenessText("contract writer idle", stage.staleness_secs, "warning");
+    }
+    if (stage.activity_status !== "Orphaned" && stage.activity_status !== "Error") {
+      return { text: "writing contract tests", tone: "contract" };
+    }
+  }
   switch (stage.activity_status) {
     case "Working":
       return {

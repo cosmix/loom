@@ -10,7 +10,14 @@ import { useGraphActions, type Emphasis } from "@/components/graph/context";
 import { StateBadge, toneClass } from "@/components/state-badge";
 import { TerminalGlyph } from "@/components/terminal/terminal-glyph";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
-import { activityText, hazardTone, mergeText, stateMeta, timeText } from "@/lib/format";
+import {
+  activityText,
+  hazardTone,
+  isContractPhase,
+  mergeText,
+  stateMeta,
+  timeText,
+} from "@/lib/format";
 import { hasFooter, NODE_WIDTH, nodeHeight } from "@/lib/graph";
 
 export interface StageNodeData extends Record<string, unknown> {
@@ -48,6 +55,7 @@ export function StageNode({ data }: NodeProps<StageNodeType>) {
   const { stage, index, emphasis } = data;
   const { open, openTerminal } = useGraphActions();
   const tone = stateMeta(stage.status).tone;
+  const contractPhase = isContractPhase(stage);
   const style = {
     "--i": index,
     width: NODE_WIDTH,
@@ -62,6 +70,7 @@ export function StageNode({ data }: NodeProps<StageNodeType>) {
       data-live={stage.status === "executing" || undefined}
       data-attention={ATTENTION.has(stage.status) || undefined}
       data-hazard={hazardTone(stage.status) ?? undefined}
+      data-phase={contractPhase ? "contract" : undefined}
     >
       <Handle
         type="target"
@@ -74,6 +83,9 @@ export function StageNode({ data }: NodeProps<StageNodeType>) {
           <StateBadge status={stage.status} className="text-xs" />
           {TYPE_TAG[stage.stage_type] && (
             <span className="stage-tag">{TYPE_TAG[stage.stage_type]}</span>
+          )}
+          {contractPhase && (
+            <span className={cn("stage-tag", toneClass("contract"))}>contracts</span>
           )}
           {stage.held && <span className={cn("stage-tag", toneClass("warning"))}>held</span>}
           {stage.incoherence !== null && (

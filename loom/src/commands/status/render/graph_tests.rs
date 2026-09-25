@@ -351,15 +351,10 @@ fn test_executing_with_adjudication_session_shows_type_and_incoherence() {
     );
 }
 
-#[test]
-fn test_executing_with_contract_session_has_no_foreign_kind_tag() {
-    let mut stage = make_stage_summary("my-stage", vec![], StageStatus::Executing);
-    stage.session_type = Some(SessionType::Contract);
-    let mut output = Vec::new();
-    render_graph(&mut output, &make_status_data(vec![stage])).unwrap();
-    let output_str = String::from_utf8(output).unwrap();
-    assert!(!output_str.contains("contract session"), "{output_str}");
-}
+// Contract-writer-phase tag tests (static `loom status` row + legend) live in
+// a sibling module to keep this file under the line-count limit.
+#[path = "graph_tests_contracts.rs"]
+mod contract_phase_tests;
 
 #[test]
 fn test_completed_merged_without_cleanup_warning_has_no_marker() {

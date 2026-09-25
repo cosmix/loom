@@ -17,9 +17,11 @@ import {
   formatClock,
   formatElapsed,
   formatStamp,
+  isContractPhase,
   mergeText,
   modelsOf,
   progressPercent,
+  sessionTypeLabel,
   stateMeta,
   summaryCounts,
   timeText,
@@ -139,6 +141,44 @@ describe("TUI formatter ports", () => {
       text: "working",
       tone: "completed",
     });
+  });
+
+  it.each<readonly [ActivityStatus, string, Tone]>([
+    ["Working", "writing contract tests", "contract"],
+    ["Idle", "writing contract tests", "contract"],
+    ["Stale", "contract writer idle 1m1s", "warning"],
+    ["Orphaned", "orphaned", "blocked"],
+    ["Error", "crashed", "blocked"],
+  ])("formats a contract-phase stage's %s activity", (activity_status, text, tone) => {
+    expect(
+      activityText(
+        stage({
+          status: "executing",
+          session_type: "contract",
+          activity_status,
+          last_tool: activity_status === "Working" ? "Bash" : null,
+          staleness_secs: ["Idle", "Stale"].includes(activity_status) ? 61 : null,
+        }),
+      ),
+    ).toEqual({ text, tone });
+  });
+
+  it.each<readonly [Partial<StageSummary>, boolean]>([
+    [{ status: "executing", session_type: "contract" }, true],
+    [{ status: "executing", session_type: "stage" }, false],
+    [{ status: "queued", session_type: "contract" }, false],
+    [{ status: "executing", session_type: null }, false],
+  ])("detects the contract-writer phase %#", (overrides, expected) => {
+    expect(isContractPhase(stage(overrides))).toBe(expected);
+  });
+
+  it.each<readonly [StageSummary["session_type"], string | null]>([
+    ["contract", "contract writer"],
+    ["stage", "stage"],
+    ["baseconflict", "baseconflict"],
+    [null, null],
+  ])("labels session type %s", (type, label) => {
+    expect(sessionTypeLabel(type)).toBe(label);
   });
 
   it.each([

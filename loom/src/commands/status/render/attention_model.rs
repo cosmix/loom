@@ -7,8 +7,8 @@ use crate::commands::status::data::{
     CompletionBlockerState, CompletionBlockerSummary, StageSummary,
 };
 use crate::models::failure::FailureType;
-use crate::models::session::SessionExitReason;
-use crate::models::stage::StageStatus;
+use crate::models::session::{SessionExitReason, SessionType};
+use crate::models::stage::{StageStatus, StageType};
 
 /// Display-ready information for one stage that needs human attention.
 #[derive(Debug, Clone)]
@@ -140,6 +140,18 @@ fn attention_status(status: &StageStatus, id: &str) -> Option<(&'static str, Str
         format!("loom stage {command} {id}")
     };
     Some((label, hint, has_human_review_choices, is_adjudicating))
+}
+
+/// A `Standard` stage in the contract-writer phase: an `Executing` stage
+/// whose live session is the contract-test writer that runs ahead of the
+/// stage's own `Stage` session on a v2 stage with `contracts`. Gated on
+/// `StageType::Standard` because that phase only exists there; a `Contract`
+/// session found on any other stage type is a coherence anomaly, not a
+/// phase, so it keeps the ordinary "{session_type} session" warning tag.
+pub fn is_contract_phase(stage: &StageSummary) -> bool {
+    stage.status == StageStatus::Executing
+        && stage.session_type == Some(SessionType::Contract)
+        && stage.stage_type == StageType::Standard
 }
 
 /// Short status-line label for a blocked stage's failure type.

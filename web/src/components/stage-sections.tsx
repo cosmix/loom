@@ -13,7 +13,13 @@ import {
   yesNo,
   type SectionSpec,
 } from "@/components/stage-detail";
-import { contextUsage, exitReasonLabel, failureLabel, formatStamp } from "@/lib/format";
+import {
+  contextUsage,
+  exitReasonLabel,
+  failureLabel,
+  formatStamp,
+  sessionTypeLabel,
+} from "@/lib/format";
 
 /// What each field means, in the words a person reading the ledger needs.
 const HINT = {
@@ -34,7 +40,7 @@ const HINT = {
   alive: "Whether that process is still running.",
   backend: "Where the session runs: a native terminal window or a tmux pane.",
   sessionType:
-    "What the session was spawned to do: stage work, a merge, a base-conflict fix, knowledge, or adjudication.",
+    "What the session was spawned to do: stage work, a merge, a base-conflict fix, knowledge, adjudication, or writing contract tests.",
   exitReason: "Why the outgoing session ended, independently of the stage's workflow status.",
   activity:
     "Working: a tool ran recently. Idle: no live session, or the stage is finished. Stale: no heartbeat for 5 min. Orphaned: executing with no session record. Error: the process died.",
@@ -125,7 +131,7 @@ function sessionRows(stage: StageSummary) {
     row("pid", HINT.pid, stage.pid === null ? null : String(stage.pid), true),
     row("alive", HINT.alive, yesNo(stage.session_alive), true),
     row("backend", HINT.backend, stage.session_backend, true),
-    row("session type", HINT.sessionType, stage.session_type, true),
+    row("session type", HINT.sessionType, sessionTypeLabel(stage.session_type), true),
     row(
       "exit reason",
       HINT.exitReason,
