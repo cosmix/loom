@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::daemon::ContractRunReport;
+use crate::git::worktree::WorktreeGit;
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::schema::ContractSpec;
 use crate::verify::contracts::store::{write_freeze, FreezeRecord, FREEZE_RECORD_VERSION};
@@ -66,7 +67,10 @@ pub(crate) fn write_test_freeze(work_dir: &Path, stage_id: &str, session_id: &st
 
 /// Make `repo_root` a repository on `main` with one commit, add the stage
 /// worktree on `loom/<stage_id>`, and write the contract file into it,
-/// untracked. Returns the worktree root.
+/// untracked. The state directory `<repo_root>/.loom/work` is left holding
+/// the singleton lock of a daemon that has stopped, as one that made the
+/// worktree leaves it: no daemon runs, so a process other than the daemon may
+/// compute the worktree's change fingerprint. Returns the worktree root.
 pub(crate) fn contract_worktree(repo_root: &Path, stage_id: &str) -> PathBuf {
     std::fs::create_dir_all(repo_root).unwrap();
     git(repo_root, &["init", "-q", "-b", "main"]);
@@ -83,7 +87,50 @@ pub(crate) fn contract_worktree(repo_root: &Path, stage_id: &str) -> PathBuf {
     let contract_file = worktree.join(CONTRACT_FILE);
     std::fs::create_dir_all(contract_file.parent().unwrap()).unwrap();
     std::fs::write(contract_file, CONTRACT_CONTENT).unwrap();
+    let work_dir = repo_root.join(".loom").join("work");
+    std::fs::create_dir_all(&work_dir).unwrap();
+    std::fs::write(work_dir.join("orchestrator.lock"), b"").unwrap();
     worktree
+}
+
+/// Git pinned to the stage worktree [`contract_worktree`] made, as the daemon
+/// runs it.
+pub(crate) fn pinned(worktree: &Path) -> WorktreeGit {
+    let repo_root = worktree.parent().and_then(Path::parent).unwrap();
+    WorktreeGit::pinned(repo_root, worktree).unwrap()
+}
+
+/// Repoint the `.git` file of a worktree [`contract_worktree`] made at a git
+/// directory the stage made itself: a bare clone of the repository, checked
+/// out at the stage branch, whose configuration defines a clean filter that
+/// creates a marker file whenever it runs. `.gitattributes` applies the
+/// filter to every path, and the tracked `README.md` is left stat-dirty, so
+/// git that follows the `.git` file runs the filter to re-hash it. Returns
+/// the marker's path, beside the repository.
+pub(crate) fn plant_foreign_git_dir(worktree: &Path) -> PathBuf {
+    let repo_root = worktree.parent().and_then(Path::parent).unwrap();
+    let outside = repo_root.parent().unwrap();
+    let foreign = outside.join("foreign.git");
+    let marker = outside.join("filter-ran");
+    let stage_id = worktree.file_name().unwrap().to_str().unwrap();
+    let (source, target) = (repo_root.to_str().unwrap(), foreign.to_str().unwrap());
+    git(outside, &["clone", "-q", "--bare", source, target]);
+    git(
+        &foreign,
+        &[
+            "symbolic-ref",
+            "HEAD",
+            &format!("refs/heads/loom/{stage_id}"),
+        ],
+    );
+    git(&foreign, &["config", "core.bare", "false"]);
+    let filter = format!("touch '{}'; cat", marker.display());
+    git(&foreign, &["config", "filter.evil.clean", &filter]);
+    std::fs::write(worktree.join(".git"), format!("gitdir: {target}\n")).unwrap();
+    git(worktree, &["read-tree", "HEAD"]);
+    std::fs::write(worktree.join(".gitattributes"), "* filter=evil\n").unwrap();
+    std::fs::write(worktree.join("README.md"), "changed\n").unwrap();
+    marker
 }
 
 fn git(dir: &Path, args: &[&str]) {

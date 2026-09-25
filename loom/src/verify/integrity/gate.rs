@@ -1,25 +1,44 @@
 //! The test-integrity gate at stage completion (DESIGN D13).
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::path::Path;
 
-use super::{load_accepted, scan, Accepted, EventKind, IntegrityEvent};
-use crate::models::stage::{Stage, StageType};
+use super::{load_accepted, scan_changes, Accepted, EventKind, IntegrityEvent};
+use crate::git::worktree::WorktreeGit;
+use crate::models::stage::Stage;
+use crate::verify::review::fingerprint::{self, ChangeFingerprint};
+use crate::verify::review::gate::covers;
 use crate::verify::review::report::single_line;
 
-/// Fail, listing every blocking event, unless `reviews/<stage>/integrity.json`
-/// accepts every integrity event of the worktree against `target_branch` and
-/// none got worse. Only v2 `standard` and `integration-verify` stages are
-/// checked; any other stage passes.
+/// [`check_changes`] against the worktree's fingerprint from the loom daemon
+/// that owns it (`fingerprint::compute`), for a stage the review gate covers
+/// (`covers`); any other stage passes. This process reads the worktree
+/// through `fingerprint::local_git`.
 pub fn check(stage: &Stage, work_dir: &Path, worktree: &Path, target_branch: &str) -> Result<()> {
-    let covered = matches!(
-        stage.stage_type,
-        StageType::Standard | StageType::IntegrationVerify
-    );
-    if stage.plan_version != 2 || !covered {
+    if !covers(stage) {
         return Ok(());
     }
-    let scan = scan(worktree, target_branch, &stage.ratchet_files)?;
+    let changes = fingerprint::compute(worktree, target_branch)
+        .context("failed to list the worktree's changes for the test-integrity check")?;
+    check_changes(
+        stage,
+        work_dir,
+        &fingerprint::local_git(worktree)?,
+        &changes,
+    )
+}
+
+/// Fail, listing every blocking event, unless `reviews/<stage>/integrity.json`
+/// accepts every integrity event of `changes`, the change fingerprint of
+/// `repo`'s worktree, and none got worse. `changes` must come from the
+/// observer that derived the accepted events: the daemon.
+pub fn check_changes(
+    stage: &Stage,
+    work_dir: &Path,
+    repo: &WorktreeGit,
+    changes: &ChangeFingerprint,
+) -> Result<()> {
+    let scan = scan_changes(repo, changes, &stage.ratchet_files)?;
     for path in &scan.unprofiled {
         println!(
             "Test integrity: no language profile covers {}; its tests are not counted.",

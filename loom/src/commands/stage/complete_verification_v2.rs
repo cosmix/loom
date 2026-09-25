@@ -16,16 +16,24 @@ use std::path::Path;
 
 /// Run every v2 check, cheap deterministic failures first. The review gate
 /// runs last: every edit made to fix an earlier failure needs a re-review.
+///
+/// The test-integrity and review gates compare this worktree's change
+/// fingerprint with values the loom daemon recorded, so the daemon computes
+/// it (`fingerprint::compute`). A sandboxed stage session (`control_session`)
+/// cannot reach the daemon; its completion reaches the daemon through the
+/// broker instead, and the daemon runs both gates before it applies the
+/// transition, so they are not run here.
 pub(super) fn run_v2(checks: &VerificationChecks<'_>, target_branch: &str) -> Result<()> {
     let (stage, work_dir) = (checks.stage, checks.work_dir);
     let standard = stage.stage_type == StageType::Standard;
     let integration = stage.stage_type == StageType::IntegrationVerify;
+    let daemon_gates = checks.control_session.is_some();
     if standard && !stage.contracts.is_empty() {
         let worktree_root = worktree(checks, "check contracts in")?;
         let acceptance_dir = checks.acceptance_dir.unwrap_or(Path::new("."));
         completion::check(stage, work_dir, acceptance_dir, worktree_root)?;
     }
-    if standard || integration {
+    if (standard || integration) && !daemon_gates {
         let worktree_root = worktree(checks, "check test integrity in")?;
         integrity::check(stage, work_dir, worktree_root, target_branch)?;
     }
@@ -34,6 +42,15 @@ pub(super) fn run_v2(checks: &VerificationChecks<'_>, target_branch: &str) -> Re
     }
     if integration {
         reverify_reachable(checks)?;
+    }
+    if daemon_gates {
+        if gate::covers(stage) {
+            println!(
+                "Test integrity and the review gate are checked by the loom daemon when it \
+                 applies this completion."
+            );
+        }
+        return Ok(());
     }
     gate::check_at_completion(stage, work_dir, checks.worktree_root, target_branch)
 }

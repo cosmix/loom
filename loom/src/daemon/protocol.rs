@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use crate::handoff::CompletionAttemptEvidence;
 use crate::models::dispute::DisputeKind;
 use crate::models::stage::StageStatus;
+use crate::verify::review::fingerprint::ChangeFingerprint;
 
 #[path = "protocol_debug.rs"]
 mod debug;
@@ -97,10 +98,11 @@ pub struct ContractRunReport {
 ///
 /// `User` requests are unprivileged RPCs (Ping, SubscribeStatus,
 /// SubscribeLogs, Unsubscribe, DisputeCriteria, FileDispute, BlockStage,
-/// CompleteStage, RecordCompletionEvidence, FreezeContracts). They use the user token. The
-/// stage self-service RPCs are additionally accepted only for the exact
-/// stage/session pair the caller names. State-transition requests carry no command, path, or
-/// privileged flags; evidence is separately bounded and validated.
+/// CompleteStage, RecordCompletionEvidence, FreezeContracts, ObserveChanges).
+/// They use the user token. The stage self-service RPCs are additionally
+/// accepted only for the exact stage/session pair the caller names.
+/// State-transition requests carry no command, path, or privileged flags;
+/// evidence is separately bounded and validated.
 ///
 /// `Admin` requests are privileged host-only operations (Stop). They require
 /// an action-bound, one-time operator proof minted from the mode-0600 admin
@@ -202,6 +204,15 @@ pub enum Request {
         session_id: String,
         reports: Vec<ContractRunReport>,
     },
+    /// Ask for a stage's change fingerprint, which only the daemon computes
+    /// (`verify::review::observer`). The request names the stage alone; the
+    /// daemon resolves its worktree and target branch itself. `session_id`
+    /// follows the rule of [`Request::DisputeCriteria`].
+    ObserveChanges {
+        auth_token: String,
+        stage_id: String,
+        session_id: String,
+    },
 }
 
 impl Request {
@@ -221,7 +232,8 @@ impl Request {
             | Request::BlockStage { .. }
             | Request::CompleteStage { .. }
             | Request::RecordCompletionEvidence { .. }
-            | Request::FreezeContracts { .. } => Capability::User,
+            | Request::FreezeContracts { .. }
+            | Request::ObserveChanges { .. } => Capability::User,
         }
     }
 
@@ -240,7 +252,8 @@ impl Request {
             | Request::BlockStage { auth_token, .. }
             | Request::CompleteStage { auth_token, .. }
             | Request::RecordCompletionEvidence { auth_token, .. }
-            | Request::FreezeContracts { auth_token, .. } => auth_token,
+            | Request::FreezeContracts { auth_token, .. }
+            | Request::ObserveChanges { auth_token, .. } => auth_token,
         }
     }
 }
@@ -271,6 +284,12 @@ pub enum Response {
     /// Reply from a successful FreezeContracts — the number of files frozen.
     ContractsFrozen {
         files: usize,
+    },
+    /// Reply from a successful ObserveChanges — the stage's change
+    /// fingerprint and the target branch it was measured against.
+    ChangesObserved {
+        target_branch: String,
+        fingerprint: ChangeFingerprint,
     },
 }
 

@@ -15,6 +15,7 @@ mod dispute_store;
 mod environment;
 mod lifecycle;
 mod lock;
+mod observer;
 mod orchestrator;
 mod peer_identity;
 mod pool;

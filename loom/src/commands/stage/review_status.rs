@@ -27,7 +27,12 @@ pub fn review_status(stage_id: String) -> Result<()> {
     print_open_findings(&open);
     println!();
     match current_fingerprint(&work_dir, &stage) {
-        Ok(current) => print_freshness(&rounds, &current),
+        Ok((current, note)) => {
+            if let Some(note) = note {
+                println!("Note: {}", single_line(&note));
+            }
+            print_freshness(&rounds, &current)
+        }
         Err(error) => println!(
             "Current fingerprint: unavailable ({})",
             single_line(&format!("{error:#}"))
@@ -36,10 +41,16 @@ pub fn review_status(stage_id: String) -> Result<()> {
     Ok(())
 }
 
-/// The worktree's change fingerprint against the base the review gate uses.
-fn current_fingerprint(work_dir: &Path, stage: &Stage) -> Result<ChangeFingerprint> {
+/// The worktree's change fingerprint against the base the review gate uses,
+/// as the loom daemon computes it. Inside a sandbox that may not reach a
+/// running daemon it is this process's own view, with the note saying so
+/// (`fingerprint::compute_or_local`).
+fn current_fingerprint(
+    work_dir: &Path,
+    stage: &Stage,
+) -> Result<(ChangeFingerprint, Option<String>)> {
     let (worktree, target) = stage_worktree_and_target(work_dir, stage)?;
-    fingerprint::compute(&worktree, &target)
+    fingerprint::compute_or_local(&worktree, &target)
 }
 
 /// The stage's worktree and the target branch the completion gates diff it

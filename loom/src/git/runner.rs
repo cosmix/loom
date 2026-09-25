@@ -4,6 +4,7 @@
 //! error handling, reducing boilerplate across the codebase.
 
 use anyhow::{bail, Context, Result};
+use std::ffi::OsStr;
 use std::path::Path;
 use std::process::{Command, Output};
 use std::time::Duration;
@@ -34,6 +35,7 @@ fn git_timeout(args: &[&str]) -> Duration {
 fn run_git_program(
     program: &str,
     exec_args: &[&str],
+    env: &[(&str, &OsStr)],
     label: &str,
     repo_root: &Path,
     timeout: Duration,
@@ -43,6 +45,7 @@ fn run_git_program(
         .args(exec_args)
         .env("LC_ALL", "C")
         .env("LANG", "C")
+        .envs(env.iter().copied())
         .current_dir(repo_root);
     crate::process::run_bounded_output(&mut command, timeout, label.to_string())
         .with_context(|| format!("Failed to execute: git {}", exec_args.join(" ")))
@@ -61,11 +64,16 @@ fn run_git_program(
 /// * `args` - Git command arguments (e.g., `&["branch", "-v"]`)
 /// * `repo_root` - Working directory for the git command
 pub fn run_git(args: &[&str], repo_root: &Path) -> Result<Output> {
+    run_git_with_env(args, &[], repo_root)
+}
+
+/// [`run_git`] with `env` added to this one command's environment.
+pub fn run_git_with_env(args: &[&str], env: &[(&str, &OsStr)], repo_root: &Path) -> Result<Output> {
     let mut exec_args = Vec::with_capacity(NO_HOOKS_ARGS.len() + args.len());
     exec_args.extend_from_slice(&NO_HOOKS_ARGS);
     exec_args.extend_from_slice(args);
     let label = format!("git {}", args.first().unwrap_or(&"command"));
-    run_git_program("git", &exec_args, &label, repo_root, git_timeout(args))
+    run_git_program("git", &exec_args, env, &label, repo_root, git_timeout(args))
 }
 
 /// Run a git command, check for success, and return stdout as a trimmed String.
@@ -143,6 +151,7 @@ mod tests {
         let error = run_git_program(
             "sh",
             &["-c", "sleep 60"],
+            &[],
             "git -c",
             repo.path(),
             Duration::from_millis(100),

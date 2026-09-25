@@ -16,19 +16,16 @@
 //! A refusal is a `Response::Error`, never an `Err`: the spool drain retries
 //! an `Err` on every tick, and a dispute refused once is refused forever.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use chrono::Utc;
 use std::path::Path;
 
 use super::dispute_store::{escalate_to_human_review, lock_stage_disputes, write_request};
 use crate::daemon::protocol::Response;
-use crate::fs::work_dir::WorkDir;
 use crate::models::dispute::{select_events, select_findings, DisputeKind, DisputeRequest};
 use crate::models::stage::dispute_budgets::{self, MAX_DISPUTES_PER_KIND};
 use crate::models::stage::Stage;
-use crate::models::worktree::Worktree;
 use crate::verify::contracts::store::load_freeze;
-use crate::verify::integrity::{current_events, IntegrityEvent};
 use crate::verify::review::store::open_findings;
 use crate::verify::transitions::{load_stage, update_stage};
 
@@ -123,7 +120,7 @@ fn confirm(work_dir: &Path, stage: &Stage, kind: DisputeKind) -> Result<DisputeK
             Ok(DisputeKind::Contract { contract_id })
         }
         DisputeKind::Integrity { event_ids, .. } => {
-            let events = integrity_events_now(work_dir, stage)?;
+            let events = super::observer::integrity_events(work_dir, stage)?;
             let evidence = select_events(&events, &event_ids)?;
             Ok(DisputeKind::Integrity {
                 event_ids,
@@ -145,22 +142,6 @@ fn check_frozen(work_dir: &Path, stage_id: &str, contract_id: &str) -> Result<()
         bail!("'{contract_id}' names no frozen contract of this stage");
     }
     Ok(())
-}
-
-/// The stage's test-integrity events now: its worktree scanned against the
-/// configured target branch, the base the completion gate uses.
-fn integrity_events_now(work_dir: &Path, stage: &Stage) -> Result<Vec<IntegrityEvent>> {
-    let workspace = WorkDir::new(work_dir)?;
-    let repo_root = workspace
-        .repo_root()
-        .context("cannot resolve the repository root of the state directory")?;
-    let worktree_id = stage.worktree.as_deref().unwrap_or(&stage.id);
-    crate::validation::validate_id(worktree_id).context("invalid worktree id")?;
-    let worktree = Worktree::worktree_path(repo_root, worktree_id)
-        .canonicalize()
-        .with_context(|| format!("stage '{}' has no worktree", stage.id))?;
-    let target = crate::fs::resolve_target_branch_from_config(work_dir, repo_root)?;
-    current_events(&worktree, &target, &stage.ratchet_files)
 }
 
 #[cfg(test)]

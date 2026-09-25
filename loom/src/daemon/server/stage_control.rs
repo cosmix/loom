@@ -1,7 +1,7 @@
 //! Serving the requests a stage agent makes about its own stage — its
-//! disputes, its block and its contract freeze — once `client.rs` has settled
-//! authorization and stage ownership. Each handler's failure to persist comes
-//! back as a `Response::Error` naming it.
+//! disputes, its block, its contract freeze and the fingerprint of its
+//! changes — once `client.rs` has settled authorization and stage ownership.
+//! Each handler's failure comes back as a `Response::Error` naming it.
 
 use std::path::Path;
 
@@ -109,6 +109,9 @@ pub(super) fn serve_stage_control(work_dir: &Path, request: Request) -> Response
             reports,
             ..
         } => serve_freeze_contracts(work_dir, &stage_id, &session_id, &reports),
+        Request::ObserveChanges { stage_id, .. } => {
+            super::observer::handle_observe_changes(work_dir, &stage_id)
+        }
         other => Response::Error {
             message: format!("{other:?} is not a stage-control request"),
         },

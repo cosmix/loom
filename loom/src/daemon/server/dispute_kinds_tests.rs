@@ -8,6 +8,7 @@ use tempfile::TempDir;
 
 use super::*;
 use crate::daemon::handle_dispute_criteria;
+use crate::fs::work_dir::WorkDir;
 use crate::models::dispute::FindingSnapshot;
 use crate::models::stage::StageStatus;
 use crate::plan::schema::AcceptanceCriterion;

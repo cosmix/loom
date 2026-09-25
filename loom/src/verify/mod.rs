@@ -8,6 +8,7 @@ pub mod goal_backward;
 pub mod impact_tests;
 pub mod integrity;
 pub mod review;
+pub mod tool_artifacts;
 pub mod transitions;
 pub mod utils;
 pub mod wiring_detection;

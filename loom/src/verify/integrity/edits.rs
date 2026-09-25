@@ -5,17 +5,17 @@
 use anyhow::Result;
 use regex::Regex;
 use std::collections::{BTreeSet, HashMap};
-use std::path::Path;
 
 use super::count::{matchers, BaseTestFile};
 use super::{current_sha256, EventKind, IntegrityEvent};
+use crate::git::worktree::WorktreeGit;
 use crate::verify::contracts::changes::git;
 use crate::verify::review::fingerprint::ChangeFingerprint;
 
 /// One event per changed base test file whose diff from base loses an
 /// assertion line.
 pub(super) fn assertion_edits(
-    worktree: &Path,
+    repo: &WorktreeGit,
     changes: &ChangeFingerprint,
     base_files: &[BaseTestFile],
 ) -> Result<Vec<IntegrityEvent>> {
@@ -26,7 +26,7 @@ pub(super) fn assertion_edits(
         }
         let pathspec = format!(":(literal){}", file.path);
         let diff = git(
-            worktree,
+            repo,
             &[
                 "diff",
                 "--no-color",

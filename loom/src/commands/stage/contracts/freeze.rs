@@ -10,6 +10,7 @@ use std::path::Path;
 use std::time::Duration;
 
 use crate::daemon::ContractRunReport;
+use crate::git::worktree::WorktreeGit;
 use crate::models::stage::CommandConfinement;
 use crate::plan::schema::ContractSpec;
 use crate::relay::emit::{mode, EnvSnapshot, RelayMode, StdSink};
@@ -138,7 +139,10 @@ pub fn freeze(stage_id: String) -> Result<()> {
 }
 
 /// D8 steps 1 to 3, run where the contract session runs: the changes, then
-/// the red run, which yields the reports the daemon is sent.
+/// the red run, which yields the reports the daemon is sent. Git runs as the
+/// worktree's `.git` directs it: this is the session's own process, and the
+/// daemon checks the changes again with git pinned to the stage's registered
+/// git directory before it freezes anything.
 fn checked_reports(stage_id: &str) -> Result<Vec<ContractRunReport>> {
     let site = ContractSite::load(stage_id)?;
     let stage = &site.stage;
@@ -146,8 +150,9 @@ fn checked_reports(stage_id: &str) -> Result<Vec<ContractRunReport>> {
         bail!("Stage '{stage_id}' declares no contracts, so there is nothing to freeze");
     }
 
-    let base = stage_base(&site.worktree_root, &site.work_dir)?;
-    let changed = changed_paths(&site.worktree_root, &site.working_dir, &base)?;
+    let repo = WorktreeGit::discovered(&site.worktree_root);
+    let base = stage_base(&repo, &site.work_dir)?;
+    let changed = changed_paths(&repo, &site.working_dir, &base)?;
     let existing = |file: &str| site.working_dir.join(file).is_file();
     let inputs = FreezeInputs {
         contracts: &stage.contracts,

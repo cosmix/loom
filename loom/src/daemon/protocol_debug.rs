@@ -135,6 +135,16 @@ impl fmt::Debug for Request {
                 debug_completion(self, formatter)
             }
             Request::FreezeContracts { .. } => debug_freeze(self, formatter),
+            Request::ObserveChanges {
+                stage_id,
+                session_id,
+                ..
+            } => formatter
+                .debug_struct("ObserveChanges")
+                .field("auth_token", &"[REDACTED]")
+                .field("stage_id", stage_id)
+                .field("session_id", session_id)
+                .finish(),
         }
     }
 }

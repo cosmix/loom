@@ -1,10 +1,10 @@
 //! Git status checking for uncommitted changes
 
 use anyhow::{bail, Result};
-use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 
 use crate::git::runner::run_git;
+use crate::verify::tool_artifacts::is_tool_artifact;
 
 /// Check if the repository has uncommitted changes (staged or unstaged)
 ///
@@ -39,32 +39,13 @@ pub fn has_uncommitted_changes(repo_root: &Path) -> Result<bool> {
     Ok(has_changes)
 }
 
-/// Whether the entry at `path`, relative to `root`, is a character or block
-/// device.
-///
-/// Claude Code's Bash sandbox bind-mounts `/dev/null` over a fixed set of
-/// worktree-root dotfiles (`.bashrc`, `.gitconfig`, `.mcp.json`, `.vscode`,
-/// ...). Inside the sandbox git lists each as untracked, from the mount
-/// point's directory entry, while `symlink_metadata` sees the character
-/// device mounted over it; on the host the paths do not exist. Every
-/// `git status` reader that can run inside a session drops the untracked
-/// entries this matches. Making a device node takes `CAP_MKNOD`, which no
-/// session has, so the filter hides nothing a session can create: a FIFO or
-/// socket is not matched. A path that cannot be read is not a device node.
-pub fn is_device_node(root: &Path, path: &str) -> bool {
-    std::fs::symlink_metadata(root.join(path)).is_ok_and(|metadata| {
-        let kind = metadata.file_type();
-        kind.is_char_device() || kind.is_block_device()
-    })
-}
-
 /// List every locally changed path in the working tree
 ///
 /// Unlike [`has_uncommitted_changes`], untracked files ARE included — a new
 /// module an agent added is untracked, and that is exactly the case callers
 /// asking "has work happened here?" care about. Files ignored by `.gitignore` /
-/// `.git/info/exclude` are excluded by git itself, and untracked device nodes
-/// by [`is_device_node`].
+/// `.git/info/exclude` are excluded by git itself, and untracked sandbox
+/// artifacts at the root by [`is_tool_artifact`].
 ///
 /// Paths are as git reports them, relative to the repository root; untracked
 /// directories are reported collapsed (`some/dir/`). For renames only the
@@ -92,7 +73,7 @@ fn working_tree_changes(repo_root: &Path, porcelain: &str) -> Vec<String> {
     porcelain
         .lines()
         .filter(|line| line.len() > 3)
-        .filter(|line| !(line.starts_with("??") && is_device_node(repo_root, &line[3..])))
+        .filter(|line| !(line.starts_with("??") && is_tool_artifact(repo_root, &line[3..])))
         // Porcelain v1: "XY path" — or "XY old -> new" for renames/copies.
         .map(|line| match line[3..].split_once(" -> ") {
             Some((_, destination)) => destination.to_string(),

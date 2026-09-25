@@ -80,7 +80,7 @@ fn current(fx: &Fixture) -> ChangeFingerprint {
 }
 
 fn gate(fx: &Fixture) -> Result<()> {
-    check(&fx.stage, &fx.work_dir, &fx.worktree, "main")
+    check(&fx.stage, &fx.work_dir, &current(fx))
 }
 
 fn write_record(fx: &Fixture, file: &str, json: &str) {

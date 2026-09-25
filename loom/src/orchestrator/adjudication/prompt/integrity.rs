@@ -1,10 +1,11 @@
 //! Brief an adjudicator on disputed losses of test protection.
 
 use std::path::{Component, Path};
-use std::process::Command;
 
 use super::{KindPromptInput, Prompt};
+use crate::git::worktree::WorktreeGit;
 use crate::models::dispute::DisputeKind;
+use crate::verify::contracts::changes::diff_from_base;
 use crate::verify::integrity::{EventKind, IntegrityEvent};
 
 pub(super) fn build(input: &KindPromptInput<'_>) -> Prompt {
@@ -152,6 +153,9 @@ fn push_ratchet_diffs(s: &mut String, input: &KindPromptInput<'_>) {
     }
 }
 
+/// The ratchet file's diff from the stage base, read with git pinned to the
+/// stage's registered git directory: the daemon runs this in a worktree the
+/// disputing agent controls.
 fn ratchet_diff(input: &KindPromptInput<'_>, path: &str) -> Result<String, String> {
     let Some(root) = input.worktree else {
         return Err("ratchet diff unavailable: stage worktree is gone".to_string());
@@ -161,30 +165,10 @@ fn ratchet_diff(input: &KindPromptInput<'_>, path: &str) -> Result<String, Strin
     {
         return Err("ratchet diff unavailable: unsafe relative path".to_string());
     }
-    let base = crate::verify::contracts::changes::stage_base(root, input.work_dir)
-        .map_err(|e| format!("ratchet diff unavailable: stage base failed: {e}"))?;
     let pathspec = format!(":(literal){path}");
-    let output = Command::new("git")
-        .args(["--no-optional-locks", "-c", "core.fsmonitor=false"])
-        .args([
-            "diff",
-            "--no-color",
-            "--no-ext-diff",
-            "--no-textconv",
-            "--text",
-        ])
-        .arg(base)
-        .args(["--", &pathspec])
-        .current_dir(root)
-        .output()
-        .map_err(|e| format!("ratchet diff unavailable: git could not start: {e}"))?;
-    if !output.status.success() {
-        return Err(format!(
-            "ratchet diff unavailable: git failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ));
-    }
-    Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    WorktreeGit::pinned_in_project_of(input.work_dir, root)
+        .and_then(|repo| diff_from_base(&repo, input.work_dir, &pathspec))
+        .map_err(|error| format!("ratchet diff unavailable: {error:#}"))
 }
 
 #[cfg(test)]
@@ -193,8 +177,10 @@ mod tests {
     use crate::models::dispute::DisputeRequest;
     use crate::models::stage::Stage;
     use crate::orchestrator::adjudication::prompt::ExecutionSite;
+    use crate::verify::contracts::test_support::contract_worktree;
     use chrono::Utc;
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
+    use std::process::Command;
 
     fn event(id: &str, kind: EventKind, path: Option<&str>) -> IntegrityEvent {
         IntegrityEvent {
@@ -231,6 +217,7 @@ mod tests {
 
     fn git(root: &Path, args: &[&str]) {
         assert!(Command::new("git")
+            .args(["-c", "user.name=Test", "-c", "user.email=test@example.com"])
             .args(args)
             .current_dir(root)
             .status()
@@ -238,44 +225,19 @@ mod tests {
             .success());
     }
 
-    /// A git repo with a base commit, a commit adding `ratchet.txt`, and an
-    /// uncommitted change to it — the history [`ratchet_diff`] compares
-    /// against for the ratchet ID in [`full_input_events`].
-    fn ratchet_git_repo() -> tempfile::TempDir {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path();
-        git(root, &["init", "-q", "-b", "main"]);
-        git(
-            root,
-            &[
-                "-c",
-                "user.name=Test",
-                "-c",
-                "user.email=test@example.com",
-                "commit",
-                "-q",
-                "--allow-empty",
-                "-m",
-                "base",
-            ],
-        );
-        std::fs::write(root.join("ratchet.txt"), "base\n").unwrap();
-        git(root, &["add", "ratchet.txt"]);
-        git(
-            root,
-            &[
-                "-c",
-                "user.name=Test",
-                "-c",
-                "user.email=test@example.com",
-                "commit",
-                "-q",
-                "-m",
-                "ratchet base",
-            ],
-        );
-        std::fs::write(root.join("ratchet.txt"), "current\n").unwrap();
-        tmp
+    /// A stage worktree whose base carries `ratchet.txt` and which changes it
+    /// without committing: the history [`ratchet_diff`] compares against for
+    /// the ratchet ID in [`full_input_events`]. Returns the worktree and the
+    /// project's state directory.
+    fn ratchet_worktree(tmp: &Path) -> (PathBuf, PathBuf) {
+        let repo = tmp.join("repo");
+        let worktree = contract_worktree(&repo, "demo");
+        std::fs::write(repo.join("ratchet.txt"), "base\n").unwrap();
+        git(&repo, &["add", "ratchet.txt"]);
+        git(&repo, &["commit", "-q", "-m", "ratchet base"]);
+        git(&worktree, &["merge", "-q", "--ff-only", "main"]);
+        std::fs::write(worktree.join("ratchet.txt"), "current\n").unwrap();
+        (worktree, repo.join(".loom").join("work"))
     }
 
     /// One event of each kind, for
@@ -299,8 +261,9 @@ mod tests {
 
     #[test]
     fn full_input_shows_each_event_and_ratchet_diff() {
-        let tmp = ratchet_git_repo();
-        let root = tmp.path();
+        let tmp = tempfile::tempdir().unwrap();
+        let (worktree, work_dir) = ratchet_worktree(tmp.path());
+        let root = worktree.as_path();
         let stage = Stage {
             id: "demo".to_string(),
             ..Stage::default()
@@ -318,7 +281,7 @@ mod tests {
             request: &request,
             site: &site,
             worktree: Some(root),
-            work_dir: root,
+            work_dir: &work_dir,
         };
         let prompt = build(&input);
         for expected in [

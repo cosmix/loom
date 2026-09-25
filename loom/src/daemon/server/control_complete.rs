@@ -33,6 +33,11 @@ pub(super) fn handle_complete_stage(
     if !sessions_dir.is_dir() {
         bail!("completion sessions directory is unavailable");
     }
+    // The completing session's sandbox could not reach this daemon, so the
+    // gates that compare against a recorded fingerprint run here, in the
+    // observer's view, outside the lock: they only read.
+    validate_active_identity(work_dir, stage_id, session_id)?;
+    super::observer::check_completion_gates(work_dir, stage_id)?;
     // Hold the session-directory lock from the Running check through the
     // stage transition. Canonical session writers take this same lock.
     locked_dir_update(&sessions_dir, || {

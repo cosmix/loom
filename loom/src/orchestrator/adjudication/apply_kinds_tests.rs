@@ -185,7 +185,7 @@ fn frozen_contract_fixture() -> (TempDir, PathBuf, PathBuf) {
     let repo = tmp.path().join("repo");
     let worktree = contract_worktree(&repo, "s1");
     let workspace = WorkDir::new(&repo).unwrap();
-    workspace.initialize().unwrap();
+    workspace.adopt_existing().unwrap();
     let work = workspace.root().to_path_buf();
     let stage = Stage {
         plan_version: 2,

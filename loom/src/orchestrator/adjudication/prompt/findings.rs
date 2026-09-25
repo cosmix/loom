@@ -1,11 +1,11 @@
 //! The briefing for disputed review findings.
 
 use std::path::{Component, Path};
-use std::process::Command;
 
 use super::{KindPromptInput, Prompt};
+use crate::git::worktree::WorktreeGit;
 use crate::models::dispute::{DisputeKind, FindingSnapshot};
-use crate::verify::contracts::changes::stage_base;
+use crate::verify::contracts::changes::diff_from_base;
 use crate::verify::review::report::single_line;
 
 pub(super) fn build(input: &KindPromptInput<'_>) -> Prompt {
@@ -177,45 +177,33 @@ fn push_source_excerpt(s: &mut String, source: &str, line: u32) {
     s.push_str("```\n\n");
 }
 
+/// The cited file's diff from the stage base, read with git pinned to the
+/// stage's registered git directory: the daemon runs this in a worktree the
+/// disputing agent controls.
 fn push_diff(s: &mut String, root: &Path, work_dir: &Path, file: &str) {
     if validated_path(file).is_err() {
         s.push_str("(diff unavailable: invalid cited path)\n\n");
         return;
     }
-    let base = match stage_base(root, work_dir) {
-        Ok(base) => base,
-        Err(error) => {
-            s.push_str(&format!(
-                "(diff unavailable: stage base failed: {})\n\n",
-                single_line(&error.to_string())
-            ));
-            return;
+    let pathspec = format!(":(literal){file}");
+    let diff = WorktreeGit::pinned_in_project_of(work_dir, root)
+        .and_then(|repo| diff_from_base(&repo, work_dir, &pathspec));
+    match diff {
+        Ok(diff) if diff.is_empty() => {
+            s.push_str("(no diff against stage base for cited file)\n\n");
         }
-    };
-    let output = Command::new("git")
-        .args(["--no-optional-locks", "-c", "core.fsmonitor=false"])
-        .args(["diff", "--no-ext-diff", "--no-textconv", &base, "--", file])
-        .current_dir(root)
-        .output();
-    match output {
-        Ok(output) if output.status.success() => {
-            let diff = String::from_utf8_lossy(&output.stdout);
-            if diff.is_empty() {
-                s.push_str("(no diff against stage base for cited file)\n\n");
-            } else {
-                s.push_str("```diff\n");
-                s.push_str(&diff);
-                if !diff.ends_with('\n') {
-                    s.push('\n');
-                }
-                s.push_str("```\n\n");
+        Ok(diff) => {
+            s.push_str("```diff\n");
+            s.push_str(&diff);
+            if !diff.ends_with('\n') {
+                s.push('\n');
             }
+            s.push_str("```\n\n");
         }
-        Ok(output) => s.push_str(&format!(
-            "(diff unavailable: git failed: {})\n\n",
-            single_line(&String::from_utf8_lossy(&output.stderr))
+        Err(error) => s.push_str(&format!(
+            "(diff unavailable: {})\n\n",
+            single_line(&format!("{error:#}"))
         )),
-        Err(error) => s.push_str(&format!("(diff unavailable: git failed: {error})\n\n")),
     }
 }
 

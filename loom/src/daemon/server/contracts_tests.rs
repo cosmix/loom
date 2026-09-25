@@ -7,7 +7,8 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::session::{Session, SessionStatus};
 use crate::verify::contracts::store::{frozen_file_path, load_freeze};
 use crate::verify::contracts::test_support::{
-    contract_stage, contract_worktree, red_reports, CONTRACT_CONTENT, CONTRACT_FILE,
+    contract_stage, contract_worktree, plant_foreign_git_dir, red_reports, CONTRACT_CONTENT,
+    CONTRACT_FILE,
 };
 use crate::verify::transitions::{save_stage, update_stage};
 use tempfile::TempDir;
@@ -28,7 +29,7 @@ fn fixture() -> Fixture {
     let repo = tmp.path().join("repo");
     let worktree = contract_worktree(&repo, STAGE);
     let workspace = WorkDir::new(&repo).unwrap();
-    workspace.initialize().unwrap();
+    workspace.adopt_existing().unwrap();
     let work_dir = workspace.root().to_path_buf();
 
     let mut session = Session::new();
@@ -136,6 +137,23 @@ fn freeze_handler_refuses_a_planted_fifo() {
         matches!(response, Response::ContractsFrozen { files: 1 }),
         "{response:?}"
     );
+}
+
+/// The contract session repointed its `.git` file at a git directory whose
+/// configuration defines a clean filter: the daemon's check reads the
+/// stage's registered git directory, never runs the filter, and refuses the
+/// changes it sees there.
+#[test]
+fn freeze_handler_ignores_a_repointed_git_file() {
+    let fx = fixture();
+    let marker = plant_foreign_git_dir(&fx.worktree);
+
+    let message = refusal(freeze(&fx, &red_reports()));
+
+    assert!(!marker.exists(), "the daemon ran the stage's clean filter");
+    assert!(message.contains("README.md"), "{message}");
+    assert!(message.contains(".gitattributes"), "{message}");
+    assert!(load_freeze(&fx.work_dir, STAGE).unwrap().is_none());
 }
 
 #[test]

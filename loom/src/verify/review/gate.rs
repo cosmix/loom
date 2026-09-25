@@ -7,24 +7,31 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
-use super::fingerprint;
+use super::fingerprint::{self, ChangeFingerprint};
 use super::report::single_line;
 use super::store::{self, OpenFinding, ReviewRound};
 use crate::models::stage::{Stage, StageType};
 
-/// [`check`] for a v2 `standard` or `integration-verify` stage; any other
-/// stage passes. A stage the gate covers must have a worktree.
+/// Whether the review gate and the test-integrity gate cover `stage`: a v2
+/// `standard` or `integration-verify` stage.
+pub fn covers(stage: &Stage) -> bool {
+    stage.plan_version == 2
+        && matches!(
+            stage.stage_type,
+            StageType::Standard | StageType::IntegrationVerify
+        )
+}
+
+/// [`check`] against the worktree's fingerprint from the loom daemon that
+/// owns it ([`fingerprint::compute`]), for a stage the gate [`covers`]; any
+/// other stage passes. A stage the gate covers must have a worktree.
 pub fn check_at_completion(
     stage: &Stage,
     work_dir: &Path,
     worktree_root: Option<&Path>,
     target_branch: &str,
 ) -> Result<()> {
-    let covered = matches!(
-        stage.stage_type,
-        StageType::Standard | StageType::IntegrationVerify
-    );
-    if stage.plan_version != 2 || !covered {
+    if !covers(stage) {
         return Ok(());
     }
     let Some(worktree_root) = worktree_root else {
@@ -33,25 +40,22 @@ pub fn check_at_completion(
             stage.id
         );
     };
-    check(stage, work_dir, worktree_root, target_branch)
+    let current = fingerprint::compute(worktree_root, target_branch)
+        .context("failed to compute the worktree's change fingerprint for the review gate")?;
+    check(stage, work_dir, &current)
 }
 
 /// Fail, listing every problem at once, unless the latest well-formed review
-/// round matches the worktree's change fingerprint against `target_branch`
-/// and no finding is open.
-pub fn check(
-    stage: &Stage,
-    work_dir: &Path,
-    worktree_root: &Path,
-    target_branch: &str,
-) -> Result<()> {
+/// round saw exactly the `current` changes and no finding is open. `current`
+/// must come from the same observer as the rounds' fingerprints: the daemon.
+pub fn check(stage: &Stage, work_dir: &Path, current: &ChangeFingerprint) -> Result<()> {
     let rounds = store::load_rounds(work_dir, &stage.id)?;
     let rulings = store::load_rulings(work_dir, &stage.id)?;
     let carried = store::load_carried(work_dir, &stage.id)?;
     let mut problems = Vec::new();
     match rounds.iter().rev().find(|round| round.is_well_formed()) {
         None => problems.push("no well-formed review round is recorded".to_string()),
-        Some(latest) => problems.extend(stale_review(latest, worktree_root, target_branch)?),
+        Some(latest) => problems.extend(stale_review(latest, current)),
     }
     let open = store::open_among(&rounds, &rulings, &carried);
     problems.extend(open.iter().map(describe_open));
@@ -64,16 +68,10 @@ pub fn check(
     )
 }
 
-/// Why `latest` no longer covers the worktree, if it does not.
-fn stale_review(
-    latest: &ReviewRound,
-    worktree_root: &Path,
-    target_branch: &str,
-) -> Result<Option<String>> {
-    let current = fingerprint::compute(worktree_root, target_branch)
-        .context("failed to compute the worktree's change fingerprint for the review gate")?;
+/// Why `latest` no longer covers the `current` changes, if it does not.
+fn stale_review(latest: &ReviewRound, current: &ChangeFingerprint) -> Option<String> {
     if current.value == latest.fingerprint {
-        return Ok(None);
+        return None;
     }
     let changed = fingerprint::changed_since(&latest.files, &current.files);
     let since = if changed.is_empty() {
@@ -82,10 +80,10 @@ fn stale_review(
         let paths: Vec<String> = changed.iter().map(|path| single_line(path)).collect();
         format!("changed since: {}", paths.join(", "))
     };
-    Ok(Some(format!(
+    Some(format!(
         "review round {} saw {}, but the worktree is now at {} ({since})",
         latest.round, latest.fingerprint, current.value
-    )))
+    ))
 }
 
 fn describe_open(open: &OpenFinding) -> String {

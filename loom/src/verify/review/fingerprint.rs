@@ -1,16 +1,24 @@
 //! Content fingerprint for a review round's changes from its target branch.
+//!
+//! Every fingerprint that is recorded at one time and compared at another is
+//! computed by one process, the loom daemon that owns the worktree (see
+//! `observer`): [`compute`] asks it, and the daemon's own code calls
+//! [`compute_local`] with git pinned to the stage's registered git directory.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
-use anyhow::{bail, Context, Result};
+use anyhow::{ensure, Context, Result};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+use super::observer::{self, DaemonUnreachable, Source};
 use crate::fs::safe_read::{is_not_found, read_bounded};
-use crate::git::branch::is_device_node;
-use crate::git::worktree::is_worktree_scaffold_path;
-use crate::git::{run_git, run_git_checked};
+use crate::git::worktree::{is_worktree_scaffold_path, WorktreeGit};
+use crate::verify::contracts::changes::{changed_names, git};
+use crate::verify::tool_artifacts::is_tool_artifact;
+
+pub(crate) use super::observer::local_git;
 
 const MAX_REVIEW_FILE_BYTES: usize = 10 * 1024 * 1024;
 
@@ -52,16 +60,87 @@ pub fn fingerprint_from(base: &str, entries: &[(String, Option<Vec<u8>>)]) -> Ch
     }
 }
 
-/// Fingerprint the worktree against `git merge-base HEAD <target_branch>`.
+/// The fingerprint of `worktree` against `git merge-base HEAD
+/// <target_branch>`, as the loom daemon that owns the worktree computes it.
+///
+/// A stage worktree (`<project>/.worktrees/<stage-id>`) is fingerprinted by
+/// its project's daemon, asked over the project's socket: the fingerprint a
+/// review round records and the one completion compares it against come from
+/// one process, one environment and one filesystem view, whatever sandbox the
+/// caller runs in. The daemon resolves the worktree and the target branch
+/// from the stage; one that measured another target than `target_branch` is
+/// an error.
+///
+/// This process computes the fingerprint itself ([`compute_local`]) only
+/// when `worktree` is no stage worktree, or when nothing answers on the
+/// socket and the project's daemon singleton lock proves that no daemon runs
+/// (`observer`). Otherwise it gets the typed `DaemonUnreachable` error, and
+/// a daemon's refusal is an error too; neither falls back to this process's
+/// view.
 pub fn compute(worktree: &Path, target_branch: &str) -> Result<ChangeFingerprint> {
-    let base = run_git_checked(&["merge-base", "HEAD", target_branch], worktree)
+    match observer::source(worktree)? {
+        Source::ThisProcess(repo) => compute_local(&repo, target_branch),
+        Source::Daemon {
+            target_branch: measured,
+            fingerprint,
+        } => {
+            ensure!(
+                measured == target_branch,
+                "the loom daemon measures this stage's changes against '{measured}', not \
+                 '{target_branch}'"
+            );
+            Ok(fingerprint)
+        }
+    }
+}
+
+/// [`compute`], or, when no daemon answers and none is proven absent
+/// (`DaemonUnreachable`), [`compute_local`] with a note saying the value is
+/// this process's own view and can differ from the one completion uses. For
+/// display, and for evidence the daemon derives again itself; never for a
+/// value that is recorded or compared.
+pub fn compute_or_local(
+    worktree: &Path,
+    target_branch: &str,
+) -> Result<(ChangeFingerprint, Option<String>)> {
+    match compute(worktree, target_branch) {
+        Ok(fingerprint) => Ok((fingerprint, None)),
+        Err(error) if error.is::<DaemonUnreachable>() => {
+            let fingerprint = compute_local(&local_git(worktree)?, target_branch)?;
+            let note = format!(
+                "{error}; this fingerprint is this process's own view and can differ from the \
+                 daemon's, which completion uses"
+            );
+            Ok((fingerprint, Some(note)))
+        }
+        Err(error) => Err(error),
+    }
+}
+
+/// The fingerprint of `repo`'s worktree against `git merge-base HEAD
+/// <target_branch>` in this process's own view: every path changed since the
+/// base, plus every untracked file git does not ignore, less worktree
+/// scaffolding and sandbox artifacts (`verify::tool_artifacts`). Git runs
+/// through `repo`, read-only, without index writes or an fsmonitor command
+/// (`contracts::changes::git`); the daemon pins `repo` to the stage's
+/// registered git directory ([`WorktreeGit::pinned`]) because it runs git in
+/// a worktree an agent controls. The daemon's observer code calls this;
+/// anything else calls [`compute`].
+pub fn compute_local(repo: &WorktreeGit, target_branch: &str) -> Result<ChangeFingerprint> {
+    let worktree = repo.work_tree();
+    let merge_base = git(repo, &["merge-base", "HEAD", target_branch])
         .with_context(|| format!("finding merge base with {target_branch}"))?;
-    let mut paths = git_paths(worktree, &["diff", "--name-only", "-z", &base, "--"])?;
-    let untracked = git_paths(
-        worktree,
+    let base = String::from_utf8_lossy(&merge_base).trim().to_string();
+    let mut paths = nul_paths(&changed_names(repo, &base, None)?)?;
+    let untracked = nul_paths(&git(
+        repo,
         &["ls-files", "--others", "--exclude-standard", "-z"],
-    )?;
-    paths.extend(without_device_nodes(worktree, untracked));
+    )?)?;
+    paths.extend(
+        untracked
+            .into_iter()
+            .filter(|path| !is_tool_artifact(worktree, path)),
+    );
 
     let mut entries = Vec::new();
     for path in paths {
@@ -80,31 +159,9 @@ pub fn compute(worktree: &Path, target_branch: &str) -> Result<ChangeFingerprint
     Ok(fingerprint_from(&base, &entries))
 }
 
-/// `untracked` without its device nodes ([`is_device_node`]). The Bash
-/// sandbox's `/dev/null` mounts over worktree-root dotfiles are listed by git
-/// inside it and absent on the host, so keeping them would refuse the read
-/// and split the fingerprint a session computes from the host's.
-fn without_device_nodes(
-    worktree: &Path,
-    untracked: BTreeSet<String>,
-) -> impl Iterator<Item = String> + '_ {
-    untracked
-        .into_iter()
-        .filter(move |path| !is_device_node(worktree, path))
-}
-
-fn git_paths(worktree: &Path, args: &[&str]) -> Result<BTreeSet<String>> {
-    let output = run_git(args, worktree)?;
-    if !output.status.success() {
-        bail!(
-            "git {} failed in {}: {}",
-            args.join(" "),
-            worktree.display(),
-            String::from_utf8_lossy(&output.stderr).trim()
-        );
-    }
-    output
-        .stdout
+/// The NUL-separated paths git listed, each required to be UTF-8.
+fn nul_paths(listed: &[u8]) -> Result<BTreeSet<String>> {
+    listed
         .split(|byte| *byte == 0)
         .filter(|path| !path.is_empty())
         .map(|path| {
@@ -131,107 +188,5 @@ pub fn changed_since(
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fingerprint_from_records_deleted_entries() {
-        let fingerprint = fingerprint_from(
-            "base",
-            &[
-                ("gone.txt".to_string(), None),
-                ("empty.txt".to_string(), Some(Vec::new())),
-            ],
-        );
-
-        assert_eq!(fingerprint.base, "base");
-        assert_eq!(fingerprint.files["gone.txt"], "deleted");
-        assert_eq!(
-            fingerprint.files["empty.txt"],
-            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-        );
-        assert!(fingerprint.value.starts_with("sha256:"));
-    }
-
-    #[test]
-    fn fingerprint_from_sorts_paths_before_hashing() {
-        let first = ("a.txt".to_string(), Some(b"a".to_vec()));
-        let second = ("z.txt".to_string(), Some(b"z".to_vec()));
-
-        let forward = fingerprint_from("base", &[first.clone(), second.clone()]);
-        let reverse = fingerprint_from("base", &[second, first]);
-
-        assert_eq!(forward, reverse);
-    }
-
-    #[test]
-    fn changed_since_includes_one_sided_paths() {
-        let previous = BTreeMap::from([
-            ("a.txt".to_string(), "old".to_string()),
-            ("b.txt".to_string(), "same".to_string()),
-        ]);
-        let current = BTreeMap::from([
-            ("b.txt".to_string(), "same".to_string()),
-            ("c.txt".to_string(), "new".to_string()),
-        ]);
-
-        assert_eq!(changed_since(&previous, &current), ["a.txt", "c.txt"]);
-    }
-
-    fn git_ok(root: &Path, args: &[&str]) -> Result<()> {
-        run_git_checked(args, root)?;
-        Ok(())
-    }
-
-    #[test]
-    fn fingerprint_ignores_commits() -> Result<()> {
-        let temp = tempfile::tempdir()?;
-        let root = temp.path();
-        git_ok(root, &["init", "-b", "main"])?;
-        git_ok(root, &["config", "user.email", "review-test@example.com"])?;
-        git_ok(root, &["config", "user.name", "Review Test"])?;
-        std::fs::write(root.join("file.txt"), b"initial")?;
-        git_ok(root, &["add", "file.txt"])?;
-        git_ok(root, &["commit", "-m", "initial"])?;
-        git_ok(root, &["switch", "-c", "feature"])?;
-
-        std::fs::write(root.join("file.txt"), b"first change")?;
-        let a = compute(root, "main")?;
-        git_ok(root, &["commit", "-am", "x"])?;
-        let b = compute(root, "main")?;
-        assert_eq!(a.value, b.value);
-        assert_eq!(a.files, b.files);
-
-        std::fs::write(root.join("file.txt"), b"second change")?;
-        let c = compute(root, "main")?;
-        assert_ne!(b.value, c.value);
-        assert_eq!(changed_since(&b.files, &c.files), ["file.txt"]);
-        Ok(())
-    }
-
-    /// The sandbox's `/dev/null` mounts over worktree-root dotfiles are never
-    /// read, never fingerprinted; git skips a FIFO on its own.
-    #[test]
-    fn fingerprint_leaves_out_untracked_device_nodes() -> Result<()> {
-        let temp = tempfile::tempdir()?;
-        let root = temp.path();
-        git_ok(root, &["init", "-b", "main"])?;
-        git_ok(root, &["config", "user.email", "review-test@example.com"])?;
-        git_ok(root, &["config", "user.name", "Review Test"])?;
-        std::fs::write(root.join("file.txt"), b"initial")?;
-        git_ok(root, &["add", "file.txt"])?;
-        git_ok(root, &["commit", "-m", "initial"])?;
-        nix::unistd::mkfifo(&root.join(".bashrc"), nix::sys::stat::Mode::S_IRWXU)?;
-        std::fs::write(root.join("notes.txt"), b"x")?;
-
-        let fingerprint = compute(root, "main")?;
-
-        assert_eq!(fingerprint.files.keys().collect::<Vec<_>>(), ["notes.txt"]);
-        // Inside the sandbox the mount point is listed, so the filter is
-        // checked on such a listing, `/dev/null` standing in for the mount.
-        let listed = BTreeSet::from(["null".to_string(), "notes.txt".to_string()]);
-        let kept: Vec<String> = without_device_nodes(Path::new("/dev"), listed).collect();
-        assert_eq!(kept, ["notes.txt"]);
-        Ok(())
-    }
-}
+#[path = "fingerprint_tests.rs"]
+mod tests;

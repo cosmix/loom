@@ -10,6 +10,7 @@ use std::sync::LazyLock;
 
 use super::{current_sha256, EventKind, IntegrityEvent};
 use crate::fs::safe_read::read_bounded;
+use crate::git::worktree::WorktreeGit;
 use crate::testrun::languages::{self, LanguageProfile};
 use crate::verify::contracts::changes::git;
 use crate::verify::review::fingerprint::ChangeFingerprint;
@@ -49,8 +50,8 @@ pub(super) struct BaseTestFile {
 
 /// Every regular file of `base`'s tree that `languages::for_path` maps to a
 /// profile. Symlinks and submodules hold no test lines.
-pub(super) fn base_test_files(worktree: &Path, base: &str) -> Result<Vec<BaseTestFile>> {
-    let listing = git(worktree, &["ls-tree", "-r", "-z", "--full-tree", base])?;
+pub(super) fn base_test_files(repo: &WorktreeGit, base: &str) -> Result<Vec<BaseTestFile>> {
+    let listing = git(repo, &["ls-tree", "-r", "-z", "--full-tree", base])?;
     Ok(listing
         .split(|byte| *byte == 0)
         .filter_map(|entry| {
@@ -101,16 +102,17 @@ struct Totals {
 /// total. A base test file the fingerprint does not list is unchanged, so its
 /// worktree content counts for both sides.
 pub(super) fn total_events(
-    worktree: &Path,
+    repo: &WorktreeGit,
     changes: &ChangeFingerprint,
     base_files: &[BaseTestFile],
 ) -> Result<Vec<IntegrityEvent>> {
+    let worktree = repo.work_tree();
     let mut totals: BTreeMap<&'static str, Totals> = BTreeMap::new();
     for file in base_files {
         let changed = changes.files.contains_key(&file.path);
         let content = if changed {
             let object = format!("{}:{}", changes.base, file.path);
-            git(worktree, &["cat-file", "blob", &object])?
+            git(repo, &["cat-file", "blob", &object])?
         } else {
             read_current(worktree, &file.path)?
         };

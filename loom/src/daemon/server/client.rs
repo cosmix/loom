@@ -194,9 +194,8 @@ pub fn handle_client_connection(
     work_dir: &Path,
     byte_budget: Arc<ByteBudget>,
 ) -> Result<()> {
-    // Ensure stream is in blocking mode - on macOS, accepted streams from
-    // a non-blocking listener may inherit non-blocking mode, causing
-    // read_message to fail with WouldBlock immediately.
+    // Ensure stream is in blocking mode - on macOS, accepted streams from a non-blocking
+    // listener may inherit non-blocking mode, making read_message fail with WouldBlock.
     stream.set_nonblocking(false)?;
 
     stream.set_write_timeout(Some(CLIENT_READ_TIMEOUT))?;
@@ -258,7 +257,8 @@ pub fn handle_client_connection(
             request @ (Request::DisputeCriteria { .. }
             | Request::FileDispute { .. }
             | Request::BlockStage { .. }
-            | Request::FreezeContracts { .. }) => {
+            | Request::FreezeContracts { .. }
+            | Request::ObserveChanges { .. }) => {
                 write_message(&mut stream, &serve_stage_control(work_dir, request))?;
                 break;
             }

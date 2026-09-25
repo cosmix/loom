@@ -161,32 +161,21 @@ fn test_list_working_tree_changes_omits_ignored_files() {
     assert!(list_working_tree_changes(repo_path).unwrap().is_empty());
 }
 
-/// Nothing an unprivileged process can make is a device node: a FIFO is
-/// kept, like a regular file, a directory and a symlink.
+/// An untracked empty placeholder the sandbox left at a protected root name
+/// is not a change; the same name tracked and modified, or holding content,
+/// is.
 #[test]
-fn device_nodes_are_character_and_block_devices_only() {
+fn test_list_working_tree_changes_omits_untracked_sandbox_artifacts() {
     let temp_dir = TempDir::new().unwrap();
     let root = temp_dir.path();
-    nix::unistd::mkfifo(&root.join("fifo"), nix::sys::stat::Mode::S_IRWXU).unwrap();
-    std::fs::write(root.join("file"), "x").unwrap();
-    std::fs::create_dir(root.join("dir")).unwrap();
-    std::os::unix::fs::symlink("/dev/null", root.join("link")).unwrap();
+    std::fs::write(root.join(".zshrc"), "").unwrap();
+    std::fs::write(root.join(".profile"), "").unwrap();
+    std::fs::write(root.join(".ripgreprc"), "--hidden\n").unwrap();
+    let porcelain = "?? .zshrc\n?? .ripgreprc\n?? new_module.rs\n M .profile\n";
 
-    assert!(is_device_node(Path::new("/dev"), "null"));
-    for path in ["fifo", "file", "dir", "dir/", "link", "missing"] {
-        assert!(!is_device_node(root, path), "{path}");
-    }
-}
-
-/// Inside the sandbox git lists a `/dev/null` mount point as an untracked
-/// regular file, so the filter is checked against the output git gives
-/// there, with `/dev/null` itself standing in for the mount.
-#[test]
-fn test_list_working_tree_changes_omits_untracked_device_nodes() {
-    let porcelain = "?? null\n?? new_module.rs\n M file1.txt\n";
     assert_eq!(
-        working_tree_changes(Path::new("/dev"), porcelain),
-        vec!["new_module.rs".to_string(), "file1.txt".to_string()]
+        working_tree_changes(root, porcelain),
+        vec![".ripgreprc", "new_module.rs", ".profile"]
     );
 }
 

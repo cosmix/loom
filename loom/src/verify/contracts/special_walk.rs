@@ -9,9 +9,13 @@ use std::path::{Path, PathBuf};
 
 use crate::fs::safe_fs::safe_open_dirfd;
 use crate::fs::safe_read::{list_dir_no_follow, EntryKind};
+use crate::verify::tool_artifacts::is_tool_artifact;
 
 /// Worktree-relative paths of every FIFO, socket and device node beneath
 /// `worktree_root`, skipping the `ignored` paths and every `.git` directory.
+/// A sandbox's `/dev/null` mount at a worktree-root name it protects
+/// (`verify::tool_artifacts`) is not reported; a FIFO or socket at such a
+/// name is.
 ///
 /// Each directory is opened from the worktree root's descriptor with a
 /// symlink refused at every component, then listed from that descriptor
@@ -34,7 +38,7 @@ pub(super) fn special_paths(
             }
             match kind {
                 EntryKind::Directory if name != ".git" => pending.push(path),
-                EntryKind::Special => {
+                EntryKind::Special if !sandbox_mount(worktree_root, &dir, &path) => {
                     found.insert(path);
                 }
                 _ => {}
@@ -42,6 +46,15 @@ pub(super) fn special_paths(
         }
     }
     Ok(found)
+}
+
+/// Whether the special entry `path`, found in `dir`, is a sandbox's mount at
+/// a worktree-root name it protects rather than something a session made.
+fn sandbox_mount(worktree_root: &Path, dir: &Path, path: &Path) -> bool {
+    dir.as_os_str().is_empty()
+        && path
+            .to_str()
+            .is_some_and(|name| is_tool_artifact(worktree_root, name))
 }
 
 /// Why `dir` could not be listed, naming a swap for a symlink or a
@@ -92,6 +105,23 @@ mod tests {
         assert_eq!(escaped("dé/p".as_bytes()), "dé/p");
         assert_eq!(escaped(b"a\\b\ncd\xff"), "a\\\\b\\ncd\\xff");
         assert_eq!(escaped(b"\\xff"), "\\\\xff");
+    }
+
+    /// Only a device node at a protected root name is the sandbox's mount; a
+    /// FIFO a session made there is reported like any other.
+    #[test]
+    fn a_fifo_at_a_protected_root_name_is_still_found() {
+        let root = tempfile::tempdir().unwrap();
+        nix::unistd::mkfifo(&root.path().join(".bashrc"), nix::sys::stat::Mode::S_IRWXU).unwrap();
+
+        let found = special_paths(root.path(), &BTreeSet::new()).unwrap();
+
+        assert_eq!(found, BTreeSet::from([PathBuf::from(".bashrc")]));
+        assert!(!sandbox_mount(
+            root.path(),
+            Path::new(""),
+            Path::new(".bashrc")
+        ));
     }
 
     /// The walk popped `dir`, and a symlink now stands in its place: the

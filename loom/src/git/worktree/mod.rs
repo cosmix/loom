@@ -11,6 +11,7 @@
 //! - `operations`: Core CRUD operations (create, remove, list, get_or_create)
 //! - `parser`: Git worktree output parsing
 //! - `paths`: Path resolution utilities for worktrees
+//! - `pinned`: Git run in a stage worktree from outside its sandbox
 //! - `settings`: Settings management (.claude/, CLAUDE.md, symlinks)
 
 mod base;
@@ -19,6 +20,7 @@ mod discovery;
 mod operations;
 mod parser;
 mod paths;
+mod pinned;
 mod settings;
 
 // Re-export all public items for backwards compatibility
@@ -32,6 +34,7 @@ pub use operations::{
 };
 pub use parser::WorktreeInfo;
 pub use paths::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
+pub use pinned::WorktreeGit;
 pub use settings::{
     add_settings_local_to_worktree_gitignore, ensure_work_symlink, is_worktree_scaffold_path,
 };

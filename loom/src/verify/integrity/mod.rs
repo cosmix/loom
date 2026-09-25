@@ -13,11 +13,12 @@ use anyhow::{Context, Result};
 use serde::{Deserialize, Serialize};
 use std::path::{Component, Path};
 
+use crate::git::worktree::WorktreeGit;
 use crate::testrun::languages;
 use crate::verify::review::fingerprint::{self, ChangeFingerprint};
 use crate::verify::review::store::{self, RECORD_VERSION};
 
-pub use gate::{check, describe, shortfall};
+pub use gate::{check, check_changes, describe, shortfall};
 
 pub(in crate::verify) const ACCEPTED_FILE: &str = "integrity.json";
 /// Directory names whose files are tests whatever their language.
@@ -96,7 +97,8 @@ pub struct Scan {
     pub unprofiled: Vec<String>,
 }
 
-/// The worktree's integrity events against `git merge-base HEAD <target_branch>`.
+/// The worktree's integrity events against `git merge-base HEAD <target_branch>`,
+/// as [`scan`] finds them.
 pub fn current_events(
     worktree: &Path,
     target_branch: &str,
@@ -105,14 +107,34 @@ pub fn current_events(
     Ok(scan(worktree, target_branch, ratchet_files)?.events)
 }
 
-/// [`current_events`], plus the unprofiled test files a caller notes.
+/// [`current_events`], plus the unprofiled test files a caller notes, for
+/// display and dispute evidence. The changes are the loom daemon's
+/// (`fingerprint::compute_or_local`); inside a sandbox that may not reach a
+/// running daemon they are this process's own, and a note on stderr says so.
+/// The completion gate ([`check`]) never takes that fallback. This process
+/// reads the worktree through `fingerprint::local_git`.
 pub fn scan(worktree: &Path, target_branch: &str, ratchet_files: &[String]) -> Result<Scan> {
-    let changes = fingerprint::compute(worktree, target_branch)
+    let (changes, note) = fingerprint::compute_or_local(worktree, target_branch)
         .context("failed to list the worktree's changes for the test-integrity check")?;
-    let base_files = count::base_test_files(worktree, &changes.base)?;
-    let mut events = count::total_events(worktree, &changes, &base_files)?;
-    events.extend(edits::assertion_edits(worktree, &changes, &base_files)?);
-    events.extend(edits::ratchet_events(&changes, ratchet_files));
+    if let Some(note) = note {
+        eprintln!("Note: {note}");
+    }
+    scan_changes(&fingerprint::local_git(worktree)?, &changes, ratchet_files)
+}
+
+/// The integrity events of `changes`, the change fingerprint of `repo`'s
+/// worktree, plus the changed test files no language profile covers. Git
+/// runs through `repo`, which the daemon pins to the stage's registered git
+/// directory.
+pub fn scan_changes(
+    repo: &WorktreeGit,
+    changes: &ChangeFingerprint,
+    ratchet_files: &[String],
+) -> Result<Scan> {
+    let base_files = count::base_test_files(repo, &changes.base)?;
+    let mut events = count::total_events(repo, changes, &base_files)?;
+    events.extend(edits::assertion_edits(repo, changes, &base_files)?);
+    events.extend(edits::ratchet_events(changes, ratchet_files));
     let unprofiled = changes
         .files
         .keys()

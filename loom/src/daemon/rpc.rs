@@ -74,14 +74,23 @@ pub enum DaemonReach {
     /// A daemon was listening and replied. Its answer stands, refusal
     /// included: a caller must not route around it.
     Answered(Response),
-    /// Nothing is listening: either no socket file exists, or one does but
-    /// nothing is bound to it — the signature a daemon leaves behind when it
-    /// dies without unlinking its socket (a crash, `SIGKILL`, power loss). A
-    /// unix socket file outlives the process that bound it, so existence
-    /// alone never proves liveness.
+    /// Nothing is listening in this process's view: the socket path does not
+    /// exist (`stat` says `ENOENT`), or a socket file does but nothing is
+    /// bound to it — the signature a daemon leaves behind when it dies
+    /// without unlinking its socket (a crash, `SIGKILL`, power loss). A unix
+    /// socket file outlives the process that bound it, so existence alone
+    /// never proves liveness.
+    ///
+    /// This is no proof that no daemon runs. A sandbox can hide a directory
+    /// entirely (a tmpfs over it), so from inside one even `ENOENT` describes
+    /// only the sandbox's view. A caller whose fallback needs no privilege
+    /// the sandbox would deny must ask for positive evidence as well: the
+    /// review observer (`verify::review::observer`) also requires the
+    /// daemon's singleton lock to prove free (`DaemonServer::proven_stopped`).
     NotListening,
-    /// The sandbox denies AF_UNIX outright, so this process cannot reach a
-    /// daemon that may well be running. Not evidence about the daemon.
+    /// This process cannot tell whether a daemon listens: the sandbox denies
+    /// AF_UNIX outright, or `stat` on the socket path fails with anything
+    /// but `ENOENT` (a denied or masked path). Not evidence about the daemon.
     ///
     /// A caller here must not take the `NotListening` fallback: writing
     /// `.loom/work/stages/<id>.md` directly would BYPASS a live daemon's authority
@@ -97,22 +106,28 @@ pub enum DaemonReach {
 /// listening" from every other failure so callers with a local fallback can
 /// tell the two apart.
 ///
-/// An absent socket FILE answers the question before any syscall is made, and
-/// has to: a sandbox denies AF_UNIX at `socket()` creation, before the path is
-/// ever considered, so without this pre-check "no daemon is configured at all"
-/// and "a daemon I cannot reach" both come back `PermissionDenied` and become
-/// indistinguishable — the exact difference that decides between the direct
-/// write and the spool.
+/// The socket path's `lstat` answers first, before any socket syscall, and
+/// has to: a sandbox denies AF_UNIX at `socket()` creation, before the path
+/// is ever considered, so without this pre-check "no daemon is configured at
+/// all" and "a daemon I cannot reach" both come back `PermissionDenied` and
+/// become indistinguishable — the exact difference that decides between the
+/// direct write and the spool. Only `ENOENT` counts as absence; any other
+/// `lstat` error (`EACCES`, `EPERM`, ...) is a path this process may not
+/// look at, which is `Unreachable`.
 ///
 /// This is NOT the inference `daemon/server/core.rs` warns against. That
 /// warning is about the opposite direction: after a FAILED connect, do not use
 /// `exists()` to conclude the daemon is absent, because a sandbox that denies
 /// `connect` may deny `stat` too and a false `exists()` would prove nothing.
-/// As a pre-check the reasoning runs the safe way round — a socket file that
-/// is genuinely absent means no daemon, and if a sandbox also denies the
-/// `stat`, the resulting `NotListening` sends the caller down the direct-write
-/// path, which that sandbox then refuses on its own terms. A worse error
-/// message, never a wrong state change.
+/// Here a denied `lstat` is never read as absence.
+///
+/// The spooling callers (`fs::stage_request`) act on `NotListening` without
+/// further evidence, deliberately: at most they write under `.loom/work`
+/// directly, which a sandbox that hides or protects that directory refuses
+/// or diverts on its own terms. A worse error message, never a wrong state
+/// change. A caller whose fallback needs no such privilege, such as
+/// computing a value locally, must not rely on `NotListening` alone (see the
+/// variant).
 ///
 /// The connect-error mapping lives here, and only here:
 ///
@@ -132,8 +147,10 @@ pub enum DaemonReach {
 ///   also always an `Err`, never `NotListening` — something was listening.
 pub fn try_send_request(work_dir: &Path, request: &Request) -> Result<DaemonReach> {
     let socket_path = socket_path(work_dir);
-    if !socket_path.exists() {
-        return Ok(DaemonReach::NotListening);
+    match std::fs::symlink_metadata(&socket_path) {
+        Ok(_) => {}
+        Err(e) if e.kind() == ErrorKind::NotFound => return Ok(DaemonReach::NotListening),
+        Err(_) => return Ok(DaemonReach::Unreachable),
     }
     let stream = match UnixStream::connect(&socket_path) {
         Ok(stream) => stream,
@@ -225,7 +242,8 @@ mod tests {
     }
 
     /// Deliberately NOT guarded by either probe above: the pre-check answers
-    /// this before any syscall, so it must hold identically sandboxed and not.
+    /// this before any socket syscall, so it must hold identically sandboxed
+    /// and not.
     /// That equivalence is the whole point of the pre-check.
     #[test]
     fn no_socket_file_at_all_is_not_listening() {
@@ -235,6 +253,31 @@ mod tests {
             DaemonReach::NotListening => {}
             DaemonReach::Answered(response) => panic!("expected NotListening, got {response:?}"),
             DaemonReach::Unreachable => panic!("expected NotListening, got Unreachable"),
+        }
+    }
+
+    /// A socket path this process may not `lstat` (its directory is mode
+    /// 000) is no evidence of absence. Root ignores the mode, so there the
+    /// test proves nothing and returns.
+    #[test]
+    fn a_socket_path_that_cannot_be_statted_is_unreachable() {
+        use std::os::unix::fs::PermissionsExt;
+        // SAFETY: geteuid has no arguments and only reads process credentials.
+        if unsafe { libc::geteuid() } == 0 {
+            return;
+        }
+        let temp = TempDir::new().unwrap();
+        let work_dir = temp.path().join("work");
+        std::fs::create_dir(&work_dir).unwrap();
+        std::fs::set_permissions(&work_dir, std::fs::Permissions::from_mode(0o000)).unwrap();
+
+        let reach = try_send_request(&work_dir, &ping());
+        std::fs::set_permissions(&work_dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+
+        match reach.unwrap() {
+            DaemonReach::Unreachable => {}
+            DaemonReach::NotListening => panic!("a denied lstat proves no daemon absent"),
+            DaemonReach::Answered(response) => panic!("expected Unreachable, got {response:?}"),
         }
     }
 

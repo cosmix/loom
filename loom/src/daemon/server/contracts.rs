@@ -9,7 +9,9 @@
 //!    `verify::contracts::refusal`);
 //! 3. every path changed since the stage base is a contract file or matches a
 //!    `harness` glob (D8 step 1, re-run with read-only git in the stage
-//!    worktree), and the worktree holds no FIFO, socket or device node
+//!    worktree, pinned to the stage's registered git directory so the
+//!    worktree's `.git` file cannot choose git's configuration), and the
+//!    worktree holds no FIFO, socket or device node
 //!    outside git-ignored directories: git lists none, and one planted where
 //!    the implementer will write blocks its first `open()`;
 //! 4. every contract file exists (D8 step 2, while reading the files).
@@ -43,6 +45,7 @@ use std::path::{Path, PathBuf};
 use super::self_service::session_owns_stage_as;
 use crate::daemon::protocol::{ContractRunReport, Response};
 use crate::fs::safe_read::{is_not_found, read_bounded};
+use crate::git::worktree::WorktreeGit;
 use crate::models::session::SessionType;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::relay::sha256_hex;
@@ -108,10 +111,11 @@ fn end_refusal_wait(work_dir: &Path, stage_id: &str, session_id: &str) -> Result
     Ok(())
 }
 
-/// Where the stage's files are: the worktree root and, beneath it, the
-/// working directory contract paths are relative to.
+/// Where the stage's files are: git pinned to the stage worktree and,
+/// beneath the worktree, the working directory contract paths are relative
+/// to.
 struct Site {
-    worktree_root: PathBuf,
+    git: WorktreeGit,
     working_dir: PathBuf,
 }
 
@@ -129,7 +133,7 @@ fn prepare(
     check_stage(work_dir, &stage)?;
     check_reports(&stage, reports)?;
     let site = locate(work_dir, &stage)?;
-    let base = changes::stage_base(&site.worktree_root, work_dir)?;
+    let base = changes::stage_base(&site.git, work_dir)?;
     check_changes(&site, &stage, &base)?;
     let files = read_files(&site, &stage)?;
     let record = FreezeRecord {
@@ -213,7 +217,7 @@ fn check_reports(stage: &Stage, reports: &[ContractRunReport]) -> Result<()> {
 fn locate(work_dir: &Path, stage: &Stage) -> Result<Site> {
     let (worktree_root, working_dir) = stage_site(work_dir, stage)?;
     Ok(Site {
-        worktree_root,
+        git: WorktreeGit::pinned_in_project_of(work_dir, &worktree_root)?,
         working_dir,
     })
 }
@@ -221,14 +225,14 @@ fn locate(work_dir: &Path, stage: &Stage) -> Result<Site> {
 /// DESIGN D8 step 1, re-run by the daemon, and the special files git cannot
 /// show it (`changes::special_files`).
 fn check_changes(site: &Site, stage: &Stage, base: &str) -> Result<()> {
-    let special = changes::special_files(&site.worktree_root, &site.working_dir)?;
+    let special = changes::special_files(&site.git, &site.working_dir)?;
     if !special.is_empty() {
         bail!(
             "the contract session may not leave a FIFO, socket or device node; found: {}",
             special.join(", ")
         );
     }
-    let changed = changes::changed_paths(&site.worktree_root, &site.working_dir, base)?;
+    let changed = changes::changed_paths(&site.git, &site.working_dir, base)?;
     let outside: Vec<String> = changed
         .into_iter()
         .filter(|path| !is_contract_or_harness(path, &stage.contracts, &stage.harness))
@@ -247,7 +251,7 @@ fn check_changes(site: &Site, stage: &Stage, base: &str) -> Result<()> {
 fn read_files(site: &Site, stage: &Stage) -> Result<Vec<(String, Vec<u8>)>> {
     let contract_files: BTreeSet<String> =
         stage.contracts.iter().map(|c| normalize(&c.file)).collect();
-    let harness = changes::harness_files(&site.worktree_root, &site.working_dir, &stage.harness)?;
+    let harness = changes::harness_files(&site.git, &site.working_dir, &stage.harness)?;
     let paths: BTreeSet<&String> = contract_files.iter().chain(&harness).collect();
     if paths.len() > MAX_FROZEN_FILES {
         bail!(

@@ -26,6 +26,5 @@ pub use operations::{
     list_loom_branches, resolve_target_branch,
 };
 pub use status::{
-    get_uncommitted_changes_summary, has_uncommitted_changes, is_device_node,
-    list_working_tree_changes,
+    get_uncommitted_changes_summary, has_uncommitted_changes, list_working_tree_changes,
 };
