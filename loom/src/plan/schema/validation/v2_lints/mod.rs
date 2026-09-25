@@ -148,3 +148,51 @@ fn runs_loom(argv: &[&Word]) -> bool {
     argv.first()
         .is_some_and(|word| word.command_name() == "loom")
 }
+
+/// Whether any stage in the plan lists a `files`/`artifacts` entry that could
+/// create or touch a path under `dir` (a `/`-separated path). Matched the
+/// same way `rust_filters::stage_could_create` matches a Rust module's
+/// directory against `files`/`artifacts` globs: a literal path at or under
+/// `dir`, or a glob whose literal prefix reaches into (or past) it.
+pub(super) fn plan_touches_dir(metadata: &LoomMetadata, dir: &str) -> bool {
+    metadata
+        .loom
+        .stages
+        .iter()
+        .flat_map(|stage| stage.files.iter().chain(&stage.artifacts))
+        .any(|entry| entry_touches_dir(entry, dir))
+}
+
+fn entry_touches_dir(entry: &str, dir: &str) -> bool {
+    let (_, literal) = split_glob_entry(entry);
+    let literal = literal.trim_end_matches('/');
+    // A glob with no literal prefix (`**`, `*`, `**/*.rs`) can create a path
+    // anywhere, so it is an ancestor of every directory.
+    if literal.is_empty() {
+        return true;
+    }
+    literal_names_or_nests_under(literal, dir) || dir.starts_with(&format!("{literal}/"))
+}
+
+/// Split a `files:`/`artifacts:` entry into (the entry without a leading
+/// `./`, its literal prefix before the first `*`, `?` or `[`).
+pub(super) fn split_glob_entry(entry: &str) -> (&str, &str) {
+    let entry = entry.trim_start_matches("./");
+    let glob_start = entry.find(['*', '?', '[']).unwrap_or(entry.len());
+    (entry, &entry[..glob_start])
+}
+
+/// Whether the literal (non-glob) part of a `files:`/`artifacts:` entry names
+/// `dir` exactly, lies under it, or has `dir` as a trailing or interior path
+/// component. Shared with `rust_filters::names_module_dir`'s module-file-shape
+/// check; `entry_touches_dir` above adds one clause on top (the entry's
+/// literal is a strict ancestor of `dir`) that `rust_filters` deliberately
+/// omits — a bare literal path there names an exact file, not every module
+/// nested arbitrarily far beneath it.
+pub(super) fn literal_names_or_nests_under(literal: &str, dir: &str) -> bool {
+    let boundary = format!("{dir}/");
+    literal == dir
+        || literal.starts_with(&boundary)
+        || literal.ends_with(&format!("/{dir}"))
+        || literal.contains(&format!("/{boundary}"))
+}

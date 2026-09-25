@@ -167,9 +167,7 @@ fn stage_could_create(stage: &StageDefinition, module: &[String]) -> bool {
 }
 
 fn entry_could_create(entry: &str, relative: &str) -> bool {
-    let entry = entry.trim_start_matches("./");
-    let glob_start = entry.find(['*', '?', '[']).unwrap_or(entry.len());
-    let literal = &entry[..glob_start];
+    let (entry, literal) = super::split_glob_entry(entry);
     if names_module_dir(literal, relative) {
         return true;
     }
@@ -185,14 +183,13 @@ fn entry_could_create(entry: &str, relative: &str) -> bool {
 }
 
 /// Whether the literal part of an entry is the module's directory or lies
-/// under it, at a path-component boundary.
+/// under it, at a path-component boundary: the boundary rule shared with
+/// `super::literal_names_or_nests_under`, without that helper's caller
+/// `entry_touches_dir` adding an "entry's literal is a strict ancestor of
+/// `dir`" clause on top — here a bare literal path names an exact file, not
+/// every module nested arbitrarily far beneath it.
 fn names_module_dir(literal: &str, relative: &str) -> bool {
-    let bare = literal.trim_end_matches('/');
-    let dir = format!("{relative}/");
-    bare == relative
-        || bare.ends_with(&format!("/{relative}"))
-        || literal.starts_with(&dir)
-        || literal.contains(&format!("/{dir}"))
+    super::literal_names_or_nests_under(literal.trim_end_matches('/'), relative)
 }
 
 /// `""` and every prefix of `literal` that ends at a `/`.

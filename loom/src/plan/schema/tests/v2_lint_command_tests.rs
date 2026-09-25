@@ -49,6 +49,38 @@ fn unknown_loom_subcommand_inside_sh_c_is_found() {
 }
 
 #[test]
+fn unknown_loom_subcommand_without_cli_stage_is_still_error_in_v2() {
+    let metadata = standard(&["loom foo bar"]);
+    let found = matching(&metadata, None, "is not a subcommand");
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].error_in_v2);
+}
+
+#[test]
+fn unknown_loom_subcommand_when_plan_adds_cli_files_is_a_warning() {
+    let mut adds_cli = stage("add-cli", StageType::Standard, &[]);
+    adds_cli.artifacts = vec!["loom/src/cli/foo.rs".to_string()];
+    let calls_it = stage("feature", StageType::Standard, &["loom foo bar"]);
+    let metadata = plan(vec![adds_cli, calls_it]);
+    let found = matching(&metadata, None, "is not a subcommand");
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(!found[0].error_in_v2);
+    assert!(found[0].message.contains("loom/src/cli"));
+}
+
+#[test]
+fn bare_glob_files_entry_touches_every_dir_is_a_warning() {
+    let mut adds_cli = stage("add-cli", StageType::Standard, &[]);
+    adds_cli.files = vec!["**".to_string()];
+    let calls_it = stage("feature", StageType::Standard, &["loom foo bar"]);
+    let metadata = plan(vec![adds_cli, calls_it]);
+    let found = matching(&metadata, None, "is not a subcommand");
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(!found[0].error_in_v2);
+    assert!(found[0].message.contains("loom/src/cli"));
+}
+
+#[test]
 fn protected_dash_patterns_are_clean() {
     let metadata = standard(&[
         r#"rg -qF -e "--out" src/x.rs"#,

@@ -6,20 +6,33 @@
 use clap::{Command, CommandFactory};
 
 use super::super::shell_lex::Word;
-use super::{runs_loom, visit_stage_argvs, LintContext, LintFinding};
+use super::{plan_touches_dir, runs_loom, visit_stage_argvs, LintContext, LintFinding};
+
+/// Directory a plan can add a subcommand under; a plan that touches it may be
+/// adding the very subcommand it later calls.
+const CLI_DIR: &str = "loom/src/cli";
 
 pub(super) fn check(ctx: &LintContext<'_>, out: &mut Vec<LintFinding>) {
     let mut root = crate::cli::Cli::command();
     // Adds clap's generated `help` subcommand, which `loom help <cmd>` names.
     root.build();
+    // A plan whose stages add files under `loom/src/cli` may be adding the
+    // subcommand it later calls, so an unknown path there is only a warning:
+    // the verifying binary's CLI predates the change the plan makes.
+    let plan_adds_cli = plan_touches_dir(ctx.metadata, CLI_DIR);
     for stage in &ctx.metadata.loom.stages {
         visit_stage_argvs(stage, &mut |command, argv| {
             if let Some(problem) = unknown_subcommand(&root, argv) {
-                out.push(LintFinding::in_stage(
-                    stage,
-                    command.describe(&problem),
-                    true,
-                ));
+                let message = if plan_adds_cli {
+                    format!(
+                        "{} (the plan also changes `{CLI_DIR}`, so the subcommand may be one a \
+                         stage adds)",
+                        command.describe(&problem)
+                    )
+                } else {
+                    command.describe(&problem)
+                };
+                out.push(LintFinding::in_stage(stage, message, !plan_adds_cli));
             }
         });
     }
