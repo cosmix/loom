@@ -9,8 +9,8 @@ use serial_test::serial;
 use std::fs;
 use std::process::Command;
 
+use loom::git::branch_exists;
 use loom::git::worktree::{resolve_base_branch, ResolvedBase};
-use loom::git::{branch_exists, create_worktree};
 
 use super::helpers::*;
 
@@ -65,7 +65,7 @@ fn test_multiple_deps_all_merged_uses_main() {
     );
 
     // Create worktree from main and verify it has both files
-    let worktree = create_worktree("stage-c", repo_root, Some(result.branch_name()))
+    let worktree = create_worktree_isolated("stage-c", repo_root, Some(result.branch_name()))
         .expect("Failed to create worktree");
 
     assert!(
@@ -201,7 +201,7 @@ fn test_diamond_pattern_all_merged() {
         "Expected Main for diamond, got {result:?}"
     );
 
-    let worktree = create_worktree("stage-d", repo_root, Some(result.branch_name()))
+    let worktree = create_worktree_isolated("stage-d", repo_root, Some(result.branch_name()))
         .expect("Failed to create worktree");
 
     assert!(

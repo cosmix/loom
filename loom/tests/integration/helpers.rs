@@ -259,3 +259,19 @@ impl Drop for EnvVarGuard {
         }
     }
 }
+
+/// `loom::git::create_worktree` under a scratch `HOME`, so its internal
+/// `trust_worktree` call — which resolves its write target through
+/// `dirs::home_dir()` with no injectable override — lands in a throwaway
+/// directory instead of the developer's real `~/.claude.json`. Tests that
+/// spawn the binary instead use `loom_cmd().env("HOME", ...)` for the same
+/// purpose.
+pub fn create_worktree_isolated(
+    stage_id: &str,
+    repo_root: &Path,
+    base_branch: Option<&str>,
+) -> anyhow::Result<loom::models::worktree::Worktree> {
+    let home = TempDir::new().expect("create scratch HOME");
+    let _guard = EnvVarGuard::set("HOME", home.path());
+    loom::git::create_worktree(stage_id, repo_root, base_branch)
+}

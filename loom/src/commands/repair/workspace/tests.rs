@@ -194,7 +194,19 @@ fn workspace_check_does_not_flag_a_worktrees_symlink_as_corruption() {
 
 #[test]
 #[cfg(unix)]
+#[serial_test::serial]
 fn workspace_repair_leaves_a_worktree_symlink_in_place() {
+    // `repair_workspace` scans the whole worktree for issues, and this bare
+    // temp dir has no `.claude/settings.json` — so besides the symlink under
+    // test it also trips `WorkspaceFix::HooksAndSettings`/`HookScripts`,
+    // whose `apply` calls the bare `install_loom_hooks()`/`install_codex_hooks()`
+    // (see the comment on `fix_hooks_with_runs_install_then_permissions_then_rebuild_in_order`
+    // below: there is no hermetic seam through `repair_workspace` for those
+    // writers). Redirecting `HOME` for the test's duration is the only way to
+    // keep that unavoidable write off the real `~/.claude` and `~/.codex`.
+    let fake_home = tempfile::tempdir().unwrap();
+    let _home_guard = HomeGuard::set(fake_home.path());
+
     let tmp = tempfile::tempdir().unwrap();
     let worktree_root = tmp.path().join(".worktrees").join("some-stage");
     fs::create_dir_all(&worktree_root).unwrap();
@@ -255,4 +267,32 @@ fn fix_hooks_with_runs_install_then_permissions_then_rebuild_in_order() {
     .unwrap();
 
     assert_eq!(*calls.borrow(), vec!["install", "permissions", "rebuild"]);
+}
+
+/// Pins `HOME` for a test's duration and restores whatever value (or
+/// absence) it had beforehand on drop. Mirrors the same-purpose
+/// `EnvVarGuard` in `completions/install/tests.rs` and `fs::permissions::trust`'s
+/// `with_test_home`, both private to their own modules.
+#[cfg(unix)]
+struct HomeGuard {
+    original: Option<std::ffi::OsString>,
+}
+
+#[cfg(unix)]
+impl HomeGuard {
+    fn set(home: &std::path::Path) -> Self {
+        let original = std::env::var_os("HOME");
+        std::env::set_var("HOME", home);
+        Self { original }
+    }
+}
+
+#[cfg(unix)]
+impl Drop for HomeGuard {
+    fn drop(&mut self) {
+        match &self.original {
+            Some(value) => std::env::set_var("HOME", value),
+            None => std::env::remove_var("HOME"),
+        }
+    }
 }

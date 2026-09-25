@@ -6,7 +6,6 @@ use serial_test::serial;
 use std::fs;
 use std::process::Command;
 
-use loom::git::create_worktree;
 use loom::git::worktree::resolve_base_branch;
 
 use super::helpers::*;
@@ -166,7 +165,7 @@ fn test_retry_after_manual_conflict_resolution() {
         .output()
         .expect("Failed to checkout main");
 
-    let worktree = create_worktree("stage-c", repo_root, Some("loom/_base/stage-c"))
+    let worktree = create_worktree_isolated("stage-c", repo_root, Some("loom/_base/stage-c"))
         .expect("Failed to create worktree after conflict resolution");
 
     let content =

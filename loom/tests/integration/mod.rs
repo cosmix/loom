@@ -12,6 +12,7 @@ pub mod dependency_conflict;
 pub mod dependency_multi;
 pub mod dependency_simple;
 pub mod helpers;
+pub mod home_isolation;
 pub mod hooks_commit_filter;
 pub mod hooks_git_add_guard;
 pub mod hooks_no_preexisting_failures;

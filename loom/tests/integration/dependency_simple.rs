@@ -6,7 +6,6 @@ use serial_test::serial;
 use std::fs;
 use std::process::Command;
 
-use loom::git::create_worktree;
 use loom::git::worktree::{resolve_base_branch, ResolvedBase};
 
 use super::helpers::*;
@@ -29,7 +28,7 @@ fn test_simple_chain_b_inherits_from_a() {
 
     assert_eq!(result, ResolvedBase::Branch("loom/stage-a".to_string()));
 
-    let worktree = create_worktree("stage-b", repo_root, Some(result.branch_name()))
+    let worktree = create_worktree_isolated("stage-b", repo_root, Some(result.branch_name()))
         .expect("Failed to create worktree");
 
     assert!(
@@ -113,7 +112,7 @@ fn test_worktree_inherits_full_git_history() {
     let result = resolve_base_branch("stage-b", &["stage-a".to_string()], &graph, repo_root, None)
         .expect("Failed to resolve");
 
-    let worktree = create_worktree("stage-b", repo_root, Some(result.branch_name()))
+    let worktree = create_worktree_isolated("stage-b", repo_root, Some(result.branch_name()))
         .expect("Failed to create worktree");
 
     assert!(verify_worktree_has_file(&worktree.path, "file1.txt"));
@@ -142,7 +141,7 @@ fn test_dep_already_merged_fallback_to_main() {
 
     assert_eq!(result, ResolvedBase::Main("main".to_string()));
 
-    let worktree = create_worktree("stage-b", repo_root, Some(result.branch_name()))
+    let worktree = create_worktree_isolated("stage-b", repo_root, Some(result.branch_name()))
         .expect("Failed to create worktree");
 
     assert!(

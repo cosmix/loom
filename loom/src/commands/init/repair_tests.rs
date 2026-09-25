@@ -9,6 +9,7 @@
 use std::fs;
 use std::os::unix::fs::symlink;
 
+use serial_test::serial;
 use tempfile::TempDir;
 
 use super::execute::{startup_repair_lines, startup_repairs};
@@ -16,6 +17,32 @@ use crate::commands::repair::workspace::AppliedRepair;
 use crate::fs::permissions::LOOM_PERMISSIONS;
 use crate::fs::work_integrity::validate_work_dir_state;
 use crate::git::install_pre_commit_hook;
+
+/// `startup_repairs(root, false)` runs `repair_workspace`, whose
+/// `HooksAndSettings`/`HookScripts` fixes call the bare
+/// `install_loom_hooks()`/`install_codex_hooks()` (see
+/// `commands/repair/workspace/tests.rs`'s `HomeGuard`), which read
+/// `dirs::home_dir()` unconditionally. None of these fixtures pre-seed a
+/// complete `.claude/settings.json` and an up-to-date Codex hook tree, so
+/// every caller here trips one or both fixes; redirect `HOME` for the
+/// duration so that write lands in a scratch directory instead of the
+/// developer's real `~/.claude`/`~/.codex`. `#[serial]` on every caller
+/// joins the same default group `fs::permissions::trust`'s HOME-mutating
+/// tests use, so none race each other over the shared env var.
+fn startup_repairs_isolated(
+    root: &std::path::Path,
+    no_repair: bool,
+) -> anyhow::Result<Vec<AppliedRepair>> {
+    let fake_home = TempDir::new().unwrap();
+    let original = std::env::var_os("HOME");
+    std::env::set_var("HOME", fake_home.path());
+    let result = startup_repairs(root, no_repair);
+    match original {
+        Some(value) => std::env::set_var("HOME", value),
+        None => std::env::remove_var("HOME"),
+    }
+    result
+}
 
 /// Write a `.gitignore` complete enough that neither `.loom/work` nor
 /// `.worktrees` register as missing.
@@ -49,6 +76,7 @@ fn corrupt_work_symlink(root: &std::path::Path, target: &std::path::Path) {
 }
 
 #[test]
+#[serial]
 fn init_repair_heals_a_corrupted_work_symlink_before_validation() {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
@@ -61,7 +89,7 @@ fn init_repair_heals_a_corrupted_work_symlink_before_validation() {
         "corrupted symlink must fail validation before repair"
     );
 
-    let repairs = startup_repairs(root, false).unwrap();
+    let repairs = startup_repairs_isolated(root, false).unwrap();
     assert!(
         repairs
             .iter()
@@ -81,6 +109,7 @@ fn init_repair_heals_a_corrupted_work_symlink_before_validation() {
 /// `.worktrees/<stage>`-shaped, where a `.loom/work` symlink is the correct
 /// shape (see `validate_work_dir_state`), and must survive the unattended pass.
 #[test]
+#[serial]
 fn init_repair_leaves_a_worktree_symlink_in_place() {
     let temp = TempDir::new().unwrap();
     let root = temp.path().join(".worktrees").join("some-stage");
@@ -89,7 +118,7 @@ fn init_repair_leaves_a_worktree_symlink_in_place() {
     fs::create_dir_all(&target).unwrap();
     corrupt_work_symlink(&root, &target);
 
-    let repairs = startup_repairs(&root, false).unwrap();
+    let repairs = startup_repairs_isolated(&root, false).unwrap();
 
     assert!(
         !repairs
@@ -104,12 +133,13 @@ fn init_repair_leaves_a_worktree_symlink_in_place() {
 }
 
 #[test]
+#[serial]
 fn init_repair_adds_the_missing_gitignore_entries() {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
     assert!(!root.join(".gitignore").exists());
 
-    let repairs = startup_repairs(root, false).unwrap();
+    let repairs = startup_repairs_isolated(root, false).unwrap();
 
     let gitignore = fs::read_to_string(root.join(".gitignore")).unwrap();
     assert!(gitignore.contains(".loom/work/"));
@@ -148,6 +178,7 @@ fn init_repair_skips_every_repair_under_no_repair() {
 }
 
 #[test]
+#[serial]
 fn init_repair_renders_no_line_for_a_clean_workspace() {
     assert!(startup_repair_lines(&[]).is_empty());
 
@@ -159,9 +190,10 @@ fn init_repair_renders_no_line_for_a_clean_workspace() {
     install_pre_commit_hook(root).unwrap();
 
     // Everything repo-local is now clean. The installed Claude and Codex hook
-    // checks read the real machine's home directory, not the scratch repo, so
-    // they are the only repairs a returned vector may still carry here.
-    let repairs = startup_repairs(root, false).unwrap();
+    // checks read `HOME`, not the scratch repo — `startup_repairs_isolated`
+    // points that at a scratch directory too, so they are the only repairs a
+    // returned vector may still carry here.
+    let repairs = startup_repairs_isolated(root, false).unwrap();
     for repair in &repairs {
         assert!(
             repair.description.contains("Loom hook scripts")
@@ -172,13 +204,14 @@ fn init_repair_renders_no_line_for_a_clean_workspace() {
 }
 
 #[test]
+#[serial]
 fn init_repair_leaves_the_dangerous_fixes_to_an_explicit_repair() {
     let temp = TempDir::new().unwrap();
     let root = temp.path();
     fs::create_dir_all(root.join(".loom")).unwrap();
     fs::write(root.join(".loom/work"), "not a directory").unwrap();
 
-    let repairs = startup_repairs(root, false).unwrap();
+    let repairs = startup_repairs_isolated(root, false).unwrap();
 
     assert!(root.join(".loom/work").is_file());
     assert!(
