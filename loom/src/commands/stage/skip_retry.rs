@@ -13,6 +13,7 @@ use crate::orchestrator::signals::{
     generate_recovery_signal, RecoveryReason, RecoverySignalContent,
 };
 use crate::orchestrator::skip::skip_stage;
+use crate::verify::contracts::store::reset_attempts;
 use crate::verify::transitions::{load_stage, update_stage};
 
 use super::recover::{
@@ -262,43 +263,92 @@ fn persist_retry_delta(
     force: bool,
 ) -> Result<()> {
     update_stage(stage_id, work_dir, |current| {
-        if &current.status != original_status {
-            bail!(
-                "Stage '{}' changed from {} to {} while retry was being prepared; retry again",
-                stage_id,
-                original_status,
-                current.status
-            );
-        }
-
-        let max = current.max_retries.unwrap_or(3);
-        if !force && current.retry_count >= max {
-            bail!(
-                "Stage '{}' has exceeded retry limit ({}/{}). Use --force to override.",
-                stage_id,
-                current.retry_count,
-                max
-            );
-        }
-        if force {
-            current.retry_count = 0;
-            current.failure_info = None;
-        } else {
-            current.retry_count += 1;
-        }
-        current.last_failure_at = None;
-        current.started_at = None;
-        current.attempt_started_at = None;
-        if current.status == StageStatus::Executing {
-            current.try_mark_blocked()?;
-        }
-        current.try_mark_queued()?;
-        current.session = planned.session.clone();
-        current.close_reason = planned.close_reason.clone();
-        current.updated_at = chrono::Utc::now();
+        validate_retry_transition(stage_id, current, original_status, force)?;
+        apply_retry_delta(current, planned, force)?;
+        // Reset last, once every check above has succeeded and the requeue
+        // itself is settled: a refused transition (status changed, retry
+        // limit exceeded, or an illegal status transition) must never reset
+        // the budget, and a failed reset must abort the transition rather
+        // than leave it requeued with a still-spent budget.
+        reset_contract_budget(current, work_dir)?;
         Ok(())
     })?;
     Ok(())
+}
+
+/// Refuse a retry whose on-disk state no longer matches what the caller
+/// planned against: the stage changed status while retry was being prepared,
+/// or it has exceeded its retry limit without `--force`.
+fn validate_retry_transition(
+    stage_id: &str,
+    current: &crate::models::stage::Stage,
+    original_status: &StageStatus,
+    force: bool,
+) -> Result<()> {
+    if &current.status != original_status {
+        bail!(
+            "Stage '{}' changed from {} to {} while retry was being prepared; retry again",
+            stage_id,
+            original_status,
+            current.status
+        );
+    }
+
+    let max = current.max_retries.unwrap_or(3);
+    if !force && current.retry_count >= max {
+        bail!(
+            "Stage '{}' has exceeded retry limit ({}/{}). Use --force to override.",
+            stage_id,
+            current.retry_count,
+            max
+        );
+    }
+    Ok(())
+}
+
+/// Apply the retry delta to the freshly-validated on-disk stage: reset or
+/// increment the retry counter, clear the previous attempt's timing, and
+/// requeue it.
+fn apply_retry_delta(
+    current: &mut crate::models::stage::Stage,
+    planned: &crate::models::stage::Stage,
+    force: bool,
+) -> Result<()> {
+    if force {
+        current.retry_count = 0;
+        current.failure_info = None;
+    } else {
+        current.retry_count += 1;
+    }
+    current.last_failure_at = None;
+    current.started_at = None;
+    current.attempt_started_at = None;
+    if current.status == StageStatus::Executing {
+        current.try_mark_blocked()?;
+    }
+    current.try_mark_queued()?;
+    current.session = planned.session.clone();
+    current.close_reason = planned.close_reason.clone();
+    current.updated_at = chrono::Utc::now();
+    Ok(())
+}
+
+/// A human retry or review approval grants a fresh contract respawn budget:
+/// left spent, the first contract writer to end without freezing would send
+/// the stage straight back to human review. Called from inside the locked
+/// `update_stage` closure that performs the requeue, after that closure's own
+/// status re-validation succeeds, so a refused transition never resets the
+/// budget and a failed reset aborts the transition instead of leaving it
+/// requeued with a still-spent budget. A frozen stage keeps its count.
+/// Shared with `human_review::handle_approve`.
+pub(super) fn reset_contract_budget(
+    stage: &crate::models::stage::Stage,
+    work_dir: &Path,
+) -> Result<()> {
+    if stage.contracts.is_empty() {
+        return Ok(());
+    }
+    reset_attempts(work_dir, &stage.id)
 }
 
 /// Probe whether a recorded session is genuinely still running.
@@ -326,3 +376,7 @@ fn session_is_live(work_dir: &Path, session_id: &str) -> bool {
     // common case) must not require `--force`.
     backend.is_session_alive(&session).unwrap_or(false)
 }
+
+#[cfg(test)]
+#[path = "skip_retry_tests.rs"]
+mod tests;

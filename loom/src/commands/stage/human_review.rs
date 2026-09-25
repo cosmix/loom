@@ -7,7 +7,7 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use crate::git::worktree::find_repo_root_from_cwd;
-use crate::models::stage::StageStatus;
+use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::{load_stage, update_stage};
 
 /// Handle human review response for a stage.
@@ -51,7 +51,7 @@ pub fn human_review(
 }
 
 /// Show current review status and available actions.
-fn show_review_status(stage_id: &str, stage: &crate::models::stage::Stage) -> Result<()> {
+fn show_review_status(stage_id: &str, stage: &Stage) -> Result<()> {
     if stage.status != StageStatus::NeedsHumanReview {
         bail!(
             "Stage '{}' is in '{}' state, not awaiting human review.",
@@ -79,10 +79,21 @@ fn show_review_status(stage_id: &str, stage: &crate::models::stage::Stage) -> Re
 }
 
 /// Approve the review: queue a fresh session with fresh fix attempts.
+///
+/// A contract stage reaches NeedsHumanReview by exhausting its contract
+/// respawn budget; left spent, the first contract writer the requeued
+/// session spawns would end without freezing and re-escalate immediately.
+/// Reset inside the same locked `update_stage` closure that performs the
+/// requeue, after `try_approve_review` re-validates the on-disk status and
+/// before the closure returns `Ok`, matching `skip_retry::persist_retry_delta`'s
+/// ordering — so a refused transition (the on-disk stage no longer in
+/// NeedsHumanReview) never resets the budget, and a failed reset aborts the
+/// transition instead of leaving it approved with a still-spent budget.
 fn handle_approve(stage_id: &str, work_dir: &Path) -> Result<()> {
     update_stage(stage_id, work_dir, |stage| {
         stage.try_approve_review()?;
         stage.fix_attempts = 0;
+        super::skip_retry::reset_contract_budget(stage, work_dir)?;
         Ok(())
     })?;
 
@@ -144,7 +155,8 @@ fn handle_reject(stage_id: &str, reason: &str, work_dir: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::stage::Stage;
+    use crate::verify::contracts::store::{attempts_spent, spend_attempt};
+    use crate::verify::contracts::test_support::contract_stage;
     use tempfile::TempDir;
 
     fn setup_stage(temp: &TempDir, status: StageStatus, review_reason: Option<&str>) -> Stage {
@@ -180,6 +192,54 @@ mod tests {
         assert_eq!(stage.status, StageStatus::Queued);
         assert_eq!(stage.fix_attempts, 0);
         assert_eq!(stage.review_reason, None);
+    }
+
+    #[test]
+    fn test_human_review_approve_resets_an_unfrozen_stage_contract_budget() {
+        let temp = TempDir::new().unwrap();
+        let mut stage = contract_stage("test-stage", "writer-1");
+        stage.status = StageStatus::NeedsHumanReview;
+        crate::verify::transitions::save_stage(&stage, temp.path()).unwrap();
+        for _ in 0..3 {
+            spend_attempt(temp.path(), "test-stage").unwrap();
+        }
+        assert_eq!(attempts_spent(temp.path(), "test-stage").unwrap(), 3);
+
+        handle_approve("test-stage", temp.path()).unwrap();
+
+        assert_eq!(
+            load_stage("test-stage", temp.path()).unwrap().status,
+            StageStatus::Queued
+        );
+        assert_eq!(attempts_spent(temp.path(), "test-stage").unwrap(), 0);
+    }
+
+    /// A refused transition (on-disk status no longer `NeedsHumanReview` by
+    /// the time the locked closure re-reads it) must not reset the budget:
+    /// the reset lives inside the same closure, after `try_approve_review`
+    /// re-validates, so its error path is never reached.
+    #[test]
+    fn test_human_review_approve_refused_transition_leaves_budget_unspent() {
+        let temp = TempDir::new().unwrap();
+        let mut stage = contract_stage("test-stage", "writer-1");
+        // On-disk status is Completed, not NeedsHumanReview: `try_approve_review`'s
+        // inner `NeedsHumanReview -> Queued` transition refuses it (Completed is
+        // terminal, mirroring `test_human_review_wrong_state`).
+        stage.status = StageStatus::Completed;
+        crate::verify::transitions::save_stage(&stage, temp.path()).unwrap();
+        for _ in 0..3 {
+            spend_attempt(temp.path(), "test-stage").unwrap();
+        }
+        assert_eq!(attempts_spent(temp.path(), "test-stage").unwrap(), 3);
+
+        let result = handle_approve("test-stage", temp.path());
+
+        assert!(result.is_err());
+        assert_eq!(
+            load_stage("test-stage", temp.path()).unwrap().status,
+            StageStatus::Completed
+        );
+        assert_eq!(attempts_spent(temp.path(), "test-stage").unwrap(), 3);
     }
 
     #[test]

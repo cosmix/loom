@@ -5,11 +5,18 @@
 //! | --- | --- |
 //! | `freeze.json` | the daemon's freeze handler; rewritten only by an accepted contract dispute |
 //! | `files/<path>` | the same handler, before `freeze.json` |
-//! | `attempts` | the daemon, when it hands out a contract session |
+//! | `attempts` | the daemon, when it hands out a contract session; reset by `loom stage retry` and `loom stage human-review --approve` |
 //!
 //! `freeze.json` is written last and atomically: its presence is what ends the
 //! contract phase, so it must never describe copies that are not on disk yet.
 //! A re-freeze follows the same order: copies first, then the record.
+//!
+//! Lock order: a caller may already hold the stages-dir lock (from
+//! `crate::verify::transitions::update_stage`/`update_stage_at_path`) while
+//! taking the contracts-dir lock `locked_dir_update` takes below — orphan
+//! recovery, `loom stage retry`, and `loom stage human-review --approve` all
+//! reset or spend the contract budget from inside such a locked closure.
+//! Nothing may take the stages-dir lock while holding this one.
 
 use anyhow::{bail, Context, Result};
 use chrono::{DateTime, Utc};
@@ -211,6 +218,22 @@ pub fn spend_attempt(work_dir: &Path, stage_id: &str) -> Result<u32> {
     })
 }
 
+/// Give a stage whose contracts are not frozen a fresh respawn budget: a
+/// human retrying it wants new contract writers, not the escalation a spent
+/// budget repeats at once. A frozen stage runs no contract writer again, so
+/// its count is left alone. The freeze is checked under the lock
+/// [`write_freeze`] holds too.
+pub fn reset_attempts(work_dir: &Path, stage_id: &str) -> Result<()> {
+    let root = canonical_work_dir(work_dir, stage_id)?;
+    let dir = stage_dir(&root, stage_id);
+    locked_dir_update(&dir, || {
+        if dir.join(FREEZE_FILE).exists() {
+            return Ok(());
+        }
+        atomic_write_locked(&dir.join(ATTEMPTS_FILE), "0\n")
+    })
+}
+
 fn read_attempts(root: &Path, stage_id: &str) -> Result<u32> {
     let relative = Path::new(CONTRACTS_DIR).join(stage_id).join(ATTEMPTS_FILE);
     let bytes = match read_bounded(root, &relative, MAX_ATTEMPTS_BYTES) {
@@ -299,5 +322,19 @@ mod tests {
         assert_eq!(spend_attempt(tmp.path(), "s1").unwrap(), 1);
         assert_eq!(spend_attempt(tmp.path(), "s1").unwrap(), 2);
         assert_eq!(attempts_spent(tmp.path(), "s1").unwrap(), 2);
+    }
+
+    #[test]
+    fn a_reset_refills_the_budget_until_the_contracts_are_frozen() {
+        let tmp = TempDir::new().unwrap();
+        spend_attempt(tmp.path(), "s1").unwrap();
+        spend_attempt(tmp.path(), "s1").unwrap();
+        reset_attempts(tmp.path(), "s1").unwrap();
+        assert_eq!(attempts_spent(tmp.path(), "s1").unwrap(), 0);
+
+        spend_attempt(tmp.path(), "s1").unwrap();
+        write_freeze(tmp.path(), &record("s1", "a.rs", "x"), &[]).unwrap();
+        reset_attempts(tmp.path(), "s1").unwrap();
+        assert_eq!(attempts_spent(tmp.path(), "s1").unwrap(), 1);
     }
 }
