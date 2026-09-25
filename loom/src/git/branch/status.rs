@@ -1,12 +1,10 @@
 //! Git status checking for uncommitted changes
 
 use anyhow::{bail, Result};
+use std::os::unix::fs::FileTypeExt;
 use std::path::Path;
 
 use crate::git::runner::run_git;
-
-#[cfg(test)]
-use std::process::Command;
 
 /// Check if the repository has uncommitted changes (staged or unstaged)
 ///
@@ -41,12 +39,32 @@ pub fn has_uncommitted_changes(repo_root: &Path) -> Result<bool> {
     Ok(has_changes)
 }
 
+/// Whether the entry at `path`, relative to `root`, is a character or block
+/// device.
+///
+/// Claude Code's Bash sandbox bind-mounts `/dev/null` over a fixed set of
+/// worktree-root dotfiles (`.bashrc`, `.gitconfig`, `.mcp.json`, `.vscode`,
+/// ...). Inside the sandbox git lists each as untracked, from the mount
+/// point's directory entry, while `symlink_metadata` sees the character
+/// device mounted over it; on the host the paths do not exist. Every
+/// `git status` reader that can run inside a session drops the untracked
+/// entries this matches. Making a device node takes `CAP_MKNOD`, which no
+/// session has, so the filter hides nothing a session can create: a FIFO or
+/// socket is not matched. A path that cannot be read is not a device node.
+pub fn is_device_node(root: &Path, path: &str) -> bool {
+    std::fs::symlink_metadata(root.join(path)).is_ok_and(|metadata| {
+        let kind = metadata.file_type();
+        kind.is_char_device() || kind.is_block_device()
+    })
+}
+
 /// List every locally changed path in the working tree
 ///
 /// Unlike [`has_uncommitted_changes`], untracked files ARE included — a new
 /// module an agent added is untracked, and that is exactly the case callers
 /// asking "has work happened here?" care about. Files ignored by `.gitignore` /
-/// `.git/info/exclude` are excluded by git itself.
+/// `.git/info/exclude` are excluded by git itself, and untracked device nodes
+/// by [`is_device_node`].
 ///
 /// Paths are as git reports them, relative to the repository root; untracked
 /// directories are reported collapsed (`some/dir/`). For renames only the
@@ -65,16 +83,22 @@ pub fn list_working_tree_changes(repo_root: &Path) -> Result<Vec<String>> {
         bail!("git status failed: {stderr}");
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
+    Ok(working_tree_changes(repo_root, &stdout))
+}
 
-    Ok(stdout
+/// The paths in `git status --porcelain` output, as
+/// [`list_working_tree_changes`] reports them.
+fn working_tree_changes(repo_root: &Path, porcelain: &str) -> Vec<String> {
+    porcelain
         .lines()
         .filter(|line| line.len() > 3)
+        .filter(|line| !(line.starts_with("??") && is_device_node(repo_root, &line[3..])))
         // Porcelain v1: "XY path" — or "XY old -> new" for renames/copies.
         .map(|line| match line[3..].split_once(" -> ") {
             Some((_, destination)) => destination.to_string(),
             None => line[3..].to_string(),
         })
-        .collect())
+        .collect()
 }
 
 /// Get a summary of uncommitted changes for display
@@ -135,234 +159,5 @@ pub fn get_uncommitted_changes_summary(repo_root: &Path) -> Result<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    fn init_test_repo() -> TempDir {
-        let temp_dir = TempDir::new().unwrap();
-        let repo_path = temp_dir.path();
-
-        Command::new("git")
-            .args(["init"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        Command::new("git")
-            .args(["config", "user.email", "test@test.com"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["config", "user.name", "Test"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        // Create initial commit
-        std::fs::write(repo_path.join("file1.txt"), "content1").unwrap();
-        Command::new("git")
-            .args(["add", "file1.txt"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Initial commit"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        temp_dir
-    }
-
-    #[test]
-    fn test_has_uncommitted_changes_clean_repo() {
-        let temp_dir = init_test_repo();
-        let repo_path = temp_dir.path();
-
-        assert!(!has_uncommitted_changes(repo_path).unwrap());
-    }
-
-    #[test]
-    fn test_has_uncommitted_changes_staged_file() {
-        let temp_dir = init_test_repo();
-        let repo_path = temp_dir.path();
-
-        std::fs::write(repo_path.join("file2.txt"), "content2").unwrap();
-        Command::new("git")
-            .args(["add", "file2.txt"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        assert!(has_uncommitted_changes(repo_path).unwrap());
-    }
-
-    #[test]
-    fn test_has_uncommitted_changes_modified_file() {
-        let temp_dir = init_test_repo();
-        let repo_path = temp_dir.path();
-
-        std::fs::write(repo_path.join("file1.txt"), "modified content").unwrap();
-
-        assert!(has_uncommitted_changes(repo_path).unwrap());
-    }
-
-    #[test]
-    fn test_has_uncommitted_changes_untracked_only() {
-        let temp_dir = init_test_repo();
-        let repo_path = temp_dir.path();
-
-        std::fs::write(repo_path.join("untracked.txt"), "untracked content").unwrap();
-
-        // Untracked files should NOT be considered uncommitted changes
-        assert!(!has_uncommitted_changes(repo_path).unwrap());
-    }
-
-    #[test]
-    fn test_list_working_tree_changes_clean_repo() {
-        let temp_dir = init_test_repo();
-
-        assert!(list_working_tree_changes(temp_dir.path())
-            .unwrap()
-            .is_empty());
-    }
-
-    #[test]
-    fn test_list_working_tree_changes_includes_untracked() {
-        let temp_dir = init_test_repo();
-        let repo_path = temp_dir.path();
-
-        std::fs::write(repo_path.join("new_module.rs"), "fn feature() {}").unwrap();
-
-        // An agent's brand-new file is untracked but is real work — unlike
-        // has_uncommitted_changes, this must see it.
-        assert_eq!(
-            list_working_tree_changes(repo_path).unwrap(),
-            vec!["new_module.rs".to_string()]
-        );
-        assert!(!has_uncommitted_changes(repo_path).unwrap());
-    }
-
-    #[test]
-    fn test_list_working_tree_changes_includes_modified() {
-        let temp_dir = init_test_repo();
-        let repo_path = temp_dir.path();
-
-        std::fs::write(repo_path.join("file1.txt"), "modified content").unwrap();
-
-        assert_eq!(
-            list_working_tree_changes(repo_path).unwrap(),
-            vec!["file1.txt".to_string()]
-        );
-    }
-
-    #[test]
-    fn test_list_working_tree_changes_reports_rename_destination() {
-        let temp_dir = init_test_repo();
-        let repo_path = temp_dir.path();
-
-        Command::new("git")
-            .args(["mv", "file1.txt", "renamed.txt"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        assert_eq!(
-            list_working_tree_changes(repo_path).unwrap(),
-            vec!["renamed.txt".to_string()]
-        );
-    }
-
-    #[test]
-    fn test_list_working_tree_changes_omits_ignored_files() {
-        let temp_dir = init_test_repo();
-        let repo_path = temp_dir.path();
-
-        std::fs::write(repo_path.join(".gitignore"), "generated.txt\n").unwrap();
-        Command::new("git")
-            .args(["add", ".gitignore"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        Command::new("git")
-            .args(["commit", "-m", "Add gitignore"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-        std::fs::write(repo_path.join("generated.txt"), "build artifact").unwrap();
-
-        assert!(list_working_tree_changes(repo_path).unwrap().is_empty());
-    }
-
-    #[test]
-    fn test_get_uncommitted_changes_summary_clean_repo() {
-        let temp_dir = init_test_repo();
-        let repo_path = temp_dir.path();
-
-        let summary = get_uncommitted_changes_summary(repo_path).unwrap();
-        assert!(summary.is_empty());
-    }
-
-    #[test]
-    fn test_get_uncommitted_changes_summary_staged_file() {
-        let temp_dir = init_test_repo();
-        let repo_path = temp_dir.path();
-
-        std::fs::write(repo_path.join("file2.txt"), "content2").unwrap();
-        Command::new("git")
-            .args(["add", "file2.txt"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        let summary = get_uncommitted_changes_summary(repo_path).unwrap();
-        assert!(summary.contains("Staged:"));
-        assert!(summary.contains("file2.txt"));
-    }
-
-    #[test]
-    fn test_get_uncommitted_changes_summary_modified_file() {
-        let temp_dir = init_test_repo();
-        let repo_path = temp_dir.path();
-
-        std::fs::write(repo_path.join("file1.txt"), "modified content").unwrap();
-
-        let summary = get_uncommitted_changes_summary(repo_path).unwrap();
-        assert!(summary.contains("Modified:"));
-        assert!(summary.contains("file1.txt"));
-    }
-
-    #[test]
-    fn test_get_uncommitted_changes_summary_both_staged_and_modified() {
-        let temp_dir = init_test_repo();
-        let repo_path = temp_dir.path();
-
-        std::fs::write(repo_path.join("file2.txt"), "content2").unwrap();
-        Command::new("git")
-            .args(["add", "file2.txt"])
-            .current_dir(repo_path)
-            .output()
-            .unwrap();
-
-        std::fs::write(repo_path.join("file1.txt"), "modified content").unwrap();
-
-        let summary = get_uncommitted_changes_summary(repo_path).unwrap();
-        assert!(summary.contains("Staged:"));
-        assert!(summary.contains("file2.txt"));
-        assert!(summary.contains("Modified:"));
-        assert!(summary.contains("file1.txt"));
-    }
-
-    #[test]
-    fn test_get_uncommitted_changes_summary_untracked_only() {
-        let temp_dir = init_test_repo();
-        let repo_path = temp_dir.path();
-
-        std::fs::write(repo_path.join("untracked.txt"), "untracked content").unwrap();
-
-        let summary = get_uncommitted_changes_summary(repo_path).unwrap();
-        assert!(summary.is_empty());
-    }
-}
+#[path = "status_tests.rs"]
+mod tests;

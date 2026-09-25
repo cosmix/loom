@@ -79,6 +79,30 @@ fn resumes_a_stage_whose_session_progressed_after_the_wait_began() {
     );
 }
 
+/// A contract writer parked on a refused freeze continues once the operator
+/// types into its session and it runs a tool; the refusal stops being the
+/// stage's reason.
+#[test]
+fn resuming_a_parked_contract_writer_clears_its_refusal_reason() {
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path();
+    let updated_at = Utc::now() - Duration::seconds(60);
+    let mut stage = waiting_stage("stage-1", "session-1", updated_at);
+    stage.review_reason = Some("contract freeze refused; fix and freeze again: x".to_string());
+    save_stage(&stage, work_dir).unwrap();
+    let progress_at = updated_at + Duration::seconds(30);
+    let heartbeat = heartbeat_with_progress("stage-1", "session-1", progress_at, Some("Bash"));
+    write_heartbeat(work_dir, &heartbeat).unwrap();
+    let watcher = watcher_after_poll(work_dir);
+
+    let resumed = reconcile_stale_input_waits(work_dir, &[stage], &watcher);
+
+    assert_eq!(resumed, vec!["stage-1".to_string()]);
+    let stage = load_stage("stage-1", work_dir).unwrap();
+    assert_eq!(stage.status, StageStatus::Executing);
+    assert_eq!(stage.review_reason, None);
+}
+
 #[test]
 fn leaves_a_stage_alone_when_progress_predates_the_wait() {
     let temp = tempfile::tempdir().unwrap();

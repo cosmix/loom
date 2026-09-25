@@ -1,9 +1,12 @@
 //! `loom stage contracts freeze`: prove every contract test fails before any
 //! implementation exists, then ask the daemon to freeze the contract files
 //! (DESIGN D8). The rules are two pure functions, [`check_changes`] and
-//! [`judge_run`]; [`freeze`] gathers their real inputs.
+//! [`judge_run`]; [`freeze`] gathers their real inputs. In a relayed session
+//! it also keeps each attempt's outcome for the Stop hook
+//! ([`crate::verify::contracts::refusal`]).
 
 use anyhow::{bail, Context, Result};
+use std::path::Path;
 use std::time::Duration;
 
 use crate::daemon::ContractRunReport;
@@ -13,7 +16,9 @@ use crate::relay::emit::{mode, EnvSnapshot, RelayMode, StdSink};
 use crate::relay::RequestKind;
 use crate::testrun::{classify, RunOutcome, RunOutput, RunSummary, TestRunnerAdapter};
 use crate::verify::contracts::changes::{changed_paths, stage_base};
-use crate::verify::contracts::{contract_command, is_contract_or_harness, resolve_adapter};
+use crate::verify::contracts::{
+    contract_command, is_contract_or_harness, refusal, resolve_adapter,
+};
 use crate::verify::criteria::{
     plan_confinement, resolve_confinement, run_spec_with_timeout, CommandSpec,
 };
@@ -109,18 +114,33 @@ pub(crate) fn judge_run(
 /// `loom stage contracts freeze <stage-id>`.
 pub fn freeze(stage_id: String) -> Result<()> {
     let relay_mode = mode(&EnvSnapshot::from_process_env());
-    if let RelayMode::Relay(context) = &relay_mode {
-        let cwd = std::env::current_dir().context("Failed to get current directory")?;
-        // SAFETY: `getuid` has no preconditions and cannot fail.
-        let uid = unsafe { libc::getuid() };
-        context.check(
-            RequestKind::FreezeContracts,
-            Some(stage_id.as_str()),
-            &cwd,
-            uid,
-        )?;
+    let scratch_dir = match &relay_mode {
+        RelayMode::Relay(context) => {
+            let cwd = std::env::current_dir().context("Failed to get current directory")?;
+            // SAFETY: `getuid` has no preconditions and cannot fail.
+            let uid = unsafe { libc::getuid() };
+            context.check(
+                RequestKind::FreezeContracts,
+                Some(stage_id.as_str()),
+                &cwd,
+                uid,
+            )?;
+            Some(context.scratch_dir.clone())
+        }
+        RelayMode::Legacy | RelayMode::Operator => None,
+    };
+    let outcome = checked_reports(&stage_id)
+        .and_then(|reports| send_freeze(&stage_id, reports, relay_mode, &mut StdSink::default()));
+    if let Some(scratch_dir) = scratch_dir {
+        keep_outcome(&scratch_dir, &outcome);
     }
-    let site = ContractSite::load(&stage_id)?;
+    outcome
+}
+
+/// D8 steps 1 to 3, run where the contract session runs: the changes, then
+/// the red run, which yields the reports the daemon is sent.
+fn checked_reports(stage_id: &str) -> Result<Vec<ContractRunReport>> {
+    let site = ContractSite::load(stage_id)?;
     let stage = &site.stage;
     if stage.contracts.is_empty() {
         bail!("Stage '{stage_id}' declares no contracts, so there is nothing to freeze");
@@ -136,18 +156,54 @@ pub fn freeze(stage_id: String) -> Result<()> {
         existing: &existing,
     };
     refuse(
-        &stage_id,
+        stage_id,
         check_changes(&inputs).err().unwrap_or_default(),
         "The contract phase may change only contract files and files matching the stage's \
          `harness` globs. Revert every other change (`git checkout -- <path>`, or delete the \
          untracked file), then",
     )?;
 
-    let reports = run_contracts(&site)?;
-    send_freeze(&stage_id, reports, relay_mode, &mut StdSink::default())
+    run_contracts(&site)
 }
 
-/// Bail with every problem listed, and the way out.
+/// Leave this attempt's outcome where the Stop hook looks once the writer
+/// stops: a failure stays on record until an attempt reaches the daemon.
+/// Best-effort; the attempt's own result is what the caller reports.
+fn keep_outcome(scratch_dir: &Path, outcome: &Result<()>) {
+    let kept = match outcome {
+        Ok(()) => refusal::clear(scratch_dir),
+        Err(error) => refusal::record(scratch_dir, &listed_problems(error)),
+    };
+    if let Err(error) = kept {
+        eprintln!("warning: the operator cannot be shown this freeze's outcome: {error:#}");
+    }
+}
+
+/// A freeze refused for the problems it lists, with the way out.
+#[derive(Debug)]
+struct Refusal {
+    problems: Vec<String>,
+    message: String,
+}
+
+impl std::fmt::Display for Refusal {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(&self.message)
+    }
+}
+
+impl std::error::Error for Refusal {}
+
+/// What a failed attempt tells the operator: the problems a refusal listed,
+/// else the error the attempt failed with.
+fn listed_problems(error: &anyhow::Error) -> Vec<String> {
+    match error.downcast_ref::<Refusal>() {
+        Some(refused) => refused.problems.clone(),
+        None => vec![format!("{error:#}")],
+    }
+}
+
+/// Fail with every problem listed, and the way out.
 fn refuse(stage_id: &str, problems: Vec<String>, fix: &str) -> Result<()> {
     if problems.is_empty() {
         return Ok(());
@@ -156,10 +212,11 @@ fn refuse(stage_id: &str, problems: Vec<String>, fix: &str) -> Result<()> {
         .iter()
         .map(|problem| format!("  - {problem}"))
         .collect();
-    bail!(
+    let message = format!(
         "Contracts not frozen:\n{}\n{fix} run `loom stage contracts freeze {stage_id}` again.",
         list.join("\n")
-    )
+    );
+    Err(Refusal { problems, message }.into())
 }
 
 /// Run every contract with the criteria executor and judge each run.
@@ -299,5 +356,22 @@ mod tests {
         let report = judge_run(&spec(), None, RunSummary::default(), Some(2)).expect("exit 2");
         assert_eq!(report.outcome, UNVERIFIED);
         assert!(judge_run(&spec(), None, RunSummary::default(), Some(0)).is_err());
+    }
+
+    /// What a failed attempt leaves for the operator: a refusal's own
+    /// problems, not its instructions, else the whole error.
+    #[test]
+    fn a_failed_attempt_lists_its_problems_for_the_operator() {
+        let problems = vec!["src/lib.rs is neither a contract file".to_string()];
+        let error = refuse("s1", problems.clone(), "Revert it, then").unwrap_err();
+        assert!(error.to_string().contains("contracts freeze s1` again"));
+        assert_eq!(listed_problems(&error), problems);
+
+        let error = anyhow::anyhow!("no merge base").context("cannot find the stage base");
+        assert_eq!(
+            listed_problems(&error),
+            ["cannot find the stage base: no merge base"]
+        );
+        assert!(refuse("s1", Vec::new(), "unused").is_ok());
     }
 }

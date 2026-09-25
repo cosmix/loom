@@ -12,7 +12,9 @@
 //!
 //! This module detects exactly that condition — the stage's own session made
 //! useful progress *after* the transition into `WaitingForInput` — and moves
-//! it back to `Executing`. A stage that flips to `WaitingForInput` and then
+//! it back to `Executing`. The same progress is how a contract writer parked
+//! on a refused freeze resumes once the operator types into its session
+//! (`verify::contracts::refusal`). A stage that flips to `WaitingForInput` and then
 //! goes quiet (a real question) is left alone. Only progress from the MAIN
 //! agent counts: a background subagent keeps calling tools no matter what the
 //! main agent is doing, so its heartbeat says nothing about whether the main
@@ -26,6 +28,7 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 
 use crate::models::stage::{Stage, StageStatus};
+use crate::verify::contracts::refusal::end_wait;
 
 use super::heartbeat::{Heartbeat, HeartbeatWatcher};
 
@@ -86,7 +89,7 @@ fn resume_stale_wait(
 ) -> bool {
     match crate::verify::transitions::update_stage(&stage.id, work_dir, |stage| {
         if stage.status == StageStatus::WaitingForInput {
-            stage.try_mark_executing()
+            end_wait(stage)
         } else {
             Ok(())
         }

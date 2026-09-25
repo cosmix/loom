@@ -4,11 +4,14 @@
 //! writes anything the handler checks, itself:
 //!
 //! 1. the caller is the stage's running `Contract` session;
-//! 2. the stage is an executing v2 `standard` stage with contracts and no
-//!    freeze yet;
+//! 2. the stage is a v2 `standard` stage with contracts and no freeze yet,
+//!    executing or waiting for input (parked on the writer's refused freeze,
+//!    `verify::contracts::refusal`);
 //! 3. every path changed since the stage base is a contract file or matches a
 //!    `harness` glob (D8 step 1, re-run with read-only git in the stage
-//!    worktree);
+//!    worktree), and the worktree holds no FIFO, socket or device node
+//!    outside git-ignored directories: git lists none, and one planted where
+//!    the implementer will write blocks its first `open()`;
 //! 4. every contract file exists (D8 step 2, while reading the files).
 //!
 //! It does not repeat D8 step 3, the red run. Running a contract executes
@@ -21,7 +24,12 @@
 //!
 //! Once the checks pass, it copies the contract and harness files under
 //! `.loom/work/contracts/<stage>/files/` and writes `freeze.json` last; its
-//! appearance is what ends the contract phase.
+//! appearance is what ends the contract phase. A freeze is the writer at
+//! work, so a stage still waiting on an earlier refusal goes back to
+//! `Executing`, where the handover to the implementer looks for it. The
+//! operator's typing and the writer's first tool call can reach the daemon
+//! in either order, so the freeze cannot rely on the monitor having resumed
+//! the stage first.
 //!
 //! A refusal is a `Response::Error`, never an `Err`: the spool drain retries
 //! an `Err` on every tick, and a request refused once is refused forever.
@@ -39,13 +47,14 @@ use crate::models::session::SessionType;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::relay::sha256_hex;
 use crate::testrun::registry;
+use crate::verify::contracts::refusal::end_wait;
 use crate::verify::contracts::store::{
     self, FreezeRecord, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION, MAX_FROZEN_FILE_BYTES,
 };
 use crate::verify::contracts::{
     changes, is_contract_or_harness, normalize, site::stage_site, RED_OUTCOMES,
 };
-use crate::verify::transitions::load_stage;
+use crate::verify::transitions::{load_stage, update_stage};
 
 /// Bounds on what one freeze copies into `.loom/work`: the harness globs
 /// come from the plan, but the files they match are the agent's.
@@ -69,11 +78,34 @@ pub(crate) fn handle_freeze_contracts(
         Err(error) => return Ok(refused(format!("{error:#}"))),
     };
     store::write_freeze(&work_dir, &record, &files)?;
+    if let Err(error) = end_refusal_wait(&work_dir, stage_id, session_id) {
+        // The freeze stands; only the resume is missing, and the operator
+        // has `loom stage resume` for it.
+        tracing::warn!(
+            stage_id = %stage_id,
+            error = %format!("{error:#}"),
+            "Froze the contracts, but the stage stays waiting for input"
+        );
+    }
     Ok(Response::ContractsFrozen { files: files.len() })
 }
 
 fn refused(message: String) -> Response {
     Response::Error { message }
+}
+
+/// Take a stage parked on its writer's refused freeze back to `Executing`
+/// once the same writer has frozen.
+fn end_refusal_wait(work_dir: &Path, stage_id: &str, session_id: &str) -> Result<()> {
+    update_stage(stage_id, work_dir, |stage| {
+        let parked = stage.status == StageStatus::WaitingForInput
+            && stage.session.as_deref() == Some(session_id);
+        if parked {
+            end_wait(stage)?;
+        }
+        Ok(())
+    })?;
+    Ok(())
 }
 
 /// Where the stage's files are: the worktree root and, beneath it, the
@@ -124,7 +156,10 @@ fn prepare(
 }
 
 fn check_stage(work_dir: &Path, stage: &Stage) -> Result<()> {
-    if stage.status != StageStatus::Executing {
+    if !matches!(
+        stage.status,
+        StageStatus::Executing | StageStatus::WaitingForInput
+    ) {
         bail!("stage '{}' is {}, not executing", stage.id, stage.status);
     }
     if stage.plan_version != 2
@@ -183,8 +218,16 @@ fn locate(work_dir: &Path, stage: &Stage) -> Result<Site> {
     })
 }
 
-/// DESIGN D8 step 1, re-run by the daemon.
+/// DESIGN D8 step 1, re-run by the daemon, and the special files git cannot
+/// show it (`changes::special_files`).
 fn check_changes(site: &Site, stage: &Stage, base: &str) -> Result<()> {
+    let special = changes::special_files(&site.worktree_root, &site.working_dir)?;
+    if !special.is_empty() {
+        bail!(
+            "the contract session may not leave a FIFO, socket or device node; found: {}",
+            special.join(", ")
+        );
+    }
     let changed = changes::changed_paths(&site.worktree_root, &site.working_dir, base)?;
     let outside: Vec<String> = changed
         .into_iter()

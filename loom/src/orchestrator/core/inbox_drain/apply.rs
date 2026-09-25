@@ -22,6 +22,7 @@ use crate::relay::{
     RequestPayload, VerdictRequest,
 };
 use crate::telemetry::{append_record, TelemetryEvent, TelemetryRecord};
+use crate::verify::contracts::refusal;
 use crate::verify::transitions::{load_stage, update_stage};
 
 use super::{InboxHost, Settle};
@@ -124,7 +125,11 @@ fn stage_request(
             failure_output,
         ),
         StageRequest::FreezeContracts { reports } => {
-            handle_freeze_contracts(work_dir, stage_id, &record.id, &reports)
+            let response = handle_freeze_contracts(work_dir, stage_id, &record.id, &reports);
+            if let Ok(Response::Error { message }) = &response {
+                park_refused_freeze(work_dir, stage_id, &record.id, message);
+            }
+            response
         }
         StageRequest::FileDispute {
             kind,
@@ -141,6 +146,21 @@ fn stage_request(
         Ok(Response::Error { message }) => Settle::Refused(message),
         Ok(other) => Settle::Refused(format!("unexpected daemon answer: {other:?}")),
         Err(error) => failed(error),
+    }
+}
+
+/// A relayed freeze tells its writer to end the turn, so a refusal here would
+/// leave the stage `Executing` with no one at work: park it for the operator
+/// with the refusal as its reason (`verify::contracts::refusal`). The refusal
+/// is settled whether or not the park lands.
+fn park_refused_freeze(work_dir: &Path, stage_id: &str, session_id: &str, message: &str) {
+    if let Err(error) = refusal::park_refused_relay(work_dir, stage_id, session_id, message) {
+        tracing::warn!(
+            stage_id = %stage_id,
+            session_id = %session_id,
+            error = %format!("{error:#}"),
+            "Could not park the stage of a refused contract freeze for the operator"
+        );
     }
 }
 

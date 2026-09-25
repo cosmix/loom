@@ -303,7 +303,8 @@ fn test_resume_from_waiting_transitions_to_executing() {
     let temp_dir = setup_work_dir();
     let work_dir_path = temp_dir.path().join(".loom").join("work");
 
-    let stage = create_test_stage("test-stage", StageStatus::WaitingForInput);
+    let mut stage = create_test_stage("test-stage", StageStatus::WaitingForInput);
+    stage.review_reason = Some("contract freeze refused; fix and freeze again: x".to_string());
     save_test_stage(&work_dir_path, &stage);
 
     let original_dir = std::env::current_dir().unwrap();
@@ -317,4 +318,6 @@ fn test_resume_from_waiting_transitions_to_executing() {
 
     let loaded_stage = load_stage("test-stage", &work_dir_path).unwrap();
     assert_eq!(loaded_stage.status, StageStatus::Executing);
+    // The reason the stage waited for does not outlive the wait.
+    assert_eq!(loaded_stage.review_reason, None);
 }

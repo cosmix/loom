@@ -81,6 +81,28 @@ fn freeze_handler_records_hashes_and_copies() {
     assert!(message.contains("contract session"), "{message}");
 }
 
+/// The writer of a stage parked on its refused freeze was typed back into
+/// action and froze before the monitor saw it working: the freeze is taken,
+/// and the stage goes back to `Executing` for the handover.
+#[test]
+fn freeze_handler_takes_a_parked_stage_back_to_executing() {
+    let fx = fixture();
+    update_stage(STAGE, &fx.work_dir, |stage| {
+        crate::verify::contracts::refusal::park(stage, "src/lib.rs is not a contract file")
+    })
+    .unwrap();
+
+    let response = freeze(&fx, &red_reports());
+
+    assert!(
+        matches!(response, Response::ContractsFrozen { .. }),
+        "{response:?}"
+    );
+    let stage = load_stage(STAGE, &fx.work_dir).unwrap();
+    assert_eq!(stage.status, StageStatus::Executing);
+    assert_eq!(stage.review_reason, None);
+}
+
 #[test]
 fn freeze_handler_refuses_changes_outside_contracts_and_harness() {
     let fx = fixture();
@@ -91,6 +113,29 @@ fn freeze_handler_refuses_changes_outside_contracts_and_harness() {
 
     assert!(message.contains("src/lib.rs"), "{message}");
     assert!(load_freeze(&fx.work_dir, STAGE).unwrap().is_none());
+}
+
+/// Git lists no FIFO, so only the walk can see one planted where the
+/// implementer will write; once it is gone the freeze is taken.
+#[test]
+fn freeze_handler_refuses_a_planted_fifo() {
+    let fx = fixture();
+    let fifo = fx.worktree.join("src/deep/lib.rs");
+    std::fs::create_dir_all(fifo.parent().unwrap()).unwrap();
+    nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::S_IRWXU).unwrap();
+
+    let message = refusal(freeze(&fx, &red_reports()));
+
+    assert!(message.contains("FIFO, socket or device node"), "{message}");
+    assert!(message.contains("src/deep/lib.rs"), "{message}");
+    assert!(load_freeze(&fx.work_dir, STAGE).unwrap().is_none());
+
+    std::fs::remove_file(&fifo).unwrap();
+    let response = freeze(&fx, &red_reports());
+    assert!(
+        matches!(response, Response::ContractsFrozen { files: 1 }),
+        "{response:?}"
+    );
 }
 
 #[test]

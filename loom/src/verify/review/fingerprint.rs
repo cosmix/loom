@@ -8,6 +8,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::fs::safe_read::{is_not_found, read_bounded};
+use crate::git::branch::is_device_node;
 use crate::git::worktree::is_worktree_scaffold_path;
 use crate::git::{run_git, run_git_checked};
 
@@ -56,10 +57,11 @@ pub fn compute(worktree: &Path, target_branch: &str) -> Result<ChangeFingerprint
     let base = run_git_checked(&["merge-base", "HEAD", target_branch], worktree)
         .with_context(|| format!("finding merge base with {target_branch}"))?;
     let mut paths = git_paths(worktree, &["diff", "--name-only", "-z", &base, "--"])?;
-    paths.extend(git_paths(
+    let untracked = git_paths(
         worktree,
         &["ls-files", "--others", "--exclude-standard", "-z"],
-    )?);
+    )?;
+    paths.extend(without_device_nodes(worktree, untracked));
 
     let mut entries = Vec::new();
     for path in paths {
@@ -76,6 +78,19 @@ pub fn compute(worktree: &Path, target_branch: &str) -> Result<ChangeFingerprint
         entries.push((path, content));
     }
     Ok(fingerprint_from(&base, &entries))
+}
+
+/// `untracked` without its device nodes ([`is_device_node`]). The Bash
+/// sandbox's `/dev/null` mounts over worktree-root dotfiles are listed by git
+/// inside it and absent on the host, so keeping them would refuse the read
+/// and split the fingerprint a session computes from the host's.
+fn without_device_nodes(
+    worktree: &Path,
+    untracked: BTreeSet<String>,
+) -> impl Iterator<Item = String> + '_ {
+    untracked
+        .into_iter()
+        .filter(move |path| !is_device_node(worktree, path))
 }
 
 fn git_paths(worktree: &Path, args: &[&str]) -> Result<BTreeSet<String>> {
@@ -191,6 +206,32 @@ mod tests {
         let c = compute(root, "main")?;
         assert_ne!(b.value, c.value);
         assert_eq!(changed_since(&b.files, &c.files), ["file.txt"]);
+        Ok(())
+    }
+
+    /// The sandbox's `/dev/null` mounts over worktree-root dotfiles are never
+    /// read, never fingerprinted; git skips a FIFO on its own.
+    #[test]
+    fn fingerprint_leaves_out_untracked_device_nodes() -> Result<()> {
+        let temp = tempfile::tempdir()?;
+        let root = temp.path();
+        git_ok(root, &["init", "-b", "main"])?;
+        git_ok(root, &["config", "user.email", "review-test@example.com"])?;
+        git_ok(root, &["config", "user.name", "Review Test"])?;
+        std::fs::write(root.join("file.txt"), b"initial")?;
+        git_ok(root, &["add", "file.txt"])?;
+        git_ok(root, &["commit", "-m", "initial"])?;
+        nix::unistd::mkfifo(&root.join(".bashrc"), nix::sys::stat::Mode::S_IRWXU)?;
+        std::fs::write(root.join("notes.txt"), b"x")?;
+
+        let fingerprint = compute(root, "main")?;
+
+        assert_eq!(fingerprint.files.keys().collect::<Vec<_>>(), ["notes.txt"]);
+        // Inside the sandbox the mount point is listed, so the filter is
+        // checked on such a listing, `/dev/null` standing in for the mount.
+        let listed = BTreeSet::from(["null".to_string(), "notes.txt".to_string()]);
+        let kept: Vec<String> = without_device_nodes(Path::new("/dev"), listed).collect();
+        assert_eq!(kept, ["notes.txt"]);
         Ok(())
     }
 }

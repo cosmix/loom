@@ -3,14 +3,17 @@
 //! A contract session writes the contract tests first and freezes them while
 //! they fail; the stage session then implements until they pass. [`store`]
 //! keeps the freeze, [`changes`] reads what the contract session changed,
-//! [`completion`] checks the frozen contracts when the stage completes. The
-//! helpers here are what the freeze CLI, the daemon's freeze handler and the
-//! completion check share, so the three agree on which command runs a
-//! contract and which paths a contract session may touch.
+//! [`refusal`] keeps a refused freeze until the writer stops and parks its
+//! stage for the operator, [`completion`] checks the frozen contracts when the
+//! stage completes. The helpers here are what the freeze CLI, the daemon's
+//! freeze handler and the completion check share, so the three agree on which
+//! command runs a contract and which paths a contract session may touch.
 
 pub mod changes;
 pub mod completion;
+pub mod refusal;
 pub mod site;
+mod special_walk;
 pub mod store;
 #[cfg(test)]
 pub(crate) mod test_support;

@@ -13,6 +13,7 @@ use crate::orchestrator::session_registry::{
 use crate::orchestrator::terminal::backend::SessionBackend;
 use crate::orchestrator::terminal::native;
 use crate::relay::emit::{mode, EnvSnapshot, StdSink};
+use crate::verify::contracts::refusal::{self, Standing};
 use crate::verify::transitions::update_stage;
 
 #[path = "state/loop_recovery/mod.rs"]
@@ -231,22 +232,30 @@ pub fn reset(stage_id: String, hard: bool, kill_session: bool) -> Result<()> {
 }
 
 /// Mark a stage as waiting for user input (called by hooks)
+///
+/// A contract writer whose latest freeze was refused waits with the problems
+/// as its reason; one whose contracts are frozen is being handed over, which
+/// needs the stage `Executing`, so it is left there ([`refusal::standing`]).
 pub fn waiting(stage_id: String) -> Result<()> {
     let work_dir = crate::commands::common::work_dir_path()?;
 
-    let mut skipped_status = None;
+    let mut skipped = None;
     update_stage(&stage_id, &work_dir, |stage| {
         if stage.status != StageStatus::Executing {
-            skipped_status = Some(stage.status.clone());
+            skipped = Some(format!("is {:?}, not executing", stage.status));
             return Ok(());
         }
-        stage.try_mark_waiting_for_input()
+        match refusal::standing(&work_dir, stage) {
+            Standing::Frozen => {
+                skipped = Some("froze its contracts and is being handed over".to_string());
+                Ok(())
+            }
+            Standing::Refused(problems) => refusal::park(stage, &problems),
+            Standing::Other => stage.try_mark_waiting_for_input(),
+        }
     })?;
-    if let Some(status) = skipped_status {
-        eprintln!(
-            "Note: Stage '{}' is {:?}, not executing. Skipping waiting transition.",
-            stage_id, status
-        );
+    if let Some(why) = skipped {
+        eprintln!("Note: Stage '{stage_id}' {why}. Skipping waiting transition.");
         return Ok(());
     }
 
@@ -264,7 +273,7 @@ pub fn resume_from_waiting(stage_id: String) -> Result<()> {
             skipped_status = Some(stage.status.clone());
             return Ok(());
         }
-        stage.try_mark_executing()
+        refusal::end_wait(stage)
     })?;
     if let Some(status) = skipped_status {
         eprintln!(
