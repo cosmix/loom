@@ -23,9 +23,13 @@ pub(super) enum LockState {
 
 pub(super) fn inspect_lock(work_dir: &Path) -> LockState {
     let path = work_dir.join(LOCK_FILE);
+    // O_NONBLOCK keeps a FIFO planted at the lock path from blocking this
+    // open forever; it has no effect on a regular file. `proven_stopped`
+    // (`observer.rs`) still refuses to trust a `Free` result unless the
+    // opened file's metadata says it is a regular file.
     let file = match OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
         .open(path)
     {
         Ok(file) => file,
@@ -50,13 +54,16 @@ pub(super) fn inspect_lock(work_dir: &Path) -> LockState {
 
 pub(super) fn acquire_lock(work_dir: &Path) -> Result<File> {
     let lock_path = work_dir.join(LOCK_FILE);
+    // O_NONBLOCK: same reasoning as `inspect_lock` above, for a FIFO planted
+    // at the lock path before this daemon starts. It has no effect on the
+    // regular file this creates and holds open for the rest of its life.
     let mut file = OpenOptions::new()
         .create(true)
         .truncate(false)
         .read(true)
         .write(true)
         .mode(0o600)
-        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC | libc::O_NONBLOCK)
         .open(&lock_path)
         .context("failed to open daemon singleton lock without following symlinks")?;
     file.set_permissions(std::os::unix::fs::PermissionsExt::from_mode(0o600))?;
@@ -234,5 +241,47 @@ mod tests {
             inspect_lock(work_dir.path()),
             LockState::Indeterminate
         ));
+    }
+
+    /// A FIFO with no writer would block a plain `open()` forever; `inspect_lock`
+    /// must return promptly instead (on another thread, so a regression fails
+    /// the test rather than hanging it), and whatever it reports must not read
+    /// as proof the lock is free and regular: `proven_stopped`
+    /// (`observer.rs`) only trusts `Free(Some(file))` when that file's
+    /// metadata says it is a regular file, which a FIFO's never does.
+    #[test]
+    fn fifo_lock_does_not_block_inspect() {
+        let work_dir = tempfile::tempdir().unwrap();
+        let path = work_dir.path().join(LOCK_FILE);
+        let c_path = std::ffi::CString::new(path.to_str().unwrap()).unwrap();
+        // SAFETY: `mkfifo` with a NUL-terminated path and a valid mode creates
+        // a FIFO special file; it does not open or block on it.
+        let result = unsafe { libc::mkfifo(c_path.as_ptr(), 0o600) };
+        assert_eq!(
+            result,
+            0,
+            "mkfifo failed: {}",
+            std::io::Error::last_os_error()
+        );
+
+        let dir = work_dir.path().to_path_buf();
+        let (sender, receiver) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let state = inspect_lock(&dir);
+            let is_regular_when_free = match &state {
+                LockState::Free(Some(file)) => file.metadata().is_ok_and(|meta| meta.is_file()),
+                LockState::Free(None) => false,
+                LockState::Held(_) | LockState::Indeterminate => false,
+            };
+            sender.send(is_regular_when_free).unwrap();
+        });
+
+        let is_regular_when_free = receiver
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("inspect_lock blocked on a FIFO");
+        assert!(
+            !is_regular_when_free,
+            "a FIFO at the lock path must never read as a regular, free lock"
+        );
     }
 }
