@@ -28,9 +28,12 @@ pub(crate) use session_denies::{codex_plugin_entries, session_denies, DenyInputs
 const GLOB_CHARS: [char; 4] = ['*', '?', '[', '{'];
 
 /// Path components that mark loom state or Claude Code configuration wherever
-/// they appear: the state root in both layouts, stage worktrees, and every
-/// `.claude` directory (hooks, settings, projects, plugins).
-const CONTROL_COMPONENTS: [&str; 4] = [".loom", ".work", ".worktrees", ".claude"];
+/// they appear: the state root in both layouts, stage worktrees, every
+/// `.claude` directory (hooks, settings, projects, plugins), and the
+/// repository's own git directory. Matched by exact path component
+/// (`pattern_names` below), so `.gitignore`, `.github` and `.gitattributes`
+/// stay unaffected: none of them equals `.git`.
+const CONTROL_COMPONENTS: [&str; 5] = [".loom", ".work", ".worktrees", ".claude", ".git"];
 
 /// Tools whose rule argument is a single path pattern.
 const PATH_TOOLS: [&str; 7] = [

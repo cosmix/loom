@@ -117,6 +117,33 @@ fn names_every_control_component_regardless_of_case() {
 }
 
 #[test]
+fn names_the_repository_git_directory() {
+    let surfaces = surfaces();
+    for rule in [
+        "Edit(.git/**)",
+        "Edit(.git/config)",
+        "Edit(.git/worktrees/s1/config.worktree)",
+        "Edit(.GIT/hooks/pre-commit)",
+    ] {
+        assert!(surfaces.names(rule), "{rule} must be dropped");
+    }
+}
+
+#[test]
+fn leaves_git_adjacent_dotfiles_alone() {
+    let surfaces = surfaces();
+    for rule in [
+        "Edit(.gitignore)",
+        "Edit(.gitattributes)",
+        "Edit(.github/**)",
+        "Edit(.github/workflows/ci.yml)",
+        "Edit(src/git/runner.rs)",
+    ] {
+        assert!(!surfaces.names(rule), "{rule} must be kept");
+    }
+}
+
+#[test]
 fn names_a_root_prefix_regardless_of_case() {
     // Neither "opt", "loom-hooks", "run", "user" nor "scratch" is a
     // `CONTROL_COMPONENTS` entry, so these can only be caught by the
