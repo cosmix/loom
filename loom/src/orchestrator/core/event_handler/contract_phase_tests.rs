@@ -11,7 +11,7 @@ use std::path::Path;
 use serial_test::serial;
 
 use super::super::tests::{
-    create_test_graph, handoff_work_dir, spawn_orphan_process, write_pid_file,
+    create_test_graph, handoff_work_dir, orchestrator_for, spawn_orphan_process, write_pid_file,
 };
 use super::super::EventHandler;
 use super::*;
@@ -21,6 +21,7 @@ use crate::models::stage::StageType;
 use crate::orchestrator::core::stage_executor::StageExecutor;
 use crate::orchestrator::core::OrchestratorConfig;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::verify::contracts::store::attempts_spent;
 use crate::verify::contracts::test_support::{contract, contract_worktree, write_test_freeze};
 use crate::verify::transitions::{create_stage, load_stage};
 
@@ -218,6 +219,58 @@ fn manual_handover_without_writer_identity_starts_implementer() {
         "a writer left in progress would read as a survivor to every later takedown"
     );
     assert!(!writer_signal.exists());
+}
+
+/// Manual mode polls no monitor, so its tick hands a frozen contract phase to
+/// the implementer itself, once.
+#[test]
+#[serial]
+fn manual_tick_hands_a_frozen_contract_phase_to_the_implementer() {
+    let _hooks = HooksDirGuard::install();
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".loom").join("work");
+    let writer = contract_session(&work);
+    create_stage(&v2_stage(StageStatus::Executing, Some(&writer.id)), &work).unwrap();
+    let mut orchestrator = manual_orchestrator(&work, temp.path());
+    orchestrator.graph.mark_executing("test-stage").unwrap();
+    track_worktree(&mut orchestrator, temp.path());
+
+    orchestrator.hand_off_frozen_contract_phases();
+    let unfrozen = load_stage("test-stage", &work).unwrap();
+    assert_eq!(unfrozen.session.as_deref(), Some(writer.id.as_str()));
+
+    write_test_freeze(&work, "test-stage", &writer.id);
+    orchestrator.hand_off_frozen_contract_phases();
+
+    let stage = load_stage("test-stage", &work).unwrap();
+    assert_eq!(stage.status, StageStatus::Executing);
+    let successor = assigned_session(&work, &stage);
+    assert_eq!(successor.session_type, SessionType::Stage);
+    let released = load_session_exact(&work, &writer.id).unwrap().unwrap();
+    assert!(released.status.is_terminal());
+
+    // The implementer is no contract writer: the next tick leaves it be.
+    orchestrator.hand_off_frozen_contract_phases();
+    let stage = load_stage("test-stage", &work).unwrap();
+    assert_eq!(stage.session.as_deref(), Some(successor.id.as_str()));
+}
+
+/// Auto mode leaves the handover to the monitor's `ContractPhaseFinished`.
+#[test]
+#[serial]
+fn auto_mode_tick_leaves_the_handover_to_the_monitor() {
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".loom").join("work");
+    let writer = contract_session(&work);
+    create_stage(&v2_stage(StageStatus::Executing, Some(&writer.id)), &work).unwrap();
+    write_test_freeze(&work, "test-stage", &writer.id);
+    let mut orchestrator = orchestrator_for(&work, temp.path());
+    orchestrator.graph.mark_executing("test-stage").unwrap();
+
+    orchestrator.hand_off_frozen_contract_phases();
+
+    let stage = load_stage("test-stage", &work).unwrap();
+    assert_eq!(stage.session.as_deref(), Some(writer.id.as_str()));
 }
 
 /// A contract writer at its context ceiling runs `loom handoff`, leaving its

@@ -1,8 +1,8 @@
-//! Per-agent orphan adoption: rebuild the session record for one unrecorded
-//! live agent, relink it to its stage, and register it as active.
-//!
-//! Extracted from `recovery.rs` to keep that file under the maintainability
-//! limit. Behavior is unchanged from before the move.
+//! Orphan handling extracted from `recovery.rs` to keep that file under the
+//! maintainability limit: per-agent adoption (rebuild the session record for
+//! one unrecorded live agent, relink it to its stage, and register it as
+//! active), and the requeue of a stage whose current session died while no
+//! daemon watched it.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -14,6 +14,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::session_registry::{adopt_orphan, OrphanEvidence};
 use crate::verify::transitions::update_stage_at_path;
 
+use super::contract_budget::charge_orphaned_contract_writer;
 use super::recovery::{load_stage_at_path, scan_stage_paths, Recovery, StageScanCounter};
 use super::{clear_status_line, Orchestrator};
 
@@ -38,6 +39,80 @@ pub(super) fn register_live_current_session(
     }
     active_sessions.insert(stage.id.clone(), session.clone());
     true
+}
+
+/// Settle the stage of a current `session` found dead after a daemon
+/// restart: requeue it, or route it to handoff when its branch already holds
+/// `commits_ahead` commits past `target_branch`.
+///
+/// A contract writer is charged to the contract respawn budget first, and
+/// its stage goes to `NeedsHumanReview` instead once that budget is spent
+/// (see [`charge_orphaned_contract_writer`]) — except in `manual_mode`, where
+/// the charge is skipped because loom cannot prove liveness of a writer it
+/// did not launch. Returns `false` when that budget cannot be read or
+/// charged, leaving the stage as it is: the monitor then reports the dead
+/// writer as `ContractSessionEnded`, whose handler retries.
+///
+/// The charge happens before routing on purpose: a contract writer that died
+/// unfrozen spends an attempt whether its stage is requeued or routed to
+/// `NeedsHandoff`.
+pub(super) fn recover_orphaned_stage(
+    stage: &mut Stage,
+    session: &Session,
+    work_dir: &Path,
+    commits_ahead: usize,
+    target_branch: &str,
+    manual_mode: bool,
+) -> bool {
+    match charge_orphaned_contract_writer(stage, session, work_dir, manual_mode) {
+        Ok(true) => return true,
+        Ok(false) => {}
+        Err(error) => {
+            tracing::warn!(
+                stage_id = %stage.id,
+                session_id = %session.id,
+                %error,
+                "Cannot charge an orphaned contract session to the respawn budget; leaving its stage as it is"
+            );
+            return false;
+        }
+    }
+    route_orphaned_stage(stage, commits_ahead, target_branch);
+    true
+}
+
+fn route_orphaned_stage(stage: &mut Stage, commits_ahead: usize, target_branch: &str) {
+    let route_to_handoff = commits_ahead > 0;
+    if route_to_handoff {
+        if let Err(error) = stage.try_mark_needs_handoff() {
+            stage.force_status_with_reason(
+                StageStatus::NeedsHandoff,
+                &format!("orphan recovery (route=handoff): {error}"),
+            );
+        }
+    } else {
+        if stage.status == StageStatus::Executing {
+            let _ = stage.try_mark_blocked();
+        }
+        if let Err(error) = stage.try_mark_queued() {
+            stage.force_status_with_reason(
+                StageStatus::Queued,
+                &format!("orphan recovery (route=requeue): {error}"),
+            );
+        }
+    }
+    stage.session = None;
+    stage.close_reason = Some(if route_to_handoff {
+        format!(
+            "Session orphaned; branch has {commits_ahead} commit(s) ahead of {target_branch} \
+             — needs handoff (use `loom check {}` to diagnose or `loom stage retry \
+             --kill-session {}` to retry)",
+            stage.id, stage.id
+        )
+    } else {
+        "Session crashed/orphaned".to_string()
+    });
+    stage.updated_at = chrono::Utc::now();
 }
 
 /// Rebuild the session record for one unrecorded-but-live agent and locate

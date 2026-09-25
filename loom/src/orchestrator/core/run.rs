@@ -67,7 +67,8 @@ impl Orchestrator {
             .context("Failed to spawn merge resolution sessions")
     }
 
-    // Reconcile before sync on every tick; spools and inboxes drain even in manual mode.
+    // Reconcile before sync on every tick; spools and inboxes drain even in manual mode,
+    // which also hands frozen contract phases on here: it polls no monitor.
     fn run_tick(&mut self, printed_view_instructions: &mut bool) -> Result<usize> {
         tick::record(&self.config.work_dir, tick::Phase::Sync);
         self.reconcile_and_update_graph()
@@ -86,6 +87,7 @@ impl Orchestrator {
         self.drain_stage_spools();
         self.drain_session_inboxes();
         tick::record(&self.config.work_dir, tick::Phase::Spawning);
+        self.hand_off_frozen_contract_phases();
         let started = self
             .start_ready_stages()
             .context("Failed to start ready stages")?;

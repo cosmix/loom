@@ -12,6 +12,9 @@
 //!   fresh contract writer is spawned, up to [`MAX_CONTRACT_RESPAWNS`] times
 //!   per stage; then the stage waits for a human.
 //!
+//! Manual mode polls no monitor, so its tick asks for the first of these
+//! itself ([`Orchestrator::hand_off_frozen_contract_phases`]).
+//!
 //! Neither adds a status or a transition edge: the stage is `Executing` from
 //! the contract writer's spawn to the implementer's completion.
 
@@ -25,16 +28,90 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::models::worktree::Worktree;
 use crate::orchestrator::signals::remove_signal;
 use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
-use crate::verify::contracts::store::{attempts_spent, load_freeze, spend_attempt};
+use crate::verify::contracts::store::load_freeze;
 
+use super::super::contract_budget::{
+    charge_contract_respawn, request_contract_review, MAX_CONTRACT_RESPAWNS,
+};
 use super::super::stage_spawn::AgentKind;
 use super::super::{clear_status_line, persistence::Persistence, Orchestrator};
 
-/// Fresh contract writers a stage may be handed after its first one ended
-/// without freezing. Spent when handed out.
-const MAX_CONTRACT_RESPAWNS: u32 = 3;
-
 impl Orchestrator {
+    /// Manual mode's stand-in for the monitor's `ContractPhaseFinished`: hand
+    /// every `Executing` stage whose contract writer has frozen on to its
+    /// implementer. The manual loop polls no monitor, so nothing else raises
+    /// the event there. Auto mode leaves it to the monitor, whose poll raises
+    /// it every tick; asking here too would take a writer that outlived its
+    /// kill down twice per tick.
+    pub(in crate::orchestrator::core) fn hand_off_frozen_contract_phases(&mut self) {
+        if !self.config.manual_mode {
+            return;
+        }
+        let frozen: Vec<(String, String)> = self
+            .graph
+            .all_nodes()
+            .into_iter()
+            .filter(|node| node.status == StageStatus::Executing)
+            .filter_map(|node| {
+                let writer = self.frozen_contract_writer(&node.id)?;
+                Some((node.id.clone(), writer))
+            })
+            .collect();
+        for (stage_id, session_id) in frozen {
+            if let Err(error) = self.on_contract_phase_finished(&stage_id, &session_id) {
+                clear_status_line();
+                tracing::error!(
+                    stage_id = %stage_id,
+                    %error,
+                    "Failed to hand a frozen contract phase to its implementer"
+                );
+            }
+        }
+    }
+
+    /// The contract session `stage_id` still runs once its contracts are
+    /// frozen, the condition the monitor raises `ContractPhaseFinished` on.
+    fn frozen_contract_writer(&self, stage_id: &str) -> Option<String> {
+        let stage = match self.load_stage(stage_id) {
+            Ok(stage) => stage,
+            Err(error) => {
+                tracing::warn!(
+                    stage_id = %stage_id,
+                    %error,
+                    "Cannot read the stage; the contract phase stays open"
+                );
+                return None;
+            }
+        };
+        let session_id = stage.session?;
+        let session = match load_session_exact(&self.config.work_dir, &session_id) {
+            Ok(session) => session?,
+            Err(error) => {
+                tracing::warn!(
+                    stage_id = %stage_id,
+                    session_id = %session_id,
+                    %error,
+                    "Cannot read the contract session; the contract phase stays open"
+                );
+                return None;
+            }
+        };
+        if session.session_type != SessionType::Contract {
+            return None;
+        }
+        match load_freeze(&self.config.work_dir, stage_id) {
+            Ok(frozen) => frozen.map(|_| session_id),
+            Err(error) => {
+                tracing::warn!(
+                    stage_id = %stage_id,
+                    %error,
+                    "Cannot read the contract freeze record; the contract phase stays open"
+                );
+                None
+            }
+        }
+    }
+
     /// Hand a stage whose contracts are frozen from its contract writer to
     /// its implementer: take the writer down, then spawn the `Stage` session
     /// into the same worktree. A writer that survives the kill keeps the
@@ -125,10 +202,9 @@ impl Orchestrator {
             return Ok(());
         }
         self.forget_contract_session(stage_id, session_id);
-        if attempts_spent(&work_dir, stage_id)? >= MAX_CONTRACT_RESPAWNS {
+        let Some(attempt) = charge_contract_respawn(&work_dir, stage_id)? else {
             return self.escalate_contract_phase(stage_id, session_id);
-        }
-        let attempt = spend_attempt(&work_dir, stage_id)?;
+        };
         clear_status_line();
         eprintln!(
             "Contract session '{session_id}' of stage '{stage_id}' ended without freezing its \
@@ -200,18 +276,13 @@ impl Orchestrator {
     /// Every replacement contract writer has ended without freezing: stop
     /// spawning and wait for a human.
     fn escalate_contract_phase(&mut self, stage_id: &str, session_id: &str) -> Result<()> {
-        let reason = format!(
-            "contract session ended {MAX_CONTRACT_RESPAWNS} times without freezing contracts"
-        );
         self.update_stage(stage_id, |stage| {
             if stage.status != StageStatus::Executing
                 || stage.session.as_deref() != Some(session_id)
             {
                 return Ok(());
             }
-            stage.try_request_human_review(reason)?;
-            stage.release_session();
-            Ok(())
+            request_contract_review(stage)
         })?;
         Ok(())
     }

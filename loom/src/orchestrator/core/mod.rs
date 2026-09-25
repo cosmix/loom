@@ -11,6 +11,7 @@ use std::io::{self, Write};
 
 mod coherence;
 mod completion_handler;
+mod contract_budget;
 mod crash_classification;
 mod crash_handler;
 mod event_handler;
