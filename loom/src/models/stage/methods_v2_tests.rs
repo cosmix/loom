@@ -1,7 +1,7 @@
 //! `Stage::from_definition` for the plan `version: 2` fields.
 
 use crate::models::stage::{PlanIdentity, Stage};
-use crate::plan::schema::{ContractSpec, ReachableCheck, StageDefinition};
+use crate::plan::schema::{ContractSpec, ReachableCheck, RegressionTest, StageDefinition};
 
 fn v2_definition() -> StageDefinition {
     StageDefinition {
@@ -54,4 +54,32 @@ fn from_definition_copies_v2_fields() {
     assert_eq!(reloaded.plan_version, 1);
     assert_eq!(reloaded.contracts, definition.contracts);
     assert_eq!(reloaded.reachable, definition.reachable);
+}
+
+#[test]
+fn has_any_goal_checks_true_for_reachable_only() {
+    let stage = Stage {
+        reachable: vec![ReachableCheck {
+            symbol: "validate_contracts".to_string(),
+            from: "validate".to_string(),
+            min_confidence: Some(0.5),
+            description: "plan validation runs the contract checks".to_string(),
+        }],
+        ..Stage::default()
+    };
+
+    assert!(stage.has_any_goal_checks());
+}
+
+#[test]
+fn has_any_goal_checks_true_for_regression_test_only() {
+    let stage = Stage {
+        regression_test: Some(RegressionTest {
+            file: "tests/policy.rs".to_string(),
+            must_contain: vec!["regression".to_string()],
+        }),
+        ..Stage::default()
+    };
+
+    assert!(stage.has_any_goal_checks());
 }

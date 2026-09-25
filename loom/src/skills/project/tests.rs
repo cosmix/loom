@@ -229,6 +229,51 @@ fn real_ancestor_git_directory_is_treated_as_a_checkout_root() {
 }
 
 #[test]
+fn nested_cmake_directory_is_not_reported_as_its_own_package() {
+    let repo = TempDir::new().unwrap();
+    fs::create_dir(repo.path().join(".git")).unwrap();
+    fs::write(repo.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    write(
+        repo.path(),
+        "CMakeLists.txt",
+        "cmake_minimum_required(VERSION 3.20)\nadd_subdirectory(tests)\n",
+    );
+    write(
+        repo.path(),
+        "tests/CMakeLists.txt",
+        "add_executable(t t.cpp)",
+    );
+
+    let profile = ProjectProfile::discover(repo.path());
+
+    assert_eq!(kinds(&profile.types), BTreeSet::from(["cpp"]));
+    assert_eq!(profile.packages, vec![Path::new("")]);
+}
+
+#[test]
+fn sibling_cmake_directories_without_a_root_manifest_are_separate_packages() {
+    let repo = TempDir::new().unwrap();
+    fs::create_dir(repo.path().join(".git")).unwrap();
+    fs::write(repo.path().join(".git/HEAD"), "ref: refs/heads/main\n").unwrap();
+    write(repo.path(), "a/CMakeLists.txt", "add_executable(a a.cpp)");
+    write(repo.path(), "b/CMakeLists.txt", "add_executable(b b.cpp)");
+
+    let profile = ProjectProfile::discover(repo.path());
+
+    let mut packages = profile.packages.clone();
+    packages.sort();
+    assert_eq!(packages, vec![Path::new("a"), Path::new("b")]);
+    assert_eq!(
+        profile
+            .types
+            .iter()
+            .filter(|kind| kind.kind == "cpp")
+            .count(),
+        2
+    );
+}
+
+#[test]
 fn infrastructure_markers_remain_detectable() {
     let repo = TempDir::new().unwrap();
     // A real `.git` keeps discovery inside the temp repo; otherwise it could

@@ -11,7 +11,9 @@ use crate::orchestrator::session_registry::orphan_evidence;
 use crate::parser::frontmatter::parse_from_markdown;
 use crate::verify::transitions::update_stage_at_path;
 
-use super::orphan_adoption::{register_live_current_session, session_is_current_for_stage};
+use super::orphan_adoption::{
+    recover_orphaned_stage, register_live_current_session, session_is_current_for_stage,
+};
 use super::persistence::Persistence;
 use super::recovery_guards;
 use super::{clear_status_line, Orchestrator};
@@ -58,44 +60,6 @@ fn persist_recovery_completed_commit(
         }
         Ok(())
     })
-}
-
-fn recover_orphaned_stage(
-    stage: &mut Stage,
-    route_to_handoff: bool,
-    commits_ahead: usize,
-    target_branch: &str,
-) {
-    if route_to_handoff {
-        if let Err(error) = stage.try_mark_needs_handoff() {
-            stage.force_status_with_reason(
-                StageStatus::NeedsHandoff,
-                &format!("orphan recovery (route=handoff): {error}"),
-            );
-        }
-    } else {
-        if stage.status == StageStatus::Executing {
-            let _ = stage.try_mark_blocked();
-        }
-        if let Err(error) = stage.try_mark_queued() {
-            stage.force_status_with_reason(
-                StageStatus::Queued,
-                &format!("orphan recovery (route=requeue): {error}"),
-            );
-        }
-    }
-    stage.session = None;
-    stage.close_reason = Some(if route_to_handoff {
-        format!(
-            "Session orphaned; branch has {commits_ahead} commit(s) ahead of {target_branch} \
-             — needs handoff (use `loom check {}` to diagnose or `loom stage retry \
-             --kill-session {}` to retry)",
-            stage.id, stage.id
-        )
-    } else {
-        "Session crashed/orphaned".to_string()
-    });
-    stage.updated_at = chrono::Utc::now();
 }
 
 /// Trait for recovery operations
@@ -958,7 +922,6 @@ impl Recovery for Orchestrator {
                 &self.config.repo_root,
             )
             .unwrap_or(0);
-            let route_to_handoff = commits_ahead > 0;
             let mut mutation_applied = false;
             let updated =
                 update_stage_at_path(stage_id, stage_path, &self.config.work_dir, |stage| {
@@ -969,13 +932,14 @@ impl Recovery for Orchestrator {
                         StageStatus::Executing
                         | StageStatus::NeedsHandoff
                         | StageStatus::Blocked => {
-                            recover_orphaned_stage(
+                            mutation_applied = recover_orphaned_stage(
                                 stage,
-                                route_to_handoff,
+                                &session,
+                                &self.config.work_dir,
                                 commits_ahead,
                                 &target_branch,
+                                self.config.manual_mode,
                             );
-                            mutation_applied = true;
                         }
                         StageStatus::MergeConflict | StageStatus::MergeBlocked => {
                             stage.session = None;

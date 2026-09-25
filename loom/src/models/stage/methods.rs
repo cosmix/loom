@@ -486,12 +486,12 @@ impl Stage {
         self.outputs.iter().any(|o| o.key == key)
     }
 
-    /// Check if this stage has any goal-backward verification checks defined.
+    /// Mirrors `StageDefinition::has_any_goal_checks` in plan/schema/types.rs; keep both in sync.
     pub fn has_any_goal_checks(&self) -> bool {
-        !self.artifacts.is_empty()
-            || !self.wiring.is_empty()
-            || !self.wiring_tests.is_empty()
-            || self.dead_code_check.is_some()
+        (!self.artifacts.is_empty() || !self.wiring.is_empty() || !self.wiring_tests.is_empty())
+            || (self.dead_code_check.is_some()
+                || self.regression_test.is_some()
+                || !self.reachable.is_empty())
     }
 
     /// Begin a new execution attempt.

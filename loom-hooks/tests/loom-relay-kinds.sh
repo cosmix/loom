@@ -125,6 +125,9 @@ expect '' 'loom memory pending'
 expect '' 'loom memory list'
 expect block 'loom stage block stage-a --reason "stuck"'
 expect dispute 'loom stage dispute-criteria stage-a --criterion 2 --reason "flaky"'
+expect file-dispute 'loom stage dispute-findings stage-a --finding F-1-1 --reason "wrong"'
+expect file-dispute 'loom stage dispute-contract stage-a --contract rejects-x --reason "wrong"'
+expect file-dispute 'loom stage dispute-integrity stage-a --event E-1 --reason "sound"'
 expect handoff 'loom handoff --stage stage-a --session s --trigger ceiling'
 expect merge-resolved 'loom stage merge stage-a --resolved'
 expect '' 'loom stage merge stage-a'
@@ -149,6 +152,9 @@ expect '' $'cat <<\'EOF\'\nloom memory note x\nEOF'
 # A subagent never relays a control kind; its memory and telemetry still flow.
 expect '' 'loom stage block stage-a --reason r' general-purpose
 expect '' 'loom stage contracts freeze stage-a' general-purpose
+expect '' 'loom stage dispute-findings stage-a --finding F-1-1 --reason "wrong"' general-purpose
+expect '' 'loom stage dispute-contract stage-a --contract rejects-x --reason "wrong"' general-purpose
+expect '' 'loom stage dispute-integrity stage-a --event E-1 --reason "sound"' general-purpose
 expect memory 'loom memory note x; loom handoff --trigger ceiling' general-purpose
 expect telemetry 'loom knowledge context --query x' general-purpose
 

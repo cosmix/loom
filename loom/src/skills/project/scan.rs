@@ -1,4 +1,4 @@
-use std::collections::VecDeque;
+use std::collections::{BTreeSet, VecDeque};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -53,9 +53,14 @@ pub(super) fn discover(root: PathBuf) -> ProjectProfile {
     };
     let mut pending = VecDeque::from([(profile.root.clone(), 0)]);
     let mut remaining = MAX_ENTRIES;
+    // Paths of packages already recorded as `cpp` from a `CMakeLists.txt`.
+    // The queue is processed breadth-first, so every ancestor of `dir` below
+    // is recorded here before `dir` itself is reached.
+    let mut cpp_package_roots: Vec<PathBuf> = Vec::new();
     while let Some((dir, depth)) = pending.pop_front() {
-        let types = markers::detect(&dir);
+        let mut types = markers::detect(&dir);
         let path = dir.strip_prefix(&profile.root).unwrap_or(Path::new(""));
+        resolve_nested_cmake(&mut types, path, &mut cpp_package_roots);
         if !types.is_empty() || markers::package_boundary(&dir) {
             profile.packages.push(path.to_path_buf());
         }
@@ -78,6 +83,26 @@ pub(super) fn discover(root: PathBuf) -> ProjectProfile {
     }
     profile.types.sort();
     profile
+}
+
+/// A `CMakeLists.txt` below an already-known CMake package belongs to that
+/// ancestor's build (`add_subdirectory`), not a package of its own: it must
+/// not become a second `cpp`/ctest package whose `package_dir` has no
+/// `build/` of its own. Otherwise, a new `cpp` package root is recorded.
+fn resolve_nested_cmake(
+    types: &mut BTreeSet<String>,
+    path: &Path,
+    cpp_package_roots: &mut Vec<PathBuf>,
+) {
+    let nested_cmake = types.contains("cpp")
+        && cpp_package_roots
+            .iter()
+            .any(|known| path != known.as_path() && path.starts_with(known));
+    if nested_cmake {
+        types.remove("cpp");
+    } else if types.contains("cpp") {
+        cpp_package_roots.push(path.to_path_buf());
+    }
 }
 
 fn children(dir: &Path, remaining: &mut usize) -> (Vec<PathBuf>, bool) {

@@ -27,7 +27,7 @@ pub fn review_status(stage_id: String) -> Result<()> {
     print_open_findings(&open);
     println!();
     match current_fingerprint(&work_dir, &stage) {
-        Ok(current) => print_freshness(rounds.last(), &current),
+        Ok(current) => print_freshness(&rounds, &current),
         Err(error) => println!(
             "Current fingerprint: unavailable ({})",
             single_line(&format!("{error:#}"))
@@ -108,39 +108,89 @@ fn print_open_findings(open: &[OpenFinding]) {
     }
 }
 
-/// Whether the latest round saw the current changes, and which files differ.
-fn print_freshness(latest: Option<&ReviewRound>, current: &ChangeFingerprint) {
-    println!("Current fingerprint: {}", current.value);
-    let previous = match latest {
+/// Whether the latest round saw the current changes, and which files differ
+/// from the latest well-formed round.
+fn print_freshness(rounds: &[ReviewRound], current: &ChangeFingerprint) {
+    for line in freshness_report(rounds, current) {
+        println!("{line}");
+    }
+}
+
+/// The lines [`print_freshness`] prints, as data: the current fingerprint,
+/// the true latest round's match/malformed state, and the files changed
+/// since the latest **well-formed** round — the same baseline the review
+/// gate anchors on (`verify::review::gate::check`'s
+/// `rounds.iter().rev().find(is_well_formed)` selector), so a malformed
+/// round never hides a diff the gate would still require a review of.
+fn freshness_report(rounds: &[ReviewRound], current: &ChangeFingerprint) -> Vec<String> {
+    let mut lines = vec![format!("Current fingerprint: {}", current.value)];
+    let latest = rounds.last();
+    match latest {
         Some(round) => {
             let matches = if round.fingerprint == current.value {
                 "yes"
             } else {
                 "no"
             };
-            println!(
+            lines.push(format!(
                 "Latest round ({}) matches the current fingerprint: {matches}",
                 round.round
-            );
+            ));
             if round.malformed.is_some() {
-                println!(
+                lines.push(
                     "The latest round is malformed; the gate needs a well-formed round at the \
                      current fingerprint."
+                        .to_string(),
                 );
+            }
+        }
+        None => lines.push("Latest round: none".to_string()),
+    }
+
+    lines.push("changed since last round:".to_string());
+    let previous = diff_baseline(rounds, latest, &mut lines);
+    let changed = fingerprint::changed_since(&previous, &current.files);
+    if changed.is_empty() {
+        lines.push("  (none)".to_string());
+    }
+    for path in changed {
+        lines.push(format!("  {}", single_line(&path)));
+    }
+    lines
+}
+
+/// Picks the diff baseline: the latest **well-formed** round's recorded
+/// files, appending a note to `lines` about which round that is (or that
+/// none is recorded, in which case every current file counts as changed).
+fn diff_baseline(
+    rounds: &[ReviewRound],
+    latest: Option<&ReviewRound>,
+    lines: &mut Vec<String>,
+) -> BTreeMap<String, String> {
+    let baseline = rounds.iter().rev().find(|round| round.is_well_formed());
+    match baseline {
+        Some(round) => {
+            if let Some(latest_round) = latest {
+                if latest_round.round != round.round {
+                    lines.push(format!(
+                        "  (round {} is malformed; measured from round {}, the last \
+                         well-formed round)",
+                        latest_round.round, round.round
+                    ));
+                }
             }
             round.files.clone()
         }
         None => {
-            println!("Latest round: none");
+            lines.push(
+                "  (no well-formed round is recorded; every current file counts as changed)"
+                    .to_string(),
+            );
             BTreeMap::new()
         }
-    };
-    println!("changed since last round:");
-    let changed = fingerprint::changed_since(&previous, &current.files);
-    if changed.is_empty() {
-        println!("  (none)");
-    }
-    for path in changed {
-        println!("  {}", single_line(&path));
     }
 }
+
+#[cfg(test)]
+#[path = "review_status_tests.rs"]
+mod tests;

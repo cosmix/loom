@@ -16,6 +16,9 @@ use super::sandbox_section::format_sandbox_section;
 use super::section_boxes::{append_empty_memory_box, append_knowledge_updates_required_box};
 use super::skills::format_skill_recommendations;
 
+mod goal_backward_section;
+use goal_backward_section::format_goal_backward_verification_section;
+
 /// SEMI-STABLE section: per-stage content (brief, facts), never per-session
 pub(super) fn format_semi_stable_section(
     embedded_context: &EmbeddedContext,
@@ -489,82 +492,7 @@ pub(super) fn format_dynamic_section(
 
     // Goal-backward verification criteria (if defined)
     if stage.has_any_goal_checks() {
-        content.push_str("\n## Goal-Backward Verification\n\n");
-        content.push_str("Beyond acceptance criteria, verify these OUTCOMES work:\n\n");
-
-        if !stage.artifacts.is_empty() {
-            content.push_str("### Artifacts (files must exist with real implementation)\n\n");
-            for artifact in &stage.artifacts {
-                content.push_str(&format!("- `{artifact}`\n"));
-            }
-            content.push('\n');
-        }
-
-        if !stage.wiring.is_empty() {
-            content.push_str("### Wiring (critical connections to verify)\n\n");
-            for check in &stage.wiring {
-                content.push_str(&format!(
-                    "- **{}**: pattern `{}` in `{}`\n",
-                    check.description, check.pattern, check.source
-                ));
-            }
-            content.push('\n');
-        }
-
-        // Wiring tests (wiring_tests field)
-        if !stage.wiring_tests.is_empty() {
-            content.push_str("### Wiring Tests (integration commands)\n\n");
-            for test in &stage.wiring_tests {
-                content.push_str(&format!("**{}:** `{}`\n", test.name, test.command));
-                if let Some(desc) = &test.description {
-                    content.push_str(&format!("  *{}*\n", desc));
-                }
-                let mut criteria = Vec::new();
-                if let Some(code) = test.success_criteria.exit_code {
-                    criteria.push(format!("exit code: {}", code));
-                }
-                if !test.success_criteria.stdout_contains.is_empty() {
-                    criteria.push(format!(
-                        "stdout contains: {}",
-                        test.success_criteria.stdout_contains.join(", ")
-                    ));
-                }
-                if !test.success_criteria.stdout_not_contains.is_empty() {
-                    criteria.push(format!(
-                        "stdout must NOT contain: {}",
-                        test.success_criteria.stdout_not_contains.join(", ")
-                    ));
-                }
-                if let Some(true) = test.success_criteria.stderr_empty {
-                    criteria.push("stderr must be empty".to_string());
-                }
-                if !criteria.is_empty() {
-                    content.push_str(&format!("  Success: {}\n", criteria.join("; ")));
-                }
-                content.push('\n');
-            }
-        }
-
-        // Dead code check (dead_code_check field)
-        if let Some(dead_code) = &stage.dead_code_check {
-            content.push_str("### Dead Code Check\n\n");
-            content.push_str(&format!("**Build command:** `{}`\n", dead_code.command));
-            if !dead_code.fail_patterns.is_empty() {
-                content.push_str(&format!(
-                    "  Fail patterns: {}\n",
-                    dead_code.fail_patterns.join(", ")
-                ));
-            }
-            if !dead_code.ignore_patterns.is_empty() {
-                content.push_str(&format!(
-                    "  Ignore patterns: {}\n",
-                    dead_code.ignore_patterns.join(", ")
-                ));
-            }
-            content.push('\n');
-        }
-
-        content.push_str("Run `loom check <stage-id> --suggest` to check these automatically.\n\n");
+        content.push_str(&format_goal_backward_verification_section(stage));
     }
 
     // Files to modify

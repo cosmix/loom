@@ -88,7 +88,7 @@ Loom builds the worktree's source graph and walks backwards from `symbol` over c
 
 Prefer `reachable` to a regex `wiring` for entry-point wiring: `wiring` proves that a line of text exists in one file, `reachable` proves a path of edges from the entry point. Keep `wiring` for seams the graph does not model: configuration files, templates, registration by string, languages without an extractor.
 
-`reachable` runs with the stage's goal-backward checks, which `loom stage complete` runs only when the stage also has `artifacts`, `wiring`, `wiring_tests` or `dead_code_check`: pair every `reachable` entry with the stage's `artifacts`. Integration-verify re-runs every completed stage's `reachable` checks on the merged tree.
+`reachable` runs with the stage's goal-backward checks; `loom stage complete` runs them whenever the stage has `reachable`, `artifacts`, `wiring`, `wiring_tests`, `dead_code_check` or `regression_test`, so a `reachable`-only stage is verified on its own. Integration-verify re-runs every completed stage's `reachable` checks on the merged tree.
 
 ### `wiring` in v2
 
