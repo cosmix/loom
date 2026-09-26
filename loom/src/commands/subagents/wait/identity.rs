@@ -130,14 +130,18 @@ fn validate_scope(scope: &IdentityScope) -> Result<()> {
     Ok(())
 }
 
+/// Exit-5 message suffix: the three stage env vars exist only inside a loom stage.
+const NEEDS_STAGE: &str = " is required (loom subagents watch runs only inside a loom stage; \
+    outside one, wait for the Agent tool's completion notification instead)";
+
 fn required_safe_env(name: &str) -> Result<String> {
-    let value = std::env::var(name).with_context(|| format!("{name} is required"))?;
+    let value = std::env::var(name).with_context(|| format!("{name}{NEEDS_STAGE}"))?;
     ensure!(is_safe_id(&value), "{name} is empty or unsafe");
     Ok(value)
 }
 
 fn canonical_env_dir(name: &str) -> Result<PathBuf> {
-    let raw = std::env::var_os(name).with_context(|| format!("{name} is required"))?;
+    let raw = std::env::var_os(name).with_context(|| format!("{name}{NEEDS_STAGE}"))?;
     let path = fs::canonicalize(raw).with_context(|| format!("canonicalizing {name}"))?;
     ensure!(path.is_dir(), "{name} is not a directory");
     Ok(path)

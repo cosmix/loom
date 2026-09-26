@@ -38,7 +38,11 @@ _loom_poll_rule_sleep() {
 	d) mult=86400 ;;
 	esac
 	awk -v n="$num" -v m="$mult" 'BEGIN { exit !(n * m >= 30) }' || return 0
-	loom_hook_note_warn "\`sleep ${arg}\` burns a turn doing nothing. Wait on the real signal instead: one background \`loom subagents watch --worker <kind>:<id> ... --timeout 3600\`, never re-armed."
+	if [[ -n "${LOOM_STAGE_ID:-}" ]]; then
+		loom_hook_note_warn "\`sleep ${arg}\` burns a turn doing nothing. Wait on the real signal instead: one background \`loom subagents watch --worker <kind>:<id> ... --timeout 3600\`, never re-armed."
+	else
+		loom_hook_note_warn "\`sleep ${arg}\` burns a turn doing nothing. \`loom subagents watch\` runs only inside a loom stage; outside one, wait for the Agent tool's completion notification instead of polling."
+	fi
 	return 0
 }
 
@@ -93,8 +97,10 @@ _loom_poll_rule_repeat() {
 		if [[ "$op" == list ]]; then
 			if receipt=$(_loom_poll_active_receipt); then
 				guidance="act on what you know: use \`loom subagents wait --receipt ${receipt} --timeout 3600\`."
-			else
+			elif [[ -n "${LOOM_STAGE_ID:-}" ]]; then
 				guidance="forward state is unresolved; repeated list polling will not resolve it. Run one background call: \`loom subagents watch --worker <kind>:<id> ... --timeout 3600\`; never re-arm it. The unowned \`loom subagents watch --timeout 3600\` lacks the required worker identity; use explicit exact-id recovery if identities are unavailable, and never retry or cancel."
+			else
+				guidance="\`loom subagents watch\` runs only inside a loom stage; outside one, wait for the Agent tool's completion notification instead of polling."
 			fi
 		fi
 		if ((occ >= 5)); then

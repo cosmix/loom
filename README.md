@@ -545,7 +545,7 @@ loom usage [--claude-root <dir>] [--codex-root <dir>] [--receipts-root <dir>] [-
 loom usage --compare <artifact.json> [--json]                                # Offline paired evaluation: exit 0 supported, 1 rejected, 2 inconclusive (doc/token-optimization-evaluation.md)
 loom subagents list | harvest [--id <id>] [--json]                           # One-shot diagnostics only: list shows liveness, harvest prints a terminal report (optionally one agent's); watch/wait below are the blocking waits
 loom subagents watch --worker <kind>:<id> [--worker <kind>:<id> ...] [--session <claude-parent-uuid>] --timeout <secs> [--json]
-                                                                             # One owned wait: exit 0 all bound workers have fresh correlated success; 2 deadline passed; 3 worker failed/cancelled
+                                                                             # One owned wait, inside a loom stage only (needs LOOM_STAGE_ID/LOOM_SESSION_ID/LOOM_WORK_DIR): exit 0 all bound workers have fresh correlated success; 2 deadline passed; 3 worker failed/cancelled
                                                                              # kind is claude (spawned agent ID) or codex (--unit-id); exit 4 AlreadyWaiting/Busy (no second monitor)
                                                                              # Exit 5 identity/evidence unknown; --dir or no --worker is rejected with migration guidance
 loom subagents wait --receipt <id> [--timeout <secs>] [--json]               # Wait on one exact forwarded Codex job; exit 0 succeeded, 1 failed/canceled, 2 still running/unknown

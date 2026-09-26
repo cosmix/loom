@@ -93,7 +93,10 @@ pub enum SubagentsCommand {
         debounce: u64,
     },
 
-    /// Wait once for an explicit set of owned workers to reach terminal state
+    /// Wait once for an explicit set of owned workers to reach terminal state.
+    ///
+    /// Runs only inside a loom stage: requires `LOOM_STAGE_ID`, `LOOM_SESSION_ID`,
+    /// and `LOOM_WORK_DIR`, and exits 5 without them.
     Watch {
         /// Worker to wait on, `claude:<agent-id>` or `codex:<unit-id>`; repeat for each
         #[arg(long = "worker")]
@@ -121,7 +124,10 @@ pub enum SubagentsCommand {
         dir: Option<PathBuf>,
     },
 
-    /// Wait for one exact forwarded job receipt without starting or changing it
+    /// Wait for one exact forwarded job receipt without starting or changing it.
+    ///
+    /// Works outside a loom stage too: without `LOOM_STAGE_ID` it falls back to
+    /// scanning the work directory's receipt ledgers for the exact receipt ID.
     Wait {
         /// Deterministic forward receipt ID (64 lowercase hexadecimal characters)
         #[arg(long)]

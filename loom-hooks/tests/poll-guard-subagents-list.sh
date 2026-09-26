@@ -24,6 +24,14 @@ run_hook() {
 		LOOM_WORK_DIR="$work" LOOM_STAGE_ID="$stage" LOOM_SESSION_ID="$session" bash "$hook"
 }
 
+# Same payload, but with no stage identity - an interactive session outside a stage.
+run_hook_no_stage() {
+	local command="$1" agent="$2"
+	jq -nc --arg command "$command" --arg agent "$agent" --arg session "$session" \
+		'{tool_name:"Bash",tool_input:{command:$command},agent_id:$agent,session_id:$session}' |
+		env -u LOOM_STAGE_ID LOOM_WORK_DIR="$work" LOOM_SESSION_ID="$session" bash "$hook"
+}
+
 third_output() {
 	local command="$1" agent="$2" output=""
 	for _ in 1 2 3; do output=$(run_hook "$command" "$agent"); done
@@ -88,5 +96,12 @@ output=$(third_output 'loom subagents list' foreign-session)
 printf '{not-json}\n' >"$receipts"
 output=$(third_output 'loom subagents list' malformed)
 [[ "$output" == *"forward state is unresolved"* ]] || fail "malformed receipt did not fail open: $output"
+
+# Outside a stage: no owned watch exists to recommend, so the guidance points
+# at the Agent tool's completion notification instead.
+output=""
+for _ in 1 2 3; do output=$(run_hook_no_stage 'loom subagents list' outside-stage); done
+[[ "$output" == *"runs only inside a loom stage"* ]] || fail "outside-stage list guidance missing: $output"
+[[ "$output" != *'loom subagents watch --worker <kind>:<id> ... --timeout 3600'* ]] || fail "outside-stage list guidance should not name the in-stage watch form: $output"
 
 printf 'PASS\n'
