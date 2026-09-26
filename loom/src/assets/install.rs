@@ -2,6 +2,7 @@
 // or `codex::` inside this module resolves to the sibling below, not to them.
 mod claude;
 mod codex;
+mod roots;
 // `pub(in crate::assets)`: the symlink-escape regression test in
 // `assets::tests` calls `place_skill` directly with a synthetic asset table.
 pub(in crate::assets) mod placement;
@@ -37,8 +38,10 @@ pub struct InstallReport {
 
 /// Return the Claude and Codex installation directories.
 ///
-/// `LOOM_CLAUDECODE_INSTALL_DIR` and `LOOM_CODEX_INSTALL_DIR` override their
-/// respective defaults when set to nonempty paths. Otherwise, the defaults are
+/// Each directory is resolved independently: `LOOM_CLAUDECODE_INSTALL_DIR` /
+/// `LOOM_CODEX_INSTALL_DIR` wins when set to a nonempty path; otherwise the
+/// root recorded by the last bare install (`record_roots`, at
+/// `<home>/.config/loom/install-roots.toml`) wins; otherwise the default,
 /// `~/.claude` and `~/.codex`.
 pub fn default_paths() -> Result<InstallPaths> {
     let claude_dir = install_dir_from_env("LOOM_CLAUDECODE_INSTALL_DIR");
@@ -50,12 +53,25 @@ pub fn default_paths() -> Result<InstallPaths> {
         }),
         (claude_dir, codex_dir) => {
             let home = dirs::home_dir().context("Failed to determine home directory")?;
+            let (recorded_claude, recorded_codex) = roots::read(&home);
             Ok(InstallPaths {
-                claude_dir: claude_dir.unwrap_or_else(|| home.join(".claude")),
-                codex_dir: codex_dir.unwrap_or_else(|| home.join(".codex")),
+                claude_dir: claude_dir
+                    .or(recorded_claude)
+                    .unwrap_or_else(|| home.join(".claude")),
+                codex_dir: codex_dir
+                    .or(recorded_codex)
+                    .unwrap_or_else(|| home.join(".codex")),
             })
         }
     }
+}
+
+/// Persist `paths` as the roots a future bare install (no env override, no
+/// explicit `--claude-dir`/`--codex-dir`) should resolve to, instead of the
+/// `~/.claude` / `~/.codex` defaults.
+pub fn record_roots(paths: &InstallPaths) -> Result<()> {
+    let home = dirs::home_dir().context("Failed to determine home directory")?;
+    roots::write(&home, paths)
 }
 
 fn install_dir_from_env(variable: &str) -> Option<PathBuf> {

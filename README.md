@@ -369,16 +369,17 @@ Set either variable to install Loom assets outside the default root:
 | `LOOM_CLAUDECODE_INSTALL_DIR` | `~/.claude` |
 | `LOOM_CODEX_INSTALL_DIR` | `~/.codex` |
 
-A nonempty variable replaces its matching default; an empty variable behaves as unset. For `loom install-assets`, `--claude-dir` or `--codex-dir` takes precedence over its matching variable, which takes precedence over the default.
+A nonempty variable replaces its matching default; an empty variable behaves as unset. Every install that passes neither `--claude-dir` nor `--codex-dir` records the roots it used in `~/.config/loom/install-roots.toml`, and later installs and `loom update` reuse them, so the variables are needed only when choosing or changing a root. For each root, `--claude-dir` or `--codex-dir` takes precedence over its variable, then the recorded root, then the default. An install given either flag does not change the record.
 
-Use absolute paths such as `$HOME/.local/share/loom/claude`. Export the variables so the shell running the source installer and future `loom update` calls inherit them:
+Use absolute paths such as `$HOME/.local/share/loom/claude`:
 
 ```bash
 export LOOM_CLAUDECODE_INSTALL_DIR="$HOME/.local/share/loom/claude"
 export LOOM_CODEX_INSTALL_DIR="$HOME/.local/share/loom/codex"
 curl -fsSL https://raw.githubusercontent.com/cosmix/loom/main/install.sh | bash
-loom update
 ```
+
+A later `loom update` in a shell without these variables refreshes the same roots.
 
 This selects Loom's installation destinations only. It does not configure Claude Code or Codex, or relocate Loom's other runtime discovery paths.
 

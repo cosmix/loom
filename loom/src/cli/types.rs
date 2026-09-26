@@ -188,11 +188,13 @@ pub enum Commands {
 
     /// Install loom's agents, skills, commands, hooks and doctrine files
     InstallAssets {
-        /// Claude configuration directory (default: ~/.claude)
+        /// Claude configuration directory (default: ~/.claude, or the directory
+        /// the last bare install recorded)
         #[arg(long)]
         claude_dir: Option<PathBuf>,
 
-        /// Codex configuration directory (default: ~/.codex)
+        /// Codex configuration directory (default: ~/.codex, or the directory
+        /// the last bare install recorded)
         #[arg(long)]
         codex_dir: Option<PathBuf>,
 

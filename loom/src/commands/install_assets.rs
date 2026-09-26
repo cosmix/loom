@@ -4,7 +4,9 @@ use anyhow::Result;
 use colored::Colorize;
 use std::path::{Path, PathBuf};
 
-use crate::assets::install::{default_paths, install_all, InstallPaths, InstallReport};
+use crate::assets::install::{
+    default_paths, install_all, record_roots, InstallPaths, InstallReport,
+};
 use crate::skills::SkillLayout;
 
 /// Resolve paths, choose the skill layout, install assets, and print a summary.
@@ -17,6 +19,12 @@ pub fn execute(
     let paths = resolve_paths(claude_dir, codex_dir)?;
     let layout = resolve_layout(&paths.claude_dir, skills);
     let report = install_all(&paths, layout, refresh_completions)?;
+    if refresh_completions {
+        // Only a bare install (no explicit directory flag) redirects a later
+        // `loom update`: an explicit `--claude-dir`/`--codex-dir` install is a
+        // one-off and must not repoint it.
+        record_roots(&paths)?;
+    }
     print_summary(&report);
     Ok(())
 }

@@ -228,3 +228,93 @@ fn codex_flag_overrides_its_env_while_claude_uses_default() {
     assert_absent(&home.join(".codex"));
     assert_eq!(fs::read_to_string(completion).unwrap(), "do not refresh\n");
 }
+
+#[test]
+fn bare_reinstall_restores_files_deleted_from_recorded_custom_roots() {
+    let temp = TempDir::new().unwrap();
+    let home = temp.path().join("home");
+    let claude = temp.path().join("recorded-claude");
+    let codex = temp.path().join("recorded-codex");
+    fs::create_dir_all(&home).unwrap();
+
+    let mut command = install_command(&home);
+    command
+        .env(CLAUDE_OVERRIDE, &claude)
+        .env(CODEX_OVERRIDE, &codex);
+    run(command);
+    assert_core_trees(&claude, &codex);
+
+    let claude_agent = claude.join("agents/loom-software-engineer.md");
+    let codex_agents_md = codex.join("AGENTS.md");
+    fs::remove_file(&claude_agent).unwrap();
+    fs::remove_file(&codex_agents_md).unwrap();
+
+    run(install_command(&home));
+
+    assert!(
+        claude_agent.is_file(),
+        "expected the recorded claude root to be reinstalled"
+    );
+    assert!(
+        codex_agents_md.is_file(),
+        "expected the recorded codex root to be reinstalled"
+    );
+    assert_absent(&home.join(".claude"));
+    assert_absent(&home.join(".codex"));
+}
+
+#[test]
+fn explicit_flags_do_not_overwrite_the_recorded_roots() {
+    let temp = TempDir::new().unwrap();
+    let home = temp.path().join("home");
+    let recorded_claude = temp.path().join("recorded-claude");
+    let recorded_codex = temp.path().join("recorded-codex");
+    let flagged_claude = temp.path().join("flagged-claude");
+    let flagged_codex = temp.path().join("flagged-codex");
+    fs::create_dir_all(&home).unwrap();
+
+    let mut command = install_command(&home);
+    command
+        .env(CLAUDE_OVERRIDE, &recorded_claude)
+        .env(CODEX_OVERRIDE, &recorded_codex);
+    run(command);
+
+    let mut flagged = install_command(&home);
+    flagged
+        .args(["--claude-dir", flagged_claude.to_str().unwrap()])
+        .args(["--codex-dir", flagged_codex.to_str().unwrap()]);
+    run(flagged);
+    assert_core_trees(&flagged_claude, &flagged_codex);
+
+    run(install_command(&home));
+    assert_core_trees(&recorded_claude, &recorded_codex);
+    assert_absent(&home.join(".claude"));
+    assert_absent(&home.join(".codex"));
+}
+
+#[test]
+fn an_env_override_wins_over_a_previously_recorded_root() {
+    let temp = TempDir::new().unwrap();
+    let home = temp.path().join("home");
+    let first_claude = temp.path().join("first-claude");
+    let first_codex = temp.path().join("first-codex");
+    let second_claude = temp.path().join("second-claude");
+    let second_codex = temp.path().join("second-codex");
+    fs::create_dir_all(&home).unwrap();
+
+    let mut first = install_command(&home);
+    first
+        .env(CLAUDE_OVERRIDE, &first_claude)
+        .env(CODEX_OVERRIDE, &first_codex);
+    run(first);
+
+    let mut second = install_command(&home);
+    second
+        .env(CLAUDE_OVERRIDE, &second_claude)
+        .env(CODEX_OVERRIDE, &second_codex);
+    run(second);
+
+    assert_core_trees(&second_claude, &second_codex);
+    assert_absent(&home.join(".claude"));
+    assert_absent(&home.join(".codex"));
+}
