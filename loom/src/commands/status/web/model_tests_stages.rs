@@ -10,6 +10,7 @@ macro_rules! stage {
         StageSummary {
             id: $id.to_owned(),
             name: $name.to_owned(),
+            description: None,
             status: $status,
             stage_type: $stage_type,
             dependencies: $dependencies

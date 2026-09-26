@@ -107,6 +107,7 @@ mod tests {
         StageSummary {
             id: "stage-1".to_string(),
             name: "Stage One".to_string(),
+            description: None,
             status: StageStatus::Executing,
             stage_type: StageType::Standard,
             dependencies: vec![],

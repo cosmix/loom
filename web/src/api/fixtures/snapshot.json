@@ -4,6 +4,7 @@
       {
         "id": "knowledge-bootstrap",
         "name": "Bootstrap Knowledge",
+        "description": null,
         "status": "completed",
         "stage_type": "knowledge",
         "dependencies": [],
@@ -37,6 +38,7 @@
       {
         "id": "server",
         "name": "Rust server",
+        "description": null,
         "status": "executing",
         "stage_type": "standard",
         "dependencies": ["knowledge-bootstrap"],
@@ -70,6 +72,7 @@
       {
         "id": "client",
         "name": "TypeScript client",
+        "description": null,
         "status": "completed-with-failures",
         "stage_type": "standard",
         "dependencies": ["knowledge-bootstrap"],
@@ -111,6 +114,7 @@
       {
         "id": "design",
         "name": "Visual design",
+        "description": null,
         "status": "waiting-for-deps",
         "stage_type": "standard",
         "dependencies": ["server", "client"],
@@ -144,6 +148,7 @@
       {
         "id": "docs",
         "name": "Documentation",
+        "description": null,
         "status": "merge-conflict",
         "stage_type": "standard",
         "dependencies": ["knowledge-bootstrap"],
@@ -177,6 +182,7 @@
       {
         "id": "integration-verify",
         "name": "Integration Verification",
+        "description": null,
         "status": "needs-human-review",
         "stage_type": "integration-verify",
         "dependencies": ["design", "docs"],
@@ -210,6 +216,7 @@
       {
         "id": "knowledge-distill",
         "name": "Knowledge Distillation",
+        "description": null,
         "status": "waiting-for-deps",
         "stage_type": "knowledge-distill",
         "dependencies": ["integration-verify"],

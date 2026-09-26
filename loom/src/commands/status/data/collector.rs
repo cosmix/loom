@@ -187,6 +187,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
     StageSummary {
         id: stage.id.clone(),
         name: stage.name.clone(),
+        description: stage.description.clone(),
         status: stage.status.clone(),
         stage_type: stage.stage_type,
         dependencies: stage.dependencies.clone(),

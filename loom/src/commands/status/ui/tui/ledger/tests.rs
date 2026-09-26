@@ -41,6 +41,7 @@ pub(super) fn make_stage(id: &str, status: StageStatus) -> StageSummary {
     StageSummary {
         id: id.to_owned(),
         name: id.to_owned(),
+        description: None,
         status,
         stage_type: StageType::Standard,
         dependencies: Vec::new(),

@@ -78,6 +78,7 @@ export const stageSummarySchema = z
   .object({
     id: z.string(),
     name: z.string(),
+    description: z.string().nullable(),
     status: stageStatusSchema,
     stage_type: stageTypeSchema,
     dependencies: z.array(z.string()),

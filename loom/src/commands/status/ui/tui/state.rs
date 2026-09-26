@@ -263,6 +263,7 @@ mod tests {
         StageSummary {
             id: id.to_string(),
             name: id.to_string(),
+            description: None,
             status,
             stage_type: Default::default(),
             dependencies: deps.iter().map(|dep| (*dep).to_string()).collect(),

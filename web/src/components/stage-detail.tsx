@@ -81,6 +81,19 @@ function Hint({ label, hint }: { label: string; hint: string }) {
   );
 }
 
+/// The stage's plan-authored description, below its heading. Untrusted
+/// plain text: rendered as a text node only, never `dangerouslySetInnerHTML`.
+/// Capped in height with its own scroll so a long description does not push
+/// the rest of the card away. Renders nothing when the stage has none.
+export function StageDescription({ description }: { description: string | null }) {
+  if (description === null) return null;
+  return (
+    <p className="max-h-24 overflow-y-auto text-sm whitespace-pre-line text-muted-foreground">
+      {description}
+    </p>
+  );
+}
+
 export function yesNo(value: boolean): string {
   return value ? "yes" : "no";
 }

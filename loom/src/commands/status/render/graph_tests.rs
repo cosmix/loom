@@ -9,6 +9,7 @@ fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSu
     StageSummary {
         id: id.to_string(),
         name: id.to_string(),
+        description: None,
         status,
         stage_type: StageType::Standard,
         dependencies: deps.into_iter().map(String::from).collect(),

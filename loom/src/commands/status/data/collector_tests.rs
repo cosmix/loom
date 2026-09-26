@@ -214,6 +214,30 @@ fn checkpoint_diagnostic_is_flattened_and_bounded() {
 }
 
 #[test]
+fn stage_summary_carries_description() {
+    let (_tmp, work_dir) = temp_work_dir();
+    let mut stage = make_test_stage("stage-1", StageStatus::Queued);
+    stage.description = Some("Wires the button to the handler.".to_string());
+
+    let summary = build_stage_summary(&stage, &[], &work_dir);
+
+    assert_eq!(
+        summary.description,
+        Some("Wires the button to the handler.".to_string())
+    );
+}
+
+#[test]
+fn stage_summary_description_defaults_to_none() {
+    let (_tmp, work_dir) = temp_work_dir();
+    let stage = make_test_stage("stage-1", StageStatus::Queued);
+
+    let summary = build_stage_summary(&stage, &[], &work_dir);
+
+    assert!(summary.description.is_none());
+}
+
+#[test]
 fn stage_summary_ignores_unattested_current_checkpoint() {
     let (_tmp, work_dir) = temp_work_dir();
     let mut checkpoint = CompletionCheckpoint::new("stage-1", "session-1");

@@ -8,6 +8,7 @@ import type { StageSummary } from "@/api/schema";
 import { HazardHeader } from "@/aurora-ui/feedback/HazardPanel";
 import { AttentionBody, attentionDetail, attentionHazard } from "@/components/attention-panel";
 import { CopyCommand } from "@/components/copy-command";
+import { StageDescription } from "@/components/stage-detail";
 import { StateLine, ThreadRows } from "@/components/stage-heading";
 import { stageHref } from "@/components/stage-href";
 import { StageSectionGrid } from "@/components/stage-sections";
@@ -214,6 +215,7 @@ function Body({
             onOpen={() => onTerminal(stage.id)}
           />
         </div>
+        <StageDescription description={stage.description} />
         <DialogDescription asChild>
           <StateLine stage={stage} className="text-foreground" />
         </DialogDescription>

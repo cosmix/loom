@@ -42,6 +42,7 @@ mod tests {
         StageSummary {
             id: "stage".to_owned(),
             name: "stage".to_owned(),
+            description: None,
             status,
             stage_type: StageType::Standard,
             dependencies: vec![],

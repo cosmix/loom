@@ -79,6 +79,7 @@ fn stage_summary(id: &str, status: StageStatus) -> StageSummary {
     StageSummary {
         id: id.to_string(),
         name: id.to_string(),
+        description: None,
         status,
         stage_type: StageType::Standard,
         dependencies: vec![],

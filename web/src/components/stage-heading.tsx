@@ -4,6 +4,7 @@ import { useNavigate } from "react-router";
 
 import type { StageSummary } from "@/api/schema";
 import { ActivityRoundel } from "@/components/activity-roundel";
+import { StageDescription } from "@/components/stage-detail";
 import { stageHref } from "@/components/stage-href";
 import { StateBadge, StateGlyph, toneClass } from "@/components/state-badge";
 import { activityText, mergeText, timeText } from "@/lib/format";
@@ -83,6 +84,7 @@ export function StageHeading({ stage }: { stage: StageSummary }) {
         <h1 className="text-xl font-semibold tracking-tight">{stage.name}</h1>
         <span className="font-mono text-sm text-muted-foreground">{stage.id}</span>
       </div>
+      <StageDescription description={stage.description} />
       <StateLine stage={stage} />
       <ThreadRows stage={stage} pick={(id) => void navigate(stageHref(id))} className="mt-1" />
     </header>

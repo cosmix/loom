@@ -85,6 +85,10 @@ pub struct StatusData {
 pub struct StageSummary {
     pub id: String,
     pub name: String,
+    /// Plan-authored description of what the stage does, shown in the stage
+    /// detail card below its heading. `None` when the plan stage has none.
+    #[serde(default)]
+    pub description: Option<String>,
     pub status: StageStatus,
     /// Type of stage (standard, knowledge, integration-verify)
     #[serde(default)]
