@@ -18,6 +18,7 @@ const SESSION_RULES: &str = "\
 - You are bootstrapping this repository's loom knowledge base (`doc/loom/knowledge/`) for future coding agents. Read the brief file named in the first message in full before anything else.
 - Write knowledge ONLY with `loom knowledge update`, `loom knowledge replace-section` and `loom knowledge annotate`, run from the repository root. File-editing tools are disabled. Never modify source files, commit, or create branches.
 - Before writing, read `doc/loom/knowledge/INDEX.md` and the existing sections you would touch. Keep human-written entries. Correct a stale claim with `replace-section` and name the wrong claim in the replacement.
+- Every file except `mistakes.md` and `mistakes/*` states current truth only: no dated headings, no \"was\"/\"used to\" history, no change log. A lesson worth keeping goes into a mistakes topic; the current-state entry links to it instead of retelling it.
 - Tier routing: a finding of about 40 lines or fewer goes into its tier-1 file (architecture, entry-points, patterns, conventions, mistakes, stack, concerns). A larger one goes to `loom knowledge update <category>/<slug>`, plus `loom knowledge annotate <category>/<slug> --blurb \"<at most 80 chars>\"`, plus a 2-4 line summary and link in the tier-1 file.
 - Every claim cites `path:line` evidence that you or a subagent read. Record only durable facts: architecture, entry points, patterns, conventions, stack, real concerns. Leave out anything git history or a quick grep answers.";
 

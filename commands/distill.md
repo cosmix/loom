@@ -7,6 +7,8 @@ Add any information that is deemed important for a future agent or human enginee
 
 **Corrections first.** Apply EVERY `corrections`-group entry. Correct files IN PLACE with `loom knowledge replace-section <file> "<heading>" "<corrected body>"` (body WITHOUT its `##` heading line) — never `loom knowledge update` for an existing claim, which only adds to a file rather than fixing what is already there.
 
+**Current truth only, outside the mistakes files.** Every knowledge file except `mistakes.md` and `mistakes/*` states how the tree works now. Rewrite any dated heading or "was", "used to", "supersedes" narrative you find there into current-state text with `replace-section`; when the history carries a lesson, move it to a mistakes topic and link to it.
+
 Route each new insight to the right file:
 
 - `architecture.md` — component relationships, data flow, module/dependency graph
