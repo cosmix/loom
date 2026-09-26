@@ -167,3 +167,7 @@ Escape to the live agent instead of letting it bubble up to the dialog's own
 Shift+Tab out of the dialog's focus trap. In `view` mode nothing is stopped: Escape bubbles
 normally and closes the dialog, and the footer hint shows `Esc back to details`
 (`terminal-view.tsx:340-377`).
+
+## Viewer wheel sensitivity (2026-09-26)
+
+Alternate-screen viewing scroll accumulates one browser viewport of wheel movement before sending a page request, capped at one page per event. The previous three-line threshold could emit five PageUp/PageDown keys from one event and skip visible output. Keep the bounded page protocol: raw arrows recall prompts. Normal-buffer scrolling stays local and line-based.

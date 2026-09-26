@@ -33,8 +33,8 @@ describe("viewer wheel", () => {
     const xtermWheel = vi.fn();
     terminal.onData(input);
     child.addEventListener("wheel", xtermWheel);
-    expect(wheel(-3).defaultPrevented).toBe(true);
-    wheel(3);
+    expect(wheel(-4).defaultPrevented).toBe(true);
+    wheel(4);
     expect(scroll.mock.calls).toEqual([[{ pages: -1 }], [{ pages: 1 }]]);
     expect(xtermWheel).not.toHaveBeenCalled();
     expect(input).not.toHaveBeenCalled();
@@ -47,11 +47,31 @@ describe("viewer wheel", () => {
     wheel(-27, WheelEvent.DOM_DELTA_PIXEL);
     expect(scroll).not.toHaveBeenCalled();
     wheel(-27, WheelEvent.DOM_DELTA_PIXEL);
+    expect(scroll).not.toHaveBeenCalled();
+    wheel(-18, WheelEvent.DOM_DELTA_PIXEL);
     expect(scroll).toHaveBeenLastCalledWith({ pages: -1 });
     wheel(1, WheelEvent.DOM_DELTA_PAGE);
     expect(scroll).toHaveBeenLastCalledWith({ pages: 1 });
     wheel(300);
-    expect(scroll).toHaveBeenLastCalledWith({ pages: 5 });
+    expect(scroll).toHaveBeenLastCalledWith({ pages: 1 });
+    wheel(-300);
+    expect(scroll).toHaveBeenLastCalledWith({ pages: -1 });
+  });
+
+  it("requires a viewport of wheel movement and resets on reversal", async () => {
+    const { terminal, scroll, write, wheel } = viewer();
+    terminal.resize(80, 24);
+    await write("\x1b[?1049h");
+    wheel(-3);
+    wheel(-20);
+    expect(scroll).not.toHaveBeenCalled();
+    wheel(-1);
+    expect(scroll.mock.calls).toEqual([[{ pages: -1 }]]);
+    wheel(-23);
+    wheel(3);
+    expect(scroll).toHaveBeenCalledOnce();
+    wheel(21);
+    expect(scroll.mock.calls).toEqual([[{ pages: -1 }], [{ pages: 1 }]]);
   });
 
   it("scrolls the normal buffer locally", async () => {

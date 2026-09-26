@@ -34,8 +34,10 @@ export function installViewerWheel(
     }
     // In tmux's alternate screen, xterm otherwise synthesizes Up/Down,
     // which recalls prompts. Use the application's PageUp/PageDown instead.
-    const pageSize = event.deltaMode === WheelEvent.DOM_DELTA_PAGE ? terminal.rows : 3;
-    const pages = Math.max(-5, Math.min(5, Math.trunc(remainder / pageSize)));
+    // Match a page to the visible viewport, rather than amplifying a wheel
+    // notch into a whole page. Large gestures must not skip several pages.
+    const pageSize = terminal.rows;
+    const pages = Math.max(-1, Math.min(1, Math.trunc(remainder / pageSize)));
     remainder %= pageSize;
     if (pages !== 0) scroll({ pages });
   };
