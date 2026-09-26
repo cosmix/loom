@@ -76,9 +76,11 @@ prompt implemented all the edits itself on sonnet and nothing surfaced it. Three
    see the macOS section below).
    On failure: report verbatim prefixed `LOOM-CODEX-FORWARD-ERROR`, never implement.
 2. **`loom-hooks/codex-forward-guard.sh`** — PreToolUse on Bash/Edit/Write/Read/Task/Agent. Primary
-   gate: payload `agent_type` ∈ {`loom-codex-forwarder`, `codex:codex-rescue`} → only a Bash
-   command containing `codex-companion.mjs` passes; everything else exits 2 with forwarding
-   doctrine on stderr. Fallback gate: `transcript_path` under `*/subagents/agent-*.jsonl` whose
+   gate: payload `agent_type` ∈ {`loom-codex-forwarder`, `codex:codex-rescue`} → only the exact
+   `~/.claude/hooks/loom/codex-forward.sh task ...` wrapper invocation passes
+   (`is_exact_forward_command`, `codex-forward-guard.sh:104-130`); everything else exits 2 with
+   forwarding doctrine on stderr. Every block first runs `require_stage_evidence`, so without
+   stage evidence the guard enforces nothing and the stock plugin runs untouched. Fallback gate: `transcript_path` under `*/subagents/agent-*.jsonl` whose
    opening bytes carry `LOOM-CODEX-FORWARD-ONLY`. Fail-open everywhere else. `loom_is_subagent`
    was unusable here — it is process-tree based and returns false for in-process subagents.
 3. **Signal doctrine** (`format_codex_implementers_section`, also emitted on the recovery path):

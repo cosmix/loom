@@ -65,6 +65,7 @@ lines; it requires a real extraction (move a cohesive block to a sibling module)
 sat exactly at its baseline (70), so every new `Stage` field grows it by a line with no in-function reduction
 available. The plan-verification stage raised its entry to 71 by an explicit, recorded decision. Any stage
 that adds a `Stage` field needs either that decision or a field-grouping refactor planned in advance.
+**Recurred (2026-09-26, outside a stage):** a doctrine brief asked for a changed exit-5 message in `subagents/wait/identity.rs` (396 lines) without naming the 400-line limit; the worker added a 10-line helper and the file failed `tests/maintainability.rs` at 406. The orchestrator replaced the helper with a message-suffix const. Every brief that edits a file within 20 lines of 400 names its current length and the limit.
 
 ## Read the Criterion Direction From the Plan, Not From the Signal (2026-09-19)
 
@@ -95,3 +96,10 @@ operator's wording is kept exactly: a summary that paraphrases a decision can ch
 ## Brief Markdown Must Survive the Pre-Commit markdownlint Fix
 
 The pre-commit hook runs markdownlint with automatic fixes on every staged markdown file and re-stages the result. Two constructs come out damaged: a `##` heading wrapped onto a second line (the fix inserts a blank line, leaving the second half as a stray paragraph), and backslash-escaped backticks inside an inline code span (Markdown has no such escape, so the span boundaries shift and the fix deletes the spaces between later spans). Keep every heading on one line, write a code span that contains backticks with double-backtick delimiters, and escape `|` as `\|` inside table cells. Run `bunx markdownlint-cli2 <files>` before committing briefs and read what it would change.
+
+## A Hook Diagnosis Read From the Enforce Path Alone Missed the Early Exit
+
+**What happened:** Asked whether loom blocks the official Codex plugin outside a stage, the orchestrator read `enforce_forwarder` (`codex-forward-guard.sh:312-337`) and a test pinning an outside-stage block, told the user the plugin was blocked, and briefed an opus subagent with a settled decision to add a stage gate. `block_forwarder` already calls `require_stage_evidence`, which exits 0 without stage evidence, so the plugin was never blocked in an ordinary session; the pinned test supplies partial stage evidence. The subagent saw `require_stage_evidence` and implemented the brief anyway, treating the settled decision as binding over the code.
+**Why:** The diagnosis traced from the blocking call backwards and never read the function every block passes through; `loom knowledge context` was not queried for the hook, and `architecture/codex-plugin.md` documents the gate. The brief framed a wrong premise as settled, which discouraged the subagent from pushing back.
+**Prevention:** Before stating that a hook blocks something, trace from the hook's entry to the block, reading every early exit on the way (the block helper's own body included), and pull `loom knowledge context --query "<hook> <behaviour>"`. A brief built on a hook diagnosis quotes the traced path. A subagent whose tree contradicts its brief's stated problem reports that before editing.
+**Fix:** The subagent was redirected, reverted every edit, and ran each registered hook with a no-stage payload: none blocks, rewrites, or records a `codex:codex-rescue` call.

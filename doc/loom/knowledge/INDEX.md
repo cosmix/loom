@@ -24,7 +24,7 @@
 | --- | --- | --- |
 | [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | Dispute to verdict, per-kind rulings | 111 |
 | [codex-concurrency](architecture/codex-concurrency.md) | Codex fan-out limits, what is measured, what degrades | 128 |
-| [codex-plugin](architecture/codex-plugin.md) | Codex plugin install, identity, and forwarding | 359 |
+| [codex-plugin](architecture/codex-plugin.md) | Codex plugin install, identity, and forwarding | 361 |
 | [completion-recovery](architecture/completion-recovery.md) | Completion HMAC, exit_reason, handoff folds | 34 |
 | [config-value-types](architecture/config-value-types.md) | ConfigValue typed read-path | 85 |
 | [context-ceiling](architecture/context-ceiling.md) | Resident-token ceiling: tiers and thresholds | 111 |
@@ -102,9 +102,9 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock: adoption, requeue | 190 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | A .git dir is not evidence of a repo | 146 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Stage bug reports; guard flags in briefs | 97 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Stage bug reports; guard flags in briefs | 105 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI clippy drift, offline cargo audit, install.sh | 182 |
-| [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | A wrapper implemented instead of forwarding | 156 |
+| [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | A wrapper implemented instead of forwarding | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Forbidding reads instead of fixing a slow reader | 32 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls: braces, placeholders, path reuse | 70 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) | Completion broker fallback, dup naming, exit-0 | 179 |
@@ -165,7 +165,7 @@
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps and housekeeping | 101 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry/completion edge cases | 82 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Runtime edge cases: tmux, orphan adoption | 139 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: no E2E canary, diverging env allowlists | 168 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: no E2E canary, diverging env allowlists | 172 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package-manager caches stay session-writable. | 9 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token-optimization and efficiency follow-ups | 92 |
 | [typed-config-values](concerns/typed-config-values.md) | Accepted gaps in the config read-path | 27 |

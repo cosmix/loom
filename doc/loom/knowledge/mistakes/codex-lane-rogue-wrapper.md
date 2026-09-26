@@ -27,8 +27,9 @@ of the companion state directory exposed it.
 
 **Prevention:**
 
-- `loom-hooks/codex-forward-guard.sh` (PreToolUse) blocks every tool call except the single
-  `codex-companion.mjs` Bash invocation, keyed primarily on payload `agent_type`
+- `loom-hooks/codex-forward-guard.sh` (PreToolUse) blocks every tool call except the exact
+  `~/.claude/hooks/loom/codex-forward.sh task ...` wrapper invocation
+  (`is_exact_forward_command`), keyed primarily on payload `agent_type`
   (`loom-codex-forwarder` | `codex:codex-rescue`), with the `LOOM-CODEX-FORWARD-ONLY`
   transcript sentinel as fallback. Fail-open for every other agent. Since 2026-09-18 the guard
   engages only with stage evidence; before that it also blocked the stock `codex:codex-rescue`

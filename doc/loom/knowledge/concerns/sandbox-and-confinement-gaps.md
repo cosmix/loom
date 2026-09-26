@@ -166,3 +166,7 @@ components of the target path are not similarly checked anywhere in the crate: a
 symlinked `doc/loom/knowledge` or `.loom` directory is still followed and written through by
 `locked_write`, `loom map`'s overlay, and any other writer that resolves a path under it.
 **Open:** no component-wise no-follow check exists for directories, only the final path segment.
+
+## Bubblewrap Confinement Reads as Stage Evidence in Remote-Tools Mode (unconfirmed)
+
+`_loom_confinement_evidence` (`loom-hooks/_codex_forward.sh`) treats a pid namespace whose pid 1 is `bwrap` as loom stage evidence. Claude Code runs project hooks through `wrapWithSandbox` (bubblewrap with `--unshare-pid`) when this machine executes tool calls for a remote session. A reconstruction of that confinement (`bwrap --ro-bind / / --dev /dev --unshare-pid --unshare-user --cap-drop ALL --proc /proc`) made `codex-forward-guard.sh` classify the session as a stage and block the stock `codex:codex-rescue` agent ("command is not an exact forwarding-wrapper invocation"); if those payloads also lack `agent_type` and `transcript_path`, the missing-metadata check (`codex-forward-guard.sh:345-347`) would block every call. Not reproduced in a real remote session. Local interactive sessions run hooks unsandboxed and are unaffected. Deciding it means weighing the plugin's usability there against the fail-closed stage classification that confinement evidence exists for.
