@@ -206,3 +206,10 @@ same settings file, the strip must run first — this function does not do it fo
 **Prevention:** a catch-up that repairs a file from a snapshot compares only what the snapshot is authoritative for (here, the amended criterion) and splices that into the live content; it never replaces the whole file. Detection: a tracked plan file that shows as modified right after a daemon start, with a diff that reverts a recent commit.
 
 **Fix (2026-09-14):** Case 2 calls `reconcile_amended_field` (`plan/amendment_catch_up.rs`), which compares and splices only the amended field and never writes a plan it cannot parse; see [Merge and Recovery Edge Cases](../concerns/merge-and-recovery-edge-cases.md).
+
+## loom update refreshed assets into the default roots
+
+**What happened:** An install run with `LOOM_CLAUDECODE_INSTALL_DIR` / `LOOM_CODEX_INSTALL_DIR` exported placed assets in the custom roots, but a later `loom update` from a shell without the variables refreshed `~/.claude` and `~/.codex` instead.
+**Why:** `default_paths` resolved roots from the environment alone and nothing persisted the roots an install chose; the knowledge entry claimed the flagless self-update path "retains configured roots", which held only while the variables stayed exported.
+**Prevention:** A setting that picks where a later automatic step writes must be persisted by the step that chose it, not re-derived from the caller's environment.
+**Fix:** `assets/install/roots.rs` records the roots in `~/.config/loom/install-roots.toml` after each flagless `install-assets`; `default_paths` reads it between the env override and the default.
