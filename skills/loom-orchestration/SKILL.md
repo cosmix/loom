@@ -112,6 +112,8 @@ than 200 lines whole that a sibling already read whole and unchanged, the read g
 latest row per path carries the current count. Before the next round of briefs, read it: a file
 several subagents each read whole belongs in the brief as quoted `file:line` ranges.
 
+**Outside a loom stage, `loom subagents watch` is unavailable:** it needs `LOOM_STAGE_ID`, `LOOM_SESSION_ID`, and `LOOM_WORK_DIR`, and exits 5 without them. Wait for each Agent-tool subagent's own completion notification instead, and never poll with `list` or `harvest`.
+
 **Checking on subagents: use one owned `loom subagents` wait, never a hand-rolled poll loop.** Spawn every worker first and capture each worker ID: the Claude agent ID from the spawn result, or the Codex unit ID you assigned with `--unit-id`. Then run ONE `loom subagents watch --worker claude:<agent-id> --worker codex:<unit-id> --timeout 3600` through the Bash tool's `run_in_background`, with one `--worker` for every worker. It binds those workers once, holds one lease for the parent session, prints one initial record and one terminal record, then exits. Treat its exit distinctly:
 
 1. **Exit 0** — every bound worker has fresh, correlated success evidence.
@@ -197,9 +199,9 @@ Fable-tier work has no pinned agent type; pass the model override explicitly at 
    SUBAGENT by what that piece needs, never once for the whole stage, and
    default downward: HAIKU (`model: haiku` on loom-software-engineer) for
    mechanical edits such as a rename or a config value; codex gpt-6-luna for
-   boilerplate, scaffolding, and simple unit tests; SONNET
-   (loom-software-engineer) or codex gpt-5.6-terra for common implementation and
-   integration tests — this is the default lane and most work belongs here; OPUS
+   boilerplate, scaffolding, and simple unit tests; codex gpt-5.6-terra or
+   SONNET (loom-software-engineer) for common implementation and integration
+   tests — most work belongs at this tier, and neither lane is the default; OPUS
    (loom-senior-software-engineer) for mainstream architecture and algorithm
    implementation; FABLE only for visual/UI design, a bug that survived a
    delegated fix attempt, or extremely challenging algorithmic design. Codex

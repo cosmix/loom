@@ -27,7 +27,7 @@ Skipping exploration causes duplicate code, poor reuse, AND the #1 failure above
 
 > ⚠️ **A stage OMITS `model` and `reasoning_effort` by default**, so the stage type's configured default applies — `standard`, `knowledge`, and `integration-verify` default to opus, `knowledge-distill` to sonnet; default effort is `high`, `medium`, `xhigh`, and `high` respectively, and the operator can change either per stage type in `[models]` in `~/.loom/config.toml` or the project's `.loom/work/config.toml`. Set either field on a stage only as a DELIBERATE OVERRIDE, and say why in the stage description — a stage that genuinely needs fable, or a cheap stage pinned to sonnet. Hardcoding `model`/`reasoning_effort` on every stage defeats the operator's own configuration. There is no per-stage SUBAGENT-model choice separate from this: the orchestrator's own model comes from this default/override chain, while subagent model choice MOVES DOWN to spawn time regardless (BLOCK-B, `SKILL.md` Section 4).
 
-**Fable-tier mechanics.** No loom agent type pins fable for implementation — pass the model override explicitly at spawn. Routine UI wiring to an existing design stays sonnet per rule 3; fable is for work where design judgment or extreme difficulty is the point, not for plumbing.
+**Fable-tier mechanics.** No loom agent type pins fable for implementation — pass the model override explicitly at spawn. Routine UI wiring to an existing design stays at the sonnet or terra tier per rule 3; fable is for work where design judgment or extreme difficulty is the point, not for plumbing.
 
 **Lowest tier, fullest brief.** For each worker, guess the lowest tier that can do its piece without losing quality and write it in the worker table's `Tier` column (`SKILL.md` Section 5); the orchestrator escalates only on evidence (BLOCK-B rule 4). Then write the brief that tier needs to get the piece right the first time: the cheaper the tier, the more the brief settles — exact paths and `file:line` ranges to read, signatures of what it must produce, the pattern to mirror, every decision already made, every trap named, the command that proves it. Never paste code the worker can open; it reads the named ranges itself and pays for that I/O at its own rate. A piece whose brief cannot settle every decision is judgment work: settle it in the plan, or raise the tier.
 
@@ -78,7 +78,7 @@ description: |
   | W3     | Metrics  | sonnet | src/metrics/*.rs  | src/config.rs (read-only)  | doc/plans/briefs/add-modules/add-auth-logging-metrics/w3-metrics.md |
 ```
 
-Match agent type to work: execution → `loom-software-engineer` (pins sonnet); judgment → `loom-senior-software-engineer`.
+Match agent type to work: execution → `loom-software-engineer` (pins sonnet), or `loom-codex-forwarder` for a codex unit on a stage licensed for codex (`codex-implementers.md`); judgment → `loom-senior-software-engineer`.
 
 ## Section 6 — Prose promises
 

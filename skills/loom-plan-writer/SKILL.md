@@ -45,7 +45,7 @@ Where other doctrine already governs something, this skill points at it: subagen
 | `references/grounding-protocols.md` | A stage widens a shared type, reuses or mirrors code, adds a destructive path, runs code under a new runtime, or depends on a sibling plan |
 | `references/bookend-stages.md` | Writing a bookend stage and Section 3's short forms leave a question open |
 | `references/stage-sizing.md` | Sizing workers, `subagent_timeout_secs`, or writing a description an orchestrator decomposes |
-| `references/codex-implementers.md` | The user may route work to codex, or a stage lists codex in `implementers` |
+| `references/codex-implementers.md` | Choosing each stage's implementation lanes (codex, Claude, or both), or a stage lists codex in `implementers` |
 | `references/parallelization.md` | More than about six workers, an agent team, or an ultracode stage |
 | `references/verification-rules.md` | Writing any `acceptance` or `wiring_tests` entry, or a criterion about an artifact the stage will produce |
 | `references/sandbox.md` | Configuring `sandbox`, or a criterion writes files or needs a host resource, network, or `HOME` |
@@ -176,9 +176,9 @@ BLOCK-B — model allocation playbook:
    SUBAGENT by what that piece needs, never once for the whole stage, and
    default downward: HAIKU (`model: haiku` on loom-software-engineer) for
    mechanical edits such as a rename or a config value; codex gpt-6-luna for
-   boilerplate, scaffolding, and simple unit tests; SONNET
-   (loom-software-engineer) or codex gpt-5.6-terra for common implementation and
-   integration tests — this is the default lane and most work belongs here; OPUS
+   boilerplate, scaffolding, and simple unit tests; codex gpt-5.6-terra or
+   SONNET (loom-software-engineer) for common implementation and integration
+   tests — most work belongs at this tier, and neither lane is the default; OPUS
    (loom-senior-software-engineer) for mainstream architecture and algorithm
    implementation; FABLE only for visual/UI design, a bug that survived a
    delegated fix attempt, or extremely challenging algorithmic design. Codex
@@ -200,7 +200,7 @@ BLOCK-B — model allocation playbook:
    Do not let an implementer thrash on the same failure twice.
 ```
 
-**Fable-tier mechanics.** No agent type pins fable — pass the model override at spawn. Routine UI wiring to an existing design stays sonnet.
+**Fable-tier mechanics.** No agent type pins fable — pass the model override at spawn. Routine UI wiring to an existing design stays at the sonnet or terra tier.
 
 **Lowest tier, fullest brief.** For each worker, write the lowest tier that can do its piece without losing quality in the worker table's `Tier` column (Section 5); the orchestrator escalates only on evidence. The cheaper the tier, the more the brief settles — exact paths and `file:line` ranges, signatures, the pattern to mirror, every decision made, every trap named, the proof command. Never paste code the worker can open. A piece whose brief cannot settle every decision is judgment work: settle it in the plan, or raise the tier.
 
@@ -208,7 +208,7 @@ BLOCK-B — model allocation playbook:
 
 **Stage descriptions carry decomposable detail:** exact file paths, signatures, `file:line` patterns to follow (and which property of the pattern NOT to copy), step-by-step subtasks, integration wiring (`mod.rs`, registry, route), and the error-handling approach. If you cannot write that, go back to Section 1. Full text, a worked example, `subagent_timeout_secs` (an idle budget, default 300) and the waiting protocol: `references/stage-sizing.md`.
 
-**Codex lane.** Before writing stage YAML, ask the user ONCE whether routine implementation goes to codex; the default is Claude. A codex stage lists `implementers: ["codex", "claude"]` and spawns `loom-codex-forwarder` subagents in the foreground. Install checks, unit sizing for the 540 s wrapper deadline, anchors, and the `.loom/` and `git` prohibitions: `references/codex-implementers.md`.
+**Implementation lanes.** Neither lane is the default: judge each stage's work against both. Codex (`loom-codex-forwarder` → gpt-5.6-terra / gpt-6-luna, xhigh) fits well-specified implementation that splits into single-file units with pinned interfaces, a large share of implementation work: its Claude-side cost is one sonnet forwarder per unit, and up to 6 units run at once in the foreground. Each unit must finish inside the 540 s wrapper deadline, runs no fixture-backed tests, and never touches git or `.loom/`. Claude fits exploration, multi-file iteration, work that converges by running tests, UI/visual design, and debugging, at its tier's token rate. Mixed stages list both lanes, preferred first. Check codex availability, then ask the user ONCE to confirm a per-stage lane recommendation, one-line reason each; if codex is unavailable, say so and plan on Claude. Comparison table, decision rule, install checks, unit sizing, anchors, and prohibitions: `references/codex-implementers.md`.
 
 ### Context ceiling (`context_ceiling_tokens`)
 
@@ -257,7 +257,7 @@ Each worker's brief is written to `doc/plans/briefs/<plan-slug>/<stage-id>/<work
 
 `Worker | Role | Tier | Files owned | Shared context | Brief path`
 
-Territories are DISJOINT; workers NEVER spawn subagents; the orchestrator spawns every worker BY AGENT TYPE, ALL in ONE message, each with a short fixed prompt plus `Your brief: <path>. Read it in full before anything else.` Execution → `loom-software-engineer` (pins sonnet); judgment → `loom-senior-software-engineer`.
+Territories are DISJOINT; workers NEVER spawn subagents; the orchestrator spawns every worker BY AGENT TYPE, ALL in ONE message, each with a short fixed prompt plus `Your brief: <path>. Read it in full before anything else.` Execution → `loom-software-engineer` (pins sonnet), or `loom-codex-forwarder` for a codex unit (Tier `codex terra` or `codex luna`); judgment → `loom-senior-software-engineer`.
 
 **A `Files owned` cell holds paths only.** `loom plan verify` parses the table: it splits the cell on `,` and `;`, strips one trailing `(annotation)` and backticks, and treats every remaining string as a path. Prose in the cell becomes a bogus path that warns as outside the stage's `files:`; a row with the wrong column count makes the whole table claim nothing. It also warns when two workers claim one path, and when four or more rows each own exactly one path (group them).
 
@@ -336,7 +336,7 @@ loom:
       stage_type: standard         # knowledge | standard | integration-verify | knowledge-distill (lowercase)
       model: "opus"                 # OPTIONAL - omit so the stage type's configured default applies (Section 4); set only as a deliberate override
       reasoning_effort: "high"    # OPTIONAL - omit likewise; reserve "xhigh" for a stage whose own design is the hard part
-      implementers: ["codex", "claude"]  # OPTIONAL - licensed lanes, first = preferred for routine work (default ["claude"])
+      implementers: ["codex", "claude"]  # OPTIONAL - lanes chosen per stage (references/codex-implementers.md), first = preferred; omitted parses as ["claude"]
       subagent_timeout_secs: 900   # OPTIONAL - advisory IDLE budget (default 300); not the watch's `--timeout` (3600) and not a per-subagent deadline
       skills: ["loom-rust"]        # OPTIONAL - full names of the skills this stage's agents need; loom plan verify rejects unknown names
       description: |               # full task spec; NO triple backticks inside
@@ -648,7 +648,7 @@ loom:
 □ Every stage sized to finish in one session under 500,000 tokens of context, or its description says why it cannot (Section 4, Context ceiling)
 □ Every stage: `model`/`reasoning_effort` OMITTED unless deliberately overriding, with why stated + stage_type + working_dir set
 □ Every stage names the skills its agents need in `skills:` (full catalog names)
-□ Codex opt-in asked and answered; codex units pass the checks in references/codex-implementers.md
+□ Codex availability checked; lanes chosen per stage by references/codex-implementers.md and confirmed in ONE question (unavailable: user told, plan on Claude); codex units pass that file's checks
 □ Standard/IV stages: acceptance OR ≥1 goal-backward check; wiring targets the CONSUMER; no leftover `truths:` block
 □ v2: `loom project detect` run; every touched package's language skill loaded and in `skills:`; each contract's `test` in the form its adapter section gives
 □ v2: every standard stage walked the risk checklist and carries its contracts; each `rejects` names a plausible wrong implementation; `harness` names test-only files
