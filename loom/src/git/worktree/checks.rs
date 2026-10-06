@@ -9,6 +9,7 @@ use std::process::Command;
 
 use super::operations::list_worktrees;
 use crate::git::runner::NO_HOOKS_ARGS;
+use crate::models::stage::Stage;
 
 /// Check if git is available
 pub fn check_git_available() -> Result<()> {
@@ -73,6 +74,15 @@ pub fn is_valid_git_worktree(worktree_path: &Path, repo_root: &Path) -> Result<b
 /// Get the path to a worktree
 pub fn get_worktree_path(stage_id: &str, repo_root: &Path) -> std::path::PathBuf {
     repo_root.join(".worktrees").join(stage_id)
+}
+
+/// The worktree `stage` runs in: the id its record names, else its stage id,
+/// validated before it names a path under `repo_root`.
+pub fn stage_worktree_path(stage: &Stage, repo_root: &Path) -> Result<std::path::PathBuf> {
+    let worktree_id = stage.worktree.as_deref().unwrap_or(&stage.id);
+    crate::validation::validate_id(worktree_id)
+        .with_context(|| format!("invalid worktree id '{worktree_id}'"))?;
+    Ok(get_worktree_path(worktree_id, repo_root))
 }
 
 #[cfg(test)]

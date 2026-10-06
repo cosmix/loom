@@ -62,4 +62,22 @@ if ! echo "$STDERR_C" | grep -q "POST-COMMIT REMINDER"; then
 	exit 1
 fi
 
+# --- (d) `loom stage commit` fires the reminder too -------------------------
+STDERR_D=$(run_hook 'loom stage commit s1 -m wip')
+if ! echo "$STDERR_D" | grep -q "POST-COMMIT REMINDER"; then
+	echo "FAIL: (d) a real 'loom stage commit' did not fire the reminder"
+	echo "stderr: $STDERR_D"
+	exit 1
+fi
+
+# --- (e) prose, or other loom segments, never fire it -----------------------
+for prose in 'loom memory note "loom stage commit later"' 'loom stage list && loom log commit'; do
+	STDERR_E=$(run_hook "$prose")
+	if echo "$STDERR_E" | grep -q "POST-COMMIT REMINDER"; then
+		echo "FAIL: (e) '$prose' fired the reminder"
+		echo "stderr: $STDERR_E"
+		exit 1
+	fi
+done
+
 echo "PASS"

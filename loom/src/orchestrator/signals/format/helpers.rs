@@ -238,7 +238,7 @@ pub(super) fn format_structured_handoff(handoff: &HandoffV2) -> String {
 /// at maximum attention (Manus recitation pattern) alongside the task list.
 pub(super) fn append_stage_end_sequence(content: &mut String) {
     content.push('\n');
-    content.push_str("**Stage end sequence (in this order, nothing skipped):** every subagent returned → full gate green → adversarial review returned and every finding fixed → gate green again → commit (orchestrator only, one logical commit per concern) → `loom stage complete <stage-id>`. A commit before this point is premature.\n");
+    content.push_str("**Stage end sequence (in this order, nothing skipped):** every subagent returned → full gate green → adversarial review returned and every finding fixed → gate green again → `loom stage commit` (orchestrator only, one logical commit per concern) → `loom stage complete <stage-id>`. A commit before this point is premature.\n");
 }
 
 /// Append the package-manager-cache carve-out note to the sandbox section,

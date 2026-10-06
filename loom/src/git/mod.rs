@@ -4,6 +4,7 @@
 //! - Worktree creation/removal for parallel stage execution
 //! - Branch management for stage isolation
 //! - Merge operations for integrating completed work
+//! - The daemon's commit of a session's staged index, and commit signing
 //! - Cleanup utilities for successful merges
 //! - Git hook installation for .loom/work protection
 
@@ -14,6 +15,8 @@ mod init_blockers;
 pub mod merge;
 pub mod repository;
 pub mod runner;
+pub mod signing;
+pub mod stage_commit;
 pub mod target_guard;
 pub mod worktree;
 

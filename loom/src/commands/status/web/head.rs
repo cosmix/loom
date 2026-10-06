@@ -1,5 +1,6 @@
 //! Reading a request head off a dashboard connection without consuming it.
 
+use std::io::ErrorKind;
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -25,6 +26,18 @@ enum HeadAttempt {
 fn fail_head(stream: &mut TcpStream, status: u16, reason: &str, body: &[u8]) -> HeadAttempt {
     fail(stream, status, reason, body);
     HeadAttempt::Failed
+}
+
+/// Whether a failed peek says "nothing yet" rather than "the connection is
+/// gone". `Interrupted` belongs here: a receive under `SO_RCVTIMEO` returns
+/// EINTR when any signal is delivered to the process, whatever `SA_RESTART`
+/// says, and treating it as terminal closed a silent client's socket without
+/// the 408 it is owed.
+fn is_transient_peek_error(kind: ErrorKind) -> bool {
+    matches!(
+        kind,
+        ErrorKind::WouldBlock | ErrorKind::TimedOut | ErrorKind::Interrupted
+    )
 }
 
 /// Peek up to `MAX_HEAD_BYTES` without consuming them, so `/ws` can later hand
@@ -55,12 +68,7 @@ fn peek_head(stream: &mut TcpStream, buffer: &mut [u8], started: Instant) -> Hea
         },
         // A client that connects and then says nothing times out every peek;
         // once the budget is spent it gets the 408 this branch advertises.
-        Err(error)
-            if matches!(
-                error.kind(),
-                std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
-            ) =>
-        {
+        Err(error) if is_transient_peek_error(error.kind()) => {
             if started.elapsed() < HEAD_TIMEOUT {
                 HeadAttempt::Retry
             } else {
@@ -88,4 +96,27 @@ pub(super) fn complete(stream: &mut TcpStream, running: &AtomicBool) -> Option<R
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn would_block_timed_out_and_interrupted_are_transient() {
+        for kind in [
+            ErrorKind::WouldBlock,
+            ErrorKind::TimedOut,
+            ErrorKind::Interrupted,
+        ] {
+            assert!(is_transient_peek_error(kind), "{kind:?}");
+        }
+    }
+
+    #[test]
+    fn connection_reset_and_broken_pipe_are_terminal() {
+        for kind in [ErrorKind::ConnectionReset, ErrorKind::BrokenPipe] {
+            assert!(!is_transient_peek_error(kind), "{kind:?}");
+        }
+    }
 }

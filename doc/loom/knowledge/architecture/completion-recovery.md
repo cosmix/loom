@@ -1,6 +1,6 @@
 # Completion Recovery
 
-> Completion HMAC, exit_reason, handoff folds
+> HMAC attestation, exit_reason
 
 ## Completion Evidence Attestation and Session Exit Reasons (2026-09-14)
 

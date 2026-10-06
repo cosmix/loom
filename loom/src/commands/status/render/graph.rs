@@ -239,9 +239,7 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
             "{ROW_INDENT}{connector}{indicator}  {colored_id}{tags}{deps}{annotations}"
         )?;
 
-        write_orphaned_hint(w, stage, &connector)?;
-        write_merge_hint(w, stage, &connector)?;
-        write_cleanup_hint(w, stage, &connector)?;
+        write_row_hints(w, stage, &connector)?;
 
         // Increment index for this level
         *level_indices.get_mut(&level).unwrap() += 1;
@@ -251,6 +249,18 @@ pub fn render_graph<W: Write>(w: &mut W, data: &StatusData) -> std::io::Result<(
     render_legend(w, &sorted_stages)?;
 
     Ok(())
+}
+
+/// The hint lines under a stage's row: each writer is a no-op for a stage it
+/// does not describe.
+fn write_row_hints<W: Write>(
+    w: &mut W,
+    stage: &StageSummary,
+    connector: &str,
+) -> std::io::Result<()> {
+    write_orphaned_hint(w, stage, connector)?;
+    write_merge_hint(w, stage, connector)?;
+    write_cleanup_hint(w, stage, connector)
 }
 
 /// For a stage whose activity status is `Orphaned` — it claims to be

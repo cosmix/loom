@@ -1,6 +1,4 @@
-//! Daemon server lifecycle methods: start, stop, run.
-
-mod socket_limit;
+//! Daemon server lifecycle methods: start, serve, stop, run.
 
 use super::admission::ByteBudget;
 use super::broadcast::{spawn_log_tailer, spawn_quota_poller, spawn_status_broadcaster};
@@ -8,7 +6,7 @@ use super::client::handle_client_connection;
 use super::core::{
     DaemonServer, CLIENT_QUEUE_CAPACITY, CLIENT_WORKERS, MAX_IN_FLIGHT_REQUEST_BYTES,
 };
-use super::environment::DaemonEnvironment;
+use super::launch::{self, LOG_ACTIVE_BYTE, READY_BYTE};
 use super::lock::{current_identity, format_identity, read_recorded_lock_identity, PID_FILE};
 use super::orchestrator::spawn_orchestrator;
 use super::pool::WorkerPool;
@@ -16,14 +14,15 @@ use super::storage::{
     ensure_private_control_dir, open_private_output, publish_private_file, remove_control_file,
 };
 use super::tokens::{publish_fresh_tokens, ADMIN_TOKEN_FILE, USER_TOKEN_FILE};
+use crate::daemon::{socket_path_fits, SOCKET_FILE, SUN_PATH_MAX};
 use crate::orchestrator::core::{
     abort_foreign_state, check_lock_identity, LockCheck, LockIdentity,
 };
-use socket_limit::{socket_path_fits, SUN_PATH_MAX};
 
 use anyhow::{Context, Result};
-use nix::unistd::{close, fork, pipe, setsid, ForkResult};
+use nix::unistd::setsid;
 use std::fs::{self, File, Permissions};
+use std::os::fd::{AsFd, OwnedFd};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::AsRawFd;
 use std::os::unix::net::UnixListener;
@@ -34,90 +33,39 @@ use std::thread;
 use std::time::{Duration, Instant};
 
 impl DaemonServer {
-    /// Start the daemon (daemonize process).
-    ///
-    /// # Returns
-    /// `Ok(())` on success, error if daemon fails to start
+    /// Start the daemon from `loom run`: re-execute the loom binary as `loom
+    /// run --daemon-child` and wait until it reports ready (`launch`).
     pub fn start(&self) -> Result<()> {
         ensure_private_control_dir(&self.work_dir)?;
-        let daemon_environment = DaemonEnvironment::capture();
+        launch::spawn_daemon(&self.work_dir, &self.config)
+    }
 
-        // Create pipe for error propagation from grandchild to original parent.
-        // The success byte is written by `run_server` only AFTER the socket is
-        // bound (see A-1/O-7), so the parent's `loom run` exits 0 only when the
-        // daemon is genuinely listening.
-        let (read_fd, write_fd) = pipe().context("Failed to create pipe")?;
-
-        // First fork - parent exits, child continues.
-        // SAFETY: daemonization occurs before Loom starts worker threads; both
-        // branches immediately follow the constrained parent/child path below.
-        match unsafe { fork() }.context("First fork failed")? {
-            ForkResult::Parent { .. } => {
-                // Close write end in parent
-                drop(write_fd);
-
-                // Wait for signal from grandchild
-                let mut buf = [0u8; 1];
-                match nix::unistd::read(&read_fd, &mut buf) {
-                    Ok(1) if buf[0] == 1 => std::process::exit(0), // Success signal received
-                    Ok(0) => {
-                        // EOF - grandchild failed before writing success signal
-                        eprintln!("Daemon failed to start");
-                        std::process::exit(1);
-                    }
-                    _ => {
-                        // Read error or unexpected data
-                        eprintln!("Daemon failed to start");
-                        std::process::exit(1);
-                    }
-                }
-            }
-            ForkResult::Child => {
-                // Close read end in child
-                drop(read_fd);
-                // Child continues with daemonization (write_fd will be passed to grandchild)
-            }
-        }
-
-        // Create new session (detach from controlling terminal)
+    /// Serve as the daemon: the body of `loom run --daemon-child`.
+    ///
+    /// stdout is the readiness pipe `loom run` waits on: an error before the
+    /// log redirect reaches `loom run` through it, one after it lands in
+    /// `orchestrator.log`, whose tail `loom run` then quotes.
+    pub(crate) fn serve(&self) -> Result<()> {
+        // Leave `loom run`'s session, so neither its terminal nor its exit
+        // reaches the daemon.
         setsid().context("setsid failed")?;
-
-        // Second fork - prevents acquiring a controlling terminal.
-        // SAFETY: this is still the single-threaded daemonization path, and the
-        // intermediate parent exits without returning to shared application state.
-        match unsafe { fork() }.context("Second fork failed")? {
-            ForkResult::Parent { .. } => {
-                // Intermediate parent exits
-                std::process::exit(0);
-            }
-            ForkResult::Child => {
-                // Grandchild continues as daemon
-            }
-        }
-
-        daemon_environment.apply();
 
         // CRITICAL (A-1/O-7): Acquire the singleton flock BEFORE any destructive
         // op (socket unlink, PID overwrite, token regeneration, log truncation).
         // A losing race or a corrupt lock must NOT delete the live daemon's
         // control-plane files. `Drop`/`cleanup` are gated on `was_running`, which
-        // is only set after a successful socket bind in `run_server`. If lock
-        // acquisition fails here, we return Err before touching anything; the
-        // success byte is never written so the parent reports failure.
-        let lock_guard = match self.acquire_exclusive_lock() {
-            Ok(guard) => guard,
-            Err(e) => {
-                // We do NOT hold the lock — `was_running` is false, so the Drop
-                // cleanup is a no-op and the winning daemon's files survive.
-                return Err(e).context("Failed to acquire daemon lock");
-            }
-        };
+        // is only set after a successful socket bind in `run_server`, so a
+        // failure here leaves the winning daemon's files alone; the ready byte
+        // is never written, so `loom run` reports this error.
+        let lock_guard = self
+            .acquire_exclusive_lock()
+            .context("Failed to acquire daemon lock")?;
 
         // From here on we hold the singleton lock; destructive setup is safe.
         crate::orchestrator::terminal::native::record_daemon_binary();
 
         // Remove stale socket if it exists (ignore NotFound to avoid TOCTOU race)
-        remove_control_file(&self.work_dir, Path::new("orchestrator.sock"))
+        remove_control_file(&self.work_dir, Path::new(SOCKET_FILE))
             .context("Failed to remove stale socket file")?;
 
         let identity = current_identity();
@@ -132,18 +80,23 @@ impl DaemonServer {
         // tokens; see `tokens::publish_fresh_tokens` for the full rationale.
         publish_fresh_tokens(&self.work_dir)?;
 
+        // Keep the readiness pipe past the redirect. The duplicate is
+        // close-on-exec, so no process the daemon starts inherits it.
+        let ready = std::io::stdout()
+            .as_fd()
+            .try_clone_to_owned()
+            .context("Failed to keep the readiness pipe")?;
         self.redirect_output_to_log()?;
+        let _ = nix::unistd::write(&ready, &[LOG_ACTIVE_BYTE]);
 
-        // Run the server. The success byte is signaled to the original parent
-        // from inside `run_server`, immediately after the socket bind succeeds.
-        self.run_server(lock_guard, Some(write_fd))
+        // `run_server` writes the ready byte once the socket is bound.
+        self.run_server(lock_guard, ready)
     }
 
-    /// Rotate the previous log, then point the daemon's stdin at nothing and
-    /// its stdout and stderr at a fresh private `orchestrator.log`.
+    /// Rotate the previous log, then point the daemon's stdout and stderr at
+    /// a fresh private `orchestrator.log`. stdin is already `/dev/null`: `loom
+    /// run` starts the daemon child that way.
     fn redirect_output_to_log(&self) -> Result<()> {
-        // Redirect stdout and stderr to log file.
-        //
         // Preserve the previous run's log first. Restarting the daemon is the
         // standard response to a stuck orchestrator, so truncating here
         // destroys the only record of *why* it got stuck at exactly the moment
@@ -153,10 +106,9 @@ impl DaemonServer {
         let log_file = open_private_output(&self.work_dir, Path::new("orchestrator.log"))
             .context("Failed to create log file")?;
 
-        // Close stdin and redirect stdout/stderr to log file
-        close(0).ok();
         // SAFETY: Using libc::dup2 directly with raw fds to avoid ownership issues.
-        // fds 1 and 2 are valid open descriptors in this double-forked daemon process.
+        // fds 1 and 2 are the readiness pipe this freshly exec'd daemon child was
+        // started with, and `log_file` is open, so both calls swap valid descriptors.
         unsafe {
             libc::dup2(log_file.as_raw_fd(), 1);
             libc::dup2(log_file.as_raw_fd(), 2);
@@ -169,15 +121,11 @@ impl DaemonServer {
     /// `lock_guard` is the held singleton flock acquired by the caller BEFORE any
     /// destructive setup (A-1/O-7). It is kept alive for the entire server
     /// lifetime; the OS releases the flock when this process exits (even via
-    /// SIGKILL). `success_pipe`, when present, is the write end of the start
-    /// pipe — the success byte is written to it only after the socket bind
-    /// succeeds, so the parent `loom run` reports failure if the daemon could
-    /// not actually start listening.
-    pub(super) fn run_server(
-        &self,
-        lock_guard: File,
-        success_pipe: Option<std::os::fd::OwnedFd>,
-    ) -> Result<()> {
+    /// SIGKILL). `ready` is the write end of the readiness pipe `loom run`
+    /// waits on; the ready byte goes to it only after the socket bind
+    /// succeeds, so `loom run` reports failure if the daemon could not
+    /// actually start listening.
+    pub(super) fn run_server(&self, lock_guard: File, ready: OwnedFd) -> Result<()> {
         let lock_identity = LockIdentity::of_file_or_warn(&lock_guard);
         // Before the umask twiddling below, so a bail here leaves it untouched.
         if !socket_path_fits(&self.socket_path) {
@@ -191,16 +139,18 @@ impl DaemonServer {
         // Set restrictive umask before socket bind to close TOCTOU window
         // between bind() and chmod(). The socket is created with permissions
         // determined by umask, so setting 0o077 ensures it's created as 0o600.
-        // SAFETY: this daemon grandchild has not started worker threads, and it
-        // restores the process-wide umask immediately after the single bind.
+        // SAFETY: the umask is process-wide; this freshly exec'd daemon child
+        // has started no worker thread yet, and it restores the umask
+        // immediately after the single bind.
         let old_umask = unsafe { libc::umask(0o077) };
-        let listener =
-            UnixListener::bind(&self.socket_path).context("Failed to bind Unix socket")?;
-        // Restore original umask immediately after bind.
-        // SAFETY: paired with the single-threaded `umask(0o077)` call above.
+        let bound = UnixListener::bind(&self.socket_path);
+        // Restore original umask immediately after bind, failed or not.
+        // SAFETY: paired with the `umask(0o077)` call above, still before any
+        // worker thread starts.
         unsafe {
             libc::umask(old_umask);
         }
+        let listener = bound.context("Failed to bind Unix socket")?;
 
         // Explicitly set permissions as defense-in-depth (umask should have handled this,
         // but being explicit is safer and documents intent)
@@ -214,14 +164,10 @@ impl DaemonServer {
         // failure never deletes the winning daemon's files.
         self.was_running.store(true, Ordering::SeqCst);
 
-        // Signal success to the original parent now that the socket is bound and
-        // permissions are set. Closing the pipe afterwards lets the parent's read
-        // return. Only the daemonized `start()` path supplies a pipe.
-        if let Some(write_fd) = success_pipe {
-            let success_signal = [1u8];
-            let _ = nix::unistd::write(&write_fd, &success_signal);
-            drop(write_fd);
-        }
+        // Tell `loom run` the daemon is ready now that the socket is bound and
+        // its permissions set; dropping `ready` closes the pipe's last write end.
+        let _ = nix::unistd::write(&ready, &[READY_BYTE]);
+        drop(ready);
 
         // Set socket to non-blocking mode for graceful shutdown
         listener
@@ -327,7 +273,7 @@ impl DaemonServer {
         }
 
         for relative in [
-            "orchestrator.sock",
+            SOCKET_FILE,
             PID_FILE,
             USER_TOKEN_FILE,
             ADMIN_TOKEN_FILE,

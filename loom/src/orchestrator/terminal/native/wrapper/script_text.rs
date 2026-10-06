@@ -1,9 +1,13 @@
 //! Static shell text for `build_wrapper_script`, split out to keep
 //! `wrapper.rs` under its line cap.
 
+use crate::process::AGENT_SESSION_ENV_NAMES;
+
 /// Rebuilds the child environment from a minimal host allowlist rather than
 /// inheriting it, so ambient credentials and token-shaped variables never
-/// reach a stage session. Fully static — no interpolation.
+/// reach a stage session. The forwarded names are generated from
+/// [`AGENT_SESSION_ENV_NAMES`], so this list and the host-side environment the
+/// auth probe runs under cannot drift; HOME and PATH are written separately.
 ///
 /// TERMINFO/TERMINFO_DIRS travel alongside TERM, together with HOME (already
 /// forwarded, which covers `~/.terminfo`) — the standard ncurses resolution
@@ -12,27 +16,29 @@
 /// half a contract: any terminal whose terminfo entry is not bundled into
 /// the system database (kitty is the observed instance) leaves the stage
 /// agent's inherited TERM with nowhere to resolve.
+/// USER and LOGNAME name the operator and are not credentials. On macOS the
+/// `claude` CLI finds its Keychain login by `$USER`, so a session without it
+/// starts "Not logged in".
 /// SCCACHE_DIR/SCCACHE_CACHE_SIZE forward an operator's own sccache cache config.
 /// RUSTC_WRAPPER is deliberately absent here — `sccache_env` decides it instead,
 /// using the session's sandbox verdict this allowlist has no access to.
-pub(super) fn env_allowlist() -> &'static str {
-    r#"# Reconstruct the stage environment from a minimal host allowlist. In
+pub(super) fn env_allowlist() -> String {
+    let names = AGENT_SESSION_ENV_NAMES.join(" ");
+    format!(
+        r#"# Reconstruct the stage environment from a minimal host allowlist. In
 # particular, ambient credentials and token-shaped variables are not inherited.
 _loom_env=(
-    "HOME=${HOME:-}"
-    "PATH=${PATH:-/usr/bin:/bin}"
+    "HOME=${{HOME:-}}"
+    "PATH=${{PATH:-/usr/bin:/bin}}"
 )
-for _loom_name in LANG LC_ALL LC_CTYPE TERM TERMINFO TERMINFO_DIRS COLORTERM \
-    TERM_PROGRAM SHELL DISPLAY \
-    WAYLAND_DISPLAY XAUTHORITY DBUS_SESSION_BUS_ADDRESS XDG_RUNTIME_DIR \
-    TMUX_TMPDIR TMUX TMUX_PANE TMPDIR \
-    SCCACHE_DIR SCCACHE_CACHE_SIZE; do
-    _loom_value="${!_loom_name}"
+for _loom_name in {names}; do
+    _loom_value="${{!_loom_name}}"
     if [ -n "$_loom_value" ]; then
         _loom_env+=("$_loom_name=$_loom_value")
     fi
 done
 "#
+    )
 }
 
 /// Records the PID and, best-effort on Linux, the process start-time on line 2

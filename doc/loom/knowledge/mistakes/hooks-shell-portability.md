@@ -189,3 +189,24 @@ session: zsh read `:l` as the lowercase modifier, `git show` failed, and the `>`
 the tracked file (restored immediately from `git show HEAD:`).
 **Prevention:** brace a variable before a colon (`"${T2}:path"`), and never redirect onto a tracked file in a
 command that can fail; write to a scratch file and `mv` on success.
+
+## BSD `wc` Padding and Bare `sha256sum` Skipped the Reviewer Harvest on macOS, and the Hook Suite Never Ran in CI (2026-10-06)
+
+**What happened:** on macOS no review round was ever recorded, `loom subagents watch` exited 1, and every
+codex forward was blocked (issue #24).
+
+**Why:** BSD `wc -c` left-pads its count, and five hook sites tested the raw value against `^[0-9]+$` and
+returned silently on a mismatch. macOS has no `sha256sum`. The hook test suite did not run in CI at all,
+and the CI runner is Linux, so a BSD form was never exercised. The `SubagentStop` hook skipping looked like
+an intermittent delivery problem
+([SubagentStop Delivery Is Intermittent](subagent-liveness-and-watch.md#subagentstop-delivery-is-intermittent-and-one-reviewer-can-record-two-rounds-2026-10-03)
+held "the hook logic is sound" only for GNU tools).
+
+**Prevention:** strip every `wc` count with `| tr -d "[:space:]"` before testing it; take sha256 through
+`loom_lifecycle_sha256`; try the BSD `date -j -f` form before GNU `date -d`. A silent `return 0` on a
+malformed value hides the bug, so a skipped reviewer stop writes a `stop-skips.jsonl` row. A contract that
+runs against a shim must assert the shim really pads (exit 90 otherwise), or it passes vacuously.
+
+**Fix:** the helpers and the stop-skips ledger in
+[Portable Shell Helpers](../architecture/hook-system.md#portable-shell-helpers-and-the-subagentstop-ledgers);
+`run-all.sh` runs in CI in plain and BSD-shim modes.

@@ -2,14 +2,16 @@
 //!
 //! Remote Control lets the loom orchestrator drive Claude Code sessions
 //! programmatically, gated behind a preflight check: `claude
-//! --remote-control` exits non-zero unless the claude version and auth
-//! setup (claude.ai login) both qualify.
+//! --remote-control` exits non-zero unless the claude version and login
+//! (claude.ai) both qualify.
 //!
 //! Resolution model:
 //!   * `RemoteControlConfig` (persisted in `.loom/work/config.toml [remote_control]`)
 //!     carries the operator-facing on/off switch (`mode = auto | off`).
-//!   * `preflight()` combines a version probe with an auth-eligibility
-//!     heuristic and yields a `RemoteControlStatus`.
+//!   * `preflight()` combines a version probe with the verdict of
+//!     `claude auth status --json` run under the environment stage sessions
+//!     receive (`eligibility_from`) and yields a `RemoteControlStatus`. There
+//!     is no credentials-file, Keychain or environment-variable heuristic.
 //!   * `resolve()` is the mode/preflight gate: `false` when the mode is
 //!     `off`, the preflight fails, or [`disable_for_this_process`] has
 //!     latched it off (in-memory only, set by the crash handler).
@@ -18,6 +20,7 @@
 //!     between `RemoteControlInvocation::Disabled`, `Bare` (older claude, no
 //!     optional-name support), and `Named(session_name)`.
 
+use crate::claude::auth::{stage_auth_status, AuthProbe};
 use crate::claude::find_claude_path;
 use crate::fs::work_dir::read_remote_control_config;
 use anyhow::{bail, Result};
@@ -28,18 +31,6 @@ use std::sync::OnceLock;
 
 /// Minimum claude version that supports the `--remote-control` flag.
 const MIN_REMOTE_CONTROL_VERSION: (u64, u64, u64) = (2, 1, 51);
-
-/// Environment variables whose presence indicates an auth setup that is NOT
-/// claude.ai login based. Remote Control relies on claude.ai login, so any of
-/// these disqualifies it. Only the variable *name* is ever surfaced — never
-/// its value.
-const DISQUALIFYING_ENV_VARS: &[&str] = &[
-    "ANTHROPIC_API_KEY",
-    "CLAUDE_CODE_OAUTH_TOKEN",
-    "CLAUDE_CODE_USE_BEDROCK",
-    "CLAUDE_CODE_USE_VERTEX",
-    "CLAUDE_CODE_USE_FOUNDRY",
-];
 
 /// Operator-facing Remote Control switch, persisted in `.loom/work/config.toml`.
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
@@ -165,75 +156,51 @@ pub fn claude_supports_remote_control(claude_path: &Path) -> bool {
     }
 }
 
-/// Heuristic check that the host's claude auth setup is eligible for Remote
-/// Control (requires claude.ai login).
-///
-/// `Err`'s reason names only the offending var, never its value, when a
-/// disqualifying auth env var is set, or none is set but neither
-/// `~/.claude/.credentials.json` nor (on macOS) a "Claude Code-credentials"
-/// Keychain entry is found. `Ok(())` when a credentials file or Keychain
-/// entry is present and no disqualifying var is set — macOS stores
-/// credentials in the Keychain instead of the file, so both are checked.
-pub fn remote_control_eligible() -> Result<()> {
-    for var in DISQUALIFYING_ENV_VARS {
-        if std::env::var_os(var).is_some() {
-            bail!("{var} is set (Remote Control requires claude.ai login auth)");
-        }
-    }
+/// Memoized login probe under the stage environment. `claude auth status`
+/// is invariant for the process's purposes, and `loom run` seeds this through
+/// `auth_preflight::require_stage_login` so the probe runs once per process.
+pub(crate) fn cached_stage_auth(claude_path: &Path) -> &'static AuthProbe {
+    static CACHE: OnceLock<AuthProbe> = OnceLock::new();
+    CACHE.get_or_init(|| stage_auth_status(claude_path))
+}
 
-    let credentials_present = dirs::home_dir()
-        .map(|h| h.join(".claude").join(".credentials.json").exists())
-        .unwrap_or(false);
+/// Longest auth method name a reason repeats.
+const MAX_METHOD_CHARS: usize = 32;
 
-    if credentials_present || macos_keychain_has_credentials() {
-        Ok(())
-    } else {
-        bail!(
-            "claude.ai login not found (no ~/.claude/.credentials.json and no macOS Keychain entry)"
-        )
+/// `method` reduced to `[A-Za-z0-9._-]`, at most [`MAX_METHOD_CHARS`] characters.
+/// It is the CLI's `authMethod` string, printed to stderr in a reason: a newline
+/// or an escape sequence in it must not reach the log.
+fn method_label(method: &str) -> String {
+    method
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '_' | '-'))
+        .take(MAX_METHOD_CHARS)
+        .collect()
+}
+
+/// Whether a login verdict is eligible for Remote Control, which requires a
+/// claude.ai login. Reasons name only the auth method (see [`method_label`]) or
+/// a fixed probe reason, never identity.
+fn eligibility_from(probe: &AuthProbe) -> Result<()> {
+    match probe {
+        AuthProbe::LoggedIn { method } if method == "claude.ai" => Ok(()),
+        AuthProbe::LoggedIn { method } => bail!(
+            "claude is logged in with {}, but Remote Control requires claude.ai login",
+            method_label(method)
+        ),
+        AuthProbe::NotLoggedIn => bail!("claude is not logged in under the stage environment"),
+        AuthProbe::Unknown(reason) => bail!("could not determine the claude login ({reason})"),
     }
 }
 
-/// Pure builder for the macOS Keychain lookup argv.
-///
-/// Shared by [`macos_keychain_has_credentials`] (so the actual command can
-/// never drift from what is tested) and asserted directly by
-/// `keychain_probe_argv_is_exact` below. Deliberately excludes `-w`, which
-/// would print the stored secret to stdout — this lookup only ever checks
-/// for the entry's existence.
-pub(crate) fn keychain_probe_argv() -> (&'static str, [&'static str; 3]) {
-    (
-        "security",
-        ["find-generic-password", "-s", "Claude Code-credentials"],
-    )
+/// Check that the claude login under the stage environment is eligible for
+/// Remote Control (claude.ai login).
+pub fn remote_control_eligible(claude_path: &Path) -> Result<()> {
+    eligibility_from(cached_stage_auth(claude_path))
 }
 
-/// Whether a "Claude Code-credentials" entry exists in the macOS Keychain.
-///
-/// Never surfaces the secret value: `security find-generic-password` (no
-/// `-w`) only communicates success/failure via its exit status, and both
-/// stdout and stderr are discarded here.
-///
-/// Always `false` off macOS. The gate is a runtime `cfg!` rather than a
-/// `#[cfg]` pair so the body — and therefore [`keychain_probe_argv`] — is
-/// compiled on every platform; under `#[cfg]` the probe builder would have no
-/// non-test caller on Linux and trip `dead_code` under `-D warnings`.
-fn macos_keychain_has_credentials() -> bool {
-    if !cfg!(target_os = "macos") {
-        return false;
-    }
-    let (program, args) = keychain_probe_argv();
-    Command::new(program)
-        .args(args)
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status()
-        .map(|s| s.success())
-        .unwrap_or(false)
-}
-
-/// Combine the version probe and the auth-eligibility heuristic into a single
-/// [`RemoteControlStatus`].
+/// Combine the version probe and the stage-environment login verdict into a
+/// single [`RemoteControlStatus`].
 pub fn preflight(claude_path: &Path) -> RemoteControlStatus {
     let version = probe_claude_version(claude_path);
     match version {
@@ -263,7 +230,7 @@ pub fn preflight(claude_path: &Path) -> RemoteControlStatus {
         }
     }
 
-    if let Err(reason) = remote_control_eligible() {
+    if let Err(reason) = remote_control_eligible(claude_path) {
         return RemoteControlStatus::Disabled {
             reason: reason.to_string(),
         };
@@ -394,205 +361,5 @@ pub fn run_startup_preflight(claude_path: &Path, work_dir: &Path) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use serial_test::serial;
-
-    #[test]
-    fn default_config_mode_is_auto() {
-        let config = RemoteControlConfig::default();
-        assert_eq!(config.mode, RemoteControlMode::Auto);
-    }
-
-    #[test]
-    fn default_mode_is_auto() {
-        assert_eq!(RemoteControlMode::default(), RemoteControlMode::Auto);
-    }
-
-    #[test]
-    fn config_round_trips_through_toml() {
-        let config = RemoteControlConfig {
-            mode: RemoteControlMode::Off,
-        };
-        let rendered = toml::to_string(&config).unwrap();
-        assert!(rendered.contains("off"), "rendered: {rendered}");
-        let parsed: RemoteControlConfig = toml::from_str(&rendered).unwrap();
-        assert_eq!(parsed, config);
-    }
-
-    #[test]
-    fn missing_mode_defaults_to_auto() {
-        let parsed: RemoteControlConfig = toml::from_str("").unwrap();
-        assert_eq!(parsed.mode, RemoteControlMode::Auto);
-    }
-
-    #[test]
-    fn parse_version_handles_plain_and_noisy() {
-        assert_eq!(parse_version("2.1.51"), Some((2, 1, 51)));
-        assert_eq!(parse_version("2.1.51 (Claude Code)"), Some((2, 1, 51)));
-        assert_eq!(parse_version("v10.20.30"), Some((10, 20, 30)));
-        assert_eq!(parse_version("not a version"), None);
-        assert_eq!(parse_version("2.1"), None);
-    }
-
-    #[test]
-    fn version_supported_covers_boundaries() {
-        // Exact minimum supported version.
-        assert!(version_supported(MIN_REMOTE_CONTROL_VERSION));
-        assert!(version_supported((2, 1, 51)));
-        // One patch below the minimum — unsupported.
-        assert!(!version_supported((2, 1, 50)));
-        // Newer patch / minor / major — all supported.
-        assert!(version_supported((2, 1, 52)));
-        assert!(version_supported((2, 2, 0)));
-        assert!(version_supported((3, 0, 0)));
-        // Older minor / major — unsupported.
-        assert!(!version_supported((2, 0, 99)));
-        assert!(!version_supported((1, 9, 9)));
-    }
-
-    #[test]
-    fn status_is_enabled_reports_correctly() {
-        assert!(RemoteControlStatus::Enabled.is_enabled());
-        assert!(!RemoteControlStatus::Disabled {
-            reason: "x".to_string()
-        }
-        .is_enabled());
-    }
-
-    #[test]
-    fn supports_remote_control_false_for_missing_binary() {
-        // A path that does not exist must fail closed.
-        assert!(!claude_supports_remote_control(Path::new(
-            "/nonexistent/claude-binary-xyz"
-        )));
-    }
-
-    #[test]
-    #[serial]
-    fn eligible_rejects_disqualifying_env_var() {
-        // Save and restore every disqualifying var so the test is hermetic.
-        let saved: Vec<(&str, Option<std::ffi::OsString>)> = DISQUALIFYING_ENV_VARS
-            .iter()
-            .map(|v| (*v, std::env::var_os(v)))
-            .collect();
-        for (var, _) in &saved {
-            // SAFETY: this `#[serial]` test exclusively owns these environment
-            // variables and restores them before returning.
-            unsafe { std::env::remove_var(var) };
-        }
-
-        // SAFETY: the test is serialized and restores the original value below.
-        unsafe { std::env::set_var("ANTHROPIC_API_KEY", "super-secret-value") };
-        let result = remote_control_eligible();
-
-        // Restore environment before asserting.
-        for (var, value) in &saved {
-            match value {
-                // SAFETY: the serialized test is restoring its saved value.
-                Some(v) => unsafe { std::env::set_var(var, v) },
-                // SAFETY: the serialized test is restoring the variable's absence.
-                None => unsafe { std::env::remove_var(var) },
-            }
-        }
-
-        let err = result
-            .expect_err("disqualifying env var must produce Err")
-            .to_string();
-        assert!(
-            err.contains("ANTHROPIC_API_KEY"),
-            "reason must name the var: {err}"
-        );
-        assert!(
-            !err.contains("super-secret-value"),
-            "reason must NEVER contain the var value: {err}"
-        );
-    }
-
-    #[test]
-    #[serial]
-    fn resolve_false_when_mode_off() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let work_dir = temp.path();
-        crate::fs::work_dir::write_remote_control_config(
-            work_dir,
-            &RemoteControlConfig {
-                mode: RemoteControlMode::Off,
-            },
-        )
-        .unwrap();
-        assert!(!resolve(work_dir));
-    }
-
-    #[test]
-    #[serial]
-    fn disable_for_this_process_latches_and_keeps_the_first_reason() {
-        reset_disabled_for_process();
-        let temp = tempfile::TempDir::new().unwrap();
-
-        disable_for_this_process("first reason");
-        disable_for_this_process("second reason");
-        assert!(!resolve(temp.path()));
-        assert_eq!(
-            DISABLED_FOR_PROCESS.lock().unwrap().as_deref(),
-            Some("first reason")
-        );
-
-        reset_disabled_for_process();
-        assert!(!disabled_for_process());
-    }
-
-    #[test]
-    fn keychain_probe_argv_is_exact() {
-        let (program, args) = keychain_probe_argv();
-        assert_eq!(program, "security");
-        assert_eq!(args[0], "find-generic-password");
-        assert_eq!(args[1], "-s");
-        assert_eq!(args[2], "Claude Code-credentials");
-        assert!(
-            !args.contains(&"-w"),
-            "must never pass -w: it prints the secret to stdout"
-        );
-    }
-
-    #[test]
-    fn help_indicates_named_arg_detects_optional_name() {
-        let help = "Usage: claude [options] [prompt]\n\
-                    \x20 --permission-mode <mode>  Permission mode\n\
-                    \x20 --remote-control [name]   Enable remote control\n";
-        assert!(help_indicates_named_arg(help));
-    }
-
-    #[test]
-    fn help_indicates_named_arg_false_without_optional_name() {
-        // Older claude: the flag exists but takes no argument.
-        let help = "  --remote-control        Enable remote control\n";
-        assert!(!help_indicates_named_arg(help));
-    }
-
-    #[test]
-    fn probe_named_arg_support_false_for_missing_binary() {
-        // A path that does not exist must fail closed (bare flag).
-        assert!(!probe_named_arg_support(Path::new(
-            "/nonexistent/claude-binary-xyz"
-        )));
-    }
-
-    #[test]
-    #[serial]
-    fn resolve_invocation_disabled_when_mode_off() {
-        let temp = tempfile::TempDir::new().unwrap();
-        let work_dir = temp.path();
-        crate::fs::work_dir::write_remote_control_config(
-            work_dir,
-            &RemoteControlConfig {
-                mode: RemoteControlMode::Off,
-            },
-        )
-        .unwrap();
-        assert_eq!(
-            resolve_invocation(work_dir, "anything"),
-            RemoteControlInvocation::Disabled
-        );
-    }
-}
+#[path = "remote_control_tests.rs"]
+mod tests;

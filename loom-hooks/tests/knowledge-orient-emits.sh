@@ -65,4 +65,13 @@ if ! printf '%s' "$CTX" | grep -qF "3 entries"; then
 	exit 1
 fi
 
+# The byte figure is the bare count: a hook that kept the padding `wc -c` prints
+# on BSD/macOS (and under the BSD shims) would print "entries,      NNN bytes".
+EXPECTED_BYTES=$(wc -c <"$KNOWLEDGE_DIR/INDEX.md" | tr -d '[:space:]')
+if ! printf '%s' "$CTX" | grep -qF "INDEX.md: 3 entries, ${EXPECTED_BYTES} bytes)"; then
+	echo "FAIL: 'INDEX.md: 3 entries, ${EXPECTED_BYTES} bytes)' not found in additionalContext"
+	echo "additionalContext: $CTX"
+	exit 1
+fi
+
 echo "PASS: knowledge-orient.sh emits additionalContext with the index path and row count"

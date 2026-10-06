@@ -2,7 +2,7 @@
 ---
 # Orchestrator Loop
 
-> Tick order, Monitor, heartbeat liveness
+> Tick order, Monitor, liveness
 
 ## Orchestrator Main-Loop Tick Sequence (Exact Call Order)
 

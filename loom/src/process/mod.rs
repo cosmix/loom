@@ -2,6 +2,7 @@
 //!
 //! This module provides common process management functions used across the codebase.
 
+pub mod boot_id;
 mod environment;
 mod identity;
 #[doc(hidden)]
@@ -17,7 +18,10 @@ use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
 use wait_timeout::ChildExt;
 
-pub use environment::apply_stage_environment;
+pub use environment::{
+    agent_session_environment_from, apply_stage_environment, apply_stage_environment_from,
+    AGENT_SESSION_ENV_NAMES,
+};
 pub use identity::{
     process_is_zombie, process_start_time, terminate_verified, verify_process_identity,
     IdentityStatus, ProcessIdentity, UnverifiedProcessIdentity,

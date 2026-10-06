@@ -373,3 +373,5 @@ mod script_text;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_exec_env;

@@ -39,6 +39,25 @@ loom_subagent_stop_review_harvest() {
 	return 0
 }
 
+# A skipped reviewer stop leaves the review gate with no round and no message,
+# so append one row to the stage's stop-skips.jsonl for `loom stage review
+# status` (loom_debug needs LOOM_HOOK_DEBUG). Diagnostic only: it never creates
+# a directory, follows a symlink, or changes the hook's exit code or output.
+loom_subagent_stop_skip() {
+	local reason="$1" dir="$WORK_DIR/subagents/$LOOM_STAGE_ID" file="" ts="" row=""
+	[[ "$AGENT_TYPE" == "$REVIEWER_AGENT_TYPE" ]] || return 0
+	loom_lifecycle_plain_path "$dir" dir || return 0
+	file="$dir/stop-skips.jsonl"
+	# A symlink, FIFO, or device would follow the append somewhere else or block it.
+	[[ ! -L "$file" && (-f "$file" || ! -e "$file") ]] || return 0
+	ts=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z" 2>/dev/null) || return 0
+	row=$(jq -nc --arg ts "$ts" --arg agent_id "$AGENT_ID" --arg agent_type "$AGENT_TYPE" \
+		--arg reason "$reason" \
+		'{ts:$ts,agent_id:$agent_id,agent_type:$agent_type,reason:$reason}' 2>/dev/null) || return 0
+	[[ -n "$row" ]] || return 0
+	{ printf '%s\n' "$row" >>"$file"; } 2>/dev/null || true
+}
+
 if [[ -z "${LOOM_STAGE_ID:-}" ]]; then
 	loom_debug "$HOOK_NAME: skipping - LOOM_STAGE_ID unset (not a loom session)"
 	exit 0
@@ -52,8 +71,8 @@ if ! loom_lifecycle_safe_id "$LOOM_STAGE_ID" ||
 	loom_debug "$HOOK_NAME: skipping - unsafe stage or Loom session id"
 	exit 0
 fi
-if ! command -v jq &>/dev/null || ! command -v sha256sum &>/dev/null; then
-	loom_debug "$HOOK_NAME: skipping - jq or sha256sum unavailable"
+if ! command -v jq &>/dev/null || ! loom_lifecycle_have_sha256; then
+	loom_debug "$HOOK_NAME: skipping - jq or a sha256 tool unavailable"
 	exit 0
 fi
 
@@ -103,6 +122,7 @@ fi
 if ! loom_lifecycle_plain_path "$PARENT_TRANSCRIPT" file ||
 	! loom_lifecycle_plain_path "$WORKER_TRANSCRIPT" file; then
 	loom_debug "$HOOK_NAME: skipping - parent or worker transcript is not a plain normalized file"
+	loom_subagent_stop_skip transcript_not_plain
 	exit 0
 fi
 
@@ -115,12 +135,14 @@ if [[ "$WORKER_NAME" != "agent-${AGENT_ID}.jsonl" ||
 	"${WORKER_SESSION##*/}" != "$PARENT_SESSION_ID" ||
 	"$PARENT_TRANSCRIPT" != "$WORKER_PROJECT/${PARENT_SESSION_ID}.jsonl" ]]; then
 	loom_debug "$HOOK_NAME: skipping - transcript layout, parent UUID, or agent id differs"
+	loom_subagent_stop_skip transcript_layout_mismatch
 	exit 0
 fi
 
 OBSERVED_AT=$(date -u +"%Y-%m-%dT%H:%M:%S.000Z" 2>/dev/null || true)
 if [[ -z "$OBSERVED_AT" ]]; then
 	loom_debug "$HOOK_NAME: skipping - UTC timestamp unavailable"
+	loom_subagent_stop_skip timestamp_unavailable
 	exit 0
 fi
 START_STATUS=0
@@ -130,6 +152,9 @@ loom_lifecycle_resolve_start "$WORK_DIR" "$LOOM_STAGE_ID" \
 if ((START_STATUS != 0)); then
 	if ((START_STATUS == 1)); then
 		loom_debug "$HOOK_NAME: skipping - no unambiguous exact SubagentStart row"
+		loom_subagent_stop_skip no_unambiguous_start_row
+	else
+		loom_subagent_stop_skip lifecycle_defect
 	fi
 	exit 0
 fi
@@ -138,6 +163,7 @@ loom_lifecycle_transcript_evidence "$WORKER_TRANSCRIPT" "$HOOK_NAME" || TRANSCRI
 if ((TRANSCRIPT_STATUS != 0)); then
 	if ((TRANSCRIPT_STATUS == 1)); then
 		loom_debug "$HOOK_NAME: skipping - worker transcript is empty, torn, malformed, or changing"
+		loom_subagent_stop_skip transcript_unusable
 	fi
 	exit 0
 fi
@@ -145,13 +171,15 @@ fi
 if ! EVENT_HEX=$(printf 'loom.lifecycle.claude_subagent_stop.v1\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s' \
 	"$LOOM_STAGE_ID" "$LOOM_SESSION_ID" "$PARENT_SESSION_ID" "$AGENT_ID" \
 	"$AGENT_TYPE" "$WORKER_TRANSCRIPT" "$LIFECYCLE_TRANSCRIPT_BYTES" \
-	"$LIFECYCLE_FINAL_DIGEST" | sha256sum 2>/dev/null); then
+	"$LIFECYCLE_FINAL_DIGEST" | loom_lifecycle_sha256 2>/dev/null); then
 	loom_debug "$HOOK_NAME: skipping - event id digest failed"
+	loom_subagent_stop_skip event_digest_failed
 	exit 0
 fi
 EVENT_HEX=${EVENT_HEX%% *}
 if [[ ! "$EVENT_HEX" =~ ^[0-9a-f]{64}$ ]]; then
-	loom_debug "$HOOK_NAME: skipping - sha256sum returned an invalid digest"
+	loom_debug "$HOOK_NAME: skipping - the sha256 digest is invalid"
+	loom_subagent_stop_skip event_digest_failed
 	exit 0
 fi
 

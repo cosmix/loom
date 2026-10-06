@@ -137,3 +137,18 @@ using an in-memory catalog` because `.loom/cache` sits outside the stage's `allo
 The query still answers correctly from the in-memory catalog rebuilt for that call -- this is a
 sandbox limit, not a knowledge-command defect. Do not treat the warning as a reason to widen the
 sandbox or to distrust the returned context.
+
+## The Knowledge Checker Read AGENTS.md.template as a Missing AGENTS.md (2026-10-06)
+
+**What happened:** `loom knowledge check` reported a missing file for a backticked AGENTS.md.template, since
+the file name matched as its AGENTS.md prefix. The fix is in the tree; a binary built before it still
+fails on the text.
+
+**Why:** the extractor matched the AGENTS.md prefix without asking whether the name continues; `continues_name` in `fs/knowledge/chunker/references.rs` now does.
+
+**Prevention:** until the installed binary carries the fix, write AGENTS.md.template, AGENTS.md and the
+codex home's AGENTS.md in knowledge without backticks, as
+[Changelog Skipped](doctrine-and-acceptance.md) does. `--write-baseline` may only remove baseline lines;
+an added line is a knowledge defect to fix.
+
+**Fix:** `continues_name` rejects a prefix followed by `.` and an identifier character, with a test for the backticked template name.

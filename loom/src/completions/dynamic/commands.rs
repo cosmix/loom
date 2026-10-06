@@ -59,7 +59,7 @@ pub fn complete_flags(command_path: &[&str], prefix: &str) -> Result<Vec<String>
         return Ok(Vec::new());
     };
     let mut flags = Vec::new();
-    for argument in command.get_arguments() {
+    for argument in command.get_arguments().filter(|arg| !arg.is_hide_set()) {
         if let Some(long) = argument.get_long() {
             flags.push(format!("--{long}"));
         }
@@ -138,4 +138,21 @@ fn filter_owned(candidates: Vec<String>, prefix: &str) -> Vec<String> {
         .into_iter()
         .filter(|candidate| prefix.is_empty() || candidate.starts_with(prefix))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::complete_flags;
+
+    #[test]
+    fn run_completions_never_offer_the_hidden_daemon_child_flag() {
+        let hidden = complete_flags(&["run"], "--daemon").unwrap();
+        assert!(
+            !hidden.contains(&"--daemon-child".to_string()),
+            "{hidden:?}"
+        );
+
+        let all = complete_flags(&["run"], "--").unwrap();
+        assert!(all.contains(&"--manual".to_string()), "{all:?}");
+    }
 }

@@ -134,10 +134,29 @@ pub(super) fn install_shims(bin: &Path) {
             "  printf '%s\\n' \"$FIXTURE_NOW\"\n",
             "  exit 0\n",
             "fi\n",
-            "PATH=/usr/bin:/bin exec date \"$@\"\n",
+            "PATH=\"${FIXTURE_DATE_PATH:-/usr/bin:/bin}\" exec date \"$@\"\n",
         ),
     );
     write_exec(&bin.join("loom"), "#!/usr/bin/env bash\nexit 0\n");
+}
+
+/// The BSD tool shims the hook suite's `LOOM_HOOK_TEST_BSD=1` mode uses: a
+/// padded `wc -c`, and `stat` and `date` with BSD-only option sets.
+pub(super) fn install_bsd_tools(dir: &Path) {
+    fs::create_dir_all(dir).expect("create BSD shim directory");
+    for (name, content) in [
+        ("wc", include_str!("../../../loom-hooks/tests/bsd-shims/wc")),
+        (
+            "stat",
+            include_str!("../../../loom-hooks/tests/bsd-shims/stat"),
+        ),
+        (
+            "date",
+            include_str!("../../../loom-hooks/tests/bsd-shims/date"),
+        ),
+    ] {
+        write_exec(&dir.join(name), content);
+    }
 }
 
 fn write_exec(path: &Path, content: &str) {

@@ -92,3 +92,39 @@ fn wire_preface_frames_the_placeholder_but_refuses_an_empty_credential() {
         "expected a credential-length error, got: {error}"
     );
 }
+
+#[test]
+fn request_completion_reaches_the_daemon_through_a_long_worktree_spelling() {
+    let root = tempfile::tempdir().unwrap();
+    if crate::process::sandbox_probe::skip_unless(
+        crate::process::sandbox_probe::unix_socket_bindable(root.path()),
+        "commands::stage::control_complete::tests::request_completion_reaches_the_daemon_through_a_long_worktree_spelling",
+        "this sandbox denies binding an AF_UNIX listener",
+    ) {
+        return;
+    }
+    let real_work = root.path().join("r/.loom/work");
+    std::fs::create_dir_all(&real_work).unwrap();
+    let worktree_state = root
+        .path()
+        .join("r/.worktrees")
+        .join("a".repeat(80))
+        .join(".loom");
+    std::fs::create_dir_all(&worktree_state).unwrap();
+    let spelling = worktree_state.join("work");
+    std::os::unix::fs::symlink("../../../.loom/work", &spelling).unwrap();
+    assert!(spelling.join(crate::daemon::SOCKET_FILE).as_os_str().len() >= 108);
+    let listener =
+        std::os::unix::net::UnixListener::bind(crate::daemon::socket_path(&real_work)).unwrap();
+
+    let handle = std::thread::spawn(move || {
+        let (mut stream, _) = listener.accept().unwrap();
+        let _request: Request = crate::daemon::read_message(&mut stream).unwrap();
+        crate::daemon::write_message(&mut stream, &Response::Ok).unwrap();
+    });
+
+    let response = request_completion("stage-a", "session-a", "nonce-a", "evidence-a", &spelling);
+
+    assert!(matches!(response, Ok(Response::Ok)), "got {response:?}");
+    handle.join().unwrap();
+}

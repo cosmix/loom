@@ -1,6 +1,6 @@
 # Merge Flow
 
-> How a completed stage reaches its target branch
+> Finished stage to target branch
 
 ## Merge Flow
 
@@ -55,9 +55,11 @@ untracked-file removal of the reapply path:
    with empty stdout (bad revision) or any other code is an error. A conflict returns
    `Conflict { conflicting_files }` and R is untouched. After a clean tree, the control-path gate
    checks the exact landing diff (see [The merge gate](#the-merge-gate)).
-5. Clean: `commit_merge` (lazily, through `PendingMerge`) runs `git commit-tree <tree> -p T0 -p B -m "Merge loom/<id> into <target>"`.
-   The commit always has two parents, even when `B` already contains `T0` after a resolver merged the
-   target in. Stats come from `git diff --shortstat T0 M`.
+5. Clean: `commit_merge` (lazily, through `PendingMerge`) calls `signing::commit_tree`, which runs `git commit-tree <tree> -p T0 -p B -m "Merge loom/<id> into <target>"`
+   and adds `-S` when `commit.gpgsign` is true (under `SIGN_TIMEOUT`, with the signing environment the
+   daemon captured at startup; see [Daemon-Owned Commits](daemon-owned-commits.md)). A signing failure
+   is a downcastable `CommitTreeError { signing: true }`. The commit always has two parents, even when
+   `B` already contains `T0` after a resolver merged the target in. Stats come from `git diff --shortstat T0 M`.
 6. `advance_target` (`tree.rs`) moves the target to the merge commit `M`, by where the target is
    checked out (`git worktree list --porcelain`):
    - nowhere (R on another branch or detached included): `git update-ref -m "loom: merge loom/<id>"
@@ -95,6 +97,7 @@ test ([Sandbox gaps](../concerns/sandbox-and-confinement-gaps.md)).
 | Git error (lock timeout, missing branch) | forced to `MergeBlocked`, `failure_info` type `InfrastructureError` with the git error as evidence | last stage: exits; `loom status` shows MERGE ERROR |
 | Merge ran but ancestry cannot be verified | forced to `MergeBlocked`, reason in `failure_info` | same |
 | Branch has zero commits beyond target | forced to `NeedsHumanReview`, `review_reason` says the agent never committed | exits; NEEDS REVIEW |
+| `commit_merge` fails to sign (`CommitTreeError { signing: true }` anywhere in the chain) | `route_to_human_review` with the signer text and the remedy: fix signing, then `loom stage human-review <id> --approve`; reached from `land_stage_merge` (it returns `Landing::Held`) and from the first auto-merge (`apply_auto_merge_outcome`'s `Err` arm); no resolver spawns and nothing retries each tick | exits; NEEDS REVIEW |
 | Auto-merge disabled for the stage or plan | stays `Completed + !merged` by design | exits; `loom status` shows unmerged |
 
 `persist_merge_blocked` is the writer for the infrastructure outcomes and `route_to_human_review`

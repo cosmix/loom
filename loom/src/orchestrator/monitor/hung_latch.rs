@@ -34,6 +34,7 @@ use super::detection::Detection;
 use super::events::MonitorEvent;
 use super::handlers::Handlers;
 use super::heartbeat::{Heartbeat, HeartbeatStatus, HeartbeatWatcher};
+use super::never_worked::silence_without_heartbeat;
 use super::parked::stage_looks_finished;
 
 /// The multiple of a stage's response budget at which a still-silent session
@@ -105,7 +106,7 @@ impl Detection {
         )
     }
 
-    /// A stage agent that has stopped heartbeating. Unchanged behaviour: the
+    /// A stage agent that has stopped heartbeating, or never started: the
     /// first silence past the budget is reported, then one more at the
     /// escalation line.
     fn stage_silence_event(
@@ -117,28 +118,8 @@ impl Detection {
         timeout_secs: u64,
         handlers: &Handlers,
     ) -> Option<MonitorEvent> {
-        // Pass the session ID so a stale heartbeat left by a previous session
-        // for the same stage does not flag this fresh session as hung.
-        let status = heartbeat_watcher.check_session_hung(
-            stage_id,
-            &session.id,
-            Duration::from_secs(timeout_secs),
-        );
-        let stale_duration_secs = match status {
-            HeartbeatStatus::Hung {
-                stale_duration_secs,
-                ..
-            } => stale_duration_secs,
-            // Answering again, so the next silence starts from the first
-            // warning.
-            HeartbeatStatus::Healthy => {
-                self.clear_hung_report(&session.id);
-                return None;
-            }
-            // Normal for a session that has not reached its first tool call.
-            HeartbeatStatus::NoHeartbeat => return None,
-        };
-
+        let stale_duration_secs =
+            self.stage_silence_secs(session, stage_id, heartbeat_watcher, timeout_secs)?;
         // A dead PID is a crash, and crash detection in
         // `detect_session_changes` owns it, so only a live one is reported hung.
         if !self.hung_report_due(&session.id, stale_duration_secs, timeout_secs)
@@ -156,6 +137,37 @@ impl Detection {
         );
         self.record_hung_report(&session.id, stale_duration_secs, timeout_secs);
         Some(event)
+    }
+
+    /// Silence of a stage session, or `None` when it answers (resetting its latch).
+    fn stage_silence_secs(
+        &mut self,
+        session: &Session,
+        stage_id: &str,
+        heartbeat_watcher: &HeartbeatWatcher,
+        timeout_secs: u64,
+    ) -> Option<u64> {
+        // The session ID keeps a previous session's stale heartbeat from flagging this one.
+        let status = heartbeat_watcher.check_session_hung(
+            stage_id,
+            &session.id,
+            Duration::from_secs(timeout_secs),
+        );
+        match status {
+            HeartbeatStatus::Hung {
+                stale_duration_secs,
+                ..
+            } => Some(stale_duration_secs),
+            // Answering again: the next silence starts from the first warning.
+            HeartbeatStatus::Healthy => {
+                self.clear_hung_report(&session.id);
+                None
+            }
+            // Measured from spawn, so a session that never reaches a tool call is reported.
+            HeartbeatStatus::NoHeartbeat => {
+                silence_without_heartbeat(session, heartbeat_watcher.now(), timeout_secs)
+            }
+        }
     }
 
     /// A judge that is still alive and has stopped working.
@@ -293,8 +305,10 @@ pub(super) fn hung_event(
     stale_duration_secs: u64,
     timeout_secs: u64,
 ) -> MonitorEvent {
+    // A previous session's activity must not describe this one.
     let last_activity = heartbeat_watcher
         .get_heartbeat(stage_id)
+        .filter(|hb| hb.session_id == session.id)
         .and_then(|hb| hb.activity.clone());
 
     let finished_without_completing = stages

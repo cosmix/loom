@@ -19,10 +19,8 @@
 //!
 //! # What this does NOT change
 //!
-//! Hung detection stays advisory. `MonitorEvent::SessionHung` still only warns —
-//! nothing here kills, retries, or transitions a stage, and that remains a
-//! deliberate design decision documented at its handler in `event_handler`.
-//! This module makes the session record true; it does not add a new policy.
+//! Hung reports are acted on by `event_handler/recover_hung.rs`. This module
+//! only makes the session record true and adds no policy.
 
 use anyhow::Result;
 use chrono::{DateTime, Utc};

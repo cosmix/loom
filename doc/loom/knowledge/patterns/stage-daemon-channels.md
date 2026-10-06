@@ -21,7 +21,19 @@ criteria were defective and it could report neither fact.
 | --- | --- | --- |
 | `Answered(resp)` | a daemon replied | its answer stands, refusal included |
 | `NotListening` | no socket file, or a stale one nothing is bound to | the caller's local fallback (an operator's direct write) |
-| `Unreachable` | `PermissionDenied` on connect | the worktree spool |
+| `Unreachable` | `PermissionDenied` on connect, a socket path `lstat` cannot look at, or a resolved socket path past `sun_path` | the worktree spool |
+
+**Every client dials `daemon::socket_path(work_dir)`** (`daemon/socket.rs`), never `work_dir.join("orchestrator.sock")`.
+In a stage worktree `.loom/work` is a symlink to the state root, and the daemon bound its socket under the
+resolved, shorter path; the worktree spelling can pass the `sun_path` limit and fail `connect` with
+`InvalidInput` before any syscall. `socket_path` canonicalizes the work dir (falling back to the
+spelling it was given), `socket_path_fits` budgets `SUN_PATH_MAX = 104` bytes (the tighter macOS/BSD
+bound, on every platform), and `try_send_request` classifies a path past the limit as `Unreachable`
+(the daemon may run; this process cannot address it) while any other `InvalidInput` stays an error.
+`loom run` refuses a work root whose resolved socket path does not fit, before the plan is marked in
+progress (`--foreground` binds no socket and is not refused), and `loom init` warns. The completion
+broker sends through `daemon::send_request` over the same path; completion is never spooled.
+The TUI, web, repair, review-observer, shutdown and status clients resolve through the same function.
 
 **A refusal is an answer; a stale socket is not.** Never fall back from `Answered` — routing around
 a live daemon's refusal hands a sandboxed agent exactly the write the sandbox denies it. Do fall

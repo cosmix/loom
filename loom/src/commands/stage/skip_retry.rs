@@ -309,7 +309,7 @@ fn validate_retry_transition(
 /// Apply the retry delta to the freshly-validated on-disk stage: reset or
 /// increment the retry counter, clear the previous attempt's timing, and
 /// requeue it.
-fn apply_retry_delta(
+pub(super) fn apply_retry_delta(
     current: &mut crate::models::stage::Stage,
     planned: &crate::models::stage::Stage,
     force: bool,
@@ -321,6 +321,8 @@ fn apply_retry_delta(
         current.retry_count += 1;
     }
     current.last_failure_at = None;
+    // A retry is a fresh attempt: the stall recovery budget starts over.
+    current.stall_recoveries = 0;
     current.started_at = None;
     current.attempt_started_at = None;
     if current.status == StageStatus::Executing {

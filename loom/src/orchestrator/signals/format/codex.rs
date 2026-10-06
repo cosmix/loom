@@ -206,7 +206,8 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
     content.push_str(
         "- VERIFICATION STAYS WITH YOU (opus): codex subagents implement and report, never verify,\n\
          commit, or run `loom stage complete`. YOU run the full build/test/lint gate and the\n\
-         six-dimension review, then commit at the end of the stage - never take a codex agent's word\n\
+         six-dimension review, then commit at the end of the stage through \
+         `loom stage commit` - never take a codex agent's word\n\
          its own work is correct, and never have codex review its own output.\n\n",
     );
 }

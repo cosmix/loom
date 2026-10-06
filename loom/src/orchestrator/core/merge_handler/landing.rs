@@ -12,12 +12,14 @@ use crate::git::cleanup::CleanupConfig;
 use crate::git::merge::{
     merge_stage, verify_merge_succeeded, MergeBlock, MergeGate, MergeResult, StashReapply,
 };
+use crate::git::signing::CommitTreeError;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::persistence::Persistence;
 use crate::orchestrator::core::{clear_status_line, Orchestrator};
 use crate::orchestrator::merge_lifecycle::finish_verified_merge;
 
 use super::report_deferred_cleanup;
+use super::review_route::ReviewRoute;
 
 /// What landing a stage's merge came to.
 #[derive(Debug, PartialEq, Eq)]
@@ -25,7 +27,8 @@ pub(in crate::orchestrator::core) enum Landing {
     /// The merge landed and ancestry proved it: the stage is `Completed` and
     /// `merged`.
     Merged,
-    /// The control-path gate held the branch and routed the stage to human review.
+    /// The stage was routed to human review: the control-path gate held the
+    /// branch, or loom's own merge commit could not be signed.
     Held,
     /// The merge conflicts in these paths; the stage is `MergeConflict`.
     Conflict(Vec<String>),
@@ -105,7 +108,41 @@ impl Orchestrator {
                 self.route_to_human_review(stage_id, reason, None);
                 Landing::Held
             }
-            Err(error) => Landing::Failed(format!("{error:#}")),
+            Err(error) => match signing_failure(&error) {
+                Some(failure) => {
+                    let reason = merge_signing_reason(stage_id, &failure.detail);
+                    self.route_to_human_review(stage_id, reason, None);
+                    Landing::Held
+                }
+                None => Landing::Failed(format!("{error:#}")),
+            },
+        }
+    }
+
+    /// Hold `stage_id`'s merge for the operator after the daemon's relayed
+    /// merge commit failed to sign: stop any resolver (it cannot fix signing),
+    /// then route the stage to `NeedsHumanReview` with the remedy. Returns the
+    /// outcome text for the refused request.
+    pub(in crate::orchestrator::core) fn hold_merge_for_signing(
+        &mut self,
+        stage_id: &str,
+        detail: &str,
+    ) -> String {
+        let mut reason = merge_signing_reason(stage_id, detail);
+        if let Some(stopped) = self.stop_gated_resolvers(stage_id) {
+            clear_status_line();
+            eprintln!("Stage '{stage_id}': merge commit signing failed; {stopped}");
+            reason = format!("{reason}. {stopped}");
+        }
+        match self.route_merge_stage_to_review(stage_id, reason, None) {
+            ReviewRoute::Routed => "held for the operator in needs-human-review".to_string(),
+            ReviewRoute::StageMovedOn => {
+                "the stage left its merge state meanwhile; it was not routed to human review"
+                    .to_string()
+            }
+            ReviewRoute::NotSaved => {
+                "the stage could not be saved; it was not routed to human review".to_string()
+            }
         }
     }
 
@@ -283,6 +320,23 @@ impl Orchestrator {
         );
         report_deferred_cleanup(stage_id, &outcome);
     }
+}
+
+/// The signing failure of loom's own merge commit in `error`'s chain, found by
+/// downcast: a `CommitTreeError` that is not a signing failure is not one.
+pub(super) fn signing_failure(error: &anyhow::Error) -> Option<&CommitTreeError> {
+    error
+        .chain()
+        .find_map(|cause| cause.downcast_ref::<CommitTreeError>())
+        .filter(|failure| failure.signing)
+}
+
+/// The review reason of a merge held because its commit could not be signed.
+pub(super) fn merge_signing_reason(stage_id: &str, detail: &str) -> String {
+    format!(
+        "merge commit signing failed: {detail}; fix signing (gpg-agent passphrase cache, GUI \
+         pinentry or ssh-agent key), then loom stage human-review {stage_id} --approve"
+    )
 }
 
 /// A merge result may only be recorded on a stage that is not merged yet.

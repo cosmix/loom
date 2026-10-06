@@ -126,3 +126,40 @@ fn exact_job_wins_over_newer_unrelated_job() -> Result<()> {
     assert_exit(&fixture.watch(&launch)?, 0);
     Ok(())
 }
+
+#[test]
+#[serial]
+fn bsd_tools_record_the_same_terminal_identity() -> Result<()> {
+    let fixture = Fixture::new("bsd-completed")?;
+    fixture.enable_bsd_tools()?;
+    let forwarder = fixture.add_forwarder(PARENT, AGENT)?;
+    let launch = fixture.launch_with_ids(
+        &forwarder,
+        Some("unit-bsd"),
+        "job-bsd",
+        "completed",
+        "thread-bsd",
+        "turn-bsd",
+    )?;
+    assert_wrapper_terminal(&fixture, &launch, "completed")?;
+
+    fixture.poll()?;
+    ensure!(fixture.lifecycle_outcome(&forwarder)? == WorkerOutcome::Succeeded);
+    let records = fixture.journal_values()?;
+    ensure!(
+        records.len() == 2,
+        "completed reconcile must write authorization and observation"
+    );
+    for record in &records {
+        assert_lifecycle_identity(record, &launch)?;
+    }
+    let terminal = records
+        .iter()
+        .find(|row| row["state"] == "completed")
+        .context("terminal record")?;
+    ensure!(terminal["evidence"]["thread_id"] == "thread-bsd");
+    ensure!(terminal["evidence"]["turn_id"] == "turn-bsd");
+    assert_state(&fixture.list(&forwarder)?, AGENT, "done")?;
+    assert_exit(&fixture.watch(&launch)?, 0);
+    Ok(())
+}

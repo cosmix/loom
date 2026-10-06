@@ -99,12 +99,41 @@ loom_lifecycle_stage_binding() {
 	[[ "$file_stage" == "$stage" && "$file_session" == "$session" ]]
 }
 
+# sha256 of stdin: GNU sha256sum, else the BSD/macOS shasum.
+loom_lifecycle_have_sha256() {
+	command -v sha256sum &>/dev/null || command -v shasum &>/dev/null
+}
+
+loom_lifecycle_sha256() {
+	if command -v sha256sum &>/dev/null; then
+		sha256sum
+	else
+		shasum -a 256
+	fi
+}
+
+# BSD date's -d is not a date string: split the timestamp, drop any fraction
+# (the caller compares equal seconds itself) and parse the rest with date -j -f.
+loom_lifecycle_bsd_epoch() {
+	local value="$1" base="" zone=""
+	local pattern='^([0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2})(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$'
+	[[ "$value" =~ $pattern ]] || return 1
+	base="${BASH_REMATCH[1]}"; zone="${BASH_REMATCH[3]}"
+	if [[ "$zone" == "Z" ]]; then
+		date -j -u -f '%Y-%m-%dT%H:%M:%SZ' "${base}Z" +%s 2>/dev/null
+	else
+		date -j -f '%Y-%m-%dT%H:%M:%S%z' "${base}${zone/:/}" +%s 2>/dev/null
+	fi
+}
+
 loom_lifecycle_epoch() {
 	local value="$1" epoch=""
 	[[ "$value" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$ ]] || return 1
-	epoch=$(date -u -d "$value" +%s 2>/dev/null || true)
+	# BSD form first: on macOS `date -u -d` sets the kernel DST flag (root can
+	# change it). GNU date rejects -j, so the BSD attempt fails harmlessly there.
+	epoch=$(loom_lifecycle_bsd_epoch "$value" || true)
 	if [[ ! "$epoch" =~ ^[0-9]+$ ]]; then
-		epoch=$(date -j -u -f '%Y-%m-%dT%H:%M:%S.000Z' "$value" +%s 2>/dev/null || true)
+		epoch=$(date -u -d "$value" +%s 2>/dev/null || true)
 	fi
 	[[ "$epoch" =~ ^[0-9]+$ ]] && printf '%s\n' "$epoch"
 }
@@ -160,7 +189,7 @@ loom_lifecycle_resolve_start() {
 		ledger="$dir/starts.jsonl"
 		[[ -e "$ledger" || -L "$ledger" ]] || continue
 		loom_lifecycle_plain_path "$ledger" file || return 1
-		bytes=$(wc -c <"$ledger" 2>/dev/null) || return 1
+		bytes=$(wc -c <"$ledger" 2>/dev/null | tr -d "[:space:]") || return 1
 		[[ "$bytes" =~ ^[0-9]+$ ]] && ((bytes <= 4194304)) || return 1
 		while IFS= read -r row; do
 			[[ -n "${row//[[:space:]]/}" ]] || continue
@@ -202,15 +231,14 @@ loom_lifecycle_transcript_evidence() {
 	local final_bytes="" digest="" newline_count="" status=0
 	loom_lifecycle_plain_path "$path" file || return 1
 	before=$(loom_lifecycle_stat_fingerprint "$path") || return 1
-	bytes=$(wc -c <"$path" 2>/dev/null) || return 1
+	bytes=$(wc -c <"$path" 2>/dev/null | tr -d "[:space:]") || return 1
 	[[ "$bytes" =~ ^[0-9]+$ ]] && ((bytes > 0)) || return 1
 	newline_count=$(tail -c 1 "$path" 2>/dev/null | wc -l) || return 1
 	[[ "$newline_count" =~ ^[[:space:]]*1[[:space:]]*$ ]] || return 1
 	final_record=$(tail -n 1 "$path" 2>/dev/null) || return 1
 	[[ -n "$final_record" ]] || return 1
-	final_bytes=$(printf '%s' "$final_record" | wc -c) || return 1
-	[[ "$final_bytes" =~ ^[[:space:]]*[0-9]+[[:space:]]*$ ]] || return 1
-	final_bytes=${final_bytes//[[:space:]]/}
+	final_bytes=$(printf '%s' "$final_record" | wc -c | tr -d '[:space:]') || return 1
+	[[ "$final_bytes" =~ ^[0-9]+$ ]] || return 1
 	((final_bytes < 1048576)) || return 1
 	printf '%s' "$final_record" | jq -e 'type == "object"' >/dev/null 2>&1
 	status=$?
@@ -221,13 +249,13 @@ loom_lifecycle_transcript_evidence() {
 		fi
 		return 1
 	fi
-	digest=$(printf '%s' "$final_record" | sha256sum 2>/dev/null) || return 1
+	digest=$(printf '%s' "$final_record" | loom_lifecycle_sha256 2>/dev/null) || return 1
 	digest=${digest%% *}
 	[[ "$digest" =~ ^[0-9a-f]{64}$ ]] || return 1
 	after=$(loom_lifecycle_stat_fingerprint "$path") || return 1
 	loom_lifecycle_plain_path "$path" file || return 1
 	[[ "$before" == "$after" ]] || return 1
-	LIFECYCLE_TRANSCRIPT_BYTES=${bytes//[[:space:]]/}
+	LIFECYCLE_TRANSCRIPT_BYTES=$bytes
 	LIFECYCLE_FINAL_DIGEST="sha256:$digest"
 }
 
@@ -235,14 +263,16 @@ loom_lifecycle_journal_ready() {
 	local journal="$1" bytes="" newline_count=""
 	if [[ -e "$journal" || -L "$journal" ]]; then
 		loom_lifecycle_plain_path "$journal" file || return 1
-		bytes=$(wc -c <"$journal" 2>/dev/null) || return 1
+		bytes=$(wc -c <"$journal" 2>/dev/null | tr -d "[:space:]") || return 1
 		[[ "$bytes" =~ ^[0-9]+$ ]] && ((bytes <= 8388608)) || return 1
 		if ((bytes > 0)); then
 			newline_count=$(tail -c 1 "$journal" 2>/dev/null | wc -l) || return 1
 			[[ "$newline_count" =~ ^[[:space:]]*1[[:space:]]*$ ]] || return 1
 		fi
 	fi
-	[[ ! -L "$journal" && ! -d "$journal" ]]
+	# Regular file or absent: a FIFO or device planted since the check above
+	# would block the append.
+	[[ ! -L "$journal" && (-f "$journal" || ! -e "$journal") ]]
 }
 
 loom_lifecycle_append() {

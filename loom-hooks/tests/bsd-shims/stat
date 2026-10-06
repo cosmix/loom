@@ -1,0 +1,56 @@
+#!/usr/bin/env bash
+# BSD/macOS stat shim over GNU stat: rejects -c like BSD stat and answers
+# `stat -f FORMAT FILE` for the directives the hooks use, translated to GNU
+# `stat -c`. %d %i %u pass through, %z -> %s (size), %m -> %Y (mtime) and
+# %Lp -> %a (octal mode). Any other directive exits 1.
+
+# The real tool is the first PATH entry (then /usr/bin, /bin) that is not this
+# script; -ef follows symlinks, so a path_without mirror of the shim directory
+# is skipped too.
+real_stat=""
+IFS=: read -r -a path_parts <<<"$PATH:/usr/bin:/bin"
+for part in "${path_parts[@]}"; do
+	if [[ -x "$part/stat" && ! "$part/stat" -ef "${BASH_SOURCE[0]}" ]]; then
+		real_stat="$part/stat"
+		break
+	fi
+done
+[[ -n "$real_stat" ]] || { echo "stat: no real stat on PATH" >&2; exit 127; }
+
+translate_format() {
+	local fmt="$1" i=0 out="" char="" next=""
+	while ((i < ${#fmt})); do
+		char="${fmt:i:1}"
+		if [[ "$char" != "%" ]]; then
+			out="${out}${char}"; i=$((i + 1)); continue
+		fi
+		next="${fmt:i+1:1}"
+		if [[ "${fmt:i+1:2}" == "Lp" ]]; then
+			out="${out}%a"; i=$((i + 3)); continue
+		fi
+		case "$next" in
+		d | i | u) out="${out}%${next}" ;;
+		z) out="${out}%s" ;;
+		m) out="${out}%Y" ;;
+		*) echo "stat: unsupported format directive in '$fmt'" >&2; return 1 ;;
+		esac
+		i=$((i + 2))
+	done
+	printf '%s' "$out"
+}
+
+case "${1:-}" in
+-c*)
+	echo "stat: illegal option -- c" >&2
+	exit 1
+	;;
+-f)
+	[[ $# -ge 3 ]] || { echo "usage: stat -f format file ..." >&2; exit 1; }
+	gnu_format=$(translate_format "$2") || exit 1
+	shift 2
+	exec "$real_stat" -c "$gnu_format" "$@"
+	;;
+*)
+	exec "$real_stat" "$@"
+	;;
+esac

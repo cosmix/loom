@@ -3,6 +3,7 @@
 //! Sends desktop notifications for events that need human attention,
 //! using notify-send on Linux and osascript on macOS.
 
+use crate::orchestrator::terminal::emulator::escape_applescript_string;
 use crate::process::run_bounded_output;
 use crate::utils::truncate;
 use anyhow::{bail, Context, Result};
@@ -12,59 +13,86 @@ use std::time::Duration;
 const NOTIFY_SEND_TIMEOUT: Duration = Duration::from_secs(2);
 const OSASCRIPT_NOTIFICATION_TIMEOUT: Duration = Duration::from_secs(3);
 
+/// The longest review reason a notification body carries.
+const REVIEW_REASON_CHARS: usize = 200;
+
+/// One notifier invocation: the program, its arguments, and how long it may run.
+struct Notifier {
+    program: &'static str,
+    args: Vec<String>,
+    timeout: Duration,
+}
+
+/// `text` with the markup characters of a freedesktop notification body
+/// escaped. Notification servers render `<a href=...>`, `<img>` and `<b>` in a
+/// body, and a body can carry text an agent wrote.
+fn escape_markup(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+/// The notifier for `os` (a `std::env::consts::OS` value): AppleScript's
+/// `display notification` on macOS, `notify-send` everywhere else, whose body is
+/// markup and is escaped.
+fn notifier_for(os: &str, title: &str, body: &str) -> Notifier {
+    if os == "macos" {
+        let script = format!(
+            r#"display notification "{}" with title "{}""#,
+            escape_applescript_string(body),
+            escape_applescript_string(title)
+        );
+        return Notifier {
+            program: "osascript",
+            args: vec!["-e".to_string(), script],
+            timeout: OSASCRIPT_NOTIFICATION_TIMEOUT,
+        };
+    }
+    Notifier {
+        program: "notify-send",
+        args: vec![
+            "--urgency=critical".to_string(),
+            "--app-name=loom".to_string(),
+            title.to_string(),
+            escape_markup(body),
+        ],
+        timeout: NOTIFY_SEND_TIMEOUT,
+    }
+}
+
 /// Send a desktop notification.
 ///
-/// Uses platform-appropriate notification tools:
-/// - Linux: `notify-send`
-/// - macOS: `osascript` with display notification
-///
-/// Failures are logged but never propagated - notifications are best-effort.
+/// Best-effort and never blocking: the notifier runs, bounded, on a thread of
+/// its own, and a failure (including a host without one) is logged, never
+/// propagated. A test build sends nothing, so no test run pops notifications
+/// on the developer's desktop.
 pub fn send_desktop_notification(title: &str, body: &str) {
-    let result = if cfg!(target_os = "macos") {
-        send_macos_notification(title, body)
-    } else {
-        send_linux_notification(title, body)
-    };
-
-    if let Err(e) = result {
+    if cfg!(test) {
+        return;
+    }
+    let notifier = notifier_for(std::env::consts::OS, title, body);
+    let spawned = std::thread::Builder::new()
+        .name("loom-notify".to_string())
+        .spawn(move || {
+            if let Err(e) = run_notifier(&notifier) {
+                eprintln!("Desktop notification failed: {e}");
+            }
+        });
+    if let Err(e) = spawned {
         eprintln!("Desktop notification failed: {e}");
     }
 }
 
-fn send_linux_notification(title: &str, body: &str) -> Result<()> {
-    let mut command = Command::new("notify-send");
-    command
-        .arg("--urgency=critical")
-        .arg("--app-name=loom")
-        .arg(title)
-        .arg(body);
+fn run_notifier(notifier: &Notifier) -> Result<()> {
+    let mut command = Command::new(notifier.program);
+    command.args(&notifier.args);
     run_notification_command(
         &mut command,
-        NOTIFY_SEND_TIMEOUT,
-        "notify-send desktop notification",
-        "notify-send",
+        notifier.timeout,
+        &format!("{} desktop notification", notifier.program),
+        notifier.program,
     )
-    .context("failed to run notify-send")
-}
-
-fn send_macos_notification(title: &str, body: &str) -> Result<()> {
-    use crate::orchestrator::terminal::emulator::escape_applescript_string;
-
-    let script = format!(
-        r#"display notification "{}" with title "{}""#,
-        escape_applescript_string(body),
-        escape_applescript_string(title)
-    );
-
-    let mut command = Command::new("osascript");
-    command.arg("-e").arg(&script);
-    run_notification_command(
-        &mut command,
-        OSASCRIPT_NOTIFICATION_TIMEOUT,
-        "osascript desktop notification",
-        "osascript",
-    )
-    .context("failed to run osascript")
+    .with_context(|| format!("failed to run {}", notifier.program))
 }
 
 fn run_notification_command(
@@ -90,15 +118,20 @@ fn notification_command_succeeded(program: &str, output: &std::process::Output) 
     bail!("{program} exited with {}: {stderr}", output.status)
 }
 
+/// The body of a needs-review notification: the command that resolves it, then
+/// `review_reason` cut to [`REVIEW_REASON_CHARS`]. The caller passes the one-line
+/// headline of a reason, never its pane notes.
+fn needs_review_body(stage_id: &str, review_reason: Option<&str>) -> String {
+    let reason = review_reason
+        .map(|r| truncate(r, REVIEW_REASON_CHARS))
+        .unwrap_or_else(|| "A stage requires human review.".to_string());
+    format!("Next: loom stage human-review {stage_id}\n{reason}")
+}
+
 /// Notify the user that a stage needs human review.
 pub fn notify_needs_human_review(stage_id: &str, review_reason: Option<&str>) {
     let title = format!("loom: Stage '{}' needs review", stage_id);
-    let reason = review_reason
-        .map(|r| truncate(r, 200))
-        .unwrap_or_else(|| "A stage requires human review.".to_string());
-    let body = format!("Next: loom stage human-review {stage_id}\n{reason}");
-
-    send_desktop_notification(&title, &body);
+    send_desktop_notification(&title, &needs_review_body(stage_id, review_reason));
 }
 
 #[cfg(test)]
@@ -113,6 +146,72 @@ mod tests {
             stdout: Vec::new(),
             stderr: stderr.as_bytes().to_vec(),
         }
+    }
+
+    #[test]
+    fn macos_notifies_through_applescript_with_its_strings_escaped() {
+        let notifier = notifier_for("macos", r#"loom: "s1""#, "Next: x\nwhy");
+
+        assert_eq!(notifier.program, "osascript");
+        assert_eq!(
+            notifier.args,
+            [
+                "-e",
+                r#"display notification "Next: x\nwhy" with title "loom: \"s1\"""#,
+            ]
+        );
+        assert_eq!(notifier.timeout, OSASCRIPT_NOTIFICATION_TIMEOUT);
+    }
+
+    #[test]
+    fn every_other_os_notifies_through_notify_send_with_title_and_body_as_arguments() {
+        let notifier = notifier_for("linux", "loom: Stage 's1' stalled", "Next: x");
+
+        assert_eq!(notifier.program, "notify-send");
+        assert_eq!(
+            notifier.args,
+            [
+                "--urgency=critical",
+                "--app-name=loom",
+                "loom: Stage 's1' stalled",
+                "Next: x",
+            ]
+        );
+        assert_eq!(notifier.timeout, NOTIFY_SEND_TIMEOUT);
+    }
+
+    #[test]
+    fn notify_send_bodies_are_escaped_so_no_markup_renders() {
+        let notifier = notifier_for("linux", "loom: s1", r#"<a href="x">go</a> & <b>more</b>"#);
+
+        assert_eq!(
+            notifier.args[3],
+            r#"&lt;a href="x"&gt;go&lt;/a&gt; &amp; &lt;b&gt;more&lt;/b&gt;"#
+        );
+    }
+
+    #[test]
+    fn a_review_notification_body_is_one_bounded_reason_without_raw_markup() {
+        let reason = format!(r#"stalled: <a href="x">open</a> {}"#, "y".repeat(500));
+        let body = needs_review_body("s1", Some(&reason));
+        let sent = notifier_for("linux", "loom: s1", &body).args[3].clone();
+
+        assert_eq!(body.lines().count(), 2, "{body}");
+        assert!(
+            body.starts_with("Next: loom stage human-review s1\n"),
+            "{body}"
+        );
+        assert!(body.chars().count() <= 40 + REVIEW_REASON_CHARS, "{body}");
+        assert!(!sent.contains('<') && !sent.contains('>'), "{sent}");
+        assert!(sent.contains("&lt;a href="), "{sent}");
+    }
+
+    #[test]
+    fn a_review_notification_without_a_reason_says_so() {
+        assert_eq!(
+            needs_review_body("s1", None),
+            "Next: loom stage human-review s1\nA stage requires human review."
+        );
     }
 
     #[test]

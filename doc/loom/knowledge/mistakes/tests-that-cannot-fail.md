@@ -282,3 +282,21 @@ error text (`"byte verification limit"`), not just `is_err()`.
 **Prevention**: when a new guard makes some fixtures fail, read every test of that path that still passes and confirm it still reaches the code its name claims. Assert a marker of the intended branch (the stage status, the reason text), not only an absence.
 
 **Fix**: the test now gives the stage a worktree and an orphan branch so `merge_tree` itself fails, and asserts the stage stays `MergeConflict` with no attempt recorded.
+
+## A Mutation Spot-Check Restored With `git checkout` Reverted a Colleague's Edit (2026-10-06)
+
+**What happened:** during integration-verify a mutation spot-check was undone with `git checkout --
+loom/src/git/signing.rs` after an engineer had already edited that file, which also reverted the engineer's
+change (making `probe` `#[cfg(test)]`).
+
+**Why:** `git checkout` restores a file to HEAD, not to its state before the mutation.
+
+**Prevention:** revert a mutation with an exact edit of the mutated line, or snapshot the file first; use
+`git checkout` only on files with no uncommitted work.
+
+## A Shim-Backed Contract Must Prove the Shim Does Its Job (2026-10-06)
+
+The padded-`wc` contract for the hook suite asserts that the `wc` shim really pads (it exits 90 otherwise),
+so it cannot pass vacuously when the shim is missing from `PATH`. It was checked in shell: the base hook
+exits 0 and the hook without its `tr` strip exits 1. A contract that runs against an emulated tool states
+the emulation's effect first.

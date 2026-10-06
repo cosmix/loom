@@ -127,6 +127,9 @@ fn classify_applied(fx: &Fixture, host: &FakeHost, kind: RequestKind) -> Cell {
         RequestKind::FreezeContracts => {
             assert!(load_freeze(&fx.work_dir, STAGE).unwrap().is_some());
         }
+        RequestKind::Commit => {
+            unreachable!("SECTION_5 has no commit column; commit_tests covers the commit kind")
+        }
     }
     Cell::Apply
 }

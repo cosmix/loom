@@ -1,6 +1,6 @@
 # Source Graph Build
 
-> Layer builder, freshness, reconcile lease
+> Layer builder, freshness, lease
 
 Builder and freshness of the source graph: how a layer is enumerated, reused and persisted,
 which states it reports, and the lease that keeps the prompt hook from stacking rebuilds.

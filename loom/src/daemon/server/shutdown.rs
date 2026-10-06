@@ -21,7 +21,7 @@ impl std::error::Error for DaemonUnavailable {}
 impl DaemonServer {
     /// Send an externally authorized stop request to the running daemon.
     pub fn stop(work_dir: &Path, operator_proof: &str) -> Result<()> {
-        let socket_path = work_dir.join("orchestrator.sock");
+        let socket_path = crate::daemon::socket_path(work_dir);
         if !Self::is_running(work_dir) {
             bail!("Daemon is not running");
         }

@@ -4,14 +4,9 @@
 
 ## Read This First: What "Containment" Means In Loom
 
-The plan that built this was named "context retrieval and containment", and the
-name oversells the second half. **Loom's execution containment is environment
-scrubbing. Nothing else.** It is least-privilege hygiene, not a security
-boundary.
-
-There is no namespace isolation, no seccomp filter, no landlock, no cgroup, and
-no network restriction applied to any command loom spawns. Three independent
-proofs, established at the plan's verification gate:
+**Loom's execution containment is environment scrubbing. Nothing else.** It is least-privilege
+hygiene, not a security boundary: no namespace isolation, no seccomp filter, no landlock, no cgroup
+and no network restriction is applied to any command loom spawns. Three independent proofs:
 
 1. An exhaustive `rg 'unshare|CLONE_NEW|netns|seccomp|landlock'` over `loom/src`
    returns only comments and unrelated matches — no syscall, no crate.
@@ -65,56 +60,58 @@ plan-authored commands: every acceptance criterion, setup command, truth check,
 wiring test, dead-code check and change-impact command in a loom plan becomes a
 process through it (`verify/criteria/confine.rs:1-14`).
 
-The rationale is worth keeping: plans are trusted artifacts, but **trusted is not
-privileged**. A plan line should not be able to read `GITHUB_TOKEN`, `AWS_*` or
-`ANTHROPIC_API_KEY` merely because loom happened to be started from a shell that
-had them.
+Plans are trusted artifacts, but **trusted is not privileged**: a plan line must not read
+`GITHUB_TOKEN`, `AWS_*` or `ANTHROPIC_API_KEY` merely because loom was started from a shell that had them.
 
 ## The Host Environment Allowlist
 
-`process/environment.rs:14-59`, `STAGE_HOST_ENV_ALLOWLIST`. Allow-only; anything
-absent is dropped. Forwarded:
+Three allow-only lists decide which host variables reach which process; anything absent is dropped.
+The principle is **locations and login identity yes, live credentials no**. In `process/environment.rs`,
+`STAGE_HOST_ENV_ALLOWLIST` serves `apply_stage_environment` (`spawn_confined`, the native spawner's
+`spawn_in_terminal`, the tmux server commands) and `AGENT_SESSION_ENV_NAMES` serves the stage
+wrapper's `exec env -i` list; `HOST_ENV_ALLOWLIST` in `daemon/server/environment.rs` serves the daemon
+child ([Launching the Daemon](daemon-launch.md)).
 
-- `HOME`, `PATH`
-- `CARGO_HOME`, `RUSTUP_HOME` — toolchain *locations*, not credentials. Usually
-  absent (both default under `HOME`), but CI images that relocate them leave
-  `cargo` unable to find its registry without them.
-- Locale/terminal: `LANG`, `LC_ALL`, `LC_CTYPE`, `TERM`, `COLORTERM`,
-  `TERM_PROGRAM`, `SHELL`
-- Display/session: `DISPLAY`, `WAYLAND_DISPLAY`, `XAUTHORITY`,
-  `DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`
-- tmux: `TMUX_TMPDIR`, `TMUX`, `TMUX_PANE`; plus `TMPDIR`
-- Proxies, both cases: `HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`, `ALL_PROXY`,
-  `http_proxy`, `https_proxy`, `no_proxy`, `all_proxy`
-- CA bundle *locations*: `SSL_CERT_FILE`, `SSL_CERT_DIR`, `NIX_SSL_CERT_FILE` —
-  paired with the proxy vars, because a host behind a corporate MITM proxy
-  usually also needs a custom CA bundle or the TLS handshake fails.
+`STAGE_HOST_ENV_ALLOWLIST` forwards `HOME`, `PATH`; `USER` and `LOGNAME` (they name the operator, and
+on macOS the `claude` CLI finds its Keychain login by `$USER`, so a session without it reads "Not
+logged in"); `CARGO_HOME`, `RUSTUP_HOME` (locations CI images relocate); `SCCACHE_DIR`,
+`SCCACHE_CACHE_SIZE` (inert without a selected wrapper, whose policy is in
+`orchestrator/terminal/native/build_cache.rs`; `RUSTC_WRAPPER` is not forwarded); `LANG`, `LC_ALL`,
+`LC_CTYPE`, `TERM`, `TERMINFO`, `TERMINFO_DIRS`, `COLORTERM`, `TERM_PROGRAM`, `SHELL`; `DISPLAY`,
+`WAYLAND_DISPLAY`, `XAUTHORITY`, `DBUS_SESSION_BUS_ADDRESS`, `XDG_RUNTIME_DIR`; `TMUX_TMPDIR`, `TMUX`,
+`TMUX_PANE`, `TMPDIR`; the proxy variables in both cases (`HTTP_PROXY`, `HTTPS_PROXY`, `NO_PROXY`,
+`ALL_PROXY`); and the CA bundle locations `SSL_CERT_FILE`, `SSL_CERT_DIR`, `NIX_SSL_CERT_FILE`.
+`TERMINFO*` pair with `TERM`: without the capability database the name is unresolvable (kitty), and
+a tmux probe on it exits non-zero like "the server is not accepting clients".
 
-**Deliberately withheld:** `SSH_AUTH_SOCK`. It is a live credential-agent socket,
-not a location, so an acceptance criterion needing SSH auth fails by design
-rather than silently inheriting host agent access.
+`AGENT_SESSION_ENV_NAMES` is the **single source for the wrapper**: `wrapper/script_text.rs` renders
+its shell loop with `AGENT_SESSION_ENV_NAMES.join(" ")`, and the wrapper writes `HOME` and `PATH`
+itself (`PATH` falls back to `/usr/bin:/bin`). It holds the locale, terminal, display, session and tmux
+names, `TMPDIR`, `SCCACHE_DIR`, `SCCACHE_CACHE_SIZE`, `USER` and `LOGNAME`; the proxy, CA bundle,
+`CARGO_HOME` and `RUSTUP_HOME` names are not forwarded to sessions
+([Three Stage Environment Allowlists](../concerns/sandbox-and-confinement-gaps.md#three-stage-environment-allowlists)).
+Tests require every session name in `STAGE_HOST_ENV_ALLOWLIST` (the half-fix that left `USER` unset
+on the tmux and native spawn paths) and in the daemon list.
 
-The governing principle is **locations yes, live credentials no**. The list must
-also carry enough for a build toolchain to find itself — an acceptance criterion
-that cannot run `cargo` fails the stage just as loudly as a real defect.
+**Withheld from every stage list:** `SSH_AUTH_SOCK`, a live credential-agent socket, so a criterion
+needing SSH auth fails by design. The list must still let a build toolchain find itself: a criterion
+that cannot run `cargo` fails the stage as loudly as a real defect.
 
 ## Honest Limits
 
 A `Confined` command **cannot** read an ambient environment variable outside the
 allowlist — that is the entire guarantee. It **can** still:
 
-- open arbitrary outbound network connections (shares the host network namespace);
+- open outbound network connections (shares the host network namespace) and connect to any host Unix socket;
 - read and write any path the invoking user can, including outside `allow_write`;
-- connect to any Unix socket on the host;
 - signal or inspect other processes owned by the user;
 - reach `org.freedesktop.secrets` and the X11 session via the forwarded
   `DBUS_SESSION_BUS_ADDRESS` and `XAUTHORITY`.
 
-That last point is a real inconsistency, not a hypothetical:
-`DBUS_SESSION_BUS_ADDRESS` is a live credential surface, which is the same
-argument used to withhold `SSH_AUTH_SOCK`. Root cause: **one allowlist serves two
-consumers with different needs** — the terminal spawner genuinely needs
-display/session variables, `spawn_confined` does not. See `concerns.md`.
+`DBUS_SESSION_BUS_ADDRESS` is a live credential surface, the argument used to withhold
+`SSH_AUTH_SOCK`. Root cause: **one list serves consumers with different needs** (the terminal spawner
+needs display variables, `spawn_confined` does not); see
+[Confined Commands Still Reach a Live Credential Bus](../concerns/sandbox-and-confinement-gaps.md#confined-commands-still-reach-a-live-credential-bus).
 
 ## Sandbox Settings Emission — `Edit(path)`, Never `Write(path)`
 

@@ -72,7 +72,7 @@ All three spawn operations use the shared `prepare_session_launch()` path, which
 
 ### 7. Run command entry points
 
-- `loom/src/commands/run/mod.rs:31-84` — `execute_background()` — daemonizes orchestrator; calls `DaemonServer::with_config(...).start()`
+- `loom/src/commands/run/mod.rs` — `execute_background()` — starts the daemon child through `DaemonServer::with_config(...).start()` (`daemon/server/launch.rs` re-executes the binary as `loom run --daemon-child <root>`); with `--daemon-child` it runs `daemon_child::execute` instead
 - `loom/src/commands/run/foreground.rs:17-36` — `execute()` — public entry for `--foreground`; marks plan in-progress then calls `execute_foreground()`
 - `loom/src/commands/run/foreground.rs:39-end` — `execute_foreground()` (private) — builds `OrchestratorConfig` (includes `sandbox_config: plan_sandbox` from `build_execution_graph`)
 

@@ -103,25 +103,59 @@ The full table lives in the `## Shared append_* Helpers (cache.rs:51-~180)` sect
 
 ## Soft Signals
 
-The JSONL-backed `possibly_stuck` soft-signal system this section used to describe is gone. `orchestrator/monitor/soft_signals.rs` no longer exists, and `orchestrator/monitor/tool_analysis.rs` no longer exists either, along with `.loom/work/monitor/soft-signals.jsonl` and `Stage.is_possibly_stuck` — none of those symbols or files exist anymore (verified with a full-tree `rg`, corrected
-2026-09-10). Hung-session detection is now entirely heartbeat-driven:
+Hung-session detection is entirely heartbeat-driven; nothing reads session JSONL. A silent stage
+session is warned about, recovered, or parked in `NeedsHumanReview`, depending on whether it ever
+worked.
 
-**Detection pipeline (`orchestrator/monitor/heartbeat.rs`, `orchestrator/monitor/hung_latch.rs`):**
+**Detection (`orchestrator/monitor/heartbeat.rs`, `hung_latch.rs`, `never_worked.rs`):**
 
 1. `HeartbeatWatcher::check_session_hung(stage_id, session_id, timeout)` compares the session's
-   last heartbeat against its resolved response budget (`Stage::effective_subagent_timeout_secs()`,
-   falling back to `MonitorConfig.hung_timeout`, default 300s / `DEFAULT_HUNG_TIMEOUT_SECS`).
+   last heartbeat against its response budget (`Stage::effective_subagent_timeout_secs()`, falling
+   back to `MonitorConfig.hung_timeout`, default 300 s / `DEFAULT_HUNG_TIMEOUT_SECS`). A heartbeat
+   naming another session is a previous attempt's and says nothing about this one. A session with
+   no heartbeat at all is measured from `created_at` (`silence_without_heartbeat`).
 2. `hung_latch::is_stall_escalation` reports a silence twice, never more: once when the budget is
-   first crossed (`SessionHung` event, advisory), and once more only if the silence reaches
-   `STALL_ESCALATION_MULTIPLIER` (3x) the budget — the escalation line the recovery path acts on.
-   A session that answers again clears both latches (`clear_hung_report`), so a blip cannot creep
-   toward escalation across unrelated silences.
-3. Adjudication sessions (judges) are measured and latched separately
-   (`adjudicator_stall_event` → `MonitorEvent::AdjudicatorStalled`), since a stalled judge has no
-   stage to hand off — it is closed and the stage it left in `NeedsAdjudication` is re-judged on
-   the next poll under the dispute's own attempt budget, latched once rather than twice.
-4. A `subagent_timeout_secs: 0` stage never escalates (warnings only), so a mis-configured zero
+   first crossed (a warning), and once more when the silence reaches `STALL_ESCALATION_MULTIPLIER`
+   (3x) the budget. A session that answers again clears both latches (`clear_hung_report`), so a
+   blip cannot creep toward escalation across unrelated silences.
+3. A session that **never worked** (`never_worked::never_worked`) escalates at 1x its budget
+   (`is_escalation`): a `SessionType::Stage` session with `context_tokens == 0` whose own heartbeat
+   names no tool and no subagent (the one `session-start.sh` writes, `last_tool: null`), or that has
+   no heartbeat past `created_at` plus its budget. The token count decides because `session-start.sh`
+   also fires on compaction and resume and rewrites the heartbeat in the same shape. Contract,
+   Knowledge, Merge, BaseConflict and Adjudication sessions keep their own handling.
+4. Adjudication sessions (judges) are measured and latched separately (`adjudicator_stall_event`
+   → `MonitorEvent::AdjudicatorStalled`): a stalled judge has no stage to hand off, so it is closed
+   and the stage it left in `NeedsAdjudication` is re-judged on the next poll under the dispute's
+   own attempt budget, latched once.
+5. A `subagent_timeout_secs: 0` stage never escalates (warnings only), so a mis-configured zero
    budget cannot get a session killed on its first poll.
+
+**Action (`orchestrator/core/event_handler/recover_hung.rs`, `core/loop_recovery/`):** the
+`SessionHung` arm calls `on_session_hung`, which prints the warning and then, on an escalation line:
+
+- takes no action when the stage no longer names this session or is not `Executing`, or when a
+  current trusted completion blocker owns the stage;
+- **never worked:** parks the stage at the first report. No handoff is written and no recovery is
+  charged. It runs `claude auth status` under the stage environment (`stage_auth_status`) and uses
+  the login remedy as the reason when the answer is a definite `NotLoggedIn`, else the
+  never-worked reason; the pane tail is captured before the takedown;
+- **worked, `stall_recoveries < MAX_STALL_RECOVERIES` (2):** writes the stall handoff, charges a
+  recovery and re-queues the stage for a continuation session;
+- **worked, recoveries exhausted:** takes the agents down, writes the stall handoff and parks the
+  stage. The reason names the session, the silence, the budget, the last activity, the recovery
+  count and the last pane line, then a blank line, `Last pane lines:` and up to 40 pane lines
+  (`PANE_TAIL_LINES`, each capped at 200 characters by `with_pane_notes`). `review_notes`, the web
+  view's field, is derived from `review_reason`.
+
+`finish_handoff_and_park` parks only once every agent is confirmed gone (approving the review
+re-queues the stage, which must not admit a second writer), releases the session, and sets the
+status with the short constant reason `"stall park"` because `force_status_with_reason` logs its
+reason at ERROR: agent-controlled pane text lives only in `review_reason`. The needs-human-review
+announcement prints and notifies the reason's one-line `review_headline` (the text before the pane
+markers, flattened and cut to 200 characters), never the pane tail. `human-review --approve`,
+`stage reset` and `stage retry` reset `stall_recoveries` to 0. There is no STALLED status marker:
+a stall that gives up leaves the stage in `NeedsHumanReview`, which every surface already renders.
 
 ## Telemetry (`loom/src/telemetry/`)
 

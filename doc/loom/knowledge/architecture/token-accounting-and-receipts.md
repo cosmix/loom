@@ -45,7 +45,7 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Token Accounting And Receipts
 
-> Usage ledger, --compare, criterion cache
+> Usage ledger, --compare, cache
 
 ## Scope and Evidence
 

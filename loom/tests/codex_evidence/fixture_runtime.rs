@@ -1,8 +1,10 @@
 use anyhow::{ensure, Context, Result};
 use loom::codex_lifecycle::CodexAuthorization;
 use serde_json::Value;
-use std::fs::{self, File};
+use std::ffi::OsString;
+use std::fs::{self, File, OpenOptions};
 use std::io::Write;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 use std::process::{Command, Output, Stdio};
 use tempfile::NamedTempFile;
@@ -89,17 +91,50 @@ impl Fixture {
             .context("running injected real Codex wrapper")
     }
 
+    /// Puts the BSD `wc`, `stat` and `date` shims (padded counts, no `-c` or
+    /// `-d`) ahead of the system tools for every child this fixture starts.
+    pub(crate) fn enable_bsd_tools(&self) -> Result<()> {
+        let dir = self.root.join("bsd-bin");
+        fs::create_dir_all(&dir)?;
+        for (name, content) in [
+            ("wc", include_str!("../../../loom-hooks/tests/bsd-shims/wc")),
+            (
+                "stat",
+                include_str!("../../../loom-hooks/tests/bsd-shims/stat"),
+            ),
+            (
+                "date",
+                include_str!("../../../loom-hooks/tests/bsd-shims/date"),
+            ),
+        ] {
+            let mut file = OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .mode(0o755)
+                .open(dir.join(name))?;
+            file.write_all(content.as_bytes())?;
+        }
+        Ok(())
+    }
+
     fn configure_child(&self, command: &mut Command, active: bool) {
         for (key, _) in std::env::vars_os() {
             if key.to_string_lossy().starts_with("LOOM_") {
                 command.env_remove(key);
             }
         }
+        let mut path = OsString::new();
+        let bsd_bin = self.root.join("bsd-bin");
+        if bsd_bin.is_dir() {
+            path.push(bsd_bin);
+            path.push(":");
+        }
+        path.push(std::env::var_os("PATH").unwrap_or_default());
         command
             .current_dir(&self.project)
             .env("HOME", &self.home)
             .env("TMPDIR", &self.tmp)
-            .env("PATH", std::env::var_os("PATH").unwrap_or_default())
+            .env("PATH", path)
             .env("LOOM_WORK_DIR", &self.work)
             .env("LOOM_STAGE_ID", if active { STAGE } else { "" })
             .env("LOOM_SESSION_ID", if active { LOOM_SESSION } else { "" })

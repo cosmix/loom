@@ -1,6 +1,6 @@
 # Codex Plugin
 
-> Codex plugin install, identity, forwarding
+> Codex plugin install, forwarding
 
 ## Install and identity
 

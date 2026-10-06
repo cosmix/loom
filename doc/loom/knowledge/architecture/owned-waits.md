@@ -1,6 +1,6 @@
 # Owned Waits
 
-> Worker-set waits: lease/engine, exit codes
+> Worker-set waits, lease, boot ID
 
 ## Owned Subagent Waits (`loom subagents wait`/`watch`, 2026-09-13)
 
@@ -46,3 +46,12 @@ resolves against the wrong namespace. Treat that exit as unverified and wait for
 `LOOM-FORWARD-END` report before concluding the job failed. Separately, a watch naming only `codex:`
 workers exits 5 ("worker set does not resolve to one Claude parent UUID") — always include the
 forwarder's own `claude:<agent-id>` in the `--worker` set alongside the codex unit id.
+
+## Where the Boot ID Comes From
+
+A wait lease persists its deadline under the boot it was written in (`Deadline.boot_id` in `commands/subagents/wait/model.rs`), and the engine ends a wait with "system boot changed while waiting" when the identity differs. `SystemBootClock::boot_id` calls `process::boot_id::current_boot_id`, which resolves in this order:
+
+1. `LOOM_BOOT_ID` from the environment, when it is UUID-shaped (trimmed; anything else is ignored).
+2. The OS source: `/proc/sys/kernel/random/boot_id` on Linux, `sysctl kern.bootsessionuuid` on macOS. Other platforms bail.
+
+The daemon computes the OS value when it writes a session wrapper (`launch/host.rs` `wrapper_env`, `WrapperHostEnv.boot_id`) and the wrapper exports it as `LOOM_BOOT_ID`, because the daemon reads the source unsandboxed and a session's sandbox can deny it (the macOS sandbox's `sysctl-read` allowlist has no `kern.bootsessionuuid`). `kern.boottime` is not an acceptable identity: macOS recomputes it when the wall clock is stepped, and a value written under one source and read under the other looks like another boot. See [Hook Tests Passed Without Exercising the BSD Forms](../mistakes/hooks-shell-portability.md) for the platform-portability work that introduced this.

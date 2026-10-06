@@ -5,6 +5,11 @@
 //! worktree's current changes, and no finding, own or carried, is open.
 
 use anyhow::{bail, Context, Result};
+use serde_json::Value;
+use std::collections::BTreeSet;
+use std::fs::{File, OpenOptions};
+use std::io::Read;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::Path;
 
 use super::fingerprint::{self, ChangeFingerprint};
@@ -62,10 +67,93 @@ pub fn check(stage: &Stage, work_dir: &Path, current: &ChangeFingerprint) -> Res
     if problems.is_empty() {
         return Ok(());
     }
-    bail!(
-        "{}",
-        failure_message(&stage.id, &problems, !open.is_empty(), rounds.last())
-    )
+    let mut message = failure_message(&stage.id, &problems, !open.is_empty(), rounds.last());
+    if let Some(hint) = harvest_hint(work_dir, &stage.id, rounds.len()) {
+        message.push('\n');
+        message.push_str(&hint);
+    }
+    bail!("{message}")
+}
+
+/// The agent type whose spawns and skipped stops the hint counts.
+const REVIEWER_AGENT_TYPE: &str = "loom-code-reviewer";
+/// Ledger files a session can write are read up to this many bytes.
+const MAX_LEDGER_BYTES: u64 = 1024 * 1024;
+/// Skipped-stop lines the hint prints (the latest ones).
+const MAX_SKIP_LINES: usize = 5;
+/// Characters of a ledger `agent_id` or `reason` the hint prints.
+const MAX_FIELD_CHARS: usize = 64;
+
+/// Why a reviewer stop may not have produced a round: when the stage's hook
+/// ledgers show more `loom-code-reviewer` spawns than recorded `rounds`, the
+/// count of unharvested stops and the reasons the SubagentStop hook logged
+/// for skipping them. `None` when every spawn has a round or the ledgers are
+/// unreadable; advisory text, so it never fails.
+pub fn harvest_hint(work_dir: &Path, stage_id: &str, rounds: usize) -> Option<String> {
+    let dir = work_dir.join("subagents").join(stage_id);
+    let spawns: BTreeSet<String> = reviewer_rows(&dir.join("starts.jsonl"))
+        .iter()
+        .filter_map(|row| Some(row.get("agent_id")?.as_str()?.to_owned()))
+        .collect();
+    let unharvested = spawns.len().checked_sub(rounds).filter(|k| *k > 0)?;
+    let skips = reviewer_rows(&dir.join("stop-skips.jsonl"));
+    let latest = skips.len().saturating_sub(MAX_SKIP_LINES);
+    let mut hint = format!(
+        "Reviewer stop events: {} reviewer spawns, {rounds} rounds, \
+         {unharvested} stop events not harvested.",
+        spawns.len()
+    );
+    for row in &skips[latest..] {
+        let field = |name| ledger_text(row.get(name).and_then(Value::as_str).unwrap_or(""));
+        hint.push_str(&format!(
+            "\n  skipped stop: agent {}: {}",
+            field("agent_id"),
+            field("reason")
+        ));
+    }
+    hint.push_str(
+        "\nRun the review again with LOOM_HOOK_DEBUG=1 to see why the SubagentStop hook \
+         skipped a stop.",
+    );
+    Some(hint)
+}
+
+/// The parsable rows of a JSONL ledger whose `agent_type` is the reviewer.
+/// A symlink, a non-file, an oversized file and an unparsable line yield
+/// nothing: a session can write these files.
+fn reviewer_rows(path: &Path) -> Vec<Value> {
+    let Some(text) = read_ledger(path) else {
+        return Vec::new();
+    };
+    text.lines()
+        .filter_map(|line| serde_json::from_str::<Value>(line).ok())
+        .filter(|row| row.get("agent_type").and_then(Value::as_str) == Some(REVIEWER_AGENT_TYPE))
+        .collect()
+}
+
+fn read_ledger(path: &Path) -> Option<String> {
+    let file: File = OpenOptions::new()
+        .read(true)
+        // O_NONBLOCK keeps a planted FIFO from blocking the open; `is_file`
+        // below then refuses it.
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .ok()?;
+    let metadata = file.metadata().ok()?;
+    if !metadata.is_file() || metadata.len() > MAX_LEDGER_BYTES {
+        return None;
+    }
+    let mut text = String::new();
+    file.take(MAX_LEDGER_BYTES).read_to_string(&mut text).ok()?;
+    Some(text)
+}
+
+/// `text` reduced to `[A-Za-z0-9_.-]`, at most [`MAX_FIELD_CHARS`] characters.
+fn ledger_text(text: &str) -> String {
+    text.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '.' | '-'))
+        .take(MAX_FIELD_CHARS)
+        .collect()
 }
 
 /// Why `latest` no longer covers the `current` changes, if it does not.
@@ -131,3 +219,7 @@ fn failure_message(
 #[cfg(test)]
 #[path = "gate_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "gate_hint_tests.rs"]
+mod hint_tests;

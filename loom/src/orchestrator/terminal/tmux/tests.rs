@@ -275,3 +275,21 @@ fn stage_servers_delete_the_kmous_capability() {
         "the override must delete kmous for every client TERM"
     );
 }
+
+#[test]
+fn capture_pane_argv_is_exact() {
+    assert_eq!(
+        capture::capture_pane_argv("loom-session-abc", "loom-stage", 40),
+        [
+            "-L",
+            "loom-session-abc",
+            "capture-pane",
+            "-p",
+            "-J",
+            "-t",
+            "loom-stage",
+            "-S",
+            "-40"
+        ]
+    );
+}

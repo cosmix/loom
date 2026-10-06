@@ -1,7 +1,8 @@
 //! Fixtures for the inbox drain tests: a state directory with session and
 //! stage records, entries relayed through the real inbox writer, and a host
-//! whose liveness and merge finalization are fixed. Nothing here reads or
-//! writes the process environment.
+//! whose liveness and merge finalization are fixed and which records every
+//! merge it is asked to hold. Nothing here reads or writes the process
+//! environment.
 
 use std::collections::HashSet;
 use std::os::unix::fs::PermissionsExt;
@@ -36,6 +37,8 @@ pub(super) struct FakeHost {
     pub repo_root: PathBuf,
     pub alive: bool,
     pub merges: Vec<(String, String)>,
+    /// Every `hold_merge_for_signing` call, as (stage id, signer detail).
+    pub holds: Vec<(String, String)>,
     reported: HashSet<String>,
 }
 
@@ -52,6 +55,10 @@ impl InboxHost for FakeHost {
     fn resolve_merge(&mut self, session: &Session, stage_id: &str) -> Settle {
         self.merges.push((session.id.clone(), stage_id.to_string()));
         Settle::Applied(None)
+    }
+    fn hold_merge_for_signing(&mut self, stage_id: &str, detail: &str) -> String {
+        self.holds.push((stage_id.to_string(), detail.to_string()));
+        "held for the operator".to_string()
     }
     fn first_report(&mut self, key: &str) -> bool {
         self.reported.insert(key.to_string())
@@ -92,6 +99,7 @@ impl Fixture {
             repo_root: self.repo_root.clone(),
             alive,
             merges: Vec::new(),
+            holds: Vec::new(),
             reported: HashSet::new(),
         }
     }
@@ -254,6 +262,11 @@ pub(super) fn payload_for(kind: RequestKind) -> Value {
             "request": "file_dispute",
             "kind": {"kind": "contract", "contract_id": CONTRACT_ID},
             "reason": "the contract asserts the wrong error",
+        }),
+        RequestKind::Commit => json!({
+            "message": "test(relay): commit a.txt",
+            "expected_head": "0".repeat(40),
+            "expected_tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
         }),
     }
 }

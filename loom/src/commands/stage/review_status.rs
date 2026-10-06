@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::Stage;
 use crate::verify::review::fingerprint::{self, ChangeFingerprint};
+use crate::verify::review::gate::harvest_hint;
 use crate::verify::review::report::single_line;
 use crate::verify::review::store::{self, OpenFinding, ReviewRound};
 use crate::verify::transitions::load_stage;
@@ -23,6 +24,9 @@ pub fn review_status(stage_id: String) -> Result<()> {
     let open = store::open_findings(&work_dir, &stage_id)?;
 
     print_rounds(&stage_id, &rounds);
+    if let Some(hint) = harvest_hint(&work_dir, &stage_id, rounds.len()) {
+        println!("{hint}");
+    }
     println!();
     print_open_findings(&open);
     println!();

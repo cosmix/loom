@@ -11,6 +11,11 @@ TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/big" "$TMP/small" "$TMP/work"
 
+# BSD mode (run-all.sh): the shim directory leads PATH, so keep it first on the
+# hook's restricted PATH and the hook meets the padded wc.
+SHIMS=""
+if [[ "${LOOM_HOOK_TEST_BSD:-}" == "1" ]]; then SHIMS="${PATH%%:*}:"; fi
+
 # A fake `loom` whose additionalContext is $1 bytes of filler.
 write_fake_loom() {
 	cat >"$1/loom" <<SH
@@ -33,7 +38,7 @@ INPUT='{"session_id":"s1","prompt":"explain how the retrieval pipeline picks whi
 run_hook() {
 	printf '%s' "$INPUT" |
 		env -u LOOM_MAIN_AGENT_PID -u LOOM_WORKTREE_PATH -u LOOM_SESSION_ID \
-			PATH="$1:/usr/bin:/bin" LOOM_WORK_DIR="$TMP/work" LOOM_STAGE_ID="test-stage" \
+			PATH="$SHIMS$1:/usr/bin:/bin" LOOM_WORK_DIR="$TMP/work" LOOM_STAGE_ID="test-stage" \
 			bash "$HOOK"
 }
 

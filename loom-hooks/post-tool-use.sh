@@ -52,9 +52,8 @@ _loom_ctx_last_usage_tokens() {
 	command -v jq &>/dev/null || return 0
 
 	local size
-	size=$(wc -c <"$transcript_path" 2>/dev/null || echo 0)
-	# `wc` pads its output on some platforms; keep the digits only.
-	size="${size//[^0-9]/}"
+	# `wc` pads its output on some platforms; strip the whitespace.
+	size=$(wc -c <"$transcript_path" 2>/dev/null | tr -d '[:space:]' || echo 0)
 
 	if [[ -n "$size" ]] && [[ "$size" -gt "$LOOM_TRANSCRIPT_WINDOW_BYTES" ]]; then
 		tail -c "$LOOM_TRANSCRIPT_WINDOW_BYTES" "$transcript_path" 2>/dev/null |
@@ -264,7 +263,8 @@ fi
 # following paths, and even redacted previews risk retaining private source.
 
 # === POST-COMMIT KNOWLEDGE/MEMORY REMINDER ===
-# After a git commit, print a non-blocking knowledge/memory reminder.
+# After a `git commit` or `loom stage commit`, print a non-blocking
+# knowledge/memory reminder.
 
 remind_knowledge_update() {
 	cat >&2 <<'REMINDER'
@@ -299,9 +299,11 @@ REMINDER
 
 if [[ "$TOOL_NAME" == "Bash" ]] && [[ -n "$COMMAND" ]]; then
 	# Shared tokenization strips heredocs and quoted prose, so only a real
-	# `git commit` fires; an unparseable Bash command safely does not.
+	# `git commit` or `loom stage commit` fires; an unparseable Bash command
+	# safely does not.
 	STRIPPED_COMMAND=$(strip_embedded_content "$COMMAND")
-	if loom_tokenize_command "$STRIPPED_COMMAND" && loom_tokens_cmd_has_arg 'git' 'commit'; then
+	if loom_tokenize_command "$STRIPPED_COMMAND" &&
+		{ loom_tokens_cmd_has_arg 'git' 'commit' || loom_tokens_cmd_has_arg_pair 'loom' 'stage' 'commit'; }; then
 		remind_knowledge_update
 	fi
 fi

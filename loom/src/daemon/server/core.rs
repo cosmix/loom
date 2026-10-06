@@ -1,6 +1,7 @@
 //! Core DaemonServer struct and constructors.
 
 use super::super::protocol::DaemonConfig;
+use super::super::SOCKET_FILE;
 use super::lock::{inspect_lock, read_persisted_identity, LockState};
 use super::storage::remove_control_file;
 use std::os::unix::net::UnixStream;
@@ -90,7 +91,7 @@ impl DaemonServer {
     /// A new `DaemonServer` instance
     pub fn with_config(work_dir: &Path, config: DaemonConfig) -> Self {
         Self {
-            socket_path: work_dir.join("orchestrator.sock"),
+            socket_path: work_dir.join(SOCKET_FILE),
             log_path: work_dir.join("orchestrator.log"),
             work_dir: work_dir.to_path_buf(),
             config,
@@ -113,7 +114,7 @@ impl DaemonServer {
     /// # Returns
     /// `DaemonStatus` indicating whether the daemon is running and responsive
     pub fn check_status(work_dir: &Path) -> DaemonStatus {
-        let socket_path = work_dir.join("orchestrator.sock");
+        let socket_path = crate::daemon::socket_path(work_dir);
         match inspect_lock(work_dir) {
             LockState::Held(_) => match UnixStream::connect(&socket_path) {
                 Ok(stream) => {
@@ -191,7 +192,7 @@ impl DaemonServer {
 
 fn cleanup_stale_control_files(work_dir: &Path) {
     for relative in [
-        "orchestrator.sock",
+        SOCKET_FILE,
         "orchestrator.pid",
         "admin.token",
         "user.token",

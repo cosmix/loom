@@ -1,6 +1,6 @@
 # Web Dashboard Server (loom status --web)
 
-> Dashboard server: concurrency, security
+> Dashboard server concurrency
 > server under `loom/src/commands/status/web/` and its React frontend. See
 > [architecture/web-dashboard.md](../architecture/web-dashboard.md) for the shape of the
 > system these fixes apply to.
@@ -314,3 +314,15 @@ updated; the test then asserts every serialized wire value appears as a quoted s
 
 **Fix:** `"contract"` added to `sessionTypeSchema` in `web/src/api/schema.ts`;
 `schema_parity.rs` added so the next such omission also fails `cargo test`.
+
+## Empty-Response (408) Candidates in the Web Server's Connection Path (2026-10-06)
+
+**What happened:** while tracing a dashboard connection that closed with no response, the paths that return
+nothing were: `peek_head` returning `Ok(0)` and its catch-all `Err` arm (`ErrorKind::Interrupted`, EINTR under
+`SO_RCVTIMEO`); `complete()` returning `None` when running clears; `gate()` returning `None` when
+`set_read_timeout` or `set_write_timeout` fails; and `spawn_connection` dropping the stream when
+`set_nonblocking`, `local_addr` or the thread spawn fails.
+
+**Prevention:** every early return on a connection path answers the client or has a reason to stay silent;
+retry EINTR on a peek. `commands/status/web/head.rs` retries the EINTR case and `unserved.rs` answers 503 when
+the spawn fails; the other candidates stay as listed.

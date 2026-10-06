@@ -100,7 +100,7 @@ The fold-back, in order:
 Accepted gap: the filter reads rule text only, so a rule naming a symlink into a control surface
 still passes it — the phase-3 OS deny rules close this in practice, since a deny wins over any allow
 and the sandbox resolves symlinks. See
-[Accepted Gaps From the State-Confinement Work](../concerns/sandbox-and-confinement-gaps.md#accepted-gaps-from-the-state-confinement-work-2026-09-13).
+[Accepted Gaps From the State-Confinement Work](../concerns/sandbox-and-confinement-gaps.md#accepted-gaps-from-the-state-confinement-work).
 
 The main checkout's `.claude/settings.local.json` is shared: knowledge-stage spawns, merge and
 adjudication sessions, and the operator's own interactive sessions all read it. Loom never writes
@@ -108,13 +108,26 @@ it, but whatever it holds (including Claude Code's own approval writes and any `
 reaches those sessions. See [Live State Pollution](../mistakes/live-state-pollution.md) for the
 exposure this caused.
 
-## Session Requests Travel Through a Hook-Written Inbox (2026-09-13)
+## Session Requests Travel Through a Hook-Written Inbox
 
-A sandboxed session cannot write loom state directly (owner decision 3). Every write request —
-memory notes, knowledge edits, stage completion, adjudication verdicts — goes by reference: the CLI
-writes a ticket into `$LOOM_SCRATCH_DIR` and prints one line ending `LOOM_RELAY_V1` naming the
-ticket id and its SHA-256, with no path in the line, so fixture output, docs and echoed transcripts
-that merely print the line do nothing.
+A sandboxed session cannot write loom state directly (owner decision 3). Every write request goes by
+reference: the CLI writes a ticket into `$LOOM_SCRATCH_DIR` and prints one line ending `LOOM_RELAY_V1`
+naming the ticket id and its SHA-256, with no path in the line, so fixture output, docs and echoed
+transcripts that merely print the line do nothing. The ten relayed kinds (`relay/kind.rs`) are
+`memory`, `block`, `dispute`, `handoff`, `merge-resolved`, `verdict`, `telemetry`, `freeze-contracts`,
+`file-dispute` and `commit`; every one but `memory` and `telemetry` is a control kind that only the
+session's lead process may relay. `commit` carries a session's staged index (message, the HEAD and
+tree it saw) for the daemon to commit and sign; see
+[Daemon-Owned Commits](daemon-owned-commits.md).
+
+**Stage completion is not a relayed request.** `loom stage complete` in a worktree verifies, and the
+trusted PostToolUse hook `loom-hooks/loom-control-complete.sh` (outside the session sandbox, with
+`LOOM_CONTROL_BROKER=1`) runs the completion broker: `commands/stage/control_complete.rs` reads
+`user.token`, which the sandbox denies the agent, and sends `RecordCompletionEvidence` and
+`CompleteStage` over the daemon socket through `daemon::send_request`. Without that token the daemon
+refuses completion, so peer identity alone authorizes `BlockStage` and `DisputeCriteria` but not
+completion; completion is never spooled. The broker's history is in
+[Completion Broker Credential](../mistakes/completion-broker-credential.md).
 
 `loom-hooks/loom-relay.sh` (PostToolUse, matcher `Bash`) runs a fast bash check on the command's
 shell tokens, then hands off to `loom hook relay`, which proves the request came from the session it
@@ -122,19 +135,19 @@ claims by process ancestry, verifies the ticket against the printed hash, and wr
 `W/inbox/<session-id>/`. The daemon's `drain_session_inboxes` applies each entry at most once against
 a per-session ledger.
 
-**Leftover tickets are swept (2026-09-18).** A ticket's line can fail to reach the hook: stdout
-redirected or piped through `tail`, a script file, a background call, or more than
-`MAX_LINES_PER_CALL` (16) lines in one output. `loom hook relay` therefore relays its own lines and
-then every other `<id>.req` still in the scratch directory whose kind is in `--allowed-kinds` and is
-NOT a control kind (`commands/hook/relay/sweep.rs`), so only `memory` and `telemetry` are swept. A
-control ticket stays bound to its own line: one a subagent wrote is refused, and sweeping it during a
-later main-agent call would relay the subagent's block, handoff or verdict under the main agent's
-authority. A swept ticket has no announced hash; `ticket_check::read_unlisted` requires the same file
-shape (single-link regular file, no symlink, owner uid, size cap) and a decoded id equal to the file
-stem. The hash never bound a ticket to anything the session could not produce itself; the session
-proof and the command-derived kinds authorise a relay, and both apply to the sweep. The hook's fast
-path lets any payload containing ` memory ` through so the helper runs even when the line was hidden,
-and stays silent unless a relay line was present. History:
+**Leftover tickets are swept.** A ticket's line can fail to reach the hook: stdout redirected or
+piped through `tail`, a script file, a background call, or more than `MAX_LINES_PER_CALL` (16) lines
+in one output. `loom hook relay` therefore relays its own lines and then every other `<id>.req` still
+in the scratch directory whose kind is in `--allowed-kinds` and is NOT a control kind
+(`commands/hook/relay/sweep.rs`), so only `memory` and `telemetry` are swept. A control ticket stays
+bound to its own line: one a subagent wrote is refused, and sweeping it during a later main-agent
+call would relay the subagent's block, handoff or verdict under the main agent's authority. A swept
+ticket has no announced hash; `ticket_check::read_unlisted` requires the same file shape
+(single-link regular file, no symlink, owner uid, size cap) and a decoded id equal to the file stem.
+The hash never bound a ticket to anything the session could not produce itself; the session proof
+and the command-derived kinds authorise a relay, and both apply to the sweep. The hook's fast path
+lets any payload containing ` memory ` through so the helper runs even when the line was hidden, and
+stays silent unless a relay line was present. History:
 [Memory Relay Drain Gap](../mistakes/memory-relay-drain-gap.md).
 
 Modules: `loom/src/relay/*` (protocol: kind, line, ticket, payload, inbox, matrix, scratch),

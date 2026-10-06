@@ -8,6 +8,11 @@ TMP=$(mktemp -d "${TMPDIR:-/tmp}/loom-hooktest.XXXXXX")
 trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/bin" "$TMP/work"
 
+# BSD mode (run-all.sh): the shim directory leads PATH, so keep it first on the
+# hook's restricted PATH and the hook meets the padded wc.
+SHIMS=""
+if [[ "${LOOM_HOOK_TEST_BSD:-}" == "1" ]]; then SHIMS="${PATH%%:*}:"; fi
+
 cat >"$TMP/bin/loom" <<'SH'
 #!/usr/bin/env bash
 [[ "$1" == "hook" && "$2" == "user-prompt" ]] || exit 1
@@ -20,7 +25,7 @@ INPUT='{"session_id":"s1","prompt":"explain how the retrieval pipeline picks whi
 
 OUTPUT=$(printf '%s' "$INPUT" |
 	env -u LOOM_MAIN_AGENT_PID -u LOOM_WORKTREE_PATH -u LOOM_SESSION_ID \
-	PATH="$TMP/bin:/usr/bin:/bin" LOOM_WORK_DIR="$TMP/work" LOOM_STAGE_ID="test-stage" \
+	PATH="$SHIMS$TMP/bin:/usr/bin:/bin" LOOM_WORK_DIR="$TMP/work" LOOM_STAGE_ID="test-stage" \
 	bash "$HOOK")
 
 LINE_COUNT=$(printf '%s\n' "$OUTPUT" | wc -l)

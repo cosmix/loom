@@ -67,7 +67,7 @@ impl fmt::Display for DaemonUnreachable {
             "no loom daemon answered on {}, and this process cannot prove that none runs (a \
              sandbox may deny unix sockets or hide the socket, and a running daemon holds \
              {}); the daemon computes every change fingerprint",
-            self.work_dir.join("orchestrator.sock").display(),
+            crate::daemon::socket_path(&self.work_dir).display(),
             self.work_dir.join("orchestrator.lock").display()
         )
     }

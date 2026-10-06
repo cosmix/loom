@@ -22,6 +22,7 @@
 //! module — and because one shared definition is what stops the one-shot build
 //! and the live reconciler from disagreeing about who is attachable.
 
+mod capture;
 mod reconcile;
 mod socket;
 /// `pub` (not `pub(crate)`) rather than re-exported piecemeal: `commands/attach`
@@ -41,6 +42,7 @@ use crate::models::session::Session;
 
 use super::native;
 
+pub(crate) use capture::capture_pane_tail;
 pub use socket::{
     kill_socket_server, list_loom_sockets, socket_path_for, socket_session_is_alive, LoomSocket,
 };

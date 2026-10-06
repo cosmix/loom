@@ -13,6 +13,7 @@ use super::dispatch::{print_minted_proof, resolve_completion_proof};
 use super::types::{OutputCommands, StageCommands};
 use super::types_stage::{ContractsCommands, ReviewCommands};
 use crate::commands::stage;
+use crate::commands::stage::commit;
 
 /// `loom stage {block,reset,waiting,resume,hold,release,skip}` dispatch.
 ///
@@ -111,6 +112,12 @@ fn dispatch_complete(command: StageCommands) -> Result<()> {
     )
 }
 
+/// Join the repeated `-m` values of `loom stage commit` into one message,
+/// separating paragraphs with a blank line as `git commit` does.
+fn join_commit_message(parts: &[String]) -> String {
+    parts.join("\n\n")
+}
+
 /// `loom stage <subcommand>` dispatch.
 ///
 /// Extracted for the same reason as `dispatch_knowledge`: the stage group is
@@ -144,6 +151,9 @@ pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
             context,
         } => stage::retry(stage_id, force, context),
         StageCommands::Merge { stage_id, resolved } => stage::merge(stage_id, resolved),
+        StageCommands::Commit { stage_id, message } => {
+            commit::execute(stage_id, join_commit_message(&message))
+        }
         StageCommands::HumanReview {
             stage_id,
             approve,
@@ -194,5 +204,46 @@ fn dispatch_stage_review(command: ReviewCommands) -> Result<()> {
     match command {
         ReviewCommands::Status { stage_id } => stage::review_status(stage_id),
         ReviewCommands::Integrity { stage_id } => stage::review_integrity(stage_id),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use clap::Parser;
+
+    use super::*;
+    use crate::cli::types::{Cli, Commands};
+
+    fn commit_parts(args: &[&str]) -> Result<Vec<String>, String> {
+        let mut argv = vec!["loom", "stage", "commit", "stage-a"];
+        argv.extend_from_slice(args);
+        let cli = Cli::try_parse_from(argv).map_err(|error| error.to_string())?;
+        match cli.command {
+            Commands::Stage {
+                command: StageCommands::Commit { message, .. },
+            } => Ok(message),
+            _ => panic!("expected StageCommands::Commit"),
+        }
+    }
+
+    #[test]
+    fn repeated_message_flags_join_with_a_blank_line() {
+        let parts = commit_parts(&["-m", "feat(a): subject", "-m", "body paragraph"])
+            .expect("repeated -m parses");
+        assert_eq!(
+            join_commit_message(&parts),
+            "feat(a): subject\n\nbody paragraph"
+        );
+    }
+
+    #[test]
+    fn single_message_is_unchanged_and_long_form_parses() {
+        let parts = commit_parts(&["--message", "fix(a): only"]).expect("--message parses");
+        assert_eq!(join_commit_message(&parts), "fix(a): only");
+    }
+
+    #[test]
+    fn message_is_required() {
+        assert!(commit_parts(&[]).is_err());
     }
 }

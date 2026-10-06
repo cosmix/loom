@@ -55,6 +55,7 @@ fn full_host_env() -> WrapperHostEnv {
         scratch_dir: Some(PathBuf::from("/scratch/session1")),
         loom_bin: Some(PathBuf::from("/opt/loom/bin/loom")),
         hook_path: vec![PathBuf::from("/usr/bin"), PathBuf::from("/bin")],
+        boot_id: None,
     }
 }
 

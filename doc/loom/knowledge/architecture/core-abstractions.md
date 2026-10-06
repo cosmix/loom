@@ -1,6 +1,6 @@
 # Core Abstractions
 
-> ExecutionGraph, Stage, Session, data flow
+> ExecutionGraph, Stage, Session
 
 ## Core Abstractions
 
@@ -81,7 +81,7 @@ start-time identity; a missing or mismatched identity fails closed instead of fa
 
 ### IPC Protocol (`daemon/protocol.rs`, `daemon/wire.rs`)
 
-Unix socket at `.loom/work/orchestrator.sock`. A fixed capability-and-credential preface is authenticated
+Unix socket at `.loom/work/orchestrator.sock`, dialed by every client through `daemon::socket_path` (the resolved state root; a path past `SUN_PATH_MAX`, 104 bytes, is `DaemonReach::Unreachable`). A fixed capability-and-credential preface is authenticated
 before the length-prefixed JSON body is allocated. Requests are capped at 64 KiB, responses at
 2 MiB, and absolute read deadlines plus bounded workers, queue slots, subscriber counts, and
 in-flight bytes prevent slow or oversized clients from exhausting the daemon. User requests cover

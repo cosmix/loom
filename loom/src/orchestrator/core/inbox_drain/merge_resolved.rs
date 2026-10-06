@@ -1,7 +1,8 @@
 //! `loom stage merge <own> --resolved`, relayed from a Merge session.
 //!
 //! The resolver merged the target into the stage branch in the stage
-//! worktree. The daemon checks that worktree through pinned git
+//! worktree (`git merge --no-commit`, then a relayed `loom stage commit` the
+//! daemon applies). The daemon checks that worktree through pinned git
 //! (`check_resolved_worktree`: no merge in progress, no unmerged path, no
 //! tracked change, the stage's recorded commit still in the branch), then lands the merge
 //! with `merge_stage` through the merge gate. `merged = true` is written only
@@ -49,7 +50,17 @@ impl Orchestrator {
         ) {
             return Settle::Refused(reason);
         }
-        settle_for_landing(self.land_stage_merge(stage_id, &target), stage_id, &target)
+        match self.land_stage_merge(stage_id, &target) {
+            // The landing recorded why it held the merge; say that.
+            Landing::Held => {
+                let review = self
+                    .load_stage(stage_id)
+                    .ok()
+                    .and_then(|held| held.review_reason);
+                Settle::Refused(held_reason(review.as_deref()))
+            }
+            landing => settle_for_landing(landing, stage_id, &target),
+        }
     }
 }
 
@@ -59,13 +70,14 @@ pub(super) fn settle_for_landing(landing: Landing, stage_id: &str, target: &str)
         Landing::Merged => Settle::Applied(Some(format!(
             "merged into '{target}'; the worktree is removed after this session exits"
         ))),
-        Landing::Held => Settle::Refused(format!(
-            "routed to human review: the stage branch touches a control path ({})",
-            Orchestrator::CONTROL_PATHS
-        )),
+        Landing::Held => Settle::Refused(held_reason(None)),
+        // A resolver never commits through git: `git merge --continue` and a
+        // bare `git merge` commit inside the sandbox, which cannot sign.
         Landing::Conflict(paths) => Settle::Refused(format!(
-            "'{target}' moved and conflicts again in {}: merge it into this worktree \
-             again, resolve, commit, then rerun --resolved",
+            "'{target}' moved and conflicts again in {}: merge it into this worktree again \
+             with git merge --no-commit --no-ff {target}, resolve, stage the resolution, \
+             commit it with loom stage commit and wait for it with loom request status <id> \
+             --wait 90, then rerun --resolved; never run git merge --continue",
             paths.join(", ")
         )),
         Landing::Blocked(block) => Settle::Applied(Some(format!(
@@ -75,5 +87,18 @@ pub(super) fn settle_for_landing(landing: Landing, stage_id: &str, target: &str)
             "no ancestry proof that stage '{stage_id}' landed in '{target}'; merged stays false"
         )),
         Landing::Failed(error) => Settle::Refused(error),
+    }
+}
+
+/// Why a held landing went to human review: the stage's own review reason
+/// when it could be read, else both causes a hold has.
+fn held_reason(review_reason: Option<&str>) -> String {
+    match review_reason {
+        Some(reason) => format!("routed to human review: {reason}"),
+        None => format!(
+            "routed to human review: the stage branch touches a control path ({}), or \
+             loom's merge commit could not be signed",
+            Orchestrator::CONTROL_PATHS
+        ),
     }
 }

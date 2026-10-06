@@ -18,8 +18,7 @@ const MAX_CREDENTIALS_FILE_BYTES: u64 = 64 * 1024;
 
 /// Pure builder for the macOS Keychain lookup argv, asserted directly by the
 /// exactness test below so the real command can never drift from what is
-/// tested. `-w` is required here (unlike `remote_control::keychain_probe_argv`,
-/// which deliberately omits it) because this lookup needs the stored secret,
+/// tested. `-w` is required here because this lookup needs the stored secret,
 /// not just proof the entry exists.
 pub fn keychain_argv() -> (&'static str, [&'static str; 4]) {
     (

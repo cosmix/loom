@@ -21,9 +21,8 @@ use super::core::DaemonServer;
 use super::lock::{inspect_lock, LockState};
 use crate::daemon::protocol::Response;
 use crate::fs::work_dir::WorkDir;
-use crate::git::worktree::WorktreeGit;
+use crate::git::worktree::{stage_worktree_path, WorktreeGit};
 use crate::models::stage::Stage;
-use crate::models::worktree::Worktree;
 use crate::verify::integrity;
 use crate::verify::review::fingerprint::{self, ChangeFingerprint};
 use crate::verify::review::gate;
@@ -111,9 +110,7 @@ fn stage_worktree_and_target(work_dir: &Path, stage: &Stage) -> Result<(Worktree
     let repo_root = workspace
         .repo_root()
         .context("cannot resolve the repository root of the state directory")?;
-    let worktree_id = stage.worktree.as_deref().unwrap_or(&stage.id);
-    crate::validation::validate_id(worktree_id).context("invalid worktree id")?;
-    let worktree = Worktree::worktree_path(repo_root, worktree_id)
+    let worktree = stage_worktree_path(stage, repo_root)?
         .canonicalize()
         .with_context(|| format!("stage '{}' has no worktree", stage.id))?;
     let repo = WorktreeGit::pinned(repo_root, &worktree)?;

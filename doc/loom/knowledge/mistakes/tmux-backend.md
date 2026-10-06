@@ -1,6 +1,6 @@
 # Tmux Backend
 
-> tmux spawn-failure exits, cleanup-on-error
+> tmux spawn failures, cleanup
 
 ## `tmux new-session` Exits 0 When the Server Fails to Start
 

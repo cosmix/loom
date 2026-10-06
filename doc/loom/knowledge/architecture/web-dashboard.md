@@ -1,6 +1,6 @@
 # Web Dashboard
 
-> loom status --web: server, SPA, streaming
+> status --web server, SPA, streams
 
 ## Server
 

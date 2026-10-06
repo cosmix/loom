@@ -4,7 +4,7 @@
 //! error handling, reducing boilerplate across the codebase.
 
 use anyhow::{bail, Context, Result};
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::Path;
 use std::process::{Command, Output};
 use std::time::Duration;
@@ -71,15 +71,20 @@ fn git_command(
     repo_root: &Path,
 ) -> Command {
     let mut command = Command::new(program);
+    harden(&mut command, exec_args, repo_root);
+    command.envs(env.iter().copied());
+    command
+}
+
+/// The argv, variables and directory of [`git_command`], set on `command`.
+fn harden(command: &mut Command, exec_args: &[&str], repo_root: &Path) {
     command
         .args(exec_args)
         .env("LC_ALL", "C")
         .env("LANG", "C")
         .env("GIT_NO_REPLACE_OBJECTS", "1")
         .env("GIT_GRAFT_FILE", NO_GRAFT_FILE)
-        .envs(env.iter().copied())
         .current_dir(repo_root);
-    command
 }
 
 fn run_bounded_git(
@@ -119,37 +124,53 @@ fn git_label(args: &[&str]) -> String {
     format!("git {}", args.first().unwrap_or(&"command"))
 }
 
-/// Run a git command and return the raw Output.
+/// Run a git command in `repo_root` and return the raw Output.
 ///
-/// Wraps `Command::new("git")` with `current_dir` and error context.
-/// Sets `LC_ALL=C` and `LANG=C` so git output is always in English,
-/// making stdout/stderr parsing locale-independent.
-///
-/// Use this when you need access to both stdout and stderr, or when
-/// you need custom error handling logic.
-///
-/// # Arguments
-/// * `args` - Git command arguments (e.g., `&["branch", "-v"]`)
-/// * `repo_root` - Working directory for the git command
+/// `git_command` sets `LC_ALL=C` and `LANG=C`, so stdout/stderr parsing is
+/// locale-independent. Use this when you need both stdout and stderr, or
+/// custom error handling.
 pub fn run_git(args: &[&str], repo_root: &Path) -> Result<Output> {
     run_git_with_env(args, &[], repo_root)
 }
 
 /// [`run_git`] with `env` added to this one command's environment.
 pub fn run_git_with_env(args: &[&str], env: &[(&str, &OsStr)], repo_root: &Path) -> Result<Output> {
+    run_git_with_env_within(repo_root, args, env, git_timeout(args))
+}
+
+/// [`run_git_with_env`] bounded by `timeout` instead of the subcommand's
+/// default deadline (a signing call waits on an agent, not on git).
+pub(crate) fn run_git_with_env_within(
+    repo_root: &Path,
+    args: &[&str],
+    env: &[(&str, &OsStr)],
+    timeout: Duration,
+) -> Result<Output> {
     let exec_args = global_args(args);
-    let label = git_label(args);
-    run_git_program("git", &exec_args, env, &label, repo_root, git_timeout(args))
+    run_git_program("git", &exec_args, env, &git_label(args), repo_root, timeout)
+}
+
+/// [`run_git_with_env_within`] from an empty environment: git sees `env` and
+/// the runner's own variables (which win), nothing this process exports.
+pub(crate) fn run_git_in_env_within(
+    repo_root: &Path,
+    args: &[&str],
+    env: &[(OsString, OsString)],
+    timeout: Duration,
+) -> Result<Output> {
+    let exec_args = global_args(args);
+    let mut command = Command::new("git");
+    command
+        .env_clear()
+        .envs(env.iter().map(|pair| (&pair.0, &pair.1)));
+    harden(&mut command, &exec_args, repo_root);
+    run_bounded_git(command, &exec_args, &git_label(args), timeout)
 }
 
 /// Run a git command, check for success, and return stdout as a trimmed String.
 ///
 /// On failure, bails with the full command + directory + exit code + stdout +
 /// stderr context (conventions.md git error format).
-///
-/// # Arguments
-/// * `args` - Git command arguments
-/// * `repo_root` - Working directory for the git command
 pub fn run_git_checked(args: &[&str], repo_root: &Path) -> Result<String> {
     stdout_of_success(args, run_git(args, repo_root)?, repo_root)
 }
@@ -191,10 +212,6 @@ fn stdout_of_success(args: &[&str], output: Output, repo_root: &Path) -> Result<
 ///
 /// Silently swallows errors (both spawn failures and non-zero exits).
 /// Use this for status checks like `branch_exists`, `rev-parse --verify`, etc.
-///
-/// # Arguments
-/// * `args` - Git command arguments
-/// * `repo_root` - Working directory for the git command
 pub fn run_git_bool(args: &[&str], repo_root: &Path) -> bool {
     run_git(args, repo_root)
         .map(|output| output.status.success())

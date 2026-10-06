@@ -1,6 +1,6 @@
 # Daemon Singleton Incident
 
-> Two daemons shared .loom/work/; now flocked
+> Two daemons shared .loom/work
 
 ## Resolution
 
@@ -88,14 +88,14 @@ recovery for sessions under 30 s old. Commits b3b75f20 and 2b90956d.
 
 **Detection rules for future incidents:**
 
-- `pgrep -af 'loom run'` returning more than one row is always wrong. Add a `loom repair` check.
+- `pgrep -af 'loom run'` returning more than one row is always wrong. Add a `loom repair` check. The daemon child's argv is `loom run --daemon-child <root>`, so it still matches this pattern, and the launching `loom run` exits once the daemon reports ready, so a second row outside that window is still wrong.
 - `loom status` reporting "daemon stopped" while `.loom/work/orchestrator.log` is being actively appended to is always wrong — either the daemon is alive (bug: stale socket cleanup) or the log is being written by a stale child process (bug: orphaned background work).
 - `orchestrator.pid` missing while any `loom run` process exists is always wrong.
 
 **Where to look in code:**
 
-- `daemon/server/lifecycle.rs` — daemonization, socket binding, PID file write. Check the order of: lock-acquire → PID-file-write → socket-bind. Each step must be atomic or roll back the previous on failure.
-- `commands/run/mod.rs` — `loom run` entry point. Check whether it consults `orchestrator.pid` + `kill -0` before forking.
+- `daemon/server/lifecycle.rs` (`serve`, the body of `loom run --daemon-child`) and `daemon/server/launch.rs` (the parent's spawn and readiness wait) — socket binding, PID file write. Check the order of: lock-acquire → PID-file-write → socket-bind. Each step must be atomic or roll back the previous on failure.
+- `commands/run/mod.rs` — `loom run` entry point. Check whether it consults `orchestrator.pid` + `kill -0` before re-executing the daemon child.
 - `commands/stop.rs` — `loom stop` must ALWAYS kill the underlying process before deleting socket/pid. Verify there's no path where the socket is removed but the process survives.
 - `commands/repair.rs` — extend with a "duplicate daemon" detector and a "socket-vs-process mismatch" detector.
 - `daemon/server/core.rs` — confirm `unlink(socket_path)` before `bind` is guarded by a process-liveness check on the prior owner.
@@ -138,4 +138,4 @@ First dated log line is `2026-05-13T16:13:18.544430Z` — within 1s of the lock 
 
 **Prevention:** a long-lived process must not re-derive its own binary path from `current_exe()` after start. Record the path once and re-validate it at use. An installer that replaces a binary must name any running process still on the old one.
 
-**Fix:** `DaemonServer::start` (`daemon/server/lifecycle.rs`) calls `record_daemon_binary`, which stores the canonical path in a `OnceLock` (`orchestrator/terminal/native/launch/host.rs`). `host_facts` uses that path, and `accepted_loom_bin` still checks it on every spawn. `loom update` warns when the current workspace's daemon is alive (`commands/self_update/daemon_notice.rs`). A daemon started before this fix still needs a restart after an update.
+**Fix:** `DaemonServer::serve` (`daemon/server/lifecycle.rs`, the daemon child) calls `record_daemon_binary`, which stores the canonical path in a `OnceLock` (`orchestrator/terminal/native/launch/host.rs`). `host_facts` uses that path, and `accepted_loom_bin` still checks it on every spawn. `loom update` warns when the current workspace's daemon is alive (`commands/self_update/daemon_notice.rs`). A daemon started before this fix still needs a restart after an update.

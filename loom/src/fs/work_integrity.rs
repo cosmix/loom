@@ -188,11 +188,61 @@ pub fn validate_work_dir_state(repo_root: &Path) -> Result<()> {
     }
 }
 
+/// File name probed inside an ignored directory; it need not exist, git
+/// applies directory rules to the leading components of the path.
+const IGNORE_PROBE: &str = ".ignore-probe";
+
+/// Ask git whether `rel` (relative to `repo_root`) is ignored
+///
+/// Discovery is capped at `repo_root`'s parent, so git answers only when
+/// `repo_root` itself is a git work tree and never borrows the ignore rules
+/// of an enclosing repository.
+///
+/// # Arguments
+/// * `repo_root` - Path to the repository root
+/// * `rel` - Path relative to `repo_root`
+///
+/// # Returns
+/// `Some(verdict)` when git answered (exit 0 ignored, 1 not ignored), `None`
+/// when git could not answer (not a repository, spawn failure, timeout)
+fn git_ignores(repo_root: &Path, rel: &str) -> Option<bool> {
+    let ceiling = repo_root.parent().map(|p| p.as_os_str());
+    let env: Vec<(&str, &std::ffi::OsStr)> = ceiling
+        .map(|c| ("GIT_CEILING_DIRECTORIES", c))
+        .into_iter()
+        .collect();
+    let output =
+        crate::git::runner::run_git_with_env(&["check-ignore", "-q", "--", rel], &env, repo_root)
+            .ok()?;
+    match output.status.code() {
+        Some(0) => Some(true),
+        Some(1) => Some(false),
+        _ => None,
+    }
+}
+
+/// Check whether `.gitignore` in `repo_root` has a line equal to one of `names`
+///
+/// # Arguments
+/// * `repo_root` - Path to the repository root
+/// * `names` - Accepted literal lines
+///
+/// # Returns
+/// true if a trimmed line matches; false when `.gitignore` is missing or unreadable
+fn gitignore_lists(repo_root: &Path, names: &[&str]) -> bool {
+    match std::fs::read_to_string(repo_root.join(".gitignore")) {
+        Ok(content) => content.lines().any(|line| names.contains(&line.trim())),
+        Err(_) => false,
+    }
+}
+
 /// Check if the state directory is properly ignored by git
 ///
-/// Accepts whichever pair matches the resolved layout (see [`state_dir`]):
-/// the nested `.loom/work/` / `.loom/work`, or, for a legacy workspace,
-/// `.work/` / `.work`.
+/// The verdict is git's (`git check-ignore`) when `repo_root` is a git work
+/// tree, so any rule git honours counts (a bare `.loom`, a glob). Otherwise
+/// the literal `.gitignore` lines for the resolved layout (see [`state_dir`])
+/// decide: the nested `.loom/work/` / `.loom/work`, or, for a legacy
+/// workspace, `.work/` / `.work`.
 ///
 /// # Arguments
 /// * `repo_root` - Path to the repository root
@@ -200,27 +250,19 @@ pub fn validate_work_dir_state(repo_root: &Path) -> Result<()> {
 /// # Returns
 /// true if the state directory is ignored
 pub fn is_work_dir_git_ignored(repo_root: &Path) -> bool {
-    let gitignore_path = repo_root.join(".gitignore");
-    if !gitignore_path.exists() {
-        return false;
-    }
-
     let (_, layout) = state_dir(repo_root);
     let (slash, bare) = match layout {
         Layout::Nested => (".loom/work/", ".loom/work"),
         Layout::Legacy => (".work/", ".work"),
     };
-
-    match std::fs::read_to_string(&gitignore_path) {
-        Ok(content) => content.lines().any(|line| {
-            let trimmed = line.trim();
-            trimmed == slash || trimmed == bare
-        }),
-        Err(_) => false,
-    }
+    git_ignores(repo_root, &format!("{bare}/{IGNORE_PROBE}"))
+        .unwrap_or_else(|| gitignore_lists(repo_root, &[slash, bare]))
 }
 
 /// Check if .worktrees is properly ignored by git
+///
+/// The verdict is git's (`git check-ignore`) when `repo_root` is a git work
+/// tree, otherwise the literal `.worktrees/` / `.worktrees` `.gitignore` lines.
 ///
 /// # Arguments
 /// * `repo_root` - Path to the repository root
@@ -228,18 +270,8 @@ pub fn is_work_dir_git_ignored(repo_root: &Path) -> bool {
 /// # Returns
 /// true if .worktrees is ignored
 pub fn is_worktrees_git_ignored(repo_root: &Path) -> bool {
-    let gitignore_path = repo_root.join(".gitignore");
-    if !gitignore_path.exists() {
-        return false;
-    }
-
-    match std::fs::read_to_string(&gitignore_path) {
-        Ok(content) => content.lines().any(|line| {
-            let trimmed = line.trim();
-            trimmed == ".worktrees/" || trimmed == ".worktrees"
-        }),
-        Err(_) => false,
-    }
+    git_ignores(repo_root, &format!(".worktrees/{IGNORE_PROBE}"))
+        .unwrap_or_else(|| gitignore_lists(repo_root, &[".worktrees/", ".worktrees"]))
 }
 
 #[cfg(test)]

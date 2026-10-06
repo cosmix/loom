@@ -213,6 +213,7 @@ Everything loom does, one line each, grouped by what you are doing at the time. 
 - Confine each session's filesystem reads/writes and network domains by plan and per-stage rules. ([Sandbox Configuration](#sandbox-configuration))
 - Rebuild a minimal, allowlisted environment for every command loom runs from your plan. ([Command Confinement](#command-confinement))
 - Deny a session write access to loom's own state, hooks, and config, relaying the rare legitimate exception through the daemon. ([Session State Confinement](#session-state-confinement))
+- Sign every stage and merge commit with your own git signing setup, although sessions cannot reach your keys. ([Signed Commits](#signed-commits))
 - Enforce commit discipline, worktree boundaries, and subagent limits from shell hooks. ([Deterministic guardrails](#deterministic-guardrails))
 - Run stages in `auto` permission mode by default and tighten it per plan or per stage; `bypass-permissions` is rejected. ([Permission Mode](#permission-mode))
 - Enable Claude Code remote control on spawned sessions automatically when its prerequisites are met. ([Remote Control](#remote-control))
@@ -220,6 +221,7 @@ Everything loom does, one line each, grouped by what you are doing at the time. 
 **Operate**
 
 - Hold, release, skip, retry, reset, or hand a stuck stage to a human. ([Stage Commands](#stage-commands))
+- Park a stalled or never-started stage for a person, with its reason and a desktop notification. ([Startup Checks and Stalled Stages](#startup-checks-and-stalled-stages))
 - Diagnose and repair a broken install or missing hook wiring. ([Other Commands](#other-commands))
 - Clear worktrees, sessions, or state selectively without touching the rest. ([Other Commands](#other-commands))
 - Check for and install a newer loom release. ([Other Commands](#other-commands))
@@ -330,7 +332,7 @@ Stages form a dependency DAG; everything independent runs at once, each in its o
 
 ### Crash recovery and liveness
 
-All orchestration state is plain files in `.loom/work/`, so nothing is lost when a process dies. The daemon polls every 5s, tracks PID liveness and per-session heartbeats, flags hung sessions after 300s, and classifies failures across ten types into retryable (exponential backoff) and needs-diagnosis. Tool-call telemetry drives a stuck-session signal when a session's recent calls are overwhelmingly failures. Orphaned sessions are recovered on daemon restart.
+All orchestration state is plain files in `.loom/work/`, so nothing is lost when a process dies. The daemon polls every 5s, tracks PID liveness and per-session heartbeats, flags hung sessions after 300s and parks stalled stages for a person (see [Startup Checks and Stalled Stages](#startup-checks-and-stalled-stages)), and classifies failures across ten types into retryable (exponential backoff) and needs-diagnosis. Tool-call telemetry drives a stuck-session signal when a session's recent calls are overwhelmingly failures. Orphaned sessions are recovered on daemon restart.
 
 A stage completes only on an authenticated evidence record that survives handoffs, so a session that finished its work but died before the daemon observed it does not loop between retries. Each session records why it exited — completed, crashed, context ceiling, stalled, operator stop, criteria blocked, or replaced — and `loom status`, `loom status --live`, and the web dashboard surface a completion-pending or blocked state with that reason ahead of generic activity.
 
@@ -481,6 +483,7 @@ loom plan verify <plan-path> [--strict] [--json] [--no-color]
 ```bash
 loom stage complete <stage-id> [--session <id>] [--no-verify] [--force-unsafe --assume-merged] [--no-cache]
 loom stage block <stage-id> <reason>
+loom stage commit <stage-id> -m <message>                                   # Relay the staged index for the daemon to commit and sign; wait with `loom request status <id> --wait 90`
 loom stage reset <stage-id> [--hard] [--kill-session]
 loom stage waiting <stage-id>
 loom stage resume <stage-id>
@@ -573,7 +576,7 @@ loom graph
 loom project detect [PATH] [--json]                                          # Per package: language kinds, the test runner loom would use (or unsupported), and the matching skills
 loom context record-edit --stage <id> --path <path> [--path <path>...]       # Keep a stage's context overlay current
 loom hook user-prompt                                                        # UserPromptSubmit entry point; invoked by loom's hooks
-loom request status <id> [--session <id>]                                    # Plumbing: has the daemon applied a request relayed through the sandbox? <id> is printed after the originating command
+loom request status <id> [--session <id>] [--wait <secs>]                    # Plumbing: has the daemon applied a request relayed through the sandbox? <id> is printed after the originating command
 loom skill-index                                                             # Plumbing: rebuild the skill keyword index the skill-trigger hook reads
 loom repair [--fix]
 loom clean [--all|--worktrees|--sessions|--state]                            # --state and --all refuse while the target branch is held (see loom target)
@@ -1116,7 +1119,7 @@ loom:
 | `confined` | **Default.** The child process environment is cleared and rebuilt from a fixed allowlist |
 | `inherit`  | The child inherits loom's ambient environment                                            |
 
-Plans are trusted artifacts, but trusted is not privileged: under `confined`, a plan line cannot read `GITHUB_TOKEN`, `AWS_*` or `ANTHROPIC_API_KEY` merely because you started loom from a shell that had them. The allowlist carries what a build toolchain needs to find itself — `HOME`, `PATH`, `CARGO_HOME`, `RUSTUP_HOME`, locale and terminal variables, `TMPDIR`, the proxy variables and the CA-bundle _locations_ (`SSL_CERT_FILE`, `SSL_CERT_DIR`, `NIX_SSL_CERT_FILE`). `SSH_AUTH_SOCK` is deliberately withheld, so an acceptance criterion that needs SSH auth fails by design rather than silently borrowing your agent.
+Plans are trusted artifacts, but trusted is not privileged: under `confined`, a plan line cannot read `GITHUB_TOKEN`, `AWS_*` or `ANTHROPIC_API_KEY` merely because you started loom from a shell that had them. The allowlist carries what a build toolchain needs to find itself — `HOME`, `PATH`, `USER`, `LOGNAME`, `CARGO_HOME`, `RUSTUP_HOME`, locale and terminal variables, `TMPDIR`, the proxy variables and the CA-bundle _locations_ (`SSL_CERT_FILE`, `SSL_CERT_DIR`, `NIX_SSL_CERT_FILE`). `SSH_AUTH_SOCK` is deliberately withheld, so an acceptance criterion that needs SSH auth fails by design rather than silently borrowing your agent.
 
 > **What confinement is not.** It is environment scrubbing — least-privilege hygiene, not a security boundary. Loom applies **no** namespace, seccomp, landlock, cgroup or network isolation to the commands it spawns: a confined command shares your network namespace, can read and write any path your user can, and can reach any Unix socket on the host. The `network:` settings above are emitted into the _agent session's_ sandbox and do not restrict plan-authored commands. Use `confined` to keep ambient credentials out of plan commands; do not use it to run code you would not run yourself.
 
@@ -1124,9 +1127,27 @@ Plans are trusted artifacts, but trusted is not privileged: under `confined`, a 
 
 Every spawned session — stage, merge, base-conflict, adjudication — launches from a settings capsule that denies writes to `.loom/`, `.claude/`, `.worktrees/`, the hooks directories, and git hooks and config, regardless of the filesystem rules above.
 
-A handful of commands still need to reach that state from inside a sandboxed session: `loom memory ...`, `loom stage block`, `loom stage dispute-criteria`, `loom handoff`, `loom stage merge --resolved`, and `loom worktree remove`. Each writes a one-shot ticket instead, picked up by a `PostToolUse` relay hook and applied by the daemon at most once through a per-session ledger. `loom request status <id>` reports whether the daemon has applied a given ticket yet.
+A handful of commands still need to reach that state from inside a sandboxed session: `loom memory ...`, `loom stage block`, `loom stage dispute-criteria`, `loom stage commit`, `loom handoff`, `loom stage merge --resolved`, and `loom worktree remove`. Each writes a one-shot ticket instead, picked up by a `PostToolUse` relay hook and applied by the daemon at most once through a per-session ledger. `loom request status <id>` reports whether the daemon has applied a given ticket yet.
 
 The daemon also refuses to merge, or hand to a conflict-resolution session, any branch whose diff touches `.claude/`, `.mcp.json`, `.loom/`, or the in-repo hooks directory — the stage moves to `NeedsHumanReview` naming the offending paths instead.
+
+### Signed Commits
+
+A session does not run `git commit`. It stages its change and runs `loom stage commit <stage-id> -m "<message>"`, which runs the project's `pre-commit` and `commit-msg` hooks inside the sandbox and relays the staged tree to the daemon. The session then waits for the outcome in its own next Bash call with `loom request status <id> --wait 90`. The daemon makes the commit outside the sandbox with plumbing only, using your git configuration, so with `commit.gpgsign` set the commit is signed even though `~/.gnupg` stays unreadable to the session. Loom's own merge commits and the plan-completion commit are signed the same way. Merge-resolution sessions stage the merge with `git merge --no-commit --no-ff <target>` and commit it through the same command.
+
+The daemon signs unattended, so the signer must work without a prompt:
+
+- **gpg**: run gpg-agent with a cached passphrase or a graphical pinentry. The agent forgets a cached passphrase after `default-cache-ttl` (600 s) of disuse and at most `max-cache-ttl` (7200 s) after first use, so raise both in `gpg-agent.conf` for a long run.
+- **ssh**: load the signing key into an ssh-agent reachable through `SSH_AUTH_SOCK`.
+- Put `commit.gpgsign` in a git config file, not in `GIT_CONFIG_COUNT` variables or `git -c`, which the daemon's environment does not see.
+
+`loom run` refuses to start when `commit.gpgsign` is true and a probe signature fails, and it runs the probe twice: in your own environment and in the exact environment the daemon runs with. If a stage's commit later fails to sign, the stage is blocked: fix signing, then run `loom stage retry <stage-id>`. If loom's own merge commit fails to sign, the stage parks in `NeedsHumanReview`: fix signing, then `loom stage human-review <stage-id> --approve`.
+
+### Startup Checks and Stalled Stages
+
+`loom run` checks what a run needs before it marks the plan in progress, and refuses with the reason when a check fails. Stage sessions must be logged in: loom runs `claude auth status` in the same stripped environment stage sessions receive, not in your shell, because a login your shell can see through `$USER` or the Keychain may be invisible to a session. A logged-out result refuses the run and says whether your own shell is logged in; an inconclusive probe warns and continues. Other checks cover the sandbox prerequisites, the git version, command confinement, signing (above), and whether the daemon's socket path fits the operating system's limit for Unix socket paths (the repository path must be short enough that `.loom/work/orchestrator.sock` stays under 104 bytes).
+
+A stage whose session stops answering is first re-queued for a continuation session, at most twice. A stage whose session never started work (no tool call and no context recorded within its response budget) is parked at once, because a re-queue would repeat whatever stopped it, and the reason says to run `claude /login` when the login probe reports a logged-out CLI. Either way the stalled stage ends in `NeedsHumanReview` with its reason (the silence, the budget, the last pane lines) and a desktop notification. Fix the cause, then run `loom stage human-review <stage-id> --approve`, which resets the stall count and re-queues the stage. Raise `subagent_timeout_secs` on a stage that legitimately opens with a long foreground subagent or codex run, since it has no tool heartbeat until that call returns.
 
 ### Permission Mode
 
@@ -1153,7 +1174,7 @@ Claude Code's `--remote-control` flag lets the loom orchestrator drive spawned C
 **Prerequisites (preflight check):**
 
 - **Claude version** ≥ 2.1.51
-- **Auth**: claude.ai login — loom accepts **either** credential store: `~/.claude/.credentials.json`, **or** (on macOS) a `Claude Code-credentials` entry in the **Keychain**, which is where Claude Code stores credentials on macOS instead of the file. Additionally, none of these env vars may be set: `ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`
+- **Auth**: a claude.ai login, read from `claude auth status --json` run in the environment stage sessions receive. A console (API key) login, a logged-out CLI and an inconclusive probe all disable Remote Control.
 
 The flag exits non-zero when its prerequisites are not met, so loom never passes it blindly. When preflight fails, loom falls back silently to standard mode and prints a one-line advisory at orchestrator startup (e.g. `⚠ Remote Control disabled: <reason>`).
 

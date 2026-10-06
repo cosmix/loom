@@ -1,5 +1,6 @@
 //! `loom init --clean` against a held target.
 
+use super::warn_on_long_socket_path;
 use super::{execute, stop_daemon_and_prune};
 use crate::git::target_guard::test_support::held_repo;
 use crate::git::target_guard::RECORD_FILE;
@@ -56,4 +57,19 @@ fn init_clean_refuses_through_execute_and_deletes_nothing() {
     assert_eq!(std::fs::read(repo.work.join(RECORD_FILE)).unwrap(), record);
     assert!(worktree_file.is_file());
     assert!(state_file.is_file());
+}
+
+#[test]
+fn a_work_root_whose_socket_path_cannot_fit_is_warned_about() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    let short = root.join("w");
+    let long = root.join("l".repeat(crate::daemon::SUN_PATH_MAX));
+    std::fs::create_dir(&short).unwrap();
+    std::fs::create_dir(&long).unwrap();
+
+    let message = warn_on_long_socket_path(&long).expect("a long work root is warned about");
+
+    assert!(message.contains(&long.display().to_string()));
+    assert_eq!(warn_on_long_socket_path(&short), None);
 }

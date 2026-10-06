@@ -1,6 +1,6 @@
 # Code Quality And Hook Debt
 
-> Oversized units, duplicated tables, hook debt
+> Oversized units, hook debt
 
 ## Oversized Rust Units Remain Controlled Debt (2026-08-09)
 

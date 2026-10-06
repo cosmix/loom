@@ -6,6 +6,7 @@ mod adjudicate;
 pub(crate) mod admin_hmac;
 pub(crate) mod admin_proof;
 mod amend;
+pub mod commit;
 pub mod complete;
 pub mod completion_evidence;
 #[path = "completion_evidence/producer.rs"]

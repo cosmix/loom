@@ -277,6 +277,28 @@ const EXPECTED: &[(SessionType, RequestKind, MatrixVerdict)] = &[
     ),
 ];
 
+/// The `commit` column, transcribed from the plan that added the kind: only
+/// the sessions that write a branch commit through the daemon.
+const COMMIT_COLUMN: [(SessionType, MatrixVerdict); 6] = [
+    (SessionType::Stage, MatrixVerdict::Apply),
+    (SessionType::Knowledge, MatrixVerdict::Apply),
+    (SessionType::Merge, MatrixVerdict::Apply),
+    (SessionType::BaseConflict, MatrixVerdict::Refuse),
+    (SessionType::Adjudication, MatrixVerdict::Refuse),
+    (SessionType::Contract, MatrixVerdict::Refuse),
+];
+
+#[test]
+fn commit_is_applied_for_stage_knowledge_and_merge_only() {
+    for (session, expected_verdict) in COMMIT_COLUMN {
+        assert_eq!(
+            verdict(session, RequestKind::Commit),
+            expected_verdict,
+            "{session:?} x commit"
+        );
+    }
+}
+
 #[test]
 fn matches_the_full_six_by_nine_writer_matrix() {
     assert_eq!(EXPECTED.len(), 54, "6 session types x 9 kinds");

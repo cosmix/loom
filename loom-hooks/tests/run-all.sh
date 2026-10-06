@@ -5,13 +5,33 @@ PASS=0
 FAIL=0
 ERRORS=()
 
+# LOOM_HOOK_TEST_BSD=1 runs every test with the BSD tool shims first on PATH
+# (padded wc output, BSD-only stat and date options), as on macOS.
+source "$SCRIPT_DIR/_bsd_path.sh"
+BSD_DIR=""
+if [[ "${LOOM_HOOK_TEST_BSD:-}" == "1" ]]; then
+    BSD_DIR=$(bsd_shim_dir)
+    trap 'rm -rf "$BSD_DIR"' EXIT
+    echo "BSD tool shims active"
+fi
+
 run_test() {
     local name="$1"
     local script="$2"
+    local path_args=()
+    if [[ -n "$BSD_DIR" ]]; then
+        path_args=(PATH="$BSD_DIR:$PATH")
+    fi
     # A loom session exports these; inherited, they would override the stub
-    # binaries and PATHs each test hands its hooks.
+    # binaries and PATHs each test hands its hooks. LOOM_HOOK_PATH in
+    # particular splices the real PATH back in over the shim directory. The
+    # session identity variables would leak into any test that does not scrub
+    # its own.
     if output=$(env -u LOOM_HOOK_PATH -u LOOM_BIN -u LOOM_HOOK_CONTEXT \
-        -u LOOM_SCRATCH_DIR -u LOOM_SESSION_TYPE bash "$script" 2>&1); then
+        -u LOOM_SCRATCH_DIR -u LOOM_SESSION_TYPE -u LOOM_STAGE_ID -u LOOM_SESSION_ID \
+        -u LOOM_WORK_DIR -u LOOM_WORKTREE_PATH -u LOOM_MAIN_AGENT_PID \
+        ${path_args[@]+"${path_args[@]}"} \
+        bash "$script" 2>&1); then
         echo "  PASS: $name"
         ((PASS++)) || true
     else
@@ -75,6 +95,7 @@ run_test "codex-forward-guard: enforcement needs unforgeable stage evidence" "$S
 run_test "git-add-guard: quoted prose allowed, real args blocked" "$SCRIPT_DIR/git-add-guard-quoting.sh"
 run_test "_common: token helpers scan argv values, not quoted prose" "$SCRIPT_DIR/common-token-helpers.sh"
 run_test "commit-filter: quoted prose about git is allowed, real commits blocked" "$SCRIPT_DIR/commit-filter-quoted-payload.sh"
+run_test "commit-filter: git commit blocked in a stage session, only as git's subcommand" "$SCRIPT_DIR/commit-filter-session-git-commit.sh"
 run_test "worktree-isolation: quoted prose paths allowed, real traversal blocked" "$SCRIPT_DIR/worktree-isolation-quoted-payload.sh"
 run_test "prefer-modern-tools: grep/find inside a quoted payload is not a command" "$SCRIPT_DIR/prefer-modern-tools-quoted-payload.sh"
 run_test "prefer-modern-tools: missing rg/fd allows grep/find with a warning" "$SCRIPT_DIR/prefer-modern-tools-missing-rg-fd.sh"
@@ -85,6 +106,7 @@ run_test "stage-terminal-guard: blocks MultiEdit once the stage is terminal" "$S
 run_test "commit-guard: a nested worktree resolves to its innermost stage" "$SCRIPT_DIR/commit-guard-nested-worktree.sh"
 run_test "commit-guard: many dirty files never raise SIGPIPE through pipefail" "$SCRIPT_DIR/commit-guard-sigpipe-many-dirty-files.sh"
 run_test "commit-guard: a contract session gets the freeze reminder, not the checklist" "$SCRIPT_DIR/commit-guard-contract-session.sh"
+run_test "commit-guard: the memory reminder shows for thin memory, hides for 11+ lines, under padded wc" "$SCRIPT_DIR/commit-guard-memory-reminder.sh"
 run_test "user-prompt-context: short prompt produces no output" "$SCRIPT_DIR/user-prompt-context-short-prompt.sh"
 run_test "user-prompt-context: no LOOM_WORK_DIR exits silently" "$SCRIPT_DIR/user-prompt-context-no-workdir.sh"
 run_test "user-prompt-context: malformed JSON fails open" "$SCRIPT_DIR/user-prompt-context-malformed-json.sh"
@@ -103,6 +125,7 @@ run_test "post-tool-use: subagent ceiling ignores the stage's own context_ceilin
 run_test "subagent-stop: heartbeat refresh is serialized and cannot roll parent tokens back" "$SCRIPT_DIR/subagent-stop-heartbeat-lock.sh"
 run_test "subagent-stop: lifecycle heartbeat tags subagent:true with no last_tool" "$SCRIPT_DIR/subagent-stop-heartbeat-subagent-flag.sh"
 run_test "subagent-stop: only a loom-code-reviewer stop reaches review-harvest, silently" "$SCRIPT_DIR/subagent-stop-review-harvest.sh"
+run_test "subagent-stop: a FIFO at stop-skips.jsonl or lifecycle.jsonl never blocks the hook" "$SCRIPT_DIR/subagent-stop-fifo-journal.sh"
 run_test "heartbeat protocol: ownership, SessionStart lock, abandoned recovery, atomic JSON" "$SCRIPT_DIR/heartbeat-protocol.sh"
 run_test "heartbeat protocol: subagent tool calls are tagged, main-agent calls are not" "$SCRIPT_DIR/heartbeat-subagent-flag.sh"
 run_test "post-tool-use: resident-token arithmetic (last record wins, torn line survives)" "$SCRIPT_DIR/post-tool-use-resident-tokens.sh"

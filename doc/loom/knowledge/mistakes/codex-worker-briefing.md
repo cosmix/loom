@@ -68,3 +68,27 @@ erasableSyntaxOnly", and the inter-wave gate must run typecheck, not tests alone
 units do not run `oxfmt` on their own output. Either the orchestrator runs `bun run --cwd web
 format` before the final gate, or each unit's brief must explicitly tell it to run `oxfmt` on
 its own files before reporting back.
+
+## A Forward Prompt That Quoted `git commit` Text Was Blocked Before Codex Ran (2026-10-06)
+
+**What happened:** a codex forward prompt that quoted `git commit -m` and `git stripspace` was blocked by
+`commit-filter.sh` before codex started.
+
+**Why:** the hook scans the whole Bash command text of the forwarder, and the prompt is part of that text.
+A stage session may not run `git commit` at all
+([Daemon-Owned Commits](../architecture/daemon-owned-commits.md)).
+
+**Prevention:** phrase codex prompts without literal `git commit` text and point to the brief for the git
+specifics.
+
+## A Codex Unit That Waited on a Parallel Worker's New Module Timed Out (2026-10-06)
+
+**What happened:** a codex unit (the stage commit command, one file plus tests) polled for a parallel worker's
+not-yet-written `git/stage_commit.rs` and hit the 540 s wrapper deadline, although it had already written both
+of its files (178 and 225 lines) before the cancellation.
+
+**Why:** the unit consumed a module another worker was still creating, and the wrapper's deadline counts the
+waiting.
+
+**Prevention:** forward a codex unit that consumes a parallel worker's new module only after that module
+exists, or pin the interface inline in the brief so codex does not wait for it.

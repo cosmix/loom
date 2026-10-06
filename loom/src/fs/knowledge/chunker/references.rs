@@ -162,11 +162,7 @@ fn references_in_line(
             let span = &line[start..position];
             let sentence = sentence_window(line, start.saturating_sub(1), position + 1);
             for matched in SOURCE_PATH_REGEX.find_iter(span) {
-                let followed_by_identifier = span[matched.end()..]
-                    .chars()
-                    .next()
-                    .is_some_and(|character| character.is_ascii_alphanumeric());
-                if !followed_by_identifier {
+                if !continues_name(&span[matched.end()..]) {
                     let source_path = matched.as_str().to_string();
                     references.push(EvidenceReference {
                         kind: classify_reference(&source_path, &sentence),
@@ -181,6 +177,18 @@ fn references_in_line(
         } else {
             span_start = Some(position + character.len_utf8());
         }
+    }
+}
+
+/// True when `rest`, the text after a path match, continues the name: an
+/// identifier character (`a.rsx`), or a `.` and then one (`AGENTS.md.template`
+/// names a template, not `AGENTS.md`). A sentence-final `.` continues nothing.
+fn continues_name(rest: &str) -> bool {
+    let mut chars = rest.chars();
+    let identifier = |character: char| character.is_ascii_alphanumeric();
+    match chars.next() {
+        Some('.') => chars.next().is_some_and(identifier),
+        first => first.is_some_and(identifier),
     }
 }
 
@@ -281,4 +289,32 @@ where
         .into_iter()
         .filter(|value| seen.insert(value.clone()))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn paths(body: &str) -> Vec<String> {
+        references_in(body)
+            .0
+            .into_iter()
+            .map(|reference| reference.source_path)
+            .collect()
+    }
+
+    #[test]
+    fn a_backticked_template_filename_is_not_a_reference_to_its_prefix() {
+        assert!(paths("Copy `AGENTS.md.template` into the repo.").is_empty());
+    }
+
+    #[test]
+    fn a_plain_source_path_is_still_a_reference() {
+        assert_eq!(paths("See `src/a.rs` for details."), ["src/a.rs"]);
+    }
+
+    #[test]
+    fn a_path_followed_by_sentence_punctuation_is_still_a_reference() {
+        assert_eq!(paths("Edit `src/a.rs.` first."), ["src/a.rs"]);
+    }
 }

@@ -345,21 +345,6 @@ remind_knowledge_capture() {
 		return
 	fi
 
-	# Check if any knowledge file has content beyond template
-	local has_content=false
-	for file in entry-points.md patterns.md conventions.md; do
-		local filepath="$knowledge_dir/$file"
-		if [[ -f "$filepath" ]]; then
-			# Check if file has more than just template content (>10 lines)
-			local lines
-			lines=$(wc -l <"$filepath")
-			if [[ "$lines" -gt 15 ]]; then
-				has_content=true
-				break
-			fi
-		fi
-	done
-
 	# Always show reminder (soft prompt, not blocking)
 	printf '\n' >&2
 	printf '%s\n' "------------------------------------------------------------" >&2
@@ -390,7 +375,7 @@ remind_memory_usage() {
 	for file in "$memory_dir"/*.md; do
 		if [[ -f "$file" ]]; then
 			local lines
-			lines=$(wc -l <"$file")
+			lines=$(wc -l <"$file" | tr -d '[:space:]')
 			if [[ "$lines" -gt 10 ]]; then
 				has_entries=true
 				break
@@ -588,7 +573,7 @@ main() {
 	message+="\n\nChecked: worktree=$(pwd), project_root=$project_root"
 
 	if [[ $has_uncommitted -eq 1 ]]; then
-		message+="\n\n1. You have uncommitted changes. Run:\n   git add <specific-files> && git commit -m 'feat: <description>'"
+		message+="\n\n1. You have uncommitted changes. Commit with git add <specific-files> then loom stage commit $STAGE_ID -m 'type(scope): description'; wait with loom request status <id> --wait 90; never run git commit."
 		message+="\n   (NOTE: Do NOT use 'git add -A' or 'git add .' as these will stage $WORK_DIR)"
 		local changes
 		changes=$(get_uncommitted_changes)

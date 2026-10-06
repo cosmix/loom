@@ -277,7 +277,17 @@ fn create_or_adopt_work_dir(
             label.dimmed()
         );
     }
+    warn_on_long_socket_path(work_dir.root());
     Ok(())
+}
+
+/// Warn when the daemon could not bind its socket under `work_dir_path`, so a
+/// repository path that is too long surfaces at init rather than at `loom run`.
+/// Returns the warning it printed.
+fn warn_on_long_socket_path(work_dir_path: &Path) -> Option<String> {
+    let problem = crate::daemon::socket_path_problem(work_dir_path)?;
+    println!("  {} {problem}", "!".yellow().bold());
+    Some(problem)
 }
 
 fn print_repo_bootstrap(repo_bootstrap: crate::git::RepoBootstrapResult) {

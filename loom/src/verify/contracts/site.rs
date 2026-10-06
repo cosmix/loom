@@ -9,8 +9,8 @@ use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
 use crate::fs::work_dir::WorkDir;
+use crate::git::worktree::stage_worktree_path;
 use crate::models::stage::Stage;
-use crate::models::worktree::Worktree;
 
 /// `stage`'s worktree root and, beneath it, its working directory: resolve
 /// `work_dir`'s repository root, validate the stage's worktree id,
@@ -21,9 +21,7 @@ pub fn stage_site(work_dir: &Path, stage: &Stage) -> Result<(PathBuf, PathBuf)> 
     let repo_root = workspace
         .repo_root()
         .context("cannot resolve the repository root of the state directory")?;
-    let worktree_id = stage.worktree.as_deref().unwrap_or(&stage.id);
-    crate::validation::validate_id(worktree_id).context("invalid worktree id")?;
-    let worktree_root = Worktree::worktree_path(repo_root, worktree_id)
+    let worktree_root = stage_worktree_path(stage, repo_root)?
         .canonicalize()
         .with_context(|| format!("stage '{}' has no worktree", stage.id))?;
     let working_dir = worktree_root

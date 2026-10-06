@@ -61,6 +61,7 @@ relay_kind_at() {
 	case "$sub:$verb" in
 	memory:note | memory:decision | memory:change | memory:question | memory:resolve) echo memory ;;
 	stage:block) echo block ;;
+	stage:commit) echo commit ;;
 	stage:dispute-criteria) echo dispute ;;
 	stage:dispute-findings | stage:dispute-contract | stage:dispute-integrity) echo file-dispute ;;
 	stage:merge) segment_has_arg "$j" --resolved && echo merge-resolved ;;
@@ -97,12 +98,13 @@ relay_allowed_kinds() {
 	printf '%s' "$kinds"
 }
 
-# drop_control_kinds <csv> - The kinds in <csv> a subagent may relay.
+# drop_control_kinds <csv> - The kinds in <csv> a subagent may relay. A
+# `commit` line is admitted like the other control kinds and never swept.
 drop_control_kinds() {
 	local kind kept="" IFS=,
 	for kind in $1; do
 		case "$kind" in
-		block | dispute | handoff | merge-resolved | verdict | freeze-contracts | file-dispute) ;;
+		block | commit | dispute | handoff | merge-resolved | verdict | freeze-contracts | file-dispute) ;;
 		*) kept=${kept:+$kept,}$kind ;;
 		esac
 	done

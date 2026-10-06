@@ -177,3 +177,19 @@ live — never went through the fixed function. Both requests now use
 `control_complete::completion_credential`; `user_credential` stays the peer-identity credential for
 `BlockStage`/`DisputeCriteria`. An `as` alias that reuses a sibling's function name hides exactly
 this kind of miss — grep the import, not just the call site.
+
+## Completion Started With `run_in_background` Reached No Broker (2026-10-06)
+
+**What happened:** the main agent of integration-verify started `loom stage complete` with the Bash tool's
+`run_in_background`, as the plan's gate conventions advised. The PostToolUse hook `loom-control-complete.sh`
+brokers completion from the command's own output, saw none, and recorded `evidence_missing_recorded`.
+
+**Why:** the plan assumed a 600 s foreground ceiling, but this harness allows a 3,600,000 ms foreground
+timeout. A backgrounded command returns before it prints anything the hook can read.
+
+**Prevention:** run the completion as one exact foreground command with `timeout` 3600000, naming `loom` by
+its absolute path: never backgrounded, piped or redirected (the PreToolUse hook rejects all three). Plan gate
+conventions must not advise `run_in_background` for the completion.
+
+**Fix:** run the completion again as a foreground command; the plan-writer gate conventions should drop the
+`run_in_background` advice.

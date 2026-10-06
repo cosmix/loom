@@ -100,7 +100,7 @@ fi
 # bytes are enforced where they actually enter the session. `wc -c` counts
 # BYTES regardless of locale, which `${#OUTPUT}` (characters) would not.
 MAX_OUTPUT_BYTES=16384
-OUTPUT_BYTES=$(LC_ALL=C printf '%s' "$OUTPUT" | wc -c)
+OUTPUT_BYTES=$(LC_ALL=C printf '%s' "$OUTPUT" | wc -c | tr -d '[:space:]')
 if [[ "$OUTPUT_BYTES" -gt "$MAX_OUTPUT_BYTES" ]]; then
 	exit 0
 fi

@@ -1,0 +1,29 @@
+#!/usr/bin/env bash
+# BSD/macOS wc shim: GNU wc with the BSD output shape. Every leading integer
+# field is right-aligned in 8 columns (`wc -c <file` prints "       5"), so a
+# hook that tests the raw value against ^[0-9]+$ fails here as it does on macOS.
+
+# The real tool is the first PATH entry (then /usr/bin, /bin) that is not this
+# script; -ef follows symlinks, so a path_without mirror of the shim directory
+# is skipped too.
+real_wc=""
+IFS=: read -r -a path_parts <<<"$PATH:/usr/bin:/bin"
+for part in "${path_parts[@]}"; do
+	if [[ -x "$part/wc" && ! "$part/wc" -ef "${BASH_SOURCE[0]}" ]]; then
+		real_wc="$part/wc"
+		break
+	fi
+done
+[[ -n "$real_wc" ]] || { echo "wc: no real wc on PATH" >&2; exit 127; }
+out=$("$real_wc" "$@") || exit $?
+[[ -n "$out" ]] || exit 0
+field_re='^[[:space:]]*([0-9]+)([[:space:]].*|)$'
+while IFS= read -r line; do
+	rest="$line"
+	padded=""
+	while [[ "$rest" =~ $field_re ]]; do
+		padded="${padded}$(printf '%8d' "$((10#${BASH_REMATCH[1]}))")"
+		rest="${BASH_REMATCH[2]}"
+	done
+	printf '%s%s\n' "$padded" "$rest"
+done <<<"$out"

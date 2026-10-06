@@ -3,6 +3,7 @@
 use anyhow::{bail, Result};
 use std::path::PathBuf;
 
+pub mod auth;
 mod session;
 pub(crate) use session::{
     classify_exit, remove_if_exists, run_foreground, ClaudeOutcome, ExitAction, AGENT_TEAMS_ENV,
