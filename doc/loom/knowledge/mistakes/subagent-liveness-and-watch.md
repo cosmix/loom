@@ -330,6 +330,23 @@ declined", not "the workers finished".
 
 **What happened:** in the target-guard plan, `loom subagents watch` exited 6 (hung) for an engineer that had already ended through a `SubagentHandback` call, and the first reviewer's round was never recorded (no `SubagentStop` lifecycle row) while the second reviewer's was. In integration-verify one reviewer spawn was recorded as two review rounds (identical 16 findings under `F-1-*` and `F-3-*`), leaving every finding open twice.
 
-**Why:** a hand-back ending does not reliably deliver `SubagentStop` (replaying `subagent-stop.sh` with a well-formed payload against a scratch work dir reaches the harvest, so the hook logic is sound); the double record is probably the hand-back record and the final-message record both harvesting.
+**Why:** a hand-back ending does not reliably deliver `SubagentStop` (replaying `subagent-stop.sh` with a well-formed payload against a scratch work dir reaches the harvest with GNU tools, but the hook logic was sound only there: on macOS a padded `wc` count made it skip silently, see [BSD `wc` Padding and Bare `sha256sum`](hooks-shell-portability.md#bsd-wc-padding-and-bare-sha256sum-skipped-the-reviewer-harvest-on-macos-and-the-hook-suite-never-ran-in-ci-2026-10-06)); the double record is probably the hand-back record and the final-message record both harvesting.
 
 **Prevention:** treat an exit 6 for a worker whose hand-back report arrived as returned, not failed. Re-review briefs paste the full open-id list from `loom stage review status`, and name both id sets under `resolved` when one reviewer is recorded twice. The commit-filter hook blocks any `git commit` string from a subagent, even in a scratch repository under `TMPDIR`, so a brief must not ask a subagent to probe commit semantics by shell.
+
+## `loom subagents watch` Rejects a Codex Worker Issued Right After Its Forwarder Spawn, and Exits 6 for a Handed-Back Worker (2026-10-06)
+
+**What happened:** two more recurrences in one plan. A `loom subagents watch --worker claude:<id> --worker
+codex:<unit>` issued right after spawning the forwarder exited 5 ("worker set does not resolve to one Claude
+parent UUID"); dropping the codex worker let the Claude-only watch bind. Separately, a watch exited 6 naming a
+worker with "no transcript growth for 902s while generating" although that worker had already delivered its
+`SubagentHandback`, and its task notification had said completed about 12 minutes earlier.
+
+**Why:** the exit 5 message says the worker set resolved to no single Claude parent UUID; the cause was not
+traced. The hung rule behind exit 6 did not treat the worker's hand-back as terminal evidence.
+
+**Prevention:** wait for a codex unit through its forwarder's own completion notification and watch only the
+Claude workers. Treat an exit 6 for a worker whose hand-back arrived as returned, as in
+[SubagentStop Delivery Is Intermittent](#subagentstop-delivery-is-intermittent-and-one-reviewer-can-record-two-rounds-2026-10-03).
+The second case recurs, so a change to the watch is proposed in
+[Recurring Mistakes Awaiting a Check](../concerns/platform-and-commit-gaps.md#recurring-mistakes-awaiting-a-check).

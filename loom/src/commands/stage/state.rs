@@ -340,6 +340,8 @@ fn apply_reset(stage: &mut Stage) {
     stage.duration_secs = None;
     stage.retry_count = 0;
     stage.fix_attempts = 0;
+    // A reset hands the stage to a fresh attempt with a fresh stall budget.
+    stage.stall_recoveries = 0;
     stage.last_failure_at = None;
     stage.failure_info = None;
     // Cleared in both soft and hard resets: by this point any live agent has

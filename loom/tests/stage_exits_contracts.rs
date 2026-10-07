@@ -11,11 +11,7 @@ use loom::commands::status::render::attention_entries;
 use loom::models::failure::{FailureInfo, FailureType};
 use loom::models::stage::StageStatus;
 
-fn blocked_summary(
-    id: &str,
-    failure_info: Option<FailureInfo>,
-    close_reason: Option<String>,
-) -> StageSummary {
+fn blocked_summary(id: &str, info: Option<FailureInfo>, reason: Option<String>) -> StageSummary {
     StageSummary {
         id: id.to_string(),
         name: id.to_string(),
@@ -29,7 +25,7 @@ fn blocked_summary(
         execution_secs: None,
         base_branch: None,
         base_merged_from: vec![],
-        failure_info,
+        failure_info: info,
         activity_status: ActivityStatus::default(),
         last_tool: None,
         last_activity: None,
@@ -58,7 +54,7 @@ fn blocked_summary(
         completion_blocker: None,
         merge_resolver_session: None,
         merge_resolver_attempts: None,
-        close_reason,
+        close_reason: reason,
     }
 }
 

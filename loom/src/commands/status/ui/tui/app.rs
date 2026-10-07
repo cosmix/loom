@@ -115,8 +115,7 @@ impl TuiApp {
     }
 
     fn connect_and_subscribe(work_path: &Path) -> Result<UnixStream> {
-        let socket_path = work_path.join("orchestrator.sock");
-        let mut stream = connect(&socket_path)?;
+        let mut stream = connect(work_path)?;
         subscribe(&mut stream)?;
         stream
             .set_read_timeout(Some(Duration::from_millis(50)))

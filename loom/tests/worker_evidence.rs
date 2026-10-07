@@ -166,3 +166,40 @@ fn teammate_idle_is_recorded_but_never_terminal() {
     assert_eq!(fixture.only_summary()["state"], "generating");
     assert_exit(&fixture.watch(), 2);
 }
+
+#[test]
+fn bsd_padded_wc_records_lifecycle_and_settles() {
+    let fixture = Fixture::new_bsd("bsd-exact-success");
+
+    let output = fixture.run_stop(&fixture.stop_payload());
+
+    assert_exit(&output, 0);
+    let records = fixture.journal_values();
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["producer"], "claude_subagent_stop");
+    assert_eq!(records[0]["identity"]["parent_session_id"], PARENT_UUID);
+    assert_eq!(records[0]["identity"]["loom_session_id"], LOOM_SESSION);
+    assert_eq!(
+        records[0]["identity"]["transcript_path"],
+        fixture.worker.display().to_string()
+    );
+    let summary = fixture.only_summary();
+    assert_eq!(summary["state"], "done");
+    assert_eq!(summary["done_evidence"], "lifecycle");
+    assert_exit(&fixture.watch(), 0);
+}
+
+#[test]
+fn bsd_teammate_idle_after_a_stop_appends_to_a_non_empty_journal() {
+    let fixture = Fixture::new_bsd("bsd-idle-after-stop");
+    assert_exit(&fixture.run_stop(&fixture.stop_payload()), 0);
+    assert_eq!(fixture.journal_values().len(), 1);
+
+    assert_exit(&fixture.run_idle(&fixture.idle_payload()), 0);
+
+    let records = fixture.journal_values();
+    assert_eq!(records.len(), 2);
+    assert_eq!(records[0]["producer"], "claude_subagent_stop");
+    assert_eq!(records[1]["producer"], "claude_teammate_idle");
+    assert_eq!(records[1]["state"], "idle");
+}

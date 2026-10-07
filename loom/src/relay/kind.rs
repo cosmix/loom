@@ -1,4 +1,4 @@
-//! The nine request kinds a CLI invocation can relay to the daemon.
+//! The ten request kinds a CLI invocation can relay to the daemon.
 
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
@@ -19,14 +19,16 @@ pub enum RequestKind {
     Telemetry,
     FreezeContracts,
     FileDispute,
+    Commit,
 }
 
 impl RequestKind {
-    /// All nine kinds, in the per-writer matrix's order
+    /// All ten kinds, in the per-writer matrix's order
     /// (`doc/plans/PLAN-loom-state-confinement.md` section 5, then
-    /// `freeze-contracts` from verification v2's contract phase and
-    /// `file-dispute` from its dispute kinds).
-    pub fn all() -> [RequestKind; 9] {
+    /// `freeze-contracts` from verification v2's contract phase,
+    /// `file-dispute` from its dispute kinds, and `commit`, the staged index
+    /// the daemon commits for a session).
+    pub fn all() -> [RequestKind; 10] {
         [
             RequestKind::Memory,
             RequestKind::Block,
@@ -37,12 +39,13 @@ impl RequestKind {
             RequestKind::Telemetry,
             RequestKind::FreezeContracts,
             RequestKind::FileDispute,
+            RequestKind::Commit,
         ]
     }
 
-    /// The seven kinds only a session's lead process may relay; the relay
+    /// The eight kinds only a session's lead process may relay; the relay
     /// hook drops these from a teammate before an inbox entry is ever
-    /// written.
+    /// written, and the daemon's drain refuses one that arrives anyway.
     pub fn is_control(self) -> bool {
         matches!(
             self,
@@ -53,6 +56,7 @@ impl RequestKind {
                 | RequestKind::Verdict
                 | RequestKind::FreezeContracts
                 | RequestKind::FileDispute
+                | RequestKind::Commit
         )
     }
 
@@ -67,6 +71,7 @@ impl RequestKind {
             RequestKind::Telemetry => "telemetry",
             RequestKind::FreezeContracts => "freeze-contracts",
             RequestKind::FileDispute => "file-dispute",
+            RequestKind::Commit => "commit",
         }
     }
 }
@@ -128,6 +133,7 @@ mod tests {
                 RequestKind::Verdict,
                 RequestKind::FreezeContracts,
                 RequestKind::FileDispute,
+                RequestKind::Commit,
             ]
         );
     }
@@ -140,6 +146,15 @@ mod tests {
     #[test]
     fn file_dispute_is_kebab_case_on_the_wire() {
         assert_eq!(RequestKind::FileDispute.to_string(), "file-dispute");
+    }
+
+    #[test]
+    fn commit_is_kebab_case_on_the_wire() {
+        assert_eq!(RequestKind::Commit.to_string(), "commit");
+        assert_eq!(
+            "commit".parse::<RequestKind>().unwrap(),
+            RequestKind::Commit
+        );
     }
 
     #[test]

@@ -6,7 +6,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::daemon::{DaemonServer, DaemonStatus};
+use crate::daemon::{socket_path, DaemonServer, DaemonStatus};
 use crate::fs::work_dir::WorkDir;
 
 use super::{RepairIssue, Severity};
@@ -162,7 +162,7 @@ fn check_daemon_socket_and_pid(work_dir: &Path) -> Vec<RepairIssue> {
     if let Some(lock_pid) = DaemonServer::check_lock(work_dir) {
         if crate::process::is_process_alive(lock_pid) {
             let pid_path = work_dir.join("orchestrator.pid");
-            let socket_path = work_dir.join("orchestrator.sock");
+            let socket_path = socket_path(work_dir);
 
             if !pid_path.exists() {
                 issues.push(RepairIssue {
@@ -338,5 +338,15 @@ mod tests {
         std::fs::create_dir_all(&work_dir).unwrap();
 
         assert_eq!(derive_repo_root(&work_dir), repo_root);
+    }
+
+    #[test]
+    fn a_daemon_child_command_line_is_a_loom_run_command_line() {
+        assert!(is_loom_run_cmdline(
+            "/usr/local/bin/loom run --daemon-child /repo/.loom/work"
+        ));
+        assert!(!is_loom_run_cmdline(
+            "/usr/local/bin/loom runner --daemon-child /repo"
+        ));
     }
 }

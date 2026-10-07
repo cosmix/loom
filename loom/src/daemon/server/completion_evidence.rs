@@ -1,6 +1,7 @@
 //! Persistence and trust checks for completion evidence.
 
 use std::path::{Path, PathBuf};
+use std::process::Output;
 
 use anyhow::{bail, Context, Result};
 
@@ -8,12 +9,14 @@ use crate::daemon::protocol::Response;
 use crate::fs::locking::locked_dir_update;
 use crate::fs::session_files::validate_session_file_id;
 use crate::fs::work_dir::WorkDir;
+use crate::git::target_guard::knowledge_prefix;
+use crate::git::worktree::{stage_worktree_path, WorktreeGit};
 use crate::handoff::generator::load_trusted_session_checkpoint;
 use crate::handoff::{
     check_definition_hash, expected_stage_commit, record_accepted_handoff, record_attempt_handoff,
     AcceptedReceipt, CompletionAttemptEvidence, CompletionPhase,
 };
-use crate::models::stage::Stage;
+use crate::models::stage::{Stage, StageType};
 use crate::parser::frontmatter::parse_from_markdown;
 use crate::verify::transitions::load_stage;
 
@@ -145,7 +148,65 @@ fn verify_evidence_bindings(
     if evidence.commit != expected {
         bail!("completion checkpoint commit binding failed");
     }
-    Ok(())
+    refuse_uncommitted_index(stage, repo_root)
+}
+
+/// A relayed commit is applied asynchronously: a session that completed
+/// before its commit applied would bind the old HEAD, and the late commit is
+/// then refused because the stage is no longer executing. So completion waits
+/// for the index the stage commits from to match its HEAD.
+fn refuse_uncommitted_index(stage: &Stage, repo_root: &Path) -> Result<()> {
+    const UNCOMMITTED: &str = "staged changes are not committed: run loom stage commit and wait \
+                               for it with loom request status <id> --wait 90";
+    let Some(output) = staged_index_diff(stage, repo_root)? else {
+        return Ok(());
+    };
+    match output.status.code() {
+        Some(0) => Ok(()),
+        Some(1) if stage.stage_type == StageType::Knowledge => bail!(
+            "{UNCOMMITTED}; a knowledge stage commits in the main checkout, so any staged \
+             change under {} there blocks completion, including one staged by another session",
+            knowledge_prefix()
+        ),
+        Some(1) => bail!("{UNCOMMITTED}"),
+        _ => bail!(
+            "completion staged-index check failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        ),
+    }
+}
+
+/// `git diff --cached --quiet HEAD` where the stage commits. A knowledge
+/// stage commits in the main checkout under the knowledge prefix, so only
+/// that prefix is compared. Any other stage commits in its worktree, through
+/// git pinned to the worktree's registered git directory, because the
+/// session can rewrite the worktree's `.git` file; `None` when no worktree
+/// exists at its path.
+fn staged_index_diff(stage: &Stage, repo_root: &Path) -> Result<Option<Output>> {
+    const DIFF: [&str; 5] = [
+        "diff",
+        "--cached",
+        "--quiet",
+        "--ignore-submodules=none",
+        "HEAD",
+    ];
+    let output = if stage.stage_type == StageType::Knowledge {
+        let mut args = DIFF.to_vec();
+        args.extend(["--", knowledge_prefix()]);
+        WorktreeGit::discovered(repo_root).run(&args)
+    } else {
+        let worktree = stage_worktree_path(stage, repo_root)
+            .context("completion staged-index check could not name the stage worktree")?;
+        if !worktree.exists() {
+            return Ok(None);
+        }
+        WorktreeGit::pinned(repo_root, &worktree)
+            .context("completion staged-index check could not pin the stage worktree")?
+            .run(&DIFF)
+    };
+    output
+        .context("completion staged-index check failed")
+        .map(Some)
 }
 
 fn exact_session(work_dir: &Path, session_id: &str) -> Result<crate::models::session::Session> {
@@ -173,7 +234,7 @@ fn sessions_dir(work_dir: &Path) -> Result<PathBuf> {
 
 #[cfg(test)]
 pub(crate) struct TrustedCheckpointFixture {
-    _scratch: ScratchGitFixture,
+    scratch: ScratchGitFixture,
     pub(crate) work: PathBuf,
     pub(crate) stage: Stage,
     pub(crate) session: crate::models::session::Session,
@@ -181,6 +242,11 @@ pub(crate) struct TrustedCheckpointFixture {
 
 #[cfg(test)]
 impl TrustedCheckpointFixture {
+    /// The repository the state directory `work` belongs to.
+    pub(crate) fn repo(&self) -> &Path {
+        &self.scratch.repo
+    }
+
     pub(crate) fn complete(&self, nonce: &str, evidence_nonce: &str) -> Result<Response> {
         super::control_complete::handle_complete_stage(
             &self.work,
@@ -226,7 +292,7 @@ pub(crate) fn trusted_checkpoint_fixture(
         work: work.to_path_buf(),
         stage,
         session,
-        _scratch: scratch,
+        scratch,
     }
 }
 

@@ -12,14 +12,9 @@
 
 ### Layering Violations (2026-01-29)
 
-> **Full details:** See [architecture.md § Review Findings - Layering Violations](architecture.md#review-findings---layering-violations-2026-01-29)
-
-Critical violations where lower layers import from higher layers:
-
-- daemon imports commands (mark_plan_done_if_all_merged)
-- orchestrator imports commands (check_merge_state)
-- git/worktree imports orchestrator (hook config)
-- models imports plan/schema (type definitions)
+Lower layers import from higher ones: daemon imports commands (`mark_plan_done_if_all_merged`), orchestrator
+imports commands (`check_merge_state`), git/worktree imports orchestrator (hook config), models imports
+plan/schema. Full details: [architecture.md § Review Findings - Layering Violations](architecture.md#review-findings---layering-violations-2026-01-29)
 
 ## Code Quality Concerns
 
@@ -37,14 +32,9 @@ extension-to-language tables, hook debug logging to `/tmp/`, hook files over the
 
 ### Code Consolidation Needed
 
-> **Full details:** See [conventions.md § Code Consolidation Opportunities](conventions.md#code-consolidation-opportunities-2026-01-29)
-
-Key duplications needing consolidation:
-
-- parse_stage_from_markdown: 4 copies
-- branch_name_for_stage: 22+ inline format!() calls
-- extract_yaml_frontmatter: 2 copies
-- compute_level: 4 copies in status modules
+Duplications needing consolidation: `parse_stage_from_markdown` (4 copies), `branch_name_for_stage` (22+ inline
+`format!()` calls), `extract_yaml_frontmatter` (2), `compute_level` (4, in status modules). Full details:
+[conventions.md § Code Consolidation Opportunities](conventions.md#code-consolidation-opportunities-2026-01-29)
 
 ## `loom pressure` Known Gaps
 
@@ -75,21 +65,21 @@ until the next recovery pass or an explicit `loom worktree remove`.
 Nothing proves sandbox denial holds against a live Claude Code runtime, and the srt stand-in misses
 the git-dir grant and every read deny. Also: credential reads confined to five home paths, sibling
 worktrees readable from Bash, the codex lane's whole `~/.codex` grant, an inert credential-guard
-rule, two diverging stage-env allowlists, and the `Read(...)` deny-rule ban, among others.
+rule, three stage-env allowlists (sessions get no proxy, CA or `CLAUDE_CONFIG_DIR` names), and the `Read(...)` deny-rule ban, among others.
 "Tool Routes That Run Outside the Bash Sandbox" lists the tools (LSP plugins, cross-session
 messaging, `WebFetch`, `RemoteTrigger`) the OS sandbox does not wrap.
 
 → [Sandbox and Confinement Gaps](concerns/sandbox-and-confinement-gaps.md)
 
-## Long Codex Runs Starve the Loom Heartbeat (2026-08-07)
+## Long Codex Runs Starve the Loom Heartbeat
 
-A foreground codex-lane run is ONE blocking Bash call, so neither `PostToolUse` nor
-`SubagentStop` can refresh the heartbeat until it returns — a codex run longer than
-the stage's hung-timeout still produces a spurious, advisory-only `appears hung`
-warning. Mitigation is doctrine (bound the task, set `subagent_timeout_secs`),
-not a monitor change — raising the global timeout was considered and rejected. The
-same topic now also covers the independent `loom status` "Stale" badge mismatch
-(two 300s constants, one stage-aware, one not).
+A foreground codex-lane run is ONE blocking Bash call, so neither `PostToolUse` nor `SubagentStop`
+can refresh the heartbeat until it returns. A stale heartbeat is acted on: a stage that had worked
+is re-queued at 3x its budget (twice at most, then parked in `NeedsHumanReview`), and a stage whose
+first tool call is a long foreground run counts as never worked and is parked at one budget.
+Mitigation is doctrine (bound the task, set `subagent_timeout_secs`), not a monitor change; raising
+the global timeout was considered and rejected. The same topic covers the independent `loom status`
+"Stale" badge mismatch (two 300 s constants, one stage-aware, one not).
 
 Full detail: [codex-heartbeat-starvation.md](concerns/codex-heartbeat-starvation.md).
 
@@ -110,24 +100,21 @@ Full detail: [automatic-knowledge-source-graph-followups.md](concerns/automatic-
 
 ## iTerm2 Windows Survive Stage Completion — Spawn Never Names the Window (GitHub #7, 2026-08-29)
 
-Teardown closes an iTerm2 window by title, but the iTerm2 spawn arm never names the
-window (`git log -S 'set name of'` is empty), so the close query matches nothing and
-falls through to killing just the `claude` process — the shell (and window) survive.
-A second, independent defect in the same path: teardown addresses `tell application
-"iTerm2"` while iTerm2's real scriptable name is `iTerm`. Naming the window alone is
-necessary but not sufficient. Terminal.app is unverified (needs a macOS host).
+Teardown closes an iTerm2 window by title, but the spawn arm never names the window, so the close
+query matches nothing and only the `claude` process dies; the shell and window survive. A second
+defect in the same path: teardown addresses `tell application "iTerm2"` while the scriptable name is
+`iTerm`. Naming the window alone is not enough. Terminal.app is unverified (needs a macOS host).
 
 Full detail: [iterm2-window-teardown.md](concerns/iterm2-window-teardown.md).
 
 ## Guard Hooks: Four Design Questions Deliberately Left Open (2026-08-30)
 
-The adversarial review of the guard hooks left four behaviours deliberately unpatched pending a
-spec decision (the deny threshold, ledger TSV atomicity, `loom_deny_enabled`'s line-oriented
-match, an unreachable `poll-guard` branch). This entry now also covers the wider runtime/session
-cluster: `evaluate_new_session`'s tmux-warning false failure, live overview-attach panes, the
-unreaped viewer socket, path-swap races, `loom attach`'s stage-bound lifetime, daemon-startup-only
-orphan adoption, `get_work_dir()`'s substring trust, `is_ancestor("1")`'s deterministic-false gap,
-and process-global cwd mutation in memory tests.
+The adversarial review of the guard hooks left four behaviours unpatched pending a spec decision (the
+deny threshold, ledger TSV atomicity, `loom_deny_enabled`'s line-oriented match, an unreachable
+`poll-guard` branch). The entry also covers the wider runtime/session cluster: tmux-warning false
+failures, live overview-attach panes, the unreaped viewer socket, path-swap races, `loom attach`'s
+stage-bound lifetime, startup-only orphan adoption, `get_work_dir()`'s substring trust, and
+process-global cwd mutation in memory tests.
 
 → [Runtime and Session Safety](concerns/runtime-and-session-safety.md)
 
@@ -248,3 +235,13 @@ run, and the labelled corpora enter loom's own graph because `EXCLUDED_ROOTS` ma
 grouped by area in the backlog.
 
 → [Source Graph Known Gaps](concerns/source-graph-known-gaps.md), [Source Graph Review Backlog](concerns/source-graph-review-backlog.md)
+
+## Platform, Commit-Relay and Stall Gaps
+
+Open items from the macOS, daemon-launch, daemon-owned-commit and stall-parking work: no macOS CI runner (BSD
+behaviour is emulated by shims), no automated test of the production daemon re-exec (only the operator's
+host smoke test covers it), sessions get no proxy, CA or `CLAUDE_CONFIG_DIR` variables, the commit relay's
+tick cost and `MERGE_HEAD` ancestor gap, the park-time login probe on the tick thread, and mistakes that
+recurred and want a check (the signal dropping `exit_code`, the watch exiting 6 after a hand-back).
+
+→ [Platform and Commit Gaps](concerns/platform-and-commit-gaps.md)

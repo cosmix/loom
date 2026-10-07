@@ -55,6 +55,9 @@ adversarial code review returned, every finding fixed, gate green again. In a pl
 worktree and no finding is open. A handoff is no reason
 to commit unverified work — record uncommitted files there instead.
 
+Commit with `git add <specific-files>` then `loom stage commit <stage-id> -m "type(scope):
+description"`, and wait for it with `loom request status <id> --wait 90`; never run `git commit`.
+
 **Complete ONLY a settled stage; completion is the session's LAST act.** All three conditions still
 hold (an abandoned subagent counts as returned only if you recorded why), every defect fixed and
 re-verified, `git status` clean. The stop hook only WARNS; confirming completion succeeded is your
@@ -175,7 +178,7 @@ COORDINATOR ROLE - YOU ARE A SUBAGENT COORDINATING WORKERS (ONE LEVEL ONLY):
 - Delegate implementation; write at most small glue/fixes within your territory
 - AT MOST ONE narrowly-scoped check over the files your workers wrote (e.g. `cargo test <your_module>::`), run ONCE; skip it if you are unsure. The stage's gate runs after you return; the MAIN AGENT owns fixes.
 - Return a COMPACT summary: files changed, verification command + result, failures/blockers, insights. No file dumps, no diffs.
-- NEVER run git commit, git add -A/., or loom stage complete - only the main agent does
+- NEVER run git commit, git add -A/., or loom stage complete - only the main agent does (the main agent commits with `loom stage commit`)
 - Record insights via loom memory note/decision; NEVER use Claude Code auto-memory
 ```
 

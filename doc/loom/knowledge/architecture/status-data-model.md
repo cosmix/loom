@@ -1,6 +1,6 @@
 # Status Data Model
 
-> Where each loom status field comes from
+> Source of each status field
 
 ## Sources of Truth
 
@@ -53,7 +53,7 @@ Related enums on `Stage`: `StageType` (`types.rs:14-29`) is Standard, Knowledge,
 - **Retry/failure**: retry_count (`types.rs:685`), max_retries (`types.rs:688`, `None` means the global default of 3), last_failure_at (`types.rs:690`), failure_info: `Option<FailureInfo>` with failure_type, detected_at, evidence (`loom/src/models/failure.rs:54-63`).
 - **Merge**: base_branch, base_merged_from, completed_commit, cleanup_warning (`types.rs:712-718`), merged, merge_assumed, merge_conflict, verification_status.
 - **Context**: context_ceiling_tokens.
-- **Adjudication/verification**: fix_attempts, max_fix_attempts, dispute_count (capped at 3, `methods.rs:11`), evidence_rounds, amendments_applied, stall_recoveries (`types.rs:777-784`), review_reason.
+- **Adjudication/verification**: fix_attempts, max_fix_attempts, dispute_count (capped at 3, `methods.rs:11`), evidence_rounds, amendments_applied, stall_recoveries (automatic stall recoveries spent; reset by `human-review --approve`, `stage reset` and `stage retry`), review_reason.
 - **Execution policy**: model (override), reasoning_effort, implementers, subagent_timeout_secs, files, auto_merge, outputs.
 
 Helper accessors: `effective_model()` (`methods.rs:131-135`), `effective_subagent_timeout_secs()` (`methods.rs:153-156`), `get_effective_max_fix_attempts()` (`methods.rs:476-483`).
@@ -87,6 +87,25 @@ Staleness is seconds since the heartbeat timestamp (`collector.rs:230-234`); the
 PID liveness comes from `crate::process::is_process_alive` (`collector.rs:175`), recomputed on every collection and never persisted.
 
 A context reading is shown only when `context_tokens > 0` and the session is not terminal — `reported_reading()` (`collector.rs:145-147`). The ceiling shown alongside it comes from `resolve_context_ceiling_tokens` (`loom/src/fs/work_dir/config_sections.rs:309-320`), resolution order: stage override, then workspace `[context]` config, then `~/.loom/config.toml`, then a hardcoded default.
+
+## Stall Parking and the Desktop Notifier
+
+A stage session that stops answering ends in `NeedsHumanReview`, not in a status of its own:
+recovery gives up after `MAX_STALL_RECOVERIES` (2) automatic re-queues, and a session that never
+worked (no tool call, no context tokens) is parked at its first report with a login remedy when
+`claude auth status` says `NotLoggedIn`. The detection and action rules are in
+[Soft Signals](signal-generation.md#soft-signals). The park sets `review_reason` (what `loom status`,
+the TUI and the web view's `review_notes` show) and the short status reason `"stall park"`, so every
+view reaches it through the NEEDS REVIEW attention entry below. There is no STALLED marker and no
+`Stage` field for one.
+
+`orchestrator/notify.rs` sends the desktop notification for a needs-human-review transition
+(`notify_needs_human_review`, called from `announce_needs_human_review`). `send_desktop_notification`
+is best-effort and never blocks the tick: the notifier (`notify-send` on Linux with the body's
+`& < >` escaped, `osascript` on macOS) runs bounded (2 s and 3 s) on its own `loom-notify` thread,
+a failure is logged and dropped, and a `cfg(test)` build sends nothing, so test runs never pop
+notifications. The body carries only the reason's `review_headline` cut to 200 characters; the full
+reason, pane tail included, stays on the stage record.
 
 ## Payload Shapes
 

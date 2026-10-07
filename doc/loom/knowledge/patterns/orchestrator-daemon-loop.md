@@ -2,7 +2,7 @@
 ---
 # Orchestrator Daemon Loop
 
-> Signal gen, IPC, poll loop, spool drain
+> Signal gen, IPC, poll loop, spool
 
 ## Signal Generation Pattern
 
@@ -22,6 +22,9 @@ KnowledgeDistill prefix: focuses on memory reading and knowledge curation; inclu
 ## Daemon IPC Pattern
 
 Unix socket at `.loom/work/orchestrator.sock`, created mode 0o600 under a mode-0700 `.loom/work/` directory.
+Every client dials `daemon::socket_path(work_dir)`, which resolves the state root first (a worktree's
+`.loom/work` is a symlink), and a resolved path past `SUN_PATH_MAX` (104 bytes) is `DaemonReach::Unreachable`,
+not an error (`daemon/socket.rs`, `daemon/rpc.rs`).
 Each request starts with a fixed authentication preface, so invalid credentials are rejected before
 allocating the JSON body. Requests are capped at 64 KiB, responses at 2 MiB, and reads use an
 absolute five-second deadline. Admission is bounded by 8 workers, a 16-request queue, a 512 KiB

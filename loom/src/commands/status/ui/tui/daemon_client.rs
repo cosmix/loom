@@ -11,10 +11,12 @@ use crate::daemon::{read_auth_token, read_message, write_message, Request, Respo
 /// Connection timeout for daemon socket.
 pub const SOCKET_TIMEOUT: Duration = Duration::from_secs(2);
 
-/// Connect to daemon socket.
-pub fn connect(socket_path: &Path) -> Result<UnixStream> {
+/// Connect to the daemon serving `work_dir`. The socket and the user token are
+/// both read from the resolved state root (`crate::daemon::socket_path`).
+pub fn connect(work_dir: &Path) -> Result<UnixStream> {
+    let socket_path = crate::daemon::socket_path(work_dir);
     let mut stream =
-        UnixStream::connect(socket_path).context("Failed to connect to daemon socket")?;
+        UnixStream::connect(&socket_path).context("Failed to connect to daemon socket")?;
 
     stream
         .set_read_timeout(Some(SOCKET_TIMEOUT))
@@ -23,7 +25,7 @@ pub fn connect(socket_path: &Path) -> Result<UnixStream> {
         .set_write_timeout(Some(SOCKET_TIMEOUT))
         .context("Failed to set write timeout")?;
 
-    let token = read_auth_token(socket_path.parent().unwrap_or(Path::new("."))).unwrap_or_default();
+    let token = read_auth_token(socket_path.parent().unwrap_or(work_dir)).unwrap_or_default();
     write_message(
         &mut stream,
         &Request::Ping {

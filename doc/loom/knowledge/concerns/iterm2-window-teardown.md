@@ -43,6 +43,7 @@ passes no `CLAUDE_CODE_DISABLE_TERMINAL_TITLE`.
 
 **Fix shape.** In the iTerm2 arm add `set name to "{escaped_title}"` inside `tell current session
 of current window` before `write text`, and assert it in `test_iterm2_build_command`. Consider
-exporting `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` through the wrapper's env allowlist (both copies —
-see "Two Diverging Copies of the Stage Environment Allowlist" in concerns.md) so neither macOS
+exporting `CLAUDE_CODE_DISABLE_TERMINAL_TITLE=1` through `AGENT_SESSION_ENV_NAMES` (the wrapper's
+list, which the subset tests also require in `STAGE_HOST_ENV_ALLOWLIST` and the daemon list; see
+"Three Stage Environment Allowlists" in concerns.md) so neither macOS
 terminal's window name drifts before teardown. Verify on macOS with both terminals before closing #7.

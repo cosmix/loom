@@ -86,6 +86,11 @@ if [[ "$GOT" != "150" ]]; then
 	exit 1
 fi
 
+# BSD wc left-pads its counts (the BSD shim does the same). The hook runs in a
+# separate bash process and never sees this function; it lets the test's own
+# string comparisons below tolerate the padding.
+wc() { command wc "$@" | tr -d '[:space:]'; }
+
 JOURNAL="$WORKDIR/subagents/$STAGE_ID/lifecycle.jsonl"
 if [[ ! -f "$JOURNAL" ]] || [[ "$(wc -l <"$JOURNAL")" != "1" ]]; then
 	echo "FAIL: lifecycle journal line was not written exactly once"

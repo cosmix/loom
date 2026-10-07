@@ -102,10 +102,8 @@ pub fn read_log_tail(path: &Path, max_lines: usize) -> Option<String> {
 
     let lines: Vec<&str> = contents.lines().collect();
     let first = lines.len().saturating_sub(max_lines);
-    Some(clamp_from_front(
-        lines[first..].join("\n"),
-        MAX_LOG_TAIL_BYTES,
-    ))
+    let tail = lines[first..].join("\n");
+    Some(clamp_from_front(&tail, MAX_LOG_TAIL_BYTES).to_owned())
 }
 
 /// The last `max_bytes` of `path`, or the whole file when it is smaller.
@@ -122,7 +120,7 @@ fn read_trailing_bytes(path: &Path, max_bytes: u64) -> Option<Vec<u8>> {
 
 /// `text` reduced to at most `max_bytes` by dropping from the FRONT, landing on
 /// a character boundary so the result is still valid UTF-8.
-fn clamp_from_front(text: String, max_bytes: usize) -> String {
+pub(crate) fn clamp_from_front(text: &str, max_bytes: usize) -> &str {
     if text.len() <= max_bytes {
         return text;
     }
@@ -130,7 +128,7 @@ fn clamp_from_front(text: String, max_bytes: usize) -> String {
     while !text.is_char_boundary(cut) {
         cut += 1;
     }
-    text[cut..].to_string()
+    &text[cut..]
 }
 
 /// Generate a crash report file in the crashes directory

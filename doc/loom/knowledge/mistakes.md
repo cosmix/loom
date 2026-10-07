@@ -128,7 +128,7 @@ clean. For every new `pub` item, **name the production caller** — the compiler
 
 ## Writer and Reader Disagreeing on One Address
 
-A derived layer written under a key its reader never consults is indistinguishable from doing nothing. One shared definition of the key, and a round-trip test through the consumer's address, are the only defences.
+A derived layer written under a key its reader never consults is indistinguishable from doing nothing. One shared definition of the key, and a round-trip test through the consumer's address, are the only defences. The daemon socket path is one such key: every client resolves it through `daemon::socket_path`.
 
 → [Writer/Reader Address](mistakes/writer-reader-address.md)
 
@@ -146,9 +146,9 @@ Three lessons: a value computed and carried correctly was still wrong because so
 
 ## Two Daemons Once Attached to the Same `.loom/work/` (2026-08-08)
 
-Nothing enforced daemon singleton, so a second daemon could attach to a live `.loom/work/` and both would drive the same stages. Startup now takes an authoritative `flock` for the daemon's whole lifetime before touching the socket or control files.
+Nothing enforced daemon singleton, so a second daemon could attach to a live `.loom/work/` and both would drive the same stages. Startup now takes an authoritative `flock` for the daemon's whole lifetime before touching the socket or control files. The daemon starts by re-executing `loom run --daemon-child`: forking it after threads existed crashed it on macOS while `loom run` reported success.
 
-→ [Daemon Singleton Incident](mistakes/daemon-singleton.md)
+→ [Daemon Singleton Incident](mistakes/daemon-singleton.md), [Fork After Threads](mistakes/daemon-fork-after-threads.md)
 
 ## An Unbounded Walk Up the Filesystem Adopts Whatever It Finds (2026-08-29)
 

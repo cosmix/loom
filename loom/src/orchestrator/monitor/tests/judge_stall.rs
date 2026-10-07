@@ -234,31 +234,3 @@ fn a_zero_budget_never_closes_a_judge() {
         "a stage declaring no real budget gets no judge watchdog, got: {events:?}"
     );
 }
-
-/// The stage-agent path is untouched: a session with no heartbeat is a session
-/// that has not reached its first tool call, and stays silent as before.
-#[test]
-fn a_stage_agent_without_a_heartbeat_still_emits_nothing() {
-    let temp = tempfile::TempDir::new().unwrap();
-    let (config, handlers) = handlers_for(temp.path());
-    let mut watcher = HeartbeatWatcher::new();
-    let mut detection = Detection::new();
-
-    let mut agent = Session::new();
-    agent.id = "session-1".to_string();
-    agent.status = SessionStatus::Running;
-    agent.stage_id = Some("disputed-stage".to_string());
-    agent.created_at = chrono::Utc::now() - chrono::Duration::seconds(BUDGET_SECS as i64 + 60);
-
-    let events = detection.detect_heartbeat_events(
-        &[agent],
-        &[disputed_stage("disputed-stage")],
-        &mut watcher,
-        &config,
-        &handlers,
-    );
-    assert!(
-        events.is_empty(),
-        "a stage agent is judged on its heartbeat file alone, got: {events:?}"
-    );
-}

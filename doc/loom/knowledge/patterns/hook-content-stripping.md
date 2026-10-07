@@ -1,6 +1,6 @@
 # Hook Command Matching
 
-> How a hook decides what a Bash command invokes
+> How hooks read a Bash command
 > argv, match command words and argument values — and fall back to the old regexes when the
 > command will not parse.
 

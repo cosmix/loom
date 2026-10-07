@@ -158,6 +158,14 @@ expect '' 'loom stage dispute-integrity stage-a --event E-1 --reason "sound"' ge
 expect memory 'loom memory note x; loom handoff --trigger ceiling' general-purpose
 expect telemetry 'loom knowledge context --query x' general-purpose
 
+# `loom stage commit` relays the `commit` control kind: seen through `cd &&`,
+# dropped for a subagent, and never read out of quoted prose.
+expect commit 'loom stage commit s1 -m "feat(x): y"'
+expect commit 'cd loom && loom stage commit s1 -m x'
+expect '' 'loom stage commit s1 -m "feat(x): y"' general-purpose
+expect '' 'cd loom && loom stage commit s1 -m x' general-purpose
+expect '' 'echo "loom stage commit s1"'
+
 # A `loom memory` write command reaches the helper even when its own output
 # carries no relay line (the case the helper's leftover-ticket sweep exists
 # for); an unrelated command never does, and stays completely silent.

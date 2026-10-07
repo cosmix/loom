@@ -9,6 +9,8 @@ use crate::models::stage::Stage;
 use crate::orchestrator::auto_merge::AutoMergeResult;
 use crate::orchestrator::core::{clear_status_line, Orchestrator};
 
+use super::landing::{merge_signing_reason, signing_failure};
+
 impl Orchestrator {
     /// Returns true when a guard stops the auto-merge of `stage_id` into
     /// `target`: the target guard holds the target, the merge gate holds the
@@ -115,12 +117,30 @@ impl Orchestrator {
                 self.verify_and_finalize_merge(stage, stage_id, target)
             }
             Err(error) => {
-                clear_status_line();
-                tracing::error!(stage_id = %stage_id, %error, "Auto-merge failed");
-                // MergeBlocked with the error recorded, so status shows it and `loom stage merge` can retry.
-                self.persist_merge_blocked(stage, stage_id, &format!("{error:#}"));
+                self.settle_auto_merge_error(stage, stage_id, &error);
                 false
             }
         }
+    }
+
+    /// Record a failed auto-merge attempt. A signing failure is the operator's
+    /// to fix: a resolver cannot, and a MergeBlocked stage would sign again on
+    /// the next spawn pass, so it goes to human review. Any other error leaves
+    /// the stage MergeBlocked with the error recorded, so status shows it and
+    /// `loom stage merge` can retry.
+    fn settle_auto_merge_error(
+        &mut self,
+        stage: &mut Stage,
+        stage_id: &str,
+        error: &anyhow::Error,
+    ) {
+        clear_status_line();
+        tracing::error!(stage_id = %stage_id, %error, "Auto-merge failed");
+        if let Some(failure) = signing_failure(error) {
+            let reason = merge_signing_reason(stage_id, &failure.detail);
+            self.route_to_human_review(stage_id, reason, None);
+            return;
+        }
+        self.persist_merge_blocked(stage, stage_id, &format!("{error:#}"));
     }
 }

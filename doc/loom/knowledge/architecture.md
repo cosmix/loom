@@ -36,6 +36,8 @@ Full `loom/src/` module tree, `.loom/work/` state layout, repo-root asset direct
 
 **Target guard** (`git/target_guard/`, `loom-hooks/git-reference-transaction-hook.sh`): a daemon-owned record of the last target tip loom accepted plus a git `reference-transaction` hook that attests host-side moves. A move loom did not make is evaluated (history rewrite, control paths, unattested gap, unmerged `loom/*` work); a hit holds every merge (`MergeBlock::TargetHeld`) until `loom target accept` or a restore, and loom never restores. → [Target Guard](architecture/target-guard.md)
 
+**Daemon-owned commits and launch**: sessions never run `git commit`; `loom stage commit` relays the staged index and the daemon commits and signs it with plumbing, and loom's merge commits sign under `commit.gpgsign`. The daemon is re-executed as `loom run --daemon-child`, never forked, and every client dials `daemon::socket_path`. → [Daemon-Owned Commits](architecture/daemon-owned-commits.md), [Daemon Launch](architecture/daemon-launch.md)
+
 ## Skills Module (loom/src/skills/)
 
 Also covers the Diagnosis (`loom/src/diagnosis/`) and Map (`loom/src/map/`) modules.

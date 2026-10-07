@@ -34,7 +34,7 @@ const PEEK_TIMEOUT: Duration = Duration::from_millis(250);
 /// this one writes whole bundle assets rather than one small snapshot frame.
 ///
 /// [`MAX_CONNECTIONS`]: super::limits::MAX_CONNECTIONS
-const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
+pub(super) const WRITE_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Body returned when the work directory cannot produce a snapshot. The
 /// underlying error names absolute work-directory paths, so it is logged
@@ -48,7 +48,7 @@ const MAX_DRAIN_BYTES: usize = 64 * 1024;
 ///
 /// The byte cap alone bounds nothing in time: a client trickling one byte per
 /// read timeout satisfies every read, so the loop can run for as many
-/// iterations as [`MAX_DRAIN_BYTES`] allows. [`reject_overloaded`] performs
+/// iterations as [`MAX_DRAIN_BYTES`] allows. [`reject_unavailable`] performs
 /// that drain on the accept loop, where stalling stops the server answering
 /// anyone at all, so the drain gives up on whichever bound it reaches first.
 const DRAIN_DEADLINE: Duration = Duration::from_millis(300);
@@ -135,6 +135,8 @@ fn gate(
     local: SocketAddr,
     lane: Option<&TerminalLane>,
 ) -> Option<RequestHead> {
+    // A socket that refuses a timeout cannot be read or written safely (a
+    // blocked syscall would pin this thread), so the connection ends here.
     if stream.set_read_timeout(Some(PEEK_TIMEOUT)).is_err()
         || stream.set_write_timeout(Some(WRITE_TIMEOUT)).is_err()
     {
@@ -180,18 +182,14 @@ pub(super) fn drain_pending(stream: &mut TcpStream) {
     }
 }
 
-/// Turn a connection away because no connection slot was free, without
-/// occupying one. Runs on the accept loop, so it only drains and answers.
-pub(super) fn reject_overloaded(stream: &mut TcpStream) {
+/// Turn a connection away with a 503 carrying `body`, without occupying a
+/// connection slot or a thread. Runs on the accept loop, so it only drains and
+/// answers; the write timeout bounds the answer.
+pub(super) fn reject_unavailable(stream: &mut TcpStream, body: &[u8]) {
     if stream.set_write_timeout(Some(WRITE_TIMEOUT)).is_err() {
         return;
     }
-    fail(
-        stream,
-        503,
-        "Service Unavailable",
-        b"dashboard connection limit reached",
-    );
+    fail(stream, 503, "Service Unavailable", body);
 }
 
 /// Drain the unread request bytes, then write a plain-text error response.

@@ -1,6 +1,6 @@
 # Quota Poller
 
-> Usage-quota polling, caching, rendering
+> Usage-quota polling and rendering
 
 ## Sources
 

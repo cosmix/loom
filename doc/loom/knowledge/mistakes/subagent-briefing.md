@@ -303,3 +303,20 @@ only thing that proves it reaches the path. See [[tests-that-cannot-fail]].
 **Prevention**: briefs require measuring sizes after `cargo fmt`, running every test file the unit adds, and refactoring instead of using formatting attributes to fit a limit.
 
 **Fix**: the brief template carries those three lines; `MergeRecord` replaced the `#[rustfmt::skip]`.
+
+## A Signal Said "the Fixed Prompt" and Defined None (2026-10-06)
+
+The wave signal told the orchestrator to spawn workers "with the fixed prompt plus Your brief", but neither the
+plan nor `common.md` held any such text. The orchestrator assembled the worker preamble, the brief path, the
+amendment lines, the frozen contract (read-only) and the territory's acceptance list instead. A plan that names
+a shared prompt includes its text, so the orchestrator does not invent one.
+
+## A Module-Split Brief Checked Only the Library Build
+
+**What happened:** a worker moved `describe_exit`, `terminate` and two other helpers out of `daemon/server/launch.rs` into `launch/child.rs` and dropped the parent's now-unused `Signal` and `ExitStatusExt` imports. Its brief asked for one check, `cargo test --test maintainability`, and it built only the library, so the pre-push clippy run failed: `launch/tests.rs` reaches those names through `use super::*`.
+
+**Why:** a child `tests` module that imports `super::*` depends on every `use` in its parent; the brief named neither that coupling nor a check that compiles test code.
+
+**Prevention:** a brief that moves items out of a module or removes its imports names `cargo clippy --all-targets -- -D warnings` (or `cargo check --all-targets`) as the worker's one check.
+
+**Fix:** `launch/tests.rs` imports `Signal` and `ExitStatusExt` itself.

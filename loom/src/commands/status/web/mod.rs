@@ -89,6 +89,7 @@ mod schema_parity;
 mod terminal;
 #[cfg(test)]
 mod tests;
+mod unserved;
 mod ws;
 
 use std::net::{IpAddr, SocketAddr, TcpListener};
@@ -326,59 +327,12 @@ fn accept_connection(
 ) {
     match listener.accept() {
         Ok((stream, _)) => {
-            spawn_connection(stream, broadcaster, base, running, limits, lane, policy)
+            unserved::spawn_connection(stream, broadcaster, base, running, limits, lane, policy)
         }
         Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
             thread::sleep(Duration::from_millis(50));
         }
         Err(error) => tracing::warn!("dashboard accept failed: {error}"),
-    }
-}
-
-#[allow(clippy::too_many_arguments)]
-fn spawn_connection(
-    mut stream: std::net::TcpStream,
-    broadcaster: &broadcast::Broadcaster,
-    base: &std::path::Path,
-    running: &Arc<AtomicBool>,
-    limits: &Arc<limits::Limits>,
-    lane: &Option<TerminalLane>,
-    policy: &Arc<AccessPolicy>,
-) {
-    if let Err(error) = stream.set_nonblocking(false) {
-        tracing::warn!("dashboard could not configure a client socket: {error}");
-        return;
-    }
-    let Ok(local) = stream.local_addr() else {
-        return;
-    };
-    let Some(slot) = limits::Slot::acquire(limits, limits::Lane::Connection) else {
-        connection::reject_overloaded(&mut stream);
-        return;
-    };
-    let broadcaster = broadcaster.clone();
-    let base = base.to_path_buf();
-    let running = running.clone();
-    let limits = limits.clone();
-    let lane = lane.clone();
-    let policy = policy.clone();
-    if let Err(error) = thread::Builder::new()
-        .name("loom-dashboard-conn".to_owned())
-        .spawn(move || {
-            connection::handle(
-                stream,
-                &broadcaster,
-                &base,
-                &running,
-                &limits,
-                lane.as_ref(),
-                &policy,
-                local,
-                slot,
-            )
-        })
-    {
-        tracing::warn!("dashboard could not spawn a connection thread: {error}");
     }
 }
 

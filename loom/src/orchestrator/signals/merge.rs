@@ -161,7 +161,11 @@ pub(super) fn format_merge_signal_content(
     content.push_str(&helpers::format_conflicting_files_section(
         conflicting_files,
     ));
-    content.push_str(&format_failure_section(stage, conflicting_files));
+    content.push_str(&format_failure_section(
+        stage,
+        target_branch,
+        conflicting_files,
+    ));
     content.push_str(&format_merge_task(stage, target_branch));
     content.push_str(&format_acceptance_section(stage));
     content.push_str(&format_merge_important());
@@ -192,14 +196,18 @@ fn format_merge_task(stage: &Stage, target_branch: &str) -> String {
     } else {
         "the stage's acceptance criteria (listed below)"
     };
+    let commit_rule = helpers::commit_command_rule("<specific-files>");
     format!(
         "## Your Task\n\n\
          1. If `git status` shows a merge already in progress in this worktree, continue it; \
-         do not start a new `git merge`. Otherwise run `git merge {target_branch}` in this worktree\n\
+         do not start a new `git merge`. Otherwise merge the target WITHOUT committing: \
+         `git merge --no-commit --no-ff {target_branch}` (a bare `git merge {target_branch}` \
+         commits by itself and cannot be signed in this sandbox) (stage the resolution; never \
+         run `git merge --continue`, which commits)\n\
          2. Resolve the conflicts in the files listed above, preserving intent from both sides\n\
          3. Rerun {criteria} in this worktree and fix what the merge broke\n\
-         4. Commit the merge: `git add <resolved-files>`, then `git commit`. The worktree must \
-         end clean with no merge in progress\n\
+         4. Finish the merge: {commit_rule} The worktree must end clean with no merge in \
+         progress\n\
          5. Run: `loom stage merge {} --resolved`\n\n",
         stage.id
     )
@@ -212,7 +220,11 @@ const MAX_FAILURE_LINES: usize = 5;
 /// to conflict nowhere: the resolver would otherwise learn nothing. Empty when
 /// conflicting files are known or the stage records no failure. The evidence is
 /// git or process output, so each line goes through `inline_safe`.
-fn format_failure_section(stage: &Stage, conflicting_files: &[String]) -> String {
+fn format_failure_section(
+    stage: &Stage,
+    target_branch: &str,
+    conflicting_files: &[String],
+) -> String {
     let Some(info) = stage
         .failure_info
         .as_ref()
@@ -228,10 +240,11 @@ fn format_failure_section(stage: &Stage, conflicting_files: &[String]) -> String
     for line in info.evidence.iter().take(MAX_FAILURE_LINES) {
         content.push_str(&format!("- {}\n", inline_safe(line)));
     }
-    content.push_str(
-        "\nStill merge the target branch into this worktree, rerun the acceptance criteria, \
-         commit, and run `--resolved`; loom then retries the merge.\n\n",
-    );
+    content.push_str(&format!(
+        "\nStill merge the target branch into this worktree (`git merge --no-commit --no-ff \
+         {target_branch}`), rerun the acceptance criteria, commit with `loom stage commit`, \
+         and run `--resolved`; loom then retries the merge.\n\n"
+    ));
     content
 }
 

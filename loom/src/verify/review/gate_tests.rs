@@ -11,18 +11,18 @@ use std::collections::BTreeMap;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-const STAGE: &str = "s1";
+pub(super) const STAGE: &str = "s1";
 
-struct Fixture {
+pub(super) struct Fixture {
     _tmp: TempDir,
-    work_dir: PathBuf,
+    pub(super) work_dir: PathBuf,
     worktree: PathBuf,
-    stage: Stage,
+    pub(super) stage: Stage,
 }
 
 /// A v2 standard stage, its work dir, and its worktree on `loom/s1` off
 /// `main` with one untracked change.
-fn fixture() -> Fixture {
+pub(super) fn fixture() -> Fixture {
     let tmp = TempDir::new().unwrap();
     let work_dir = tmp.path().join("work");
     std::fs::create_dir_all(&work_dir).unwrap();

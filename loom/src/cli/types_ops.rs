@@ -181,5 +181,10 @@ pub enum RequestCommands {
         /// scanned.
         #[arg(long)]
         session: Option<String>,
+
+        /// Wait up to SECS seconds for the request to be applied or refused,
+        /// failing on a refusal or when it is still pending at the deadline.
+        #[arg(long, value_name = "SECS", value_parser = clap::value_parser!(u64).range(1..=600))]
+        wait: Option<u64>,
     },
 }

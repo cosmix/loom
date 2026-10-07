@@ -2,7 +2,7 @@
 ---
 # Plan Yaml And Hooks
 
-> Plan YAML schema, hook I/O, skill format
+> Plan YAML, hook I/O, skills
 
 ## Plan YAML Schema
 

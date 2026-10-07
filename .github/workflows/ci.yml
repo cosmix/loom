@@ -198,6 +198,21 @@ jobs:
       - name: Parse every shell hook
         run: ./scripts/check-hook-syntax.sh
 
+      # The hook tests call rg, fd and jq; ubuntu ships fd as fdfind.
+      - name: Install hook test tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ripgrep fd-find jq
+          sudo ln -sf "$(command -v fdfind)" /usr/local/bin/fd
+
+      - name: Run the hook tests
+        run: bash loom-hooks/tests/run-all.sh
+
+      # BSD tool shims put a padded wc, BSD stat and BSD date ahead of the GNU
+      # tools, the way macOS runs the hooks.
+      - name: Run the hook tests with BSD tool shims
+        run: LOOM_HOOK_TEST_BSD=1 bash loom-hooks/tests/run-all.sh
+
       - name: Pre-commit partial-staging regression
         run: ./scripts/test-pre-commit-partial-staging.sh
 

@@ -1,6 +1,6 @@
 # Subagent Hierarchy
 
-> Fan-out vs coordinators vs teams; model mix
+> Fan-out, coordinators, teams
 
 ## Subagent Hierarchy + Ultracode Guidance (2026-06-12)
 

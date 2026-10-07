@@ -9,6 +9,8 @@ mod stall;
 #[cfg(test)]
 mod engine_tests;
 #[cfg(test)]
+mod lease_boot_tests;
+#[cfg(test)]
 mod lease_tests;
 #[cfg(test)]
 mod tests;

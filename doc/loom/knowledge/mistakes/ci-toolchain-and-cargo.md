@@ -1,6 +1,6 @@
 # Ci Toolchain And Cargo
 
-> CI drift and caching, cargo audit, install.sh
+> CI drift, cargo audit, install.sh
 
 ## CI's Clippy Tracks Rustup `stable`, So a New Rust Release Breaks Main With No Code Change (2026-08-26)
 
@@ -102,14 +102,24 @@ copying a gate list between plans, re-check each criterion against the destinati
 stage's own sandbox network policy — a criterion that passed in the source plan is not
 evidence it will pass in the copy.
 
-## `cargo audit` Also Cannot Pass Inside the Agent's Own Bash-Tool Sandbox (2026-09-13)
+## Plain `cargo audit` Cannot Refresh Its Database Inside the Agent's Bash-Tool Sandbox (2026-09-13)
 
-A different failure mode from the one above: run interactively (not as a plan's acceptance
-criterion), `cargo audit` fails inside the Claude Code Bash sandbox with `~/.cargo/advisory-db`
-read-only, and `--db` fetch fails on host-key verification. The repo's pre-push hook runs `cargo
-audit` outside that sandbox; do not add it to a stage's own gate script or try to make it pass
-inside an agent session — treat a red `cargo audit` from inside the sandbox as expected, not a
-regression, and rely on the pre-push hook for the real check.
+**What happened:** run interactively (not as a plan's acceptance criterion), plain `cargo audit`
+fails inside the Claude Code Bash sandbox: `~/.cargo/advisory-db` is read-only there, so the
+database refresh fails, and a `--db` fetch fails on host-key verification. A note written then
+concluded `cargo audit` cannot pass inside an agent session at all.
+
+**Why that was wrong:** only the fetch cannot run. The sandbox grants write to the lock file
+`~/.cargo/advisory-db..lock` and reads the database directory, so `cargo audit --no-fetch` scans
+against a database the operator already refreshed on the host. The platform-portability stage of
+PLAN-open-issues-19-24 ran it that way as an acceptance criterion; the plan's host prerequisite was
+one host `cargo audit` in `loom/` before the run.
+
+**Prevention:** inside an agent session or a no-network stage use `cargo audit --no-fetch`, and
+treat a failure naming a missing or stale database as an environment gap to report (the operator
+refreshes it on the host), not as an audit result. Plain `cargo audit` stays a pre-push step. Run
+it from the directory that holds `Cargo.lock`: the command has no `--manifest-path`, so
+`loom plan verify` flags it when the stage's `working_dir` is the repository root.
 
 ## `libc::mode_t` Width Differs by Platform — `.into()` Is a Clippy Error on Linux (2026-08-10)
 

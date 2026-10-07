@@ -3,7 +3,8 @@
 //! The tmux socket directory is `$TMUX_TMPDIR` (or `/tmp` when unset) joined
 //! with `tmux-<uid>` (see `orchestrator::terminal::tmux::socket::loom_socket_dir`),
 //! resolved from the CALLING process's own environment. The daemon's
-//! environment is captured once at `loom run` time and frozen after the fork
+//! environment is captured once at `loom run` time and frozen when the daemon
+//! child is spawned
 //! (`daemon::server::environment::DaemonEnvironment`, which keeps
 //! `TMUX_TMPDIR` on its allowlist); `loom attach` instead resolves
 //! `TMUX_TMPDIR` fresh from the operator's current shell. If the two differ —

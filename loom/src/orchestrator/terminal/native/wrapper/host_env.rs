@@ -25,6 +25,8 @@ pub(crate) struct WrapperHostEnv {
     pub loom_bin: Option<PathBuf>,
     /// The filtered PATH entries, exported colon-joined as `LOOM_HOOK_PATH`.
     pub hook_path: Vec<PathBuf>,
+    /// The operating system's boot ID, exported as `LOOM_BOOT_ID`.
+    pub boot_id: Option<String>,
 }
 
 impl WrapperHostEnv {
@@ -50,6 +52,7 @@ impl WrapperHostEnv {
                 self.loom_bin.as_ref().map(|bin| bin.display().to_string()),
             ),
             ("LOOM_HOOK_PATH", hook_path),
+            ("LOOM_BOOT_ID", self.boot_id.clone()),
         ]
         .into_iter()
         .filter_map(|(name, value)| {
@@ -243,5 +246,28 @@ mod tests {
 
         let stranger = operator_executable_dirs(&bin, &hook_path, uid.wrapping_add(1));
         assert_eq!(stranger, [temp.path().to_path_buf()]);
+    }
+
+    #[test]
+    fn boot_id_renders_as_loom_boot_id() {
+        let env = WrapperHostEnv {
+            boot_id: Some("0f8fad5b-d9cb-469f-a165-70867728950e".to_owned()),
+            ..Default::default()
+        };
+
+        let rendered = env.render();
+
+        assert_eq!(
+            rendered
+                .matches("LOOM_BOOT_ID=0f8fad5b-d9cb-469f-a165-70867728950e")
+                .count(),
+            1,
+            "{rendered}"
+        );
+    }
+
+    #[test]
+    fn a_default_host_env_renders_no_boot_id() {
+        assert!(!WrapperHostEnv::default().render().contains("LOOM_BOOT_ID"));
     }
 }

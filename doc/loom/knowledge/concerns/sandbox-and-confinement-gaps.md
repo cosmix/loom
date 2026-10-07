@@ -1,6 +1,6 @@
 # Sandbox And Confinement Gaps
 
-> Sandbox gaps: canary, creds, codex home
+> Sandbox gaps: canary, creds, env
 
 ## Sandbox Denial Has No End-to-End CI Canary
 
@@ -19,31 +19,31 @@ User-provided regex patterns in plan files (failure_patterns, wiring patterns) a
 
 Files: src/verify/baseline/capture.rs:76-79, src/verify/baseline/compare.rs:155-158
 
-## Two Diverging Copies of the Stage Environment Allowlist (2026-08-17)
+## Three Stage Environment Allowlists
 
-The host env allowlist exists twice, and the copies differ:
+Three host-environment lists remain ([The Host Environment Allowlist](../architecture/execution-containment.md)
+has the full contents):
 
-| Copy | Form | Consumer |
+| List | Form | Consumer |
 | --- | --- | --- |
-| `process/environment.rs` `STAGE_HOST_ENV_ALLOWLIST` | Rust `&[&str]` | `spawn_confined`, i.e. plan-authored commands |
-| `orchestrator/terminal/native/wrapper/script_text.rs` `env_allowlist` | shell loop feeding the wrapper's `exec env -i` | stage agent sessions |
+| `process/environment.rs` `STAGE_HOST_ENV_ALLOWLIST` | Rust `&[&str]` | `spawn_confined`, the native spawner and the tmux server commands |
+| `process/environment.rs` `AGENT_SESSION_ENV_NAMES` | Rust `&[&str]` | stage agent sessions: `wrapper/script_text.rs` renders its `exec env -i` shell loop from it |
+| `daemon/server/environment.rs` `HOST_ENV_ALLOWLIST` | Rust `&[&str]` | the daemon child |
 
-The shell copy forwards `HOME`, `PATH`, the locale and terminal variables, the display and
-session variables, the tmux variables, `TMPDIR`, `SCCACHE_DIR` and `SCCACHE_CACHE_SIZE`. It omits
-`CARGO_HOME`, `RUSTUP_HOME`, all eight proxy variables (`HTTP_PROXY`/`HTTPS_PROXY`/`NO_PROXY`/
-`ALL_PROXY` and their lowercase twins) and all three CA-bundle locations (`SSL_CERT_FILE`,
-`SSL_CERT_DIR`, `NIX_SSL_CERT_FILE`), which the Rust copy forwards. Verified by reading both.
+One constant now drives the wrapper, and tests pin every session name into the other two lists, so
+the lists cannot drift apart silently. What remains is a deliberate gap: sessions do
+not receive the proxy variables, the CA bundle locations (`SSL_CERT_FILE`, `SSL_CERT_DIR`,
+`NIX_SSL_CERT_FILE`), `CARGO_HOME` or `RUSTUP_HOME`, although plan-authored commands do, and no
+list forwards `CLAUDE_CONFIG_DIR`.
 
 **Concrete failure mode:** on a host behind a corporate proxy, a plan-authored acceptance command
 can fetch and a stage agent session cannot, and the symptom is a network failure inside the agent
-with no error pointing at an env allowlist. The same divergence hides a relocated `CARGO_HOME`.
+with no error pointing at an env allowlist. A relocated `CARGO_HOME` hides the same way.
 
-**Fix:** derive the shell loop from the Rust constant (generate the variable-name list at build
-time or render it into the wrapper from the same slice), and add a test asserting the two agree.
-Two tables encoding one real-world fact will drift; the test that matters pins them to each
-other.
+**Fix when needed:** add the names to `AGENT_SESSION_ENV_NAMES` (the wrapper follows) and keep the
+subset tests green.
 
-## Confined Commands Still Reach a Live Credential Bus (2026-08-17)
+## Confined Commands Still Reach a Live Credential Bus
 
 `process/environment.rs` withholds `SSH_AUTH_SOCK` with an explicit rationale — it
 is a live credential-agent socket, not a location — while forwarding
@@ -55,12 +55,13 @@ the argument used to withhold the SSH socket.
 needs. The terminal spawner genuinely needs display and session variables to attach
 a window; `spawn_confined` does not need either. **Fix:** split the list into a
 common base plus a terminal-only extension, and let `spawn_confined` take only the
-base. Doing that also removes the reason the second copy above exists.
+base. The wrapper's list is already generated from `AGENT_SESSION_ENV_NAMES`, so the split
+only has to separate `STAGE_HOST_ENV_ALLOWLIST`'s two consumers.
 
 See `architecture/execution-containment.md` for the honest statement of what
 confinement does and does not guarantee.
 
-## Sandbox-Widening Fields Need No Author Acknowledgement (2026-08-17)
+## Sandbox-Widening Fields Need No Author Acknowledgement
 
 `sandbox::validate_config` (`sandbox/config.rs`) refuses `sandbox.enabled: false` and
 `sandbox.allow_unsandboxed_escape: true` outright, with no acknowledgement possible, so a plan
@@ -69,7 +70,7 @@ carrying either cannot run. The fields that check does not cover, `allow_write`,
 (`models/stage/types.rs`), widen the sandbox with no acknowledgement from the plan author:
 `plan/schema/validation.rs` only checks that `allow_write` entries are valid globs.
 
-## Uncalled Path-Escape Validators Read As Protection (2026-08-17)
+## Uncalled Path-Escape Validators Read As Protection
 
 `sandbox/config.rs` ships three `pub` path-escape validators that **nothing in production
 calls**: `detect_path_escape` (`:192`), `validate_paths` (`:276`) and
@@ -99,7 +100,7 @@ protection.**
 
 `WorktreeGit::run` (`git/worktree/pinned.rs`) calls `check_worktree_config` before each git command, for a worktree created after an agent's session spawned (the capsule's `config.worktree` deny covers only worktrees that existed when it was built). An agent with write access to that worktree's admin directory can rewrite `config.worktree` between the check and the command it guards. Closing it needs the file unwritable to the agent for the whole command, which the grant of the git common directory prevents (G2 in [Agent Rule-Bending Hardening](agent-rule-bending-hardening.md)).
 
-## Accepted Gaps From the State-Confinement Work (2026-09-13)
+## Accepted Gaps From the State-Confinement Work
 
 Two gaps from PLAN-loom-state-confinement were accepted, not closed:
 
@@ -114,7 +115,7 @@ Two gaps from PLAN-loom-state-confinement were accepted, not closed:
   by the operator's own builds. [State Confinement Gaps](state-confinement-gaps.md) has the
   consequence. The gap is open: no plan makes them per-session.
 
-## No `Read(...)` Deny Rule May Exist in Any Settings File (2026-09-04)
+## No `Read(...)` Deny Rule May Exist in Any Settings File
 
 Claude Code (verified against 2.1.259) runs two checks on `rg`, `grep`, `egrep`, `fgrep`, `diff`,
 `git`, `cp` and `mv`. Both return `ask` with `circuitBreaker: deniedPathInsideDirectory`,
@@ -167,7 +168,7 @@ prompt-free auto mode. Never reintroduce a `Read(...)` deny of any shape, and ne
 `denyRead` glob whose wildcard-free prefix lies above the project or above a small home
 subdirectory.
 
-## Locked-Write Symlink Fix Was File-Only, Not Directory-Component (2026-09-22)
+## Locked-Write Symlink Fix Was File-Only, Not Directory-Component
 
 `fs/locking.rs` now opens `<path>.tmp` with `O_NOFOLLOW`, closing the specific
 `<file>.tmp`-as-tracked-symlink redirect found during `knowledge-bootstrap-command` integration

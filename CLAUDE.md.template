@@ -79,11 +79,13 @@ After compaction or context loss: `loom memory list`, then your stage's latest h
 Before ending any worktree session (hard stop 3):
 
 ```bash
-git add <specific-files> && git commit -m "feat(scope): <description>"
+git add <specific-files>
+loom stage commit <stage-id> -m "feat(scope): <description>"
+loom request status <id> --wait 90   # its own Bash call, after the commit command returns
 loom stage complete <stage-id>   # from the worktree root
 ```
 
-Stage `git add <specific-files>` only, never `-A` or `.`.
+Stage `git add <specific-files>` only, never `-A` or `.`; never run `git commit`.
 
 **When to commit — at the END, after ALL verification, never before.** Commits happen ONLY as the final step of the stage — never mid-stage, never "what is done so far" — once every subagent returned, the full gate is green (a `loom-verifier` round in a standard stage), and the review's findings are fixed (the `loom-orchestration` skill spells out the three conditions). Completion is the session's last act; work after it is lost.
 

@@ -49,7 +49,8 @@ pub enum MonitorEvent {
         repeat_count: u32,
         escalation: CompletionEscalation,
     },
-    /// Session is hung (PID alive but no heartbeat for its response budget)
+    /// Session is hung (PID alive but no heartbeat for its response budget, or
+    /// none at all since spawn)
     SessionHung {
         session_id: String,
         stage_id: Option<String>,

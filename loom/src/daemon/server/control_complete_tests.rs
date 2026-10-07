@@ -188,6 +188,93 @@ fn only_stage_and_knowledge_sessions_complete_through_the_broker() {
 }
 
 #[test]
+fn completion_refuses_a_staged_but_uncommitted_change() {
+    use super::super::completion_evidence::scratch_git;
+
+    let fixture = super::super::completion_evidence::trusted_checkpoint_fixture(
+        "build-api",
+        StageType::Standard,
+        SessionType::Stage,
+        EVIDENCE_NONCE,
+    );
+    let worktree = crate::git::get_worktree_path("build-api", fixture.repo());
+    let relative = ".worktrees/build-api";
+    let _ = scratch_git(
+        fixture.repo(),
+        &["worktree", "add", "-q", relative, "loom/build-api"],
+    );
+    fs::write(worktree.join("a.txt"), "a\n").unwrap();
+    let _ = scratch_git(&worktree, &["add", "a.txt"]);
+
+    let error = fixture
+        .complete("77777777777777777777777777777777", EVIDENCE_NONCE)
+        .unwrap_err();
+
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("staged changes are not committed"),
+        "{message}"
+    );
+    assert!(message.contains("--wait 90"), "{message}");
+    assert_eq!(
+        load_stage("build-api", &fixture.work).unwrap().status,
+        StageStatus::Executing
+    );
+}
+
+/// A knowledge stage's fixture with `path` staged in the main checkout.
+fn knowledge_fixture_staging(
+    path: &str,
+) -> super::super::completion_evidence::TrustedCheckpointFixture {
+    use super::super::completion_evidence::scratch_git;
+
+    let fixture = super::super::completion_evidence::trusted_checkpoint_fixture(
+        "notes",
+        StageType::Knowledge,
+        SessionType::Knowledge,
+        EVIDENCE_NONCE,
+    );
+    let file = fixture.repo().join(path);
+    fs::create_dir_all(file.parent().unwrap()).unwrap();
+    fs::write(&file, "staged\n").unwrap();
+    let _ = scratch_git(fixture.repo(), &["add", path]);
+    fixture
+}
+
+#[test]
+fn completion_refuses_a_staged_but_uncommitted_knowledge_change() {
+    let fixture = knowledge_fixture_staging("doc/loom/knowledge/notes.md");
+
+    let error = fixture
+        .complete("88888888888888888888888888888888", EVIDENCE_NONCE)
+        .unwrap_err();
+
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("staged changes are not committed"),
+        "{message}"
+    );
+    assert_eq!(
+        load_stage("notes", &fixture.work).unwrap().status,
+        StageStatus::Executing
+    );
+}
+
+#[test]
+fn a_knowledge_completion_ignores_a_change_staged_outside_the_prefix() {
+    let fixture = knowledge_fixture_staging("src/unrelated.rs");
+
+    fixture
+        .complete("99999999999999999999999999999999", EVIDENCE_NONCE)
+        .unwrap();
+
+    assert_eq!(
+        load_stage("notes", &fixture.work).unwrap().status,
+        StageStatus::Completed
+    );
+}
+
+#[test]
 fn completion_request_uses_user_capability_and_has_no_extensible_payload() {
     use crate::daemon::protocol::{Capability, Request};
 

@@ -48,7 +48,7 @@ load_payload() {
 load_authorization() {
 	local ledger="$WORK/subagents/$STAGE/codex.jsonl" bytes auth_fields
 	loom_lifecycle_plain_path "$ledger" file || return 1
-	bytes=$(wc -c <"$ledger" 2>/dev/null) || return 1
+	bytes=$(wc -c <"$ledger" 2>/dev/null | tr -d "[:space:]") || return 1
 	[[ "$bytes" =~ ^[0-9]+$ ]] && ((bytes > 0 && bytes <= 4194304)) || return 1
 	AUTH_ROW=$(jq -sc --arg stage "$STAGE" --arg session "$SESSION" \
 		--arg parent "$PARENT_ID" --arg forwarder "$FORWARDER_ID" \
@@ -83,7 +83,7 @@ valid_persisted_output() {
 	case "$path" in ../* | */../* | */.. | ..) return 1 ;; esac
 	[[ "$path" == "$projects"/* && "$path" == */tool-results/* && -f "$path" && ! -L "$path" ]] || return 1
 	before=$(loom_lifecycle_stat_fingerprint "$path") || return 1
-	bytes=$(wc -c <"$path" 2>/dev/null) || return 1
+	bytes=$(wc -c <"$path" 2>/dev/null | tr -d "[:space:]") || return 1
 	[[ "$bytes" =~ ^[0-9]+$ ]] && ((bytes > 0 && bytes <= 262144)) || return 1
 	newline_count=$(tail -c 1 "$path" 2>/dev/null | wc -l) || return 1
 	[[ "$newline_count" =~ ^[[:space:]]*1[[:space:]]*$ ]] || return 1
@@ -185,17 +185,10 @@ validate_wrapper_output() {
 event_id() {
 	local state="$1" kind="$2" turn="$3" terminal="$4" outcome="$5" execution digest
 	execution="direct:$THREAD_ID:$TOOL_USE_ID"
-	if command -v sha256sum >/dev/null 2>&1; then
-		digest=$(printf 'loom.lifecycle.codex.v1\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s' \
-			codex_direct "$STAGE" "$SESSION" "$PARENT_ID" "$FORWARDER_ID" "$UNIT" "$INVOCATION" \
-			"$WORKSPACE" "$execution" "$state" "$MODEL" "$EFFORT" "$kind" "$turn" "$terminal" "$outcome" |
-			sha256sum 2>/dev/null) || return 1
-	else
-		digest=$(printf 'loom.lifecycle.codex.v1\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s' \
-			codex_direct "$STAGE" "$SESSION" "$PARENT_ID" "$FORWARDER_ID" "$UNIT" "$INVOCATION" \
-			"$WORKSPACE" "$execution" "$state" "$MODEL" "$EFFORT" "$kind" "$turn" "$terminal" "$outcome" |
-			shasum -a 256 2>/dev/null) || return 1
-	fi
+	digest=$(printf 'loom.lifecycle.codex.v1\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s' \
+		codex_direct "$STAGE" "$SESSION" "$PARENT_ID" "$FORWARDER_ID" "$UNIT" "$INVOCATION" \
+		"$WORKSPACE" "$execution" "$state" "$MODEL" "$EFFORT" "$kind" "$turn" "$terminal" "$outcome" |
+		loom_lifecycle_sha256 2>/dev/null) || return 1
 	digest=${digest%% *}
 	[[ "$digest" =~ ^[0-9a-f]{64}$ ]] && printf 'sha256:%s\n' "$digest"
 }

@@ -1,7 +1,9 @@
 //! The handlers a drained request reaches: the daemon's existing code paths,
 //! each answering with a [`Settle`]. A handler that fails outright settles as
 //! a refusal naming the failure: `applying` is already recorded, so the
-//! request is never retried.
+//! request is never retried. A relayed commit goes to [`super::commit`], which
+//! maps the session to the branch it may commit and commits through
+//! `git::stage_commit`.
 
 use std::path::Path;
 
@@ -15,16 +17,17 @@ use crate::fs::memory::{append_entry, validate_spooled_entry, MemoryEntry};
 use crate::fs::stage_request::StageRequest;
 use crate::handoff::session_content::{write_session_handoff, SessionHandoff, CEILING_TRIGGER};
 use crate::models::session::{Session, SessionStatus, SessionType};
-use crate::models::stage::StageStatus;
+use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::adjudication::record::{self, AdjudicateOutcome};
 use crate::relay::{
-    decode_payload, verdict as matrix_verdict, HandoffRequest, InboxEntry, MatrixVerdict,
-    RequestPayload, VerdictRequest,
+    decode_payload, verdict as matrix_verdict, AgentRole, HandoffRequest, InboxEntry,
+    MatrixVerdict, RequestPayload, VerdictRequest,
 };
 use crate::telemetry::{append_record, TelemetryEvent, TelemetryRecord};
 use crate::verify::contracts::refusal;
 use crate::verify::transitions::{load_stage, update_stage};
 
+use super::commit::{self, CommitSite};
 use super::{InboxHost, Settle};
 
 /// An entry the matrix lets through, with its payload decoded.
@@ -35,8 +38,18 @@ pub(super) struct Admitted {
     payload: RequestPayload,
 }
 
-/// The matrix row for the record's session kind, then the payload shape.
+/// The writer, the matrix row for the record's session kind, then the payload
+/// shape. A control request from a subagent is refused here as well as in the
+/// relay hook, so an entry written past the hook still never acts with the
+/// main agent's authority.
 pub(super) fn admit(record: &Session, inbox_entry: &InboxEntry) -> Result<Admitted, String> {
+    if inbox_entry.agent == AgentRole::Subagent && inbox_entry.kind.is_control() {
+        return Err(format!(
+            "a '{}' request from a subagent is never applied: only the session's main agent \
+             makes it",
+            inbox_entry.kind
+        ));
+    }
     let matrix = matrix_verdict(record.session_type, inbox_entry.kind);
     if matrix == MatrixVerdict::Refuse {
         return Err(format!(
@@ -82,6 +95,16 @@ pub(super) fn apply(host: &mut dyn InboxHost, record: &Session, admitted: Admitt
         }
         RequestPayload::Telemetry(event) => {
             telemetry(&work_dir, stage_id, record, event, admitted.relayed_at)
+        }
+        RequestPayload::Commit(payload) => {
+            let repo_root = host.repo_root().to_path_buf();
+            let site = CommitSite {
+                work_dir: &work_dir,
+                repo_root: &repo_root,
+                stage_id,
+                record,
+            };
+            commit::apply_commit(host, &site, &payload)
         }
     }
 }
@@ -166,10 +189,15 @@ fn park_refused_freeze(work_dir: &Path, stage_id: &str, session_id: &str, messag
     }
 }
 
-/// Block, disputes and freeze act on a stage only for the live session that
-/// owns it, the rule `daemon::server` enforces for the same requests over the
-/// socket. The freeze handler further requires a contract session.
-fn require_owner(work_dir: &Path, stage_id: &str, record: &Session) -> Result<(), String> {
+/// Block, disputes, freeze and a stage or knowledge commit act on a stage only
+/// for the live session that owns it, the rule `daemon::server` enforces for
+/// the same requests over the socket. The freeze handler further requires a
+/// contract session. Returns the stage as loaded for the check.
+pub(super) fn require_owner(
+    work_dir: &Path,
+    stage_id: &str,
+    record: &Session,
+) -> Result<Stage, String> {
     if record.status != SessionStatus::Running {
         return Err(format!("session '{}' is no longer running", record.id));
     }
@@ -181,7 +209,7 @@ fn require_owner(work_dir: &Path, stage_id: &str, record: &Session) -> Result<()
             record.id
         ));
     }
-    Ok(())
+    Ok(stage)
 }
 
 /// Where a relayed handoff is written from.

@@ -129,7 +129,14 @@ pub(super) fn extract_backtick_items(lines: &[String]) -> Vec<String> {
 /// files re-read). Both are interpolated into otherwise identical text so the
 /// doctrine lives in exactly one place; `tests_commit_timing.rs` pins the
 /// sentinel phrases across every stable prefix and `CLAUDE.md.template`.
-pub(super) fn append_commit_timing_rules(content: &mut String, gate: &str, review: &str) {
+///
+/// `add_target` is what the doctrine sentence stages (`commit_command_rule`).
+pub(super) fn append_commit_timing_rules(
+    content: &mut String,
+    gate: &str,
+    review: &str,
+    add_target: &str,
+) {
     content.push_str(
         "**When to Commit (ORCHESTRATOR ONLY — AT THE END — AFTER ALL VERIFICATION):**\n\n",
     );
@@ -139,7 +146,55 @@ pub(super) fn append_commit_timing_rules(content: &mut String, gate: &str, revie
         "2. The full verification gate is GREEN on the complete tree: {gate}.\n"
     ));
     content.push_str(&format!("3. {review}\n\n"));
-    content.push_str("Then stage your files, commit (one logical commit per concern — module, tests, wiring, docs), and run `loom stage complete <stage-id>`.\n\n");
+    content.push_str(&format!(
+        "Then {} One logical commit per concern (module, tests, wiring, docs). Then run `loom stage complete <stage-id>`.\n\n",
+        commit_command_rule(add_target)
+    ));
+}
+
+/// The commit doctrine sentence, in lower case so it follows "Then" or a
+/// label; a surface that opens a sentence with it capitalises the first
+/// letter. Every surface that tells a session how to commit uses this
+/// wording (`add_target` replaces `<specific-files>`).
+pub(super) fn commit_command_rule(add_target: &str) -> String {
+    format!(
+        "commit with `git add {add_target}` then `loom stage commit <stage-id> -m \"type(scope): description\"`, and wait for it with `loom request status <id> --wait 90`; never run `git commit`."
+    )
+}
+
+/// The knowledge-stage header bullets that state where commits go.
+pub(super) fn append_knowledge_commit_header(content: &mut String) {
+    content.push_str("- **COMMITS REQUIRED** - commit through `loom stage commit`, never `git commit`; your commits go directly to main\n");
+    content.push_str("- **NO MERGING** - Your commits go directly to main (no branch to merge)\n");
+}
+
+/// The knowledge-stage completion bullet that commits the knowledge files.
+pub(super) fn append_knowledge_commit_bullet(content: &mut String) {
+    content.push_str(&format!(
+        "- **Commit knowledge changes**: {} Message: `docs(knowledge): populate codebase knowledge`\n",
+        commit_command_rule("doc/loom/knowledge/")
+    ));
+}
+
+/// The knowledge stage's mission block (moved out of `cache.rs` unchanged).
+pub(super) fn append_knowledge_mission(content: &mut String) {
+    content.push_str("**Your Mission:**\n\n");
+    content.push_str(
+        "Build a **briefing document** for future implementation agents. Every entry you\n",
+    );
+    content.push_str(
+        "write should help an agent who has never seen this codebase avoid mistakes and\n",
+    );
+    content.push_str("find their way quickly. Implementation stages build on this foundation.\n\n");
+    content.push_str("1. **Exhaustively map** the codebase (hierarchically) — entry points, every module, data flow, patterns, conventions; leave no major area unmapped.\n");
+    content.push_str(
+        "2. **Document** findings using `loom knowledge update <file> <content>` commands\n",
+    );
+    content.push_str("3. **Backfill** any knowledge gaps — if existing knowledge files are sparse, enrich them\n");
+    content.push_str("4. **Contextualize the plan** — understand what the plan intends to change and document the current state of those areas\n");
+    content.push_str("5. **Review existing mistakes** — pull them with `loom knowledge context --stage <stage-id> --query \"mistakes\" --budget-tokens <n>` and check if any entries are now obsolete or fixed. Remove stale entries to keep the briefing accurate\n");
+    content.push_str("6. **Verify** acceptance criteria before completing\n\n");
+    content.push_str("**Do NOT modify the project's CLAUDE.md** — it is the user's file. All knowledge goes to `loom knowledge update`; your own insights go to `loom memory`.\n\n");
 }
 
 /// Append the shared "settled stage" completion doctrine: `loom stage

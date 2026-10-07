@@ -25,7 +25,7 @@ file src/orchestrator/core/merge_handler.rs 616
 file src/orchestrator/core/recovery.rs 1455
 file src/orchestrator/core/stage_executor.rs 596
 file src/orchestrator/merge_attribution.rs 543
-file src/orchestrator/signals/cache.rs 524
+file src/orchestrator/signals/cache.rs 511
 file src/orchestrator/signals/format/sections.rs 569
 file src/orchestrator/signals/tests.rs 551
 file src/orchestrator/signals/tests_cache.rs 630
@@ -38,7 +38,6 @@ file src/plan/schema/tests/validation_tests.rs 826
 file src/plan/schema/types.rs 416
 file src/plan/schema/validation.rs 1222
 file src/plan/tests/amendment.rs 605
-file src/remote_control.rs 598
 file src/sandbox/config.rs 822
 file src/sandbox/settings.rs 438
 file src/sandbox/settings/tests.rs 1565
@@ -85,7 +84,7 @@ function src/commands/status.rs execute_static 81
 function src/commands/status/render/completion.rs render_completion_lines 55
 function src/commands/status/render/completion.rs render_completion_screen 84
 function src/commands/status/render/graph.rs format_stage_annotations 78
-function src/commands/status/render/graph.rs render_graph 66
+function src/commands/status/render/graph.rs render_graph 64
 function src/commands/status/ui/tui/renderer.rs render_completion 128
 function src/commands/verify.rs execute 72
 function src/completions/dynamic/mod.rs complete_after_subcommand 56
@@ -93,8 +92,7 @@ function src/completions/install.rs install 52
 function src/context/refresh/tests_source_graph/enumeration.rs an_unreadable_file_survives_as_a_reported_lexical_only_entry 62
 function src/daemon/server/broadcast.rs run_status_broadcaster 80
 function src/daemon/server/client.rs handle_client_connection 87
-function src/daemon/server/lifecycle.rs run_server 133
-function src/daemon/server/lifecycle.rs start 100
+function src/daemon/server/lifecycle.rs run_server 127
 function src/daemon/server/orchestrator.rs run_orchestrator 89
 function src/daemon/server/status.rs collect_completion_summary 97
 function src/daemon/server/tests.rs test_collect_status_with_stages 77
@@ -137,7 +135,6 @@ function src/orchestrator/monitor/tests/heartbeats.rs test_hung_detection_honors
 function src/orchestrator/retry.rs classify_failure 64
 function src/orchestrator/retry.rs test_classify_failure 85
 function src/orchestrator/signals/cache.rs generate_knowledge_distill_stable_prefix 74
-function src/orchestrator/signals/cache.rs generate_knowledge_stable_prefix 66
 function src/orchestrator/signals/crud.rs update_signal 69
 function src/orchestrator/signals/format/helpers.rs format_structured_handoff 107
 function src/orchestrator/signals/format/sandbox_section.rs format_sandbox_section 58

@@ -6,7 +6,7 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Source Graph
 
-> Source graph contract, extractor, limits
+> Source graph contract, limits
 
 ## What It Is, and What It Is Not
 

@@ -43,8 +43,9 @@ fn test_complete_subcommands_stage() {
 #[test]
 fn test_complete_subcommands_stage_prefix() {
     let results = complete_subcommands("stage", "com").unwrap();
-    assert_eq!(results.len(), 1);
+    assert_eq!(results.len(), 2);
     assert!(results.contains(&"complete".to_string()));
+    assert!(results.contains(&"commit".to_string()));
 }
 
 #[test]

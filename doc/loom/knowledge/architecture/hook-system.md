@@ -3,7 +3,7 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Hook System
 
-> Hook embedding, SessionStart contract
+> Hook embedding, SessionStart
 
 ## Hook System Architecture (loom/src/hooks/)
 
@@ -121,6 +121,38 @@ Late hooks from an old session therefore cannot overwrite a successor, concurren
 refreshes cannot roll the parent's token count backward, and the Rust watcher never observes a
 partially truncated JSON document. Lock metadata permits conservative recovery after a dead
 writer leaves an abandoned lock; live or uncertain owners are never stolen.
+
+## Portable Shell Helpers and the SubagentStop Ledgers
+
+Hook scripts run on GNU and BSD (macOS) userlands, and the BSD forms differ where it matters. The
+rules, in `loom-hooks/_lifecycle.sh` unless noted:
+
+- **Padded `wc`.** BSD `wc -c` left-pads its count, so a raw value fails `^[0-9]+$`. Every `wc -c`
+  site strips whitespace inline with `| tr -d "[:space:]"` before testing it (never `$(( ))`); an
+  unstripped count makes a hook skip silently, which on macOS meant no review round and a blocked codex forward.
+- **`loom_lifecycle_sha256`** uses `sha256sum`, else `shasum -a 256`; `loom_lifecycle_have_sha256`
+  tells the caller whether either exists, and every bare `sha256sum` goes through the helper.
+- **`loom_lifecycle_epoch`** tries the BSD form first (`loom_lifecycle_bsd_epoch`: `date -j -f`,
+  accepting fractional seconds and a `Z` or `+hh:mm` zone) and falls back to GNU `date -u -d`. On macOS
+  `date -u -d` is the set-kernel-DST option and can change the DST flag when run as root, while GNU
+  date rejects `-j`, so the BSD attempt fails harmlessly there.
+- **Ledger appends** (`loom_lifecycle_journal_ready`, the stop-skips append) require a regular file or an
+  absent path, never a symlink: a planted FIFO would block the hook.
+- **Tests.** `loom-hooks/tests/run-all.sh` runs in the `hook-syntax` CI job twice, plain and with
+  `LOOM_HOOK_TEST_BSD=1`, which puts `loom-hooks/tests/bsd-shims/` (padded `wc`, BSD `stat` including
+  `-f '%Lp'`, BSD `date` with `-r` and `-j -f`) first on PATH; `scripts/check-hook-syntax.sh` parses the
+  extensionless shims as well. See [No macOS CI Runner](../concerns/platform-and-commit-gaps.md#no-macos-ci-runner-bsd-behaviour-is-emulated).
+
+**Stop-skips ledger.** A skipped `loom-code-reviewer` stop leaves the review gate with no round and no
+message, so `subagent-stop.sh` (`loom_subagent_stop_skip`) appends one row to
+`.loom/work/subagents/<stage>/stop-skips.jsonl`: `{"ts":"<UTC>","agent_id":"<id>","agent_type":
+"loom-code-reviewer","reason":"<code>"}`. It is diagnostic only: it never creates the directory,
+follows a symlink, or changes the hook's exit code. `verify/review/gate.rs::harvest_hint` compares the
+`starts.jsonl` reviewer spawns with the recorded rounds, opens both ledgers read-only (no symlink, regular
+file, size cap), and `loom stage review status` and the review gate's failure message print
+`N reviewer spawns, M rounds, K stop events not harvested` with the last recorded skip reasons and a
+pointer to re-run with `LOOM_HOOK_DEBUG=1`. Ledger text is filtered through `ledger_text` because a
+session can write these files.
 
 ## Prompt-Submit Hooks and the `loom hook` Delegates
 

@@ -29,14 +29,14 @@ fn run_terminal_probe(
 /// Detect the available terminal emulator (Linux)
 ///
 /// Priority:
-/// 0. LOOM_TERMINAL environment variable (set before daemon fork to preserve terminal choice)
+/// 0. LOOM_TERMINAL environment variable (set before the daemon child is spawned to preserve terminal choice)
 /// 1. TERMINAL environment variable (user preference)
 /// 2. gsettings/dconf default terminal (GNOME/Cosmic DE settings)
 /// 3. xdg-terminal-exec (emerging standard)
 /// 4. Common terminals: kitty, alacritty, etc.
 #[cfg(target_os = "linux")]
 pub fn detect_terminal() -> Result<TerminalEmulator> {
-    // 0. Check LOOM_TERMINAL environment variable first (set before daemon fork to preserve terminal choice)
+    // 0. Check LOOM_TERMINAL environment variable first (set before the daemon child is spawned to preserve terminal choice)
     if let Ok(terminal_name) = std::env::var("LOOM_TERMINAL") {
         if !terminal_name.is_empty() {
             if let Some(emulator) = TerminalEmulator::from_name(&terminal_name) {
@@ -139,14 +139,14 @@ fn get_gsettings_terminal() -> Option<String> {
 /// Detect the available terminal emulator (macOS)
 ///
 /// Priority:
-/// 0. LOOM_TERMINAL environment variable (set before daemon fork to preserve terminal choice)
+/// 0. LOOM_TERMINAL environment variable (set before the daemon child is spawned to preserve terminal choice)
 /// 1. TERMINAL environment variable (user preference)
 /// 2. Currently running terminal (detected via parent process)
 /// 3. Cross-platform terminals (kitty, alacritty, wezterm)
 /// 4. iTerm2 or Terminal.app (check for installed apps)
 #[cfg(target_os = "macos")]
 pub fn detect_terminal() -> Result<TerminalEmulator> {
-    // 0. Check LOOM_TERMINAL environment variable first (set before daemon fork to preserve terminal choice)
+    // 0. Check LOOM_TERMINAL environment variable first (set before the daemon child is spawned to preserve terminal choice)
     if let Ok(terminal_name) = std::env::var("LOOM_TERMINAL") {
         if !terminal_name.is_empty() {
             if let Some(emulator) = TerminalEmulator::from_name(&terminal_name) {

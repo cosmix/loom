@@ -11,6 +11,7 @@ use crate::commands::status::render::print_completion_summary;
 use crate::daemon::collect_completion_summary;
 use crate::fs::plan_lifecycle;
 use crate::fs::work_dir::WorkDir;
+use crate::git::signing;
 use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
 use crate::plan::schema::SandboxConfig;
 
@@ -23,6 +24,12 @@ pub fn execute(
     auto_merge: bool,
     backend: Option<String>,
 ) -> Result<()> {
+    // First, before any thread exists (`main` spawns none before dispatch):
+    // this process runs the orchestrator, so it keeps the signing variables
+    // for its own signing calls and takes them out of the environment every
+    // stage process would otherwise inherit.
+    signing::take_from_process();
+
     // Ensure git worktree prerequisites are met before starting.
     let repo_root = std::env::current_dir()?;
     prepare_repo_for_run(&repo_root)?;

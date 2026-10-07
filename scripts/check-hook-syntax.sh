@@ -21,7 +21,8 @@ repo_root=$(cd "$(dirname "$0")/.." && pwd)
 # loom-hooks/ and scripts/ both carry hand-written shell; a syntax error in either
 # one is the same failure mode this script exists to catch. The git hooks
 # directory (loom/.githooks) is scanned separately below for its executable
-# files, since git only runs executable hooks and they carry no extension.
+# files, since git only runs executable hooks and they carry no extension. The
+# extensionless test tool shims (loom-hooks/tests/bsd-shims) are scanned the same way.
 
 if [ ! -d "$repo_root/loom-hooks" ]; then
 	printf 'check-hook-syntax: required hook directory is missing: %s\n' "$repo_root/loom-hooks" >&2
@@ -46,7 +47,7 @@ while IFS= read -r script; do
 		bash -n "$script" 2>&1 | sed 's/^/    /' >&2
 		failed=$((failed + 1))
 	fi
-done < <({ find "${script_dirs[@]}" -type f -name '*.sh'; find "$repo_root/loom/.githooks" -type f -perm -u+x; } 2>/dev/null | sort)
+done < <({ find "${script_dirs[@]}" -type f -name '*.sh'; find "$repo_root/loom-hooks/tests/bsd-shims" -type f; find "$repo_root/loom/.githooks" -type f -perm -u+x; } 2>/dev/null | sort)
 
 if [ "$failed" -ne 0 ]; then
 	printf '\ncheck-hook-syntax: %d of %d shell scripts failed to parse\n' "$failed" "$checked" >&2

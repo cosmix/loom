@@ -2,7 +2,7 @@
 ---
 # Writer/Reader Address
 
-> A layer written under a key its reader ignores
+> Layer written under an ignored key
 
 ## A Fallback That Writes Under a Key No Reader Consults
 
@@ -71,3 +71,24 @@ failing retrieval. That is right — a cold cache must not break a spawn. The co
 that EVERY addressing bug in this subsystem presents as "slightly thinner output",
 never as an error. In a subsystem that degrades silently by design, the round-trip
 test is not a nicety; it is the only detector you have.
+
+## Every Client Dialled the Symlinked Worktree Spelling, and the Issue Blamed the Wrong File (2026-10-06)
+
+**What happened:** completion ended `verified_pending_ack` / `daemon_transport` (issue #23). The issue
+blamed `daemon/rpc.rs`; the connect that failed was the completion broker's own copy in
+`commands/stage/control_complete.rs`.
+
+**Why:** every client joined `orchestrator.sock` onto the worktree's `.loom/work` symlink spelling. The
+daemon binds under the resolved, shorter path, so past 103 bytes (107 on Linux) `connect` failed with
+`InvalidInput` before any syscall, which was classified as a hard error instead of "unreachable". An
+outside PR resolved the work dir in `rpc.rs` only, mapped every `InvalidInput` to `Unreachable` (an
+interior NUL included) and left the TUI, web, repair and review-observer clients on the unresolved
+spelling; its description said an over-long completion is spooled while the broker still failed.
+
+**Prevention:** one function resolves the address for every client, and a length check runs before the
+connect instead of a blanket error mapping. `rg` for every `join(SOCKET_FILE)` and private connect when
+fixing an address bug, and test with a path past the limit through each client.
+
+**Fix:** `daemon/socket.rs` (`socket_path`, `socket_path_fits`, `socket_path_problem`); the broker uses
+`daemon::send_request`; `loom run` refuses a root that does not fit
+([The Socket Path Rule](../architecture/daemon-launch.md#the-socket-path-rule)).

@@ -28,6 +28,18 @@ pub struct VerdictRequest {
     pub verdict: String,
 }
 
+/// `{message, expected_head, expected_tree}` for a `commit` request: the
+/// message the session's hooks accepted, and the HEAD and staged tree it saw.
+/// The daemon commits that tree only while both still hold
+/// (`git::stage_commit`).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct CommitPayload {
+    pub message: String,
+    pub expected_head: String,
+    pub expected_tree: String,
+}
+
 /// A ticket payload, decoded to the type its `kind` promises.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RequestPayload {
@@ -40,6 +52,7 @@ pub enum RequestPayload {
     Telemetry(TelemetryEvent),
     FreezeContracts(StageRequest),
     FileDispute(StageRequest),
+    Commit(CommitPayload),
 }
 
 /// Decode `payload` under the shape `kind` promises. `block`, `dispute`,
@@ -70,6 +83,7 @@ pub fn decode_payload(kind: RequestKind, payload: &Value) -> Result<RequestPaylo
             payload,
             "file_dispute",
         )?)),
+        RequestKind::Commit => Ok(RequestPayload::Commit(decode(payload, "commit")?)),
     }
 }
 
@@ -238,6 +252,34 @@ mod tests {
         ));
         assert!(decode_payload(RequestKind::Dispute, &file_dispute).is_err());
         assert!(decode_payload(RequestKind::FileDispute, &stage_request_json("dispute")).is_err());
+    }
+
+    #[test]
+    fn decodes_a_commit_payload_and_refuses_an_unknown_field() {
+        let head = "a".repeat(40);
+        let tree = "b".repeat(40);
+        let payload = serde_json::json!({
+            "message": "feat(relay): commit",
+            "expected_head": head,
+            "expected_tree": tree,
+        });
+        assert_eq!(
+            decode_payload(RequestKind::Commit, &payload).unwrap(),
+            RequestPayload::Commit(CommitPayload {
+                message: "feat(relay): commit".to_string(),
+                expected_head: head.clone(),
+                expected_tree: tree.clone(),
+            })
+        );
+
+        let extra = serde_json::json!({
+            "message": "feat(relay): commit",
+            "expected_head": head,
+            "expected_tree": tree,
+            "amend": true,
+        });
+        assert!(decode_payload(RequestKind::Commit, &extra).is_err());
+        assert!(decode_payload(RequestKind::Commit, &serde_json::json!({})).is_err());
     }
 
     #[test]

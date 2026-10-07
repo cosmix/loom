@@ -17,9 +17,9 @@ Claude Code's `--remote-control` flag lets the loom orchestrator drive Claude se
 
 | Function                                     | Purpose                                                                                                                                    |
 | -------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `preflight(claude_path)`                     | Combines version probe + auth-eligibility heuristic                                                                                        |
+| `preflight(claude_path)`                     | Combines the version probe with the stage-environment login verdict                                                                        |
 | `claude_supports_remote_control(path)`       | Version gate only (>= 2.1.51)                                                                                                              |
-| `remote_control_eligible()`                  | Auth heuristic: no disqualifying env var + `~/.claude/.credentials.json` present                                                           |
+| `remote_control_eligible(claude_path)`       | Login verdict: `eligibility_from(cached_stage_auth(claude_path))`; a claude.ai login is eligible, other methods, `NotLoggedIn` and `Unknown` are not |
 | `resolve(work_dir)`                          | Mode/preflight/in-memory-disable-flag gate — unchanged `bool` contract, now called ONLY by the crash handler's fast-fail check              |
 | `resolve_invocation(work_dir, session_name)` | **The real per-spawn gate.** Layers a memoized `--help` capability probe over `resolve()`; returns `Disabled`/`Bare`/`Named(session_name)` |
 | `run_startup_preflight(path, work_dir)`      | Advisory startup warning if disabled                                                                                                       |
@@ -52,10 +52,9 @@ If a session crashes within `FAST_FAIL_WINDOW_SECS` (15s) of creation with a ver
 
 `fs/work_dir.rs` exposes `read_remote_control_config()` / `write_remote_control_config()` using the `[remote_control]` section of `.loom/work/config.toml`. Pattern mirrors `read_plan_sandbox` / `write_plan_sandbox`.
 
-**Auth disqualifying env vars (Remote Control requires claude.ai login):**
+**Eligibility is the stage-environment auth probe (Remote Control requires a claude.ai login):**
 
-`ANTHROPIC_API_KEY`, `CLAUDE_CODE_OAUTH_TOKEN`, `CLAUDE_CODE_USE_BEDROCK`, `CLAUDE_CODE_USE_VERTEX`, `CLAUDE_CODE_USE_FOUNDRY`
-
+`claude/auth.rs` runs `claude auth status --json` with the environment from `agent_session_environment_from` (the minimal list a stage session gets, see [The Host Environment Allowlist](execution-containment.md)) and reads only `loggedIn` and `authMethod`, returning `AuthProbe::{LoggedIn { method }, NotLoggedIn, Unknown(reason)}`. `remote_control::cached_stage_auth` memoizes the verdict in a process-lifetime `OnceLock` (`loom run` seeds it through `auth_preflight::require_stage_login`, so the probe runs once per process); `eligibility_from` turns it into the preflight reason. A reason repeats only the auth method, reduced to `[A-Za-z0-9._-]` and 32 characters by `method_label`, or a fixed probe reason, never the CLI's identity fields. The same probe gates `loom run` itself: see [Stage Login Preflight](orchestrator-daemon-and-sessions.md#stage-login-preflight).
 **Known limitations (2026-08-08):**
 
 - `cached_named_arg_supported` (named-arg support) and `cached_preflight_enabled` (version+auth) each memoize on a `OnceLock<bool>` keyed by nothing, ignoring the `claude_path` argument they accept — consistent with each other, but means a `claude_path` that changes mid-process (unlikely) would not be re-probed. Two/three `which::which` lookups still happen per spawn (`resolve()` → `find_claude_path()`, then `resolve_invocation` calls it again) — accepted as consistent with existing precedent, not fixed.

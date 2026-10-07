@@ -348,9 +348,9 @@ put the doc edits in the implementation brief.
 
 ## Changelog skipped a shipped doctrine change
 
-**What happened:** `/changelog 1.1.1` reviewed `v1.1.0..HEAD`, found `docs(doctrine): give codex the stale-knowledge rule and the block and dispute routes`, and dropped it as a doc commit. The operator pointed out that `AGENTS.md.template` is not documentation.
+**What happened:** `/changelog 1.1.1` reviewed `v1.1.0..HEAD`, found `docs(doctrine): give codex the stale-knowledge rule and the block and dispute routes`, and dropped it as a doc commit. The operator pointed out that the AGENTS.md.template file is not documentation.
 
-**Why:** The `docs(...)` commit type was read as "documentation". `CLAUDE.md.template`, `AGENTS.md.template`, `loom-hooks/*` and `skills/*` are compiled into the binary and written by `loom install-assets` (to `~/.claude/`, `~/.codex/AGENTS.md`), so they change what operator sessions do.
+**Why:** The `docs(...)` commit type was read as "documentation". `CLAUDE.md.template`, the AGENTS.md.template file, `loom-hooks/*` and `skills/*` are compiled into the binary and written by `loom install-assets` (to `~/.claude/`, and to the codex home as its AGENTS.md), so they change what operator sessions do.
 
 **Prevention:** Classify a changelog commit by the files it touches, never by its type prefix. A change to an installed doctrine template, hook or skill is user-facing; only `doc/`, `README`-only prose and knowledge files are excluded as docs.
 

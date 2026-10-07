@@ -210,8 +210,8 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
         "- VERIFICATION NEVER GOES TO CODEX: codex subagents implement and report, never verify,\n\
          commit, or run `loom stage complete`. The full build/test/lint gate runs in a\n\
          loom-verifier (integration-verify keeps its own gate); YOU own the six-dimension review\n\
-         and commit at the end of the stage - never take a codex agent's word its own work is\n\
-         correct, and never have codex review its own output.\n\n",
+         and commit at the end of the stage through `loom stage commit` - never take a codex\n\
+         agent's word its own work is correct, and never have codex review its own output.\n\n",
     );
 }
 

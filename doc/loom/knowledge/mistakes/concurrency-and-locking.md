@@ -34,3 +34,13 @@ the first match reads the in-progress state instead of the outcome.
 match.
 
 **Fix:** `fs/inbox/status.rs` uses `.rev().find(...)` — walk from the end.
+
+## `save_stage` Creates and Never Overwrites, So a Test Mutating a Stage Must Use `update_stage` (2026-10-06)
+
+**What happened:** two new tests loaded a stage, mutated it and called `save_stage`, which panicked with
+`Stage already exists`.
+
+**Why:** `save_stage` is an alias of `create_stage` and refuses to overwrite
+(`verify/transitions/persistence.rs`).
+
+**Prevention:** change an existing stage record in a test with `update_stage(id, dir, |stage| { ...; Ok(()) })`.

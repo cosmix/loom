@@ -1,6 +1,6 @@
 # Live State Pollution
 
-> Tests rewrote live .loom/work and real HOME
+> Tests wrote live state and HOME
 
 ## A Stage's Test Run Rewrote the Live State Directory (2026-09-13)
 

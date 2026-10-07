@@ -14,9 +14,12 @@ use super::super::cache::{
     generate_knowledge_stable_prefix, generate_stable_prefix,
 };
 use super::super::generate::generate_signal_with_metrics;
+use super::super::merge::format_merge_signal_content;
 use super::{create_test_session, create_test_stage, create_test_worktree};
 
 const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
+const ORCHESTRATION_SKILL: &str = include_str!("../../../../skills/loom-orchestration/SKILL.md");
+const COMMIT_GUARD_HOOK: &str = include_str!("../../../../loom-hooks/commit-guard.sh");
 
 /// A stable-prefix generator, named for its failure message.
 type PrefixGenerator = fn() -> String;
@@ -198,5 +201,75 @@ fn sandbox_section_names_the_package_cache_grant() {
     assert!(
         !disabled_content.contains("**Package-manager caches:**"),
         "a disabled sandbox has nothing to carve an exception out of"
+    );
+}
+
+#[test]
+fn commit_command_doctrine_is_on_every_surface() {
+    let mut surfaces: Vec<(&str, String)> = all_generators()
+        .into_iter()
+        .map(|(name, generator)| (name, generator()))
+        .collect();
+    surfaces.push(("CLAUDE.md.template", CLAUDE_MD_TEMPLATE.to_string()));
+    surfaces.push(("loom-orchestration skill", ORCHESTRATION_SKILL.to_string()));
+
+    for (name, text) in &surfaces {
+        for needle in ["loom stage commit", "--wait 90"] {
+            assert!(text.contains(needle), "{name} must carry `{needle}`");
+        }
+    }
+}
+
+#[test]
+fn knowledge_prefix_carries_the_doctrine_without_specific_files() {
+    let prefix = generate_knowledge_stable_prefix();
+    assert!(
+        prefix.contains("git add doc/loom/knowledge/"),
+        "the knowledge prefix stages the knowledge directory"
+    );
+    assert!(
+        !prefix.contains("git add <specific-files>"),
+        "the knowledge prefix must not carry the generic placeholder"
+    );
+}
+
+#[test]
+fn retired_session_commit_wording_is_gone() {
+    let retired = [
+        concat!("Then stage your ", "files, commit"),
+        concat!("git add <specific-files> &&", " git commit -m"),
+        concat!("git add doc/loom/knowledge/ &&", " git commit"),
+    ];
+    let mut surfaces: Vec<(&str, String)> = all_generators()
+        .into_iter()
+        .map(|(name, generator)| (name, generator()))
+        .collect();
+    surfaces.push(("CLAUDE.md.template", CLAUDE_MD_TEMPLATE.to_string()));
+    surfaces.push(("loom-orchestration skill", ORCHESTRATION_SKILL.to_string()));
+    surfaces.push(("commit-guard.sh", COMMIT_GUARD_HOOK.to_string()));
+
+    for (name, text) in &surfaces {
+        for phrase in retired {
+            assert!(
+                !text.contains(phrase),
+                "{name} must not carry the retired commit wording `{phrase}`"
+            );
+        }
+    }
+}
+
+#[test]
+fn merge_signal_merges_without_committing() {
+    let session = create_test_session();
+    let stage = create_test_stage();
+
+    let content = format_merge_signal_content(&session, &stage, "loom/stage-1", "main", &[]);
+    assert!(
+        content.contains("git merge --no-commit --no-ff main"),
+        "the resolver merges without committing: {content}"
+    );
+    assert!(
+        content.contains("loom stage commit"),
+        "the resolver commits through loom stage commit: {content}"
     );
 }

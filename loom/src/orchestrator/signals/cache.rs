@@ -1,8 +1,9 @@
 use sha2::{Digest, Sha256};
 
-use super::helpers::append_commit_timing_rules;
 use super::helpers::{
-    append_completion_rules, append_settled_completion_rules, CONTEXT_CEILING_HANDOFF,
+    append_commit_timing_rules, append_completion_rules, append_knowledge_commit_bullet,
+    append_knowledge_commit_header, append_knowledge_mission, append_settled_completion_rules,
+    CONTEXT_CEILING_HANDOFF,
 };
 
 mod blocks;
@@ -78,6 +79,10 @@ const CODE_STAGE_GATE: &str = "build, tests, lint, format, plus this stage's acc
 const CODE_STAGE_REVIEW: &str = "The mini adversarial code review has RETURNED, every finding is FIXED, and the gate is green AGAIN after those fixes.";
 const DOC_STAGE_GATE: &str = "this stage's acceptance criteria";
 const DOC_STAGE_REVIEW: &str = "You have re-read every knowledge file you wrote — nothing stale left standing, no duplicate headings — and the acceptance criteria pass AGAIN after any fix.";
+/// What the commit doctrine sentence stages: a code stage's own files, or the
+/// knowledge directory (the knowledge signal never carries the generic placeholder).
+const FILES: &str = "<specific-files>";
+const KNOWLEDGE: &str = "doc/loom/knowledge/";
 
 // ── Prefix generators ────────────────────────────────────────────────
 
@@ -101,7 +106,7 @@ pub fn generate_stable_prefix() -> String {
     append_adversarial_review(&mut content);
 
     append_verifier_completion_header(&mut content);
-    append_commit_timing_rules(&mut content, CODE_STAGE_GATE, CODE_STAGE_REVIEW);
+    append_commit_timing_rules(&mut content, CODE_STAGE_GATE, CODE_STAGE_REVIEW, FILES);
     append_completion_rules(&mut content);
 
     content
@@ -149,7 +154,7 @@ pub fn generate_integration_verify_stable_prefix() -> String {
     append_subagent_ceiling_block(&mut content);
 
     content.push_str("**Completion:**\n");
-    append_commit_timing_rules(&mut content, CODE_STAGE_GATE, CODE_STAGE_REVIEW);
+    append_commit_timing_rules(&mut content, CODE_STAGE_GATE, CODE_STAGE_REVIEW, FILES);
     content.push_str(
         "- **Fix ALL issues** - do not mark complete with any warnings or errors remaining\n",
     );
@@ -230,7 +235,7 @@ pub fn generate_knowledge_distill_stable_prefix() -> String {
     append_execution_rules_header(&mut content);
 
     content.push_str("**Completion:**\n");
-    append_commit_timing_rules(&mut content, DOC_STAGE_GATE, DOC_STAGE_REVIEW);
+    append_commit_timing_rules(&mut content, DOC_STAGE_GATE, DOC_STAGE_REVIEW, FILES);
     append_completion_rules(&mut content);
 
     content
@@ -248,37 +253,19 @@ pub fn generate_knowledge_stable_prefix() -> String {
     content.push_str("**Key Differences from Regular Stages:**\n\n");
     content
         .push_str("- **NO WORKTREE** - You are in the main repository, not an isolated worktree\n");
-    content.push_str("- **COMMITS REQUIRED** - You MUST `git add doc/loom/knowledge/` and `git commit` before completing\n");
-    content.push_str("- **NO MERGING** - Your commits go directly to main (no branch to merge)\n");
+    append_knowledge_commit_header(&mut content);
     content.push_str(
         "- **EXPLORATION FOCUS** - Your goal is to understand and document the codebase\n\n",
     );
 
-    // Mission
-    content.push_str("**Your Mission:**\n\n");
-    content.push_str(
-        "Build a **briefing document** for future implementation agents. Every entry you\n",
-    );
-    content.push_str(
-        "write should help an agent who has never seen this codebase avoid mistakes and\n",
-    );
-    content.push_str("find their way quickly. Implementation stages build on this foundation.\n\n");
-    content.push_str("1. **Exhaustively map** the codebase (hierarchically) — entry points, every module, data flow, patterns, conventions; leave no major area unmapped.\n");
-    content.push_str(
-        "2. **Document** findings using `loom knowledge update <file> <content>` commands\n",
-    );
-    content.push_str("3. **Backfill** any knowledge gaps — if existing knowledge files are sparse, enrich them\n");
-    content.push_str("4. **Contextualize the plan** — understand what the plan intends to change and document the current state of those areas\n");
-    content.push_str("5. **Review existing mistakes** — pull them with `loom knowledge context --stage <stage-id> --query \"mistakes\" --budget-tokens <n>` and check if any entries are now obsolete or fixed. Remove stale entries to keep the briefing accurate\n");
-    content.push_str("6. **Verify** acceptance criteria before completing\n\n");
-    content.push_str("**Do NOT modify the project's CLAUDE.md** — it is the user's file. All knowledge goes to `loom knowledge update`; your own insights go to `loom memory`.\n\n");
+    append_knowledge_mission(&mut content);
 
     append_execution_rules_header(&mut content);
 
     content.push_str("**Completion:**\n");
-    append_commit_timing_rules(&mut content, DOC_STAGE_GATE, DOC_STAGE_REVIEW);
+    append_commit_timing_rules(&mut content, DOC_STAGE_GATE, DOC_STAGE_REVIEW, KNOWLEDGE);
     append_settled_completion_rules(&mut content);
-    content.push_str("- **Commit knowledge changes**: `git add doc/loom/knowledge/ && git commit -m 'docs(knowledge): populate codebase knowledge'`\n");
+    append_knowledge_commit_bullet(&mut content);
     content.push_str(CONTEXT_CEILING_HANDOFF);
     content.push_str("- **Run `loom stage complete <stage-id>`** when done (from the repo root)\n");
     content.push_str("- **If acceptance criteria fail**: Fix the issues and run `loom stage complete <stage-id>` again\n\n");

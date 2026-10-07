@@ -1,0 +1,99 @@
+#!/usr/bin/env bash
+# BSD/macOS date shim over GNU date. Like BSD date it rejects -d and --date.
+# It answers the two BSD forms the hooks use and delegates everything else
+# (`date -u +FORMAT`):
+#   [-j] [-u] -f FORMAT VALUE +OUTFMT   parse VALUE with a strptime-style FORMAT
+#   [-u] -r EPOCH +OUTFMT               format an epoch
+# FORMAT may use %Y %m %d %H %M %S %z and literal characters; VALUE must match it
+# exactly (leftover text is a mismatch, as with strptime). Output is UTC with -u,
+# else local time. A FORMAT without %z is read as UTC.
+
+# The real tool is the first PATH entry (then /usr/bin, /bin) that is not this
+# script; -ef follows symlinks, so a path_without mirror of the shim directory
+# is skipped too.
+real_date=""
+IFS=: read -r -a path_parts <<<"$PATH:/usr/bin:/bin"
+for part in "${path_parts[@]}"; do
+	if [[ -x "$part/date" && ! "$part/date" -ef "${BASH_SOURCE[0]}" ]]; then
+		real_date="$part/date"
+		break
+	fi
+done
+[[ -n "$real_date" ]] || { echo "date: no real date on PATH" >&2; exit 127; }
+real_date() { "$real_date" "$@"; }
+
+fail() { echo "date: $*" >&2; exit 1; }
+
+# print_epoch <epoch> <+OUTFMT>: format an epoch in UTC (utc=1) or local time.
+print_epoch() {
+	if [[ "$utc" == 1 ]]; then real_date -u -d "@$1" "$2"; else real_date -d "@$1" "$2"; fi
+}
+
+# format_regex <FORMAT>: sets format_pattern (anchored ERE) and format_fields
+# (the directive letters, in capture-group order).
+format_regex() {
+	local fmt="$1" i=0 char="" next=""
+	format_pattern="^"; format_fields=""
+	while ((i < ${#fmt})); do
+		char="${fmt:i:1}"
+		if [[ "$char" == "%" ]]; then
+			next="${fmt:i+1:1}"
+			case "$next" in
+			Y) format_pattern="${format_pattern}([0-9]{4})" ;;
+			m | d | H | M | S) format_pattern="${format_pattern}([0-9]{2})" ;;
+			z) format_pattern="${format_pattern}([+-][0-9]{4})" ;;
+			*) fail "unsupported format directive %$next" ;;
+			esac
+			format_fields="${format_fields}${next}"; i=$((i + 2)); continue
+		fi
+		case "$char" in
+		[.*\[\]\\^\$\(\)+?{}\|]) format_pattern="${format_pattern}\\${char}" ;;
+		*) format_pattern="${format_pattern}${char}" ;;
+		esac
+		i=$((i + 1))
+	done
+	format_pattern="${format_pattern}\$"
+}
+
+# parse_value <FORMAT> <VALUE>: prints the UTC epoch of VALUE or fails.
+parse_value() {
+	local fields="" idx=1 letter="" offset=0 sign="" base=""
+	local Y="" m="" d="" H="00" M="00" S="00" z="+0000"
+	format_regex "$1"
+	[[ "$2" =~ $format_pattern ]] || return 1
+	fields="$format_fields"
+	while [[ -n "$fields" ]]; do
+		letter="${fields:0:1}"; fields="${fields:1}"
+		printf -v "$letter" '%s' "${BASH_REMATCH[idx]}"
+		idx=$((idx + 1))
+	done
+	[[ -n "$Y" && -n "$m" && -n "$d" ]] || return 1
+	base=$(real_date -u -d "$Y-$m-$d $H:$M:$S" +%s 2>/dev/null) || return 1
+	sign="${z:0:1}"
+	offset=$((10#${z:1:2} * 3600 + 10#${z:3:2} * 60))
+	if [[ "$sign" == "+" ]]; then echo $((base - offset)); else echo $((base + offset)); fi
+}
+
+utc=0; jmode=0; format=""; has_f=0; epoch=""; has_r=0; positional=()
+while (($#)); do
+	case "$1" in
+	-d | -d* | --date | --date=*) echo "date: illegal option -- d" >&2; exit 1 ;;
+	-u) utc=1; shift ;;
+	-j) jmode=1; shift ;;
+	-f) [[ $# -ge 2 ]] || fail "option requires an argument -- f"; format="$2"; has_f=1; shift 2 ;;
+	-r) [[ $# -ge 2 ]] || fail "option requires an argument -- r"; epoch="$2"; has_r=1; shift 2 ;;
+	*) positional+=("$1"); shift ;;
+	esac
+done
+
+if [[ "$has_f" == 1 && "$jmode" == 1 && ${#positional[@]} -ge 2 ]]; then
+	parsed=$(parse_value "$format" "${positional[0]}") || fail "failed conversion of '${positional[0]}' using format '$format'"
+	print_epoch "$parsed" "${positional[1]}"
+elif [[ "$has_r" == 1 && ${#positional[@]} -ge 1 ]]; then
+	[[ "$epoch" =~ ^[0-9]+$ ]] || fail "invalid epoch '$epoch'"
+	print_epoch "$epoch" "${positional[0]}"
+elif [[ "$utc" == 1 ]]; then
+	real_date -u "${positional[@]}"
+else
+	real_date "${positional[@]}"
+fi

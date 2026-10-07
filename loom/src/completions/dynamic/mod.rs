@@ -28,6 +28,9 @@ pub use plans::complete_plan_files;
 pub use sessions::{complete_session_ids, complete_stage_or_session_ids};
 pub use stages::{complete_stage_ids, complete_stage_ids_filtered};
 
+/// The statuses of a stage `loom stage complete` and `loom stage commit` act on.
+const EXECUTING: [&str; 1] = ["executing"];
+
 /// Context for shell completion
 #[derive(Debug, Clone)]
 pub struct CompletionContext {
@@ -255,7 +258,7 @@ fn complete_after_subcommand(
 ) -> Result<Vec<String>> {
     match (cmd, sub) {
         // Stage subcommands that take stage IDs
-        ("stage", "complete") => complete_stage_ids_filtered(cwd, prefix, &["executing"]),
+        ("stage", "complete" | "commit") => complete_stage_ids_filtered(cwd, prefix, &EXECUTING),
         ("stage", "retry") => complete_stage_ids_filtered(
             cwd,
             prefix,

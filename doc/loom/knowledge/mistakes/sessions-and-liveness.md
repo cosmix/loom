@@ -345,3 +345,22 @@ start-time line. It verifies as `Unverifiable`, which counts as ALIVE for probin
 the verified-kill path REFUSES to signal an unverifiable identity — so a test can point this at its
 own PID with zero risk of the test killing itself. `Some(u64::MAX)` as the start time gives the
 deterministic dead case for the opposite branch.
+
+## Stall Exhaustion Left the Stage Executing With Only a Log Line (2026-10-06)
+
+**What happened:** a stalled stage stayed `executing` for hours with its agent alive and one line in the
+log (issue #20). An outside PR made it visible with a STALLED marker in `loom status`, the TUI and the web
+view, and still left the stage `Executing`.
+
+**Why:** exhausted stall recovery only printed. The escalation latch then suppressed every later event for
+the session, `stall_recoveries` was never reset, and a session that never wrote a heartbeat was never
+reported at all.
+
+**Prevention:** a recovery path that gives up must change state an operator sees (a status with a reason
+and a notification), not only print. Reset a counter on every operator action that restarts the work.
+Show a condition through state every view already renders, not a marker each view must learn.
+
+**Fix:** exhausted recovery and a session that never worked park the stage in `NeedsHumanReview` with a
+reason and a desktop notification; `human-review --approve`, `stage reset` and `stage retry` reset the
+counter; the STALLED marker was deleted
+([Soft Signals](../architecture/signal-generation.md#soft-signals)).

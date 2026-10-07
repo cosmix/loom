@@ -2,7 +2,7 @@
 ---
 # Git And Build Workflow
 
-> Git/worktree ops, cargo, CI paths, size ledger
+> Git, cargo, CI paths, size ledger
 
 ## Git Operations
 
@@ -215,3 +215,29 @@ The operator installs a freshly built `loom` (`dev-install.sh`) only once the pl
 `.github/workflows/ci.yml` triggers on every push to main and every pull request; its `changes` job (`dorny/paths-filter`) decides which jobs run. `rust` gates lint, test, flake-check, macos, audit and deny; `web` gates the dashboard job; `shell` gates hook-syntax. The workflow has no `paths:` trigger, so the filter list is the only place CI names paths.
 
 The crate compiles in files outside `loom/`: the asset roots in `loom/build/assets.rs` (`agents/`, `commands/`, `skills/`, `codex/skills/`, `web/dist/`, both `*.md.template` files), `loom-hooks/`, `install.sh` and `dev-install.sh` through `include_str!`, and `web/src/api/` fixtures through tests. A new asset root, or a new `include_str!` or `CARGO_MANIFEST_DIR`-relative read of a repo-root path, needs an entry in the `rust` filter. Without it, a change to that path alone skips every Rust job. To audit, list `rg -o 'include_(str|bytes)!\("(\.\./)+[A-Za-z0-9._-]+' loom/src loom/tests` against the filter.
+
+## Signed Commits: What the Operator's Setup Must Provide
+
+With `commit.gpgsign` true, the daemon signs every stage, knowledge and merge commit and the plan-completion
+commit unattended, with no terminal ([Daemon-Owned Commits](../architecture/daemon-owned-commits.md)). The
+signer must therefore work without a prompt, and `loom run` refuses to start when a probe signature fails in
+either the operator's environment or the daemon's:
+
+- **gpg-agent with a cached passphrase, or a GUI pinentry.** A terminal pinentry cannot prompt the daemon.
+  The agent forgets a cached passphrase `default-cache-ttl` (600 s) after its last use and at most
+  `max-cache-ttl` (7200 s) after the first, so raise both in `gpg-agent.conf` for a long run; `loom run`
+  prints this caveat when `gpg.format` is openpgp. `loom run` sets `GPG_TTY` from `ttyname(stdin)` for its own
+  probe when stdin is a terminal and `GPG_TTY` is unset, so a terminal pinentry can prompt once and the agent
+  caches the passphrase.
+- **SSH signing through the agent.** With `gpg.format` ssh, the key must be loaded in a running ssh-agent
+  reachable through `SSH_AUTH_SOCK`; no cache expiry applies.
+- **`GNUPGHOME` is honoured** (a non-default home works). `GNUPGHOME` and `SSH_AUTH_SOCK` are captured by
+  the daemon at startup and passed only to the signing call, never to a session.
+- **`commit.gpgsign` comes from a config file.** The daemon sees the operator's global configuration through
+  `XDG_CONFIG_HOME` and `GIT_CONFIG_GLOBAL` but not `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*` or `git -c`; `loom run`
+  refuses when the two environments read different values (`git config --global commit.gpgsign true`).
+- **Check before running:** `git commit-tree -S` on an empty tree in the repository, from the shell that
+  will run `loom run`.
+
+A stage whose commit fails to sign is blocked (fix signing, then `loom stage retry`); a merge commit that
+fails to sign parks the stage in needs-human-review (fix signing, then `loom stage human-review <id> --approve`).

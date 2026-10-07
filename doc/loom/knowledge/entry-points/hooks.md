@@ -1,6 +1,6 @@
 # Hooks
 
-> Hook scripts, their events, command matching
+> Hook scripts, events, matching
 
 ## Hooks
 
@@ -40,7 +40,7 @@ Skill-trigger scoring, the prompt-hook wrapper and `HookTarget` are described in
 | `SessionEnd`    | `session-end.sh`         | Cleanup on normal exit                                                   |
 | `Stop`          | `learning-validator.sh`  | Memory usage check on stop                                               |
 | `SubagentStart` | `subagent-start.sh`      | Records `{agent_id, agent_type, stage_id, parent_session_id, loom_session_id, ts}` to `.loom/work/subagents/<stage>/starts.jsonl`; usage joins by agent + Claude parent transcript UUID, while Loom ownership stays distinct |
-| `SubagentStop`  | `subagent-stop.sh`       | Appends a validated `claude_subagent_stop` line to `subagents/<stage>/lifecycle.jsonl` (worker-evidence journal, replacing the retired per-agent `<agentId>.json` termination record) plus parent heartbeat refresh, when a Task-tool subagent finishes. For `agent_type` `loom-code-reviewer` it also pipes `{stage_id, session_id, agent_id, transcript_path}` to the hidden `loom hook review-harvest` (`commands/hook/review_harvest.rs`), which records a review round and `Suggestion` memory entries for a v2 stage and exits 0 without writing for v1 (see `architecture/verification-v2-gates.md`) |
+| `SubagentStop`  | `subagent-stop.sh`       | Appends a validated `claude_subagent_stop` line to `subagents/<stage>/lifecycle.jsonl` (worker-evidence journal, replacing the retired per-agent `<agentId>.json` termination record) plus parent heartbeat refresh, when a Task-tool subagent finishes. For `agent_type` `loom-code-reviewer` it also pipes `{stage_id, session_id, agent_id, transcript_path}` to the hidden `loom hook review-harvest` (`commands/hook/review_harvest.rs`), which records a review round and `Suggestion` memory entries for a v2 stage and exits 0 without writing for v1 (see `architecture/verification-v2-gates.md`). A skipped reviewer stop appends a row to `subagents/<stage>/stop-skips.jsonl`, which `loom stage review status` summarizes as `N reviewer spawns, M rounds, K stop events not harvested` ([Portable Shell Helpers](../architecture/hook-system.md#portable-shell-helpers-and-the-subagentstop-ledgers)) |
 | `TeammateIdle`  | `teammate-idle.sh`       | Nonterminal idle evidence for an agent-team teammate, which never fires `SubagentStop`; shares lifecycle-journal/heartbeat helpers with `subagent-stop.sh` via `loom-hooks/_lifecycle.sh` |
 
 There is no `PreferModernTools` `HookEvent` variant any more — it was deleted. `prefer-modern-tools.sh` still runs, but through a separate path entirely: it is registered as a **global** `PreToolUse:Bash` hook in `fs/permissions/hooks/config.rs`, alongside `commit-filter.sh`/`git-add-guard.sh`/etc., never through `HookEvent`/`to_settings_hooks()`.
@@ -84,7 +84,7 @@ There is no `PreferModernTools` `HookEvent` variant any more — it was deleted.
 | `ask-user-post.sh`         | PostToolUse:AskUserQuestion                | Resumes stage only when stdin names tool `AskUserQuestion` on `PostToolUse`; logs the trigger the same way                                                                                                                                                |
 | `teammate-idle.sh`         | TeammateIdle                               | Writes nonterminal idle evidence for an agent-team teammate via the shared `loom-hooks/_lifecycle.sh` journal/heartbeat helpers; teammates never fire `SubagentStop`                                                                                     |
 | `_common.sh`               | Utility (sourced, not registered)          | Exports the command-matching and subagent-detection helpers — see below                                                                                                                                                                                                                             |
-| `_lifecycle.sh`            | Utility (sourced, not registered)          | Shared lifecycle-journal/heartbeat helpers (`loom_lifecycle_refresh_heartbeat`, prior-progress carry-forward) used by `subagent-stop.sh` and `teammate-idle.sh`                                                                                          |
+| `_lifecycle.sh`            | Utility (sourced, not registered)          | Shared lifecycle-journal/heartbeat helpers (`loom_lifecycle_refresh_heartbeat`, prior-progress carry-forward) used by `subagent-stop.sh` and `teammate-idle.sh`, plus the portable BSD/GNU helpers `loom_lifecycle_sha256` and `loom_lifecycle_epoch`                                                                                          |
 
 ### `loom-hooks/_common.sh` Helpers
 

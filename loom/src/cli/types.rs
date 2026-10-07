@@ -85,6 +85,10 @@ pub enum Commands {
         /// Terminal backend for sessions (native|tmux); persisted to the `[terminal]` section of the loom config
         #[arg(long, value_parser = ["native", "tmux"])]
         backend: Option<String>,
+
+        /// Internal: serve as the daemon for this absolute state directory
+        #[arg(long, hide = true, conflicts_with = "foreground")]
+        daemon_child: Option<PathBuf>,
     },
 
     /// Show dashboard with context health

@@ -102,3 +102,25 @@ pid, line 2 is `loom::process::process_start_time`. `pid_tracking` is `pub(crate
 test (a separate crate) cannot import its layout — it has to re-derive the path from
 `Session::derive_tracking_key` and write the two-line format itself to fabricate valid evidence.
 **Fix:** `fs/permissions/settings.rs::scrub_session_identity_env()` (shared `SESSION_IDENTITY_ENV_KEYS` scrubber) applied in `generate_hooks_settings`, `create_worktree_settings`, the worktree settings.local.json copy, `refresh_worktree_settings_local` (which now uses the worktree's own settings as merge base), and `ensure_loom_hooks_local` (self-heals existing installs on `loom init`/`repair`). `HooksConfig` no longer carries stage/session IDs at all.
+
+## The Login Check Ran in the Daemon's Environment, and USER and LOGNAME Were Stripped at Two Layers (2026-10-06)
+
+**What happened:** on macOS, stage sessions started "Not logged in" and burned their retry budget
+(issue #19) while loom's own login probe passed.
+
+**Why:** the `claude` CLI finds its Keychain login by `$USER`. Two layers stripped it: the host layer
+(`STAGE_HOST_ENV_ALLOWLIST`, applied by the native spawner's `spawn_in_terminal` and every tmux server
+command) and the wrapper's `env -i` list. An outside PR added `USER` and `LOGNAME` to the wrapper's
+literal list only, and `apply_stage_environment` runs first on those paths, so the wrapper found both
+unset; its test rendered the list with `USER` already set and could not see the gap. Loom's own Keychain
+probe ran in the daemon's environment, which holds `USER`, so it passed.
+
+**Prevention:** probe readiness in the environment the agent receives (`claude auth status --json` under
+`agent_session_environment_from`), never the daemon's. When an allowlist applies in two layers, one
+constant feeds both and a test pins the subset relation. A fixture must not pre-set the variable under
+test.
+
+**Fix:** `AGENT_SESSION_ENV_NAMES` generates the wrapper list, `USER` and `LOGNAME` join
+`STAGE_HOST_ENV_ALLOWLIST`, `claude/auth.rs` runs the probe under the stage environment, and `loom run`
+refuses a definite `NotLoggedIn`
+([The Host Environment Allowlist](../architecture/execution-containment.md#the-host-environment-allowlist)).

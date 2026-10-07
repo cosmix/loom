@@ -338,3 +338,24 @@ fn wrapper_executes_with_minimal_environment_and_no_ambient_secret() {
     assert!(!environment.contains("ANTHROPIC_API_KEY"));
     assert!(!environment.contains("GITHUB_TOKEN"));
 }
+
+#[test]
+fn env_allowlist_forwards_user_and_logname() {
+    let script = format!(
+        "{}\nprintf '%s\\n' \"${{_loom_env[@]}}\"",
+        super::script_text::env_allowlist()
+    );
+    let output = std::process::Command::new("bash")
+        .args(["-c", &script])
+        .env_clear()
+        .env("PATH", "/usr/bin:/bin")
+        .env("USER", "operator")
+        .env("LOGNAME", "operator")
+        .env("AWS_SECRET_ACCESS_KEY", "secret")
+        .output()
+        .unwrap();
+    let text = String::from_utf8(output.stdout).unwrap();
+    assert!(text.lines().any(|l| l == "USER=operator"), "{text}");
+    assert!(text.lines().any(|l| l == "LOGNAME=operator"), "{text}");
+    assert!(!text.contains("AWS_SECRET_ACCESS_KEY"), "{text}");
+}

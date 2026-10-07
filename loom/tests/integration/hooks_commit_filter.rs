@@ -35,6 +35,17 @@ fn setup_hook() -> (TempDir, std::path::PathBuf) {
 /// Run hook with tool_name and command, return exit code
 /// The hook reads JSON from stdin: {"tool_name": "...", "tool_input": {"command": "..."}}
 fn run_hook(hook_path: &std::path::Path, tool_name: &str, command: &str) -> i32 {
+    run_hook_with_env(hook_path, tool_name, command, &[])
+}
+
+/// As `run_hook`, with the stage-session variables removed first (an acceptance
+/// run may itself be a stage session) and then `env` applied on top.
+fn run_hook_with_env(
+    hook_path: &std::path::Path,
+    tool_name: &str,
+    command: &str,
+    env: &[(&str, &str)],
+) -> i32 {
     use std::io::Write;
     use std::process::Stdio;
 
@@ -46,6 +57,9 @@ fn run_hook(hook_path: &std::path::Path, tool_name: &str, command: &str) -> i32 
 
     let mut child = Command::new("bash")
         .arg(hook_path)
+        .env_remove("LOOM_STAGE_ID")
+        .env_remove("LOOM_SESSION_ID")
+        .envs(env.iter().copied())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -62,6 +76,15 @@ fn run_hook(hook_path: &std::path::Path, tool_name: &str, command: &str) -> i32 
 // =============================================================================
 // Tests: Hook BLOCKS commits with Claude attribution (exit code 2)
 // =============================================================================
+
+#[test]
+fn blocks_git_commit_in_a_stage_session() {
+    let (_temp, hook) = setup_hook();
+    let env = [("LOOM_STAGE_ID", "s1"), ("LOOM_SESSION_ID", "sess")];
+    let command = r#"git commit -m "Fix bug in parser""#;
+
+    assert_eq!(run_hook_with_env(&hook, "Bash", command, &env), 2);
+}
 
 #[test]
 fn blocks_coauthored_by_claude_simple() {
@@ -366,33 +389,5 @@ fn blocks_git_committer_email_anthropic() {
     assert_eq!(run_hook(&hook, "Bash", input), 2);
 }
 
-// =============================================================================
-// Tests: Hook script structure validation
-// =============================================================================
-
-#[test]
-fn hook_contains_blocking_logic() {
-    // Check for the regex patterns used in the hook
-    assert!(HOOK_COMMIT_FILTER.contains("Co-Authored-By:"));
-    assert!(HOOK_COMMIT_FILTER.contains("(claude|anthropic|noreply@anthropic)"));
-    assert!(HOOK_COMMIT_FILTER.contains("exit 2"));
-    // Check for bypass vector coverage
-    assert!(HOOK_COMMIT_FILTER.contains("--trailer"));
-    assert!(HOOK_COMMIT_FILTER.contains("--author"));
-    assert!(HOOK_COMMIT_FILTER.contains("GIT_AUTHOR_"));
-    assert!(HOOK_COMMIT_FILTER.contains("GIT_COMMITTER_EMAIL"));
-    assert!(HOOK_COMMIT_FILTER.contains("Signed-off-by:"));
-    assert!(HOOK_COMMIT_FILTER.contains("Generated with"));
-    assert!(HOOK_COMMIT_FILTER.contains("trailer."));
-}
-
-#[test]
-fn hook_has_user_friendly_message() {
-    assert!(HOOK_COMMIT_FILTER.contains("BLOCKED"));
-    // Attribution is rule 9; rule 8 is native tools/formatting.
-    assert!(HOOK_COMMIT_FILTER.contains("CLAUDE.md rule 9"));
-    // The block kills the whole Bash call, so a chained `git add` is lost too.
-    // Without this, the agent retries the commit alone and hits "no changes
-    // added to commit" - the recurring second failure this guidance prevents.
-    assert!(HOOK_COMMIT_FILTER.contains("NOTHING RAN"));
-}
+#[path = "hooks_commit_filter_session.rs"]
+mod session;

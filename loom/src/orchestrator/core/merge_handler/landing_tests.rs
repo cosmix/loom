@@ -13,6 +13,7 @@ use super::super::resolver_spawn::test_fixtures::{
 };
 use super::Landing;
 use crate::fs::stage_files::find_stage_file;
+use crate::git::signing::tests::fake_signer;
 use crate::git::{MergeBlock, StashReapply};
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
@@ -350,3 +351,27 @@ fn note_merge_stash_persists_an_unrestored_stash_and_ignores_none() {
     orchestrator.note_merge_stash(ID, Some(lost.clone()));
     assert_eq!(on_disk(&orchestrator).merge.stash, Some(lost));
 }
+
+#[test]
+fn a_merge_signing_failure_holds_without_a_resolver() {
+    let (repo, mut orchestrator) = worktree_stage();
+    fake_signer(repo.path(), true);
+    let main_before = main_tip(&repo);
+
+    assert_eq!(orchestrator.land_stage_merge(ID, "main"), Landing::Held);
+
+    let stage = on_disk(&orchestrator);
+    assert_eq!(stage.status, StageStatus::NeedsHumanReview);
+    let reason = stage.review_reason.unwrap();
+    assert!(reason.contains("merge commit signing failed"), "{reason}");
+    assert!(reason.contains("fake signer refused"), "{reason}");
+    assert!(reason.contains("loom stage human-review s --approve"));
+    assert_eq!(main_tip(&repo), main_before);
+    assert_eq!(
+        merge_resolver_attempts(&orchestrator.config.work_dir, ID),
+        0
+    );
+}
+
+#[path = "landing_signing_tests.rs"]
+mod signing;

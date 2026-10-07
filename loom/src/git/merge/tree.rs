@@ -13,6 +13,7 @@ use std::path::{Path, PathBuf};
 
 use crate::git::branch::branch_ref;
 use crate::git::runner::{run_git, run_git_checked};
+use crate::git::signing;
 use crate::git::target_guard::short;
 use crate::git::worktree::list_worktrees;
 
@@ -194,20 +195,11 @@ pub fn merge_tree(repo: &Path, target: &str, branch: &str) -> Result<TreeMerge> 
 }
 
 /// Write a merge commit for `tree` with the given parents; returns its id.
+/// Signed when `commit.gpgsign` is true; a failure keeps its
+/// [`CommitTreeError`](crate::git::signing::CommitTreeError) downcastable.
 pub fn commit_merge(repo: &Path, tree: &str, parents: [&str; 2], message: &str) -> Result<String> {
-    run_git_checked(
-        &[
-            "commit-tree",
-            tree,
-            "-p",
-            parents[0],
-            "-p",
-            parents[1],
-            "-m",
-            message,
-        ],
-        repo,
-    )
+    signing::commit_tree(repo, tree, &[parents[0], parents[1]], message)
+        .map_err(anyhow::Error::from)
 }
 
 /// A computed merge whose commit is written only when an advance needs it,

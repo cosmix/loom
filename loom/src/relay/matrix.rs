@@ -32,6 +32,11 @@ pub enum MatrixVerdict {
 ///
 /// `file-dispute` (DESIGN D15) disputes a plan v2 stage's findings, contract
 /// or integrity events; only a `Stage` session may relay it.
+///
+/// `commit` hands the daemon a session's staged index to commit. The three
+/// sessions that write a branch relay it: `Stage` (its stage branch),
+/// `Knowledge` (the target branch, knowledge prefix only) and `Merge` (the
+/// resolved merge). A contract, judge or base-conflict session never commits.
 const MATRIX: &[(SessionType, RequestKind, MatrixVerdict)] = &[
     (
         SessionType::Stage,
@@ -297,6 +302,36 @@ const MATRIX: &[(SessionType, RequestKind, MatrixVerdict)] = &[
     (
         SessionType::Contract,
         RequestKind::FileDispute,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Stage,
+        RequestKind::Commit,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Knowledge,
+        RequestKind::Commit,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Merge,
+        RequestKind::Commit,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::BaseConflict,
+        RequestKind::Commit,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Adjudication,
+        RequestKind::Commit,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::Commit,
         MatrixVerdict::Refuse,
     ),
 ];

@@ -13,7 +13,7 @@ if [[ -z "${LOOM_STAGE_ID:-}" || -z "${LOOM_SESSION_ID:-}" || -z "${LOOM_WORK_DI
 	exit 0
 fi
 if ! loom_lifecycle_safe_id "$LOOM_STAGE_ID" || ! loom_lifecycle_safe_id "$LOOM_SESSION_ID" ||
-	! command -v jq &>/dev/null || ! command -v sha256sum &>/dev/null; then
+	! command -v jq &>/dev/null || ! loom_lifecycle_have_sha256; then
 	loom_debug "$HOOK_NAME: skipping - unsafe environment identity or missing dependency"
 	exit 0
 fi
@@ -73,13 +73,13 @@ fi
 if ! EVENT_HEX=$(printf 'loom.lifecycle.claude_teammate_idle.v1\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s' \
 	"$LOOM_STAGE_ID" "$LOOM_SESSION_ID" "$PARENT_SESSION_ID" "$TEAM_NAME" "$TEAMMATE_NAME" \
 	"$PARENT_TRANSCRIPT" "$LIFECYCLE_TRANSCRIPT_BYTES" "$LIFECYCLE_FINAL_DIGEST" "$OBSERVED_AT" |
-	sha256sum 2>/dev/null); then
+	loom_lifecycle_sha256 2>/dev/null); then
 	loom_debug "$HOOK_NAME: skipping - event id digest failed"
 	exit 0
 fi
 EVENT_HEX=${EVENT_HEX%% *}
 if [[ ! "$EVENT_HEX" =~ ^[0-9a-f]{64}$ ]]; then
-	loom_debug "$HOOK_NAME: skipping - sha256sum returned an invalid digest"
+	loom_debug "$HOOK_NAME: skipping - the sha256 digest is invalid"
 	exit 0
 fi
 RECORD=$(jq -nc --arg event_id "sha256:$EVENT_HEX" --arg stage_id "$LOOM_STAGE_ID" \

@@ -14,13 +14,20 @@
 //! entries wait for the next tick. Delivery is at most once: `applying` is
 //! recorded before a handler runs, and one found without an outcome is settled
 //! `unknown-after-restart`, never applied again.
+//!
+//! A relayed `commit` is applied by the `commit` module: the daemon commits
+//! the session's staged index, because a session cannot sign and so never
+//! runs `git commit`.
 
 mod apply;
+mod commit;
 mod entry;
 mod merge_resolved;
 mod session_pass;
 mod sweep;
 
+#[cfg(test)]
+mod commit_tests;
 #[cfg(test)]
 mod test_support;
 #[cfg(test)]
@@ -58,6 +65,10 @@ trait InboxHost {
     fn session_alive(&self, session: &Session) -> Result<bool>;
     /// Finalize the merge a Merge session resolved for `stage_id`.
     fn resolve_merge(&mut self, session: &Session, stage_id: &str) -> Settle;
+    /// Hold `stage_id`'s merge for the operator after the daemon could not
+    /// sign a Merge session's commit: stop the resolver and route the stage to
+    /// human review with the remedy. Returns what was done, for the ledger.
+    fn hold_merge_for_signing(&mut self, stage_id: &str, detail: &str) -> String;
     /// True the first time `key` is reported, so a condition that persists
     /// across ticks is logged once rather than every five seconds.
     fn first_report(&mut self, key: &str) -> bool;
@@ -125,6 +136,10 @@ impl InboxHost for Orchestrator {
 
     fn resolve_merge(&mut self, session: &Session, stage_id: &str) -> Settle {
         self.resolve_merge_from_inbox(session, stage_id)
+    }
+
+    fn hold_merge_for_signing(&mut self, stage_id: &str, detail: &str) -> String {
+        Orchestrator::hold_merge_for_signing(self, stage_id, detail)
     }
 
     // The spool drain's log-once set, namespaced so neither silences the other.

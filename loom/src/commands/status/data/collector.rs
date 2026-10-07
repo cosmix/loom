@@ -14,11 +14,11 @@ use crate::plan::parser::extract_plan_name;
 use crate::verify::transitions::list_all_stages;
 
 use super::completion_view::collect_completion_view;
-use super::heartbeat_facts::{heartbeat_facts, stage_extras};
+use super::heartbeat_facts::heartbeat_facts;
 use super::merge_note::{merge_block_text, stash_warning};
 use super::sanitize::{sanitize_stage_summary, valid_stage_id};
 use super::timing::{elapsed_secs_live, execution_secs_live};
-use super::{MergeSummary, ProgressSummary, StageSummary, StatusData};
+use super::{execution_models_for_stage, MergeSummary, ProgressSummary, StageSummary, StatusData};
 
 #[cfg(test)]
 use super::SessionSummary;
@@ -219,7 +219,6 @@ fn resolved_model(stage: &Stage, work_dir: &WorkDir) -> String {
 fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) -> StageSummary {
     let (facts, now) = (session_facts(stage, sessions, work_dir), Utc::now());
     let heartbeat = heartbeat_facts(stage, facts.session, work_dir);
-    let extras = stage_extras(stage, work_dir);
     let view = collect_completion_view(stage, assigned_session(stage, sessions), work_dir);
     StageSummary {
         id: stage.id.clone(),
@@ -255,9 +254,9 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         model: resolved_model(stage, work_dir),
         session_type: facts.session_type,
         incoherence: facts.incoherence,
-        execution_models: extras.execution_models,
+        execution_models: execution_models_for_stage(work_dir, &stage.id),
         dispute_count: stage.dispute_count,
-        judge_heartbeat_secs: extras.judge_heartbeat_secs,
+        judge_heartbeat_secs: heartbeat.judge_heartbeat_secs,
         session_backend: facts.session.map(|s| s.backend),
         outgoing_session_exit_reason: view.0,
         completion_blocker: view.1,

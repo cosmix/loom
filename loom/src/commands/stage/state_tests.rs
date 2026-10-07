@@ -225,3 +225,39 @@ fn reset_closes_open_disputes() {
     assert!(temp.path().join("disputes/alpha/1/closed.marker").exists());
     assert!(!temp.path().join("disputes/alpha/2/closed.marker").exists());
 }
+
+#[test]
+fn reset_clears_the_stall_recovery_counter() {
+    let temp = work_dir();
+    executing_stage(temp.path(), None);
+    update_stage("alpha", temp.path(), |stage| {
+        stage.stall_recoveries = 2;
+        Ok(())
+    })
+    .unwrap();
+    let runtime = FakeRuntime {
+        probe: FakeProbe::Error,
+        missing_identity: true,
+    };
+
+    loop_recovery::reset_with(temp.path(), "alpha", true, true, &runtime).unwrap();
+
+    assert_eq!(
+        load_stage("alpha", temp.path()).unwrap().stall_recoveries,
+        0
+    );
+}
+
+#[test]
+fn retry_delta_clears_the_stall_recovery_counter() {
+    let mut stage = Stage::new("alpha".to_string(), None);
+    stage.id = "alpha".to_string();
+    stage.status = StageStatus::Blocked;
+    stage.stall_recoveries = 2;
+    let planned = stage.clone();
+
+    crate::commands::stage::skip_retry::apply_retry_delta(&mut stage, &planned, false).unwrap();
+
+    assert_eq!(stage.stall_recoveries, 0);
+    assert_eq!(stage.status, StageStatus::Queued);
+}

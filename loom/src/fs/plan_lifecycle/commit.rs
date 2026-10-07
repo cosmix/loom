@@ -1,14 +1,15 @@
 //! Post-completion commit: keep the default branch clean after a plan is
 //! marked done.
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
 use crate::fs::work_dir::WorkDir;
 use crate::git::branch::{branch_ref, current_branch};
 use crate::git::merge::control_paths::changed_paths;
-use crate::git::runner::run_git_checked;
+use crate::git::runner::{run_git_checked, run_git_with_env_within};
+use crate::git::signing::{self, SigningEnv};
 use crate::git::target_guard;
 
 /// Commit tracked changes to keep the default branch clean after plan completion.
@@ -45,13 +46,10 @@ pub(super) fn commit_post_completion_changes(
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("plan");
-    run_git_checked(
-        &[
-            "commit",
-            "-m",
-            &format!("chore(loom): mark plan complete — {plan_name}"),
-        ],
+    commit_signed(
         repo_root,
+        &format!("chore(loom): mark plan complete — {plan_name}"),
+        signing::installed(),
     )?;
 
     attest_completion_commit(work_dir, repo_root, old_plan_path, new_plan_path);
@@ -62,6 +60,28 @@ pub(super) fn commit_post_completion_changes(
     );
 
     Ok(())
+}
+
+/// Commit what is staged in `repo_root` with `message`. The daemon's process
+/// environment no longer holds `GNUPGHOME` and `SSH_AUTH_SOCK`, so the captured
+/// signing environment `env` is handed to this one command, bounded by
+/// [`signing::SIGN_TIMEOUT`]; the runner keeps repository hooks off.
+fn commit_signed(repo_root: &Path, message: &str, env: &SigningEnv) -> Result<()> {
+    let output = run_git_with_env_within(
+        repo_root,
+        &["commit", "-m", message],
+        &env.env_pairs(),
+        signing::SIGN_TIMEOUT,
+    )?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let code = output
+        .status
+        .code()
+        .map_or_else(|| "a signal".to_string(), |code| code.to_string());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    bail!("git commit failed (exit {code}): {}", stderr.trim())
 }
 
 /// Attest the post-completion commit when it touches only the plan's own
@@ -129,6 +149,7 @@ fn is_own(path: &str, repo_root: &Path, allowed: &[&Path]) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::git::signing::tests::fake_signer;
     use crate::git::target_guard::test_support::{activate, commit_file, git, repo, Repo};
     use crate::git::target_guard::{check, GuardState, LEDGER_FILE};
 
@@ -177,6 +198,58 @@ mod tests {
 
     fn guard(repo: &Repo) -> GuardState {
         check(&repo.root, &repo.work, "main").unwrap().unwrap()
+    }
+
+    #[test]
+    fn the_plan_done_commit_signs_with_the_signing_environment() {
+        let repo = plan_repo();
+        let argv_log = fake_signer(&repo.root, false);
+
+        complete(&repo);
+
+        let commit = git(&repo.root, &["cat-file", "commit", "HEAD"]);
+        assert!(
+            commit.contains("gpgsig"),
+            "the DONE commit is signed: {commit}"
+        );
+        let calls = std::fs::read_to_string(argv_log).unwrap();
+        assert_eq!(calls.lines().count(), 1);
+    }
+
+    #[test]
+    fn the_plan_done_commit_hands_the_given_signing_environment_to_the_signer() {
+        let repo = plan_repo();
+        let log = fake_signer(&repo.root, false);
+        std::fs::write(repo.root.join("src/x.rs"), "v2\n").unwrap();
+        git(&repo.root, &["add", "src/x.rs"]);
+        let env = SigningEnv {
+            gnupghome: Some("/loom-test/gnupghome".into()),
+            ssh_auth_sock: None,
+        };
+
+        commit_signed(&repo.root, "chore: signed", &env).unwrap();
+
+        let calls = std::fs::read_to_string(log).unwrap();
+        assert_eq!(calls.lines().count(), 1, "{calls}");
+        assert!(
+            calls.trim_end().ends_with("GNUPGHOME=/loom-test/gnupghome"),
+            "the signer did not see the given GNUPGHOME: {calls}"
+        );
+    }
+
+    #[test]
+    fn a_failing_signer_fails_the_plan_done_commit() {
+        let repo = plan_repo();
+        fake_signer(&repo.root, true);
+        let head = git(&repo.root, &["rev-parse", "HEAD"]);
+        std::fs::rename(repo.root.join(OLD), repo.root.join(NEW)).unwrap();
+        let work_dir = WorkDir::new(&repo.root).unwrap();
+        let (old, new) = (repo.root.join(OLD), repo.root.join(NEW));
+
+        let error = commit_post_completion_changes(&work_dir, &old, &new).unwrap_err();
+
+        assert!(format!("{error:#}").contains("git commit"), "{error:#}");
+        assert_eq!(git(&repo.root, &["rev-parse", "HEAD"]), head);
     }
 
     #[test]

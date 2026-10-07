@@ -1,5 +1,6 @@
 use super::setup::{
-    generated_commands, install_hooks, install_shims, prepare_layout, transcript_row, write_stage,
+    generated_commands, install_bsd_tools, install_hooks, install_shims, prepare_layout,
+    transcript_row, write_stage,
 };
 use loom::hooks::HookEvent;
 use serde_json::{json, Value};
@@ -28,10 +29,21 @@ pub struct Fixture {
     pub worker: PathBuf,
     commands: HashMap<HookEvent, String>,
     bin: PathBuf,
+    bsd_bin: Option<PathBuf>,
 }
 
 impl Fixture {
     pub fn new(label: &str) -> Self {
+        Self::with_mode(label, false)
+    }
+
+    /// A fixture whose hooks run with the BSD `wc`, `stat` and `date` shims
+    /// (padded counts, no `-c` or `-d`) ahead of the system tools.
+    pub fn new_bsd(label: &str) -> Self {
+        Self::with_mode(label, true)
+    }
+
+    fn with_mode(label: &str, bsd: bool) -> Self {
         let temp = Builder::new()
             .prefix(&format!("worker-evidence-{label}-"))
             .tempdir()
@@ -43,6 +55,10 @@ impl Fixture {
         let (parent, worker) = prepare_layout(&root, &work);
         install_hooks(&hooks);
         install_shims(&bin);
+        let bsd_bin = bsd.then(|| root.join("bsd-bin"));
+        if let Some(dir) = &bsd_bin {
+            install_bsd_tools(dir);
+        }
         let commands = generated_commands(&hooks, &work);
         let fixture = Self {
             _temp: temp,
@@ -52,6 +68,7 @@ impl Fixture {
             worker,
             commands,
             bin,
+            bsd_bin,
         };
         let output = fixture.run_hook(
             HookEvent::SubagentStart,
@@ -305,6 +322,15 @@ impl Fixture {
         }
         let mut path = OsString::from(self.bin.as_os_str());
         path.push(":");
+        if let Some(bsd_bin) = &self.bsd_bin {
+            // The fixture `date` shim falls through to this path, so BSD mode
+            // reaches the BSD date shim rather than the system one.
+            path.push(bsd_bin);
+            path.push(":");
+            let mut date_path = OsString::from(bsd_bin.as_os_str());
+            date_path.push(":/usr/bin:/bin");
+            command.env("FIXTURE_DATE_PATH", date_path);
+        }
         path.push(std::env::var_os("PATH").unwrap_or_default());
         command
             .env("PATH", path)

@@ -29,7 +29,11 @@
 ## Daemon
 
 - `daemon/server/core.rs` - `DaemonServer` state and bounded-client constants
-- `daemon/server/lifecycle.rs` - Daemonization, authoritative singleton-lock lifetime, socket binding, accept loop, and shutdown
+- `daemon/server/launch.rs` - starts the daemon child: `spawn_daemon` re-executes the binary as `loom run --daemon-child <root>` and `await_ready` reads its readiness pipe (`0x02` log active, `0x01` ready); see [Daemon Launch and the Socket Path](../architecture/daemon-launch.md)
+- `daemon/server/lifecycle.rs` - `start` (delegates to `launch`) and `serve`, the daemon child's body: `setsid`, the authoritative singleton lock (held for the process lifetime), pid and token publication, the log redirect, socket binding, accept loop, and shutdown
+- `daemon/server/environment.rs` - the allowlisted environment the daemon child starts with (`DaemonEnvironment`)
+- `daemon/socket.rs` - `socket_path`, `socket_path_fits`, `socket_path_problem`: the one place a client resolves the socket
+- `commands/run/daemon_child.rs` - the hidden `--daemon-child` entry: captures the signing environment, then `DaemonServer::serve`
 - `daemon/protocol.rs` - IPC request/response and capability types
 - `daemon/wire.rs` - Fixed authentication preface plus bounded JSON framing (64 KiB requests, 2 MiB responses)
 - `daemon/server/admission.rs` - Absolute-deadline reads and the global in-flight byte budget

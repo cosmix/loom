@@ -12,9 +12,11 @@
 pub mod backend;
 pub mod emulator;
 pub mod native;
+mod session_tail;
 pub mod tmux;
 
 // Re-export terminal emulator
 pub use backend::SessionBackend;
 pub use emulator::TerminalEmulator;
+pub use session_tail::session_tail;
 pub use tmux::TmuxBackend;

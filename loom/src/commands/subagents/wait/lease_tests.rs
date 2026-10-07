@@ -58,7 +58,8 @@ fn assert_mode(path: &Path, expected: u32) {
 }
 
 fn assert_private_lease_directories(fixture: &Fixture) {
-    let mut path = fixture._temp.path().to_path_buf();
+    // macOS temp dirs sit behind a /var -> /private/var symlink the lease root resolves.
+    let mut path = fixture._temp.path().canonicalize().unwrap();
     for component in fixture.dir.root().strip_prefix(&path).unwrap().components() {
         path.push(component);
         assert_mode(&path, 0o700);

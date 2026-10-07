@@ -1,7 +1,40 @@
 //! Minimal environment policy for processes that host stage agents.
 
+use std::collections::HashMap;
 use std::ffi::{OsStr, OsString};
 use std::process::Command;
+
+/// Names the stage wrapper's `env -i` list forwards from the host environment
+/// into an agent session. The wrapper's shell loop is generated from this list,
+/// so the two cannot drift. `HOME` and `PATH` are handled separately (the
+/// wrapper always writes both, with a `PATH` fallback). Locations and login
+/// identity only, never credentials.
+pub const AGENT_SESSION_ENV_NAMES: &[&str] = &[
+    "LANG",
+    "LC_ALL",
+    "LC_CTYPE",
+    "TERM",
+    "TERMINFO",
+    "TERMINFO_DIRS",
+    "COLORTERM",
+    "TERM_PROGRAM",
+    "SHELL",
+    "DISPLAY",
+    "WAYLAND_DISPLAY",
+    "XAUTHORITY",
+    "DBUS_SESSION_BUS_ADDRESS",
+    "XDG_RUNTIME_DIR",
+    "TMUX_TMPDIR",
+    "TMUX",
+    "TMUX_PANE",
+    "TMPDIR",
+    "SCCACHE_DIR",
+    "SCCACHE_CACHE_SIZE",
+    // USER and LOGNAME name the operator and are not credentials. On macOS the
+    // `claude` CLI finds its Keychain login by `$USER`.
+    "USER",
+    "LOGNAME",
+];
 
 /// Host values required for executable lookup, locale handling, and terminal
 /// attachment. Authentication tokens and arbitrary ambient variables are not
@@ -14,6 +47,11 @@ use std::process::Command;
 const STAGE_HOST_ENV_ALLOWLIST: &[&str] = &[
     "HOME",
     "PATH",
+    // USER and LOGNAME name the operator and are not credentials. On macOS the
+    // `claude` CLI finds its Keychain login by `$USER`; without it every
+    // session started under this environment reads "Not logged in".
+    "USER",
+    "LOGNAME",
     // Rust toolchain locations. Both default to paths under HOME, so they are
     // usually absent — but installs that relocate them (CI images commonly set
     // CARGO_HOME=/usr/local/cargo) leave `cargo` unable to find its registry
@@ -81,7 +119,8 @@ pub fn apply_stage_environment(command: &mut Command) {
     apply_stage_environment_from(command, std::env::vars_os());
 }
 
-fn apply_stage_environment_from<I, K, V>(command: &mut Command, source: I)
+/// [`apply_stage_environment`] over an explicit environment source.
+pub fn apply_stage_environment_from<I, K, V>(command: &mut Command, source: I)
 where
     I: IntoIterator<Item = (K, V)>,
     K: Into<OsString>,
@@ -94,6 +133,41 @@ where
             command.env(key, value.into());
         }
     }
+}
+
+/// The environment a stage session's `claude` process runs under, mirroring
+/// the wrapper's `env -i` list: `HOME` (empty when unset), `PATH` (falling back
+/// to `/usr/bin:/bin` when unset or empty), then each
+/// [`AGENT_SESSION_ENV_NAMES`] entry that has a non-empty value in `source`.
+/// Everything else is dropped.
+pub fn agent_session_environment_from<I, K, V>(source: I) -> Vec<(OsString, OsString)>
+where
+    I: IntoIterator<Item = (K, V)>,
+    K: Into<OsString>,
+    V: Into<OsString>,
+{
+    let source: HashMap<OsString, OsString> = source
+        .into_iter()
+        .map(|(key, value)| (key.into(), value.into()))
+        .collect();
+    let non_empty = |name: &str| {
+        source
+            .get(OsStr::new(name))
+            .filter(|value| !value.is_empty())
+    };
+
+    let home = source.get(OsStr::new("HOME")).cloned().unwrap_or_default();
+    let path = non_empty("PATH")
+        .cloned()
+        .unwrap_or_else(|| OsString::from("/usr/bin:/bin"));
+    let mut environment: Vec<(OsString, OsString)> =
+        vec![("HOME".into(), home), ("PATH".into(), path)];
+    environment.extend(
+        AGENT_SESSION_ENV_NAMES
+            .iter()
+            .filter_map(|name| non_empty(name).map(|value| ((*name).into(), value.clone()))),
+    );
+    environment
 }
 
 fn is_allowed(key: &OsStr) -> bool {
@@ -151,5 +225,70 @@ mod tests {
         assert!(!environment.contains("RUSTC_WRAPPER"));
         assert!(environment.contains("SCCACHE_DIR=/safe/home/.cache/sccache"));
         assert!(environment.contains("SCCACHE_CACHE_SIZE=10G"));
+    }
+
+    #[test]
+    fn agent_session_environment_keeps_user_logname_home_and_path() {
+        let source = [
+            ("HOME", "/home/alice"),
+            ("PATH", "/opt/bin:/usr/bin"),
+            ("USER", "alice"),
+            ("LOGNAME", "alice"),
+            ("LANG", "C.UTF-8"),
+            ("GITHUB_TOKEN", "canary"),
+        ];
+        let environment = agent_session_environment_from(source);
+        let pair = |k: &str, v: &str| (OsString::from(k), OsString::from(v));
+
+        assert_eq!(environment[0], pair("HOME", "/home/alice"));
+        assert_eq!(environment[1], pair("PATH", "/opt/bin:/usr/bin"));
+        assert!(environment.contains(&pair("USER", "alice")));
+        assert!(environment.contains(&pair("LOGNAME", "alice")));
+        assert!(environment.contains(&pair("LANG", "C.UTF-8")));
+        assert!(environment.iter().all(|(key, _)| key != "GITHUB_TOKEN"));
+    }
+
+    #[test]
+    fn agent_session_environment_defaults_path_and_skips_empty_values() {
+        let source = [("PATH", ""), ("USER", ""), ("LOGNAME", "alice")];
+        let environment = agent_session_environment_from(source);
+        let pair = |k: &str, v: &str| (OsString::from(k), OsString::from(v));
+
+        assert_eq!(environment[0], pair("HOME", ""));
+        assert_eq!(environment[1], pair("PATH", "/usr/bin:/bin"));
+        assert!(environment.iter().all(|(key, _)| key != "USER"));
+        assert!(environment.contains(&pair("LOGNAME", "alice")));
+    }
+
+    #[test]
+    fn every_agent_session_name_is_in_the_stage_host_allowlist() {
+        // A name the wrapper forwards that the host layer drops never reaches
+        // the wrapper: the gap the first fix for issue #19 left.
+        for name in AGENT_SESSION_ENV_NAMES {
+            assert!(
+                STAGE_HOST_ENV_ALLOWLIST.contains(name),
+                "{name} is forwarded to agent sessions but missing from STAGE_HOST_ENV_ALLOWLIST"
+            );
+        }
+    }
+
+    #[test]
+    fn stage_host_layer_keeps_user_and_logname() {
+        let source = [
+            ("HOME", "/safe/home"),
+            ("PATH", "/usr/bin:/bin"),
+            ("USER", "alice"),
+            ("LOGNAME", "alice"),
+            ("GITHUB_TOKEN", "ambient-secret-canary"),
+        ];
+        let mut command = Command::new("/usr/bin/env");
+        apply_stage_environment_from(&mut command, source);
+
+        let output = command.output().expect("the system env tool should run");
+        let environment = String::from_utf8(output.stdout).unwrap();
+        let lines: Vec<&str> = environment.lines().collect();
+        assert!(lines.contains(&"USER=alice"));
+        assert!(lines.contains(&"LOGNAME=alice"));
+        assert!(!environment.contains("ambient-secret-canary"));
     }
 }

@@ -3,6 +3,7 @@ CLAUDE.md is already in your context; the rules below are the ones that bind you
 SUBAGENT RESTRICTIONS - YOU ARE A SUBAGENT:
 - NEVER run git commit - the main agent will commit your work
 - NEVER run loom stage complete - the main agent will complete the stage
+- NEVER run loom stage commit - the main agent commits your work with it
 - NEVER run loom stage block or loom stage dispute-* - report the need to the main agent
 - NEVER run git add -A or git add . - the main agent handles staging
 - DO write code and report results back

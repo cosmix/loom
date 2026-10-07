@@ -144,3 +144,13 @@ whatever other processes leave there, so bound the walk inside the test's own di
 OS temp root (`std::env::temp_dir()`, canonicalized) or anything above it when the base path is inside
 it — on top of the `is_real_git_dir` check above. See [Live State Pollution](live-state-pollution.md),
 which this bound was added to fix.
+
+## A .gitignore Line Is Not the Ignore Verdict (2026-10-06)
+
+**What happened:** `loom init` on `fix/macos-review-round-recording` appended `# loom workspace state`, `.loom/work/` and `.loom/work` to `.gitignore`, although its bare `.loom` rule already ignores the state directory. `loom run` then refused to start: `check_for_uncommitted_changes` (`loom/src/commands/run/checks.rs`) refuses any modified tracked file, and `.gitignore` was one. The planning session had handed the operator that branch as ready for `loom run` without accounting for it.
+
+**Why:** `is_work_dir_git_ignored` (`loom/src/fs/work_integrity.rs`) accepted only the literal lines `.loom/work/` or `.loom/work` and never asked git; `is_worktrees_git_ignored` did the same for `.worktrees`. `loom init` runs `repair_workspace` (`loom/src/commands/init/execute.rs`), whose `fix_gitignore_work` appends the pair whenever that check fails, so every `loom init` in this repository dirtied `.gitignore` again.
+
+**Prevention:** Decide whether a path is ignored with `git check-ignore`, never by matching `.gitignore` lines. Before telling an operator a branch is ready for `loom run`, include `loom init` in the check and confirm `git status --porcelain` lists no tracked change.
+
+**Fix:** Both checks take `git check-ignore`'s verdict when the repository root is a git work tree, with discovery capped at the root (`GIT_CEILING_DIRECTORIES`) so an enclosing repository's rules never count, and fall back to the literal lines otherwise (`git_ignores`, `gitignore_lists`). A loom binary built before the fix still dirties `.gitignore` on `loom init`: run `git checkout -- .gitignore` after it.

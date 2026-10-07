@@ -180,3 +180,58 @@ fn test_is_work_dir_git_ignored_false_when_pair_does_not_match_layout() {
     fs::write(temp.path().join(".gitignore"), ".loom/work/\n.loom/work\n").unwrap();
     assert!(!is_work_dir_git_ignored(temp.path()));
 }
+
+/// Initialise `temp` as a git repository isolated from the host's git config
+fn git_repo(temp: &Path) {
+    let run = |args: &[&str]| {
+        let status = std::process::Command::new("git")
+            .args(args)
+            .current_dir(temp)
+            .env("GIT_CONFIG_GLOBAL", temp.join("missing-global"))
+            .env("GIT_CONFIG_SYSTEM", temp.join("missing-system"))
+            .env("GIT_CONFIG_NOSYSTEM", "1")
+            .status()
+            .unwrap();
+        assert!(status.success(), "git {args:?} failed");
+    };
+    run(&["init", "-q"]);
+    let excludes = temp.join("no-global-excludes");
+    run(&["config", "core.excludesFile", excludes.to_str().unwrap()]);
+}
+
+#[test]
+fn a_bare_loom_rule_ignores_the_state_dir_in_a_git_repo() {
+    let temp = TempDir::new().unwrap();
+    git_repo(temp.path());
+    fs::write(temp.path().join(".gitignore"), ".loom\n").unwrap();
+    fs::create_dir_all(temp.path().join(".loom/work")).unwrap();
+    assert!(is_work_dir_git_ignored(temp.path()));
+}
+
+#[test]
+fn an_unlisted_state_dir_in_a_git_repo_is_not_ignored() {
+    let temp = TempDir::new().unwrap();
+    git_repo(temp.path());
+    fs::write(temp.path().join(".gitignore"), "node_modules/\n").unwrap();
+    fs::create_dir_all(temp.path().join(".loom/work")).unwrap();
+    assert!(!is_work_dir_git_ignored(temp.path()));
+}
+
+#[test]
+fn a_worktrees_glob_rule_counts_in_a_git_repo() {
+    let temp = TempDir::new().unwrap();
+    git_repo(temp.path());
+    fs::write(temp.path().join(".gitignore"), ".worktrees/*\n").unwrap();
+    assert!(is_worktrees_git_ignored(temp.path()));
+}
+
+#[test]
+fn a_nested_temp_dir_does_not_borrow_an_outer_repos_rules() {
+    let outer = TempDir::new().unwrap();
+    git_repo(outer.path());
+    fs::write(outer.path().join(".gitignore"), ".loom\n").unwrap();
+    let inner = outer.path().join("inner");
+    fs::create_dir_all(inner.join(".loom/work")).unwrap();
+    fs::write(inner.join(".gitignore"), "node_modules/\n").unwrap();
+    assert!(!is_work_dir_git_ignored(&inner));
+}

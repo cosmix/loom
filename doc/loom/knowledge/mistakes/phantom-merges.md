@@ -239,3 +239,19 @@ and commit the tree with `commit-tree`.
 **What happened:** adding the reference-transaction hook to `loom repair`'s check made `init_repair_renders_no_line_for_a_clean_workspace` red: its fixture installed only the pre-commit hook, so the unattended startup repair reported the missing hook. The file belonged to no worker row.
 
 **Prevention:** when a brief adds a check to a repair or doctor path, grep for tests that render that path's clean output and put their fixtures in the brief's ownership table. Install every checked artifact in the fixture (`install_reference_transaction_hook(root)` beside `install_pre_commit_hook(root)`).
+
+## Loom's Own Merge Commits Were Unsigned Under `commit.gpgsign` (2026-10-06)
+
+**What happened:** an operator who requires signed commits had to commit every stage by hand (issue #22),
+and loom's own merge commits carried no signature.
+
+**Why:** `~/.gnupg` is a read denial in every session sandbox, Linux included, and the session was the only
+party told to commit. `commit_merge` ran `git commit-tree` without `-S`, so the merge commit ignored
+`commit.gpgsign`.
+
+**Prevention:** every plumbing path that writes a commit goes through `signing::commit_tree`, and a test with
+a fake signer asserts the signature on each path (stage commit, merge commit, plan-completion commit).
+
+**Fix:** sessions relay `loom stage commit` and the daemon commits and signs; `commit_merge` signs; a signing
+failure parks the stage for the operator
+([Daemon-Owned Commits](../architecture/daemon-owned-commits.md)).

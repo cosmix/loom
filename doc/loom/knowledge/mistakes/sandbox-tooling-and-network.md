@@ -245,3 +245,19 @@ cleanup pass should also check that scope, not just local.
 **Prevention:** when the same failure is recorded a second time, fix the cause instead of adding another workaround entry.
 
 **Fix:** `build_settings` drops in-tree non-glob entries (see [Execution Containment](../architecture/execution-containment.md), "In-Tree allow_write Entries Are Not Emitted"); the plan-writer and pressure-review guidance now say `allow_write` is for paths outside the worktree. Merge resolution no longer runs in the main checkout ([Merge Flow](../architecture/merge-flow.md)).
+
+## The macOS Sandbox Denies `kern.bootsessionuuid`, and `kern.boottime` Was Not a Substitute (2026-10-06)
+
+**What happened:** inside a stage session on macOS the boot identity that `loom subagents watch` leases
+persist could not be read (issue #24): the sandbox's `sysctl-read` allowlist has no `kern.bootsessionuuid`.
+An outside PR fell back to `kern.boottime` in `lease.rs`.
+
+**Why:** macOS recomputes `kern.boottime` when the wall clock is stepped, so one boot can show two values,
+and a lease written under one source and read under the other looks like another boot.
+
+**Prevention:** read host facts a sandbox denies from the unsandboxed daemon and export them, resolving the
+export before any local source; never mix two sources for one identity.
+
+**Fix:** the daemon exports `LOOM_BOOT_ID` in each session wrapper and `process::boot_id::resolve_boot_id`
+takes it first, then `/proc/sys/kernel/random/boot_id` or `kern.bootsessionuuid`
+([Where the Boot ID Comes From](../architecture/owned-waits.md#where-the-boot-id-comes-from)).

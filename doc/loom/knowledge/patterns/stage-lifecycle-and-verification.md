@@ -49,16 +49,19 @@ When adding new fields to StageDefinition: (1) plan/schema/types.rs, (2) models/
 
 ## NeedsHumanReview Orchestrator Handling Pattern
 
-Where the orchestrator handles `NeedsHumanReview`, and how `NeedsAdjudication` differs at each site.
-Earlier text framed this as a template ("add parallel handling for `NeedsAdjudication`") with line
-numbers that have since drifted; adjudication shipped, but it does NOT mirror human review at every
-site:
+Where the orchestrator handles `NeedsHumanReview`, and how `NeedsAdjudication` differs at each site;
+adjudication does NOT mirror human review at every site:
 
 1. `orchestrator/monitor/detection.rs` — a transition to `NeedsHumanReview` pushes
    `MonitorEvent::StageNeedsHumanReview`. `NeedsAdjudication` has no monitor event; the daemon's
    adjudication path observes it directly (see `architecture/adjudication-lifecycle.md`).
 2. `orchestrator/core/event_handler.rs` — `MonitorEvent::StageNeedsHumanReview` prints the banner via
-   `announce_needs_human_review`.
+   `announce_needs_human_review` (`event_handler/human_review.rs`), which prints and sends the desktop
+   notification (`orchestrator/notify.rs`) with only `review_headline(review_reason)`: the reason cut at its
+   pane markers (`; pane: "` and the `Last pane lines:` block) and flattened with `inline_safe` to 200
+   characters. A stall park's reason ends in pane text an agent controls, so the full multi-line
+   `review_reason` stays on the stage record and never reaches `orchestrator.log` or the notification
+   body.
 3. `orchestrator/core/recovery.rs::stage_file_is_terminal` — `NeedsHumanReview` is terminal;
    `NeedsAdjudication` is never terminal, because the daemon must stay alive to spawn and watch the
    adjudicator judge. `MergeConflict`/`MergeBlocked` are never terminal either: the resolver

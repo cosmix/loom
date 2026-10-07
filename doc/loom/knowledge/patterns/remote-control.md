@@ -1,23 +1,23 @@
 # Remote Control
 
-> Detect/preflight/resolve for external agents
+> Remote Control detect and resolve
 
-## Remote Control Capability/Preflight/Resolve Pattern (2026-05-14, extended 2026-08-08)
+## Remote Control Capability/Preflight/Resolve Pattern
 
-`--remote-control` requires claude >= 2.1.51 AND claude.ai login auth (no disqualifying env var, `~/.claude/.credentials.json` present). Because the flag exits non-zero on failure, it must never be passed unconditionally. `--remote-control [name]` also takes an optional name argument on newer claude versions — a second, independently-memoized capability probe decides whether to pass it.
+`--remote-control` requires claude >= 2.1.51 AND a claude.ai login, read from `claude auth status --json` run under the stage-environment variables (`remote_control_eligible` over `cached_stage_auth`; a console login, a logged-out CLI or an inconclusive probe disables it). Because the flag exits non-zero on failure, it must never be passed unconditionally. `--remote-control [name]` also takes an optional name argument on newer claude versions — a second, independently-memoized capability probe decides whether to pass it.
 
 **Function split:**
 
 | Function                                     | What it does                                                         | When to call                                              |
 | -------------------------------------------- | -------------------------------------------------------------------- | --------------------------------------------------------- |
-| `preflight(path)`                            | Runs `claude --version` + auth eligibility check                     | Startup advisory only                                     |
+| `preflight(path)`                            | Runs `claude --version` + the stage-environment auth probe          | Startup advisory only                                     |
 | `resolve(work_dir)`                          | Mode/preflight/in-memory-disable-flag gate (unchanged `bool` contract) | Called ONLY by the crash handler's fast-fail check        |
 | `resolve_invocation(work_dir, session_name)` | Per-spawn gate: layers the `--help` named-arg probe over `resolve()` | Called at every spawn site (via `prepare_session_launch`) |
 | `disable_for_this_process(reason)`           | Sets an in-memory, process-lifetime flag; logs one stderr line; nothing persisted | Called by crash_handler on fast-fail with a verified PID  |
 
 **`resolve_invocation()` check order (all cheap except the two probes, each memoized):**
 
-1. `resolve(work_dir)` false (mode off / marker present / version-or-auth preflight fails) → `Disabled`
+1. `resolve(work_dir)` false (mode off / marker present / version-or-login preflight fails) → `Disabled`
 2. `find_claude_path()` fails → `Disabled` (defensive — `resolve()` already required this to succeed)
 3. Memoized `--help` probe (`cached_named_arg_supported`, its OWN `OnceLock`, separate from the version-preflight cache) — does `claude --help` contain the literal substring `--remote-control [name]`?
    - Yes → `Named(session_name)`
@@ -46,6 +46,6 @@ Appends the flag AFTER the prompt positional (required — `--remote-control [na
 
 **OnceLock memoization note:**
 
-Both `cached_preflight_enabled()` (version+auth) and `cached_named_arg_supported()` (named-arg support) use process-lifetime `OnceLock<bool>` caches, each keyed by nothing. This is intentional: both probes' outputs (`claude --version` / `claude --help`) are invariant for the lifetime of a daemon process. Config (`mode`) and the marker file are re-read on every `resolve()` call (both cheap) so operator changes or crash-handler writes take effect immediately without restarting the daemon.
+Both `cached_preflight_enabled()` (version + login) and `cached_named_arg_supported()` (named-arg support) use process-lifetime `OnceLock<bool>` caches, each keyed by nothing. This is intentional: both probes' outputs (`claude --version` / `claude --help`) are invariant for the lifetime of a daemon process. Config (`mode`) and the marker file are re-read on every `resolve()` call (both cheap) so operator changes or crash-handler writes take effect immediately without restarting the daemon.
 
 **Testing consequence:** because the caches are process-global, the `Bare` vs `Named` branch of `resolve_invocation` cannot be exercised both ways within one `cargo test` binary — the first test in execution order to reach the real probe pins the result for every other test sharing that binary. Don't add a committed test that asserts a specific branch there; it will be order-dependent/flaky. Verify that branch via a one-off isolated run instead (`cargo test --lib <test_name> -- --exact --nocapture`, written temporarily and removed before commit) or manual inspection of a generated wrapper script.

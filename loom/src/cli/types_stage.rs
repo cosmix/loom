@@ -185,6 +185,21 @@ pub enum StageCommands {
         resolved: bool,
     },
 
+    /// Commit the staged changes through the daemon
+    ///
+    /// Runs the pre-commit and commit-msg hooks here, then relays the staged
+    /// tree; wait for it with `loom request status <id> --wait 90`.
+    Commit {
+        /// Stage ID (alphanumeric, dash, underscore only; max 128 characters)
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+
+        /// Commit message (type(scope): description); repeat -m for further
+        /// paragraphs, joined with a blank line as git does
+        #[arg(short = 'm', long = "message", required = true)]
+        message: Vec<String>,
+    },
+
     /// Respond to a stage flagged for human review
     ///
     /// Use this to approve, force-complete, or reject a stage in NeedsHumanReview state.
