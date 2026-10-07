@@ -106,7 +106,7 @@ fn defaults_when_the_file_is_absent() {
     assert_eq!(config.pressure_address_effort(), "high");
 
     assert_eq!(config.stage_model(StageType::Standard), "opus");
-    assert_eq!(config.stage_reasoning_effort(StageType::Standard), "high");
+    assert_eq!(config.stage_reasoning_effort(StageType::Standard), "medium");
     assert_eq!(config.stage_model(StageType::Knowledge), "opus");
     assert_eq!(
         config.stage_reasoning_effort(StageType::Knowledge),
@@ -340,7 +340,7 @@ fn value_of_has_an_arm_for_every_registered_key() {
             "pressure.address_model" => assert_eq!(value, "opus"),
             "pressure.address_effort" => assert_eq!(value, "high"),
             "models.standard_model" => assert_eq!(value, "opus"),
-            "models.standard_effort" => assert_eq!(value, "high"),
+            "models.standard_effort" => assert_eq!(value, "medium"),
             "models.knowledge_model" => assert_eq!(value, "opus"),
             "models.knowledge_effort" => assert_eq!(value, "medium"),
             "models.knowledge_distill_model" => assert_eq!(value, "sonnet"),

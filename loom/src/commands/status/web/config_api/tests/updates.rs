@@ -323,7 +323,7 @@ fn a_project_scope_write_creates_a_key_level_section() {
         &scratch,
         r#"{"scope":"project","name":"models.standard_effort","value":"low"}"#,
     );
-    assert_eq!(updated.old, ConfigValue::Text("high".to_owned()));
+    assert_eq!(updated.old, ConfigValue::Text("medium".to_owned()));
     assert_eq!(updated.new, ConfigValue::Text("low".to_owned()));
     assert_eq!(updated.entry.effective.source, Source::Project);
     let text = project_text(&scratch);

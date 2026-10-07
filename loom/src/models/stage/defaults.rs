@@ -98,7 +98,8 @@ impl Default for Stage {
 /// Every implementation stage's MAIN AGENT is an orchestrator: it reads
 /// context, plans the work, and delegates implementation to subagents (sonnet
 /// or codex terra workers for common implementation and integration tests,
-/// codex luna workers for boilerplate/scaffolding/simple unit tests, opus
+/// haiku workers for boilerplate/scaffolding/simple unit tests (codex luna on
+/// explicit request), opus
 /// workers only where architecture or algorithm judgment is required). Model
 /// choice for the actual implementation work happens at the subagent level,
 /// not here. The one exception is knowledge-distill: a single-agent sonnet
@@ -134,8 +135,10 @@ impl StageType {
             // The final quality gate, combining code review and functional
             // verification, gets the highest effort available.
             StageType::IntegrationVerify => "xhigh",
-            // Ordinary orchestration: plan the work, delegate, verify.
-            StageType::Standard => "high",
+            // Ordinary orchestration: plan the work, delegate, commit. The
+            // gate runs in a loom-verifier subagent at xhigh, so the
+            // orchestrator itself needs only medium.
+            StageType::Standard => "medium",
         }
     }
 }

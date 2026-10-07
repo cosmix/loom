@@ -142,7 +142,7 @@ mod tests {
         let project = ModelsConfig::default();
         let user = UserConfig::default();
         let cases = [
-            (StageType::Standard, "opus", "high"),
+            (StageType::Standard, "opus", "medium"),
             (StageType::Knowledge, "opus", "medium"),
             (StageType::KnowledgeDistill, "sonnet", "high"),
             (StageType::IntegrationVerify, "opus", "xhigh"),
@@ -195,7 +195,7 @@ mod tests {
         let user = UserConfig::default();
         assert_eq!(
             resolve_from(&project, &user, StageType::Standard, None, None),
-            ("sonnet".to_string(), "high".to_string())
+            ("sonnet".to_string(), "medium".to_string())
         );
     }
 
@@ -206,7 +206,7 @@ mod tests {
         let user = UserConfig::default();
         assert_eq!(
             resolve_from(&project, &user, StageType::Standard, None, None),
-            ("opus".to_string(), "high".to_string())
+            ("opus".to_string(), "medium".to_string())
         );
     }
 

@@ -246,17 +246,17 @@
         "variants": ["low", "medium", "high", "xhigh", "max"]
       },
       "scopes": ["user", "project"],
-      "default": "high",
+      "default": "medium",
       "user": {
-        "value": "high",
+        "value": "medium",
         "set": false
       },
       "project": {
-        "value": "high",
+        "value": "medium",
         "set": false
       },
       "effective": {
-        "value": "high",
+        "value": "medium",
         "source": "default"
       }
     },

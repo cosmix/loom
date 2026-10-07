@@ -324,7 +324,7 @@ fn a_project_model_alone_leaves_effort_at_the_built_in() {
 
     let (model, effort) = model_and_effort(SessionType::Stage, &stage, &work_dir);
     assert_eq!(model, "sonnet");
-    assert_eq!(effort, "high");
+    assert_eq!(effort, "medium");
 }
 
 /// Pin the stage-type built-ins a bare spawn launches on, so a later edit to
