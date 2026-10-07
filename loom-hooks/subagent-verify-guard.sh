@@ -1,10 +1,11 @@
 #!/usr/bin/env bash
 # subagent-verify-guard.sh - PreToolUse hook blocking full-suite runs by SUBAGENTS
 #
-# Verification is the MAIN AGENT's job: a subagent running the full build/test/
-# lint/typecheck suite burns wall-clock and tokens and surfaces failures it was
-# never asked to own. Project-wide runners are blocked at the tool boundary,
-# narrowly-scoped runs (a filter, one test target, a path) allowed.
+# Verification belongs to the stage's gate, never to an implementer: a
+# subagent running the full build/test/lint/typecheck suite burns wall-clock
+# and tokens and surfaces failures it was never asked to own. Project-wide
+# runners are blocked at the tool boundary, narrowly-scoped runs (a filter,
+# one test target, a path) allowed.
 #
 # The MAIN AGENT IS NEVER AFFECTED: the hook acts only when `loom_is_subagent`
 # (loom-hooks/_common.sh) says so. That check gates on a LIVE loom session FIRST,
@@ -22,9 +23,11 @@
 # mentions a ~/.claude/ path, e.g. sourcing a shell-snapshot file) can no
 # longer be mistaken for an intervening Claude process. Only when the payload
 # answers neither field does the hook fall back to counting Claude processes
-# between the caller and LOOM_MAIN_AGENT_PID. integration-verify stages are
-# carved out below (their review subagents are supposed to run the full
-# suite). There is deliberately NO escape-hatch env var - an opt-out would
+# between the caller and LOOM_MAIN_AGENT_PID. Two callers are carved out
+# below: a `loom-verifier` subagent, named by the payload's `.agent_type`
+# (it runs a standard stage's gate), and any subagent of an integration-verify
+# stage (its review subagents are supposed to run the full suite). There is
+# deliberately NO escape-hatch env var - an opt-out would
 # defeat the whole purpose (commit-filter.sh already treats unsetting the
 # detection gate as evasion).
 #
@@ -67,6 +70,19 @@ fi
 
 # === SUBAGENT GATE === everything below is subagent-only; a main agent exits here
 loom_is_subagent "$INPUT_JSON" || exit 0
+
+# === LOOM-VERIFIER CARVE-OUT ===
+# A standard stage's gate runs in a loom-verifier subagent (agents/loom-verifier.md:
+# read-only, reports instead of fixing), so the full suite is its whole job.
+# Claude Code sets `.agent_type` from the spawn's subagent_type; nothing the
+# subagent writes reaches it, so it cannot be forged from inside the session.
+# Exact match only: a substring test would exempt any type whose name merely
+# contains this one.
+CALLER_AGENT_TYPE=$(printf '%s' "$INPUT_JSON" | jq -r '.agent_type // empty' 2>/dev/null || true)
+if [[ "$CALLER_AGENT_TYPE" == "loom-verifier" ]]; then
+	loom_debug "DEBUG: loom-verifier subagent - full-suite runs allowed"
+	exit 0
+fi
 
 # === INTEGRATION-VERIFY CARVE-OUT ===
 # WHY LOOM_STAGE_ID IS SAFE HERE AND ONLY HERE: LOOM_STAGE_ID leaks into plain
@@ -158,7 +174,7 @@ VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
 - AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.
   `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.
 - Report instead: files changed, assumptions made, anything unresolved.
-  The MAIN AGENT compiles, tests, lints, and fixes.
+  The stage's gate compiles, tests, and lints; the MAIN AGENT fixes.
 EOF
 	exit 2
 }

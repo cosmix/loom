@@ -131,6 +131,19 @@ INPUT_G_VERIFY=$(jq -nc --arg cmd "$TEST_COMMAND" \
 expect_exit "(g) subagent-verify-guard allows a subagent-shaped payload with no live loom session" \
 	0 "$VERIFY_GUARD" "$INPUT_G_VERIFY"
 
+# (j) THE VERIFIER CARVE-OUT: a loom-verifier subagent runs a standard stage's
+# gate, so subagent-verify-guard lets its full-suite run through inside a live
+# loom session. Case (d) is the paired refusal for an implementer type.
+INPUT_J=$(jq -nc --arg cmd "$TEST_COMMAND" \
+	'{tool_name:"Bash",tool_input:{command:$cmd},agent_type:"loom-verifier"}')
+expect_exit "(j) subagent-verify-guard allows a loom-verifier caller" 0 "$VERIFY_GUARD" "$INPUT_J" "LOOM_MAIN_AGENT_PID=$$"
+
+# (k) exact match only: a type that merely contains the verifier's name is
+# still an ordinary subagent.
+INPUT_K=$(jq -nc --arg cmd "$TEST_COMMAND" \
+	'{tool_name:"Bash",tool_input:{command:$cmd},agent_type:"loom-verifier-extra"}')
+expect_exit "(k) subagent-verify-guard blocks a type that only contains loom-verifier" 2 "$VERIFY_GUARD" "$INPUT_K" "LOOM_MAIN_AGENT_PID=$$"
+
 # (f) unit check of loom_cmdline_is_claude: a Bash-tool shell whose cmdline
 # merely MENTIONS a ~/.claude/ path must not count as Claude Code, while the
 # real interpreter+script/binary forms still must.

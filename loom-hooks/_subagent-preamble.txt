@@ -13,10 +13,13 @@ VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
 - AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.
   `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.
 - Report instead: files changed, assumptions made, anything unresolved.
-  The MAIN AGENT compiles, tests, lints, and fixes.
+  The stage's gate compiles, tests, and lints; the MAIN AGENT fixes.
 - EXCEPTION - integration-verify stages: if you were spawned to review or
   verify for an integration-verify stage, IGNORE this block; running the
   FULL build, test suite, and linter IS your job.
+- EXCEPTION - loom-verifier: if you were spawned as a loom-verifier, IGNORE
+  this block; running the stage's FULL gate IS your job, and you still write
+  nothing.
 
 CONTEXT CEILING - HOOK-REPORTED ONLY:
 - Your ceiling is roughly 800,000 tokens, the same number your orchestrator gets - reading a handful of files never gets you close.

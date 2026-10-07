@@ -209,7 +209,7 @@ tier_rank() {
 # --- 2. DENY: UNTYPED SPAWN --------------------------------------------------
 # Follows the ENFORCEMENT GATE only (deny when it passes, else warn-and-allow).
 # With an explicit `model` nothing is inherited; the message says so.
-TYPED_AGENTS='loom-software-engineer (sonnet, default) / loom-senior-software-engineer (opus) / loom-code-reviewer / loom-advisor (fable, read-only) / loom-codex-forwarder / Explore'
+TYPED_AGENTS='loom-software-engineer (sonnet, default) / loom-senior-software-engineer (opus) / loom-code-reviewer / loom-advisor (fable, read-only) / loom-verifier (opus xhigh, gate only) / loom-codex-forwarder / Explore'
 if [[ -z "$MODEL_REQ" ]]; then
 	UNTYPED_MSG="Untyped spawn inherits the model of the spawning session. Use ${TYPED_AGENTS}. Pass \`model\` only to escalate, and record why."
 else
