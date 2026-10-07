@@ -269,7 +269,7 @@ pub(super) fn format_semi_stable_section(
             "Workflow agents are subagents (Rule 5 applies — no commits, no stage completion);\n",
         );
         content.push_str(
-            "the main agent runs acceptance criteria and commits. Do not exceed the stage's\n",
+            "the stage's gate runs after them and the main agent commits. Do not exceed the stage's\n",
         );
         content.push_str("scope just because orchestration is available.\n");
         content.push_str(

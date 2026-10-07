@@ -14,14 +14,14 @@ pub(super) const BLOCK_A: &str = "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOU
 - AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.
   `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.
 - Report instead: files changed, assumptions made, anything unresolved.
-  The MAIN AGENT compiles, tests, lints, and fixes.";
+  The stage's gate compiles, tests, and lints; the MAIN AGENT fixes.";
 
 /// BLOCK-B - the model playbook, verbatim.
 ///
 /// A raw literal: point 4 quotes the phrase an orchestrator uses to talk
 /// itself into escalating ("This feels subtle"), so it carries `"` inside.
 pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIMES MODEL TIER (hard stop 6). A
-   stage's main agent decomposes the work, briefs subagents, verifies and
+   stage's main agent decomposes the work, briefs subagents, owns the gate and
    commits. A spawn costs a written brief, the subagent's boot (about 28,000
    tokens before it reads anything) and a harvest turn. The main agent makes a
    change itself only when ALL of these hold: at most 20 changed lines, in at
@@ -41,25 +41,32 @@ pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIM
    below what that needs: every extra spawn pays the boot cost again. Pick PER
    SUBAGENT by what that piece needs, never once for the whole stage, and
    default downward: HAIKU (`model: haiku` on loom-software-engineer) for
-   mechanical edits such as a rename or a config value; codex gpt-6-luna for
-   boilerplate, scaffolding, and simple unit tests; codex gpt-5.6-terra or
-   SONNET (loom-software-engineer) for common implementation and integration
-   tests — most work belongs at this tier, and neither lane is the default; OPUS
-   (loom-senior-software-engineer) for mainstream architecture and algorithm
-   implementation; FABLE only for visual/UI design, a bug that survived a
+   mechanical edits, boilerplate, scaffolding, and simple unit tests; codex
+   gpt-6-luna for that same work only when the user or the plan asks for it;
+   codex gpt-5.6-terra or SONNET (loom-software-engineer) for common
+   implementation and integration tests — most work belongs at this tier, and
+   neither lane is the default; OPUS (loom-senior-software-engineer, effort
+   high) for mainstream architecture and algorithm implementation, spawned
+   with `effort: xhigh` for hard debugging, core algorithmic or architectural
+   work, distributed systems, heavily multithreaded or parallel code, and
+   systems engineering; FABLE only for visual/UI design, a bug that survived a
    delegated fix attempt, or extremely challenging algorithmic design. Codex
    tiers (effort xhigh, via loom-codex-forwarder) exist only on stages listing
    codex in implementers AND when the codex CLI + plugin are installed;
-   otherwise that work goes to sonnet (loom warns at startup when a stage lists
-   codex it cannot use). Verification NEVER delegates - the orchestrator
-   verifies and commits. Spawn BY AGENT TYPE.
+   otherwise terra-tier work goes to sonnet and luna-tier work to haiku (loom
+   warns at startup when a stage lists codex it cannot use). In a standard
+   stage the GATE (build, tests, lint, format, acceptance) runs in ONE
+   loom-verifier subagent (opus, effort xhigh) per round; an
+   integration-verify stage runs the gate its own signal names. Either
+   way the orchestrator owns fixes and the commit. Spawn BY AGENT TYPE.
 4. ESCALATE ON EVIDENCE, NOT ON HUNCH. Start at the cheapest plausible tier. A
    fix that failed ONCE against clear acceptance criteria moves up exactly one
-   tier — sonnet to opus, opus to fable — with the failed attempt and its
-   evidence in the new brief; never rerun the same tier on the same bug. "This
-   feels subtle" does not justify escalation. When a cheap subagent's output is
-   wrong, first ask whether the brief was detailed enough — a vague brief is an
-   orchestrator failure, not evidence the tier was too small.
+   tier — haiku to sonnet, sonnet to opus, opus to fable — with the failed
+   attempt and its evidence in the new brief; never rerun the same tier on the
+   same bug. "This feels subtle" does not justify escalation. When a cheap
+   subagent's output is wrong, first ask whether the brief was detailed enough
+   — a vague brief is an orchestrator failure, not evidence the tier was too
+   small.
 5. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
    narrow scope, full detail supplied by the orchestrator, advice returned, no
    writes. Its diagnosis then feeds a sonnet or opus implementer per point 2.
@@ -96,6 +103,9 @@ pub(super) const RETIRED_PHRASES: &[&str] = &[
     concat!("Zero IDE ", "diagnostics"),
     concat!("haiku stays rare", " and trivial"),
     concat!("haiku (rare, trivial ", "mechanical edits)"),
+    // Retired: haiku was limited to renames and config values; it now takes
+    // boilerplate, scaffolding and simple unit tests, and luna only on request.
+    concat!("mechanical edits such as a rename", " or a config value"),
     concat!("take the work ", "over"),
     concat!("report back ", "within"),
     concat!("hard ceiling on any", " single check"),
@@ -135,4 +145,9 @@ pub(super) const RETIRED_PHRASES: &[&str] = &[
         "ends your turn and sends the stage to ",
         "adjudication; loom retires"
     ),
+    // Retired when a standard stage's gate moved to the loom-verifier: the
+    // orchestrator still owns fixes and the commit, but no longer runs the
+    // gate itself outside integration-verify.
+    concat!("Verification NEVER ", "delegates"),
+    concat!("verification never ", "delegates"),
 ];

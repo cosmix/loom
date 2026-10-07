@@ -66,7 +66,7 @@ pub(super) fn append_no_verify_block(content: &mut String) {
     content.push_str("- AT MOST ONE narrowly-scoped check over the files YOU wrote (e.g.\n");
     content.push_str("  `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.\n");
     content.push_str("- Report instead: files changed, assumptions made, anything unresolved.\n");
-    content.push_str("  The MAIN AGENT compiles, tests, lints, and fixes.\n\n");
+    content.push_str("  The stage's gate compiles, tests, and lints; the MAIN AGENT fixes.\n\n");
 }
 
 /// Append the subagent context-ceiling doctrine directly beside BLOCK-A, so a
@@ -87,6 +87,18 @@ pub(super) fn append_subagent_ceiling_block(content: &mut String) {
     content.push_str("- Your ceiling is roughly 800,000 tokens, the same number your orchestrator gets - reading a handful of files never gets you close.\n");
     content.push_str("- The hook line beginning `SUBAGENT CEILING REACHED:` in your own tool output is the sole evidence you reached it. Never estimate, infer, or assume one.\n");
     content.push_str("- A turn that ends with zero files written, on a task that asked for files, counts as a FAILED unit of work even if the report reads well. If genuinely blocked, name the real blocker - the hook line above is the only thing that counts as a context blocker.\n\n");
+}
+
+/// Where a standard stage's gate runs, stated as the opening line of its
+/// completion rules.
+const VERIFIER_GATE: &str = "**The gate runs in a `loom-verifier`** (opus, effort xhigh): once every implementer has returned, spawn ONE by agent type, without `name`, briefed with this stage's acceptance criteria. It writes nothing and reports PASS/FAIL per step with command, exit code and failing excerpt. Delegate each fix, then spawn a FRESH verifier for the next round.\n\n";
+
+/// Open a STANDARD stage's `**Completion:**` list with `VERIFIER_GATE`. The
+/// integration-verify prefix opens its list without it: that stage keeps its
+/// own gate, set by its override block.
+pub(super) fn append_verifier_completion_header(content: &mut String) {
+    content.push_str("**Completion:**\n");
+    content.push_str(VERIFIER_GATE);
 }
 
 /// Append the mandatory mini adversarial code review block.

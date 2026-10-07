@@ -100,7 +100,7 @@ pub fn format_recovery_signal(
     // licenses), so they are never part of the stable prefix and this signal does
     // not embed them elsewhere. Emit the gated block here too, or a resumed codex
     // stage loses foreground-only fan-out, the concurrency cap, and "verification
-    // stays with you" for its licensed lanes.
+    // never goes to codex" for its licensed lanes.
     if stage.implementers.includes_codex() {
         signal.push_str(&format_codex_implementers_section(
             &stage.implementers,

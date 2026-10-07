@@ -49,9 +49,10 @@ work it to completion.
 
 The commit is legitimate only once all three hold: (1) every subagent, coordinator, team, and
 Workflow returned and was absorbed; (2) the full gate (build, tests, lint, format, acceptance) is
-green on the complete tree; (3) the mini adversarial code review returned, every finding fixed,
-gate green again. In a plan version 2 stage `loom stage complete` enforces condition (3): it fails
-until a recorded review round matches the worktree and no finding is open. A handoff is no reason
+green on the complete tree, as a `loom-verifier` round reports it in a standard stage; (3) the mini
+adversarial code review returned, every finding fixed, gate green again. In a plan version 2 stage
+`loom stage complete` enforces condition (3): it fails until a recorded review round matches the
+worktree and no finding is open. A handoff is no reason
 to commit unverified work — record uncommitted files there instead.
 
 **Complete ONLY a settled stage; completion is the session's LAST act.** All three conditions still
@@ -59,17 +60,25 @@ hold (an abandoned subagent counts as returned only if you recorded why), every 
 re-verified, `git status` clean. The stop hook only WARNS; confirming completion succeeded is your
 job. Afterwards STOP: post-completion work is LOST WORK.
 
+**The gate in a standard stage.** Once every implementer has returned, spawn ONE `loom-verifier`
+BY AGENT TYPE, without `name`, briefed with the stage's acceptance criteria and the project's build,
+test, lint, and format commands. It runs them on the complete tree, writes nothing, and reports PASS or FAIL per
+step with the command, exit code, and failing excerpt. Each FAIL becomes a fix brief (Rule 7);
+after the fixes, spawn a FRESH verifier, never a message to the old one. Do not repeat its run
+yourself. An integration-verify stage keeps its own gate, as its signal directs.
+
 Group commits logically: 5 files across 3 concerns = 3 commits, not 1 or 5.
 
 ## Rule 5 — Subagent preamble
 
-Subagents write code and report; the main agent owns verification and all git operations (hard
-stop 3). Every typed Claude spawn opens with the preamble in `loom-hooks/_subagent-preamble.txt`
-(installed beside `spawn-guard.sh`). The spawn guard prepends that file to any typed spawn whose
-prompt lacks its first line, so you do not paste it; a prompt that already opens with that line,
-such as a coordinator's (below), is left alone. The file carries the git restrictions, the
-no-verify rule (BLOCK-A), the context-ceiling rule (BLOCK-D), memory recording, and the
-auto-memory prohibition.
+Subagents write code and report; the main agent owns fixes, the commit, and all git operations
+(hard stop 3), and a standard stage's gate runs in a `loom-verifier` (Rule 4). Every typed Claude
+spawn opens with the preamble in `loom-hooks/_subagent-preamble.txt` (installed beside
+`spawn-guard.sh`). The spawn guard prepends that file to any typed spawn whose prompt lacks its
+first line, so you do not paste it; a prompt that already opens with that line, such as a
+coordinator's (below), is left alone. The file carries the git restrictions, the
+no-verify rule (BLOCK-A, with exceptions for integration-verify and the `loom-verifier`), the
+context-ceiling rule (BLOCK-D), memory recording, and the auto-memory prohibition.
 
 Claude subagents only; `loom-hooks/codex-forward.sh` prepends codex's own rules to forwarded
 prompts (Rule 7).
@@ -82,7 +91,7 @@ prompts (Rule 7).
 | **2-level hierarchy** | >~6 tasks in 2-4 DISJOINT territories, 2+ tasks each, well-defined for sonnet workers; NOT for ≤~6 tasks, shared files, cross-territory iteration, or sequential work | +1 coordinator per territory | Main agent | Coordinator preamble to coordinators; Rule 5 + worker addendum |
 | **Agent teams** | Wide, exploratory work needing inter-agent messaging or dynamic task discovery; NOT for concrete assignments with clear file ownership | ~7x whole-job | Team lead, who alone runs `loom stage complete` and `loom memory` | Rule 5 |
 
-Team lead: TeamCreate → TaskCreate → spawn → monitor (TaskList) → shutdown, verify, complete;
+Team lead: TeamCreate → TaskCreate → spawn → monitor (TaskList) → shutdown, gate (Rule 4), complete;
 delegate, keep context <40%, shut down ALL teammates.
 
 **GROUP TASKS: small tasks go to ONE subagent, never one per task or file.** Every extra subagent
@@ -123,7 +132,7 @@ several subagents each read whole belongs in the brief as quoted `file:line` ran
 5. **Exit 5** — worker identity or terminal evidence is unknown. This is never success.
 6. **Exit 6** — a bound worker is hung: no transcript growth past the stall budget (`--stall-secs`, default the stage's `subagent_timeout_secs`, else 600 s) for a Claude worker, or a codex job whose process is gone or whose log stopped growing. `TaskStop` the Claude worker, confirm it stopped, then RE-DELEGATE the remainder in a smaller brief.
 
-Harvest each worker's terminal report exactly once. Never re-arm the watch and never poll with `loom subagents list`, `loom subagents harvest`, `git status`, `wc`, or `ls`; `list` and `harvest` remain one-shot diagnostics. Only exact authoritative terminal evidence permits completion. Exit 6 is the channel that reports a worker idle past the stage's `subagent_timeout_secs` budget with no transcript growth — the only positive evidence of death. `TaskStop` it, confirm it stopped, then RE-DELEGATE the remainder to a fresh subagent. Never absorb the work into yourself — the orchestrator decomposes, delegates, verifies, and commits; it does not implement (hard stop 6). Re-read the tree before writing the new brief: a stale brief is worse than no brief. Never complete the stage while any subagent is still out (Rule 4).
+Harvest each worker's terminal report exactly once. Never re-arm the watch and never poll with `loom subagents list`, `loom subagents harvest`, `git status`, `wc`, or `ls`; `list` and `harvest` remain one-shot diagnostics. Only exact authoritative terminal evidence permits completion. Exit 6 is the channel that reports a worker idle past the stage's `subagent_timeout_secs` budget with no transcript growth — the only positive evidence of death. `TaskStop` it, confirm it stopped, then RE-DELEGATE the remainder to a fresh subagent. Never absorb the work into yourself — the orchestrator decomposes, delegates, owns the gate, and commits; it does not implement (hard stop 6). Re-read the tree before writing the new brief: a stale brief is worse than no brief. Never complete the stage while any subagent is still out (Rule 4).
 
 **Subagents are ONE-SHOT.** Brief completely, wait, harvest, let it end. Never message a finished
 subagent. A follow-up, or continuation after a ceiling, is a FRESH spawn of the same type, briefed
@@ -141,8 +150,10 @@ they cannot coordinate. Spawn workers BY AGENT TYPE — untyped ones inherit the
 Coordinators delegate too (hard stop 6), going opus only when territory integration needs
 judgment. Mix lanes under ONE ownership table. On a stage listing codex in `implementers`, a
 coordinator spawns `loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue`
-directly), foreground only: gpt-5.6-terra for common implementation and integration tests,
-gpt-6-luna for boilerplate, scaffolding, and simple unit tests. The lane is chosen per subagent,
+directly), foreground only: gpt-5.6-terra for common implementation and integration tests.
+Boilerplate, scaffolding, and simple unit tests go to haiku (`model: haiku` on
+loom-software-engineer); gpt-6-luna does that work only when the user or the plan asks for it.
+The lane is chosen per subagent,
 never per stage; the coordinator still does not verify.
 
 With an `EXECUTION PLAN` block, parse ALL assignments and spawn ALL in ONE message; hierarchical
@@ -159,10 +170,10 @@ CLAUDE.md is already in your context; the rules below are the ones that bind you
 COORDINATOR ROLE - YOU ARE A SUBAGENT COORDINATING WORKERS (ONE LEVEL ONLY):
 - You own ONE territory: [TERRITORY]. Never touch files outside it.
 - Partition your territory into DISJOINT worker file sets - two workers writing one file = LOST WORK
-- Spawn workers via the Task tool BY AGENT TYPE (loom-software-engineer = sonnet) and never pass `name`; include the WORKER PREAMBLE as the first lines of EVERY worker prompt; spawn independent workers in ONE message
+- Spawn workers via the Task tool BY AGENT TYPE (loom-software-engineer = sonnet; model: haiku for mechanical work) and never pass `name`; include the WORKER PREAMBLE as the first lines of EVERY worker prompt; spawn independent workers in ONE message
 - Workers NEVER spawn subagents - they are LEAVES (loom caps the tree at 2 levels)
 - Delegate implementation; write at most small glue/fixes within your territory
-- AT MOST ONE narrowly-scoped check over the files your workers wrote (e.g. `cargo test <your_module>::`), run ONCE; skip it if you are unsure. The MAIN AGENT compiles, tests, lints, and fixes.
+- AT MOST ONE narrowly-scoped check over the files your workers wrote (e.g. `cargo test <your_module>::`), run ONCE; skip it if you are unsure. The stage's gate runs after you return; the MAIN AGENT owns fixes.
 - Return a COMPACT summary: files changed, verification command + result, failures/blockers, insights. No file dumps, no diffs.
 - NEVER run git commit, git add -A/., or loom stage complete - only the main agent does
 - Record insights via loom memory note/decision; NEVER use Claude Code auto-memory
@@ -183,7 +194,7 @@ WORKER RESTRICTIONS - YOU ARE A LEAF AGENT:
 Fable-tier work has no pinned agent type; pass the model override explicitly at spawn.
 
 1. DELEGATION IS A COST DECISION: TOKENS TIMES MODEL TIER (hard stop 6). A
-   stage's main agent decomposes the work, briefs subagents, verifies and
+   stage's main agent decomposes the work, briefs subagents, owns the gate and
    commits. A spawn costs a written brief, the subagent's boot (about 28,000
    tokens before it reads anything) and a harvest turn. The main agent makes a
    change itself only when ALL of these hold: at most 20 changed lines, in at
@@ -203,25 +214,32 @@ Fable-tier work has no pinned agent type; pass the model override explicitly at 
    below what that needs: every extra spawn pays the boot cost again. Pick PER
    SUBAGENT by what that piece needs, never once for the whole stage, and
    default downward: HAIKU (`model: haiku` on loom-software-engineer) for
-   mechanical edits such as a rename or a config value; codex gpt-6-luna for
-   boilerplate, scaffolding, and simple unit tests; codex gpt-5.6-terra or
-   SONNET (loom-software-engineer) for common implementation and integration
-   tests — most work belongs at this tier, and neither lane is the default; OPUS
-   (loom-senior-software-engineer) for mainstream architecture and algorithm
-   implementation; FABLE only for visual/UI design, a bug that survived a
+   mechanical edits, boilerplate, scaffolding, and simple unit tests; codex
+   gpt-6-luna for that same work only when the user or the plan asks for it;
+   codex gpt-5.6-terra or SONNET (loom-software-engineer) for common
+   implementation and integration tests — most work belongs at this tier, and
+   neither lane is the default; OPUS (loom-senior-software-engineer, effort
+   high) for mainstream architecture and algorithm implementation, spawned
+   with `effort: xhigh` for hard debugging, core algorithmic or architectural
+   work, distributed systems, heavily multithreaded or parallel code, and
+   systems engineering; FABLE only for visual/UI design, a bug that survived a
    delegated fix attempt, or extremely challenging algorithmic design. Codex
    tiers (effort xhigh, via loom-codex-forwarder) exist only on stages listing
    codex in implementers AND when the codex CLI + plugin are installed;
-   otherwise that work goes to sonnet (loom warns at startup when a stage lists
-   codex it cannot use). Verification NEVER delegates - the orchestrator
-   verifies and commits. Spawn BY AGENT TYPE.
+   otherwise terra-tier work goes to sonnet and luna-tier work to haiku (loom
+   warns at startup when a stage lists codex it cannot use). In a standard
+   stage the GATE (build, tests, lint, format, acceptance) runs in ONE
+   loom-verifier subagent (opus, effort xhigh) per round; an
+   integration-verify stage runs the gate its own signal names. Either
+   way the orchestrator owns fixes and the commit. Spawn BY AGENT TYPE.
 4. ESCALATE ON EVIDENCE, NOT ON HUNCH. Start at the cheapest plausible tier. A
    fix that failed ONCE against clear acceptance criteria moves up exactly one
-   tier — sonnet to opus, opus to fable — with the failed attempt and its
-   evidence in the new brief; never rerun the same tier on the same bug. "This
-   feels subtle" does not justify escalation. When a cheap subagent's output is
-   wrong, first ask whether the brief was detailed enough — a vague brief is an
-   orchestrator failure, not evidence the tier was too small.
+   tier — haiku to sonnet, sonnet to opus, opus to fable — with the failed
+   attempt and its evidence in the new brief; never rerun the same tier on the
+   same bug. "This feels subtle" does not justify escalation. When a cheap
+   subagent's output is wrong, first ask whether the brief was detailed enough
+   — a vague brief is an orchestrator failure, not evidence the tier was too
+   small.
 5. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
    narrow scope, full detail supplied by the orchestrator, advice returned, no
    writes. Its diagnosis then feeds a sonnet or opus implementer per point 2.

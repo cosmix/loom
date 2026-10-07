@@ -7,10 +7,10 @@ license the better fit; the stage's orchestrator still picks the lane per subage
 
 - **Codex lane:** `loom-codex-forwarder`, a sonnet agent whose only tool is Bash, makes one
   foreground call to `codex-forward.sh`, which runs gpt-5.6-terra (common implementation,
-  integration tests) or gpt-6-luna (boilerplate, scaffolding, simple unit tests), always at effort
-  xhigh.
+  integration tests), or gpt-6-luna (boilerplate, scaffolding, simple unit tests) only when the user
+  or the plan explicitly asks for it, always at effort xhigh.
 - **Claude lane:** `loom-software-engineer` (sonnet, or haiku by `model` override),
-  `loom-senior-software-engineer` (opus), and fable by an explicit model override.
+  `loom-senior-software-engineer` (opus, effort high; spawned with `effort: xhigh` for hard cases), and fable by an explicit model override.
 
 ## Lane comparison
 
@@ -24,7 +24,7 @@ license the better fit; the stage's orchestrator still picks the lane per subage
 | Guardrails | Loom's hooks never see the commands codex runs, and codex runs `workspace-write` with approval `never`: no `git` and no `.loom/` path are prose rules, backed by the orchestrator's `git status --short` after each run | Loom's hooks guard every Bash call |
 | Escalation | Two tiers. A timed-out unit is re-split, never re-forwarded as is; work that cannot be cut to unit size, or needs architectural judgment, moves to Claude | Sonnet to opus to fable on evidence, and `loom-advisor` (fable) after a repeated failure |
 | Heartbeat | A forward is one long Bash call: raise `subagent_timeout_secs` and read `appears hung` as advisory | SubagentStop refreshes the parent's heartbeat |
-| Availability | Needs the codex CLI and plugin; on Linux also `exclude_slash_tmp` in `~/.codex/config.toml` (`loom repair --fix`). Missing at run time, the signal reroutes codex-tier work to sonnet | Always available |
+| Availability | Needs the codex CLI and plugin; on Linux also `exclude_slash_tmp` in `~/.codex/config.toml` (`loom repair --fix`). Missing at run time, the signal reroutes terra-tier work to sonnet and luna-tier work to haiku | Always available |
 
 Sources: BLOCK-A (subagent preamble), BLOCK-B (`SKILL.md` Section 4), and knowledge
 `architecture/codex-concurrency.md`, `architecture/owned-waits.md` (unit deadline, unit verification
@@ -95,15 +95,15 @@ After the stage list is settled and before writing stage YAML:
    ```
 
 Listing codex is safe even if the executing machine might lack it: `loom run` warns at startup and
-the stage signal reroutes the codex tiers' work to sonnet, so the plan needs no fallback wiring.
+the stage signal reroutes terra-tier work to sonnet and luna-tier work to haiku, so the plan needs no fallback wiring.
 
 ## Writing codex stages
 
 1. In each codex stage's description, name the subagent and the fan-out explicitly, e.g. "Spawn N
    `loom-codex-forwarder` subagents in the FOREGROUND, each with the tier-appropriate model —
-   `--model gpt-5.6-terra` (common implementation, integration tests) or `--model gpt-6-luna`
-   (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`, an explicit Bash
-   timeout of 600000 ms (the Bash tool's maximum), and a DISJOINT file set; verify and commit yourself." (The forwarder is
+   `--model gpt-5.6-terra` (common implementation, integration tests) or, only when the user or plan
+   asks for luna, `--model gpt-6-luna` (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`, an explicit Bash
+   timeout of 600000 ms (the Bash tool's maximum), and a DISJOINT file set; spawn a loom-verifier for the gate, then commit yourself." (The forwarder is
    loom's own shim; never spawn the plugin's `codex:codex-rescue`
    directly — plugin agents' tools restriction is ignored by design, so that wrapper runs
    unrestricted. The orchestrator's signal carries the sentinel and evidence-trailer protocol;
@@ -164,5 +164,5 @@ the stage signal reroutes the codex tiers' work to sonnet, so the plan needs no 
 □ Codex availability checked; if available, ONE AskUserQuestion confirmed a per-stage lane recommendation with a one-line reason each, and every `implementers:` list matches the answer; if unavailable, the user was told and no stage lists codex
 □ Lanes follow the per-stage rule: codex-fit pieces (single-file units, pinned interfaces, mechanical acceptance) license codex; exploration, multi-file iteration, fixture-backed test convergence, UI design, and debugging license Claude; codex never on bookend stages; every list is a non-empty YAML sequence with no repeated lane
 □ Every codex unit fits the 540 s wrapper deadline (one file or a file plus its test, at most three steps, shared interfaces pinned verbatim) and names its anchors — files owned/read, entry points by symbol name, done-condition and proof command, and any constraint the graph can't show. An unanchored codex block ("refactor the merge path") is underspecified regardless of length: codex has the source-graph navigation kit (`loom map`, `loom knowledge context`) but not your intent
-□ Every codex subagent prompt states an explicit Bash timeout (600000 ms, the tool's maximum) alongside the tier-appropriate model — `--model gpt-5.6-terra` (common implementation, integration tests) or `--model gpt-6-luna` (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`; without it the wrapper's single Bash call hits the 120s default and the harness backgrounds the run
+□ Every codex subagent prompt states an explicit Bash timeout (600000 ms, the tool's maximum) alongside the tier-appropriate model — `--model gpt-5.6-terra` (common implementation, integration tests) or, only on explicit request, `--model gpt-6-luna` (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`; without it the wrapper's single Bash call hits the 120s default and the harness backgrounds the run
 ```

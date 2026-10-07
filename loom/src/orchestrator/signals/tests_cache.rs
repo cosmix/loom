@@ -438,7 +438,7 @@ fn test_codex_implementers_section_unavailable_falls_back_to_sonnet() {
     );
     assert!(
         content.contains("loom-software-engineer"),
-        "the fallback block must route codex-tier work to sonnet instead"
+        "the fallback block must route codex-tier work to a Claude lane instead"
     );
     assert!(
         !content.contains(CODEX_FORWARD_SENTINEL),

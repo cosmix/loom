@@ -57,10 +57,10 @@ pub(crate) fn format_codex_implementers_section(
 fn push_codex_unavailable_fallback(content: &mut String) {
     content.push_str(&format!(
         "This stage lists codex in `implementers`, but the lane is UNAVAILABLE on this machine.\n\
-         Do NOT spawn `loom-codex-forwarder`; route codex-tier work to sonnet\n\
-         (`loom-software-engineer`) instead - {CODEX_IMPLEMENTER_MODEL_TERRA}'s tier (common\n\
-         implementation, integration tests) and {CODEX_IMPLEMENTER_MODEL_LUNA}'s tier\n\
-         (boilerplate, scaffolding, simple unit tests) alike.\n"
+         Do NOT spawn `loom-codex-forwarder`; route {CODEX_IMPLEMENTER_MODEL_TERRA}-tier work (common\n\
+         implementation, integration tests) to sonnet (`loom-software-engineer`) and\n\
+         {CODEX_IMPLEMENTER_MODEL_LUNA}-tier work (boilerplate, scaffolding, simple unit tests)\n\
+         to haiku (`loom-software-engineer` with `model: haiku`).\n"
     ));
 }
 
@@ -73,21 +73,23 @@ fn push_codex_intro(content: &mut String, implementers: &Implementers) {
         content.push_str(&format!(
             "This stage MIXES lanes. Choose the lane PER SUBAGENT, not once for the whole stage -\n\
              reach for {} first (terra: common implementation/integration tests; luna: boilerplate,\n\
-             scaffolding, simple unit tests), and use the other lane where the work calls for it.\n\
+             scaffolding, simple unit tests, only when the user or plan asks for luna - haiku takes\n\
+             that work otherwise), and use the other lane where the work calls for it.\n\
              Codex for one file set and loom-software-engineer (sonnet) for another in one stage is\n\
              the intended shape, not a contradiction.\n",
             implementers.preferred()
         ));
     } else {
         content.push_str(
-            "Codex is the lane for this stage's terra- and luna-tier work; the Claude escalation\n\
-             paths below were never implementation lanes and still apply.\n",
+            "Codex is the lane for this stage's terra-tier work, and for luna-tier work when the user\n\
+             or plan asks for luna (haiku takes it otherwise); the Claude escalation paths below\n\
+             were never implementation lanes and still apply.\n",
         );
     }
     content.push_str(
         "Regardless of the list: YOU (opus) keep the work needing architectural judgment,\n\
-         loom-advisor (fable) is available on a second failure, and verification never moves off\n\
-         you - see below.\n\n",
+         loom-advisor (fable) is available on a second failure, and verification never moves to\n\
+         codex - see below.\n\n",
     );
 }
 
@@ -185,7 +187,8 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
     );
     content.push_str(
         "- WHAT CODEX IS FOR: terra takes common implementation/integration tests (the sonnet tier);\n\
-         luna takes boilerplate/scaffolding/simple unit tests. Not opus work (architecture,\n\
+         luna takes boilerplate/scaffolding/simple unit tests only when the user or plan asks\n\
+         for it (haiku is the default for that work). Not opus work (architecture,\n\
          algorithms, cross-cutting refactors, security-sensitive code), fable work (visual/UI\n\
          design, a bug that survived a delegated fix, hard algorithmic design), or loom-advisor's\n\
          role on a second failure - route by what the task needs, not by what the stage lists.\n",
@@ -204,10 +207,11 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
         "  for orchestrator review.\n",
     ));
     content.push_str(
-        "- VERIFICATION STAYS WITH YOU (opus): codex subagents implement and report, never verify,\n\
-         commit, or run `loom stage complete`. YOU run the full build/test/lint gate and the\n\
-         six-dimension review, then commit at the end of the stage - never take a codex agent's word\n\
-         its own work is correct, and never have codex review its own output.\n\n",
+        "- VERIFICATION NEVER GOES TO CODEX: codex subagents implement and report, never verify,\n\
+         commit, or run `loom stage complete`. The full build/test/lint gate runs in a\n\
+         loom-verifier (integration-verify keeps its own gate); YOU own the six-dimension review\n\
+         and commit at the end of the stage - never take a codex agent's word its own work is\n\
+         correct, and never have codex review its own output.\n\n",
     );
 }
 

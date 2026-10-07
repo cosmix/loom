@@ -58,7 +58,8 @@ preamble=$(cat <<'CODEX_PREAMBLE'
 === LOOM CONTEXT (prepended automatically; your task follows the TASK marker) ===
 
 You are implementing one slice of a loom-orchestrated stage inside a git worktree. That
-worktree is your boundary. An orchestrator verifies and commits your work; you do neither.
+worktree is your boundary. The stage's gate verifies your work and an orchestrator commits it;
+you do neither.
 
 NAVIGATE WITH THE SOURCE GRAPH INSTEAD OF PAGING FILES.
 Loom keeps a tree-sitter index of this repository. Each command below answers in well under a

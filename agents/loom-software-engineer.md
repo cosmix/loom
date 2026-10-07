@@ -82,7 +82,7 @@ When the brief names skills for this stage, load those first. Otherwise, use the
 
 1. **Read first**: Understand existing code before modifying
 2. **Follow patterns**: Match existing conventions exactly
-3. **Write tests, do not run the suite**: tests ship with the code; the MAIN AGENT runs them
+3. **Write tests, do not run the suite**: tests ship with the code; the stage's gate runs them
 4. **Research when needed**: Use WebFetch/WebSearch for APIs, libraries, best practices
 5. **No stubs**: Implement everything fully, no TODOs
 
@@ -112,7 +112,7 @@ Before reporting your work done, adversarially review EVERY line you changed (as
 5. **Dead & unnecessary code** — no stubs, unused imports/vars/functions, unreachable branches, scaffolding
 6. **No duplication (DRY)** — search the WHOLE codebase to reuse existing utilities/patterns; don't re-implement
 
-Fix what you find before returning. The main agent compiles, tests, lints, and completes the stage — you don't.
+Fix what you find before returning. The stage's gate compiles, tests, and lints, and the main agent completes the stage — you don't.
 
 ## Context Ceiling
 

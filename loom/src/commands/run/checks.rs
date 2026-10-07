@@ -110,9 +110,9 @@ fn advisory_sccache_preflight() {
 ///
 /// When any stage licenses the codex lane but the codex CLI or its plugin's
 /// companion runtime is missing on this machine, print ONE warning naming the
-/// stages. The stage signals independently route codex-tier work to sonnet
-/// (the fallback branch of `format_codex_implementers_section`), so this is
-/// notice, not enforcement.
+/// stages. The stage signals independently route terra-tier work to sonnet and
+/// luna-tier work to haiku (the fallback branch of `format_codex_implementers_section`),
+/// so this is notice, not enforcement.
 pub fn advisory_codex_lane_preflight(repo_root: &Path) {
     let Ok(stages) = crate::verify::transitions::list_all_stages(repo_root) else {
         return;
@@ -128,7 +128,7 @@ pub fn advisory_codex_lane_preflight(repo_root: &Path) {
     if let Err(reason) = crate::codex::codex_lane_status() {
         eprintln!(
             "codex lane licensed for stage(s) {} but unavailable ({reason}) - \
-             terra/luna-tier work will fall back to sonnet.",
+             terra-tier work will fall back to sonnet and luna-tier work to haiku.",
             codex_stage_ids.join(", ")
         );
         return;

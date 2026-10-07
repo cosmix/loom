@@ -150,13 +150,13 @@ Never give a knowledge stage a heading-presence grep on a tier-1 file: the scaff
 
 ## 4. Model Selection Per Stage (REQUIRED)
 
-> ⚠️ **A stage OMITS `model` and `reasoning_effort` by default**, so the stage type's configured default applies — `standard`, `knowledge`, and `integration-verify` default to opus, `knowledge-distill` to sonnet; default effort is `high`, `medium`, `xhigh`, and `high` respectively, configurable per stage type in `[models]` of `~/.loom/config.toml` or `.loom/work/config.toml`. Set either field only as a DELIBERATE OVERRIDE, and say why in the stage description. Subagent model choice happens at spawn time (BLOCK-B), never in the YAML.
+> ⚠️ **A stage OMITS `model` and `reasoning_effort` by default**, so the stage type's configured default applies — `standard`, `knowledge`, and `integration-verify` default to opus, `knowledge-distill` to sonnet; default effort is `medium`, `medium`, `xhigh`, and `high` respectively, configurable per stage type in `[models]` of `~/.loom/config.toml` or `.loom/work/config.toml`. Set either field only as a DELIBERATE OVERRIDE, and say why in the stage description. Subagent model choice happens at spawn time (BLOCK-B), never in the YAML.
 
 BLOCK-B — model allocation playbook:
 
 ```text
 1. DELEGATION IS A COST DECISION: TOKENS TIMES MODEL TIER (hard stop 6). A
-   stage's main agent decomposes the work, briefs subagents, verifies and
+   stage's main agent decomposes the work, briefs subagents, owns the gate and
    commits. A spawn costs a written brief, the subagent's boot (about 28,000
    tokens before it reads anything) and a harvest turn. The main agent makes a
    change itself only when ALL of these hold: at most 20 changed lines, in at
@@ -176,25 +176,32 @@ BLOCK-B — model allocation playbook:
    below what that needs: every extra spawn pays the boot cost again. Pick PER
    SUBAGENT by what that piece needs, never once for the whole stage, and
    default downward: HAIKU (`model: haiku` on loom-software-engineer) for
-   mechanical edits such as a rename or a config value; codex gpt-6-luna for
-   boilerplate, scaffolding, and simple unit tests; codex gpt-5.6-terra or
-   SONNET (loom-software-engineer) for common implementation and integration
-   tests — most work belongs at this tier, and neither lane is the default; OPUS
-   (loom-senior-software-engineer) for mainstream architecture and algorithm
-   implementation; FABLE only for visual/UI design, a bug that survived a
+   mechanical edits, boilerplate, scaffolding, and simple unit tests; codex
+   gpt-6-luna for that same work only when the user or the plan asks for it;
+   codex gpt-5.6-terra or SONNET (loom-software-engineer) for common
+   implementation and integration tests — most work belongs at this tier, and
+   neither lane is the default; OPUS (loom-senior-software-engineer, effort
+   high) for mainstream architecture and algorithm implementation, spawned
+   with `effort: xhigh` for hard debugging, core algorithmic or architectural
+   work, distributed systems, heavily multithreaded or parallel code, and
+   systems engineering; FABLE only for visual/UI design, a bug that survived a
    delegated fix attempt, or extremely challenging algorithmic design. Codex
    tiers (effort xhigh, via loom-codex-forwarder) exist only on stages listing
    codex in implementers AND when the codex CLI + plugin are installed;
-   otherwise that work goes to sonnet (loom warns at startup when a stage lists
-   codex it cannot use). Verification NEVER delegates - the orchestrator
-   verifies and commits. Spawn BY AGENT TYPE.
+   otherwise terra-tier work goes to sonnet and luna-tier work to haiku (loom
+   warns at startup when a stage lists codex it cannot use). In a standard
+   stage the GATE (build, tests, lint, format, acceptance) runs in ONE
+   loom-verifier subagent (opus, effort xhigh) per round; an
+   integration-verify stage runs the gate its own signal names. Either
+   way the orchestrator owns fixes and the commit. Spawn BY AGENT TYPE.
 4. ESCALATE ON EVIDENCE, NOT ON HUNCH. Start at the cheapest plausible tier. A
    fix that failed ONCE against clear acceptance criteria moves up exactly one
-   tier — sonnet to opus, opus to fable — with the failed attempt and its
-   evidence in the new brief; never rerun the same tier on the same bug. "This
-   feels subtle" does not justify escalation. When a cheap subagent's output is
-   wrong, first ask whether the brief was detailed enough — a vague brief is an
-   orchestrator failure, not evidence the tier was too small.
+   tier — haiku to sonnet, sonnet to opus, opus to fable — with the failed
+   attempt and its evidence in the new brief; never rerun the same tier on the
+   same bug. "This feels subtle" does not justify escalation. When a cheap
+   subagent's output is wrong, first ask whether the brief was detailed enough
+   — a vague brief is an orchestrator failure, not evidence the tier was too
+   small.
 5. DEBUGGING OR REPEATED FAILURE → spawn a `loom-advisor` (fable) subagent:
    narrow scope, full detail supplied by the orchestrator, advice returned, no
    writes. Its diagnosis then feeds a sonnet or opus implementer per point 2.
@@ -203,13 +210,13 @@ BLOCK-B — model allocation playbook:
 
 **Fable-tier mechanics.** No agent type pins fable — pass the model override at spawn. Routine UI wiring to an existing design stays at the sonnet or terra tier.
 
-**Lowest tier, fullest brief.** For each worker, write the lowest tier that can do its piece without losing quality in the worker table's `Tier` column (Section 5); the orchestrator escalates only on evidence. The cheaper the tier, the more the brief settles — exact paths and `file:line` ranges, signatures, the pattern to mirror, every decision made, every trap named, the proof command. Never paste code the worker can open. A piece whose brief cannot settle every decision is judgment work: settle it in the plan, or raise the tier.
+**Lowest tier, fullest brief.** For each worker, write the lowest tier that can do its piece without losing quality in the worker table's `Tier` column (Section 5); the orchestrator escalates only on evidence. The `Tier` column may read `opus/xhigh` for hard debugging, core algorithmic or architectural work, distributed systems, heavily multithreaded or parallel code, and systems engineering (BLOCK-B point 3); plain `opus` runs at effort high. The cheaper the tier, the more the brief settles — exact paths and `file:line` ranges, signatures, the pattern to mirror, every decision made, every trap named, the proof command. Never paste code the worker can open. A piece whose brief cannot settle every decision is judgment work: settle it in the plan, or raise the tier.
 
 **Sizing rubric — group by cost.** A subagent typically completes under about 400,000 tokens, and every spawn pays about 28,000 tokens of boot before it reads anything. Group small tasks into one assignment and never split below what 400,000 tokens needs; an assignment likely to pass that is two assignments, or a coordinator with two workers. Write each stage so its implementation is assigned to subagents: the main agent's own edits are limited to BLOCK-B point 1's small-change test.
 
 **Stage descriptions carry decomposable detail:** exact file paths, signatures, `file:line` patterns to follow (and which property of the pattern NOT to copy), step-by-step subtasks, integration wiring (`mod.rs`, registry, route), and the error-handling approach. If you cannot write that, go back to Section 1. Full text, a worked example, `subagent_timeout_secs` (an idle budget, default 300) and the waiting protocol: `references/stage-sizing.md`.
 
-**Implementation lanes.** Neither lane is the default: judge each stage's work against both. Codex (`loom-codex-forwarder` → gpt-5.6-terra / gpt-6-luna, xhigh) fits well-specified implementation that splits into single-file units with pinned interfaces, a large share of implementation work: its Claude-side cost is one sonnet forwarder per unit, and up to 6 units run at once in the foreground. Each unit must finish inside the 540 s wrapper deadline, runs no fixture-backed tests, and never touches git or `.loom/`. Claude fits exploration, multi-file iteration, work that converges by running tests, UI/visual design, and debugging, at its tier's token rate. Mixed stages list both lanes, preferred first. Check codex availability, then ask the user ONCE to confirm a per-stage lane recommendation, one-line reason each; if codex is unavailable, say so and plan on Claude. Comparison table, decision rule, install checks, unit sizing, anchors, and prohibitions: `references/codex-implementers.md`.
+**Implementation lanes.** Neither lane is the default: judge each stage's work against both. Codex (`loom-codex-forwarder` → gpt-5.6-terra, xhigh; gpt-6-luna only when the user or plan asks for it, otherwise boilerplate and simple unit tests go to haiku) fits well-specified implementation that splits into single-file units with pinned interfaces, a large share of implementation work: its Claude-side cost is one sonnet forwarder per unit, and up to 6 units run at once in the foreground. Each unit must finish inside the 540 s wrapper deadline, runs no fixture-backed tests, and never touches git or `.loom/`. Claude fits exploration, multi-file iteration, work that converges by running tests, UI/visual design, and debugging, at its tier's token rate. Mixed stages list both lanes, preferred first. Check codex availability, then ask the user ONCE to confirm a per-stage lane recommendation, one-line reason each; if codex is unavailable, say so and plan on Claude. Comparison table, decision rule, install checks, unit sizing, anchors, and prohibitions: `references/codex-implementers.md`.
 
 ### Context ceiling (`context_ceiling_tokens`)
 

@@ -9,7 +9,7 @@ mod blocks;
 use blocks::{
     append_adversarial_review, append_execution_rules_header, append_isolation_boundaries_simple,
     append_no_verify_block, append_path_boundaries, append_review_dimension_details,
-    append_subagent_ceiling_block, LOAD_ORCHESTRATION_SKILL,
+    append_subagent_ceiling_block, append_verifier_completion_header, LOAD_ORCHESTRATION_SKILL,
 };
 mod distill_ordering;
 use distill_ordering::append_memory_ordering_doctrine;
@@ -100,7 +100,7 @@ pub fn generate_stable_prefix() -> String {
     append_subagent_ceiling_block(&mut content);
     append_adversarial_review(&mut content);
 
-    content.push_str("**Completion:**\n");
+    append_verifier_completion_header(&mut content);
     append_commit_timing_rules(&mut content, CODE_STAGE_GATE, CODE_STAGE_REVIEW);
     append_completion_rules(&mut content);
 

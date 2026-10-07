@@ -50,7 +50,7 @@ Loom also indexes the repository's own source; query the graph before opening a 
 
 **E. Cheapest capable agent.** Delegate every piece to the smallest model that can do it (Rule 7).
 
-**F. Corrections become memory.** When the user corrects or steers you, or you find a mistake of yours or a subagent's, record it before anything else; a major decision likewise. In a stage: `loom memory note "mistake: <what happened>. Why: <cause>. Prevention: <rule>"` or `loom memory decision`. Outside one: the knowledge files, per Rule 12. A correction living only in conversation is lost next session. The same mistake made twice goes to a subagent one tier up — sonnet to opus, opus to fable — briefed with the task, both attempts, and their evidence (Rule 7).
+**F. Corrections become memory.** When the user corrects or steers you, or you find a mistake of yours or a subagent's, record it before anything else; a major decision likewise. In a stage: `loom memory note "mistake: <what happened>. Why: <cause>. Prevention: <rule>"` or `loom memory decision`. Outside one: the knowledge files, per Rule 12. A correction living only in conversation is lost next session. The same mistake made twice goes to a subagent one tier up — haiku to sonnet, sonnet to opus, opus to fable — briefed with the task, both attempts, and their evidence (Rule 7).
 
 ---
 
@@ -85,13 +85,13 @@ loom stage complete <stage-id>   # from the worktree root
 
 Stage `git add <specific-files>` only, never `-A` or `.`.
 
-**When to commit — at the END, after ALL verification, never before.** Commits happen ONLY as the final step of the stage — never mid-stage, never "what is done so far" — once every subagent returned, the full gate is green, and the review's findings are fixed (the `loom-orchestration` skill spells out the three conditions). Completion is the session's last act; work after it is lost.
+**When to commit — at the END, after ALL verification, never before.** Commits happen ONLY as the final step of the stage — never mid-stage, never "what is done so far" — once every subagent returned, the full gate is green (a `loom-verifier` round in a standard stage), and the review's findings are fixed (the `loom-orchestration` skill spells out the three conditions). Completion is the session's last act; work after it is lost.
 
 Commits follow Conventional Commits: `type(scope): description`, type `feat` `fix` `refactor` `test` `docs` or `chore`, one commit per concern.
 
 ### 5. SUBAGENT RESTRICTIONS
 
-Subagents write code and report; the main agent owns verification and all git operations (hard stop 3). A subagent runs at most one narrowly scoped check, once. `loom-hooks/spawn-guard.sh` prepends the subagent preamble, `loom-hooks/_subagent-preamble.txt` (git restrictions, the no-verify rule, the ceiling rule, memory recording), to every typed spawn whose prompt lacks it; do not paste it yourself. Codex subagents get their own rules from `loom-hooks/codex-forward.sh`.
+Subagents write code and report; the main agent owns fixes and all git operations (hard stop 3). A subagent runs at most one narrowly scoped check, once. A standard stage's full gate runs in a `loom-verifier`; integration-verify keeps its own. `loom-hooks/spawn-guard.sh` prepends the subagent preamble, `loom-hooks/_subagent-preamble.txt` (git restrictions, the no-verify rule, the ceiling rule, memory recording), to every typed spawn whose prompt lacks it; do not paste it yourself. Codex subagents get their own rules from `loom-hooks/codex-forward.sh`.
 
 ### 6. SUBAGENTS
 
@@ -108,18 +108,20 @@ Check skills and agents before implementing; the prompt-submit hook surfaces mat
 
 | Agent | Model | Use for |
 | --- | --- | --- |
+| `loom-software-engineer` (`model: haiku`) | Haiku | Mechanical edits, boilerplate, scaffolding, simple unit tests |
 | `loom-software-engineer` | Sonnet | Common implementation and integration tests; refactors to spec |
-| `loom-senior-software-engineer` | Opus | Mainstream architecture, algorithm implementation, complex debugging, security-sensitive code, cross-cutting refactors |
+| `loom-senior-software-engineer` | Opus (effort high) | Mainstream architecture, algorithm implementation, complex debugging, security-sensitive code, cross-cutting refactors; spawn with `effort: xhigh` for hard debugging, core algorithmic or architectural work, distributed systems, heavily multithreaded or parallel code, systems engineering |
 | `loom-code-reviewer` | — | Read-only code/security/architecture review |
 | `Explore` | — | Codebase exploration |
 | `loom-advisor` | Fable | Read-only advisory for debugging and repeated failures — receives full detail, returns a diagnosis and next step, writes nothing |
-| `loom-codex-forwarder` | gpt-5.6-terra / gpt-6-luna | Codex lane on stages listing codex in `implementers`; state `--model <tier> --effort xhigh` in the prompt; write-capable, foreground only, never verifies; a unit is one file (or a file plus its test), at most three steps, sized for the wrapper's 540 s deadline; an overrun exits 124 `timed_out` — re-split, never re-forward as is |
+| `loom-verifier` | Opus (effort xhigh) | Runs a standard stage's gate (build, tests, lint, format, acceptance), reports pass/fail per step, writes nothing |
+| `loom-codex-forwarder` | gpt-5.6-terra; gpt-6-luna only on explicit request | Codex lane on stages listing codex in `implementers`; state `--model <tier> --effort xhigh` in the prompt; write-capable, foreground only, never verifies; a unit is one file (or a file plus its test), at most three steps, sized for the wrapper's 540 s deadline; an overrun exits 124 `timed_out` — re-split, never re-forward as is |
 
 Fable-tier work has no pinned agent type; pass the model override explicitly at spawn.
 
 Outside a loom stage `loom-codex-forwarder` is blocked; when the official Codex plugin is installed (the `codex:codex-rescue` agent type is listed), delegate codex work to that agent or `/codex:rescue`. Pick the lane per task: codex for well-specified implementation with pinned interfaces, Claude for exploration, cross-cutting changes, debugging, and work that iterates on tests.
 
-Model allocation, in full in the `loom-orchestration` skill. Delegation is a cost decision, tokens times model tier: the main agent makes a change itself only when it is at most 20 lines in at most 2 files already read, proven by one command, and a fable main session delegates even those. Everything else goes to as few subagents as the work allows at the cheapest capable tier, escalating one tier only after a failed attempt; verification never delegates.
+Model allocation, in full in the `loom-orchestration` skill. Delegation is a cost decision, tokens times model tier: the main agent makes a change itself only when it is at most 20 lines in at most 2 files already read, proven by one command, and a fable main session delegates even those. Everything else goes to as few subagents as the work allows at the cheapest capable tier, escalating one tier only after a failed attempt; a standard stage's gate goes to a fresh `loom-verifier` each round.
 
 ### 8. NATIVE TOOLS AND CODE FORMATTING
 

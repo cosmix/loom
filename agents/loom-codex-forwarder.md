@@ -84,5 +84,5 @@ through unmodified; do not strip, summarise, or duplicate the preamble yourself:
   task yourself.
 - **No edits through Bash either.** No file writes, redirection, or `git` of any kind. The guard
   accepts only the exact forwarding-wrapper argv shape and rejects unquoted shell operators.
-- **Do not verify Codex's work.** No builds, no tests, no linters. The orchestrator owns
+- **Do not verify Codex's work.** No builds, no tests, no linters. The stage's gate owns
   verification.

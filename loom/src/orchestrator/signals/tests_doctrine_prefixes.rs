@@ -57,6 +57,22 @@ fn settled_completion_doctrine_present_in_all_stable_prefixes() {
     }
 }
 
+/// A standard stage's gate runs in a `loom-verifier`; integration-verify keeps
+/// its own gate, so the verifier block must not reach its prefix.
+#[test]
+fn only_the_standard_prefix_sends_the_gate_to_a_loom_verifier() {
+    let needle = "**The gate runs in a `loom-verifier`**";
+    assert!(
+        generate_stable_prefix().contains(needle),
+        "the standard stable prefix must tell the orchestrator to spawn a loom-verifier \
+         for the gate"
+    );
+    assert!(
+        !generate_integration_verify_stable_prefix().contains(needle),
+        "integration-verify keeps its own gate; the verifier block must not reach its prefix"
+    );
+}
+
 /// The subagent-response-budget block must frame the timeout as a check-in
 /// cadence, not a deadline that licenses taking over a live subagent's work.
 #[test]

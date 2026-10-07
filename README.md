@@ -30,7 +30,7 @@ Loom is for engineers who would rather spend their own judgment than someone els
 - **Done means verified** — loom runs each stage's acceptance criteria itself and inspects the tree for stubs, unwired code, and code nothing calls. The agent's own account of its work does not count. Once every stage has merged, an `integration-verify` stage reviews and tests the combined work as one system. ([Verification Model](#verification-model))
 - **Rules enforced by hooks** — commit discipline, worktree boundaries, and subagent limits fire from shell hooks, so they hold whatever the model intends. ([Deterministic guardrails](#deterministic-guardrails))
 - **Contained by default** — sessions run in a filesystem and network sandbox and cannot write loom's own state, hooks, or config. ([Sandbox Configuration](#sandbox-configuration))
-- **Expensive models only where judgment is needed** — the orchestrator plans and verifies; implementation goes to the cheapest subagent that can do the piece, Claude or Codex. ([Model Allocation](#model-allocation))
+- **Expensive models only where judgment is needed** — the orchestrator plans and commits, an Opus verifier runs the gate; implementation goes to the cheapest subagent that can do the piece, Claude or Codex. ([Model Allocation](#model-allocation))
 - **Survives crashes and context limits** — all state is plain files. The daemon spots dead and hung sessions and retries them, and a handoff is written before a session runs out of context. ([Crash recovery and liveness](#crash-recovery-and-liveness))
 - **Watch it live, steer when you want** — `loom status --live` is a dashboard in your terminal. `loom status --web` is the same run in a browser: the plan as a dependency graph, a ledger of every stage, and terminals you can watch read-only or take over. ([Primary Commands](#primary-commands), [Web Dashboard](#web-dashboard))
 
@@ -281,11 +281,11 @@ The rules that matter are not left to the model. Loom installs Claude Code hooks
 - `git-add-guard.sh` blocks `git add -A` / `git add .`; `git-pre-commit-hook.sh` blocks commits containing `.loom/work` or `.worktrees`
 - `worktree-isolation.sh` / `worktree-file-guard.sh` block cross-worktree writes, reads, and path traversal
 - `commit-filter.sh` blocks subagent git operations (a subagent commit loses the main agent's work) and blocks AI attribution in commit messages
-- `subagent-verify-guard.sh` blocks subagents from running project-wide build/test/lint suites, so verification stays with the one agent that can see the whole tree — with `integration-verify` stages carved out, and no opt-out environment variable
+- `subagent-verify-guard.sh` blocks subagents from running project-wide build/test/lint suites, so implementers never verify — with the `loom-verifier` subagent and `integration-verify` stages carved out, and no opt-out environment variable
 - `pre-compact.sh` blocks compaction, writes a handoff, then allows it; `session-start.sh` re-anchors the resumed agent to its signal file
 - `plans-path-guard.sh` keeps plans in `doc/plans/` where loom and git can see them
 
-Subagent detection is a live process-tree ancestry check, not a PPID comparison. See [Verification Is the Main Agent's Job](#verification-is-the-main-agents-job).
+Subagent detection is a live process-tree ancestry check, not a PPID comparison. See [Implementers Do Not Verify](#implementers-do-not-verify).
 
 ### Verification that outlives the agent's opinion
 
@@ -313,8 +313,9 @@ Knowledge lives in `doc/loom/knowledge/`; agents write it through loom, and `loo
 
 Loom's savings come from **delegation, not downgrade**:
 
-- **Orchestration's model and effort come from the stage type's default** — every stage's main agent plans, decomposes, verifies, and commits, the judgment-heavy work that is worst to economize on — and both are overridable, in `[models]` in either config file or per stage; see [Model Allocation](#model-allocation).
-- **Delegation is a cost decision, tokens times model tier.** A stage's main agent makes a change itself only when it is at most 20 lines in at most 2 files it has already read, needs no further exploration, and one command proves it; a Fable main session delegates even those. Everything larger goes to the cheapest subagent that can do it, spawned by agent type so the choice is explicit rather than inherited: Haiku for mechanical edits such as a rename; Fable only for visual/UI design, a bug that survived a delegated fix attempt, and extremely challenging algorithmic design (no agent type pins it — the model override is stated explicitly at spawn); Opus for mainstream architecture and algorithm implementation; Sonnet or Codex GPT-5.6 Terra for common implementation and integration tests; Codex GPT-6 Luna for boilerplate, scaffolding, and simple unit tests. The codex tiers are licensed only on stages listing codex in `implementers`, and additionally require the `codex` CLI and its plugin to be installed — when either is missing, `loom run` prints an advisory warning at startup (it never aborts) and terra-/luna-tier work falls back to Sonnet.
+- **Orchestration's model and effort come from the stage type's default** — every stage's main agent plans, decomposes, fixes what the gate reports, and commits, the judgment-heavy work that is worst to economize on — and both are overridable, in `[models]` in either config file or per stage; see [Model Allocation](#model-allocation).
+- **Delegation is a cost decision, tokens times model tier.** A stage's main agent makes a change itself only when it is at most 20 lines in at most 2 files it has already read, needs no further exploration, and one command proves it; a Fable main session delegates even those. Everything larger goes to the cheapest subagent that can do it, spawned by agent type so the choice is explicit rather than inherited: Haiku for mechanical edits, boilerplate, scaffolding, and simple unit tests; Fable only for visual/UI design, a bug that survived a delegated fix attempt, and extremely challenging algorithmic design (no agent type pins it — the model override is stated explicitly at spawn); Opus (effort high; the orchestrator spawns it with `effort: xhigh` for hard debugging, core algorithmic or architectural work, distributed systems, heavily multithreaded or parallel code, and systems engineering) for mainstream architecture and algorithm implementation; Sonnet or Codex GPT-5.6 Terra for common implementation and integration tests; Codex GPT-6 Luna does the boilerplate tier only when the user or the plan asks for it. The codex tiers are licensed only on stages listing codex in `implementers`, and additionally require the `codex` CLI and its plugin to be installed — when either is missing, `loom run` prints an advisory warning at startup (it never aborts) and Terra-tier work falls back to Sonnet and Luna-tier work to Haiku.
+- **The gate runs in its own subagent.** In a `standard` stage a `loom-verifier` (Opus, effort xhigh) runs the build, tests, lint, format, and acceptance criteria on the finished tree and reports pass or fail per step; it writes nothing. The orchestrator, at effort medium, delegates the fixes, spawns a fresh verifier for each round, and commits. An `integration-verify` stage keeps its own gate.
 - **Signals are built for cache reuse.** Each signal is a four-section layout with a per-stage-type stable prefix that is byte-identical across sessions, so the large doctrine block is a cache hit rather than a re-read.
 - **The orchestrator's rulebook loads when it is needed.** Delegation, briefs, file ownership, waiting on subagents and commit timing live in the `loom-orchestration` core skill, which a session loads before it fans out; the installed `CLAUDE.md` keeps the hard stops and a pointer, under a 20 KB ceiling. `spawn-guard.sh` prepends the subagent preamble to every typed spawn, so an orchestrator no longer pastes it.
 - **Context budgets prevent compaction**, which is the expensive failure: an uncached re-read that costs more and produces worse work.
@@ -623,7 +624,7 @@ The keys, with their built-in defaults:
 | `pressure.address_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `pressure.address_effort`          | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 | `models.standard_model`            | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
-| `models.standard_effort`           | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
+| `models.standard_effort`           | `medium`      | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 | `models.knowledge_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `models.knowledge_effort`          | `medium`      | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 | `models.knowledge_distill_model`   | `sonnet`      | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
@@ -895,15 +896,15 @@ never reads the token file, so a caller that can invoke loom but cannot read tha
 
 An agent that genuinely believes a criterion is wrong or impossible has a sanctioned path — `loom stage dispute-criteria` — rather than an incentive to weaken it.
 
-### Verification Is the Main Agent's Job
+### Implementers Do Not Verify
 
-Subagents do not verify. A subagent may run **at most one narrowly-scoped check** covering the files it just changed; project-wide builds, full test suites, and repo-wide lint or typecheck runs belong to the main agent — the only party that can see the whole tree and act on the result.
+An implementing subagent may run **at most one narrowly-scoped check** covering the files it just changed. Project-wide builds, full test suites, and repo-wide lint or typecheck runs belong to the stage's gate: in a `standard` stage a `loom-verifier` subagent runs it on the finished tree and reports, and an `integration-verify` stage keeps its own gate, as its signal directs. The orchestrator acts on the result: it delegates the fixes and commits.
 
 This is enforced, not just advised: `loom-hooks/subagent-verify-guard.sh` (a `PreToolUse:Bash` hook) blocks project-wide runners — `cargo build`, `cargo test`, `make test`, `tsc`, `go build` and friends — when the caller is detected as a subagent. Scoped invocations pass, quoted mentions are ignored, and unrecognised commands are always allowed: a false block would strand a subagent mid-task.
 
 Two things worth knowing:
 
-- **`integration-verify` stages are carved out.** That stage type exists to run the complete suite, so its subagents may. The carve-out is read from the stage file and fails safe — an ambiguous or missing stage file means no relaxation.
+- **Two carve-outs: the `loom-verifier`, and `integration-verify` stages.** The verifier is recognized by the `agent_type` Claude Code puts in the hook payload, which the subagent cannot set. The `integration-verify` stage type exists to run the complete suite, so its subagents may; that carve-out is read from the stage file and fails safe — an ambiguous or missing stage file means no relaxation.
 - **There is deliberately no opt-out environment variable.** The main agent is never affected, so an escape hatch would only serve to defeat the rule.
 
 ### Bug-Fix Stages
@@ -1025,7 +1026,7 @@ Every stage's main agent is an **orchestrator**; the model and effort it runs co
 
 | Stage type           | Default model | Default effort |
 | -------------------- | ------------- | -------------- |
-| `standard`           | `opus`        | `high`         |
+| `standard`           | `opus`        | `medium`       |
 | `knowledge`          | `opus`        | `medium`       |
 | `knowledge-distill`  | `sonnet`      | `high`         |
 | `integration-verify` | `opus`        | `xhigh`        |
@@ -1036,7 +1037,7 @@ Configure either default per stage type in the `[models]` section of `~/.loom/co
 # ~/.loom/config.toml or .loom/work/config.toml
 [models]
 standard_model = "opus"
-standard_effort = "high"
+standard_effort = "medium"
 knowledge_model = "opus"
 knowledge_effort = "medium"
 knowledge_distill_model = "sonnet"
@@ -1047,19 +1048,21 @@ integration_verify_effort = "xhigh"
 
 A plan stage's `model` / `reasoning_effort` field overrides both config tiers for that one stage. Merge and base-conflict sessions stay pinned at opus/high and adjudication keeps its own `[adjudication] model`; neither is configurable through `[models]`.
 
-The orchestrator decomposes the work, hands each subagent full context, then verifies and commits. It makes a change itself only when that is cheaper than a spawn: at most 20 changed lines in at most 2 files it has already read, proven by one command; a fable session delegates even those. Implementation is delegated to as few subagents as the work allows, each spawned **by agent type** so the model choice is explicit:
+The orchestrator decomposes the work, hands each subagent full context, then has the gate run and commits. In a `standard` stage the gate (build, tests, lint, format, the acceptance criteria) runs in a `loom-verifier` subagent, one fresh spawn per round; an `integration-verify` stage keeps its own gate. Either way the orchestrator owns the fixes and the commit. It makes a change itself only when that is cheaper than a spawn: at most 20 changed lines in at most 2 files it has already read, proven by one command; a fable session delegates even those. Implementation is delegated to as few subagents as the work allows, each spawned **by agent type** so the model choice is explicit:
 
-| Agent                           | Model                             | Use for                                                                                                                                                                          |
-| ------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `loom-software-engineer`        | Sonnet                            | Common implementation and integration tests to detailed instructions                                                                                                             |
-| `loom-codex-forwarder`          | Codex GPT-5.6 Terra or GPT-6 Luna | Codex lane, licensed only on stages listing codex in `implementers`: Terra for common implementation/integration tests, Luna for boilerplate, scaffolding, and simple unit tests |
-| `loom-senior-software-engineer` | Opus                              | Mainstream architecture and algorithm implementation, complex debugging, security-sensitive or cross-cutting work                                                                |
-| `loom-code-reviewer`            | Opus                              | Read-only code, security, and architecture review                                                                                                                                |
-| `loom-advisor`                  | Fable                             | Diagnosis after a repeated failure — advice returned, nothing written                                                                                                            |
+| Agent                                     | Model                                                | Use for                                                                                                                                                                                                          |
+| ----------------------------------------- | ---------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loom-software-engineer`                  | Sonnet                                               | Common implementation and integration tests to detailed instructions                                                                                                                                             |
+| `loom-software-engineer` (`model: haiku`) | Haiku                                                | Mechanical edits, boilerplate, scaffolding, and simple unit tests                                                                                                                                                |
+| `loom-codex-forwarder`                    | Codex GPT-5.6 Terra (GPT-6 Luna on explicit request) | Codex lane, licensed only on stages listing codex in `implementers`: Terra for common implementation/integration tests, Luna for boilerplate, scaffolding, and simple unit tests only when the user or plan asks |
+| `loom-senior-software-engineer`           | Opus (effort high)                                   | Mainstream architecture and algorithm implementation, complex debugging, security-sensitive or cross-cutting work; spawned with `effort: xhigh` for the hardest cases                                            |
+| `loom-code-reviewer`                      | Opus                                                 | Read-only code, security, and architecture review                                                                                                                                                                |
+| `loom-advisor`                            | Fable                                                | Diagnosis after a repeated failure — advice returned, nothing written                                                                                                                                            |
+| `loom-verifier`                           | Opus (effort xhigh)                                  | A standard stage's gate: build, tests, lint, format, and acceptance on the finished tree, reported pass or fail per step; writes nothing                                                                         |
 
 Fable-tier implementation — major bugs, visual/UI design, extremely challenging algorithmic design — has no dedicated agent type; it is spawned with an explicit model override rather than relying on inheritance.
 
-The `loom-codex-forwarder` row additionally depends on the `codex` CLI and its plugin's companion runtime being installed. `loom run` checks this at startup and prints an advisory warning if either is missing — it never blocks the run — and terra-/luna-tier work falls back to Sonnet for the duration; the stage signal states the fallback explicitly and does not spawn `loom-codex-forwarder`.
+The `loom-codex-forwarder` row additionally depends on the `codex` CLI and its plugin's companion runtime being installed. `loom run` checks this at startup and prints an advisory warning if either is missing — it never blocks the run — and terra-tier work falls back to Sonnet and luna-tier work to Haiku for the duration; the stage signal states the fallback explicitly and does not spawn `loom-codex-forwarder`.
 
 This is why savings come from delegation rather than downgrade: an untyped subagent silently inherits the stage's own (usually Opus) model, making every worker expensive. Two failures on the same task should produce a `loom-advisor` diagnosis, not a blind retry at a larger model.
 
