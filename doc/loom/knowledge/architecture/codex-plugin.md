@@ -172,8 +172,8 @@ capability/preflight/resolve shape as [Remote Control](remote-control.md)'s `pre
   failure — a missing codex install must not block a run that never intended to use codex on most
   of its stages.
 - **Signal doctrine.** When the lane is unavailable, `format_codex_implementers_section` emits a
-  fallback note in place of the normal codex doctrine block: terra-/luna-tier work routes to
-  sonnet for the run, and the orchestrator must NOT spawn `loom-codex-forwarder` — spawning it
+  fallback note in place of the normal codex doctrine block: terra-tier work routes to
+  sonnet and luna-tier work to haiku for the run, and the orchestrator must NOT spawn `loom-codex-forwarder` — spawning it
   against a missing companion runtime would just fail the one Bash call the forwarder is allowed
   to make.
 - **Scope.** The check does not mutate `implementers` or stage state; it only changes what the
@@ -236,8 +236,8 @@ Three moving parts:
    `CODEX_IMPLEMENTER_MODEL_LUNA = "gpt-6-luna"`, and `CODEX_IMPLEMENTER_EFFORT = "xhigh"`
    (`loom/src/codex.rs`) rather than hardcoded, and `tests_doctrine.rs` asserts BLOCK-B contains
    all three — so changing `codex.rs` without updating the prose surfaces fails the build. Terra is
-   the tier for common implementation and integration tests; luna is for boilerplate, scaffolding,
-   and simple unit tests.
+   the tier for common implementation and integration tests; luna does boilerplate, scaffolding,
+   and simple unit tests only when the user or plan asks for it; haiku takes that work by default.
 4. **Settings carry-forward.** `PRESERVED_SETTINGS_KEYS` / `preserve_unowned_keys`
    (`sandbox/settings.rs:580,587`) — see the scope section below.
 

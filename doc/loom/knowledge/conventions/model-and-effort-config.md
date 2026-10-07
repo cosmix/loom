@@ -25,7 +25,7 @@ gpt-6.1-sol (in-family fallback to gpt-6-sol, see Codex Model Fallback below),
 
 ## `[models]` Keys and Defaults
 
-`models.standard_model` opus / `models.standard_effort` high (`standard`);
+`models.standard_model` opus / `models.standard_effort` medium (`standard`);
 `models.knowledge_model` opus / `models.knowledge_effort` medium (`knowledge`);
 `models.knowledge_distill_model` sonnet / `models.knowledge_distill_effort` high
 (`knowledge-distill`); `models.integration_verify_model` opus /

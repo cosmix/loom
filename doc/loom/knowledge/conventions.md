@@ -152,13 +152,13 @@ See [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugi
 ## Guidance Delivery Channels Convention
 
 Vendored-asset location, guidance-channel selection (hooks vs. signals vs. skills vs.
-CLAUDE.md, and when to escalate prose to a hook), the main-agent-only verification rule,
+CLAUDE.md, and when to escalate prose to a hook), the implementers-do-not-verify rule and the loom-verifier gate,
 and Claude Code plugin scope/settings-regeneration behaviour in loom repos
 → [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugin-scope.md).
 
-## Verification Is the Main Agent's Job
+## Implementers Do Not Verify; the Gate Runs in a Verifier
 
-See [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugin-scope.md).
+A standard stage's gate runs in a `loom-verifier` subagent (opus, xhigh); integration-verify uses its own canonical verifier. See [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugin-scope.md).
 
 ## Git Push Requires Explicit User Request
 

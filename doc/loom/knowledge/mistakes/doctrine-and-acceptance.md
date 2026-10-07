@@ -355,3 +355,13 @@ put the doc edits in the implementation brief.
 **Prevention:** Classify a changelog commit by the files it touches, never by its type prefix. A change to an installed doctrine template, hook or skill is user-facing; only `doc/`, `README`-only prose and knowledge files are excluded as docs.
 
 **Fix:** Added a `### Changed` bullet for the codex doctrine to the `[1.1.x]` section of `CHANGELOG.md`.
+
+## Skipped INDEX.md and grep-swept a doctrine change
+
+**What happened:** Asked to add a haiku tier to the model guidance, the main agent ran `fd`/`rg -i haiku`/`sed -n` sweeps across the tree before opening `doc/loom/knowledge/INDEX.md`, though the SessionStart hook and KNOWLEDGE-FIRST both named it. The operator caught it.
+
+**Why:** A targeted grep for one word felt like lookup rather than exploration, so the index step was skipped. The index pointed straight at `patterns/doctrine-cross-surface.md` and `patterns/subagent-hierarchy.md`, which hold the BLOCK-B pinning rules the sweep had to rediscover.
+
+**Prevention:** In a tree with `INDEX.md`, the first read is the index, before any `rg`, `fd` or `sed` sweep. A grep across the tree is exploration.
+
+**Fix:** Read INDEX.md and the two topics it names before planning the edit.

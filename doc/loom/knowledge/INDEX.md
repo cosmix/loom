@@ -88,7 +88,7 @@
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Hooks, input validation, sandbox config | 137 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) | How a stage agent reaches the daemon | 105 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage states, locked writes, verify | 195 |
-| [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out vs coordinators vs teams; model mix | 91 |
+| [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out vs coordinators vs teams; model mix | 98 |
 
 ### conventions
 
@@ -98,7 +98,7 @@
 | [commits](conventions/commits.md) | Grouped Conventional Commits, no trailers | 25 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute authority, budgets | 119 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git/worktree ops, cargo, CI paths, size ledger | 217 |
-| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, verification, plugin scope | 121 |
+| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, verification, plugin scope | 126 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [pressure]/[models], precedence, value types | 103 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML schema, hook I/O, skill format | 168 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard type conventions and CSS gotchas | 30 |
@@ -119,7 +119,7 @@
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes, save races | 36 |
 | [daemon-singleton](mistakes/daemon-singleton.md) | Two daemons shared .loom/work/; now flocked | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | No process may outlive its test | 55 |
-| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine drift, acceptance | 357 |
+| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine drift, acceptance | 367 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability, hook tests | 191 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How knowledge goes stale | 229 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants live in constructor | 139 |
