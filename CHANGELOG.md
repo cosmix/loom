@@ -5,7 +5,7 @@ All notable changes to loom are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [1.1.x] - 2026-10-05
+## [1.1.x] - 2026-10-08
 
 ### Added
 
@@ -15,6 +15,7 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Disputes over wiring checks** — `loom stage dispute-criteria --field acceptance|wiring|wiring-tests` points `--criterion-index` into the list `loom stage complete` named in its failure label, and an accepted verdict patches that list.
 - **Source graph queries** — `loom map` adds `--references` and direct callers and callees with their call sites, `--window <id>` with `--window-lines` for an exact source window, `--limit`, `--path`, `--lang` and `--evidence` filters, `--timings`, `--census [--root <dir>]` to report which files the graph can see by dialect, and versioned `loom-map/2` JSON carrying the snapshot identity; `loom map --eval-edges <dir> [--thresholds <file>]` scores labelled corpora against the published edge-quality thresholds and exits 1 when one fails.
 - **Seven more languages** — the source graph parses and resolves JavaScript, TSX, Java, C#, Ruby, PHP, C and C++ alongside Rust, TypeScript, Python and Go; language detection recognizes the same set from extensions and manifests (`pom.xml`, `build.gradle`, `*.csproj`, `Gemfile`, `composer.json`, CMake and others), a bare `package.json` now reads as JavaScript, and the new `loom-javascript` and `loom-c` catalog skills bring the install to 75 skills, 65 of them on demand.
+- **Verifier subagent** — a new `loom-verifier` agent (Opus, effort xhigh) runs a `standard` stage's gate on the finished tree, covering build, tests, lint, format and acceptance criteria, and reports pass or fail per step without writing anything; `subagent-verify-guard.sh` lets it run project-wide suites, recognized by the `agent_type` in the hook payload, and the orchestrator spawns a fresh one for each round.
 
 ### Changed
 
@@ -22,3 +23,4 @@ to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - **Blocked stages retire their session** — `loom stage block`, from the agent or the operator, ends the stage's live session so its later exit is not filed as a crash, and the block reason appears in `loom status` and its attention list; a failed `loom stage complete` names the dispute and block routes in the stage's signal.
 - **Knowledge context routed by intent** — `loom knowledge context`, the prompt hook, worker briefs and the signal's Knowledge Brief route a query by its intent, explain why each neighbouring section was included, attach anchored source windows, and render caveats and text-search hints for each surface.
 - **Codex doctrine follows the stale-knowledge and block rules** — the `~/.codex/AGENTS.md` that `loom install-assets` writes tells codex sessions to correct a stale knowledge claim where they find it (a `stale-knowledge:` memory note inside a stage, a `loom knowledge replace-section` rewrite outside one) and to keep knowledge files other than the mistakes files to current truth; it and the preamble on every forwarded codex task forbid `loom stage complete`, `loom stage block` and `loom stage dispute-*` and send a blocker or a disputed check to the worker's report instead.
+- **Cheaper default model allocation** — `standard` stages now default to effort `medium` (`models.standard_effort`), since the gate runs in the verifier; the installed doctrine sends boilerplate, scaffolding and simple unit tests to a `haiku` `loom-software-engineer` by default, keeps codex `gpt-6-luna` for explicit requests, and has hard debugging and core architectural work spawned on Opus at effort `xhigh`.
