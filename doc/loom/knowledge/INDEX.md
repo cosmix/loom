@@ -85,18 +85,12 @@
 | [doctrine-cross-surface](patterns/doctrine-cross-surface.md) | Pinning multi-surface guidance | 135 |
 | [hook-content-stripping](patterns/hook-content-stripping.md) | How hooks read a Bash command | 161 |
 | [merge-and-recovery](patterns/merge-and-recovery.md) | Progressive merge, conflict recovery | 120 |
-| [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Signal gen, IPC, poll loop, spool drain | 107 |
-| [remote-control](patterns/remote-control.md) | Detect/preflight/resolve for external agents | 51 |
-| [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Hooks, input validation, sandbox config | 137 |
-| [stage-daemon-channels](patterns/stage-daemon-channels.md) | How a stage agent reaches the daemon | 105 |
-| [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage states, locked writes, verify | 195 |
-| [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out vs coordinators vs teams; model mix | 98 |
 | [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Signal gen, IPC, poll loop, spool | 110 |
 | [remote-control](patterns/remote-control.md) | Remote Control detect and resolve | 51 |
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Hooks, validation, sandbox config | 137 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) | How a stage agent reaches the daemon | 117 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage states, locked writes, verify | 198 |
-| [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out, coordinators, teams | 91 |
+| [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out, coordinators, teams | 98 |
 
 ### conventions
 
@@ -105,13 +99,8 @@
 | [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, errors, size limits | 273 |
 | [commits](conventions/commits.md) | Grouped Conventional Commits | 25 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute authority, budgets | 119 |
-| [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git/worktree ops, cargo, CI paths, size ledger | 217 |
-| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, verification, plugin scope | 126 |
-| [model-and-effort-config](conventions/model-and-effort-config.md) | [pressure]/[models], precedence, value types | 103 |
-| [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML schema, hook I/O, skill format | 168 |
-| [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard type conventions and CSS gotchas | 30 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, cargo, CI paths, size ledger | 243 |
-| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, plugin scope | 121 |
+| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, plugin scope | 126 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] precedence, value types | 103 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML, hook I/O, skills | 168 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard type and CSS gotchas | 30 |
@@ -134,8 +123,6 @@
 | [daemon-singleton](mistakes/daemon-singleton.md) | Two daemons shared .loom/work | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | No process may outlive its test | 55 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine drift, acceptance | 367 |
-| [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability, hook tests | 191 |
-| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine drift, acceptance | 357 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability, hook tests | 212 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How knowledge goes stale | 229 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants live in constructor | 154 |
@@ -150,7 +137,7 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, wiring pins | 303 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions, edges | 53 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 146 |
-| [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync | 293 |
+| [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync | 300 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | hooks/ dir is sandbox-protected | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers vs work state | 298 |
 | [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Sandbox tool failures | 263 |

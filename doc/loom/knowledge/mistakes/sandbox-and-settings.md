@@ -291,3 +291,10 @@ expected).
 **Residual, not fixed here:** directory components of the target path are still followed
 crate-wide — a tracked symlinked `doc/loom/knowledge` or `.loom` is written through by other
 commands (e.g. `loom map`'s overlay). See `concerns/sandbox-and-confinement-gaps.md`.
+
+## Home-expanded codex-forward allow written into committed settings.json
+
+**What happened:** `merge_permissions` appended `Bash(<$HOME>/.claude/hooks/loom/codex-forward.sh:*)` to the project's `.claude/settings.json` beside the `~` spelling, leaking the user's home path into a checked-in file.
+**Why:** the absolute spelling is needed because Bash allow rules do not expand `~` and `codex-forward-guard.sh` accepts both spellings; it was placed in the only file the fold already wrote.
+**Prevention:** machine-specific absolute paths go only in the per-session capsule (`session_settings/contents.rs` `capsule_settings`), never in `.claude/settings.json`.
+**Fix:** `capsule_settings` adds the entry when implementers include codex; `merge_permissions` strips it from `settings.json`.
