@@ -13,7 +13,7 @@ file src/commands/plan/verify.rs 555
 file src/commands/stage/complete.rs 743
 file src/commands/stage/tests/complete.rs 534
 file src/fs/permissions/hooks.rs 446
-file src/fs/permissions/settings.rs 422
+file src/fs/permissions/settings.rs 413
 file src/fs/safe_fs.rs 1019
 file src/fs/work_dir.rs 433
 file src/fs/work_dir/tests.rs 873

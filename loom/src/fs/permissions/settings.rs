@@ -65,25 +65,16 @@ fn require_object<'a>(value: &'a mut Value, label: &str) -> Result<&'a mut Map<S
 /// Home-expanded twin of `LOOM_PERMISSIONS`'s static
 /// `Bash(~/.claude/hooks/loom/codex-forward.sh:*)` allow entry.
 ///
-/// `loom-hooks/codex-forward-guard.sh` accepts TWO spellings of the wrapper path —
-/// the literal `~/...` form and the fully `$HOME`-expanded absolute form (see
-/// `is_exact_forward_command` there, and `loom-hooks/tests/codex-forward-guard-quoting.sh`,
-/// which pins the absolute form deliberately). A forwarder subagent that
-/// writes the absolute spelling passes the guard but was still denied by the
-/// Claude Code permission classifier, since only the `~` spelling could live
-/// in `LOOM_PERMISSIONS` — `$HOME` varies per machine, so a `&'static str`
-/// can't express it. This computes that second spelling at runtime, matching
-/// the `dirs::home_dir()` pattern already used for hook installation (see
-/// `hooks.rs`).
+/// `loom-hooks/codex-forward-guard.sh` accepts both the literal `~/...` and the
+/// `$HOME`-expanded absolute spelling of the wrapper path, but Claude Code Bash
+/// allow rules do not expand `~`. The absolute spelling embeds the user's home
+/// directory, so it is placed in the session capsule settings (see
+/// `capsule_settings`), which are generated at launch and never committed.
+/// It must never be written to the project's committed `settings.json`, which
+/// would leak the home path; `merge_permissions` removes it from there.
 ///
-/// Returns `None` if the home directory can't be determined; callers must
-/// treat that as "skip the dynamic entry" rather than a hard failure — a
-/// machine without a resolvable home dir must not lose the static entry too.
-///
-/// `pub(crate)`: `settings` is already a `pub(crate) mod` (see
-/// `permissions/mod.rs`), so any other in-crate call site that ever needs
-/// this same entry (e.g. a future worktree-side fold) can reuse it directly
-/// instead of re-deriving the string.
+/// Returns `None` if the home directory can't be determined; callers skip the
+/// entry rather than fail.
 pub(crate) fn codex_forward_home_allow_entry() -> Option<String> {
     let home = dirs::home_dir()?;
     Some(format!(

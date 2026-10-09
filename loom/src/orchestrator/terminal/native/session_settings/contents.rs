@@ -60,6 +60,8 @@ pub(super) struct CapsuleInputs<'a> {
 /// `worktree.bgIsolation` included, the checkout's deny rules carried, and
 /// with the codex lane its plugin keys), then the plans read, the scratch
 /// grant, the approved list, the session's write denies and the kind's hooks.
+/// With the codex lane it also allows the home-expanded forwarding wrapper
+/// path, which must not be committed in the project's `settings.json`.
 /// The config must pass `sandbox::validate_config` first. It never carries
 /// an `env` block: `LOOM_WORK_DIR` and every identity variable come from the
 /// wrapper alone.
@@ -80,6 +82,10 @@ pub(super) fn capsule_settings(inputs: &CapsuleInputs<'_>) -> Result<Value> {
     let plans_read = format!("Read(/{}/**)", utf8(&plans)?);
     extend_strings(&mut settings, &["permissions", "allow"], &[plans_read]);
     add_scratch_grant(&mut settings, inputs.scratch_dir)?;
+    if inputs.sandbox.implementers.includes_codex() {
+        let forward = crate::fs::permissions::settings::codex_forward_home_allow_entry();
+        extend_strings(&mut settings, &["permissions", "allow"], forward.as_slice());
+    }
     extend_strings(&mut settings, &["permissions", "allow"], inputs.approved);
     let denies = inputs.denies;
     let deny_write = ["sandbox", "filesystem", "denyWrite"];

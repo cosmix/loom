@@ -136,11 +136,10 @@ pub fn path_writable(dir: &Path) -> bool {
 
 /// Returns true if `dirs::home_dir()` resolves in this environment.
 ///
-/// `fs::permissions::settings::codex_forward_home_allow_entry` silently skips
-/// its dynamic permission entry when the home directory can't be determined
-/// (never a hard failure — see that function's doc comment), so a test that
-/// asserts the entry's presence needs this fact separated out rather than
-/// panicking on the same `None` the code under test already handles.
+/// `fs::permissions::settings::codex_forward_home_allow_entry` returns `None`
+/// when the home directory can't be determined (callers skip the entry, never
+/// fail), so a test that asserts the entry's presence or removal needs this
+/// fact separated out rather than panicking on the same `None`.
 pub fn home_dir_resolvable() -> bool {
     static RESULT: OnceLock<bool> = OnceLock::new();
     *RESULT.get_or_init(|| dirs::home_dir().is_some())

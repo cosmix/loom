@@ -346,3 +346,19 @@ fn a_config_validate_config_refuses_is_refused_for_every_kind() {
         }
     }
 }
+
+#[test]
+fn the_home_expanded_forward_entry_is_allowed_only_with_the_codex_lane() {
+    let Some(entry) = crate::fs::permissions::settings::codex_forward_home_allow_entry() else {
+        return;
+    };
+    for kind in ALL_KINDS {
+        let with_codex = build(kind, &sandbox(true), &[], None, true);
+        assert_has(&with_codex, "/permissions/allow", &entry, kind);
+        let without = strings(
+            &build(kind, &sandbox(false), &[], None, true),
+            "/permissions/allow",
+        );
+        assert!(!without.contains(&entry), "{kind}: {without:?}");
+    }
+}

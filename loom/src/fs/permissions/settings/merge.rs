@@ -8,8 +8,9 @@ use crate::fs::permissions::constants::LOOM_PERMISSIONS;
 use crate::fs::permissions::write_rules::prune_legacy_permission_grants;
 
 /// Merge loom's permission grants into `settings_obj`'s `permissions.allow`
-/// array: prune legacy grants, then add any missing loom permission
-/// (including the home-expanded codex forwarding wrapper entry).
+/// array: prune legacy grants and the home-expanded codex forwarding wrapper
+/// entry (it belongs in the session capsule, never this committed file), then
+/// add any missing loom permission.
 ///
 /// Returns `(added_permissions, removed_permissions)`.
 ///
@@ -30,7 +31,12 @@ pub(super) fn merge_permissions(settings_obj: &mut Map<String, Value>) -> Result
         .as_array_mut()
         .ok_or_else(|| anyhow::anyhow!("permissions.allow must be a JSON array"))?;
 
-    let removed_permissions = prune_legacy_permission_grants(allow_arr);
+    let mut removed_permissions = prune_legacy_permission_grants(allow_arr);
+    if let Some(home_entry) = codex_forward_home_allow_entry() {
+        let before = allow_arr.len();
+        allow_arr.retain(|v| v.as_str() != Some(home_entry.as_str()));
+        removed_permissions += before - allow_arr.len();
+    }
 
     // Collect existing permissions as strings for deduplication
     let existing: std::collections::HashSet<String> = allow_arr
@@ -43,17 +49,6 @@ pub(super) fn merge_permissions(settings_obj: &mut Map<String, Value>) -> Result
     for permission in LOOM_PERMISSIONS {
         if !existing.contains(*permission) {
             allow_arr.push(json!(permission));
-            added_permissions += 1;
-        }
-    }
-
-    // Additive: also allow the home-expanded spelling of the codex forwarding wrapper (see
-    // `codex_forward_home_allow_entry` for why this can't live in the static LOOM_PERMISSIONS
-    // array above). Skipped silently if the home directory can't be resolved — never fail the
-    // whole permission write over it.
-    if let Some(home_entry) = codex_forward_home_allow_entry() {
-        if !existing.contains(home_entry.as_str()) {
-            allow_arr.push(json!(home_entry));
             added_permissions += 1;
         }
     }
