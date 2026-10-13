@@ -80,33 +80,50 @@ one still tells every IV review or verify subagent to run the full build, suite 
 does not match the one-canonical-verifier wording; see the open follow-ups in
 [Token Accounting Follow-Ups](../concerns/token-accounting-and-proof-defects.md).
 
-## Claude Code Plugin Scope in Loom Repos (2026-08-07)
+## Claude Code Plugin Scope in Loom Repos
 
-Enable Claude Code plugins at **user or project scope** — `claude plugin install codex@openai-codex --scope user`.
-Scope decides the file: user → `~/.claude/settings.json`, project → `.claude/settings.json`,
-local → `.claude/settings.local.json`. That last file is the one loom REBUILDS from scratch on every
-stage spawn (`sandbox::write_settings`, `sandbox/settings.rs:77`, called from
-`orchestrator/core/stage_executor.rs:373` and `:584`, and from `loom repair --fix`).
+Enable Claude Code plugins at **user or project scope**: `claude plugin install codex@openai-codex --scope user`.
+Scope decides the file: user is `~/.claude/settings.json`, project is `.claude/settings.json`, local is
+`.claude/settings.local.json`.
 
-**Nuance that shipped 2026-08-07 — do not over-read the old "local scope vanishes" rule.**
-`preserve_unowned_keys` (`sandbox/settings.rs:587`) now carries a two-key allowlist across every
-regeneration:
+**Why.** Every loom-spawned session, whatever its kind, launches with `--settings <work_dir>/capsules/<session-id>.settings.json --setting-sources user,project`
+(`session_capsule` and `capsule_from` in `loom/src/orchestrator/terminal/native/capsule.rs`; the flags
+are emitted when the installed claude advertises them). Claude Code therefore loads the user and
+project files and never the local one, so a plugin enabled at user or project scope loads in every
+session with no further condition. A plugin folder `~/.claude/skills/<name>/` that holds
+`.claude-plugin/plugin.json` is auto-enabled at user scope as `<name>@skills-dir` and still loads under
+a capsule that carries `enabledPlugins` (checked against Claude Code 2.1.295).
 
-```rust
-const PRESERVED_SETTINGS_KEYS: [&str; 2] = ["enabledPlugins", "extraKnownMarketplaces"];
-```
+**What loom writes per spawn.** `write_session_capsule` (`native/session_settings.rs`) writes the
+capsule, file mode 0600 in a 0700 directory, and `cleanup_session_settings` removes it when the
+session ends. `capsule_settings` (`native/session_settings/contents.rs`) builds it over
+`sandbox::build_settings` (`loom/src/sandbox/settings.rs`), which only builds a document and writes
+nothing. Spawning writes no `.claude/settings.local.json`: `install_required_hooks`
+(`orchestrator/core/stage_executor.rs`) only refuses a spawn that has no hooks directory.
 
-Plugin enablement at local scope therefore _survives_ — verified by driving the real `write_settings`
-over a seeded file twice. The user/project rule still stands, for a different reason than before:
-the carve-out is exactly two keys, so local scope is safe **only** for plugins and **only** by
-special case. Everything else you put in that file (`env`, custom `hooks`, ...) is still dropped on
-the next spawn — see [Sandbox & Settings](../mistakes/sandbox-and-settings.md).
+**What survives.** `build_settings` ends in `preserve_unowned_keys`, which copies
+`PRESERVED_SETTINGS_KEYS = ["enabledPlugins", "extraKnownMarketplaces"]` (`sandbox/settings.rs`) from
+the main checkout's `.claude/settings.local.json` (read by `read_checkout_settings`) into the capsule.
+It runs only when `SettingsTarget::carry_plugin_keys` is set, which `capsule_settings` sets from
+`implementers.includes_codex()`, and it fills only keys the generated document lacks. A local-scope
+plugin therefore reaches a session only on a stage whose `implementers` include codex. Apart from
+its `permissions.deny` rules (`merge_existing_permissions`), every other key in that file (`env`,
+custom `hooks`, ...) never reaches the capsule; see
+[Sandbox & Settings](../mistakes/sandbox-and-settings.md).
 
-Verify inside a worktree after a stage starts; never assume:
+**What still touches `.claude/settings.local.json`.** `loom init` (`ensure_loom_permissions`) and
+`loom repair --fix` (`fix_hooks_local`, which calls `ensure_loom_hooks_local`) merge loom hooks, the
+agent-teams env var and `worktree.bgIsolation: "none"` into the main checkout's file for interactive
+sessions there, leaving other keys, `enabledPlugins` included, alone. `loom repair --fix` also strips
+the keys every capsule carries (`loom_written_keys_issue` in `commands/repair/settings_checks.rs`
+detects them, `strip_settings_local_loom_keys` in `sandbox/config/preflight/local_settings.rs` strips them). No loom-spawned session loads the file.
+
+Verify with a stage running; never assume:
 
 ```bash
-rg -n "enabledPlugins" .claude/settings.local.json
-claude plugin list --json
+claude plugin list --json                                # the plugin is listed as enabled, with its scope
+rg -n "enabledPlugins" .loom/work/capsules/              # main checkout: the plugin keys a live session was handed
+rg -n "enabledPlugins" .claude/settings.local.json       # main checkout: the source file those keys are copied from
 ```
 
 ## Planning custom asset install roots (2026-09-21)

@@ -239,7 +239,7 @@ Three moving parts:
    the tier for common implementation and integration tests; luna does boilerplate, scaffolding,
    and simple unit tests only when the user or plan asks for it; haiku takes that work by default.
 4. **Settings carry-forward.** `PRESERVED_SETTINGS_KEYS` / `preserve_unowned_keys`
-   (`sandbox/settings.rs:580,587`) — see the scope section below.
+   (`loom/src/sandbox/settings.rs`) — see the scope section below.
 
 Do NOT confuse the two implementer-lane tiers — `gpt-5.6-terra` and `gpt-6-luna` (both
 `codex.rs`) — with the `loom pressure` review model: `gpt-6.1-sol` by default
@@ -248,23 +248,23 @@ lacks it. The forwarder lane never falls back. `CODEX_MODELS` in `codex.rs` list
 
 ## Install scope: user or project, not local
 
-Scope decides the file: project → `.claude/settings.json`, local → `.claude/settings.local.json`,
-user → `~/.claude/settings.json`. The relevant keys are `enabledPlugins` and `extraKnownMarketplaces`.
+Install the plugin at **user or project scope** (`claude plugin install codex@openai-codex --scope user`).
+Scope decides the file: user is `~/.claude/settings.json`, project is `.claude/settings.json`, local is
+`.claude/settings.local.json`; the plugin lives under `enabledPlugins` and `extraKnownMarketplaces`.
 
-`sandbox::write_settings` (`sandbox/settings.rs:77`) REBUILDS `.claude/settings.local.json` from
-scratch on every stage spawn, in worktrees and in the main repo root alike. **Since `df7d1060`
-(2026-08-07) that no longer erases plugin installs:** `preserve_unowned_keys` (`:587`) carries a
-two-key allowlist forward —
+Every loom-spawned session launches with `--settings <capsule> --setting-sources user,project`
+(`capsule_from` in `loom/src/orchestrator/terminal/native/capsule.rs`), so user and project scope load in
+every session of every kind with no further condition. Local scope does not load by itself: the capsule
+carries the checkout's `enabledPlugins` and `extraKnownMarketplaces` from `.claude/settings.local.json`
+only when `capsule_settings` sets `SettingsTarget::carry_plugin_keys` from `implementers.includes_codex()`
+(`native/session_settings/contents.rs`), which `build_settings` then applies through
+`preserve_unowned_keys` over `PRESERVED_SETTINGS_KEYS` (`loom/src/sandbox/settings.rs`). A local-scope
+install therefore reaches a loom-spawned session only on a stage whose `implementers` include codex.
+User or project scope has no such condition. `skills/loom-plan-writer/references/codex-implementers.md`
+states the user/project rule as the requirement.
 
-```rust
-const PRESERVED_SETTINGS_KEYS: [&str; 2] = ["enabledPlugins", "extraKnownMarketplaces"];
-```
-
-— so a local-scope install now survives regeneration (verified by driving the real `write_settings`
-over a seeded file twice). **Prefer user or project scope anyway**: the carve-out is exactly two
-keys, so local scope is safe only for plugins and only by special case, while every other top-level
-key in that file is still dropped. `/loom-plan-writer` states the user/project rule as the
-requirement. See [Sandbox & Settings](../mistakes/sandbox-and-settings.md) for the rebuild mechanics.
+The capsule mechanics, what survives from the checkout's local file and what still writes it are in
+[Claude Code Plugin Scope in Loom Repos](../conventions/guidance-channels-and-plugin-scope.md).
 
 ## What Codex Actually Reads (verified 2026-08-29)
 

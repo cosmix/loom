@@ -43,11 +43,11 @@ YAML key is `permission_mode` (snake_case), values are kebab-case: `"auto"`, `"a
 
 ## One Flattener for an Untrusted Value Rendered on Many Surfaces
 
-`context/untrusted.rs::inline_safe` is the single definition now shared by THREE surfaces: the two
+`context/untrusted.rs::inline_safe` is the single definition shared by THREE surfaces: the two
 agent-facing renderers — the Knowledge Brief (`orchestrator/signals/format/brief.rs`) and `loom knowledge context`'s
-stdout (`commands/knowledge/context.rs`) — plus one operator-facing surface added later, the `loom
-status` payload (`commands/status/data/sanitize.rs`, applied via `commands/status/data/collector.rs:364` to every untrusted
-string reaching `StatusData`: stage/session ids, `model`, `last_tool`, `last_activity`, evidence lines).
+stdout (`commands/knowledge/context.rs`) — plus the operator-facing `loom
+status` payload (`sanitize_stage_summary` in `commands/status/data/sanitize.rs`, applied to every `StageSummary` by `collect_status_data` in `commands/status/data/collector.rs`; it covers the untrusted
+strings reaching `StatusData`: stage/session ids, `model`, `last_tool`, `last_activity`, evidence lines).
 Its docstring states outright that a second copy would duplicate a security rule that must never drift.
 
 ## Ask Which Surfaces Render the Type, Not Who Copied the Helper

@@ -143,11 +143,12 @@ any file at or near its ledger cap must be refactored in the same change that gr
 
 ## Ledger TUI: Tech Debt From the Live-Ledger-Dashboard Plan (2026-09-04)
 
-- **`StageSummary.session_backend` has no reader.** Populated by the collector
-  (`commands/status/data/collector.rs:225`, from `session.backend`) and delivered to spec by the payload-parity stage, but
-  no ledger column, static renderer line, or attention entry ever reads it — every other occurrence in
-  the tree is a test-fixture struct literal. Either give the ledger a BACKEND cell or drop the field
-  from `StageSummary`.
+- **`StageSummary.session_backend` has no Rust reader.** Populated by `build_stage_summary`
+  (`commands/status/data/collector.rs`, from `session.backend`), but no ledger column, static
+  renderer line, or attention entry reads it; every other Rust occurrence is a test-fixture struct
+  literal. Its only reader is the web stage page (`web/src/routes/stage.tsx`), which shows the
+  `loom run --backend tmux` command when the backend is `native`. Either give the ledger a BACKEND
+  cell or accept the web as the sole consumer.
 - **`render_context_bar` (`commands/status/render/progress.rs:56`, re-exported at `commands/status/render/mod.rs:18`) is dead**, with
   no caller anywhere in the tree — `commands/status/ui/tui/ledger/cells.rs:100-116` independently reimplements the
   same five-cell bar with the same characters. Also apparently unused: `pub use theme::{StatusColors,

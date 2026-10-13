@@ -139,8 +139,8 @@ thread and regex-tests every entry, per sandboxed Bash command. Only a prefix of
 refused as too broad. On a `~/src` holding 2.7 million inodes that froze the TUI for long stretches.
 
 Loom therefore never writes a `Read(` entry under `permissions.deny`, anywhere.
-`sandbox::settings::generate_settings_json`, `write_settings` and `git::worktree::settings` emit
-none; `carry_forward_denies` and the worktree refresh drop every `Read(` deny on shape alone;
+`sandbox::settings::generate_settings_json`, `build_settings` (the document each session capsule
+is written from, `write_session_capsule`) and `git::worktree::settings` emit none; `carry_forward_denies` and the worktree refresh drop every `Read(` deny on shape alone;
 `fs::permissions::sync` never promotes one; `fs/permissions/write_rules.rs::prune_loom_read_denies`
 strips loom-written ones (token denies in any spelling, and mirrors of
 `state_root::CREDENTIAL_DENY_READ_PATHS`) from both `.claude/settings.json` and

@@ -103,3 +103,14 @@ distillation should expect to shorten more blurbs before adding a topic, or drop
 ## `loom knowledge update` Run From Inside the Knowledge Directory Scaffolds a Nested Tree
 
 Run with the cwd at `doc/loom/knowledge`, `loom knowledge update <category>/<slug>` resolves the knowledge root relative to the cwd instead of the repository root: it scaffolds a second tree at `doc/loom/knowledge/doc/loom/knowledge/` (every tier-1 file, an `INDEX.md`, and the topic with the scaffold blurb) and writes the entry there. `loom knowledge check` then reports the scaffold blurb as an issue. Run knowledge commands from the repository root until the CLI resolves the root itself.
+
+## Stale References Awaiting a Knowledge Pass
+
+These sections still cite locations or behavior the tree no longer has; correct each with `loom knowledge replace-section` using symbol anchors:
+
+- `entry-points/filesystem-and-integration-modules.md`, the sandbox settings entry: cites `sandbox/settings.rs:16-34` and `SENSITIVE_ENV_KEYS`, which no longer exists in `loom/src`, inside an "earlier version of this line claimed" narrative.
+- `entry-points/remote-control.md`: cites `sandbox/settings.rs:15-26` for `apply_default_mode` and says every generated `settings.local.json` carries `defaultMode`; the per-session capsule (`capsule_settings`) carries it.
+- Dated headings or history narratives outside the mistakes files: `conventions.md` ("Additive Schema Fields ... (2026-08-07)" and two "(2026-09-21)" headings), `concerns/code-quality-and-hook-debt.md` ("Ledger TUI: Tech Debt ... (2026-09-04)"), `architecture/status-data-model.md` (a "2026-09-04 correction" paragraph and "used to" phrasing), `architecture/codex-plugin.md` ("What Codex Actually Reads (verified 2026-08-29)" and a fixed-by-commit narrative).
+- Line-number citations in `architecture/status-data-model.md` (`types.rs`, `protocol.rs`, `status.rs`, `app.rs`, `retry.rs`) and `architecture/web-dashboard.md` (`schema.ts` lines).
+- `mistakes/untrusted-value-boundaries.md` cites `collector.rs:266-267` and `:364` (history is allowed there; the citations are not current).
+- Outside the knowledge base: `skills/loom-plan-writer/references/codex-implementers.md` describes `.claude/settings.local.json` as the file loom rebuilds per worktree; each spawn writes a per-session capsule instead (`orchestrator/terminal/native/session_settings.rs` `write_session_capsule`).

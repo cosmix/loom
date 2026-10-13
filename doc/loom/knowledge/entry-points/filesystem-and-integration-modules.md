@@ -39,7 +39,7 @@
 ## Sandbox
 
 - `sandbox/config.rs` - MergedSandboxConfig, merge_config(), expand_paths()
-- `sandbox/settings.rs` - generate_settings_json(), write_settings()
+- `sandbox/settings.rs` - generate_settings_json(), build_settings() (builds the settings document and writes nothing; the per-session capsule file is written by `write_session_capsule` in `orchestrator/terminal/native/session_settings.rs`, contents from `capsule_settings`)
 
 ## Remote Control Module
 

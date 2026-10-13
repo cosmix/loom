@@ -164,7 +164,7 @@ A standard stage's gate runs in a `loom-verifier` subagent (opus, xhigh); integr
 
 See [Git and Build Workflow](conventions/git-and-build-workflow.md).
 
-## Claude Code Plugin Scope in Loom Repos (2026-08-07)
+## Claude Code Plugin Scope in Loom Repos
 
 See [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugin-scope.md).
 
