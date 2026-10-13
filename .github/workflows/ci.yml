@@ -317,6 +317,7 @@ jobs:
           echo "$RUNNER_TEMP/system-bash" >> "$GITHUB_PATH"
 
       - name: Assert bash is 3.2
+        id: bash32
         run: |
           version=$(bash -c 'echo "$BASH_VERSION"')
           echo "bash $version"
@@ -325,14 +326,18 @@ jobs:
             *) echo "expected bash 3.2, got $version"; exit 1 ;;
           esac
 
+      # The three checks below run independently of each other, but only
+      # when bash 3.2 is confirmed: under bash 5 they would pass vacuously.
       - name: Parse every shell hook
+        if: ${{ !cancelled() && steps.bash32.outcome == 'success' }}
         run: ./scripts/check-hook-syntax.sh
 
       - name: Run the hook tests
+        if: ${{ !cancelled() && steps.bash32.outcome == 'success' }}
         run: bash loom-hooks/tests/run-all.sh
 
       - name: Pre-commit partial-staging regression
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.bash32.outcome == 'success' }}
         run: ./scripts/test-pre-commit-partial-staging.sh
 
   audit:
