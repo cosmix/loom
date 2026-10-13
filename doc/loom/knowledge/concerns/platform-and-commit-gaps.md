@@ -204,11 +204,13 @@ CI run 38386384997 (commit `37c67d38`) confirmed the fixes for every failure of 
 first macOS run, except one. `tests_bridge::backpressure::bridge_leaves_pty_output_upstream_while_the_client_is_stalled`
 still fails on the macOS runner: the child writes its whole 256 KiB while the client never reads. The
 pre-`connect` shrink of the client socket (`tests_bridge/sockets.rs`) did not stop it, so the TCP
-advertised-window explanation was wrong or incomplete. The tree now also gives the client a 1 KiB send
-buffer before `connect`, which by XNU source caps its receive buffer near 47 KiB
-([Rust Fixtures Assumed Linux](../mistakes/ci-toolchain-and-cargo.md#rust-fixtures-assumed-linux-paths-ptys-and-tool-output-2026-10-13)).
-No macOS run has confirmed it. The same run lost the Linux `Hook syntax` runner to a BSD-shim recursion,
-also fixed in the tree. A runaway in a hook step kills the runner and its log; no hook step caps
+advertised-window explanation was wrong or incomplete, and so was a second, XNU-source fix (CI run
+38393520660). A stalled macOS loopback client absorbs about 330 KB whatever its socket options, so the
+test now measures that absorption with the fixture's own setup (`sockets::stalled_client_capacity`)
+and writes it plus `STALL_MARGIN` (192 KiB). It passes on a Mac (Darwin 27); no CI run has confirmed
+it yet. See [Rust Fixtures Assumed Linux](../mistakes/ci-toolchain-and-cargo.md#rust-fixtures-assumed-linux-paths-ptys-and-tool-output-2026-10-13).
+Run 38386384997 also lost the Linux `Hook syntax` runner to a BSD-shim recursion, which run
+38393520660 confirms fixed. A runaway in a hook step kills the runner and its log; no hook step caps
 `ulimit -u`. The causes of the fixed failures are in
 [The First macOS Hook Run](../mistakes/hooks-shell-portability.md#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13),
 [Rust Fixtures Assumed Linux](../mistakes/ci-toolchain-and-cargo.md#rust-fixtures-assumed-linux-paths-ptys-and-tool-output-2026-10-13)

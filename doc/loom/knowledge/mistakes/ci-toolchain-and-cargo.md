@@ -269,13 +269,20 @@ name, which APFS refuses. The web-terminal tests assumed Linux PTY buffering and
 - A PTY test that needs backpressure puts the child in raw mode: a canonical-mode Darwin PTY never
   blocks the master's writes without a complete line. Squeeze `od` output (`tr -s ' '`): BSD `od` pads
   each byte to four columns.
-- A small `SO_RCVBUF` does not bound a stalled TCP receiver on macOS. XNU's `tcp_sbrcv_grow_rwin`
-  (`bsd/netinet/tcp_subr.c`) grows the receive buffer by up to two steps of `16 × t_maxseg` past the
-  set size and ignores `SB_USRSIZE`. `t_maxseg` is clamped to the client's send buffer at connect
-  time, so a test that needs a stalled client must set a small `SO_SNDBUF` (1 KiB caps it near 47 KiB)
-  before `connect`. A first fix shrank only the receive buffer before `connect`, reasoning that TCP
-  never takes back an advertised window, and still failed on the runner. Linux locks a user-set
-  `SO_RCVBUF`. This is derived from XNU source.
+- Do not size a macOS kernel buffer from source reading alone; measure it on a Mac first. Two fixes to
+  the stalled-client web-terminal test failed on the runner. The first shrank the client's
+  `SO_RCVBUF` before `connect`, reasoning that TCP never takes back an advertised window. The second
+  also set a 1 KiB client `SO_SNDBUF`, reasoning from XNU's `tcp_sbrcv_grow_rwin` that receive
+  autosizing ignores a set `SO_RCVBUF` and steps by `16 × t_maxseg`. Measured on macOS (Darwin 27)
+  loopback, the client keeps a 16,332-byte MSS whatever its send buffer, and `TCP_MAXSEG` 1024 is
+  `EINVAL` (512 is accepted and ignored). A client `SO_RCVBUF` of 8 KiB set before `connect` becomes
+  326,640 bytes (20 × MSS) and stays there, so a never-reading client plus an 8 KiB server send buffer
+  absorb 331,416 bytes. Set after `connect`, it keeps autosizing (past 530 KB). No socket option bounds
+  a stalled loopback client below about 330 KB, so a test that needs one to block a writer must
+  measure the absorption and write more than that. The window opens gradually (about 100 KB per half
+  second from an initial 128 KiB), so the measurement must wait out a quiet period longer than that
+  cadence. A 50 ms pause measured 128 KiB; a write that moves nothing for 500 ms measures the
+  ~330 KB. Linux locks a user-set `SO_RCVBUF`.
 
 **Fix:** the fixtures and tests listed in
 [macOS Test Failures Open in CI](../concerns/platform-and-commit-gaps.md#macos-test-failures-open-in-ci).
