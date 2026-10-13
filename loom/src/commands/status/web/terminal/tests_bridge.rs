@@ -36,7 +36,8 @@ fn start_bridge(script: impl Into<String>, mode: Mode) -> Fixture {
 /// `socket_bytes` shrinks both ends' kernel buffers. Left at `None` the
 /// autotuned defaults hold megabytes, so a client that stops reading is
 /// invisible to the bridge; shrunk, a client that stops reading stalls the
-/// bridge's writes after a few tens of kilobytes.
+/// bridge's writes after a bounded amount: tens of kilobytes on Linux, about
+/// 330 KB on macOS (`sockets::stalled_client_capacity` measures it).
 ///
 /// `stall_timeout` is the bridge's give-up deadline for an input queue that
 /// never drains. Everything but the test for that deadline passes

@@ -14,6 +14,7 @@ use tungstenite::{Message, WebSocket};
 
 use super::super::bridge::GATE_STALL_TIMEOUT;
 use super::super::protocol::{Mode, CLOSE_REFUSED, CLOSE_SERVER_STOPPING};
+use super::sockets::stalled_client_capacity;
 use super::{
     gating_flood, join_within, skip_bridge_test, start_bridge, start_bridge_with,
     wait_for_binary_progressing, wait_for_close, wait_for_close_frame,
@@ -23,9 +24,17 @@ use super::{
 /// never appear. A bridge that drained the master into its out-buffer
 /// regardless of the stall would move 16 KiB per iteration and park twice per
 /// iteration on the 250 ms write timeout - about 32 KiB a second, so this is
-/// comfortably longer than such a bridge would need to swallow the child's
-/// whole 256 KiB of output.
+/// comfortably longer than such a bridge would need to swallow the
+/// `STALL_MARGIN` of output the kernel buffers leave to it.
 const STALL_WATCH: Duration = Duration::from_secs(8);
+
+/// How far the stalled test's child output runs past what the kernel buffers
+/// absorb. It must exceed what a correct bridge can still hold above that -
+/// the PTY's queue plus at most one 16 KiB frame in its out-buffer - so the
+/// child blocks. A bridge that drains the PTY regardless of the stall moves
+/// about 32 KiB a second (see `STALL_WATCH`), so it swallows this margin in
+/// about 6 s and lets the marker appear within the 8 s watch.
+const STALL_MARGIN: usize = 192 * 1024;
 
 /// Send `payload` as 32 KiB frames, and fail if that took longer than
 /// `budget`.
@@ -178,11 +187,12 @@ fn bridge_gives_up_on_a_child_that_never_drains() {
     join_within(fixture.server, Duration::from_secs(5));
 }
 
-/// 256 KiB of child output and then a marker, with both ends' kernel buffers
-/// shrunk to 8 KiB. That is far past what those buffers and the PTY's own
-/// output buffer together absorb, so a bridge that stops reading the master
-/// while its writes are stalled leaves the child blocked in `write` with the
-/// marker untouched - which is the assertion, and the only way to see that
+/// Child output of what a stalled client's kernel buffers absorb on this host
+/// plus `STALL_MARGIN`, and then a marker, with both ends' kernel buffers
+/// shrunk to 8 KiB. The margin outruns the PTY's own output buffer and one
+/// bridge frame, so a bridge that stops reading the master while its writes
+/// are stalled leaves the child blocked in `write` with the marker
+/// untouched - which is the assertion, and the only way to see that
 /// tmux's backpressure reaches tmux rather than being absorbed here. It is
 /// also well under `MAX_WRITE_BUFFER`, so a bridge that kept draining the
 /// master into its out-buffer regardless would swallow all of it and let the
@@ -194,8 +204,12 @@ fn bridge_leaves_pty_output_upstream_while_the_client_is_stalled() {
     }
     let dir = TempDir::new().expect("temp dir");
     let finished = dir.path().join("finished");
+    // Measured, not fixed: a stalled loopback client absorbs over 300 KiB on
+    // macOS whatever its socket options (see `connect_shrunk`), tens of KiB
+    // on Linux. Measured before the bridge starts, so its traffic cannot skew it.
+    let output = stalled_client_capacity(8 * 1024) + STALL_MARGIN;
     let script = format!(
-        "head -c 262144 /dev/zero | tr '\\0' 'x'; touch '{}'; printf 'DONE\\n'",
+        "head -c {output} /dev/zero | tr '\\0' 'x'; touch '{}'; printf 'DONE\\n'",
         finished.display()
     );
     let mut stalled = start_bridge_with(
