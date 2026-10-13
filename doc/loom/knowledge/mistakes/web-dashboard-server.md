@@ -326,3 +326,13 @@ nothing were: `peek_head` returning `Ok(0)` and its catch-all `Err` arm (`ErrorK
 **Prevention:** every early return on a connection path answers the client or has a reason to stay silent;
 retry EINTR on a peek. `commands/status/web/head.rs` retries the EINTR case and `unserved.rs` answers 503 when
 the spawn fails; the other candidates stay as listed.
+
+## A Signal Ended Terminal Bridges as Dead Peers (2026-10-14)
+
+**What happened:** `bridge_survives_a_client_that_stops_reading` and `bridge_leaves_pty_output_upstream_while_the_client_is_stalled` failed about one full `cargo test --lib` run in three, and never alone or under CPU load (`scripts/flake-check.sh`). The client received a bare close partway through the output. Temporary logging at each `Stop::Peer` site showed `outbound: Io(Interrupted)`, an `EINTR` from the bridge's `send`.
+
+**Why:** the bridge sets `SO_SNDTIMEO`/`SO_RCVTIMEO` (`WRITE_TIMEOUT`, `READ_TIMEOUT`). signal(7): socket calls on such a socket are never restarted after a signal handler runs, `SA_RESTART` or not. Once any handler is installed in the process (the server's own `ctrlc` one in `status/web/mod.rs`), every delivered signal is `EINTR` on whichever bridge is mid-call. `bridge.rs::stalled` counted only `WouldBlock` and `TimedOut` as not-yet-transferred, so `outbound_stop` and `pump_socket` ended the session as a dead peer.
+
+**Prevention:** wherever an error kind is classified as retryable on a socket with a timeout, `Interrupted` belongs with `WouldBlock`/`TimedOut`. A test that fails only inside the full suite, and never under CPU load alone, points to process-global state (signals, descriptors) rather than timing. Log the stop reason before tuning budgets.
+
+**Fix:** `stalled` includes `Interrupted`, pinned by `bridge.rs` `tests::a_signal_interrupting_a_transfer_is_retried_not_read_as_a_dead_peer`. `tests_bridge.rs::read_until` prints the close frame and byte count when a bridge closes before the needle arrives.

@@ -255,3 +255,13 @@ tests parent, `rg` the name in sibling files that glob-import `super::*`.
 **Prevention:** A gate that degrades when a run cannot happen degrades on every error the run returns, not on a list of known outcomes. Never answer an OS limit with a constant tuned to the host: the first proposed fix was a 100 KiB bound under Linux's 128 KiB per-argument limit, which scales with page size, does not exist on macOS (about 1 MiB for all arguments plus the environment), and would ship to every project loom runs. Let exec report the limit and degrade. Bound what a note prints: the criteria runner's error context carries the full command text.
 
 **Fix:** `run_group` turns a run error into a full-suite note naming only the error's root cause, and every note, failure and `ran` entry shows the command cut at 200 bytes and at most 10 selected test names (`impact_tests/runs.rs`, tests in `runs_tests.rs`, one of them a real 4 MiB exec). The recovery gap this exposed is in [[concerns/merge-and-recovery-edge-cases]], "A Defect in a Loom Gate Parks the Stage Until an Operator Acts".
+
+## Contracts in a Sub-Workspace Ran Under the Root's Runner Config (2026-10-14)
+
+**What happened:** in a monorepo whose `apps/web/` has its own bunfig.toml (a happy-dom preload), and whose root bunfig.toml ignores `apps/web/**`, every contract in `apps/web` failed `loom stage complete` with `bun-test output not parsed`. Loom ran `bun test apps/web/src/x.test.ts -t ...` from the stage working dir. Bun read the root config, treated the non-`./` argument as a filter, and matched no file. The freeze had accepted that same no-match exit as `exit_nonzero_unverified`, so it never saw the contracts fail. A dispute could not help: it re-freezes content and cannot change where a contract runs.
+
+**Why:** contracts assumed the stage working dir is every runner's project root. Runners that read config or find their project only in their cwd (bun, vitest, jest, mocha, dart, go, dotnet, phpunit) break when a contract file belongs to a nested project. The 2026-09-30 Rust case above is the same bug, worked around by the plan.
+
+**Prevention:** a contract command is built only through `run_dir::resolve_run`, which resolves the run dir from the recorded cwd, plan `cwd`, adapter run-root markers, then working dir. An adapter whose output can say "no test file matched" must classify that as `NotSelected`, never leave it unparsed.
+
+**Fix:** `cwd` on the plan contract and in `freeze.json`, `run_root_markers` per adapter, bun `./` paths, and bun no-match parsing (see architecture/contract-phase.md, "Where a Contract Runs").

@@ -142,3 +142,16 @@ exists (`graph/state-key.tsx`), the legend lists `writing contract tests` under 
 stage-strip label reads `... · contract phase`, and the stage dialog's session-type row reads
 `contract writer` (`sessionTypeLabel`). `web/src/api/schema.ts` must accept
 `session_type: "contract"` (see mistakes/web-dashboard-server.md).
+
+## Where a Contract Runs
+
+`verify/contracts/run_dir.rs::resolve_run` picks the directory every contract command runs from, and is the only builder of a contract command (freeze CLI, daemon freeze record, completion, dispute re-freeze, contract signal, adjudication prompt). Priority:
+
+1. the plan contract's optional `cwd`, relative to the worktree root (`v2_fields.rs` requires the file to lie beneath it); it always wins;
+2. the cwd `freeze.json` recorded for the contract's current file, found by `store::recorded_cwd` (completion, dispute re-freeze, adjudication prompt), so completion runs where the freeze ran even if a runner config is planted since;
+3. the nearest ancestor of the contract file holding one of the adapter's `run_root_markers()` (regular files only, symlinks ignored), walking up to the worktree root;
+4. the stage's `working_dir`.
+
+The file is passed to the runner relative to that directory. The daemon records each contract's normalized `file` (relative to `working_dir`) and resolved `cwd` in `FrozenContract`. `store::recorded_cwd` trusts an entry only for the file it was recorded with: the entry with the contract's id and file, else any entry with its file (a renamed id keeps its cwd, so markers the agent plants cannot move it), else an entry with its id and no `file`. A contract re-pointed to another file gets no recorded cwd and falls to rules 3-4; so does an entry without `cwd`.
+
+An accepted contract dispute (`apply_contract.rs::refrozen_contracts`) re-freezes the disputed contract and every contract whose id and file the record does not hold together with a `cwd` (inserted, renamed, re-pointed, or an entry lacking `file`/`cwd`), resolving each with `store::recorded_cwd`. The files of all of them, plus the disputed contract's file before the amendment (taken from the stage and from its record entry), are re-hashed. The choice reads only the record, which `store::refreeze` rewrites last and atomically, so a retry after a partial failure makes the same choice. `store::refreeze` updates `adapter`, `file` and `cwd` on an existing entry, keeping its outcome, and adds a contract the record lacks with outcome `REFROZEN_OUTCOME` (`refrozen`), because it was never run at freeze. Entries for ids the amendment removed stay in the record. See mistakes/verification-v2-delivery.md, "Contracts in a Sub-Workspace Ran Under the Root's Runner Config".

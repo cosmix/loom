@@ -116,3 +116,9 @@ Plan authors are trusted, so these are author-mistake gaps, not stage-agent bypa
 - A `format_check: bool` field on `TruthCheck` (`models/stage/checks.rs`, `deny_unknown_fields`, serde default and skip-if-false like `WiringCheck.literal`), honoured by `is_format_check`. A Simple (string) criterion cannot carry it. The field must be threaded through plan amendment (`plan/amendment.rs`, `plan/amendment_fields.rs`), `acceptance_command.rs` validation, the adjudication prompt and `verify/criteria/cache_contract.rs` (pass-cache keys); check whether it needs the `version: 2` gate.
 - A `stdout_empty` field beside `stderr_empty`, so `gofmt -l .` fails on any output without a `test -z` wrapper.
 - A narrower rule recognising `test -z "$(gofmt -l ...)"` and more formatter commands in `format_gate.rs`, one file, no schema; `invocations()` splits subshells and pipelines, so each accepted shape needs a test, with near-miss tests as the module already has.
+
+## Contract Run Dir Detected Twice at Freeze
+
+The freeze CLI resolves each contract's run dir for its red run, and the daemon resolves it again from the worktree when it writes `freeze.json` (`daemon/server/contracts.rs`); `ContractRunReport` carries no cwd. A run-root marker matching a `harness` glob that the writer adds or removes between the two would record a dir the red run never used. Fix when it matters: send the CLI's cwd in the report and refuse a freeze whose daemon-side resolution differs.
+
+`loom stage amend --field contracts` re-freezes nothing. An amended explicit `cwd` still takes effect, because the plan's `cwd` beats the recorded one, and a changed `file` drops the recorded dir. But the new file's content is not hashed until a dispute re-freezes it.

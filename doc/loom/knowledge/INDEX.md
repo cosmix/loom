@@ -32,7 +32,7 @@
 | [context-retrieval-corpus](architecture/context-retrieval-corpus.md) | Stopwording, rescue floor, BM25 | 177 |
 | [context-retrieval-routing](architecture/context-retrieval-routing.md) | Intent routing, neighbours, caveats | 75 |
 | [context-retrieval-state](architecture/context-retrieval-state.md) | Base/overlay layers, delivery records | 192 |
-| [contract-phase](architecture/contract-phase.md) | Contract session, freeze, handover | 144 |
+| [contract-phase](architecture/contract-phase.md) | Contract session, freeze, handover | 157 |
 | [core-abstractions](architecture/core-abstractions.md) | ExecutionGraph, Stage, Session | 136 |
 | [daemon-launch](architecture/daemon-launch.md) | Re-exec launch, readiness, socket path | 65 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) | Relayed signed commits | 143 |
@@ -60,7 +60,7 @@
 | [status-data-model](architecture/status-data-model.md) | Source of each status field | 226 |
 | [target-guard](architecture/target-guard.md) | Accepted-tip record, hook, holds | 127 |
 | [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends | 285 |
-| [test-runner-adapters](architecture/test-runner-adapters.md) | 23 adapters, profiles, quoting, detect | 49 |
+| [test-runner-adapters](architecture/test-runner-adapters.md) | 23 adapters, profiles, quoting, detect | 57 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, --compare, cache | 260 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 135 |
 | [web-dashboard](architecture/web-dashboard.md) | status --web server, SPA, streams | 95 |
@@ -160,9 +160,9 @@
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server, plan-prose gotchas | 43 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Producers of a rendered field | 188 |
 | [verification-harness](mistakes/verification-harness.md) | Many checks failing: suspect harness | 371 |
-| [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 257 |
+| [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 267 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) capped by path | 123 |
-| [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server concurrency | 328 |
+| [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server concurrency | 338 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Layer written under an ignored key | 94 |
 
 ### concerns
@@ -184,5 +184,5 @@
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package caches session-writable | 17 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token-optimization follow-ups | 92 |
 | [typed-config-values](concerns/typed-config-values.md) | Accepted gaps in the config read-path | 27 |
-| [verification-v2-followups](concerns/verification-v2-followups.md) | v2 adapters, parser gaps, known gaps | 118 |
+| [verification-v2-followups](concerns/verification-v2-followups.md) | v2 adapters, parser gaps, known gaps | 124 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Latent issues in status/web | 94 |

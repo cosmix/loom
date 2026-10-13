@@ -47,3 +47,11 @@ Probe reads go through `fs::safe_read::read_bounded` with an `lstat` regular-fil
 `types.rs`) prints per package the kinds, the runner and the skills; `"runner":null` means unsupported.
 `loom-hooks/skill-trigger.sh` maps a kind to `loom-<kind>` and finds no skill for `javascript`
 (`recommend::resolve_skill` maps it to `loom-typescript`).
+
+## Run-Root Markers
+
+`TestRunnerAdapter::run_root_markers` names the files that make a directory the one the runner must run from: the runner reads its config, or finds its project, only in its cwd. A `*.ext` entry matches any file with that extension. Contracts use it (see architecture/contract-phase.md, "Where a Contract Runs"). Set: bun-test bunfig.toml; vitest `vitest.config.*`; jest `jest.config.*`; mocha `.mocharc.*`; dart/flutter pubspec.yaml; go `go.mod`; cargo-test and nextest `Cargo.toml`; swift `Package.swift`; mix `mix.exs`; rspec `.rspec`, `Gemfile`; minitest `Gemfile`, `Rakefile`; phpunit and pest `phpunit.xml*`; dotnet `*.sln`, `*.slnx`, `*.csproj`, `*.fsproj`, `*.vbproj`. None for node-test, pytest, unittest, gradle, maven, sbt and ctest: pytest locates its config from its arguments, and the build-tool runners select by name across a multi-module build, where a module dir is not reliably the right root. A plan sets contract `cwd` for those.
+
+Excluded on purpose: `vite.config.*` (an app's build config usually has no `test` block, and would shadow a root `vitest.config` defining projects) and `composer.json` (a path-repository package has no `vendor/bin` of its own).
+
+bun-test passes every relative file as `./<path>`: without the prefix bun reads the argument as a substring filter. Its parser classifies `did not match any test files` and `Test filter ... had no matches` as `NotSelected`, so a freeze refuses a run that found no file instead of accepting it as `exit_nonzero_unverified`. `testrun/command.rs::package_runner` looks for a bun lockfile in the package dir and each ancestor up to the first one holding `.git`, because a workspace's lockfile sits at the repository root.
