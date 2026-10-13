@@ -61,7 +61,7 @@ triggers:
   - login
   - password
 "#;
-        let metadata: SkillMetadata = serde_yaml::from_str(yaml).unwrap();
+        let metadata: SkillMetadata = crate::yaml::from_str(yaml).unwrap();
         assert_eq!(metadata.name, "auth");
         assert_eq!(metadata.description, "Authentication patterns");
         assert_eq!(metadata.triggers.len(), 2);
@@ -73,7 +73,7 @@ triggers:
 name: test-skill
 description: A test skill
 "#;
-        let metadata: SkillMetadata = serde_yaml::from_str(yaml).unwrap();
+        let metadata: SkillMetadata = crate::yaml::from_str(yaml).unwrap();
         assert_eq!(metadata.name, "test-skill");
         assert!(metadata.triggers.is_empty());
     }

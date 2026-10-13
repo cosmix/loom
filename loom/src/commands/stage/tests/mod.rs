@@ -40,7 +40,7 @@ pub(crate) fn setup_work_dir() -> TempDir {
 }
 
 pub(crate) fn save_test_stage(work_dir: &Path, stage: &Stage) {
-    let yaml = serde_yaml::to_string(stage).unwrap();
+    let yaml = crate::yaml::to_string(stage).unwrap();
     let content = format!("---\n{yaml}---\n\n# Stage: {}\n", stage.name);
 
     let stages_dir = work_dir.join("stages");

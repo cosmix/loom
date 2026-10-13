@@ -8,6 +8,7 @@
 //! `make_acceptance_yaml`, `make_wiring_test_yaml`) live there and are
 //! imported here.
 
+use crate::models::stage::{AcceptanceCriterion, TruthCheck};
 use crate::plan::amendment::{
     apply_amendment, verify_plan_versions_consistency, AmendmentField, AmendmentPatch,
     AmendmentRequest,
@@ -16,7 +17,7 @@ use crate::verify::transitions::{load_stage, update_stage};
 
 use super::amendment::{
     audit_content, make_acceptance_yaml, make_stage, make_wiring_test_yaml, read_plan, setup_env,
-    snapshot_count, PLAN_CONTENT,
+    setup_env_with_plan, snapshot_count, PLAN_CONTENT,
 };
 
 // --------------------------------------------------------------------------
@@ -217,4 +218,86 @@ fn wiring_tests_field_name_round_trips_through_recovery() {
     assert!(actions >= 1);
     let recovered = load_stage("stage-a", &env.work_dir).unwrap();
     assert_eq!(recovered.wiring_tests[0].name, "smoke test v2");
+}
+
+// --------------------------------------------------------------------------
+// Round trip: amended metadata re-parses from the written plan file
+// --------------------------------------------------------------------------
+fn amend(env: &super::amendment::TestEnv, field: AmendmentField, patch: AmendmentPatch) {
+    let req = AmendmentRequest {
+        stage_id: "stage-a".to_string(),
+        field,
+        patch,
+        reason: None,
+        dispute_id: None,
+    };
+    apply_amendment(&env.plan_path, &env.work_dir, req).unwrap();
+}
+
+/// Applies the four amendments under test and returns the extended
+/// acceptance check it wrote.
+fn write_round_trip_amendments(env: &super::amendment::TestEnv) -> TruthCheck {
+    let extended = TruthCheck {
+        command: "loom --help".to_string(),
+        stdout_contains: vec![
+            "Usage:".to_string(),
+            "yes".to_string(),
+            "key: v # c".to_string(),
+        ],
+        stdout_not_contains: Vec::new(),
+        stderr_empty: None,
+        exit_code: Some(0),
+        description: Some("first line\nsecond line\n\nfourth line\n".to_string()),
+    };
+    let extended_yaml = crate::yaml::to_string(&extended).unwrap();
+    let wiring_yaml = "source: \"src/lib.rs\"\npattern: \"1.0\"\n\
+                       description: \"multi\\nline: null\\n\"\n";
+    let test_yaml = "name: \"null\"\ncommand: \"~\"\ndescription: \"a\\nb\"\n";
+    let replace = |value: &str| AmendmentPatch::Replace {
+        index: 0,
+        value: value.to_string(),
+    };
+    amend(env, AmendmentField::Acceptance, replace(&extended_yaml));
+    amend(
+        env,
+        AmendmentField::Acceptance,
+        AmendmentPatch::Insert {
+            index: 2,
+            value: make_acceptance_yaml("on"),
+        },
+    );
+    amend(env, AmendmentField::Wiring, replace(wiring_yaml));
+    amend(env, AmendmentField::WiringTests, replace(test_yaml));
+    extended
+}
+
+#[test]
+fn amended_plan_metadata_round_trips_through_plan_parser() {
+    let env = setup_env_with_plan(&PLAN_CONTENT.replace(
+        "max_amendments_per_stage: 3",
+        "max_amendments_per_stage: 10",
+    ));
+    let extended = write_round_trip_amendments(&env);
+    let parsed = crate::plan::parser::parse_plan(&env.plan_path).unwrap();
+    let def = &parsed.stages[0];
+    assert_eq!(
+        def.acceptance,
+        vec![
+            AcceptanceCriterion::Extended(extended),
+            AcceptanceCriterion::Simple("cargo clippy".to_string()),
+            AcceptanceCriterion::Simple("on".to_string()),
+        ]
+    );
+    assert_eq!(def.wiring.len(), 1);
+    assert_eq!(def.wiring[0].pattern, "1.0");
+    assert_eq!(def.wiring[0].description, "multi\nline: null\n");
+    assert_eq!(def.wiring_tests.len(), 1);
+    assert_eq!(def.wiring_tests[0].name, "null");
+    assert_eq!(def.wiring_tests[0].command, "~");
+    assert_eq!(def.wiring_tests[0].description.as_deref(), Some("a\nb"));
+
+    let stage = load_stage("stage-a", &env.work_dir).unwrap();
+    assert_eq!(stage.acceptance, def.acceptance);
+    assert_eq!(stage.wiring[0].description, def.wiring[0].description);
+    assert_eq!(stage.wiring_tests[0].name, def.wiring_tests[0].name);
 }

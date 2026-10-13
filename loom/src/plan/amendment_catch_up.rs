@@ -105,12 +105,12 @@ fn stage_def_field_matches(
     match field {
         AmendmentField::Acceptance => live.acceptance == snap.acceptance,
         AmendmentField::Wiring => {
-            serde_yaml::to_string(&live.wiring).unwrap_or_default()
-                == serde_yaml::to_string(&snap.wiring).unwrap_or_default()
+            crate::yaml::to_string(&live.wiring).unwrap_or_default()
+                == crate::yaml::to_string(&snap.wiring).unwrap_or_default()
         }
         AmendmentField::WiringTests => {
-            serde_yaml::to_string(&live.wiring_tests).unwrap_or_default()
-                == serde_yaml::to_string(&snap.wiring_tests).unwrap_or_default()
+            crate::yaml::to_string(&live.wiring_tests).unwrap_or_default()
+                == crate::yaml::to_string(&snap.wiring_tests).unwrap_or_default()
         }
         AmendmentField::Contracts => live.contracts == snap.contracts,
     }

@@ -142,7 +142,7 @@ fn stage_is_executing_for(stages: &[Stage], stage_id: &str, session_id: &str) ->
 /// one: an unreadable file, a document without frontmatter, and every origin
 /// other than an agent's own ceiling handoff.
 fn takedown_request(path: &Path) -> Option<TakedownRequest> {
-    let frontmatter: HandoffFrontmatter = serde_yaml::from_str(&frontmatter_head(path)?).ok()?;
+    let frontmatter: HandoffFrontmatter = crate::yaml::from_str(&frontmatter_head(path)?).ok()?;
     if frontmatter.origin != Some(HandoffOrigin::AgentCeiling) {
         return None;
     }

@@ -131,12 +131,11 @@ fn context_defaults_keep_800k_ceilings_and_80_100_feedback() {
 }
 
 fn assert_max_turns_at_or_above_floor(
-    mapping: &serde_yaml::Mapping,
+    mapping: &serde_json::Map<String, serde_json::Value>,
     path: &Path,
     floor: u64,
 ) -> bool {
-    let max_turns = serde_yaml::Value::String("maxTurns".to_string());
-    let Some(value) = mapping.get(&max_turns) else {
+    let Some(value) = mapping.get("maxTurns") else {
         return false;
     };
     let value = value
@@ -172,7 +171,7 @@ fn agent_frontmatter_keeps_max_turns_at_or_above_current_floor() {
         }
         let content = fs::read_to_string(&path).expect("read agent definition");
         let frontmatter = extract_yaml_frontmatter(&content).expect("parse agent YAML frontmatter");
-        let mapping = frontmatter.as_mapping().expect("agent frontmatter mapping");
+        let mapping = frontmatter.as_object().expect("agent frontmatter mapping");
         if assert_max_turns_at_or_above_floor(mapping, &path, MAX_TURNS_FLOOR) {
             declarations += 1;
             if let Some(index) = path

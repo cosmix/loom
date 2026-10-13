@@ -16,8 +16,8 @@ use serde::de::DeserializeOwned;
 ///
 /// Returns an error if frontmatter extraction fails or YAML deserialization fails.
 pub fn parse_from_markdown<T: DeserializeOwned>(content: &str, type_name: &str) -> Result<T> {
-    let frontmatter = extract_yaml_frontmatter(content)?;
-    serde_yaml::from_value(frontmatter)
+    let raw = extract_frontmatter_raw(content)?;
+    crate::yaml::from_str(raw)
         .with_context(|| format!("Failed to parse {type_name} from frontmatter"))
 }
 
@@ -45,11 +45,11 @@ pub fn extract_frontmatter_field(content: &str, field: &str) -> Result<Option<St
 
     // Navigate to the field in the YAML value
     let value = match &yaml[field] {
-        serde_yaml::Value::Null => return Ok(None),
-        serde_yaml::Value::String(s) if s.is_empty() => return Ok(None),
-        serde_yaml::Value::String(s) => s.clone(),
-        serde_yaml::Value::Number(n) => n.to_string(),
-        serde_yaml::Value::Bool(b) => b.to_string(),
+        serde_json::Value::Null => return Ok(None),
+        serde_json::Value::String(s) if s.is_empty() => return Ok(None),
+        serde_json::Value::String(s) => s.clone(),
+        serde_json::Value::Number(n) => n.to_string(),
+        serde_json::Value::Bool(b) => b.to_string(),
         _ => return Ok(None),
     };
 
@@ -123,9 +123,9 @@ pub fn extract_frontmatter_raw(content: &str) -> Result<&str> {
 /// # Errors
 ///
 /// Returns an error if frontmatter extraction fails or YAML cannot be parsed.
-pub fn extract_yaml_frontmatter(content: &str) -> Result<serde_yaml::Value> {
+pub fn extract_yaml_frontmatter(content: &str) -> Result<serde_json::Value> {
     let yaml_content = extract_frontmatter_raw(content)?;
-    serde_yaml::from_str(yaml_content).context("Failed to parse YAML frontmatter")
+    crate::yaml::from_str(yaml_content).context("Failed to parse YAML frontmatter")
 }
 
 #[cfg(test)]

@@ -37,7 +37,7 @@ pub fn parse_and_validate(yaml_content: &str) -> Result<LoomMetadata> {
     // `unknown field` message, which includes the line/column - surface that
     // message plus migration guidance instead of swallowing it under the
     // generic context below.
-    let metadata: LoomMetadata = match serde_yaml::from_str(yaml_content) {
+    let metadata: LoomMetadata = match crate::yaml::from_str(yaml_content) {
         Ok(metadata) => metadata,
         Err(e) => {
             let message = e.to_string();

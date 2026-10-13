@@ -114,7 +114,7 @@ pub fn load_labels(dir: &Path) -> Result<Labels> {
     let path = dir.join(LABELS_FILE);
     let text = fs::read_to_string(&path).with_context(|| format!("read {}", path.display()))?;
     let labels: Labels =
-        serde_yaml::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
+        crate::yaml::from_str(&text).with_context(|| format!("parse {}", path.display()))?;
     if dialect_by_id(&labels.dialect).is_none() {
         bail!("{}: unknown dialect '{}'", path.display(), labels.dialect);
     }

@@ -52,6 +52,6 @@ loom:
       acceptance:
         - "true"
 "#;
-    let metadata: crate::plan::schema::LoomMetadata = serde_yaml::from_str(yaml).unwrap();
+    let metadata: crate::plan::schema::LoomMetadata = crate::yaml::from_str(yaml).unwrap();
     assert_eq!(metadata.loom.stages[0].stage_type, None);
 }

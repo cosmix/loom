@@ -149,7 +149,7 @@ pub fn load_thresholds(path: &Path) -> Result<Thresholds> {
 impl Thresholds {
     /// Parse a thresholds document.
     pub fn from_yaml(text: &str) -> Result<Self> {
-        Ok(serde_yaml::from_str(text)?)
+        Ok(crate::yaml::from_str(text)?)
     }
 
     /// The thresholds compiled into this binary.

@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use loom::models::stage::Stage;
 use std::path::Path;
 
-use super::yaml::extract_yaml_frontmatter;
+use super::yaml::extract_frontmatter_text;
 
 /// Writes a stage to .loom/work/stages/{stage.id}.md
 pub fn create_stage_file(work_dir: &Path, stage: &Stage) -> Result<()> {
@@ -13,7 +13,7 @@ pub fn create_stage_file(work_dir: &Path, stage: &Stage) -> Result<()> {
 
     let stage_path = stages_dir.join(format!("{}.md", stage.id));
 
-    let yaml = serde_yaml::to_string(stage).context("Failed to serialize stage to YAML")?;
+    let yaml = loom::yaml::to_string(stage).context("Failed to serialize stage to YAML")?;
 
     let mut content = String::new();
     content.push_str("---\n");
@@ -79,9 +79,9 @@ pub fn read_stage_file(work_dir: &Path, stage_id: &str) -> Result<Stage> {
 
 /// Parse a Stage from markdown with YAML frontmatter
 fn parse_stage_from_markdown(content: &str) -> Result<Stage> {
-    let frontmatter = extract_yaml_frontmatter(content)?;
+    let frontmatter = extract_frontmatter_text(content)?;
 
-    let stage: Stage = serde_yaml::from_value(frontmatter)
+    let stage: Stage = loom::yaml::from_str(&frontmatter)
         .context("Failed to deserialize Stage from YAML frontmatter")?;
 
     Ok(stage)

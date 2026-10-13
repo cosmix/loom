@@ -258,9 +258,9 @@ fn a_disabled_sandbox_needs_no_domain() {
 fn before_stage_runs_outside_the_sandbox() {
     let mut metadata = plan_allowing(&[], &[]);
     let checks = "- command: bunx tsc";
-    metadata.loom.stages[0].before_stage = serde_yaml::from_str(checks).expect("check");
+    metadata.loom.stages[0].before_stage = crate::yaml::from_str(checks).expect("check");
     assert!(messages(&metadata, None, NEEDS).is_empty());
-    metadata.loom.stages[0].after_stage = serde_yaml::from_str(checks).expect("check");
+    metadata.loom.stages[0].after_stage = crate::yaml::from_str(checks).expect("check");
     assert_eq!(messages(&metadata, None, NEEDS).len(), 1);
 }
 

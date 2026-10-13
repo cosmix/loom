@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use loom::models::session::Session;
 use std::path::Path;
 
-use super::yaml::extract_yaml_frontmatter;
+use super::yaml::extract_frontmatter_text;
 
 /// Writes a session to .loom/work/sessions/{session.id}.md
 pub fn create_session_file(work_dir: &Path, session: &Session) -> Result<()> {
@@ -13,7 +13,7 @@ pub fn create_session_file(work_dir: &Path, session: &Session) -> Result<()> {
 
     let session_path = sessions_dir.join(format!("{}.md", session.id));
 
-    let yaml = serde_yaml::to_string(session).context("Failed to serialize session to YAML")?;
+    let yaml = loom::yaml::to_string(session).context("Failed to serialize session to YAML")?;
 
     let content = format!(
         "---\n{yaml}---\n\n# Session: {}\n\n## Details\n\n- **Status**: {:?}\n- **Stage**: {}\n- **Context**: {} tokens\n",
@@ -50,9 +50,9 @@ pub fn read_session_file(work_dir: &Path, session_id: &str) -> Result<Session> {
 
 /// Parse a Session from markdown with YAML frontmatter
 fn parse_session_from_markdown(content: &str) -> Result<Session> {
-    let frontmatter = extract_yaml_frontmatter(content)?;
+    let frontmatter = extract_frontmatter_text(content)?;
 
-    let session: Session = serde_yaml::from_value(frontmatter)
+    let session: Session = loom::yaml::from_str(&frontmatter)
         .context("Failed to deserialize Session from YAML frontmatter")?;
 
     Ok(session)

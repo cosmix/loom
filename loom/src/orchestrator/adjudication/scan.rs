@@ -208,6 +208,6 @@ pub(super) fn parse_yaml_frontmatter<T: serde::de::DeserializeOwned>(content: &s
         .find("\n---")
         .ok_or_else(|| anyhow::anyhow!("missing closing '---'"))?;
     let yaml = &body[..end];
-    let parsed: T = serde_yaml::from_str(yaml).context("yaml deserialization")?;
+    let parsed: T = crate::yaml::from_str(yaml).context("yaml deserialization")?;
     Ok(parsed)
 }

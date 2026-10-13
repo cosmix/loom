@@ -145,7 +145,7 @@ impl Fixture {
             fix_attempts_at_dispute: 1,
             created_at: Utc::now(),
         };
-        let yaml = serde_yaml::to_string(&request).unwrap();
+        let yaml = crate::yaml::to_string(&request).unwrap();
         std::fs::write(path, format!("---\n{yaml}---\n\n# Dispute\n")).unwrap();
     }
 

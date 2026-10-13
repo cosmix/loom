@@ -27,7 +27,7 @@ fn plan_yaml_with_effort(effort: &str) -> String {
 fn accepts_each_allowed_value() {
     for effort in ALLOWED_REASONING_EFFORTS {
         let yaml = plan_yaml_with_effort(effort);
-        let parsed: Result<LoomMetadata, _> = serde_yaml::from_str(&yaml);
+        let parsed: Result<LoomMetadata, _> = crate::yaml::from_str(&yaml);
         assert!(
             parsed.is_ok(),
             "expected '{effort}' to parse, got: {:?}",
@@ -45,7 +45,7 @@ fn accepts_each_allowed_value() {
 fn rejects_shell_injection_attempt() {
     // Codex-noted attack vector: malicious plan smuggles shell metacharacters.
     let yaml = plan_yaml_with_effort("low; rm -rf / #");
-    let err = serde_yaml::from_str::<LoomMetadata>(&yaml)
+    let err = crate::yaml::from_str::<LoomMetadata>(&yaml)
         .expect_err("malicious reasoning_effort must be rejected");
     let msg = format!("{err}");
     assert!(
@@ -65,7 +65,7 @@ fn rejects_shell_injection_attempt() {
 #[test]
 fn rejects_random_string() {
     let yaml = plan_yaml_with_effort("ultra-mega");
-    let err = serde_yaml::from_str::<LoomMetadata>(&yaml).expect_err("should reject 'ultra-mega'");
+    let err = crate::yaml::from_str::<LoomMetadata>(&yaml).expect_err("should reject 'ultra-mega'");
     assert!(format!("{err}").contains("invalid reasoning_effort"));
 }
 
@@ -73,7 +73,7 @@ fn rejects_random_string() {
 fn rejects_uppercase_variant() {
     // Anchored to lowercase; Claude Code CLI is case-sensitive.
     let yaml = plan_yaml_with_effort("HIGH");
-    let err = serde_yaml::from_str::<LoomMetadata>(&yaml).expect_err("uppercase rejected");
+    let err = crate::yaml::from_str::<LoomMetadata>(&yaml).expect_err("uppercase rejected");
     assert!(format!("{err}").contains("invalid reasoning_effort"));
 }
 
@@ -88,7 +88,7 @@ loom:
       working_dir: "."
       artifacts: ["README.md"]
 "#;
-    let parsed: LoomMetadata = serde_yaml::from_str(yaml).expect("should parse without effort");
+    let parsed: LoomMetadata = crate::yaml::from_str(yaml).expect("should parse without effort");
     assert!(parsed.loom.stages[0].reasoning_effort.is_none());
 }
 
@@ -104,6 +104,6 @@ loom:
       artifacts: ["README.md"]
       reasoning_effort: null
 "#;
-    let parsed: LoomMetadata = serde_yaml::from_str(yaml).expect("null should be accepted");
+    let parsed: LoomMetadata = crate::yaml::from_str(yaml).expect("null should be accepted");
     assert!(parsed.loom.stages[0].reasoning_effort.is_none());
 }

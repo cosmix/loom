@@ -9,9 +9,7 @@ targets = [
 
 [advisories]
 db-urls = ["https://github.com/rustsec/advisory-db"]
-ignore = [
-    { id = "RUSTSEC-2024-0449", reason = "unsafe-libyaml is unmaintained, with no known vulnerability; it comes in only through serde_yaml, and moving off that is tracked in #27" },
-]
+ignore = []
 
 [licenses]
 confidence-threshold = 0.8

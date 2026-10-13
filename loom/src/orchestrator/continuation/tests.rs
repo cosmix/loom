@@ -29,7 +29,7 @@ fn create_test_stage(stage_id: &str, work_dir: &std::path::Path) -> crate::model
     stage.worktree = Some(stage_id.to_string());
 
     let stage_path = work_dir.join("stages").join(format!("{stage_id}.md"));
-    let yaml = serde_yaml::to_string(&stage).unwrap();
+    let yaml = crate::yaml::to_string(&stage).unwrap();
     let content = format!("---\n{yaml}---\n\n# Stage: {stage_id}\n");
     fs::write(stage_path, content).unwrap();
 

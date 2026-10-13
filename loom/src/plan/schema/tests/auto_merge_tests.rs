@@ -13,7 +13,7 @@ loom:
       name: "Test Stage"
       working_dir: "."
 "#;
-    let metadata: LoomMetadata = serde_yaml::from_str(yaml).unwrap();
+    let metadata: LoomMetadata = crate::yaml::from_str(yaml).unwrap();
     assert_eq!(metadata.loom.auto_merge, Some(true));
 }
 
@@ -28,7 +28,7 @@ loom:
       auto_merge: false
       working_dir: "."
 "#;
-    let metadata: LoomMetadata = serde_yaml::from_str(yaml).unwrap();
+    let metadata: LoomMetadata = crate::yaml::from_str(yaml).unwrap();
     assert_eq!(metadata.loom.stages[0].auto_merge, Some(false));
 }
 
@@ -42,7 +42,7 @@ loom:
       name: "Test Stage"
       working_dir: "."
 "#;
-    let metadata: LoomMetadata = serde_yaml::from_str(yaml).unwrap();
+    let metadata: LoomMetadata = crate::yaml::from_str(yaml).unwrap();
     assert_eq!(metadata.loom.auto_merge, None);
     assert_eq!(metadata.loom.stages[0].auto_merge, None);
 }

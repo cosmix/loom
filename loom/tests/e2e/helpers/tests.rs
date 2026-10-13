@@ -162,16 +162,10 @@ status: Pending
 # Body content"#;
 
     let yaml = extract_yaml_frontmatter(content).expect("Should extract frontmatter");
-    assert!(yaml.is_mapping());
+    assert!(yaml.is_object());
 
-    let map = yaml.as_mapping().unwrap();
-    assert_eq!(
-        map.get(serde_yaml::Value::String("id".to_string()))
-            .unwrap()
-            .as_str()
-            .unwrap(),
-        "test-1"
-    );
+    let map = yaml.as_object().unwrap();
+    assert_eq!(map.get("id").unwrap().as_str().unwrap(), "test-1");
 }
 
 #[test]

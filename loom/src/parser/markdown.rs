@@ -40,9 +40,9 @@ impl MarkdownDocument {
 
         // Convert YAML value to HashMap<String, String> for backward compatibility
         let mut frontmatter = HashMap::new();
-        if let serde_yaml::Value::Mapping(map) = yaml_value {
-            for (key, value) in map {
-                if let (serde_yaml::Value::String(k), serde_yaml::Value::String(v)) = (key, value) {
+        if let serde_json::Value::Object(map) = yaml_value {
+            for (k, value) in map {
+                if let serde_json::Value::String(v) = value {
                     frontmatter.insert(k, v);
                 }
             }

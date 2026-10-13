@@ -36,17 +36,17 @@ fn ids(names: &[&str]) -> Vec<String> {
 #[test]
 fn dispute_request_round_trip_yaml() {
     let req = request(DisputeKind::criterion(CriterionField::Acceptance, 2));
-    let y = serde_yaml::to_string(&req).unwrap();
-    let back: DisputeRequest = serde_yaml::from_str(&y).unwrap();
+    let y = crate::yaml::to_string(&req).unwrap();
+    let back: DisputeRequest = crate::yaml::from_str(&y).unwrap();
     assert_eq!(req, back);
 }
 
 #[test]
 fn a_criterion_request_round_trips_its_field() {
     let req = request(DisputeKind::criterion(CriterionField::WiringTests, 1));
-    let y = serde_yaml::to_string(&req).unwrap();
+    let y = crate::yaml::to_string(&req).unwrap();
     assert!(y.contains("field: wiring-tests"), "{y}");
-    let back: DisputeRequest = serde_yaml::from_str(&y).unwrap();
+    let back: DisputeRequest = crate::yaml::from_str(&y).unwrap();
     assert_eq!(
         back.kind,
         DisputeKind::criterion(CriterionField::WiringTests, 1)
@@ -56,9 +56,9 @@ fn a_criterion_request_round_trips_its_field() {
 #[test]
 fn the_kind_sits_beside_the_request_fields_in_the_frontmatter() {
     let req = request(DisputeKind::criterion(CriterionField::Acceptance, 2));
-    let yaml: serde_yaml::Value = serde_yaml::to_value(&req).unwrap();
-    assert_eq!(yaml["kind"], serde_yaml::Value::from("criterion"));
-    assert_eq!(yaml["criterion_index"], serde_yaml::Value::from(2));
+    let yaml: serde_json::Value = serde_json::to_value(&req).unwrap();
+    assert_eq!(yaml["kind"], serde_json::Value::from("criterion"));
+    assert_eq!(yaml["criterion_index"], serde_json::Value::from(2));
 }
 
 #[test]
@@ -68,9 +68,9 @@ fn a_findings_request_round_trips_with_its_evidence() {
         finding_ids: ids(&["s0/F-2-1"]),
         evidence,
     });
-    let y = serde_yaml::to_string(&req).unwrap();
+    let y = crate::yaml::to_string(&req).unwrap();
     assert!(y.contains("kind: findings"), "{y}");
-    let back: DisputeRequest = serde_yaml::from_str(&y).unwrap();
+    let back: DisputeRequest = crate::yaml::from_str(&y).unwrap();
     assert_eq!(req, back);
 }
 
@@ -90,8 +90,8 @@ fn an_integrity_request_round_trips_with_its_evidence() {
         event_ids: ids(&["TI-assert-rust"]),
         evidence: select_events(&[event], &ids(&["TI-assert-rust"])).unwrap(),
     });
-    let y = serde_yaml::to_string(&req).unwrap();
-    let back: DisputeRequest = serde_yaml::from_str(&y).unwrap();
+    let y = crate::yaml::to_string(&req).unwrap();
+    let back: DisputeRequest = crate::yaml::from_str(&y).unwrap();
     assert_eq!(req, back);
 }
 
@@ -137,8 +137,8 @@ fn verdict_accept_serializes_with_citations() {
         model: "claude-sonnet".to_string(),
         session_id: Some("session-abc".to_string()),
     };
-    let y = serde_yaml::to_string(&v).unwrap();
-    let back: DisputeVerdictRecord = serde_yaml::from_str(&y).unwrap();
+    let y = crate::yaml::to_string(&v).unwrap();
+    let back: DisputeVerdictRecord = crate::yaml::from_str(&y).unwrap();
     assert_eq!(v, back);
 }
 
@@ -148,7 +148,7 @@ fn verdict_reject_no_plan_patch_field() {
         citations: vec![],
         reasoning: "no evidence".to_string(),
     };
-    let s = serde_yaml::to_string(&v).unwrap();
+    let s = crate::yaml::to_string(&v).unwrap();
     assert!(s.contains("reject"), "verdict tag missing: {s}");
     assert!(
         !s.contains("plan_patch"),
@@ -161,7 +161,7 @@ fn verdict_needs_more_evidence_carries_questions() {
     let v = DisputeVerdict::NeedsMoreEvidence {
         questions: vec!["clarify A".to_string(), "clarify B".to_string()],
     };
-    let s = serde_yaml::to_string(&v).unwrap();
+    let s = crate::yaml::to_string(&v).unwrap();
     assert!(s.contains("needs-more-evidence"), "wrong tag: {s}");
     assert!(s.contains("clarify A"));
 }

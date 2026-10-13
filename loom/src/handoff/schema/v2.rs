@@ -188,12 +188,12 @@ impl HandoffV2 {
 
     /// Serialize to YAML string
     pub fn to_yaml(&self) -> Result<String> {
-        serde_yaml::to_string(self).context("Failed to serialize handoff to YAML")
+        crate::yaml::to_string(self).context("Failed to serialize handoff to YAML")
     }
 
     /// Parse from YAML string
     pub fn from_yaml(yaml: &str) -> Result<Self> {
-        let handoff: Self = serde_yaml::from_str(yaml).context("Failed to parse handoff YAML")?;
+        let handoff: Self = crate::yaml::from_str(yaml).context("Failed to parse handoff YAML")?;
         handoff.validate()?;
         Ok(handoff)
     }

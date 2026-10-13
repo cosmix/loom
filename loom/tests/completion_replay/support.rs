@@ -118,7 +118,7 @@ impl ReplayFixture {
             .strip_prefix("---\n")
             .and_then(|body| body.split_once("\n---").map(|(yaml, _)| yaml))
             .context("stage file must contain YAML frontmatter")?;
-        serde_yaml::from_str(frontmatter).context("deserializing replay stage")
+        loom::yaml::from_str(frontmatter).context("deserializing replay stage")
     }
 }
 
@@ -199,7 +199,7 @@ fn create_state(
 }
 
 fn write_record<T: serde::Serialize>(path: &Path, value: &T, title: &str) -> Result<()> {
-    let yaml = serde_yaml::to_string(value).context("serializing replay state")?;
+    let yaml = loom::yaml::to_string(value).context("serializing replay state")?;
     fs::write(path, format!("---\n{yaml}---\n\n# {title}\n"))
         .with_context(|| format!("writing {}", path.display()))
 }

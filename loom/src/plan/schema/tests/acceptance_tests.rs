@@ -149,7 +149,7 @@ fn test_validate_metadata_multiple_invalid_acceptance() {
 #[test]
 fn test_acceptance_criterion_yaml_simple_string() {
     let yaml = r#""echo hello""#;
-    let result: Result<AcceptanceCriterion, _> = serde_yaml::from_str(yaml);
+    let result: Result<AcceptanceCriterion, _> = crate::yaml::from_str(yaml);
     assert!(
         result.is_ok(),
         "Simple string should deserialize: {:?}",
@@ -168,7 +168,7 @@ command: "echo test output"
 stdout_contains: ["test output"]
 exit_code: 0
 "#;
-    let result: Result<AcceptanceCriterion, _> = serde_yaml::from_str(yaml);
+    let result: Result<AcceptanceCriterion, _> = crate::yaml::from_str(yaml);
     assert!(
         result.is_ok(),
         "Extended object should deserialize: {:?}",
@@ -187,7 +187,7 @@ fn test_acceptance_criterion_yaml_mixed_list() {
   stdout_contains: ["test output"]
   exit_code: 0
 "#;
-    let result: Result<Vec<AcceptanceCriterion>, _> = serde_yaml::from_str(yaml);
+    let result: Result<Vec<AcceptanceCriterion>, _> = crate::yaml::from_str(yaml);
     assert!(
         result.is_ok(),
         "Mixed list should deserialize: {:?}",
@@ -220,7 +220,7 @@ loom:
       artifacts:
         - "README.md"
 "#;
-    let result: Result<crate::plan::schema::types::LoomMetadata, _> = serde_yaml::from_str(yaml);
+    let result: Result<crate::plan::schema::types::LoomMetadata, _> = crate::yaml::from_str(yaml);
     assert!(
         result.is_ok(),
         "Full plan with mixed acceptance should parse: {:?}",
@@ -240,7 +240,7 @@ loom:
 fn test_retired_truth_fields_are_rejected() {
     // Retired verification fields must fail loudly instead of disappearing,
     // and the error must say where the check moved. `parse_and_validate` is
-    // the layer under test here (not raw `serde_yaml::from_str`), since the
+    // the layer under test here (not raw `crate::yaml::from_str`), since the
     // migration guidance is attached there.
     for field in ["truths", "truth_checks"] {
         let yaml = format!(

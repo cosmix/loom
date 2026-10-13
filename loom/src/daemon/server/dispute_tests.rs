@@ -73,7 +73,7 @@ fn filed_field(work_dir: &Path) -> String {
     let path = work_dir.join("disputes/stage-disp/1/request.md");
     let content = std::fs::read_to_string(path).unwrap();
     let frontmatter = content.split("---").nth(1).unwrap();
-    let yaml: serde_yaml::Value = serde_yaml::from_str(frontmatter).unwrap();
+    let yaml: serde_json::Value = crate::yaml::from_str(frontmatter).unwrap();
     yaml["field"].as_str().unwrap().to_string()
 }
 
@@ -280,7 +280,7 @@ fn dispute_with_failure_output_truncates_at_4kb() {
     // The frontmatter contains the failure_output; parse YAML and
     // check the field length is bounded.
     let yaml_chunk = content.split("---").nth(1).unwrap();
-    let parsed: serde_yaml::Value = serde_yaml::from_str(yaml_chunk).unwrap();
+    let parsed: serde_json::Value = crate::yaml::from_str(yaml_chunk).unwrap();
     let fo = parsed["failure_output"].as_str().unwrap();
     assert!(fo.len() <= 4096, "got {}", fo.len());
 }

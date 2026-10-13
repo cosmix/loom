@@ -111,7 +111,7 @@ fn v2_metadata_with_provision(working_dir: &str) -> LoomMetadata {
           rejects: "a parser that still accepts only version 1"
 "#
     );
-    serde_yaml::from_str(&yaml).expect("the plan with provision parses")
+    loom::yaml::from_str(&yaml).expect("the plan with provision parses")
 }
 
 fn provision_errors(working_dir: &str) -> Vec<String> {

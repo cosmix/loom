@@ -375,7 +375,7 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
     let plan_id = path.file_stem().and_then(|s| s.to_str()).map(String::from);
 
     // Deserialize LoomMetadata
-    let loom_metadata: LoomMetadata = match serde_yaml::from_str(&yaml) {
+    let loom_metadata: LoomMetadata = match crate::yaml::from_str(&yaml) {
         Ok(m) => m,
         Err(e) => return early_failure(json, source_str, format!("YAML parse error: {e}")),
     };

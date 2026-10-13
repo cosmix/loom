@@ -205,7 +205,7 @@ fn read_request(path: &Path) -> DisputeRequest {
         .by_ref()
         .take_while(|line| line.trim() != "---")
         .collect();
-    serde_yaml::from_str(&frontmatter.join("\n"))
+    loom::yaml::from_str(&frontmatter.join("\n"))
         .unwrap_or_else(|e| panic!("parse {}: {e}\n{content}", path.display()))
 }
 

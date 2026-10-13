@@ -24,7 +24,7 @@ loom:
       artifacts: ["README.md"]
       implementers: ["codex"]
 "#;
-    let parsed: LoomMetadata = serde_yaml::from_str(yaml).expect("implementers: [codex] parses");
+    let parsed: LoomMetadata = crate::yaml::from_str(yaml).expect("implementers: [codex] parses");
     let lanes = &parsed.loom.stages[0].implementers;
     assert_eq!(lanes.preferred(), Implementer::Codex);
     assert!(lanes.includes_codex());
@@ -44,7 +44,7 @@ loom:
       artifacts: ["README.md"]
       implementers: ["codex", "claude"]
 "#;
-    let parsed: LoomMetadata = serde_yaml::from_str(yaml).expect("mixed implementers parse");
+    let parsed: LoomMetadata = crate::yaml::from_str(yaml).expect("mixed implementers parse");
     let lanes = &parsed.loom.stages[0].implementers;
     assert!(lanes.is_mixed());
     assert!(lanes.includes_codex());
@@ -72,7 +72,7 @@ loom:
       artifacts: ["README.md"]
       implementers: ["claude", "codex"]
 "#;
-    let parsed: LoomMetadata = serde_yaml::from_str(yaml).expect("mixed implementers parse");
+    let parsed: LoomMetadata = crate::yaml::from_str(yaml).expect("mixed implementers parse");
     let lanes = &parsed.loom.stages[0].implementers;
     assert_eq!(lanes.preferred(), Implementer::Claude);
     assert!(
@@ -92,7 +92,7 @@ loom:
       working_dir: "."
       artifacts: ["README.md"]
 "#;
-    let parsed: LoomMetadata = serde_yaml::from_str(yaml).expect("plan should parse");
+    let parsed: LoomMetadata = crate::yaml::from_str(yaml).expect("plan should parse");
     let lanes = &parsed.loom.stages[0].implementers;
     assert_eq!(lanes.preferred(), Implementer::Claude);
     assert!(!lanes.includes_codex());
@@ -111,7 +111,7 @@ loom:
       artifacts: ["README.md"]
       implementers: ["gemini"]
 "#;
-    let result: Result<LoomMetadata, _> = serde_yaml::from_str(yaml);
+    let result: Result<LoomMetadata, _> = crate::yaml::from_str(yaml);
     assert!(
         result.is_err(),
         "an unknown lane should fail to parse, got: {result:?}"
@@ -133,7 +133,7 @@ loom:
       artifacts: ["README.md"]
       implementers: codex
 "#;
-    let result: Result<LoomMetadata, _> = serde_yaml::from_str(yaml);
+    let result: Result<LoomMetadata, _> = crate::yaml::from_str(yaml);
     assert!(
         result.is_err(),
         "a scalar implementers value should fail to parse, got: {result:?}"
@@ -152,7 +152,7 @@ loom:
       artifacts: ["README.md"]
       implementers: []
 "#;
-    let parsed: LoomMetadata = serde_yaml::from_str(yaml).expect("empty list parses");
+    let parsed: LoomMetadata = crate::yaml::from_str(yaml).expect("empty list parses");
     let errors = validate(&parsed).expect_err("an empty lane list must fail validation");
     assert!(
         errors
@@ -174,7 +174,7 @@ loom:
       artifacts: ["README.md"]
       implementers: ["codex", "claude", "codex"]
 "#;
-    let parsed: LoomMetadata = serde_yaml::from_str(yaml).expect("duplicate list parses");
+    let parsed: LoomMetadata = crate::yaml::from_str(yaml).expect("duplicate list parses");
     let errors = validate(&parsed).expect_err("a duplicated lane must fail validation");
     assert!(
         errors
@@ -236,7 +236,7 @@ fn implementer_display_matches_serde_representation() {
     // calls Display today, so without this the two could silently diverge and
     // a log line would disagree with the value written to a stage file.
     for variant in [Implementer::Claude, Implementer::Codex] {
-        let serialized = serde_yaml::to_string(&variant).expect("serialize implementer");
+        let serialized = crate::yaml::to_string(&variant).expect("serialize implementer");
         assert_eq!(
             variant.to_string(),
             serialized.trim(),

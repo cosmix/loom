@@ -77,7 +77,7 @@ fn write_dispute(work_dir: &Path, stage_id: &str, id: u32) {
         fix_attempts_at_dispute: 1,
         created_at: chrono::Utc::now(),
     };
-    let yaml = serde_yaml::to_string(&req).unwrap();
+    let yaml = loom::yaml::to_string(&req).unwrap();
     let path = request_file(&disputes_root, stage_id, id);
     std::fs::write(&path, format!("---\n{yaml}---\n\n# Dispute\n")).unwrap();
 }

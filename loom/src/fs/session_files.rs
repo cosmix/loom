@@ -53,7 +53,7 @@ pub fn save_session(session: &Session, work_dir: &Path) -> Result<()> {
 /// [`crate::parser::frontmatter::parse_from_markdown`]) followed by a
 /// human-readable body.
 pub fn session_to_markdown(session: &Session) -> String {
-    let yaml = serde_yaml::to_string(session).unwrap_or_else(|_| String::from("{}"));
+    let yaml = crate::yaml::to_string(session).unwrap_or_else(|_| String::from("{}"));
 
     format!(
         "---\n{yaml}---\n\n# Session: {}\n\n## Details\n\n- **Status**: {:?}\n- **Stage**: {}\n- **Context**: {} tokens\n",

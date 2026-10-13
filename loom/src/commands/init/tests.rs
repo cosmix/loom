@@ -25,7 +25,7 @@ fn create_test_plan(dir: &Path, stages: Vec<StageDefinition>) -> PathBuf {
         },
     };
 
-    let yaml = serde_yaml::to_string(&metadata).unwrap();
+    let yaml = crate::yaml::to_string(&metadata).unwrap();
     let plan_content = format!(
         "# Test Plan\n\n## Overview\n\nTest plan for unit tests\n\n<!-- loom METADATA -->\n```yaml\n{yaml}```\n<!-- END loom METADATA -->\n"
     );

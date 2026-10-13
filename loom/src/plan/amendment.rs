@@ -69,7 +69,7 @@ pub enum AmendmentField {
 }
 
 fn field_from_name(name: &str) -> Option<AmendmentField> {
-    serde_yaml::from_str(&format!("\"{}\"", name.replace('_', "-"))).ok()
+    crate::yaml::from_str(&format!("\"{}\"", name.replace('_', "-"))).ok()
 }
 
 /// The mutation to apply within the targeted field.
@@ -841,7 +841,7 @@ pub(super) enum ParsedAmendmentValue {
 }
 
 pub(super) fn serialize_loom_metadata(metadata: &LoomMetadata) -> Result<String> {
-    serde_yaml::to_string(metadata).context("Failed to serialize loom metadata to YAML")
+    crate::yaml::to_string(metadata).context("Failed to serialize loom metadata to YAML")
 }
 
 /// Splice a new YAML body into the original plan content, preserving every

@@ -23,7 +23,7 @@ loom:
       subagent_timeout_secs: 900
 "#;
     let parsed: LoomMetadata =
-        serde_yaml::from_str(yaml).expect("subagent_timeout_secs should parse");
+        crate::yaml::from_str(yaml).expect("subagent_timeout_secs should parse");
     assert_eq!(parsed.loom.stages[0].subagent_timeout_secs, Some(900));
 }
 
@@ -40,7 +40,7 @@ loom:
       working_dir: "."
       artifacts: ["README.md"]
 "#;
-    let parsed: LoomMetadata = serde_yaml::from_str(yaml).expect("plan should parse");
+    let parsed: LoomMetadata = crate::yaml::from_str(yaml).expect("plan should parse");
     assert_eq!(parsed.loom.stages[0].subagent_timeout_secs, None);
 
     let stage = Stage {

@@ -209,7 +209,7 @@ loom:
 "#
 }
 
-/// Plan with malformed YAML inside the metadata block (triggers serde_yaml::Error).
+/// Plan with malformed YAML inside the metadata block (triggers serde_saphyr::Error).
 fn malformed_yaml_plan() -> &'static str {
     r#"# Malformed YAML Plan
 

@@ -177,23 +177,23 @@ fn route_to_review_records_the_reason_and_clears_the_block() {
 #[test]
 fn merge_block_round_trips_and_is_omitted_when_absent() {
     let mut stage = stage_in(StageStatus::Completed);
-    let plain = serde_yaml::to_string(&stage).unwrap();
+    let plain = crate::yaml::to_string(&stage).unwrap();
     assert!(!plain.contains("merge_block"), "{plain}");
-    let back: Stage = serde_yaml::from_str(&plain).unwrap();
+    let back: Stage = crate::yaml::from_str(&plain).unwrap();
     assert_eq!(back.merge.block, None);
 
     stage.block_merge(MergeBlock::UncommittedOverlap {
         paths: vec!["a.txt".to_string()],
     });
-    let text = serde_yaml::to_string(&stage).unwrap();
-    let back: Stage = serde_yaml::from_str(&text).unwrap();
+    let text = crate::yaml::to_string(&stage).unwrap();
+    let back: Stage = crate::yaml::from_str(&text).unwrap();
     assert_eq!(back.merge.block, stage.merge.block);
 }
 
 #[test]
 fn merge_record_keeps_top_level_keys_and_round_trips() {
     let mut stage = stage_in(StageStatus::Completed);
-    let plain = serde_yaml::to_string(&stage).unwrap();
+    let plain = crate::yaml::to_string(&stage).unwrap();
     assert!(!plain.contains("merge_block:"), "{plain}");
     assert!(!plain.contains("merge_stash:"), "{plain}");
     assert!(!plain.contains("merge_unrestored_stashes:"), "{plain}");
@@ -206,7 +206,7 @@ fn merge_record_keeps_top_level_keys_and_round_trips() {
         }),
         unrestored: vec!["refs/loom/autostash/x".to_string()],
     };
-    let text = serde_yaml::to_string(&stage).unwrap();
+    let text = crate::yaml::to_string(&stage).unwrap();
     assert!(
         text.lines().any(|l| l.starts_with("merge_block:")),
         "{text}"
@@ -220,6 +220,6 @@ fn merge_record_keeps_top_level_keys_and_round_trips() {
             .any(|l| l.starts_with("merge_unrestored_stashes:")),
         "{text}"
     );
-    let back: Stage = serde_yaml::from_str(&text).unwrap();
+    let back: Stage = crate::yaml::from_str(&text).unwrap();
     assert_eq!(back.merge, stage.merge);
 }

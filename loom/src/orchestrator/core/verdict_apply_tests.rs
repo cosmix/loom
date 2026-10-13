@@ -88,7 +88,7 @@ fn write_dispute_request(work: &std::path::Path, stage_id: &str, id: u32) {
         fix_attempts_at_dispute: 1,
         created_at: chrono::Utc::now(),
     };
-    let yaml = serde_yaml::to_string(&req).unwrap();
+    let yaml = crate::yaml::to_string(&req).unwrap();
     std::fs::write(
         request_file(&disputes_root, stage_id, id),
         format!("---\n{yaml}---\n\n# Dispute {stage_id}/{id}\n"),
@@ -112,7 +112,7 @@ fn write_verdict(work: &std::path::Path, stage_id: &str, id: u32, session_id: Op
         model: "test".to_string(),
         session_id,
     };
-    let yaml = serde_yaml::to_string(&record).unwrap();
+    let yaml = crate::yaml::to_string(&record).unwrap();
     std::fs::write(
         verdict_file(&disputes_root, stage_id, id),
         format!("---\n{yaml}---\n\n# Verdict {stage_id}/{id}\n"),

@@ -51,7 +51,7 @@ pub(super) fn parse_amendment_value(request: &AmendmentRequest) -> Result<Parsed
 }
 
 fn parse_yaml<T: DeserializeOwned>(value: &str, type_name: &str, stage_id: &str) -> Result<T> {
-    serde_yaml::from_str(value)
+    crate::yaml::from_str(value)
         .with_context(|| format!("Invalid {type_name} in amendment for stage '{stage_id}'"))
 }
 
@@ -179,14 +179,14 @@ pub(super) fn stage_field_matches(
         AmendmentField::Acceptance => stage.acceptance == def.acceptance,
         AmendmentField::Wiring => {
             // WiringCheck doesn't derive PartialEq; compare by serialized form.
-            let a = serde_yaml::to_string(&stage.wiring).unwrap_or_default();
-            let b = serde_yaml::to_string(&def.wiring).unwrap_or_default();
+            let a = crate::yaml::to_string(&stage.wiring).unwrap_or_default();
+            let b = crate::yaml::to_string(&def.wiring).unwrap_or_default();
             a == b
         }
         AmendmentField::WiringTests => {
             // WiringTest doesn't derive PartialEq; compare by serialized form.
-            let a = serde_yaml::to_string(&stage.wiring_tests).unwrap_or_default();
-            let b = serde_yaml::to_string(&def.wiring_tests).unwrap_or_default();
+            let a = crate::yaml::to_string(&stage.wiring_tests).unwrap_or_default();
+            let b = crate::yaml::to_string(&def.wiring_tests).unwrap_or_default();
             a == b
         }
         AmendmentField::Contracts => stage.contracts == def.contracts,

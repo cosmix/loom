@@ -4,8 +4,8 @@ use super::create_valid_metadata;
 use crate::plan::schema::types::LoomMetadata;
 use crate::plan::schema::validation::validate;
 
-fn parse(yaml: &str) -> Result<LoomMetadata, serde_yaml::Error> {
-    serde_yaml::from_str(yaml)
+fn parse(yaml: &str) -> Result<LoomMetadata, serde_saphyr::Error> {
+    crate::yaml::from_str(yaml)
 }
 
 const UNKNOWN_NESTED_FIELD_CASES: [(&str, &str, &str); 6] = [

@@ -299,7 +299,7 @@ pub fn persist_verdict(
         std::fs::create_dir_all(parent)
             .with_context(|| format!("Failed to create {}", parent.display()))?;
     }
-    let yaml = serde_yaml::to_string(&record).context("serialize verdict record")?;
+    let yaml = crate::yaml::to_string(&record).context("serialize verdict record")?;
     let body = format!("---\n{yaml}---\n\n# Verdict for {stage_id} dispute {dispute_id}\n");
     std::fs::write(&path, body).with_context(|| format!("Failed to write {}", path.display()))?;
     Ok(())

@@ -110,7 +110,7 @@ fn write_verdict(work_dir: &std::path::Path, stage_id: &str, dispute_id: u32, se
         model: "test".to_string(),
         session_id: Some(session_id.to_string()),
     };
-    let yaml = serde_yaml::to_string(&record).unwrap();
+    let yaml = crate::yaml::to_string(&record).unwrap();
     let path = verdict_file(&disputes_root, stage_id, dispute_id);
     std::fs::write(
         &path,

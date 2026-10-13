@@ -182,7 +182,7 @@ id: test-stage
 name: Test Stage
 working_dir: "."
 "#;
-    let stage: StageDefinition = serde_yaml::from_str(yaml).unwrap();
+    let stage: StageDefinition = crate::yaml::from_str(yaml).unwrap();
     assert_eq!(stage.id, "test-stage");
     assert_eq!(stage.name, "Test Stage");
     assert_eq!(stage.description, None);
@@ -805,7 +805,7 @@ loom:
       context_budget: 65
 "#;
 
-    let metadata: LoomMetadata = serde_yaml::from_str(yaml)
+    let metadata: LoomMetadata = crate::yaml::from_str(yaml)
         .expect("`context_budget` must land in the trap field, not fail as an unknown key");
     assert_eq!(metadata.loom.stages[0].removed_context_budget, Some(65));
 

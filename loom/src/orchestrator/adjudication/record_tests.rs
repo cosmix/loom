@@ -33,7 +33,7 @@ fn write_request(work: &Path, dispute_id: u32) {
         fix_attempts_at_dispute: 1,
         created_at: Utc::now(),
     };
-    let yaml = serde_yaml::to_string(&req).unwrap();
+    let yaml = crate::yaml::to_string(&req).unwrap();
     std::fs::write(
         request_file(&disputes_root, "s1", dispute_id),
         format!("---\n{yaml}---\n\n# Dispute\n"),
@@ -71,7 +71,7 @@ fn records_a_valid_verdict() {
     assert!(content.contains("reject"));
     // The record must parse back as the daemon reads it.
     let record: DisputeVerdictRecord =
-        serde_yaml::from_str(content.split("---").nth(1).unwrap()).unwrap();
+        crate::yaml::from_str(content.split("---").nth(1).unwrap()).unwrap();
     assert_eq!(record.stage_id, "s1");
     assert_eq!(record.adjudicator_attempt_count, 1);
     assert_eq!(record.session_id.as_deref(), Some("session-test"));

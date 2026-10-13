@@ -214,14 +214,14 @@ impl FailureTracker {
 fn load_failure_state(path: &Path) -> Result<StageFailureState> {
     let content = fs::read_to_string(path)
         .with_context(|| format!("Failed to read failure state: {}", path.display()))?;
-    serde_yaml::from_str(&content)
+    crate::yaml::from_str(&content)
         .with_context(|| format!("Failed to parse failure state: {}", path.display()))
 }
 
 /// Save failure state to a YAML file
 fn save_failure_state(state: &StageFailureState, state_dir: &Path) -> Result<()> {
     let path = state_dir.join(format!("{}.yaml", state.stage_id));
-    let content = serde_yaml::to_string(state).context("Failed to serialize failure state")?;
+    let content = crate::yaml::to_string(state).context("Failed to serialize failure state")?;
     fs::write(&path, content)
         .with_context(|| format!("Failed to write failure state: {}", path.display()))
 }

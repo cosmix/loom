@@ -136,7 +136,7 @@ fn test_apply_default_mode_preserves_existing_permissions() {
 
 #[test]
 fn test_permission_mode_kebab_case_round_trip() {
-    // Round-trip through serde_yaml using kebab-case spelling.
+    // Round-trip through YAML using kebab-case spelling.
     for (mode, kebab) in [
         (PermissionMode::Default, "default"),
         (PermissionMode::AcceptEdits, "accept-edits"),
@@ -144,9 +144,9 @@ fn test_permission_mode_kebab_case_round_trip() {
         (PermissionMode::Plan, "plan"),
         (PermissionMode::BypassPermissions, "bypass-permissions"),
     ] {
-        let yaml = serde_yaml::to_string(&mode).unwrap();
+        let yaml = crate::yaml::to_string(&mode).unwrap();
         assert!(yaml.contains(kebab), "{mode:?} should serialize to {kebab}");
-        let back: PermissionMode = serde_yaml::from_str(&yaml).unwrap();
+        let back: PermissionMode = crate::yaml::from_str(&yaml).unwrap();
         assert_eq!(back, mode);
     }
 }

@@ -103,7 +103,7 @@ fn add_triggers(
 
 /// Parse a SKILL.md file and extract trigger keywords from all sources.
 ///
-/// Tries serde_yaml parsing first; falls back to line-by-line text extraction
+/// Tries YAML parsing first; falls back to line-by-line text extraction
 /// when the YAML frontmatter contains unquoted colons or other syntax that
 /// trips up the YAML parser.
 fn parse_skill_triggers(path: &Path) -> Result<Vec<String>> {
@@ -113,7 +113,7 @@ fn parse_skill_triggers(path: &Path) -> Result<Vec<String>> {
     let frontmatter_text = extract_frontmatter_raw(&content)?;
 
     // Try strict YAML deserialization first
-    let fm: SkillFrontmatter = serde_yaml::from_str(&frontmatter_text).unwrap_or_default();
+    let fm: SkillFrontmatter = crate::yaml::from_str(&frontmatter_text).unwrap_or_default();
 
     let mut triggers = Vec::new();
 

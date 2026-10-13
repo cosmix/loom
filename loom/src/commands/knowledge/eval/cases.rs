@@ -68,7 +68,7 @@ pub(super) fn load_cases_file(path: &Path) -> Result<CasesFile> {
             path.display()
         )
     })?;
-    let parsed: CasesFile = serde_yaml::from_str(&raw)
+    let parsed: CasesFile = crate::yaml::from_str(&raw)
         .with_context(|| format!("Failed to parse eval cases file {}", path.display()))?;
     validate_cases(&parsed)?;
     Ok(parsed)

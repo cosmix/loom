@@ -21,7 +21,7 @@ loom:
       artifacts: ["README.md"]
       ultracode: true
 "#;
-    let parsed: LoomMetadata = serde_yaml::from_str(yaml).expect("ultracode: true should parse");
+    let parsed: LoomMetadata = crate::yaml::from_str(yaml).expect("ultracode: true should parse");
     assert!(parsed.loom.stages[0].ultracode);
 }
 
@@ -36,7 +36,7 @@ loom:
       working_dir: "."
       artifacts: ["README.md"]
 "#;
-    let parsed: LoomMetadata = serde_yaml::from_str(yaml).expect("plan should parse");
+    let parsed: LoomMetadata = crate::yaml::from_str(yaml).expect("plan should parse");
     assert!(!parsed.loom.stages[0].ultracode);
 }
 

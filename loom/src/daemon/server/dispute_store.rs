@@ -79,7 +79,7 @@ pub(super) fn write_request(stage_dir: &Path, mut record: DisputeRequest) -> Res
     };
 
     record.id = id;
-    let yaml = serde_yaml::to_string(&record)?;
+    let yaml = crate::yaml::to_string(&record)?;
     let content = format!(
         "---\n{yaml}---\n\n# Dispute request {id} for stage {}\n",
         record.stage_id

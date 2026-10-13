@@ -104,7 +104,7 @@ cases:
     stage_fields: ["src/foo.rs"]
     forbid: ["noisy#id"]
 "#;
-    let parsed: CasesFile = serde_yaml::from_str(yaml).unwrap();
+    let parsed: CasesFile = crate::yaml::from_str(yaml).unwrap();
     assert_eq!(parsed.pass_floor, 0.6);
     assert_eq!(parsed.precision_floor, 0.2);
     assert_eq!(parsed.cases.len(), 2);
@@ -118,7 +118,7 @@ cases:
 #[test]
 fn default_floors_apply_when_absent() {
     let yaml = "cases:\n  - name: a\n    query: q\n    expect: [\"x\"]\n";
-    let parsed: CasesFile = serde_yaml::from_str(yaml).unwrap();
+    let parsed: CasesFile = crate::yaml::from_str(yaml).unwrap();
     assert_eq!((parsed.pass_floor, parsed.precision_floor), (0.5, 0.0));
 }
 

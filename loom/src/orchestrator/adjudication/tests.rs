@@ -57,7 +57,7 @@ pub(super) fn write_request(work_dir: &Path, stage_id: &str, id: u32, kind: Disp
         fix_attempts_at_dispute: 1,
         created_at: Utc::now(),
     };
-    let yaml = serde_yaml::to_string(&req).unwrap();
+    let yaml = crate::yaml::to_string(&req).unwrap();
     let path = request_file(&disputes_root, stage_id, id);
     std::fs::write(
         &path,
@@ -84,7 +84,7 @@ pub(super) fn write_verdict(
         model: "test".to_string(),
         session_id: None,
     };
-    let yaml = serde_yaml::to_string(&record).unwrap();
+    let yaml = crate::yaml::to_string(&record).unwrap();
     let path = verdict_file(&disputes_root, stage_id, id);
     std::fs::write(
         &path,
@@ -313,7 +313,7 @@ fn parse_yaml_frontmatter_round_trips() {
         fix_attempts_at_dispute: 0,
         created_at: Utc::now(),
     };
-    let yaml = serde_yaml::to_string(&req).unwrap();
+    let yaml = crate::yaml::to_string(&req).unwrap();
     let body = format!("---\n{yaml}---\n\n# X\n");
     let parsed: DisputeRequest = parse_yaml_frontmatter(&body).unwrap();
     assert_eq!(parsed.id, 7);

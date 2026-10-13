@@ -62,7 +62,7 @@ mod tests {
     fn fixture() -> (TempDir, ExecutionGraph) {
         let dir = TempDir::new().unwrap();
         fs::create_dir(dir.path().join("stages")).unwrap();
-        let definition = serde_yaml::from_str("id: test\nname: Test\nworking_dir: .\n").unwrap();
+        let definition = crate::yaml::from_str("id: test\nname: Test\nworking_dir: .\n").unwrap();
         (dir, ExecutionGraph::build(vec![definition]).unwrap())
     }
 

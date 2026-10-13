@@ -5,7 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
-use crate::parser::frontmatter::extract_yaml_frontmatter;
+use crate::parser::frontmatter::extract_frontmatter_raw;
 
 use super::matcher::{match_skills, normalize_text};
 use super::types::{SkillMatch, SkillMetadata};
@@ -88,8 +88,8 @@ impl SkillIndex {
 
     /// Parse YAML frontmatter from skill file content
     fn parse_frontmatter(content: &str) -> Result<SkillMetadata> {
-        let yaml = extract_yaml_frontmatter(content)?;
-        serde_yaml::from_value(yaml).context("Failed to parse SkillMetadata from frontmatter")
+        let raw = extract_frontmatter_raw(content)?;
+        crate::yaml::from_str(raw).context("Failed to parse SkillMetadata from frontmatter")
     }
 
     /// Add a skill to the index

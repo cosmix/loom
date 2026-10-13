@@ -137,13 +137,11 @@ fn test_regression_test_empty_must_contain_fails() {
 
 #[test]
 fn test_regression_test_serde_defaults() {
-    use serde_yaml;
-
     let yaml = r#"
 file: "tests/regression_test.rs"
 "#;
 
-    let rt: RegressionTest = serde_yaml::from_str(yaml).unwrap();
+    let rt: RegressionTest = crate::yaml::from_str(yaml).unwrap();
     assert_eq!(rt.file, "tests/regression_test.rs");
     assert!(rt.must_contain.is_empty());
 }
@@ -151,7 +149,6 @@ file: "tests/regression_test.rs"
 #[test]
 fn test_full_plan_with_regression_test_yaml() {
     use crate::plan::schema::types::LoomMetadata;
-    use serde_yaml;
 
     let yaml = r#"
 loom:
@@ -174,7 +171,7 @@ loom:
 "#;
 
     // Deserialize
-    let metadata: LoomMetadata = serde_yaml::from_str(yaml).unwrap();
+    let metadata: LoomMetadata = crate::yaml::from_str(yaml).unwrap();
 
     // Verify structure
     assert_eq!(metadata.loom.stages.len(), 1);
@@ -195,8 +192,6 @@ loom:
 
 #[test]
 fn test_regression_test_serialization_round_trip() {
-    use serde_yaml;
-
     let mut metadata = create_valid_metadata();
     let mut stage = make_stage("bug-fix", "Bug Fix Stage");
     stage.bug_fix = Some(true);
@@ -211,10 +206,10 @@ fn test_regression_test_serialization_round_trip() {
     metadata.loom.stages.push(stage);
 
     // Serialize to YAML
-    let yaml = serde_yaml::to_string(&metadata).unwrap();
+    let yaml = crate::yaml::to_string(&metadata).unwrap();
 
     // Deserialize back
-    let deserialized: super::LoomMetadata = serde_yaml::from_str(&yaml).unwrap();
+    let deserialized: super::LoomMetadata = crate::yaml::from_str(&yaml).unwrap();
 
     // Verify the regression_test survived the round trip
     let bug_stage = deserialized

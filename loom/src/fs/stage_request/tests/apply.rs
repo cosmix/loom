@@ -62,7 +62,7 @@ fn only_dispute_on_disk(work_dir: &Path, stage_id: &str) -> DisputeRequest {
 
     let content = std::fs::read_to_string(dir.join(id.to_string()).join("request.md")).unwrap();
     let frontmatter = content.split("---").nth(1).unwrap();
-    let mut record: DisputeRequest = serde_yaml::from_str(frontmatter).unwrap();
+    let mut record: DisputeRequest = crate::yaml::from_str(frontmatter).unwrap();
     record.created_at = chrono::DateTime::<chrono::Utc>::UNIX_EPOCH;
     record
 }

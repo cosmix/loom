@@ -37,7 +37,7 @@ impl Frontmatter {
         let known = if raw.trim().is_empty() {
             KnownFrontmatter::default()
         } else {
-            serde_yaml::from_str(raw).context("Invalid YAML frontmatter")?
+            crate::yaml::from_str(raw).context("Invalid YAML frontmatter")?
         };
         Ok(Self {
             id: known.id,
@@ -57,7 +57,7 @@ impl Frontmatter {
             sources: self.sources.clone(),
             verified: self.verified.clone(),
         };
-        let mut yaml = serde_yaml::to_string(&known).context("Failed to serialize frontmatter")?;
+        let mut yaml = crate::yaml::to_string(&known).context("Failed to serialize frontmatter")?;
         if yaml == "{}\n" {
             yaml.clear();
         }

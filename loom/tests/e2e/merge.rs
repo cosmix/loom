@@ -96,7 +96,7 @@ loom:
       working_dir: "."
 "#;
 
-    let metadata: LoomMetadata = serde_yaml::from_str(yaml).unwrap();
+    let metadata: LoomMetadata = loom::yaml::from_str(yaml).unwrap();
 
     // Plan-level auto_merge
     assert_eq!(metadata.loom.auto_merge, Some(true));
@@ -149,7 +149,7 @@ name: Test Stage
 auto_merge: true
 working_dir: "."
 "#;
-    let stage: StageDefinition = serde_yaml::from_str(yaml).unwrap();
+    let stage: StageDefinition = loom::yaml::from_str(yaml).unwrap();
     assert_eq!(stage.auto_merge, Some(true));
 }
 
@@ -160,7 +160,7 @@ id: test-stage
 name: Test Stage
 working_dir: "."
 "#;
-    let stage: StageDefinition = serde_yaml::from_str(yaml).unwrap();
+    let stage: StageDefinition = loom::yaml::from_str(yaml).unwrap();
     assert_eq!(stage.auto_merge, None);
 }
 
@@ -175,7 +175,7 @@ loom:
       name: "Stage 1"
       working_dir: "."
 "#;
-    let metadata: LoomMetadata = serde_yaml::from_str(yaml).unwrap();
+    let metadata: LoomMetadata = loom::yaml::from_str(yaml).unwrap();
     assert_eq!(metadata.loom.auto_merge, Some(false));
 }
 
@@ -199,7 +199,7 @@ loom:
       working_dir: "."
 "#;
 
-    let metadata: LoomMetadata = serde_yaml::from_str(yaml).unwrap();
+    let metadata: LoomMetadata = loom::yaml::from_str(yaml).unwrap();
 
     // Plan level
     assert_eq!(metadata.loom.auto_merge, Some(true));

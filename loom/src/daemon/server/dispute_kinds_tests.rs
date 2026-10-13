@@ -87,9 +87,9 @@ fn request_path(work_dir: &Path, id: u32) -> PathBuf {
 }
 
 /// The frontmatter of dispute `id`'s `request.md`.
-fn frontmatter(work_dir: &Path, id: u32) -> serde_yaml::Value {
+fn frontmatter(work_dir: &Path, id: u32) -> serde_json::Value {
     let content = std::fs::read_to_string(request_path(work_dir, id)).unwrap();
-    serde_yaml::from_str(content.split("---").nth(1).unwrap()).unwrap()
+    crate::yaml::from_str(content.split("---").nth(1).unwrap()).unwrap()
 }
 
 fn created(response: Response) -> u32 {
@@ -114,13 +114,13 @@ fn finding_dispute_records_kind_and_evidence() {
     let id = created(file(&work_dir, findings(Vec::new())));
 
     let yaml = frontmatter(&work_dir, id);
-    assert_eq!(yaml["kind"], serde_yaml::Value::from("findings"));
-    assert_eq!(yaml["finding_ids"][0], serde_yaml::Value::from("F-1-1"));
-    assert_eq!(yaml["evidence"][0]["id"], serde_yaml::Value::from("F-1-1"));
-    assert_eq!(yaml["evidence"][0]["round"], serde_yaml::Value::from(1));
+    assert_eq!(yaml["kind"], serde_json::Value::from("findings"));
+    assert_eq!(yaml["finding_ids"][0], serde_json::Value::from("F-1-1"));
+    assert_eq!(yaml["evidence"][0]["id"], serde_json::Value::from("F-1-1"));
+    assert_eq!(yaml["evidence"][0]["round"], serde_json::Value::from(1));
     assert_eq!(
         yaml["evidence"][0]["finding"]["claim"],
-        serde_yaml::Value::from(CLAIM)
+        serde_json::Value::from(CLAIM)
     );
     let stage = load_stage(STAGE, &work_dir).unwrap();
     assert_eq!(stage.status, StageStatus::NeedsAdjudication);
@@ -167,10 +167,10 @@ fn criterion_dispute_behaviour_is_unchanged() {
 
     let yaml = frontmatter(&work_dir, id);
     let mut keys: Vec<&str> = yaml
-        .as_mapping()
+        .as_object()
         .unwrap()
         .keys()
-        .map(|key| key.as_str().unwrap())
+        .map(|key| key.as_str())
         .collect();
     keys.sort_unstable();
     let expected = [
@@ -186,8 +186,8 @@ fn criterion_dispute_behaviour_is_unchanged() {
         "stage_id",
     ];
     assert_eq!(keys, expected);
-    assert_eq!(yaml["kind"], serde_yaml::Value::from("criterion"));
-    assert_eq!(yaml["criterion_index"], serde_yaml::Value::from(1));
+    assert_eq!(yaml["kind"], serde_json::Value::from("criterion"));
+    assert_eq!(yaml["criterion_index"], serde_json::Value::from(1));
     let content = std::fs::read_to_string(request_path(&work_dir, id)).unwrap();
     assert!(content.ends_with(&format!("# Dispute request {id} for stage {STAGE}\n")));
     let stage = load_stage(STAGE, &work_dir).unwrap();
@@ -212,7 +212,7 @@ fn the_daemon_records_its_own_evidence_not_the_callers() {
     let yaml = frontmatter(&work_dir, id);
     assert_eq!(
         yaml["evidence"][0]["finding"]["claim"],
-        serde_yaml::Value::from(CLAIM)
+        serde_json::Value::from(CLAIM)
     );
 }
 
@@ -262,7 +262,7 @@ fn a_frozen_contract_can_be_disputed() {
 
     assert_eq!(
         frontmatter(&work_dir, id)["contract_id"],
-        serde_yaml::Value::from(CONTRACT_ID)
+        serde_json::Value::from(CONTRACT_ID)
     );
     let stage = load_stage(STAGE, &work_dir).unwrap();
     assert_eq!(stage.tally.contract_disputes, 1);

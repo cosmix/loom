@@ -47,10 +47,10 @@ fn from_definition_copies_v2_fields() {
     assert_eq!(stage.reachable, definition.reachable);
 
     // A stage file persisted before `plan_version` existed reads as a v1 stage.
-    let mut yaml = serde_yaml::to_value(&stage).expect("stage serializes");
-    let fields = yaml.as_mapping_mut().expect("stage mapping");
+    let mut yaml = serde_json::to_value(&stage).expect("stage serializes");
+    let fields = yaml.as_object_mut().expect("stage mapping");
     assert!(fields.remove("plan_version").is_some());
-    let reloaded: Stage = serde_yaml::from_value(yaml).expect("v1 stage loads");
+    let reloaded: Stage = serde_json::from_value(yaml).expect("v1 stage loads");
     assert_eq!(reloaded.plan_version, 1);
     assert_eq!(reloaded.contracts, definition.contracts);
     assert_eq!(reloaded.reachable, definition.reachable);

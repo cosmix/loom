@@ -128,7 +128,7 @@ mod tests {
     }
 
     /// `#[serde(flatten)]` must keep each tally counter a top-level key of the
-    /// stage file's YAML frontmatter (the same `serde_yaml::to_string` call
+    /// stage file's YAML frontmatter (the same `crate::yaml::to_string` call
     /// `serialize_stage_to_markdown` uses), not nested under a `tally:` map —
     /// existing stage files on disk have no such wrapper key.
     #[test]
@@ -141,7 +141,7 @@ mod tests {
             },
             ..Default::default()
         };
-        let yaml = serde_yaml::to_string(&stage).expect("stage serializes");
+        let yaml = crate::yaml::to_string(&stage).expect("stage serializes");
         assert!(
             yaml.lines().any(|l| l == "finding_disputes: 1"),
             "finding_disputes must be a top-level key:\n{yaml}",
@@ -151,7 +151,7 @@ mod tests {
             "evidence_rounds must be a top-level key:\n{yaml}",
         );
 
-        let reloaded: Stage = serde_yaml::from_str(&yaml).expect("stage deserializes");
+        let reloaded: Stage = crate::yaml::from_str(&yaml).expect("stage deserializes");
         assert_eq!(reloaded.tally, stage.tally);
     }
 }
