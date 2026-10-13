@@ -124,8 +124,8 @@ writer leaves an abandoned lock; live or uncertain owners are never stolen.
 
 ## Portable Shell Helpers and the SubagentStop Ledgers
 
-Hook scripts run on GNU and BSD (macOS) userlands, and the BSD forms differ where it matters. The
-rules, in `loom-hooks/_lifecycle.sh` unless noted:
+Hook scripts run on GNU and BSD (macOS) userlands under bash 5 and macOS `/bin/bash` 3.2, and the forms
+differ where it matters. The rules, in `loom-hooks/_lifecycle.sh` unless noted:
 
 - **Padded `wc`.** BSD `wc -c` left-pads its count, so a raw value fails `^[0-9]+$`. Every `wc -c`
   site strips whitespace inline with `| tr -d "[:space:]"` before testing it (never `$(( ))`); an
@@ -136,13 +136,25 @@ rules, in `loom-hooks/_lifecycle.sh` unless noted:
   accepting fractional seconds and a `Z` or `+hh:mm` zone) and falls back to GNU `date -u -d`. On macOS
   `date -u -d` is the set-kernel-DST option and can change the DST flag when run as root, while GNU
   date rejects `-j`, so the BSD attempt fails harmlessly there.
+- **`loom_run_bounded <secs> <cmd...>`** (`_read_ledger.sh`) bounds a command with `gtimeout`, else
+  `timeout`, else a pure-bash watchdog for stock macOS: the command runs in the background with `<&0`,
+  a `( _loom_watchdog ... ) &` subshell TERMs it after `<secs>` and KILLs it a second later, and the
+  caller retires the watchdog. The fallback signals only the direct child (not its process group) and
+  returns 143/137 where `timeout` returns 124. `_read_discipline.sh` bounds `loom map --outline` with
+  it; hooks that only read stdin keep the `gtimeout` → `timeout` → `cat` cascade.
+- **Bash 3.2.** Guard every value expansion of a possibly empty array with `${arr[@]+"${arr[@]}"}`
+  (`${#arr[@]}` is safe). Use `$$`, never `$BASHPID`. Here-strings and here-documents need a temp file,
+  so a block path prints with `printf` inside `{ ... } >&2 || true` after `trap '' PIPE`, and trims
+  with parameter expansion, never `read <<<`.
 - **Ledger appends** (`loom_lifecycle_journal_ready`, the stop-skips append) require a regular file or an
   absent path, never a symlink: a planted FIFO would block the hook.
 - **Tests.** `loom-hooks/tests/run-all.sh` runs in the `hook-syntax` CI job twice, plain and with
   `LOOM_HOOK_TEST_BSD=1`, which puts `loom-hooks/tests/bsd-shims/` (padded `wc`, BSD `stat` including
-  `-f '%Lp'`, BSD `date` with `-r` and `-j -f`) first on PATH; `scripts/check-hook-syntax.sh` parses the
-  extensionless shims as well. The `hooks-macos` job runs the suite on macOS with the real BSD tools,
-  under `/bin/bash` 3.2. See [macOS CI Jobs](../concerns/platform-and-commit-gaps.md#macos-ci-jobs-have-no-green-baseline-linux-still-emulates-bsd).
+  `-f '%Lp'`, BSD `date` with `-r` and `-j -f`) first on PATH. Each shim carries a `# loom-bsd-shim`
+  marker line, skips marked candidates while resolving the real tool, and execs the real tool unchanged
+  when it is already BSD. `scripts/check-hook-syntax.sh` parses the extensionless shims as well. The
+  `hooks-macos` job runs the suite on macOS with the real BSD tools, under `/bin/bash` 3.2. See
+  [macOS CI Jobs](../concerns/platform-and-commit-gaps.md#macos-ci-jobs-have-no-green-baseline-linux-still-emulates-bsd).
 
 **Stop-skips ledger.** A skipped `loom-code-reviewer` stop leaves the review gate with no round and no
 message, so `subagent-stop.sh` (`loom_subagent_stop_skip`) appends one row to

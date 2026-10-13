@@ -364,3 +364,20 @@ Show a condition through state every view already renders, not a marker each vie
 reason and a desktop notification; `human-review --approve`, `stage reset` and `stage retry` reset the
 counter; the STALLED marker was deleted
 ([Soft Signals](../architecture/signal-generation.md#soft-signals)).
+
+## macOS `proc_pidinfo` Hid Zombies, So an Unreaped Dead Session Read as Alive (2026-10-13)
+
+**What happened:** on macOS `is_process_alive` reported an unreaped zombie as alive, so a dead child
+looked like a working one. `process::tests::unreaped_dead_child_is_not_alive` failed on the CI runner
+and only SKIPPED locally, because Claude Code's sandbox denies `ps`.
+
+**Why:** `bsd_info` (`loom/src/process/identity.rs`) called `proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, ...)`.
+XNU looks for zombies only when that `arg` is non-zero, so it returned ESRCH for one and
+`process_is_zombie` was always false, while `kill(pid, 0)` succeeds on a zombie as POSIX requires.
+
+**Prevention:** pass `arg` 1 to `PROC_PIDTBSDINFO` whenever the answer must cover zombies. A liveness
+check combines `kill(pid, 0)` with zombie detection on every platform. A SKIP is not a pass: read the
+test output before calling a platform test green.
+
+**Fix:** `bsd_info` passes 1; `process_start_time` now also answers for a zombie, as on Linux, and every
+caller checks `is_process_alive` first.

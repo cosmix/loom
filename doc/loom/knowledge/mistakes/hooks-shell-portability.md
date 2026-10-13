@@ -20,7 +20,7 @@
 
 **What happened:** `git-add-guard.sh` used bare `timeout` command without `gtimeout` fallback, which fails silently on macOS without GNU coreutils.
 **Why:** macOS doesn't have `timeout` by default; GNU coreutils provides it as `gtimeout`.
-**How to avoid:** All hooks reading stdin MUST use the three-way cascade: `gtimeout` → `timeout` → `cat`.
+**How to avoid:** Hooks reading stdin use the cascade `gtimeout` → `timeout` → `cat`. Any other command that needs a bound goes through `loom_run_bounded` (`_read_ledger.sh`), whose last tier is a bash watchdog; never skip the command or run it unbounded when both binaries are missing ([The First macOS Hook Run](#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13)).
 
 ## `${#arr[@]-0}` Is Not a Portable Empty-Array Guard (2026-08-10)
 
@@ -220,3 +220,41 @@ runs against a shim must assert the shim really pads (exit 90 otherwise), or it 
 **Prevention:** never put a heredoc inside `$( )` in a hook or script; put it in a function and capture the function's output. Parse under bash 3.2 before pushing a hook change: `docker run --rm -v "$PWD:/r:ro" -w /r bash:3.2 bash scripts/check-hook-syntax.sh`. That proves parsing only; the image has GNU and busybox tools, not the BSD userland, so the hook suite's macOS behaviour is proven only by the `hooks-macos` job.
 
 **Fix:** `codex-forward.sh` defines `codex_preamble()` around the heredoc and sets `preamble=$(codex_preamble)`; the captured text is byte-identical. `hooks-macos` now runs each check after a confirmed bash 3.2, whatever the others did, so a syntax failure no longer hides the hook suite.
+
+## The First macOS Hook Run Found Bash 3.2 and BSD Faults the Linux Shims Hid (2026-10-13)
+
+**What happened:** the first `hooks-macos` run under `/bin/bash` 3.2 failed 9 hook tests, and the
+macOS Rust suite failed more through the same hooks. Production faults among them:
+
+- `codex-apply-patch.sh` looped over an empty `"${TARGETS[@]}"` under `set -u`; bash 3.2 aborted
+  the hook with exit 1, which Claude Code treats as non-blocking, so every apply_patch guard was skipped.
+- `_loom_outline_covered_rows` (`_read_discipline.sh`) skipped `loom map` when neither `gtimeout`
+  nor `timeout` existed, so the read guard only ever warned on stock macOS.
+- `codex-forward-guard.sh` `block_forwarder` printed its message through a here-document naming
+  `$HOME`; with HOME unset, `set -u` exited 1 and the call it meant to block went through.
+- `_codex_forward.sh` trimmed `ps` output with a here-string. Bash 3.2 writes here-strings and
+  here-documents to a temp file, so an unwritable TMPDIR lost the ancestor evidence and the
+  stage-evidence check failed open.
+
+Test-only faults: `poll-guard-subagent-waits.sh` used `$BASHPID` (bash 4+), so under 3.2 every
+fixture aborted with "unbound variable" and the script still printed PASS. The BSD shims translated
+BSD arguments to GNU ones even on a BSD host, and two stacked shim copies (different inodes, so
+`-ef` misses them) would call each other without end, forking at every level.
+
+**Why:** BSD behaviour was emulated on Linux only, and bash 3.2 never ran
+([The Test Suite Never Ran on macOS in CI](ci-toolchain-and-cargo.md#the-test-suite-never-ran-on-macos-in-ci-2026-10-13)).
+
+**Prevention:**
+
+- Nothing on a blocking hook's block path may fail before `exit 2`: no here-documents or
+  here-strings, `${HOME:-}` for optional variables, the message inside `{ ... } >&2 || true`, and
+  `trap '' PIPE` first.
+- Guard every value expansion of a possibly empty array with `${arr[@]+"${arr[@]}"}`. Use `$$`, never
+  `$BASHPID`. Trim with parameter expansion, never `read <<<`.
+- Bound a command with `loom_run_bounded` (`_read_ledger.sh`), never skip it or run it unbounded.
+- A test shim steps aside when the host tool already speaks its dialect, and skips every candidate
+  that is a shim (marker line), not only itself.
+- A test that prints PASS after an error message is vacuous: read the whole output under bash 3.2.
+
+**Fix:** each fault above; see
+[Portable Shell Helpers](../architecture/hook-system.md#portable-shell-helpers-and-the-subagentstop-ledgers).

@@ -10,21 +10,23 @@ scripts), `flake-check-macos`, and `hooks-macos` (hook syntax, the hook suite an
 regression under `/bin/bash` 3.2, which a step asserts). fmt, audit, deny and the web job stay Linux-only.
 Open gaps:
 
-- `test-macos` and `flake-check-macos` are red on failures no Linux job shows; each is a macOS bug,
-  not CI noise. They are listed in [macOS Test Failures Open in CI](#macos-test-failures-open-in-ci).
-  See [The Test Suite Never Ran on macOS in CI](../mistakes/ci-toolchain-and-cargo.md#the-test-suite-never-ran-on-macos-in-ci-2026-10-13).
+- No macOS run has been green yet. The fixes waiting for one are listed in
+  [macOS Test Failures Open in CI](#macos-test-failures-open-in-ci).
 - The smoke scripts run under the runner's Homebrew bash 5, never under bash 3.2.
 - `loom-hooks/tests/run-all.sh` also runs in the Linux `hook-syntax` job twice, plain and with
   `LOOM_HOOK_TEST_BSD=1`, which puts `loom-hooks/tests/bsd-shims/` (padded `wc`, BSD `stat`, BSD `date`)
-  first on PATH. The shims find the real tool by skipping PATH entries that are the shim directory
-  (`-ef`), then `/usr/bin:/bin`, so a PATH built from symlinks into the shim, or stacked shim
-  directories, breaks them. `scripts/check-hook-syntax.sh` parses the extensionless shims too.
-- `bsd-shims/date` reads zone-less formats as UTC whatever `-u` says, while real `date -j -f` uses
-  local time unless `-u` is given. A mutation deleting `-u` at `_lifecycle.sh`'s epoch parse survives;
-  the practical effect is small because start and observed timestamps share one parse. Fix: honour
-  `-u` in the shim and add an epoch check under `TZ=America/Los_Angeles`.
+  first on PATH. A shim finds the real tool by skipping PATH entries that are the shim itself (`-ef`)
+  or carry the `# loom-bsd-shim` marker line, then `/usr/bin:/bin`. When the real tool already rejects
+  `--version` (BSD, as on macOS), the shim execs it unchanged. `scripts/check-hook-syntax.sh` parses the
+  extensionless shims too.
 - `knowledge-orient-emits.sh` asserts `3 entries` but not the byte count, so dropping the padded-`wc`
   strip in `knowledge-orient.sh` survives under the shim (cosmetic).
+- About 20 hooks (`codex-forward-guard.sh`, `read-guard.sh`, `stage-terminal-guard.sh` and others) read
+  stdin through their own `gtimeout` → `timeout` → bare `cat` cascade, not `loom_run_bounded`, so on
+  stock macOS those reads have no bound.
+- Bash 3.2 writes here-strings and here-documents to a temp file. `codex-apply-patch.sh`
+  (`done <<<"$PATCH"`) and the shims' PATH split still use one, so an unwritable TMPDIR fails them; the
+  apply-patch one exits 1, which Claude Code treats as non-blocking.
 
 ## The Production Daemon Re-Exec Has No Automated Test
 
@@ -190,15 +192,26 @@ Each recurred after its lesson was recorded, so a check beats another paragraph:
 
 ## macOS Test Failures Open in CI
 
-CI run 38368215757 (commit `bd201891`) is the first macOS run. `Test (macos)` failed 59 tests in four targets (lib 29, `codex_evidence` 19, `integration` 9, `worker_evidence` 2). `Flake check (macos)` failed on `process::tests::unreaped_dead_child_is_not_alive`, which also fails in `Test (macos)`, so it is a macOS failure, not a flake. Linux passed. `Hook tests (macos)` failed only on the bash 3.2 parse error in `codex-forward.sh`, which is now fixed; the hook suite itself had not yet run on macOS. The causes below are read from the failure messages; only the first is confirmed in code.
+Every failure of CI run 38368215757, the first macOS run, has a fix in the tree, but no macOS run has
+confirmed them. The causes are in
+[The First macOS Hook Run](../mistakes/hooks-shell-portability.md#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13),
+[Rust Fixtures Assumed Linux](../mistakes/ci-toolchain-and-cargo.md#rust-fixtures-assumed-linux-paths-ptys-and-tool-output-2026-10-13)
+and [macOS `proc_pidinfo` Hid Zombies](../mistakes/sessions-and-liveness.md#macos-proc_pidinfo-hid-zombies-so-an-unreaped-dead-session-read-as-alive-2026-10-13).
+Three fixes rest on reasoning that only a macOS runner can check:
 
-- **`/var` is a symlink to `/private/var`.** macOS temp dirs live under `/var/folders`, and `reject_symlink_components` (`loom/src/subagent_lifecycle/claude_files.rs:103`) refuses an evidence path with any symlinked component (`unsafe Claude evidence: symlinked path: /var`). Affected in lib: `subagent_lifecycle::tests` (4), `commands::subagents::classify::{lifecycle_tests,recovery_tests}` (10), `commands::subagents::render::forward_tests` (2), `codex_lifecycle::tests` (3), `loop_recovery::park_disposition_tests` (2). Probable fix: fixtures canonicalize their temp root. Unverified: if a real evidence path runs through a symlinked `~/.claude` (dotfile managers create one), production refuses it the same way.
-- **`codex_evidence` (19).** 18 fail with `fake companion did not write exact job file` (`loom/tests/codex_evidence/fixture.rs:145`); `happy_path::bsd_tools_record_the_same_terminal_identity` fails with `guard failed`. Probably the same path mismatch; unconfirmed.
-- **Hook read and poll guards (6, `integration`).** `hooks_read_guard::{line_limit_boundary_is_strictly_greater_than, unbounded_read_of_large_covered_file_denies_with_outline, repeat::tier1_knowledge_read_warns_index_is_exempt_tier2_is_not_exempt}` and `hooks_poll_guard::reads::{bash_side_cat_gets_read_rules_sed_range_is_allowed, head_tail_with_count_is_range_bare_is_full, sed_dollar_range_is_treated_as_a_full_read}`. The hook warns that a `/var/folders/...` file "is not covered", so coverage probably keys on the `/private/var` form.
-- **Relay e2e (3, `integration`).** `relay_commit_e2e::{a_relayed_commit_is_signed_when_gpgsign, a_relayed_stage_commit_flows_end_to_end}` (`ledger has no row for request`) and `relay_e2e::relay_memory_note_flows_end_to_end` (`LOOM_SCRATCH_DIR ... is not this session's scratch`): a scratch-path comparison fails.
-- **Web terminal PTY (3, lib).** `tests_bridge::backpressure::bridge_leaves_pty_output_upstream_while_the_client_is_stalled`, `tests_bridge::scroll::bridge_passes_only_page_keys_from_viewer_scroll_messages`, `tests_pty::pty_write_survives_a_child_that_stops_reading`: Darwin PTY buffering differs from Linux.
-- **`context::census::tests::a_non_utf8_path_is_counted_once_as_unsupported`.** APFS refuses a non-UTF-8 file name (os error 92, `Illegal byte sequence`), so the fixture cannot be created on macOS.
-- **`process::tests::unreaped_dead_child_is_not_alive`.** Its precondition, that the child is an unreaped zombie, fails; zombie detection differs on Darwin.
-- **Undiagnosed.** `skills::project::tests::{nested_cwd_and_assignments_select_the_nearest_package, unrelated_slashes_in_prose_do_not_disable_project_discovery}`, `fs::permissions::approved::tests::control_surface_rules_are_never_recorded`, and `worker_evidence`'s `bsd_padded_wc_records_lifecycle_and_settles` and `bsd_teammate_idle_after_a_stop_appends_to_a_non_empty_journal` fail plain `left == right` assertions.
+- **Web terminal PTY tests.** These are
+  `tests_pty::pty_write_survives_a_child_that_stops_reading`,
+  `tests_bridge::backpressure::bridge_leaves_pty_output_upstream_while_the_client_is_stalled` and
+  `tests_bridge::scroll::bridge_passes_only_page_keys_from_viewer_scroll_messages`. The raw-mode
+  backpressure test and the pre-`connect` socket shrink (`tests_bridge/sockets.rs`) are reasoned from
+  XNU sources; the `od` spacing fix was measured.
+- **`process::tests::unreaped_dead_child_is_not_alive`.** The `proc_pidinfo` arg is confirmed by a C
+  probe; the test itself has only skipped locally.
+- **The E3 Seatbelt case** in `codex-forward-guard-stage-evidence.sh`. It relies on macOS refusing a
+  nested profile that differs from the outer one. An identical nested profile is admitted, so the
+  guard's allow-everything probe only detects confinement by a different outer profile.
 
-No Linux check reproduces these. Read a job's log with `gh api repos/cosmix/loom/actions/jobs/<job-id>/logs`; the failing names are under each target's `failures:` list.
+Inside Claude Code's macOS sandbox, `ps`, `sysctl` (the boot ID), `sandbox-exec`, PTY spawn, loopback
+bind and writes under `/var/folders` are denied, so the codex_evidence, worker_evidence, relay e2e, PTY,
+credential-guard and ancestry tests fail or skip there for that reason alone. A local run is no
+evidence either way. Read a job's log with `gh api repos/cosmix/loom/actions/jobs/<job-id>/logs`.

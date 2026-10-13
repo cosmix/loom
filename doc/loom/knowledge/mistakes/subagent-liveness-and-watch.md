@@ -350,3 +350,20 @@ Claude workers. Treat an exit 6 for a worker whose hand-back arrived as returned
 [SubagentStop Delivery Is Intermittent](#subagentstop-delivery-is-intermittent-and-one-reviewer-can-record-two-rounds-2026-10-03).
 The second case recurs, so a change to the watch is proposed in
 [Recurring Mistakes Awaiting a Check](../concerns/platform-and-commit-gaps.md#recurring-mistakes-awaiting-a-check).
+
+## `loom subagents` Refused Lifecycle Evidence Under a Worktree's `.loom/work` Symlink (2026-10-13)
+
+**What happened:** found by code reading while fixing the macOS suite, not reproduced in a live stage.
+`render.rs::find_work_dir_quietly` returned the work dir as `work_dir_path()` gave it. In a stage
+worktree that is the `.loom/work` symlink, and lifecycle replay (`plain_absolute`,
+`reject_symlink_components` in `subagent_lifecycle/claude_files.rs`) refuses any path with a symlinked
+component, so evidence under it classified as unknown.
+
+**Why:** the symlink refusal guards the components below the work root, but nothing resolved the root
+itself before paths were joined onto it.
+
+**Prevention:** canonicalize a state root once, at the point it is resolved; the symlink refusal then
+applies only below it. Never weaken the refusal to admit a symlinked root.
+
+**Fix:** `find_work_dir_quietly` canonicalizes the work dir;
+`render_tests.rs::work_dir_resolves_through_a_symlinked_state_root` pins it.

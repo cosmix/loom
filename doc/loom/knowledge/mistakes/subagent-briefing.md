@@ -165,11 +165,11 @@ report, diff the file's block names old vs new
 (`git show HEAD:<file> | rg '^\s*(describe|it)\('`) rather than trusting that the
 listed cases were the only ones that mattered.
 
-## A Brief With 5-6 Tasks Across a Dozen Files Overruns the Harness's 150-Turn Limit (2026-09-13)
+## A Brief With 5-6 Tasks Across a Dozen Files Overruns the Agents' 150-Turn Limit (2026-09-13)
 
 **What happened:** in the state-confinement plan, phase-1 worker I1 (sonnet) and phase-3 workers B1
-(sonnet, 170 tool uses) and D (sonnet, 164 tool uses) all stopped mid-edit at the harness's 150-turn
-limit WITHOUT a report, leaving the tree in an unknown, sometimes non-compiling state (B1 had
+(sonnet, 170 tool uses) and D (sonnet, 164 tool uses) all stopped mid-edit at the 150-turn limit
+(`maxTurns` in loom's own `agents/*.md` frontmatter, not a harness setting) WITHOUT a report, leaving the tree in an unknown, sometimes non-compiling state (B1 had
 deleted a function a test still called).
 
 **Why:** each brief carried 5-6 tasks spread across roughly a dozen files — too much for one sonnet
@@ -320,3 +320,26 @@ a shared prompt includes its text, so the orchestrator does not invent one.
 **Prevention:** a brief that moves items out of a module or removes its imports names `cargo clippy --all-targets -- -D warnings` (or `cargo check --all-targets`) as the worker's one check.
 
 **Fix:** `launch/tests.rs` imports `Signal` and `ExitStatusExt` itself.
+
+## Over-Scoped Fix Briefs Hit the Turn Cap Again, and Four Parallel Test Runs Exhausted Process Slots (2026-10-13)
+
+**What happened:** fixing the macOS CI failures, the orchestrator spawned four debugging subagents at
+once. Two stopped at `maxTurns` 150 without a report: one was briefed with eight failure clusters
+(45 tests), the other with five items across a dozen files. That repeats
+[the 2026-09-13 entry](#a-brief-with-5-6-tasks-across-a-dozen-files-overruns-the-agents-150-turn-limit-2026-09-13).
+Their trees were complete, but only a diff read showed it. During the same run the shells of several
+subagents got `fork: Resource temporarily unavailable` for minutes: EAGAIN from the per-user process
+limit (`ulimit -u` 10666 there), not open files (that is EMFILE). All four were building and running
+cargo tests and hook suites. The cause was never confirmed (the sandbox denies `ps`); a stacked-shim
+recursion that could fork without end was found and fixed in review. One brief also told a subagent
+that a test "passes locally" when it had only SKIPPED.
+
+**Why:** the briefs were sized by failure count, not by the distinct causes each needed to debug, and
+debugging subagents each ran their own test suites in parallel.
+
+**Prevention:** keep a debugging brief to about three causes. Run at most two test-running subagents
+at once on one host. Ask every worker to keep a running list of files changed, so a cut-off run still
+reports. Read SKIP lines before calling a test green. The cap now sits at `maxTurns: 1000` in
+`agents/*.md`, so the turn cap no longer forces a split; context still does.
+
+**Fix:** the stopped workers' diffs were reviewed and verified by the orchestrator instead of re-spawning.

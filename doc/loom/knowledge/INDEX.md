@@ -38,7 +38,7 @@
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) | Relayed signed commits | 143 |
 | [directory-structure](architecture/directory-structure.md) | Module tree, state layout, root assets | 50 |
 | [execution-containment](architecture/execution-containment.md) | Sandboxed command containment, limits | 397 |
-| [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 278 |
+| [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 290 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Deterministic phase, digest, receipts | 86 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | fs/knowledge, INDEX.md, checks | 261 |
 | [memory-spool](architecture/memory-spool.md) | Read before touching loom memory | 188 |
@@ -112,7 +112,7 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock | 200 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | A .git dir is not evidence of a repo | 156 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Stage bug reports; brief guard flags | 116 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, cargo audit, install.sh | 250 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, cargo audit, install.sh | 275 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented, not forwarded | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Slow reader fixed by forbidding reads | 52 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 94 |
@@ -123,7 +123,7 @@
 | [daemon-singleton](mistakes/daemon-singleton.md) | Two daemons shared .loom/work | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | No process may outlive its test | 55 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine drift, acceptance | 367 |
-| [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability, hook tests | 222 |
+| [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability, hook tests | 260 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How knowledge goes stale | 229 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants live in constructor | 154 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why distillation cannot write directly | 100 |
@@ -144,14 +144,14 @@
 | [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) | Only Edit(path) rules are enforced | 57 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) | deny_unknown_fields, two sources | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | LOOM_* wrapper exports contract | 126 |
-| [sessions-and-liveness](mistakes/sessions-and-liveness.md) | Session identity, liveness, coverage | 366 |
+| [sessions-and-liveness](mistakes/sessions-and-liveness.md) | Session identity, liveness, coverage | 383 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) | Glued separators, forgeable lookups | 246 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Resolver, cache, wiring, eval | 172 |
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Stages flipped to waiting-for-input | 35 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Frame overflow, read desync | 74 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Store written, never read | 94 |
-| [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, wave sizing, ownership | 322 |
-| [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Subagent liveness; watch traps | 352 |
+| [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, wave sizing, ownership | 345 |
+| [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Subagent liveness; watch traps | 369 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 130 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY, stdin | 217 |
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 336 |
@@ -176,7 +176,7 @@
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 window never named | 49 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps and housekeeping | 116 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry/completion edge cases | 147 |
-| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Open gaps: commits, launch, stalls | 204 |
+| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Open gaps: commits, launch, stalls | 217 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | tmux, orphan adoption edge cases | 150 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: canary, creds, env | 304 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Language limits, open decisions | 79 |

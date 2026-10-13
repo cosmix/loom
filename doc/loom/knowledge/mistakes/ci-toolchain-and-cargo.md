@@ -248,3 +248,28 @@ a branch. Without `--no-fail-fast` the first failing target hides every target a
 **Prevention:** every gate whose result can depend on the target OS runs on `macos-latest` as well as Linux; a new such gate gets its macOS job in the same change. A job that forces a tool version asserts the version it got, so it cannot pass vacuously.
 
 **Fix:** `.github/workflows/ci.yml` gained `lint-macos` (clippy and rustdoc), `test-macos` (`cargo test --all-targets --no-fail-fast` and both smoke scripts), `flake-check-macos`, and `hooks-macos` (hook syntax, hook suite, partial-staging regression, with `/bin/bash` symlinked first on PATH and a step that fails unless `$BASH_VERSION` is 3.2).
+
+## Rust Fixtures Assumed Linux Paths, PTYs and Tool Output (2026-10-13)
+
+**What happened:** the first macOS run failed 59 Rust tests that pass on Linux. Most fixtures built
+evidence paths from a raw tempdir, and macOS temp dirs sit behind a symlink (`/var` →
+`/private/var`, `/tmp` → `/private/tmp`), so the evidence-path checks refused them or a hook's
+`pwd -P` spelling did not match. The relay e2e tests hard-coded the XDG scratch layout, but on macOS
+the scratch root is `$HOME/Library/Caches/loom/scratch`. The census test created a non-UTF-8 file
+name, which APFS refuses. The web-terminal tests assumed Linux PTY buffering and GNU `od` spacing.
+
+**Why:** the suite had only ever run on Linux, where none of these differ.
+
+**Prevention:**
+
+- A fixture canonicalizes its temp root once (`fs::canonicalize(temp.path())`) and builds every path
+  from it. A shell test canonicalizes its expectation with `pwd -P` when the hook does.
+- Derive a platform-dependent path through the production function (`relay::scratch_root`), never a
+  hard-coded layout.
+- A PTY test that needs backpressure puts the child in raw mode: a canonical-mode Darwin PTY never
+  blocks the master's writes without a complete line. Squeeze `od` output (`tr -s ' '`): BSD `od` pads
+  each byte to four columns.
+- Shrink a test socket's receive buffer before `connect`: TCP never takes back a window it has advertised.
+
+**Fix:** the fixtures and tests listed in
+[macOS Test Failures Open in CI](../concerns/platform-and-commit-gaps.md#macos-test-failures-open-in-ci).
