@@ -1,0 +1,3 @@
+command: bun test apps/web/src/a.contract.test.ts
+exit: 1
+cwd: .

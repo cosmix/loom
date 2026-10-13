@@ -93,9 +93,27 @@ pub fn marker_choice(
 }
 
 /// The package runner that starts a JavaScript test runner: `bunx` in a Bun
-/// package (`bun.lock` or `bun.lockb`), else `npx`.
+/// package, else `npx`. A Bun workspace keeps its lockfile (`bun.lock` or
+/// `bun.lockb`) at the repository root, so the search climbs from
+/// `package_dir` through the first ancestor holding a `.git` entry. Without
+/// one it checks `package_dir` alone, never a stray lockfile higher up.
 pub fn package_runner(package_dir: &Path) -> &'static str {
-    marker_choice(package_dir, BUN_LOCKFILES, "bunx", "npx")
+    let has_lockfile = |dir: &Path| {
+        BUN_LOCKFILES
+            .iter()
+            .any(|lockfile| dir.join(lockfile).is_file())
+    };
+    // Search through the first ancestor with a `.git` entry; with none, only
+    // `package_dir`.
+    let depth = package_dir
+        .ancestors()
+        .position(|dir| dir.join(".git").exists())
+        .map_or(1, |index| index + 1);
+    if package_dir.ancestors().take(depth).any(has_lockfile) {
+        "bunx"
+    } else {
+        "npx"
+    }
 }
 
 /// A test name that naive quoting breaks: an apostrophe, a command separator
@@ -191,5 +209,25 @@ mod tests {
         assert_eq!(package_runner(dir.path()), "npx");
         std::fs::write(dir.path().join("bun.lockb"), "").expect("bun lockfile");
         assert_eq!(package_runner(dir.path()), "bunx");
+    }
+
+    #[test]
+    fn package_runner_climbs_to_the_repository_root() {
+        let repo = tempfile::tempdir().expect("temporary repository");
+        let nested = repo.path().join("apps/web");
+        std::fs::create_dir_all(&nested).expect("nested package directory");
+        assert_eq!(package_runner(&nested), "npx");
+        std::fs::write(repo.path().join("bun.lock"), "").expect("root lockfile");
+        // No `.git` entry: only the package directory itself is checked.
+        assert_eq!(package_runner(&nested), "npx");
+        std::fs::create_dir(repo.path().join(".git")).expect("git directory");
+        assert_eq!(package_runner(&nested), "bunx");
+        // A worktree's `.git` is a file; it still bounds the search.
+        let inner = repo.path().join("apps/api");
+        std::fs::create_dir_all(&inner).expect("sibling package directory");
+        std::fs::write(inner.join(".git"), "gitdir: x").expect(".git file");
+        let below = inner.join("src");
+        std::fs::create_dir(&below).expect("package below a .git file");
+        assert_eq!(package_runner(&below), "npx");
     }
 }

@@ -55,6 +55,17 @@ impl TestRunnerAdapter for Jest {
         "javascript"
     }
 
+    /// Jest resolves its config from the cwd.
+    fn run_root_markers(&self) -> &'static [&'static str] {
+        &[
+            "jest.config.js",
+            "jest.config.ts",
+            "jest.config.mjs",
+            "jest.config.cjs",
+            "jest.config.json",
+        ]
+    }
+
     fn recognizes(&self, argv: &[String]) -> bool {
         command_args(argv, COMMAND).is_some()
     }

@@ -53,6 +53,20 @@ impl TestRunnerAdapter for Vitest {
         "javascript"
     }
 
+    /// Vitest reads its config only from the cwd. A `vite.config.*` alone
+    /// marks no run root: it is an app's build config, present whether or not
+    /// that app runs its own tests.
+    fn run_root_markers(&self) -> &'static [&'static str] {
+        &[
+            "vitest.config.ts",
+            "vitest.config.mts",
+            "vitest.config.cts",
+            "vitest.config.js",
+            "vitest.config.mjs",
+            "vitest.config.cjs",
+        ]
+    }
+
     fn recognizes(&self, argv: &[String]) -> bool {
         command_args(argv, COMMAND).is_some()
     }

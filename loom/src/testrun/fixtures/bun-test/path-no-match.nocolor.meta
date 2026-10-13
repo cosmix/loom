@@ -1,0 +1,3 @@
+command: NO_COLOR=1 bun test ./apps/web/src/nope.test.ts
+exit: 1
+cwd: .

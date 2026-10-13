@@ -89,6 +89,11 @@ impl TestRunnerAdapter for CargoTest {
         "rust"
     }
 
+    /// Cargo finds its package from the cwd upward and builds the one it is in.
+    fn run_root_markers(&self) -> &'static [&'static str] {
+        &["Cargo.toml"]
+    }
+
     fn recognizes(&self, argv: &[String]) -> bool {
         command_args(argv, COMMAND).is_some()
     }

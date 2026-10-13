@@ -86,6 +86,15 @@ pub trait TestRunnerAdapter: Sync {
     /// `package_dir` as its cwd.
     fn single_test_command(&self, file: &str, test: &str, package_dir: &Path) -> String;
 
+    /// Files whose presence makes a directory the one this runner must run
+    /// from, because the runner reads its configuration or finds its project
+    /// in its cwd. A `*.ext` entry matches any file with that extension. A
+    /// contract runs from the nearest ancestor of its file holding one; an
+    /// empty list keeps the stage's working directory.
+    fn run_root_markers(&self) -> &'static [&'static str] {
+        &[]
+    }
+
     /// One shell command running every target, or `None` when the runner
     /// cannot select tests by file or name.
     fn select_command(&self, targets: &[TestTarget], package_dir: &Path) -> Option<String>;

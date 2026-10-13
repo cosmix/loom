@@ -85,6 +85,11 @@ impl TestRunnerAdapter for GoTest {
         "go"
     }
 
+    /// `go test` resolves its module from the cwd.
+    fn run_root_markers(&self) -> &'static [&'static str] {
+        &["go.mod"]
+    }
+
     fn recognizes(&self, argv: &[String]) -> bool {
         command_args(argv, COMMAND).is_some()
     }

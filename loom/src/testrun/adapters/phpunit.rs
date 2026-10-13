@@ -75,6 +75,17 @@ impl TestRunnerAdapter for Phpunit {
         "php"
     }
 
+    /// PHPUnit runs `vendor/bin/phpunit` relative to the cwd and reads its config there.
+    /// A `composer.json` alone marks no run root: every PHP package has one,
+    /// whether or not it runs its own tests.
+    fn run_root_markers(&self) -> &'static [&'static str] {
+        &[
+            "phpunit.xml",
+            "phpunit.xml.dist",
+            "phpunit.dist.xml",
+        ]
+    }
+
     fn recognizes(&self, argv: &[String]) -> bool {
         phpunit_args(argv).is_some()
     }

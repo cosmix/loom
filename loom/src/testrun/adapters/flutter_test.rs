@@ -68,6 +68,11 @@ impl TestRunnerAdapter for FlutterTest {
         "dart"
     }
 
+    /// `flutter test` finds its package from the cwd.
+    fn run_root_markers(&self) -> &'static [&'static str] {
+        &["pubspec.yaml"]
+    }
+
     fn recognizes(&self, argv: &[String]) -> bool {
         command_args(argv, COMMAND).is_some()
     }

@@ -88,6 +88,11 @@ impl TestRunnerAdapter for Minitest {
         "ruby"
     }
 
+    /// Minitest runs through Bundler and Rake from the cwd.
+    fn run_root_markers(&self) -> &'static [&'static str] {
+        &["Gemfile", "Rakefile"]
+    }
+
     fn recognizes(&self, argv: &[String]) -> bool {
         ruby_test_args(argv).is_some()
             || command_args(argv, &["rake", "test"]).is_some()

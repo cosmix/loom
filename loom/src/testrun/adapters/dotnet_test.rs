@@ -73,6 +73,11 @@ impl TestRunnerAdapter for DotnetTest {
         "csharp"
     }
 
+    /// `dotnet test` finds its solution or project in the cwd.
+    fn run_root_markers(&self) -> &'static [&'static str] {
+        &["*.sln", "*.slnx", "*.csproj", "*.fsproj", "*.vbproj"]
+    }
+
     fn recognizes(&self, argv: &[String]) -> bool {
         command_args(argv, COMMAND).is_some()
     }

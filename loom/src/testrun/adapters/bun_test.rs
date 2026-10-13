@@ -5,7 +5,9 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::testrun::command::{distinct_files, regex_literal, shell_quote, shell_word, shell_words};
+use crate::testrun::command::{
+    distinct_files, regex_literal, shell_quote, shell_word, shell_words,
+};
 use crate::testrun::recognize::{
     combined_output, command_args, has_flag, last_match, pattern, positionals, summary_from_counts,
 };
@@ -36,7 +38,22 @@ static PASSED: LazyLock<Regex> = LazyLock::new(|| pattern(r"(?m)^[ \t]*(\d+)[ \t
 static FAILED: LazyLock<Regex> = LazyLock::new(|| pattern(r"(?m)^[ \t]*(\d+)[ \t]+fail\b"));
 static SKIPPED: LazyLock<Regex> =
     LazyLock::new(|| pattern(r"(?m)^[ \t]*(\d+)[ \t]+skip(?:ped)?\b"));
-static NO_MATCH: LazyLock<Regex> = LazyLock::new(|| pattern(r"matched 0 tests\b"));
+
+/// Bun's "nothing to run" reports, all exit 1: a name regex that matched no
+/// test, a filter that matched no file, and a path filter with no matches.
+static NO_MATCH: LazyLock<Regex> = LazyLock::new(|| {
+    pattern(r"matched 0 tests\b|did not match any test files|(?m)^Test filter .* had no matches\b")
+});
+
+/// `file` as a path operand: bun treats an operand without a leading `./`,
+/// `../` or `/` as a substring filter, which a nested file does not match.
+fn path_filter(file: &str) -> String {
+    if file.starts_with("./") || file.starts_with("../") || file.starts_with('/') {
+        file.to_string()
+    } else {
+        format!("./{file}")
+    }
+}
 
 impl TestRunnerAdapter for BunTest {
     fn name(&self) -> &'static str {
@@ -61,8 +78,14 @@ impl TestRunnerAdapter for BunTest {
             && positionals(&args, VALUE_FLAGS).is_empty()
     }
 
+    /// Bun reads `bunfig.toml` only from its cwd.
+    fn run_root_markers(&self) -> &'static [&'static str] {
+        &["bunfig.toml"]
+    }
+
     fn single_test_command(&self, file: &str, test: &str, _package_dir: &Path) -> String {
-        let file = shell_word(file);
+        let file = path_filter(file);
+        let file = shell_word(&file);
         let name = shell_quote(&regex_literal(test));
         format!("bun test {file} -t {name}")
     }
@@ -73,7 +96,11 @@ impl TestRunnerAdapter for BunTest {
         if files.is_empty() {
             return None;
         }
-        Some(format!("bun test {}", shell_words(files)))
+        let paths: Vec<String> = files.into_iter().map(path_filter).collect();
+        Some(format!(
+            "bun test {}",
+            shell_words(paths.iter().map(String::as_str))
+        ))
     }
 
     /// Count tests from Bun's aggregate lines; a regex with no matches ran zero.
@@ -114,8 +141,27 @@ mod tests {
         );
         assert_eq!(
             command,
-            "bun test tests/math.test.ts -t 'math adds two numbers'"
+            "bun test ./tests/math.test.ts -t 'math adds two numbers'"
         );
+    }
+
+    #[test]
+    fn files_are_path_operands_not_filters() {
+        for (file, operand) in [
+            ("a/b.test.ts", "./a/b.test.ts"),
+            ("./a.test.ts", "./a.test.ts"),
+            ("../a.test.ts", "../a.test.ts"),
+            ("/abs/a.test.ts", "/abs/a.test.ts"),
+            ("my dir/a.test.ts", "'./my dir/a.test.ts'"),
+        ] {
+            let command = ADAPTER.single_test_command(file, "t", Path::new("."));
+            assert_eq!(command, format!("bun test {operand} -t 't'"), "{file}");
+        }
+    }
+
+    #[test]
+    fn marker_is_the_bun_config_file() {
+        assert_eq!(ADAPTER.run_root_markers(), ["bunfig.toml"]);
     }
 
     #[test]
@@ -176,7 +222,7 @@ mod tests {
         ];
         assert_eq!(
             ADAPTER.select_command(&targets, Path::new(".")).as_deref(),
-            Some("bun test a.test.ts b.test.ts")
+            Some("bun test ./a.test.ts ./b.test.ts")
         );
         assert_eq!(ADAPTER.select_command(&[], Path::new(".")), None);
     }
@@ -196,7 +242,7 @@ mod tests {
             let expected = match base {
                 "one-pass" => RunOutcome::Passed,
                 "one-fail" | "suite" => RunOutcome::Failed,
-                "no-match" => RunOutcome::NotSelected,
+                "no-match" | "filter-no-file" | "path-no-match" => RunOutcome::NotSelected,
                 other => panic!("unexpected bun-test fixture: {other}"),
             };
             assert_eq!(

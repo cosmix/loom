@@ -34,6 +34,11 @@ impl TestRunnerAdapter for SwiftTest {
         "swift"
     }
 
+    /// `swift test` finds its package in the cwd.
+    fn run_root_markers(&self) -> &'static [&'static str] {
+        &["Package.swift"]
+    }
+
     fn recognizes(&self, argv: &[String]) -> bool {
         command_args(argv, COMMAND).is_some()
     }

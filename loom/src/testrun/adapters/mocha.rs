@@ -64,6 +64,19 @@ impl TestRunnerAdapter for Mocha {
         "javascript"
     }
 
+    /// Mocha reads `.mocharc.*` from the cwd.
+    fn run_root_markers(&self) -> &'static [&'static str] {
+        &[
+            ".mocharc.js",
+            ".mocharc.cjs",
+            ".mocharc.mjs",
+            ".mocharc.yaml",
+            ".mocharc.yml",
+            ".mocharc.json",
+            ".mocharc.jsonc",
+        ]
+    }
+
     fn recognizes(&self, argv: &[String]) -> bool {
         command_args(argv, COMMAND).is_some()
     }

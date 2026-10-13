@@ -5,7 +5,9 @@ use std::sync::LazyLock;
 
 use regex::Regex;
 
-use crate::testrun::command::{distinct_files, marker_choice, shell_quote, shell_word, shell_words};
+use crate::testrun::command::{
+    distinct_files, marker_choice, shell_quote, shell_word, shell_words,
+};
 use crate::testrun::recognize::{
     combined_output, command_args, has_flag, last_match, pattern, positionals,
 };
@@ -77,6 +79,11 @@ impl TestRunnerAdapter for Rspec {
 
     fn language(&self) -> &'static str {
         "ruby"
+    }
+
+    /// RSpec reads `.rspec` and the Bundler `Gemfile` from the cwd.
+    fn run_root_markers(&self) -> &'static [&'static str] {
+        &[".rspec", "Gemfile"]
     }
 
     fn recognizes(&self, argv: &[String]) -> bool {

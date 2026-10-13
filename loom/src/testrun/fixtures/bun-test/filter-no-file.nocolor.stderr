@@ -1,0 +1,7 @@
+The following filters did not match any test files in --cwd="/tmp/fixture":
+ apps/web/src/a.contract.test.ts
+7 files were searched [7.00ms]
+
+note: Tests need ".test", "_test_", ".spec" or "_spec_" in the filename (ex: "MyApp.test.ts")
+note: To treat the "apps/web/src/a.contract.test.ts" filter as a path, run "bun test ./apps/web/src/a.contract.test.ts"
+

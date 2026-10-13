@@ -56,6 +56,11 @@ impl TestRunnerAdapter for MixTest {
         "elixir"
     }
 
+    /// `mix test` finds its project in the cwd.
+    fn run_root_markers(&self) -> &'static [&'static str] {
+        &["mix.exs"]
+    }
+
     fn recognizes(&self, argv: &[String]) -> bool {
         command_args(argv, COMMAND).is_some()
     }

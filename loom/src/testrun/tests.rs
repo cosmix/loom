@@ -106,7 +106,7 @@ fn check_scenario(scenario: &str, summary: &RunSummary, exit: Option<i32>) -> Re
     let expected = match base {
         "one-pass" => RunOutcome::Passed,
         "one-fail" | "suite" => RunOutcome::Failed,
-        "no-match" => RunOutcome::NotSelected,
+        "no-match" | "filter-no-file" | "path-no-match" => RunOutcome::NotSelected,
         "build-error" => RunOutcome::BuildFailed,
         other => return Err(format!("unknown scenario `{other}`")),
     };
@@ -123,6 +123,24 @@ fn check_scenario(scenario: &str, summary: &RunSummary, exit: Option<i32>) -> Re
         ));
     }
     Ok(())
+}
+
+/// A marker is a plain file name or a `*.ext` pattern, never a path: the
+/// resolver matches it against the entries of one directory.
+#[test]
+fn run_root_markers_are_plain_names_or_extension_patterns() {
+    for adapter in registry::all() {
+        for marker in adapter.run_root_markers() {
+            let name = marker.strip_prefix("*.").unwrap_or(marker);
+            let plain = !name.is_empty() && !name.contains(['/', '*']);
+            assert!(plain, "{}: marker {marker:?}", adapter.name());
+        }
+    }
+    let with_markers = registry::all()
+        .iter()
+        .filter(|adapter| !adapter.run_root_markers().is_empty())
+        .count();
+    assert_eq!(with_markers, 16, "adapters declaring run-root markers");
 }
 
 #[test]
