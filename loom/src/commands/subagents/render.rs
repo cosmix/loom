@@ -25,9 +25,12 @@ enum Gathered {
 /// Best-effort state directory root for the authoritative lifecycle and spawn-ledger
 /// paths in `classify::analyze` (see its doc). `None` when no state directory is
 /// found -- this command has no other reason to need one, so absence is
-/// silent, not an error.
+/// silent, not an error. Canonicalized: from a stage worktree the root is the
+/// `.loom/work` symlink, and lifecycle replay refuses evidence under any
+/// symlinked path component.
 fn find_work_dir_quietly() -> Option<PathBuf> {
-    crate::commands::common::work_dir_path().ok()
+    let work_dir = crate::commands::common::work_dir_path().ok()?;
+    std::fs::canonicalize(work_dir).ok()
 }
 
 /// Resolve the transcript directory and classify every subagent transcript

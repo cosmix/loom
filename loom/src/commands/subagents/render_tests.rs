@@ -186,3 +186,23 @@ fn harvest_terminal_failure_evidence_keeps_agent_state_and_reason() {
         Some("terminal failure evidence: agent=agent-x state=cancelled reason=operator cancelled")
     );
 }
+
+#[test]
+#[serial]
+fn work_dir_resolves_through_a_symlinked_state_root() {
+    let (_cwd_guard, isolated) = isolate_cwd();
+    // A stage worktree's `.loom/work` is a symlink to the main checkout's
+    // state; lifecycle replay refuses evidence under any symlinked component.
+    let real = isolated.path().join("main-state");
+    std::fs::create_dir_all(&real).unwrap();
+    std::fs::write(real.join("config.toml"), "").unwrap();
+    let loom_dir = isolated.path().join(".loom");
+    std::fs::create_dir_all(&loom_dir).unwrap();
+    std::os::unix::fs::symlink(&real, loom_dir.join("work")).unwrap();
+
+    assert_eq!(
+        find_work_dir_quietly(),
+        Some(real.canonicalize().unwrap()),
+        "the symlinked state root must resolve to its canonical target"
+    );
+}
