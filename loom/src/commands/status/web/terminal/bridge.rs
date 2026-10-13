@@ -295,10 +295,17 @@ fn outbound_stop(result: tungstenite::Result<()>) -> Option<Stop> {
 }
 
 /// A transfer that has not happened yet, as opposed to one that failed.
+///
+/// `Interrupted` belongs here: a socket call with `SO_SNDTIMEO`/`SO_RCVTIMEO`
+/// set is never restarted after a signal handler runs, `SA_RESTART` or not
+/// (signal(7)), so any handler in the process (the server's own `ctrlc`
+/// one) turns a delivered signal into `EINTR` on whichever bridge was mid-call.
 fn stalled(error: &std::io::Error) -> bool {
     matches!(
         error.kind(),
-        std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut
+        std::io::ErrorKind::WouldBlock
+            | std::io::ErrorKind::TimedOut
+            | std::io::ErrorKind::Interrupted
     )
 }
 
@@ -350,4 +357,24 @@ fn finish(mut socket: WebSocket<TcpStream>, child: PtyChild, stop: Stop) {
     let _ = socket.close(None);
     let _ = socket.flush();
     child.shutdown();
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::io::{Error as IoError, ErrorKind};
+
+    #[test]
+    fn a_signal_interrupting_a_transfer_is_retried_not_read_as_a_dead_peer() {
+        for kind in [
+            ErrorKind::Interrupted,
+            ErrorKind::WouldBlock,
+            ErrorKind::TimedOut,
+        ] {
+            assert!(stalled(&IoError::from(kind)), "{kind:?}");
+            assert!(outbound_stop(Err(Error::Io(IoError::from(kind)))).is_none());
+        }
+        let reset = Err(Error::Io(IoError::from(ErrorKind::ConnectionReset)));
+        assert!(matches!(outbound_stop(reset), Some(Stop::Peer)));
+    }
 }

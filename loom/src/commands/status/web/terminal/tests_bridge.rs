@@ -124,7 +124,15 @@ fn read_until(
                     deadline = Instant::now() + budget;
                 }
             }
-            Ok(Message::Close(_)) => return false,
+            Ok(Message::Close(frame)) => {
+                eprintln!(
+                    "bridge closed after {} bytes without {:?}: {frame:?}; last bytes {:?}",
+                    seen.len(),
+                    String::from_utf8_lossy(needle),
+                    String::from_utf8_lossy(&seen[seen.len().saturating_sub(32)..])
+                );
+                return false;
+            }
             Ok(_) => {}
             Err(tungstenite::Error::Io(error)) if is_transient(&error) => {}
             Err(error) => panic!("read bridge output: {error}"),
