@@ -82,8 +82,14 @@ pub fn process_is_zombie(pid: u32) -> bool {
 
 /// Fetch the BSD process info block backing both the start-time token and the
 /// zombie check below.
+///
+/// The non-zero `arg` asks XNU to search zombies too. With `arg == 0`,
+/// `PROC_PIDTBSDINFO` fails with `ESRCH` for an unreaped child while
+/// `kill(pid, 0)` still succeeds, so [`super::is_process_alive`] would read
+/// the zombie as running.
 #[cfg(target_os = "macos")]
 fn bsd_info(pid: u32) -> Option<libc::proc_bsdinfo> {
+    const INCLUDE_ZOMBIES: u64 = 1;
     let pid = libc::c_int::try_from(pid).ok()?;
     let size = std::mem::size_of::<libc::proc_bsdinfo>();
     let buffer_size = libc::c_int::try_from(size).ok()?;
@@ -97,7 +103,7 @@ fn bsd_info(pid: u32) -> Option<libc::proc_bsdinfo> {
         libc::proc_pidinfo(
             pid,
             libc::PROC_PIDTBSDINFO,
-            0,
+            INCLUDE_ZOMBIES,
             info.as_mut_ptr().cast(),
             buffer_size,
         )
