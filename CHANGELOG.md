@@ -5,6 +5,12 @@ All notable changes to loom are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Changed
+
+- **YAML handled by serde-saphyr** — loom reads and writes YAML (plan metadata; stage, session, handoff, dispute and skill frontmatter) with `serde-saphyr` in place of the deprecated `serde_yaml`, which removes the unmaintained `unsafe-libyaml` (RUSTSEC-2024-0449) from the build, and `cargo deny` no longer ignores that advisory. Only `true` and `false` read as booleans, as before. Plan metadata that loom writes back into a plan file, after `loom stage amend` for example, can be quoted and laid out differently, and enum values that carry data are written as `Variant: value` maps instead of `!Variant value` tags; state files written by earlier versions still load.
+
 ## [1.1.x] - 2026-10-08
 
 ### Added
