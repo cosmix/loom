@@ -12,6 +12,9 @@ Open gaps:
 
 - No macOS run has been green yet. The fixes waiting for one are listed in
   [macOS Test Failures Open in CI](#macos-test-failures-open-in-ci).
+- Unverified: `reject_symlink_components` (`subagent_lifecycle/claude_files.rs`) refuses an evidence
+  path with any symlinked component. If a real transcript path runs through a symlinked `~/.claude`
+  (dotfile managers create one), production refuses that evidence as unsafe.
 - The smoke scripts run under the runner's Homebrew bash 5, never under bash 3.2.
 - `loom-hooks/tests/run-all.sh` also runs in the Linux `hook-syntax` job twice, plain and with
   `LOOM_HOOK_TEST_BSD=1`, which puts `loom-hooks/tests/bsd-shims/` (padded `wc`, BSD `stat`, BSD `date`)
