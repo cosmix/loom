@@ -259,3 +259,26 @@ BSD arguments to GNU ones even on a BSD host, and two stacked shim copies (diffe
 
 **Fix:** each fault above; see
 [Portable Shell Helpers](../architecture/hook-system.md#portable-shell-helpers-and-the-subagentstop-ledgers).
+
+## A Shim's `--version` Probe Recursed Through a Test's Wrapper and Killed the Linux Runner (2026-10-13)
+
+**What happened:** after the BSD shims gained a `"$real" --version` probe (to step aside on a BSD
+host), CI's Linux `Hook syntax` job hung in its `LOOM_HOOK_TEST_BSD=1` pass and the runner died ("The
+hosted runner lost communication with the server", no log). `worktree-file-guard-scratchpad.sh` takes
+`REAL_STAT=$(command -v stat)`, which in BSD mode is the stat shim. It then puts a stub `stat` that
+execs `$REAL_STAT` first on PATH. The shim picked the stub as its "real" tool (no marker, not `-ef`),
+`stub --version` exec'd the shim, and the shim ran `stub --version` again as a child: an unbounded
+process chain. The same loop is the probable cause of the per-user process limit (EAGAIN) hit on a Mac
+while the shims were being changed.
+
+**Why:** "the first PATH entry that is not me" accepts a wrapper that sits before the shim and hands
+calls back to it. Before the probe, the shim called the wrapper with GNU arguments that it rejected, so
+the loop ended at once.
+
+**Prevention:** a wrapper resolves its real tool from the PATH entries after its own position, never
+before it. Any tool that can re-enter itself through PATH carries a depth guard (an exported counter
+that fails past a small bound), so a mistake costs one error, not a machine. Experiments with such
+tools run under `ulimit -u` and a hard kill.
+
+**Fix:** each shim resolves "next after me" and stops with exit 125 when `LOOM_BSD_SHIM_DEPTH`
+reaches 3.

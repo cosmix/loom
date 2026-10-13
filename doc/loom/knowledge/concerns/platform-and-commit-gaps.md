@@ -18,9 +18,11 @@ Open gaps:
 - The smoke scripts run under the runner's Homebrew bash 5, never under bash 3.2.
 - `loom-hooks/tests/run-all.sh` also runs in the Linux `hook-syntax` job twice, plain and with
   `LOOM_HOOK_TEST_BSD=1`, which puts `loom-hooks/tests/bsd-shims/` (padded `wc`, BSD `stat`, BSD `date`)
-  first on PATH. A shim finds the real tool by skipping PATH entries that are the shim itself (`-ef`)
-  or carry the `# loom-bsd-shim` marker line, then `/usr/bin:/bin`. When the real tool already rejects
-  `--version` (BSD, as on macOS), the shim execs it unchanged. `scripts/check-hook-syntax.sh` parses the
+  first on PATH. A shim finds the real tool among the PATH entries after its own position (then
+  `/usr/bin:/bin`), skipping copies that carry the `# loom-bsd-shim` marker line. A wrapper earlier on
+  PATH that hands calls back to the shim is therefore never chosen. `LOOM_BSD_SHIM_DEPTH` stops a
+  re-entered shim with exit 125 at depth 3. When the real tool already rejects `--version` (BSD, as on
+  macOS), the shim execs it unchanged. `scripts/check-hook-syntax.sh` parses the
   extensionless shims too.
 - `knowledge-orient-emits.sh` asserts `3 entries` but not the byte count, so dropping the padded-`wc`
   strip in `knowledge-orient.sh` survives under the shim (cosmetic).
@@ -198,24 +200,23 @@ Each recurred after its lesson was recorded, so a check beats another paragraph:
 
 ## macOS Test Failures Open in CI
 
-Every failure of CI run 38368215757, the first macOS run, has a fix in the tree, but no macOS run has
-confirmed them. The causes are in
+CI run 38386384997 (commit `37c67d38`) confirmed the fixes for every failure of run 38368215757, the
+first macOS run, except one. `tests_bridge::backpressure::bridge_leaves_pty_output_upstream_while_the_client_is_stalled`
+still fails on the macOS runner: the child writes its whole 256 KiB while the client never reads. The
+pre-`connect` shrink of the client socket (`tests_bridge/sockets.rs`) did not stop it, so the TCP
+advertised-window explanation was wrong or incomplete. The tree now also gives the client a 1 KiB send
+buffer before `connect`, which by XNU source caps its receive buffer near 47 KiB
+([Rust Fixtures Assumed Linux](../mistakes/ci-toolchain-and-cargo.md#rust-fixtures-assumed-linux-paths-ptys-and-tool-output-2026-10-13)).
+No macOS run has confirmed it. The same run lost the Linux `Hook syntax` runner to a BSD-shim recursion,
+also fixed in the tree. A runaway in a hook step kills the runner and its log; no hook step caps
+`ulimit -u`. The causes of the fixed failures are in
 [The First macOS Hook Run](../mistakes/hooks-shell-portability.md#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13),
 [Rust Fixtures Assumed Linux](../mistakes/ci-toolchain-and-cargo.md#rust-fixtures-assumed-linux-paths-ptys-and-tool-output-2026-10-13)
 and [macOS `proc_pidinfo` Hid Zombies](../mistakes/sessions-and-liveness.md#macos-proc_pidinfo-hid-zombies-so-an-unreaped-dead-session-read-as-alive-2026-10-13).
-Three fixes rest on reasoning that only a macOS runner can check:
-
-- **Web terminal PTY tests.** These are
-  `tests_pty::pty_write_survives_a_child_that_stops_reading`,
-  `tests_bridge::backpressure::bridge_leaves_pty_output_upstream_while_the_client_is_stalled` and
-  `tests_bridge::scroll::bridge_passes_only_page_keys_from_viewer_scroll_messages`. The raw-mode
-  backpressure test and the pre-`connect` socket shrink (`tests_bridge/sockets.rs`) are reasoned from
-  XNU sources; the `od` spacing fix was measured.
-- **`process::tests::unreaped_dead_child_is_not_alive`.** The `proc_pidinfo` arg is confirmed by a C
-  probe; the test itself has only skipped locally.
-- **The E3 Seatbelt case** in `codex-forward-guard-stage-evidence.sh`. It relies on macOS refusing a
-  nested profile that differs from the outer one. An identical nested profile is admitted, so the
-  guard's allow-everything probe only detects confinement by a different outer profile.
+The hook suite passes on the runner (`run-all.sh` hides a passing test's output, so a SKIP of the E3
+Seatbelt case in `codex-forward-guard-stage-evidence.sh` cannot be ruled out). E3 relies on macOS
+refusing a nested profile that differs from the outer one. An identical nested profile is admitted, so
+the guard's allow-everything probe only detects confinement by a different outer profile.
 
 Inside Claude Code's macOS sandbox, `ps`, `sysctl` (the boot ID), `sandbox-exec`, PTY spawn, loopback
 bind and writes under `/var/folders` are denied, so the codex_evidence, worker_evidence, relay e2e, PTY,

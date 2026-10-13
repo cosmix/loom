@@ -269,7 +269,13 @@ name, which APFS refuses. The web-terminal tests assumed Linux PTY buffering and
 - A PTY test that needs backpressure puts the child in raw mode: a canonical-mode Darwin PTY never
   blocks the master's writes without a complete line. Squeeze `od` output (`tr -s ' '`): BSD `od` pads
   each byte to four columns.
-- Shrink a test socket's receive buffer before `connect`: TCP never takes back a window it has advertised.
+- A small `SO_RCVBUF` does not bound a stalled TCP receiver on macOS. XNU's `tcp_sbrcv_grow_rwin`
+  (`bsd/netinet/tcp_subr.c`) grows the receive buffer by up to two steps of `16 × t_maxseg` past the
+  set size and ignores `SB_USRSIZE`. `t_maxseg` is clamped to the client's send buffer at connect
+  time, so a test that needs a stalled client must set a small `SO_SNDBUF` (1 KiB caps it near 47 KiB)
+  before `connect`. A first fix shrank only the receive buffer before `connect`, reasoning that TCP
+  never takes back an advertised window, and still failed on the runner. Linux locks a user-set
+  `SO_RCVBUF`. This is derived from XNU source.
 
 **Fix:** the fixtures and tests listed in
 [macOS Test Failures Open in CI](../concerns/platform-and-commit-gaps.md#macos-test-failures-open-in-ci).

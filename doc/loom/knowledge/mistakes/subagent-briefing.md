@@ -330,8 +330,11 @@ once. Two stopped at `maxTurns` 150 without a report: one was briefed with eight
 Their trees were complete, but only a diff read showed it. During the same run the shells of several
 subagents got `fork: Resource temporarily unavailable` for minutes: EAGAIN from the per-user process
 limit (`ulimit -u` 10666 there), not open files (that is EMFILE). All four were building and running
-cargo tests and hook suites. The cause was never confirmed (the sandbox denies `ps`); a stacked-shim
-recursion that could fork without end was found and fixed in review. One brief also told a subagent
+cargo tests and hook suites. The sandbox denies `ps`, so the cause was never observed. The probable
+cause is a worker's new shim `--version` probe recursing through a test's PATH wrapper, which later
+killed a Linux CI runner; see
+[A Shim's `--version` Probe Recursed](hooks-shell-portability.md#a-shims-version-probe-recursed-through-a-tests-wrapper-and-killed-the-linux-runner-2026-10-13).
+Parallel test runs made the loop's effect worse rather than causing it. One brief also told a subagent
 that a test "passes locally" when it had only SKIPPED.
 
 **Why:** the briefs were sized by failure count, not by the distinct causes each needed to debug, and

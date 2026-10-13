@@ -152,8 +152,9 @@ differ where it matters. The rules, in `loom-hooks/_lifecycle.sh` unless noted:
 - **Tests.** `loom-hooks/tests/run-all.sh` runs in the `hook-syntax` CI job twice, plain and with
   `LOOM_HOOK_TEST_BSD=1`, which puts `loom-hooks/tests/bsd-shims/` (padded `wc`, BSD `stat` including
   `-f '%Lp'`, BSD `date` with `-r` and `-j -f`) first on PATH. Each shim carries a `# loom-bsd-shim`
-  marker line, skips marked candidates while resolving the real tool, and execs the real tool unchanged
-  when it is already BSD. `scripts/check-hook-syntax.sh` parses the extensionless shims as well. The
+  marker line, resolves the real tool from the PATH entries after its own position (skipping marked
+  copies), stops with exit 125 when re-entered three deep (`LOOM_BSD_SHIM_DEPTH`), and execs the real
+  tool unchanged when it is already BSD. `scripts/check-hook-syntax.sh` parses the extensionless shims as well. The
   `hooks-macos` job runs the suite on macOS with the real BSD tools, under `/bin/bash` 3.2. See
   [macOS CI Jobs](../concerns/platform-and-commit-gaps.md#macos-ci-jobs-have-no-green-baseline-linux-still-emulates-bsd).
 
