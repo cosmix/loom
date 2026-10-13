@@ -334,3 +334,18 @@ higher) to be safe.
 **Prevention:** to change a stage a test already wrote, call `update_stage`, the locked read-modify-write every production writer uses.
 
 **Fix:** the test calls `update_stage`.
+
+## A Test Edit Passed fmt and Clippy but Broke the 50-Line Cap in CI (2026-10-13)
+
+**What happened:** an edit to `tests_bridge/backpressure.rs` grew a test function to 54 lines. The
+gate run after it was `cargo fmt --check` plus `cargo clippy --all-targets`, both green, and the push
+failed `Test (linux)` in `tests/maintainability.rs` (`repository_maintainability_debt_does_not_grow_or_go_stale`).
+
+**Why:** the 400-line file and 50-line function caps are enforced by that test, not by clippy, so a
+lint-only gate never sees them.
+
+**Prevention:** after any Rust edit, run `cargo test --test maintainability` (about a second) with
+fmt and clippy, even when the rest of the suite is left to CI. Fix a new violation by refactoring,
+never by adding a baseline entry.
+
+**Fix:** the stalled-client test's positive control moved into `assert_reading_client_reaches_marker`.

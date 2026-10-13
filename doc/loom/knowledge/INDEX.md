@@ -154,7 +154,7 @@
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Subagent liveness; watch traps | 369 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 130 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY, stdin | 217 |
-| [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 336 |
+| [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 351 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass with the bug | 302 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn failures, cleanup | 136 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server, plan-prose gotchas | 43 |
