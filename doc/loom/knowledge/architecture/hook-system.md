@@ -141,7 +141,8 @@ rules, in `loom-hooks/_lifecycle.sh` unless noted:
 - **Tests.** `loom-hooks/tests/run-all.sh` runs in the `hook-syntax` CI job twice, plain and with
   `LOOM_HOOK_TEST_BSD=1`, which puts `loom-hooks/tests/bsd-shims/` (padded `wc`, BSD `stat` including
   `-f '%Lp'`, BSD `date` with `-r` and `-j -f`) first on PATH; `scripts/check-hook-syntax.sh` parses the
-  extensionless shims as well. See [No macOS CI Runner](../concerns/platform-and-commit-gaps.md#no-macos-ci-runner-bsd-behaviour-is-emulated).
+  extensionless shims as well. The `hooks-macos` job runs the suite on macOS with the real BSD tools,
+  under `/bin/bash` 3.2. See [macOS CI Jobs](../concerns/platform-and-commit-gaps.md#macos-ci-jobs-have-no-green-baseline-linux-still-emulates-bsd).
 
 **Stop-skips ledger.** A skipped `loom-code-reviewer` stop leaves the review gate with no round and no
 message, so `subagent-stop.sh` (`loom_subagent_stop_skip`) appends one row to

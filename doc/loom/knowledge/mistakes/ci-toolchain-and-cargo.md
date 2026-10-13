@@ -238,3 +238,13 @@ the default `loom/target`. A detached `git worktree add --detach ~/src/<name> <s
 a branch. Without `--no-fail-fast` the first failing target hides every target after it.
 
 **Fix:** none needed in the tree; re-run from such a checkout.
+
+## The Test Suite Never Ran on macOS in CI (2026-10-13)
+
+**What happened:** macOS-only defects reached main and were found only by a contributor running loom on a Mac (issues #19, #21, #23, #24). That contributor could not run the full suite there either: PR #26 reports two `park_disposition_tests` failing on macOS and others failing for local reasons such as a global `core.hooksPath`.
+
+**Why:** CI's only macOS job was compile-only (`cargo test --no-run`, commit a48a0117), then clippy-only once 083f84c1 dropped the build-once job. No test, rustdoc, flake-check or hook-suite run ever happened on Darwin. The hook suite's BSD mode is a Linux shim, and the macOS runner puts a Homebrew bash 5 first on PATH, so bash 3.2, the version the hooks target, never ran.
+
+**Prevention:** every gate whose result can depend on the target OS runs on `macos-latest` as well as Linux; a new such gate gets its macOS job in the same change. A job that forces a tool version asserts the version it got, so it cannot pass vacuously.
+
+**Fix:** `.github/workflows/ci.yml` gained `lint-macos` (clippy and rustdoc), `test-macos` (`cargo test --all-targets --no-fail-fast` and both smoke scripts), `flake-check-macos`, and `hooks-macos` (hook syntax, hook suite, partial-staging regression, with `/bin/bash` symlinked first on PATH and a step that fails unless `$BASH_VERSION` is 3.2).

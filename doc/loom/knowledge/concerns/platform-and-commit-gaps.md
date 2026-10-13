@@ -2,13 +2,19 @@
 
 > Open gaps: commits, launch, stalls
 
-## No macOS CI Runner: BSD Behaviour Is Emulated
+## macOS CI Jobs Have No Green Baseline; Linux Still Emulates BSD
 
-CI runs Linux only. The macOS-specific paths (BSD `wc` padding, BSD `stat` and `date` forms,
-`sha256sum` versus `shasum`, the `kern.bootsessionuuid` sysctl, objc and CoreFoundation behaviour
-after a fork) are exercised through shims and unit seams, not on macOS:
+CI runs every gate whose result depends on the target OS on `macos-latest` as well as Linux:
+`lint-macos` (clippy, rustdoc), `test-macos` (`cargo test --all-targets --no-fail-fast`, both smoke
+scripts), `flake-check-macos`, and `hooks-macos` (hook syntax, the hook suite and the partial-staging
+regression under `/bin/bash` 3.2, which a step asserts). fmt, audit, deny and the web job stay Linux-only.
+Open gaps:
 
-- `loom-hooks/tests/run-all.sh` runs in the `hook-syntax` job twice, plain and with
+- The macOS jobs were added without a macOS run to check them against. Expect failures there that no
+  Linux job shows (PR #26 reports two `park_disposition_tests` failing on macOS); each is a macOS bug,
+  not CI noise. See [The Test Suite Never Ran on macOS in CI](../mistakes/ci-toolchain-and-cargo.md#the-test-suite-never-ran-on-macos-in-ci-2026-10-13).
+- The smoke scripts run under the runner's Homebrew bash 5, never under bash 3.2.
+- `loom-hooks/tests/run-all.sh` also runs in the Linux `hook-syntax` job twice, plain and with
   `LOOM_HOOK_TEST_BSD=1`, which puts `loom-hooks/tests/bsd-shims/` (padded `wc`, BSD `stat`, BSD `date`)
   first on PATH. The shims find the real tool by skipping PATH entries that are the shim directory
   (`-ef`), then `/usr/bin:/bin`, so a PATH built from symlinks into the shim, or stacked shim

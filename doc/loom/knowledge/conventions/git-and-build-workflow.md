@@ -212,7 +212,7 @@ The operator installs a freshly built `loom` (`dev-install.sh`) only once the pl
 
 ## CI Jobs Run on Path Filters; the `rust` Filter Must Name Every Repo-Root Path the Crate Reads
 
-`.github/workflows/ci.yml` triggers on every push to main and every pull request; its `changes` job (`dorny/paths-filter`) decides which jobs run. `rust` gates lint, test, flake-check, macos, audit and deny; `web` gates the dashboard job; `shell` gates hook-syntax. The workflow has no `paths:` trigger, so the filter list is the only place CI names paths.
+`.github/workflows/ci.yml` triggers on every push to main and every pull request; its `changes` job (`dorny/paths-filter`) decides which jobs run. `rust` gates lint, test, flake-check, their macOS counterparts lint-macos, test-macos and flake-check-macos, audit and deny; `web` gates the dashboard job; `shell` gates hook-syntax and hooks-macos. The workflow has no `paths:` trigger, so the filter list is the only place CI names paths. A new gate whose result can depend on the target OS gets a `macos-latest` job beside its Linux one.
 
 The crate compiles in files outside `loom/`: the asset roots in `loom/build/assets.rs` (`agents/`, `commands/`, `skills/`, `codex/skills/`, `web/dist/`, both `*.md.template` files), `loom-hooks/`, `install.sh` and `dev-install.sh` through `include_str!`, and `web/src/api/` fixtures through tests. A new asset root, or a new `include_str!` or `CARGO_MANIFEST_DIR`-relative read of a repo-root path, needs an entry in the `rust` filter. Without it, a change to that path alone skips every Rust job. To audit, list `rg -o 'include_(str|bytes)!\("(\.\./)+[A-Za-z0-9._-]+' loom/src loom/tests` against the filter.
 
