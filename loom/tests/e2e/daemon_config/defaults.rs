@@ -40,6 +40,7 @@ fn test_orchestrator_config_custom_values() {
         shutdown_flag: None,
         lock_identity: None,
         plan_id: None,
+        ..Default::default()
     };
 
     assert_eq!(config.max_parallel_sessions, 8);

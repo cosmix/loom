@@ -81,6 +81,28 @@ impl loop_recovery::ResetRuntime for FakeRuntime {
     fn wait(&self) {}
 }
 
+/// An agent that takes `polls` liveness probes to exit, as `claude` does while
+/// it runs its shutdown hooks.
+struct SlowExitRuntime {
+    polls_left: std::cell::Cell<usize>,
+}
+
+impl loop_recovery::ResetRuntime for SlowExitRuntime {
+    fn kill(&self, _work_dir: &Path, _agents: &[LiveAgent]) {}
+
+    fn identity_missing(&self, _work_dir: &Path, _agent: &LiveAgent) -> bool {
+        false
+    }
+
+    fn is_alive(&self, _work_dir: &Path, _agent: &LiveAgent) -> Result<bool> {
+        let left = self.polls_left.get();
+        self.polls_left.set(left.saturating_sub(1));
+        Ok(left > 0)
+    }
+
+    fn wait(&self) {}
+}
+
 fn assert_reset_refused_without_mutation(work: &Path, session: &Session, error: anyhow::Error) {
     assert!(error.to_string().contains(&session.id));
     let stage = load_stage("alpha", work).unwrap();
@@ -260,4 +282,22 @@ fn retry_delta_clears_the_stall_recovery_counter() {
 
     assert_eq!(stage.stall_recoveries, 0);
     assert_eq!(stage.status, StageStatus::Queued);
+}
+
+#[test]
+fn reset_waits_out_an_agent_that_is_slow_to_exit() {
+    let temp = work_dir();
+    let session = session_for("alpha", SessionStatus::Running);
+    save_session(&session, temp.path()).unwrap();
+    executing_stage(temp.path(), Some(&session));
+    // 80 probes at the 50ms interval is 4s: past the old 2s window, inside the
+    // current 6s one.
+    let runtime = SlowExitRuntime {
+        polls_left: std::cell::Cell::new(80),
+    };
+
+    loop_recovery::reset_with(temp.path(), "alpha", false, true, &runtime).unwrap();
+
+    let stage = load_stage("alpha", temp.path()).unwrap();
+    assert_eq!(stage.session, None);
 }

@@ -24,7 +24,9 @@ pub use continuation::{
     continue_session, load_handoff_content, prepare_continuation, ContinuationConfig,
     ContinuationContext,
 };
-pub use core::{Orchestrator, OrchestratorConfig, OrchestratorResult};
+pub use core::{
+    Orchestrator, OrchestratorConfig, OrchestratorResult, DEFAULT_KILL_CONFIRM_TIMEOUT,
+};
 pub use merge_attribution::{
     attribute_main_repo_merge, reconcile_main_repo_active_merge, AttributionSource,
     MergeAttribution, ReconciliationOutcome,

@@ -19,11 +19,6 @@ use crate::orchestrator::terminal::native::{session_process_status, SessionProce
 
 use super::super::{persistence::Persistence, Orchestrator};
 
-/// How long a takedown waits for a signalled agent to actually exit before
-/// calling it a survivor. See [`Orchestrator::confirm_session_gone`], which is
-/// also the poll `close_adjudication_session` (`judge_close.rs`) uses to confirm
-/// a killed judge before its record is written.
-const KILL_CONFIRM_TIMEOUT: Duration = Duration::from_secs(2);
 const KILL_CONFIRM_POLL_INTERVAL: Duration = Duration::from_millis(50);
 
 fn retain_missing_identity(missing: bool, session: &Session, survivors: &mut Vec<String>) -> bool {
@@ -254,21 +249,32 @@ impl Orchestrator {
         Ok(survivors)
     }
 
-    /// Whether `session`'s process is gone, waiting a bounded moment for it.
+    /// Whether `session`'s process is gone, waiting up to
+    /// `config.kill_confirm_timeout` for it.
     ///
     /// The teardown signals with SIGTERM and returns immediately
     /// (`process::terminate`), so an agent that is exiting exactly as asked
     /// still answers the liveness probe for a while. Deciding on the first
     /// probe would call every correctly-killed agent a survivor and leave every
-    /// handed-off stage sitting in `NeedsHandoff` forever. The wait is short and
-    /// runs once per handoff, which the poll loop can afford; an agent that
-    /// outlasts it is genuinely not responding to the kill.
+    /// handed-off stage sitting in `NeedsHandoff` forever.
+    ///
+    /// The wait blocks the daemon's poll thread, and what it costs depends on
+    /// the caller:
+    /// - A takedown (`take_down_agents`) waits once per agent, one agent after
+    ///   another, so N survivors cost N times the window.
+    /// - `cleanup_stale_merge_session` runs on every tick while a stale writer
+    ///   blocks the merge resolver. A writer that ignores SIGTERM costs the
+    ///   full window on each of those ticks, with no end.
+    ///
+    /// Probing across ticks instead, so the poll thread never sleeps, is
+    /// tracked in the follow-up linked from the PR that introduced this
+    /// window.
     ///
     /// A probe error is uncertainty, not proof of death. Propagating it keeps
     /// the stage in `NeedsHandoff`, where an operator can retry safely without
     /// ever admitting a second writer to the worktree.
     pub(crate) fn confirm_session_gone(&self, session: &Session) -> Result<bool> {
-        let deadline = Instant::now() + KILL_CONFIRM_TIMEOUT;
+        let deadline = Instant::now() + self.config.kill_confirm_timeout;
         loop {
             if !self.backend.is_session_alive(session).with_context(|| {
                 format!(

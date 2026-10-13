@@ -185,6 +185,21 @@ fn complete(
     super::completion_dispatch::dispatch(&auth, request, work_dir)
 }
 
+/// Puts an accepted stream into the mode the handler needs. `false` means the
+/// peer has already hung up and there is nothing to serve.
+fn prepare_client_stream(stream: &UnixStream) -> Result<bool> {
+    // On macOS, accepted streams from a non-blocking listener may inherit
+    // non-blocking mode, making read_message fail with WouldBlock.
+    stream.set_nonblocking(false)?;
+    match stream.set_write_timeout(Some(CLIENT_READ_TIMEOUT)) {
+        Ok(()) => Ok(true),
+        // macOS answers setsockopt with EINVAL once the peer has closed (a
+        // status probe that hung up).
+        Err(error) if error.kind() == std::io::ErrorKind::InvalidInput => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
 /// Handle a client connection.
 pub fn handle_client_connection(
     mut stream: UnixStream,
@@ -194,11 +209,9 @@ pub fn handle_client_connection(
     work_dir: &Path,
     byte_budget: Arc<ByteBudget>,
 ) -> Result<()> {
-    // Ensure stream is in blocking mode - on macOS, accepted streams from a non-blocking
-    // listener may inherit non-blocking mode, making read_message fail with WouldBlock.
-    stream.set_nonblocking(false)?;
-
-    stream.set_write_timeout(Some(CLIENT_READ_TIMEOUT))?;
+    if !prepare_client_stream(&stream)? {
+        return Ok(());
+    }
 
     loop {
         let mut reader = DeadlineReader::new(&stream, CLIENT_READ_TIMEOUT);

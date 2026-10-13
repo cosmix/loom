@@ -2,7 +2,8 @@
 
 use super::governor_tests::assign_stage_session;
 use super::tests::{
-    executing_stage, handoff_work_dir, orchestrator_for, recorded_session, write_pid_file,
+    executing_stage, handoff_work_dir, orchestrator_for, orchestrator_with_kill_window,
+    recorded_session, write_pid_file,
 };
 use super::*;
 use crate::fs::session_files::{load_session_exact, save_session};
@@ -14,16 +15,18 @@ use crate::verify::transitions::{load_stage, update_stage};
 use std::path::Path;
 use std::time::Duration;
 
-fn spawn_sigterm_resistant_orphan(ready: &Path) -> u32 {
+/// A stand-in agent that runs `on_term` when told to stop. An empty `on_term`
+/// ignores SIGTERM (it survives until force-killed); `sleep 1; exit 0` exits a
+/// second after the signal, as a session running its shutdown work does.
+fn spawn_agent(ready: &Path, on_term: &str) -> u32 {
+    let script = format!(
+        "(trap '{on_term}' TERM; : > \"$1\"; while :; do sleep 0.1; done) >/dev/null 2>&1 & echo $!"
+    );
     let output = std::process::Command::new("sh")
-        .args([
-            "-c",
-            "(trap '' TERM; : > \"$1\"; exec sleep 30) >/dev/null 2>&1 & echo $!",
-            "sh",
-        ])
+        .args(["-c", &script, "sh"])
         .arg(ready)
         .output()
-        .expect("failed to spawn a SIGTERM-resistant stand-in agent");
+        .expect("failed to spawn a stand-in agent");
     let pid = String::from_utf8_lossy(&output.stdout)
         .trim()
         .parse()
@@ -146,7 +149,7 @@ fn handoff_does_not_requeue_a_verified_process_that_outlives_sigterm() {
     let session = recorded_session(&work);
     assign_stage_session(&work, &session.id);
 
-    let pid = spawn_sigterm_resistant_orphan(&work.join("slow-exit-ready"));
+    let pid = spawn_agent(&work.join("slow-exit-ready"), "");
     write_test_pid_identity(&work, &session, pid).unwrap();
     assert_eq!(
         session_process_status(&work, &session),
@@ -172,4 +175,44 @@ fn handoff_does_not_requeue_a_verified_process_that_outlives_sigterm() {
     assert!(!graph_has_ready_stage(&orchestrator.graph, "test-stage"));
 
     force_kill(pid);
+}
+
+/// A session that needs a second to exit after SIGTERM, taken down under a
+/// kill window of `window`. Returns the stage and session once the handoff
+/// has run.
+fn hand_off_a_slow_exiting_agent(window: Duration) -> (StageStatus, SessionStatus) {
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".loom").join("work");
+    executing_stage(&work);
+    let session = recorded_session(&work);
+    assign_stage_session(&work, &session.id);
+    let pid = spawn_agent(&work.join("slow-exit-ready"), "sleep 1; exit 0");
+    write_test_pid_identity(&work, &session, pid).unwrap();
+
+    let mut orchestrator = orchestrator_with_kill_window(&work, temp.path(), window);
+    orchestrator.graph.mark_executing("test-stage").unwrap();
+    orchestrator
+        .on_needs_handoff(&session.id, "test-stage")
+        .unwrap();
+    force_kill(pid);
+
+    let stage = load_stage("test-stage", &work).unwrap().status;
+    let record = load_session_exact(&work, &session.id).unwrap().unwrap();
+    (stage, record.status)
+}
+
+#[test]
+fn handoff_waits_out_an_agent_that_exits_within_the_window() {
+    let (stage, session) = hand_off_a_slow_exiting_agent(Duration::from_secs(5));
+
+    assert_eq!(stage, StageStatus::Queued);
+    assert_eq!(session, SessionStatus::ContextExhausted);
+}
+
+#[test]
+fn handoff_calls_an_agent_that_outlasts_the_window_a_survivor() {
+    let (stage, session) = hand_off_a_slow_exiting_agent(Duration::from_millis(300));
+
+    assert_eq!(stage, StageStatus::NeedsHandoff);
+    assert_eq!(session, SessionStatus::Running);
 }

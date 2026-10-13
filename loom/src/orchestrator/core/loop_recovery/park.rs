@@ -121,7 +121,10 @@ impl Orchestrator {
         {
             return self.escalate_completion_ownership(stage_id, session_id, fingerprint);
         }
-        match self.confirm_session_gone(&session) {
+        // One probe, not `confirm_session_gone`: nothing has been signalled
+        // yet, so waiting cannot change the answer for a writer that is still
+        // running, and it would cost the full window on every park.
+        match self.backend.is_session_alive(&session).map(|alive| !alive) {
             Ok(true) => self.park_completion(
                 stage_id,
                 &session,

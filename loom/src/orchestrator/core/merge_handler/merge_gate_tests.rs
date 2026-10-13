@@ -56,6 +56,7 @@ fn orchestrator_for(root: &Path, work_dir: &Path) -> Orchestrator {
         repo_root: root.to_path_buf(),
         base_branch: Some("main".to_string()),
         enable_skill_routing: false,
+        kill_confirm_timeout: std::time::Duration::from_millis(300),
         ..Default::default()
     };
     let saved_terminal = pin_terminal_env();

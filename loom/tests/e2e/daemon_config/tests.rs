@@ -44,6 +44,7 @@ fn test_orchestrator_creation_with_config() {
         shutdown_flag: None,
         lock_identity: None,
         plan_id: None,
+        ..Default::default()
     };
 
     let orchestrator = Orchestrator::new(config.clone(), graph);

@@ -143,6 +143,7 @@ pub(crate) fn orchestrator_with_conflict(repo_root: &Path, stage_id: &str) -> Or
         repo_root: repo_root.to_path_buf(),
         base_branch: Some("main".to_string()),
         enable_skill_routing: false,
+        kill_confirm_timeout: std::time::Duration::from_millis(300),
         ..Default::default()
     };
     Orchestrator::new(config, ExecutionGraph::build(Vec::new()).unwrap()).unwrap()

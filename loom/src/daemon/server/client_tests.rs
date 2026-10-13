@@ -194,3 +194,25 @@ fn a_failed_admin_credential_is_never_deferred() {
     });
     assert_eq!(Authorization::Denied, authorize_preface(tmp.path(), &stop));
 }
+
+/// The fix this guards only runs on macOS: there `set_write_timeout` fails
+/// with EINVAL on a socket whose peer has closed. On Linux the call succeeds
+/// and the handler returns `Ok` through the read path, so this test passes
+/// there with or without the fix.
+#[test]
+fn a_client_that_hung_up_before_being_served_is_not_a_handler_error() {
+    let work_dir = TempDir::new().unwrap();
+    let (server_stream, client_stream) = UnixStream::pair().unwrap();
+    drop(client_stream);
+
+    let result = handle_client_connection(
+        server_stream,
+        Arc::new(AtomicBool::new(false)),
+        Arc::new(Mutex::new(Vec::new())),
+        Arc::new(Mutex::new(Vec::new())),
+        work_dir.path(),
+        ByteBudget::new(2 * crate::daemon::wire::MAX_REQUEST_BYTES),
+    );
+
+    assert!(result.is_ok(), "{result:?}");
+}

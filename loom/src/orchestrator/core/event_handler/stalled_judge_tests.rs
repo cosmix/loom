@@ -39,6 +39,7 @@ fn orchestrator_for(work_dir: &std::path::Path, repo_root: &std::path::Path) -> 
         work_dir: work_dir.to_path_buf(),
         repo_root: repo_root.to_path_buf(),
         enable_skill_routing: false,
+        kill_confirm_timeout: std::time::Duration::from_millis(300),
         ..Default::default()
     };
     Orchestrator::new(config, ExecutionGraph::build(Vec::new()).unwrap()).unwrap()

@@ -11,12 +11,18 @@ use crate::orchestrator::adjudication::close_open_disputes;
 use crate::orchestrator::session_registry::in_progress_sessions_for_stage;
 use crate::orchestrator::terminal::backend::SessionBackend;
 use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
+use crate::orchestrator::DEFAULT_KILL_CONFIRM_TIMEOUT;
 use crate::verify::transitions::{load_stage, update_stage};
 
 use super::{apply_reset, live_agent_refusal, live_agents_for, LiveAgent};
 
-const CONFIRM_ATTEMPTS: usize = 41;
+/// A killed agent gets the daemon's window (`DEFAULT_KILL_CONFIRM_TIMEOUT`) to
+/// exit before the reset is refused. A loom-started `claude` session took
+/// 1.7s to 2.2s to exit after the kill on macOS, so 6s is about 2.7 times the
+/// slowest measured exit; the reset command and the daemon use the same value.
 const CONFIRM_INTERVAL: Duration = Duration::from_millis(50);
+const CONFIRM_ATTEMPTS: usize =
+    (DEFAULT_KILL_CONFIRM_TIMEOUT.as_millis() / CONFIRM_INTERVAL.as_millis()) as usize + 1;
 
 pub(super) trait ResetRuntime {
     fn kill(&self, work_dir: &Path, agents: &[LiveAgent]);

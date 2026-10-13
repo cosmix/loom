@@ -12,7 +12,9 @@ use crate::daemon::collect_completion_summary;
 use crate::fs::plan_lifecycle;
 use crate::fs::work_dir::WorkDir;
 use crate::git::signing;
-use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
+use crate::orchestrator::{
+    Orchestrator, OrchestratorConfig, OrchestratorResult, DEFAULT_KILL_CONFIRM_TIMEOUT,
+};
 use crate::plan::schema::SandboxConfig;
 
 /// Execute plan stages in foreground (for --foreground flag)
@@ -135,6 +137,7 @@ fn foreground_orchestrator_config(
         // attending the terminal is the guard.
         lock_identity: None,
         plan_id,
+        kill_confirm_timeout: DEFAULT_KILL_CONFIRM_TIMEOUT,
     })
 }
 

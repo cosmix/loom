@@ -55,7 +55,15 @@ pub struct OrchestratorConfig {
     /// at startup from `config.toml`. Used by the recovery sync to reject
     /// stage files that belong to a different plan than the one running.
     pub plan_id: Option<String>,
+    /// How long a takedown waits for a killed agent to exit before calling it
+    /// a survivor; tests set a short value.
+    pub kill_confirm_timeout: Duration,
 }
+
+/// Default [`OrchestratorConfig::kill_confirm_timeout`], also the window
+/// `loom stage reset --kill-session` waits. A loom-started `claude` took 1.7s
+/// to 2.2s to exit after the kill on macOS; 6s is about 2.7 times that.
+pub const DEFAULT_KILL_CONFIRM_TIMEOUT: Duration = Duration::from_secs(6);
 
 impl Default for OrchestratorConfig {
     fn default() -> Self {
@@ -76,6 +84,7 @@ impl Default for OrchestratorConfig {
             shutdown_flag: None,
             lock_identity: None,
             plan_id: None,
+            kill_confirm_timeout: DEFAULT_KILL_CONFIRM_TIMEOUT,
         }
     }
 }

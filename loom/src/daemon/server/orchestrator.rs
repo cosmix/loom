@@ -14,7 +14,9 @@ use crate::fs::mark_plan_done_if_all_merged;
 use crate::fs::parse_base_branch_from_config;
 use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::core::state_identity::LockIdentity;
-use crate::orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
+use crate::orchestrator::{
+    Orchestrator, OrchestratorConfig, OrchestratorResult, DEFAULT_KILL_CONFIRM_TIMEOUT,
+};
 use crate::plan::graph::ExecutionGraph;
 use crate::plan::schema::SandboxConfig;
 
@@ -170,6 +172,7 @@ fn orchestrator_config(
         shutdown_flag: Some(shutdown_flag),
         lock_identity,
         plan_id,
+        kill_confirm_timeout: DEFAULT_KILL_CONFIRM_TIMEOUT,
     }
 }
 

@@ -40,11 +40,24 @@ pub(super) fn handoff_work_dir() -> TempDir {
     temp
 }
 
+/// A survivor costs this long in tests; production waits
+/// `DEFAULT_KILL_CONFIRM_TIMEOUT`.
+const TEST_KILL_CONFIRM_TIMEOUT: std::time::Duration = std::time::Duration::from_millis(300);
+
 pub(super) fn orchestrator_for(work_dir: &Path, repo_root: &Path) -> Orchestrator {
+    orchestrator_with_kill_window(work_dir, repo_root, TEST_KILL_CONFIRM_TIMEOUT)
+}
+
+pub(super) fn orchestrator_with_kill_window(
+    work_dir: &Path,
+    repo_root: &Path,
+    kill_confirm_timeout: std::time::Duration,
+) -> Orchestrator {
     let config = OrchestratorConfig {
         work_dir: work_dir.to_path_buf(),
         repo_root: repo_root.to_path_buf(),
         enable_skill_routing: false,
+        kill_confirm_timeout,
         ..Default::default()
     };
     Orchestrator::new(config, create_test_graph()).unwrap()

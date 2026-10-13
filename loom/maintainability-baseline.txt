@@ -91,7 +91,7 @@ function src/completions/dynamic/mod.rs complete_after_subcommand 56
 function src/completions/install.rs install 52
 function src/context/refresh/tests_source_graph/enumeration.rs an_unreadable_file_survives_as_a_reported_lexical_only_entry 62
 function src/daemon/server/broadcast.rs run_status_broadcaster 80
-function src/daemon/server/client.rs handle_client_connection 87
+function src/daemon/server/client.rs handle_client_connection 85
 function src/daemon/server/lifecycle.rs run_server 127
 function src/daemon/server/orchestrator.rs run_orchestrator 89
 function src/daemon/server/status.rs collect_completion_summary 97

@@ -47,7 +47,9 @@ pub(crate) use crash_classification::spawn_failure_type;
 pub(crate) use merge_handler::resolver_attempts::{
     merge_resolver_attempts, MAX_MERGE_RESOLVER_ATTEMPTS,
 };
-pub use orchestrator::{Orchestrator, OrchestratorConfig, OrchestratorResult};
+pub use orchestrator::{
+    Orchestrator, OrchestratorConfig, OrchestratorResult, DEFAULT_KILL_CONFIRM_TIMEOUT,
+};
 pub use state_identity::{abort_foreign_state, check_lock_identity, LockCheck, LockIdentity};
 
 /// Clear the current line (status line) before printing a message.
@@ -85,6 +87,7 @@ mod tests {
             shutdown_flag: None,
             lock_identity: None,
             plan_id: None,
+            kill_confirm_timeout: std::time::Duration::from_millis(300),
         }
     }
 
