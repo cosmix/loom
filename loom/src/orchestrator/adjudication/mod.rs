@@ -46,6 +46,8 @@ pub mod verdict;
 mod verdict_kinds;
 
 #[cfg(test)]
+mod apply_contract_tests;
+#[cfg(test)]
 mod apply_kinds_tests;
 #[cfg(test)]
 mod closed_disputes_tests;

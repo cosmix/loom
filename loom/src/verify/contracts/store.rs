@@ -24,12 +24,14 @@ use serde::{Deserialize, Serialize};
 use std::os::fd::AsRawFd;
 use std::path::{Component, Path, PathBuf};
 
+use super::normalize;
 use crate::daemon::ContractRunReport;
 use crate::fs::locking::{atomic_write_locked, locked_dir_update};
 use crate::fs::safe_fs::{
     safe_create_dir_all_in_workdir, safe_locked_write_in_workdir, safe_open_dirfd,
 };
 use crate::fs::safe_read::{is_not_found, read_bounded};
+use crate::plan::schema::ContractSpec;
 use crate::relay::sha256_hex;
 
 pub const FREEZE_RECORD_VERSION: u32 = 1;
@@ -72,8 +74,36 @@ pub struct FrozenContract {
     pub adapter: Option<String>,
     pub outcome: String,
     pub exit_code: Option<i32>,
+    /// The contract's file when its run directory was recorded, normalized
+    /// and relative to the stage's working directory: [`recorded_cwd`] trusts
+    /// `cwd` only for a contract that still names this file.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub file: Option<String>,
+    /// The directory the contract ran from, relative to the worktree root
+    /// (`.` for the root), so the completion check runs it there too. `None`
+    /// leaves the completion check to resolve it as the freeze would.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
 }
 
+/// The outcome a re-freeze records for a contract the record did not list (one
+/// an accepted dispute's amendment added or renamed): nothing ran it, so it
+/// claims no run result. Only `loom stage contracts show` reads it.
+pub const REFROZEN_OUTCOME: &str = "refrozen";
+
+/// A contract an accepted dispute re-freezes: its resolved adapter, its
+/// normalized file, and the run directory to record, relative to the worktree
+/// root.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RefrozenContract {
+    pub id: String,
+    pub adapter: Option<String>,
+    pub file: String,
+    pub cwd: String,
+}
+
+/// The report's run, with no file or run directory recorded: the freeze
+/// handler records the ones it resolves.
 impl From<&ContractRunReport> for FrozenContract {
     fn from(report: &ContractRunReport) -> Self {
         Self {
@@ -81,8 +111,33 @@ impl From<&ContractRunReport> for FrozenContract {
             adapter: report.adapter.clone(),
             outcome: report.outcome.clone(),
             exit_code: report.exit_code,
+            file: None,
+            cwd: None,
         }
     }
+}
+
+/// The run directory `record` holds for `contract`, read from the entry that
+/// still describes the contract's file: the entry with its id and file, else
+/// any entry with its file (an amendment renamed the contract), else an entry
+/// with its id that predates recording files. `None` when no entry describes
+/// the contract or the one that does recorded no run directory; the caller
+/// then resolves the directory from the plan.
+pub fn recorded_cwd<'a>(record: &'a FreezeRecord, contract: &ContractSpec) -> Option<&'a str> {
+    let file = normalize(&contract.file);
+    let same_file = |entry: &&FrozenContract| entry.file.as_deref() == Some(file.as_str());
+    let entries = &record.contracts;
+    entries
+        .iter()
+        .filter(same_file)
+        .find(|entry| entry.id == contract.id)
+        .or_else(|| entries.iter().find(same_file))
+        .or_else(|| {
+            entries
+                .iter()
+                .find(|entry| entry.id == contract.id && entry.file.is_none())
+        })
+        .and_then(|entry| entry.cwd.as_deref())
 }
 
 /// Refuse a path that is empty, absolute, or has any component other than a
@@ -95,6 +150,16 @@ pub fn validate_relative(path: &str) -> Result<()> {
         bail!("'{path}' is not a plain relative path");
     }
     Ok(())
+}
+
+/// Refuse a run directory that is neither `.` (the worktree root) nor a plain
+/// relative path, as [`validate_relative`] defines one.
+pub fn validate_cwd(cwd: &str) -> Result<()> {
+    if cwd == "." {
+        return Ok(());
+    }
+    validate_relative(cwd)
+        .context("a contract's run directory must be '.' or a plain relative path")
 }
 
 /// Where the frozen copy of `rel` lives. `rel` must already have passed
@@ -123,6 +188,15 @@ pub fn load_freeze(work_dir: &Path, stage_id: &str) -> Result<Option<FreezeRecor
     for file in &record.files {
         validate_relative(&file.path)
             .with_context(|| format!("freeze record for stage '{stage_id}'"))?;
+    }
+    for contract in &record.contracts {
+        if let Some(file) = contract.file.as_deref() {
+            validate_relative(file)
+                .with_context(|| format!("freeze record for stage '{stage_id}'"))?;
+        }
+        if let Some(cwd) = contract.cwd.as_deref() {
+            validate_cwd(cwd).with_context(|| format!("freeze record for stage '{stage_id}'"))?;
+        }
     }
     Ok(Some(record))
 }
@@ -156,13 +230,24 @@ pub fn write_freeze(
 
 /// Re-freeze `files` (path relative to the working directory, content) at the
 /// given content: replace their frozen copies, then rewrite `freeze.json` with
-/// their new hashes, adding a path the record did not list. The adjudication
-/// of an accepted contract dispute is the only caller; the stage must already
-/// be frozen.
-pub fn refreeze(work_dir: &Path, stage_id: &str, files: &[(String, Vec<u8>)]) -> Result<()> {
+/// their new hashes, adding a path the record did not list, and with each of
+/// `contracts` recorded with its adapter, file and run directory: a contract
+/// the record lists keeps its freeze-time run result, one it does not list is
+/// added as [`REFROZEN_OUTCOME`]. The adjudication of an accepted contract dispute is
+/// the only caller; the stage must already be frozen.
+pub fn refreeze(
+    work_dir: &Path,
+    stage_id: &str,
+    files: &[(String, Vec<u8>)],
+    contracts: &[RefrozenContract],
+) -> Result<()> {
     let root = canonical_work_dir(work_dir, stage_id)?;
     for (path, _) in files {
         validate_relative(path)?;
+    }
+    for contract in contracts {
+        validate_relative(&contract.file)?;
+        validate_cwd(&contract.cwd)?;
     }
     let dir = stage_dir(&root, stage_id);
     locked_dir_update(&dir, || {
@@ -170,6 +255,9 @@ pub fn refreeze(work_dir: &Path, stage_id: &str, files: &[(String, Vec<u8>)]) ->
             bail!("the contracts of stage '{stage_id}' were never frozen");
         };
         copy_files(&dir, files)?;
+        for contract in contracts {
+            upsert_contract(&mut record.contracts, contract);
+        }
         for (path, bytes) in files {
             let sha256 = sha256_hex(bytes);
             match record.files.iter_mut().find(|file| file.path == *path) {
@@ -185,6 +273,26 @@ pub fn refreeze(work_dir: &Path, stage_id: &str, files: &[(String, Vec<u8>)]) ->
             &serde_json::to_string_pretty(&record)?,
         )
     })
+}
+
+fn upsert_contract(frozen: &mut Vec<FrozenContract>, contract: &RefrozenContract) {
+    let file = Some(contract.file.clone());
+    let cwd = Some(contract.cwd.clone());
+    match frozen.iter_mut().find(|c| c.id == contract.id) {
+        Some(existing) => {
+            existing.adapter = contract.adapter.clone();
+            existing.file = file;
+            existing.cwd = cwd;
+        }
+        None => frozen.push(FrozenContract {
+            id: contract.id.clone(),
+            adapter: contract.adapter.clone(),
+            outcome: REFROZEN_OUTCOME.to_string(),
+            exit_code: None,
+            file,
+            cwd,
+        }),
+    }
 }
 
 fn copy_files(dir: &Path, files: &[(String, Vec<u8>)]) -> Result<()> {
@@ -262,79 +370,5 @@ pub(in crate::verify) fn canonical_work_dir(work_dir: &Path, stage_id: &str) -> 
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use tempfile::TempDir;
-
-    fn record(stage_id: &str, path: &str, sha256: &str) -> FreezeRecord {
-        FreezeRecord {
-            version: FREEZE_RECORD_VERSION,
-            stage_id: stage_id.to_string(),
-            session_id: "session-1".to_string(),
-            frozen_at: Utc::now(),
-            base: "a".repeat(40),
-            files: vec![FrozenFile {
-                path: path.to_string(),
-                sha256: sha256.to_string(),
-            }],
-            contracts: Vec::new(),
-        }
-    }
-
-    #[test]
-    fn write_then_load_round_trips_and_refuses_a_second_freeze() {
-        let tmp = TempDir::new().unwrap();
-        let bytes = b"fn contract() {}\n".to_vec();
-        let frozen = record("s1", "tests/a_contract.rs", "abc");
-        let files = vec![("tests/a_contract.rs".to_string(), bytes.clone())];
-
-        write_freeze(tmp.path(), &frozen, &files).unwrap();
-
-        assert_eq!(load_freeze(tmp.path(), "s1").unwrap(), Some(frozen.clone()));
-        let copy = frozen_file_path(tmp.path(), "s1", "tests/a_contract.rs");
-        assert_eq!(std::fs::read(copy).unwrap(), bytes);
-        let again = write_freeze(tmp.path(), &frozen, &files).unwrap_err();
-        assert!(again.to_string().contains("already frozen"), "{again:#}");
-    }
-
-    #[test]
-    fn a_stage_without_a_freeze_loads_none() {
-        let tmp = TempDir::new().unwrap();
-        assert_eq!(load_freeze(tmp.path(), "s1").unwrap(), None);
-    }
-
-    #[test]
-    fn escaping_paths_and_ids_are_refused() {
-        let tmp = TempDir::new().unwrap();
-        for path in ["../x.rs", "/etc/passwd", "a/../../x", "./a.rs", ""] {
-            assert!(validate_relative(path).is_err(), "{path}");
-            let files = vec![(path.to_string(), Vec::new())];
-            assert!(write_freeze(tmp.path(), &record("s1", "a.rs", "x"), &files).is_err());
-        }
-        assert!(load_freeze(tmp.path(), "../escape").is_err());
-        assert!(spend_attempt(tmp.path(), "../escape").is_err());
-    }
-
-    #[test]
-    fn attempts_are_counted_as_they_are_spent() {
-        let tmp = TempDir::new().unwrap();
-        assert_eq!(attempts_spent(tmp.path(), "s1").unwrap(), 0);
-        assert_eq!(spend_attempt(tmp.path(), "s1").unwrap(), 1);
-        assert_eq!(spend_attempt(tmp.path(), "s1").unwrap(), 2);
-        assert_eq!(attempts_spent(tmp.path(), "s1").unwrap(), 2);
-    }
-
-    #[test]
-    fn a_reset_refills_the_budget_until_the_contracts_are_frozen() {
-        let tmp = TempDir::new().unwrap();
-        spend_attempt(tmp.path(), "s1").unwrap();
-        spend_attempt(tmp.path(), "s1").unwrap();
-        reset_attempts(tmp.path(), "s1").unwrap();
-        assert_eq!(attempts_spent(tmp.path(), "s1").unwrap(), 0);
-
-        spend_attempt(tmp.path(), "s1").unwrap();
-        write_freeze(tmp.path(), &record("s1", "a.rs", "x"), &[]).unwrap();
-        reset_attempts(tmp.path(), "s1").unwrap();
-        assert_eq!(attempts_spent(tmp.path(), "s1").unwrap(), 1);
-    }
-}
+#[path = "store_tests.rs"]
+mod tests;

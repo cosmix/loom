@@ -5,14 +5,16 @@
 //! keeps the freeze, [`changes`] reads what the contract session changed,
 //! [`refusal`] keeps a refused freeze until the writer stops and parks its
 //! stage for the operator, [`completion`] checks the frozen contracts when the
-//! stage completes. The helpers here are what the freeze CLI, the daemon's
-//! freeze handler and the completion check share, so the three agree on which
-//! command runs a contract and which paths a contract session may touch.
+//! stage completes, [`run_dir`] resolves where and how a contract runs. The
+//! helpers here are what the freeze CLI, the daemon's freeze handler and the
+//! completion check share, so the three agree on which adapter runs a contract
+//! and which paths a contract session may touch.
 
 pub mod changes;
 pub mod completion;
 pub mod format_gate;
 pub mod refusal;
+pub mod run_dir;
 pub mod site;
 mod special_walk;
 pub mod store;
@@ -96,22 +98,6 @@ pub(in crate::verify) fn owning_package<'p>(
         .max_by_key(|package| package.path.components().count())
 }
 
-/// The shell command that runs `contract` from `package_dir`: the adapter's
-/// single-test command, or the contract's `test` itself when no adapter
-/// applies, in which case only its exit code can be judged.
-pub fn contract_command(
-    contract: &ContractSpec,
-    adapter: Option<&dyn TestRunnerAdapter>,
-    package_dir: &Path,
-) -> String {
-    match adapter {
-        Some(adapter) => {
-            adapter.single_test_command(&normalize(&contract.file), &contract.test, package_dir)
-        }
-        None => contract.test.clone(),
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -122,6 +108,7 @@ mod tests {
             file: file.to_string(),
             test: "tests::rejects_x".to_string(),
             runner: Some("cargo-test".to_string()),
+            cwd: None,
             scenario: "s".to_string(),
             rejects: "r".to_string(),
         }
@@ -157,18 +144,5 @@ mod tests {
             &contracts,
             &harness
         ));
-    }
-
-    #[test]
-    fn a_named_runner_builds_its_single_test_command() {
-        let contract = contract("tests/x_contract.rs");
-        let adapter = resolve_adapter(&contract, Path::new(".")).unwrap();
-        assert_eq!(adapter.name(), "cargo-test");
-        let command = contract_command(&contract, Some(adapter), Path::new("."));
-        assert!(command.contains("tests::rejects_x"), "{command}");
-        assert_eq!(
-            contract_command(&contract, None, Path::new(".")),
-            contract.test
-        );
     }
 }

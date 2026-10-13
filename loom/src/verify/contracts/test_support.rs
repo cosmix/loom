@@ -21,6 +21,7 @@ pub(crate) fn contract() -> ContractSpec {
         file: CONTRACT_FILE.to_string(),
         test: "tests::rejects_x".to_string(),
         runner: Some("cargo-test".to_string()),
+        cwd: None,
         scenario: "x arrives".to_string(),
         rejects: "accepting x".to_string(),
     }

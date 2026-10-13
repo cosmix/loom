@@ -21,7 +21,8 @@ use crate::models::worktree::Worktree;
 use crate::plan::schema::ContractSpec;
 use crate::skills::{skill_invocation, SkillIndex};
 use crate::testrun::{languages, TestRunnerAdapter};
-use crate::verify::contracts::{contract_command, resolve_adapter};
+use crate::verify::contracts::resolve_adapter;
+use crate::verify::contracts::run_dir::{resolve_run, ContractRun};
 
 use super::format::{format_skill_recommendations, format_stage_brief};
 use super::generate::declared_and_recommended_skills;
@@ -29,12 +30,13 @@ use super::helpers::CONTEXT_CEILING_HANDOFF;
 use super::retrieval::STAGE_QUERY_INPUTS;
 use super::types::EmbeddedContext;
 
-/// One contract with the adapter and the command loom runs it with: the same
-/// pair `loom stage contracts freeze` and the completion check resolve.
+/// One contract with the adapter and the run loom runs it with, or why it
+/// cannot be run: the same `loom stage contracts freeze` and the completion
+/// check resolve.
 struct ResolvedContract<'a> {
     spec: &'a ContractSpec,
     adapter: Option<&'static dyn TestRunnerAdapter>,
-    command: String,
+    run: Result<ContractRun, String>,
 }
 
 impl ResolvedContract<'_> {
@@ -83,12 +85,9 @@ pub fn generate_contract_signal(
         .iter()
         .map(|spec| {
             let adapter = resolve_adapter(spec, &stage_root);
-            let command = contract_command(spec, adapter, &stage_root);
-            ResolvedContract {
-                spec,
-                adapter,
-                command,
-            }
+            let run = resolve_run(spec, adapter, &worktree.path, &stage_root, None)
+                .map_err(|error| format!("{error:#}"));
+            ResolvedContract { spec, adapter, run }
         })
         .collect();
     let content =
@@ -182,10 +181,17 @@ fn append_contracts(content: &mut String, contracts: &[ResolvedContract<'_>]) {
             table_cell(&spec.rejects),
         ));
     }
-    content.push_str("\nloom runs each contract from the working directory as:\n\n");
+    content.push_str(
+        "\nloom runs each contract from its run directory (relative to the worktree root: \
+         the contract's `cwd`, else the nearest directory above its file holding the \
+         runner's config, else the working directory) as:\n\n",
+    );
     for contract in contracts {
-        let (id, command) = (&contract.spec.id, &contract.command);
-        content.push_str(&format!("- `{id}`: `{command}`\n"));
+        let id = &contract.spec.id;
+        match &contract.run {
+            Ok(run) => content.push_str(&format!("- `{id}` in `{}`: `{}`\n", run.cwd, run.command)),
+            Err(error) => content.push_str(&format!("- `{id}`: cannot be run: {error}\n")),
+        }
         if let Some(reason) = contract.unsupported_reason() {
             content.push_str(&format!(
                 "  Unsupported runner ({reason}): its `test` runs as a shell command, and the \

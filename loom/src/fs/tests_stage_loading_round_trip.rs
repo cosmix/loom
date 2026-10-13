@@ -119,6 +119,7 @@ fn sample_contract() -> ContractSpec {
         file: "tests/contract.rs".to_string(),
         test: "parses_plan".to_string(),
         runner: Some("cargo".to_string()),
+        cwd: None,
         scenario: "a v2 plan with one standard stage".to_string(),
         rejects: "a parser that drops the stage's contracts".to_string(),
     }

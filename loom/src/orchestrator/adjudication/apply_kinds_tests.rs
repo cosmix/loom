@@ -16,9 +16,11 @@ use crate::models::dispute::{
 };
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::relay::sha256_hex;
-use crate::verify::contracts::store::{self as contract_store, FreezeRecord, FrozenFile};
+use crate::verify::contracts::store::{
+    self as contract_store, FreezeRecord, FrozenContract, FrozenFile,
+};
 use crate::verify::contracts::test_support::{
-    contract, contract_worktree, CONTRACT_CONTENT, CONTRACT_FILE, CONTRACT_ID,
+    contract, contract_worktree, red_reports, CONTRACT_CONTENT, CONTRACT_FILE, CONTRACT_ID,
 };
 use crate::verify::integrity::{self, EventKind, IntegrityEvent};
 use crate::verify::review::report::Finding;
@@ -204,7 +206,7 @@ fn frozen_contract_fixture() -> (TempDir, PathBuf, PathBuf) {
             path: CONTRACT_FILE.to_string(),
             sha256: sha256_hex(CONTRACT_CONTENT),
         }],
-        contracts: Vec::new(),
+        contracts: red_reports().iter().map(FrozenContract::from).collect(),
     };
     let copies = [(CONTRACT_FILE.to_string(), CONTRACT_CONTENT.to_vec())];
     contract_store::write_freeze(&work, &record, &copies).unwrap();
@@ -227,6 +229,7 @@ fn contract_accept_refreezes_current_content() {
     let record = contract_store::load_freeze(&work, "s1").unwrap().unwrap();
     assert_eq!(record.files.len(), 1);
     assert_eq!(record.files[0].sha256, sha256_hex(edited));
+    assert_eq!(record.contracts[0].cwd.as_deref(), Some("."));
     let copy = contract_store::frozen_file_path(&work, "s1", CONTRACT_FILE);
     assert_eq!(std::fs::read(copy).unwrap(), edited);
     assert_eq!(status(&work, "s1"), StageStatus::Queued);

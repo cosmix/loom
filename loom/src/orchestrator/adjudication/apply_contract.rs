@@ -1,10 +1,11 @@
 //! A contract dispute's verdicts (DESIGN D15), routed here by `apply_kinds.rs`.
 //!
 //! `accept` means the frozen contract was wrong and the agent's edit is right:
-//! the verdict's optional `contracts` amendment is applied, then the
-//! contract's file is re-frozen at its current worktree content. `reject`
-//! means the contract stands: the agent restores it and implements against
-//! it. Neither sends the stage to a human, except an amendment that hits the
+//! the verdict's optional `contracts` amendment is applied, then the disputed
+//! contract and every contract the record no longer describes are re-frozen:
+//! their files at their current worktree content, their files and run
+//! directories recorded (see `refrozen_contracts`). `reject` means the contract stands: the agent
+//! restores it and implements against it. Neither sends the stage to a human, except an amendment that hits the
 //! per-stage amendment cap, exactly as for a criterion dispute.
 
 use anyhow::{bail, Context, Result};
@@ -14,7 +15,9 @@ use crate::fs::safe_read::read_bounded;
 use crate::models::dispute::PlanPatch;
 use crate::models::stage::Stage;
 use crate::plan::amendment::{AmendmentField, AmendmentRequest};
-use crate::verify::contracts::{normalize, site::stage_site, store as contract_store};
+use crate::verify::contracts::run_dir::resolve_run;
+use crate::verify::contracts::store::{self as contract_store, FreezeRecord, RefrozenContract};
+use crate::verify::contracts::{normalize, resolve_adapter, site::stage_site};
 
 use super::apply::amend_plan;
 use super::plan_patch;
@@ -33,18 +36,26 @@ pub(super) fn accept(
         if !amend_plan(work_dir, stage, request)? {
             return Ok(None);
         }
-        files.extend(contract_file(stage, contract_id));
     }
-    files.sort();
-    files.dedup();
+    let Some(record) = contract_store::load_freeze(work_dir, &stage.id)? else {
+        bail!("the contracts of stage '{}' were never frozen", stage.id);
+    };
+    files.extend(recorded_file(&record, contract_id));
+    files.extend(contract_file(stage, contract_id));
     if files.is_empty() {
         bail!(
             "stage '{}' has no contract '{contract_id}' to re-freeze",
             stage.id
         );
     }
-    let contents = read_worktree_files(work_dir, stage, &files)?;
-    contract_store::refreeze(work_dir, &stage.id, &contents)?;
+    let (worktree_root, working_dir) = stage_paths(work_dir, stage)?;
+    let site = (worktree_root.as_path(), working_dir.as_path());
+    let contracts = refrozen_contracts(stage, &record, contract_id, site)?;
+    files.extend(contracts.iter().map(|contract| contract.file.clone()));
+    files.sort();
+    files.dedup();
+    let contents = read_worktree_files(&working_dir, &files)?;
+    contract_store::refreeze(work_dir, &stage.id, &contents, &contracts)?;
     Ok(Some(format!(
         "The adjudicator accepted your contract dispute: contract '{contract_id}' is \
          re-frozen at its current content ({}).\n\nAction: implement until every contract \
@@ -94,19 +105,68 @@ fn contracts_amendment(
     }))
 }
 
-/// The current content of `paths` (relative to the working directory) in the
-/// stage's worktree, read without following a symlink, as the freeze read it.
-fn read_worktree_files(
-    work_dir: &Path,
+/// The contracts the re-freeze records: the disputed one, and every one the
+/// record does not describe as it now stands, because its id or file is not
+/// recorded together (an amendment inserted, renamed or re-pointed it) or its
+/// entry lacks a file or run directory. Each is resolved with the run
+/// directory the record holds for its file (`store::recorded_cwd`), so a
+/// runner config planted since cannot move a contract whose file is
+/// unchanged. The choice reads only the record, which `refreeze` rewrites
+/// last, so a retry after a partial failure makes the same one. `site` is
+/// the stage's worktree root and working directory.
+fn refrozen_contracts(
     stage: &Stage,
-    paths: &[String],
-) -> Result<Vec<(String, Vec<u8>)>> {
-    let working_dir = stage_working_dir(work_dir, stage)?;
+    record: &FreezeRecord,
+    contract_id: &str,
+    (worktree_root, working_dir): (&Path, &Path),
+) -> Result<Vec<RefrozenContract>> {
+    let mut refrozen = Vec::new();
+    for contract in &stage.contracts {
+        let file = normalize(&contract.file);
+        if contract.id != contract_id && is_recorded(record, &contract.id, &file) {
+            continue;
+        }
+        let adapter = resolve_adapter(contract, working_dir);
+        let recorded = contract_store::recorded_cwd(record, contract);
+        let run = resolve_run(contract, adapter, worktree_root, working_dir, recorded)?;
+        refrozen.push(RefrozenContract {
+            id: contract.id.clone(),
+            adapter: adapter.map(|adapter| adapter.name().to_string()),
+            file,
+            cwd: run.cwd,
+        });
+    }
+    Ok(refrozen)
+}
+
+/// Whether `record` holds an entry for contract `id` naming `file` with a run
+/// directory.
+fn is_recorded(record: &FreezeRecord, id: &str, file: &str) -> bool {
+    record
+        .contracts
+        .iter()
+        .any(|entry| entry.id == id && entry.file.as_deref() == Some(file) && entry.cwd.is_some())
+}
+
+/// The file `record` holds for contract `id`. For the disputed contract it is
+/// the file from before the amendment, even when a retry finds the amendment
+/// already applied.
+fn recorded_file(record: &FreezeRecord, id: &str) -> Option<String> {
+    record
+        .contracts
+        .iter()
+        .find(|entry| entry.id == id)
+        .and_then(|entry| entry.file.clone())
+}
+
+/// The current content of `paths` (relative to `working_dir`) in the stage's
+/// worktree, read without following a symlink, as the freeze read it.
+fn read_worktree_files(working_dir: &Path, paths: &[String]) -> Result<Vec<(String, Vec<u8>)>> {
     paths
         .iter()
         .map(|path| {
             let bytes = read_bounded(
-                &working_dir,
+                working_dir,
                 Path::new(path),
                 contract_store::MAX_FROZEN_FILE_BYTES,
             )
@@ -116,12 +176,11 @@ fn read_worktree_files(
         .collect()
 }
 
-/// The stage's working directory inside its worktree, located the way the
-/// freeze handler (`daemon/server/contracts.rs`) locates it.
-fn stage_working_dir(work_dir: &Path, stage: &Stage) -> Result<PathBuf> {
+/// The stage's worktree root and working directory inside it, located the
+/// way the freeze handler (`daemon/server/contracts.rs`) locates them.
+fn stage_paths(work_dir: &Path, stage: &Stage) -> Result<(PathBuf, PathBuf)> {
     let work_dir = work_dir
         .canonicalize()
         .with_context(|| format!("failed to resolve {}", work_dir.display()))?;
-    let (_worktree_root, working_dir) = stage_site(&work_dir, stage)?;
-    Ok(working_dir)
+    stage_site(&work_dir, stage)
 }

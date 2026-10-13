@@ -6,7 +6,8 @@ use std::path::Path;
 use super::{KindPromptInput, Prompt};
 use crate::models::dispute::DisputeKind;
 use crate::plan::schema::ContractSpec;
-use crate::verify::contracts::{contract_command, resolve_adapter, store};
+use crate::verify::contracts::run_dir::{resolve_run, ContractRun};
+use crate::verify::contracts::{resolve_adapter, store};
 
 pub(super) fn build(input: &KindPromptInput<'_>) -> Prompt {
     Prompt {
@@ -54,30 +55,86 @@ fn build_instructions(input: &KindPromptInput<'_>) -> String {
 fn first_step(input: &KindPromptInput<'_>) -> String {
     let mut s = String::from("## Step 1 — Run and compare the contract\n\n");
     s.push_str("Run the contract test as the adapter runs it, then compare the frozen content with the current content.\n\n");
-    match spec(input) {
-        Some(contract) if input.worktree.is_some() && valid_file(&contract.file) => {
-            let dir = &input.site.path;
-            let command = contract_command(contract, resolve_adapter(contract, dir), dir);
-            let quoted_dir = dir.display().to_string().replace('\'', "'\\''");
-            s.push_str(&format!(
-                "Run from the stage's worktree plus `working_dir` (`{}`):\n\n",
-                input.site.working_dir
-            ));
-            s.push_str(&format!(
-                "```bash\ncd -- '{quoted_dir}'\n{command}\necho \"exit: $?\"\n```\n\n"
-            ));
-        }
-        Some(contract) if !valid_file(&contract.file) => {
+    match (spec(input), input.worktree) {
+        (Some(contract), _) if !valid_file(&contract.file) => {
             s.push_str("(contract file path is unsafe; do not run a command against it)\n\n");
         }
-        Some(_) => s.push_str("(stage worktree unavailable; report what evidence is missing)\n\n"),
-        None => {
+        (Some(contract), Some(worktree)) => match contract_run(input, contract, worktree) {
+            Ok(run) => {
+                let quoted_dir = run.dir.display().to_string().replace('\'', "'\\''");
+                s.push_str(&format!(
+                    "Run from the contract's run directory (`{}` in the stage's worktree), \
+                     where the completion check runs it:\n\n",
+                    run.cwd
+                ));
+                s.push_str(&format!(
+                    "```bash\ncd -- '{quoted_dir}'\n{}\necho \"exit: $?\"\n```\n\n",
+                    run.command
+                ));
+            }
+            Err(error) => s.push_str(&format!(
+                "(the contract's run directory cannot be resolved: {error:#}; report what \
+                 evidence is missing)\n\n"
+            )),
+        },
+        (Some(_), None) => {
+            s.push_str("(stage worktree unavailable; report what evidence is missing)\n\n")
+        }
+        (None, _) => {
             s.push_str("(disputed contract spec unavailable; report what evidence is missing)\n\n")
         }
     }
     s.push_str("A failed run alone does not decide whether the change weakens the contract.\n");
     s.push_str("Compare the scenario and rejects clause with both versions of the file.\n\n");
     s
+}
+
+/// Where and how the completion check runs `contract`, from the run
+/// directory the plan gives or the freeze recorded for its file.
+fn contract_run(
+    input: &KindPromptInput<'_>,
+    contract: &ContractSpec,
+    worktree: &Path,
+) -> anyhow::Result<ContractRun> {
+    let recorded = recorded_cwd(input, contract)?;
+    let adapter = resolve_adapter(contract, &input.site.path);
+    resolve_run(
+        contract,
+        adapter,
+        worktree,
+        &input.site.path,
+        recorded.as_deref(),
+    )
+}
+
+/// The run directory the freeze recorded for `contract`'s file, if it
+/// recorded one.
+fn recorded_cwd(
+    input: &KindPromptInput<'_>,
+    contract: &ContractSpec,
+) -> anyhow::Result<Option<String>> {
+    let record = store::load_freeze(input.work_dir, &input.stage.id)?;
+    Ok(record.and_then(|record| store::recorded_cwd(&record, contract).map(str::to_string)))
+}
+
+/// The disputed contract's spec as the plan holds it, with the run directory
+/// the plan gives and the one the freeze recorded.
+fn spec_block(input: &KindPromptInput<'_>, contract: &ContractSpec) -> String {
+    let recorded = match recorded_cwd(input, contract) {
+        Ok(Some(cwd)) => cwd,
+        Ok(None) => "(none recorded)".to_string(),
+        Err(error) => format!("(freeze record unreadable: {error:#})"),
+    };
+    format!(
+        "id: {}\nfile: {}\ntest: {}\ncwd: {}\nrecorded cwd: {recorded}\nscenario: {}\n\
+         rejects: {}\n\n",
+        contract.id,
+        contract.file,
+        contract.test,
+        contract.cwd.as_deref().unwrap_or("(not set; detected)"),
+        contract.scenario,
+        contract.rejects
+    )
 }
 
 fn verdict_schema() -> &'static str {
@@ -91,8 +148,13 @@ Write one of these JSON objects. On accept, omit `plan_patch` unless the
 contract spec itself needs replacement. If included, `field` must be
 `contracts`, `index` is the zero-based index in the stage's contracts array,
 and `value` is a JSON string containing the complete replacement contract in
-YAML (including id, file, test, scenario, and rejects). Accept and reject each
-need at least one citation; needs-more-evidence needs at least one question.
+YAML (including id, file, test, scenario, and rejects, plus `runner` and `cwd`
+whenever the current spec sets them). `cwd` is the optional directory the
+contract runs from, relative to the worktree root, and always decides where it
+runs. Without one, a replacement that keeps `file` keeps the recorded cwd, and
+one that changes `file` lets loom detect the directory again.
+Accept and reject each need at least one citation; needs-more-evidence needs
+at least one question.
 
 "#
 }
@@ -109,10 +171,7 @@ fn build_evidence(input: &KindPromptInput<'_>) -> String {
     let contract = spec(input);
     s.push_str("## Contract spec\n\n");
     if let Some(contract) = contract {
-        s.push_str(&format!(
-            "id: {}\nfile: {}\ntest: {}\nscenario: {}\nrejects: {}\n\n",
-            contract.id, contract.file, contract.test, contract.scenario, contract.rejects
-        ));
+        s.push_str(&spec_block(input, contract));
     } else {
         s.push_str("(contract spec unavailable for this dispute)\n\n");
     }
@@ -209,144 +268,5 @@ fn push_content(out: &mut String, heading: &str, content: &Result<String, String
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::dispute::DisputeRequest;
-    use crate::models::stage::Stage;
-    use crate::orchestrator::adjudication::prompt::ExecutionSite;
-    use crate::verify::contracts::test_support::contract;
-    use chrono::Utc;
-    use std::path::PathBuf;
-
-    fn request() -> DisputeRequest {
-        DisputeRequest {
-            id: 4,
-            stage_id: "demo".to_string(),
-            kind: DisputeKind::Contract {
-                contract_id: "rejects-x".to_string(),
-            },
-            reason: "the new assertion still rejects x".to_string(),
-            evidence_commit: None,
-            failure_output: None,
-            fix_attempts_at_dispute: 0,
-            created_at: Utc::now(),
-        }
-    }
-
-    /// Fixture for [`full_briefing_quotes_each_source_and_the_diff`]: a
-    /// stage with one contract, its frozen file and current worktree file
-    /// written to disk, ready for [`KindPromptInput`] to borrow from.
-    struct ContractFixture {
-        _tmp: tempfile::TempDir,
-        work_dir: PathBuf,
-        worktree: PathBuf,
-        stage: Stage,
-        request: DisputeRequest,
-        site: ExecutionSite,
-    }
-
-    fn contract_fixture() -> ContractFixture {
-        let tmp = tempfile::tempdir().unwrap();
-        let work_dir = tmp.path().join(".loom/work");
-        let worktree = tmp.path().join(".worktrees/demo");
-        let execution = worktree.join("loom");
-        let stage = Stage {
-            id: "demo".to_string(),
-            working_dir: Some("loom".to_string()),
-            contracts: vec![contract()],
-            ..Stage::default()
-        };
-        let frozen = store::frozen_file_path(&work_dir, &stage.id, &stage.contracts[0].file);
-        let current = execution.join(&stage.contracts[0].file);
-        fs::create_dir_all(frozen.parent().unwrap()).unwrap();
-        fs::create_dir_all(current.parent().unwrap()).unwrap();
-        fs::write(&frozen, "assert!(false);\n").unwrap();
-        fs::write(&current, "assert!(rejects_x());\n").unwrap();
-        let site = ExecutionSite {
-            path: execution,
-            working_dir: "loom".to_string(),
-            worktree_present: true,
-            root: worktree.clone(),
-        };
-        ContractFixture {
-            _tmp: tmp,
-            work_dir,
-            worktree,
-            stage,
-            request: request(),
-            site,
-        }
-    }
-
-    #[test]
-    fn full_briefing_quotes_each_source_and_the_diff() {
-        let fx = contract_fixture();
-        let input = KindPromptInput {
-            stage: &fx.stage,
-            dispute_id: 4,
-            request: &fx.request,
-            site: &fx.site,
-            worktree: Some(&fx.worktree),
-            work_dir: &fx.work_dir,
-        };
-
-        let prompt = build(&input);
-
-        for expected in [
-            "## Contract spec",
-            "id: rejects-x",
-            "file: tests/x_contract.rs",
-            "test: tests::rejects_x",
-            "scenario: x arrives",
-            "rejects: accepting x",
-            "## Frozen content",
-            "assert!(false);",
-            "## Current content",
-            "assert!(rejects_x());",
-            "## Agent's reason",
-            "the new assertion still rejects x",
-            "## Diff (frozen vs current)",
-            "-assert!(false);",
-            "+assert!(rejects_x());",
-        ] {
-            assert!(prompt.evidence.contains(expected), "missing {expected}");
-        }
-        assert!(prompt
-            .instructions
-            .contains("loom stage adjudicate --stage demo"));
-    }
-
-    #[test]
-    fn missing_worktree_leaves_a_readable_briefing() {
-        let tmp = tempfile::tempdir().unwrap();
-        let work_dir = tmp.path().join(".loom/work");
-        let stage = Stage {
-            id: "demo".to_string(),
-            contracts: vec![contract()],
-            ..Stage::default()
-        };
-        let site = ExecutionSite {
-            path: tmp.path().to_path_buf(),
-            working_dir: ".".to_string(),
-            worktree_present: false,
-            root: tmp.path().to_path_buf(),
-        };
-        let request = request();
-        let input = KindPromptInput {
-            stage: &stage,
-            dispute_id: 4,
-            request: &request,
-            site: &site,
-            worktree: None,
-            work_dir: &work_dir,
-        };
-
-        let prompt = build(&input);
-
-        assert!(prompt
-            .evidence
-            .contains("(current file unavailable: stage worktree missing)"));
-        assert!(prompt.evidence.contains("(diff unavailable"));
-        assert!(prompt.instructions.contains("stage worktree unavailable"));
-    }
-}
+#[path = "contract_tests.rs"]
+mod tests;

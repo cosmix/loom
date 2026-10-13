@@ -73,6 +73,7 @@ fn freeze_handler_records_hashes_and_copies() {
     assert_eq!(record.files[0].path, CONTRACT_FILE);
     assert_eq!(record.files[0].sha256, sha256_hex(CONTRACT_CONTENT));
     assert_eq!(record.contracts[0].outcome, "failed");
+    assert_eq!(record.contracts[0].cwd.as_deref(), Some("."));
     let copy = frozen_file_path(&fx.work_dir, STAGE, CONTRACT_FILE);
     assert_eq!(std::fs::read(copy).unwrap(), CONTRACT_CONTENT);
 
@@ -80,6 +81,38 @@ fn freeze_handler_records_hashes_and_copies() {
     save_session(&fx.session, &fx.work_dir).unwrap();
     let message = refusal(freeze(&fx, &red_reports()));
     assert!(message.contains("contract session"), "{message}");
+}
+
+/// A contract whose file sits in a sub-workspace with its own runner config
+/// runs from that sub-workspace, and the record says so.
+#[test]
+fn freeze_handler_records_the_run_dir_holding_the_runner_config() {
+    let fx = fixture();
+    std::fs::remove_file(fx.worktree.join(CONTRACT_FILE)).unwrap();
+    let web = fx.worktree.join("apps/web");
+    std::fs::create_dir_all(web.join("src")).unwrap();
+    std::fs::write(web.join("bunfig.toml"), "").unwrap();
+    std::fs::write(web.join("src/a.contract.test.ts"), "test('x', () => {});\n").unwrap();
+    update_stage(STAGE, &fx.work_dir, |stage| {
+        stage.contracts[0].file = "apps/web/src/a.contract.test.ts".to_string();
+        stage.contracts[0].runner = Some("bun-test".to_string());
+        stage.harness = vec!["apps/web/bunfig.toml".to_string()];
+        Ok(())
+    })
+    .unwrap();
+    let mut reports = red_reports();
+    reports[0].adapter = Some("bun-test".to_string());
+
+    let response = freeze(&fx, &reports);
+
+    assert!(
+        matches!(response, Response::ContractsFrozen { .. }),
+        "{response:?}"
+    );
+    let record = load_freeze(&fx.work_dir, STAGE).unwrap().unwrap();
+    assert_eq!(record.contracts[0].cwd.as_deref(), Some("apps/web"));
+    let file = record.contracts[0].file.as_deref();
+    assert_eq!(file, Some("apps/web/src/a.contract.test.ts"));
 }
 
 /// The writer of a stage parked on its refused freeze was typed back into

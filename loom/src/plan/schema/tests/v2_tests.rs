@@ -26,6 +26,7 @@ fn contract(id: &str) -> ContractSpec {
         file: "tests/plan_v2.rs".to_string(),
         test: "parses_v2_plan".to_string(),
         runner: None,
+        cwd: None,
         scenario: "a version 2 plan is parsed".to_string(),
         rejects: "a parser that accepts only version 1".to_string(),
     }

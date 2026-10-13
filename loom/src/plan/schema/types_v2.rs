@@ -33,6 +33,10 @@ pub struct ContractSpec {
     /// Runner adapter name; `None` means detected from the project.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub runner: Option<String>,
+    /// Directory the contract runs from, relative to the worktree root; `None`
+    /// means detected (nearest runner config, else `working_dir`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd: Option<String>,
     /// What the test sets up.
     pub scenario: String,
     /// The plausible wrong implementation the test must fail on.

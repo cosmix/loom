@@ -51,11 +51,12 @@ use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::relay::sha256_hex;
 use crate::testrun::registry;
 use crate::verify::contracts::refusal::end_wait;
+use crate::verify::contracts::run_dir::resolve_run;
 use crate::verify::contracts::store::{
     self, FreezeRecord, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION, MAX_FROZEN_FILE_BYTES,
 };
 use crate::verify::contracts::{
-    changes, is_contract_or_harness, normalize, site::stage_site, RED_OUTCOMES,
+    changes, is_contract_or_harness, normalize, resolve_adapter, site::stage_site, RED_OUTCOMES,
 };
 use crate::verify::transitions::{load_stage, update_stage};
 
@@ -111,11 +112,11 @@ fn end_refusal_wait(work_dir: &Path, stage_id: &str, session_id: &str) -> Result
     Ok(())
 }
 
-/// Where the stage's files are: git pinned to the stage worktree and,
-/// beneath the worktree, the working directory contract paths are relative
-/// to.
+/// Where the stage's files are: git pinned to the stage worktree, its root
+/// and, beneath it, the working directory contract paths are relative to.
 struct Site {
     git: WorktreeGit,
+    worktree_root: PathBuf,
     working_dir: PathBuf,
 }
 
@@ -149,14 +150,40 @@ fn prepare(
                 sha256: sha256_hex(bytes),
             })
             .collect(),
-        contracts: stage
-            .contracts
-            .iter()
-            .filter_map(|contract| reports.iter().find(|r| r.contract_id == contract.id))
-            .map(FrozenContract::from)
-            .collect(),
+        contracts: frozen_contracts(&site, &stage, reports)?,
     };
     Ok((record, files))
+}
+
+/// Each contract's run report with its file and the directory it runs from,
+/// which the completion check then runs it from too while the contract names
+/// that file. The handler resolves the directory itself, as the CLI did; it
+/// runs nothing there.
+fn frozen_contracts(
+    site: &Site,
+    stage: &Stage,
+    reports: &[ContractRunReport],
+) -> Result<Vec<FrozenContract>> {
+    let mut frozen = Vec::with_capacity(stage.contracts.len());
+    for contract in &stage.contracts {
+        let Some(report) = reports.iter().find(|r| r.contract_id == contract.id) else {
+            continue;
+        };
+        let adapter = resolve_adapter(contract, &site.working_dir);
+        let run = resolve_run(
+            contract,
+            adapter,
+            &site.worktree_root,
+            &site.working_dir,
+            None,
+        )?;
+        frozen.push(FrozenContract {
+            file: Some(normalize(&contract.file)),
+            cwd: Some(run.cwd),
+            ..FrozenContract::from(report)
+        });
+    }
+    Ok(frozen)
 }
 
 fn check_stage(work_dir: &Path, stage: &Stage) -> Result<()> {
@@ -218,6 +245,7 @@ fn locate(work_dir: &Path, stage: &Stage) -> Result<Site> {
     let (worktree_root, working_dir) = stage_site(work_dir, stage)?;
     Ok(Site {
         git: WorktreeGit::pinned_in_project_of(work_dir, &worktree_root)?,
+        worktree_root,
         working_dir,
     })
 }

@@ -1,7 +1,8 @@
 //! The contract check at stage completion (DESIGN D9).
 //!
-//! Every frozen file still has its frozen content, and every contract passes.
-//! Contracts run through the acceptance-criteria runner with the same
+//! Every frozen file still has its frozen content, and every contract passes,
+//! run from the directory `run_dir` resolves for it. Contracts
+//! run through the acceptance-criteria runner with the same
 //! `CommandSpec` a criterion carrying the command would get, so an identical
 //! earlier pass is reused from the certified cache. The caller gates this on a
 //! v2 `standard` stage with contracts.
@@ -9,8 +10,9 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
+use super::resolve_adapter;
+use super::run_dir::resolve_run;
 use super::store::{self, FreezeRecord};
-use super::{contract_command, resolve_adapter};
 use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::models::stage::Stage;
 use crate::plan::schema::ContractSpec;
@@ -51,12 +53,9 @@ fn check_with(
     };
     let mut failures = changed_frozen_files(&record, acceptance_dir, worktree_root)?;
     for contract in &stage.contracts {
-        let adapter = resolve_adapter(contract, acceptance_dir);
-        let command = contract_command(contract, adapter, acceptance_dir);
-        let run = runner
-            .run(&command, acceptance_dir)
-            .with_context(|| format!("failed to run contract '{}'", contract.id))?;
-        failures.extend(judge(contract, adapter, &command, &run));
+        let recorded = store::recorded_cwd(&record, contract);
+        let failure = run_contract(contract, recorded, acceptance_dir, worktree_root, runner)?;
+        failures.extend(failure);
     }
     if failures.is_empty() {
         return Ok(());
@@ -70,6 +69,34 @@ fn check_with(
         failures.join("\n  - "),
         id = stage.id
     )
+}
+
+/// Run `contract` from its run directory (its plan `cwd`, else the one
+/// `recorded` for its file by the freeze, else resolved as the freeze
+/// resolves it) and say why it does not pass, if it
+/// does not. A contract that cannot be resolved is a failure of its own, so
+/// the check still runs and reports every other contract.
+fn run_contract(
+    contract: &ContractSpec,
+    recorded: Option<&str>,
+    acceptance_dir: &Path,
+    worktree_root: &Path,
+    runner: &dyn ProbeRunner,
+) -> Result<Option<String>> {
+    let adapter = resolve_adapter(contract, acceptance_dir);
+    let resolved = match resolve_run(contract, adapter, worktree_root, acceptance_dir, recorded) {
+        Ok(resolved) => resolved,
+        Err(error) => {
+            return Ok(Some(format!(
+                "contract '{}' cannot be run: {error:#}",
+                contract.id
+            )))
+        }
+    };
+    let run = runner
+        .run(&resolved.command, &resolved.dir)
+        .with_context(|| format!("failed to run contract '{}'", contract.id))?;
+    Ok(judge(contract, adapter, &resolved.command, &run))
 }
 
 /// Frozen files whose content differs from the freeze, or that are gone.

@@ -18,9 +18,8 @@ use crate::relay::RequestKind;
 use crate::testrun::{classify, RunOutcome, RunOutput, RunSummary, TestRunnerAdapter};
 use crate::verify::contracts::changes::{changed_paths, stage_base};
 use crate::verify::contracts::format_gate::format_problems;
-use crate::verify::contracts::{
-    contract_command, is_contract_or_harness, refusal, resolve_adapter,
-};
+use crate::verify::contracts::run_dir::resolve_run;
+use crate::verify::contracts::{is_contract_or_harness, refusal, resolve_adapter};
 use crate::verify::criteria::{
     plan_confinement, resolve_confinement, run_spec_with_timeout, CommandSpec,
 };
@@ -256,7 +255,12 @@ fn run_contracts(
     let stage = &site.stage;
     let (mut reports, mut problems) = (Vec::new(), Vec::new());
     for contract in &stage.contracts {
-        match run_contract(site, contract, confinement)? {
+        match run_contract(
+            &site.worktree_root,
+            &site.working_dir,
+            contract,
+            confinement,
+        )? {
             Ok(report) => reports.push(report),
             Err(problem) => problems.push(problem),
         }
@@ -271,19 +275,24 @@ fn run_contracts(
     Ok(reports)
 }
 
-/// Run one contract and judge the run. The outer `Err` means the command
-/// could not be run at all; the inner one is a problem the agent must fix.
+/// Run one contract from its run directory and judge the run. The outer
+/// `Err` means the command could not be run at all; the inner one is a
+/// problem the agent must fix.
 fn run_contract(
-    site: &ContractSite,
+    worktree_root: &Path,
+    working_dir: &Path,
     contract: &ContractSpec,
     confinement: CommandConfinement,
 ) -> Result<Result<ContractRunReport, String>> {
-    let adapter = resolve_adapter(contract, &site.working_dir);
-    let command = contract_command(contract, adapter, &site.working_dir);
-    println!("Running contract `{}`: {command}", contract.id);
+    let adapter = resolve_adapter(contract, working_dir);
+    let resolved = resolve_run(contract, adapter, worktree_root, working_dir, None)?;
+    println!(
+        "Running contract `{}` in {}: {}",
+        contract.id, resolved.cwd, resolved.command
+    );
     let run = run_spec_with_timeout(
-        &CommandSpec::shell(command),
-        Some(&site.working_dir),
+        &CommandSpec::shell(resolved.command),
+        Some(&resolved.dir),
         CONTRACT_TIMEOUT,
         confinement,
     )?;
@@ -318,3 +327,7 @@ fn run_contract(
 #[cfg(test)]
 #[path = "freeze_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "freeze_run_dir_tests.rs"]
+mod run_dir_tests;

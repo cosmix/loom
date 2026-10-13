@@ -17,6 +17,7 @@ fn contract(file: &str, runner: Option<&str>) -> ContractSpec {
         file: file.to_string(),
         test: "greets_by_name".to_string(),
         runner: runner.map(str::to_string),
+        cwd: None,
         scenario: "a greeting is built for Ada".to_string(),
         rejects: "a greeting that ignores the name".to_string(),
     }

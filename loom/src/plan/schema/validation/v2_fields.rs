@@ -3,7 +3,7 @@
 //! `plan verify` lint marked `error_in_v2` is an error rather than a warning (D4).
 
 use std::collections::HashSet;
-use std::path::{Component, Path};
+use std::path::{Component, Path, PathBuf};
 
 use super::super::detect::detect_stage_type;
 use super::super::types::{
@@ -97,7 +97,7 @@ fn push_v2_rules(metadata: &LoomMetadata, errors: &mut Vec<ValidationError>) {
     }
     for stage in &metadata.loom.stages {
         let mut messages: Vec<String> = contract_count_problem(stage).into_iter().collect();
-        push_contract_problems(&stage.contracts, &mut messages);
+        push_contract_problems(&stage.contracts, &stage.working_dir, &mut messages);
         for entry in &stage.harness {
             if let Some(problem) = path_problem(entry) {
                 messages.push(format!("harness entry '{entry}' {problem}"));
@@ -154,8 +154,13 @@ fn contract_count_problem(stage: &StageDefinition) -> Option<String> {
     }
 }
 
-/// Contract `id` pattern and uniqueness, non-empty fields, and a relative `file`.
-fn push_contract_problems(contracts: &[ContractSpec], messages: &mut Vec<String>) {
+/// Contract `id` pattern and uniqueness, non-empty fields, a relative `file`,
+/// and a relative `cwd` holding that file (`working_dir` joined with it).
+fn push_contract_problems(
+    contracts: &[ContractSpec],
+    working_dir: &str,
+    messages: &mut Vec<String>,
+) {
     let mut seen = HashSet::new();
     for (idx, contract) in contracts.iter().enumerate() {
         let label = format!("Contract #{}", idx + 1);
@@ -177,7 +182,52 @@ fn push_contract_problems(contracts: &[ContractSpec], messages: &mut Vec<String>
         if let Some(problem) = path_problem(&contract.file) {
             messages.push(format!("{label} file '{}' {problem}", contract.file));
         }
+        if let Some(problem) = cwd_problem(contract, working_dir) {
+            messages.push(format!("{label} {problem}"));
+        }
     }
+}
+
+/// Why a contract's `cwd` is unusable: not a relative path free of `..`, or
+/// not an ancestor of the contract file. `None` when it is unset or usable.
+fn cwd_problem(contract: &ContractSpec, working_dir: &str) -> Option<String> {
+    let cwd = contract.cwd.as_deref()?;
+    if cwd.trim().is_empty() {
+        return Some("cwd must not be empty (use \".\" for the worktree root)".to_string());
+    }
+    if let Some(problem) = path_problem(cwd) {
+        return Some(format!("cwd '{cwd}' {problem}"));
+    }
+    // A malformed `file` or `working_dir` is reported on its own.
+    let (Some(dir), Some(file)) = (
+        plain_path(&[cwd]),
+        plain_path(&[working_dir, &contract.file]),
+    ) else {
+        return None;
+    };
+    (!file.starts_with(&dir)).then(|| {
+        format!(
+            "cwd '{cwd}' does not contain the contract file '{}' (relative to working_dir \
+             '{working_dir}')",
+            contract.file
+        )
+    })
+}
+
+/// `parts` joined, with `.` components dropped; `None` when one has a root
+/// or a `..` component.
+fn plain_path(parts: &[&str]) -> Option<PathBuf> {
+    let mut joined = PathBuf::new();
+    for part in parts {
+        for component in Path::new(part).components() {
+            match component {
+                Component::Normal(name) => joined.push(name),
+                Component::CurDir => {}
+                _ => return None,
+            }
+        }
+    }
+    Some(joined)
 }
 
 /// Non-empty `symbol`, `from` and `description`; `min_confidence` within `0.0..=1.0`.

@@ -8,6 +8,7 @@ fn spec() -> ContractSpec {
         file: "tests/no_follow.rs".to_string(),
         test: "no_follow::rejects_symlink".to_string(),
         runner: Some("cargo-test".to_string()),
+        cwd: None,
         scenario: "a symlink planted in the path".to_string(),
         rejects: "an open that follows symlinks".to_string(),
     }

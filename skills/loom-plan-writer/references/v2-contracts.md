@@ -55,6 +55,7 @@ harness: ["tests/fixtures/spool/**"]
 | `id` | `^[a-z0-9][a-z0-9-]*$`, unique within the stage; named after what it rejects |
 | `file` | the test file, relative to the stage's `working_dir`, no `..`, at a location the language skill names |
 | `test` | the exact name the adapter selects, in the form the language skill gives |
+| `cwd` | optional directory the contract runs from, relative to the worktree root; the file must lie beneath it. Omitted: the nearest ancestor of the file holding the runner's config or project file (`bunfig.toml` for `bun-test`, `Cargo.toml`, `go.mod`, a `vitest`/`jest`/`mocha` config, `pubspec.yaml`, `phpunit.xml`, ...), up to the worktree root, else `working_dir`. The file is passed to the runner relative to that directory |
 | `runner` | optional adapter name that overrides detection; an unknown name is an error in v2 |
 | `scenario` | the concrete input or state the test sets up |
 | `rejects` | the plausible wrong implementation the test must fail on |

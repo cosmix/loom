@@ -24,8 +24,10 @@ pub fn show(stage_id: String) -> Result<()> {
         let exit = contract
             .exit_code
             .map_or_else(|| "none".to_string(), |code| code.to_string());
+        let file = contract.file.as_deref().unwrap_or("unrecorded");
+        let cwd = contract.cwd.as_deref().unwrap_or("unrecorded");
         println!(
-            "  {}  outcome={}  adapter={adapter}  exit={exit}",
+            "  {}  outcome={}  adapter={adapter}  exit={exit}  file={file}  cwd={cwd}",
             contract.id, contract.outcome
         );
     }

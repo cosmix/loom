@@ -13,6 +13,7 @@ mod stage_id_tests;
 mod stage_type_tests;
 mod subagent_timeout_tests;
 mod ultracode_tests;
+mod v2_contract_cwd_tests;
 mod v2_contract_lint_tests;
 mod v2_lint_environment_tests;
 mod v2_lint_tests;
@@ -69,6 +70,7 @@ pub(crate) fn create_valid_metadata_v2() -> LoomMetadata {
         file: "tests/plan_v2.rs".to_string(),
         test: "parses_v2_plan".to_string(),
         runner: Some("cargo-test".to_string()),
+        cwd: None,
         scenario: "a plan file declaring version 2 is parsed".to_string(),
         rejects: "a parser that still accepts only version 1".to_string(),
     }];
