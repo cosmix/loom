@@ -2,16 +2,30 @@
 
 > Open gaps: commits, launch, stalls
 
-## macOS CI Jobs Have No Green Baseline; Linux Still Emulates BSD
+## macOS CI Jobs and Remaining BSD Gaps
 
 CI runs every gate whose result depends on the target OS on `macos-latest` as well as Linux:
 `lint-macos` (clippy, rustdoc), `test-macos` (`cargo test --all-targets --no-fail-fast`, both smoke
 scripts), `flake-check-macos`, and `hooks-macos` (hook syntax, the hook suite and the partial-staging
 regression under `/bin/bash` 3.2, which a step asserts). fmt, audit, deny and the web job stay Linux-only.
+Every macOS job is green from run 38397957790 (commit `44095fa4`) on. The causes of the earlier macOS
+failures are in
+[The First macOS Hook Run](../mistakes/hooks-shell-portability.md#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13),
+[Rust Fixtures Assumed Linux](../mistakes/ci-toolchain-and-cargo.md#rust-fixtures-assumed-linux-paths-ptys-and-tool-output-2026-10-13)
+and [macOS `proc_pidinfo` Hid Zombies](../mistakes/sessions-and-liveness.md#macos-proc_pidinfo-hid-zombies-so-an-unreaped-dead-session-read-as-alive-2026-10-13).
 Open gaps:
 
-- No macOS run has been green yet. The fixes waiting for one are listed in
-  [macOS Test Failures Open in CI](#macos-test-failures-open-in-ci).
+- `run-all.sh` hides a passing test's output, so on the macOS runner a SKIP of the E3 Seatbelt case in
+  `codex-forward-guard-stage-evidence.sh` cannot be ruled out. E3 relies on macOS refusing a nested
+  profile that differs from the outer one; an identical nested profile is admitted, so the guard's
+  allow-everything probe only detects confinement by a different outer profile.
+- No hook step caps `ulimit -u`, so a runaway in a hook test kills the runner and its log, as a
+  BSD-shim recursion once did to the Linux `Hook syntax` job.
+- Inside Claude Code's macOS sandbox, `ps`, `sysctl` (the boot ID), `sandbox-exec`, PTY spawn, loopback
+  bind and writes under `/var/folders` are denied, so the codex_evidence, worker_evidence, relay e2e,
+  PTY, credential-guard and ancestry tests fail or skip there for that reason alone. A local run is no
+  evidence either way; run them outside the sandbox (the `!` prefix) or read the CI job log with
+  `gh api repos/cosmix/loom/actions/jobs/<job-id>/logs`.
 - Unverified: `reject_symlink_components` (`subagent_lifecycle/claude_files.rs`) refuses an evidence
   path with any symlinked component. If a real transcript path runs through a symlinked `~/.claude`
   (dotfile managers create one), production refuses that evidence as unsafe.
@@ -197,30 +211,3 @@ Each recurred after its lesson was recorded, so a check beats another paragraph:
   worker briefs so none exceeds about twice the median.
 - **A load-sensitive timing bound.** `commands::status::web::terminal::tests_pty::pty_child_shutdown_reaps_the_child`
   failed once during the completion run on its `started.elapsed() < 1s` bound while passing 15 of 15 alone.
-
-## macOS Test Failures Open in CI
-
-CI run 38386384997 (commit `37c67d38`) confirmed the fixes for every failure of run 38368215757, the
-first macOS run, except one. `tests_bridge::backpressure::bridge_leaves_pty_output_upstream_while_the_client_is_stalled`
-still fails on the macOS runner: the child writes its whole 256 KiB while the client never reads. The
-pre-`connect` shrink of the client socket (`tests_bridge/sockets.rs`) did not stop it, so the TCP
-advertised-window explanation was wrong or incomplete, and so was a second, XNU-source fix (CI run
-38393520660). A stalled macOS loopback client absorbs about 330 KB whatever its socket options, so the
-test now measures that absorption with the fixture's own setup (`sockets::stalled_client_capacity`)
-and writes it plus `STALL_MARGIN` (192 KiB). It passes on a Mac (Darwin 27); no CI run has confirmed
-it yet. See [Rust Fixtures Assumed Linux](../mistakes/ci-toolchain-and-cargo.md#rust-fixtures-assumed-linux-paths-ptys-and-tool-output-2026-10-13).
-Run 38386384997 also lost the Linux `Hook syntax` runner to a BSD-shim recursion, which run
-38393520660 confirms fixed. A runaway in a hook step kills the runner and its log; no hook step caps
-`ulimit -u`. The causes of the fixed failures are in
-[The First macOS Hook Run](../mistakes/hooks-shell-portability.md#the-first-macos-hook-run-found-bash-32-and-bsd-faults-the-linux-shims-hid-2026-10-13),
-[Rust Fixtures Assumed Linux](../mistakes/ci-toolchain-and-cargo.md#rust-fixtures-assumed-linux-paths-ptys-and-tool-output-2026-10-13)
-and [macOS `proc_pidinfo` Hid Zombies](../mistakes/sessions-and-liveness.md#macos-proc_pidinfo-hid-zombies-so-an-unreaped-dead-session-read-as-alive-2026-10-13).
-The hook suite passes on the runner (`run-all.sh` hides a passing test's output, so a SKIP of the E3
-Seatbelt case in `codex-forward-guard-stage-evidence.sh` cannot be ruled out). E3 relies on macOS
-refusing a nested profile that differs from the outer one. An identical nested profile is admitted, so
-the guard's allow-everything probe only detects confinement by a different outer profile.
-
-Inside Claude Code's macOS sandbox, `ps`, `sysctl` (the boot ID), `sandbox-exec`, PTY spawn, loopback
-bind and writes under `/var/folders` are denied, so the codex_evidence, worker_evidence, relay e2e, PTY,
-credential-guard and ancestry tests fail or skip there for that reason alone. A local run is no
-evidence either way. Read a job's log with `gh api repos/cosmix/loom/actions/jobs/<job-id>/logs`.

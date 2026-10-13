@@ -156,7 +156,7 @@ differ where it matters. The rules, in `loom-hooks/_lifecycle.sh` unless noted:
   copies), stops with exit 125 when re-entered three deep (`LOOM_BSD_SHIM_DEPTH`), and execs the real
   tool unchanged when it is already BSD. `scripts/check-hook-syntax.sh` parses the extensionless shims as well. The
   `hooks-macos` job runs the suite on macOS with the real BSD tools, under `/bin/bash` 3.2. See
-  [macOS CI Jobs](../concerns/platform-and-commit-gaps.md#macos-ci-jobs-have-no-green-baseline-linux-still-emulates-bsd).
+  [macOS CI Jobs](../concerns/platform-and-commit-gaps.md#macos-ci-jobs-and-remaining-bsd-gaps).
 
 **Stop-skips ledger.** A skipped `loom-code-reviewer` stop leaves the review gate with no round and no
 message, so `subagent-stop.sh` (`loom_subagent_stop_skip`) appends one row to

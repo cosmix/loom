@@ -284,5 +284,7 @@ name, which APFS refuses. The web-terminal tests assumed Linux PTY buffering and
   cadence. A 50 ms pause measured 128 KiB; a write that moves nothing for 500 ms measures the
   ~330 KB. Linux locks a user-set `SO_RCVBUF`.
 
-**Fix:** the fixtures and tests listed in
-[macOS Test Failures Open in CI](../concerns/platform-and-commit-gaps.md#macos-test-failures-open-in-ci).
+**Fix:** fixtures canonicalize their temp roots, the relay tests derive the scratch root through
+`relay::scratch_root`, the census test is gated off macOS, the PTY tests use raw mode and squeeze `od`
+spacing, and the stalled-client test sizes its output from `sockets::stalled_client_capacity`. CI
+run 38397957790 is the first with every macOS job green.

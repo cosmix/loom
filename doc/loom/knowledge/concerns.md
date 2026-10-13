@@ -238,8 +238,8 @@ grouped by area in the backlog.
 
 ## Platform, Commit-Relay and Stall Gaps
 
-Open items from the macOS, daemon-launch, daemon-owned-commit and stall-parking work: no macOS CI runner (BSD
-behaviour is emulated by shims), no automated test of the production daemon re-exec (only the operator's
+Open items from the macOS, daemon-launch, daemon-owned-commit and stall-parking work: macOS CI gaps (hook
+stdin reads unbounded on stock macOS, no `ulimit -u` cap on hook steps), no automated test of the production daemon re-exec (only the operator's
 host smoke test covers it), sessions get no proxy, CA or `CLAUDE_CONFIG_DIR` variables, the commit relay's
 tick cost and `MERGE_HEAD` ancestor gap, the park-time login probe on the tick thread, and mistakes that
 recurred and want a check (the signal dropping `exit_code`, the watch exiting 6 after a hand-back).
