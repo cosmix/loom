@@ -231,11 +231,14 @@ fn bridge_leaves_pty_output_upstream_while_the_client_is_stalled() {
         .close(None)
         .expect("close the stalled client");
     join_within(stalled.server, Duration::from_secs(5));
+    assert_reading_client_reaches_marker(script, &finished);
+}
 
-    // Positive control, same script and same marker path: a client that does
-    // read drains the bridge, the child runs to the end, and the marker
-    // appears. Without this the assertion above would also pass against a
-    // script that could never write the marker at all.
+/// Positive control for the stalled-client test, same script and same marker
+/// path: a client that does read drains the bridge, the child runs to the end,
+/// and the marker appears. Without this the stalled assertion would also pass
+/// against a script that could never write the marker at all.
+fn assert_reading_client_reaches_marker(script: String, finished: &Path) {
     let mut reading = start_bridge_with(script, Mode::Control, Some(8 * 1024), GATE_STALL_TIMEOUT);
     assert!(wait_for_binary_progressing(
         &mut reading.socket,
