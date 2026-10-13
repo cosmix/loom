@@ -52,7 +52,10 @@ fn root_discovers_nested_packages_and_reports_evidence() {
 #[test]
 fn nested_cwd_and_assignments_select_the_nearest_package() {
     let repo = monorepo();
-    let cwd = repo.path().join("web/src");
+    // Canonical, as the prompt hook hands it (`commands/hook/project_types.rs`):
+    // `for_prompt` matches its cwd against the canonical profile root.
+    let root = repo.path().canonicalize().unwrap();
+    let cwd = root.join("web/src");
     let profile = ProjectProfile::discover(&cwd);
     assert_eq!(
         kinds(&profile.for_prompt(&cwd, "please continue")),
@@ -63,7 +66,7 @@ fn nested_cwd_and_assignments_select_the_nearest_package() {
         BTreeSet::from(["rust"])
     );
     assert_eq!(
-        kinds(&profile.for_prompt(repo.path(), "edit web/src/new.tsx")),
+        kinds(&profile.for_prompt(&root, "edit web/src/new.tsx")),
         BTreeSet::from(["react", "typescript"])
     );
 }
@@ -182,10 +185,11 @@ fn child_package_does_not_inherit_parent_workspace_language() {
 #[test]
 fn unrelated_slashes_in_prose_do_not_disable_project_discovery() {
     let repo = monorepo();
-    let profile = ProjectProfile::discover(repo.path());
+    let root = repo.path().canonicalize().unwrap();
+    let profile = ProjectProfile::discover(&root);
     assert_eq!(
         kinds(&profile.for_prompt(
-            repo.path(),
+            &root,
             "review performance/correctness and https://example.org"
         )),
         kinds(&profile.types),

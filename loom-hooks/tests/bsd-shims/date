@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# loom-bsd-shim
 # BSD/macOS date shim over GNU date. Like BSD date it rejects -d and --date.
 # It answers the two BSD forms the hooks use and delegates everything else
 # (`date -u +FORMAT`):
@@ -6,20 +7,27 @@
 #   [-u] -r EPOCH +OUTFMT               format an epoch
 # FORMAT may use %Y %m %d %H %M %S %z and literal characters; VALUE must match it
 # exactly (leftover text is a mismatch, as with strptime). Output is UTC with -u,
-# else local time. A FORMAT without %z is read as UTC.
+# else local time. A FORMAT without %z is read as UTC with -u, else as local
+# time, as BSD date -j -f does.
+# On a host whose real date is already BSD (macOS) the shim steps aside and runs it.
 
 # The real tool is the first PATH entry (then /usr/bin, /bin) that is not this
 # script; -ef follows symlinks, so a path_without mirror of the shim directory
-# is skipped too.
+# is skipped too. A copy of a shim has another inode, so -ef misses it: the
+# marker on line 2 skips it instead, or two stacked shim directories would call
+# each other without end.
 real_date=""
 IFS=: read -r -a path_parts <<<"$PATH:/usr/bin:/bin"
 for part in "${path_parts[@]}"; do
-	if [[ -x "$part/date" && ! "$part/date" -ef "${BASH_SOURCE[0]}" ]]; then
+	if [[ -x "$part/date" && ! "$part/date" -ef "${BASH_SOURCE[0]}" ]] &&
+		! grep -q '^# loom-bsd-shim' "$part/date" 2>/dev/null; then
 		real_date="$part/date"
 		break
 	fi
 done
 [[ -n "$real_date" ]] || { echo "date: no real date on PATH" >&2; exit 127; }
+# GNU date answers --version; BSD date rejects it.
+"$real_date" --version >/dev/null 2>&1 || exec "$real_date" "$@"
 real_date() { "$real_date" "$@"; }
 
 fail() { echo "date: $*" >&2; exit 1; }
@@ -68,7 +76,12 @@ parse_value() {
 		idx=$((idx + 1))
 	done
 	[[ -n "$Y" && -n "$m" && -n "$d" ]] || return 1
-	base=$(real_date -u -d "$Y-$m-$d $H:$M:$S" +%s 2>/dev/null) || return 1
+	# Without %z the fields are wall-clock time: UTC under -u, else local.
+	if [[ "$format_fields" != *z* && "$utc" != 1 ]]; then
+		base=$(real_date -d "$Y-$m-$d $H:$M:$S" +%s 2>/dev/null) || return 1
+	else
+		base=$(real_date -u -d "$Y-$m-$d $H:$M:$S" +%s 2>/dev/null) || return 1
+	fi
 	sign="${z:0:1}"
 	offset=$((10#${z:1:2} * 3600 + 10#${z:3:2} * 60))
 	if [[ "$sign" == "+" ]]; then echo $((base - offset)); else echo $((base + offset)); fi

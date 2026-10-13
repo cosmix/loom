@@ -37,6 +37,14 @@ pub fn install_fake_companion(home: &Path) -> Result<()> {
     Ok(())
 }
 
+/// A `sandbox-exec` that always succeeds, first on every child's PATH.
+/// `codex-forward.sh` takes its direct lane when that probe fails, as it does
+/// on a macOS host already inside a Seatbelt sandbox; this target exercises
+/// the companion lane.
+pub fn install_seatbelt_probe(bin: &Path) -> Result<()> {
+    write_executable(&bin.join("sandbox-exec"), "#!/bin/sh\nexit 0\n")
+}
+
 fn write_executable(path: &Path, contents: &str) -> Result<()> {
     fs::write(path, contents)?;
     let mut permissions = fs::metadata(path)?.permissions();

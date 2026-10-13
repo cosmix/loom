@@ -324,7 +324,7 @@ struct Fixture {
 impl Fixture {
     fn new(prefix: &str) -> Result<Self> {
         let temp = tempfile::Builder::new().prefix(prefix).tempdir()?;
-        let root = temp.path().to_path_buf();
+        let root = fs::canonicalize(temp.path())?;
         let work = root.join("work");
         let project = root.join("claude-project");
         let parent = project.join(format!("{PARENT}.jsonl"));

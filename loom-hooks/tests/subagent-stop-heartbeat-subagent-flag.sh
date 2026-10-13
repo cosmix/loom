@@ -13,6 +13,8 @@ TMP=$(mktemp -d "${TMPDIR:-/tmp}/subagent-stop-flag.XXXXXX") && [[ -n "$TMP" ]] 
 	exit 1
 }
 trap '[[ -n "${TMP:-}" ]] && rm -rf -- "$TMP"' EXIT
+# The hook refuses paths that cross a symlink, so use the physical path.
+TMP=$(cd "$TMP" && pwd -P)
 
 WORKDIR="$TMP/work"
 STAGE_ID="test-stage"

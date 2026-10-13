@@ -129,6 +129,8 @@ impl Fixture {
             path.push(bsd_bin);
             path.push(":");
         }
+        path.push(&self.bin);
+        path.push(":");
         path.push(std::env::var_os("PATH").unwrap_or_default());
         command
             .current_dir(&self.project)

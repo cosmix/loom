@@ -194,7 +194,11 @@ mod tests {
     #[test]
     fn control_surface_rules_are_never_recorded() {
         let temp = TempDir::new().unwrap();
-        let work_dir = temp.path().join("work");
+        // The resolved absolute state root, as `resolve_state_root` hands it
+        // to `record_fold_back` (canonicalized), which builds the surfaces
+        // from that same root: `work` itself is never created in this test,
+        // so the existing ancestor is resolved and `work` joined onto it.
+        let work_dir = temp.path().canonicalize().unwrap().join("work");
         let mut dropped = rules(&[
             "Edit(.loom/work/handoffs/**)",
             "Edit(.work/memory/**)",
@@ -205,12 +209,7 @@ mod tests {
             "Edit(~/.loom/config.toml)",
         ]);
         dropped.push(format!("Edit(/{}/signals/**)", work_dir.display()));
-        // The resolved absolute state root, as `resolve_state_root` hands it
-        // to `record_fold_back` (canonicalized): `work_dir` itself is never
-        // created in this test, so the existing ancestor is resolved and
-        // `work` re-joined onto it.
-        let resolved_work_dir = temp.path().canonicalize().unwrap().join("work");
-        dropped.push(format!("Edit(/{}/memory/**)", resolved_work_dir.display()));
+        dropped.push(format!("Edit(/{}/memory/**)", work_dir.display()));
 
         assert_eq!(
             record_approved(&work_dir, &dropped, &surfaces(&work_dir)).unwrap(),

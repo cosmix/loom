@@ -52,7 +52,10 @@ fi
 
 CTX=$(printf '%s' "$OUTPUT" | jq -r '.hookSpecificOutput.additionalContext')
 
-EXPECTED_INDEX_PATH="$KNOWLEDGE_DIR/INDEX.md"
+# The hook walks up from the shell's logical $PWD, which bash normalises: a
+# TMPDIR with a trailing slash ($TMP then holds "//") comes back with one slash,
+# and a symlinked /var stays /var. Take the expected path from the same source.
+EXPECTED_INDEX_PATH="$(cd "$REPO" && pwd)/doc/loom/knowledge/INDEX.md"
 if ! printf '%s' "$CTX" | grep -qF "$EXPECTED_INDEX_PATH"; then
 	echo "FAIL: absolute index path '$EXPECTED_INDEX_PATH' not found in additionalContext"
 	echo "additionalContext: $CTX"

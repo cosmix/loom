@@ -27,8 +27,10 @@ fn bridge_passes_only_page_keys_from_viewer_scroll_messages() {
     if skip_bridge_test("bridge_passes_only_page_keys_from_viewer_scroll_messages") {
         return;
     }
+    // BSD `od` pads each byte to four columns where GNU `od` uses three;
+    // squeezing the spaces gives the needle below one spelling on both.
     let mut fixture = start_bridge(
-        "stty raw -echo; printf ready; dd bs=1 count=8 2>/dev/null | od -An -tx1",
+        "stty raw -echo; printf ready; dd bs=1 count=8 2>/dev/null | od -An -tx1 | tr -s ' '",
         Mode::View,
     );
     assert!(wait_for_binary(

@@ -12,7 +12,6 @@
 
 use std::fs;
 use std::io::Write;
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
@@ -31,6 +30,7 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use super::helpers;
+use super::relay_scratch::{create_scratch_dir, tempdir_outside_tmp};
 
 const TEST_NAME: &str = "relay_memory_note_flows_end_to_end";
 const NOTE_TEXT: &str = "relay e2e probe";
@@ -49,33 +49,6 @@ struct Fixture {
     scratch_dir: PathBuf,
     session_id: String,
     stage_id: String,
-}
-
-/// A fresh temp dir that does NOT resolve under `/tmp` — required for the
-/// scratch root: `relay::scratch::scratch_root` refuses one that does (real
-/// sandboxes mount `/tmp` world-writable, so a root there would let any
-/// sandboxed process on the host plant tickets), and this suite's own
-/// `$TMPDIR` lives under `/tmp` (`relay/scratch.rs`'s own tests hit the same
-/// constraint). `target/` is gitignored scratch space that is not.
-fn tempdir_outside_tmp() -> TempDir {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("target")
-        .join("relay-e2e-tmp");
-    fs::create_dir_all(&base).expect("create target/relay-e2e-tmp");
-    tempfile::Builder::new()
-        .prefix("xdg-")
-        .tempdir_in(&base)
-        .expect("create xdg tempdir outside /tmp")
-}
-
-/// `<xdg>/loom/scratch/<session_id>`, mode 0700 — the exact path
-/// `scratch_root_from_env`/`session_dir` derive when `XDG_RUNTIME_DIR` is a
-/// valid owned 0700 directory (`relay::scratch::linux_scratch_root`).
-fn create_scratch_dir(xdg: &Path, session_id: &str) -> PathBuf {
-    let scratch = xdg.join("loom").join("scratch").join(session_id);
-    fs::create_dir_all(&scratch).expect("create scratch dir");
-    fs::set_permissions(&scratch, fs::Permissions::from_mode(0o700)).expect("chmod scratch dir");
-    scratch
 }
 
 /// A `<pid_key>.pid` file carrying the test process's own verified identity —
@@ -133,9 +106,8 @@ fn build_fixture() -> Fixture {
     fs::create_dir_all(&work_dir).expect("create work dir");
 
     let worktree = TempDir::new().expect("create worktree dir");
-    let home = TempDir::new().expect("create home dir");
-    let xdg = tempdir_outside_tmp();
-    fs::set_permissions(xdg.path(), fs::Permissions::from_mode(0o700)).expect("chmod xdg dir");
+    let home = tempdir_outside_tmp("home-");
+    let xdg = tempdir_outside_tmp("xdg-");
 
     let session_id = format!(
         "relay-e2e-{}-{}",
@@ -146,7 +118,7 @@ fn build_fixture() -> Fixture {
 
     write_running_stage_session(&work_dir, worktree.path(), &session_id, &stage_id);
     write_executing_stage(&work_dir, &stage_id, &session_id);
-    let scratch_dir = create_scratch_dir(xdg.path(), &session_id);
+    let scratch_dir = create_scratch_dir(xdg.path(), home.path(), &session_id);
 
     let worktree_path = worktree.path().to_path_buf();
     let home_path = home.path().to_path_buf();

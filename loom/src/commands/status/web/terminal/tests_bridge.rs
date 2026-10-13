@@ -1,5 +1,4 @@
 use std::net::{TcpListener, TcpStream};
-use std::os::fd::AsRawFd;
 use std::process::Command;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -19,7 +18,10 @@ use super::protocol::{
 use super::pty::PtyChild;
 use crate::commands::status::web::limits::MAX_INBOUND_BYTES;
 mod backpressure;
+mod sockets;
 mod spin;
+
+use sockets::{connect_shrunk, shrink_buffers};
 
 struct Fixture {
     socket: WebSocket<TcpStream>,
@@ -66,10 +68,10 @@ fn start_bridge_with(
     let request = format!("ws://127.0.0.1:{port}/")
         .into_client_request()
         .expect("build WebSocket request");
-    let stream = TcpStream::connect(("127.0.0.1", port)).expect("connect bridge client");
-    if let Some(bytes) = socket_bytes {
-        shrink_buffers(&stream, bytes);
-    }
+    let stream = match socket_bytes {
+        Some(bytes) => connect_shrunk(port, bytes),
+        None => TcpStream::connect(("127.0.0.1", port)).expect("connect bridge client"),
+    };
     let (mut socket, _) = tungstenite::client(request, stream).expect("handshake bridge client");
     socket
         .get_mut()
@@ -87,26 +89,6 @@ fn start_bridge_with(
         socket,
         running,
         server,
-    }
-}
-
-fn shrink_buffers(stream: &TcpStream, bytes: libc::c_int) {
-    for option in [libc::SO_SNDBUF, libc::SO_RCVBUF] {
-        // SAFETY: `stream` owns a live socket fd for the duration of the call,
-        // and the value pointer and length describe one complete `c_int`.
-        let rc = unsafe {
-            libc::setsockopt(
-                stream.as_raw_fd(),
-                libc::SOL_SOCKET,
-                option,
-                (&raw const bytes).cast::<libc::c_void>(),
-                std::mem::size_of::<libc::c_int>() as libc::socklen_t,
-            )
-        };
-        // Checked, not discarded: a failure here leaves the autotuned
-        // megabyte-scale buffers in place, and every caller's stalled client
-        // would then be absorbed by the network and test nothing at all.
-        assert_ne!(rc, -1, "shrink socket buffer option {option}");
     }
 }
 

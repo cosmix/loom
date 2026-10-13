@@ -158,11 +158,15 @@ append_usage 50
 run_bash_tool "loom subagents list"
 assert_observation "legacy heartbeat observation" 50 "$LEGACY_AT"
 
+# The hooks hand the helper a resolved work root (subagent-stop.sh and
+# teammate-idle.sh run loom_lifecycle_resolve_work_root first): a TMPDIR with a
+# trailing slash or a symlinked /var is not a plain path until it is resolved.
 reset_heartbeat_times "$SEEDED_AT"
 bash -c '
 	source "$1/_common.sh"
 	source "$1/_lifecycle.sh"
-	loom_lifecycle_refresh_heartbeat "$2" "$3" "$4" \
+	work=$(loom_lifecycle_resolve_work_root "$2")
+	loom_lifecycle_refresh_heartbeat "$work" "$3" "$4" \
 		progress "subagent agent-1 finished" subagent-stop
 ' _ "$SCRIPT_DIR/.." "$WORK_DIR" "$STAGE_ID" "$SESSION_ID"
 assert_progress "subagent-stop terminal evidence" "<null>"
@@ -171,7 +175,8 @@ reset_heartbeat_times "$SEEDED_AT"
 bash -c '
 	source "$1/_common.sh"
 	source "$1/_lifecycle.sh"
-	loom_lifecycle_refresh_heartbeat "$2" "$3" "$4" \
+	work=$(loom_lifecycle_resolve_work_root "$2")
+	loom_lifecycle_refresh_heartbeat "$work" "$3" "$4" \
 		observation "teammate worker-1 idle" teammate-idle
 ' _ "$SCRIPT_DIR/.." "$WORK_DIR" "$STAGE_ID" "$SESSION_ID"
 if ! jq -e --arg progress_at "$SEEDED_AT" '

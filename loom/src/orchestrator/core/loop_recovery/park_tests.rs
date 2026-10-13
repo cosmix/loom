@@ -94,8 +94,9 @@ fn write_signal(work: &Path, session: &Session) {
 
 pub(super) fn fixture(repeats: u32) -> Fixture {
     let temp = handoff_work_dir();
-    let commit = init_repo(temp.path());
-    let work = temp.path().join(".loom/work");
+    let root = temp.path().canonicalize().unwrap();
+    let commit = init_repo(&root);
+    let work = root.join(".loom/work");
     executing_stage(&work);
     let session = recorded_session(&work);
     update_stage("test-stage", &work, |stage| {
@@ -121,7 +122,7 @@ pub(super) fn fixture(repeats: u32) -> Fixture {
         .blocker
         .unwrap()
         .fingerprint;
-    let mut orchestrator = orchestrator_for(&work, temp.path());
+    let mut orchestrator = orchestrator_for(&work, &root);
     orchestrator.graph.mark_executing("test-stage").unwrap();
     orchestrator
         .active_sessions

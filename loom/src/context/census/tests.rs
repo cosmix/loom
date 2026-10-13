@@ -315,7 +315,9 @@ fn census_handles_thousands_of_long_paths() {
     assert_eq!(report.totals.eligible.files, FILES as u64);
 }
 
-#[cfg(unix)]
+// APFS rejects file names that are not valid UTF-8 (EILSEQ), so the fixture
+// cannot exist on macOS.
+#[cfg(all(unix, not(target_os = "macos")))]
 #[test]
 fn a_non_utf8_path_is_counted_once_as_unsupported() {
     use std::ffi::OsStr;

@@ -10,8 +10,8 @@ use std::process::Output;
 use tempfile::{Builder, TempDir};
 
 use crate::fixture_support::{
-    apply_status, install_fake_companion, install_hooks, output_text, updated_command,
-    workspace_state_dir, write_session, write_stage, ProcessEnvironment,
+    apply_status, install_fake_companion, install_hooks, install_seatbelt_probe, output_text,
+    updated_command, workspace_state_dir, write_session, write_stage, ProcessEnvironment,
 };
 
 pub const STAGE: &str = "codex-stage";
@@ -43,6 +43,7 @@ pub struct Fixture {
     pub work: PathBuf,
     pub hooks: PathBuf,
     pub tmp: PathBuf,
+    pub bin: PathBuf,
 }
 
 impl Fixture {
@@ -56,12 +57,14 @@ impl Fixture {
         let work = project.join(".loom/work");
         let hooks = home.join(".claude/hooks/loom");
         let tmp = root.join("tmp");
-        for directory in [&home, &project, &work, &hooks, &tmp] {
+        let bin = root.join("bin");
+        for directory in [&home, &project, &work, &hooks, &tmp, &bin] {
             fs::create_dir_all(directory)?;
         }
         fs::create_dir(project.join(".git"))?;
         install_hooks(&hooks)?;
         install_fake_companion(&home)?;
+        install_seatbelt_probe(&bin)?;
         fs::create_dir_all(home.join(".codex/plugin-data/state"))?;
         write_stage(&work, &project)?;
         write_session(&work, &project)?;
@@ -73,6 +76,7 @@ impl Fixture {
             work,
             hooks,
             tmp,
+            bin,
         })
     }
 

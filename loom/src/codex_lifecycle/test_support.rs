@@ -32,18 +32,16 @@ pub(super) struct Fixture {
 impl Fixture {
     pub fn new() -> Result<Self> {
         let temp = tempfile::tempdir()?;
-        let work_dir = temp.path().join(".loom/work");
-        let workspace = temp.path().join("workspace");
-        let state_root = temp.path().join("home/.codex/plugin-data/state");
-        let companion = temp.path().join("plugin/codex-companion.mjs");
+        let root = fs::canonicalize(temp.path())?;
+        let work_dir = root.join(".loom/work");
+        let workspace = root.join("workspace");
+        let state_root = root.join("home/.codex/plugin-data/state");
+        let companion = root.join("plugin/codex-companion.mjs");
         fs::create_dir_all(work_dir.join("stages"))?;
         fs::create_dir_all(&workspace)?;
         fs::create_dir_all(&state_root)?;
         fs::create_dir_all(companion.parent().context("companion parent")?)?;
         fs::write(&companion, "// companion fixture\n")?;
-        let workspace = fs::canonicalize(workspace)?;
-        let state_root = fs::canonicalize(state_root)?;
-        let companion = fs::canonicalize(companion)?;
         fs::write(
             work_dir.join("stages").join(format!("{STAGE}.md")),
             format!("---\nid: {STAGE}\nsession: {SESSION}\n---\n"),

@@ -168,7 +168,7 @@ struct LifecycleFixture {
 impl LifecycleFixture {
     fn new(prefix: &str, agent_type: &str) -> anyhow::Result<Self> {
         let temp = tempfile::Builder::new().prefix(prefix).tempdir()?;
-        let root = temp.path().to_path_buf();
+        let root = fs::canonicalize(temp.path())?;
         let work = root.join("work");
         let parent = root.join(format!("{PARENT}.jsonl"));
         let worker = root

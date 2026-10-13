@@ -4,13 +4,16 @@
 # 150, and the late subagent write can roll the file back to 100.
 set -euo pipefail
 
-HOOK="$(dirname "$0")/../subagent-stop.sh"
+HOOK_DIR="$(cd "$(dirname "$0")/.." && pwd)"
+HOOK="$HOOK_DIR/subagent-stop.sh"
 TMP=""
 TMP=$(mktemp -d "${TMPDIR:-/tmp}/subagent-stop-lock.XXXXXX") && [[ -n "$TMP" ]] || {
 	echo "FAIL: could not create scratch directory"
 	exit 1
 }
 trap '[[ -n "${TMP:-}" ]] && rm -rf -- "$TMP"' EXIT
+# The hook refuses paths that cross a symlink, so use the physical path.
+TMP=$(cd "$TMP" && pwd -P)
 
 WORKDIR="$TMP/work"
 STAGE_ID="test-stage"
@@ -91,6 +94,10 @@ fi
 # string comparisons below tolerate the padding.
 wc() { command wc "$@" | tr -d '[:space:]'; }
 
+# The hook's own digest helper: sha256sum on Linux, shasum -a 256 on macOS,
+# which has no sha256sum.
+lifecycle_sha256() { bash -c 'source "$1" && loom_lifecycle_sha256' _ "$HOOK_DIR/_lifecycle.sh"; }
+
 JOURNAL="$WORKDIR/subagents/$STAGE_ID/lifecycle.jsonl"
 if [[ ! -f "$JOURNAL" ]] || [[ "$(wc -l <"$JOURNAL")" != "1" ]]; then
 	echo "FAIL: lifecycle journal line was not written exactly once"
@@ -98,11 +105,11 @@ if [[ ! -f "$JOURNAL" ]] || [[ "$(wc -l <"$JOURNAL")" != "1" ]]; then
 fi
 TRANSCRIPT_BYTES=$(wc -c <"$WORKER_TRANSCRIPT")
 TRANSCRIPT_BYTES=${TRANSCRIPT_BYTES//[[:space:]]/}
-FINAL_HEX=$(printf '%s' '{"type":"assistant","message":"done"}' | sha256sum)
+FINAL_HEX=$(printf '%s' '{"type":"assistant","message":"done"}' | lifecycle_sha256)
 FINAL_DIGEST="sha256:${FINAL_HEX%% *}"
 EVENT_HEX=$(printf 'loom.lifecycle.claude_subagent_stop.v1\0%s\0%s\0%s\0%s\0%s\0%s\0%s\0%s' \
 	"$STAGE_ID" "$SESSION_ID" "$PARENT_SESSION_ID" "$AGENT_ID" "$AGENT_TYPE" \
-	"$WORKER_TRANSCRIPT" "$TRANSCRIPT_BYTES" "$FINAL_DIGEST" | sha256sum)
+	"$WORKER_TRANSCRIPT" "$TRANSCRIPT_BYTES" "$FINAL_DIGEST" | lifecycle_sha256)
 EVENT_ID="sha256:${EVENT_HEX%% *}"
 if ! jq -e --arg event_id "$EVENT_ID" --arg stage "$STAGE_ID" --arg session "$SESSION_ID" \
 	--arg parent "$PARENT_SESSION_ID" --arg agent "$AGENT_ID" --arg agent_type "$AGENT_TYPE" \

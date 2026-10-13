@@ -108,7 +108,17 @@ fn pty_child_resize_delivers_sigwinch() {
 
 #[test]
 fn pty_write_survives_a_child_that_stops_reading() {
-    let child = spawn_shell("sleep 30");
+    // Raw mode, as tmux sets it, and only once the child says it is set. A
+    // canonical-mode PTY holding no complete line never refuses the master's
+    // writes on Darwin: input past MAX_INPUT is discarded with a bell instead,
+    // so an unterminated flood there would never see backpressure at all.
+    let child = spawn_shell("stty raw -echo; printf ready; sleep 30");
+    let ready = read_until(&child, b"ready", Duration::from_secs(10));
+    assert!(
+        ready.windows(5).any(|part| part == b"ready"),
+        "PTY output was {:?}",
+        String::from_utf8_lossy(&ready)
+    );
     let payload = vec![b'x'; 1024 * 1024];
     let deadline = Instant::now() + Duration::from_secs(2);
     let mut saturated = false;

@@ -19,7 +19,8 @@ with_fixture() (
 	fixture_work="$fixture_dir/work"
 	fixture_stage="stage-$name"
 	fixture_session="session-$name"
-	fixture_main_pid=$BASHPID
+	# $$, not $BASHPID (bash 4+): the script is a live ancestor of the hook.
+	fixture_main_pid=$$
 	mkdir -p "$fixture_work"
 	"$body" "$@"
 )

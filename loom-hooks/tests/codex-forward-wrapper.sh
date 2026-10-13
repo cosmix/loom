@@ -24,6 +24,9 @@ mkdir -p "$BIN_DIR" "$COMPANION_DIR" "$PLUGIN_DATA/state/workspace-hash/jobs" \
 	"$WORK_DIR/subagents/stage-one"
 printf '%s\n' '// pinned fixture' >"$COMPANION"
 printf '%s\n' '{}' >"$PLUGIN_DATA/state/workspace-hash/jobs/job-exact.json"
+# The wrapper canonicalizes HOME, and a macOS TMPDIR sits behind the /var
+# symlink, so expectations use the physical spelling of the plugin data root.
+CANONICAL_PLUGIN_DATA=$(cd "$PLUGIN_DATA" && pwd -P)
 jq -nc '{agent_id:"wrapper-forwarder",agent_type:"loom-codex-forwarder",stage_id:"stage-one",
 	loom_session_id:"loom-session",parent_session_id:"parent-session",
 	ts:"2000-01-01T00:00:00.000Z"}' >"$STARTS"
@@ -141,12 +144,12 @@ run_companion completed "$OUT" "$ERR"
 assert_line "$OUT" 1 "$START"
 assert_line "$OUT" 2 'LOOM-FORWARD-END {"v":1,"backend":"companion","job_id":"job-exact","outcome":"succeeded","exit_code":0}'
 assert_line "$OUT" 3 "$SEPARATOR"
-rg -qFx "record: $PLUGIN_DATA/state/workspace-hash/jobs/job-exact.json" "$OUT"
+rg -qFx "record: $CANONICAL_PLUGIN_DATA/state/workspace-hash/jobs/job-exact.json" "$OUT"
 rg -qFx 'state: succeeded' "$OUT"
 [[ $(wc -l <"$ENV_CALLS") -eq 3 ]]
-rg -qFx "task|$SESSION_ID|$PLUGIN_DATA" "$ENV_CALLS"
-rg -qFx "status|$SESSION_ID|$PLUGIN_DATA" "$ENV_CALLS"
-rg -qFx "result|$SESSION_ID|$PLUGIN_DATA" "$ENV_CALLS"
+rg -qFx "task|$SESSION_ID|$CANONICAL_PLUGIN_DATA" "$ENV_CALLS"
+rg -qFx "status|$SESSION_ID|$CANONICAL_PLUGIN_DATA" "$ENV_CALLS"
+rg -qFx "result|$SESSION_ID|$CANONICAL_PLUGIN_DATA" "$ENV_CALLS"
 [[ $(wc -l <"$STATUS_CALLS") -eq 1 ]]
 rg -qFx 'job-exact --wait --json --timeout-ms 540000' "$STATUS_CALLS"
 

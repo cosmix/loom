@@ -23,6 +23,7 @@ use tempfile::TempDir;
 use uuid::Uuid;
 
 use super::helpers;
+use super::relay_scratch::{create_scratch_dir, tempdir_outside_tmp};
 
 const MESSAGE: &str = "test(e2e): commit a.txt";
 const FAKE_SIGNER: &str = r#"#!/bin/sh
@@ -76,18 +77,6 @@ fn git(home: &Path, dir: &Path, args: &[&str]) -> String {
         String::from_utf8_lossy(&output.stderr)
     );
     String::from_utf8_lossy(&output.stdout).trim().to_string()
-}
-
-/// A temp dir outside `/tmp`, which the scratch root refuses.
-fn tempdir_outside_tmp() -> TempDir {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("target/relay-e2e-tmp");
-    fs::create_dir_all(&base).expect("create target/relay-e2e-tmp");
-    let dir = tempfile::Builder::new()
-        .prefix("xdg-")
-        .tempdir_in(&base)
-        .expect("create xdg tempdir outside /tmp");
-    fs::set_permissions(dir.path(), fs::Permissions::from_mode(0o700)).expect("chmod xdg dir");
-    dir
 }
 
 /// A Running Stage session and an Executing stage it owns, with the pid entry
@@ -146,8 +135,8 @@ fn init_repo_with_worktree(home: &Path, stage_id: &str) -> (TempDir, PathBuf) {
 }
 
 fn build_fixture() -> Fixture {
-    let home = TempDir::new().expect("create home dir");
-    let xdg = tempdir_outside_tmp();
+    let home = tempdir_outside_tmp("home-");
+    let xdg = tempdir_outside_tmp("xdg-");
     let stage_id = "relay-commit-e2e-stage".to_string();
     let (repo, worktree_path) = init_repo_with_worktree(home.path(), &stage_id);
     let repo_root = repo.path().to_path_buf();
@@ -161,9 +150,7 @@ fn build_fixture() -> Fixture {
     let uuid = Uuid::new_v4().simple();
     let session_id = format!("relay-commit-e2e-{}-{uuid}", std::process::id());
     write_session_and_stage(&work_dir, &worktree_path, &session_id, &stage_id);
-    let scratch_dir = xdg.path().join("loom").join("scratch").join(&session_id);
-    fs::create_dir_all(&scratch_dir).expect("create scratch dir");
-    fs::set_permissions(&scratch_dir, fs::Permissions::from_mode(0o700)).expect("chmod scratch");
+    let scratch_dir = create_scratch_dir(xdg.path(), home.path(), &session_id);
 
     let (home_path, xdg_path) = (home.path().to_path_buf(), xdg.path().to_path_buf());
     Fixture {

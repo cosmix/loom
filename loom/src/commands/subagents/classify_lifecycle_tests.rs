@@ -107,7 +107,7 @@ struct Fixture {
 impl Fixture {
     fn new(job_status: &str) -> anyhow::Result<Self> {
         let temp = tempfile::tempdir()?;
-        let root = temp.path().to_path_buf();
+        let root = fs::canonicalize(temp.path())?;
         let work = root.join(".loom/work");
         let plugin_data = root.join("plugin-data");
         let transcript = root

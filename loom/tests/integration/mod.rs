@@ -32,5 +32,6 @@ pub mod plan_verify;
 pub mod project_detect;
 pub mod relay_commit_e2e;
 pub mod relay_e2e;
+pub mod relay_scratch;
 pub mod source_graph_fixtures;
 pub mod update_notice;

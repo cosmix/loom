@@ -128,6 +128,7 @@ fn lifecycle_failure_cancellation_and_active_have_distinct_harvest_evidence() {
 
 struct Fixture {
     _temp: tempfile::TempDir,
+    root: PathBuf,
     work: PathBuf,
     state: PathBuf,
     transcripts: PathBuf,
@@ -137,7 +138,7 @@ struct Fixture {
 impl Fixture {
     fn new(status: &str, foreign_locator: bool) -> Self {
         let temp = tempfile::tempdir().unwrap();
-        let root = temp.path();
+        let root = fs::canonicalize(temp.path()).unwrap();
         let work = root.join("work");
         let state = root.join("state");
         let transcripts = root.join(PARENT).join("subagents");
@@ -156,6 +157,7 @@ impl Fixture {
         .unwrap();
         let mut fixture = Self {
             _temp: temp,
+            root,
             work,
             state,
             transcripts,
@@ -195,7 +197,7 @@ impl Fixture {
             codex_thread_id: None,
             locator: Some(
                 if foreign_locator {
-                    self._temp.path().join("foreign/job-a.json")
+                    self.root.join("foreign/job-a.json")
                 } else {
                     locator
                 }
@@ -246,7 +248,7 @@ impl Fixture {
             "session_id": PARENT,
             "agent_id": AGENT,
             "agent_type": agent_type,
-            "transcript_path": self._temp.path().join(format!("{PARENT}.jsonl")),
+            "transcript_path": self.root.join(format!("{PARENT}.jsonl")),
             "agent_transcript_path": self.transcript(),
         });
         let environment = crate::subagent_lifecycle::ClaudeEnvironment {
@@ -277,7 +279,7 @@ impl Fixture {
             forwarder_agent_id: AGENT.into(),
             unit_id: "unit-a".into(),
             invocation_id: INVOCATION.into(),
-            workspace_root: fs::canonicalize(self._temp.path()).unwrap(),
+            workspace_root: self.root.clone(),
             execution: CodexExecution::Companion { job_id: JOB.into() },
         };
         for (state, kind) in [

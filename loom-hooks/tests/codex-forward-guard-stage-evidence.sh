@@ -199,13 +199,24 @@ else
 fi
 
 # E3 on macOS: a Seatbelt profile is inherited by every descendant, so it still
-# answers for a process that double-forked out of the ancestry chain.
+# answers for a process that double-forked out of the ancestry chain. macOS
+# admits the guard's nested `(version 1)(allow default)` probe inside an outer
+# profile identical to it, so the outer profile here differs from the probe, as
+# Claude Code's deny-default profile does. It denies only outbound network
+# access, which the guard never uses.
+SEATBELT_PROFILE='(version 1)(allow default)(deny network-outbound)'
 if [[ "$(uname -s)" != Darwin ]]; then
 	printf 'SKIP: the Seatbelt confinement case is macOS-only\n'
+elif [[ -n "$AMBIENT" ]]; then
+	# Ancestry evidence blocks with exit 2 before confinement is consulted, so
+	# the case would pass without exercising Seatbelt.
+	printf 'SKIP: stage evidence present in the test'"'"'s own ancestry (%s)\n' "$AMBIENT"
+elif ! /usr/bin/sandbox-exec -p "$SEATBELT_PROFILE" /usr/bin/true 2>"$d/seatbelt.err"; then
+	printf 'SKIP: a Seatbelt profile was refused: %s\n' "$(tail -n 1 "$d/seatbelt.err")"
 else
 	CODE=0
 	printf '%s' "$RESCUE_EDIT" | env -i PATH="$CLEAN_PATH" HOME="$HOME_DIR" \
-		/usr/bin/sandbox-exec -p '(version 1)(allow default)' \
+		/usr/bin/sandbox-exec -p "$SEATBELT_PROFILE" \
 		"$BASH_BIN" "$HOOK" >"$d/stdout" 2>"$d/stderr" || CODE=$?
 	assert_code 2 'E3 Seatbelt confinement'
 	assert_stderr 'E3 Seatbelt confinement' 'sandbox confinement (seatbelt)'
