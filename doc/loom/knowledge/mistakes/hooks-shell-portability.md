@@ -210,3 +210,13 @@ runs against a shim must assert the shim really pads (exit 90 otherwise), or it 
 **Fix:** the helpers and the stop-skips ledger in
 [Portable Shell Helpers](../architecture/hook-system.md#portable-shell-helpers-and-the-subagentstop-ledgers);
 `run-all.sh` runs in CI in plain and BSD-shim modes.
+
+## A Heredoc Inside `$( )` Parses Under Bash 5 and Fails Under Bash 3.2 (2026-10-13)
+
+**What happened:** the first `hooks-macos` CI run failed `scripts/check-hook-syntax.sh` on `loom-hooks/codex-forward.sh` (`line 387: unexpected EOF while looking for matching '''`). Every Linux job had parsed the same file cleanly, so the codex lane's wrapper was unparseable under stock macOS bash.
+
+**Why:** the preamble was `preamble=$(cat <<'CODEX_PREAMBLE' ... )`. Bash 3.2's command-substitution lexer re-scans a heredoc body for quotes despite the quoted delimiter, so the apostrophe in "stage's" opened a single-quoted region; bash 5 parses the substitution properly. `check-hook-syntax.sh` had only ever run under bash 5. The same construct broke `spawn-guard.sh` earlier ([tests-that-cannot-fail](tests-that-cannot-fail.md)).
+
+**Prevention:** never put a heredoc inside `$( )` in a hook or script; put it in a function and capture the function's output. Parse under bash 3.2 before pushing a hook change: `docker run --rm -v "$PWD:/r:ro" -w /r bash:3.2 bash scripts/check-hook-syntax.sh`. That proves parsing only; the image has GNU and busybox tools, not the BSD userland, so the hook suite's macOS behaviour is proven only by the `hooks-macos` job.
+
+**Fix:** `codex-forward.sh` defines `codex_preamble()` around the heredoc and sets `preamble=$(codex_preamble)`; the captured text is byte-identical. `hooks-macos` now runs each check after a confirmed bash 3.2, whatever the others did, so a syntax failure no longer hides the hook suite.
