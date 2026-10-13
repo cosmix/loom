@@ -135,6 +135,7 @@ run_test "read-guard: offset/limit arithmetic injection is dead, well-formed rea
 run_test "read-guard: INDEX.md is exempt from the tier-1 warning" "$SCRIPT_DIR/read-guard-index-exempt.sh"
 run_test "read-guard: sibling whole-file reads are advised once and recorded in _shared.tsv" "$SCRIPT_DIR/read-guard-sibling-receipts.sh"
 run_test "read-guard: out-of-stage ledgers are per session and per agent, private, and failure-silent" "$SCRIPT_DIR/read-guard-session-ledgers.sh"
+run_test "loom_run_bounded: a bash watchdog bounds the command when neither gtimeout nor timeout exists" "$SCRIPT_DIR/loom-run-bounded.sh"
 run_test "session-start: heartbeat write escapes a quoted transcript_path via jq" "$SCRIPT_DIR/session-start-heartbeat-escaping.sh"
 run_test "knowledge-orient: emits the INDEX.md pointer on startup" "$SCRIPT_DIR/knowledge-orient-emits.sh"
 run_test "knowledge-orient: silent without an index, inside a stage, on compact, past the git root" "$SCRIPT_DIR/knowledge-orient-silent.sh"

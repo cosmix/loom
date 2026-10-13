@@ -134,7 +134,12 @@ _loom_parent_pid() {
 	case "$(_loom_platform)" in
 	Darwin)
 		value=$(/bin/ps -o ppid= -p "$pid" 2>/dev/null || true)
-		read -r value <<<"$value" || true
+		# ps pads the number with spaces. Trim by parameter expansion: a
+		# here-string needs a temp file on bash 3.2, and when it cannot be
+		# created the padding survives, the numeric check below fails, and
+		# the ancestor walk ends without evidence.
+		value="${value#"${value%%[![:space:]]*}"}"
+		value="${value%"${value##*[![:space:]]}"}"
 		;;
 	*)
 		[[ -r "/proc/$pid/status" ]] || return 1
@@ -177,8 +182,10 @@ _loom_confinement_evidence() {
 	local comm=""
 	case "$(_loom_platform)" in
 	Darwin)
-		# A nested Seatbelt profile is refused, so the probe failing means this
-		# process is already inside one. codex-forward.sh runs the same probe to
+		# A nested Seatbelt profile that differs from the one already applied is
+		# refused, so the probe failing means this process is already inside one.
+		# Only an outer profile identical to the probe's allow-everything one,
+		# which confines nothing, admits it. codex-forward.sh runs the same probe to
 		# pick its lane; its copy is not shared here because it resolves
 		# sandbox-exec through PATH so its own tests can stub it, and a
 		# stub-able probe would defeat this one.

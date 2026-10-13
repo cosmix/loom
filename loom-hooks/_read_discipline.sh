@@ -158,24 +158,16 @@ _loom_ledger_file() {
 
 # _loom_outline_covered_rows <path> - echo `loom map --outline <path>`'s
 # symbol rows (matching `^[[:space:]]+L[0-9]+-L[0-9]+[[:space:]]`), or return
-# 1 (nothing echoed) when the graph does not cover <path>, the command
-# produced no output, or NEITHER gtimeout NOR timeout is on PATH. That last
-# case is deliberate, not a fallback to a bare untimed call: a cold source
-# graph would then block the Read tool call indefinitely, so with no way to
-# bound it we skip `loom map` entirely and let the caller take the warn
-# branch instead. STDERR is always discarded: inside a worktree `loom map`
-# prints a "could not refresh the working-tree source graph" warning that
-# must never reach a deny message.
+# 1 (nothing echoed) when the graph does not cover <path> or the command
+# produced no output. The call is bounded to 2 seconds by loom_run_bounded
+# (_read_ledger.sh: gtimeout, timeout, or a bash watchdog on a machine with
+# neither), because a cold source graph must never block the Read tool call
+# indefinitely. STDERR is always discarded: inside a worktree `loom map`
+# prints a "could not refresh the working-tree source graph" warning that must
+# never reach a deny message.
 _loom_outline_covered_rows() {
-	local path="$1" output rows timeout_bin
-	if command -v gtimeout &>/dev/null; then
-		timeout_bin="gtimeout"
-	elif command -v timeout &>/dev/null; then
-		timeout_bin="timeout"
-	else
-		return 1
-	fi
-	output=$(LOOM_HOOK_CONTEXT=1 "$timeout_bin" 2 "${LOOM_BIN:-loom}" map --outline "$path" 2>/dev/null || true)
+	local path="$1" output rows
+	output=$(LOOM_HOOK_CONTEXT=1 loom_run_bounded 2 "${LOOM_BIN:-loom}" map --outline "$path" 2>/dev/null || true)
 	[[ -n "$output" ]] || return 1
 	rows=$(printf '%s\n' "$output" | grep -E '^[[:space:]]+L[0-9]+-L[0-9]+[[:space:]]' || true)
 	[[ -n "$rows" ]] || return 1

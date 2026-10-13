@@ -62,6 +62,9 @@ TOOL_INPUT=$(printf '%s' "$INPUT_JSON" | jq -c '.tool_input | select(type == "ob
 
 block_forwarder() {
 	local reason="$1" evidence_note=""
+	# A closed stderr must not kill the shell with SIGPIPE (exit 141) before
+	# the exit 2 below.
+	trap '' PIPE
 	require_stage_evidence
 	# Name the signal when it is not the hook's own environment, so the
 	# operator of a false positive can see what classified the session.
@@ -70,22 +73,26 @@ block_forwarder() {
 	*) evidence_note="
 This session was classified as a loom stage by: $LOOM_STAGE_EVIDENCE" ;;
 	esac
-	loom_debug "DEBUG: BLOCKED codex forwarder tool=$TOOL_NAME reason=$reason evidence=$LOOM_STAGE_EVIDENCE"
-	cat >&2 <<EOF
-⛔ BLOCKED: codex forwarding policy could not authorize this tool call.
-
-Reason: $reason$evidence_note
-
-The forwarding shim may make one direct Bash call of this form:
-  ~/.claude/hooks/loom/codex-forward.sh task '<prompt>' --model gpt-5.6-terra --effort xhigh --write [--unit-id <unit>]
-The wrapper path may instead be written out in full as
-  $HOME/.claude/hooks/loom/codex-forward.sh
-Write that path expanded, exactly as shown - a literal \$HOME is rejected,
-because an unquoted \$ is a forbidden shell metacharacter.
-
-Shell operators, pipelines, redirections, command substitution, and any other
-tool are forbidden. If forwarding fails, report the error and stop.
-EOF
+	loom_debug "DEBUG: BLOCKED codex forwarder tool=$TOOL_NAME reason=$reason evidence=$LOOM_STAGE_EVIDENCE" || true
+	# The message must never stop the exit 2: under set -e a failure exits 1,
+	# which Claude Code treats as a non-blocking error that lets the call run.
+	# Hence printf over a here-document (bash 3.2 writes one to a temp file a
+	# confined hook may be unable to create), an optional HOME, and `|| true`.
+	{
+		printf '%s\n' '⛔ BLOCKED: codex forwarding policy could not authorize this tool call.' '' \
+			"Reason: $reason$evidence_note" '' \
+			'The forwarding shim may make one direct Bash call of this form:' \
+			"  ~/.claude/hooks/loom/codex-forward.sh task '<prompt>' --model gpt-5.6-terra --effort xhigh --write [--unit-id <unit>]"
+		if [[ -n "${HOME:-}" ]]; then
+			printf '%s\n' 'The wrapper path may instead be written out in full as' \
+				"  $HOME/.claude/hooks/loom/codex-forward.sh" \
+				'Write that path expanded, exactly as shown - a literal $HOME is rejected,' \
+				'because an unquoted $ is a forbidden shell metacharacter.'
+		fi
+		printf '%s\n' '' \
+			'Shell operators, pipelines, redirections, command substitution, and any other' \
+			'tool are forbidden. If forwarding fails, report the error and stop.'
+	} >&2 || true
 	exit 2
 }
 

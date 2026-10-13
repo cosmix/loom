@@ -46,7 +46,7 @@ remember_target() {
 	local path="$1"
 	local existing
 	[[ -n "$path" ]] || return 0
-	for existing in "${TARGETS[@]}"; do
+	for existing in ${TARGETS[@]+"${TARGETS[@]}"}; do
 		[[ "$existing" == "$path" ]] && return 0
 	done
 	TARGETS+=("$path")
