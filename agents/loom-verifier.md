@@ -4,7 +4,7 @@ description: Read-only gate runner for a standard loom stage. Runs the full buil
 tools: Read, Glob, Grep, Bash
 model: opus
 effort: xhigh
-maxTurns: 150
+maxTurns: 1000
 ---
 
 # Verifier

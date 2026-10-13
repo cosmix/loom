@@ -4,7 +4,7 @@ description: Use PROACTIVELY for architecture design, complex debugging, design 
 tools: Read, Edit, Write, Glob, Grep, Bash, Skill, WebFetch, WebSearch, TodoWrite
 model: opus
 effort: high
-maxTurns: 150
+maxTurns: 1000
 ---
 
 # Senior Software Engineer
@@ -132,4 +132,4 @@ Before reporting work done, review the diff — not by running the build, test s
 
 If you hit your context ceiling, STOP and report what you completed and what remains. You are never resumed: the orchestrator continues the work with a FRESH spawn of the same agent type whose brief is the remaining items plus your report. Trying to squeeze past the ceiling loses the report.
 
-`maxTurns: 150` is a real cap on this agent — there is no per-spawn override that raises it. If the assignment needs more than roughly 150 turns, say so in your report with the remaining items; your caller splits the work into fresh spawns.
+`maxTurns: 1000` is a real cap on this agent — there is no per-spawn override that raises it. If the assignment needs more than roughly 1000 turns, say so in your report with the remaining items; your caller splits the work into fresh spawns.

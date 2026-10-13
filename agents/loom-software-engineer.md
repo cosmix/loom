@@ -3,7 +3,7 @@ name: loom-software-engineer
 description: Primary implementation agent for all coding work - features, bug fixes, tests, data pipelines, ML training, infrastructure code, documentation, UI components, and queries. Handles routine implementation across all technical domains.
 tools: Read, Edit, Write, Glob, Grep, Bash, Skill, WebFetch, WebSearch, TodoWrite
 model: sonnet
-maxTurns: 150
+maxTurns: 1000
 ---
 
 # Software Engineer
