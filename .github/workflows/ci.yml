@@ -139,6 +139,52 @@ jobs:
         if: ${{ !cancelled() }}
         run: ./scripts/smoke-web-terminal.sh loom/target/debug/loom
 
+  # The Linux jobs never see Darwin's sockets, sandbox, BSD userland or path
+  # layout (/var/folders temp dirs that resolve under /private), and most
+  # contributors have no Mac to run the suite on. --no-fail-fast reports every
+  # failing target in one run.
+  test-macos:
+    name: Test (macos)
+    runs-on: macos-latest
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: loom
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      # The smoke scripts call rg and jq.
+      - name: Install tmux, ripgrep and jq
+        run: brew install tmux ripgrep jq
+
+      - name: Run tests
+        working-directory: loom
+        run: cargo test --all-targets --no-fail-fast
+        env:
+          LOOM_E2E_REQUIRE_TMUX: "1"
+
+      - name: Build the loom binary
+        if: ${{ !cancelled() }}
+        working-directory: loom
+        run: cargo build --bin loom
+
+      - name: Run the web dashboard smoke test
+        if: ${{ !cancelled() }}
+        run: ./scripts/smoke-web-dashboard.sh loom/target/debug/loom
+
+      - name: Run the web terminal smoke test
+        if: ${{ !cancelled() }}
+        run: ./scripts/smoke-web-terminal.sh loom/target/debug/loom
+
   flake-check:
     name: Flake check
     runs-on: ubuntu-latest
@@ -160,10 +206,36 @@ jobs:
       - name: Re-run the timing-sensitive tests under load
         run: ./scripts/flake-check.sh
 
-  # Type-checks every target on macOS and runs the lints that only fire under
-  # macOS cfg, without the codegen and linking a test build would add.
-  macos:
-    name: Clippy (macos)
+  # scripts/flake-check.sh runs unpinned on macOS (no taskset; see its header),
+  # and Darwin's scheduler produces different contention from Linux's.
+  flake-check-macos:
+    name: Flake check (macos)
+    runs-on: macos-latest
+    needs: changes
+    if: needs.changes.outputs.rust == 'true'
+    timeout-minutes: 90
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: loom
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+
+      - name: Re-run the timing-sensitive tests under load
+        run: ./scripts/flake-check.sh
+
+  # Runs the lint gates whose result depends on the target OS: clippy and
+  # rustdoc both see code under macOS-only cfg. fmt does not, so it runs on
+  # Linux only. A separate job from test-macos because a job compiles the
+  # crate in one mode.
+  lint-macos:
+    name: Lint (macos)
     runs-on: macos-latest
     needs: changes
     if: needs.changes.outputs.rust == 'true'
@@ -185,6 +257,13 @@ jobs:
       - name: Run clippy
         working-directory: loom
         run: cargo clippy --all-targets -- -D warnings
+
+      - name: Check public documentation
+        if: ${{ !cancelled() }}
+        working-directory: loom
+        env:
+          RUSTDOCFLAGS: "-D warnings"
+        run: cargo doc --workspace --all-features --no-deps
 
   hook-syntax:
     name: Hook syntax
@@ -214,6 +293,46 @@ jobs:
         run: LOOM_HOOK_TEST_BSD=1 bash loom-hooks/tests/run-all.sh
 
       - name: Pre-commit partial-staging regression
+        run: ./scripts/test-pre-commit-partial-staging.sh
+
+  # The hooks target macOS's bash 3.2, but the runner image puts a Homebrew
+  # bash 5 first on PATH; the symlink and the version check make the job run
+  # under 3.2 and fail rather than pass under 5.
+  hooks-macos:
+    name: Hook tests (macos)
+    runs-on: macos-latest
+    needs: changes
+    if: needs.changes.outputs.shell == 'true'
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install hook test tools
+        run: brew install ripgrep fd jq
+
+      - name: Put the system bash first on PATH
+        run: |
+          mkdir -p "$RUNNER_TEMP/system-bash"
+          ln -sf /bin/bash "$RUNNER_TEMP/system-bash/bash"
+          echo "$RUNNER_TEMP/system-bash" >> "$GITHUB_PATH"
+
+      - name: Assert bash is 3.2
+        run: |
+          version=$(bash -c 'echo "$BASH_VERSION"')
+          echo "bash $version"
+          case "$version" in
+            3.2.*) ;;
+            *) echo "expected bash 3.2, got $version"; exit 1 ;;
+          esac
+
+      - name: Parse every shell hook
+        run: ./scripts/check-hook-syntax.sh
+
+      - name: Run the hook tests
+        run: bash loom-hooks/tests/run-all.sh
+
+      - name: Pre-commit partial-staging regression
+        if: ${{ !cancelled() }}
         run: ./scripts/test-pre-commit-partial-staging.sh
 
   audit:
