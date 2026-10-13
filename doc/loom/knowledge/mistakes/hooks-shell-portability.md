@@ -233,8 +233,9 @@ macOS Rust suite failed more through the same hooks. Production faults among the
 - `codex-forward-guard.sh` `block_forwarder` printed its message through a here-document naming
   `$HOME`; with HOME unset, `set -u` exited 1 and the call it meant to block went through.
 - `_codex_forward.sh` trimmed `ps` output with a here-string. Bash 3.2 writes here-strings and
-  here-documents to a temp file, so an unwritable TMPDIR lost the ancestor evidence and the
-  stage-evidence check failed open.
+  here-documents to a temp file (`$TMPDIR`, `/tmp`, `/var/tmp`, `/usr/tmp`, then the current
+  directory). With none of them writable the read fails, the padded value fails the numeric check, and
+  the stage-evidence check fails open. `set -e` does not stop a script on that redirect failure.
 
 Test-only faults: `poll-guard-subagent-waits.sh` used `$BASHPID` (bash 4+), so under 3.2 every
 fixture aborted with "unbound variable" and the script still printed PASS. The BSD shims translated

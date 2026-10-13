@@ -143,8 +143,9 @@ differ where it matters. The rules, in `loom-hooks/_lifecycle.sh` unless noted:
   returns 143/137 where `timeout` returns 124. `_read_discipline.sh` bounds `loom map --outline` with
   it; hooks that only read stdin keep the `gtimeout` → `timeout` → `cat` cascade.
 - **Bash 3.2.** Guard every value expansion of a possibly empty array with `${arr[@]+"${arr[@]}"}`
-  (`${#arr[@]}` is safe). Use `$$`, never `$BASHPID`. Here-strings and here-documents need a temp file,
-  so a block path prints with `printf` inside `{ ... } >&2 || true` after `trap '' PIPE`, and trims
+  (`${#arr[@]}` is safe). Use `$$`, never `$BASHPID`. Here-strings and here-documents need a temp file
+  (`$TMPDIR`, `/tmp`, `/var/tmp`, `/usr/tmp`, then the current directory; `set -e` does not stop the
+  script when none is writable, the command just reads nothing), so a block path prints with `printf` inside `{ ... } >&2 || true` after `trap '' PIPE`, and trims
   with parameter expansion, never `read <<<`.
 - **Ledger appends** (`loom_lifecycle_journal_ready`, the stop-skips append) require a regular file or an
   absent path, never a symlink: a planted FIFO would block the hook.

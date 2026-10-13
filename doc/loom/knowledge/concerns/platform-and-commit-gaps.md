@@ -27,9 +27,12 @@ Open gaps:
 - About 20 hooks (`codex-forward-guard.sh`, `read-guard.sh`, `stage-terminal-guard.sh` and others) read
   stdin through their own `gtimeout` → `timeout` → bare `cat` cascade, not `loom_run_bounded`, so on
   stock macOS those reads have no bound.
-- Bash 3.2 writes here-strings and here-documents to a temp file. `codex-apply-patch.sh`
-  (`done <<<"$PATCH"`) and the shims' PATH split still use one, so an unwritable TMPDIR fails them; the
-  apply-patch one exits 1, which Claude Code treats as non-blocking.
+- Bash 3.2 writes every here-string and here-document to a temp file. It tries `$TMPDIR`, `/tmp`,
+  `/var/tmp`, `/usr/tmp`, then the current directory, and leaves an `sh-thd-*` file behind when
+  killed mid-command. Only when none is writable does the redirect fail ("cannot create temp file for
+  here document"). `set -e` does not stop the script then; the command just reads nothing.
+  `codex-apply-patch.sh` (`done <<<"$PATCH"`) then sees no targets and blocks in `pre` mode, so it fails
+  closed.
 
 ## The Production Daemon Re-Exec Has No Automated Test
 
