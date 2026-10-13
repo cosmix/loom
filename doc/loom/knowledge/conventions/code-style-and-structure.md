@@ -36,6 +36,9 @@ verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 ## Serialization
 
 - State files use markdown with YAML frontmatter (`---` delimited)
+- YAML goes through `crate::yaml::{from_str, to_string}` (`loom/src/yaml.rs`, serde-saphyr); integration tests call the same functions as `loom::yaml`. `from_str` sets `strict_booleans`, so only `true`/`false` are booleans and `yes`/`no`/`on`/`off` stay strings on every `deserialize_any` path (`serde_json::Value`, untagged enums, `flatten`). Calling `serde_saphyr` directly drops that setting.
+- Dynamic YAML is `serde_json::Value`: serde-saphyr has no value type. Parse a typed struct straight from the frontmatter text (`parser::frontmatter::extract_frontmatter_raw`, then `crate::yaml::from_str`), never through a `Value` and `serde_json::from_value`, which loses YAML typing.
+- Enum variants that carry data serialize as `Variant: value` maps; `!Variant value` tags still deserialize.
 - Serde: `#[serde(rename_all = "snake_case")]` on structs
 - Use `#[serde(default)]`, `#[serde(skip_serializing_if = "Option::is_none")]`, `#[serde(alias = "...")]` as needed
 - All timestamps: `DateTime<Utc>` from chrono

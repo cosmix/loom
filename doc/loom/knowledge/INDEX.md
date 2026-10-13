@@ -36,7 +36,7 @@
 | [core-abstractions](architecture/core-abstractions.md) | ExecutionGraph, Stage, Session | 136 |
 | [daemon-launch](architecture/daemon-launch.md) | Re-exec launch, readiness, socket path | 65 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) | Relayed signed commits | 143 |
-| [directory-structure](architecture/directory-structure.md) | Module tree, state layout, root assets | 49 |
+| [directory-structure](architecture/directory-structure.md) | Module tree, state layout, root assets | 50 |
 | [execution-containment](architecture/execution-containment.md) | Sandboxed command containment, limits | 397 |
 | [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 277 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Deterministic phase, digest, receipts | 86 |
@@ -96,7 +96,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, errors, size limits | 273 |
+| [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, errors, size limits | 276 |
 | [commits](conventions/commits.md) | Grouped Conventional Commits | 25 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute authority, budgets | 119 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, cargo, CI paths, size ledger | 243 |

@@ -7,6 +7,7 @@
 ```text
 loom/src/
   main.rs, lib.rs          # CLI entry (clap), module exports
+  yaml.rs                   # YAML from_str/to_string over serde-saphyr (strict booleans)
   commands/                 # CLI implementations (~4K lines)
     init/, run/, stage/ (complete, merge, merge_resolver, merge_verify, ...),
     status/, merge/, memory/, knowledge/, track/, runner/

@@ -7,29 +7,30 @@
 
 ## Core Stack
 
-- **Language:** Rust (~15K lines)
-- **Concurrency:** std threads only. The daemon is thread-based: a Unix socket accept loop, a client worker pool, and the orchestrator, log-tailer, status-broadcaster, and quota-poller threads, each joined with a 5 s timeout on shutdown (`loom/src/daemon/server/lifecycle.rs`). `loom/Cargo.toml` has no tokio and no async runtime; this line used to claim tokio.
+- **Language:** Rust (~380K lines under `loom/src`)
+- **Concurrency:** std threads only. The daemon is thread-based: a Unix socket accept loop, a client worker pool, and the orchestrator, log-tailer, status-broadcaster, and quota-poller threads, each joined with a 5 s timeout on shutdown (`loom/src/daemon/server/lifecycle.rs`). `loom/Cargo.toml` has no tokio and no async runtime.
 - **CLI Framework:** clap with `#[derive(Parser)]`
-- **Serialization:** serde, serde_yaml, toml
+- **Serialization:** serde; YAML through `loom::yaml` (serde-saphyr), JSON through serde_json, toml
 - **Error Handling:** `anyhow` at application/orchestration boundaries with context chaining; typed
   domain errors where callers branch on outcomes
 
 ## Key Dependencies (Cargo.toml)
 
-| Crate       | Purpose                            |
-| ----------- | ---------------------------------- |
-| clap        | CLI argument parsing               |
-| serde       | Serialization framework            |
-| serde_yaml  | YAML parsing for frontmatter       |
-| anyhow      | Application errors and context     |
-| reqwest     | Blocking HTTP (self-update, quota) |
-| toml        | Config file parsing                |
-| chrono      | Timestamps                         |
-| minisign    | Self-update signature verification |
-| ratatui     | Terminal UI for status dashboard   |
-| serial_test | Test isolation                     |
-| tempfile    | Temporary directories for tests    |
-| fs2         | File locking                       |
+| Crate           | Purpose                                     |
+| --------------- | ------------------------------------------- |
+| clap            | CLI argument parsing                        |
+| serde           | Serialization framework                     |
+| serde-saphyr    | YAML via `loom::yaml` (plans, frontmatter)  |
+| serde_json      | JSON, and dynamic YAML values               |
+| anyhow          | Application errors and context              |
+| reqwest         | Blocking HTTP (self-update, quota)          |
+| toml            | Config file parsing                         |
+| chrono          | Timestamps                                  |
+| minisign-verify | Self-update signature verification          |
+| ratatui         | Terminal UI for status dashboard            |
+| serial_test     | Test isolation                              |
+| tempfile        | Temporary directories for tests             |
+| fs2             | File locking                                |
 
 ## Build Tools
 
@@ -44,8 +45,7 @@
 
 ## Skills Dependencies
 
-- serde + serde_yaml: YAML frontmatter parsing for SKILL.md files
-- crate::parser::frontmatter::extract_yaml_frontmatter: Shared YAML extraction utility
+- `crate::parser::frontmatter::extract_frontmatter_raw` + `crate::yaml::from_str`: SKILL.md frontmatter deserialized straight into `SkillMetadata` (`loom/src/skills/index.rs`)
 
 ## Map Dependencies
 
