@@ -54,7 +54,10 @@ esac
 # model/effort ledger row; this in-sandbox wrapper cannot write it safely.
 
 # This per-task preamble keeps the stage contract attached to every forward.
-preamble=$(cat <<'CODEX_PREAMBLE'
+# The heredoc lives in a function: bash 3.2 re-scans a heredoc body inside $( )
+# for quotes, and the apostrophe in "stage's" would break the parse.
+codex_preamble() {
+	cat <<'CODEX_PREAMBLE'
 === LOOM CONTEXT (prepended automatically; your task follows the TASK marker) ===
 
 You are implementing one slice of a loom-orchestrated stage inside a git worktree. That
@@ -101,7 +104,8 @@ FINISH BY REPORTING: files changed, assumptions you made, anything you could not
 
 === TASK ===
 CODEX_PREAMBLE
-)
+}
+preamble=$(codex_preamble)
 
 task="${preamble}
 
