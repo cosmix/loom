@@ -11,15 +11,30 @@
 # time, as BSD date -j -f does.
 # On a host whose real date is already BSD (macOS) the shim steps aside and runs it.
 
-# The real tool is the first PATH entry (then /usr/bin, /bin) that is not this
-# script; -ef follows symlinks, so a path_without mirror of the shim directory
-# is skipped too. A copy of a shim has another inode, so -ef misses it: the
-# marker on line 2 skips it instead, or two stacked shim directories would call
-# each other without end.
+depth=${LOOM_BSD_SHIM_DEPTH:-0}
+((depth < 3)) || { echo "date: BSD shim re-entered ${depth} times; a PATH wrapper delegates back to it" >&2; exit 125; }
+export LOOM_BSD_SHIM_DEPTH=$((depth + 1))
+
+# The real tool is the next PATH entry after this script's own (then /usr/bin,
+# /bin). A wrapper earlier on PATH may delegate back to the shim
+# (worktree-file-guard-scratchpad's stat stub), so taking the first entry that
+# is not this script would pick the wrapper and loop; the depth guard above is
+# the backstop. -ef follows symlinks, so a path_without mirror of the shim
+# directory counts as this script. A copy of a shim has another inode, so -ef
+# misses it: the marker on line 2 skips it instead, or two stacked shim
+# directories would call each other without end. Run by a path outside PATH,
+# the shim never meets itself and takes /usr/bin or /bin only.
 real_date=""
-IFS=: read -r -a path_parts <<<"$PATH:/usr/bin:/bin"
-for part in "${path_parts[@]}"; do
-	if [[ -x "$part/date" && ! "$part/date" -ef "${BASH_SOURCE[0]}" ]] &&
+met_self=0
+IFS=: read -r -a path_parts <<<"$PATH"
+system_at=${#path_parts[@]}
+path_parts+=(/usr/bin /bin)
+for i in "${!path_parts[@]}"; do
+	part="${path_parts[i]}"
+	((i == system_at)) && met_self=1
+	if [[ "$part/date" -ef "${BASH_SOURCE[0]}" ]]; then
+		met_self=1
+	elif ((met_self)) && [[ -x "$part/date" ]] &&
 		! grep -q '^# loom-bsd-shim' "$part/date" 2>/dev/null; then
 		real_date="$part/date"
 		break
