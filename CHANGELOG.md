@@ -5,10 +5,17 @@ All notable changes to loom are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
-## [Unreleased]
+## [1.2.x] - 2026-10-15
+
+### Added
+
+- **Token flow** — a daemon thread reads the transcripts of every stage session, subagent and forwarded Codex job every 30 seconds and tracks the tokens the run spends (fresh tokens are input plus cache writes plus output; cache reads feed a cache-hit percentage). The web dashboard shows a TOKENS rail in the header, a Token flow panel, a TOKENS column in the ledger, a token trace with live-agent pips on each redesigned stage card and a Tokens section in the stage dialog; `loom status --live` gains a ninth TOKENS column, a plan summary in the header and a per-agent pane toggled with `t`, and both show beside the Claude five-hour quota meter how long the window lasts at the last 30 minutes' pace.
+- **Terminal history** — each tmux session keeps 50,000 lines of scrollback, saved to `.loom/work/terminal-history/<session-id>.terminal` before the server is killed, and the web dashboard replays it read-only after the session ends.
 
 ### Changed
 
+- **Unix socket grants hide host sockets** — on Linux a stage with `allow_all_unix_sockets` no longer reaches every socket it can see: the host's socket locations (`/run`, agent sockets, tmux and X11 directories, the loom daemon socket and sockets under `/tmp`) go into its sandbox `denyRead`, and `loom run` refuses such a plan unless started with `--accept-unix-socket-risk`, stating what stays reachable. `loom plan verify` warns that `allow_unix_sockets` has no effect on Linux.
+- **Blocked stages shown in full** — `loom status` and the web dashboard show a block reason whole (up to 4000 characters, line breaks kept) instead of cutting it at 200, and a block filed by the stage agent offers `loom stage retry --context "<answer>"`, `loom stage amend` and `loom stage skip`; the `--context` text becomes the first recovery action of the retried session.
 - **YAML handled by serde-saphyr** — loom reads and writes YAML (plan metadata; stage, session, handoff, dispute and skill frontmatter) with `serde-saphyr` in place of the deprecated `serde_yaml`, which removes the unmaintained `unsafe-libyaml` (RUSTSEC-2024-0449) from the build, and `cargo deny` no longer ignores that advisory. Only `true` and `false` read as booleans, as before. Plan metadata that loom writes back into a plan file, after `loom stage amend` for example, can be quoted and laid out differently, and enum values that carry data are written as `Variant: value` maps instead of `!Variant value` tags; state files written by earlier versions still load.
 
 ## [1.1.x] - 2026-10-08
