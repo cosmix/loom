@@ -61,7 +61,7 @@ export function terminalHref(id: string): string {
 }
 
 /// Delay for the header's staggered first paint, as the graph's `--i`.
-function rise(index: number): CSSProperties {
+export function rise(index: number): CSSProperties {
   return { "--i": index } as CSSProperties;
 }
 
@@ -172,13 +172,13 @@ function Head({
 }
 
 /// The dialog's accessible title, or a plain heading on the page.
-function Name({ stage, frame }: { stage: StageSummary; frame: TerminalViewProps["frame"] }) {
+export function Name({ stage, frame }: { stage: StageSummary; frame: TerminalViewProps["frame"] }) {
   const className = "text-xl font-semibold tracking-tight text-foreground";
   if (frame === "dialog") return <DialogTitle className={className}>{stage.name}</DialogTitle>;
   return <h1 className={className}>{stage.name}</h1>;
 }
 
-function Line({ stage, frame }: { stage: StageSummary; frame: TerminalViewProps["frame"] }) {
+export function Line({ stage, frame }: { stage: StageSummary; frame: TerminalViewProps["frame"] }) {
   const line = <StateLine stage={stage} className="text-foreground" />;
   return (
     <div className="rise" style={rise(2)}>

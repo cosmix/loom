@@ -23,6 +23,7 @@
 //! and the live reconciler from disagreeing about who is attachable.
 
 mod capture;
+mod history;
 mod reconcile;
 mod socket;
 /// `pub` (not `pub(crate)`) rather than re-exported piecemeal: `commands/attach`
@@ -41,9 +42,12 @@ use std::time::Duration;
 use crate::models::session::Session;
 
 use super::native;
-pub(crate) use socket::loom_socket_dir;
 
 pub(crate) use capture::capture_pane_tail;
+pub use history::{
+    has_history, history_dir, history_relpath, read_history, write_history, MAX_HISTORY_BYTES,
+};
+pub(crate) use socket::loom_socket_dir;
 pub use socket::{
     kill_socket_server, list_loom_sockets, socket_path_for, socket_session_is_alive, LoomSocket,
 };
@@ -167,9 +171,14 @@ pub fn socket_name(session: &Session) -> String {
     format!("loom-{}", session.id)
 }
 
-/// Pure builder for the `tmux new-session` argv (excluding the `tmux` binary
-/// itself), so the exact argument list is unit-testable without running
-/// tmux.
+/// Pure builder for the argv of the tmux invocation that creates a session's
+/// server and the session (excluding the `tmux` binary itself), so the exact
+/// argument list is unit-testable without running tmux.
+///
+/// The invocation chains `set-option` commands ahead of `new-session`, joined by
+/// tmux's `;` separator: the server starts with the first command and runs them
+/// in order, so the options in `history::SERVER_OPTIONS` are set before the
+/// session's pane exists, which is when a pane reads `history-limit`.
 ///
 /// `command` is shell-escaped here, EXACTLY ONCE: tmux interprets its
 /// trailing argument as a shell command line, so an unescaped wrapper path
@@ -177,21 +186,26 @@ pub fn socket_name(session: &Session) -> String {
 /// worse. Callers must pass the raw path, never a pre-escaped string.
 fn new_session_argv(socket: &str, session_name: &str, cwd: &Path, command: &Path) -> Vec<String> {
     let escaped_command = escape(command.to_string_lossy()).into_owned();
-    vec![
-        "-L".to_string(),
-        socket.to_string(),
-        "new-session".to_string(),
-        "-d".to_string(),
-        "-s".to_string(),
-        session_name.to_string(),
-        "-x".to_string(),
-        "220".to_string(),
-        "-y".to_string(),
-        "50".to_string(),
-        "-c".to_string(),
-        cwd.to_string_lossy().to_string(),
-        escaped_command,
-    ]
+    let cwd = cwd.to_string_lossy();
+    let mut argv = vec!["-L".to_string(), socket.to_string()];
+    for (option, value) in history::SERVER_OPTIONS {
+        argv.extend(["set-option", "-g", *option, *value, ";"].map(str::to_string));
+    }
+    let new_session = [
+        "new-session",
+        "-d",
+        "-s",
+        session_name,
+        "-x",
+        "220",
+        "-y",
+        "50",
+        "-c",
+        cwd.as_ref(),
+        escaped_command.as_str(),
+    ];
+    argv.extend(new_session.map(str::to_string));
+    argv
 }
 
 /// Decide whether a `tmux new-session` invocation actually succeeded.
@@ -335,5 +349,7 @@ pub use backend::TmuxBackend;
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+mod tests_history;
 #[cfg(test)]
 mod tests_spawn;

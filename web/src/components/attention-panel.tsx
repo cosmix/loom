@@ -119,24 +119,60 @@ function AttentionCard({ entry }: { entry: Attention }) {
   );
 }
 
-/// The evidence, the note, the command, the review choices, and the cleanup
-/// warning: what the card and the stage dialog both show under their strips.
-/// The note is prose, so it never gets a copy button.
+/// What the stage dialog and the stage page tell the operator to do, or what
+/// loom is doing about the stage.
+export function OperatorGuidance({ entry }: { entry: Attention }) {
+  return (
+    <div className="flex flex-col gap-2.5 rounded-lg border border-hairline bg-card p-4 text-sm">
+      <h2 className="eyebrow">{entry.automatic ? "what loom is doing" : "what to do"}</h2>
+      <AttentionBody entry={entry} />
+    </div>
+  );
+}
+
+/// The evidence, the note, the command, the other options, the review
+/// choices, and the cleanup warning: what the card and the stage dialog both
+/// show under their strips. The note is prose, so it never gets a copy button,
+/// and it is shown whole: it may be a long reason with its own line breaks.
 export function AttentionBody({ entry }: { entry: Attention }) {
   return (
     <>
       {entry.evidence.length > 0 && <Evidence lines={entry.evidence} />}
-      {entry.note && <p>{entry.note}</p>}
+      {entry.note && <p className="break-words whitespace-pre-wrap">{entry.note}</p>}
       {(entry.command || entry.has_human_review_choices) && (
         <div className="flex flex-col gap-1.5 text-foreground">
-          {entry.command && <CopyCommand command={entry.command} />}
+          {entry.command && (
+            <Step
+              lead={entry.command_when ? `Once ${entry.command_when}:` : null}
+              command={entry.command}
+            />
+          )}
           {entry.has_human_review_choices && <ReviewChoices id={entry.id} />}
         </div>
+      )}
+      {entry.alternatives.length > 0 && (
+        <ul className="flex flex-col gap-2.5 text-foreground" aria-label="other options">
+          {entry.alternatives.map((alternative) => (
+            <li key={alternative.command}>
+              <Step lead={`If ${alternative.when}:`} command={alternative.command} />
+            </li>
+          ))}
+        </ul>
       )}
       {entry.cleanup_warning && (entry.review_reason || entry.failure_type) && (
         <p className={cn("text-xs", toneClass("warning"))}>{entry.cleanup_warning}</p>
       )}
     </>
+  );
+}
+
+/// A command with the sentence that says when to run it.
+function Step({ lead, command }: { lead: string | null; command: string }) {
+  return (
+    <div className="flex flex-col gap-1">
+      {lead && <p className="text-xs break-words text-muted-foreground">{lead}</p>}
+      <CopyCommand command={command} />
+    </div>
   );
 }
 

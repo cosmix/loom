@@ -18,14 +18,22 @@
 # sandbox. This hook applies the same boundary to them, so the two layers
 # together cover what the `Read(...)` denies used to cover alone.
 #
-# Two rules, in order:
+# Three rules, in order:
 #   (a) hardcoded: capability tokens and `completion-attestation.key` directly
 #       under a state root
 #       (`.loom/work`, or legacy `.work`). Hardcoded so a missing, renamed or
 #       hand-edited settings file can never let an orchestrator secret through.
-#   (b) the project's own `sandbox.filesystem.denyRead` list, applied to the
+#   (b) hardcoded, loom sessions only: the saved terminal histories under a
+#       state root's `terminal-history/`, and a Grep or Glob that would walk into
+#       the state root: rooted at it or at the directory holding it, or carrying
+#       a glob filter while rooted above it. Every capsule denies the
+#       directory to Bash through `denyRead`; this rule is what keeps the file
+#       tools out of it, so one stage cannot read what another showed. A session
+#       that loom did not launch (the operator's own) is not refused, so a person
+#       can still read a transcript to diagnose a stage.
+#   (c) the project's own `sandbox.filesystem.denyRead` list, applied to the
 #       file tools. A missing or unparsable settings file contributes nothing
-#       here and leaves rule (a) standing.
+#       here and leaves rules (a) and (b) standing.
 #
 # Input: JSON from stdin (Claude Code passes tool info via stdin)
 # Exit codes: 0 = allow, 2 = block (including jq not installed - fail closed)
@@ -199,6 +207,37 @@ Use a different path.
 EOF
 }
 
+# block_state_root <original> <resolved> <why> - Refuse a Grep or Glob that would
+# walk into the state root: one rooted at it, at the directory holding it, or
+# filtered so as to reach it from above. Its own message, since the root is open
+# to Bash and only the histories and tokens under it are not, which the
+# credential text above would misstate.
+block_state_root() {
+	local original="$1"
+	local resolved="$2"
+	local why="$3"
+	cat >&2 <<EOF
+
+============================================================
+  LOOM: BLOCKED - This search would walk into the state root
+============================================================
+
+Tool: $TOOL_NAME
+Path: $original
+Resolved: $resolved
+Why: $why
+
+The state root holds the saved terminal histories (terminal-history/) and the
+orchestrator's token files, which a loom session cannot read. Search a
+subdirectory instead, for example .loom/work/memory or .loom/work/signals, or
+search the project root with no glob filter and no absolute or ".." pattern.
+To narrow a project-wide Grep by file kind, use its type parameter (for
+example type "rust"), which keeps ignored directories out of the search.
+============================================================
+
+EOF
+}
+
 # --- Target extraction -------------------------------------------------------
 
 RAW_TARGET=$(printf '%s' "$INPUT_JSON" |
@@ -273,7 +312,126 @@ admin.token | user.token | completion-attestation.key)
 	;;
 esac
 
-# --- Rule (b): the project's own sandbox deny-read list -----------------------
+# --- Rule (b): saved terminal histories, in a loom session ---------------------
+
+# in_loom_session - Return 0 when this hook runs inside a session loom launched.
+# The session wrapper starts claude under `env -i` and exports LOOM_SESSION_ID,
+# LOOM_STAGE_ID and LOOM_WORK_DIR for every session kind, so a hook process
+# inherits them and the agent cannot change them. A person's own claude has none
+# of them. Same test as teammate-idle.sh, pre-compact.sh and learning-validator.sh;
+# it is a presence test, so an operator who exported all three into a shell would
+# be refused here too, and read the transcript from that shell instead.
+in_loom_session() {
+	[[ -n "${LOOM_SESSION_ID:-}" && -n "${LOOM_STAGE_ID:-}" && -n "${LOOM_WORK_DIR:-}" ]]
+}
+
+# TARGET is fully resolved, so the worktree's `.loom/work` symlink has already
+# become the real state root. WORK_ROOT is that same real path as the session's
+# LOOM_WORK_DIR names it, which carries no `.loom/work` component when the state
+# root itself is a symlink; it is compared next to the two spellings.
+WORK_ROOT=""
+
+# history_target - Return 0 when TARGET is the history directory or lies under it.
+history_target() {
+	case "$TARGET" in
+	*/.loom/work/terminal-history | */.loom/work/terminal-history/* | \
+		*/.work/terminal-history | */.work/terminal-history/*)
+		return 0
+		;;
+	esac
+	[[ -n "$WORK_ROOT" ]] || return 1
+	[[ "$TARGET" == "$WORK_ROOT/terminal-history" || "$TARGET" == "$WORK_ROOT/terminal-history/"* ]]
+}
+
+# state_root_target - Return 0 when TARGET is the state root directory itself.
+state_root_target() {
+	case "$TARGET" in
+	*/.loom/work | */.work) return 0 ;;
+	esac
+	[[ -n "$WORK_ROOT" && "$TARGET" == "$WORK_ROOT" ]]
+}
+
+# state_root_parent_target - Return 0 when TARGET is the directory holding the
+# state root: `.loom`, or the parent of the real state directory when LOOM_WORK_DIR
+# names a symlinked one. An explicitly named search root is walked whatever the
+# ignore files say, so the `.loom` entry `loom init` writes to .gitignore does not
+# prune a search rooted at `.loom` itself.
+state_root_parent_target() {
+	local parent
+	case "$TARGET" in
+	*/.loom) return 0 ;;
+	esac
+	[[ -n "$WORK_ROOT" ]] || return 1
+	parent="${WORK_ROOT%/*}"
+	[[ "$TARGET" == "${parent:-/}" ]]
+}
+
+# state_root_below_target - Return 0 when the state root lies strictly below
+# TARGET, so a search rooted at TARGET can descend into it.
+state_root_below_target() {
+	[[ -n "$WORK_ROOT" && "$WORK_ROOT" == "${TARGET%/}"/* ]]
+}
+
+# filtered_search - Return 0 when the call carries a filter that can walk into a
+# gitignored directory: a Grep `glob`, which ripgrep lets override .gitignore (and
+# the ripgreprc exclusions) for any directory it matches, or a Glob `pattern`
+# that is absolute or climbs with `..`. The filter text is not parsed; any such
+# filter counts, since a glob can name a directory in more ways than a check can
+# list.
+filtered_search() {
+	local filter
+	case "$TOOL_NAME" in
+	Grep)
+		filter=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_input.glob // empty' 2>/dev/null || true)
+		[[ -n "$filter" ]]
+		;;
+	Glob)
+		filter=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_input.pattern // empty' 2>/dev/null || true)
+		[[ "$filter" == /* || "$filter" == *..* ]]
+		;;
+	*) return 1 ;;
+	esac
+}
+
+# walks_into_state_root - Return 0 when the search would descend into the state
+# root, leaving the reason in WALK_WHY. A plain search rooted above it (the repo
+# root, as a knowledge stage runs it) is left alone: it relies on .gitignore
+# pruning `.loom`.
+WALK_WHY=""
+walks_into_state_root() {
+	if state_root_target; then
+		WALK_WHY="the search is rooted at the state root"
+	elif state_root_parent_target; then
+		WALK_WHY="the search is rooted at the directory holding the state root, and no ignore file prunes an explicit root"
+	elif state_root_below_target && filtered_search; then
+		WALK_WHY="a glob filter, or an absolute or \"..\" pattern, on a search rooted above the state root reaches into it"
+	else
+		return 1
+	fi
+}
+
+if in_loom_session; then
+	WORK_ROOT=$(canonical_target "$LOOM_WORK_DIR" 2>/dev/null || true)
+	if history_target; then
+		block_target "$RAW_TARGET" "$TARGET" \
+			"saved terminal history is not readable by a loom session"
+		exit 2
+	fi
+	# A Grep or Glob that walks down into the state root reaches terminal-history
+	# and the token files without naming either, which neither the history check
+	# above nor a path-prefix test catches. worktree-file-guard.sh lets the exact
+	# `.loom/work` link through as a read root, so this is where it is refused.
+	case "$TOOL_NAME" in
+	Grep | Glob)
+		if walks_into_state_root; then
+			block_state_root "$RAW_TARGET" "$TARGET" "$WALK_WHY"
+			exit 2
+		fi
+		;;
+	esac
+fi
+
+# --- Rule (c): the project's own sandbox deny-read list ------------------------
 
 # expand_deny_entry <entry> - Echo the absolute path a denyRead entry names.
 # Claude Code's own convention: a single leading `/` is PROJECT-relative and a

@@ -4,7 +4,7 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use crate::commands::status::data::StatusData;
-use crate::commands::status::render::attention_model::AttentionEntry;
+use crate::commands::status::render::attention_model::{Alternative, AttentionEntry};
 use crate::commands::status::render::failure_label;
 use crate::daemon::{DaemonServer, DaemonStatus};
 use crate::models::failure::FailureType;
@@ -74,6 +74,11 @@ pub struct WebAttention {
     /// Shell command the operator should run; `None` when no single command
     /// applies or loom is handling the state.
     pub command: Option<String>,
+    /// When to run `command`, phrased to follow "Once "; `None` when it is the
+    /// first thing to do.
+    pub command_when: Option<String>,
+    /// Other commands for other situations, in the order to offer them.
+    pub alternatives: Vec<Alternative>,
     /// What loom is doing, or what the operator should do when no single
     /// command fits. Prose, never a command meant for copying.
     pub note: Option<String>,
@@ -125,6 +130,8 @@ impl From<&AttentionEntry> for WebAttention {
             name: entry.name.clone(),
             label: entry.label.to_owned(),
             command: entry.command.clone(),
+            command_when: entry.command_when.clone(),
+            alternatives: entry.alternatives.clone(),
             note: entry.note.clone(),
             automatic: entry.automatic,
             failure_type: entry.failure_type.clone(),

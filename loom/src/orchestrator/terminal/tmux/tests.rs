@@ -90,6 +90,53 @@ fn new_session_argv_keeps_command_substitution_and_newline_inert() {
 }
 
 #[test]
+fn new_session_argv_sets_the_history_options_before_the_session_exists() {
+    let argv = new_session_argv(
+        "sock",
+        "sess",
+        Path::new("/work dir"),
+        Path::new("/tmp/wrapper.sh"),
+    );
+
+    // A pane reads `history-limit` when it is created, so the options must run
+    // ahead of `new-session` inside the same invocation.
+    let new_session = argv.iter().position(|arg| arg == "new-session").unwrap();
+    assert_eq!(
+        &argv[..new_session],
+        [
+            "-L",
+            "sock",
+            "set-option",
+            "-g",
+            "history-limit",
+            "50000",
+            ";",
+            "set-option",
+            "-g",
+            "remain-on-exit",
+            "on",
+            ";"
+        ]
+    );
+    assert_eq!(
+        &argv[new_session..],
+        [
+            "new-session",
+            "-d",
+            "-s",
+            "sess",
+            "-x",
+            "220",
+            "-y",
+            "50",
+            "-c",
+            "/work dir",
+            "/tmp/wrapper.sh"
+        ]
+    );
+}
+
+#[test]
 fn tmux_control_runner_returns_structured_timeout() {
     let mut command = Command::new("sh");
     command.args(["-c", "sleep 60"]);

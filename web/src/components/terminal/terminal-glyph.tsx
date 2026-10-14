@@ -18,6 +18,16 @@ export function terminalGate(terminals: boolean, stage: StageSummary): string | 
   return null;
 }
 
+/// The ended session whose saved screen the stage's Terminal button opens
+/// read-only when `terminalGate` refuses a live terminal for want of a live
+/// session, or `null` when there is none. The history is served by the same
+/// lane as the terminals, so it needs `--terminals` too.
+export function terminalHistory(terminals: boolean, stage: StageSummary): string | null {
+  if (!terminals || stage.session_backend === "native") return null;
+  if (terminalGate(terminals, stage) === null) return null;
+  return stage.terminal_history_session ?? null;
+}
+
 /// The reason from `terminalGate` for the current snapshot.
 export function useTerminalGate(stage: StageSummary): string | null {
   const snapshot = useAtomValue(snapshotAtom);

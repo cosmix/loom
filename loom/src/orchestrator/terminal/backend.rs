@@ -17,7 +17,7 @@ use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 
 use super::native::NativeBackend;
-use super::tmux::TmuxBackend;
+use super::tmux::{self, TmuxBackend};
 
 /// The stage worktree a merge resolver works in. Errors when its directory
 /// is missing: the caller routes the stage to human review.
@@ -284,6 +284,23 @@ impl SessionBackend {
         }
     }
 
+    /// Release what a session whose agent has already exited still holds.
+    ///
+    /// A tmux session's server outlives the agent (`remain-on-exit` keeps the
+    /// dead pane so its history can be saved), so an exit nobody kills would
+    /// leave the server running for good. This ends it through
+    /// [`Self::kill_session`], which saves the history first, and tries again
+    /// once when that fails. A native session holds nothing once its process is
+    /// gone.
+    pub fn release_ended_session(&self, session: &Session) -> Result<()> {
+        match session.backend {
+            SessionBackendKind::Tmux => {
+                end_tmux_server(session, || self.tmux.kill_session(session))
+            }
+            SessionBackendKind::Native => Ok(()),
+        }
+    }
+
     /// Dispatches on `session.backend`, same reasoning as `kill_session`.
     pub fn is_session_alive(&self, session: &Session) -> Result<bool> {
         match session.backend {
@@ -296,6 +313,31 @@ impl SessionBackend {
             },
         }
     }
+}
+
+/// Run `end_server` and, when it fails, once more: a `kill-server` that times
+/// out under load usually succeeds on the next try. The caller records the
+/// session as ended whatever happens here, so a server that survives both
+/// attempts stays until `loom clean`; every failure names the session and the
+/// socket, so that server can be found.
+fn end_tmux_server(session: &Session, mut end_server: impl FnMut() -> Result<()>) -> Result<()> {
+    let Err(first) = end_server() else {
+        return Ok(());
+    };
+    let socket = tmux::socket_name(session);
+    tracing::warn!(
+        session_id = %session.id,
+        %socket,
+        error = %format!("{first:#}"),
+        "Could not end the tmux server of an ended session; retrying once"
+    );
+    end_server().map_err(|second| {
+        anyhow::anyhow!(
+            "the tmux server on socket {socket} of ended session {} is still running \
+             (`loom clean` ends it): {second:#}",
+            session.id
+        )
+    })
 }
 
 #[cfg(test)]

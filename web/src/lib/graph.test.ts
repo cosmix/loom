@@ -117,6 +117,7 @@ describe("dependentsOf", () => {
       "client",
       "docs",
       "merge-gate",
+      "local-runtime",
     ]);
     expect(dependentsOf(stages, "knowledge-distill")).toEqual([]);
   });

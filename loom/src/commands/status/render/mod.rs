@@ -1,12 +1,14 @@
 pub mod activity;
 pub mod attention;
 pub mod attention_model;
+mod blocked_guidance;
 pub mod compact;
 pub mod completion;
 pub mod graph;
 pub mod merge;
 pub mod progress;
 pub mod summary;
+pub(crate) mod wrap;
 
 pub use activity::{render_activity_status, render_orphaned_warning, render_staleness_warning};
 pub use attention::render_attention;

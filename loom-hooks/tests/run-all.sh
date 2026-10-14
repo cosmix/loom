@@ -70,6 +70,7 @@ run_test "worktree-file-guard: the session scratchpad is open, its surroundings 
 run_test "worktree-file-guard: main-agent edit advisory warns once per path, never denies" "$SCRIPT_DIR/worktree-file-guard-edit-advisory.sh"
 run_test "credential-guard: capability tokens blocked through the state-root symlink" "$SCRIPT_DIR/credential-guard-tokens.sh"
 run_test "credential-guard: sandbox denyRead gates file tools, search roots above a denial run" "$SCRIPT_DIR/credential-guard-deny-read.sh"
+run_test "credential-guard: a saved terminal history is closed to a loom session, open to the operator" "$SCRIPT_DIR/credential-guard-terminal-history.sh"
 run_test "credential-guard: a .. after a nonexistent component is normalized, not treated as unresolvable" "$SCRIPT_DIR/credential-guard-dotdot.sh"
 run_test "plans-path-guard: blocks ~/.claude/plans write" "$SCRIPT_DIR/plans-path-guard-blocks-claude-plans.sh"
 run_test "plans-path-guard: blocks ~/.claude/projects/*/plans edit" "$SCRIPT_DIR/plans-path-guard-blocks-project-plans.sh"

@@ -82,6 +82,8 @@ mod tests {
             merge_resolver_session: None,
             merge_resolver_attempts: None,
             close_reason: None,
+            acceptance: vec![],
+            terminal_history_session: None,
         }
     }
 

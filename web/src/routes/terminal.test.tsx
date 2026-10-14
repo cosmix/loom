@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
@@ -7,6 +7,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import fixtureJson from "@/api/fixtures/snapshot.json";
 import { snapshotSchema, type Snapshot, type StageSummary } from "@/api/schema";
 import { TerminalPage } from "@/routes/terminal";
+import { fakeFactory } from "@/components/terminal/terminal-view-test-helpers";
 import type { EmulatorFactory } from "@/components/terminal/use-terminal";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { applySnapshot } from "@/state/apply";
@@ -66,5 +67,43 @@ describe("terminal route", () => {
     renderPage("/terminal/nope");
 
     expect(screen.getByText("No such stage")).toBeTruthy();
+  });
+
+  it("replays the saved screen of an ended session instead of attaching", async () => {
+    const stage = {
+      ...terminalStage(),
+      session_alive: false,
+      terminal_history_session: "session-ab12cd34-1700000000",
+    };
+    const store = createStore();
+    applySnapshot(store, snapshotFor(stage));
+    const history = fakeFactory();
+    const router = createMemoryRouter(
+      [
+        {
+          path: "/terminal/:stageId",
+          element: (
+            <TerminalPage
+              factory={pendingFactory()}
+              historyFactory={history.factory}
+              historyLoader={async () => new TextEncoder().encode("saved\n")}
+            />
+          ),
+        },
+      ],
+      { initialEntries: [`/terminal/${stage.id}`] },
+    );
+    render(
+      <Provider store={store}>
+        <TooltipProvider>
+          <RouterProvider router={router} />
+        </TooltipProvider>
+      </Provider>,
+    );
+
+    await waitFor(() => expect(history.doubles[0]?.calls.written).toHaveLength(1));
+    expect(history.doubles[0].calls.readOnly).toEqual([true]);
+    expect(screen.getByText("Terminal history")).toBeTruthy();
+    expect(document.querySelector(".terminal-frame")?.getAttribute("data-frame")).toBe("page");
   });
 });

@@ -18,7 +18,7 @@ use crate::verify::transitions::{load_stage, update_stage};
 
 use super::recover::{
     determine_recovery_reason, extract_context_tokens, find_crash_report,
-    generate_recovery_session_id, load_last_heartbeat,
+    generate_recovery_session_id, load_last_heartbeat, recovery_close_reason, with_operator_answer,
 };
 
 /// Skip a stage
@@ -209,17 +209,12 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
         let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
         MergeLifecycle::new(&stage_id, &repo_root, work_dir).reconcile_overlay();
 
+        let signal_content = with_operator_answer(signal_content, context.as_deref());
         generate_recovery_signal(&signal_content, &stage, work_dir)
             .context("Failed to generate recovery signal")?;
 
         stage.session = Some(new_session_id.clone());
-        stage.close_reason = if let Some(ref ctx_msg) = context {
-            Some(format!(
-                "Recovery initiated (attempt #{recovery_attempt}): {ctx_msg}"
-            ))
-        } else {
-            Some(format!("Recovery initiated (attempt #{recovery_attempt})"))
-        };
+        stage.close_reason = Some(recovery_close_reason(recovery_attempt, context.as_deref()));
         stage.updated_at = chrono::Utc::now();
 
         persist_retry_delta(&stage_id, work_dir, &stage, &original_status, force)?;

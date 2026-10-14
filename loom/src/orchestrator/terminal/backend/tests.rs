@@ -342,3 +342,56 @@ fn from_config_native_builds_the_lane_eagerly_or_fails_with_detection() {
         ),
     }
 }
+
+fn ended_tmux_session() -> Session {
+    let mut session = Session::new();
+    session.assign_to_stage("ended-stage".to_string());
+    session
+}
+
+#[test]
+fn an_ended_tmux_server_that_goes_down_at_once_is_not_asked_again() {
+    let attempts = std::cell::Cell::new(0);
+
+    end_tmux_server(&ended_tmux_session(), || {
+        attempts.set(attempts.get() + 1);
+        Ok(())
+    })
+    .unwrap();
+
+    assert_eq!(attempts.get(), 1);
+}
+
+#[test]
+fn an_ended_tmux_server_whose_first_kill_fails_is_killed_on_the_second_try() {
+    let attempts = std::cell::Cell::new(0);
+
+    end_tmux_server(&ended_tmux_session(), || {
+        attempts.set(attempts.get() + 1);
+        if attempts.get() == 1 {
+            anyhow::bail!("tmux kill-server failed");
+        }
+        Ok(())
+    })
+    .unwrap();
+
+    assert_eq!(attempts.get(), 2);
+}
+
+#[test]
+fn an_ended_tmux_server_that_survives_both_tries_names_its_session_and_socket() {
+    let session = ended_tmux_session();
+    let attempts = std::cell::Cell::new(0);
+
+    let error = end_tmux_server(&session, || {
+        attempts.set(attempts.get() + 1);
+        anyhow::bail!("tmux kill-server failed")
+    })
+    .unwrap_err();
+
+    assert_eq!(attempts.get(), 2, "one retry, not a loop");
+    let message = format!("{error:#}");
+    assert!(message.contains(&session.id), "{message}");
+    assert!(message.contains(&tmux::socket_name(&session)), "{message}");
+    assert!(message.contains("tmux kill-server failed"), "{message}");
+}

@@ -37,6 +37,18 @@ const MAX_EVIDENCE_LINES: usize = 32;
 /// rest is.
 const EVIDENCE_TRUNCATED_MARKER: &str = "... evidence truncated; see the stage file for full text";
 
+/// Longest close reason a status payload carries.
+///
+/// A reason is the whole message a stage agent leaves with `loom stage block`,
+/// and the operator acts on it, so it is not cut to the inline limit. Four
+/// thousand characters holds several paragraphs and still bounds what one
+/// stage contributes to the shared payload.
+const MAX_CLOSE_REASON_CHARS: usize = 4000;
+
+/// Last line of a close reason a cap cut short, naming where the rest is.
+const CLOSE_REASON_TRUNCATED_MARKER: &str =
+    "... reason truncated; see the stage file for the full text";
+
 /// Flatten every untrusted display string on a stage summary, in place.
 ///
 /// Structured, enumerated and numeric fields are left alone: they cannot carry
@@ -45,7 +57,8 @@ const EVIDENCE_TRUNCATED_MARKER: &str = "... evidence truncated; see the stage f
 /// fixed prose around the stage's `session` pointer and a session record's
 /// `stage_id`, both read from unvalidated frontmatter. `merge_resolver_session`
 /// is likewise a session record's `id`, and the attention note prints it.
-/// `close_reason` is free text a stage agent writes with `loom stage block`.
+/// `close_reason` is free text a stage agent writes with `loom stage block`; it
+/// keeps its line breaks and is bounded by [`bound_close_reason`].
 pub(super) fn sanitize_stage_summary(summary: &mut StageSummary) {
     flatten(&mut summary.model);
     summary.execution_models.iter_mut().for_each(flatten);
@@ -59,7 +72,12 @@ pub(super) fn sanitize_stage_summary(summary: &mut StageSummary) {
     summary.stash_warning.iter_mut().for_each(flatten);
     summary.incoherence.iter_mut().for_each(flatten);
     summary.merge_resolver_session.iter_mut().for_each(flatten);
-    summary.close_reason.iter_mut().for_each(flatten);
+    bound_close_reason(&mut summary.close_reason);
+    summary.acceptance.iter_mut().for_each(flatten);
+    summary
+        .terminal_history_session
+        .iter_mut()
+        .for_each(flatten);
     if let Some(blocker) = summary.completion_blocker.as_mut() {
         flatten(&mut blocker.failure_code);
         blocker.summary.iter_mut().for_each(flatten);
@@ -82,6 +100,22 @@ fn flatten_multiline(value: &mut Option<String>) {
         .as_deref()
         .map(multiline_safe)
         .filter(|text| !text.trim().is_empty());
+}
+
+/// Neutralize a close reason as [`flatten_multiline`] does, then cut it to
+/// [`MAX_CLOSE_REASON_CHARS`], ending a cut reason with
+/// [`CLOSE_REASON_TRUNCATED_MARKER`] on a line of its own.
+fn bound_close_reason(value: &mut Option<String>) {
+    flatten_multiline(value);
+    let Some(reason) = value.as_mut() else {
+        return;
+    };
+    if let Some((cut, _)) = reason.char_indices().nth(MAX_CLOSE_REASON_CHARS) {
+        reason.truncate(cut);
+        reason.truncate(reason.trim_end().len());
+        reason.push('\n');
+        reason.push_str(CLOSE_REASON_TRUNCATED_MARKER);
+    }
 }
 
 /// Bound an evidence list to [`MAX_EVIDENCE_LINES`], saying so when it bites.
@@ -120,7 +154,7 @@ mod tests {
     use crate::models::failure::{FailureInfo, FailureType};
     use chrono::Utc;
 
-    fn summary() -> StageSummary {
+    pub(super) fn summary() -> StageSummary {
         StageSummary {
             id: "stage-1".to_string(),
             name: "Stage One".to_string(),
@@ -164,6 +198,8 @@ mod tests {
             merge_resolver_session: None,
             merge_resolver_attempts: None,
             close_reason: None,
+            acceptance: vec![],
+            terminal_history_session: None,
         }
     }
 
@@ -324,3 +360,7 @@ mod tests {
         assert!(!valid_stage_id("bad/stage"));
     }
 }
+
+#[cfg(test)]
+#[path = "sanitize_close_reason_tests.rs"]
+mod close_reason_tests;

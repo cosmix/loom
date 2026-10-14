@@ -12,6 +12,8 @@ use crate::orchestrator::scheduling_report::Alert;
 pub mod cells;
 /// Ledger table column definitions.
 pub mod columns;
+/// One needs-attention entry's lines.
+mod entries;
 /// Ledger dashboard header rendering.
 pub mod header;
 /// Ledger dashboard layout rendering.
@@ -28,6 +30,8 @@ pub mod rows;
 mod tests;
 #[cfg(test)]
 mod tests_alignment;
+#[cfg(test)]
+mod tests_attention;
 #[cfg(test)]
 mod tests_completion;
 #[cfg(test)]

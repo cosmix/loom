@@ -172,6 +172,36 @@ pub(crate) mod tests {
         }
     }
 
+    /// Ends the tmux server on a socket when dropped, whether the test passed
+    /// or panicked. loom's servers run with `remain-on-exit on`, so a server a
+    /// failed test leaves behind never exits on its own.
+    ///
+    /// The socket path is resolved when the guard is made, so it does not
+    /// depend on `TMUX_TMPDIR` still being pinned at drop. Make the guard
+    /// BEFORE starting the server: a spawn that fails after the server came up
+    /// leaks it as well. Declare it after the `TmuxTmpDirGuard` so it drops
+    /// first.
+    pub(crate) struct TmuxServerGuard {
+        socket_path: PathBuf,
+    }
+
+    impl TmuxServerGuard {
+        pub(crate) fn new(socket: &str) -> Self {
+            Self {
+                socket_path: socket_path_for(socket),
+            }
+        }
+    }
+
+    impl Drop for TmuxServerGuard {
+        fn drop(&mut self) {
+            if self.socket_path.exists() {
+                let _ = kill_socket_server(&self.socket_path);
+                let _ = std::fs::remove_file(&self.socket_path);
+            }
+        }
+    }
+
     #[test]
     fn unreadable_session_file_reports_alive_so_it_is_never_reaped() {
         // Fail-safe: callers reap on `attributed && !alive`, and `attributed`

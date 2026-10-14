@@ -1,4 +1,4 @@
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
 
 import fixtureJson from "@/api/fixtures/snapshot.json";
@@ -153,5 +153,29 @@ describe("review notes panel", () => {
     expect(stageSections(stage, null).flatMap((s) => s.rows.map((r) => r.label))).not.toContain(
       "review reason",
     );
+  });
+});
+
+describe("a blocked stage's acceptance list", () => {
+  it("numbers each criterion from 0, the index loom stage amend takes", () => {
+    const blocked = fixture.status.stages.find((candidate) => candidate.id === "local-runtime");
+    if (!blocked) throw new Error("fixture local-runtime stage is missing");
+
+    renderSections(blocked);
+
+    const items = within(screen.getByRole("region", { name: "acceptance criteria" })).getAllByRole(
+      "listitem",
+    );
+    expect(items.map((item) => item.getAttribute("data-index"))).toEqual(["0", "1", "2", "3", "4"]);
+    expect(items[4]?.textContent).toBe(
+      "4TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/db/src/ephemeral-services",
+    );
+    expect(screen.getByText(/index for loom stage amend --index, counted from 0/)).toBeTruthy();
+  });
+
+  it("is absent for a stage that carries no criteria", () => {
+    renderSections(fixtureStage());
+
+    expect(screen.queryByRole("region", { name: "acceptance criteria" })).toBeNull();
   });
 });

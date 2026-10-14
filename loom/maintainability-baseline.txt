@@ -15,7 +15,7 @@ file src/commands/stage/tests/complete.rs 534
 file src/fs/permissions/hooks.rs 446
 file src/fs/permissions/settings.rs 413
 file src/fs/safe_fs.rs 1019
-file src/fs/work_dir.rs 433
+file src/fs/work_dir.rs 429
 file src/fs/work_dir/tests.rs 873
 file src/git/worktree/base.rs 469
 file src/git/worktree/settings.rs 462
@@ -79,7 +79,7 @@ function src/commands/stage/complete.rs route_complete_for_conflicts 157
 function src/commands/stage/complete.rs run_verification_phase 99
 function src/commands/stage/knowledge_complete.rs complete_knowledge_stage 122
 function src/commands/stage/merge.rs merge_retry 52
-function src/commands/stage/skip_retry.rs retry 214
+function src/commands/stage/skip_retry.rs retry 209
 function src/commands/status.rs execute_static 81
 function src/commands/status/render/completion.rs render_completion_lines 55
 function src/commands/status/render/completion.rs render_completion_screen 84

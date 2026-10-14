@@ -42,7 +42,7 @@ pub const LEGEND: [(StageStatus, &str); 13] = [
     ),
     (
         StageStatus::Blocked,
-        "errored; crashes auto-retry, else → loom stage retry <id>",
+        "stopped; crashes auto-retry, else do what its note asks, then → loom stage retry <id>",
     ),
     (
         StageStatus::CompletedWithFailures,

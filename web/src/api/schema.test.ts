@@ -19,7 +19,7 @@ describe("snapshot schema", () => {
   it("the fixture parses and terminals is false", () => {
     const snapshot = snapshotSchema.parse(fixtureJson);
 
-    expect(snapshot.status.stages).toHaveLength(8);
+    expect(snapshot.status.stages).toHaveLength(9);
     expect(stageStatusSchema.options).toHaveLength(13);
     expect(snapshot.terminals).toBe(false);
   });
@@ -182,5 +182,32 @@ describe("snapshot schema", () => {
 
     expect(parsed.success).toBe(true);
     expect(parsed.success && parsed.data.status.stages[0].session_type).toBe("contract");
+  });
+
+  it("keeps the blocked-stage fields optional and the stage object strict", () => {
+    const stages = (fixtureJson as { status: { stages: Array<Record<string, unknown>> } }).status
+      .stages;
+    const blocked = stages.find((stage) => stage.id === "local-runtime");
+    const plain = stages.find((stage) => stage.id === "client");
+
+    expect(blocked?.acceptance).toHaveLength(5);
+    expect(blocked?.terminal_history_session).toBe("session-9c1d4e7a-1788700000");
+    expect(plain && "acceptance" in plain).toBe(false);
+    expect(plain && "terminal_history_session" in plain).toBe(false);
+
+    const withUnknown = structuredClone(fixtureJson) as {
+      status: { stages: Array<Record<string, unknown>> };
+    };
+    withUnknown.status.stages[0].unexpected = true;
+    expect(snapshotSchema.safeParse(withUnknown).success).toBe(false);
+  });
+
+  it("requires every attention entry to carry its introduction and alternatives", () => {
+    const withoutAlternatives = structuredClone(fixtureJson) as {
+      attention: Array<Record<string, unknown>>;
+    };
+    delete withoutAlternatives.attention[0].alternatives;
+
+    expect(snapshotSchema.safeParse(withoutAlternatives).success).toBe(false);
   });
 });

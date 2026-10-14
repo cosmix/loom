@@ -4,6 +4,7 @@
 
 use ratatui::{backend::TestBackend, Terminal};
 
+use super::panels::attention_lines;
 use super::tests::{contains, fixture, make_stage, render_view, screen};
 use super::{render, LedgerView, RenderOutcome};
 use crate::commands::status::data::{MergeSummary, ProgressSummary, StageSummary, StatusData};
@@ -187,4 +188,54 @@ fn footer_shows_the_last_error_when_present() {
     let data = fixture();
     let rows = render_view_with(&data, 120, 40, 0, Some("daemon exploded"));
     assert!(contains(&rows, "Error: daemon exploded"));
+}
+
+#[test]
+fn on_80x24_the_attention_panel_gives_up_only_the_rows_the_table_needs() {
+    let mut blocked = make_stage("integration-verify", StageStatus::Blocked);
+    blocked.close_reason = Some("criterion 1 cannot pass in this sandbox".into());
+    blocked.acceptance = vec!["cargo test".into(), "bun run check".into()];
+    let data = StatusData {
+        stages: vec![
+            make_stage("build", StageStatus::Completed),
+            blocked,
+            make_stage("docs", StageStatus::Queued),
+        ],
+        ..StatusData::default()
+    };
+
+    let rows = render_view(&data, 80, 24, false);
+
+    let title = rows
+        .iter()
+        .position(|row| row.contains("NEEDS ATTENTION"))
+        .expect("the panel's title");
+    let marker = rows
+        .iter()
+        .position(|row| row.contains(" more lines"))
+        .expect("the row counting what the panel left out");
+    // The table keeps its six rows (two of them the heading and its rule), so the
+    // panel holds the other ten: its title, eight entry lines and the marker.
+    assert_eq!(marker - title + 1, 10, "{rows:#?}");
+    assert!(contains(&rows[..title], "build"), "{rows:#?}");
+    assert!(contains(&rows[..title], "docs"), "{rows:#?}");
+    // The retry command is among the lines shown, not behind the marker.
+    assert!(
+        contains(
+            &rows[title..marker],
+            "→ loom stage retry integration-verify"
+        ),
+        "{rows:#?}"
+    );
+    // Every line past the header is the panel's own line, and the marker counts
+    // exactly the lines it replaced.
+    let all = attention_lines(&attention_entries(&data.stages), 80);
+    for (shown, line) in rows[title + 2..marker].iter().zip(&all[2..]) {
+        assert_eq!(shown, line.to_string().trim_end());
+    }
+    let left_out = all.len() - (marker - title);
+    assert_eq!(
+        rows[marker].trim(),
+        format!("… {left_out} more lines, `loom status` shows them all")
+    );
 }

@@ -15,6 +15,7 @@ use super::config_api;
 use super::head::complete as complete_head;
 use super::http::{self, RequestHead};
 use super::limits::{Limits, Slot};
+use super::terminal::{serve_history, HISTORY_PREFIX};
 use super::TerminalLane;
 
 /// How long a single peek may block, bounding how long a connection thread
@@ -111,6 +112,10 @@ pub(super) fn handle(
     // nothing else: every other path answers a `POST` with the same 405 it
     // always has.
     let route = route(&head.path);
+    // Gated like the terminal lane, which `handle_route` knows nothing of.
+    if head.path.starts_with(HISTORY_PREFIX) && matches!(head.method.as_str(), "GET" | "HEAD") {
+        return serve_history(&mut stream, &head, base, lane, policy, local);
+    }
     match head.method.as_str() {
         "GET" | "HEAD" => handle_route(&mut stream, &head, route, broadcaster, base, policy, local),
         "POST" if route == Route::Config => {

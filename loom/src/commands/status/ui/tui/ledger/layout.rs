@@ -17,6 +17,14 @@ use crate::models::stage::StageStatus;
 const HEADER_HEIGHT: u16 = 4;
 const ALERT_MAX_HEIGHT: u16 = 4;
 const TABLE_MIN_HEIGHT: u16 = 6;
+/// The needs-attention panel's title row and the 13 lines of the largest single
+/// entry: a stage its agent blocked, with a header, three note lines, the retry
+/// and when to run it, three alternatives of two lines each, and the pointer to
+/// the acceptance criteria.
+const ATTENTION_MAX_HEIGHT: u16 = 14;
+/// Rows the panel keeps when the table needs the rest: its title, two entry lines
+/// and the "… N more lines" marker `fit_to_rows` adds.
+const ATTENTION_MIN_HEIGHT: u16 = 4;
 
 /// The footer is the legend strip alone, or the quota line above it.
 fn footer_height(has_quota: bool) -> u16 {
@@ -89,8 +97,10 @@ fn budget(
         activity = 0;
         table = available_table_height(height, alerts, attention, activity, footer, compact);
     }
-    if table < TABLE_MIN_HEIGHT {
-        attention = attention.min(4);
+    // Shrink the panel one row at a time, only until the table has its minimum.
+    let floor = attention.min(ATTENTION_MIN_HEIGHT);
+    while table < TABLE_MIN_HEIGHT && attention > floor {
+        attention -= 1;
         table = available_table_height(height, alerts, attention, activity, footer, compact);
     }
     if table < TABLE_MIN_HEIGHT {
@@ -113,12 +123,14 @@ fn budget(
     }
 }
 
-/// The panel's entry lines plus its title row, capped at 10.
+/// The panel's entry lines plus its title row, capped at [`ATTENTION_MAX_HEIGHT`].
 fn attention_height(lines: usize) -> u16 {
     if lines == 0 {
         0
     } else {
-        lines.saturating_add(1).min(10) as u16
+        lines
+            .saturating_add(1)
+            .min(usize::from(ATTENTION_MAX_HEIGHT)) as u16
     }
 }
 
@@ -269,6 +281,17 @@ mod tests {
         let budget = budget(40, 0, 4, 0, false);
 
         assert_eq!(budget.attention, 5);
+    }
+
+    #[test]
+    fn attention_budget_fits_a_blocked_entry_with_all_its_alternatives() {
+        // Header, three note lines, the retry and when to run it, three
+        // alternatives of two lines each, and the acceptance pointer.
+        let budget = budget(60, 0, 13, 0, false);
+
+        assert_eq!(budget.attention, ATTENTION_MAX_HEIGHT);
+        assert_eq!(budget.attention, 14);
+        assert_eq!(super::budget(60, 0, 30, 0, false).attention, 14);
     }
 
     #[test]

@@ -24,11 +24,11 @@ fn fixture_status(stages: Vec<StageSummary>) -> StatusData {
             conflicts: vec!["docs".to_owned()],
         },
         progress: crate::commands::status::data::ProgressSummary {
-            total: 8,
+            total: 9,
             completed: 1,
             executing: 1,
             pending: 3,
-            blocked: 3,
+            blocked: 4,
         },
         plan_name: Some("Web Dashboard Fixture".to_owned()),
         quota: QuotaSnapshot {
@@ -117,7 +117,7 @@ fn fixture_matches_serde_output() {
 #[test]
 fn fixture_deserializes_into_web_snapshot() {
     let snapshot = serde_json::from_str::<WebSnapshot>(FIXTURE).unwrap();
-    assert_eq!(snapshot.status.stages.len(), 8);
+    assert_eq!(snapshot.status.stages.len(), 9);
 }
 
 #[test]
@@ -151,6 +151,9 @@ fn attention_conversion_keeps_failure_label() {
         name: "Rust server".to_owned(),
         label: "BLOCKED",
         command: Some("loom stage retry server".to_owned()),
+        command_when: None,
+        alternatives: Vec::new(),
+        acceptance: Vec::new(),
         note: None,
         automatic: false,
         failure_type: Some(FailureType::TestFailure),

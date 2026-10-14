@@ -45,7 +45,7 @@
     "status": "blocked",
     "icon": "✗",
     "label": "Blocked",
-    "legend": "errored; crashes auto-retry, else → loom stage retry <id>"
+    "legend": "stopped; crashes auto-retry, else do what its note asks, then → loom stage retry <id>"
   },
   {
     "status": "completed-with-failures",

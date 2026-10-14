@@ -49,6 +49,8 @@ const HINT = {
     "The last heartbeat event that is not already stated by last tool, such as session start or a subagent finishing.",
   staleness: "Time since the last heartbeat.",
   retries: "Automatic retries so far, of the stage's limit.",
+  acceptance:
+    "The number in front of each criterion is its index for loom stage amend --index, counted from 0. A criterion's own text is cut at 200 characters here.",
   disputes: "Acceptance criteria the stage's agent disputed. A judge session settles them.",
   judge: "Time since the adjudication judge for this stage last reported in.",
   merged:
@@ -269,6 +271,11 @@ export function StageSectionGrid({
           <ReviewNotes notes={stage.review_notes} />
         </div>
       )}
+      {stage.acceptance !== undefined && stage.acceptance.length > 0 && (
+        <div className={cn("md:col-span-2", wide && "xl:col-span-3")}>
+          <AcceptanceList criteria={stage.acceptance} />
+        </div>
+      )}
       {stageSections(stage, level).map((section) => (
         <Section key={section.title} {...section} />
       ))}
@@ -295,6 +302,30 @@ function ReviewNotes({ notes }: { notes: string }) {
       >
         {notes}
       </div>
+    </section>
+  );
+}
+
+/// A blocked stage's acceptance criteria, each with the 0-based index that
+/// `loom stage amend --index` takes. Untrusted text: text nodes only.
+function AcceptanceList({ criteria }: { criteria: string[] }) {
+  return (
+    <section
+      aria-label="acceptance criteria"
+      className="flex flex-col gap-2.5 rounded-lg border border-hairline bg-card p-4"
+    >
+      <h2 className="eyebrow">acceptance</h2>
+      <p className="text-xs text-muted-foreground">{HINT.acceptance}</p>
+      <ol className="flex flex-col gap-1.5 text-sm">
+        {criteria.map((criterion, index) => (
+          <li key={index} className="flex gap-3" data-index={index}>
+            <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground">
+              {index}
+            </span>
+            <code className="min-w-0 text-xs wrap-anywhere">{criterion}</code>
+          </li>
+        ))}
+      </ol>
     </section>
   );
 }

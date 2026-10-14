@@ -55,6 +55,8 @@ fn blocked_summary(id: &str, info: Option<FailureInfo>, reason: Option<String>) 
         merge_resolver_session: None,
         merge_resolver_attempts: None,
         close_reason: reason,
+        acceptance: vec![],
+        terminal_history_session: None,
     }
 }
 
@@ -90,9 +92,12 @@ fn agent_block_reason_reaches_attention_over_the_wire() {
     assert_eq!(entry.label, "BLOCKED");
     assert_eq!(
         entry.note.as_deref(),
-        Some("blocked: needs registry.npmjs.org for bunx vitest"),
+        Some("blocked by the stage agent: needs registry.npmjs.org for bunx vitest"),
     );
-    assert_eq!(entry.command.as_deref(), Some("loom stage retry s1"));
+    assert_eq!(
+        entry.command.as_deref(),
+        Some("loom stage retry s1 --context \"<what you did and what it showed>\""),
+    );
     assert!(!entry.automatic, "an agent block needs the operator");
 }
 
@@ -124,7 +129,7 @@ fn crash_blocked_stage_is_not_an_agent_block() {
         !entry
             .note
             .as_deref()
-            .is_some_and(|note| note.starts_with("blocked: ")),
+            .is_some_and(|note| note.starts_with("blocked by")),
         "a crash is not an agent block, got note {:?}",
         entry.note,
     );

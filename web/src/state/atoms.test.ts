@@ -23,12 +23,13 @@ describe("dashboard atoms", () => {
     applySnapshot(store, fixture, 100);
 
     expect(store.get(snapshotAtom)).toBe(fixture);
-    expect(store.get(orderedStagesAtom)).toHaveLength(8);
+    expect(store.get(orderedStagesAtom)).toHaveLength(9);
     expect(store.get(attentionAtom).map((entry) => entry.id)).toEqual([
       "client",
       "docs",
       "integration-verify",
       "merge-gate",
+      "local-runtime",
     ]);
     expect(store.get(alertsAtom)).toHaveLength(3);
     // The first frame is the baseline; the log records later transitions.

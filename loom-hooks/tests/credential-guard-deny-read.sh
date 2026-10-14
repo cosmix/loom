@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# credential-guard.sh rule (b): the project's own sandbox.filesystem.denyRead
+# credential-guard.sh rule (c): the project's own sandbox.filesystem.denyRead
 # list gates the file tools the way it already gates Bash - including the
 # containment rule that lets a search rooted ABOVE a denied directory run.
 set -euo pipefail

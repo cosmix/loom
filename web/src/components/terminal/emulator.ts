@@ -1,5 +1,5 @@
 import { loadTerminalFonts, TERMINAL_FONT_FAMILY } from "./fonts";
-import type { Terminal } from "@xterm/xterm";
+import type { ILinkHandler, ITerminalOptions, Terminal } from "@xterm/xterm";
 import type { FitAddon } from "@xterm/addon-fit";
 import { handleTerminalKey } from "./keyboard";
 import { installViewerWheel, type TerminalScroll } from "./viewer-wheel";
@@ -127,8 +127,33 @@ function installWebgl<T extends { dispose(): void; onContextLoss(handler: () => 
   }
 }
 
+/// Lines a saved screen keeps in scrollback: the longest history loom saves is
+/// 50000 lines, and xterm re-wraps them to the viewer's width.
+const HISTORY_SCROLLBACK = 60_000;
+
+export const createXtermEmulator: EmulatorFactory = () => createEmulator({});
+
+/** A saved screen is text a past session printed, and `capture-pane -e` keeps an
+ *  OSC 8 hyperlink in it. Activating one does nothing, so a link in saved output
+ *  is not a way out of the page, and xterm's own confirm-and-open never runs. */
+export const historyLinkHandler: ILinkHandler = {
+  activate() {
+    // Refused on purpose: see above.
+  },
+  allowNonHttpProtocols: false,
+};
+
+/** A viewer for a saved screen: the whole saved scrollback, and bare newlines
+ *  start a fresh line, as the saved text separates lines with `\n` alone. */
+export const createHistoryEmulator: EmulatorFactory = () =>
+  createEmulator({
+    scrollback: HISTORY_SCROLLBACK,
+    convertEol: true,
+    linkHandler: historyLinkHandler,
+  });
+
 /** Lazily imports @xterm packages so the main bundle does not carry them. */
-export const createXtermEmulator: EmulatorFactory = async () => {
+async function createEmulator(overrides: ITerminalOptions): Promise<Emulator> {
   const [{ Terminal }, { FitAddon }, { WebglAddon }, { Unicode11Addon }] = await Promise.all([
     import("@xterm/xterm"),
     import("@xterm/addon-fit"),
@@ -136,7 +161,7 @@ export const createXtermEmulator: EmulatorFactory = async () => {
     import("@xterm/addon-unicode11"),
     loadTerminalFonts(),
   ]);
-  const terminal = new Terminal(terminalOptions());
+  const terminal = new Terminal({ ...terminalOptions(), ...overrides });
   terminal.attachCustomKeyEventHandler((event) => handleTerminalKey(event, terminal));
   const fitAddon = new FitAddon();
   const unicodeAddon = new Unicode11Addon();
@@ -149,7 +174,7 @@ export const createXtermEmulator: EmulatorFactory = async () => {
       (addon) => terminal.loadAddon(addon),
     ),
   );
-};
+}
 
 function wrapTerminal(terminal: Terminal, fitAddon: FitAddon, render: () => void): Emulator {
   let opened = false;

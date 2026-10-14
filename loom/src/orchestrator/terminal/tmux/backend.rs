@@ -12,6 +12,7 @@ use crate::models::session::{Session, SessionType};
 use crate::models::stage::Stage;
 use crate::models::worktree::Worktree;
 
+use super::history::save_history;
 use super::native;
 use super::{
     abort_tmux_spawn, await_tmux_session_pid, socket_name, spawn_in_tmux, teardown_socket,
@@ -120,7 +121,12 @@ impl TmuxBackend {
         self.spawn(kind, stage, session, signal_path, repo_root, false)
     }
 
+    /// Every teardown of a tmux session ends here (`SessionBackend::kill_session`),
+    /// and the server's end is the end of its scrollback, so the history is saved
+    /// first. Saving never blocks the kill.
     pub fn kill_session(&self, session: &Session) -> Result<()> {
+        save_history(&self.work_dir, session);
+
         // Capture PID identity before either teardown path can remove its
         // evidence. `session.pid` is never a destructive fallback.
         let process_was_verified_alive = native::session_process_status(&self.work_dir, session)

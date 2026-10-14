@@ -335,8 +335,8 @@ impl Detection {
     }
 
     /// Persist `status` for a session whose process is gone, drop its
-    /// heartbeat, and remember the status so the next poll does not report
-    /// the same exit again.
+    /// heartbeat, release what it still holds, and remember the status so the
+    /// next poll does not report the same exit again.
     fn mark_terminal(
         &mut self,
         session: &Session,
@@ -354,6 +354,8 @@ impl Detection {
             );
         }
         cleanup_heartbeat_for_session(handlers.work_dir(), session, stages);
+        // The agent exited by itself, so nothing else will end its tmux server.
+        handlers.release_ended_session(session);
         self.last_session_states.insert(session.id.clone(), status);
     }
 

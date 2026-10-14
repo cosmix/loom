@@ -56,9 +56,14 @@ macro_rules! stage {
             merge_resolver_session: None,
             merge_resolver_attempts: None,
             close_reason: None,
+            acceptance: vec![],
+            terminal_history_session: None,
         }
     };
 }
+
+#[path = "model_tests_blocked.rs"]
+mod blocked;
 
 fn stage_knowledge_bootstrap() -> StageSummary {
     let empty: &[&str] = &[];
@@ -366,5 +371,6 @@ pub(super) fn fixture_stages() -> Vec<StageSummary> {
         stage_integration_verify(),
         stage_knowledge_distill(),
         stage_merge_gate(),
+        blocked::stage_local_runtime(),
     ]
 }

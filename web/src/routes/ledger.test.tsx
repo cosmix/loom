@@ -48,8 +48,8 @@ describe("ledger route", () => {
     const rail = screen.getByRole("region", { name: "stages" });
     const cell = within(rail).getByText("attention").closest("li");
     if (!cell) throw new Error("the attention cell is missing");
-    expect(snapshot.attention).toHaveLength(4);
-    expect(within(cell).getByText("2")).toBeTruthy();
+    expect(snapshot.attention).toHaveLength(5);
+    expect(within(cell).getByText("3")).toBeTruthy();
   });
 });
 
@@ -59,5 +59,15 @@ describe("stage route", () => {
 
     expect(screen.getAllByText("Bash").length).toBeGreaterThan(0);
     expect(screen.getAllByText("opus").length).toBeGreaterThan(0);
+  });
+
+  it("tells the operator what to do for a blocked stage and numbers its criteria", () => {
+    renderAt("/stages/local-runtime");
+
+    expect(screen.getByText("what to do")).toBeTruthy();
+    expect(screen.getByText(/Or allow AF_UNIX for this stage\./)).toBeTruthy();
+    expect(screen.getByRole("button", { name: "copy loom stage skip local-runtime" })).toBeTruthy();
+    const criteria = within(screen.getByRole("region", { name: "acceptance criteria" }));
+    expect(criteria.getAllByRole("listitem")).toHaveLength(5);
   });
 });

@@ -377,3 +377,15 @@ fn stage_summary_carries_the_block_reason() {
         None
     );
 }
+
+#[test]
+fn stage_summary_leaves_out_the_close_reason_of_a_stage_that_is_not_blocked() {
+    let (_tmp, work_dir) = temp_work_dir();
+    let mut skipped = make_test_stage("stage-1", StageStatus::Skipped);
+    skipped.close_reason = Some("Not needed".to_string());
+
+    assert_eq!(
+        build_stage_summary(&skipped, &[], &work_dir).close_reason,
+        None
+    );
+}

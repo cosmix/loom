@@ -299,6 +299,51 @@
         "dispute_count": 0,
         "judge_heartbeat_secs": null,
         "session_backend": null
+      },
+      {
+        "id": "local-runtime",
+        "name": "Local runtime",
+        "description": null,
+        "summary": null,
+        "status": "blocked",
+        "stage_type": "standard",
+        "dependencies": ["knowledge-bootstrap"],
+        "context_tokens": null,
+        "elapsed_secs": 1800,
+        "execution_secs": 1500,
+        "base_branch": null,
+        "base_merged_from": [],
+        "failure_info": null,
+        "activity_status": "Idle",
+        "last_tool": null,
+        "last_activity": null,
+        "staleness_secs": null,
+        "context_ceiling_tokens": null,
+        "review_reason": null,
+        "review_notes": null,
+        "merged": false,
+        "merge_assumed": false,
+        "held": false,
+        "retry_count": 0,
+        "max_retries": null,
+        "pid": null,
+        "session_alive": false,
+        "model": "opus",
+        "session_type": null,
+        "incoherence": null,
+        "execution_models": [],
+        "dispute_count": 0,
+        "judge_heartbeat_secs": null,
+        "session_backend": "tmux",
+        "close_reason": "Adjudicator needs an unsandboxed run only the operator can do. From the worktree root run: TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/storage packages/db/src/ephemeral-services; report exit code, test summary, and .stack/objectstore.log on failure. Criterion 5 (stack:ephemeral --with objectstore) cannot pass in this sandbox: it denies AF_UNIX socket creation everywhere.\nOr allow AF_UNIX for this stage. All work committed; 0 open findings.",
+        "acceptance": [
+          "cargo build",
+          "cargo test",
+          "bun run typecheck",
+          "bun test packages/storage",
+          "TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/db/src/ephemeral-services"
+        ],
+        "terminal_history_session": "session-9c1d4e7a-1788700000"
       }
     ],
     "merge": {
@@ -307,26 +352,40 @@
       "conflicts": ["docs"]
     },
     "progress": {
-      "total": 8,
+      "total": 9,
       "completed": 1,
       "executing": 1,
       "pending": 3,
-      "blocked": 3
+      "blocked": 4
     },
     "plan_name": "Web Dashboard Fixture",
     "quota": {
       "claude": {
         "observed_at": 1788523200,
         "windows": [
-          { "kind": "five-hour", "used_percent": 48.0, "resets_at": 1788531180 },
-          { "kind": "seven-day", "used_percent": 31.0, "resets_at": 1788876000 }
+          {
+            "kind": "five-hour",
+            "used_percent": 48.0,
+            "resets_at": 1788531180
+          },
+          {
+            "kind": "seven-day",
+            "used_percent": 31.0,
+            "resets_at": 1788876000
+          }
         ],
         "plan": null,
         "error": null
       },
       "codex": {
         "observed_at": 1788522960,
-        "windows": [{ "kind": "seven-day", "used_percent": 63.0, "resets_at": 1788728400 }],
+        "windows": [
+          {
+            "kind": "seven-day",
+            "used_percent": 63.0,
+            "resets_at": 1788728400
+          }
+        ],
         "plan": "pro",
         "error": null
       }
@@ -338,6 +397,8 @@
       "name": "TypeScript client",
       "label": "ACCEPTANCE FAILED",
       "command": "loom stage retry client",
+      "command_when": null,
+      "alternatives": [],
       "note": null,
       "automatic": false,
       "failure_type": "test-failure",
@@ -358,6 +419,8 @@
       "name": "Documentation",
       "label": "MERGE CONFLICT",
       "command": null,
+      "command_when": null,
+      "alternatives": [],
       "note": "merge resolver session-3f9a2c1e-1788720000 is working (attempt 1 of 6); run loom attach docs to watch it, or open the stage's terminal in the web UI",
       "automatic": true,
       "failure_type": null,
@@ -374,6 +437,8 @@
       "name": "Integration Verification",
       "label": "NEEDS REVIEW",
       "command": null,
+      "command_when": null,
+      "alternatives": [],
       "note": null,
       "automatic": false,
       "failure_type": null,
@@ -390,8 +455,41 @@
       "name": "Merge Gate",
       "label": "MERGE BLOCKED",
       "command": null,
+      "command_when": null,
+      "alternatives": [],
       "note": "the target branch moved while the merge was being prepared; it will be retried; loom retries the merge automatically once that changes",
       "automatic": true,
+      "failure_type": null,
+      "failure_label": null,
+      "evidence": [],
+      "review_reason": null,
+      "cleanup_warning": null,
+      "has_human_review_choices": false,
+      "dispute_count": null,
+      "judge_heartbeat_secs": null
+    },
+    {
+      "id": "local-runtime",
+      "name": "Local runtime",
+      "label": "BLOCKED",
+      "command": "loom stage retry local-runtime --context \"<what you did and what it showed>\"",
+      "command_when": "you have done what the reason asks, retry with your answer (the next session receives it)",
+      "alternatives": [
+        {
+          "when": "the reason is an acceptance criterion that cannot pass where the stage runs, drop it before retrying (find the criterion's index in the acceptance list)",
+          "command": "loom stage amend local-runtime --field acceptance --op delete --index <n>"
+        },
+        {
+          "when": "that criterion should run another way, replace it before retrying (same index)",
+          "command": "loom stage amend local-runtime --field acceptance --op replace --index <n> --value \"<new command>\""
+        },
+        {
+          "when": "you give up on the stage (its dependents stay blocked)",
+          "command": "loom stage skip local-runtime"
+        }
+      ],
+      "note": "blocked by the stage agent: Adjudicator needs an unsandboxed run only the operator can do. From the worktree root run: TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/storage packages/db/src/ephemeral-services; report exit code, test summary, and .stack/objectstore.log on failure. Criterion 5 (stack:ephemeral --with objectstore) cannot pass in this sandbox: it denies AF_UNIX socket creation everywhere.\nOr allow AF_UNIX for this stage. All work committed; 0 open findings.\nterminal history of its last session: less -R .loom/work/terminal-history/session-9c1d4e7a-1788700000.terminal",
+      "automatic": false,
       "failure_type": null,
       "failure_label": null,
       "evidence": [],

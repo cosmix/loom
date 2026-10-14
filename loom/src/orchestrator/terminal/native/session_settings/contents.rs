@@ -62,8 +62,8 @@ pub(super) struct CapsuleInputs<'a> {
 /// stage's config for the session's location (`defaultMode` and
 /// `worktree.bgIsolation` included, the checkout's deny rules carried, and
 /// with the codex lane its plugin keys), then the plans read, the scratch
-/// grant, the approved list, the session's write denies, the hidden host
-/// sockets and the kind's hooks.
+/// grant, the approved list, the session's write denies, the hidden terminal
+/// histories, the hidden host sockets and the kind's hooks.
 /// With the codex lane it also allows the home-expanded forwarding wrapper
 /// path, which must not be committed in the project's `settings.json`.
 /// The config must pass `sandbox::validate_config` first. It never carries
@@ -96,6 +96,11 @@ pub(super) fn capsule_settings(inputs: &CapsuleInputs<'_>) -> Result<Value> {
     extend_strings(&mut settings, &deny_write, &denies.deny_write);
     extend_strings(&mut settings, &["permissions", "deny"], &denies.edit);
     let deny_read = ["sandbox", "filesystem", "denyRead"];
+    extend_strings(
+        &mut settings,
+        &deny_read,
+        &[history_dir_denial(inputs.state_root)?],
+    );
     extend_strings(&mut settings, &deny_read, inputs.hidden_sockets);
     settings["hooks"] = capsule_hooks(
         inputs.kind,
@@ -105,6 +110,20 @@ pub(super) fn capsule_settings(inputs: &CapsuleInputs<'_>) -> Result<Value> {
     );
     settings["hasTrustDialogAccepted"] = json!(true);
     Ok(settings)
+}
+
+/// The `denyRead` entry that hides the saved terminal histories
+/// (`tmux::history_dir`) from the session's Bash. A history holds what some
+/// stage's agent printed, and sessions share one user. The OS sandbox does not
+/// bind the native Read, Grep and Glob tools; `loom-hooks/credential-guard.sh`
+/// refuses those the directory for a session loom launched, and leaves the
+/// operator's own session free to read a transcript. Spelled like the state-root
+/// secrets beside it (`state_root::token_deny_paths`): the real state root, which
+/// the worktree's `.loom/work` symlink resolves to, with the `//` of an absolute
+/// path.
+fn history_dir_denial(state_root: &Path) -> Result<String> {
+    let dir = crate::orchestrator::terminal::tmux::history_dir(state_root);
+    Ok(format!("/{}", utf8(&dir)?))
 }
 
 /// The session's own scratch directory, writable in both layers: the OS

@@ -118,6 +118,8 @@ export const stageSummarySchema = z
     merge_resolver_session: z.string().optional(),
     merge_resolver_attempts: z.number().int().optional(),
     close_reason: z.string().optional(),
+    acceptance: z.array(z.string()).optional(),
+    terminal_history_session: z.string().optional(),
   })
   .strict();
 export const mergeSummarySchema = z.object({
@@ -155,11 +157,17 @@ export const statusDataSchema = z.object({
   plan_name: z.string().nullable(),
   quota: quotaSnapshotSchema,
 });
+export const alternativeSchema = z.object({
+  when: z.string(),
+  command: z.string(),
+});
 export const attentionSchema = z.object({
   id: z.string(),
   name: z.string(),
   label: z.string(),
   command: z.string().nullable(),
+  command_when: z.string().nullable(),
+  alternatives: z.array(alternativeSchema),
   note: z.string().nullable(),
   automatic: z.boolean(),
   failure_type: failureTypeSchema.nullable(),
@@ -195,6 +203,7 @@ export type StageStatus = z.infer<typeof stageStatusSchema>;
 export type StageSummary = z.infer<typeof stageSummarySchema>;
 export type StatusData = z.infer<typeof statusDataSchema>;
 export type Attention = z.infer<typeof attentionSchema>;
+export type Alternative = z.infer<typeof alternativeSchema>;
 export type Alert = z.infer<typeof alertSchema>;
 export type DaemonState = z.infer<typeof daemonStateSchema>;
 export type FailureType = z.infer<typeof failureTypeSchema>;

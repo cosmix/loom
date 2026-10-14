@@ -5,6 +5,7 @@ mod heartbeat_facts;
 mod merge_note;
 mod resolver;
 mod sanitize;
+mod stopped;
 mod timing;
 
 pub use collector::{collect_status_data, load_all_sessions};
@@ -194,10 +195,20 @@ pub struct StageSummary {
     /// `MergeBlocked` stage; `None` for every other stage.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merge_resolver_attempts: Option<u32>,
-    /// Why the stage was closed or blocked (`stage.close_reason`). Feeds the attention
-    /// note for an agent's `loom stage block`.
+    /// Why the stage was blocked (`stage.close_reason`). Feeds the attention
+    /// note for an agent's `loom stage block`. `None` for every other status.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub close_reason: Option<String>,
+    /// The commands of a blocked stage's acceptance criteria, in the order
+    /// `loom stage amend --index` counts them from 0. Empty for every other
+    /// stage.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub acceptance: Vec<String>,
+    /// Id of the newest ended tmux session of this stage that left a terminal
+    /// history file (`terminal-history/<id>.terminal`). The dashboard opens it read-only
+    /// once the stage has no live terminal.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub terminal_history_session: Option<String>,
 }
 
 impl StageSummary {

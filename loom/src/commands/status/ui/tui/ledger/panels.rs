@@ -6,22 +6,46 @@ use ratatui::{
     Frame,
 };
 
+use super::entries::entry_lines;
 use super::legend::LEGEND;
-use super::text::{self, cut_line, spans_width};
+use super::text::{cut_line, spans_width};
 use super::{quota, LedgerView};
-use crate::commands::status::render::attention_model::{
-    failure_label, human_review_choices, AttentionEntry,
-};
-use crate::commands::status::ui::theme::{StatusColors, Theme};
+use crate::commands::status::render::attention_model::AttentionEntry;
+use crate::commands::status::ui::theme::Theme;
 use crate::commands::status::ui::tui::state::TuiActivityLog;
 use crate::models::stage::StageStatus;
 
-/// Indent of the lines under an entry's header line.
-const DETAIL_INDENT: &str = "                       ";
-
 /// Render the needs-attention panel.
 pub fn render_attention(frame: &mut Frame, area: Rect, entries: &[AttentionEntry]) {
-    frame.render_widget(Paragraph::new(attention_lines(entries, area.width)), area);
+    let lines = fit_to_rows(
+        attention_lines(entries, area.width),
+        area.height,
+        area.width,
+    );
+    frame.render_widget(Paragraph::new(lines), area);
+}
+
+/// `lines` cut to `rows`. A panel the layout gave too few rows for its entries
+/// ends in a row counting the lines left out, so nothing goes missing unmarked.
+pub(super) fn fit_to_rows(
+    mut lines: Vec<Line<'static>>,
+    rows: u16,
+    width: u16,
+) -> Vec<Line<'static>> {
+    let rows = usize::from(rows);
+    if rows < 2 || lines.len() <= rows {
+        return lines;
+    }
+    let left_out = lines.len() - (rows - 1);
+    lines.truncate(rows - 1);
+    lines.push(cut_line(
+        Line::from(Span::styled(
+            format!(" … {left_out} more lines, `loom status` shows them all"),
+            Theme::dimmed(),
+        )),
+        width,
+    ));
+    lines
 }
 
 /// Render the activity panel.
@@ -119,101 +143,6 @@ pub fn footer_line(present: &[StageStatus], width: u16, scrollable: bool) -> Lin
     cut_line(Line::from(spans), width)
 }
 
-fn entry_lines(entry: &AttentionEntry, width: u16) -> Vec<Line<'static>> {
-    let status = entry_status(entry.label);
-    let detail = attention_detail(entry);
-    let mut spans = vec![
-        Span::raw(" "),
-        Span::styled(status.icon().to_owned(), status.tui_style()),
-        Span::raw(format!(" {} ", text::padded(&entry.id, 20))),
-        Span::styled(
-            entry.label.to_owned(),
-            status.tui_style().add_modifier(Modifier::BOLD),
-        ),
-    ];
-    if !detail.is_empty() {
-        spans.push(Span::raw(" · "));
-        spans.push(Span::raw(detail));
-    }
-    let mut lines = vec![cut_line(Line::from(spans), width)];
-    if let Some(evidence) = entry.evidence.first() {
-        lines.push(cut_line(
-            Line::from(Span::styled(
-                format!("{DETAIL_INDENT}{evidence}"),
-                Theme::dimmed(),
-            )),
-            width,
-        ));
-    }
-    lines.extend(guidance_line(entry, width));
-    if entry.has_human_review_choices {
-        lines.extend(
-            human_review_choices(&entry.id)
-                .into_iter()
-                .map(|(command, _)| command_line(command, Vec::new(), width)),
-        );
-    }
-    lines
-}
-
-/// `cleanup_warning` is already flattened to one line (and capped at
-/// `MAX_INLINE_CHARS`) by `context::untrusted::inline_safe` before it reaches
-/// a `StageSummary`, so it is used directly rather than split on newlines.
-fn attention_detail(entry: &AttentionEntry) -> String {
-    entry
-        .review_reason
-        .clone()
-        .or_else(|| {
-            entry
-                .failure_type
-                .as_ref()
-                .map(failure_label)
-                .map(str::to_owned)
-        })
-        .or_else(|| entry.cleanup_warning.clone())
-        .unwrap_or_default()
-}
-
-/// The entry's command, followed by its note, on one line; a note alone is
-/// prose, so it gets no command arrow. `None` when the entry has neither.
-fn guidance_line(entry: &AttentionEntry, width: u16) -> Option<Line<'static>> {
-    let note = entry
-        .note
-        .clone()
-        .map(|note| Span::styled(note, Theme::dimmed()));
-    let Some(command) = entry.command.clone() else {
-        return note.map(|note| cut_line(Line::from(vec![Span::raw(DETAIL_INDENT), note]), width));
-    };
-    let trailing = note.map_or_else(Vec::new, |note| {
-        vec![Span::styled(" · ", Theme::dimmed()), note]
-    });
-    Some(command_line(command, trailing, width))
-}
-
-/// `→ command` under the entry's detail, followed by `trailing` spans.
-fn command_line(command: String, trailing: Vec<Span<'static>>, width: u16) -> Line<'static> {
-    let mut spans = vec![
-        Span::styled(format!("{DETAIL_INDENT}→ "), Theme::dimmed()),
-        Span::styled(command, Style::default().fg(StatusColors::QUEUED)),
-    ];
-    spans.extend(trailing);
-    cut_line(Line::from(spans), width)
-}
-
-fn entry_status(label: &str) -> StageStatus {
-    match label {
-        "MERGE CONFLICT" => StageStatus::MergeConflict,
-        "ACCEPTANCE FAILED" => StageStatus::CompletedWithFailures,
-        "MERGE ERROR" | "MERGE BLOCKED" => StageStatus::MergeBlocked,
-        // Changes at risk read as the strongest state.
-        "STASH NOT RESTORED" => StageStatus::Blocked,
-        "NEEDS REVIEW" => StageStatus::NeedsHumanReview,
-        "NEEDS INPUT" => StageStatus::WaitingForInput,
-        "ADJUDICATING" => StageStatus::NeedsAdjudication,
-        _ => StageStatus::Blocked,
-    }
-}
-
 fn legend_entry(status: &StageStatus) -> Vec<Span<'static>> {
     vec![
         Span::styled(status.icon().to_owned(), status.tui_style()),
@@ -272,85 +201,8 @@ fn entries_width(entries: &[Vec<Span<'static>>]) -> usize {
 
 #[cfg(test)]
 mod tests {
-    use super::{attention_line_count, attention_lines, footer_line, AttentionEntry};
+    use super::footer_line;
     use crate::models::stage::StageStatus;
-
-    fn entry(label: &'static str, command: Option<&str>, note: Option<&str>) -> AttentionEntry {
-        AttentionEntry {
-            id: "stage-a".into(),
-            name: "Stage A".into(),
-            label,
-            command: command.map(str::to_owned),
-            note: note.map(str::to_owned),
-            automatic: false,
-            failure_type: None,
-            evidence: Vec::new(),
-            review_reason: None,
-            cleanup_warning: None,
-            has_human_review_choices: false,
-            dispute_count: None,
-            judge_heartbeat_secs: None,
-            completion_blocker: None,
-            outgoing_session_exit_reason: None,
-        }
-    }
-
-    fn rendered(entry: AttentionEntry) -> Vec<String> {
-        attention_lines(&[entry], 120)
-            .iter()
-            .map(ToString::to_string)
-            .collect()
-    }
-
-    #[test]
-    fn human_review_attention_lists_the_three_full_commands() {
-        let lines = rendered(AttentionEntry {
-            review_reason: Some("ambiguous result".into()),
-            has_human_review_choices: true,
-            ..entry("NEEDS REVIEW", None, None)
-        });
-        assert_eq!(lines.len(), 5, "{lines:#?}");
-        assert!(lines[2].ends_with("→ loom stage human-review stage-a --approve"));
-        assert!(lines[3].ends_with("→ loom stage human-review stage-a --force-complete"));
-        assert!(lines[4].ends_with("→ loom stage human-review stage-a --reject \"<reason>\""));
-    }
-
-    #[test]
-    fn entry_without_detail_omits_the_dangling_separator() {
-        let lines = rendered(entry("NEEDS INPUT", None, Some("answer it")));
-        assert!(lines[1].ends_with("NEEDS INPUT"));
-        assert!(!lines[1].contains(" · "));
-    }
-
-    #[test]
-    fn a_note_alone_has_no_command_arrow_and_follows_a_command() {
-        let note_only = rendered(entry("NEEDS INPUT", None, Some("answer it")));
-        assert_eq!(note_only[2].trim(), "answer it");
-        let both = rendered(entry(
-            "BLOCKED",
-            Some("loom stage retry stage-a --force"),
-            Some("retry limit reached (3/3)"),
-        ));
-        let expected = "→ loom stage retry stage-a --force · retry limit reached (3/3)";
-        assert!(both[2].ends_with(expected), "{both:#?}");
-    }
-
-    #[test]
-    fn line_count_is_the_rendered_entry_lines() {
-        let review = AttentionEntry {
-            has_human_review_choices: true,
-            ..entry("NEEDS REVIEW", None, None)
-        };
-        let blocked = entry("BLOCKED", Some("loom stage retry stage-a"), None);
-
-        assert_eq!(attention_line_count(&[review, blocked], 120), 6);
-    }
-
-    #[test]
-    fn an_entry_with_neither_command_nor_note_prints_no_empty_line() {
-        let lines = rendered(entry("NEEDS REVIEW", None, None));
-        assert_eq!(lines.len(), 2, "{lines:#?}");
-    }
 
     #[test]
     fn footer_only_lists_present_statuses_and_keeps_quit_hint() {

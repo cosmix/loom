@@ -1,7 +1,7 @@
 //! Spawn-abort tests for `tmux/mod.rs`, split from `tests.rs` to keep both
 //! modules under the 400-line ceiling (CLAUDE.md Rule 17).
 
-use super::socket::tests::TmuxTmpDirGuard;
+use super::socket::tests::{TmuxServerGuard, TmuxTmpDirGuard};
 use super::*;
 use crate::models::session::SessionType;
 use crate::models::stage::Stage;
@@ -325,13 +325,13 @@ fn a_failed_spawn_aborts_and_leaves_no_pid_file_for_the_native_retry_to_adopt() 
     std::fs::create_dir_all(work.path().join("pids")).unwrap();
     let pid_file = work.path().join("pids").join(format!("{pid_key}.pid"));
     std::fs::write(&pid_file, "424242\n").unwrap();
-
     let worktree = Worktree::new(
         stage.id.clone(),
         work.path().to_path_buf(),
         format!("loom/{}", stage.id),
     );
     let socket = socket_name(&session);
+    let _server = TmuxServerGuard::new(&socket); // a root runner starts a real server; end it
     let signal = work.path().join("signal.md");
     let err = TmuxBackend::new(work.path().to_path_buf())
         .spawn_session(SessionType::Stage, &stage, &worktree, session, &signal)

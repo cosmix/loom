@@ -97,6 +97,13 @@ const LOOM_DIR: &str = ".loom";
 const WORK_DIR: &str = "work";
 /// The pre-move spelling of the state root, directly under the project root.
 const LEGACY_WORK_DIR: &str = ".work";
+/// The state root's private subdirectories. `terminal-history` exists from the start: every
+/// session capsule denies reading it, and the sandbox skips a deny whose path is missing.
+#[rustfmt::skip]
+const STATE_SUBDIRS: [&str; 11] = [
+    "signals", "handoffs", "archive", "stages", "sessions", "crashes", "memory",
+    "wrappers", "pids", "logs", "terminal-history",
+];
 
 /// Which on-disk spelling a resolved workspace uses.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -208,13 +215,7 @@ impl WorkDir {
     /// so `adopt_existing()` can call it against a state root that already
     /// holds some (but not all) of this layout.
     fn ensure_layout(&self) -> Result<()> {
-        // Session wrappers, PID files, captured stderr and the memory journal live here.
-        let subdirs = [
-            "signals", "handoffs", "archive", "stages", "sessions", "crashes", "memory",
-            "wrappers", "pids", "logs",
-        ];
-
-        for subdir in &subdirs {
+        for subdir in &STATE_SUBDIRS {
             let path = self.root.join(subdir);
             if path.exists() {
                 continue;
@@ -256,12 +257,7 @@ impl WorkDir {
     }
 
     fn validate_structure(&self) -> Result<()> {
-        let required_dirs = [
-            "signals", "handoffs", "archive", "stages", "sessions", "crashes", "memory",
-            "wrappers", "pids", "logs",
-        ];
-
-        for dir in &required_dirs {
+        for dir in &STATE_SUBDIRS {
             let path = self.root.join(dir);
             if !path.exists() {
                 // Auto-create missing directories instead of failing, at the

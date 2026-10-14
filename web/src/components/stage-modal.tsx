@@ -6,14 +6,15 @@ import { Link, useSearchParams } from "react-router";
 
 import type { StageSummary } from "@/api/schema";
 import { HazardHeader } from "@/aurora-ui/feedback/HazardPanel";
-import { AttentionBody, attentionCounts, attentionHazard } from "@/components/attention-panel";
+import { OperatorGuidance, attentionCounts, attentionHazard } from "@/components/attention-panel";
 import { CopyCommand } from "@/components/copy-command";
 import { StageSummaryText } from "@/components/stage-detail";
 import { StateLine, ThreadRows } from "@/components/stage-heading";
 import { stageHref } from "@/components/stage-href";
 import { StageSectionGrid } from "@/components/stage-sections";
 import { toneClass } from "@/components/state-badge";
-import { TerminalMark, terminalGate } from "@/components/terminal/terminal-glyph";
+import { HistoryView } from "@/components/terminal/history-view";
+import { TerminalMark, terminalGate, terminalHistory } from "@/components/terminal/terminal-glyph";
 import {
   IDLE_FRAME,
   TerminalFrameContext,
@@ -30,6 +31,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
+import type { HistoryLoader } from "@/api/terminal-history";
 import { stateMeta } from "@/lib/format";
 import { attentionAtom, orderedStagesAtom, selectStage, snapshotAtom } from "@/state/atoms";
 
@@ -83,9 +85,16 @@ function isTyping(target: EventTarget | null): boolean {
 export interface StageModalProps {
   terminalFactory?: EmulatorFactory;
   terminalDeps?: TerminalDeps;
+  historyFactory?: EmulatorFactory;
+  historyLoader?: HistoryLoader;
 }
 
-export function StageModal({ terminalFactory, terminalDeps }: StageModalProps = {}) {
+export function StageModal({
+  terminalFactory,
+  terminalDeps,
+  historyFactory,
+  historyLoader,
+}: StageModalProps = {}) {
   const [params, setParams] = useSearchParams();
   const id = params.get(STAGE_PARAM);
   const terminal = params.get(STAGE_VIEW_PARAM) === TERMINAL_VIEW;
@@ -95,6 +104,7 @@ export function StageModal({ terminalFactory, terminalDeps }: StageModalProps = 
   const stage = id === null ? undefined : selectStage(snapshot, id);
   const terminalsEnabled = snapshot?.terminals ?? false;
   const gate = stage === undefined ? null : terminalGate(terminalsEnabled, stage);
+  const history = stage === undefined ? null : terminalHistory(terminalsEnabled, stage);
   const nativeBackend =
     stage !== undefined && terminalsEnabled && stage.session_backend === "native";
   const showTerminal = terminal && stage !== undefined;
@@ -118,7 +128,8 @@ export function StageModal({ terminalFactory, terminalDeps }: StageModalProps = 
   };
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (showTerminal || event.key !== "t" || event.altKey || event.ctrlKey || event.metaKey) return;
-    if (isTyping(event.target) || stage === undefined || gate !== null) return;
+    if (isTyping(event.target) || stage === undefined) return;
+    if (gate !== null && history === null) return;
     event.preventDefault();
     openTerminal(stage.id);
   };
@@ -150,9 +161,24 @@ export function StageModal({ terminalFactory, terminalDeps }: StageModalProps = 
       >
         {id !== null && stage === undefined && <Missing id={id} />}
         {stage && !terminal && (
-          <Body stage={stage} gate={gate} nativeBackend={nativeBackend} onTerminal={openTerminal} />
+          <Body
+            stage={stage}
+            gate={gate}
+            history={history}
+            nativeBackend={nativeBackend}
+            onTerminal={openTerminal}
+          />
         )}
-        {stage && terminal && (
+        {stage && terminal && history !== null && (
+          <HistoryView
+            stage={stage}
+            session={history}
+            frame="dialog"
+            factory={historyFactory}
+            load={historyLoader}
+          />
+        )}
+        {stage && terminal && history === null && (
           <TerminalFrameContext.Provider value={setFrame}>
             <TerminalView
               stage={stage}
@@ -170,11 +196,13 @@ export function StageModal({ terminalFactory, terminalDeps }: StageModalProps = 
 function Body({
   stage,
   gate,
+  history,
   nativeBackend,
   onTerminal,
 }: {
   stage: StageSummary;
   gate: string | null;
+  history: string | null;
   nativeBackend: boolean;
   onTerminal: (id: string) => void;
 }) {
@@ -204,7 +232,8 @@ function Body({
             <span className="font-mono text-sm text-muted-foreground">{stage.id}</span>
           </div>
           <TerminalButton
-            reason={gate}
+            reason={history === null ? gate : null}
+            history={history !== null}
             nativeBackend={nativeBackend}
             onOpen={() => onTerminal(stage.id)}
           />
@@ -217,14 +246,7 @@ function Body({
       </DialogHeader>
       <div className="max-h-[62dvh] overflow-y-auto p-5">
         <div className="flex flex-col gap-4">
-          {attention && (
-            <div className="flex flex-col gap-2.5 rounded-lg border border-hairline bg-card p-4 text-sm">
-              <h2 className="eyebrow">
-                {attention.automatic ? "what loom is doing" : "what to do"}
-              </h2>
-              <AttentionBody entry={attention} />
-            </div>
-          )}
+          {attention && <OperatorGuidance entry={attention} />}
           <StageSectionGrid stage={stage} level={level} />
         </div>
       </div>
@@ -247,10 +269,12 @@ function Body({
 /// The primary way into the terminal.
 function TerminalButton({
   reason,
+  history,
   nativeBackend,
   onOpen,
 }: {
   reason: string | null;
+  history: boolean;
   nativeBackend: boolean;
   onOpen: () => void;
 }) {
@@ -262,11 +286,13 @@ function TerminalButton({
         size="sm"
         disabled={reason !== null}
         onClick={onOpen}
-        aria-label="open terminal"
-        title={reason ?? undefined}
+        aria-label={history ? "open terminal history" : "open terminal"}
+        title={
+          history ? "The session ended; its saved screen opens read-only" : (reason ?? undefined)
+        }
       >
         <TerminalMark className="size-3.5" />
-        Terminal
+        {history ? "Terminal history" : "Terminal"}
         <Kbd className="h-4 min-w-4 px-1 text-[10px]">t</Kbd>
       </Button>
       {nativeBackend && <CopyCommand command="loom run --backend tmux" />}

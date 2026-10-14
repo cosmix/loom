@@ -29,6 +29,7 @@ describe("stage levels", () => {
       "knowledge-bootstrap",
       "client",
       "docs",
+      "local-runtime",
       "merge-gate",
       "server",
       "design",

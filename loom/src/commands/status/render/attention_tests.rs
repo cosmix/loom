@@ -51,6 +51,8 @@ fn make_stage_summary(id: &str, status: StageStatus) -> StageSummary {
         merge_resolver_session: None,
         merge_resolver_attempts: None,
         close_reason: None,
+        acceptance: vec![],
+        terminal_history_session: None,
     }
 }
 
@@ -280,3 +282,94 @@ fn completion_blockers_render_recovery_details_and_distinct_exit_reasons() {
         "output: {output}"
     );
 }
+
+fn guidance_output(stage: StageSummary, width: usize) -> String {
+    let entry = attention_entries(&[stage]).remove(0);
+    let mut output = Vec::new();
+    write_guidance(&mut output, &entry, width).unwrap();
+    String::from_utf8(output).unwrap()
+}
+
+const LONG_REASON: &str = "Criterion 5 (stack:ephemeral --with objectstore) cannot pass in this \
+    sandbox: it denies AF_UNIX socket creation everywhere, and SeaweedFS 4.48 weed filer/s3 \
+    always open a unix socket.\nNeeded: run criterion 5 with unix sockets allowed or outside the \
+    sandbox.";
+
+#[test]
+fn a_long_block_reason_prints_whole_and_wrapped_under_its_label() {
+    let mut stage = make_stage_summary("local-runtime", StageStatus::Blocked);
+    stage.close_reason = Some(LONG_REASON.to_string());
+
+    let output = guidance_output(stage, 60);
+
+    let note: Vec<&str> = output
+        .lines()
+        .take_while(|line| !line.trim_start().starts_with("Once"))
+        .collect();
+    assert!(
+        note.len() > 3,
+        "the reason wraps onto several lines: {output}"
+    );
+    assert!(note[0].starts_with("    Note: blocked by the stage agent: Criterion 5"));
+    for line in &note {
+        assert!(line.chars().count() <= 60, "{line:?}");
+    }
+    for continuation in &note[1..] {
+        assert!(continuation.starts_with("          "), "{continuation:?}");
+    }
+    let printed: Vec<&str> = note
+        .iter()
+        .flat_map(|line| line.split_whitespace())
+        .collect();
+    let expected = format!("Note: blocked by the stage agent: {LONG_REASON}");
+    assert_eq!(printed, expected.split_whitespace().collect::<Vec<_>>());
+}
+
+#[test]
+fn a_block_prints_the_note_then_the_retry_then_the_alternatives() {
+    let mut stage = make_stage_summary("local-runtime", StageStatus::Blocked);
+    stage.close_reason = Some("needs the unsandboxed run".to_string());
+
+    let output = guidance_output(stage, 200);
+
+    let lines: Vec<&str> = output.lines().collect();
+    assert_eq!(
+        lines[0],
+        "    Note: blocked by the stage agent: needs the unsandboxed run"
+    );
+    assert!(lines[1].starts_with("    Once you have done what the reason asks"));
+    assert_eq!(
+        lines[2],
+        "      loom stage retry local-runtime --context \"<what you did and what it showed>\""
+    );
+    assert!(lines[3].starts_with("    If the reason is an acceptance criterion"));
+    assert!(lines[3].contains("find the criterion's index in the acceptance list"));
+    assert!(
+        lines[4].starts_with("      loom stage amend local-runtime --field acceptance --op delete")
+    );
+    assert!(lines[6].contains("--op replace"));
+    assert!(lines[7].starts_with("    If you give up on the stage"));
+    assert_eq!(lines[8], "      loom stage skip local-runtime");
+    assert!(
+        !output.contains("Run:"),
+        "no plain retry is offered: {output}"
+    );
+}
+
+#[test]
+fn a_plain_command_keeps_its_run_line() {
+    let mut stage = make_stage_summary("server", StageStatus::Blocked);
+    stage.failure_info = Some(FailureInfo {
+        failure_type: FailureType::TestFailure,
+        detected_at: Utc::now(),
+        evidence: vec![],
+    });
+
+    assert_eq!(
+        guidance_output(stage, 80),
+        "    Run: loom stage retry server\n"
+    );
+}
+
+#[path = "attention_acceptance_tests.rs"]
+mod acceptance_tests;

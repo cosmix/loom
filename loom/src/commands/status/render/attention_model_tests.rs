@@ -5,6 +5,8 @@ use crate::commands::status::data::{
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::StageStatus;
 
+#[path = "blocked_guidance_tests.rs"]
+mod blocked_guidance_tests;
 #[path = "attention_model_guidance_tests.rs"]
 mod guidance_tests;
 
@@ -52,6 +54,8 @@ fn make_stage_summary(id: &str, status: StageStatus) -> StageSummary {
         merge_resolver_session: None,
         merge_resolver_attempts: None,
         close_reason: None,
+        acceptance: vec![],
+        terminal_history_session: None,
     }
 }
 

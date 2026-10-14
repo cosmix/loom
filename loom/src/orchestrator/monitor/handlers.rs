@@ -68,6 +68,15 @@ impl Handlers {
         }
     }
 
+    /// Release what a session whose process is gone still holds, such as the
+    /// tmux server that kept its last screen. A no-op without a liveness
+    /// service (test-only construction).
+    pub fn release_ended_session(&self, session: &Session) {
+        if let Some(liveness) = self.liveness.as_ref() {
+            liveness.release_ended(session);
+        }
+    }
+
     /// Check if a session is a merge session (has a merge signal file)
     pub fn is_merge_session(&self, session_id: &str) -> bool {
         matches!(

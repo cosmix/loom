@@ -3,6 +3,8 @@
 //! This module decides which stages need a human and the recovery information
 //! to show, leaving each renderer responsible only for presentation.
 
+use serde::{Deserialize, Serialize};
+
 use crate::commands::status::data::{
     ActivityStatus, CompletionBlockerState, CompletionBlockerSummary, StageSummary,
 };
@@ -10,7 +12,8 @@ use crate::models::failure::FailureType;
 use crate::models::session::{SessionBackendKind, SessionExitReason, SessionType};
 use crate::models::stage::{StageStatus, StageType};
 use crate::orchestrator::core::MAX_MERGE_RESOLVER_ATTEMPTS;
-use crate::orchestrator::retry::should_auto_retry;
+
+use super::blocked_guidance::{blocked_guidance, retry_guidance};
 
 /// Display-ready information for one stage that needs human attention.
 #[derive(Debug, Clone)]
@@ -21,6 +24,14 @@ pub struct AttentionEntry {
     /// A shell command the operator should run. `None` when no single command
     /// applies or loom is handling the state.
     pub command: Option<String>,
+    /// When to run `command`, phrased to follow "Once ": set when the command
+    /// is the step after something else the operator must do first.
+    pub command_when: Option<String>,
+    /// Other commands for other situations, in the order to offer them.
+    pub alternatives: Vec<Alternative>,
+    /// The acceptance criteria the entry offers to drop or replace, in the order
+    /// `loom stage amend --index` counts them from 0. Empty when it offers none.
+    pub acceptance: Vec<String>,
     /// What loom is doing, or what the operator should do when no single
     /// command fits. Prose, never a command meant for copying.
     pub note: Option<String>,
@@ -37,17 +48,39 @@ pub struct AttentionEntry {
     pub outgoing_session_exit_reason: Option<SessionExitReason>,
 }
 
-/// The `command`, `note` and `automatic` triple of an [`AttentionEntry`].
+/// A command for a situation other than the one the entry's primary
+/// `command` is for.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Alternative {
+    /// The situation, phrased to follow "If ".
+    pub when: String,
+    /// The command to run in that situation.
+    pub command: String,
+}
+
+impl Alternative {
+    pub(super) fn new(when: impl Into<String>, command: impl Into<String>) -> Self {
+        Self {
+            when: when.into(),
+            command: command.into(),
+        }
+    }
+}
+
+/// The guidance fields of an [`AttentionEntry`].
 #[derive(Default)]
-struct Guidance {
-    command: Option<String>,
-    note: Option<String>,
-    automatic: bool,
+pub(super) struct Guidance {
+    pub(super) command: Option<String>,
+    pub(super) command_when: Option<String>,
+    pub(super) alternatives: Vec<Alternative>,
+    pub(super) acceptance: Vec<String>,
+    pub(super) note: Option<String>,
+    pub(super) automatic: bool,
 }
 
 impl Guidance {
     /// The operator should run `command`.
-    fn run(command: impl Into<String>) -> Self {
+    pub(super) fn run(command: impl Into<String>) -> Self {
         Self {
             command: Some(command.into()),
             ..Self::default()
@@ -55,7 +88,7 @@ impl Guidance {
     }
 
     /// The operator should act as `note` says; no single command fits.
-    fn manual(note: impl Into<String>) -> Self {
+    pub(super) fn manual(note: impl Into<String>) -> Self {
         Self {
             note: Some(note.into()),
             ..Self::default()
@@ -63,7 +96,7 @@ impl Guidance {
     }
 
     /// Loom is handling the state as `note` says.
-    fn automatic(note: impl Into<String>) -> Self {
+    pub(super) fn automatic(note: impl Into<String>) -> Self {
         Self {
             automatic: true,
             ..Self::manual(note)
@@ -82,6 +115,9 @@ impl AttentionEntry {
             name: stage.name.clone(),
             label,
             command: guidance.command,
+            command_when: guidance.command_when,
+            alternatives: guidance.alternatives,
+            acceptance: guidance.acceptance,
             note: guidance.note,
             automatic: guidance.automatic,
             failure_type: None,
@@ -290,45 +326,6 @@ fn merge_block_guidance(sentence: &str) -> Guidance {
     Guidance::automatic(format!(
         "{sentence}; loom retries the merge automatically once that changes"
     ))
-}
-
-/// A crash or timeout under the retry limit is requeued by the daemon once its
-/// backoff elapses; any other failure waits for `loom stage retry`.
-fn blocked_guidance(stage: &StageSummary) -> Guidance {
-    let max = retry_limit(stage);
-    match (stage.failure_info.as_ref(), stage.close_reason.as_deref()) {
-        (Some(failure), _) if should_auto_retry(&failure.failure_type, stage.retry_count, max) => {
-            Guidance::automatic(format!(
-                "auto-retry {} of {max} pending after a {}",
-                stage.retry_count + 1,
-                failure_label(&failure.failure_type)
-            ))
-        }
-        // Every block writer clears `failure_info`, so a reason without one is a
-        // deliberate block: the stage agent's, or the operator's own.
-        (None, Some(reason)) => Guidance {
-            note: Some(format!("blocked: {reason}")),
-            ..retry_guidance(stage)
-        },
-        _ => retry_guidance(stage),
-    }
-}
-
-/// `loom stage retry` refuses a stage at its retry limit unless forced.
-fn retry_guidance(stage: &StageSummary) -> Guidance {
-    let max = retry_limit(stage);
-    if stage.retry_count < max {
-        return Guidance::run(format!("loom stage retry {}", stage.id));
-    }
-    Guidance {
-        note: Some(format!("retry limit reached ({}/{max})", stage.retry_count)),
-        ..Guidance::run(format!("loom stage retry {} --force", stage.id))
-    }
-}
-
-/// The stage's retry limit, with the default the daemon and `loom stage retry` apply.
-fn retry_limit(stage: &StageSummary) -> u32 {
-    stage.max_retries.unwrap_or(3)
 }
 
 /// A `Standard` stage in the contract-writer phase: an `Executing` stage

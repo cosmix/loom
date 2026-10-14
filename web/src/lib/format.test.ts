@@ -447,7 +447,7 @@ describe("TUI formatter ports", () => {
       executing: 1,
       queued: 0,
       waiting: 2,
-      attention: 4,
+      attention: 5,
       done: 1,
     });
   });

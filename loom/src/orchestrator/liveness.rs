@@ -54,4 +54,16 @@ impl LivenessService {
             LivenessSource::Fixed(v) => Ok(*v),
         }
     }
+
+    /// Release what a session whose process is gone still holds (see
+    /// [`SessionBackend::release_ended_session`]). Best-effort: a failure is
+    /// logged, because the session is already recorded as ended.
+    pub fn release_ended(&self, session: &Session) {
+        let LivenessSource::Backend(backend) = &self.source else {
+            return;
+        };
+        if let Err(error) = backend.release_ended_session(session) {
+            tracing::warn!(session_id = %session.id, %error, "Failed to release an ended session");
+        }
+    }
 }

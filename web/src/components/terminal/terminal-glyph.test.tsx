@@ -8,7 +8,7 @@ import fixtureJson from "@/api/fixtures/snapshot.json";
 import { snapshotSchema, type Snapshot, type StageSummary } from "@/api/schema";
 import { LedgerRow } from "@/components/ledger-row";
 import { useOpenTerminal } from "@/components/stage-modal";
-import { TerminalGlyph, terminalGate } from "@/components/terminal/terminal-glyph";
+import { TerminalGlyph, terminalGate, terminalHistory } from "@/components/terminal/terminal-glyph";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { routes } from "@/router";
 import { applySnapshot } from "@/state/apply";
@@ -143,5 +143,31 @@ describe("terminal glyph", () => {
     expect(terminalGate(true, terminalStage({ session_backend: "native" }))).toContain(
       "--backend tmux",
     );
+  });
+
+  describe("terminalHistory", () => {
+    const ended = (overrides: Partial<StageSummary> = {}) =>
+      terminalStage({
+        session_alive: false,
+        terminal_history_session: "session-ab12cd34-1700000000",
+        ...overrides,
+      });
+
+    it("names the ended session when no live terminal can open", () => {
+      expect(terminalHistory(true, ended())).toBe("session-ab12cd34-1700000000");
+    });
+
+    it("yields to a live terminal", () => {
+      expect(terminalHistory(true, ended({ session_alive: true }))).toBeNull();
+    });
+
+    it("needs the dashboard started with --terminals", () => {
+      expect(terminalHistory(false, ended())).toBeNull();
+    });
+
+    it("is absent when the stage left no history or runs in a native window", () => {
+      expect(terminalHistory(true, ended({ terminal_history_session: undefined }))).toBeNull();
+      expect(terminalHistory(true, ended({ session_backend: "native" }))).toBeNull();
+    });
   });
 });

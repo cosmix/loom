@@ -146,7 +146,7 @@ describe("notifiableEvents", () => {
       {
         key: RUN_FINISHED_KEY,
         title: "loom — run finished",
-        body: `${next.status.plan_name ?? "the run"} finished; 8 stages merged`,
+        body: `${next.status.plan_name ?? "the run"} finished; 9 stages merged`,
       },
     ]);
   });
@@ -230,7 +230,7 @@ describe("notifiableEvents", () => {
       {
         key: RUN_FINISHED_KEY,
         title: "loom — run finished",
-        body: `${next.status.plan_name ?? "the run"} finished; 7 stages merged`,
+        body: `${next.status.plan_name ?? "the run"} finished; 8 stages merged`,
       },
     ]);
   });

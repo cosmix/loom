@@ -285,6 +285,18 @@ fn the_state_root_grants_are_resolved_and_the_tokens_denied() {
 }
 
 #[test]
+fn every_capsule_hides_the_saved_terminal_histories() {
+    for (label, settings) in every_capsule() {
+        assert_has(
+            &settings,
+            "/sandbox/filesystem/denyRead",
+            "//repo/.loom/work/terminal-history",
+            &label,
+        );
+    }
+}
+
+#[test]
 fn no_capsule_grants_a_handoff_edit_in_any_spelling() {
     for (label, settings) in every_capsule() {
         let allow = strings(&settings, "/permissions/allow");

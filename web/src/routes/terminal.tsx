@@ -2,7 +2,10 @@ import { useAtomValue } from "jotai/react";
 import { ArrowLeftIcon } from "lucide-react";
 import { Link, useParams } from "react-router";
 
+import type { HistoryLoader } from "@/api/terminal-history";
 import { stageHref } from "@/components/stage-href";
+import { HistoryView } from "@/components/terminal/history-view";
+import { terminalHistory } from "@/components/terminal/terminal-glyph";
 import { TerminalView } from "@/components/terminal/terminal-view";
 import type { EmulatorFactory, TerminalDeps } from "@/components/terminal/use-terminal";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -14,15 +17,23 @@ import { selectStage, snapshotAtom } from "@/state/atoms";
 export interface TerminalPageProps {
   factory?: EmulatorFactory;
   deps?: TerminalDeps;
+  historyFactory?: EmulatorFactory;
+  historyLoader?: HistoryLoader;
 }
 
-export function TerminalPage({ factory, deps }: TerminalPageProps = {}) {
+export function TerminalPage({
+  factory,
+  deps,
+  historyFactory,
+  historyLoader,
+}: TerminalPageProps = {}) {
   const { stageId = "" } = useParams<{ stageId: string }>();
   const snapshot = useAtomValue(snapshotAtom);
 
   if (snapshot === null) return <TerminalSkeleton />;
   const stage = selectStage(snapshot, stageId);
   if (stage === undefined) return <NotFound id={stageId} />;
+  const history = terminalHistory(snapshot.terminals, stage);
 
   return (
     <article className="mx-auto flex min-h-0 w-full max-w-[1440px] flex-1 flex-col gap-3 px-4 py-5 sm:px-6">
@@ -34,7 +45,17 @@ export function TerminalPage({ factory, deps }: TerminalPageProps = {}) {
         stage
       </Link>
       <div className="min-h-0 flex-1 overflow-hidden rounded-xl bg-popover text-sm ring-1 ring-foreground/10">
-        <TerminalView stage={stage} frame="page" factory={factory} deps={deps} />
+        {history === null ? (
+          <TerminalView stage={stage} frame="page" factory={factory} deps={deps} />
+        ) : (
+          <HistoryView
+            stage={stage}
+            session={history}
+            frame="page"
+            factory={historyFactory}
+            load={historyLoader}
+          />
+        )}
       </div>
     </article>
   );

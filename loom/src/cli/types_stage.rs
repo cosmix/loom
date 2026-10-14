@@ -164,7 +164,8 @@ pub enum StageCommands {
         #[arg(long)]
         force: bool,
 
-        /// Recovery context message (triggers recovery signal generation)
+        /// Recovery context message (triggers recovery signal generation). How an
+        /// operator answers a stage that blocked itself: the next session reads it first.
         #[arg(long)]
         context: Option<String>,
     },

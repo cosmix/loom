@@ -148,3 +148,59 @@ describe("AttentionPanel", () => {
     expect(screen.queryByRole("region", { name: "needs attention" })).toBeNull();
   });
 });
+
+describe("a deliberate block", () => {
+  const entry = () => fixtureEntry("local-runtime");
+  const reason = () => {
+    const note = entry().note;
+    if (!note) throw new Error("the fixture block has no note");
+    return note;
+  };
+
+  it("shows the whole reason, command included, wrapped and never clamped", () => {
+    render(<AttentionBody entry={entry()} />);
+
+    const note = screen.getByText(
+      (_, element) => element?.tagName === "P" && element.textContent === reason(),
+    );
+    expect(note.textContent).toContain(
+      "From the worktree root run: TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore",
+    );
+    expect(note.textContent).toContain("Or allow AF_UNIX for this stage.");
+    expect(note.className).toContain("whitespace-pre-wrap");
+    expect(note.className).toContain("break-words");
+    expect(note.className).not.toMatch(/truncate|line-clamp|text-ellipsis/);
+  });
+
+  it("introduces the retry as the step after the reason and lists the other ways out", () => {
+    render(<AttentionBody entry={entry()} />);
+
+    expect(screen.getByText(/^Once you have done what the reason asks/)).toBeTruthy();
+    const options = within(screen.getByRole("list", { name: "other options" }));
+    expect(options.getAllByRole("listitem")).toHaveLength(3);
+    expect(options.getByText(/^If the reason is an acceptance criterion/).textContent).toContain(
+      "find the criterion's index in the acceptance list",
+    );
+    expect(options.getByText(/^If you give up on the stage/)).toBeTruthy();
+  });
+
+  it("gives the retry and each alternative its own copy button", () => {
+    render(<AttentionBody entry={entry()} />);
+
+    expect(
+      screen.getAllByRole("button").map((button) => button.getAttribute("aria-label")),
+    ).toEqual([
+      'copy loom stage retry local-runtime --context "<what you did and what it showed>"',
+      "copy loom stage amend local-runtime --field acceptance --op delete --index <n>",
+      'copy loom stage amend local-runtime --field acceptance --op replace --index <n> --value "<new command>"',
+      "copy loom stage skip local-runtime",
+    ]);
+  });
+
+  it("leaves out the option list and the introduction when an entry has none", () => {
+    render(<AttentionBody entry={fixtureEntry("client")} />);
+
+    expect(screen.queryByRole("list", { name: "other options" })).toBeNull();
+    expect(screen.queryByText(/^Once /)).toBeNull();
+  });
+});

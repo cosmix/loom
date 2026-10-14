@@ -17,8 +17,12 @@ use super::heartbeat_facts::heartbeat_facts;
 use super::merge_note::{merge_block_text, stash_warning};
 use super::resolver::{merge_resolver_facts, speaking_for};
 use super::sanitize::sanitize_stage_summary;
+use super::stopped::{blocked_acceptance, blocked_close_reason, terminal_history_session};
 use super::timing::{elapsed_secs_live, execution_secs_live};
-use super::{execution_models_for_stage, MergeSummary, ProgressSummary, StageSummary, StatusData};
+use super::{
+    execution_models_for_stage, CompletionBlockerSummary, MergeSummary, ProgressSummary,
+    SessionExitReason, StageSummary, StatusData,
+};
 
 #[cfg(test)]
 use super::SessionSummary;
@@ -136,6 +140,8 @@ struct SessionFacts<'a> {
     session_alive: bool,
     merge_resolver_session: Option<String>,
     merge_resolver_attempts: Option<u32>,
+    /// The assigned session's exit reason and the stage's completion blocker.
+    completion_view: (Option<SessionExitReason>, Option<CompletionBlockerSummary>),
 }
 
 fn session_facts<'a>(
@@ -172,6 +178,7 @@ fn session_facts<'a>(
         session_alive,
         merge_resolver_session,
         merge_resolver_attempts,
+        completion_view: collect_completion_view(stage, assigned, work_dir),
     }
 }
 
@@ -191,12 +198,10 @@ fn resolved_model(stage: &Stage, work_dir: &WorkDir) -> String {
     .0
 }
 
-/// Build a StageSummary from a Stage and optional associated Session. `view`
-/// is (outgoing session exit reason, completion blocker).
+/// Build a StageSummary from a Stage and optional associated Session.
 fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) -> StageSummary {
     let (facts, now) = (session_facts(stage, sessions, work_dir), Utc::now());
     let heartbeat = heartbeat_facts(stage, facts.session, work_dir);
-    let view = collect_completion_view(stage, assigned_session(stage, sessions), work_dir);
     StageSummary {
         id: stage.id.clone(),
         name: stage.name.clone(),
@@ -235,11 +240,13 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         dispute_count: stage.dispute_count,
         judge_heartbeat_secs: heartbeat.judge_heartbeat_secs,
         session_backend: facts.session.map(|s| s.backend),
-        outgoing_session_exit_reason: view.0,
-        completion_blocker: view.1,
+        outgoing_session_exit_reason: facts.completion_view.0,
+        completion_blocker: facts.completion_view.1,
         merge_resolver_session: facts.merge_resolver_session,
         merge_resolver_attempts: facts.merge_resolver_attempts,
-        close_reason: stage.close_reason.clone(),
+        close_reason: blocked_close_reason(stage),
+        acceptance: blocked_acceptance(stage),
+        terminal_history_session: terminal_history_session(stage, sessions, work_dir),
     }
 }
 

@@ -6,6 +6,7 @@ use std::io::Write;
 use crate::commands::status::data::StageSummary;
 
 use super::attention_model::{attention_entries, human_review_choices, AttentionEntry};
+use super::wrap::wrap_text;
 
 /// Render detailed failure information for blocked stages. The status line,
 /// ID, `Reason:`, and the entry's guidance always render for a problem stage;
@@ -32,33 +33,136 @@ pub fn render_attention<W: Write>(
     Ok(())
 }
 
-/// The entry's command, its note, and, for a stage stopped for a human, the
-/// three full review commands. Prints nothing for a part the entry lacks.
+/// Columns assumed when the terminal's width cannot be read (output piped to a
+/// file, for one).
+const FALLBACK_WIDTH: usize = 100;
+
+/// Narrowest text column a wrapped note gets, however narrow the terminal.
+const MIN_TEXT_WIDTH: usize = 20;
+
+/// Indent of every guidance line under an entry's header.
+const INDENT: &str = "    ";
+
+/// Indent of a command that sits on a line of its own under its introduction.
+const COMMAND_INDENT: &str = "      ";
+
+fn terminal_width() -> usize {
+    crossterm::terminal::size().map_or(FALLBACK_WIDTH, |(columns, _)| usize::from(columns))
+}
+
 fn render_guidance<W: Write>(w: &mut W, entry: &AttentionEntry) -> std::io::Result<()> {
-    if let Some(command) = entry.command.as_deref() {
-        writeln!(w, "    {}: {}", "Run".cyan(), command.dimmed())?;
-    }
+    write_guidance(w, entry, terminal_width())
+}
+
+/// The entry's note, wrapped to `width` whole, then its command, then its
+/// alternatives, and, for a stage stopped for a human, the three full review
+/// commands. Prints nothing for a part the entry lacks.
+///
+/// A command that follows an introduction goes on a line of its own, unwrapped,
+/// so it can be copied from the terminal as it is.
+fn write_guidance<W: Write>(
+    w: &mut W,
+    entry: &AttentionEntry,
+    width: usize,
+) -> std::io::Result<()> {
     if let Some(note) = entry.note.as_deref() {
-        writeln!(w, "    {}: {}", "Note".cyan(), note.dimmed())?;
+        write_wrapped(w, "Note", note, width)?;
     }
+    match (entry.command.as_deref(), entry.command_when.as_deref()) {
+        (Some(command), Some(when)) => write_step(w, &format!("Once {when}"), command, width)?,
+        (Some(command), None) => writeln!(w, "{INDENT}{}: {}", "Run".cyan(), command.dimmed())?,
+        (None, _) => {}
+    }
+    for alternative in &entry.alternatives {
+        let when = format!("If {}", alternative.when);
+        write_step(w, &when, &alternative.command, width)?;
+    }
+    write_acceptance(w, &entry.acceptance, width)?;
     if !entry.has_human_review_choices {
         return Ok(());
     }
     let choices = human_review_choices(&entry.id);
-    let width = choices
+    let command_width = choices
         .iter()
         .map(|(command, _)| command.len())
         .max()
         .unwrap_or(0);
-    writeln!(w, "    {}:", "Run one of".cyan())?;
+    writeln!(w, "{INDENT}{}:", "Run one of".cyan())?;
     for (command, description) in choices {
         writeln!(
             w,
-            "      {}  {description}",
-            format!("{command:<width$}").dimmed()
+            "{COMMAND_INDENT}{}  {description}",
+            format!("{command:<command_width$}").dimmed()
         )?;
     }
     Ok(())
+}
+
+/// `label: body`, the body wrapped to `width` and its continuation lines
+/// aligned under its first.
+fn write_wrapped<W: Write>(
+    w: &mut W,
+    label: &str,
+    body: &str,
+    width: usize,
+) -> std::io::Result<()> {
+    let prefix_width = INDENT.len() + label.chars().count() + 2;
+    let room = width.saturating_sub(prefix_width).max(MIN_TEXT_WIDTH);
+    for (index, line) in wrap_text(body, room).iter().enumerate() {
+        if index == 0 {
+            writeln!(w, "{INDENT}{}: {}", label.cyan(), line.dimmed())?;
+        } else {
+            writeln!(w, "{}{}", " ".repeat(prefix_width), line.dimmed())?;
+        }
+    }
+    Ok(())
+}
+
+/// The acceptance criteria an alternative above points to, each under the
+/// number `loom stage amend --index` takes (the first is 0). A long command
+/// wraps under its own first line. Prints nothing without criteria.
+fn write_acceptance<W: Write>(w: &mut W, criteria: &[String], width: usize) -> std::io::Result<()> {
+    if criteria.is_empty() {
+        return Ok(());
+    }
+    writeln!(
+        w,
+        "{INDENT}{}",
+        "Acceptance criteria (--index counts from 0):".cyan()
+    )?;
+    let digits = (criteria.len() - 1).to_string().len();
+    let prefix_width = COMMAND_INDENT.len() + digits + 2;
+    let room = width.saturating_sub(prefix_width).max(MIN_TEXT_WIDTH);
+    for (index, criterion) in criteria.iter().enumerate() {
+        let mut lines = wrap_text(criterion, room);
+        if lines.is_empty() {
+            lines.push(String::new());
+        }
+        for (row, line) in lines.iter().enumerate() {
+            let number = if row == 0 {
+                format!("{index:>digits$}")
+            } else {
+                " ".repeat(digits)
+            };
+            writeln!(w, "{COMMAND_INDENT}{}  {}", number.cyan(), line.dimmed())?;
+        }
+    }
+    Ok(())
+}
+
+/// An introduction, wrapped, ending in a colon, with `command` on the line below.
+fn write_step<W: Write>(
+    w: &mut W,
+    introduction: &str,
+    command: &str,
+    width: usize,
+) -> std::io::Result<()> {
+    let room = width.saturating_sub(INDENT.len()).max(MIN_TEXT_WIDTH);
+    let lines = wrap_text(&format!("{introduction}:"), room);
+    for line in &lines {
+        writeln!(w, "{INDENT}{}", line.cyan())?;
+    }
+    writeln!(w, "{COMMAND_INDENT}{}", command.dimmed())
 }
 
 fn render_problem_stage<W: Write>(

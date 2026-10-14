@@ -167,6 +167,8 @@ describe("stage modal", () => {
       name: stage.name,
       label: "NEEDS ADJUDICATION",
       command: null,
+      command_when: null,
+      alternatives: [],
       note: "a judge session is ruling on the open disputes",
       automatic: true,
       failure_type: null,
