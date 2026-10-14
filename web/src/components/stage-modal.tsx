@@ -146,7 +146,7 @@ export function StageModal({
           "stage-modal gap-0 overflow-hidden p-0",
           showTerminal
             ? "terminal-dialog h-[min(86dvh,860px)] grid-rows-[auto_1fr_auto] sm:max-w-[min(96vw,1280px)]"
-            : "sm:max-w-3xl",
+            : "sm:max-w-[min(92vw,1100px)]",
         )}
         data-mode={showTerminal ? frame.mode : undefined}
         data-phase={showTerminal ? frame.phase : undefined}

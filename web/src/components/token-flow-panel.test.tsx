@@ -30,7 +30,13 @@ describe("TokenFlowPanel", () => {
     const panel = screen.getByRole("region", { name: "Token flow" });
     expect(panel.textContent).toContain("43.2k");
     expect(panel.textContent).toContain("5 min avg");
-    for (const label of ["fresh input", "cache write", "output", "cache read", "cache hit"]) {
+    for (const label of [
+      "uncached input",
+      "cache write",
+      "output",
+      "cache read",
+      "cache hit (5 min)",
+    ]) {
       expect(within(panel).getByText(label)).toBeTruthy();
     }
     expect(within(panel).getByText("94%")).toBeTruthy();
@@ -38,6 +44,41 @@ describe("TokenFlowPanel", () => {
     expect(within(panel).getByText("server")).toBeTruthy();
     for (const label of ["−30m", "−15m", "now"]) {
       expect(panel.textContent).toContain(label);
+    }
+  });
+
+  it("keeps the raw input row apart from the fresh headline", () => {
+    renderWith(fixture, <TokenFlowPanel />);
+
+    const panel = screen.getByRole("region", { name: "Token flow" });
+    expect(within(panel).queryByText("fresh input")).toBeNull();
+    expect(within(panel).getByText("fresh / min")).toBeTruthy();
+  });
+
+  it("captions the chart axis as per 30 s buckets", () => {
+    renderWith(fixture, <TokenFlowPanel />);
+
+    const panel = screen.getByRole("region", { name: "Token flow" });
+    expect(within(panel).getByText("per 30 s")).toBeTruthy();
+  });
+
+  it("draws the chart at a fixed pixel height with HTML axis labels", () => {
+    renderWith(fixture, <TokenFlowPanel />);
+
+    const panel = screen.getByRole("region", { name: "Token flow" });
+    const chart = within(panel).getByRole("img", { name: "fresh tokens per stage, last 30 min" });
+    expect(chart.tagName.toLowerCase()).toBe("svg");
+    expect(chart.getAttribute("height")).toBe("96");
+    expect(chart.getAttribute("preserveAspectRatio")).toBe("none");
+    expect(chart.querySelectorAll("text")).toHaveLength(0);
+    for (const polygon of Array.from(chart.querySelectorAll("polygon"))) {
+      expect(polygon.getAttribute("vector-effect")).toBe("non-scaling-stroke");
+    }
+
+    for (const label of ["per 30 s", "−30m", "−15m", "now", "21.6k"]) {
+      const matches = within(panel).getAllByText(label);
+      expect(matches.length).toBeGreaterThan(0);
+      for (const match of matches) expect(match.closest("svg")).toBeNull();
     }
   });
 

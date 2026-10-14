@@ -52,10 +52,15 @@ impl ReceiptLoad {
     }
 }
 
+/// Loads the receipts file at `path`; an absent file is an empty load.
+///
+/// `O_NONBLOCK` keeps a FIFO swapped in for the file from blocking the open
+/// before the regular-file check refuses it, and has no effect on reading a
+/// regular file.
 pub fn load_receipts(path: &Path) -> Result<ReceiptLoad> {
     let mut file = match OpenOptions::new()
         .read(true)
-        .custom_flags(libc::O_NOFOLLOW)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)
     {
         Ok(file) => file,

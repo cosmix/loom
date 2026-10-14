@@ -4,15 +4,13 @@ use super::{
     continuity, decode_history, history_path_in, provider_index, stored_observation, StoredPoint,
 };
 use crate::fs::locking::locked_dir_update;
+use crate::fs::safe_read::{is_not_found, read_to_string_bounded};
 use crate::quota::cache;
 use crate::quota::model::ProviderQuota;
 use anyhow::{bail, Context, Result};
-use std::fs::File;
-use std::io::Read;
 use std::path::{Path, PathBuf};
 
 const MAX_HISTORY_BYTES: usize = 16 * 1024 * 1024;
-const MAX_HISTORY_FILE_BYTES: u64 = MAX_HISTORY_BYTES as u64;
 const HISTORY_RETENTION_SECS: i64 = 30 * 24 * 60 * 60;
 pub(super) const PROVIDERS: [&str; 2] = ["claude", "codex"];
 
@@ -73,27 +71,20 @@ pub(super) fn record_observation_at(
     })
 }
 
+/// The history file's text, `Ok(None)` when it (or its directory) is absent,
+/// and an error for a symlink, a non-regular file, an oversized file, or a
+/// read failure. `read_to_string_bounded` opens without following a symlink
+/// and without blocking, so a FIFO at the history path fails here instead of
+/// stalling the status collector or the token tracker.
 pub(super) fn read_history_body(path: &Path) -> Result<Option<String>> {
-    let metadata = match std::fs::symlink_metadata(path) {
-        Ok(metadata) => metadata,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
-        Err(error) => return Err(error).with_context(|| "failed to inspect quota history"),
-    };
-    if metadata.file_type().is_symlink() || !metadata.file_type().is_file() {
+    let (Some(dir), Some(name)) = (path.parent(), path.file_name()) else {
         bail!("unsafe quota history file");
+    };
+    match read_to_string_bounded(dir, Path::new(name), MAX_HISTORY_BYTES) {
+        Ok(body) => Ok(Some(body)),
+        Err(error) if is_not_found(&error) => Ok(None),
+        Err(error) => Err(error.context("failed to read quota history")),
     }
-    if metadata.len() > MAX_HISTORY_FILE_BYTES {
-        bail!("oversized quota history file");
-    }
-
-    let mut body = String::new();
-    File::open(path)?
-        .take(MAX_HISTORY_FILE_BYTES + 1)
-        .read_to_string(&mut body)?;
-    if body.len() > MAX_HISTORY_BYTES {
-        bail!("oversized quota history file");
-    }
-    Ok(Some(body))
 }
 
 fn should_skip_observation(last: Option<&StoredPoint>, next: &StoredPoint, provider: &str) -> bool {

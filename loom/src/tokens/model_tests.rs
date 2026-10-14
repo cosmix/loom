@@ -188,3 +188,28 @@ fn test_add_sums_corresponding_fields() {
         }
     );
 }
+
+#[cfg(unix)]
+#[test]
+fn test_read_flow_symlinked_tokens_directory_returns_none() {
+    let work = TempDir::new().unwrap();
+    let real = work.path().join("elsewhere");
+    std::fs::create_dir(&real).unwrap();
+    std::fs::write(
+        real.join(FLOW_FILE),
+        serde_json::to_vec(&sample_flow()).unwrap(),
+    )
+    .unwrap();
+    std::os::unix::fs::symlink(&real, work.path().join(TOKENS_DIR)).unwrap();
+
+    assert_eq!(read_flow(work.path()), None);
+}
+
+#[cfg(unix)]
+#[test]
+fn test_read_flow_fifo_returns_none_without_blocking() {
+    let dir = flow_dir();
+    nix::unistd::mkfifo(&flow_path(dir.path()), nix::sys::stat::Mode::S_IRWXU).unwrap();
+
+    assert_eq!(read_flow(dir.path()), None);
+}

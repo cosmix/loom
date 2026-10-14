@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { activityText, mergeText, modelsOf, stateMeta, timeText } from "@/lib/format";
-import { compactTokens, fresh, stageFlow } from "@/lib/tokens";
+import { compactTokens, fresh, lastValues, stageFlow } from "@/lib/tokens";
 import { snapshotAtom } from "@/state/atoms";
 
 /// One ledger row. Re-mounted by the table when the status changes (the key
@@ -80,15 +80,17 @@ export function LedgerRow({ stage, level }: { stage: StageSummary; level: number
   );
 }
 
-/// An executing stage's rate with its sparkline; a finished stage's total,
-/// dimmed; a dash otherwise.
+/// An executing stage's rate with its sparkline; any other stage with a flow
+/// shows its total, dimmed. A stage without a flow renders nothing, so the
+/// empty cell is hidden on the card layout.
 function TokensCell({ stage }: { stage: StageSummary }) {
   const flow = stageFlow(useAtomValue(snapshotAtom)?.status.tokens, stage.id);
-  if (flow && stage.status === "executing") {
+  if (!flow) return null;
+  if (stage.status === "executing") {
     return (
       <span className="inline-flex items-center gap-2">
         <Sparkline
-          values={flow.series.slice(-20)}
+          values={lastValues(flow.series, 20)}
           width={56}
           height={12}
           label={`${stage.name} tokens, last 10 min`}
@@ -98,10 +100,7 @@ function TokensCell({ stage }: { stage: StageSummary }) {
       </span>
     );
   }
-  if (flow && stage.status === "completed") {
-    return <span className="text-muted-foreground">{compactTokens(fresh(flow.total))} total</span>;
-  }
-  return <span className="text-muted-foreground">—</span>;
+  return <span className="text-muted-foreground">{compactTokens(fresh(flow.total))} total</span>;
 }
 
 /// The orchestrator model dimmed, then `›` and the execution models.

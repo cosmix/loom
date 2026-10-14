@@ -3,10 +3,13 @@
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use super::tests::{contains, fixture, render_view};
-use crate::commands::status::data::StatusData;
+use super::tests::{contains, fixture, render_view, screen};
+use super::LedgerView;
+use crate::commands::status::data::{StageSummary, StatusData};
+use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::ui::tui::event_handler::{handle_key_event, KeyEventResult};
-use crate::commands::status::ui::tui::state::GraphState;
+use crate::commands::status::ui::tui::state::{GraphState, TuiActivityLog};
+use crate::plan::graph::levels;
 use crate::tokens::{
     AgentFlow, AgentKind, PlanFlow, QuotaLeft, QuotaProvider, StageFlow, TokenFlow, TokenUsage,
 };
@@ -142,6 +145,71 @@ fn rows_without_a_flow_leave_the_cell_empty() {
     let rows = render_view(&fixture(), 132, 40, false);
     assert!(!contains(&rows, "43.2k"));
     assert!(!contains(&rows, "2.23M"));
+}
+
+#[test]
+fn stages_that_stopped_before_completing_show_their_total_dimmed() {
+    let mut data = flow_data();
+    let flow = data.tokens.as_mut().unwrap();
+    let stopped = ["s-blocked", "s-failed", "s-conflict", "s-review"];
+    flow.stages.extend(stopped.into_iter().map(stage_flow));
+
+    let rows = render_view(&data, 132, 48, false);
+    for id in stopped {
+        let row = row_of(&rows, id);
+        assert!(row.contains("2.23M"), "{row:?}");
+        assert!(!row.contains("43.2k"), "{row:?}");
+    }
+}
+
+/// Render `data` at 132 columns with the tokens pane toggled on.
+fn render_with_pane(data: &StatusData, height: u16) -> Vec<String> {
+    let levels = levels::compute_all_levels(
+        &data.stages,
+        |stage| stage.id.as_str(),
+        |stage| &stage.dependencies,
+    );
+    let ordered: Vec<&StageSummary> = data.stages.iter().collect();
+    let attention = attention_entries(&data.stages);
+    let activity = TuiActivityLog::new();
+    let view = LedgerView {
+        data,
+        levels: &levels,
+        ordered: &ordered,
+        attention: &attention,
+        activity: &activity,
+        alerts: &[],
+        spinner: '⠋',
+        scroll_y: 0,
+        legend_open: false,
+        tick_age_secs: Some(2),
+        last_error: None,
+        now_epoch: NOW,
+        scrollable: false,
+        show_tokens: true,
+    };
+    screen(132, height, &view)
+}
+
+#[test]
+fn the_pane_says_so_when_there_is_no_flow_or_no_active_agent() {
+    let rows = render_with_pane(&fixture(), 40);
+    assert!(contains(&rows, "fresh per 30 s cell"), "{rows:#?}");
+    assert!(contains(&rows, "no token data yet"), "{rows:#?}");
+
+    let mut data = flow_data();
+    for stage in &mut data.tokens.as_mut().unwrap().stages {
+        stage
+            .agents
+            .iter_mut()
+            .for_each(|agent| agent.active = false);
+    }
+    let rows = render_with_pane(&data, 40);
+    assert!(
+        row_of(&rows, "fresh per 30 s cell").contains("no active agent"),
+        "{rows:#?}"
+    );
+    assert!(!contains(&rows, "no token data yet"), "{rows:#?}");
 }
 
 #[test]

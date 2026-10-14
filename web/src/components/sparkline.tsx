@@ -1,5 +1,7 @@
 import { cn } from "cn";
 
+import { maxOf } from "@/lib/tokens";
+
 export function Sparkline({
   values,
   width,
@@ -13,7 +15,7 @@ export function Sparkline({
   label: string;
   className?: string;
 }) {
-  const max = Math.max(0, ...values);
+  const max = maxOf(values);
   const points = values.map((value, index) => ({
     x: values.length === 1 ? width : (index / (values.length - 1)) * width,
     y: max === 0 ? height : height - (value / max) * height,

@@ -144,6 +144,22 @@ describe("status socket", () => {
     dispose();
   });
 
+  it("applies a frame whose only defect is an invalid tokens block, with tokens absent", () => {
+    const store = createStore();
+    const dispose = connectStatusSocket(store, dependencies());
+    const socket = FakeSocket.instances[0];
+    const invalid = structuredClone(fixture);
+    invalid.status.tokens!.plan.rate.cache_write = -1;
+
+    socket.receive(JSON.stringify(invalid));
+
+    expect(store.get(connectionAtom).phase).toBe("live");
+    expect(store.get(snapshotAtom)?.status.plan_name).toBe("Web Dashboard Fixture");
+    expect(store.get(snapshotAtom)?.status.stages).toHaveLength(fixture.status.stages.length);
+    expect(store.get(snapshotAtom)?.status.tokens).toBeUndefined();
+    dispose();
+  });
+
   it("keeps the last snapshot after a bad frame", () => {
     const store = createStore();
     const error = vi.spyOn(console, "error").mockImplementation(() => undefined);

@@ -9,7 +9,7 @@ import { StageStrip } from "@/components/stage-strip";
 import { toneClass } from "@/components/state-badge";
 import { daemonLine, progressPercent, stateMeta, summaryCounts, type Tone } from "@/lib/format";
 import { STAGE_STATES } from "@/lib/states";
-import { cacheHitPercent, compactTokens, fresh } from "@/lib/tokens";
+import { cacheHitPercent, compactTokens, fresh, lastValues } from "@/lib/tokens";
 import { connectionAtom, snapshotAtom, type ConnectionPhase } from "@/state/atoms";
 
 const CONNECTION_LINE: Record<ConnectionPhase, ReturnType<typeof daemonLine>> = {
@@ -157,7 +157,7 @@ export function TokenLine() {
         <TokenCell label="fresh / min">{compactTokens(fresh(tokens.plan.rate))}</TokenCell>
         <TokenCell label="last 15 min">
           <Sparkline
-            values={tokens.plan.series.slice(-30)}
+            values={lastValues(tokens.plan.series, 30)}
             width={72}
             height={18}
             label="plan fresh tokens, last 15 min"
@@ -171,9 +171,17 @@ export function TokenLine() {
   );
 }
 
+/// One cell of the token rail. On phones the rail wraps to two rows of two:
+/// the first cell of each row drops the `.stat-cell` left rule and the second
+/// row gains a top rule.
 function TokenCell({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <li className="stat-cell flex min-w-0 flex-col items-center gap-1 px-1.5 py-1.5 sm:items-start sm:px-3.5">
+    <li
+      className={cn(
+        "stat-cell flex min-w-0 flex-col items-center gap-1 px-1.5 py-1.5 sm:items-start sm:px-3.5",
+        "max-sm:odd:border-l-0 max-sm:nth-[n+3]:border-t max-sm:nth-[n+3]:border-hairline",
+      )}
+    >
       <span className="flex h-[18px] items-center font-display text-lg leading-none font-semibold tabular-nums">
         {children}
       </span>

@@ -2,17 +2,19 @@
 //! lines every stage's transcripts gained, update the checkpoint, and publish
 //! `.loom/work/tokens/flow.json` for the status collector.
 
-use super::checkpoint::Checkpoint;
+use super::checkpoint::{Checkpoint, Saved, MAX_CHECKPOINT_BYTES};
 use super::discover::{discover, Source};
 use super::flow_build::{build_flow, fit_flow};
 use super::model::{
     TokenFlow, BUCKET_SECS, FLOW_FILE, MAX_FLOW_BYTES, STAGE_SERIES_LEN, TOKENS_DIR,
 };
 use super::quota_points::quota_left;
-use super::tail;
+use super::tail::{self, Line};
+use crate::context::untrusted::inline_safe;
 use crate::quota::cache::{atomic_write, create_quota_dir, reject_symlink};
 use anyhow::{bail, Context, Result};
 use std::cell::RefCell;
+use std::collections::HashSet;
 use std::panic::{self, AssertUnwindSafe};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -82,8 +84,9 @@ struct Pass {
 
 /// [`scan_pass`] that stops reading files once `stop` is set; what was read
 /// up to then is still checkpointed and published. A file that cannot be read
-/// is skipped and reported as the pass's warning. A checkpoint that cannot be
-/// written fails the pass, after `flow.json` is still written.
+/// is skipped and reported as the pass's warning, as is a checkpoint or flow
+/// that is too big to write. A checkpoint or flow that cannot be written fails
+/// the pass, after the other is still written, naming both when both fail.
 fn scan_until(
     work_root: &Path,
     codex_sessions_root: Option<&Path>,
@@ -91,37 +94,62 @@ fn scan_until(
     stop: &AtomicBool,
 ) -> Result<Pass> {
     let dir = ensure_tokens_dir(work_root)?;
-    let mut checkpoint = Checkpoint::load(&dir);
+    let (mut checkpoint, load_note) = Checkpoint::load_reporting(&dir);
     let sources = discover(work_root, codex_sessions_root, &mut checkpoint.threads, now)?;
-    let mut warning = None;
-    for source in &sources {
-        if stop.load(Ordering::SeqCst) {
-            break;
-        }
-        if let Err(error) = read_source(&mut checkpoint, source) {
-            warning.get_or_insert_with(|| format!("cannot read {}: {error}", source.path));
-        }
-    }
+    let mut problems: Vec<String> = load_note.into_iter().collect();
+    let (advanced, read_failure) = read_sources(&mut checkpoint, &sources, stop);
+    problems.extend(read_failure);
     checkpoint.prune(now.div_euclid(BUCKET_SECS) - (STAGE_SERIES_LEN as i64 - 1));
     let mut flow = build_flow(&checkpoint.stages, now);
     flow.quota_left = quota_left(work_root, now);
-    let saved = checkpoint.save(&dir);
-    if !write_flow(&dir, &mut flow)? {
-        warning = Some(format!(
-            "flow over {MAX_FLOW_BYTES} bytes without idle series; {FLOW_FILE} not written"
-        ));
-    }
-    saved?;
+    let saved = save_checkpoint(&mut checkpoint, &dir, &advanced);
+    let written = write_flow(&dir, &mut flow);
+    problems.extend(writes_outcome(saved, written)?);
+    let warning = (!problems.is_empty()).then(|| problems.join("; "));
     Ok(Pass { flow, warning })
 }
 
-/// Reads the lines `source`'s file gained since the checkpoint. A missing file
-/// is skipped and its agent keeps its totals; a new inode, a shrink below the
-/// saved offset, or a different path restarts the agent from offset 0.
-fn read_source(checkpoint: &mut Checkpoint, source: &Source) -> std::io::Result<()> {
+/// Reads every source until `stop` is set. Returns the `(stage id, agent key)`
+/// of each agent whose file was read, and the first file that could not be.
+fn read_sources<'a>(
+    checkpoint: &mut Checkpoint,
+    sources: &'a [Source],
+    stop: &AtomicBool,
+) -> (HashSet<(&'a str, &'a str)>, Option<String>) {
+    let mut advanced = HashSet::new();
+    let mut failure = None;
+    for source in sources {
+        if stop.load(Ordering::SeqCst) {
+            break;
+        }
+        match read_source(checkpoint, source, stop) {
+            Ok(false) => continue,
+            Ok(true) => {}
+            // A read that failed part way may still have moved the offset.
+            Err(error) => {
+                failure.get_or_insert_with(|| {
+                    format!("cannot read {}: {error}", inline_safe(&source.path))
+                });
+            }
+        }
+        advanced.insert((source.stage_id.as_str(), source.key.as_str()));
+    }
+    (advanced, failure)
+}
+
+/// Reads the lines `source`'s file gained since the checkpoint, and says
+/// whether there were any. A missing file is skipped and its agent keeps its
+/// totals; a new inode, a shrink below the saved offset, or a different path
+/// restarts the agent from offset 0. A line over [`tail::MAX_LINE_BYTES`] is
+/// skipped and counted as unreadable.
+fn read_source(
+    checkpoint: &mut Checkpoint,
+    source: &Source,
+    stop: &AtomicBool,
+) -> std::io::Result<bool> {
     let path = Path::new(&source.path);
     let Some(stat) = tail::stat(path) else {
-        return Ok(());
+        return Ok(false);
     };
     let agent = checkpoint.agent(source);
     if source.agent_type.is_some() {
@@ -132,12 +160,55 @@ fn read_source(checkpoint: &mut Checkpoint, source: &Source) -> std::io::Result<
         agent.restart(&source.path, stat.inode);
     }
     if stat.len == agent.file.offset {
-        return Ok(());
+        return Ok(false);
     }
     let mut offset = agent.file.offset;
-    let read = tail::read_lines(path, &mut offset, stat.len, |line| agent.ingest(line));
+    let read = tail::read_lines(path, &mut offset, stat.len, stop, |line| match line {
+        Line::Text(text) => agent.ingest(text),
+        Line::TooLong => agent.count_unreadable(),
+    });
     agent.file.offset = offset;
-    read
+    read.map(|()| true)
+}
+
+/// Saves `checkpoint`. Over [`MAX_CHECKPOINT_BYTES`], first empties the message
+/// tables of every agent not in `advanced` (their files did not change this
+/// pass) and tries again. The warning when it is still over: nothing is
+/// written, and the next pass starts from the checkpoint before this one.
+fn save_checkpoint(
+    checkpoint: &mut Checkpoint,
+    dir: &Path,
+    advanced: &HashSet<(&str, &str)>,
+) -> Result<Option<String>> {
+    let mut saved = checkpoint.save(dir)?;
+    if matches!(saved, Saved::OverCap(_)) {
+        checkpoint.clear_tables_except(advanced);
+        saved = checkpoint.save(dir)?;
+    }
+    Ok(match saved {
+        Saved::Written => None,
+        Saved::OverCap(bytes) => Some(format!(
+            "checkpoint is {bytes} bytes, over {MAX_CHECKPOINT_BYTES} even without idle \
+             message tables; {CHECKPOINT_FILE} not written"
+        )),
+    })
+}
+
+/// The warnings of the two writes, or their errors: both when both failed, so
+/// a failed `flow.json` does not hide a checkpoint that could not be saved.
+fn writes_outcome(saved: Result<Option<String>>, written: Result<bool>) -> Result<Vec<String>> {
+    match (saved, written) {
+        (Ok(save_warning), Ok(flow_written)) => {
+            let flow_warning = (!flow_written).then(|| {
+                format!(
+                    "flow over {MAX_FLOW_BYTES} bytes without idle series; {FLOW_FILE} not written"
+                )
+            });
+            Ok(save_warning.into_iter().chain(flow_warning).collect())
+        }
+        (Err(saved), Err(written)) => bail!("{written:#}; {saved:#}"),
+        (Err(error), Ok(_)) | (Ok(_), Err(error)) => Err(error),
+    }
 }
 
 /// `<work_root>/tokens`, created with mode 0700. A symlink there is refused
@@ -161,7 +232,7 @@ fn write_flow(dir: &Path, flow: &mut TokenFlow) -> Result<bool> {
     let Some(json) = fit_flow(flow)? else {
         return Ok(false);
     };
-    atomic_write(&dir.join(FLOW_FILE), &json)?;
+    atomic_write(&dir.join(FLOW_FILE), &json).context("writing the token flow")?;
     Ok(true)
 }
 

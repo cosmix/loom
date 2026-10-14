@@ -12,13 +12,15 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::forward_receipt::{is_safe_id, load_receipts, receipts_path};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, BTreeSet, HashSet};
+use std::collections::{BTreeMap, BTreeSet, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 pub(super) const MAIN_PREFIX: &str = "main-";
 pub(super) const CODEX_PREFIX: &str = "codex-";
 /// A Codex thread whose rollout was not found is looked for again after this.
 pub(super) const MISS_RETRY_SECS: i64 = 600;
+/// Length of the `YYYY-MM-DDThh-mm-ss` timestamp in a rollout file name.
+const ROLLOUT_TIMESTAMP_LEN: usize = 19;
 
 /// One file to read, and the agent its usage belongs to.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -154,8 +156,9 @@ fn stage_threads(work_root: &Path, stages: &BTreeSet<&str>) -> Vec<(String, Stri
 }
 
 /// Looks the due threads of `stage_threads` up in one walk of the sessions
-/// root. A rollout is the file whose name ends in `-<thread id>.jsonl`; a
-/// thread without one is recorded as a miss at `now`.
+/// root. A rollout is the file `rollout-<timestamp>-<thread id>.jsonl` whose
+/// whole thread id matches; a thread without one is recorded as a miss at
+/// `now`.
 fn resolve_threads(
     threads: &mut BTreeMap<String, ThreadLookup>,
     stage_threads: &[(String, String)],
@@ -167,7 +170,8 @@ fn resolve_threads(
         .map(|(_, thread)| thread.as_str())
         .filter(|thread| {
             threads.get(*thread).is_none_or(|lookup| {
-                lookup.rollout.is_none() && now - lookup.checked_at >= MISS_RETRY_SECS
+                // `checked_at` comes from the checkpoint file, so the difference saturates.
+                lookup.rollout.is_none() && now.saturating_sub(lookup.checked_at) >= MISS_RETRY_SECS
             })
         })
         .collect();
@@ -175,19 +179,49 @@ fn resolve_threads(
         return;
     }
     let rollouts = rollout_files(sessions_root);
+    let by_thread = rollouts_by_thread(&rollouts);
     for thread in due {
-        let suffix = format!("-{thread}.jsonl");
-        let rollout = rollouts
-            .iter()
-            .filter_map(|path| path.to_str())
-            .find(|path| path.ends_with(&suffix))
-            .map(str::to_owned);
         let lookup = ThreadLookup {
-            rollout,
+            rollout: by_thread.get(thread).map(|path| (*path).to_owned()),
             checked_at: now,
         };
         threads.insert(thread.to_owned(), lookup);
     }
+}
+
+/// The first rollout path of each thread id the files name.
+fn rollouts_by_thread(rollouts: &[PathBuf]) -> HashMap<&str, &str> {
+    let mut by_thread = HashMap::new();
+    for path in rollouts {
+        if let (Some(thread), Some(path)) = (rollout_thread_id(path), path.to_str()) {
+            by_thread.entry(thread).or_insert(path);
+        }
+    }
+    by_thread
+}
+
+/// The thread id of a rollout file named
+/// `rollout-<YYYY-MM-DDThh-mm-ss>-<thread id>.jsonl`. The fixed-width
+/// timestamp is what separates the thread id from the rest of the name: the
+/// id itself contains hyphens, so matching on a `-<id>.jsonl` suffix would
+/// also accept a short id equal to the last segment of another thread's id.
+fn rollout_thread_id(path: &Path) -> Option<&str> {
+    let name = path.file_name()?.to_str()?;
+    let rest = name.strip_prefix("rollout-")?.strip_suffix(".jsonl")?;
+    let (timestamp, thread) = rest.split_at_checked(ROLLOUT_TIMESTAMP_LEN)?;
+    if !is_rollout_timestamp(timestamp) {
+        return None;
+    }
+    thread.strip_prefix('-').filter(|thread| !thread.is_empty())
+}
+
+fn is_rollout_timestamp(text: &str) -> bool {
+    text.len() == ROLLOUT_TIMESTAMP_LEN
+        && text.bytes().enumerate().all(|(index, byte)| match index {
+            4 | 7 | 13 | 16 => byte == b'-',
+            10 => byte == b'T',
+            _ => byte.is_ascii_digit(),
+        })
 }
 
 /// Every `.jsonl` file under the sessions root.

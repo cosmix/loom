@@ -1,9 +1,9 @@
 //! Wire and file model of live token flow: `StatusData.tokens` and
 //! `.loom/work/tokens/flow.json`.
 
+use crate::fs::safe_read::read_bounded;
 use serde::{Deserialize, Serialize};
-use std::fs::File;
-use std::io::Read;
+use serde_json::Value;
 use std::path::{Path, PathBuf};
 
 pub const BUCKET_SECS: i64 = 30;
@@ -38,6 +38,16 @@ impl TokenUsage {
         self.cache_write = self.cache_write.saturating_add(other.cache_write);
         self.cache_read = self.cache_read.saturating_add(other.cache_read);
         self.output = self.output.saturating_add(other.output);
+    }
+}
+
+/// A token count a source line may leave out: an absent field and a JSON
+/// `null` are both 0, any other value that is not a non-negative integer is
+/// `None` (the line is unreadable).
+pub(super) fn optional_count(value: Option<&Value>) -> Option<u64> {
+    match value {
+        None | Some(Value::Null) => Some(0),
+        Some(value) => value.as_u64(),
     }
 }
 
@@ -106,25 +116,18 @@ pub fn flow_path(work_root: &Path) -> PathBuf {
     work_root.join(TOKENS_DIR).join(FLOW_FILE)
 }
 
-/// The last written flow, or `None` for missing, symlinked, non-regular,
-/// oversized, unreadable, or invalid files. Checks file type before opening
-/// so a FIFO does not block the caller. Never panics or logs.
+/// The last written flow, or `None` for missing, symlinked (the file or the
+/// `tokens` directory), non-regular, oversized, unreadable, or invalid files.
+/// `read_bounded` opens no-follow and non-blocking and checks the type and size
+/// of the opened file, so a FIFO put in its place never blocks the caller.
+/// Never panics or logs.
 pub fn read_flow(work_root: &Path) -> Option<TokenFlow> {
-    let path = flow_path(work_root);
-    crate::quota::cache::reject_symlink(&path).ok()?;
-    let metadata = std::fs::symlink_metadata(&path).ok()?;
-    if !metadata.file_type().is_file() || metadata.len() > MAX_FLOW_BYTES {
-        return None;
-    }
-    let mut bytes = Vec::new();
-    File::open(&path)
-        .ok()?
-        .take(MAX_FLOW_BYTES + 1)
-        .read_to_end(&mut bytes)
-        .ok()?;
-    if bytes.len() as u64 > MAX_FLOW_BYTES {
-        return None;
-    }
+    let bytes = read_bounded(
+        &work_root.join(TOKENS_DIR),
+        Path::new(FLOW_FILE),
+        MAX_FLOW_BYTES as usize,
+    )
+    .ok()?;
     serde_json::from_slice(&bytes).ok()
 }
 

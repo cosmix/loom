@@ -158,3 +158,45 @@ fn prune_keeps_totals() {
     assert_eq!(agent.buckets.len(), 1);
     assert_eq!(agent.total.cache_write, 15);
 }
+
+#[test]
+fn synthetic_error_rows_do_not_replace_the_model() {
+    let mut agent = claude_agent();
+    agent.ingest(&claude_line("msg_1", NOW - 60, SONNET, &usage(1, 2, 3, 4)));
+    agent.ingest(&claude_line(
+        "msg_2",
+        NOW - 30,
+        "<synthetic>",
+        &TokenUsage::default(),
+    ));
+
+    assert_eq!(agent.model.as_deref(), Some(SONNET));
+    assert_eq!(agent.total, usage(1, 2, 3, 4));
+
+    let mut only_errors = claude_agent();
+    only_errors.ingest(&claude_line(
+        "msg_3",
+        NOW,
+        "<synthetic>",
+        &TokenUsage::default(),
+    ));
+    assert_eq!(only_errors.model, None);
+}
+
+#[test]
+fn skipped_line_counts_as_unreadable() {
+    let mut agent = claude_agent();
+    agent.count_unreadable();
+    agent.count_unreadable();
+
+    assert_eq!(agent.unreadable, 2);
+}
+
+#[test]
+fn unreadable_count_saturates_instead_of_overflowing() {
+    let mut agent = claude_agent();
+    agent.unreadable = u64::MAX;
+    agent.count_unreadable();
+
+    assert_eq!(agent.unreadable, u64::MAX);
+}

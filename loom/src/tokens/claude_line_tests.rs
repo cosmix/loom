@@ -156,3 +156,37 @@ fn test_parse_line_non_usage_records_return_other() {
         assert_eq!(parse_line(line), ClaudeLine::Other, "{line}");
     }
 }
+
+#[test]
+fn test_parse_line_null_cache_counts_are_zero() {
+    let mut line = assistant_usage();
+    line["message"]["usage"]["cache_creation_input_tokens"] = Value::Null;
+    line["message"]["usage"]["cache_read_input_tokens"] = Value::Null;
+
+    assert_eq!(
+        parse_line(&line.to_string()),
+        ClaudeLine::Usage {
+            message_id: None,
+            timestamp: 1_790_802_575,
+            model: None,
+            usage: TokenUsage {
+                input: 2,
+                cache_write: 0,
+                cache_read: 0,
+                output: 20,
+            },
+        }
+    );
+}
+
+#[test]
+fn test_parse_line_non_numeric_cache_counts_stay_unreadable() {
+    for field in ["cache_creation_input_tokens", "cache_read_input_tokens"] {
+        for invalid in [json!(-1), json!(1.5), json!(true), json!([1]), json!({})] {
+            let mut line = assistant_usage();
+            line["message"]["usage"][field] = invalid;
+
+            assert_eq!(parse_line(&line.to_string()), ClaudeLine::Unreadable);
+        }
+    }
+}

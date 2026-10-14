@@ -44,7 +44,19 @@ pub(crate) fn codex_root(explicit_root: Option<&Path>) -> Option<PathBuf> {
     })
 }
 
+/// Directory levels below the walk root that are still listed. A sessions tree
+/// is `YYYY/MM/DD/<rollout>.jsonl`, three levels deep; the fourth is slack.
+const MAX_DEPTH: usize = 4;
+
+/// Every `.jsonl` file under `directory`, descending at most [`MAX_DEPTH`]
+/// levels. A symlink to a directory is never entered, so a link back to an
+/// ancestor cannot loop the walk and a link out of the tree cannot widen it.
+/// A symlink to a file is still collected, as `loom usage` always has.
 pub(crate) fn collect_jsonl(directory: &Path, result: &mut CodexDiscovery) {
+    collect_level(directory, 0, result);
+}
+
+fn collect_level(directory: &Path, depth: usize, result: &mut CodexDiscovery) {
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(_) => {
@@ -53,9 +65,14 @@ pub(crate) fn collect_jsonl(directory: &Path, result: &mut CodexDiscovery) {
         }
     };
     for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
         let path = entry.path();
-        if path.is_dir() {
-            collect_jsonl(&path, result);
+        if file_type.is_dir() {
+            if depth < MAX_DEPTH {
+                collect_level(&path, depth + 1, result);
+            }
         } else if path.extension().and_then(|value| value.to_str()) == Some("jsonl") {
             result.files.push(path);
         }

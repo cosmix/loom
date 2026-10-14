@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import fixtureJson from "@/api/fixtures/snapshot.json";
-import { snapshotSchema, stageStatusSchema } from "@/api/schema";
+import { parseSnapshot, snapshotSchema, stageStatusSchema } from "@/api/schema";
 
 const validBlocker = {
   state: "pending",
@@ -51,6 +51,54 @@ describe("token flow schema", () => {
     invalid.status.tokens.plan.rate.cache_write = -1;
 
     expect(snapshotSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it("a tokens block with a counter of 2**53 parses with tokens undefined and everything else intact", () => {
+    const oversized = structuredClone(fixtureJson);
+    oversized.status.tokens.plan.total.cache_read = 2 ** 53;
+
+    const result = parseSnapshot(oversized);
+
+    expect(result.success).toBe(true);
+    expect(result.data?.status.tokens).toBeUndefined();
+    expect(result.data?.status.stages).toHaveLength(9);
+    expect(result.data?.status.progress).toEqual(fixtureJson.status.progress);
+    expect(result.data?.status.quota).toEqual(fixtureJson.status.quota);
+    expect(result.data?.attention).toHaveLength(fixtureJson.attention.length);
+    expect(result.data?.version).toBe(fixtureJson.version);
+  });
+
+  it("parseSnapshot drops an invalid tokens block from a frame that is otherwise valid", () => {
+    const invalid = structuredClone(fixtureJson);
+    invalid.status.tokens.plan.rate.cache_write = -1;
+
+    const result = parseSnapshot(invalid);
+
+    expect(result.success).toBe(true);
+    expect(result.data?.status.tokens).toBeUndefined();
+    expect(result.data?.status.stages).toHaveLength(9);
+  });
+
+  it("parseSnapshot still fails a frame that is invalid outside tokens", () => {
+    const invalid = structuredClone(fixtureJson);
+    invalid.status.stages[0].status = "bogus";
+
+    expect(parseSnapshot(invalid).success).toBe(false);
+  });
+
+  it("parseSnapshot still fails when tokens and another field are both invalid", () => {
+    const invalid = structuredClone(fixtureJson);
+    invalid.status.tokens.plan.rate.cache_write = -1;
+    invalid.status.stages[0].status = "bogus";
+
+    const result = parseSnapshot(invalid);
+
+    expect(result.success).toBe(false);
+    expect(result.error?.issues.some((issue) => issue.path[1] === "stages")).toBe(true);
+  });
+
+  it("parseSnapshot leaves a valid frame untouched", () => {
+    expect(parseSnapshot(fixtureJson).data).toEqual(snapshotSchema.parse(fixtureJson));
   });
 });
 

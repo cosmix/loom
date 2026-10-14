@@ -1,4 +1,4 @@
-use super::{discover, Source, ThreadLookup, MISS_RETRY_SECS};
+use super::{discover, rollout_thread_id, Source, ThreadLookup, MISS_RETRY_SECS};
 use crate::fs::session_files::save_session;
 use crate::fs::work_dir::WorkDir;
 use crate::models::forward_receipt::{
@@ -11,6 +11,7 @@ use crate::tokens::tests_fixture::{append, Fixture, SESSION_UUID, THREAD_ID};
 use serde_json::json;
 use std::collections::BTreeMap;
 use std::fs;
+use std::path::Path;
 
 const NOW: i64 = 1_788_523_200;
 const AGENT: &str = "a04baa183f888b773";
@@ -28,6 +29,11 @@ fn keys(sources: &[Source]) -> Vec<(&str, &str)> {
 
 /// A forward receipt for `THREAD_ID` in `stage`'s receipts file.
 fn add_receipt(fx: &Fixture, stage: &str) {
+    add_receipt_for(fx, stage, THREAD_ID);
+}
+
+/// A forward receipt for `thread_id` in `stage`'s receipts file.
+fn add_receipt_for(fx: &Fixture, stage: &str, thread_id: &str) {
     let identity = ForwardIdentity::new(SESSION_UUID, "a0c0dec0ffee", "toolu_01", stage, "s-1")
         .expect("forward identity");
     let observation = ForwardObservation {
@@ -39,11 +45,11 @@ fn add_receipt(fx: &Fixture, stage: &str) {
         stage_id: identity.stage_id.clone(),
         loom_session_id: identity.loom_session_id.clone(),
         backend: ForwardBackend::Direct,
-        backend_id: THREAD_ID.to_string(),
+        backend_id: thread_id.to_string(),
         state: ForwardState::Succeeded,
         observed_at: chrono::Utc::now(),
         exit_code: Some(0),
-        codex_thread_id: Some(THREAD_ID.to_string()),
+        codex_thread_id: Some(thread_id.to_string()),
         locator: None,
         model: Some("gpt-6.1-sol".to_string()),
         effort: None,
@@ -155,4 +161,79 @@ fn missed_rollout_is_looked_for_again_only_after_the_retry_delay() {
     assert_eq!(codex.len(), 1);
     assert_eq!(codex[0].key, format!("codex-{THREAD_ID}"));
     assert_eq!(codex[0].path, rollout.to_str().expect("utf-8"));
+}
+
+#[test]
+fn a_planted_checked_at_cannot_overflow_the_retry_age() {
+    let fx = Fixture::new();
+    fx.add_session("alpha", SESSION_UUID, "");
+    add_receipt(&fx, "alpha");
+    let dir = fx.codex_sessions().join("2026/10/14");
+    fs::create_dir_all(&dir).expect("rollout dir");
+    let rollout = dir.join(format!("rollout-2026-10-14T10-58-07-{THREAD_ID}.jsonl"));
+    fs::write(&rollout, "").expect("rollout");
+
+    for checked_at in [i64::MIN, i64::MAX] {
+        let mut threads = BTreeMap::from([(
+            THREAD_ID.to_owned(),
+            ThreadLookup {
+                rollout: None,
+                checked_at,
+            },
+        )]);
+
+        let found = sources(&fx, &mut threads, NOW);
+
+        let looked_up = threads[THREAD_ID].rollout.is_some();
+        assert_eq!(
+            looked_up,
+            checked_at == i64::MIN,
+            "looked up again at {checked_at}"
+        );
+        assert_eq!(
+            found.iter().any(|s| s.kind == AgentKind::Codex),
+            looked_up,
+            "codex source at {checked_at}"
+        );
+    }
+}
+
+#[test]
+fn a_short_id_equal_to_the_last_segment_does_not_resolve_to_another_threads_rollout() {
+    let fx = Fixture::new();
+    fx.add_session("alpha", SESSION_UUID, "");
+    let short = THREAD_ID.rsplit('-').next().expect("last segment");
+    add_receipt_for(&fx, "alpha", short);
+    let dir = fx.codex_sessions().join("2026/10/14");
+    fs::create_dir_all(&dir).expect("rollout dir");
+    let rollout = dir.join(format!("rollout-2026-10-14T10-58-07-{THREAD_ID}.jsonl"));
+    fs::write(&rollout, "").expect("rollout");
+    let mut threads = BTreeMap::new();
+
+    let found = sources(&fx, &mut threads, NOW);
+
+    assert!(
+        found.iter().all(|s| s.kind != AgentKind::Codex),
+        "{found:?}"
+    );
+    assert_eq!(threads[short].rollout, None);
+}
+
+#[test]
+fn rollout_thread_id_requires_the_timestamped_rollout_name() {
+    fn id(name: &str) -> Option<&str> {
+        rollout_thread_id(Path::new(name))
+    }
+
+    let full = format!("rollout-2026-10-14T10-58-07-{THREAD_ID}.jsonl");
+    assert_eq!(id(&full), Some(THREAD_ID));
+    assert_eq!(id("rollout-2026-10-14T10-58-07-abc.jsonl"), Some("abc"));
+    assert_eq!(id(&format!("rollout-{THREAD_ID}.jsonl")), None);
+    assert_eq!(
+        id(&format!("session-2026-10-14T10-58-07-{THREAD_ID}.jsonl")),
+        None
+    );
+    assert_eq!(id("rollout-2026-10-14T10-58-07-abc.json"), None);
+    assert_eq!(id("rollout-2026-10-14T10-58-07.jsonl"), None);
+    assert_eq!(id("rollout-2026-10-14T10-58-07-.jsonl"), None);
 }

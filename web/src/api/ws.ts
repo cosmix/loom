@@ -1,4 +1,4 @@
-import { snapshotSchema } from "@/api/schema";
+import { parseSnapshot } from "@/api/schema";
 import { applySnapshot } from "@/state/apply";
 import { connectionAtom, type ConnectionPhase } from "@/state/atoms";
 import type { Store } from "@/state/store";
@@ -117,7 +117,7 @@ class StatusSocketConnection {
   }
 
   private receiveSnapshot(value: unknown): void {
-    const result = snapshotSchema.safeParse(value);
+    const result = parseSnapshot(value);
     if (result.success) {
       applySnapshot(this.store, result.data);
       // Only transition on phase change: `since` marks when the phase began,

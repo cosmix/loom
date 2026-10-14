@@ -253,6 +253,32 @@ export const snapshotSchema = z
   })
   .strict();
 
+const TOKENS_PATH = ["status", "tokens"] as const;
+
+function isTokensIssue(issue: { path: PropertyKey[] }): boolean {
+  return TOKENS_PATH.every((key, index) => issue.path[index] === key);
+}
+
+// Only called once every issue sits under `status.tokens`, so zod has already
+// walked `raw` and `raw.status` as objects.
+function withoutTokens(raw: unknown): unknown {
+  const frame = raw as { status: Record<string, unknown> };
+  const status = { ...frame.status };
+  delete status.tokens;
+  return { ...frame, status };
+}
+
+// Token flow is an overlay: a frame whose only defects are inside `tokens`
+// parses with the block absent, so ordinary status still renders. Any defect
+// outside it fails the frame exactly as `snapshotSchema.safeParse` does.
+export function parseSnapshot(raw: unknown): ReturnType<typeof snapshotSchema.safeParse> {
+  const result = snapshotSchema.safeParse(raw);
+  if (result.success || !result.error.issues.every(isTokensIssue)) {
+    return result;
+  }
+  return snapshotSchema.safeParse(withoutTokens(raw));
+}
+
 export type StageStatus = z.infer<typeof stageStatusSchema>;
 export type StageSummary = z.infer<typeof stageSummarySchema>;
 export type StatusData = z.infer<typeof statusDataSchema>;

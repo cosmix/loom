@@ -4,6 +4,7 @@
 use super::claude_line::{self, ClaudeLine};
 use super::codex_line::{self, CodexLine, CodexTotals};
 use super::model::{AgentKind, TokenUsage, BUCKET_SECS};
+use crate::commands::usage::transcript_types::SYNTHETIC_MODEL;
 use crate::context::untrusted::inline_safe;
 use serde::{Deserialize, Serialize};
 use std::collections::{BTreeMap, HashMap, VecDeque};
@@ -190,6 +191,11 @@ impl AgentState {
         }
     }
 
+    /// Counts a line skipped unread, as one that fails to parse is counted.
+    pub(super) fn count_unreadable(&mut self) {
+        self.unreadable = self.unreadable.saturating_add(1);
+    }
+
     /// Drops buckets before bucket index `oldest`; their usage stays in `total`.
     pub(super) fn prune(&mut self, oldest: i64) {
         self.buckets.retain(|bucket, _| *bucket >= oldest);
@@ -203,7 +209,8 @@ impl AgentState {
                 model,
                 usage,
             } => {
-                if let Some(model) = model {
+                // An API-error row names the `<synthetic>` sentinel, not a model.
+                if let Some(model) = model.filter(|model| model != SYNTHETIC_MODEL) {
                     self.model = Some(inline_safe(&model));
                 }
                 let spent = match message_id {
@@ -212,7 +219,7 @@ impl AgentState {
                 };
                 self.add(timestamp, &spent);
             }
-            ClaudeLine::Unreadable => self.unreadable += 1,
+            ClaudeLine::Unreadable => self.count_unreadable(),
             ClaudeLine::Other => {}
         }
     }
@@ -231,7 +238,7 @@ impl AgentState {
                 self.add(timestamp, &delta.to_usage());
             }
             CodexLine::Model(model) => self.model = Some(inline_safe(&model)),
-            CodexLine::Unreadable => self.unreadable += 1,
+            CodexLine::Unreadable => self.count_unreadable(),
             CodexLine::SessionMeta { .. } | CodexLine::Other => {}
         }
     }

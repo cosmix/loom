@@ -223,3 +223,152 @@ fn test_pane_stage_visibility_uses_active_flag() {
     flow.stages[0].agents[0].series.clear();
     assert_eq!(tokens_pane_lines(&flow, 132, PANE_MAX_ROWS).len(), 5);
 }
+
+/// `len` empty buckets whose newest holds `newest`.
+fn newest_only(len: usize, newest: u64) -> Vec<u64> {
+    let mut series = vec![0; len - 1];
+    series.push(newest);
+    series
+}
+
+#[test]
+fn test_shrink_takes_columns_in_order_down_to_their_minimum() {
+    for (room, expected) in [
+        (100, [40, 30]),
+        (60, [30, 30]),
+        (35, [10, 25]),
+        (0, [10, 10]),
+    ] {
+        assert_eq!(shrink(room, [(40, 10), (30, 10)]), expected);
+    }
+}
+
+#[test]
+fn test_columns_shrink_the_model_then_the_strip_then_the_label() {
+    for (width, stage, agent) in [
+        (132, (30, 48), (30, 24, 48)),
+        (100, (30, 48), (30, 8, 47)),
+        (80, (30, 39), (30, 8, 27)),
+        (64, (30, 23), (29, 8, 12)),
+    ] {
+        let columns = Columns::fit(width, SLOT_MIN, SLOT_MIN);
+        assert_eq!((columns.stage_id, columns.spark), stage, "stage at {width}");
+        assert_eq!(
+            (columns.label, columns.model, columns.strip),
+            agent,
+            "agent at {width}"
+        );
+    }
+}
+
+#[test]
+fn test_pane_keeps_the_newest_cells_and_the_state_down_to_64_columns() {
+    let mut flow = fixture();
+    flow.stages[0].series = newest_only(120, 10);
+    for agent in &mut flow.stages[0].agents {
+        agent.series = newest_only(120, 10);
+    }
+    flow.stages[0].agents[0].active = false;
+
+    for width in [64, 80, 100, 132] {
+        let lines = tokens_pane_lines(&flow, width, PANE_MAX_ROWS);
+        let text: Vec<_> = lines.iter().map(ToString::to_string).collect();
+
+        assert_eq!(lines.len(), 5);
+        assert!(text[1].ends_with('█'), "stage at {width}: {:?}", text[1]);
+        for (row, total, state) in [
+            (2, "740k", "idle "),
+            (3, "1.11M", "live "),
+            (4, "380k", "live "),
+        ] {
+            let body = text[row]
+                .strip_suffix(total)
+                .unwrap_or_else(|| panic!("no {total} at {width}: {:?}", text[row]));
+            assert!(
+                body.trim_end().ends_with('█'),
+                "newest cell lost at {width}: {:?}",
+                text[row]
+            );
+            assert!(text[row].contains(state), "{state:?} lost at {width}");
+            assert_eq!(lines[row].width(), usize::from(width));
+        }
+    }
+}
+
+#[test]
+fn test_pane_sizes_the_total_and_rate_slots_to_the_widest_number() {
+    for (fresh, cells) in [(12_340_000, 6), (123_400_000, 7)] {
+        let wide = compact_tokens(fresh);
+        assert_eq!(wide.len(), cells);
+        let mut flow = fixture();
+        flow.stages[0].series = newest_only(120, 10);
+        flow.stages[0].rate = usage(fresh, 0, 0, 0);
+        for agent in &mut flow.stages[0].agents {
+            agent.series = newest_only(120, 10);
+        }
+        flow.stages[0].agents[0].total = usage(fresh, 0, 0, 0);
+        flow.stages[0].agents[0].active = false;
+
+        for width in [64, 80, 100] {
+            let lines = tokens_pane_lines(&flow, width, PANE_MAX_ROWS);
+            let text: Vec<_> = lines.iter().map(ToString::to_string).collect();
+
+            assert_eq!(lines.len(), 5);
+            assert!(lines.iter().all(|line| line.width() <= usize::from(width)));
+            assert!(text[1].ends_with('█'), "stage at {width}: {:?}", text[1]);
+            assert!(text[1].contains(&format!("{wide}/m")), "{:?}", text[1]);
+            for (row, total, state) in [
+                (2, wide.as_str(), "idle "),
+                (3, "1.11M", "live "),
+                (4, "380k", "live "),
+            ] {
+                let body = text[row]
+                    .strip_suffix(total)
+                    .unwrap_or_else(|| panic!("no {total} at {width}: {:?}", text[row]));
+                assert!(
+                    body.trim_end().ends_with('█'),
+                    "newest cell lost at {width} with {wide}: {:?}",
+                    text[row]
+                );
+                assert!(text[row].contains(state), "{state:?} lost at {width}");
+            }
+        }
+    }
+}
+
+#[test]
+fn test_pane_without_active_agents_or_data_says_so() {
+    let mut flow = fixture();
+    for agent in &mut flow.stages[0].agents {
+        agent.active = false;
+    }
+    let lines = tokens_pane_lines(&flow, 132, PANE_MAX_ROWS);
+    assert_eq!(lines.len(), 1);
+    assert!(lines[0].to_string().ends_with("t close"));
+    let note = lines[0]
+        .spans
+        .iter()
+        .find(|span| span.content.contains("no active agent"));
+    assert_eq!(note.map(|span| span.style), Some(Theme::dimmed()));
+    for width in [64, 70] {
+        let line = tokens_pane_lines(&flow, width, PANE_MAX_ROWS).remove(0);
+        let text = line.to_string();
+        assert!(text.contains("no active agent"), "{text:?} at {width}");
+        assert!(text.ends_with("t close"), "{text:?} at {width}");
+        assert_eq!(line.width(), usize::from(width));
+    }
+    assert_eq!(tokens_pane_lines(&flow, 132, 1).len(), 1);
+    assert!(tokens_pane_lines(&flow, 40, PANE_MAX_ROWS)
+        .iter()
+        .all(|line| line.width() <= 40));
+
+    let lines = no_data_lines(132, PANE_MAX_ROWS);
+    assert_eq!(lines.len(), 2);
+    assert!(lines[0].to_string().ends_with("t close"));
+    assert_eq!(lines[1].to_string(), "  no token data yet");
+    assert!(no_data_lines(132, 0).is_empty());
+    assert_eq!(no_data_lines(132, 1).len(), 1);
+    assert!(no_data_lines(5, PANE_MAX_ROWS)
+        .iter()
+        .all(|line| line.width() <= 5));
+}

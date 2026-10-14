@@ -57,6 +57,21 @@ describe("StageTokens", () => {
     expect(screen.getByText("2 of 3")).toBeTruthy();
   });
 
+  it("renders a 200k-value series without throwing", () => {
+    const long = Array<number>(200_000).fill(0);
+    long[199_999] = 5;
+
+    expect(() =>
+      renderTokens("server", (raw) => {
+        const stage = raw.status.tokens.stages[0];
+        if (!stage) throw new Error("fixture server stage is missing");
+        stage.series = [...long];
+        for (const agent of stage.agents) agent.series = [...long];
+      }),
+    ).not.toThrow();
+    expect(screen.getAllByTestId("token-lane")).toHaveLength(3);
+  });
+
   it("renders nothing for a stage without a flow", () => {
     renderTokens("not-a-stage");
 

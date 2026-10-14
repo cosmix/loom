@@ -66,8 +66,9 @@ pub const LEGEND: [(StageStatus, &str); 13] = [
     ),
 ];
 
-/// Rows of the overlay: its 23 content lines and the two border rows.
-const OVERLAY_MAX_HEIGHT: u16 = 25;
+/// Rows of the overlay: its 22 content lines and the two border rows, so it fits an
+/// 80x24 terminal.
+const OVERLAY_MAX_HEIGHT: u16 = 24;
 
 /// Render the centred legend overlay.
 pub fn render_legend_overlay(frame: &mut Frame, area: Rect) {
@@ -103,11 +104,13 @@ pub fn legend_lines() -> Vec<Line<'static>> {
         Span::styled("  context", Theme::dimmed()),
         Span::raw("    resident tokens of the stage's session against its ceiling"),
     ]));
-    lines.push(Line::from(Span::styled("  tokens", Theme::dimmed())));
+    lines.push(Line::from(vec![
+        Span::styled("  tokens", Theme::dimmed()),
+        Span::raw("     fresh tokens per minute (uncached input + cache writes +"),
+    ]));
     lines.push(Line::from(
-        "    fresh tokens per minute (input + cache writes + output),",
+        "             output), 5 min average; t opens the per-agent pane",
     ));
-    lines.push(Line::from("    5 min average; t opens the per-agent pane"));
     lines
 }
 
@@ -152,7 +155,9 @@ fn activity_lines() -> [Line<'static>; 2] {
 
 #[cfg(test)]
 mod tests {
-    use super::{legend_lines, LEGEND};
+    use ratatui::{backend::TestBackend, Terminal};
+
+    use super::{legend_lines, render_legend_overlay, LEGEND};
 
     #[test]
     fn legend_has_thirteen_distinct_statuses() {
@@ -181,16 +186,46 @@ mod tests {
     fn legend_explains_the_tokens_column_within_the_overlay_width() {
         let lines = legend_lines();
         let text: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
-        let at = text.iter().position(|line| line == "  tokens").unwrap();
+        let at = text
+            .iter()
+            .position(|line| line.starts_with("  tokens"))
+            .unwrap();
+        assert_eq!(
+            text[at],
+            "  tokens     fresh tokens per minute (uncached input + cache writes +"
+        );
         assert_eq!(
             text[at + 1],
-            "    fresh tokens per minute (input + cache writes + output),"
+            "             output), 5 min average; t opens the per-agent pane"
         );
-        assert_eq!(
-            text[at + 2],
-            "    5 min average; t opens the per-agent pane"
-        );
-        assert!(lines[at..=at + 2].iter().all(|line| line.width() <= 76));
+        assert!(lines[at..=at + 1].iter().all(|line| line.width() <= 76));
         assert_eq!(lines.len(), usize::from(super::OVERLAY_MAX_HEIGHT) - 2);
+    }
+
+    #[test]
+    fn every_legend_line_is_visible_at_80x24() {
+        let mut terminal = Terminal::new(TestBackend::new(80, 24)).unwrap();
+        terminal
+            .draw(|frame| {
+                let area = frame.area();
+                render_legend_overlay(frame, area);
+            })
+            .unwrap();
+        let rows: Vec<String> = terminal
+            .backend()
+            .buffer()
+            .content
+            .chunks(80)
+            .map(|row| row.iter().map(|cell| cell.symbol()).collect())
+            .collect();
+
+        // The popup is as tall as the legend plus its two borders, so no line is clipped.
+        assert_eq!(legend_lines().len() + 2, 24);
+        let last = rows
+            .iter()
+            .position(|row| row.contains("5 min average; t opens the per-agent pane"))
+            .unwrap_or_else(|| panic!("last legend line clipped: {rows:#?}"));
+        assert!(rows[last + 1].contains("? or esc to close"), "{rows:#?}");
+        assert!(rows[0].contains("Stage states"), "{rows:#?}");
     }
 }

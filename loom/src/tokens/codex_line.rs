@@ -1,6 +1,6 @@
 //! Parse cumulative token counts and metadata from Codex rollout lines.
 
-use crate::tokens::model::TokenUsage;
+use crate::tokens::model::{optional_count, TokenUsage};
 use chrono::DateTime;
 use serde_json::Value;
 
@@ -78,8 +78,8 @@ fn parse_token_count(value: &Value) -> Option<CodexLine> {
     let usage = &value["payload"]["info"]["total_token_usage"];
     let total = CodexTotals {
         input: usage["input_tokens"].as_u64()?,
-        cached_input: usage["cached_input_tokens"].as_u64().unwrap_or(0),
-        cache_write: usage["cache_write_input_tokens"].as_u64().unwrap_or(0),
+        cached_input: optional_count(usage.get("cached_input_tokens"))?,
+        cache_write: optional_count(usage.get("cache_write_input_tokens"))?,
         output: usage["output_tokens"].as_u64()?,
     };
     let timestamp = DateTime::parse_from_rfc3339(value["timestamp"].as_str()?)
