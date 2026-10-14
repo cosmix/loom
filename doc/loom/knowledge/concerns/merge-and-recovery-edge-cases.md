@@ -1,6 +1,6 @@
 # Merge And Recovery Edge Cases
 
-> Merge/retry/completion edge cases
+> Merge/retry edge cases
 
 ## BranchMissing Phantom-Merge Risk in merge_handler.rs (2026-04-16)
 

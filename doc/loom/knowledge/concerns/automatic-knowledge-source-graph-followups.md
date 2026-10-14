@@ -1,6 +1,6 @@
 # Automatic Knowledge Source Graph Followups
 
-> Knowledge-plan followups
+> Knowledge followups
 
 ## Open Items From the Automatic-Knowledge Plan
 

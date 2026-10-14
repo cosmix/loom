@@ -61,7 +61,8 @@
 | [target-guard](architecture/target-guard.md) | Accepted-tip record, hook, holds | 127 |
 | [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends | 293 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) | 23 adapters, profiles, quoting, detect | 57 |
-| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, --compare, cache | 260 |
+| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, compare, cache | 260 |
+| [token-flow-sources](architecture/token-flow-sources.md) | Token usage sources: transcripts, rollouts, receipts | 24 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 135 |
 | [web-dashboard](architecture/web-dashboard.md) | status --web server, SPA, streams | 95 |
 | [web-terminal](architecture/web-terminal.md) | loom status --web terminals | 175 |
@@ -72,16 +73,16 @@
 | --- | --- | --- |
 | [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch, plan pipeline | 192 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) | Context retrieval, source graph | 79 |
-| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs, handoff, sandbox, remote | 126 |
+| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs, handoff, sandbox | 126 |
 | [hooks](entry-points/hooks.md) | Hook scripts, events, matching | 147 |
-| [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Orchestrator, daemon, signals, merges | 234 |
+| [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Orchestrator, daemon, signals | 234 |
 | [remote-control](entry-points/remote-control.md) | Remote-control detection call sites | 99 |
 
 ### patterns
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [cli-process-and-conventions](patterns/cli-process-and-conventions.md) | CLI registration, TUI, errors, config | 249 |
+| [cli-process-and-conventions](patterns/cli-process-and-conventions.md) | CLI registration, TUI, errors | 249 |
 | [doctrine-cross-surface](patterns/doctrine-cross-surface.md) | Pinning multi-surface guidance | 135 |
 | [hook-content-stripping](patterns/hook-content-stripping.md) | How hooks read a Bash command | 161 |
 | [merge-and-recovery](patterns/merge-and-recovery.md) | Progressive merge, conflict recovery | 122 |
@@ -89,7 +90,7 @@
 | [remote-control](patterns/remote-control.md) | Remote Control detect and resolve | 51 |
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Hooks, validation, sandbox config | 139 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) | How a stage agent reaches the daemon | 117 |
-| [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage states, locked writes, verify | 198 |
+| [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage states, locked writes | 198 |
 | [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out, coordinators, teams | 98 |
 
 ### conventions
@@ -116,8 +117,8 @@
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented, not forwarded | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Slow reader fixed by forbidding reads | 52 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 94 |
-| [completion-broker-credential](mistakes/completion-broker-credential.md) | Broker fallback, dup naming, exit-0 | 195 |
-| [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread downstream | 245 |
+| [completion-broker-credential](mistakes/completion-broker-credential.md) | Broker fallback, dup naming | 195 |
+| [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread | 245 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes, save races | 46 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork after threads, early ready byte | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) | Two daemons shared .loom/work | 141 |
@@ -135,7 +136,7 @@
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) | Resolver kept stage write denies | 15 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races | 203 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merge lessons: merged=true unverified | 257 |
-| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, wiring pins | 303 |
+| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 303 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions, edges | 53 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 146 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync | 300 |
@@ -143,7 +144,7 @@
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers vs work state | 298 |
 | [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Sandbox tool failures | 273 |
 | [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) | Only Edit(path) rules are enforced | 57 |
-| [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) | deny_unknown_fields, two sources | 130 |
+| [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) | deny_unknown_fields | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | LOOM_* wrapper exports contract | 126 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) | Session identity, liveness, coverage | 383 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) | Glued separators, forgeable lookups | 246 |
@@ -158,7 +159,7 @@
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 351 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass with the bug | 302 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn failures, cleanup | 136 |
-| [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server, plan-prose gotchas | 43 |
+| [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server gotchas | 43 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Producers of a rendered field | 188 |
 | [verification-harness](mistakes/verification-harness.md) | Many checks failing: suspect harness | 371 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 267 |
@@ -170,20 +171,20 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Bendable checks, hardening backlog | 256 |
-| [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Knowledge-plan followups | 51 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Oversized units, hook debt | 196 |
-| [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat starvation, stall limits | 66 |
+| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Bendable checks backlog | 256 |
+| [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Knowledge followups | 51 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Oversized units, hooks | 196 |
+| [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat starvation | 66 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 window never named | 49 |
-| [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps and housekeeping | 116 |
-| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry/completion edge cases | 147 |
+| [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps | 116 |
+| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry edge cases | 147 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Open gaps: commits, launch, stalls | 213 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | tmux, orphan adoption edge cases | 150 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: canary, creds, env | 326 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: canary, creds, env | 325 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Language limits, open decisions | 79 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Unimplemented reviewer suggestions | 242 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package caches session-writable | 17 |
-| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token-optimization follow-ups | 92 |
+| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token follow-ups | 92 |
 | [typed-config-values](concerns/typed-config-values.md) | Accepted gaps in the config read-path | 27 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) | v2 adapters, parser gaps, known gaps | 124 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Latent issues in status/web | 94 |

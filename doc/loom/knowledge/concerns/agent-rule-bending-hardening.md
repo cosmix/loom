@@ -1,6 +1,6 @@
 # Agent Rule-Bending Hardening
 
-> Bendable checks, hardening backlog
+> Bendable checks backlog
 
 ## Why This Entry Exists (2026-09-16)
 

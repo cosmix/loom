@@ -2,7 +2,7 @@
 ---
 # Filesystem And Integration Modules
 
-> Git, fs, handoff, sandbox, remote
+> Git, fs, handoff, sandbox
 
 ## Git Operations
 

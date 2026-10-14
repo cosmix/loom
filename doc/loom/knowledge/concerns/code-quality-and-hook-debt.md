@@ -1,6 +1,6 @@
 # Code Quality And Hook Debt
 
-> Oversized units, hook debt
+> Oversized units, hooks
 
 ## Oversized Rust Units Remain Controlled Debt (2026-08-09)
 
