@@ -16,6 +16,8 @@ pub enum KeyEventResult {
     Exit,
     /// User toggled the stage-state legend.
     ToggleLegend,
+    /// User toggled the per-agent tokens pane.
+    ToggleTokens,
     /// User requested that the legend close, or to exit when it is already closed.
     CloseLegend,
     /// Continue running.
@@ -31,6 +33,7 @@ pub fn handle_key_event(
     match code {
         KeyCode::Char('q') => KeyEventResult::Exit,
         KeyCode::Char('?') => KeyEventResult::ToggleLegend,
+        KeyCode::Char('t') => KeyEventResult::ToggleTokens,
         KeyCode::Esc => KeyEventResult::CloseLegend,
         KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => KeyEventResult::Exit,
 

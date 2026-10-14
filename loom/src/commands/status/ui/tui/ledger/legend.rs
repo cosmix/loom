@@ -66,6 +66,9 @@ pub const LEGEND: [(StageStatus, &str); 13] = [
     ),
 ];
 
+/// Rows of the overlay: its 23 content lines and the two border rows.
+const OVERLAY_MAX_HEIGHT: u16 = 25;
+
 /// Render the centred legend overlay.
 pub fn render_legend_overlay(frame: &mut Frame, area: Rect) {
     let popup = overlay_area(area);
@@ -100,12 +103,17 @@ pub fn legend_lines() -> Vec<Line<'static>> {
         Span::styled("  context", Theme::dimmed()),
         Span::raw("    resident tokens of the stage's session against its ceiling"),
     ]));
+    lines.push(Line::from(Span::styled("  tokens", Theme::dimmed())));
+    lines.push(Line::from(
+        "    fresh tokens per minute (input + cache writes + output),",
+    ));
+    lines.push(Line::from("    5 min average; t opens the per-agent pane"));
     lines
 }
 
 fn overlay_area(area: Rect) -> Rect {
     let width = area.width.min(78);
-    let height = area.height.min(22);
+    let height = area.height.min(OVERLAY_MAX_HEIGHT);
     Rect::new(
         area.x + area.width.saturating_sub(width) / 2,
         area.y + area.height.saturating_sub(height) / 2,
@@ -167,5 +175,22 @@ mod tests {
         for (status, _) in LEGEND {
             assert!(text.contains(status.label()));
         }
+    }
+
+    #[test]
+    fn legend_explains_the_tokens_column_within_the_overlay_width() {
+        let lines = legend_lines();
+        let text: Vec<String> = lines.iter().map(|line| line.to_string()).collect();
+        let at = text.iter().position(|line| line == "  tokens").unwrap();
+        assert_eq!(
+            text[at + 1],
+            "    fresh tokens per minute (input + cache writes + output),"
+        );
+        assert_eq!(
+            text[at + 2],
+            "    5 min average; t opens the per-agent pane"
+        );
+        assert!(lines[at..=at + 2].iter().all(|line| line.width() <= 76));
+        assert_eq!(lines.len(), usize::from(super::OVERLAY_MAX_HEIGHT) - 2);
     }
 }

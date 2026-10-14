@@ -7,53 +7,14 @@ use ratatui::{
     Frame,
 };
 
+use super::layout_tokens::{areas, budget, Budget};
+use super::tokens_pane::{tokens_pane_lines, PANE_MAX_ROWS};
 use super::{
     columns, header, legend, panels, quota, rows, LedgerView, RenderOutcome, MIN_COLS, MIN_ROWS,
 };
 use crate::commands::status::ui::theme::Theme;
 use crate::commands::status::ui::tui::renderer;
 use crate::models::stage::StageStatus;
-
-const HEADER_HEIGHT: u16 = 4;
-const ALERT_MAX_HEIGHT: u16 = 4;
-const TABLE_MIN_HEIGHT: u16 = 6;
-/// The needs-attention panel's title row and the 13 lines of the largest single
-/// entry: a stage its agent blocked, with a header, three note lines, the retry
-/// and when to run it, three alternatives of two lines each, and the pointer to
-/// the acceptance criteria.
-const ATTENTION_MAX_HEIGHT: u16 = 14;
-/// Rows the panel keeps when the table needs the rest: its title, two entry lines
-/// and the "… N more lines" marker `fit_to_rows` adds.
-const ATTENTION_MIN_HEIGHT: u16 = 4;
-
-/// The footer is the legend strip alone, or the quota line above it.
-fn footer_height(has_quota: bool) -> u16 {
-    if has_quota {
-        2
-    } else {
-        1
-    }
-}
-
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-struct Budget {
-    alerts: u16,
-    table: u16,
-    attention: u16,
-    activity: u16,
-    footer: u16,
-    compact: bool,
-}
-
-#[derive(Clone, Copy)]
-struct Areas {
-    header: Rect,
-    alerts: Rect,
-    table: Rect,
-    attention: Rect,
-    activity: Rect,
-    footer: Rect,
-}
 
 /// Render the responsive live ledger dashboard.
 pub fn render(frame: &mut Frame, view: &LedgerView) -> RenderOutcome {
@@ -63,14 +24,7 @@ pub fn render(frame: &mut Frame, view: &LedgerView) -> RenderOutcome {
         return RenderOutcome::default();
     }
 
-    let budget = budget(
-        area.height,
-        view.alerts.len(),
-        panels::attention_line_count(view.attention, area.width),
-        view.activity.len(),
-        quota::has_quota(&view.data.quota),
-    );
-    render_dashboard(frame, area, view, budget);
+    let budget = render_dashboard(frame, area, view);
     if view.legend_open {
         legend::render_legend_overlay(frame, area);
     }
@@ -79,138 +33,36 @@ pub fn render(frame: &mut Frame, view: &LedgerView) -> RenderOutcome {
     }
 }
 
-fn budget(
-    height: u16,
-    alerts: usize,
-    attention_lines: usize,
-    activity_len: usize,
-    has_quota: bool,
-) -> Budget {
-    let alerts = (alerts.min(ALERT_MAX_HEIGHT as usize)) as u16;
-    let mut attention = attention_height(attention_lines);
-    let mut activity = activity_height(activity_len);
-    let mut footer = footer_height(has_quota);
-    let mut compact = false;
-    let mut table = available_table_height(height, alerts, attention, activity, footer, compact);
-
-    if table < TABLE_MIN_HEIGHT {
-        activity = 0;
-        table = available_table_height(height, alerts, attention, activity, footer, compact);
-    }
-    // Shrink the panel one row at a time, only until the table has its minimum.
-    let floor = attention.min(ATTENTION_MIN_HEIGHT);
-    while table < TABLE_MIN_HEIGHT && attention > floor {
-        attention -= 1;
-        table = available_table_height(height, alerts, attention, activity, footer, compact);
-    }
-    if table < TABLE_MIN_HEIGHT {
-        compact = true;
-        table = available_table_height(height, alerts, attention, activity, footer, compact);
-    }
-    if table < TABLE_MIN_HEIGHT {
-        // The quota line is the last thing to yield before the stages themselves.
-        footer = footer_height(false);
-        table = available_table_height(height, alerts, attention, activity, footer, compact);
-    }
-
-    Budget {
-        alerts,
-        table,
-        attention,
-        activity,
-        footer,
-        compact,
+/// The tokens pane's lines while it is toggled on and a flow exists, else none.
+fn pane_lines(view: &LedgerView, width: u16) -> Vec<Line<'static>> {
+    match view.data.tokens.as_ref().filter(|_| view.show_tokens) {
+        Some(flow) => tokens_pane_lines(flow, width, PANE_MAX_ROWS),
+        None => Vec::new(),
     }
 }
 
-/// The panel's entry lines plus its title row, capped at [`ATTENTION_MAX_HEIGHT`].
-fn attention_height(lines: usize) -> u16 {
-    if lines == 0 {
-        0
-    } else {
-        lines
-            .saturating_add(1)
-            .min(usize::from(ATTENTION_MAX_HEIGHT)) as u16
-    }
-}
-
-fn activity_height(entries: usize) -> u16 {
-    if entries == 0 {
-        0
-    } else {
-        (1 + entries).min(6) as u16
-    }
-}
-
-fn available_table_height(
-    height: u16,
-    alerts: u16,
-    attention: u16,
-    activity: u16,
-    footer: u16,
-    compact: bool,
-) -> u16 {
-    let alert_gap = if alerts > 0 { 1 } else { 0 };
-    let table_gap = if compact { 0 } else { 1 };
-    let attention_gap = if attention > 0 && !compact { 1 } else { 0 };
-    let activity_gap = if activity > 0 { 1 } else { 0 };
-    let reserved = HEADER_HEIGHT
-        + 1
-        + alerts
-        + alert_gap
-        + table_gap
-        + attention
-        + attention_gap
-        + activity
-        + activity_gap
-        + footer;
-    height.saturating_sub(reserved)
-}
-
-fn render_dashboard(frame: &mut Frame, area: Rect, view: &LedgerView, budget: Budget) {
+fn render_dashboard(frame: &mut Frame, area: Rect, view: &LedgerView) -> Budget {
+    let mut pane = pane_lines(view, area.width);
+    let budget = budget(
+        area.height,
+        view.alerts.len(),
+        panels::attention_line_count(view.attention, area.width),
+        view.activity.len(),
+        quota::has_quota(&view.data.quota),
+        pane.len() as u16,
+    );
     let areas = areas(area, budget);
     header::render_header(frame, areas.header, view);
     renderer::render_scheduler_alerts(frame, areas.alerts, view.alerts);
     render_table(frame, areas.table, view);
+    pane.truncate(usize::from(areas.tokens.height));
+    frame.render_widget(Paragraph::new(pane), areas.tokens);
     panels::render_attention(frame, areas.attention, view.attention);
     panels::render_activity(frame, areas.activity, view.activity);
 
     let present = present_statuses(view);
     panels::render_footer(frame, areas.footer, &present, view);
-}
-
-fn areas(area: Rect, budget: Budget) -> Areas {
-    let mut y = area.y;
-    let header = take(area, &mut y, HEADER_HEIGHT);
-    y += 1;
-    let alerts = take(area, &mut y, budget.alerts);
-    y += if budget.alerts > 0 { 1 } else { 0 };
-    let table = take(area, &mut y, budget.table);
-    y += if budget.compact { 0 } else { 1 };
-    let attention = take(area, &mut y, budget.attention);
-    y += if budget.attention > 0 && !budget.compact {
-        1
-    } else {
-        0
-    };
-    let activity = take(area, &mut y, budget.activity);
-    y += if budget.activity > 0 { 1 } else { 0 };
-    let footer = take(area, &mut y, budget.footer);
-
-    Areas {
-        header,
-        alerts,
-        table,
-        attention,
-        activity,
-        footer,
-    }
-}
-
-fn take(area: Rect, y: &mut u16, height: u16) -> Rect {
-    let rect = Rect::new(area.x, *y, area.width, height);
-    *y = y.saturating_add(height);
-    rect
+    budget
 }
 
 fn render_table(frame: &mut Frame, area: Rect, view: &LedgerView) {
@@ -225,7 +77,12 @@ fn render_table(frame: &mut Frame, area: Rect, view: &LedgerView) {
             .skip(view.scroll_y as usize)
             .map(|stage| {
                 let level = view.levels.get(&stage.id).copied().unwrap_or_default();
-                rows::stage_row(stage, level, &columns, view.ordered)
+                let flow = view.data.tokens.as_ref().and_then(|flow| {
+                    flow.stages
+                        .iter()
+                        .find(|candidate| candidate.stage_id == stage.id)
+                });
+                rows::stage_row(stage, level, &columns, view.ordered, flow)
             }),
     );
     frame.render_widget(Paragraph::new(lines), area);
@@ -260,6 +117,7 @@ mod tests {
 
     use ratatui::{backend::TestBackend, Terminal};
 
+    use super::super::layout_tokens::{ATTENTION_MAX_HEIGHT, TABLE_MIN_HEIGHT};
     use super::*;
     use crate::commands::status::data::StatusData;
     use crate::commands::status::ui::tui::state::TuiActivityLog;
@@ -267,7 +125,7 @@ mod tests {
     #[test]
     fn budget_leaves_the_remainder_for_the_table() {
         // Nine entry lines: three entries of header, evidence and command.
-        let budget = budget(40, 8, 9, 8, false);
+        let budget = budget(40, 8, 9, 8, false, 0);
 
         assert_eq!(budget.alerts, 4);
         assert_eq!(budget.attention, 10);
@@ -278,7 +136,7 @@ mod tests {
     #[test]
     fn attention_budget_fits_a_review_entry_and_its_three_commands() {
         // Header plus the three `loom stage human-review` command lines.
-        let budget = budget(40, 0, 4, 0, false);
+        let budget = budget(40, 0, 4, 0, false, 0);
 
         assert_eq!(budget.attention, 5);
     }
@@ -287,16 +145,16 @@ mod tests {
     fn attention_budget_fits_a_blocked_entry_with_all_its_alternatives() {
         // Header, three note lines, the retry and when to run it, three
         // alternatives of two lines each, and the acceptance pointer.
-        let budget = budget(60, 0, 13, 0, false);
+        let budget = budget(60, 0, 13, 0, false, 0);
 
         assert_eq!(budget.attention, ATTENTION_MAX_HEIGHT);
         assert_eq!(budget.attention, 14);
-        assert_eq!(super::budget(60, 0, 30, 0, false).attention, 14);
+        assert_eq!(super::budget(60, 0, 30, 0, false, 0).attention, 14);
     }
 
     #[test]
     fn budget_preserves_a_minimum_table_before_panels() {
-        let budget = budget(16, 0, 6, 3, false);
+        let budget = budget(16, 0, 6, 3, false, 0);
 
         assert_eq!(budget.activity, 0);
         assert_eq!(budget.attention, 4);
@@ -305,8 +163,8 @@ mod tests {
 
     #[test]
     fn footer_takes_a_second_row_only_with_quota_data() {
-        let without = budget(40, 0, 0, 0, false);
-        let with = budget(40, 0, 0, 0, true);
+        let without = budget(40, 0, 0, 0, false, 0);
+        let with = budget(40, 0, 0, 0, true, 0);
 
         assert_eq!(without.footer, 1);
         assert_eq!(with.footer, 2);
@@ -318,16 +176,16 @@ mod tests {
         // Header 4 + gap 1 + full alert band 4 + gap 1 + footer 2 = 12 reserved rows
         // even in compact mode, leaving 4 for the table at height 16; the footer then
         // drops back to one row so the table matches the no-quota budget.
-        let with_alerts = budget(16, 4, 0, 0, true);
+        let with_alerts = budget(16, 4, 0, 0, true, 0);
         assert_eq!(with_alerts.footer, 1);
-        assert_eq!(with_alerts.table, budget(16, 4, 0, 0, false).table);
+        assert_eq!(with_alerts.table, budget(16, 4, 0, 0, false, 0).table);
 
         // At 17 the two-row footer would still leave the table one short; at 18 the
         // quota line has room again above a minimum-height table.
-        let still_short = budget(17, 4, 0, 0, true);
+        let still_short = budget(17, 4, 0, 0, true, 0);
         assert_eq!(still_short.footer, 1);
         assert_eq!(still_short.table, TABLE_MIN_HEIGHT);
-        let roomy = budget(18, 4, 0, 0, true);
+        let roomy = budget(18, 4, 0, 0, true, 0);
         assert_eq!(roomy.footer, 2);
         assert_eq!(roomy.table, TABLE_MIN_HEIGHT);
     }
@@ -339,7 +197,7 @@ mod tests {
         // with a full alert band the table drops below TABLE_MIN_HEIGHT. Nothing panics
         // and ratatui clips safely, but this pins the actual behaviour rather than the
         // spec's minimum.
-        let no_panels = budget(16, 4, 0, 0, false);
+        let no_panels = budget(16, 4, 0, 0, false, 0);
         assert_eq!(no_panels.alerts, 4);
         assert_eq!(no_panels.attention, 0);
         assert_eq!(no_panels.activity, 0);
@@ -348,7 +206,7 @@ mod tests {
             no_panels.alerts + no_panels.table + no_panels.attention + no_panels.activity <= 16
         );
 
-        let with_panels = budget(16, 4, 6, 3, false);
+        let with_panels = budget(16, 4, 6, 3, false, 0);
         assert_eq!(with_panels.alerts, 4);
         assert_eq!(with_panels.attention, 4);
         assert_eq!(with_panels.activity, 0);
@@ -357,6 +215,34 @@ mod tests {
             with_panels.alerts + with_panels.table + with_panels.attention + with_panels.activity
                 <= 16
         );
+    }
+
+    #[test]
+    fn pane_rows_and_their_gap_come_out_of_the_table() {
+        let without = budget(40, 0, 0, 0, false, 0);
+        let with = budget(40, 0, 0, 0, false, 5);
+
+        assert_eq!(with.tokens, 5);
+        assert_eq!(with.table, without.table - 6);
+    }
+
+    #[test]
+    fn pane_is_dropped_before_the_activity_panel() {
+        // Thirteen rows stay for the table without the pane; with eight pane rows
+        // and their gap only four would, so the pane goes and activity stays.
+        let budget = budget(24, 0, 0, 2, false, 8);
+
+        assert_eq!(budget.tokens, 0);
+        assert_eq!(budget.activity, 3);
+        assert!(budget.table >= TABLE_MIN_HEIGHT);
+    }
+
+    #[test]
+    fn pane_is_kept_when_the_table_still_has_its_minimum() {
+        let budget = budget(40, 0, 0, 2, false, 8);
+
+        assert_eq!(budget.tokens, 8);
+        assert_eq!(budget.activity, 3);
     }
 
     #[test]
@@ -381,6 +267,7 @@ mod tests {
             last_error: None,
             now_epoch: 1_788_523_200,
             scrollable: false,
+            show_tokens: false,
         };
         let mut terminal = Terminal::new(TestBackend::new(60, 20)).unwrap();
 

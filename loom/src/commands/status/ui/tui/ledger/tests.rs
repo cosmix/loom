@@ -227,6 +227,7 @@ pub(super) fn render_view(
         last_error: None,
         now_epoch: 1_788_523_200,
         scrollable: false,
+        show_tokens: false,
     };
     screen(width, height, &view)
 }
@@ -234,7 +235,7 @@ pub(super) fn render_view(
 #[test]
 fn renders_all_thirteen_states_at_full_width() {
     let data = fixture();
-    let rows = render_view(&data, 120, 40, false);
+    let rows = render_view(&data, 132, 40, false);
     for status in [
         StageStatus::WaitingForDeps,
         StageStatus::Queued,

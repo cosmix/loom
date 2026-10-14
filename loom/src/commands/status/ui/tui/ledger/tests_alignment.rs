@@ -25,7 +25,7 @@ fn last_column_of(row: &str, needle: &str) -> Option<usize> {
 #[test]
 fn wide_icon_row_keeps_column_alignment() {
     let data = fixture();
-    let rows = render_view(&data, 120, 40, false);
+    let rows = render_view(&data, 132, 40, false);
     let header = rows.iter().find(|row| row.contains("STAGE")).unwrap();
     let stage_at = column_of(header, "STAGE").unwrap();
     let models_at = column_of(header, "MODELS").unwrap();
