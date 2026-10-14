@@ -19,6 +19,10 @@
 use super::StageSummary;
 use crate::context::untrusted::{inline_safe, multiline_safe};
 
+#[path = "sanitize_token_flow.rs"]
+mod token_flow;
+pub(super) use token_flow::{flow_is_fresh, sanitize_token_flow};
+
 /// Longest evidence list a status payload carries for one stage.
 ///
 /// The longest list loom itself builds is 21 lines: a startup refusal is one

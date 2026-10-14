@@ -1,6 +1,6 @@
 //! Parser for token-usage lines of a Claude transcript.
 
-use crate::tokens::model::TokenUsage;
+use crate::tokens::model::{optional_count, TokenUsage};
 use chrono::DateTime;
 use serde_json::{Map, Value};
 
@@ -54,17 +54,10 @@ pub fn parse_line(line: &str) -> ClaudeLine {
 fn parse_usage(fields: &Map<String, Value>) -> Option<TokenUsage> {
     Some(TokenUsage {
         input: fields.get("input_tokens")?.as_u64()?,
-        cache_write: optional_count(fields, "cache_creation_input_tokens")?,
-        cache_read: optional_count(fields, "cache_read_input_tokens")?,
+        cache_write: optional_count(fields.get("cache_creation_input_tokens"))?,
+        cache_read: optional_count(fields.get("cache_read_input_tokens"))?,
         output: fields.get("output_tokens")?.as_u64()?,
     })
-}
-
-fn optional_count(fields: &Map<String, Value>, name: &str) -> Option<u64> {
-    match fields.get(name) {
-        Some(value) => value.as_u64(),
-        None => Some(0),
-    }
 }
 
 #[cfg(test)]

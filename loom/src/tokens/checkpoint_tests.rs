@@ -1,8 +1,10 @@
-use super::{Checkpoint, CHECKPOINT_VERSION, MAX_CHECKPOINT_BYTES};
+use super::{Checkpoint, Saved, CHECKPOINT_VERSION, MAX_CHECKPOINT_BYTES};
+use crate::tokens::accumulate::{AgentState, MESSAGE_TABLE_CAP};
 use crate::tokens::discover::{Source, ThreadLookup};
 use crate::tokens::model::{AgentKind, BUCKET_SECS};
 use crate::tokens::tests_fixture::{claude_line, codex_count, usage, Fixture, THREAD_ID};
 use crate::tokens::tracker::CHECKPOINT_FILE;
+use std::collections::HashSet;
 use std::fs;
 
 const NOW: i64 = 1_788_523_200;
@@ -111,4 +113,103 @@ fn prune_drops_old_buckets_of_every_agent() {
         .flat_map(|agents| agents.values());
     assert!(agents.clone().all(|agent| agent.buckets.is_empty()));
     assert!(agents.map(|agent| agent.total.fresh()).sum::<u64>() > 0);
+}
+
+/// Message ids this long make one full table about 5 MB of JSON: one agent
+/// fits [`MAX_CHECKPOINT_BYTES`], two do not.
+const BULKY_ID_LEN: usize = 1200;
+
+fn fill_table(agent: &mut AgentState) {
+    for n in 0..MESSAGE_TABLE_CAP {
+        let id = format!("{n:0>width$}", width = BULKY_ID_LEN);
+        agent.file.messages.increase(&id, &usage(1, 0, 0, 0));
+    }
+}
+
+fn bulky(keys: &[&str]) -> Checkpoint {
+    let mut checkpoint = Checkpoint::empty();
+    for key in keys {
+        fill_table(checkpoint.agent(&source(AgentKind::Subagent, key)));
+    }
+    checkpoint
+}
+
+fn table_len(checkpoint: &Checkpoint, key: &str) -> usize {
+    let agent = &checkpoint.stages["alpha"][key];
+    serde_json::to_value(&agent.file.messages)
+        .expect("serialize")
+        .as_array()
+        .map_or(0, Vec::len)
+}
+
+#[test]
+fn save_writes_a_checkpoint_that_load_accepts_up_to_the_cap() {
+    let fx = Fixture::new();
+    let dir = fx.tokens_dir();
+    let checkpoint = bulky(&["a1"]);
+
+    assert_eq!(checkpoint.save(&dir).expect("save"), Saved::Written);
+
+    assert_eq!(Checkpoint::load(&dir), checkpoint);
+}
+
+#[test]
+fn save_refuses_a_checkpoint_load_would_refuse() {
+    let fx = Fixture::new();
+    let dir = fx.tokens_dir();
+
+    let saved = bulky(&["a1", "a2"]).save(&dir).expect("save");
+
+    let Saved::OverCap(bytes) = saved else {
+        panic!("a checkpoint over the cap must not be written: {saved:?}");
+    };
+    assert!(bytes > MAX_CHECKPOINT_BYTES);
+    assert!(!dir.join(CHECKPOINT_FILE).exists());
+}
+
+#[test]
+fn clearing_tables_spares_the_listed_agents_and_keeps_their_totals() {
+    let mut checkpoint = bulky(&["a1", "a2"]);
+    checkpoint.agent(&source(AgentKind::Subagent, "a2")).total = usage(7, 0, 0, 0);
+    let keep = HashSet::from([("alpha", "a1")]);
+
+    checkpoint.clear_tables_except(&keep);
+
+    assert_eq!(table_len(&checkpoint, "a1"), MESSAGE_TABLE_CAP);
+    assert_eq!(table_len(&checkpoint, "a2"), 0);
+    assert_eq!(checkpoint.stages["alpha"]["a2"].total, usage(7, 0, 0, 0));
+}
+
+#[test]
+fn load_reporting_names_why_it_fell_back() {
+    let fx = Fixture::new();
+    let dir = fx.tokens_dir();
+    let file = dir.join(CHECKPOINT_FILE);
+    let reason = |dir: &std::path::Path| {
+        let (checkpoint, reason) = Checkpoint::load_reporting(dir);
+        assert_eq!(checkpoint, Checkpoint::empty());
+        reason
+    };
+    assert_eq!(reason(&dir), None, "a first run has nothing to explain");
+
+    let mut json = serde_json::to_string(&populated()).expect("serialize");
+    json.push_str(&" ".repeat(MAX_CHECKPOINT_BYTES));
+    fs::write(&file, &json).expect("oversized");
+    assert!(reason(&dir).expect("reason").contains("over"));
+
+    fs::write(&file, "{\"version\":").expect("torn");
+    assert!(reason(&dir).expect("reason").contains("unparseable"));
+
+    fs::remove_file(&file).expect("remove");
+    fs::create_dir(&file).expect("directory");
+    assert!(reason(&dir).expect("reason").contains("unreadable"));
+
+    fs::remove_dir(&file).expect("remove");
+    let mut other = populated();
+    other.version = CHECKPOINT_VERSION + 1;
+    other.save(&dir).expect("save");
+    assert!(reason(&dir).expect("reason").contains("version"));
+
+    populated().save(&dir).expect("save");
+    assert_eq!(Checkpoint::load_reporting(&dir).1, None);
 }

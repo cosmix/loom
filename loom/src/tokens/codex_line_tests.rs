@@ -214,3 +214,42 @@ fn conversion_subtracts_cache_write_and_saturates_without_overflow() {
     };
     assert_eq!(oversized.to_usage().input, 0);
 }
+
+fn first_with_cache_field(field: &str, value: Value) -> CodexLine {
+    let mut line: Value = serde_json::from_str(FIRST).unwrap();
+    line["payload"]["info"]["total_token_usage"][field] = value;
+    parse_line(&line.to_string())
+}
+
+fn totals(line: CodexLine) -> CodexTotals {
+    match line {
+        CodexLine::TokenCount { total, .. } => total,
+        other => panic!("expected a token count, got {other:?}"),
+    }
+}
+
+#[test]
+fn null_cache_fields_are_zero() {
+    let cached = totals(first_with_cache_field("cached_input_tokens", Value::Null));
+    let written = totals(first_with_cache_field(
+        "cache_write_input_tokens",
+        Value::Null,
+    ));
+
+    assert_eq!((cached.input, cached.cached_input), (21255, 0));
+    assert_eq!((written.input, written.cached_input), (21255, 12160));
+    assert_eq!((cached.cache_write, written.cache_write), (0, 0));
+}
+
+#[test]
+fn non_numeric_cache_fields_make_the_line_unreadable() {
+    for field in ["cached_input_tokens", "cache_write_input_tokens"] {
+        for invalid in [json!("12"), json!(-1), json!(1.5), json!(true), json!([1])] {
+            assert_eq!(
+                first_with_cache_field(field, invalid),
+                CodexLine::Unreadable,
+                "{field}"
+            );
+        }
+    }
+}

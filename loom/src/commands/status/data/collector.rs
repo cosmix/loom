@@ -3,7 +3,6 @@ use chrono::Utc;
 use std::fs;
 
 use crate::commands::status::merge_status::build_merge_report;
-use crate::context::untrusted::inline_safe;
 use crate::fs::work_dir::{load_config, resolve_context_ceiling_tokens, WorkDir};
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::{Stage, StageStatus, StatusBucket};
@@ -17,7 +16,7 @@ use super::completion_view::collect_completion_view;
 use super::heartbeat_facts::heartbeat_facts;
 use super::merge_note::{merge_block_text, stash_warning};
 use super::resolver::{merge_resolver_facts, speaking_for};
-use super::sanitize::sanitize_stage_summary;
+use super::sanitize::{flow_is_fresh, sanitize_stage_summary, sanitize_token_flow};
 use super::stopped::{blocked_acceptance, blocked_close_reason, terminal_history_session};
 use super::timing::{elapsed_secs_live, execution_secs_live};
 use super::{
@@ -369,20 +368,13 @@ pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
     })
 }
 
-/// The tracker's last flow when it is recent enough to show, with every
-/// string flattened at this boundary (a planted `flow.json` is untrusted).
+/// The tracker's last flow when it is recent enough to show, sanitized at
+/// this boundary (a planted `flow.json` is untrusted).
 fn fresh_flow(work_dir: &WorkDir) -> Option<crate::tokens::TokenFlow> {
-    let mut flow = crate::tokens::model::read_flow(work_dir.root()).filter(|f| {
-        Utc::now().timestamp() - f.observed_at <= crate::tokens::model::FLOW_STALE_SECS
-    })?;
-    for stage in &mut flow.stages {
-        stage.stage_id = inline_safe(&stage.stage_id);
-        for agent in &mut stage.agents {
-            agent.id = inline_safe(&agent.id);
-            agent.agent_type = agent.agent_type.as_deref().map(inline_safe);
-            agent.model = agent.model.as_deref().map(inline_safe);
-        }
-    }
+    let now = Utc::now().timestamp();
+    let mut flow = crate::tokens::model::read_flow(work_dir.root())
+        .filter(|flow| flow_is_fresh(flow.observed_at, now))?;
+    sanitize_token_flow(&mut flow);
     Some(flow)
 }
 
