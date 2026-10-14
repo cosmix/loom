@@ -117,12 +117,13 @@ pub struct TokenFlow {
 /// `<work_root>/tokens/flow.json`.
 pub fn flow_path(work_root: &Path) -> PathBuf { /* ... */ }
 
-/// The last written flow, or `None` when the file is missing, is a symlink
-/// (`crate::quota::cache::reject_symlink`), is not a regular file
-/// (`symlink_metadata(..).file_type().is_file()`, checked before opening, so a
-/// FIFO never blocks the caller), is larger than MAX_FLOW_BYTES (by metadata,
-/// and again by reading through `take(MAX_FLOW_BYTES + 1)`), cannot be read,
-/// or does not parse. Never panics, never logs.
+/// The last written flow, or `None` when the file is missing, is a symlink or
+/// sits under a symlinked `tokens` directory, is not a regular file, is larger
+/// than MAX_FLOW_BYTES, cannot be read, or does not parse. It is read through
+/// `crate::fs::safe_read::read_bounded(<work_root>/tokens, "flow.json",
+/// MAX_FLOW_BYTES)`, which opens no-follow and non-blocking and checks the type
+/// and size of the opened file (by `fstat`, and again while reading), so a FIFO
+/// never blocks the caller. Never panics, never logs.
 pub fn read_flow(work_root: &Path) -> Option<TokenFlow> { /* ... */ }
 ```
 
@@ -130,11 +131,15 @@ Serialization rules:
 
 - No `skip_serializing_if` inside the model. `Option` fields serialize as `null`, so every key is always present (the web schema is `.strict()`).
 - `StatusData` gains `#[serde(default, skip_serializing_if = "Option::is_none")] pub tokens: Option<crate::tokens::TokenFlow>` (`loom/src/commands/status/data/mod.rs`, after `quota`). The key is absent when there is no fresh flow.
-- The collector sets `tokens` from `crate::tokens::model::read_flow(work_dir.root()).filter(|f| now - f.observed_at <= FLOW_STALE_SECS)`, with `now` being the current unix time, and flattens every string of the flow (`stage_id`, agent `id`, `agent_type`, `model`) with `inline_safe` at that boundary, as `status/data/sanitize.rs` does for the rest of the payload.
+- The collector sets `tokens` from `crate::tokens::model::read_flow(work_dir.root())`, kept only when `now.saturating_sub(observed_at)` is in `0..=FLOW_STALE_SECS` (`now` being the current unix time): a future-dated `observed_at` never goes stale, so it is never fresh, and the subtraction cannot overflow. It then runs `sanitize_token_flow` (`status/data/sanitize.rs`) on the flow, at that boundary, as that module does for the rest of the payload:
+  - every string (`stage_id`, agent `id`, `agent_type`, `model`) is flattened with `inline_safe`;
+  - every published number (each `TokenUsage` field of plan, stage and agent `total` and `rate`, every series value, `observed_at`, `bucket_secs`, `unreadable_lines`) is clamped to JavaScript's safe-integer range, 2^53 - 1 (`quota_left.minutes_left` is a `u32`, inside it already). The web schema rejects a larger integer and then drops the whole status frame;
+  - each stage and agent series keeps only its newest `STAGE_SERIES_LEN` values and the plan series its newest `PLAN_SERIES_LEN`, so a planted `flow.json` cannot swell every frame. Shorter series are not padded.
 - Callers name `read_flow` and `spawn_token_tracker` through their defining modules (`crate::tokens::model::`, `crate::tokens::tracker::`), never through the `crate::tokens::` re-export: the source graph adds no call edge for a qualified call through a re-export, and the `reachable` checks walk those edges.
 - `MAX_FLOW_BYTES` is 512 KiB, a quarter of the daemon's 2 MiB response frame (`loom/src/daemon/wire.rs` `MAX_RESPONSE_BYTES`): a status frame over that limit is skipped for every client (`broadcast.rs` `frame_overflow`), freezing the TUI and web. Before writing, the tracker checks the serialized size; over the cap it empties the `series` of inactive agents (totals stay), and if still over it skips the write and logs once. A skipped write ages out after `FLOW_STALE_SECS`, and the collector then publishes no `tokens`: ordinary status always wins over token detail.
 - `flow.json` is compact JSON (`serde_json::to_vec`, never `to_vec_pretty`), and the cap is measured on exactly the bytes written. Contract `oversized-flow-sheds-idle-series` (1600 idle subagents) depends on it.
 - An inactive agent's `series` can therefore be empty or shorter than `STAGE_SERIES_LEN`. Every UI treats missing values as zeros and left-pads to the length it draws; none errors or skips the agent.
+- An agent `id` is `main-` or `codex-` plus the first 8 characters of the session uuid or thread id (13 characters), and a subagent's is its key. Every agent of a stage that shares its short form with another agent of that stage gets its full key instead (`flow_build.rs` `ordered`), so a UI must not assume 13-character ids.
 
 JSON shape, abbreviated:
 
@@ -200,7 +205,9 @@ Mapping:
 - `cache_read` = `cache_read_input_tokens`
 - `output` = `output_tokens`
 
-`input_tokens` and `output_tokens` are required. A missing cache field counts as 0.
+`input_tokens` and `output_tokens` are required. A missing or `null` cache field counts as 0; a cache field that is present and not a non-negative integer (for example the string `"20"`) makes the line unreadable.
+
+The agent's model is the `message.model` of its latest usage line, except the literal `<synthetic>` (`SYNTHETIC_MODEL`, `loom/src/commands/usage/transcript_types.rs`): Claude Code writes it on an API-error row that has all-zero usage, and such a row never sets the model.
 
 One API response is written as several lines that share `message.id`, each repeating `usage`. The tracker keeps the field-wise maximum per `message.id` and adds only the increase, so a response counts once and a later line with a larger `output_tokens` adds the difference. A usage line without `message.id` counts on its own.
 
@@ -216,10 +223,11 @@ One API response is written as several lines that share `message.id`, each repea
 - `total_tokens = input_tokens + output_tokens`, so `cached_input_tokens` and `cache_write_input_tokens` are parts of `input_tokens`, and `reasoning_output_tokens` is part of `output_tokens`.
 - Mapping:
   - `input` = `input_tokens - cached_input_tokens - cache_write_input_tokens` (saturating)
-  - `cache_write` = `cache_write_input_tokens` (0 when absent)
-  - `cache_read` = `cached_input_tokens`
+  - `cache_write` = `cache_write_input_tokens` (0 when absent or `null`)
+  - `cache_read` = `cached_input_tokens` (0 when absent or `null`)
   - `output` = `output_tokens`
 - The tracker uses deltas between successive `total_token_usage` values, so a missed line loses nothing. When any field decreases, the new total itself is the delta (a new baseline).
+- A `cached_input_tokens` or `cache_write_input_tokens` that is present and not a non-negative integer makes the line unreadable, as it does for Claude.
 - `"info": null` is a rate-limit-only ping and is not usage.
 
 **Forward receipts:** a stage's receipts live at `.loom/work/subagents/<stage_id>/forward-receipts.jsonl`. `loom/src/models/forward_receipt.rs` gives the path (`receipts_path`) and the decoders. A `ForwardReceipt` carries `codex_thread_id: Option<String>`. The rollout for a thread is the file under the Codex sessions root whose name ends in `-<thread_id>.jsonl`. Codex never runs with `--ephemeral` in loom (checked: no occurrence in `loom-hooks/` or `loom/src`).
@@ -269,11 +277,13 @@ Display tone:
 | File shrinks or inode changes | Drop that file's accumulated state (its agent's totals and buckets), reset the offset to 0 and re-read the whole file. |
 | Subagent file appears late | List `<transcript stem>/subagents/` on every pass. New files start at offset 0. |
 | Daemon paused or laptop asleep | Bucket by line timestamp. |
-| Daemon restart | Checkpoint `.loom/work/tokens/checkpoint.json` (offsets, inodes, per-file dedupe tables, Codex last totals, per-agent totals and buckets, unreadable count) after every pass, atomically. A missing, unparseable, wrong-version, symlinked or oversized (over 8 MiB, checked before reading) checkpoint means a full rescan. |
+| Daemon restart | Checkpoint `.loom/work/tokens/checkpoint.json` (offsets, inodes, per-file dedupe tables, Codex last totals, per-agent totals and buckets, unreadable count) after every pass, atomically. A missing, unparseable, wrong-version, symlinked or oversized (over 8 MiB, checked before reading) checkpoint means a full rescan; all but a missing one are named in the pass warning. |
 | Checkpoint growth | Buckets older than the bucket containing `observed_at` minus `STAGE_SERIES_LEN` are dropped before writing (older usage lives in totals only). The per-file dedupe table keeps the 4096 most recent ids. |
+| Checkpoint over the cap | `Checkpoint::save` refuses to write more than the 8 MiB that `load` reads, measured on the exact compact JSON it would write. Over it, the pass empties the message-id table of every agent whose file did not advance this pass and measures again. Still over: nothing is written, the next pass starts from the checkpoint before this one, and the pass's warning says so (logged once, like any warning). Clearing a finished file's table means a later repeated id in that file could count again. |
+| Over-long line | A line over 32 MiB (`tail::MAX_LINE_BYTES`) is skipped without buffering more than the cap, the offset moves past it, and it counts in `unreadable_lines`. A line still unfinished is left for a later read, as for any partial line. |
 | File no longer discovered | Discovery only adds agents. A checkpointed agent whose file is no longer found (transcript deleted, `transcript_path` replaced by a later heartbeat, rollout removed) keeps its totals and buckets; its file is skipped, never reset. Only a shrink or inode change on a file that still exists resets that file's state. |
 | Unresolved Codex thread | A thread whose rollout is not found is cached as a miss with the pass time; the sessions root is walked again for it at most every 10 minutes, never every pass. |
-| Format drift | A Claude line that is invalid JSON and contains `"usage"`, or an assistant line whose `usage` lacks numeric `input_tokens` or `output_tokens`, counts in `unreadable_lines`. So does a Codex line that contains `"token_count"` and is invalid JSON, or whose `info` object lacks a numeric `total_token_usage`. Valid JSON lines that merely mention the word are not usage and not unreadable. |
+| Format drift | A Claude line that is invalid JSON and contains `"usage"`, or an assistant line whose `usage` lacks numeric `input_tokens` or `output_tokens` or has a present non-numeric cache field, counts in `unreadable_lines`. An absent or `null` cache field is 0, for Claude and for Codex. So does a Codex line that contains `"token_count"` and is invalid JSON, or whose `info` object lacks a numeric `total_token_usage`. Valid JSON lines that merely mention the word are not usage and not unreadable. |
 | No transcript path yet | The stage is absent from `stages`. The UI shows "—", never 0. |
-| Untrusted strings | `agent_type` and `model` pass through `crate::context::untrusted::inline_safe`. Agent ids come from file names and must satisfy `crate::models::forward_receipt::is_safe_id`; files with unsafe names are skipped. |
-| Watching cost | Stat size and inode first; open only files that grew or changed. |
+| Untrusted strings | `agent_type` and `model` pass through `crate::context::untrusted::inline_safe`. Agent ids come from file names and must satisfy `crate::models::forward_receipt::is_safe_id`; files with unsafe names are skipped. A transcript path in a logged warning passes through `inline_safe` too. |
+| Watching cost | Stat size and inode first (without following a symlink); open only files that grew or changed, with `O_NOFOLLOW | O_NONBLOCK`, and stop between lines when the tracker's shutdown flag is set. |
