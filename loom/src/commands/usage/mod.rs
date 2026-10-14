@@ -15,7 +15,7 @@
 mod accounting;
 mod claude_provider;
 mod claude_usage;
-mod codex_discovery;
+pub(crate) mod codex_discovery;
 mod codex_provider;
 mod codex_tokens;
 mod comparison;

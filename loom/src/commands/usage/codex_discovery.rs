@@ -36,7 +36,7 @@ pub(crate) fn discover(explicit_root: Option<&Path>) -> CodexDiscovery {
     result
 }
 
-fn codex_root(explicit_root: Option<&Path>) -> Option<PathBuf> {
+pub(crate) fn codex_root(explicit_root: Option<&Path>) -> Option<PathBuf> {
     explicit_root.map(Path::to_path_buf).or_else(|| {
         std::env::var_os("HOME")
             .map(PathBuf::from)
@@ -44,7 +44,7 @@ fn codex_root(explicit_root: Option<&Path>) -> Option<PathBuf> {
     })
 }
 
-fn collect_jsonl(directory: &Path, result: &mut CodexDiscovery) {
+pub(crate) fn collect_jsonl(directory: &Path, result: &mut CodexDiscovery) {
     let entries = match fs::read_dir(directory) {
         Ok(entries) => entries,
         Err(_) => {
