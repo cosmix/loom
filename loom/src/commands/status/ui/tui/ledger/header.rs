@@ -246,6 +246,7 @@ mod tests {
                 claude: None,
                 codex: None,
             },
+            tokens: None,
         }
     }
 

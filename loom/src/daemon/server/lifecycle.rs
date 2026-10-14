@@ -179,7 +179,7 @@ impl DaemonServer {
 
         let log_tail_handle = spawn_log_tailer(self);
         let status_broadcast_handle = spawn_status_broadcaster(self);
-        let quota_poller_handle = spawn_quota_poller(self);
+        let producers = spawn_producers(self);
         let client_pool = WorkerPool::new(CLIENT_WORKERS, CLIENT_QUEUE_CAPACITY);
         let byte_budget = ByteBudget::new(MAX_IN_FLIGHT_REQUEST_BYTES);
 
@@ -247,7 +247,7 @@ impl DaemonServer {
             wait_with_timeout(handle, "log_tail");
         }
         wait_with_timeout(status_broadcast_handle, "status_broadcast");
-        wait_with_timeout(quota_poller_handle, "quota_poller");
+        join_producers(producers, wait_with_timeout);
 
         self.cleanup()?;
         Ok(())
@@ -284,6 +284,29 @@ impl DaemonServer {
         }
         Ok(())
     }
+}
+
+/// Background threads that publish status inputs on their own cadence.
+struct Producers {
+    quota_poller: thread::JoinHandle<()>,
+    token_tracker: thread::JoinHandle<()>,
+}
+
+/// Start the quota poller and the token tracker.
+fn spawn_producers(server: &DaemonServer) -> Producers {
+    Producers {
+        quota_poller: spawn_quota_poller(server),
+        token_tracker: crate::tokens::tracker::spawn_token_tracker(
+            server.work_dir.clone(),
+            Arc::clone(&server.shutdown_flag),
+        ),
+    }
+}
+
+/// Wait for the producer threads one after the other through `wait`.
+fn join_producers(producers: Producers, wait: impl Fn(thread::JoinHandle<()>, &str)) {
+    wait(producers.quota_poller, "quota_poller");
+    wait(producers.token_tracker, "token_tracker");
 }
 
 /// Move the existing daemon log aside to `<log>.prev`, keeping exactly one

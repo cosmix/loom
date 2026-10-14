@@ -145,7 +145,7 @@ fn status_data() -> StatusData {
             ..Default::default()
         },
         plan_name: Some("Test plan".to_string()),
-        quota: crate::quota::QuotaSnapshot::default(),
+        ..Default::default()
     }
 }
 

@@ -120,7 +120,7 @@ pub fn ensure_daemon_stopped(work_root: &std::path::Path) -> Result<()> {
 
     // 30s, not a "brief window": `DaemonServer::stop` returns as soon as the
     // daemon acks the stop request, after which `run_server` still has to
-    // join four threads sequentially with a 5s timeout each
+    // join five threads sequentially with a 5s timeout each
     // (`daemon/server/lifecycle.rs`) before it releases the flock, and even
     // then release is not always observable on the very next probe (see the
     // `poll_until_free` comment in `daemon/server/lock.rs`). A shorter
