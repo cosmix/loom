@@ -77,6 +77,7 @@ fn data_without_attention() -> StatusData {
         },
         plan_name: Some("no-attention".to_owned()),
         quota: crate::quota::QuotaSnapshot::default(),
+        tokens: None,
     }
 }
 

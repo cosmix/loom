@@ -187,6 +187,7 @@ pub(super) fn fixture() -> StatusData {
         progress,
         plan_name: Some("embed-assets-self-update".to_owned()),
         quota: crate::quota::QuotaSnapshot::default(),
+        tokens: None,
     }
 }
 

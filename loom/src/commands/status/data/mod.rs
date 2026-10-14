@@ -81,6 +81,10 @@ pub struct StatusData {
     /// no cache entry exists yet.
     #[serde(default)]
     pub quota: crate::quota::QuotaSnapshot,
+    /// Live token flow from the daemon's tracker; absent when no fresh
+    /// `flow.json` exists.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub tokens: Option<crate::tokens::TokenFlow>,
 }
 
 /// Stage display data

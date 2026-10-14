@@ -3,6 +3,7 @@ use chrono::Utc;
 use std::fs;
 
 use crate::commands::status::merge_status::build_merge_report;
+use crate::context::untrusted::inline_safe;
 use crate::fs::work_dir::{load_config, resolve_context_ceiling_tokens, WorkDir};
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::{Stage, StageStatus, StatusBucket};
@@ -364,7 +365,25 @@ pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
         progress,
         plan_name,
         quota: crate::quota::read_snapshot(work_dir.root()),
+        tokens: fresh_flow(work_dir),
     })
+}
+
+/// The tracker's last flow when it is recent enough to show, with every
+/// string flattened at this boundary (a planted `flow.json` is untrusted).
+fn fresh_flow(work_dir: &WorkDir) -> Option<crate::tokens::TokenFlow> {
+    let mut flow = crate::tokens::model::read_flow(work_dir.root()).filter(|f| {
+        Utc::now().timestamp() - f.observed_at <= crate::tokens::model::FLOW_STALE_SECS
+    })?;
+    for stage in &mut flow.stages {
+        stage.stage_id = inline_safe(&stage.stage_id);
+        for agent in &mut stage.agents {
+            agent.id = inline_safe(&agent.id);
+            agent.agent_type = agent.agent_type.as_deref().map(inline_safe);
+            agent.model = agent.model.as_deref().map(inline_safe);
+        }
+    }
+    Some(flow)
 }
 
 #[cfg(test)]
