@@ -184,3 +184,7 @@ before writing a new one.
   counted as stage changes.
 - **Degraded modes are reported.** No base graph layer, an unchecked file in definition-site exclusion and a language
   without an extractor each produce a note or stderr warning and never a false gap.
+
+## Optional Status Field From a Daemon-Written File
+
+A field the daemon derives slowly (token flow) gets its own thread that persists a compact file; the collector reads it bounded (`read_bounded`: no-follow, non-blocking, size-capped), keeps it only while fresh, and sanitizes strings and numbers at that boundary. The key is absent when stale, the web schema marks it optional, and a frame whose only defects sit under that key drops the block alone, so ordinary status always wins over the overlay. Shedding rules keep the file under a quarter of the response frame. Instance: [architecture/token-flow-sources.md](architecture/token-flow-sources.md#collector-boundary).

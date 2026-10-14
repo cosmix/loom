@@ -10,7 +10,7 @@
 | --- | --- | --- |
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 249 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 245 |
-| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
+| [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 190 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 247 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
@@ -47,7 +47,7 @@
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Tick order, Monitor, liveness | 56 |
 | [owned-waits](architecture/owned-waits.md) | Worker-set waits, lease, boot ID | 57 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) | Plan fields v1/v2, checks, lints | 252 |
-| [quota-poller](architecture/quota-poller.md) | Usage-quota polling and rendering | 31 |
+| [quota-poller](architecture/quota-poller.md) | Usage-quota polling and rendering | 35 |
 | [remote-control](architecture/remote-control.md) | Capability detection, preflight, naming | 81 |
 | [security-and-isolation](architecture/security-and-isolation.md) | 4-layer worktree defense | 212 |
 | [signal-generation](architecture/signal-generation.md) | Signal assembly, cache, prefixes | 236 |
@@ -62,9 +62,9 @@
 | [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends | 293 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) | 23 adapters, profiles, quoting, detect | 57 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, compare, cache | 260 |
-| [token-flow-sources](architecture/token-flow-sources.md) | Token usage sources: transcripts, rollouts, receipts | 24 |
+| [token-flow-sources](architecture/token-flow-sources.md) | Token flow: sources, tracker, surfaces | 69 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 135 |
-| [web-dashboard](architecture/web-dashboard.md) | status --web server, SPA, streams | 95 |
+| [web-dashboard](architecture/web-dashboard.md) | status --web server, SPA, streams | 99 |
 | [web-terminal](architecture/web-terminal.md) | loom status --web terminals | 175 |
 
 ### entry-points
@@ -75,7 +75,7 @@
 | [context-and-source-graph](entry-points/context-and-source-graph.md) | Context retrieval, source graph | 79 |
 | [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs, handoff, sandbox | 126 |
 | [hooks](entry-points/hooks.md) | Hook scripts, events, matching | 147 |
-| [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Orchestrator, daemon, signals | 234 |
+| [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Orchestrator, daemon, signals | 246 |
 | [remote-control](entry-points/remote-control.md) | Remote-control detection call sites | 99 |
 
 ### patterns
@@ -104,7 +104,7 @@
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, plugin scope | 143 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] precedence, value types | 103 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML, hook I/O, skills | 168 |
-| [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard type and CSS gotchas | 30 |
+| [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard type and CSS gotchas | 23 |
 
 ### mistakes
 
@@ -162,7 +162,7 @@
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server gotchas | 43 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Producers of a rendered field | 188 |
 | [verification-harness](mistakes/verification-harness.md) | Many checks failing: suspect harness | 371 |
-| [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 267 |
+| [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 328 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) capped by path | 123 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server concurrency | 338 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Layer written under an ignored key | 94 |
@@ -184,7 +184,7 @@
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Language limits, open decisions | 79 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Unimplemented reviewer suggestions | 242 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package caches session-writable | 17 |
-| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token follow-ups | 92 |
+| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token follow-ups | 142 |
 | [typed-config-values](concerns/typed-config-values.md) | Accepted gaps in the config read-path | 27 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) | v2 adapters, parser gaps, known gaps | 124 |
-| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Latent issues in status/web | 94 |
+| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Latent issues in status/web | 106 |

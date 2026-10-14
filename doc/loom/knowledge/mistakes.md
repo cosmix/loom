@@ -239,7 +239,7 @@ Lint and test-discipline lessons spanning `--all-targets`, `--no-fail-fast`, amb
 
 ## Verification v2 Delivery Mistakes
 
-Twelve prevention rules from the verification-v2 plan: wave-brief ownership gaps, truncated caller searches, worker sizing and `loom subagents watch` traps, rustfmt-before-measure, the pre-commit rustdoc gate, the silent markdown lint, unregistered hook tests, commit mechanics, gates on the wrong record, unverified reviews, fixtures that cannot fail, frozen contract files, ledger lines, stage gotchas. → [verification-v2-delivery](mistakes/verification-v2-delivery.md).
+Twelve prevention rules from the verification-v2 plan: wave-brief ownership gaps, truncated caller searches, worker sizing and `loom subagents watch` traps, rustfmt-before-measure, the pre-commit rustdoc gate, the silent markdown lint, unregistered hook tests, commit mechanics, gates on the wrong record, unverified reviews, fixtures that cannot fail, frozen contract files, ledger lines, stage gotchas. → [verification-v2-delivery](mistakes/verification-v2-delivery.md). Token-flow stages added `reachable` call shapes, a required TypeScript field, a source edit after the dist build and a filtered commit ticket.
 
 ## An flock Outlives `drop` Under a Forking Test Binary
 
