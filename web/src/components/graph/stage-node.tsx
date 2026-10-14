@@ -7,8 +7,8 @@ import type { StageFlow, StageSummary } from "@/api/schema";
 import { ActivityRoundel } from "@/components/activity-roundel";
 import { ContextMeter } from "@/components/context-meter";
 import { useGraphActions, type Emphasis } from "@/components/graph/context";
+import { NodeTokens } from "@/components/graph/node-tokens";
 import { StateBadge, toneClass } from "@/components/state-badge";
-import { Sparkline } from "@/components/sparkline";
 import { TerminalGlyph } from "@/components/terminal/terminal-glyph";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -20,7 +20,6 @@ import {
   timeText,
 } from "@/lib/format";
 import { hasFooter, NODE_WIDTH, nodeHeight } from "@/lib/graph";
-import { compactTokens, fresh } from "@/lib/tokens";
 
 export interface StageNodeData extends Record<string, unknown> {
   stage: StageSummary;
@@ -53,8 +52,8 @@ const TYPE_TAG: Partial<Record<StageSummary["stage_type"], string>> = {
 };
 
 /// An index card on the sheet: state and type along the top with the
-/// terminal glyph in the corner, name and id, then the live row. The card
-/// re-keys on status so a change washes it.
+/// terminal glyph in the corner, name and id, then the tray of live lines.
+/// The card re-keys on status so a change washes it.
 export function StageNode({ data }: NodeProps<StageNodeType>) {
   const { stage, index, emphasis, tokens } = data;
   const { open, openTerminal } = useGraphActions();
@@ -115,7 +114,7 @@ export function StageNode({ data }: NodeProps<StageNodeType>) {
           {stage.name}
         </p>
         <p className="truncate font-mono text-[11px] leading-4 text-muted-foreground">{stage.id}</p>
-        {(hasFooter(stage) || tokens !== null) && <Footer stage={stage} tokens={tokens} />}
+        {(hasFooter(stage) || tokens !== null) && <Tray stage={stage} tokens={tokens} />}
       </div>
       <Handle
         type="source"
@@ -127,58 +126,43 @@ export function StageNode({ data }: NodeProps<StageNodeType>) {
   );
 }
 
-/// Activity, merge and time on one line; the context meter, when the stage
-/// has one, and the token flow, each on a line of its own so the activity
-/// text keeps its room.
-function Footer({ stage, tokens }: { stage: StageSummary; tokens: StageFlow | null }) {
-  const activity = activityText(stage);
-  const merge = mergeText(stage);
-  const time = timeText(stage);
+/// The tray along the card's foot, below a hairline rule: activity, merge and
+/// time on one line, then the context meter and the token row, each on a
+/// line of its own so the activity text keeps its room. A stage with a token
+/// flow but nothing else live shows the token row alone.
+function Tray({ stage, tokens }: { stage: StageSummary; tokens: StageFlow | null }) {
   return (
-    <footer className="mt-auto flex flex-col gap-0.5 text-[11px] leading-4">
-      <div className="flex items-center gap-2">
-        <ActivityRoundel stage={stage} size={13} />
-        {activity && (
-          <span
-            className={cn("min-w-0 truncate", toneClass(activity.tone))}
-            title={stage.completion_blocker?.next_action}
-          >
-            {activity.text}
-          </span>
-        )}
-        {merge && <span className={cn("shrink-0", toneClass(merge.tone))}>{merge.text}</span>}
-        {time && (
-          <span className="ml-auto shrink-0 font-mono text-muted-foreground tabular-nums">
-            {time}
-          </span>
-        )}
-      </div>
+    <footer className="stage-tray">
+      {hasFooter(stage) && <ActivityLine stage={stage} />}
       <ContextMeter stage={stage} className="shrink-0" />
-      {tokens && <TokenLine stage={stage} tokens={tokens} />}
+      {tokens && <NodeTokens stage={stage} tokens={tokens} />}
     </footer>
   );
 }
 
-/// An executing stage shows its rate beside a sparkline; any other stage
-/// shows what it spent in all.
-function TokenLine({ stage, tokens }: { stage: StageSummary; tokens: StageFlow }) {
-  if (stage.status !== "executing") {
-    return (
-      <div className="text-muted-foreground tabular-nums">
-        {compactTokens(fresh(tokens.total))} total
-      </div>
-    );
-  }
+function ActivityLine({ stage }: { stage: StageSummary }) {
+  const activity = activityText(stage);
+  const merge = mergeText(stage);
+  const time = timeText(stage);
   return (
-    <div className="flex items-center gap-2 tabular-nums">
-      <Sparkline
-        values={tokens.series.slice(-20)}
-        width={56}
-        height={12}
-        label={`${stage.name} tokens, last 10 min`}
-        className="shrink-0 text-(--tone-executing)"
-      />
-      <span className="font-mono">{compactTokens(fresh(tokens.rate))}/m</span>
+    <div className="flex items-center gap-2">
+      <ActivityRoundel stage={stage} size={13} />
+      {activity && (
+        <span
+          className={cn("min-w-0 truncate", toneClass(activity.tone))}
+          title={stage.completion_blocker?.next_action}
+        >
+          {activity.text}
+        </span>
+      )}
+      {merge && merge.text !== activity?.text && (
+        <span className={cn("shrink-0", toneClass(merge.tone))}>{merge.text}</span>
+      )}
+      {time && (
+        <span className="ml-auto shrink-0 font-mono text-muted-foreground tabular-nums">
+          {time}
+        </span>
+      )}
     </div>
   );
 }

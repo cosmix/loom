@@ -13,6 +13,11 @@ import {
 
 /// Card geometry shared by the layout and the node component so the two
 /// never disagree: dagre lays out the size the card will actually render at.
+/// The head is 10 padding + 20 header + 6 + 20 name + 16 id = 72; a bare card
+/// adds 11 of room and its 9 bottom padding (92). The tray (stage-node.css)
+/// replaces that padding with a 1 px rule, 8 + 8 padding and its 16 px lines,
+/// 2 px apart, sitting 13 below the id: its first line costs 26, each further
+/// line (context meter, tokens) 18.
 export const NODE_WIDTH = 248;
 const NODE_BASE_HEIGHT = 92;
 const NODE_FOOTER_HEIGHT = 26;
@@ -34,7 +39,8 @@ export function hasFooter(stage: StageSummary): boolean {
 
 /// The footer gets a second line for the context meter when there is one and
 /// a further line for the token flow when the stage has one; a token line
-/// alone still brings the footer.
+/// alone still brings the footer, whose activity line the tray then leaves
+/// out, so the head above the rule keeps that line's room.
 export function nodeHeight(stage: StageSummary, hasTokens = false): number {
   return (
     NODE_BASE_HEIGHT +
@@ -171,7 +177,8 @@ export function layoutStages(
   );
   const rows = [...new Set(nodes.map((node) => node.y + node.height / 2))].sort((a, b) => a - b);
   const ranks = rows.map((y, rank) => ({ rank, y }));
-  const left = nodes.length === 0 ? 0 : Math.min(...nodes.map((node) => node.x));
+  const left =
+    nodes.length === 0 ? 0 : nodes.reduce((min, node) => Math.min(min, node.x), Infinity);
   return { nodes, edges, ranks, left };
 }
 
