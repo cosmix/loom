@@ -5,6 +5,7 @@
 use super::tests::default_config;
 use super::{build_settings, SettingsTarget};
 use serde_json::{json, Value};
+use serial_test::serial;
 use std::path::Path;
 use tempfile::TempDir;
 
@@ -123,6 +124,7 @@ fn no_cwd_keeps_every_entry() {
 }
 
 #[test]
+#[serial]
 fn a_tilde_entry_inside_the_cwd_is_dropped() {
     let Some(home) = dirs::home_dir() else {
         return;

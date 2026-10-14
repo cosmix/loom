@@ -8,6 +8,7 @@ use crate::plan::schema::PermissionMode;
 use crate::sandbox::control_surfaces::{session_denies, DenyInputs, SessionDenies};
 use crate::sandbox::MergedSandboxConfig;
 use serde_json::{json, Value};
+use serial_test::serial;
 use std::path::{Path, PathBuf};
 
 const ALL_KINDS: [SessionType; 6] = [
@@ -347,7 +348,10 @@ fn a_config_validate_config_refuses_is_refused_for_every_kind() {
     }
 }
 
+/// Reads `HOME` here and again inside `build`, so it must not overlap a test
+/// that points `HOME` elsewhere (`ScratchHome`, `#[serial]`).
 #[test]
+#[serial]
 fn the_home_expanded_forward_entry_is_allowed_only_with_the_codex_lane() {
     let Some(entry) = crate::fs::permissions::settings::codex_forward_home_allow_entry() else {
         return;
