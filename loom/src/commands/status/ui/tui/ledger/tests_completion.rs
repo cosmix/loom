@@ -3,6 +3,9 @@ use super::tests::{make_blocker, make_stage};
 use crate::commands::status::data::{ActivityStatus, CompletionBlockerState, SessionExitReason};
 use crate::models::stage::StageStatus;
 
+#[path = "tests_tokens_contracts.rs"]
+mod tokens_contracts;
+
 #[test]
 fn blocker_activity_beats_stale_and_incoherent_execution() {
     let mut stage = make_stage("blocked-work", StageStatus::Executing);
