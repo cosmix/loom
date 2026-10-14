@@ -6,15 +6,16 @@
 //! an error - a bad cache entry must never take down status reporting.
 
 use crate::context::untrusted::inline_safe;
+use crate::fs::safe_read::read_to_string_bounded;
 use crate::quota::model::{ProviderQuota, QuotaWindow, WindowKind};
 use anyhow::{bail, Context, Result};
 use std::fs::{File, OpenOptions};
-use std::io::{BufWriter, Read, Write};
+use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
 /// Cached files are never trusted past this size; a body at or above the cap
 /// is treated the same as a corrupt file.
-const MAX_CACHE_FILE_BYTES: u64 = 64 * 1024;
+const MAX_CACHE_FILE_BYTES: usize = 64 * 1024;
 
 /// The `quota/` directory under a work root.
 pub fn quota_dir(work_root: &Path) -> PathBuf {
@@ -43,18 +44,17 @@ pub fn write_provider(work_root: &Path, provider: &str, quota: &ProviderQuota) -
 
 /// Read and sanitize a provider's cached quota, or `None` when the file is
 /// absent, oversized, unreadable, or fails to parse. Never deletes the file.
+///
+/// The read goes through `read_to_string_bounded`, which opens without
+/// following a symlink and without blocking, so a FIFO or a symlink planted at
+/// the cache path reads as `None` instead of stalling the 1 s status collector
+/// or the token tracker.
 pub fn read_provider(work_root: &Path, provider: &str) -> Option<ProviderQuota> {
-    let path = provider_path(work_root, provider);
-    let metadata = std::fs::metadata(&path).ok()?;
-    if metadata.len() >= MAX_CACHE_FILE_BYTES {
-        return None;
-    }
-
-    let file = File::open(&path).ok()?;
-    let mut body = String::new();
-    file.take(MAX_CACHE_FILE_BYTES)
-        .read_to_string(&mut body)
-        .ok()?;
+    let root = quota_dir(work_root);
+    let relative = PathBuf::from(format!("{provider}.json"));
+    // `read_to_string_bounded` refuses a body over its limit; the cap here is
+    // exclusive, so the limit is one byte below it.
+    let body = read_to_string_bounded(&root, &relative, MAX_CACHE_FILE_BYTES - 1).ok()?;
 
     let quota: ProviderQuota = serde_json::from_str(&body).ok()?;
     Some(sanitize(quota))
@@ -147,14 +147,11 @@ pub(crate) fn atomic_write(path: &Path, content: &str) -> Result<()> {
     Ok(())
 }
 
-/// Refuse a target symlink before replacing a cache or history file.
+/// Refuse a target symlink before replacing a cache, history, or token file.
 pub(crate) fn reject_symlink(path: &Path) -> Result<()> {
     if let Ok(metadata) = std::fs::symlink_metadata(path) {
         if metadata.file_type().is_symlink() {
-            bail!(
-                "refusing to write quota cache through a symlink: {}",
-                path.display()
-            );
+            bail!("refusing to write through a symlink: {}", path.display());
         }
     }
     Ok(())

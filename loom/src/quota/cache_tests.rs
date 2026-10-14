@@ -243,3 +243,62 @@ fn recording_a_failure_does_not_create_a_history_observation() {
         crate::quota::HistorySourceState::Missing
     );
 }
+
+#[test]
+fn a_fifo_at_the_cache_path_reads_as_none_without_blocking() {
+    let dir = tempdir().unwrap();
+    std::fs::create_dir_all(quota_dir(dir.path())).unwrap();
+    let fifo = provider_path(dir.path(), "claude");
+    nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::S_IRWXU).unwrap();
+
+    let root = dir.path().to_path_buf();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(read_provider(&root, "claude"));
+    });
+
+    let quota = receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("read_provider blocked on a FIFO");
+    assert_eq!(quota, None);
+}
+
+#[test]
+fn a_symlinked_cache_file_reads_as_none() {
+    let dir = tempdir().unwrap();
+    let target = dir.path().join("elsewhere.json");
+    write_provider(dir.path(), "claude", &sample_quota()).unwrap();
+    std::fs::rename(provider_path(dir.path(), "claude"), &target).unwrap();
+    std::os::unix::fs::symlink(&target, provider_path(dir.path(), "claude")).unwrap();
+
+    assert_eq!(read_provider(dir.path(), "claude"), None);
+}
+
+#[test]
+fn a_body_at_the_cap_reads_as_none_and_one_byte_under_parses() {
+    let dir = tempdir().unwrap();
+    std::fs::create_dir_all(quota_dir(dir.path())).unwrap();
+    let path = provider_path(dir.path(), "claude");
+    let json = serde_json::to_string(&sample_quota()).unwrap();
+
+    let padded = |len: usize| format!("{json}{}", " ".repeat(len - json.len()));
+    std::fs::write(&path, padded(MAX_CACHE_FILE_BYTES - 1)).unwrap();
+    assert_eq!(read_provider(dir.path(), "claude"), Some(sample_quota()));
+
+    std::fs::write(&path, padded(MAX_CACHE_FILE_BYTES)).unwrap();
+    assert_eq!(read_provider(dir.path(), "claude"), None);
+}
+
+#[test]
+fn the_symlink_refusal_names_the_path_and_is_not_specific_to_the_quota_cache() {
+    let dir = tempdir().unwrap();
+    let link = dir.path().join("tokens");
+    std::os::unix::fs::symlink(dir.path(), &link).unwrap();
+
+    let message = reject_symlink(&link).unwrap_err().to_string();
+
+    assert_eq!(
+        message,
+        format!("refusing to write through a symlink: {}", link.display())
+    );
+}

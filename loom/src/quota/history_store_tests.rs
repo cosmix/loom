@@ -230,3 +230,52 @@ fn unknown_provider_does_not_create_any_history_file() {
     assert!(!history_path(dir.path(), "claude").exists());
     assert!(!history_path(dir.path(), "codex").exists());
 }
+
+#[test]
+fn a_fifo_at_the_history_path_is_unreadable_without_blocking() {
+    let dir = tempdir().unwrap();
+    let path = history_path(dir.path(), "claude");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    nix::unistd::mkfifo(&path, nix::sys::stat::Mode::S_IRWXU).unwrap();
+
+    let root = dir.path().to_path_buf();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(read_history(&root, "claude", 0, None).diagnostics.source);
+    });
+
+    let source = receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("read_history blocked on a FIFO");
+    assert_eq!(source, HistorySourceState::Unreadable);
+}
+
+#[test]
+fn a_fifo_at_the_history_path_fails_the_writer_without_blocking() {
+    let dir = tempdir().unwrap();
+    let path = history_path(dir.path(), "claude");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    nix::unistd::mkfifo(&path, nix::sys::stat::Mode::S_IRWXU).unwrap();
+
+    let root = dir.path().to_path_buf();
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let observation = quota(NOW, 10.0, None, None);
+        let failed = record_observation_at(&root, "claude", &observation, NOW, 200).is_err();
+        let _ = sender.send(failed);
+    });
+
+    let failed = receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("record_observation_at blocked on a FIFO");
+    assert!(failed);
+}
+
+#[test]
+fn an_absent_history_directory_reads_as_missing() {
+    let dir = tempdir().unwrap();
+
+    let history = read_history(dir.path(), "claude", 0, None);
+
+    assert_eq!(history.diagnostics.source, HistorySourceState::Missing);
+}

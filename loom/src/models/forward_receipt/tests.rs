@@ -295,6 +295,23 @@ fn loader_marks_byte_and_line_limits_truncated() {
     assert_eq!(loaded.malformed, 20_000);
 }
 
+#[test]
+fn loader_refuses_a_fifo_without_blocking() {
+    let temp = tempfile::tempdir().expect("temporary directory");
+    let fifo = temp.path().join("fifo.jsonl");
+    nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::S_IRWXU).expect("mkfifo");
+
+    let (sender, receiver) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = sender.send(load_receipts(&fifo).is_err());
+    });
+
+    let refused = receiver
+        .recv_timeout(std::time::Duration::from_secs(5))
+        .expect("load_receipts blocked on a FIFO");
+    assert!(refused);
+}
+
 fn observation_with_exit(state: ForwardState, exit_code: i32) -> ForwardObservation {
     let mut observation = observation(state);
     observation.exit_code = Some(exit_code);
