@@ -32,7 +32,7 @@ use Cell::{Apply as A, DocumentOnly as D, Refuse as R};
 const SECTION_5: [(SessionType, [Cell; 9]); 6] = [
     (SessionType::Stage, [A, A, A, A, R, R, A, R, A]),
     (SessionType::Knowledge, [A, A, A, A, R, R, A, R, R]),
-    (SessionType::Merge, [A, R, R, D, A, R, A, R, R]),
+    (SessionType::Merge, [A, A, R, D, A, R, A, R, R]),
     (SessionType::Adjudication, [R, R, R, R, R, A, A, R, R]),
     (SessionType::BaseConflict, [A, R, R, D, R, R, A, R, R]),
     (SessionType::Contract, [A, A, R, A, R, R, A, A, R]),
@@ -60,6 +60,10 @@ fn run_cell(session_type: SessionType, kind: RequestKind) -> Cell {
             fx.file_dispute(1);
         }
         RequestKind::MergeResolved => fx.stage(StageStatus::MergeConflict, Some(&record.id)),
+        // A resolver gives up on a stage that is waiting for its merge.
+        RequestKind::Block if session_type == SessionType::Merge => {
+            fx.stage(StageStatus::MergeConflict, None)
+        }
         RequestKind::FreezeContracts => {
             // Everything the freeze handler needs to succeed, so a refusal
             // can only come from the matrix.
@@ -94,15 +98,26 @@ fn run_cell(session_type: SessionType, kind: RequestKind) -> Cell {
             assert_no_effect(&fx, &host, kind);
             Cell::Refuse
         }
-        Settle::Applied(_) => classify_applied(&fx, &host, kind),
+        Settle::Applied(_) => classify_applied(&fx, &host, session_type, kind),
     }
 }
 
 /// Which applied cell this is, after confirming the handler's effect landed.
-fn classify_applied(fx: &Fixture, host: &FakeHost, kind: RequestKind) -> Cell {
+fn classify_applied(
+    fx: &Fixture,
+    host: &FakeHost,
+    session_type: SessionType,
+    kind: RequestKind,
+) -> Cell {
     let stage = load_stage(STAGE, &fx.work_dir).unwrap();
     match kind {
         RequestKind::Memory => assert_eq!(fx.journal_len(), 1),
+        // A resolver's block is a give-up the host carries out; any other
+        // session's block is the stage block itself.
+        RequestKind::Block if session_type == SessionType::Merge => {
+            assert_eq!(host.give_ups.len(), 1);
+            assert_eq!(stage.status, StageStatus::MergeConflict);
+        }
         RequestKind::Block => assert_eq!(stage.status, StageStatus::Blocked),
         RequestKind::Dispute | RequestKind::FileDispute => {
             assert_eq!(stage.status, StageStatus::NeedsAdjudication)
@@ -137,6 +152,7 @@ fn classify_applied(fx: &Fixture, host: &FakeHost, kind: RequestKind) -> Cell {
 fn assert_no_effect(fx: &Fixture, host: &FakeHost, kind: RequestKind) {
     assert_eq!(fx.journal_len(), 0);
     assert!(host.merges.is_empty());
+    assert!(host.give_ups.is_empty());
     assert!(!fx.handoff_written());
     assert!(!verdict_file(&fx.work_dir.join("disputes"), STAGE, 1).exists());
     assert!(crate::telemetry::read_events(&fx.work_dir)

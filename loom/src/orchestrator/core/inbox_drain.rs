@@ -69,6 +69,10 @@ trait InboxHost {
     /// sign a Merge session's commit: stop the resolver and route the stage to
     /// human review with the remedy. Returns what was done, for the ledger.
     fn hold_merge_for_signing(&mut self, stage_id: &str, detail: &str) -> String;
+    /// A Merge session reported through `loom stage block` that it cannot
+    /// finish `stage_id`'s merge: stop it and route the stage to human review
+    /// with its `reason`.
+    fn give_up_merge(&mut self, session: &Session, stage_id: &str, reason: &str) -> Settle;
     /// True the first time `key` is reported, so a condition that persists
     /// across ticks is logged once rather than every five seconds.
     fn first_report(&mut self, key: &str) -> bool;
@@ -140,6 +144,13 @@ impl InboxHost for Orchestrator {
 
     fn hold_merge_for_signing(&mut self, stage_id: &str, detail: &str) -> String {
         Orchestrator::hold_merge_for_signing(self, stage_id, detail)
+    }
+
+    fn give_up_merge(&mut self, session: &Session, stage_id: &str, reason: &str) -> Settle {
+        match Orchestrator::hold_merge_for_resolver(self, stage_id, session, reason) {
+            Ok(outcome) => Settle::Applied(Some(outcome)),
+            Err(refusal) => Settle::Refused(refusal),
+        }
     }
 
     // The spool drain's log-once set, namespaced so neither silences the other.

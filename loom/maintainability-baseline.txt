@@ -21,7 +21,7 @@ file src/git/worktree/base.rs 469
 file src/git/worktree/settings.rs 462
 file src/models/stage/methods.rs 639
 file src/models/stage/types.rs 696
-file src/orchestrator/core/merge_handler.rs 616
+file src/orchestrator/core/merge_handler.rs 556
 file src/orchestrator/core/recovery.rs 1455
 file src/orchestrator/core/stage_executor.rs 596
 file src/orchestrator/merge_attribution.rs 543

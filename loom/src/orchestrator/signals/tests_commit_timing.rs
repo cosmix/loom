@@ -263,7 +263,7 @@ fn merge_signal_merges_without_committing() {
     let session = create_test_session();
     let stage = create_test_stage();
 
-    let content = format_merge_signal_content(&session, &stage, "loom/stage-1", "main", &[]);
+    let content = format_merge_signal_content(&session, &stage, "loom/stage-1", "main", &[], "");
     assert!(
         content.contains("git merge --no-commit --no-ff main"),
         "the resolver merges without committing: {content}"

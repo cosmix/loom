@@ -71,7 +71,7 @@ fn is_symlink(path: &Path) -> bool {
 /// directory holding `settings.local.json`. They isolate a worktree from its
 /// repo, but are nonsensical — and actively harmful — at the main repo root,
 /// where `../..` resolves to `$HOME`.
-fn is_worktree_escape_path(path: &str) -> bool {
+pub(super) fn is_worktree_escape_path(path: &str) -> bool {
     let t = path.trim();
     t.starts_with("..") || t.contains("../") || t.contains(".worktrees")
 }

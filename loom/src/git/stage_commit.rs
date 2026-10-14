@@ -5,7 +5,8 @@
 //! agent sockets) is outside its sandbox, so the session stages its files and
 //! asks the daemon to commit them. [`Committer::commit_staged`] checks what
 //! the session saw (HEAD, the staged tree) against the worktree, refuses state
-//! paths and gitlinks, writes the commit with `commit-tree` (signed when
+//! paths and gitlinks (and, in a merge, new content under the plan's write
+//! denies: [`Committer::guarding_paths`]), writes the commit with `commit-tree` (signed when
 //! `commit.gpgsign` is true) and moves the branch with a compare-and-swap
 //! `update-ref`. Every git call goes through the runner, so no repository
 //! hook runs, and every index and ref read goes through the given
@@ -25,7 +26,7 @@ use crate::validation::validate_id;
 mod checks;
 
 use checks::require_object_id;
-pub use checks::validate_commit_message;
+pub use checks::{guarded_restore_command, validate_commit_message};
 
 /// What the session saw when it asked for the commit.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -78,6 +79,23 @@ fn refused(reason: impl Into<String>) -> CommitRefusal {
     }
 }
 
+/// The refusal for a commit outside a Merge scope while `MERGE_HEAD` is set.
+/// Both owners of a merge in progress hear their own way out: a merge session
+/// commits through loom, an operator who resolved it by hand commits with git
+/// and lets loom land it; `git merge --abort` only throws the merge away.
+fn merge_in_progress(scope: &CommitScope, merge_head: &str) -> String {
+    let stage: &str = match scope {
+        CommitScope::StageBranch { stage_id } | CommitScope::Merge { stage_id } => stage_id,
+        CommitScope::Knowledge { .. } => "<stage-id>",
+    };
+    format!(
+        "a merge is in progress (MERGE_HEAD {merge_head}) and this commit cannot finish it. \
+         A merge session finishes it with loom stage commit. An operator who resolved it by hand \
+         finishes it from their shell: git commit --no-edit, then loom stage merge {stage} \
+         --resolved. To discard the merge instead: git merge --abort"
+    )
+}
+
 /// The full ref the commit moves.
 fn scope_ref(scope: &CommitScope) -> Result<String, CommitRefusal> {
     match scope {
@@ -108,6 +126,7 @@ pub struct Committer<'a> {
     git: &'a WorktreeGit,
     repo_root: &'a Path,
     merge_target: Option<&'a str>,
+    guarded_paths: &'a [String],
 }
 
 impl<'a> Committer<'a> {
@@ -118,6 +137,7 @@ impl<'a> Committer<'a> {
             git,
             repo_root,
             merge_target: None,
+            guarded_paths: &[],
         }
     }
 
@@ -128,6 +148,16 @@ impl<'a> Committer<'a> {
     /// commit records as its second parent.
     pub fn merging_into(mut self, target_branch: &'a str) -> Self {
         self.merge_target = Some(target_branch);
+        self
+    }
+
+    /// Guard the paths `globs` cover (the plan's worktree-relative
+    /// `deny_write`) in a Merge scope: the merge commit holds git's merge
+    /// result in such a path, or one side of it where git could not merge
+    /// the two, never new content. The merge session's sandbox is released
+    /// from these denies, so the daemon enforces them on its commit.
+    pub fn guarding_paths(mut self, globs: &'a [String]) -> Self {
+        self.guarded_paths = globs;
         self
     }
 
@@ -227,10 +257,7 @@ impl<'a> Committer<'a> {
             (true, None) => Err(refused(
                 "a merge commit needs MERGE_HEAD: run git merge --no-commit --no-ff <target> first",
             )),
-            (false, Some(id)) => Err(refused(format!(
-                "a merge is in progress (MERGE_HEAD {id}); only a merge session can finish it: \
-                 run git merge --abort"
-            ))),
+            (false, Some(id)) => Err(refused(merge_in_progress(scope, &id))),
             (true, Some(id)) => {
                 self.require_single_merge_head()?;
                 self.require_merged_target(&id)?;

@@ -4,56 +4,20 @@
 //! a lane the harness cannot build is settled from the evidence its teardown
 //! would observe.
 
-use std::path::{Path, PathBuf};
-
 use super::super::resolver_attempts::{attempts_file, merge_resolver_attempts, ReservedAttempt};
 use super::super::resolver_spawn::test_fixtures::{
-    commit_on_stage_branch, orchestrator_with_conflict, repo_with_stage_branches,
-    with_read_only_stages,
+    commit_on_stage_branch, orchestrator_with_conflict, repo_with_stage_branches, resolver_for,
+    with_read_only_stages, write_pid_file, write_signal,
 };
 use super::{teardown_proves_gone, UnstoppedResolver};
 use crate::fs::session_files::{load_session_exact, save_session};
 use crate::models::session::{Session, SessionBackendKind, SessionExitReason, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
-use crate::orchestrator::core::Orchestrator;
 use crate::orchestrator::signals::generate_merge_signal;
 use crate::orchestrator::terminal::native::{
     pid_only_is_alive, pid_only_terminate, write_test_pid_identity,
 };
 use crate::verify::transitions::load_stage;
-
-/// A merge resolver session for `stage_id`, with the identity its spawn
-/// gives it.
-fn resolver_for(stage_id: &str) -> Session {
-    let mut session = Session::new_merge(format!("loom/{stage_id}"), "main".to_string());
-    session.assign_to_stage(stage_id.to_string());
-    session
-}
-
-/// Write `session`'s PID file: this test process's PID, with `start_time`
-/// when given. A mismatched start time reads as dead; none at all reads as
-/// alive but unverifiable, which no kill ever signals.
-fn write_pid_file(work_dir: &Path, session: &Session, start_time: Option<u64>) {
-    let pids = work_dir.join("pids");
-    std::fs::create_dir_all(&pids).unwrap();
-    let mut contents = format!("{}\n", std::process::id());
-    if let Some(start_time) = start_time {
-        contents.push_str(&format!("{start_time}\n"));
-    }
-    let name = format!("{}-{}.pid", session.tracking_key, session.id);
-    std::fs::write(pids.join(name), contents).unwrap();
-}
-
-fn write_signal(orchestrator: &Orchestrator, session_id: &str) -> PathBuf {
-    let signal = orchestrator
-        .config
-        .work_dir
-        .join("signals")
-        .join(format!("{session_id}.md"));
-    std::fs::create_dir_all(signal.parent().unwrap()).unwrap();
-    std::fs::write(&signal, "merge signal").unwrap();
-    signal
-}
 
 #[test]
 fn a_spawned_resolver_keeps_its_attempt() {

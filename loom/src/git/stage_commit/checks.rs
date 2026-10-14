@@ -10,6 +10,9 @@ use super::{git_failure, refused, CommitRefusal, CommitScope, Committer};
 use crate::fs::safe_read::read_to_string_bounded;
 use crate::git::branch::branch_ref;
 
+mod guarded;
+pub use guarded::guarded_restore_command;
+
 /// Longest commit message accepted, in bytes.
 const MAX_MESSAGE_BYTES: usize = 16 * 1024;
 
@@ -89,7 +92,9 @@ impl Committer<'_> {
     /// Refuse a commit of `tree` on `head` that changes a state path, adds or
     /// moves a gitlink, leaves a Knowledge scope's prefix, or changes nothing
     /// outside a merge. In a Merge scope a gitlink or state path whose entry
-    /// equals MERGE_HEAD's is the target's own and passes.
+    /// equals MERGE_HEAD's is the target's own and passes, and a guarded path
+    /// ([`Committer::guarding_paths`]) must hold git's merge result, or one
+    /// side where git could not merge it.
     pub(super) fn require_allowed_paths(
         &self,
         scope: &CommitScope,
@@ -126,6 +131,9 @@ impl Committer<'_> {
                     )));
                 }
             }
+        }
+        if let (Some(id), Some(differs)) = (merge_head, &differs_from_merge_head) {
+            self.require_guarded_paths_carried(head, id, tree, &changes, differs)?;
         }
         Ok(())
     }

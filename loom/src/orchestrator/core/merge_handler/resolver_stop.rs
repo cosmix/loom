@@ -39,6 +39,23 @@ impl fmt::Display for UnstoppedResolver {
     }
 }
 
+/// What stopping a stage's merge resolvers found: the note a review reason
+/// carries, and whether every resolver was proven stopped.
+pub(super) struct ResolverStop {
+    pub(super) note: String,
+    pub(super) proven: bool,
+}
+
+impl ResolverStop {
+    /// A resolver that may still be running, described by `note`.
+    fn unproven(note: String) -> Self {
+        Self {
+            note,
+            proven: false,
+        }
+    }
+}
+
 impl Orchestrator {
     /// Hand the resolver `session` for `stage` to the backend, to run in the
     /// stage worktree, then settle its answer with
@@ -134,48 +151,63 @@ impl Orchestrator {
     /// `Stage`) and the one a merge signal names. Returns what the review
     /// reason must add, or `None` when no resolver was found.
     pub(super) fn stop_gated_resolvers(&mut self, stage_id: &str) -> Option<String> {
-        let mut notes = Vec::new();
+        self.stop_resolvers_proven(stage_id)
+            .map(|stopped| stopped.note)
+    }
+
+    /// [`Self::stop_gated_resolvers`], also saying whether every resolver it
+    /// found was proven stopped.
+    pub(super) fn stop_resolvers_proven(&mut self, stage_id: &str) -> Option<ResolverStop> {
+        let mut stops = Vec::new();
         let tracked = self
             .active_sessions
             .get(stage_id)
             .filter(|session| session.session_type != SessionType::Stage)
             .cloned();
         if let Some(session) = &tracked {
-            notes.push(self.stop_resolver(stage_id, session));
+            stops.push(self.stop_resolver(stage_id, session));
         }
         match find_live_merge_session_for_stage(stage_id, &self.config.work_dir) {
             Ok(Some(id)) if tracked.as_ref().is_none_or(|session| session.id != id) => {
-                notes.push(self.stop_signalled_resolver(stage_id, &id));
+                stops.push(self.stop_signalled_resolver(stage_id, &id));
             }
             Ok(_) => {}
-            Err(error) => notes.push(format!(
+            Err(error) => stops.push(ResolverStop::unproven(format!(
                 "loom could not tell whether a merge resolver is running ({error:#})"
-            )),
+            ))),
         }
-        if notes.is_empty() {
+        if stops.is_empty() {
             return None;
         }
+        let proven = stops.iter().all(|stop| stop.proven);
+        let notes: Vec<String> = stops.into_iter().map(|stop| stop.note).collect();
         let steps = self.manual_merge_steps(stage_id);
         let note = self.in_progress_merge_note(stage_id);
-        Some(format!("{}; {note}. Then {steps}", notes.join("; ")))
+        Some(ResolverStop {
+            note: format!("{}; {note}. Then {steps}", notes.join("; ")),
+            proven,
+        })
     }
 
     /// [`Self::stop_resolver`] for the session a live merge signal names.
-    fn stop_signalled_resolver(&mut self, stage_id: &str, session_id: &str) -> String {
+    fn stop_signalled_resolver(&mut self, stage_id: &str, session_id: &str) -> ResolverStop {
         match load_session_exact(&self.config.work_dir, session_id) {
             Ok(Some(session)) => self.stop_resolver(stage_id, &session),
-            Ok(None) | Err(_) => unstopped_note(session_id),
+            Ok(None) | Err(_) => ResolverStop::unproven(unstopped_note(session_id)),
         }
     }
 
     /// Kill `session`, a resolver for `stage_id`, and retire it once proven
     /// gone; returns the review-reason note saying which.
-    fn stop_resolver(&mut self, stage_id: &str, session: &Session) -> String {
+    fn stop_resolver(&mut self, stage_id: &str, session: &Session) -> ResolverStop {
         if self.merge_writer_retirement_unproven(session, false) {
-            return unstopped_note(&session.id);
+            return ResolverStop::unproven(unstopped_note(&session.id));
         }
         self.finish_stale_merge_retirement(stage_id, session, SessionExitReason::OperatorStop);
-        format!("loom stopped merge resolver session {}", session.id)
+        ResolverStop {
+            note: format!("loom stopped merge resolver session {}", session.id),
+            proven: true,
+        }
     }
 }
 

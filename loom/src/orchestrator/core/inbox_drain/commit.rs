@@ -53,13 +53,15 @@ pub(super) struct CommitSite<'a> {
 }
 
 /// What one commit runs under: git in the checkout it commits, the branch it
-/// may move, for a merge commit the target its `MERGE_HEAD` must be on, and
-/// for a knowledge commit the merge lock, held until the commit and its
-/// attestation are done.
+/// may move, for a merge commit the target its `MERGE_HEAD` must be on and
+/// the plan's write denies it must not author content under, and for a
+/// knowledge commit the merge lock, held until the commit and its attestation
+/// are done.
 struct Prepared {
     git: WorktreeGit,
     scope: CommitScope,
     merge_target: Option<String>,
+    guarded_paths: Vec<String>,
     _merge_lock: Option<MergeLock>,
 }
 
@@ -79,7 +81,8 @@ pub(super) fn apply_commit(
         expected_head: payload.expected_head.clone(),
         expected_tree: payload.expected_tree.clone(),
     };
-    let mut committer = Committer::new(&prepared.git, site.repo_root);
+    let mut committer =
+        Committer::new(&prepared.git, site.repo_root).guarding_paths(&prepared.guarded_paths);
     if let Some(target) = &prepared.merge_target {
         committer = committer.merging_into(target);
     }
@@ -120,6 +123,7 @@ fn prepare_stage(site: &CommitSite<'_>) -> Result<Prepared, String> {
             stage_id: site.stage_id.to_string(),
         },
         merge_target: None,
+        guarded_paths: Vec::new(),
         _merge_lock: None,
     })
 }
@@ -140,6 +144,7 @@ fn prepare_knowledge(site: &CommitSite<'_>) -> Result<Prepared, String> {
             prefix: PathBuf::from(knowledge_prefix().trim_end_matches('/')),
         },
         merge_target: None,
+        guarded_paths: Vec::new(),
         _merge_lock: Some(merge_lock),
     })
 }
@@ -154,7 +159,9 @@ fn target_branch(site: &CommitSite<'_>) -> Result<String, String> {
 /// A merge session's commit of the merge it resolves. The merge session is
 /// not the stage's `session`, so it is attributed by the branch it was
 /// spawned for, as `merge-resolved` is. Its `MERGE_HEAD` must be on the
-/// target: the session can write that file, and the commit records it.
+/// target: the session can write that file, and the commit records it. Its
+/// sandbox is released from the plan's worktree-relative `deny_write`, so the
+/// commit enforces those instead (`Committer::guarding_paths`).
 fn prepare_merge(site: &CommitSite<'_>) -> Result<Prepared, String> {
     let record = site.record;
     if record.status != SessionStatus::Running {
@@ -184,7 +191,21 @@ fn prepare_merge(site: &CommitSite<'_>) -> Result<Prepared, String> {
             stage_id: site.stage_id.to_string(),
         },
         merge_target: Some(target_branch(site)?),
+        guarded_paths: guarded_paths(site, &stage)?,
         _merge_lock: None,
+    })
+}
+
+/// The plan's worktree-relative `deny_write` globs the merge commit must not
+/// author content under. An unreadable plan snapshot refuses the commit: the
+/// resolver's sandbox is released from those denies, so guessing none would
+/// leave the paths unprotected.
+fn guarded_paths(site: &CommitSite<'_>, stage: &Stage) -> Result<Vec<String>, String> {
+    crate::sandbox::worktree_write_denies(site.work_dir, stage).map_err(|error| {
+        format!(
+            "the merge commit cannot be checked against the plan's write denies: {error:#}; \
+             it is refused until the plan's sandbox config reads again"
+        )
     })
 }
 

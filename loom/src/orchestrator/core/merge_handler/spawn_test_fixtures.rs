@@ -1,11 +1,11 @@
 //! Repositories and orchestrators the merge-resolver spawn-loop tests share.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use tempfile::TempDir;
 
 use crate::fs::work_dir::write_terminal_config;
-use crate::models::session::{SessionBackendKind, TerminalConfig};
+use crate::models::session::{Session, SessionBackendKind, TerminalConfig};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::{Orchestrator, OrchestratorConfig};
 use crate::plan::ExecutionGraph;
@@ -147,4 +147,37 @@ pub(crate) fn orchestrator_with_conflict(repo_root: &Path, stage_id: &str) -> Or
         ..Default::default()
     };
     Orchestrator::new(config, ExecutionGraph::build(Vec::new()).unwrap()).unwrap()
+}
+
+/// A merge resolver session for `stage_id`, with the identity its spawn
+/// gives it.
+pub(crate) fn resolver_for(stage_id: &str) -> Session {
+    let mut session = Session::new_merge(format!("loom/{stage_id}"), "main".to_string());
+    session.assign_to_stage(stage_id.to_string());
+    session
+}
+
+/// Write `session`'s PID file: this test process's PID, with `start_time`
+/// when given. A mismatched start time reads as dead; none at all reads as
+/// alive but unverifiable, which no kill ever signals.
+pub(crate) fn write_pid_file(work_dir: &Path, session: &Session, start_time: Option<u64>) {
+    let pids = work_dir.join("pids");
+    std::fs::create_dir_all(&pids).unwrap();
+    let mut contents = format!("{}\n", std::process::id());
+    if let Some(start_time) = start_time {
+        contents.push_str(&format!("{start_time}\n"));
+    }
+    let name = format!("{}-{}.pid", session.tracking_key, session.id);
+    std::fs::write(pids.join(name), contents).unwrap();
+}
+
+pub(crate) fn write_signal(orchestrator: &Orchestrator, session_id: &str) -> PathBuf {
+    let signal = orchestrator
+        .config
+        .work_dir
+        .join("signals")
+        .join(format!("{session_id}.md"));
+    std::fs::create_dir_all(signal.parent().unwrap()).unwrap();
+    std::fs::write(&signal, "merge signal").unwrap();
+    signal
 }

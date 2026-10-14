@@ -73,6 +73,12 @@ pub(super) fn apply(host: &mut dyn InboxHost, record: &Session, admitted: Admitt
     let stage_id = admitted.stage_id.as_str();
     match admitted.payload {
         RequestPayload::Memory(entry) => memory(&work_dir, stage_id, &entry),
+        // A resolver is not its stage's worker, so its block is a give-up.
+        RequestPayload::Block(StageRequest::Block { reason })
+            if record.session_type == SessionType::Merge =>
+        {
+            host.give_up_merge(record, stage_id, &reason)
+        }
         RequestPayload::Block(request)
         | RequestPayload::Dispute(request)
         | RequestPayload::FreezeContracts(request)

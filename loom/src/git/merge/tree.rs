@@ -23,7 +23,10 @@ pub enum TreeMerge {
     /// The merge is clean; `tree` is the merged tree object.
     Clean { tree: String },
     /// The merge conflicts in these paths (deduplicated, in git's order).
-    Conflict { paths: Vec<String> },
+    /// `tree` is the tree git wrote anyway: the clean paths merged, each
+    /// conflicted path as git left it (conflict markers in a content
+    /// conflict).
+    Conflict { tree: String, paths: Vec<String> },
 }
 
 /// Why the target branch was not advanced. Nothing in the main checkout was
@@ -191,7 +194,7 @@ pub fn merge_tree(repo: &Path, target: &str, branch: &str) -> Result<TreeMerge> 
             paths.push(path.to_string());
         }
     }
-    Ok(TreeMerge::Conflict { paths })
+    Ok(TreeMerge::Conflict { tree, paths })
 }
 
 /// Write a merge commit for `tree` with the given parents; returns its id.

@@ -21,10 +21,13 @@ pub enum MatrixVerdict {
     Refuse,
 }
 
-/// Section 5's table, verbatim. `BaseConflict` follows `Merge` except for
-/// `merge-resolved`, which it refuses: a base-conflict session resolves the
-/// *pre-stage* merge, so finalizing an unrelated stage merge from inside one
-/// would be a forgery.
+/// Section 5's table, with one change: a `Merge` session may relay `block`,
+/// its way to say it cannot finish the merge. The daemon applies it as a give-up
+/// (stops the resolver, routes the stage to human review with the reason), not
+/// as the stage block a stage session gets. `BaseConflict` follows `Merge`
+/// except that it refuses `block` and `merge-resolved`; for the latter, a
+/// base-conflict session resolves the *pre-stage* merge, so finalizing an
+/// unrelated stage merge from inside one would be a forgery.
 ///
 /// Verification v2 (DESIGN D8) adds the `Contract` session and the
 /// `freeze-contracts` kind. `Contract` follows `Stage` except that it may not
@@ -109,11 +112,7 @@ const MATRIX: &[(SessionType, RequestKind, MatrixVerdict)] = &[
         RequestKind::Memory,
         MatrixVerdict::Apply,
     ),
-    (
-        SessionType::Merge,
-        RequestKind::Block,
-        MatrixVerdict::Refuse,
-    ),
+    (SessionType::Merge, RequestKind::Block, MatrixVerdict::Apply),
     (
         SessionType::Merge,
         RequestKind::Dispute,

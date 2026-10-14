@@ -28,12 +28,12 @@ fn merge_tree_conflict_lists_each_path_once() {
 
     let merged = merge_tree(root, "main", "loom/s1").unwrap();
 
-    assert_eq!(
-        merged,
-        TreeMerge::Conflict {
-            paths: vec!["a.txt".to_string()]
-        }
-    );
+    let TreeMerge::Conflict { tree, paths } = merged else {
+        panic!("expected a conflict, got {merged:?}");
+    };
+    assert_eq!(paths, ["a.txt"]);
+    // The tree is written even for a conflict: it holds the conflicted path.
+    assert_eq!(git_out(root, &["ls-tree", "--name-only", &tree]), "a.txt");
 }
 
 #[test]

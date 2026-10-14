@@ -6,6 +6,7 @@
 mod config;
 pub(crate) mod control_surfaces;
 mod grant_paths;
+mod merge_resolver;
 mod package_caches;
 mod settings;
 
@@ -16,6 +17,9 @@ pub use config::{
     PathEscapeAttempt, KNOWLEDGE_WRITE_GLOB,
 };
 pub use grant_paths::{missing_grant_paths, warn_missing_grants};
+pub(crate) use merge_resolver::{
+    release_worktree_write_denies, stage_sandbox, worktree_write_denies,
+};
 pub use package_caches::PACKAGE_MANAGER_CACHE_WRITE_PATHS;
 pub use settings::{apply_default_mode, generate_settings_json};
 pub(crate) use settings::{build_settings, target_is_worktree, validate_emittable, SettingsTarget};

@@ -73,3 +73,26 @@ fn accepts_a_merge_head_the_target_has_moved_past() {
 
     assert_eq!(tip(root, &format!("{id}^2")), merged);
 }
+
+#[test]
+fn the_refusal_outside_a_merge_scope_names_each_way_out() {
+    let temp = merging();
+    let root = temp.path();
+    let before = tip(root, BRANCH);
+
+    let refusal = reason(commit_staged(
+        root,
+        &stage_scope(),
+        &request(root, "feat(s1): x"),
+    ));
+
+    for expected in [
+        "MERGE_HEAD",
+        "A merge session finishes it with loom stage commit",
+        "git commit --no-edit, then loom stage merge s1 --resolved",
+        "To discard the merge instead: git merge --abort",
+    ] {
+        assert!(refusal.contains(expected), "{refusal}");
+    }
+    assert_eq!(tip(root, BRANCH), before);
+}

@@ -295,16 +295,7 @@ fn build_sandbox_summary(stage: &Stage, work_dir: &Path) -> SandboxSummary {
 /// because it is a relative glob, and `missing_grant_paths` only checks
 /// absolute or `~/` entries for existence.
 fn missing_allow_write_from_merged(work_dir: &Path, stage: &Stage) -> Vec<String> {
-    let plan_sandbox = crate::fs::work_dir::read_plan_sandbox(work_dir)
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    let mut merged = crate::sandbox::merge_config(
-        &plan_sandbox,
-        &stage.sandbox,
-        stage.stage_type,
-        &stage.implementers,
-    );
+    let mut merged = crate::sandbox::stage_sandbox(work_dir, stage);
     crate::sandbox::expand_paths(&mut merged);
     crate::sandbox::missing_grant_paths(&merged.filesystem.allow_write, dirs::home_dir().as_deref())
 }

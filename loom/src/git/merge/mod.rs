@@ -176,7 +176,7 @@ fn merge_and_advance(
 ) -> Result<MergeResult> {
     let merged_tree = match merge_tree(repo_root, old, branch_tip)? {
         TreeMerge::Clean { tree } => tree,
-        TreeMerge::Conflict { paths } => {
+        TreeMerge::Conflict { paths, .. } => {
             return Ok(MergeResult::Conflict {
                 conflicting_files: paths,
             })

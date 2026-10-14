@@ -80,11 +80,7 @@ const EXPECTED: &[(SessionType, RequestKind, MatrixVerdict)] = &[
         RequestKind::Memory,
         MatrixVerdict::Apply,
     ),
-    (
-        SessionType::Merge,
-        RequestKind::Block,
-        MatrixVerdict::Refuse,
-    ),
+    (SessionType::Merge, RequestKind::Block, MatrixVerdict::Apply),
     (
         SessionType::Merge,
         RequestKind::Dispute,

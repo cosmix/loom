@@ -8,13 +8,16 @@
 //! is reserved. Relocated out of `merge_handler.rs` to keep it within its
 //! maintainability-ledger line budget.
 
+use anyhow::{Context, Result};
+
 use crate::git::branch::{branch_name_for_stage, resolve_target_branch};
 use crate::git::cleanup::branch_exists_strict;
 use crate::git::merge::{merge_tree, TreeMerge};
+use crate::models::session::Session;
 use crate::models::stage::Stage;
 use crate::orchestrator::core::persistence::Persistence;
 use crate::orchestrator::core::{clear_status_line, Orchestrator};
-use crate::orchestrator::signals::find_live_merge_session_for_stage;
+use crate::orchestrator::signals::{find_live_merge_session_for_stage, generate_merge_signal};
 use crate::orchestrator::terminal::backend::merge_resolver_worktree;
 
 use super::landing::Landing;
@@ -227,6 +230,49 @@ impl Orchestrator {
         }
     }
 
+    /// Spawn a merge resolution session for a stage with merge issues.
+    /// `attempt` is kept once the backend spawns the session; any failure
+    /// before that gives it back, and `launch_resolver` settles a backend
+    /// failure. A spawned resolver stays tracked when its record cannot be
+    /// saved: its signal then reads as stale, and only tracking holds the stage.
+    fn spawn_merge_resolution_session(
+        &mut self,
+        stage: &Stage,
+        attempt: ReservedAttempt,
+    ) -> Result<()> {
+        let source_branch = branch_name_for_stage(&stage.id);
+
+        let target_branch = resolve_target_branch(&self.config.base_branch, &self.config.repo_root);
+
+        // Conflicting files from a merge-tree dry run, which touches no working tree.
+        let conflicting_files =
+            match merge_tree(&self.config.repo_root, &target_branch, &source_branch)? {
+                TreeMerge::Clean { .. } => Vec::new(),
+                TreeMerge::Conflict { paths, .. } => paths,
+            };
+        let session = Session::new_merge(source_branch.clone(), target_branch.clone());
+
+        let signal_path = generate_merge_signal(
+            &session,
+            stage,
+            &source_branch,
+            &target_branch,
+            &conflicting_files,
+            &self.config.work_dir,
+        )
+        .context("Failed to generate merge signal")?;
+
+        let spawned_session = self.launch_resolver(stage, session, &signal_path, attempt)?;
+
+        announce_resolver(&stage.id, &spawned_session.id, &conflicting_files);
+        self.active_sessions
+            .insert(stage.id.clone(), spawned_session.clone());
+        if let Err(error) = self.save_session(&spawned_session) {
+            eprintln!("Warning: Failed to save the merge resolver's session record: {error:#}");
+        }
+        Ok(())
+    }
+
     /// Record the attempt of the resolver about to spawn for `stage_id`, whose
     /// counter read `attempts`. When the counter cannot be written, no resolver
     /// spawns and the stage goes to `NeedsHumanReview`: an uncounted resolver
@@ -246,6 +292,18 @@ impl Orchestrator {
         );
         self.route_merge_stage_to_review(stage_id, reason, None);
         None
+    }
+}
+
+/// Tell the console which resolver spawned for `stage_id` and what it merges.
+fn announce_resolver(stage_id: &str, session_id: &str, conflicting_files: &[String]) {
+    clear_status_line();
+    eprintln!("Spawned merge resolution session for stage '{stage_id}': {session_id}");
+    if !conflicting_files.is_empty() {
+        eprintln!("  Conflicting files:");
+        for file in conflicting_files {
+            eprintln!("    - {file}");
+        }
     }
 }
 

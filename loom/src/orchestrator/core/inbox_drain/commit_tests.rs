@@ -20,6 +20,8 @@ use crate::verify::transitions::{load_stage, update_stage};
 use super::run_pass;
 use super::test_support::{entry_for, fixture, FakeHost, Fixture, STAGE};
 
+#[path = "commit_tests_guarded.rs"]
+mod guarded;
 #[path = "commit_tests_signing.rs"]
 mod signing;
 

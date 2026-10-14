@@ -39,6 +39,8 @@ pub(super) struct FakeHost {
     pub merges: Vec<(String, String)>,
     /// Every `hold_merge_for_signing` call, as (stage id, signer detail).
     pub holds: Vec<(String, String)>,
+    /// Every `give_up_merge` call, as (session id, stage id, resolver reason).
+    pub give_ups: Vec<(String, String, String)>,
     reported: HashSet<String>,
 }
 
@@ -59,6 +61,11 @@ impl InboxHost for FakeHost {
     fn hold_merge_for_signing(&mut self, stage_id: &str, detail: &str) -> String {
         self.holds.push((stage_id.to_string(), detail.to_string()));
         "held for the operator".to_string()
+    }
+    fn give_up_merge(&mut self, session: &Session, stage_id: &str, reason: &str) -> Settle {
+        self.give_ups
+            .push((session.id.clone(), stage_id.to_string(), reason.to_string()));
+        Settle::Applied(None)
     }
     fn first_report(&mut self, key: &str) -> bool {
         self.reported.insert(key.to_string())
@@ -100,6 +107,7 @@ impl Fixture {
             alive,
             merges: Vec::new(),
             holds: Vec::new(),
+            give_ups: Vec::new(),
             reported: HashSet::new(),
         }
     }

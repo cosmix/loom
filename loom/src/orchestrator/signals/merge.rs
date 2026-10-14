@@ -4,6 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::context::untrusted::inline_safe;
 use crate::fs::session_files::load_session_exact;
+use crate::git::stage_commit::guarded_restore_command;
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::Stage;
 use crate::process::is_process_alive;
@@ -16,7 +17,8 @@ use super::types::MergeSignalContent;
 /// The signal directs the session to merge the target branch into the stage
 /// branch inside the stage worktree, resolve the conflicts there, rerun the
 /// stage's acceptance criteria, and report with `loom stage merge --resolved`.
-/// It never works in the main checkout.
+/// It never works in the main checkout. Where the plan protects paths with
+/// `deny_write`, the signal ends with the rule for them.
 pub fn generate_merge_signal(
     session: &Session,
     stage: &Stage,
@@ -31,6 +33,7 @@ pub fn generate_merge_signal(
         source_branch,
         target_branch,
         conflicting_files,
+        &format_protected_paths(stage, work_dir),
     );
     helpers::write_signal_file(&session.id, &content, work_dir)
 }
@@ -141,12 +144,16 @@ pub fn read_merge_signal(session_id: &str, work_dir: &Path) -> Result<Option<Mer
     Ok(Some(parsed))
 }
 
+/// The whole signal. `protected_paths` is [`format_protected_paths`]'s section,
+/// empty when the plan protects nothing; the Task cross-references it only
+/// when it is there.
 pub(super) fn format_merge_signal_content(
     session: &Session,
     stage: &Stage,
     source_branch: &str,
     target_branch: &str,
     conflicting_files: &[String],
+    protected_paths: &str,
 ) -> String {
     let mut content = format!("# Merge Signal: {}\n\n", session.id);
     content.push_str(&format_merge_context(stage, source_branch, target_branch));
@@ -166,14 +173,19 @@ pub(super) fn format_merge_signal_content(
         target_branch,
         conflicting_files,
     ));
-    content.push_str(&format_merge_task(stage, target_branch));
+    content.push_str(&format_merge_task(
+        stage,
+        target_branch,
+        !protected_paths.is_empty(),
+    ));
     content.push_str(&format_acceptance_section(stage));
-    content.push_str(&format_merge_important());
+    content.push_str(&format_merge_important(&stage.id));
     content.push_str(&format_inherited_responsibilities(
         &stage.id,
         source_branch,
         target_branch,
     ));
+    content.push_str(protected_paths);
     content
 }
 
@@ -190,13 +202,18 @@ fn format_merge_context(stage: &Stage, source_branch: &str, target_branch: &str)
     )
 }
 
-fn format_merge_task(stage: &Stage, target_branch: &str) -> String {
+fn format_merge_task(stage: &Stage, target_branch: &str, has_protected_paths: bool) -> String {
     let criteria = if stage.acceptance.is_empty() {
         "the stage's acceptance criteria"
     } else {
         "the stage's acceptance criteria (listed below)"
     };
     let commit_rule = helpers::commit_command_rule("<specific-files>");
+    let protected_note = if has_protected_paths {
+        "; a path under Protected Paths keeps exactly one side instead, as that section says"
+    } else {
+        ""
+    };
     format!(
         "## Your Task\n\n\
          1. If `git status` shows a merge already in progress in this worktree, continue it; \
@@ -204,7 +221,8 @@ fn format_merge_task(stage: &Stage, target_branch: &str) -> String {
          `git merge --no-commit --no-ff {target_branch}` (a bare `git merge {target_branch}` \
          commits by itself and cannot be signed in this sandbox) (stage the resolution; never \
          run `git merge --continue`, which commits)\n\
-         2. Resolve the conflicts in the files listed above, preserving intent from both sides\n\
+         2. Resolve the conflicts in the files listed above, preserving intent from both \
+         sides{protected_note}\n\
          3. Rerun {criteria} in this worktree and fix what the merge broke\n\
          4. Finish the merge: {commit_rule} The worktree must end clean with no merge in \
          progress\n\
@@ -261,17 +279,56 @@ fn format_acceptance_section(stage: &Stage) -> String {
     content
 }
 
-fn format_merge_important() -> String {
-    "## Important\n\n\
-     - Do NOT change code beyond what the conflicts and the acceptance criteria require\n\
-     - Preserve intent from BOTH branches where possible\n\
-     - If unclear how to resolve, ask the user for guidance\n\
-     - Never touch the main checkout\n\
-     - Do not rebase, reset, squash, amend or force-push: the stage's existing commits must \
-     stay in the branch history, so merge only. Loom refuses a worktree that lost them\n\
-     - Do not run `loom worktree remove`: the orchestrator removes the worktree after this \
-     session exits and the merge has landed\n\n"
-        .to_string()
+fn format_merge_important(stage_id: &str) -> String {
+    format!(
+        "## Important\n\n\
+         - Do NOT change code beyond what the conflicts and the acceptance criteria require\n\
+         - Preserve intent from BOTH branches where possible\n\
+         - Nobody watches this terminal: never end your turn with an explanation or a question. \
+         If you cannot finish the merge (a path is read-only, a command is denied, or the right \
+         resolution is unclear), run `loom stage block {stage_id} \"<why the merge cannot be \
+         finished>\"` instead. Loom then stops this session and hands the stage to the operator \
+         with your reason\n\
+         - Never touch the main checkout\n\
+         - Do not rebase, reset, squash, amend or force-push: the stage's existing commits must \
+         stay in the branch history, so merge only. Loom refuses a worktree that lost them\n\
+         - Do not run `loom worktree remove`: the orchestrator removes the worktree after this \
+         session exits and the merge has landed\n\n"
+    )
+}
+
+/// The rule for the paths the plan's `deny_write` protects. A resolver's
+/// sandbox is released from those denies so `git merge` can write them, and
+/// `loom stage commit` checks them instead (`git::stage_commit`). Empty when
+/// the stage has no worktree-relative deny entry, and when the plan snapshot
+/// cannot be read: the commit check refuses on its own then.
+fn format_protected_paths(stage: &Stage, work_dir: &Path) -> String {
+    let globs = match crate::sandbox::worktree_write_denies(work_dir, stage) {
+        Ok(globs) if !globs.is_empty() => globs,
+        _ => return String::new(),
+    };
+    let listed: String = globs
+        .iter()
+        .map(|glob| format!("- `{}`\n", inline_safe(glob)))
+        .collect();
+    format!(
+        "## Protected Paths\n\n\
+         The plan forbids writes to these paths, and loom checks them when you commit the \
+         merge:\n\n\
+         {listed}\n\
+         Content at a protected path must be exactly what git's merge produced. Do not edit it, \
+         and do not take one side of a path git merged cleanly. For a path git could not merge, \
+         keep exactly one side of it. A side without the path removes it.\n\n\
+         A refused commit prints the exact command for each path it names, with the path already \
+         quoted for the shell: run it as printed, and never retype the path. A name with a \
+         control character, or a character that prints as something else (a bidirectional \
+         override, a zero-width or non-ASCII space or format character), is quoted as `$'...'`, \
+         which bash and zsh read, with each such character written as the `\\xHH` of its UTF-8 \
+         bytes. A command has this shape, `<path>` standing for the quoted path: `{}` for the \
+         stage branch's version, `{}` for the target's.\n\n",
+        guarded_restore_command("HEAD"),
+        guarded_restore_command("MERGE_HEAD"),
+    )
 }
 
 fn format_inherited_responsibilities(

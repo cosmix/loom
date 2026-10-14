@@ -8,9 +8,10 @@
 use super::host::{hook_path_entries, LaunchHost};
 use super::*;
 use crate::fs::permissions::install_loom_hooks_to;
-use crate::fs::work_dir::write_remote_control_config;
+use crate::fs::work_dir::{write_plan_sandbox, write_remote_control_config};
 use crate::orchestrator::terminal::native::capsule::CapsuleSupport;
 use crate::orchestrator::terminal::native::session_settings_path;
+use crate::plan::schema::{FilesystemConfig, SandboxConfig};
 use crate::remote_control::{RemoteControlConfig, RemoteControlMode};
 use crate::sandbox::preflight::{HostFacts, SandboxPreflightRefusal};
 use serde_json::Value;
@@ -191,6 +192,86 @@ fn each_capsule_on_disk_carries_its_kinds_hooks_and_no_env() {
         );
         assert!(capsule.get("env").is_none(), "{kind}: {capsule}");
     }
+}
+
+/// A plan whose `sandbox.filesystem.deny_write` guards `doc/specs/**` inside
+/// the worktree and `/data/shared/prod/**` outside it.
+fn plan_denying_specs(fixture: &Fixture) {
+    let sandbox = SandboxConfig {
+        filesystem: FilesystemConfig {
+            deny_write: vec![
+                "doc/specs/**".to_string(),
+                "/data/shared/prod/**".to_string(),
+            ],
+            ..FilesystemConfig::default()
+        },
+        ..SandboxConfig::default()
+    };
+    write_plan_sandbox(&fixture.work_dir, &sandbox).unwrap();
+}
+
+/// A merge resolver writes whatever the target branch changed, so the plan's
+/// worktree-relative write denies must not reach its capsule, in either
+/// layer. A stage session keeps them. The merge session keeps the plan's
+/// absolute denies and loom's own.
+#[test]
+fn a_merge_session_drops_the_plans_worktree_deny_write_and_a_stage_session_keeps_it() {
+    let fixture = fixture();
+    plan_denying_specs(&fixture);
+
+    let (stage, _) = launch(&fixture, SessionType::Stage);
+    let stage_capsule = capsule_of(&fixture, &stage);
+    assert!(
+        stage_capsule["sandbox"]["filesystem"]["denyWrite"]
+            .to_string()
+            .contains("doc/specs/**"),
+        "{stage_capsule}"
+    );
+    assert!(stage_capsule["permissions"]["deny"]
+        .to_string()
+        .contains("Edit(doc/specs/**)"));
+
+    let (merge, _) = launch(&fixture, SessionType::Merge);
+    let merge_capsule = capsule_of(&fixture, &merge);
+    let deny_write = merge_capsule["sandbox"]["filesystem"]["denyWrite"].to_string();
+    let rules = merge_capsule["permissions"]["deny"].to_string();
+    assert!(!deny_write.contains("doc/specs"), "{merge_capsule}");
+    assert!(!rules.contains("doc/specs"), "{merge_capsule}");
+    assert!(
+        deny_write.contains("/data/shared/prod/**"),
+        "{merge_capsule}"
+    );
+    assert!(
+        rules.contains("Edit(/data/shared/prod/**)"),
+        "{merge_capsule}"
+    );
+    assert!(rules.contains("Edit(.loom/**)"), "{merge_capsule}");
+    assert!(
+        deny_write.contains(&fixture.repo.join(".loom").display().to_string()),
+        "{merge_capsule}"
+    );
+}
+
+#[test]
+fn a_merge_session_keeps_the_absolute_write_denies_in_its_merged_config() {
+    let fixture = fixture();
+    plan_denying_specs(&fixture);
+    let stage = Stage::default();
+
+    let merge = session_sandbox(&fixture.work_dir, &stage, SessionType::Merge);
+    let worker = session_sandbox(&fixture.work_dir, &stage, SessionType::Stage);
+
+    assert_eq!(
+        merge.filesystem.deny_write,
+        vec!["/data/shared/prod/**".to_string()]
+    );
+    assert_eq!(
+        worker.filesystem.deny_write,
+        vec![
+            "doc/specs/**".to_string(),
+            "/data/shared/prod/**".to_string()
+        ]
+    );
 }
 
 #[test]

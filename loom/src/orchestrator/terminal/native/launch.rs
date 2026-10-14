@@ -184,17 +184,25 @@ fn initial_prompt(kind: SessionType, stage: &Stage, signal_path: &Path) -> Strin
 /// resolved mode (default: `auto`): Claude Code v2.1.142+ ignores
 /// `defaultMode: "auto"` from settings files, and only `--permission-mode` is
 /// honored (see `build_claude_command`).
-fn session_sandbox(work_dir: &Path, stage: &Stage) -> MergedSandboxConfig {
-    let plan_sandbox = crate::fs::work_dir::read_plan_sandbox(work_dir)
-        .ok()
-        .flatten()
-        .unwrap_or_default();
-    let mut sandbox = crate::sandbox::merge_config(
-        &plan_sandbox,
-        &stage.sandbox,
-        stage.stage_type,
-        &stage.implementers,
-    );
+///
+/// A merge resolver does not keep the plan's or stage's worktree-relative
+/// `deny_write` entries: they guard what the stage agent may author, while
+/// the resolver must write whatever the target branch changed (`git merge`
+/// rewrites those files, and a denied path fails it with "Read-only file
+/// system"). Absolute, `~` and `${VAR}` entries stay, as does every
+/// control-surface deny the capsule adds (hooks, `.loom`, `.git/hooks`,
+/// `.claude`, executable directories). The daemon enforces the released
+/// entries on the merge commit instead (`git::stage_commit`). The control
+/// gate diffs only the stage branch against the merge base
+/// (`control_path_violation`), so a target branch that changed a control path
+/// still reaches a resolver, whose `git merge` then fails read-only; it gives
+/// up through `loom stage block`. Base conflict sessions are not spawned by
+/// any flow, so only `Merge` is relaxed.
+fn session_sandbox(work_dir: &Path, stage: &Stage, kind: SessionType) -> MergedSandboxConfig {
+    let mut sandbox = crate::sandbox::stage_sandbox(work_dir, stage);
+    if kind == SessionType::Merge {
+        crate::sandbox::release_worktree_write_denies(&mut sandbox);
+    }
     crate::sandbox::expand_paths(&mut sandbox);
     sandbox
 }
@@ -309,7 +317,7 @@ fn prepare_session_launch_with(
     session.assign_to_stage(stage.id.clone());
     let title = session.tracking_key.clone();
     let pid_key = format!("{}-{}", title, session.id);
-    let sandbox = session_sandbox(work_dir, stage);
+    let sandbox = session_sandbox(work_dir, stage, kind);
     crate::sandbox::preflight::require_confined_host(&host.facts)?;
     let scratch_dir = host.prepare_scratch(&session.id)?;
     let settings_file = write_capsule(

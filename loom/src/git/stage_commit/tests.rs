@@ -5,6 +5,8 @@ use tempfile::TempDir;
 
 use crate::git::signing::tests::{fake_signer, git_in};
 
+#[path = "tests_guarded.rs"]
+mod guarded;
 #[path = "tests_merge.rs"]
 mod merge;
 #[path = "tests_paths.rs"]
@@ -32,7 +34,7 @@ fn stage(root: &Path, path: &str, content: &str) {
     let file = root.join(path);
     fs::create_dir_all(file.parent().unwrap()).unwrap();
     fs::write(file, content).unwrap();
-    git_in(root, &["add", "-f", path]);
+    git_in(root, &["--literal-pathspecs", "add", "-f", "--", path]);
 }
 
 /// Stage a gitlink at `path` naming the current HEAD.
