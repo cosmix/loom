@@ -87,7 +87,7 @@ fn fixture_snapshot() -> WebSnapshot {
         .iter()
         .map(WebAttention::from)
         .collect();
-    let status = without_merge_resolver_facts(fixture_status(stages));
+    let status = fixture_status(stages);
     WebSnapshot {
         status,
         attention,

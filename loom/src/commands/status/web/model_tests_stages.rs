@@ -207,6 +207,8 @@ fn stage_design() -> StageSummary {
     )
 }
 
+/// The merge stage, as the collector reports it while a tmux resolver, spawned
+/// 40 seconds ago and not yet through a tool call, speaks for the stage.
 fn stage_docs() -> StageSummary {
     let empty: &[&str] = &[];
     let mut stage = stage!(
@@ -219,10 +221,10 @@ fn stage_docs() -> StageSummary {
         Some(300),
         Some(290),
         None,
-        ActivityStatus::Idle,
+        ActivityStatus::Working,
         None,
         None,
-        None,
+        Some(40),
         None,
         None,
         false,
@@ -230,20 +232,18 @@ fn stage_docs() -> StageSummary {
         false,
         0,
         None,
-        None,
-        false,
+        Some(4343),
+        true,
         "opus",
-        None,
+        Some(SessionType::Merge),
         None,
         empty,
         0,
         None,
-        None
+        Some(SessionBackendKind::Tmux)
     );
     stage.merge_resolver_session = Some("session-3f9a2c1e-1788720000".to_owned());
     stage.merge_resolver_attempts = Some(1);
-    // The fixture stays free of this key only because the snapshot builder drops it.
-    stage.close_reason = Some("the agent's reason".to_owned());
     stage
 }
 

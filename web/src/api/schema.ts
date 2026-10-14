@@ -115,6 +115,9 @@ export const stageSummarySchema = z
     dispute_count: z.number().int(),
     judge_heartbeat_secs: z.number().int().nullable(),
     session_backend: sessionBackendSchema.nullable(),
+    merge_resolver_session: z.string().optional(),
+    merge_resolver_attempts: z.number().int().optional(),
+    close_reason: z.string().optional(),
   })
   .strict();
 export const mergeSummarySchema = z.object({

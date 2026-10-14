@@ -198,7 +198,7 @@ pub fn collect_snapshot(
         .flatten()
         .map(|tick| tick.age_secs(Utc::now()));
     WebSnapshot {
-        status: without_merge_resolver_facts(status),
+        status,
         attention,
         alerts,
         daemon,
@@ -209,18 +209,6 @@ pub fn collect_snapshot(
         generated_at: Utc::now(),
         version: crate::version::VERSION.to_owned(),
     }
-}
-
-/// `status` without the daemon-only attention inputs (the merge-resolver facts and
-/// the block reason): `attention` already states them, and the page's stage schema
-/// is strict.
-fn without_merge_resolver_facts(mut status: StatusData) -> StatusData {
-    for stage in &mut status.stages {
-        stage.merge_resolver_session = None;
-        stage.merge_resolver_attempts = None;
-        stage.close_reason = None;
-    }
-    status
 }
 
 #[cfg(test)]
