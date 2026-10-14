@@ -79,8 +79,9 @@ pub(super) fn context_cell(stage: &StageSummary) -> Cell {
     }
 }
 
-/// Executing stages show a 4-cell sparkline and the fresh rate per minute; finished
-/// ones the fresh total, dimmed. A stage without a flow shows nothing.
+/// Executing stages show a 4-cell sparkline and the fresh rate per minute; every other
+/// stage with a flow (completed, blocked, awaiting review...) the fresh total, dimmed.
+/// A stage without a flow shows nothing.
 fn tokens_cell(stage: &StageSummary, flow: Option<&StageFlow>, width: u16) -> Cell {
     let Some(flow) = flow else {
         return empty_cell();
@@ -94,7 +95,7 @@ fn tokens_cell(stage: &StageSummary, flow: Option<&StageFlow>, width: u16) -> Ce
             ),
             style: Style::default(),
         },
-        StageStatus::Completed => Cell {
+        _ => Cell {
             text: format!(
                 "{:>w$}",
                 compact_tokens(flow.total.fresh()),
@@ -102,7 +103,6 @@ fn tokens_cell(stage: &StageSummary, flow: Option<&StageFlow>, width: u16) -> Ce
             ),
             style: Theme::dimmed(),
         },
-        _ => empty_cell(),
     }
 }
 

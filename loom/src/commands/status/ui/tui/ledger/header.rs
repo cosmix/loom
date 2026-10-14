@@ -175,7 +175,7 @@ fn merge_line(data: &crate::commands::status::data::StatusData, width: u16) -> L
 }
 
 /// `   tokens 43.2k/m ▁▂▃ · 2.23M total · hit 93.1%`: the plan's fresh rate, its
-/// 30-minute sparkline, its fresh total and its cache hit share.
+/// 6-minute sparkline (12 cells of 30 s), its fresh total and its cache hit share.
 fn plan_summary(plan: &PlanFlow) -> Vec<Span<'static>> {
     vec![
         Span::styled("   tokens ", Theme::dimmed()),
