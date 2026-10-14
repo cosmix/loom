@@ -15,6 +15,7 @@ const DESIGNED_COLUMNS: &[(ColumnKind, u16)] = &[
     (ColumnKind::Models, 16),
     (ColumnKind::Activity, 14),
     (ColumnKind::Context, 9),
+    (ColumnKind::Tokens, 10),
     (ColumnKind::Time, 7),
     (ColumnKind::Merge, 8),
 ];
@@ -33,6 +34,7 @@ pub fn columns_for_width(width: u16) -> Vec<Column> {
         ColumnKind::Time,
         ColumnKind::Models,
         ColumnKind::DependsOn,
+        ColumnKind::Tokens,
         ColumnKind::Context,
     ] {
         if total(&cols) <= width {
@@ -111,6 +113,7 @@ fn header(kind: ColumnKind) -> &'static str {
         ColumnKind::Models => "MODELS",
         ColumnKind::Activity => "ACTIVITY",
         ColumnKind::Context => "CONTEXT",
+        ColumnKind::Tokens => "TOKENS",
         ColumnKind::Time => "TIME",
         ColumnKind::Merge => "MERGE",
     }
@@ -122,32 +125,44 @@ mod tests {
 
     #[test]
     fn full_width_has_all_columns() {
-        let cols = columns_for_width(120);
-        assert_eq!(cols.len(), 8);
-        assert_eq!(total(&cols), 120);
+        let cols = columns_for_width(132);
+        assert_eq!(cols.len(), 9);
+        assert_eq!(total(&cols), 132);
     }
 
     #[test]
     fn one_cell_short_drops_time() {
-        let cols = columns_for_width(119);
+        let cols = columns_for_width(131);
         assert!(!cols.iter().any(|column| column.kind == ColumnKind::Time));
-        assert_eq!(total(&cols), 111);
+        assert_eq!(total(&cols), 123);
     }
 
     #[test]
     fn narrow_width_drops_models() {
-        let cols = columns_for_width(110);
+        let cols = columns_for_width(122);
         assert!(!cols.iter().any(|column| column.kind == ColumnKind::Models));
-        assert_eq!(total(&cols), 93);
+        assert_eq!(total(&cols), 105);
     }
 
     #[test]
     fn narrower_width_drops_dependencies() {
-        let cols = columns_for_width(92);
+        let cols = columns_for_width(104);
         assert!(!cols
             .iter()
             .any(|column| column.kind == ColumnKind::DependsOn));
-        assert_eq!(total(&cols), 75);
+        assert_eq!(total(&cols), 87);
+    }
+
+    #[test]
+    fn tokens_shows_at_90_and_is_gone_at_80() {
+        let has = |w| {
+            columns_for_width(w)
+                .iter()
+                .any(|column| column.kind == ColumnKind::Tokens)
+        };
+        assert!(has(90));
+        assert!(!has(80));
+        assert_eq!(total(&columns_for_width(86)), 75);
     }
 
     #[test]
@@ -164,20 +179,20 @@ mod tests {
 
     #[test]
     fn surplus_widens_stage_then_models() {
-        let cols = columns_for_width(140);
+        let cols = columns_for_width(152);
         assert_eq!(cols[1].width, 40); // Stage: 25 + 15 (capped)
         assert_eq!(cols[3].width, 21); // Models: 16 + 5 (remaining surplus)
         assert_eq!(cols[2].width, 16); // DependsOn: no surplus left, unchanged
-        assert_eq!(total(&cols), 140);
+        assert_eq!(total(&cols), 152);
     }
 
     #[test]
     fn large_surplus_caps_models_then_widens_dependencies() {
-        let cols = columns_for_width(160);
+        let cols = columns_for_width(172);
         assert_eq!(cols[1].width, 40); // Stage: 25 + 15 (capped)
         assert_eq!(cols[3].width, 24); // Models: 16 + 8 (capped)
         assert_eq!(cols[2].width, 33); // DependsOn: 16 + 17 (remaining surplus)
-        assert_eq!(total(&cols), 160);
+        assert_eq!(total(&cols), 172);
     }
 
     #[test]
@@ -192,8 +207,8 @@ mod tests {
 
     #[test]
     fn headers_and_rule_fill_their_widths() {
-        let cols = columns_for_width(120);
-        assert_eq!(header_line(&cols).width(), 120);
-        assert_eq!(rule_line(120).width(), 120);
+        let cols = columns_for_width(132);
+        assert_eq!(header_line(&cols).width(), 132);
+        assert_eq!(rule_line(132).width(), 132);
     }
 }

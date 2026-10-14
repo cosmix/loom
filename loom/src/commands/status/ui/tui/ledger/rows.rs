@@ -1,6 +1,7 @@
 use ratatui::text::{Line, Span};
 
 use crate::commands::status::data::StageSummary;
+use crate::tokens::StageFlow;
 
 use super::{
     cells::{cell_for, model_spans, padded},
@@ -14,6 +15,7 @@ pub fn stage_row(
     level: usize,
     cols: &[Column],
     all: &[&StageSummary],
+    flow: Option<&StageFlow>,
 ) -> Line<'static> {
     let mut spans = Vec::new();
     for column in cols {
@@ -21,7 +23,7 @@ pub fn stage_row(
         if column.kind == ColumnKind::Models {
             spans.extend(model_spans(stage, column.width));
         } else {
-            let cell = cell_for(stage, level, column, all);
+            let cell = cell_for(stage, level, column, all, flow);
             spans.push(Span::styled(padded(&cell.text, column.width), cell.style));
         }
     }
@@ -289,8 +291,8 @@ mod tests {
         stage.context_tokens = Some(487_000);
         stage.context_ceiling_tokens = Some(800_000);
         assert_eq!(
-            stage_row(&stage, 2, &columns_for_width(120), &[]).width(),
-            120
+            stage_row(&stage, 2, &columns_for_width(132), &[], None).width(),
+            132
         );
     }
 
@@ -298,8 +300,8 @@ mod tests {
     fn empty_cells_row_fills_full_width() {
         let stage = summary(StageStatus::Completed);
         assert_eq!(
-            stage_row(&stage, 0, &columns_for_width(120), &[]).width(),
-            120
+            stage_row(&stage, 0, &columns_for_width(132), &[], None).width(),
+            132
         );
     }
 }

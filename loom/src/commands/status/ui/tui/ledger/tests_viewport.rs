@@ -52,6 +52,7 @@ fn render_view_with(
         last_error,
         now_epoch: 1_788_523_200,
         scrollable: false,
+        show_tokens: false,
     };
     screen(width, height, &view)
 }
@@ -98,6 +99,7 @@ fn table_viewport_rows_matches_the_computed_table_budget() {
         last_error: None,
         now_epoch: 1_788_523_200,
         scrollable: false,
+        show_tokens: false,
     };
     let mut terminal = Terminal::new(TestBackend::new(120, 40)).unwrap();
     let mut outcome = RenderOutcome::default();
@@ -132,6 +134,7 @@ fn a_long_plan_at_minimum_height_overflows_the_viewport() {
         last_error: None,
         now_epoch: 1_788_523_200,
         scrollable: true,
+        show_tokens: false,
     };
     let mut terminal = Terminal::new(TestBackend::new(120, 16)).unwrap();
     let mut outcome = RenderOutcome::default();

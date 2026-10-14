@@ -79,6 +79,10 @@ pub fn render_footer(frame: &mut Frame, area: Rect, present: &[StageStatus], vie
     if area.height >= 2 {
         lines.push(quota::quota_line(
             &view.data.quota,
+            view.data
+                .tokens
+                .as_ref()
+                .map_or(&[][..], |flow| &flow.quota_left),
             view.now_epoch,
             area.width,
         ));
@@ -164,6 +168,9 @@ fn key_hints(scrollable: bool) -> Vec<Span<'static>> {
         Span::styled("?", key),
         Span::styled(" legend", Theme::dimmed()),
     ];
+    spans.push(Span::styled(" · ", Theme::dimmed()));
+    spans.push(Span::styled("t", key));
+    spans.push(Span::styled(" tokens", Theme::dimmed()));
     if scrollable {
         spans.push(Span::styled(" · ", Theme::dimmed()));
         spans.push(Span::styled("↑↓", key));
@@ -223,6 +230,6 @@ mod tests {
         let fixed = footer_line(&present, 100, false).to_string();
         assert!(scrollable.contains("↑↓ scroll"));
         assert!(!fixed.contains("↑↓"));
-        assert!(fixed.ends_with("? legend · q quit"));
+        assert!(fixed.ends_with("? legend · t tokens · q quit"));
     }
 }

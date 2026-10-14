@@ -18,6 +18,8 @@ mod entries;
 pub mod header;
 /// Ledger dashboard layout rendering.
 pub mod layout;
+/// Row budget and areas of the dashboard.
+mod layout_tokens;
 /// Ledger dashboard legend rendering.
 pub mod legend;
 /// Ledger dashboard attention panels.
@@ -35,9 +37,12 @@ mod tests_attention;
 #[cfg(test)]
 mod tests_completion;
 #[cfg(test)]
+mod tests_tokens;
+#[cfg(test)]
 mod tests_viewport;
 /// Cell width and truncation helpers.
 pub mod text;
+mod tokens_pane;
 
 /// Render the ledger dashboard.
 pub use layout::render;
@@ -47,7 +52,7 @@ pub const MIN_COLS: u16 = 64;
 /// Minimum terminal height required for the ledger dashboard.
 pub const MIN_ROWS: u16 = 16;
 /// Width at which every column is shown at its designed width.
-pub const FULL_WIDTH: u16 = 120;
+pub const FULL_WIDTH: u16 = 132;
 
 /// The kind of data shown in a ledger column.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -64,6 +69,8 @@ pub enum ColumnKind {
     Activity,
     /// Stage context usage.
     Context,
+    /// Token flow rate or total.
+    Tokens,
     /// Stage elapsed time.
     Time,
     /// Stage merge state.
@@ -107,6 +114,8 @@ pub struct LedgerView<'a> {
     pub now_epoch: i64,
     /// Whether the stage table overflows its viewport, so `↑↓ scroll` is meaningful.
     pub scrollable: bool,
+    /// Whether the per-agent tokens pane is open.
+    pub show_tokens: bool,
 }
 
 /// What `render` reports back so the app can bound scrolling.

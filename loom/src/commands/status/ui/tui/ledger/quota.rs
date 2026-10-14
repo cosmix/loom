@@ -7,12 +7,16 @@ use ratatui::{
 };
 
 use super::text::{cut_line, spans_width, text_width, truncate};
-use super::FULL_WIDTH;
+use super::tokens_pane::quota_left_text;
 use crate::commands::status::ui::theme::Theme;
 use crate::quota::{
     age_secs, format_reset, reset_text, ProviderQuota, QuotaSnapshot, QuotaWindow, WindowKind,
     STALE_AFTER_SECS,
 };
+use crate::tokens::{QuotaLeft, QuotaProvider};
+
+/// Width at which the quota line shows its richest layout.
+const QUOTA_FULL_WIDTH: u16 = 120;
 
 /// Narrowest width at which six-segment bars and countdowns are laid out.
 pub const MEDIUM_WIDTH: u16 = 90;
@@ -58,7 +62,7 @@ pub fn has_quota(snapshot: &QuotaSnapshot) -> bool {
 
 /// The richest layout a terminal of `width` cells is allowed to show.
 pub fn quota_layout(width: u16) -> QuotaLayout {
-    if width >= FULL_WIDTH {
+    if width >= QUOTA_FULL_WIDTH {
         FULL
     } else if width >= MEDIUM_WIDTH {
         MEDIUM
@@ -68,23 +72,38 @@ pub fn quota_layout(width: u16) -> QuotaLayout {
 }
 
 /// Build the quota line for `width` cells: the meters in the richest layout that
-/// fits the data, then the stale and error notes that fit after them.
-pub fn quota_line(snapshot: &QuotaSnapshot, now: i64, width: u16) -> Line<'static> {
-    let mut spans = fitting_meters(snapshot, now, width);
+/// fits the data, then the stale and error notes that fit after them. `left` adds the
+/// time-left estimate after a provider's five-hour window in the wider layouts.
+pub fn quota_line(
+    snapshot: &QuotaSnapshot,
+    left: &[QuotaLeft],
+    now: i64,
+    width: u16,
+) -> Line<'static> {
+    let mut spans = fitting_meters(snapshot, left, now, width);
     append_suffixes(&mut spans, suffix_texts(snapshot, now), width);
     cut_line(Line::from(spans), width)
 }
 
 /// The meters in the richest layout at or below the width's tier whose content fits;
 /// the narrowest layout when nothing does.
-fn fitting_meters(snapshot: &QuotaSnapshot, now: i64, width: u16) -> Vec<Span<'static>> {
+fn fitting_meters(
+    snapshot: &QuotaSnapshot,
+    left: &[QuotaLeft],
+    now: i64,
+    width: u16,
+) -> Vec<Span<'static>> {
     let ceiling = quota_layout(width);
     let mut spans = Vec::new();
     for layout in LAYOUTS
         .into_iter()
         .filter(|layout| layout.bar <= ceiling.bar && (ceiling.countdown || !layout.countdown))
     {
-        spans = meter_spans(snapshot, now, layout);
+        // The time-left estimate never costs the layout its bars: drop it before the layout.
+        spans = meter_spans(snapshot, left, now, layout);
+        if spans_width(&spans) > usize::from(width) {
+            spans = meter_spans(snapshot, &[], now, layout);
+        }
         if spans_width(&spans) <= usize::from(width) {
             break;
         }
@@ -92,16 +111,25 @@ fn fitting_meters(snapshot: &QuotaSnapshot, now: i64, width: u16) -> Vec<Span<'s
     spans
 }
 
-fn meter_spans(snapshot: &QuotaSnapshot, now: i64, layout: QuotaLayout) -> Vec<Span<'static>> {
+fn meter_spans(
+    snapshot: &QuotaSnapshot,
+    left: &[QuotaLeft],
+    now: i64,
+    layout: QuotaLayout,
+) -> Vec<Span<'static>> {
     let mut spans = vec![Span::raw(" ")];
-    let providers = [("claude", &snapshot.claude), ("codex", &snapshot.codex)]
-        .into_iter()
-        .filter_map(|(name, quota)| quota.as_ref().map(|quota| (name, quota)));
-    for (index, (name, quota)) in providers.enumerate() {
+    let providers = [
+        ("claude", QuotaProvider::Claude, &snapshot.claude),
+        ("codex", QuotaProvider::Codex, &snapshot.codex),
+    ]
+    .into_iter()
+    .filter_map(|(name, provider, quota)| quota.as_ref().map(|quota| (name, provider, quota)));
+    for (index, (name, provider, quota)) in providers.enumerate() {
         if index > 0 {
             spans.push(Span::styled(" │ ", Theme::dimmed()));
         }
-        spans.extend(provider_spans(name, quota, now, layout));
+        let estimate = left.iter().find(|entry| entry.provider == provider);
+        spans.extend(provider_spans(name, quota, estimate, now, layout));
     }
     spans
 }
@@ -109,6 +137,7 @@ fn meter_spans(snapshot: &QuotaSnapshot, now: i64, layout: QuotaLayout) -> Vec<S
 fn provider_spans(
     name: &str,
     quota: &ProviderQuota,
+    left: Option<&QuotaLeft>,
     now: i64,
     layout: QuotaLayout,
 ) -> Vec<Span<'static>> {
@@ -125,8 +154,22 @@ fn provider_spans(
         }
         let window = quota.windows.iter().find(|window| window.kind == kind);
         spans.extend(window_spans(kind, window, now, layout));
+        if kind == WindowKind::FiveHour && window.is_some() && layout.bar > 0 {
+            spans.extend(left_spans(left));
+        }
     }
     spans
+}
+
+/// The time-left estimate after the five-hour window, or nothing without one.
+fn left_spans(left: Option<&QuotaLeft>) -> Vec<Span<'static>> {
+    let Some(entry) = left else {
+        return Vec::new();
+    };
+    match quota_left_text(entry) {
+        Some((text, style)) => vec![Span::raw(" "), Span::styled(text, style)],
+        None => Vec::new(),
+    }
 }
 
 /// Bars and countdowns separate the windows on their own; bare percentages need a dot.

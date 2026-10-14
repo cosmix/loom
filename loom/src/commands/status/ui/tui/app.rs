@@ -53,6 +53,7 @@ pub struct TuiApp {
     graph_state: GraphState,
     activity_log: TuiActivityLog,
     legend_open: bool,
+    show_tokens: bool,
     tick_age_secs: Option<i64>,
     mouse_enabled: bool,
     exiting: bool,
@@ -89,6 +90,7 @@ impl TuiApp {
             graph_state: GraphState::default(),
             activity_log: TuiActivityLog::new(),
             legend_open: false,
+            show_tokens: false,
             tick_age_secs: None,
             mouse_enabled,
             exiting: false,
@@ -265,6 +267,7 @@ impl TuiApp {
         match result {
             KeyEventResult::Exit => self.exiting = true,
             KeyEventResult::ToggleLegend => self.legend_open = !self.legend_open,
+            KeyEventResult::ToggleTokens => self.show_tokens = !self.show_tokens,
             KeyEventResult::CloseLegend if self.legend_open => self.legend_open = false,
             KeyEventResult::CloseLegend => self.exiting = true,
             KeyEventResult::Continue => {}
@@ -335,6 +338,7 @@ impl TuiApp {
             spinner: self.spinner_char(),
             scroll_y: self.graph_state.scroll_y,
             legend_open: self.legend_open,
+            show_tokens: self.show_tokens,
             tick_age_secs: self.tick_age_secs,
             last_error: self.last_error.as_deref(),
             now_epoch: Utc::now().timestamp(),

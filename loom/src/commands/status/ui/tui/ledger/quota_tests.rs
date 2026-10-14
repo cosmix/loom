@@ -10,6 +10,7 @@ use crate::commands::status::data::{StageSummary, StatusData};
 use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::ui::tui::state::TuiActivityLog;
 use crate::plan::graph::levels;
+use crate::tokens::{QuotaLeft, QuotaProvider};
 
 const NOW: i64 = 1_788_523_200;
 
@@ -78,6 +79,7 @@ fn with_view<T>(data: &StatusData, scrollable: bool, draw: impl FnOnce(&LedgerVi
         last_error: None,
         now_epoch: NOW,
         scrollable,
+        show_tokens: false,
     };
     draw(&view)
 }
@@ -112,7 +114,7 @@ fn full_width_shows_both_providers_with_meters_and_countdowns() {
     }
     assert!(rows.last().unwrap().contains("legend"));
 
-    let line = quota_line(&snapshot(), NOW, 120).to_string();
+    let line = quota_line(&snapshot(), &[], NOW, 120).to_string();
     assert_eq!(
         line,
         " claude 5h ━━━━╌╌╌╌ 48% · 2h13m  7d ━━╌╌╌╌╌╌ 31% · 4d2h │ codex 5h —  7d ━━━━━╌╌╌ 63% · 2d9h"
@@ -121,7 +123,7 @@ fn full_width_shows_both_providers_with_meters_and_countdowns() {
 
 #[test]
 fn medium_width_keeps_shorter_bars_without_truncation() {
-    let line = quota_line(&snapshot(), NOW, 90);
+    let line = quota_line(&snapshot(), &[], NOW, 90);
     assert!(line.width() <= 90);
     assert_eq!(
         line.to_string(),
@@ -131,7 +133,7 @@ fn medium_width_keeps_shorter_bars_without_truncation() {
 
 #[test]
 fn narrow_width_shows_percentages_only() {
-    let line = quota_line(&snapshot(), NOW, 64).to_string();
+    let line = quota_line(&snapshot(), &[], NOW, 64).to_string();
     assert_eq!(line, " claude 5h 48% · 7d 31% │ codex 5h — · 7d 63%");
     assert!(!line.contains('━'));
 
@@ -166,13 +168,13 @@ fn four_windows_drop_the_bars_before_truncating() {
         codex: Some(codex),
     };
 
-    let medium = quota_line(&snapshot, NOW, 90);
+    let medium = quota_line(&snapshot, &[], NOW, 90);
     assert!(medium.width() <= 90);
     let medium = medium.to_string();
     assert!(!medium.contains('━'));
     assert!(medium.contains("75% · 1h40m"));
 
-    let full = quota_line(&snapshot, NOW, 120);
+    let full = quota_line(&snapshot, &[], NOW, 120);
     assert!(full.width() <= 120);
     assert!(full.to_string().contains('━'));
 }
@@ -183,7 +185,7 @@ fn a_single_provider_has_no_separator() {
         claude: Some(claude()),
         codex: None,
     };
-    let line = quota_line(&snapshot, NOW, 120).to_string();
+    let line = quota_line(&snapshot, &[], NOW, 120).to_string();
     assert!(!line.contains('│'));
     assert!(!line.contains("codex"));
     assert!(line.contains("claude 5h"));
@@ -197,7 +199,7 @@ fn stale_data_is_noted_at_the_far_right() {
         claude: Some(claude),
         codex: Some(codex()),
     };
-    let line = quota_line(&snapshot, NOW, 120);
+    let line = quota_line(&snapshot, &[], NOW, 120);
     assert_eq!(line.width(), 120);
     let text = line.to_string();
     assert!(text.ends_with("· claude 11m old"));
@@ -212,7 +214,7 @@ fn a_poll_error_is_noted_after_the_meters() {
         claude: Some(claude()),
         codex: Some(codex),
     };
-    let line = quota_line(&snapshot, NOW, 120).to_string();
+    let line = quota_line(&snapshot, &[], NOW, 120).to_string();
     assert!(line.contains("· codex: rate limited"));
     assert!(line.contains("63%"));
 }
@@ -226,14 +228,14 @@ fn an_overlong_error_is_truncated_into_the_room_left_or_dropped() {
         codex: Some(codex),
     };
 
-    let full = quota_line(&snapshot, NOW, 120);
+    let full = quota_line(&snapshot, &[], NOW, 120);
     assert_eq!(full.width(), 120);
     let full = full.to_string();
     assert!(full.contains("· codex: xxx"));
     assert!(full.ends_with('…'));
 
     // Four cells of room at the medium tier is not enough to say anything useful.
-    let medium = quota_line(&snapshot, NOW, 90).to_string();
+    let medium = quota_line(&snapshot, &[], NOW, 90).to_string();
     assert!(!medium.contains("· codex:"));
     assert!(medium.contains("63% · 2d9h"));
 }
@@ -284,4 +286,61 @@ fn has_quota_needs_either_provider() {
         claude: None,
         codex: Some(codex()),
     }));
+}
+
+fn left(minutes_left: Option<u32>, lasts_to_reset: bool) -> [QuotaLeft; 1] {
+    [QuotaLeft {
+        provider: QuotaProvider::Claude,
+        minutes_left,
+        lasts_to_reset,
+    }]
+}
+
+#[test]
+fn time_left_follows_the_five_hour_window() {
+    let line = quota_line(&snapshot(), &left(Some(127), false), NOW, 132).to_string();
+    assert!(
+        line.contains("claude 5h ━━━━╌╌╌╌ 48% · 2h13m ~2h07m left  7d"),
+        "{line:?}"
+    );
+    let medium = quota_line(&snapshot(), &left(Some(43), false), NOW, 100).to_string();
+    assert!(medium.contains("2h13m ~43m left  7d"), "{medium:?}");
+}
+
+#[test]
+fn time_left_says_lasts_to_reset() {
+    let line = quota_line(&snapshot(), &left(None, true), NOW, 132).to_string();
+    assert!(line.contains("2h13m lasts to reset  7d"), "{line:?}");
+}
+
+#[test]
+fn no_estimate_or_other_provider_leaves_the_line_unchanged() {
+    let plain = quota_line(&snapshot(), &[], NOW, 120).to_string();
+    let codex_only = [QuotaLeft {
+        provider: QuotaProvider::Codex,
+        minutes_left: Some(30),
+        lasts_to_reset: false,
+    }];
+    assert_eq!(
+        quota_line(&snapshot(), &codex_only, NOW, 120).to_string(),
+        plain
+    );
+    assert_eq!(
+        quota_line(&snapshot(), &left(None, false), NOW, 120).to_string(),
+        plain
+    );
+}
+
+#[test]
+fn narrow_layout_shows_no_time_left() {
+    let line = quota_line(&snapshot(), &left(Some(127), false), NOW, 64).to_string();
+    assert!(!line.contains("left"), "{line:?}");
+    assert_eq!(line, " claude 5h 48% · 7d 31% │ codex 5h — · 7d 63%");
+}
+
+#[test]
+fn time_left_yields_before_the_bars_do() {
+    let line = quota_line(&snapshot(), &left(Some(127), false), NOW, 90).to_string();
+    assert!(!line.contains("left"), "{line:?}");
+    assert!(line.contains('━'), "{line:?}");
 }

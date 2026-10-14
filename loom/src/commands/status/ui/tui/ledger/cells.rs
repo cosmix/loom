@@ -3,10 +3,12 @@ use ratatui::{style::Style, text::Span};
 use crate::{
     commands::status::{data::StageSummary, ui::theme::Theme},
     models::stage::{StageStatus, StageType},
+    tokens::StageFlow,
     utils::format_elapsed,
 };
 
 use super::text::{text_width, truncate};
+use super::tokens_pane::{compact_tokens, spark};
 use super::{Column, ColumnKind};
 
 /// The "Activity" column, split into its own module.
@@ -28,6 +30,7 @@ pub(super) fn cell_for(
     level: usize,
     column: &Column,
     all: &[&StageSummary],
+    flow: Option<&StageFlow>,
 ) -> Cell {
     match column.kind {
         ColumnKind::State => state_cell(stage, column.width),
@@ -35,6 +38,7 @@ pub(super) fn cell_for(
         ColumnKind::DependsOn => dependencies_cell(stage, all, column.width),
         ColumnKind::Activity => activity_cell(stage, column.width),
         ColumnKind::Context => context_cell(stage),
+        ColumnKind::Tokens => tokens_cell(stage, flow, column.width),
         ColumnKind::Time => time_cell(stage),
         ColumnKind::Merge => merge_cell(stage),
         ColumnKind::Models => empty_cell(),
@@ -72,6 +76,33 @@ pub(super) fn context_cell(stage: &StageSummary) -> Cell {
             "╌".repeat(5 - filled)
         ),
         style: Theme::context_style(tokens, ceiling),
+    }
+}
+
+/// Executing stages show a 4-cell sparkline and the fresh rate per minute; finished
+/// ones the fresh total, dimmed. A stage without a flow shows nothing.
+fn tokens_cell(stage: &StageSummary, flow: Option<&StageFlow>, width: u16) -> Cell {
+    let Some(flow) = flow else {
+        return empty_cell();
+    };
+    match &stage.status {
+        StageStatus::Executing => Cell {
+            text: format!(
+                "{} {:>5}",
+                spark(&flow.series, 4),
+                compact_tokens(flow.rate.fresh())
+            ),
+            style: Style::default(),
+        },
+        StageStatus::Completed => Cell {
+            text: format!(
+                "{:>w$}",
+                compact_tokens(flow.total.fresh()),
+                w = usize::from(width)
+            ),
+            style: Theme::dimmed(),
+        },
+        _ => empty_cell(),
     }
 }
 

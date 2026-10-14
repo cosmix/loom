@@ -1,15 +1,17 @@
 use ratatui::{
     layout::Rect,
-    style::Style,
+    style::{Modifier, Style},
     text::{Line, Span},
     widgets::Paragraph,
     Frame,
 };
 
 use super::text::{cut_line, spans_width, text_width};
+use super::tokens_pane::{compact_tokens, spark};
 use super::LedgerView;
 use crate::commands::status::ui::theme::{StatusColors, Theme};
 use crate::models::stage::StageStatus;
+use crate::tokens::{PlanFlow, TokenUsage};
 
 /// Render the four-line ledger header.
 pub fn render_header(frame: &mut Frame, area: Rect, view: &LedgerView) {
@@ -157,12 +159,55 @@ fn merge_line(data: &crate::commands::status::data::StatusData, width: u16) -> L
     )];
     let label = vec![Span::styled(crate::version::LABEL, Theme::dimmed())];
     let room = budget as usize;
+    let tokens = data.tokens.as_ref().map(|flow| plan_summary(&flow.plan));
+    // The token summary is the first thing to give way: the label must fit with it.
+    if let Some(summary) = tokens.filter(|summary| {
+        spans_width(&spans) + spans_width(summary) + 1 + spans_width(&label) <= room
+    }) {
+        spans.extend(summary);
+    }
     if spans_width(&spans) + 1 + spans_width(&label) <= room {
         let gap = room.saturating_sub(spans_width(&spans) + spans_width(&label));
         spans.push(Span::raw(" ".repeat(gap)));
         spans.extend(label);
     }
     cut_line(Line::from(spans), budget)
+}
+
+/// `   tokens 43.2k/m ▁▂▃ · 2.23M total · hit 93.1%`: the plan's fresh rate, its
+/// 30-minute sparkline, its fresh total and its cache hit share.
+fn plan_summary(plan: &PlanFlow) -> Vec<Span<'static>> {
+    vec![
+        Span::styled("   tokens ", Theme::dimmed()),
+        Span::styled(
+            format!("{}/m", compact_tokens(plan.rate.fresh())),
+            Style::default().add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(" "),
+        Span::styled(
+            spark(&plan.series, 12),
+            Style::default().fg(StatusColors::WARNING),
+        ),
+        Span::styled(" · ", Theme::dimmed()),
+        Span::raw(compact_tokens(plan.total.fresh())),
+        Span::styled(" total · hit ", Theme::dimmed()),
+        Span::raw(hit_text(&plan.total)),
+    ]
+}
+
+/// cache_read / (cache_read + input + cache_write) with one decimal, or "—".
+fn hit_text(usage: &TokenUsage) -> String {
+    let denominator = usage
+        .cache_read
+        .saturating_add(usage.input)
+        .saturating_add(usage.cache_write);
+    if denominator == 0 {
+        return "—".to_owned();
+    }
+    format!(
+        "{:.1}%",
+        usage.cache_read as f64 * 100.0 / denominator as f64
+    )
 }
 
 fn logo_line(logo: &str, line: Line<'static>, width: u16) -> Line<'static> {
@@ -248,6 +293,22 @@ mod tests {
             },
             tokens: None,
         }
+    }
+
+    #[test]
+    fn hit_text_is_a_dash_without_input() {
+        assert_eq!(super::hit_text(&crate::tokens::TokenUsage::default()), "—");
+    }
+
+    #[test]
+    fn hit_text_has_one_decimal() {
+        let usage = crate::tokens::TokenUsage {
+            input: 120_000,
+            cache_write: 1_800_000,
+            cache_read: 26_000_000,
+            output: 310_000,
+        };
+        assert_eq!(super::hit_text(&usage), "93.1%");
     }
 
     #[test]
