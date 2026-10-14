@@ -232,3 +232,15 @@ The legacy `ToolEvent` reader remains able to consume an older `.loom/work/tool-
 | Live             | `--live`    | TUI subscribed to daemon IPC; requires daemon running (`DaemonServer::is_running()`)      |
 
 **Verbose mode (`--verbose`):** Shows `render_attention()` — detailed failure information for blocked/failed stages.
+
+## Token Flow (`loom/src/tokens/`)
+
+- `loom/src/tokens/model.rs` - wire and file model (`TokenFlow`, `TokenUsage`, `read_flow`, size and staleness consts)
+- `loom/src/tokens/tracker.rs` - `spawn_token_tracker`, the 30 s pass, `flow.json` and checkpoint writes
+- `loom/src/tokens/discover.rs`, `tail.rs`, `accumulate.rs`, `claude_line.rs`, `codex_line.rs` - sources, incremental reads, dedupe, line parsers
+- `loom/src/tokens/flow_build.rs`, `quota_left.rs`, `quota_points.rs`, `checkpoint.rs` - buckets to rates and series, time-left estimate, restart state
+- `loom/src/commands/status/data/sanitize_token_flow.rs` - collector-side hygiene of the flow
+- `loom/src/commands/status/ui/tui/ledger/tokens_pane.rs`, `layout_tokens.rs` - the `t` pane and the row budget
+- `web/src/lib/tokens.ts`, `web/src/components/token-flow-panel.tsx`, `stage-tokens.tsx`, `graph/node-tokens.tsx` - web helpers and surfaces
+
+Design and limits: [architecture/token-flow-sources.md](../architecture/token-flow-sources.md).

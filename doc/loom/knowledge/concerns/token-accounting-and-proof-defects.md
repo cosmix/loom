@@ -90,3 +90,53 @@ Found during the plan's stages and integration-verify, verified against the tree
 - **Declared skills resolve against the home catalog only.** `check_declared_skills` reads `~/.claude/skills` plus the
   catalog, so a project-local skills directory is not consulted for a stage's `skills:` list
   ([plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md)).
+
+## Token Flow Gaps
+
+Open items from PLAN-token-flow; the design is in [token-flow-sources](../architecture/token-flow-sources.md).
+
+### Measurement Limits
+
+- **Numbers are a lower bound.** The tracker reads local transcripts only. Compaction and auxiliary API calls may be missing from them, and a session whose transcript is not found keeps its stage out of `stages` (the UIs show `—`).
+- **Other config homes are invisible.** Sessions under another `CLAUDE_CONFIG_DIR` or `CODEX_HOME` than the daemon's are not discovered: the daemon's environment allowlist (`daemon/server/environment.rs`) forwards `HOME` but not those two.
+- **Codex fork rollouts would double count.** A forked rollout replays its parent's history and the tracker has no fork handling, so a forked thread counts the replayed turns again.
+- **A running Codex job is invisible until its forward returns.** The tracker learns `codex_thread_id` only from forward receipts, and PostToolUse writes one after the forwarder's foreground Bash call returns (`loom-hooks/post-tool-use.sh` near line 250; `loom/src/models/forward_receipt.rs` skips a call without a result): up to the 540 s wrapper deadline, after which the job back-fills its own past buckets by line timestamp. A live source exists and is not used: companion job records under `~/.codex/plugin-data/state/*/jobs/*.json` carry `threadId` while the job runs, and `loom/src/codex_lifecycle/jobs.rs` `locate_job` (`pub(super)`) matches them to authorization rows.
+- **A thread in two stages' receipts counts once.** `discover.rs` dedupes by path under the alphabetically first stage; if the other stage already accumulated it, its state is kept and the thread double counts across stages. Needs a thread forwarded from two stages.
+- **Flat usage can lose the time-left label.** With no history row inside the 30-minute window only the snapshot point remains, and fewer than 2 points gives no label although a slope-0 "lasts to reset" would be the better answer (`quota_points.rs`).
+
+### Silent Degradation
+
+- **A stage's Codex agents vanish when its receipts file is unreadable.** `discover.rs` `stage_threads` drops them when `load_receipts` returns an error (unreadable file, failed open, non-regular file; malformed lines are only counted). `discover()` returns `Result<Vec<Source>>` with no warning channel into `Pass.warning`/`log_change`; fixing it needs `discover` to return sources plus an optional warning.
+- **A checkpoint over 8 MiB means a full rescan every pass.** Each Claude transcript keeps up to 4096 message ids (about 55 bytes each, around 225 KB per long transcript), so about 35 long main transcripts in one checkpoint pass `MAX_CHECKPOINT_BYTES`. The tracker sheds the id tables of idle agents and warns once; active agents' tables are never shed.
+- **A deterministic panic prints every pass.** The `catch_unwind` arm in `guarded_pass` has no test, and the default panic hook prints a line per pass, defeating `log_change`'s dedupe.
+
+### Hardening Backlog
+
+- **FIFO at a quota cache path blocks the tracker and the collector.** `quota/cache.rs` `read_provider` (and `history_store.rs`) open with `fs::metadata` plus a blocking `File::open` and no `is_file` check, and both the tracker pass (`quota_points.rs`) and the 1 s collector call it. Switching to `crate::fs::safe_read::read_bounded` fixes both.
+- **Writes by path after the symlink check.** `checkpoint.save` and `write_flow` write by path seconds after `ensure_tokens_dir` checked the directory (a first pass can take seconds); recheck before each write or write through a directory fd. Exploiting it needs write access to `.loom/work`, which sandboxed sessions lack.
+- **Unbounded fan-out and id length.** `discover.rs` does not cap subagent files per directory or agents per stage, and `MessageTable` (`accumulate.rs`) caps the number of ids (4096) but not their length.
+
+### Structure
+
+- **`tokens` depends upward on `commands::*` and forms a cycle with `commands::status::data`.** `discover.rs` imports `collect_jsonl`, `codex_root` and `CodexDiscovery` from `commands::usage::codex_discovery` (plan-mandated reuse, widened to `pub(crate)`), and `commands::status::data` imports `tokens`; this contradicts [core-abstractions](../architecture/core-abstractions.md) layering. Moving the three items to a lower module resolves it. `rollout_files` builds a `CodexDiscovery` only to read `.files` and drops its `unreadable_directories`.
+- **Small couplings.** `checkpoint.rs` imports `CHECKPOINT_FILE` from `tracker.rs` while `tracker.rs` imports `Checkpoint`; the bucket index `div_euclid(BUCKET_SECS)` is inlined in `accumulate.rs`, `flow_build.rs` and `tracker.rs`; `tracker.rs` carries a `thread_local` `TrackerLocal` only because `scan_pass`'s signature is pinned (`guarded_pass` and `scan_until` share a module and could pass the flag directly); `CodexLine::SessionMeta` is parsed and never consumed, and `claude_line`, `codex_line` and `TRACKER_INTERVAL_SECS` are `pub` with no outside user, which hides dead code from rustc; `checkpoint.save` runs every 30 s even when no source advanced, though only `flow.json` must be rewritten for `observed_at`.
+- **Layering of TUI helpers.** `compact_tokens`, `spark` and `quota_left_text` are shared by `header.rs`, `cells.rs` and `quota.rs` but live in `tokens_pane.rs`. The `watch_lock_identity` doc comment in `daemon/server/lifecycle.rs` names only `tick::record` and the quota poller as path-writing threads, not the tracker.
+
+### UI Polish
+
+- `compact_tokens` returns 6 or more cells at 10M and above (`10.00M`), past the 5-cell rate slot (`{:>5}`) in `cells.rs`; only a stage rate of 10M fresh per minute reaches it.
+- Below 74 columns the pane title row's "no active agent" note is cut; put the note before the legend text or drop the legend text when a note is present.
+- On phones the header token rail is `grid-cols-2` with `.stat-cell + .stat-cell` putting a left border on the first cell of row 2 with no row divider, and the ledger's mobile card layout always shows `tokens —` because the cell is never `:empty`.
+- The 20-point 56x12 sparkline config is duplicated between `ledger-row.tsx` and the node tray; sparklines share `lastValues` padding.
+- `token-flow-panel.tsx` `StageChart` is 94 lines (the 50-line guideline is not enforced for TSX) and zero-window stages draw zero-area stroked polygons; the six-colour palette repeats after six stages.
+
+### Test Weaknesses
+
+- The frozen contract `rate-is-five-minute-average` stays green under an 11-14 bucket rate window (the outside line sits at `now - 420 s`); `flow_build.rs` uses `RATE_BUCKETS` = 10 correctly. A contract revision should place the outside line in bucket 11 (a dispute, not an edit).
+
+### Proposals
+
+- **Dist freshness check.** A `loom plan verify` or gate check that rebuilds `web/dist` and compares it would end the recurrence in [Token-flow delivery](../mistakes/verification-v2-delivery.md) and the legend-text mirror in [verification-v2-delivery](../mistakes/verification-v2-delivery.md).
+- **Commit-output filter.** A PreToolUse hook that refuses `loom stage commit` followed by a pipe or redirect would end the lost commit ticket, which two stages of one plan hit after [Memory Relay Drain Gap](../mistakes/memory-relay-drain-gap.md) was written.
+- **Wiring detector and `#[path]` test modules** (first recorded in [Test Modules Wired by `#[path]` Read as Unwired](../mistakes/verification-v2-delivery.md), now failing a stage's finish step). `verify/wiring_detection.rs` `detect_unwired_files` matches only `mod <stem>` or `use .*<stem>`, and its `is_test_file` misses file names ending in _tests or starting with tests_, so a test file wired by a `#[path]` attribute on `mod tests;` is flagged and the stage's finish step fails; the error is lost when impact-test notes overflow the tool output.
+- **Integrity events.** `loom stage review integrity` reported no events after a commit although width-test assertion numbers changed in several `tui/ledger` test files; the gap is in the detector's reading of a numeric edit.

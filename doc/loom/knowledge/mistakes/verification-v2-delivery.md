@@ -265,3 +265,64 @@ tests parent, `rg` the name in sibling files that glob-import `super::*`.
 **Prevention:** a contract command is built only through `run_dir::resolve_run`, which resolves the run dir from the recorded cwd, plan `cwd`, adapter run-root markers, then working dir. An adapter whose output can say "no test file matched" must classify that as `NotSelected`, never leave it unparsed.
 
 **Fix:** `cwd` on the plan contract and in `freeze.json`, `run_root_markers` per adapter, bun `./` paths, and bun no-match parsing (see architecture/contract-phase.md, "Where a Contract Runs").
+
+## A `reachable` Check Fails When the Call Is a Value or Goes Through a Re-export
+
+**What happened:** tui-tokens' `reachable` checks failed although the code worked: `left.and_then(quota_left_text)` passed the function as a value, and `pane_lines`/`budget` were called by a caller of `render_dashboard` rather than inside its chain. token-core's brief had to pin the same rule for `crate::tokens::` re-exports.
+
+**Why:** the source graph records a call edge only for a function named in a call expression, resolved through its defining module; a function used as a value, a call made upstream of the named root, and a qualified call through a `pub use` re-export leave no edge.
+
+**Prevention:** a `reachable` target must be called by name in an expression inside the named root's call chain, through its defining module path (`crate::tokens::model::read_flow`, never `crate::tokens::read_flow`). Write the plan's `reachable` entries and the call shape together.
+
+**Fix:** a direct call in `left_spans` (`ledger/quota.rs`), and `pane_lines`/`budget` moved into `render_dashboard` (`ledger/layout.rs`).
+
+## A Required Field on a Shared TypeScript Type Needs Every Constructing Test Updated, and Vitest Does Not Check It
+
+**What happened:** a web worker made `StageNodeData.tokens` required and did not touch `stage-node.test.tsx`; the mid-wave `bun run typecheck` ran before that worker finished, and `tsc -b` inside `bun run build` raised TS2741 at the end.
+
+**Why:** the worker's one allowed check was vitest, which strips types and never type-checks.
+
+**Prevention:** brief every worker that a required field added to a shared type must be threaded through each existing test and fixture that constructs it, and run `bun run typecheck` once after the last worker returns, not between waves.
+
+## A Source Edit After the Dist Build Fails the Dist-Diff Criterion
+
+**What happened:** a round-1 lint fix touched `web/src/components/token-flow-panel.tsx` two minutes after `web/dist` was built, so the committed bundle still held the unfixed expression and the `web/dist` diff criterion failed. The legend-text mirror in [A Single Fact Mirrored in Three Places](verification-v2-delivery.md) is the earlier occurrence of the same coupling.
+
+**Why:** `web/dist` is a committed build product of `web/src`; nothing ties the two together except the criterion at the end.
+
+**Prevention:** any `web/src` change, lint fixes included, is followed by the vite build into `web/dist` as the last step before the gate. A completion check that rebuilds `web/dist` and compares is proposed in [Token Flow Gaps](../concerns/token-accounting-and-proof-defects.md#proposals).
+
+## Filtering `loom stage commit` Output Loses the Commit Ticket
+
+**What happened:** token-core piped `loom stage commit` through `rg` and tui-tokens through `tail -1`; both cut the `LOOM_RELAY_V1` line, so `loom request status` answered "not relayed yet" and the commit never reached the daemon. integration-verify chained several `loom memory resolve` calls with `&&` and a trailing command, and the relay hook refused both requests until the next standalone loom call.
+
+**Why:** commit tickets are the control kind, which the hook's sweep never drains ([Memory Relay Drain Gap](memory-relay-drain-gap.md)); the relay reads the line from the Bash call's own unfiltered stdout and admits one memory-writing loom command per call.
+
+**Prevention:** run `loom stage commit` and each `loom memory` write alone in a Bash call with stdout unfiltered. When the line was cut, issue the command once more: the first ticket never reached the daemon.
+
+## A Build-State Claim Was Recorded Without Re-checking the Tree
+
+**What happened:** integration-verify noted that a `nix::unistd::geteuid` compile error in `loom/src/tokens/tracker_tests.rs:354` was pre-existing at HEAD, from a `git status` run once at the start. The file had an uncommitted 127-line change in the working tree that added the line.
+
+**Prevention:** run `git status` and `git diff <file>` immediately before recording a claim about build state, and attribute a compile error to a file only after the diff. The call is now `libc::geteuid()` in `unsafe` with a SAFETY comment, as `locator.rs` does.
+
+## A Label Taken From a Brief Read as a Contradiction
+
+**What happened:** an operator read the Token flow panel's mix row "fresh input 42/m" beside the headline "89.2k fresh / min" as contradictory. Both were right: the row is raw `input_tokens` (uncached, tiny under prompt caching) and "fresh" is input plus cache writes plus output.
+
+**Prevention:** a label must not reuse a defined term for a different quantity. The panel row is "uncached input" and "cache hit (5 min)" (the header rail's cache hit is the plan total), and the TUI and web legends use the same wording.
+
+## `rg -q` in a `pipefail` Smoke Script Fails With 141 or 23
+
+**What happened:** `printf "$big" | rg -q X` and `curl url | rg -q X` failed once the payload passed the pipe buffer.
+
+**Why:** `rg -q` exits on the first match, so the writer dies of SIGPIPE (141, curl 23) and `pipefail` reports it.
+
+**Prevention:** match a captured variable with `rg -q X <<<"$var"`. `scripts/smoke-web-dashboard.sh` only pipes small pages and has not hit it.
+
+## Recurrences Recorded Elsewhere
+
+- A private `thread_local` linked as an intra-doc link from a `pub fn` doc failed `RUSTDOCFLAGS='-D warnings' cargo doc` after a restructure that ran only `cargo test`: [A `[`link`]` to a Private Item Fails the Docs Build](testing-and-lint.md).
+- `loom-code-reviewer` rounds recorded twice for two of four parallel reviewers (identical findings at one fingerprint): a re-review lists every duplicate id under `resolved` ([subagent-liveness-and-watch.md](subagent-liveness-and-watch.md)).
+- `loom subagents watch --worker codex:<unit>` exiting 5 or 3 beside Claude forwarder ids ("companion request cwd mismatch", a low pid from a PID namespace mismatch): wait on the Agent completion notifications ([subagent-liveness-and-watch.md](subagent-liveness-and-watch.md)).
+- Codex output that was not rustfmt-clean: `cargo fmt --all` after the wave ([codex-worker-briefing.md](codex-worker-briefing.md)).

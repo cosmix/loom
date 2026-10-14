@@ -152,7 +152,7 @@ dispute covers loom's own gates, a deliberate block is never retried; proposed: 
 Open follow-ups from PLAN-token-optimization-2026-09-13: git and bounded-runner hygiene,
 read-receipt runtime uncertainties, the IV fence wording, and two fail-open guard choices.
 
-→ [Token Accounting Follow-Ups](concerns/token-accounting-and-proof-defects.md)
+→ [Token Accounting Follow-Ups](concerns/token-accounting-and-proof-defects.md). Token flow limits, hardening and structure: [Token Flow Gaps](concerns/token-accounting-and-proof-defects.md#token-flow-gaps).
 
 ## State Confinement Gaps (2026-09-13) [DETAILED]
 
