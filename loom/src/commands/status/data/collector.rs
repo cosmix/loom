@@ -7,7 +7,6 @@ use crate::fs::work_dir::{load_config, resolve_context_ceiling_tokens, WorkDir};
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::{Stage, StageStatus, StatusBucket};
 use crate::orchestrator::coherence::executing_stage_incoherence;
-use crate::orchestrator::core::merge_resolver_attempts;
 use crate::orchestrator::get_merge_point;
 use crate::parser::frontmatter::parse_from_markdown;
 use crate::plan::parser::extract_plan_name;
@@ -16,7 +15,8 @@ use crate::verify::transitions::list_all_stages;
 use super::completion_view::collect_completion_view;
 use super::heartbeat_facts::heartbeat_facts;
 use super::merge_note::{merge_block_text, stash_warning};
-use super::sanitize::{sanitize_stage_summary, valid_stage_id};
+use super::resolver::{merge_resolver_facts, speaking_for};
+use super::sanitize::sanitize_stage_summary;
 use super::timing::{elapsed_secs_live, execution_secs_live};
 use super::{execution_models_for_stage, MergeSummary, ProgressSummary, StageSummary, StatusData};
 
@@ -82,6 +82,10 @@ fn load_session_from_file(path: &std::path::Path) -> Result<Session> {
 /// crashed still renders as `Error` rather than as an orphan with no session at
 /// all; [`reported_reading`] is what keeps its frozen token count off the
 /// screen.
+///
+/// The one exception to "the named session wins outright" is a stage in a merge
+/// state whose named session has ended: its live merge resolver speaks instead
+/// ([`speaking_for`]).
 fn session_for_stage<'a>(stage: &Stage, sessions: &'a [Session]) -> Option<&'a Session> {
     let own = || {
         sessions
@@ -90,7 +94,7 @@ fn session_for_stage<'a>(stage: &Stage, sessions: &'a [Session]) -> Option<&'a S
     };
     if let Some(session_id) = stage.session.as_deref() {
         if let Some(named) = own().find(|s| s.id == session_id) {
-            return Some(named);
+            return Some(speaking_for(stage, named, sessions));
         }
     }
     own()
@@ -134,39 +138,6 @@ struct SessionFacts<'a> {
     merge_resolver_attempts: Option<u32>,
 }
 
-/// The live merge resolver for a stage in a merge state, if one is running: a
-/// non-terminal `Merge` session naming the stage whose recorded pid, if any, is
-/// alive. Deliberately not `find_live_merge_session_for_stage`, which deletes
-/// stale signal files; status collection never writes.
-fn live_merge_resolver<'a>(stage: &Stage, sessions: &'a [Session]) -> Option<&'a Session> {
-    sessions.iter().find(|s| {
-        s.session_type == SessionType::Merge
-            && s.stage_id.as_deref() == Some(stage.id.as_str())
-            && !s.status.is_terminal()
-            && s.pid.is_none_or(crate::process::is_process_alive)
-    })
-}
-
-/// The live resolver's id and the resolver attempts spent, for a stage the
-/// daemon resolves a merge for; `(None, None)` for every other stage. An id
-/// that is unsafe as a path segment reads no counter file.
-fn merge_resolver_facts(
-    stage: &Stage,
-    sessions: &[Session],
-    work_dir: &WorkDir,
-) -> (Option<String>, Option<u32>) {
-    if !matches!(
-        stage.status,
-        StageStatus::MergeConflict | StageStatus::MergeBlocked
-    ) {
-        return (None, None);
-    }
-    (
-        live_merge_resolver(stage, sessions).map(|s| s.id.clone()),
-        valid_stage_id(&stage.id).then(|| merge_resolver_attempts(work_dir.root(), &stage.id)),
-    )
-}
-
 fn session_facts<'a>(
     stage: &Stage,
     sessions: &'a [Session],
@@ -174,7 +145,13 @@ fn session_facts<'a>(
 ) -> SessionFacts<'a> {
     let session = session_for_stage(stage, sessions);
     let assigned = assigned_session(stage, sessions);
-    let session_type = assigned.or(session).map(|s| s.session_type);
+    // A resolver speaking for the stage is the session a person attaches to,
+    // so its type is the one reported; otherwise the assigned session's.
+    let session_type = session
+        .filter(|s| s.session_type == SessionType::Merge)
+        .or(assigned)
+        .or(session)
+        .map(|s| s.session_type);
     let incoherence = executing_stage_incoherence(stage, assigned);
     let reading = reported_reading(session);
     let context_tokens = reading.map(|s| s.context_tokens);
@@ -386,6 +363,9 @@ pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
 #[cfg(test)]
 #[path = "collector_activity_tests.rs"]
 mod activity_tests;
+#[cfg(test)]
+#[path = "collector_resolver_tests.rs"]
+mod resolver_tests;
 #[cfg(test)]
 #[path = "collector_tests.rs"]
 mod tests;

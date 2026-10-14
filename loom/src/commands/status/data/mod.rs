@@ -3,6 +3,7 @@ pub(crate) mod completion_view;
 mod execution_models;
 mod heartbeat_facts;
 mod merge_note;
+mod resolver;
 mod sanitize;
 mod timing;
 
@@ -155,10 +156,11 @@ pub struct StageSummary {
     pub session_alive: bool,
     /// Effective model name for this stage (explicit override or stage-type default)
     pub model: String,
-    /// The kind of session named by `stage.session`, if any. An `Executing`
-    /// stage whose session is not of its own worker kind (e.g. an
-    /// adjudication session) is not describing a working agent — see
-    /// `incoherence`.
+    /// The kind of the session that speaks for the stage, if any: the one
+    /// `stage.session` names, or the live merge resolver once the stage is in
+    /// a merge state and its worker has ended. An `Executing` stage whose
+    /// session is not of its own worker kind (e.g. an adjudication session)
+    /// is not describing a working agent — see `incoherence`.
     pub session_type: Option<SessionType>,
     /// Why an `Executing` stage does not describe a working agent, if it
     /// does not. `None` for every other stage.
@@ -185,17 +187,15 @@ pub struct StageSummary {
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub completion_blocker: Option<CompletionBlockerSummary>,
     /// Id of the live merge-resolver session for a `MergeConflict` or
-    /// `MergeBlocked` stage. Feeds the attention note: it crosses the daemon
-    /// socket, and `web::model::collect_snapshot` drops it from the browser wire.
+    /// `MergeBlocked` stage. Feeds the attention note and the dashboard.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merge_resolver_session: Option<String>,
     /// Merge-resolver sessions the daemon has spawned for a `MergeConflict` or
-    /// `MergeBlocked` stage; `None` for every other stage. Carried like the above.
+    /// `MergeBlocked` stage; `None` for every other stage.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub merge_resolver_attempts: Option<u32>,
     /// Why the stage was closed or blocked (`stage.close_reason`). Feeds the attention
-    /// note for an agent's `loom stage block`: it crosses the daemon socket, and
-    /// `web::model::collect_snapshot` drops it from the browser wire.
+    /// note for an agent's `loom stage block`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub close_reason: Option<String>,
 }

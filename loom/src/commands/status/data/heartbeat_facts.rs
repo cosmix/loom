@@ -4,7 +4,7 @@ use chrono::Utc;
 
 use crate::fs::work_dir::WorkDir;
 use crate::models::constants::STALENESS_THRESHOLD_SECS;
-use crate::models::session::{Session, SessionStatus};
+use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus, StatusBucket};
 use crate::orchestrator::monitor::heartbeat::{judge_heartbeat_path, read_heartbeat, Heartbeat};
 use crate::orchestrator::monitor::progress::age_secs;
@@ -90,11 +90,25 @@ pub(super) fn heartbeat_facts(
     work_dir: &WorkDir,
 ) -> HeartbeatFacts {
     let heartbeat = read_heartbeat_for_stage(&stage.id, work_dir);
+    // A merge resolver writes the stage's heartbeat file after the worker that
+    // finished before it. Only the resolver's own heartbeat describes it, and
+    // until it makes a tool call its silence runs from its spawn.
+    let resolver = session.filter(|s| s.session_type == SessionType::Merge);
+    let heartbeat = match resolver {
+        Some(resolver) => heartbeat.filter(|hb| hb.session_id == resolver.id),
+        None => heartbeat,
+    };
 
     // Liveness follows useful progress; activity strings remain observational.
+    let now = Utc::now();
     let staleness_secs = heartbeat
         .as_ref()
-        .map(|hb| age_secs(Utc::now(), hb.effective_progress_at()));
+        .map(|hb| age_secs(now, hb.effective_progress_at()))
+        .or_else(|| {
+            resolver
+                .filter(|resolver| !resolver.status.is_terminal())
+                .map(|resolver| age_secs(now, resolver.created_at))
+        });
 
     // Determine activity status based on session, heartbeat, and stage status
     let activity_status = determine_activity_status(session, staleness_secs, &stage.status);

@@ -4,10 +4,10 @@
 //! to show, leaving each renderer responsible only for presentation.
 
 use crate::commands::status::data::{
-    CompletionBlockerState, CompletionBlockerSummary, StageSummary,
+    ActivityStatus, CompletionBlockerState, CompletionBlockerSummary, StageSummary,
 };
 use crate::models::failure::FailureType;
-use crate::models::session::{SessionExitReason, SessionType};
+use crate::models::session::{SessionBackendKind, SessionExitReason, SessionType};
 use crate::models::stage::{StageStatus, StageType};
 use crate::orchestrator::core::MAX_MERGE_RESOLVER_ATTEMPTS;
 use crate::orchestrator::retry::should_auto_retry;
@@ -231,14 +231,56 @@ fn status_guidance(stage: &StageSummary) -> Option<(&'static str, Guidance)> {
 /// The daemon spawns a merge resolver for a conflict and for a merge error
 /// without a typed block, up to [`MAX_MERGE_RESOLVER_ATTEMPTS`], then routes
 /// the stage to human review.
+///
+/// A live resolver is told apart from one whose turn ended by its tool calls:
+/// `Stale` is no tool call for the staleness threshold, measured from its own
+/// heartbeat or from its spawn. A resolver that ended its turn without running
+/// `loom stage merge --resolved` stays alive and waits at its prompt forever,
+/// so that state is the operator's to act on, not the daemon's. The heartbeat
+/// is written after a tool call, so one command running past the threshold
+/// (an acceptance rerun) reads the same: the note sends the operator to look
+/// before it offers the kill, which spends a resolver attempt.
 fn merge_guidance(stage: &StageSummary) -> Guidance {
     let used = stage.merge_resolver_attempts.unwrap_or(0);
     let max = MAX_MERGE_RESOLVER_ATTEMPTS;
-    Guidance::automatic(match stage.merge_resolver_session.as_deref() {
-        Some(session) => format!("merge resolver {session} is running (attempt {used} of {max})"),
-        None => format!(
+    let Some(session) = stage.merge_resolver_session.as_deref() else {
+        return Guidance::automatic(format!(
             "waiting for the daemon to start a merge resolver ({used} of {max} attempts used)"
+        ));
+    };
+    let view = resolver_view(stage);
+    if stage.activity_status != ActivityStatus::Stale {
+        let view = view.map_or_else(String::new, |view| format!("; {view}"));
+        return Guidance::automatic(format!(
+            "merge resolver {session} is working (attempt {used} of {max}){view}"
+        ));
+    }
+    let minutes = stage.staleness_secs.unwrap_or(0) / 60;
+    let look = view.map_or_else(String::new, |view| format!(" Look first: {view}."));
+    Guidance::manual(format!(
+        "merge resolver {session} made no tool call for {minutes} min and has not run loom stage \
+         merge {} --resolved: it may be inside one long command or may have stopped (attempt \
+         {used} of {max}).{look} Only if it is stuck, loom sessions kill {session} ends it and \
+         the daemon starts the next attempt",
+        stage.id
+    ))
+}
+
+/// How to look at the resolver: `loom attach` reaches a tmux session, and the
+/// web terminal follows the same session; a native session runs in a terminal
+/// window titled with its tracking key.
+fn resolver_view(stage: &StageSummary) -> Option<String> {
+    Some(match stage.session_backend? {
+        SessionBackendKind::Tmux => format!(
+            "run loom attach {} to watch it, or open the stage's terminal in the web UI",
+            stage.id
         ),
+        SessionBackendKind::Native => {
+            format!(
+                "it runs in the terminal window titled loom-merge-{}",
+                stage.id
+            )
+        }
     })
 }
 

@@ -115,7 +115,7 @@ fn an_automatic_entry_renders_its_note_and_no_command() {
     let output_str = rendered(&[stage]);
 
     assert!(
-        output_str.contains("merge resolver session-abc is running (attempt 1 of 6)"),
+        output_str.contains("merge resolver session-abc is working (attempt 1 of 6)"),
         "output: {output_str}"
     );
     assert!(!output_str.contains("Run"), "output: {output_str}");
