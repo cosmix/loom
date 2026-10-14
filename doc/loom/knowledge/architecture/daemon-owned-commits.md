@@ -61,6 +61,20 @@ A refusal leaves the ref unmoved and settles the request `Refused` with the reas
 - a staged path under `.loom/`, `.work/` or `.worktrees/` (ASCII case ignored, as `is_control_path`
   does, since a case-insensitive filesystem resolves both names) or any gitlink; a Merge scope allows
   an entry only when it equals HEAD's or `MERGE_HEAD`'s;
+- in a Merge scope, a path matching the stage's worktree-relative plan/stage `deny_write` globs
+  (`Committer::guarding_paths`, filled by `prepare_merge` from `sandbox::worktree_write_denies`;
+  matched by `covers` in `git/stage_commit/checks/guarded.rs`, ASCII case ignored, a trailing `/`
+  stripped) whose committed entry differs from `git merge-tree`'s result where git merged it
+  cleanly, or from both HEAD and `MERGE_HEAD` where it conflicted. The resolver's sandbox releases
+  those denies so `git merge` can write them; this check is what keeps them. The refusal prints a ready command per path (first 10),
+  `git --literal-pathspecs restore --source=<src> --staged --worktree -- <path>`: the merged tree
+  for a clean path, HEAD or `MERGE_HEAD` for a conflicted one. The path is shell-quoted by
+  `shell_path` (`checks/guarded/quote.rs`): single quotes, or `$'...'` when the name holds a control
+  character or any character `flatten_char` (`context/untrusted.rs`) would rewrite (bidi, zero-width,
+  Unicode spaces and line separators), each such character as `\xHH` bytes and `!` as `\x21`, so the
+  message stays one line, renders as what runs, and a pasted name never expands. A name decoded lossily
+  gets no command. The merge signal lists the guarded globs and the rule up front. A plan
+  snapshot that cannot be read refuses the commit;
 - the wrong branch, a non-owner session, a symbolic ref (`update-ref --no-deref`, so a planted
   `refs/heads/loom/<id>` symref cannot move the target);
 - a message that is empty, over 16 KiB, holds a NUL, or carries AI attribution
