@@ -103,7 +103,7 @@ lock file); every other outcome is the typed `DaemonUnreachable` error, and the 
 than falling back to its own view. `loom stage review status`/`review integrity` may fall back to a locally
 computed value labelled as such, for display only, never for a value recorded or compared.
 
-A stage session's sandbox denies `AF_UNIX`, so a sandboxed `loom stage complete` cannot ask and runs neither
+A stage session's sandbox denies `AF_UNIX` (or, under `allow_all_unix_sockets`, masks the daemon socket, which `daemon/rpc.rs` classifies the same way), so a sandboxed `loom stage complete` cannot ask and runs neither
 gate locally (`complete_verification_v2.rs`, above); the daemon runs both
 (`daemon/server/observer.rs::check_completion_gates`) right before it applies the `CompleteStage` transition
 (`control_complete.rs`), outside the session lock since both gates only read.

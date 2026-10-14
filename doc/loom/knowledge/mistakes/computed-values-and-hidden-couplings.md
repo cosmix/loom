@@ -233,3 +233,13 @@ same settings file, the strip must run first — this function does not do it fo
 **Prevention:** guidance for a state must say whether loom is handling it (`automatic`) and read the facts that decide that (a live resolver session, retry eligibility). A command named in a reason or hint must accept the state the stage will be in when the operator reads it; check the command's gate (`require_merge_state`, `skip_retry` retryable set, `human_review` status check) before naming it.
 
 **Fix:** `AttentionEntry` carries `command`, `note` and `automatic` (architecture/status-data-model.md, Attention Rendering). Merge escalations name `human-review --force-complete` through `manual_merge_steps`.
+
+## `loom stage retry --context` Never Delivered the Operator's Text (2026-10-14)
+
+**What happened:** an operator answered a blocked troofoo stage twice with `loom stage retry local-runtime --context "..."`; both retried sessions started with only the three generic recovery actions, re-ran the same check and blocked again on the same need.
+
+**Why:** `--context` only forced the recovery reason to Manual (`skip_retry.rs`). `RecoverySignalContent::for_manual` took no context, and the text was stored in `close_reason` after the signal was written, where the recovery formatter never reads.
+
+**Prevention:** a flag whose purpose is to hand text to an agent needs a test that reads the delivered artifact, the written signal, for that text.
+
+**Fix:** `commands/stage/recover.rs` `with_operator_answer` inserts the answer verbatim as the first recovery action before `generate_recovery_signal`, with a test on the written file.

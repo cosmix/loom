@@ -283,3 +283,11 @@ Note: `$TERM_PROGRAM` is NOT checked.
 ## find_claude_path() (src/claude.rs)
 
 Shared binary resolution: `which::which("claude")` -> `~/.claude/local/claude` -> `~/.local/bin/claude` -> `~/.cargo/bin/claude` -> `/usr/local/bin/claude` -> `/opt/homebrew/bin/claude`.
+
+## Terminal History
+
+Every tmux server starts with `set-option -g history-limit 50000` and `set-option -g remain-on-exit on` ahead of `new-session` (`tmux/history.rs` `SERVER_OPTIONS`), so the first pane keeps 50,000 lines and an agent that exits leaves its dead pane behind. Liveness stays PID-based, so a dead pane never reads as a live session.
+
+`TmuxBackend::kill_session` saves the scrollback before it kills the server: `capture-pane -p -e -J -S - -E -` (`capture.rs` `capture_history_argv`), written through `safe_fs` to `.loom/work/terminal-history/<session-id>.terminal`, the id validated, symlinks refused, the tail kept within 4 MiB. A failed capture never blocks the kill, and an empty capture does not overwrite an earlier file. Every daemon and CLI teardown reaches `kill_session`; an agent that exits by itself reaches it through `monitor/session_events.rs` `mark_terminal` -> `release_ended_session` (`terminal/backend.rs` `end_tmux_server`, one retry, then an error naming `loom clean`). The sweeps in `loom clean --sessions` and `loom init` kill dead servers without saving history. Native sessions keep no history.
+
+`terminal-history/` is a `STATE_SUBDIRS` entry (`fs/work_dir.rs`), so it exists before any session starts: every capsule denies it to Bash by its real path (`session_settings/contents.rs`), since the sandbox skips a deny whose path is missing at spawn, and `credential-guard.sh` refuses it to a session's file tools ([gaps](../concerns/sandbox-and-confinement-gaps.md#terminal-history-is-guarded-by-a-hook-not-a-boundary)). The web host serves a transcript read-only at `GET /api/terminal-history/<session-id>` (`commands/status/web/terminal/history.rs`, behind the terminal lane's Origin and cookie checks), and the dashboard replays it in an xterm with no input and a link handler that refuses navigation. Tmux tests guard every server they start with `TmuxServerGuard`, because `remain-on-exit` keeps a panicked test's server alive.

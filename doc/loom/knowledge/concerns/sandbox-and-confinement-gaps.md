@@ -65,10 +65,11 @@ confinement does and does not guarantee.
 
 `sandbox::validate_config` (`sandbox/config.rs`) refuses `sandbox.enabled: false` and
 `sandbox.allow_unsandboxed_escape: true` outright, with no acknowledgement possible, so a plan
-carrying either cannot run. The fields that check does not cover, `allow_write`,
-`allow_all_unix_sockets`, `allow_local_binding` and `linux.enable_weaker_nested`
-(`models/stage/types.rs`), widen the sandbox with no acknowledgement from the plan author:
-`plan/schema/validation.rs` only checks that `allow_write` entries are valid globs.
+carrying either cannot run. `allow_all_unix_sockets: true` needs the operator's
+`loom run --accept-unix-socket-risk` (`sandbox/config/preflight/unix_sockets.rs`). The remaining
+widening fields, `allow_write`, `allow_local_binding` and `linux.enable_weaker_nested`
+(`models/stage/types.rs`), need no acknowledgement: `plan/schema/validation.rs` only checks that
+`allow_write` entries are valid globs.
 
 ## Uncalled Path-Escape Validators Read As Protection
 
@@ -303,8 +304,22 @@ Measured on git 2.53:
 
 **Still open.** Production git spawned with `Command::new("git")` outside the runner gets none of the three settings: `version/derive.rs`, `verify/criteria/cache_ignore.rs`, `commands/handoff/create.rs`, `orchestrator/adjudication/prompt/sources.rs`, `git/worktree/checks.rs`, `git/cleanup/batch.rs`, `commands/knowledge/annotate.rs`, `commands/pressure/paths.rs`, and `git/branch/cleanup.rs` (`cleanup_merged_branches`, exported and apparently unused). None decides ancestry or a merge. `<common>/shallow` is session-writable and not neutralised: it can only cut history edges (extra holds, or `stage_work` seeing no branches); whether git honors `GIT_SHALLOW_FILE` for the runner is unverified. Git run by the operator honors every one of these files.
 
-## `allow_all_unix_sockets` Reaches Every Host Socket
+## What `allow_all_unix_sockets` Still Exposes
 
-On Linux the session sandbox blocks `socket(AF_UNIX)` with a seccomp filter. `allow_all_unix_sockets` (`allowAllUnixSockets`) lifts that filter for every path; `allow_unix_sockets` (`allowUnixSockets`) is a path list the Linux sandbox ignores (`orchestrator/terminal/native/build_cache.rs` `sccache_usable_in`), and `loom plan verify` does not say so. The sandbox binds the host root read-only, and `connect()` needs no write access to the mount, so with the flag on a sandboxed command reaches every socket path it can see. A probe under Claude Code 2.1.299 got `/version` from `/var/run/docker.sock` (root, for a user in the `docker` group) and connected to `/run/user/<uid>/bus` (the session D-Bus, so `systemd-run --user` runs outside the sandbox) and `/run/user/<uid>/gnupg/S.gpg-agent` (signing, which daemon-owned commits assume a session cannot do).
+On Linux the session sandbox blocks `socket(AF_UNIX)` with a seccomp filter. `allow_all_unix_sockets` (`allowAllUnixSockets`) lifts it for every path; `allow_unix_sockets` (`allowUnixSockets`) is a path list the Linux sandbox ignores, and `loom plan verify` warns about it on Linux (`v2_lints/sandbox_capability.rs`). The sandbox binds the host root read-only and `connect()` needs no write access to the mount, so without more a flagged session reaches every socket it can see: a probe under Claude Code 2.1.299 got `/version` from `/var/run/docker.sock` (root for a `docker`-group user) and connected to the session D-Bus (`systemd-run --user` escapes) and gpg-agent (signing).
 
-Adding `denyRead: ["/run", "/var/run"]` closed all three, while a socket bound in the working directory still worked and the network proxy still ran. Adding `/tmp` broke the proxy, whose bridge sockets live there. Sockets under `/tmp` (tmux servers, `codex-daemon-<uid>`, VS Code) and under `$HOME` (Dropbox `command_socket`, ServiceHub) therefore stay reachable, as does `.loom/work/orchestrator.sock`; a hide list built at spawn cannot cover a socket created later.
+Loom therefore adds host socket locations to a flagged session's `denyRead` on Linux (`sandbox/host_sockets.rs`, collected by `orchestrator/terminal/native/session_settings/host_sockets.rs` for every session kind): `/run` (and `/var/run`, collapsed into it when it is a link), `XDG_RUNTIME_DIR`, the ssh agent socket and `GNUPGHOME`, the tmux socket directories, `/tmp/.X11-unix`, the daemon socket, and every socket a bounded scan finds under `/tmp` when the capsule is written. Paths are canonicalized; one that is, holds or lies inside the cwd or repo is never hidden (except a socket file, so the daemon socket stays hidden), and `/run` holding one is hidden around it, entry by entry. A path holding `*`, `?`, `[` or `]` is left out with a warning: sandbox-runtime 0.0.78 expands such `denyRead` entries as globs on Linux (`sandbox-manager.js` `resolveReadPathEntries`), so a literal name would hide nothing and a pattern could hide too much. A masked daemon socket answers `ECONNREFUSED` on a non-socket, which `daemon/rpc.rs` `refused_by_mask` and `daemon/server/core.rs` classify as unreachable, like a sandbox `EPERM`. `/tmp` itself cannot be hidden: the network proxy's bridge sockets live there.
+
+Still reachable, and stated in the `loom run` refusal and the plan-verify note: every socket outside `/run`, `/var/run` and the `/tmp` scan (`/var/snap/lxd/...`, `/var/lib/...`, `$HOME` such as Dropbox's `command_socket`), a `/tmp` socket created after the capsule is written or nested deeper than `TMP_SCAN_DEPTH` (3), and the daemon socket after a daemon restart (the daemon re-creates `orchestrator.sock`, which detaches the mask from a session that outlives it). The `/tmp` scan and the `/run` walk stop at their entry caps with a warning.
+
+## Terminal History Is Guarded by a Hook, Not a Boundary
+
+Saved tmux scrollback (`.loom/work/terminal-history/<session-id>.terminal`) is in every capsule's OS-level `denyRead`, so no session's Bash can read it. The native file tools run outside the OS sandbox, and `loom-hooks/credential-guard.sh` rule (b) stands in for it in a loom session (`LOOM_SESSION_ID`, `LOOM_STAGE_ID` and `LOOM_WORK_DIR` all set; the operator's own sessions are exempt): it refuses a target inside the directory, a Grep or Glob rooted at the state root or its parent, and a Grep `glob` or a Glob absolute or `..` pattern on a search rooted above the state root, since an include glob overrides `.gitignore`. A worktree session is covered, because ripgrep does not follow its `.loom/work` link. A session in the main checkout (knowledge, merge, base-conflict) is not fully covered:
+
+- A path-less Grep after a Bash `cd .loom/work` (or `cd .loom`) is judged against `CLAUDE_PROJECT_DIR` while ripgrep searches the current directory, and reads every transcript.
+- A plain repo-root Grep relies on `.loom/work` being ignored, and the session can write `.ignore` or `.gitignore`.
+- A Glob with a relative pattern such as `**/*.terminal` lists transcript names, not contents.
+
+In a legacy `.work` checkout the parent rule refuses a plain repo-root Grep, because the state root's parent is the repo root. Rule (a) matches the token files only by the `.loom/work`/`.work` spellings, so with a state root symlinked to a directory of another name `completion-attestation.key` (and, from the main checkout, `admin.token`) is readable; this predates rule (b). `credential-guard.sh` is 575 lines, over the 400-line limit.
+
+Fix direction: keep transcripts outside the repository (a per-user state directory), so no repo-rooted search can reach them and the hook needs only a path-prefix rule and a refusal of searches rooted at that directory's ancestors; check rule (a) against the canonical `$LOOM_WORK_DIR`; move rule (b) into a sourced file. Nothing prunes the directory; each file is capped at 4 MiB.

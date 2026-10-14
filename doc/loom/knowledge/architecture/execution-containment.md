@@ -226,10 +226,8 @@ per-user cache directories of bun, npm, pnpm, yarn, deno, cargo, rustup, uv, pip
 go, in tilde form. It is emitted into `sandbox.filesystem.allowWrite` of every
 session capsule through `sandbox/settings/policy.rs::filesystem_settings` (order:
 plan `allow_write` entries, then the package caches, then codex's own state paths
-when that lane is licensed). Until the state-confinement merge (2026-09-14) a second
-writer, the `codex_sandbox` module, also merged these grants into the MAIN repo's
-`.claude/settings.local.json` on `loom init`/`loom repair`; that writer and its
-module are deleted, and loom no longer writes that file.
+when that lane is licensed). The capsule is their only carrier: nothing merges them into
+the main checkout's `.claude/settings.local.json`.
 
 **Cache-only policy.** Only cache directories are listed, never a
 credential-bearing parent — `~/.cargo/registry` and `~/.cargo/git` are granted,
@@ -303,7 +301,7 @@ Package-manager cache paths are not checked here; their own signal note covers t
 
 Running `loom status` FROM INSIDE a stage's own sandboxed session reports that stage's session as orphaned/dead (`session_alive` false, `render/graph.rs:133-137`), even though it is the live session asking the question. **Why:** bubblewrap's PID namespace hides the host PID from the sandboxed process, so the liveness check (which compares against a host PID) cannot see its own process as alive. This is a sandbox artifact of the caller inspecting itself from inside its own namespace, not evidence the session actually died — treat a self-reported "orphaned" from inside a stage sandbox as uninformative, never as a signal to intervene.
 
-**Sanctioned proxies for what a live-host smoke test cannot verify inside a stage sandbox:** a real daemon Unix-socket round trip is blocked (`socket(AF_UNIX)` is `EPERM`) — verify via an in-memory transport test instead (e.g. `completion_dispatch` tests) or a daemon-offline path (`completion_replay/hook_broker.rs`); a live Codex companion is unreachable — `codex_evidence` installs a fake companion; local TCP listeners for `loom status --web` are blocked (`allow_local_binding=false`) — drive the pure route directly instead (`web/tests/embedded.rs`); the tmux backend needs its own per-test `TmuxTmpDirGuard` workaround (see [Sandbox and Settings](../mistakes/sandbox-and-settings.md)).
+**Sanctioned proxies for what a live-host smoke test cannot verify inside a stage sandbox:** a real daemon Unix-socket round trip is blocked (`socket(AF_UNIX)` is `EPERM`; a stage granted `allow_all_unix_sockets` finds the socket masked instead) — verify via an in-memory transport test instead (e.g. `completion_dispatch` tests) or a daemon-offline path (`completion_replay/hook_broker.rs`); a live Codex companion is unreachable — `codex_evidence` installs a fake companion; local TCP listeners for `loom status --web` are blocked (`allow_local_binding=false`) — drive the pure route directly instead (`web/tests/embedded.rs`); the tmux backend needs its own per-test `TmuxTmpDirGuard` workaround (see [Sandbox and Settings](../mistakes/sandbox-and-settings.md)).
 
 ## macOS: the stage sandbox refuses a nested Seatbelt, so the wrapper runs codex exec directly (2026-09-02)
 

@@ -24,7 +24,7 @@ up front and name them explicitly in every other worker's brief; otherwise budge
 pass afterward to converge the duplicates.
 
 **A design table's own example content did not fit its own column width.** The MODELS column is 16
-cells, pinned by `FULL_WIDTH=120` (`commands/status/ui/tui/ledger/mod.rs:40`) and the drop-order termination proof at width
+cells, pinned by `FULL_WIDTH=120` (`commands/status/ui/tui/ledger/mod.rs`) and the drop-order termination proof at width
 64 — it cannot widen. The plan's design table and a worker brief both used `opus›sonnet,terra` (17
 cells) as example acceptance content, which the column's own truncation rule cannot render intact
 (the real output is `opus›sonnet+1`). **Prevention:** when a design table gives both a column width

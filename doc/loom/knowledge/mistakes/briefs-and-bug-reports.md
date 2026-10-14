@@ -114,3 +114,13 @@ The pre-commit hook runs markdownlint with automatic fixes on every staged markd
 **Prevention:** before fixing anything from a stage bug report, confirm each entry against the tree and `.loom/work/orchestrator.log` (grep the stage id around the reported timestamps). Record a verdict and root cause (file:line) per entry. Only then decide scope with the user.
 
 **Fix:** the entries were validated one by one, and their fixes were scoped from the confirmed causes.
+
+## Described an In-Flight Edit as Installed Behavior
+
+**What happened:** while a delegated engineer was fixing how `loom stage retry --context` reaches the retried session, the main agent read `commands/stage/recover.rs` from the working tree, found `with_operator_answer`, and told the operator that loom already delivers the `--context` text verbatim. That function was the engineer's uncommitted change. The installed binary only marked the retry as a manual recovery and dropped the text, so two operator answers were lost and the stage blocked twice more.
+
+**Why:** the working tree was not the code the operator runs; a subagent was editing it at the time.
+
+**Prevention:** before telling an operator how loom behaves today, read the code at `HEAD` (`git show HEAD:<path>`) or test the installed `loom`, never the working tree while a subagent writes to it.
+
+**Fix:** the operator was told the text had been dropped and given the commands that work with the installed binary.

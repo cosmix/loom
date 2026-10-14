@@ -4,7 +4,7 @@
 
 ## The Sandbox's AF_UNIX Denial Also Kills sccache, Breaking Every Cargo Command (2026-09-04)
 
-**Current state (2026-09-25):** the export described below is now gated. `build_cache::sccache_usable_in` (`orchestrator/terminal/native/build_cache.rs:145`) is `!sandbox.enabled || network.allow_all_unix_sockets`; `launch.rs:337` and `wrapper.rs:308` withhold `RUSTC_WRAPPER` from a sandboxed session whose seccomp filter denies `AF_UNIX`, and `process/environment.rs` starts acceptance commands from `env_clear()`. The `env -u RUSTC_WRAPPER` workaround and the `LOOM_SCCACHE=0` restart are needed only for a sandbox that allows all unix sockets yet still breaks sccache, or if that gate is removed. Verification v2's D4 plan-verify "Rustc wrapper" lint was dropped for this reason: as specified it warned on every cargo plan whenever `/usr/bin/sccache` existed, so `plan verify --strict` failed for plans that could not hit the failure.
+**Current state (2026-09-25):** the export described below is now gated. `build_cache::sccache_usable_in` (`orchestrator/terminal/native/build_cache.rs:145`) is `!sandbox.enabled || network.allow_all_unix_sockets`; `launch.rs:337` and `wrapper.rs:308` withhold `RUSTC_WRAPPER` from a sandboxed session whose seccomp filter denies `AF_UNIX`, and `process/environment.rs` starts acceptance commands from `env_clear()`. The `env -u RUSTC_WRAPPER` workaround and the `LOOM_SCCACHE=0` restart are needed only for a sandbox that allows all unix sockets yet still breaks sccache, or if that gate is removed. A 2026-10-14 probe under the host-socket hiding (`sandbox/host_sockets.rs`) ran `sccache rustc -vV` and `sccache --start-server` inside a flagged session, so the gate's "on" side holds. Verification v2's D4 plan-verify "Rustc wrapper" lint was dropped for this reason: as specified it warned on every cargo plan whenever `/usr/bin/sccache` existed, so `plan verify --strict` failed for plans that could not hit the failure.
 
 The rest is the 2026-09-04 history, true of the tree before the gate.
 
@@ -261,3 +261,13 @@ export before any local source; never mix two sources for one identity.
 **Fix:** the daemon exports `LOOM_BOOT_ID` in each session wrapper and `process::boot_id::resolve_boot_id`
 takes it first, then `/proc/sys/kernel/random/boot_id` or `kern.bootsessionuuid`
 ([Where the Boot ID Comes From](../architecture/owned-waits.md#where-the-boot-id-comes-from)).
+
+## Stages Stranded on the Sandbox's AF_UNIX Denial (2026-10-14)
+
+**What happened:** troofoo stages kept blocking on Unix sockets: Chrome's singleton and postgres's default socket in plan 1, then SeaweedFS `weed filer`/`weed s3` (which always open one) in plan 2's `local-runtime`, after every other criterion had passed. The agent spent a session discovering the denial, and the operator had no way to grant it.
+
+**Why:** the plan-writer skill called AF_UNIX ungrantable but its environment inventory never asked which command opens a socket; plans shipped `allow_all_unix_sockets: false` and sometimes an `allow_unix_sockets` path list that does nothing on Linux; the stage signal never mentioned the denial; and the one setting that lifts it exposed every host socket (docker, D-Bus, gpg-agent).
+
+**Prevention:** the plan-writer inventory asks about sockets (TCP-only option, a per-stage grant, or an operator-run stage); the signal states the socket policy up front; `plan verify` warns on `allow_unix_sockets` on Linux.
+
+**Fix:** a per-stage `allow_all_unix_sockets` grant now hides host sockets and needs `loom run --accept-unix-socket-risk` ([what it still exposes](../concerns/sandbox-and-confinement-gaps.md#what-allow_all_unix_sockets-still-exposes)).
