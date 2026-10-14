@@ -86,6 +86,10 @@ pub enum Commands {
         #[arg(long, value_parser = ["native", "tmux"])]
         backend: Option<String>,
 
+        /// Start although a stage sets `allow_all_unix_sockets`; required on every such run
+        #[arg(long)]
+        accept_unix_socket_risk: bool,
+
         /// Internal: serve as the daemon for this absolute state directory
         #[arg(long, hide = true, conflicts_with = "foreground")]
         daemon_child: Option<PathBuf>,

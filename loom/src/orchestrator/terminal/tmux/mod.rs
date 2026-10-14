@@ -41,6 +41,7 @@ use std::time::Duration;
 use crate::models::session::Session;
 
 use super::native;
+pub(crate) use socket::loom_socket_dir;
 
 pub(crate) use capture::capture_pane_tail;
 pub use socket::{

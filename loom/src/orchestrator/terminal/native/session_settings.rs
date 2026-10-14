@@ -10,6 +10,7 @@
 //! this module owns the file and its lifecycle.
 
 mod contents;
+mod host_sockets;
 
 use anyhow::{Context, Result};
 use serde_json::Value;
@@ -72,6 +73,9 @@ pub(super) struct CapsuleRequest<'a> {
     /// Every regular file directly in the hooks directory whose first line
     /// is a python shebang (`HostFacts::python_hooks`).
     pub python_hooks: &'a [PathBuf],
+    /// Where host sockets are looked for when the stage is granted every
+    /// Unix socket: `sandbox::HOST_TMP_ROOT` on a real host.
+    pub socket_scan_root: &'a Path,
 }
 
 /// Build and write the session's capsule, returning its absolute path.
@@ -97,6 +101,7 @@ pub(super) fn write_session_capsule(request: &CapsuleRequest<'_>) -> Result<Stri
     let approved = crate::fs::permissions::approved::approved_rules(&state_root, request.surfaces);
     let worktree = worktree_rooted.then_some(cwd.as_path());
     let denies = capsule_denies(request, hooks_dir, &repo_root, &state_root, worktree)?;
+    let hidden_sockets = host_sockets::hidden_sockets(request, &cwd, &repo_root, &state_root);
     let settings = contents::capsule_settings(&contents::CapsuleInputs {
         kind: request.kind,
         sandbox: request.sandbox,
@@ -111,6 +116,7 @@ pub(super) fn write_session_capsule(request: &CapsuleRequest<'_>) -> Result<Stri
         denies: &denies,
         python3: request.python3,
         python_hooks: request.python_hooks,
+        hidden_sockets: &hidden_sockets,
     })?;
     let path = write_capsule_file(request.work_dir, request.session_id, &settings)?;
     path.to_str().map(str::to_owned).with_context(|| {

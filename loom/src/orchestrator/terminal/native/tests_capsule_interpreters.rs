@@ -25,6 +25,7 @@ fn build_with_interpreters(python3: Option<&Path>, python_hooks: &[PathBuf]) -> 
         denies: &denies,
         python3,
         python_hooks,
+        hidden_sockets: &[],
     })
     .unwrap()
 }

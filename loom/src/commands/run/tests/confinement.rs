@@ -1,10 +1,12 @@
 //! `loom run`'s confinement refusals: the startup preflights both entry
-//! points share refuse an unconfined stage, both entry points run them before
+//! points share refuse an unconfined stage and an unaccepted grant of every
+//! Unix socket, both entry points run them before
 //! the plan is marked in progress, and the local-settings warning comes and
 //! goes with the loom-written keys.
 
 use super::super::confinement::{confinement_findings, local_settings_warning, RunHost};
 use super::*;
+use crate::plan::schema::NetworkConfig;
 use crate::sandbox::preflight::{
     strip_settings_local_loom_keys, HookFindings, HostFacts, SandboxPreflightRefusal,
 };
@@ -38,7 +40,7 @@ fn the_shared_startup_preflights_refuse_a_stage_that_disables_its_sandbox() {
     let temp = TempDir::new().unwrap();
     let work_dir = work_dir_with_stage(&temp, disabled());
 
-    let error = super::super::run_startup_preflights(&work_dir)
+    let error = super::super::run_startup_preflights(&work_dir, false)
         .expect_err("a stage with its sandbox disabled must refuse the run");
 
     let text = format!("{error:#}");
@@ -60,7 +62,7 @@ fn both_run_entry_points_refuse_before_the_plan_is_marked_in_progress() {
         ("run/foreground.rs", include_str!("../foreground.rs")),
     ] {
         let refusal = source
-            .find("run_startup_preflights(&work_dir)")
+            .find("run_startup_preflights(&work_dir, accept_unix_socket_risk)")
             .unwrap_or_else(|| panic!("{label} must call run_startup_preflights"));
         let rename = source.find("mark_plan_in_progress(").unwrap();
         assert!(
@@ -70,44 +72,74 @@ fn both_run_entry_points_refuse_before_the_plan_is_marked_in_progress() {
     }
 }
 
-#[test]
-fn confinement_findings_refuse_check_1_and_pass_a_confined_run() {
+/// Checks 1-5 and the Unix-socket acknowledgement over `work_dir`'s stages,
+/// on a host whose every fact passes.
+fn findings_on_a_clean_host(work_dir: &WorkDir, accept_unix_socket_risk: bool) -> HookFindings {
     let host = TempDir::new().unwrap();
     let hooks_dir = host.path().join("hooks");
     crate::fs::permissions::install_loom_hooks_to(&hooks_dir).unwrap();
     let loom_bin = host.path().join("loom");
     fs::write(&loom_bin, "").unwrap();
     let home = host.path().join("home");
-    let findings = |work_dir: &WorkDir| {
-        let repo_root = work_dir.project_root().unwrap();
-        confinement_findings(&RunHost {
-            work_dir: work_dir.root(),
-            repo_root,
-            home: Some(home.as_path()),
-            path: &[],
-            facts: Ok(HostFacts {
-                writable_roots: vec![repo_root.to_path_buf()],
-                hooks_dir: Some(hooks_dir.clone()),
-                loom_bin: loom_bin.clone(),
-                hook_path: Vec::new(),
-                python3: None,
-                python_hooks: Vec::new(),
-            }),
-        })
-        .unwrap()
-    };
+    let repo_root = work_dir.project_root().unwrap();
+    confinement_findings(&RunHost {
+        work_dir: work_dir.root(),
+        repo_root,
+        home: Some(home.as_path()),
+        path: &[],
+        facts: Ok(HostFacts {
+            writable_roots: vec![repo_root.to_path_buf()],
+            hooks_dir: Some(hooks_dir),
+            loom_bin,
+            hook_path: Vec::new(),
+            python3: None,
+            python_hooks: Vec::new(),
+        }),
+        accept_unix_socket_risk,
+    })
+    .unwrap()
+}
 
+#[test]
+fn confinement_findings_refuse_check_1_and_pass_a_confined_run() {
     let confined = TempDir::new().unwrap();
     let confined = work_dir_with_stage(&confined, StageSandboxConfig::default());
-    assert_eq!(findings(&confined), HookFindings::default());
+    assert_eq!(
+        findings_on_a_clean_host(&confined, false),
+        HookFindings::default()
+    );
 
     let unconfined = TempDir::new().unwrap();
-    let refused = findings(&work_dir_with_stage(&unconfined, disabled()));
+    let refused = findings_on_a_clean_host(&work_dir_with_stage(&unconfined, disabled()), false);
     assert_eq!(refused.refusals.len(), 1, "{refused:?}");
     let refusal = &refused.refusals[0];
     assert!(
         refusal.starts_with("stage `only`: sandbox.enabled=false"),
         "{refusal}"
+    );
+}
+
+#[test]
+fn confinement_findings_refuse_a_stage_granted_every_unix_socket_until_accepted() {
+    let temp = TempDir::new().unwrap();
+    let sockets = StageSandboxConfig {
+        network: Some(NetworkConfig {
+            allow_all_unix_sockets: true,
+            ..NetworkConfig::default()
+        }),
+        ..StageSandboxConfig::default()
+    };
+    let work_dir = work_dir_with_stage(&temp, sockets);
+
+    let refused = findings_on_a_clean_host(&work_dir, false);
+    assert_eq!(refused.refusals.len(), 1, "{refused:?}");
+    assert!(
+        refused.refusals[0].contains("--accept-unix-socket-risk"),
+        "{refused:?}"
+    );
+    assert_eq!(
+        findings_on_a_clean_host(&work_dir, true),
+        HookFindings::default()
     );
 }
 

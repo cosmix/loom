@@ -137,6 +137,27 @@ fn a_sandbox_denying_af_unix_is_unreachable_not_not_listening() {
     }
 }
 
+/// A sandbox hides a socket from its session by binding `/dev/null` over it,
+/// so the connect is refused just as at a stale socket, yet that says nothing
+/// about the daemon. A regular file and a link to `/dev/null` stand in for
+/// the mask. Linux only: macOS answers `ENOTSOCK` for a non-socket path.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_non_socket_masking_the_socket_path_is_unreachable() {
+    let regular = TempDir::new().unwrap();
+    std::fs::write(socket_path(regular.path()), b"").unwrap();
+    let device = TempDir::new().unwrap();
+    std::os::unix::fs::symlink("/dev/null", socket_path(device.path())).unwrap();
+
+    for work_dir in [regular.path(), device.path()] {
+        match try_send_request(work_dir, &ping()).unwrap() {
+            DaemonReach::Unreachable => {}
+            DaemonReach::NotListening => panic!("a masked socket proves no daemon absent"),
+            DaemonReach::Answered(response) => panic!("expected Unreachable, got {response:?}"),
+        }
+    }
+}
+
 #[test]
 fn a_live_listener_is_answered() {
     let temp = TempDir::new().unwrap();

@@ -37,7 +37,8 @@ command enters `acceptance`:
 4. **Environment-dependent tests are the usual culprit** — anything needing a daemon, a socket, a
    display, a container, or the network. A test that cannot pass in the environment the gate runs
    in belongs behind a self-skip guard, not inside a stage's acceptance list. (In this repo the
-   tmux e2e suite cannot create an `AF_UNIX` socket under a session sandbox, and says so in its
+   tmux e2e suite cannot create an `AF_UNIX` socket under a session sandbox without
+   `allow_all_unix_sockets`, and says so in its
    own file header — which is exactly the kind of header a plan author must read before writing
    `--all-targets` into a gate.)
 5. **Scratch directories and `HOME` — enforced by `loom plan verify`.** It rejects a bare

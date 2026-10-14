@@ -22,6 +22,9 @@ pub struct SandboxSummary {
     pub missing_allow_write: Vec<String>,
     /// Allowed network domains
     pub allowed_domains: Vec<String>,
+    /// Whether the session may create Unix sockets: the merged config
+    /// enables the sandbox and sets `network.allow_all_unix_sockets`.
+    pub unix_sockets_allowed: bool,
     /// Commands excluded from sandbox
     pub excluded_commands: Vec<String>,
 }

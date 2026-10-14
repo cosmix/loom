@@ -58,11 +58,13 @@ impl LintFinding {
 /// filters but no source-graph base layer to check them against, it skips
 /// them and says so there (`plan verify`'s notes, which never count as
 /// warnings), since a `LintFinding` cannot express a skipped check.
+/// `sandbox_capability` notes there what a grant of every Unix socket leaves
+/// reachable, which must not fail `--strict` either.
 pub(crate) fn run(ctx: &LintContext<'_>, notes: &mut Vec<String>) -> Vec<LintFinding> {
     let mut out = Vec::new();
     loom_subcommands::check(ctx, &mut out);
     regex_patterns::check(ctx, &mut out);
-    sandbox_capability::check(ctx, &mut out);
+    notes.extend(sandbox_capability::check(ctx, &mut out));
     knowledge_check::check(ctx, &mut out);
     contracts::check(ctx, &mut out);
     notes.extend(rust_filters::check(ctx, &mut out));

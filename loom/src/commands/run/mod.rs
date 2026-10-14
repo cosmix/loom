@@ -37,22 +37,24 @@ pub use foreground::execute;
 pub use crate::fs::plan_lifecycle::mark_plan_done_if_all_merged;
 
 /// Execute orchestrator in background (daemon mode)
-/// Usage: `loom run [--manual] [--max-parallel <n>] [--no-merge] [--backend <native|tmux>]`
+/// Usage: `loom run [--manual] [--max-parallel <n>] [--no-merge] [--backend <native|tmux>] [--accept-unix-socket-risk]`
 ///
 /// `daemon_child` is the hidden `--daemon-child <root>`: the daemon process
-/// that this command starts runs as `loom run --daemon-child <root>`.
+/// that this command starts runs as `loom run --daemon-child <root>`. It runs
+/// no startup preflight, so `accept_unix_socket_risk` never reaches it.
 pub fn execute_background(
     manual: bool,
     max_parallel: Option<usize>,
     auto_merge: bool,
     backend: Option<String>,
+    accept_unix_socket_risk: bool,
     daemon_child: Option<PathBuf>,
 ) -> Result<()> {
     if let Some(root) = daemon_child {
         return daemon_child::execute(&root, daemon_config(manual, max_parallel, auto_merge));
     }
 
-    let work_dir = prepare_background_run(backend)?;
+    let work_dir = prepare_background_run(backend, accept_unix_socket_risk)?;
 
     crate::utils::print_logo_header("Run");
 
@@ -90,7 +92,10 @@ fn daemon_config(manual: bool, max_parallel: Option<usize>, auto_merge: bool) ->
     }
 }
 
-fn prepare_background_run(backend: Option<String>) -> Result<WorkDir> {
+fn prepare_background_run(
+    backend: Option<String>,
+    accept_unix_socket_risk: bool,
+) -> Result<WorkDir> {
     // Ensure git worktree prerequisites are met before starting.
     let repo_root = std::env::current_dir()?;
     prepare_repo_for_run(&repo_root)?;
@@ -107,7 +112,7 @@ fn prepare_background_run(backend: Option<String>) -> Result<WorkDir> {
 
     resolve_backend_flag(&work_dir, backend, "loom run")?;
 
-    run_startup_preflights(&work_dir)?;
+    run_startup_preflights(&work_dir, accept_unix_socket_risk)?;
     plan_inputs::mark_plan_in_progress(&work_dir)?;
 
     // Publish against the committed active filename and the revision stages inherit.
@@ -128,7 +133,8 @@ fn require_socket_path_fits(work_dir: &WorkDir) -> Result<()> {
 
 /// The startup preflights both entry points run before the plan is marked in
 /// progress, in order: the confinement refusals (`confinement`, plan section
-/// 12); the hard login refusal (`auth_preflight`: claude logged out under the
+/// 12, and a stage granted every Unix socket unless `accept_unix_socket_risk`);
+/// the hard login refusal (`auth_preflight`: claude logged out under the
 /// environment stage sessions receive makes every session exit at startup);
 /// advisory Remote Control, which never aborts startup; the hard
 /// git-version check (merges need `git merge-tree --write-tree`); the hard
@@ -139,8 +145,8 @@ fn require_socket_path_fits(work_dir: &WorkDir) -> Result<()> {
 /// must sign unattended in its own environment); then the advisory codex
 /// lane. One function, so a refusal added here reaches `loom run` and
 /// `loom run --foreground` alike.
-fn run_startup_preflights(work_dir: &WorkDir) -> Result<()> {
-    confinement::require_confinement(work_dir)?;
+fn run_startup_preflights(work_dir: &WorkDir, accept_unix_socket_risk: bool) -> Result<()> {
+    confinement::require_confinement(work_dir, accept_unix_socket_risk)?;
     if let Ok(claude_path) = crate::claude::find_claude_path() {
         auth_preflight::require_stage_login(&claude_path)?;
         crate::remote_control::run_startup_preflight(&claude_path, work_dir.root());

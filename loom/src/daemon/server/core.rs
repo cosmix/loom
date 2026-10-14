@@ -27,9 +27,11 @@ pub enum DaemonStatus {
     /// process could not `connect()` to its socket because AF_UNIX socket
     /// syscalls are denied to it — e.g. Claude Code's Bash tool sandbox,
     /// which permits `stat`/`ls` on the socket file but rejects `socket()`
-    /// outright. Distinct from `ProcessOnly`: there the connect failure
-    /// (connection refused, or a genuinely missing socket file) is real
-    /// evidence the daemon's listener is gone. Here the failure is a
+    /// outright — or because its sandbox masks the socket path with a
+    /// non-socket (`daemon::rpc::refused_by_mask`). Distinct from
+    /// `ProcessOnly`: there the connect failure (a socket nothing is bound
+    /// to, or a genuinely missing socket file) is real evidence the
+    /// daemon's listener is gone. Here the failure is a
     /// property of the CALLER's sandbox, not the daemon, so it must never
     /// drive "restart the daemon" advice (`commands/repair.rs`) or a
     /// "socket missing" message (`commands/status.rs`).
@@ -144,6 +146,12 @@ impl DaemonServer {
                     // `ProcessOnly`.
                     DaemonStatus::Unreachable
                 }
+                // A session whose stage is granted every Unix socket sees the
+                // socket masked by `/dev/null`: refused, like a dead listener,
+                // but by something that is not a socket.
+                Err(e) if super::super::rpc::refused_by_mask(&e, &socket_path) => {
+                    DaemonStatus::Unreachable
+                }
                 Err(_) => DaemonStatus::ProcessOnly,
             },
             LockState::Free(guard) => {
@@ -204,7 +212,10 @@ fn cleanup_stale_control_files(work_dir: &Path) {
 
 #[cfg(test)]
 mod tests {
-    use super::cleanup_stale_control_files;
+    use super::super::lock::acquire_lock;
+    use super::{cleanup_stale_control_files, DaemonServer, DaemonStatus};
+    use crate::daemon::socket_path;
+    use crate::process::sandbox_probe::{skip_unless, unix_socket_bindable};
 
     #[test]
     fn cleanup_preserves_completion_attestation_key() {
@@ -217,5 +228,57 @@ mod tests {
 
         assert!(key.exists());
         assert!(!temp.path().join("admin.token").exists());
+    }
+
+    /// A non-socket at the socket path under a held lock is a sandbox's
+    /// mask (`/dev/null` bound over the socket), never a hung daemon. A
+    /// regular file and a link to `/dev/null` stand in for it. Linux only:
+    /// macOS answers `ENOTSOCK` for a non-socket path.
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn a_masked_socket_under_a_held_lock_is_unreachable() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let work_dir = temp.path();
+        let _lock = acquire_lock(work_dir).unwrap();
+        let socket = socket_path(work_dir);
+
+        std::fs::write(&socket, b"").unwrap();
+        assert_eq!(
+            DaemonServer::check_status(work_dir),
+            DaemonStatus::Unreachable
+        );
+
+        std::fs::remove_file(&socket).unwrap();
+        std::os::unix::fs::symlink("/dev/null", &socket).unwrap();
+        assert_eq!(
+            DaemonServer::check_status(work_dir),
+            DaemonStatus::Unreachable
+        );
+    }
+
+    /// The same lock over a socket nothing is bound to is a hung daemon.
+    #[test]
+    fn a_stale_socket_under_a_held_lock_is_process_only() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let work_dir = temp.path();
+        if skip_unless(
+            unix_socket_bindable(work_dir),
+            "daemon::server::core::tests::a_stale_socket_under_a_held_lock_is_process_only",
+            "this sandbox denies binding an AF_UNIX listener",
+        ) {
+            return;
+        }
+        let _lock = acquire_lock(work_dir).unwrap();
+        let listener = std::os::unix::net::UnixListener::bind(socket_path(work_dir)).unwrap();
+        // Shut down before the drop, so a process another test forks
+        // meanwhile cannot keep accepting on an inherited copy.
+        // SAFETY: shutdown(2) on an fd this test owns and keeps open until the drop below.
+        unsafe { libc::shutdown(std::os::fd::AsRawFd::as_raw_fd(&listener), libc::SHUT_RDWR) };
+        drop(listener);
+
+        assert_eq!(
+            DaemonServer::check_status(work_dir),
+            DaemonStatus::ProcessOnly
+        );
     }
 }

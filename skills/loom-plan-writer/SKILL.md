@@ -431,7 +431,8 @@ loom:
     network:                       # ⛔ MUST be a struct, NEVER the string "deny"
       allowed_domains: []          # empty = deny all; or list domains
       allow_local_binding: false
-      allow_unix_sockets: []
+      allow_unix_sockets: []       # ignored on Linux: the sandbox cannot filter sockets by path
+      allow_all_unix_sockets: false  # true only per stage, with the operator's `loom run --accept-unix-socket-risk`
 ```
 
 Per-stage `sandbox:` overrides are allowed. **Acceptance runs INSIDE the stage's sandbox** (`loom stage complete` runs it from the worktree session): a command confirmed at the repo root was confirmed in the wrong environment. A command needing something the sandbox cannot grant (a write escaping the worktree, a host daemon or socket, un-allowed network, the real `HOME`, a `loom` subcommand that opens shared `.loom/work` state) is NOT an acceptance criterion. Walking the writes, package-manager caches, and the four ungrantable classes: `references/sandbox.md`.
@@ -443,6 +444,7 @@ Per-stage `sandbox:` overrides are allowed. **Acceptance runs INSIDE the stage's
 - Impact-selected test runners, one per package: a JS package needs `node_modules` in the worktree, so provision it.
 - The repository's git hooks: a pre-commit hook that runs `bunx` needs `registry.npmjs.org` in every sandboxed stage, because every stage commits.
 - Audit databases: `cargo audit` fetches from github.com unless run with `--no-fetch` against a host copy.
+- Unix sockets: list every acceptance command that starts something opening a Unix socket (postgres's default socket, SeaweedFS `weed filer`/`weed s3`, Chrome's process singleton, tmux, the docker CLI, sccache); by default creating one fails with `Operation not permitted`. Each ends in one of: a TCP-only option (postgres `-c unix_socket_directories=''`); `allow_all_unix_sockets: true` on that stage only, which needs the operator to run `loom run --accept-unix-socket-risk` and leaves sockets created under `/tmp` after spawn, and those under `$HOME`, reachable; or the command moved to an operator-gated stage. `allow_unix_sockets` does nothing on Linux.
 - Credentials and tokens: a stage session never gets them; ask the user how the need is met.
 - Host tools: anything that must be installed on the host (compilers, `rg`, `fd`) is checked now, and the user installs what is missing.
 

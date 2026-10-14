@@ -78,7 +78,29 @@ fn format_network_section(summary: &SandboxSummary) -> String {
         content.push_str("### Network\n\n");
         content.push_str("**No network access allowed.**\n\n");
     }
+    content.push_str(&format_unix_socket_note(summary.unix_sockets_allowed));
     content
+}
+
+/// The `**Unix sockets:**` paragraph: what this session may do with Unix
+/// sockets, and what to do when a criterion needs one it may not create.
+fn format_unix_socket_note(allowed: bool) -> String {
+    if allowed {
+        return format!(
+            "**Unix sockets:** this stage may create Unix sockets. Put each one inside the \
+             worktree, at a path shorter than {} bytes (`sun_path`). Host sockets (`/run`, \
+             `/var/run`, the ssh and gpg agents, tmux, the loom daemon) are off limits, and on \
+             Linux hidden from this session, though a session that outlives a daemon restart \
+             can reach the restarted daemon's socket: do not seek them.\n\n",
+            crate::daemon::SUN_PATH_MAX
+        );
+    }
+    // Every stage pays this text (`tests_size.rs` caps the floor): keep it short.
+    "**Unix sockets:** none can be created (`Operation not permitted`, any path): postgres, \
+     SeaweedFS filer/s3, Chrome, tmux, docker, sccache. Use TCP instead (postgres \
+     `-c unix_socket_directories=''`). A criterion needing one goes last: do the rest, then \
+     `loom stage block <stage-id> \"<criterion> needs a Unix socket\"`.\n\n"
+        .to_string()
 }
 
 /// Format the "missing on the host" note for `allow_write` grants the
@@ -117,6 +139,7 @@ mod tests {
             allow_write,
             missing_allow_write,
             allowed_domains: vec![],
+            unix_sockets_allowed: false,
             excluded_commands: vec![],
         }
     }
@@ -158,6 +181,7 @@ mod tests {
             allow_write: vec![],
             missing_allow_write: vec!["/tmp/loom-pre-commit-plan".to_string()],
             allowed_domains: vec![],
+            unix_sockets_allowed: false,
             excluded_commands: vec![],
         };
 
@@ -165,5 +189,22 @@ mod tests {
 
         assert!(content.contains("Missing on the host, so NOT writable this session"));
         assert!(content.contains("`/tmp/loom-pre-commit-plan`"));
+    }
+
+    #[test]
+    fn the_unix_socket_note_follows_the_grant() {
+        let mut summary = summary_with(vec![], vec![]);
+
+        let denied = format_sandbox_section(&summary);
+        assert!(denied.contains("**Unix sockets:** none can be created"));
+        assert!(denied.contains("`loom stage block <stage-id>"), "{denied}");
+        assert!(denied.contains("unix_socket_directories=''"), "{denied}");
+
+        summary.unix_sockets_allowed = true;
+        let allowed = format_sandbox_section(&summary);
+        assert!(allowed.contains("**Unix sockets:** this stage may create Unix sockets"));
+        assert!(allowed.contains("shorter than 104 bytes"), "{allowed}");
+        assert!(allowed.contains("outlives a daemon restart"), "{allowed}");
+        assert!(!allowed.contains("Operation not permitted"), "{allowed}");
     }
 }

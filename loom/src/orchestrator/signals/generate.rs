@@ -274,6 +274,9 @@ fn build_sandbox_summary(stage: &Stage, work_dir: &Path) -> SandboxSummary {
                 domains
             })
             .unwrap_or_default(),
+        unix_sockets_allowed: crate::sandbox::grants_all_unix_sockets(
+            &crate::sandbox::stage_sandbox(work_dir, stage),
+        ),
         excluded_commands: stage.sandbox.excluded_commands.clone(),
     }
 }

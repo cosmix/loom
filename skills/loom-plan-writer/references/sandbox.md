@@ -30,8 +30,19 @@ Four ungrantable classes, each logged:
   every `../` entry
   (`sandbox/settings/policy.rs`, `sandbox/settings.rs`), so **no `allow_write` line can express
   those paths at all.** See `doc/loom/knowledge/mistakes/parallel-worktree-shared-state.md`.
-- **Host daemons and OS resources** — tmux and `AF_UNIX` sockets, Docker, an X11 display, a
-  listening port.
+- **Host daemons and OS resources** — Docker, the host's tmux, an X11 display, a listening port.
+  Their sockets stay hidden even from a stage that may create its own (below).
+
+**`AF_UNIX` sockets are grantable per stage, with residual risk.** By default creating any Unix
+socket fails with `Operation not permitted`, at any path. `allow_unix_sockets` (a path list) does
+nothing on Linux: the sandbox cannot filter a socket by its path. `allow_all_unix_sockets: true` on
+one stage lifts the filter; loom then hides the host's sockets (`/run`, `/var/run`, the ssh and gpg
+agents, tmux, X11, the loom daemon, and those in `/tmp` at spawn), but a socket created under
+`/tmp` after the session starts, and every socket under `$HOME`, stays reachable. `loom run`
+refuses such a plan until the operator passes `--accept-unix-socket-risk`, on every run. Prefer a
+tool's TCP-only option (postgres `-c unix_socket_directories=''`); grant the stage only when none
+exists.
+
 - **Network beyond `allowed_domains`** — including the registry fetch a "cheap" build step makes
   on a cold worktree.
 - **The user's real HOME** — credentials, `~/.claude`, a global toolchain config.

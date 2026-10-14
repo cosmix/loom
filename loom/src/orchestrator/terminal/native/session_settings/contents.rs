@@ -53,13 +53,17 @@ pub(super) struct CapsuleInputs<'a> {
     /// Every regular file directly in the hooks directory whose first line
     /// is a python shebang.
     pub python_hooks: &'a [PathBuf],
+    /// The host's Unix sockets to hide, when the stage is granted every Unix
+    /// socket (`sandbox::hidden_socket_paths`); empty otherwise.
+    pub hidden_sockets: &'a [String],
 }
 
 /// The capsule document: what `sandbox::build_settings` builds from the
 /// stage's config for the session's location (`defaultMode` and
 /// `worktree.bgIsolation` included, the checkout's deny rules carried, and
 /// with the codex lane its plugin keys), then the plans read, the scratch
-/// grant, the approved list, the session's write denies and the kind's hooks.
+/// grant, the approved list, the session's write denies, the hidden host
+/// sockets and the kind's hooks.
 /// With the codex lane it also allows the home-expanded forwarding wrapper
 /// path, which must not be committed in the project's `settings.json`.
 /// The config must pass `sandbox::validate_config` first. It never carries
@@ -91,6 +95,8 @@ pub(super) fn capsule_settings(inputs: &CapsuleInputs<'_>) -> Result<Value> {
     let deny_write = ["sandbox", "filesystem", "denyWrite"];
     extend_strings(&mut settings, &deny_write, &denies.deny_write);
     extend_strings(&mut settings, &["permissions", "deny"], &denies.edit);
+    let deny_read = ["sandbox", "filesystem", "denyRead"];
+    extend_strings(&mut settings, &deny_read, inputs.hidden_sockets);
     settings["hooks"] = capsule_hooks(
         inputs.kind,
         inputs.hooks_dir,

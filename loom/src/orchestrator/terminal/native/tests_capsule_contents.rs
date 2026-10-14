@@ -82,6 +82,7 @@ fn try_build(
         denies: &denies,
         python3: None,
         python_hooks: &[],
+        hidden_sockets: &[],
     })
 }
 

@@ -13,6 +13,7 @@ use crate::orchestrator::terminal::native::session_settings::{
 use crate::sandbox::control_surfaces::ControlSurfaces;
 use crate::sandbox::MergedSandboxConfig;
 use serde_json::{json, Value};
+use serial_test::serial;
 use std::collections::BTreeSet;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
@@ -164,7 +165,8 @@ fn cleanup_session_settings_removes_the_file_and_tolerates_a_missing_one() {
 }
 
 /// A repository with a state root and a stage worktree, a hooks directory, an
-/// operator home, and where its scratch directories go; every path canonical.
+/// operator home, where its scratch directories go, and the `/tmp` its
+/// host-socket scan reads; every path canonical.
 pub(super) struct Checkout {
     _temp: TempDir,
     pub(super) repo: PathBuf,
@@ -173,6 +175,7 @@ pub(super) struct Checkout {
     pub(super) hooks_dir: PathBuf,
     pub(super) home: PathBuf,
     scratch_root: PathBuf,
+    tmp_root: PathBuf,
 }
 
 pub(super) fn checkout() -> Checkout {
@@ -194,6 +197,7 @@ pub(super) fn checkout() -> Checkout {
         hooks_dir,
         home,
         scratch_root: root.join("scratch"),
+        tmp_root: root.join("tmp"),
     }
 }
 
@@ -225,6 +229,7 @@ pub(super) fn write_capsule(
         writable_roots: &[],
         python3: None,
         python_hooks: &[],
+        socket_scan_root: &checkout.tmp_root,
     })
 }
 
@@ -306,4 +311,80 @@ fn a_spawn_without_a_verified_hooks_dir_is_refused_for_every_kind() {
         !checkout.work_dir.join("capsules").exists(),
         "a refused spawn writes no capsule"
     );
+}
+
+/// Bind an IDE socket under the checkout's `/tmp` and the daemon socket, and
+/// plant links at the tmux and X11 candidates' fixed places, pointing at the
+/// repository and at a directory inside the worktree; return what a granted
+/// stage's capsule hides on Linux.
+fn plant_host_sockets(checkout: &Checkout) -> Vec<String> {
+    let ide_dir = checkout.tmp_root.join("ide");
+    let daemon_socket = checkout.work_dir.join("orchestrator.sock");
+    for socket in [&ide_dir.join("ide.sock"), &daemon_socket] {
+        drop(std::os::unix::net::UnixListener::bind(socket).unwrap());
+    }
+    // SAFETY: `getuid` has no preconditions and cannot fail.
+    let uid = unsafe { libc::getuid() };
+    let tmux_link = checkout.tmp_root.join(format!("tmux-{uid}"));
+    std::os::unix::fs::symlink(&checkout.repo, tmux_link).unwrap();
+    let src = checkout.worktree.join("src");
+    std::fs::create_dir(&src).unwrap();
+    std::os::unix::fs::symlink(src, checkout.tmp_root.join(".X11-unix")).unwrap();
+    ["/run", "/var/run"]
+        .iter()
+        .filter_map(|root| std::fs::canonicalize(root).ok())
+        .chain([ide_dir, daemon_socket])
+        .map(|path| path.display().to_string())
+        .collect()
+}
+
+#[test]
+#[serial]
+fn a_stage_granted_every_unix_socket_hides_the_host_sockets_for_every_kind() {
+    let checkout = checkout();
+    std::fs::create_dir_all(checkout.tmp_root.join("ide")).unwrap();
+    if crate::process::sandbox_probe::skip_unless(
+        crate::process::sandbox_probe::unix_socket_bindable(&checkout.tmp_root),
+        "a_stage_granted_every_unix_socket_hides_the_host_sockets_for_every_kind",
+        "this sandbox denies binding an AF_UNIX listener",
+    ) {
+        return;
+    }
+    let planted = plant_host_sockets(&checkout);
+    let expected = if cfg!(target_os = "linux") {
+        planted
+    } else {
+        Vec::new()
+    };
+    let mut granted = default_sandbox();
+    granted.network.allow_all_unix_sockets = true;
+
+    let deny_read = |kind: SessionType, sandbox: &MergedSandboxConfig| {
+        let cwd = &checkout.worktree;
+        let hooks = Some(checkout.hooks_dir.as_path());
+        let path = write_capsule(&checkout, "session-us1", kind, cwd, sandbox, hooks).unwrap();
+        strings(&read_capsule(&path), "/sandbox/filesystem/denyRead")
+    };
+    for kind in ALL_KINDS {
+        let plain = deny_read(kind, &default_sandbox());
+        let added: BTreeSet<String> = deny_read(kind, &granted)
+            .difference(&plain)
+            .cloned()
+            .collect();
+        for entry in &expected {
+            assert!(added.contains(entry), "{kind}: {entry} not in {added:?}");
+        }
+        assert_eq!(added.is_empty(), expected.is_empty(), "{kind}: {added:?}");
+        // Resolved as the sandbox's mount would resolve it: the repository
+        // behind the tmux link and the worktree's `src` behind the X11 link
+        // stay visible; inside the repository only the daemon socket is hidden.
+        let daemon_socket = checkout.work_dir.join("orchestrator.sock");
+        let hides_tree = |entry: &String| {
+            std::fs::canonicalize(entry).is_ok_and(|entry| {
+                checkout.worktree.starts_with(&entry)
+                    || (entry.starts_with(&checkout.repo) && entry != daemon_socket)
+            })
+        };
+        assert!(!added.iter().any(hides_tree), "{added:?}");
+    }
 }

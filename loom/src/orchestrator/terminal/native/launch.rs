@@ -284,6 +284,7 @@ fn write_capsule(
         writable_roots: &host.facts.writable_roots,
         python3: host.facts.python3.as_deref(),
         python_hooks: &host.facts.python_hooks,
+        socket_scan_root: Path::new(crate::sandbox::HOST_TMP_ROOT),
     })
 }
 

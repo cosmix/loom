@@ -7,6 +7,7 @@
 //! them together means a fix to any of the three is a fix for all of them.
 
 use std::io::ErrorKind;
+use std::os::unix::fs::FileTypeExt;
 use std::os::unix::net::UnixStream;
 use std::path::Path;
 use std::time::Duration;
@@ -86,9 +87,11 @@ pub enum DaemonReach {
     NotListening,
     /// This process cannot tell whether a daemon listens: the sandbox denies
     /// AF_UNIX outright, `stat` on the socket path fails with anything but
-    /// `ENOENT` (a denied or masked path), or the resolved socket path is too
-    /// long for `sun_path` (the daemon may run; this process cannot address
-    /// it). Not evidence about the daemon.
+    /// `ENOENT` (a denied or masked path), the connect is refused by
+    /// something other than a socket at the path (a sandbox's mask, see
+    /// `refused_by_mask`), or the resolved socket path is too long for
+    /// `sun_path` (the daemon may run; this process cannot address it). Not
+    /// evidence about the daemon.
     ///
     /// A caller here must not take the `NotListening` fallback: writing
     /// `.loom/work/stages/<id>.md` directly would BYPASS a live daemon's authority
@@ -140,7 +143,9 @@ pub enum DaemonReach {
 /// - `ErrorKind::NotFound` (the file vanished between the check and the
 ///   connect) and `ErrorKind::ConnectionRefused` (a socket file exists but
 ///   nothing is bound to it — the stale-socket case) both mean there is no
-///   daemon to defer to, so they map to `NotListening`.
+///   daemon to defer to, so they map to `NotListening`. A refusal from
+///   something other than a socket at the path is a sandbox's mask
+///   (`refused_by_mask`) and maps to `Unreachable`.
 /// - `ErrorKind::PermissionDenied` means the sandbox refused the syscall, not
 ///   that the daemon is absent: a sandboxed process is denied AF_UNIX
 ///   outright, failing at `socket()` or at `connect()` (see
@@ -163,11 +168,11 @@ pub fn try_send_request(work_dir: &Path, request: &Request) -> Result<DaemonReac
     }
     let stream = match UnixStream::connect(&socket_path) {
         Ok(stream) => stream,
+        Err(e) if e.kind() == ErrorKind::PermissionDenied || refused_by_mask(&e, &socket_path) => {
+            return Ok(DaemonReach::Unreachable);
+        }
         Err(e) if matches!(e.kind(), ErrorKind::NotFound | ErrorKind::ConnectionRefused) => {
             return Ok(DaemonReach::NotListening);
-        }
-        Err(e) if e.kind() == ErrorKind::PermissionDenied => {
-            return Ok(DaemonReach::Unreachable);
         }
         Err(e) => {
             return Err(e).with_context(|| {
@@ -176,6 +181,17 @@ pub fn try_send_request(work_dir: &Path, request: &Request) -> Result<DaemonReac
         }
     };
     exchange(stream, request).map(DaemonReach::Answered)
+}
+
+/// Whether `error`, from connecting to `path`, is a sandbox's mask rather
+/// than a stale socket. A sandbox hides a socket from its session by mounting
+/// something else over it (Linux binds `/dev/null`), and a connect to a
+/// path that is not a socket is refused with `ECONNREFUSED`, just as a socket
+/// nothing is bound to is. What sits at the path tells the two apart; like
+/// the connect, the check follows a symlink.
+pub(super) fn refused_by_mask(error: &std::io::Error, path: &Path) -> bool {
+    error.kind() == ErrorKind::ConnectionRefused
+        && std::fs::metadata(path).is_ok_and(|metadata| !metadata.file_type().is_socket())
 }
 
 /// Send one request and read the daemon's reply, for callers with no

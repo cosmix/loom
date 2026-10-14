@@ -6,6 +6,7 @@
 mod config;
 pub(crate) mod control_surfaces;
 mod grant_paths;
+mod host_sockets;
 mod merge_resolver;
 mod package_caches;
 mod settings;
@@ -17,6 +18,10 @@ pub use config::{
     PathEscapeAttempt, KNOWLEDGE_WRITE_GLOB,
 };
 pub use grant_paths::{missing_grant_paths, warn_missing_grants};
+pub(crate) use host_sockets::{
+    grants_all_unix_sockets, hidden_socket_paths, scan_sockets, SocketHostFacts, HOST_TMP_ROOT,
+    TMP_SCAN_DEPTH, TMP_SCAN_MAX_ENTRIES,
+};
 pub(crate) use merge_resolver::{
     release_worktree_write_denies, stage_sandbox, worktree_write_denies,
 };

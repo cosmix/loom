@@ -8,16 +8,20 @@
 //! root a session can write. `loom run` refuses on checks 1-5, and the daemon
 //! repeats checks 1-4 at each spawn. Check 5 and the `R/loom-hooks/**` rule
 //! live in `hook_commands`; `local_settings` names the keys loom used to write
-//! into the operator's `R/.claude/settings.local.json`.
+//! into the operator's `R/.claude/settings.local.json`; `unix_sockets` refuses
+//! a `loom run` that grants a stage every Unix socket unless the operator
+//! accepted it.
 //!
 //! Every check takes its host facts as parameters; only the scripts, tools
 //! and hook executables those facts name are read from disk.
 
 mod hook_commands;
 mod local_settings;
+mod unix_sockets;
 
 pub(crate) use hook_commands::{hook_documents, scan_hook_registrations, HookFindings, HookScan};
 pub(crate) use local_settings::{settings_local_loom_keys, strip_settings_local_loom_keys};
+pub(crate) use unix_sockets::{unix_socket_grant_refusals, ACCEPT_UNIX_SOCKET_RISK_FLAG};
 
 use std::fmt;
 use std::os::unix::fs::PermissionsExt;
@@ -123,6 +127,11 @@ fn policy_origin(stage: &StageSandboxConfig, merged: &MergedSandboxConfig) -> &'
     } else {
         stage.allow_unsandboxed_escape.is_some()
     };
+    origin_label(set_by_stage)
+}
+
+/// The words a refusal names a setting's origin with.
+fn origin_label(set_by_stage: bool) -> &'static str {
     if set_by_stage {
         "the stage's own `sandbox:` override"
     } else {

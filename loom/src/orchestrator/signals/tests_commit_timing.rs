@@ -205,6 +205,37 @@ fn sandbox_section_names_the_package_cache_grant() {
 }
 
 #[test]
+fn sandbox_section_says_whether_unix_sockets_are_allowed() {
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path().join(".loom").join("work");
+    fs::create_dir_all(&work_dir).unwrap();
+    let session = create_test_session();
+    let worktree = create_test_worktree();
+    let signal_for = |allow_all_unix_sockets: bool| {
+        let mut stage = create_test_stage();
+        stage.sandbox.network = Some(crate::plan::schema::NetworkConfig {
+            allow_all_unix_sockets,
+            ..Default::default()
+        });
+        let (path, _) =
+            generate_signal_with_metrics(&session, &stage, &worktree, &[], None, None, &work_dir)
+                .unwrap();
+        fs::read_to_string(path).unwrap()
+    };
+
+    let denied = signal_for(false);
+    assert!(
+        denied.contains("**Unix sockets:** none can be created"),
+        "the default sandbox must say a Unix socket cannot be created"
+    );
+    let allowed = signal_for(true);
+    assert!(
+        allowed.contains("**Unix sockets:** this stage may create Unix sockets"),
+        "a stage granted every Unix socket must be told it may create them"
+    );
+}
+
+#[test]
 fn commit_command_doctrine_is_on_every_surface() {
     let mut surfaces: Vec<(&str, String)> = all_generators()
         .into_iter()

@@ -149,6 +149,7 @@ fn test_loom_run_fails_with_staged_changes() {
         false, // watch
         true,  // auto_merge
         None,  // backend
+        false, // accept_unix_socket_risk
     );
 
     // Restore original directory
@@ -197,6 +198,7 @@ fn test_loom_run_fails_with_mixed_changes() {
         false, // watch
         true,  // auto_merge
         None,  // backend
+        false, // accept_unix_socket_risk
     );
 
     // Restore original directory
@@ -271,6 +273,7 @@ fn test_loom_run_fails_with_modified_tracked_files() {
         false, // watch
         true,  // auto_merge
         None,  // backend
+        false, // accept_unix_socket_risk
     );
 
     // Restore original directory

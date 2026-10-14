@@ -18,13 +18,14 @@ use crate::orchestrator::{
 use crate::plan::schema::SandboxConfig;
 
 /// Execute plan stages in foreground (for --foreground flag)
-/// Usage: `loom run --foreground [--manual] [--max-parallel <n>] [--watch] [--no-merge] [--backend <native|tmux>]`
+/// Usage: `loom run --foreground [--manual] [--max-parallel <n>] [--watch] [--no-merge] [--backend <native|tmux>] [--accept-unix-socket-risk]`
 pub fn execute(
     manual: bool,
     max_parallel: Option<usize>,
     watch: bool,
     auto_merge: bool,
     backend: Option<String>,
+    accept_unix_socket_risk: bool,
 ) -> Result<()> {
     // First, before any thread exists (`main` spawns none before dispatch):
     // this process runs the orchestrator, so it keeps the signing variables
@@ -43,7 +44,7 @@ pub fn execute(
 
     resolve_backend_flag(&work_dir, backend, "loom run --foreground")?;
 
-    super::run_startup_preflights(&work_dir)?;
+    super::run_startup_preflights(&work_dir, accept_unix_socket_risk)?;
     super::plan_inputs::mark_plan_in_progress(&work_dir)?;
 
     // Publish against the committed active filename and the revision stages inherit.

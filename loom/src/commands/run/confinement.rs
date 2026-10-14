@@ -1,9 +1,10 @@
 //! `loom run`'s refusal to start a run whose sessions would not be confined
 //! (`doc/plans/PLAN-loom-state-confinement.md`, section 12): checks 1-5 of
 //! `crate::sandbox::preflight` over every stage and the host its sessions
-//! launch on, and a warning while the operator's `.claude/settings.local.json`
-//! still carries keys loom used to write there. The daemon repeats checks 1-4
-//! at each spawn.
+//! launch on, a stage granted every Unix socket the operator did not accept
+//! for this run, and a warning while the operator's
+//! `.claude/settings.local.json` still carries keys loom used to write there.
+//! The daemon repeats checks 1-4 at each spawn.
 
 use anyhow::{Context, Result};
 use colored::Colorize;
@@ -12,8 +13,9 @@ use std::path::{Path, PathBuf};
 use crate::fs::work_dir::WorkDir;
 use crate::sandbox::preflight::{self, HookFindings, HookScan, HostFacts, SandboxPreflightRefusal};
 
-/// Refuse to start unless checks 1-5 pass, printing their warnings first.
-pub(super) fn require_confinement(work_dir: &WorkDir) -> Result<()> {
+/// Refuse to start unless checks 1-5 pass and every stage granted every Unix
+/// socket was accepted, printing the warnings first.
+pub(super) fn require_confinement(work_dir: &WorkDir, accept_unix_socket_risk: bool) -> Result<()> {
     let repo_root = work_dir
         .project_root()
         .context("cannot resolve the project root of the state directory")?;
@@ -26,6 +28,7 @@ pub(super) fn require_confinement(work_dir: &WorkDir) -> Result<()> {
         home: home.as_deref(),
         path: &path,
         facts: crate::orchestrator::terminal::native::run_host_facts(work_dir.root()),
+        accept_unix_socket_risk,
     })?;
     for warning in &findings.warnings {
         eprintln!("{} {warning}", "⚠".yellow().bold());
@@ -43,14 +46,23 @@ pub(super) struct RunHost<'a> {
     pub(super) path: &'a [PathBuf],
     /// What every spawn resolves and checks (checks 2-4).
     pub(super) facts: Result<HostFacts>,
+    /// `loom run --accept-unix-socket-risk`: a stage granted every Unix
+    /// socket is not refused.
+    pub(super) accept_unix_socket_risk: bool,
 }
 
-/// Checks 1-5 over the stages in `host.work_dir` and over the host, plus the
-/// local-settings warning. Facts that cannot be resolved are a refusal.
+/// Checks 1-5 over the stages in `host.work_dir` and over the host, the
+/// Unix-socket acknowledgement, plus the local-settings warning. Facts that
+/// cannot be resolved are a refusal.
 pub(super) fn confinement_findings(host: &RunHost<'_>) -> Result<HookFindings> {
     let plan = crate::fs::work_dir::read_plan_sandbox(host.work_dir)?.unwrap_or_default();
     let stages = crate::verify::list_all_stages(host.work_dir)?;
     let mut refusals = preflight::sandbox_policy_refusals(&plan, &stages);
+    refusals.extend(preflight::unix_socket_grant_refusals(
+        &plan,
+        &stages,
+        host.accept_unix_socket_risk,
+    ));
     let writable_roots: &[PathBuf] = match &host.facts {
         Ok(facts) => {
             refusals.extend(preflight::host_refusals(facts));

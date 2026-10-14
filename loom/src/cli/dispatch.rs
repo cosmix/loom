@@ -297,16 +297,17 @@ fn dispatch_run(command: Commands) -> Result<()> {
         watch,
         no_merge,
         backend,
-        daemon_child,
+        accept_unix_socket_risk: accept,
+        daemon_child: child,
     } = command
     else {
         unreachable!("dispatch routes only Run here");
     };
     let auto_merge = !no_merge;
     if foreground {
-        run::execute(manual, max_parallel, watch, auto_merge, backend)
+        run::execute(manual, max_parallel, watch, auto_merge, backend, accept)
     } else {
-        run::execute_background(manual, max_parallel, auto_merge, backend, daemon_child)
+        run::execute_background(manual, max_parallel, auto_merge, backend, accept, child)
     }
 }
 
