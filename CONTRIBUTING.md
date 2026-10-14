@@ -2,7 +2,7 @@
 
 Thanks for your interest in contributing to Loom.
 
-Loom is pre-1.0 and under active development: do not add backwards-compatibility shims or migration routines; change the code and its callers directly.
+Loom is under active development: do not add backwards-compatibility shims or migration routines; change the code and its callers directly.
 
 ## Code of Conduct
 
