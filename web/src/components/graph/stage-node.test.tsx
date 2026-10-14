@@ -15,7 +15,7 @@ function stage(overrides: Partial<StageSummary> = {}): StageSummary {
 function renderNode(stage: StageSummary) {
   const props: NodeProps<StageNodeType> = {
     id: stage.id,
-    data: { stage, index: 0, emphasis: "plain" },
+    data: { stage, index: 0, emphasis: "plain", tokens: null },
     type: "stage",
     dragging: false,
     zIndex: 0,

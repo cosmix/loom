@@ -16,7 +16,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type KeyboardEvent }
 
 import { EmptyState } from "@/aurora-ui/feedback/EmptyState";
 
-import type { StageStatus, StageSummary } from "@/api/schema";
+import type { StageStatus, StageSummary, TokenFlow } from "@/api/schema";
 import { GraphActionsContext, type Emphasis, type Focus } from "@/components/graph/context";
 import { RankNode, type RankNodeType } from "@/components/graph/rank-node";
 import { StageNode, type StageNodeType } from "@/components/graph/stage-node";
@@ -26,6 +26,7 @@ import { useOpenStage, useOpenTerminal } from "@/components/stage-modal";
 import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import { layoutStages, lineage, threadOf, type GraphLayout } from "@/lib/graph";
+import { stageFlow } from "@/lib/tokens";
 import { snapshotAtom } from "@/state/atoms";
 
 type CanvasNode = StageNodeType | RankNodeType;
@@ -60,12 +61,12 @@ export function StageGraph() {
   }
   return (
     <ReactFlowProvider>
-      <Canvas stages={stages} />
+      <Canvas stages={stages} flow={snapshot.status.tokens} />
     </ReactFlowProvider>
   );
 }
 
-function Canvas({ stages }: { stages: StageSummary[] }) {
+function Canvas({ stages, flow }: { stages: StageSummary[]; flow: TokenFlow | undefined }) {
   const open = useOpenStage();
   const openTerminal = useOpenTerminal();
   const { fitView } = useReactFlow();
@@ -73,8 +74,21 @@ function Canvas({ stages }: { stages: StageSummary[] }) {
   const [hovered, setHovered] = useState<Focus>(null);
   const focus = hovered ?? pinned;
 
-  const layout = useMemo(() => layoutStages(stages), [stages]);
-  const nodes = useMemo(() => buildNodes(layout, stages, focus), [layout, stages, focus]);
+  // The layout keys on which stages have a flow, not on the flow itself: every
+  // status frame carries a new flow object, and dagre must not re-run each second.
+  const tokenKey = stages
+    .filter((stage) => stageFlow(flow, stage.id) !== undefined)
+    .map((stage) => stage.id)
+    .join("\n");
+  const withTokens = useMemo(
+    () => new Set(tokenKey === "" ? [] : tokenKey.split("\n")),
+    [tokenKey],
+  );
+  const layout = useMemo(() => layoutStages(stages, withTokens), [stages, withTokens]);
+  const nodes = useMemo(
+    () => buildNodes(layout, stages, focus, flow),
+    [layout, stages, focus, flow],
+  );
   const edges = useMemo(() => buildEdges(layout, stages, focus), [layout, stages, focus]);
   const actions = useMemo(() => ({ open, openTerminal }), [open, openTerminal]);
 
@@ -185,6 +199,7 @@ export function buildNodes(
   layout: GraphLayout,
   stages: readonly StageSummary[],
   focus: Focus,
+  flow?: TokenFlow,
 ): CanvasNode[] {
   const traced = tracedIds(stages, focus);
   const emphasis = (id: string): Emphasis =>
@@ -211,14 +226,19 @@ export function buildNodes(
     connectable: false,
     zIndex: -1,
   }));
-  const cards: StageNodeType[] = layout.nodes.map(({ stage, x, y, width, height }) => ({
+  const cards: StageNodeType[] = layout.nodes.map(({ stage, x, y, width, height, hasTokens }) => ({
     id: stage.id,
     type: "stage",
     position: { x, y },
     width,
     height,
     measured: { width, height },
-    data: { stage, index: index.get(stage.id) ?? 0, emphasis: emphasis(stage.id) },
+    data: {
+      stage,
+      index: index.get(stage.id) ?? 0,
+      emphasis: emphasis(stage.id),
+      tokens: hasTokens ? (stageFlow(flow, stage.id) ?? null) : null,
+    },
   }));
   return [...captions, ...cards];
 }

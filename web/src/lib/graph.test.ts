@@ -2,7 +2,15 @@ import { describe, expect, it } from "vitest";
 
 import fixture from "@/api/fixtures/snapshot.json";
 import { snapshotSchema, type StageSummary } from "@/api/schema";
-import { dependentsOf, hasFooter, layoutStages, lineage, nodeHeight, threadOf } from "@/lib/graph";
+import {
+  dependentsOf,
+  hasFooter,
+  layoutStages,
+  lineage,
+  NODE_TOKENS_HEIGHT,
+  nodeHeight,
+  threadOf,
+} from "@/lib/graph";
 
 const stages = snapshotSchema.parse(fixture).status.stages;
 const byId = (id: string): StageSummary => stages.find((stage) => stage.id === id)!;
@@ -55,6 +63,22 @@ describe("nodeHeight", () => {
   it("adds the footer row only when the card has something live to show", () => {
     expect(nodeHeight(byId("client"))).toBeGreaterThan(nodeHeight(byId("design")));
     expect(nodeHeight(byId("design"))).toBe(nodeHeight(byId("knowledge-distill")));
+  });
+
+  it("adds the token line, and the footer it needs on a footer-less stage", () => {
+    expect(NODE_TOKENS_HEIGHT).toBe(18);
+    expect(nodeHeight(byId("client"), true)).toBe(nodeHeight(byId("client")) + 18);
+    const bare = byId("design");
+    expect(hasFooter(bare)).toBe(false);
+    expect(nodeHeight(bare, true)).toBe(nodeHeight(bare) + 26 + 18);
+  });
+
+  it("lays out a card taller by the token line for stages in the token set", () => {
+    const withTokens = layoutStages(stages, new Set(["server"]));
+    const node = withTokens.nodes.find((candidate) => candidate.stage.id === "server")!;
+    expect(node.hasTokens).toBe(true);
+    expect(node.height).toBe(nodeHeight(byId("server"), true));
+    expect(withTokens.nodes.filter((candidate) => candidate.hasTokens)).toHaveLength(1);
   });
 
   it("adds a meter line to a card with a context reading", () => {

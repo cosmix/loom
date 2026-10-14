@@ -2,6 +2,7 @@ import { ActivityPanel } from "@/components/activity-panel";
 import { AlertsBand } from "@/components/alerts-band";
 import { AttentionPanel } from "@/components/attention-panel";
 import { StageGraph } from "@/components/graph/stage-graph";
+import { TokenFlowPanel } from "@/components/token-flow-panel";
 
 /// Route `/`: alerts, then the sheet with the attention and activity rail
 /// beside it. On a wide window the sheet fills the frame and the rail scrolls
@@ -16,6 +17,7 @@ export function Overview() {
         </section>
         <aside className="flex min-w-0 flex-col gap-5 xl:min-h-0 xl:overflow-y-auto xl:pr-1">
           <AttentionPanel />
+          <TokenFlowPanel />
           <ActivityPanel />
         </aside>
       </div>

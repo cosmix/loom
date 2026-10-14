@@ -1,6 +1,6 @@
 import { cn } from "cn";
 
-import type { ProviderQuota, QuotaSnapshot, WindowKind } from "@/api/schema";
+import type { ProviderQuota, QuotaLeft, QuotaSnapshot, WindowKind } from "@/api/schema";
 import { toneClass } from "@/components/state-badge";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatStamp, type Tone } from "@/lib/format";
@@ -15,6 +15,7 @@ import {
   type ProviderName,
   type QuotaHealth,
 } from "@/lib/quota";
+import { quotaLeftText } from "@/lib/tokens";
 
 const HEALTH_TONE: Record<QuotaHealth, Tone> = {
   green: "completed",
@@ -36,10 +37,12 @@ function localTime(epochSecs: number): string {
 /// window that reports later drops into place without moving its neighbours.
 export function QuotaMeters({
   snapshot,
+  quotaLeft = [],
   nowSecs,
   className,
 }: {
   snapshot: QuotaSnapshot;
+  quotaLeft?: readonly QuotaLeft[];
   nowSecs: number;
   className?: string;
 }) {
@@ -48,7 +51,13 @@ export function QuotaMeters({
   return (
     <div className={cn("flex flex-wrap items-center gap-x-6 gap-y-1", className)}>
       {rows.map(([provider, quota]) => (
-        <ProviderGroup key={provider} provider={provider} quota={quota} nowSecs={nowSecs} />
+        <ProviderGroup
+          key={provider}
+          provider={provider}
+          quota={quota}
+          left={quotaLeft.find((entry) => entry.provider === provider)}
+          nowSecs={nowSecs}
+        />
       ))}
     </div>
   );
@@ -57,10 +66,12 @@ export function QuotaMeters({
 function ProviderGroup({
   provider,
   quota,
+  left,
   nowSecs,
 }: {
   provider: ProviderName;
   quota: ProviderQuota;
+  left: QuotaLeft | undefined;
   nowSecs: number;
 }) {
   const age = ageText(quota.observed_at, nowSecs);
@@ -79,6 +90,7 @@ function ProviderGroup({
           provider={provider}
           quota={quota}
           kind={kind}
+          left={kind === "five-hour" ? left : undefined}
           nowSecs={nowSecs}
           age={age}
         />
@@ -94,12 +106,14 @@ function QuotaGauge({
   provider,
   quota,
   kind,
+  left,
   nowSecs,
   age,
 }: {
   provider: ProviderName;
   quota: ProviderQuota;
   kind: WindowKind;
+  left: QuotaLeft | undefined;
   nowSecs: number;
   age: string | null;
 }) {
@@ -112,9 +126,11 @@ function QuotaGauge({
   const remaining =
     resetsAt === null ? 0 : Math.max(0, Math.min(1, (resetsAt - nowSecs) / WINDOW_SECS[kind]));
   const usage = percent === null ? "no reading" : `${percent}% used`;
+  const timeLeft = left === undefined ? null : quotaLeftText(left);
   const ariaLabel = [
     `${provider} ${label} window ${usage}`,
     reset === null ? null : reset === "now" ? "resets now" : `resets in ${reset}`,
+    timeLeft === null ? null : timeLeft.text,
     age === null ? null : `reading ${age}`,
   ]
     .filter((part) => part !== null)
@@ -156,6 +172,17 @@ function QuotaGauge({
           <span className="min-w-[6ch] font-mono text-[11px] tabular-nums text-muted-foreground max-[899px]:hidden">
             {reset}
           </span>
+          {timeLeft !== null && (
+            <span
+              title="At the last 30 min average"
+              className={cn(
+                "font-mono text-[11px] tabular-nums max-[899px]:hidden",
+                toneClass(timeLeft.tone),
+              )}
+            >
+              {timeLeft.text}
+            </span>
+          )}
         </span>
       </TooltipTrigger>
       <TooltipContent side="top" align="start" className="flex-col items-start gap-0.5">
