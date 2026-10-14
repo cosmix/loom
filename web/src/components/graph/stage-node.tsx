@@ -3,11 +3,12 @@ import { MaximizeIcon } from "lucide-react";
 import { Handle, Position, type Node, type NodeProps } from "@xyflow/react";
 import type { CSSProperties } from "react";
 
-import type { StageSummary } from "@/api/schema";
+import type { StageFlow, StageSummary } from "@/api/schema";
 import { ActivityRoundel } from "@/components/activity-roundel";
 import { ContextMeter } from "@/components/context-meter";
 import { useGraphActions, type Emphasis } from "@/components/graph/context";
 import { StateBadge, toneClass } from "@/components/state-badge";
+import { Sparkline } from "@/components/sparkline";
 import { TerminalGlyph } from "@/components/terminal/terminal-glyph";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import {
@@ -19,12 +20,15 @@ import {
   timeText,
 } from "@/lib/format";
 import { hasFooter, NODE_WIDTH, nodeHeight } from "@/lib/graph";
+import { compactTokens, fresh } from "@/lib/tokens";
 
 export interface StageNodeData extends Record<string, unknown> {
   stage: StageSummary;
   /// Position in the reveal sequence, for the staggered first paint.
   index: number;
   emphasis: Emphasis;
+  /// The stage's token flow; the layout reserved the card's token line for it.
+  tokens: StageFlow | null;
 }
 
 export type StageNodeType = Node<StageNodeData, "stage">;
@@ -52,14 +56,14 @@ const TYPE_TAG: Partial<Record<StageSummary["stage_type"], string>> = {
 /// terminal glyph in the corner, name and id, then the live row. The card
 /// re-keys on status so a change washes it.
 export function StageNode({ data }: NodeProps<StageNodeType>) {
-  const { stage, index, emphasis } = data;
+  const { stage, index, emphasis, tokens } = data;
   const { open, openTerminal } = useGraphActions();
   const tone = stateMeta(stage.status).tone;
   const contractPhase = isContractPhase(stage);
   const style = {
     "--i": index,
     width: NODE_WIDTH,
-    height: nodeHeight(stage),
+    height: nodeHeight(stage, tokens !== null),
   } as CSSProperties;
 
   return (
@@ -111,7 +115,7 @@ export function StageNode({ data }: NodeProps<StageNodeType>) {
           {stage.name}
         </p>
         <p className="truncate font-mono text-[11px] leading-4 text-muted-foreground">{stage.id}</p>
-        {hasFooter(stage) && <Footer stage={stage} />}
+        {(hasFooter(stage) || tokens !== null) && <Footer stage={stage} tokens={tokens} />}
       </div>
       <Handle
         type="source"
@@ -124,8 +128,9 @@ export function StageNode({ data }: NodeProps<StageNodeType>) {
 }
 
 /// Activity, merge and time on one line; the context meter, when the stage
-/// has one, on a line of its own so the activity text keeps its room.
-function Footer({ stage }: { stage: StageSummary }) {
+/// has one, and the token flow, each on a line of its own so the activity
+/// text keeps its room.
+function Footer({ stage, tokens }: { stage: StageSummary; tokens: StageFlow | null }) {
   const activity = activityText(stage);
   const merge = mergeText(stage);
   const time = timeText(stage);
@@ -149,6 +154,31 @@ function Footer({ stage }: { stage: StageSummary }) {
         )}
       </div>
       <ContextMeter stage={stage} className="shrink-0" />
+      {tokens && <TokenLine stage={stage} tokens={tokens} />}
     </footer>
+  );
+}
+
+/// An executing stage shows its rate beside a sparkline; any other stage
+/// shows what it spent in all.
+function TokenLine({ stage, tokens }: { stage: StageSummary; tokens: StageFlow }) {
+  if (stage.status !== "executing") {
+    return (
+      <div className="text-muted-foreground tabular-nums">
+        {compactTokens(fresh(tokens.total))} total
+      </div>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 tabular-nums">
+      <Sparkline
+        values={tokens.series.slice(-20)}
+        width={56}
+        height={12}
+        label={`${stage.name} tokens, last 10 min`}
+        className="shrink-0 text-(--tone-executing)"
+      />
+      <span className="font-mono">{compactTokens(fresh(tokens.rate))}/m</span>
+    </div>
   );
 }

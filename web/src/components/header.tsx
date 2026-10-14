@@ -4,7 +4,13 @@ import { CircleHelpIcon, SlidersHorizontalIcon } from "lucide-react";
 
 import { ThemeToggle } from "@/aurora-ui/theme/ThemeToggle";
 import { WorkRoundel } from "@/components/activity-roundel";
-import { DaemonLine, MergeLine, ProgressLine, SummaryLine } from "@/components/header-lines";
+import {
+  DaemonLine,
+  MergeLine,
+  ProgressLine,
+  SummaryLine,
+  TokenLine,
+} from "@/components/header-lines";
 import { Logo } from "@/components/logo";
 import { useOpenSettings } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
@@ -66,6 +72,7 @@ export function Header({ onOpenLegend }: { onOpenLegend: () => void }) {
               <div className="flex flex-wrap items-end gap-x-4 gap-y-3">
                 <SummaryLine snapshot={snapshot} attention={attention.length} />
                 <MergeLine snapshot={snapshot} />
+                <TokenLine />
               </div>
             </div>
           ) : (

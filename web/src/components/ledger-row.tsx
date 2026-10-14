@@ -1,4 +1,5 @@
 import { cn } from "cn";
+import { useAtomValue } from "jotai/react";
 import { Link, useNavigate } from "react-router";
 
 import type { StageSummary } from "@/api/schema";
@@ -6,12 +7,15 @@ import { ActivityRoundel } from "@/components/activity-roundel";
 import { ContextMeter } from "@/components/context-meter";
 import { stageHref } from "@/components/stage-href";
 import { useOpenTerminal } from "@/components/stage-modal";
+import { Sparkline } from "@/components/sparkline";
 import { StateBadge, toneClass } from "@/components/state-badge";
 import { TerminalGlyph } from "@/components/terminal/terminal-glyph";
 import { Badge } from "@/components/ui/badge";
 import { TableCell, TableRow } from "@/components/ui/table";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { activityText, mergeText, modelsOf, stateMeta, timeText } from "@/lib/format";
+import { compactTokens, fresh, stageFlow } from "@/lib/tokens";
+import { snapshotAtom } from "@/state/atoms";
 
 /// One ledger row. Re-mounted by the table when the status changes (the key
 /// carries the status) so the wash animation marks exactly that row.
@@ -63,6 +67,9 @@ export function LedgerRow({ stage, level }: { stage: StageSummary; level: number
       <TableCell data-label="context">
         <ContextMeter stage={stage} />
       </TableCell>
+      <TableCell data-label="tokens" className="font-mono text-xs tabular-nums">
+        <TokensCell stage={stage} />
+      </TableCell>
       <TableCell data-label="time" className="font-mono text-xs text-muted-foreground tabular-nums">
         {time}
       </TableCell>
@@ -71,6 +78,30 @@ export function LedgerRow({ stage, level }: { stage: StageSummary; level: number
       </TableCell>
     </TableRow>
   );
+}
+
+/// An executing stage's rate with its sparkline; a finished stage's total,
+/// dimmed; a dash otherwise.
+function TokensCell({ stage }: { stage: StageSummary }) {
+  const flow = stageFlow(useAtomValue(snapshotAtom)?.status.tokens, stage.id);
+  if (flow && stage.status === "executing") {
+    return (
+      <span className="inline-flex items-center gap-2">
+        <Sparkline
+          values={flow.series.slice(-20)}
+          width={56}
+          height={12}
+          label={`${stage.name} tokens, last 10 min`}
+          className="shrink-0 text-(--tone-executing)"
+        />
+        {compactTokens(fresh(flow.rate))}/m
+      </span>
+    );
+  }
+  if (flow && stage.status === "completed") {
+    return <span className="text-muted-foreground">{compactTokens(fresh(flow.total))} total</span>;
+  }
+  return <span className="text-muted-foreground">—</span>;
 }
 
 /// The orchestrator model dimmed, then `›` and the execution models.

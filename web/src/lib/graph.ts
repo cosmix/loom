@@ -17,6 +17,7 @@ export const NODE_WIDTH = 248;
 const NODE_BASE_HEIGHT = 92;
 const NODE_FOOTER_HEIGHT = 26;
 const NODE_METER_HEIGHT = 18;
+export const NODE_TOKENS_HEIGHT = 18;
 const RANK_GAP = 64;
 const NODE_GAP = 24;
 const MARGIN = 24;
@@ -31,12 +32,15 @@ export function hasFooter(stage: StageSummary): boolean {
   );
 }
 
-/// The footer gets a second line for the context meter when there is one.
-export function nodeHeight(stage: StageSummary): number {
+/// The footer gets a second line for the context meter when there is one and
+/// a further line for the token flow when the stage has one; a token line
+/// alone still brings the footer.
+export function nodeHeight(stage: StageSummary, hasTokens = false): number {
   return (
     NODE_BASE_HEIGHT +
-    (hasFooter(stage) ? NODE_FOOTER_HEIGHT : 0) +
-    (contextUsage(stage) !== null ? NODE_METER_HEIGHT : 0)
+    (hasFooter(stage) || hasTokens ? NODE_FOOTER_HEIGHT : 0) +
+    (contextUsage(stage) !== null ? NODE_METER_HEIGHT : 0) +
+    (hasTokens ? NODE_TOKENS_HEIGHT : 0)
   );
 }
 
@@ -77,6 +81,8 @@ export interface LaidOutNode {
   y: number;
   width: number;
   height: number;
+  /// Whether the card carries a token line; the component reads the same flag.
+  hasTokens: boolean;
 }
 
 export interface LaidOutEdge {
@@ -115,8 +121,12 @@ function uniqueStages(stages: readonly StageSummary[]): StageSummary[] {
 
 /// Top-to-bottom layered layout: dependencies above, dependents below, so
 /// the threads hang like a warp. Dependencies naming a stage absent from the
-/// snapshot are skipped rather than drawn to a phantom.
-export function layoutStages(stages: readonly StageSummary[]): GraphLayout {
+/// snapshot are skipped rather than drawn to a phantom. `withTokens` holds the
+/// ids of the stages whose card shows a token line.
+export function layoutStages(
+  stages: readonly StageSummary[],
+  withTokens: ReadonlySet<string> = new Set(),
+): GraphLayout {
   const unique = uniqueStages(stages);
   const ids = new Set(unique.map((stage) => stage.id));
   const graph = new dagre.graphlib.Graph();
@@ -130,7 +140,10 @@ export function layoutStages(stages: readonly StageSummary[]): GraphLayout {
   graph.setDefaultEdgeLabel(() => ({}));
 
   for (const stage of unique) {
-    graph.setNode(stage.id, { width: NODE_WIDTH, height: nodeHeight(stage) });
+    graph.setNode(stage.id, {
+      width: NODE_WIDTH,
+      height: nodeHeight(stage, withTokens.has(stage.id)),
+    });
   }
   for (const stage of unique) {
     for (const dependency of stage.dependencies) {
@@ -143,7 +156,14 @@ export function layoutStages(stages: readonly StageSummary[]): GraphLayout {
 
   const nodes: LaidOutNode[] = unique.map((stage) => {
     const { x, y, width, height } = graph.node(stage.id);
-    return { stage, x: x - width / 2, y: y - height / 2, width, height };
+    return {
+      stage,
+      x: x - width / 2,
+      y: y - height / 2,
+      width,
+      height,
+      hasTokens: withTokens.has(stage.id),
+    };
   });
   const edges = routeEdges(
     graph.edges().map(({ v, w }) => ({ source: v, target: w, points: graph.edge(v, w).points })),

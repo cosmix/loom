@@ -13,6 +13,7 @@ import {
   yesNo,
   type SectionSpec,
 } from "@/components/stage-detail";
+import { StageTokens } from "@/components/stage-tokens";
 import {
   contextUsage,
   exitReasonLabel,
@@ -279,6 +280,9 @@ export function StageSectionGrid({
       {stageSections(stage, level).map((section) => (
         <Section key={section.title} {...section} />
       ))}
+      <div className={cn("empty:hidden md:col-span-2", wide && "xl:col-span-3")}>
+        <StageTokens stageId={stage.id} />
+      </div>
       {currentFailure && (
         <div className={cn("md:col-span-2", wide && "xl:col-span-3")}>
           <FailureSection failure={currentFailure} />

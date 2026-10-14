@@ -5,7 +5,12 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, beforeAll, describe, expect, it } from "vitest";
 
 import fixture from "@/api/fixtures/snapshot.json";
-import { snapshotSchema, type ProviderQuota, type QuotaSnapshot } from "@/api/schema";
+import {
+  snapshotSchema,
+  type ProviderQuota,
+  type QuotaLeft,
+  type QuotaSnapshot,
+} from "@/api/schema";
 import { QuotaMeters } from "@/components/quota-meters";
 import { TooltipProvider } from "@/components/ui/tooltip";
 import { routes } from "@/router";
@@ -101,6 +106,39 @@ describe("QuotaMeters", () => {
 
     expect(screen.getByText(/rate limited/)).toBeTruthy();
     expect(screen.getByText("63%")).toBeTruthy();
+  });
+});
+
+describe("QuotaMeters time left", () => {
+  function renderLeft(quotaLeft: QuotaLeft[]) {
+    return render(
+      <TooltipProvider>
+        <QuotaMeters snapshot={snapshot.status.quota} quotaLeft={quotaLeft} nowSecs={NOW_SECS} />
+      </TooltipProvider>,
+    );
+  }
+
+  it("shows the time left after the reset text and in the gauge label", () => {
+    renderLeft([{ provider: "claude", minutes_left: 127, lasts_to_reset: false }]);
+
+    const text = screen.getByText("~2h07m left");
+    expect(text.getAttribute("title")).toBe("At the last 30 min average");
+    expect(
+      screen.getByRole("img", { name: "claude 5h window 48% used, resets in 2h13m, ~2h07m left" }),
+    ).toBeTruthy();
+  });
+
+  it("shows lasts to reset when usage is flat", () => {
+    renderLeft([{ provider: "claude", minutes_left: null, lasts_to_reset: true }]);
+
+    expect(screen.getByText("lasts to reset")).toBeTruthy();
+  });
+
+  it("shows nothing when there is no entry", () => {
+    renderLeft([]);
+
+    expect(screen.queryByText(/left$/)).toBeNull();
+    expect(screen.queryByText("lasts to reset")).toBeNull();
   });
 });
 

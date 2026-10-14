@@ -9,6 +9,7 @@ import { stageHref } from "@/components/stage-href";
 import { StateBadge, StateGlyph, toneClass } from "@/components/state-badge";
 import { activityText, mergeText, timeText } from "@/lib/format";
 import { dependentsOf } from "@/lib/graph";
+import { compactTokens, fresh, stageFlow } from "@/lib/tokens";
 import { snapshotAtom } from "@/state/atoms";
 
 /// State badge, activity, time and merge on one line: the row's cells
@@ -17,6 +18,7 @@ export function StateLine({ stage, className }: { stage: StageSummary; className
   const activity = activityText(stage);
   const merge = mergeText(stage);
   const time = timeText(stage);
+  const flow = stageFlow(useAtomValue(snapshotAtom)?.status.tokens, stage.id);
   return (
     <div className={cn("flex flex-wrap items-center gap-x-3 gap-y-1 text-sm", className)}>
       <StateBadge status={stage.status} />
@@ -27,6 +29,11 @@ export function StateLine({ stage, className }: { stage: StageSummary; className
         </span>
       )}
       {time && <span className="font-mono text-xs text-muted-foreground">{time}</span>}
+      {flow && stage.status === "executing" && (
+        <span className="font-mono text-xs text-muted-foreground">
+          {compactTokens(fresh(flow.rate))}/m fresh
+        </span>
+      )}
       {merge && <span className={toneClass(merge.tone)}>{merge.text}</span>}
     </div>
   );

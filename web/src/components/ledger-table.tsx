@@ -15,11 +15,12 @@ const COLUMNS = [
   "models",
   "activity",
   "context",
+  "tokens",
   "time",
   "merge",
 ] as const;
 
-/// The TUI's eight-column ledger. Rows link to the stage page; a state change
+/// The TUI's nine-column ledger. Rows link to the stage page; a state change
 /// re-keys the row so it washes in.
 export function LedgerTable() {
   const snapshot = useAtomValue(snapshotAtom);

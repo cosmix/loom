@@ -15,6 +15,45 @@ const validBlocker = {
   next_action: "retry verification",
 };
 
+describe("token flow schema", () => {
+  it("parses the fixture's plan token rate", () => {
+    const snapshot = snapshotSchema.parse(fixtureJson);
+
+    expect(snapshot.status.tokens?.plan.rate.cache_write).toBe(36000);
+  });
+
+  it("parses all three agent kinds in the server stage", () => {
+    const tokens = snapshotSchema.parse(fixtureJson).status.tokens;
+    const server = tokens?.stages.find((stage) => stage.stage_id === "server");
+
+    expect(server?.agents).toHaveLength(3);
+    expect(server?.agents.map((agent) => agent.kind)).toEqual(["main", "subagent", "codex"]);
+  });
+
+  it("accepts a snapshot without token flow", () => {
+    const withoutTokens = structuredClone(fixtureJson) as {
+      status: Record<string, unknown>;
+    };
+    delete withoutTokens.status.tokens;
+
+    expect(snapshotSchema.parse(withoutTokens).status.tokens).toBeUndefined();
+  });
+
+  it("rejects an unknown agent key", () => {
+    const invalid = structuredClone(fixtureJson);
+    Object.assign(invalid.status.tokens.stages[0].agents[0], { unexpected: true });
+
+    expect(snapshotSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it("rejects a negative token count", () => {
+    const invalid = structuredClone(fixtureJson);
+    invalid.status.tokens.plan.rate.cache_write = -1;
+
+    expect(snapshotSchema.safeParse(invalid).success).toBe(false);
+  });
+});
+
 describe("snapshot schema", () => {
   it("the fixture parses and terminals is false", () => {
     const snapshot = snapshotSchema.parse(fixtureJson);

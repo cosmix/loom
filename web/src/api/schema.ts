@@ -150,12 +150,66 @@ export const quotaSnapshotSchema = z.object({
   claude: providerQuotaSchema.nullable(),
   codex: providerQuotaSchema.nullable(),
 });
+export const tokenUsageSchema = z
+  .object({
+    input: z.number().int().nonnegative(),
+    cache_write: z.number().int().nonnegative(),
+    cache_read: z.number().int().nonnegative(),
+    output: z.number().int().nonnegative(),
+  })
+  .strict();
+export const agentFlowSchema = z
+  .object({
+    id: z.string(),
+    kind: z.enum(["main", "subagent", "codex"]),
+    agent_type: z.string().nullable(),
+    model: z.string().nullable(),
+    active: z.boolean(),
+    total: tokenUsageSchema,
+    rate: tokenUsageSchema,
+    series: z.array(z.number().int().nonnegative()),
+  })
+  .strict();
+export const stageFlowSchema = z
+  .object({
+    stage_id: z.string(),
+    total: tokenUsageSchema,
+    rate: tokenUsageSchema,
+    series: z.array(z.number().int().nonnegative()),
+    agents: z.array(agentFlowSchema),
+  })
+  .strict();
+export const planFlowSchema = z
+  .object({
+    total: tokenUsageSchema,
+    rate: tokenUsageSchema,
+    series: z.array(z.number().int().nonnegative()),
+  })
+  .strict();
+export const quotaLeftSchema = z
+  .object({
+    provider: z.enum(["claude", "codex"]),
+    minutes_left: z.number().int().nonnegative().nullable(),
+    lasts_to_reset: z.boolean(),
+  })
+  .strict();
+export const tokenFlowSchema = z
+  .object({
+    observed_at: z.number().int(),
+    bucket_secs: z.number().int(),
+    plan: planFlowSchema,
+    stages: z.array(stageFlowSchema),
+    quota_left: z.array(quotaLeftSchema),
+    unreadable_lines: z.number().int().nonnegative(),
+  })
+  .strict();
 export const statusDataSchema = z.object({
   stages: z.array(stageSummarySchema),
   merge: mergeSummarySchema,
   progress: progressSummarySchema,
   plan_name: z.string().nullable(),
   quota: quotaSnapshotSchema,
+  tokens: tokenFlowSchema.optional(),
 });
 export const alternativeSchema = z.object({
   when: z.string(),
@@ -217,3 +271,9 @@ export type WindowKind = z.infer<typeof windowKindSchema>;
 export type QuotaWindow = z.infer<typeof quotaWindowSchema>;
 export type ProviderQuota = z.infer<typeof providerQuotaSchema>;
 export type QuotaSnapshot = z.infer<typeof quotaSnapshotSchema>;
+export type TokenUsage = z.infer<typeof tokenUsageSchema>;
+export type AgentFlow = z.infer<typeof agentFlowSchema>;
+export type StageFlow = z.infer<typeof stageFlowSchema>;
+export type PlanFlow = z.infer<typeof planFlowSchema>;
+export type QuotaLeft = z.infer<typeof quotaLeftSchema>;
+export type TokenFlow = z.infer<typeof tokenFlowSchema>;
