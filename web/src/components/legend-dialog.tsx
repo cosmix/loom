@@ -70,8 +70,8 @@ export function LegendDialog({
           </dd>
           <dt className="eyebrow col-span-2 mt-2">tokens</dt>
           <dd className="col-span-2 text-muted-foreground">
-            fresh tokens per minute (input + cache writes + output), 5 min average; the 5h time left
-            is at the last 30 min average
+            fresh tokens per minute (uncached input + cache writes + output), 5 min average; the 5h
+            time left is at the last 30 min average
           </dd>
         </dl>
       </DialogContent>

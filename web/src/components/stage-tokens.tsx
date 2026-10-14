@@ -2,33 +2,37 @@ import { useAtomValue } from "jotai/react";
 
 import type { AgentFlow, StageFlow } from "@/api/schema";
 import { HeatStrip } from "@/components/sparkline";
-import { agentLabel, cacheHitPercent, compactTokens, fresh, stageFlow } from "@/lib/tokens";
+import {
+  agentLabel,
+  cacheHitPercent,
+  compactTokens,
+  fresh,
+  maxOf,
+  padLeft,
+  stageFlow,
+} from "@/lib/tokens";
 import { snapshotAtom } from "@/state/atoms";
 
 const MIN_CELLS = 20;
 const RAMP = [0, 1, 2, 3, 4];
 
-/// An agent's series left-padded with zeros to `length`: an idle agent's
-/// series can be empty or short.
-function padded(series: readonly number[], length: number): number[] {
-  return [...Array<number>(Math.max(0, length - series.length)).fill(0), ...series];
-}
-
-/// The lanes' series, trimmed of the leading buckets that are zero for every
-/// agent (keeping at least `MIN_CELLS`), and the maximum they are scaled to.
+/// The lanes' series (an idle agent's can be empty or short, so each is
+/// left-padded to the stage's length), trimmed of the leading buckets that are
+/// zero for every agent (keeping at least `MIN_CELLS`), and the maximum they
+/// are scaled to. Loops over the series rather than spreading them into
+/// arguments, which throws a RangeError on a long series.
 function laneSeries(stage: StageFlow): { lanes: number[][]; max: number } {
   const length = stage.series.length;
-  const full = stage.agents.map((agent) => padded(agent.series, length));
-  const firstUsed = Math.min(
-    length,
-    ...full.map((series) => {
-      const index = series.findIndex((value) => value > 0);
-      return index === -1 ? length : index;
-    }),
-  );
+  const full = stage.agents.map((agent) => padLeft(agent.series, length));
+  let firstUsed = length;
+  for (const series of full) {
+    const index = series.findIndex((value) => value > 0);
+    if (index !== -1 && index < firstUsed) firstUsed = index;
+  }
   const start = Math.max(0, Math.min(firstUsed, length - MIN_CELLS));
   const lanes = full.map((series) => series.slice(start));
-  return { lanes, max: Math.max(0, ...stage.series, ...lanes.flat()) };
+  const max = lanes.reduce((best, series) => maxOf(series, best), maxOf(stage.series));
+  return { lanes, max };
 }
 
 function Chip({ value, label }: { value: string; label: string }) {
@@ -46,18 +50,23 @@ function Lane({ agent, series, max }: { agent: AgentFlow; series: number[]; max:
   return (
     <li
       data-testid="token-lane"
-      className="grid grid-cols-[minmax(0,12rem)_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 max-md:grid-cols-[minmax(0,1fr)_auto_auto]"
+      className="grid grid-cols-[minmax(0,20rem)_minmax(0,1fr)_auto_auto] items-center gap-x-3 gap-y-1 max-md:grid-cols-[minmax(0,1fr)_auto_auto]"
     >
       <div className="flex min-w-0 flex-col">
         <span className="flex items-center gap-1.5 text-sm font-medium">
-          <span className="truncate">{label}</span>
+          <span className="truncate" title={label}>
+            {label}
+          </span>
           {agent.kind === "codex" && (
             <span className="rounded-sm border border-hairline px-1 text-[10px] text-muted-foreground">
               codex
             </span>
           )}
         </span>
-        <span className="truncate font-mono text-[11px] text-muted-foreground">
+        <span
+          className="truncate font-mono text-[11px] text-muted-foreground"
+          title={`${agent.id} · ${agent.model ?? "unknown model"} · ${state}`}
+        >
           {agent.id} · {agent.model ?? "unknown model"} · {state}
         </span>
       </div>

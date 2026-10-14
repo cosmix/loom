@@ -6,7 +6,10 @@ import {
   cacheHitPercent,
   compactTokens,
   fresh,
+  lastValues,
+  maxOf,
   modelRates,
+  padLeft,
   quotaLeftText,
   stageFlow,
 } from "@/lib/tokens";
@@ -171,4 +174,29 @@ it("stageFlow returns undefined for an unknown stage", () => {
 
 it("stageFlow returns undefined when flow is absent", () => {
   expect(stageFlow(undefined, "server")).toBeUndefined();
+});
+
+it("maxOf returns the largest value, never below the floor", () => {
+  expect(maxOf([3, 9, 4])).toBe(9);
+  expect(maxOf([])).toBe(0);
+  expect(maxOf([2, 3], 10)).toBe(10);
+});
+
+it("maxOf handles a series too long to spread into arguments", () => {
+  const long = Array<number>(200_000).fill(1);
+  long[150_000] = 7;
+
+  expect(maxOf(long)).toBe(7);
+});
+
+it("padLeft pads short series with zeros and returns a long one whole", () => {
+  expect(padLeft([1, 2], 4)).toEqual([0, 0, 1, 2]);
+  expect(padLeft([1, 2, 3], 2)).toEqual([1, 2, 3]);
+  expect(padLeft([], 2)).toEqual([0, 0]);
+});
+
+it("lastValues keeps the last N values and pads a short series on the left", () => {
+  expect(lastValues([1, 2, 3, 4, 5], 3)).toEqual([3, 4, 5]);
+  expect(lastValues([5, 6], 4)).toEqual([0, 0, 5, 6]);
+  expect(lastValues([], 3)).toEqual([0, 0, 0]);
 });

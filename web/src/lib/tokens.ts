@@ -5,6 +5,26 @@ export function fresh(u: TokenUsage): number {
   return u.input + u.cache_write + u.output;
 }
 
+/// The largest of `values`, at least `floor`. A loop, not `Math.max(...values)`:
+/// spreading a long series into arguments throws a RangeError.
+export function maxOf(values: readonly number[], floor = 0): number {
+  let max = floor;
+  for (const value of values) if (value > max) max = value;
+  return max;
+}
+
+/// `series` left-padded with zeros to `length`; a longer series is returned whole.
+export function padLeft(series: readonly number[], length: number): number[] {
+  return [...Array<number>(Math.max(0, length - series.length)).fill(0), ...series];
+}
+
+/// The last `length` values of `series`, left-padded with zeros: an idle or
+/// young series carries fewer values than a sparkline or chart draws, and
+/// unpadded it would stretch across the full width.
+export function lastValues(series: readonly number[], length: number): number[] {
+  return padLeft(series.slice(-length), length);
+}
+
 export function compactTokens(n: number): string {
   if (n < 1000) return String(Math.floor(n));
   if (n < 100000) return `${(Math.floor(n / 100) / 10).toFixed(1)}k`;
