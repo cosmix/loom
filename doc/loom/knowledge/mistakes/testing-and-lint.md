@@ -349,3 +349,13 @@ fmt and clippy, even when the rest of the suite is left to CI. Fix a new violati
 never by adding a baseline entry.
 
 **Fix:** the stalled-client test's positive control moved into `assert_reading_client_reaches_marker`.
+
+## macOS Git Precomposes Decomposed Unicode Paths in the Index
+
+**What happened:** `a_combining_mark_in_a_guarded_name_is_printed_as_it_is_and_restores_it` passed on Linux and failed on macOS CI: the refusal printed `caf\u{e9}.md`, the test looked for `cafe\u{301}.md`.
+
+**Why:** macOS `git init` sets `core.precomposeunicode true`, so an NFD name passed to `git add` lands in the index as NFC. Production prints the index path, which is correct for macOS users.
+
+**Prevention:** git-repo tests that check non-ASCII path bytes set `core.precomposeunicode false` (`git/stage_commit/tests.rs::repo`).
+
+**Fix:** that config line in the stage_commit test `repo()`.

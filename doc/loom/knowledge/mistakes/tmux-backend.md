@@ -42,9 +42,9 @@
 ## AF_UNIX Socket Paths: 104 Bytes, and Never Under `std::env::temp_dir()`
 
 - `sun_path` is capped at **104 bytes on macOS**. Key loom tmux sockets on `session.id` (`session-<uuid8>-<unixts>`, ~25 chars), **never** on `stage_id` — plan stage ids run up to 128 chars and would silently blow the limit.
-- On macOS `std::env::temp_dir()` is a ~57-byte `/var/folders/<...>/T/` path; adding tmux's own `tmux-<uid>/` plus a `loom-session-<uuid8>-<ts>` name overflows 104 and tmux fails with **`File name too long`**.
+- On macOS `std::env::temp_dir()` is a ~57-byte `/var/folders/<...>/T/` path; adding tmux's own `tmux-<uid>/` plus a `loom-session-<uuid8>-<ts>` name overflows 104 and tmux fails with **`File name too long`**. `tempfile::TempDir::new()` lives there too: the `tmux/tests_history.rs` server tests failed macOS CI this way.
 
-**Prevention:** `loom_socket_dir()` and the tmux e2e both use `TMUX_TMPDIR`-else-literal-`/tmp`, matching tmux's own convention. Any AF_UNIX path built from loom identifiers must be budgeted against 104 bytes explicitly. Detection: `File name too long` from `tmux new-session` under a redirected `TMUX_TMPDIR`.
+**Prevention:** `loom_socket_dir()` and the tmux e2e both use `TMUX_TMPDIR`-else-literal-`/tmp`, matching tmux's own convention. Lib unit tests that start a real server pin `TMUX_TMPDIR` to `socket::tests::server_socket_dir()` (`/tmp`, `$TMPDIR` only as a fallback), never `TempDir::new()`. Any AF_UNIX path built from loom identifiers must be budgeted against 104 bytes explicitly. Detection: `File name too long` from `tmux new-session` under a redirected `TMUX_TMPDIR`.
 
 ## `kill-server` Does Not Reliably Unlink Its Own Socket
 
@@ -134,3 +134,13 @@ tmux spawn test for reasons unrelated to the code under test unless two RAII gua
   test fails on the build environment, not the code under test.
 
 **Residual risk, recorded deliberately:** any future claude feature that runs `tmux load-buffer -w` from a keyboard path still crashes a tmux 3.6a stage server. The deeper shield — dropping `TMUX`/`TMUX_PANE` from the agent environment in the wrapper so claude never talks to loom's tmux at all — was considered and NOT taken: the wrapper allowlists them today and the blast radius of lying to the agent about its terminal is unassessed. Revisit if a non-mouse `load-buffer` death appears.
+
+## tmux Drops a Pane's Unread Output When It Reaps the Pane's Process
+
+**What happened:** `killing_a_session_whose_agent_exited_saves_the_whole_scrollback` waited for a marker the agent touched just before exiting, then for its last line in the capture. It passed locally and failed every CI run on ubuntu tmux 3.4 (and macOS).
+
+**Why:** `server_child_exited` calls `server_destroy_pane`, which closes the pane's pty at once; `window_pane_destroy_ready` waits for unread output (`FIONREAD`) only while `pipe-pane` is active (same code in tmux 3.4–3.6). On a loaded host hundreds of tail lines vanish even with `remain-on-exit on`. Reproduced 11/30 in a `--cpus=1` ubuntu:24.04 container; never unloaded. A saved stage history can therefore miss the tail of the agent's final output (documented in `tmux/history.rs`).
+
+**Prevention:** a test that needs an exited pane's last output observes it while the agent is alive, then releases the agent and waits for `#{pane_dead}` before capturing.
+
+**Fix:** the release-gated agent and `pane_dead` helper in `tmux/tests_history.rs`.
