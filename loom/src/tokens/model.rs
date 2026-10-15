@@ -15,6 +15,14 @@ pub const TOKENS_DIR: &str = "tokens";
 pub const FLOW_FILE: &str = "flow.json";
 pub const MAX_FLOW_BYTES: u64 = 512 * 1024;
 pub const FLOW_STALE_SECS: i64 = 600;
+/// Distinct (model, effort) keys one agent keeps; usage for a further key goes to `OTHER_MODEL`.
+pub const MAX_MODEL_KEYS: usize = 8;
+/// Entries of `TokenFlow.models`; the rest are merged into one `OTHER_MODEL` entry.
+pub const MAX_MODEL_ROWS: usize = 24;
+/// The model of usage read before any line named one.
+pub const UNKNOWN_MODEL: &str = "unknown";
+/// The key that absorbs usage past `MAX_MODEL_KEYS` or `MAX_MODEL_ROWS`.
+pub const OTHER_MODEL: &str = "other";
 
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct TokenUsage {
@@ -71,12 +79,23 @@ pub struct AgentFlow {
     pub series: Vec<u64>,
 }
 
+/// Tokens used with one model at one reasoning effort.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ModelUsage {
+    pub model: String,
+    pub effort: Option<String>,
+    pub total: TokenUsage,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct StageFlow {
     pub stage_id: String,
     pub total: TokenUsage,
     pub rate: TokenUsage,
     pub series: Vec<u64>,
+    /// Cache hit percent per bucket, aligned with `series`; `None` for a bucket
+    /// without input-side tokens.
+    pub hit_series: Vec<Option<u8>>,
     pub agents: Vec<AgentFlow>,
 }
 
@@ -107,6 +126,9 @@ pub struct TokenFlow {
     pub bucket_secs: i64,
     pub plan: PlanFlow,
     pub stages: Vec<StageFlow>,
+    /// Plan-wide totals per (model, effort), largest fresh total first, at most
+    /// `MAX_MODEL_ROWS` entries.
+    pub models: Vec<ModelUsage>,
     pub quota_left: Vec<QuotaLeft>,
     pub unreadable_lines: u64,
 }

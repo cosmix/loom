@@ -170,12 +170,20 @@ export const agentFlowSchema = z
     series: z.array(z.number().int().nonnegative()),
   })
   .strict();
+export const modelUsageSchema = z
+  .object({
+    model: z.string(),
+    effort: z.string().nullable(),
+    total: tokenUsageSchema,
+  })
+  .strict();
 export const stageFlowSchema = z
   .object({
     stage_id: z.string(),
     total: tokenUsageSchema,
     rate: tokenUsageSchema,
     series: z.array(z.number().int().nonnegative()),
+    hit_series: z.array(z.number().int().min(0).max(100).nullable()),
     agents: z.array(agentFlowSchema),
   })
   .strict();
@@ -199,6 +207,7 @@ export const tokenFlowSchema = z
     bucket_secs: z.number().int(),
     plan: planFlowSchema,
     stages: z.array(stageFlowSchema),
+    models: z.array(modelUsageSchema),
     quota_left: z.array(quotaLeftSchema),
     unreadable_lines: z.number().int().nonnegative(),
   })
@@ -298,6 +307,7 @@ export type QuotaWindow = z.infer<typeof quotaWindowSchema>;
 export type ProviderQuota = z.infer<typeof providerQuotaSchema>;
 export type QuotaSnapshot = z.infer<typeof quotaSnapshotSchema>;
 export type TokenUsage = z.infer<typeof tokenUsageSchema>;
+export type ModelUsage = z.infer<typeof modelUsageSchema>;
 export type AgentFlow = z.infer<typeof agentFlowSchema>;
 export type StageFlow = z.infer<typeof stageFlowSchema>;
 export type PlanFlow = z.infer<typeof planFlowSchema>;

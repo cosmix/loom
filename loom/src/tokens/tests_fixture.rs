@@ -58,6 +58,20 @@ pub(super) fn claude_line(msg_id: &str, ts: i64, model: &str, u: &TokenUsage) ->
     .to_string()
 }
 
+/// [`claude_line`] carrying a top-level `perTurnEffort`.
+pub(super) fn claude_line_effort(
+    msg_id: &str,
+    ts: i64,
+    model: &str,
+    effort: &str,
+    u: &TokenUsage,
+) -> String {
+    let mut line: serde_json::Value =
+        serde_json::from_str(&claude_line(msg_id, ts, model, u)).expect("claude line is json");
+    line["perTurnEffort"] = json!(effort);
+    line.to_string()
+}
+
 /// A rollout `token_count` line with `total_token_usage`
 /// `[input, cached_input, output]`.
 pub(super) fn codex_count(ts: i64, [input, cached, output]: [u64; 3]) -> String {

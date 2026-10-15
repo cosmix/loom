@@ -1,12 +1,13 @@
 use super::{build_flow, fit_flow};
 use crate::tokens::accumulate::{AgentState, StageAgents};
 use crate::tokens::model::{
-    AgentKind, TokenUsage, BUCKET_SECS, MAX_FLOW_BYTES, PLAN_SERIES_LEN, STAGE_SERIES_LEN,
+    AgentKind, ModelUsage, TokenUsage, BUCKET_SECS, MAX_FLOW_BYTES, MAX_MODEL_ROWS, OTHER_MODEL,
+    PLAN_SERIES_LEN, STAGE_SERIES_LEN,
 };
 use crate::tokens::tests_fixture::usage;
 use std::collections::BTreeMap;
 
-const NOW: i64 = 1_788_523_200;
+const NOW: i64 = 1_788_523_229;
 const NOW_BUCKET: i64 = NOW / BUCKET_SECS;
 
 /// An agent with `cache_write` usage in buckets `back` buckets before now.
@@ -125,6 +126,131 @@ fn plan_sums_stages_and_unreadable_lines() {
     assert_eq!(flow.unreadable_lines, 2);
     let ids: Vec<&str> = flow.stages.iter().map(|s| s.stage_id.as_str()).collect();
     assert_eq!(ids, ["alpha", "beta"]);
+}
+
+#[test]
+fn rate_at_the_first_second_of_a_bucket_uses_the_shorter_span() {
+    let stages = one_stage(vec![(
+        "a1",
+        agent(AgentKind::Subagent, Some(1), &[(2, 2710)]),
+    )]);
+
+    let flow = build_flow(&stages, NOW_BUCKET * BUCKET_SECS);
+
+    assert_eq!(flow.stages[0].rate, usage(0, 2710 * 60 / 271, 0, 0));
+    assert_eq!(flow.plan.rate.cache_write, 600);
+}
+
+fn modeled(entries: &[(&str, Option<&str>, TokenUsage)]) -> AgentState {
+    let mut state = agent(AgentKind::Main, Some(1), &[]);
+    state.by_model = entries
+        .iter()
+        .map(|(model, effort, total)| ModelUsage {
+            model: (*model).to_owned(),
+            effort: effort.map(str::to_owned),
+            total: *total,
+        })
+        .collect();
+    state
+}
+
+#[test]
+fn models_merge_across_agents_and_sort() {
+    let first = modeled(&[
+        ("opus", Some("high"), usage(1, 0, 0, 9)),
+        ("sonnet", None, usage(0, 0, 5, 20)),
+    ]);
+    let second = modeled(&[
+        ("opus", Some("high"), usage(0, 0, 3, 1)),
+        ("opus", None, usage(0, 0, 0, 10)),
+        ("haiku", None, usage(0, 0, 0, 10)),
+    ]);
+    let stages = one_stage(vec![("main-a", first), ("main-b", second)]);
+
+    let flow = build_flow(&stages, NOW);
+
+    let keys: Vec<(&str, Option<&str>)> = flow
+        .models
+        .iter()
+        .map(|entry| (entry.model.as_str(), entry.effort.as_deref()))
+        .collect();
+    assert_eq!(
+        keys,
+        [
+            ("sonnet", None),
+            ("opus", Some("high")),
+            ("haiku", None),
+            ("opus", None)
+        ]
+    );
+    assert_eq!(flow.models[1].total, usage(1, 0, 3, 10));
+}
+
+#[test]
+fn models_past_the_row_cap_fold_into_other_and_still_sum() {
+    let entries: Vec<(String, TokenUsage)> = (0..MAX_MODEL_ROWS + 3)
+        .map(|n| (format!("m{n:02}"), usage(0, 0, 0, 100 - n as u64)))
+        .collect();
+    let borrowed: Vec<(&str, Option<&str>, TokenUsage)> = entries
+        .iter()
+        .map(|(model, total)| (model.as_str(), None, *total))
+        .collect();
+    let mut state = modeled(&borrowed);
+    state.by_model.push(ModelUsage {
+        model: OTHER_MODEL.to_owned(),
+        effort: None,
+        total: usage(0, 0, 0, 1000),
+    });
+    let mut expected = TokenUsage::default();
+    for entry in &state.by_model {
+        expected.add(&entry.total);
+    }
+    let stages = one_stage(vec![("main-a", state)]);
+
+    let flow = build_flow(&stages, NOW);
+
+    // 22 kept entries (the old other entry folded away) plus the new other.
+    assert_eq!(flow.models.len(), MAX_MODEL_ROWS - 1);
+    let last = flow.models.last().expect("last");
+    assert_eq!(
+        (last.model.as_str(), last.effort.as_ref()),
+        (OTHER_MODEL, None)
+    );
+    assert_eq!(
+        flow.models[0].model, "m00",
+        "the old other entry is folded away"
+    );
+    let mut sum = TokenUsage::default();
+    for entry in &flow.models {
+        sum.add(&entry.total);
+    }
+    assert_eq!(sum, expected);
+}
+
+#[test]
+fn hit_series_rounds_half_up_and_leaves_empty_buckets_none() {
+    let mut state = agent(AgentKind::Main, Some(1), &[]);
+    state.buckets.insert(NOW_BUCKET, usage(1, 0, 3, 0));
+    state.buckets.insert(NOW_BUCKET - 1, usage(3, 0, 1, 0));
+    state.buckets.insert(NOW_BUCKET - 2, usage(0, 0, 0, 500));
+    state.buckets.insert(NOW_BUCKET - 3, usage(0, 0, 7, 0));
+    state.buckets.insert(NOW_BUCKET - 4, usage(3, 0, 5, 0));
+    let stages = one_stage(vec![("main-a", state)]);
+
+    let flow = build_flow(&stages, NOW);
+
+    let hits = &flow.stages[0].hit_series;
+    assert_eq!(hits.len(), STAGE_SERIES_LEN);
+    assert_eq!(hits[STAGE_SERIES_LEN - 1], Some(75));
+    assert_eq!(hits[STAGE_SERIES_LEN - 2], Some(25));
+    assert_eq!(
+        hits[STAGE_SERIES_LEN - 3],
+        None,
+        "output only has no input side"
+    );
+    assert_eq!(hits[STAGE_SERIES_LEN - 4], Some(100));
+    assert_eq!(hits[STAGE_SERIES_LEN - 5], Some(63), "62.5 rounds up");
+    assert_eq!(hits[0], None);
 }
 
 /// `count` subagents, each with one bucket `back` buckets before now.

@@ -6,10 +6,14 @@ use ratatui::{
 };
 
 use super::text::{cut_line, padded, spans_width};
+use super::tokens_models::{model_lines, MODEL_BLOCK_MAX_ROWS};
 use crate::commands::status::ui::theme::Theme;
 use crate::tokens::{AgentFlow, AgentKind, QuotaLeft, StageFlow, TokenFlow};
 
-pub(super) const PANE_MAX_ROWS: u16 = 16;
+/// Most rows the live part (title, stage and agent lines) uses.
+const LIVE_MAX_ROWS: usize = 16;
+/// The live rows, a blank line and the by-model block.
+pub(super) const PANE_MAX_ROWS: u16 = (LIVE_MAX_ROWS + 1 + MODEL_BLOCK_MAX_ROWS) as u16;
 /// Preferred and smallest cell widths of the series strip, the agent label and the
 /// model column.
 const SERIES_CELLS: u16 = 48;
@@ -156,10 +160,24 @@ fn shrink<const N: usize>(room: u16, columns: [(u16, u16); N]) -> [u16; N] {
     })
 }
 
+/// The live rows (at most [`LIVE_MAX_ROWS`]), a blank line and the by-model block,
+/// cut to `max_rows` from the bottom.
 pub(super) fn tokens_pane_lines(flow: &TokenFlow, width: u16, max_rows: u16) -> Vec<Line<'static>> {
     if max_rows == 0 {
         return Vec::new();
     }
+    let mut lines = live_lines(flow, width);
+    let models = model_lines(&flow.models, width);
+    if !models.is_empty() {
+        lines.push(Line::default());
+        lines.extend(models);
+    }
+    lines.truncate(usize::from(max_rows));
+    lines
+}
+
+/// The title and the stage and agent rows of the stages with a live agent.
+fn live_lines(flow: &TokenFlow, width: u16) -> Vec<Line<'static>> {
     let active: Vec<&StageFlow> = flow
         .stages
         .iter()
@@ -171,7 +189,7 @@ pub(super) fn tokens_pane_lines(flow: &TokenFlow, width: u16, max_rows: u16) -> 
     let columns = Columns::for_stages(width, &active);
     let mut lines = vec![title_line(width, None)];
     for stage in active {
-        if lines.len() >= usize::from(max_rows) {
+        if lines.len() >= LIVE_MAX_ROWS {
             break;
         }
         lines.push(stage_line(stage, &columns, width));
@@ -182,7 +200,7 @@ pub(super) fn tokens_pane_lines(flow: &TokenFlow, width: u16, max_rows: u16) -> 
             .max()
             .unwrap_or(0);
         for agent in &stage.agents {
-            if lines.len() >= usize::from(max_rows) {
+            if lines.len() >= LIVE_MAX_ROWS {
                 break;
             }
             lines.push(agent_line(agent, max, &columns, width));
@@ -305,3 +323,7 @@ fn right_aligned(spans: Vec<Span<'static>>, right: Span<'static>, width: u16) ->
 #[cfg(test)]
 #[path = "tokens_pane_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tokens_pane_models_tests.rs"]
+mod models_tests;

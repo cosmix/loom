@@ -1,5 +1,7 @@
 use super::*;
-use crate::tokens::model::{AgentFlow, AgentKind, PlanFlow, QuotaLeft, QuotaProvider, StageFlow};
+use crate::tokens::model::{
+    AgentFlow, AgentKind, ModelUsage, PlanFlow, QuotaLeft, QuotaProvider, StageFlow,
+};
 
 const SAFE: u64 = 9_007_199_254_740_991;
 
@@ -36,8 +38,10 @@ fn flow_of(value: u64, series: Vec<u64>) -> TokenFlow {
             total: usage_of(value),
             rate: usage_of(value),
             series,
+            hit_series: Vec::new(),
             agents: vec![agent],
         }],
+        models: Vec::new(),
         quota_left: vec![QuotaLeft {
             provider: QuotaProvider::Claude,
             minutes_left: Some(u32::MAX),
@@ -133,6 +137,66 @@ fn every_string_is_flattened() {
     for text in strings {
         assert!(!text.contains(['\u{1b}', '\u{202e}', '\n']), "{text:?}");
     }
+}
+
+fn model_entry(model: &str, effort: Option<&str>, value: u64) -> ModelUsage {
+    ModelUsage {
+        model: model.to_owned(),
+        effort: effort.map(str::to_owned),
+        total: usage_of(value),
+    }
+}
+
+#[test]
+fn model_entries_are_flattened_and_clamped() {
+    let evil = |base: &str| format!("{base}\u{1b}[31m\u{202e}\nx");
+    let mut flow = flow_of(1, vec![1]);
+    flow.models = vec![
+        model_entry(&evil("model"), Some(&evil("effort")), u64::MAX),
+        model_entry("plain", None, 5),
+    ];
+
+    sanitize_token_flow(&mut flow);
+
+    let first = &flow.models[0];
+    let effort = first.effort.as_ref().expect("effort");
+    for text in [&first.model, effort] {
+        assert!(!text.contains(['\u{1b}', '\u{202e}', '\n']), "{text:?}");
+    }
+    assert_eq!(first.total, usage_of(SAFE));
+    assert_eq!(flow.models[1], model_entry("plain", None, 5));
+}
+
+#[test]
+fn models_are_cut_to_the_row_cap_keeping_the_first_entries() {
+    let mut flow = flow_of(1, vec![1]);
+    flow.models = (0..MAX_MODEL_ROWS + 5)
+        .map(|n| model_entry(&format!("m{n}"), None, 1))
+        .collect();
+
+    sanitize_token_flow(&mut flow);
+
+    assert_eq!(flow.models.len(), MAX_MODEL_ROWS);
+    assert_eq!(flow.models[0].model, "m0");
+    assert_eq!(flow.models[MAX_MODEL_ROWS - 1].model, "m23");
+}
+
+#[test]
+fn hit_series_keeps_the_newest_values_and_caps_each_at_100() {
+    let mut flow = flow_of(1, vec![1]);
+    let mut hits: Vec<Option<u8>> = vec![Some(7); 30];
+    hits.extend((0..STAGE_SERIES_LEN - 2).map(|_| None));
+    hits.extend([Some(250), Some(100)]);
+    flow.stages[0].hit_series = hits;
+
+    sanitize_token_flow(&mut flow);
+
+    let hit_series = &flow.stages[0].hit_series;
+    assert_eq!(hit_series.len(), STAGE_SERIES_LEN);
+    assert!(hit_series[..STAGE_SERIES_LEN - 2]
+        .iter()
+        .all(Option::is_none));
+    assert_eq!(hit_series[STAGE_SERIES_LEN - 2..], [Some(100), Some(100)]);
 }
 
 #[test]

@@ -94,8 +94,10 @@ fn flow() -> TokenFlow {
             total,
             rate,
             series: vec![21_600; 120],
+            hit_series: Vec::new(),
             agents: agents(),
         }],
+        models: Vec::new(),
         quota_left: vec![QuotaLeft {
             provider: QuotaProvider::Claude,
             minutes_left: Some(127),

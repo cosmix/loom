@@ -3,8 +3,8 @@ use crate::commands::status::data::StageSummary;
 use crate::models::stage::StageStatus;
 use crate::quota::{ProviderQuota, QuotaSnapshot, QuotaWindow, WindowKind};
 use crate::tokens::model::{
-    AgentFlow, AgentKind, PlanFlow, QuotaLeft, QuotaProvider, StageFlow, TokenFlow, TokenUsage,
-    PLAN_SERIES_LEN, STAGE_SERIES_LEN,
+    AgentFlow, AgentKind, ModelUsage, PlanFlow, QuotaLeft, QuotaProvider, StageFlow, TokenFlow,
+    TokenUsage, PLAN_SERIES_LEN, STAGE_SERIES_LEN,
 };
 use chrono::TimeZone;
 
@@ -125,6 +125,37 @@ fn fixture_agents() -> Vec<AgentFlow> {
     ]
 }
 
+/// The plan-wide per (model, effort) totals; they sum to the plan total.
+fn fixture_models() -> Vec<ModelUsage> {
+    let entry = |model: &str, effort: &str, total: TokenUsage| ModelUsage {
+        model: model.to_owned(),
+        effort: Some(effort.to_owned()),
+        total,
+    };
+    vec![
+        entry(
+            "claude-sonnet-5-5",
+            "medium",
+            usage(50_000, 900_000, 13_000_000, 160_000),
+        ),
+        entry(
+            "claude-opus-5-5",
+            "xhigh",
+            usage(30_000, 450_000, 7_000_000, 80_000),
+        ),
+        entry(
+            "gpt-6.1-sol",
+            "xhigh",
+            usage(30_000, 300_000, 4_000_000, 50_000),
+        ),
+        entry(
+            "claude-opus-5-5",
+            "high",
+            usage(10_000, 150_000, 2_000_000, 20_000),
+        ),
+    ]
+}
+
 /// The pinned token-flow block behind [`fixture_snapshot`].
 fn fixture_tokens() -> TokenFlow {
     let total = usage(120_000, 1_800_000, 26_000_000, 310_000);
@@ -142,8 +173,10 @@ fn fixture_tokens() -> TokenFlow {
             total,
             rate,
             series: vec![21_600; STAGE_SERIES_LEN],
+            hit_series: vec![Some(94); STAGE_SERIES_LEN],
             agents: fixture_agents(),
         }],
+        models: fixture_models(),
         quota_left: vec![QuotaLeft {
             provider: QuotaProvider::Claude,
             minutes_left: Some(127),

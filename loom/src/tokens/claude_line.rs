@@ -10,6 +10,7 @@ pub enum ClaudeLine {
         message_id: Option<String>,
         timestamp: i64,
         model: Option<String>,
+        effort: Option<String>,
         usage: TokenUsage,
     },
     Other,
@@ -46,6 +47,10 @@ pub fn parse_line(line: &str) -> ClaudeLine {
         model: message
             .get("model")
             .and_then(Value::as_str)
+            .map(str::to_owned),
+        effort: ["perTurnEffort", "effort"]
+            .iter()
+            .find_map(|key| value.get(*key).and_then(Value::as_str))
             .map(str::to_owned),
         usage,
     }

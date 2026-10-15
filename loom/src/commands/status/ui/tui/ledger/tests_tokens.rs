@@ -90,6 +90,7 @@ fn stage_flow(stage_id: &str) -> StageFlow {
         total: plan_total(),
         rate: plan_rate(),
         series: vec![21_600; 120],
+        hit_series: Vec::new(),
         agents: section4_agents(),
     }
 }
@@ -107,6 +108,7 @@ pub(super) fn flow_data() -> StatusData {
             series: vec![21_600; 60],
         },
         stages: vec![stage_flow("s-executing"), stage_flow("s-completed")],
+        models: Vec::new(),
         quota_left: vec![QuotaLeft {
             provider: QuotaProvider::Claude,
             minutes_left: Some(127),

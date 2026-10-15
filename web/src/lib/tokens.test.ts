@@ -53,6 +53,7 @@ const server: StageFlow = {
   total: usage(120000, 1800000, 26000000, 310000),
   rate: usage(2000, 36000, 600000, 5200),
   series: Array(120).fill(21600),
+  hit_series: Array(120).fill(94),
   agents: [main, subagent, codex],
 };
 const flow: TokenFlow = {
@@ -60,6 +61,7 @@ const flow: TokenFlow = {
   bucket_secs: 30,
   plan: { total: server.total, rate: server.rate, series: Array(60).fill(21600) },
   stages: [server],
+  models: [],
   quota_left: [{ provider: "claude", minutes_left: 127, lasts_to_reset: false }],
   unreadable_lines: 0,
 };

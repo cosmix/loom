@@ -8,6 +8,7 @@ pub mod codex_line;
 mod discover;
 mod flow_build;
 pub mod model;
+mod pass_memo;
 pub mod quota_left;
 mod quota_points;
 mod tail;
