@@ -65,7 +65,7 @@
 | [token-flow-sources](architecture/token-flow-sources.md) | Token flow: sources, tracker, surfaces | 71 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 135 |
 | [web-dashboard](architecture/web-dashboard.md) | status --web server, SPA, streams | 99 |
-| [web-terminal](architecture/web-terminal.md) | loom status --web terminals | 177 |
+| [web-terminal](architecture/web-terminal.md) | loom status --web terminals | 178 |
 
 ### entry-points
 

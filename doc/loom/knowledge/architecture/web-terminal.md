@@ -123,20 +123,20 @@ PTY (`drain_pending`), check `socket_gone`.
   PTY, and its tmux child stay held for up to that 2s even on a clean close — see
   concerns/web-dashboard-latent-issues.md.
 
-## View mode: `-f read-only`, not `ignore-size` (`resolve.rs::attach_args`, :120-134)
+## View mode: one tmux attach for both modes, input gated by the bridge (`resolve.rs::attach_args`, :121-133)
 
-Both modes attach to a PTY sized to the browser window (`WindowSize { cols: 120, rows: 36 }`
-at spawn, then `TIOCSWINSZ` via `PtyChild::resize` on each resize frame) — this was a
-deliberate plan decision, not an oversight: `ignore-size` was considered and rejected because
-it would force the agent's real terminal size (commonly ~220 columns) into the dashboard's
-well. `View` mode instead passes tmux `-f read-only` (input blocked at the tmux layer; the
-client still resizes the window) while `Control` mode is a plain `attach-session`. `loom
-attach`'s own nested-session flow reflows the same way, so this keeps the dashboard
-consistent with the rest of the tool rather than a special case.
+Both modes run the same `tmux -L <socket> -T 256,RGB attach-session -t <session>` on a PTY
+sized to the browser window (`WindowSize { cols: 120, rows: 36 }` at spawn, `upgrade.rs:154-158`,
+then `TIOCSWINSZ` via `PtyChild::resize` on each resize frame). Neither tmux flag is passed:
+`ignore-size` would force the agent's real terminal size (commonly ~220 columns) into the
+dashboard's well, and `-f read-only` also drops PageUp/PageDown, which view-mode paging needs.
+Under tmux's `window-size latest` the dashboard client resizes the agent's window, as `loom
+attach` does.
 
-Server-side, the bridge additionally never enqueues `ClientFrame::Input` while in `Mode::View`
-— the frame is parsed and discarded, not merely rejected by tmux — so a compromised or buggy
-client cannot even reach the PTY write path in view mode.
+View mode is enforced by the bridge alone (`bridge.rs:256-263`): a `ClientFrame::Input` reaches
+the pending queue only in `Mode::Control` and is parsed and discarded in `Mode::View`, so a
+compromised or buggy client cannot reach the PTY write path. A `ClientFrame::Scroll` is admitted
+in both modes and becomes only PageUp/PageDown keys (`protocol.rs::scroll_input`, :72-75).
 
 ## Frontend: the `Emulator` interface and the lazy xterm chunk
 
@@ -154,11 +154,12 @@ otherwise (`installWebgl`, `:93-107`).
 
 ## Keystroke wire contract and the Esc rule
 
-`protocol.rs::parse_client_frame` (`:38-51`): a **binary** WebSocket frame is raw keystroke
-bytes, already xterm-encoded — sent as-is to the PTY. A **text** frame must be JSON
-`{"resize":{"cols":N,"rows":N}}`, clamped to 1..=500 columns / 1..=200 rows
-(`protocol.rs::clamp`, :54-59); anything else (wrong shape, out-of-range before clamping
-changes it) is silently dropped, not an error.
+`protocol.rs::parse_client_frame` (`:50-69`): a **binary** WebSocket frame is raw keystroke
+bytes, already xterm-encoded — sent as-is to the PTY in control mode. A **text** frame is JSON,
+either `{"scroll":{"pages":N}}` with N non-zero in -5..=5 (`ClientFrame::Scroll`), or
+`{"resize":{"cols":N,"rows":N}}` within 1..=500 columns / 1..=200 rows (`protocol.rs::clamp`,
+:77-83; a size that clamping would change is dropped, never clamped). Anything else is silently
+dropped, not an error.
 
 `TerminalView`'s `onKeyDown` (`terminal-view.tsx:87-91`) is bound in the **bubble** phase, so
 xterm's own listener on its hidden helper textarea has already run and turned the keystroke
