@@ -62,10 +62,10 @@
 | [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends | 293 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) | 23 adapters, profiles, quoting, detect | 57 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, compare, cache | 260 |
-| [token-flow-sources](architecture/token-flow-sources.md) | Token flow: sources, tracker, surfaces | 69 |
+| [token-flow-sources](architecture/token-flow-sources.md) | Token flow: sources, tracker, surfaces | 71 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 135 |
 | [web-dashboard](architecture/web-dashboard.md) | status --web server, SPA, streams | 99 |
-| [web-terminal](architecture/web-terminal.md) | loom status --web terminals | 175 |
+| [web-terminal](architecture/web-terminal.md) | loom status --web terminals | 177 |
 
 ### entry-points
 

@@ -163,12 +163,14 @@ changes it) is silently dropped, not an error.
 `TerminalView`'s `onKeyDown` (`terminal-view.tsx:87-91`) is bound in the **bubble** phase, so
 xterm's own listener on its hidden helper textarea has already run and turned the keystroke
 into a binary frame before this handler sees it. In `control` mode, if the event originated
-inside the terminal host, it calls `stopPropagation()` unconditionally — this is what sends
-Escape to the live agent instead of letting it bubble up to the dialog's own
-`onEscapeKeyDown` (which would otherwise close the dialog), and incidentally also keeps Tab /
-Shift+Tab out of the dialog's focus trap. In `view` mode nothing is stopped: Escape bubbles
-normally and closes the dialog, and the footer hint shows `Esc back to details`
-(`terminal-view.tsx:340-377`).
+inside the terminal host, it calls `stopPropagation()` unconditionally: Escape goes to the live
+agent instead of reaching the dialog's `onEscapeKeyDown`, and Tab / Shift+Tab stay out of the
+dialog's focus trap. In `view` mode nothing is stopped: Escape reaches `StageModal`'s
+`onEscapeKeyDown` (`stage-modal.tsx:154-158`), which prevents the dialog from closing and calls
+`toDetails`, deleting the `view` search parameter so the dialog shows the stage details again.
+`HistoryView` never reports a frame, so `StageModal` keeps `IDLE_FRAME` (mode `view`) and Esc
+leaves the history view the same way. Both footers carry the hint `Esc back to details` in the
+dialog frame (`Hint` in `terminal-view.tsx`, the footer of `history-view.tsx`).
 
 ## Viewer wheel sensitivity (2026-09-26)
 
