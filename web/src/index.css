@@ -45,6 +45,14 @@
   --tone-control: oklch(0.55 0.21 27);
   --tone-neutral: var(--foreground);
   --tone-contract: oklch(0.53 0.18 300);
+  /* Stage identity in charts, kept off the state tones so a stage's colour
+   * never reads as a state: no executing blue, no blocked red. */
+  --series-1: #1baf7a;
+  --series-2: #eda100;
+  --series-3: #e87ba4;
+  --series-4: #008300;
+  --series-5: #6250d6;
+  --series-6: #eb6834;
   --hairline: color-mix(in oklch, var(--border) 85%, transparent);
   /* The accent marks the current thing: on paper a highlighter fill under
    * ink, in the dark the ink itself. */
@@ -69,6 +77,12 @@
   --tone-dimmed: oklch(0.55 0.025 325);
   --tone-control: oklch(0.72 0.17 25);
   --tone-contract: oklch(0.75 0.14 300);
+  --series-1: #199e70;
+  --series-2: #c98500;
+  --series-3: #d55181;
+  --series-4: #008300;
+  --series-5: #9085e9;
+  --series-6: #d95926;
   --highlight: color-mix(in oklch, var(--primary) 18%, transparent);
   --highlight-foreground: var(--primary);
   --logo: oklch(1 0 0);

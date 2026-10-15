@@ -30,16 +30,9 @@ describe("TokenFlowPanel", () => {
     const panel = screen.getByRole("region", { name: "Token flow" });
     expect(panel.textContent).toContain("43.2k");
     expect(panel.textContent).toContain("5 min avg");
-    for (const label of [
-      "uncached input",
-      "cache write",
-      "output",
-      "cache read",
-      "cache hit (5 min)",
-    ]) {
+    for (const label of ["uncached input", "cache write", "output", "cache read"]) {
       expect(within(panel).getByText(label)).toBeTruthy();
     }
-    expect(within(panel).getByText("94%")).toBeTruthy();
     expect(within(panel).getByText("claude-opus-5-5")).toBeTruthy();
     expect(within(panel).getByText("server")).toBeTruthy();
     for (const label of ["−30m", "−15m", "now"]) {
@@ -80,6 +73,38 @@ describe("TokenFlowPanel", () => {
       expect(matches.length).toBeGreaterThan(0);
       for (const match of matches) expect(match.closest("svg")).toBeNull();
     }
+  });
+
+  it("keeps a stage's colour as other stages join the flow, never in a state tone", () => {
+    const bandFills = (raw: unknown) => {
+      renderWith(raw, <TokenFlowPanel />);
+      const chart = screen.getByRole("img", { name: "fresh tokens per stage, last 30 min" });
+      const fills = Array.from(chart.querySelectorAll("polygon"), (p) => p.getAttribute("fill"));
+      cleanup();
+      return fills;
+    };
+    const [serverAlone] = bandFills(fixture);
+    // The tracker publishes stages in id order, so "client" comes before "server".
+    const raw = structuredClone(fixture) as unknown as {
+      status: { tokens: { stages: Array<{ stage_id: string; agents: unknown[] }> } };
+    };
+    const [server] = raw.status.tokens.stages;
+    raw.status.tokens.stages.unshift({
+      ...structuredClone(server!),
+      stage_id: "client",
+      agents: [],
+    });
+    const [client, serverJoined] = bandFills(raw);
+
+    expect(serverJoined).toBe(serverAlone);
+    expect(client).not.toBe(serverJoined);
+    for (const fill of [client, serverJoined]) expect(fill).not.toMatch(/--tone-/);
+  });
+
+  it("leaves the cache hit to the header rail", () => {
+    renderWith(fixture, <TokenFlowPanel />);
+    const panel = screen.getByRole("region", { name: "Token flow" });
+    expect(panel.textContent).not.toContain("cache hit");
   });
 
   it("renders nothing without token data", () => {

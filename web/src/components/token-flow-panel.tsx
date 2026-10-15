@@ -2,7 +2,7 @@ import { cn } from "cn";
 import { useAtomValue } from "jotai/react";
 
 import type { StageFlow, TokenFlow, TokenUsage } from "@/api/schema";
-import { cacheHitPercent, compactTokens, fresh, lastValues, maxOf, modelRates } from "@/lib/tokens";
+import { compactTokens, fresh, lastValues, maxOf, modelRates } from "@/lib/tokens";
 import { snapshotAtom } from "@/state/atoms";
 
 /// The chart's plot height in pixels; its width follows the container.
@@ -16,14 +16,15 @@ const TIME_LABELS = [
   { text: "now", position: "right-0" },
 ] as const;
 
-/// Stage colours: the existing state tones, cycled in `stages` order.
+/// Stage colours: identity hues apart from the state tones, so no band reads
+/// as the executing stage.
 const PALETTE = [
-  "var(--tone-executing)",
-  "var(--tone-queued)",
-  "var(--tone-completed)",
-  "var(--tone-warning)",
-  "var(--tone-contract)",
-  "var(--tone-merged)",
+  "var(--series-1)",
+  "var(--series-2)",
+  "var(--series-3)",
+  "var(--series-4)",
+  "var(--series-5)",
+  "var(--series-6)",
 ] as const;
 
 const MIX = [
@@ -37,8 +38,13 @@ const MIX = [
 /// 30 minutes, the token mix and the per-model rates. Renders nothing while
 /// the snapshot carries no token flow.
 export function TokenFlowPanel() {
-  const flow = useAtomValue(snapshotAtom)?.status.tokens;
-  if (!flow) return null;
+  const status = useAtomValue(snapshotAtom)?.status;
+  const flow = status?.tokens;
+  if (!status || !flow) return null;
+  const colors = stageColors(
+    status.stages.map((stage) => stage.id),
+    flow.stages,
+  );
   return (
     <section aria-label="Token flow" className="flex min-w-0 flex-col gap-3">
       <div className="flex items-baseline justify-between gap-2">
@@ -52,12 +58,20 @@ export function TokenFlowPanel() {
           </span>
           <span className="text-sm text-muted-foreground">fresh / min</span>
         </div>
-        <StageChart stages={flow.stages} />
+        <StageChart stages={flow.stages} colors={colors} />
         <Mix flow={flow} />
         <Models flow={flow} />
       </div>
     </section>
   );
+}
+
+/// Each stage's colour, by its place among all the plan's stage ids in id
+/// order: a stage keeps its colour while other stages start, finish or leave
+/// the window.
+function stageColors(planIds: string[], stages: StageFlow[]): Map<string, string> {
+  const ids = [...new Set([...planIds, ...stages.map((stage) => stage.stage_id)])].sort();
+  return new Map(ids.map((id, index) => [id, PALETTE[index % PALETTE.length]]));
 }
 
 /// Where a chart value sits in the 100 x 100 plot box, as a percentage.
@@ -91,7 +105,7 @@ function stackBands(stages: StageFlow[]): { bands: Band[]; max: number } {
   return { bands, max };
 }
 
-function StageChart({ stages }: { stages: StageFlow[] }) {
+function StageChart({ stages, colors }: { stages: StageFlow[]; colors: Map<string, string> }) {
   const { bands, max } = stackBands(stages);
   return (
     <div className="flex flex-col gap-2">
@@ -103,16 +117,24 @@ function StageChart({ stages }: { stages: StageFlow[] }) {
           per 30 s
         </span>
         <div className="relative">
-          <BandPlot bands={bands} max={max} />
+          <BandPlot bands={bands} max={max} colors={colors} />
           <AxisLabels max={max} />
         </div>
       </div>
-      <StageLegend stages={stages} />
+      <StageLegend stages={stages} colors={colors} />
     </div>
   );
 }
 
-function BandPlot({ bands, max }: { bands: Band[]; max: number }) {
+function BandPlot({
+  bands,
+  max,
+  colors,
+}: {
+  bands: Band[];
+  max: number;
+  colors: Map<string, string>;
+}) {
   return (
     <svg
       role="img"
@@ -135,13 +157,13 @@ function BandPlot({ bands, max }: { bands: Band[]; max: number }) {
           vectorEffect="non-scaling-stroke"
         />
       ))}
-      {bands.map((band, index) => (
+      {bands.map((band) => (
         <polygon
           key={band.id}
           points={band.points}
-          fill={PALETTE[index % PALETTE.length]}
+          fill={colors.get(band.id)}
           fillOpacity={0.55}
-          stroke={PALETTE[index % PALETTE.length]}
+          stroke={colors.get(band.id)}
           strokeWidth={1}
           vectorEffect="non-scaling-stroke"
         />
@@ -173,15 +195,15 @@ function AxisLabels({ max }: { max: number }) {
   );
 }
 
-function StageLegend({ stages }: { stages: StageFlow[] }) {
+function StageLegend({ stages, colors }: { stages: StageFlow[]; colors: Map<string, string> }) {
   return (
     <ul className="flex flex-wrap gap-x-3 gap-y-1 text-xs text-muted-foreground">
-      {stages.map((stage, index) => (
+      {stages.map((stage) => (
         <li key={stage.stage_id} className="flex items-center gap-1.5">
           <span
             aria-hidden="true"
             className="size-2 rounded-sm"
-            style={{ background: PALETTE[index % PALETTE.length] }}
+            style={{ background: colors.get(stage.stage_id) }}
           />
           <span className="font-mono">{stage.stage_id}</span>
         </li>
@@ -193,7 +215,6 @@ function StageLegend({ stages }: { stages: StageFlow[] }) {
 function Mix({ flow }: { flow: TokenFlow }) {
   const rate = flow.plan.rate;
   const sum = MIX.reduce((total, { key }) => total + rate[key], 0);
-  const hit = cacheHitPercent(rate);
   return (
     <div className="flex flex-col gap-2">
       <div
@@ -222,10 +243,6 @@ function Mix({ flow }: { flow: TokenFlow }) {
             <dd className="text-right font-mono tabular-nums">{compactTokens(rate[key])}/m</dd>
           </div>
         ))}
-        <dt className="text-muted-foreground">cache hit (5 min)</dt>
-        <dd className="text-right font-mono tabular-nums">
-          {hit === null ? "—" : `${Math.round(hit)}%`}
-        </dd>
       </dl>
     </div>
   );
