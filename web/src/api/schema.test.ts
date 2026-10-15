@@ -46,6 +46,27 @@ describe("token flow schema", () => {
     expect(snapshotSchema.safeParse(invalid).success).toBe(false);
   });
 
+  it("rejects an unknown key on a models entry", () => {
+    const invalid = structuredClone(fixtureJson);
+    Object.assign(invalid.status.tokens.models[0], { unexpected: true });
+
+    expect(snapshotSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it("rejects a cache hit value of 101", () => {
+    const invalid = structuredClone(fixtureJson);
+    invalid.status.tokens.stages[0].hit_series[0] = 101;
+
+    expect(snapshotSchema.safeParse(invalid).success).toBe(false);
+  });
+
+  it("parses null cache hit values", () => {
+    const valid = structuredClone(fixtureJson);
+    (valid.status.tokens.stages[0].hit_series as (number | null)[])[0] = null;
+
+    expect(snapshotSchema.parse(valid).status.tokens?.stages[0].hit_series[0]).toBeNull();
+  });
+
   it("rejects a negative token count", () => {
     const invalid = structuredClone(fixtureJson);
     invalid.status.tokens.plan.rate.cache_write = -1;
