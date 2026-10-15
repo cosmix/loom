@@ -39,8 +39,14 @@ pub fn keychain_argv() -> (&'static str, [&'static str; 4]) {
 /// usable token - never partial information, and never the token itself in
 /// the error.
 pub fn access_token(home: &Path) -> Result<String> {
+    resolve_token(home, keychain_token)
+}
+
+/// [`access_token`] with the Keychain lookup injected, so a test reads only the
+/// credentials file it was given and never the host's own login.
+fn resolve_token(home: &Path, keychain: impl FnOnce() -> Option<String>) -> Result<String> {
     if cfg!(target_os = "macos") {
-        if let Some(token) = keychain_token() {
+        if let Some(token) = keychain() {
             return Ok(token);
         }
     }

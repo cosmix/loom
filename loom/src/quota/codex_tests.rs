@@ -52,6 +52,49 @@ fn write_fake_codex(dir: &std::path::Path, script: &str) -> std::path::PathBuf {
     path
 }
 
+/// Polls until the fake child has written its whole pid line and returns
+/// the instant it saw it: the child's real start. A loaded runner can take
+/// many seconds to get from `spawn` to the script's first line, so bounds
+/// timed from this instant exclude that latency.
+#[cfg(unix)]
+fn wait_for_pid_file(pid_file: &Path) -> Option<Instant> {
+    let give_up = Instant::now() + REPLY_DEADLINE;
+    while Instant::now() < give_up {
+        if std::fs::read_to_string(pid_file).is_ok_and(|pid| pid.ends_with('\n')) {
+            return Some(Instant::now());
+        }
+        std::thread::sleep(Duration::from_millis(20));
+    }
+    None
+}
+
+/// Runs `poll_once` with `REPLY_DEADLINE` beside a watcher thread waiting
+/// for the fake child's pid file, and returns the result with the time from
+/// the child's start to `poll_once` returning. With `stop_once_started`, the
+/// watcher sets the shutdown flag as soon as the pid is on disk.
+#[cfg(unix)]
+fn poll_timed_from_child_start(
+    codex_bin: &Path,
+    pid_file: &Path,
+    stop_once_started: bool,
+) -> (Result<ProviderQuota>, Duration) {
+    let shutdown = AtomicBool::new(false);
+    let (result, started, finished) = std::thread::scope(|scope| {
+        let watcher = scope.spawn(|| {
+            let started = wait_for_pid_file(pid_file);
+            if stop_once_started {
+                shutdown.store(true, Ordering::SeqCst);
+            }
+            started
+        });
+        let result = poll_once(codex_bin, REPLY_DEADLINE, &shutdown, 0);
+        let finished = Instant::now();
+        (result, watcher.join().unwrap(), finished)
+    });
+    let started = started.expect("the fake child never wrote its pid file");
+    (result, finished.saturating_duration_since(started))
+}
+
 #[test]
 #[cfg(unix)]
 fn a_successful_exchange_parses_both_windows_and_the_plan() {
@@ -109,11 +152,13 @@ fn a_hanging_server_times_out_and_the_child_is_killed() {
     let pid_file = dir.path().join("pid");
     let script = format!("#!/bin/sh\necho $$ > {}\nsleep 30\n", pid_file.display());
     let codex_bin = write_fake_codex(dir.path(), &script);
-    let shutdown = AtomicBool::new(false);
 
-    let start = std::time::Instant::now();
-    let result = poll_once(&codex_bin, Duration::from_secs(1), &shutdown, 0);
-    let elapsed = start.elapsed();
+    // A fixed deadline races the child's start-up: under load the kill can
+    // come before `echo $$` runs, leaving no pid to check. The watcher sets
+    // `shutdown` only once the pid is on disk, which ends the reply wait
+    // with the same "timed out" error; `a_passed_reply_deadline_times_out`
+    // covers the deadline branch itself.
+    let (result, elapsed) = poll_timed_from_child_start(&codex_bin, &pid_file, true);
 
     assert!(result.is_err());
     assert_eq!(
@@ -121,10 +166,9 @@ fn a_hanging_server_times_out_and_the_child_is_killed() {
         "codex app-server timed out"
     );
     // `sleep 30` never reads stdin, so dropping it in teardown cannot make
-    // the child exit early: the 1 s deadline and the 2 s graceful
-    // `wait_timeout` both elapse before the process-group kill. The bound
-    // only has to rule out waiting for `sleep 30` itself, and leaves room
-    // for a loaded runner to stall the child.
+    // the child exit early: the 2 s graceful `wait_timeout` elapses before
+    // the process-group kill. `elapsed` runs from the child's start, so the
+    // bound only has to rule out waiting for `sleep 30` itself.
     assert!(elapsed < Duration::from_secs(15), "took {elapsed:?}");
 
     let pid: u32 = std::fs::read_to_string(&pid_file)
@@ -133,6 +177,29 @@ fn a_hanging_server_times_out_and_the_child_is_killed() {
         .parse()
         .unwrap();
     assert!(!crate::process::is_process_alive(pid));
+}
+
+#[test]
+#[cfg(unix)]
+fn a_passed_reply_deadline_times_out() {
+    let dir = tempdir().unwrap();
+    // The deadline runs whether or not the child ever gets to run `sleep`,
+    // so nothing here waits on the child's start-up.
+    let codex_bin = write_fake_codex(dir.path(), "#!/bin/sh\nsleep 30\n");
+    let shutdown = AtomicBool::new(false);
+
+    let start = Instant::now();
+    let result = poll_once(&codex_bin, Duration::from_secs(1), &shutdown, 0);
+    let elapsed = start.elapsed();
+
+    assert_eq!(
+        result.unwrap_err().to_string(),
+        "codex app-server timed out"
+    );
+    // Expected: spawn, the 1 s deadline, then the 2 s graceful wait and the
+    // kill. Waiting on `sleep 30` instead would take at least 30 s, and the
+    // bound leaves the rest for a loaded runner's slow spawn.
+    assert!(elapsed < Duration::from_secs(25), "took {elapsed:?}");
 }
 
 #[test]
@@ -152,15 +219,12 @@ fn a_flood_of_notifications_after_the_reply_does_not_hang_the_reader_join() {
         pid = pid_file.display(),
     );
     let codex_bin = write_fake_codex(dir.path(), &script);
-    let shutdown = AtomicBool::new(false);
 
-    let start = std::time::Instant::now();
-    let result = poll_once(&codex_bin, Duration::from_secs(10), &shutdown, 0);
-    let elapsed = start.elapsed();
+    let (result, elapsed) = poll_timed_from_child_start(&codex_bin, &pid_file, false);
 
     assert!(result.is_ok(), "expected Ok, got {result:?}");
-    // Without the receiver drop the join never returns; the bound only has
-    // to rule out that hang.
+    // Without the receiver drop the join never returns; `elapsed` runs from
+    // the child's start, so the bound only has to rule out that hang.
     assert!(elapsed < Duration::from_secs(20), "took {elapsed:?}");
 
     let pid: u32 = std::fs::read_to_string(&pid_file)
