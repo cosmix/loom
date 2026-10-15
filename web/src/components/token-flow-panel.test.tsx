@@ -33,7 +33,8 @@ describe("TokenFlowPanel", () => {
     for (const label of ["uncached input", "cache write", "output", "cache read"]) {
       expect(within(panel).getByText(label)).toBeTruthy();
     }
-    expect(within(panel).getByText("claude-opus-5-5")).toBeTruthy();
+    const legend = within(screen.getByRole("list", { name: "models" }));
+    expect(legend.getByText("claude-opus-5-5")).toBeTruthy();
     expect(within(panel).getByText("server")).toBeTruthy();
     for (const label of ["−30m", "−15m", "now"]) {
       expect(panel.textContent).toContain(label);
@@ -46,6 +47,13 @@ describe("TokenFlowPanel", () => {
     const panel = screen.getByRole("region", { name: "Token flow" });
     expect(within(panel).queryByText("fresh input")).toBeNull();
     expect(within(panel).getByText("fresh / min")).toBeTruthy();
+  });
+
+  it("explains the uncached input row in a tooltip", () => {
+    renderWith(fixture, <TokenFlowPanel />);
+
+    const label = screen.getByText("uncached input");
+    expect(label.closest("dt")?.getAttribute("title")).toContain("prompt cache");
   });
 
   it("captions the chart axis as per 30 s buckets", () => {

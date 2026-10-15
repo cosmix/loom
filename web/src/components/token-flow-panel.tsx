@@ -1,8 +1,10 @@
 import { cn } from "cn";
 import { useAtomValue } from "jotai/react";
+import { InfoIcon } from "lucide-react";
 
 import type { StageFlow, TokenFlow, TokenUsage } from "@/api/schema";
-import { compactTokens, fresh, lastValues, maxOf, modelRates } from "@/lib/tokens";
+import { TokenModels } from "@/components/token-models";
+import { compactTokens, fresh, lastValues, maxOf } from "@/lib/tokens";
 import { snapshotAtom } from "@/state/atoms";
 
 /// The chart's plot height in pixels; its width follows the container.
@@ -27,15 +29,25 @@ const PALETTE = [
   "var(--series-6)",
 ] as const;
 
-const MIX = [
-  { key: "input", label: "uncached input", color: "var(--tone-executing)" },
+const MIX: ReadonlyArray<{
+  key: keyof TokenUsage;
+  label: string;
+  color: string;
+  hint?: string;
+}> = [
+  {
+    key: "input",
+    label: "uncached input",
+    color: "var(--tone-executing)",
+    hint: "Input tokens neither read from nor written to the prompt cache. Claude Code caches almost every prompt, so this stays at a few tokens per API call.",
+  },
   { key: "cache_write", label: "cache write", color: "var(--tone-warning)" },
   { key: "output", label: "output", color: "var(--tone-completed)" },
   { key: "cache_read", label: "cache read", color: "var(--tone-dimmed)" },
-] as const satisfies ReadonlyArray<{ key: keyof TokenUsage; label: string; color: string }>;
+];
 
 /// The plan's token flow: the fresh rate, a stacked chart of each stage's last
-/// 30 minutes, the token mix and the per-model rates. Renders nothing while
+/// 30 minutes, the token mix and the by-model breakdown. Renders nothing while
 /// the snapshot carries no token flow.
 export function TokenFlowPanel() {
   const status = useAtomValue(snapshotAtom)?.status;
@@ -60,7 +72,7 @@ export function TokenFlowPanel() {
         </div>
         <StageChart stages={flow.stages} colors={colors} />
         <Mix flow={flow} />
-        <Models flow={flow} />
+        <TokenModels flow={flow} />
       </div>
     </section>
   );
@@ -230,35 +242,21 @@ function Mix({ flow }: { flow: TokenFlow }) {
         ))}
       </div>
       <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1 text-xs">
-        {MIX.map(({ key, label, color }) => (
+        {MIX.map(({ key, label, color, hint }) => (
           <div key={key} className="contents">
-            <dt className="flex items-center gap-1.5 text-muted-foreground">
+            <dt className="flex items-center gap-1.5 text-muted-foreground" title={hint}>
               <span
                 aria-hidden="true"
                 className="size-2 rounded-sm"
                 style={{ background: color }}
               />
               {label}
+              {hint && <InfoIcon aria-hidden="true" className="size-3" />}
             </dt>
             <dd className="text-right font-mono tabular-nums">{compactTokens(rate[key])}/m</dd>
           </div>
         ))}
       </dl>
     </div>
-  );
-}
-
-function Models({ flow }: { flow: TokenFlow }) {
-  const rates = modelRates(flow);
-  if (rates.length === 0) return null;
-  return (
-    <dl className="grid grid-cols-[1fr_auto] gap-x-4 gap-y-1 border-t border-hairline pt-3 text-xs">
-      {rates.map(({ model, perMinute }) => (
-        <div key={model} className="contents">
-          <dt className="truncate font-mono text-muted-foreground">{model}</dt>
-          <dd className="text-right font-mono tabular-nums">{compactTokens(perMinute)}/m</dd>
-        </div>
-      ))}
-    </dl>
   );
 }

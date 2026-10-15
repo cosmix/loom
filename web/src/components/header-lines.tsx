@@ -4,12 +4,11 @@ import type { CSSProperties, ReactNode } from "react";
 
 import type { Snapshot, StageStatus } from "@/api/schema";
 import { useNow } from "@/components/hooks/use-now";
-import { Sparkline } from "@/components/sparkline";
 import { StageStrip } from "@/components/stage-strip";
 import { toneClass } from "@/components/state-badge";
 import { daemonLine, progressPercent, stateMeta, summaryCounts, type Tone } from "@/lib/format";
 import { STAGE_STATES } from "@/lib/states";
-import { cacheHitPercent, compactTokens, fresh, lastValues } from "@/lib/tokens";
+import { cacheHitPercent, compactTokens, fresh } from "@/lib/tokens";
 import { connectionAtom, snapshotAtom, type ConnectionPhase } from "@/state/atoms";
 
 const CONNECTION_LINE: Record<ConnectionPhase, ReturnType<typeof daemonLine>> = {
@@ -144,8 +143,8 @@ export function MergeLine({ snapshot }: { snapshot: Snapshot }) {
 }
 
 /// The plan's token flow as a rail beside the merge rail: fresh tokens per
-/// minute, a 15 minute sparkline, the plan total and the cache hit. Absent
-/// while the snapshot carries no token flow.
+/// minute, the plan total and the cache hit. Absent while the snapshot carries
+/// no token flow.
 export function TokenLine() {
   const tokens = useAtomValue(snapshotAtom)?.status.tokens;
   if (!tokens) return null;
@@ -153,17 +152,8 @@ export function TokenLine() {
   return (
     <section aria-label="tokens" className="flex w-full min-w-0 flex-col gap-1 sm:w-auto">
       <h2 className="eyebrow text-[10px]">tokens</h2>
-      <ol className="grid grid-cols-2 rounded-lg border border-hairline bg-card/60 shadow-xs sm:inline-grid sm:grid-cols-[repeat(4,auto)]">
+      <ol className="grid grid-cols-3 rounded-lg border border-hairline bg-card/60 shadow-xs sm:inline-grid sm:grid-cols-[repeat(3,auto)]">
         <TokenCell label="fresh / min">{compactTokens(fresh(tokens.plan.rate))}</TokenCell>
-        <TokenCell label="last 15 min">
-          <Sparkline
-            values={lastValues(tokens.plan.series, 30)}
-            width={72}
-            height={18}
-            label="plan fresh tokens, last 15 min"
-            className="text-(--tone-executing)"
-          />
-        </TokenCell>
         <TokenCell label="plan total">{compactTokens(fresh(tokens.plan.total))}</TokenCell>
         <TokenCell label="cache hit">{hit === null ? "—" : `${Math.round(hit)}%`}</TokenCell>
       </ol>
@@ -171,17 +161,10 @@ export function TokenLine() {
   );
 }
 
-/// One cell of the token rail. On phones the rail wraps to two rows of two:
-/// the first cell of each row drops the `.stat-cell` left rule and the second
-/// row gains a top rule.
+/// One cell of the token rail.
 function TokenCell({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <li
-      className={cn(
-        "stat-cell flex min-w-0 flex-col items-center gap-1 px-1.5 py-1.5 sm:items-start sm:px-3.5",
-        "max-sm:odd:border-l-0 max-sm:nth-[n+3]:border-t max-sm:nth-[n+3]:border-hairline",
-      )}
-    >
+    <li className="stat-cell flex min-w-0 flex-col items-center gap-1 px-1.5 py-1.5 sm:items-start sm:px-3.5">
       <span className="flex h-[18px] items-center font-display text-lg leading-none font-semibold tabular-nums">
         {children}
       </span>

@@ -23,26 +23,20 @@ function renderTokenLine(mutate?: (raw: typeof fixture) => void) {
 afterEach(cleanup);
 
 describe("TokenLine", () => {
-  it("left-pads a short plan series to the sparkline's 30 points", () => {
-    renderTokenLine((raw) => {
-      raw.status.tokens.plan.series = [9, 9];
-    });
+  it("shows the numbers without a sparkline", () => {
+    renderTokenLine();
 
-    const chart = screen.getByRole("img", { name: "plan fresh tokens, last 15 min" });
-    const d = chart.querySelectorAll("path")[1]?.getAttribute("d") ?? "";
-    expect((d.match(/[ML]/g) ?? []).length).toBe(30);
+    const rail = screen.getByRole("region", { name: "tokens" });
+    for (const text of ["43.2k", "2.23M", "93%"]) expect(rail.textContent).toContain(text);
+    expect(within(rail).queryAllByRole("img")).toHaveLength(0);
   });
 
-  it("wraps the phone rail into two rows ruled apart, with no left rule on a row's first cell", () => {
+  it("keeps the three cells in one row with no wrap rules", () => {
     renderTokenLine();
 
     const rail = screen.getByRole("region", { name: "tokens" });
     const cells = within(rail).getAllByRole("listitem");
-    expect(cells).toHaveLength(4);
-    // The variants pick the cells: `odd` is the first of each row, `n+3` the second row.
-    for (const cell of cells) {
-      expect(cell.className).toContain("max-sm:odd:border-l-0");
-      expect(cell.className).toContain("max-sm:nth-[n+3]:border-t");
-    }
+    expect(cells).toHaveLength(3);
+    for (const cell of cells) expect(cell.className).not.toContain("max-sm:");
   });
 });
