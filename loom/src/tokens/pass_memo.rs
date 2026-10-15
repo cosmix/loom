@@ -14,18 +14,28 @@ use super::model::{QuotaLeft, TokenFlow, FLOW_FILE};
 use super::quota_points::{self, quota_inputs};
 use super::tracker::{write_flow, CHECKPOINT_FILE};
 use anyhow::{Context, Result};
-use std::collections::hash_map::DefaultHasher;
+use std::collections::hash_map::{DefaultHasher, RandomState};
 use std::collections::HashSet;
-use std::hash::Hasher;
+use std::hash::{BuildHasher, Hasher};
 use std::io::{self, Write};
 use std::os::unix::fs::MetadataExt;
 use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 /// An unchanged flow is still rewritten this often, so readers see a fresh
 /// `observed_at`.
 pub(super) const FLOW_HEARTBEAT_SECS: i64 = 60;
 /// How long a computed `quota_left` is reused while no quota file changes.
 pub(super) const QUOTA_LEFT_REFRESH_SECS: i64 = 30;
+
+/// The keys of every hash a memo takes. The hashed JSON derives from transcripts, so
+/// a fixed key would let a transcript be crafted to collide; these are random per
+/// process and fixed for its life, which is as long as a memo lives.
+static HASH_KEYS: OnceLock<RandomState> = OnceLock::new();
+
+fn new_hasher() -> DefaultHasher {
+    HASH_KEYS.get_or_init(RandomState::new).build_hasher()
+}
 
 /// A file's identity and version: a rename onto the path changes the inode,
 /// a write the length or the mtime.
@@ -238,17 +248,16 @@ fn flow_hash(flow: &mut TokenFlow) -> Result<Option<u64>> {
     let json = fit_flow(flow);
     flow.observed_at = observed_at;
     Ok(json?.map(|json| {
-        let mut hasher = DefaultHasher::new();
+        let mut hasher = new_hasher();
         hasher.write(json.as_bytes());
         hasher.finish()
     }))
 }
 
 /// The hash of `checkpoint`'s compact JSON, streamed into the hasher rather
-/// than built as a string. `DefaultHasher` is stable within one process,
-/// which is as long as a memo lives.
+/// than built as a string. The keys are those of [`HASH_KEYS`].
 fn json_hash(checkpoint: &Checkpoint) -> Result<u64> {
-    let mut writer = HashWriter(DefaultHasher::new());
+    let mut writer = HashWriter(new_hasher());
     serde_json::to_writer(&mut writer, checkpoint).context("hashing the token checkpoint")?;
     Ok(writer.0.finish())
 }

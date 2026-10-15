@@ -217,20 +217,27 @@ fn rate(buckets: &Buckets, now: i64, now_bucket: i64) -> TokenUsage {
 /// any existing `OTHER_MODEL` entry merge into one `OTHER_MODEL` entry placed
 /// last, so the entries still sum to the plan total.
 fn model_totals(stages: &BTreeMap<String, StageAgents>) -> Vec<ModelUsage> {
-    let mut merged: Vec<ModelUsage> = Vec::new();
+    // A map, not a scan of the merged entries: a checkpoint is not capped by
+    // `MAX_MODEL_KEYS`, so the distinct keys can be many.
+    let mut totals: BTreeMap<(&str, Option<&str>), TokenUsage> = BTreeMap::new();
     for entry in stages
         .values()
         .flat_map(|agents| agents.values())
         .flat_map(|agent| &agent.by_model)
     {
-        match merged
-            .iter_mut()
-            .find(|seen| seen.model == entry.model && seen.effort == entry.effort)
-        {
-            Some(seen) => seen.total.add(&entry.total),
-            None => merged.push(entry.clone()),
-        }
+        totals
+            .entry((entry.model.as_str(), entry.effort.as_deref()))
+            .or_default()
+            .add(&entry.total);
     }
+    let mut merged: Vec<ModelUsage> = totals
+        .into_iter()
+        .map(|((model, effort), total)| ModelUsage {
+            model: model.to_owned(),
+            effort: effort.map(str::to_owned),
+            total,
+        })
+        .collect();
     merged.sort_by(|a, b| {
         let effort_key = |entry: &ModelUsage| (entry.effort.is_none(), entry.effort.clone());
         (std::cmp::Reverse(a.total.fresh()), &a.model, effort_key(a)).cmp(&(

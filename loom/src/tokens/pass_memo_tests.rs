@@ -1,4 +1,4 @@
-use super::{FileStamp, PassMemo, FLOW_HEARTBEAT_SECS};
+use super::{json_hash, FileStamp, PassMemo, FLOW_HEARTBEAT_SECS};
 use crate::tokens::accumulate::MESSAGE_TABLE_CAP;
 use crate::tokens::checkpoint::Checkpoint;
 use crate::tokens::discover::Source;
@@ -118,6 +118,17 @@ fn deleted_flow_is_written_on_the_next_pass() {
     fx.scan(now + 5);
 
     assert_eq!(written_at(&fx), now + 5);
+}
+
+#[test]
+fn the_checkpoint_hash_is_stable_within_the_process_and_follows_the_content() {
+    let mut checkpoint = Checkpoint::empty();
+    let first = json_hash(&checkpoint).expect("hash");
+
+    assert_eq!(json_hash(&checkpoint).expect("hash"), first);
+    assert_eq!(json_hash(&checkpoint.clone()).expect("hash"), first);
+    checkpoint.version += 1;
+    assert_ne!(json_hash(&checkpoint).expect("hash"), first);
 }
 
 /// A checkpoint of two agents with full tables of 1200-character message
