@@ -124,3 +124,13 @@ The pre-commit hook runs markdownlint with automatic fixes on every staged markd
 **Prevention:** before telling an operator how loom behaves today, read the code at `HEAD` (`git show HEAD:<path>`) or test the installed `loom`, never the working tree while a subagent writes to it.
 
 **Fix:** the operator was told the text had been dropped and given the commands that work with the installed binary.
+
+## A Bug Report's Proposed Remedies Were Adopted Without Checking Them Against the Tree
+
+**What happened:** an incident write-up proposed a new `loom stage contracts run` command and told the contract writer to set `cwd` on its contracts. Both went into a scope proposal unchecked. The freeze already runs and prints every contract's command, and the contract writer cannot edit plan metadata.
+
+**Why:** the write-up's remedies were read as requirements, not as hypotheses about a failure chain.
+
+**Prevention:** for each remedy in a bug report, find the code that already serves it and the actor who would carry it out before adopting it. Keep only remedies that close a gap the tree has.
+
+**Fix:** the scope was rebuilt from the failure chain: run-dir resolution, freeze acceptance of unreadable reds, plan verify, dispute granularity, stale `contracts show`.

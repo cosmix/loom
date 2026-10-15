@@ -176,8 +176,8 @@ Five workers fanning the ledger TUI out by file each reimplemented cell-padding 
 
 ## Web Dashboard Server
 
-Concurrency bugs, a cross-worker field-semantics bug, a browser-vs-jsdom gotcha, and terminal
-bridge lessons, all from `loom/src/commands/status/web/` and `web/`.
+Concurrency bugs, a cross-worker field-semantics bug, a browser-vs-jsdom gotcha, terminal bridge
+lessons, and chart bands in state tones by rank, from `loom/src/commands/status/web/` and `web/`.
 
 → [Web Dashboard Server](mistakes/web-dashboard-server.md)
 

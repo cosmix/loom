@@ -336,3 +336,13 @@ the spawn fails; the other candidates stay as listed.
 **Prevention:** wherever an error kind is classified as retryable on a socket with a timeout, `Interrupted` belongs with `WouldBlock`/`TimedOut`. A test that fails only inside the full suite, and never under CPU load alone, points to process-global state (signals, descriptors) rather than timing. Log the stop reason before tuning budgets.
 
 **Fix:** `stalled` includes `Interrupted`, pinned by `bridge.rs` `tests::a_signal_interrupting_a_transfer_is_retried_not_read_as_a_dead_peer`. `tests_bridge.rs::read_until` prints the close frame and byte count when a bridge closes before the needle arrives.
+
+## Stage Bands Wore State Tones by Rank
+
+**What happened:** The web Token flow chart coloured each stage band with a `--tone-*` state colour picked by the stage's index in `flow.stages`. The first stage in id order always wore `--tone-executing`, the blue the ledger and graph give the running stage, so a finished stage's tokens read as the current stage's. A stage that sorts earlier joining the flow repainted every later stage.
+
+**Why:** The palette reused the state tones to avoid adding colour tokens, and the colour followed rank, not the stage.
+
+**Prevention:** Chart series take identity colours apart from the state tones, and a series keeps its colour when the set of series changes. Validate a categorical palette with the dataviz validator against the card surface in both themes.
+
+**Fix:** `--series-1..6` in `web/src/index.css`, assigned in `token-flow-panel.tsx` `stageColors` by the stage's place among all plan stage ids in id order. Test: `token-flow-panel.test.tsx` "keeps a stage's colour as other stages join the flow".

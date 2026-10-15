@@ -82,7 +82,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [cli-process-and-conventions](patterns/cli-process-and-conventions.md) | CLI registration, TUI, errors | 249 |
+| [cli-process-and-conventions](patterns/cli-process-and-conventions.md) | CLI registration, TUI, errors | 253 |
 | [doctrine-cross-surface](patterns/doctrine-cross-surface.md) | Pinning multi-surface guidance | 135 |
 | [hook-content-stripping](patterns/hook-content-stripping.md) | How hooks read a Bash command | 161 |
 | [merge-and-recovery](patterns/merge-and-recovery.md) | Progressive merge, conflict recovery | 122 |
@@ -112,7 +112,7 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock | 200 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | A .git dir is not evidence of a repo | 156 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Stage bug reports; brief guard flags | 126 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Stage bug reports; brief guard flags | 136 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, cargo audit, install.sh | 290 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented, not forwarded | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Slow reader fixed by forbidding reads | 52 |
@@ -164,7 +164,7 @@
 | [verification-harness](mistakes/verification-harness.md) | Many checks failing: suspect harness | 371 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 328 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) capped by path | 123 |
-| [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server concurrency | 338 |
+| [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server concurrency | 348 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Layer written under an ignored key | 94 |
 
 ### concerns

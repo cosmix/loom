@@ -247,3 +247,7 @@ the post-kill grace period, because the reader thread delivered its buffered out
 the grace timer expired. The grace-period `recv_stream` calls exist only to let reader
 threads exit promptly; their results are discarded (`let _ = ...`), never fed back into the
 Completed/TimedOut decision.
+
+## A New CLI Command Needs a Need No Existing Surface Can Carry
+
+The loom binary gets a new command or subcommand only when no existing command, signal, or printed output can carry the need. Before proposing one, list every place that already computes or prints the value and extend those. Example: running a contract the way completion runs it is already covered by the freeze, which runs and prints every contract's cwd and command, and by `resolve_run`'s command in the contract signal and adjudication prompt; it gets no `contracts run` command.
