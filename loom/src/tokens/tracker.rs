@@ -2,13 +2,13 @@
 //! lines every stage's transcripts gained, update the checkpoint, and publish
 //! `.loom/work/tokens/flow.json` for the status collector.
 
-use super::checkpoint::{Checkpoint, Saved, MAX_CHECKPOINT_BYTES};
+use super::checkpoint::Checkpoint;
 use super::discover::{discover, Source};
 use super::flow_build::{build_flow, fit_flow};
 use super::model::{
     TokenFlow, BUCKET_SECS, FLOW_FILE, MAX_FLOW_BYTES, STAGE_SERIES_LEN, TOKENS_DIR,
 };
-use super::quota_points::quota_left;
+use super::pass_memo::PassMemo;
 use super::tail::{self, Line};
 use crate::context::untrusted::inline_safe;
 use crate::quota::cache::{atomic_write, create_quota_dir, reject_symlink};
@@ -22,18 +22,21 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-pub const TRACKER_INTERVAL_SECS: u64 = 30;
+/// Seconds the tracker sleeps after each pass.
+pub const TRACKER_INTERVAL_SECS: u64 = 5;
 pub const CHECKPOINT_FILE: &str = "checkpoint.json";
 /// How often a sleeping tracker looks at the shutdown flag.
 const SLEEP_SLICE: Duration = Duration::from_millis(250);
 
 /// What [`scan_pass`] shares with the thread it runs on: the shutdown flag
-/// that stops its file loop early (set only on a `tokens-tracker` thread) and
-/// the warning of the last pass that finished. Thread-local, so trackers on
-/// different threads never see each other's flag.
+/// that stops its file loop early (set only on a `tokens-tracker` thread),
+/// the warning of the last pass that finished, and the memo of the work root
+/// it last scanned. Thread-local, so trackers on different threads never see
+/// each other's flag or memo.
 struct TrackerLocal {
     stop: Option<Arc<AtomicBool>>,
     warning: Option<String>,
+    memo: Option<PassMemo>,
 }
 
 thread_local! {
@@ -41,13 +44,15 @@ thread_local! {
         RefCell::new(TrackerLocal {
             stop: None,
             warning: None,
+            memo: None,
         })
     };
 }
 
 /// One pass at `now` over the `.loom/work` directory `work_root`: read every
-/// stage's new transcript lines, write the checkpoint, then `flow.json`, and
-/// return the flow as written. Codex rollouts are looked up under
+/// stage's new transcript lines, write the checkpoint, then `flow.json`, each
+/// only when the pass memo shows the file does not already hold it, and
+/// return the flow the pass built. Codex rollouts are looked up under
 /// `codex_sessions_root`, else `~/.codex/sessions`.
 ///
 /// On the `tokens-tracker` thread the pass stops reading files once the
@@ -87,23 +92,43 @@ struct Pass {
 /// is skipped and reported as the pass's warning, as is a checkpoint or flow
 /// that is too big to write. A checkpoint or flow that cannot be written fails
 /// the pass, after the other is still written, naming both when both fail.
+///
+/// The pass runs with this thread's memo of `work_root`, a fresh one when the
+/// thread last scanned another root, and leaves it for the next pass.
 fn scan_until(
     work_root: &Path,
     codex_sessions_root: Option<&Path>,
     now: i64,
     stop: &AtomicBool,
 ) -> Result<Pass> {
+    let mut memo = TRACKER
+        .with_borrow_mut(|tracker| tracker.memo.take())
+        .filter(|memo| memo.is_for(work_root))
+        .unwrap_or_else(|| PassMemo::new(work_root));
+    let pass = run_pass(&mut memo, work_root, codex_sessions_root, now, stop);
+    TRACKER.with_borrow_mut(|tracker| tracker.memo = Some(memo));
+    pass
+}
+
+/// [`scan_until`]'s pass with `memo`, which it reads and updates.
+fn run_pass(
+    memo: &mut PassMemo,
+    work_root: &Path,
+    codex_sessions_root: Option<&Path>,
+    now: i64,
+    stop: &AtomicBool,
+) -> Result<Pass> {
     let dir = ensure_tokens_dir(work_root)?;
-    let (mut checkpoint, load_note) = Checkpoint::load_reporting(&dir);
+    let (mut checkpoint, load_note) = memo.take_checkpoint(&dir);
     let sources = discover(work_root, codex_sessions_root, &mut checkpoint.threads, now)?;
     let mut problems: Vec<String> = load_note.into_iter().collect();
     let (advanced, read_failure) = read_sources(&mut checkpoint, &sources, stop);
     problems.extend(read_failure);
     checkpoint.prune(now.div_euclid(BUCKET_SECS) - (STAGE_SERIES_LEN as i64 - 1));
     let mut flow = build_flow(&checkpoint.stages, now);
-    flow.quota_left = quota_left(work_root, now);
-    let saved = save_checkpoint(&mut checkpoint, &dir, &advanced);
-    let written = write_flow(&dir, &mut flow);
+    flow.quota_left = memo.quota_left(work_root, now);
+    let saved = memo.save_checkpoint(checkpoint, &dir, &advanced);
+    let written = memo.publish_flow(&dir, &mut flow, now);
     problems.extend(writes_outcome(saved, written)?);
     let warning = (!problems.is_empty()).then(|| problems.join("; "));
     Ok(Pass { flow, warning })
@@ -171,29 +196,6 @@ fn read_source(
     read.map(|()| true)
 }
 
-/// Saves `checkpoint`. Over [`MAX_CHECKPOINT_BYTES`], first empties the message
-/// tables of every agent not in `advanced` (their files did not change this
-/// pass) and tries again. The warning when it is still over: nothing is
-/// written, and the next pass starts from the checkpoint before this one.
-fn save_checkpoint(
-    checkpoint: &mut Checkpoint,
-    dir: &Path,
-    advanced: &HashSet<(&str, &str)>,
-) -> Result<Option<String>> {
-    let mut saved = checkpoint.save(dir)?;
-    if matches!(saved, Saved::OverCap(_)) {
-        checkpoint.clear_tables_except(advanced);
-        saved = checkpoint.save(dir)?;
-    }
-    Ok(match saved {
-        Saved::Written => None,
-        Saved::OverCap(bytes) => Some(format!(
-            "checkpoint is {bytes} bytes, over {MAX_CHECKPOINT_BYTES} even without idle \
-             message tables; {CHECKPOINT_FILE} not written"
-        )),
-    })
-}
-
 /// The warnings of the two writes, or their errors: both when both failed, so
 /// a failed `flow.json` does not hide a checkpoint that could not be saved.
 fn writes_outcome(saved: Result<Option<String>>, written: Result<bool>) -> Result<Vec<String>> {
@@ -228,7 +230,7 @@ fn ensure_tokens_dir(work_root: &Path) -> Result<PathBuf> {
 
 /// Writes `flow` atomically when it fits [`MAX_FLOW_BYTES`] (after shedding
 /// idle series); `false` when it does not and nothing was written.
-fn write_flow(dir: &Path, flow: &mut TokenFlow) -> Result<bool> {
+pub(super) fn write_flow(dir: &Path, flow: &mut TokenFlow) -> Result<bool> {
     let Some(json) = fit_flow(flow)? else {
         return Ok(false);
     };

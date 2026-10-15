@@ -3,8 +3,9 @@
 
 use super::model::{QuotaLeft, QuotaProvider};
 use super::quota_left::{estimate, SLOPE_WINDOW_SECS};
+use crate::quota::cache::{provider_path, quota_dir};
 use crate::quota::{read_history, read_snapshot, ProviderQuota, QuotaWindow, WindowKind};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 /// Five-hour `resets_at` values further apart than this belong to different
 /// periods. Real history alternates `resets_at` by 1 s between polls.
@@ -38,6 +39,19 @@ pub(super) fn quota_left(work_root: &Path, now: i64) -> Vec<QuotaLeft> {
         })
     })
     .collect()
+}
+
+/// Every file [`quota_left`] reads: each provider's cached snapshot, then
+/// each provider's history (`quota/history/<provider>.jsonl`, where
+/// `read_history` reads it).
+pub(super) fn quota_inputs(work_root: &Path) -> [PathBuf; 4] {
+    let history = quota_dir(work_root).join("history");
+    [
+        provider_path(work_root, "claude"),
+        provider_path(work_root, "codex"),
+        history.join("claude.jsonl"),
+        history.join("codex.jsonl"),
+    ]
 }
 
 /// The provider's five-hour points of the last [`SLOPE_WINDOW_SECS`], oldest

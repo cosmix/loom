@@ -1,7 +1,8 @@
-use super::{newest_period, quota_left, FivePoint};
+use super::{newest_period, quota_inputs, quota_left, FivePoint};
 use crate::quota::cache::write_provider;
 use crate::quota::{ProviderQuota, QuotaWindow, WindowKind};
 use crate::tokens::model::{QuotaLeft, QuotaProvider};
+use crate::tokens::pass_memo::PassMemo;
 use crate::tokens::tests_fixture::{body, Fixture};
 use serde_json::{json, Value};
 use std::fs;
@@ -138,4 +139,67 @@ fn short_history_yields_an_entry_without_minutes() {
     write_history(&fx, "claude", &[row(NOW - 30, 62.0, Some(RESET), false)]);
 
     assert_eq!(quota_left(&fx.work_root, NOW), claude_left(None));
+}
+
+#[test]
+fn quota_inputs_are_the_files_the_quota_writers_create() {
+    let fx = Fixture::new();
+    let snapshot = ProviderQuota {
+        observed_at: NOW - 30,
+        windows: vec![],
+        plan: None,
+        error: None,
+    };
+    for provider in ["claude", "codex"] {
+        write_history(&fx, provider, &[row(NOW - 30, 62.0, Some(RESET), false)]);
+        write_provider(&fx.work_root, provider, &snapshot).expect("snapshot");
+    }
+
+    for path in quota_inputs(&fx.work_root) {
+        assert!(path.is_file(), "{} is not a quota file", path.display());
+    }
+}
+
+#[test]
+fn memo_reuses_quota_left_until_a_file_changes_or_30_s_pass() {
+    let fx = Fixture::new();
+    let steady = [
+        row(NOW - 1530, 52.0, Some(RESET), false),
+        row(NOW - 30, 62.0, Some(RESET), false),
+    ];
+    write_history(&fx, "claude", &steady);
+    let mut memo = PassMemo::new(&fx.work_root);
+
+    assert_eq!(
+        memo.quota_left(&fx.work_root, NOW + 2),
+        claude_left(Some(94))
+    );
+    assert_eq!(
+        quota_left(&fx.work_root, NOW + 31),
+        claude_left(Some(93)),
+        "a fresh estimate at NOW + 31"
+    );
+    assert_eq!(
+        memo.quota_left(&fx.work_root, NOW + 31),
+        claude_left(Some(94)),
+        "reused 29 s later"
+    );
+    assert_eq!(
+        memo.quota_left(&fx.work_root, NOW + 32),
+        claude_left(Some(93)),
+        "recomputed 30 s later"
+    );
+
+    let steeper = [
+        row(NOW - 1530, 52.0, Some(RESET), false),
+        row(NOW - 630, 60.0, Some(RESET), false),
+        row(NOW - 30, 72.0, Some(RESET), false),
+    ];
+    write_history(&fx, "claude", &steeper);
+
+    assert_eq!(
+        memo.quota_left(&fx.work_root, NOW + 33),
+        claude_left(Some(33)),
+        "recomputed when the history changed"
+    );
 }

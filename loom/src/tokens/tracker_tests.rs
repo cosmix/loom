@@ -5,7 +5,7 @@ use crate::tokens::accumulate::{AgentState, MESSAGE_TABLE_CAP};
 use crate::tokens::checkpoint::{Checkpoint, MAX_CHECKPOINT_BYTES};
 use crate::tokens::discover::Source;
 use crate::tokens::flow_build::build_flow;
-use crate::tokens::model::{flow_path, read_flow, AgentKind, TokenUsage, FLOW_FILE};
+use crate::tokens::model::{flow_path, read_flow, AgentKind, TokenUsage, BUCKET_SECS, FLOW_FILE};
 use crate::tokens::tail::{self, MAX_LINE_BYTES};
 use crate::tokens::tests_fixture::{
     agents_of, append, body, claude_line, stage, unix_now, usage, Fixture, SESSION_UUID,
@@ -194,7 +194,8 @@ fn flow_over_the_cap_is_not_written() {
 #[test]
 fn two_stages_sum_into_the_plan_and_decay() {
     let fx = Fixture::new();
-    let now = unix_now();
+    // The last second of a bucket: the rate's span is the full 300 s there.
+    let now = unix_now().div_euclid(BUCKET_SECS) * BUCKET_SECS - 1;
     fx.add_session("alpha", SESSION_UUID, &body(&[line("a", now - 60, 3000)]));
     let beta = body(&[line("b", now - 60, 1500)]);
     fx.add_session("beta", "02ed9f4c-608e-4e2c-8edf-05d26adcd4d6", &beta);
