@@ -219,12 +219,17 @@ impl AgentState {
                 effort,
                 usage,
             } => {
-                // An API-error row names the `<synthetic>` sentinel, not a model.
-                if let Some(model) = model.filter(|model| model != SYNTHETIC_MODEL) {
-                    self.model = Some(inline_safe(&model));
+                // An API-error row names the `<synthetic>` sentinel, not a model. A
+                // value that sanitizes to nothing leaves the current one, as a line
+                // without it does.
+                if let Some(model) = model
+                    .filter(|model| model != SYNTHETIC_MODEL)
+                    .and_then(|model| visible(&model))
+                {
+                    self.model = Some(model);
                 }
-                if let Some(effort) = effort {
-                    self.effort = Some(inline_safe(&effort));
+                if let Some(effort) = effort.and_then(|effort| visible(&effort)) {
+                    self.effort = Some(effort);
                 }
                 let spent = match message_id {
                     Some(id) => self.file.messages.increase(&id, &usage),
@@ -251,8 +256,8 @@ impl AgentState {
                 self.add(timestamp, &delta.to_usage());
             }
             CodexLine::TurnContext { model, effort } => {
-                self.model = Some(inline_safe(&model));
-                self.effort = effort.as_deref().map(inline_safe);
+                self.model = visible(&model);
+                self.effort = effort.as_deref().and_then(visible);
             }
             CodexLine::Unreadable => self.count_unreadable(),
             CodexLine::SessionMeta { .. } | CodexLine::Other => {}
@@ -305,6 +310,12 @@ impl AgentState {
             });
         }
     }
+}
+
+/// `value` made inline-safe, or `None` when nothing is left of it: a blank model or
+/// effort would show as an empty label and collide with an absent one.
+fn visible(value: &str) -> Option<String> {
+    Some(inline_safe(value)).filter(|safe| !safe.is_empty())
 }
 
 #[cfg(test)]

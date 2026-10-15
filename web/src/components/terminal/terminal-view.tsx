@@ -173,15 +173,16 @@ function Well({ stage, mode, state, hostRef, retry, onTakeControl }: WellProps) 
   );
 }
 
-/// The back arrow in a terminal header: returns to the details, as Esc does in view mode.
-export function BackButton({ onBack }: { onBack: () => void }) {
+/// The back arrow in a terminal header: returns to the details, as Esc does in view
+/// mode. In control mode Esc goes to the agent, so the tooltip leaves it out.
+export function BackButton({ onBack, mode = "view" }: { onBack: () => void; mode?: TerminalMode }) {
   return (
     <button
       type="button"
       aria-label="Back to details"
-      title="Back to details (Esc)"
+      title={mode === "control" ? "Back to details" : "Back to details (Esc)"}
       onClick={onBack}
-      className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground hover:bg-muted hover:text-foreground"
+      className="inline-flex size-6 items-center justify-center rounded-md text-muted-foreground outline-none hover:bg-muted hover:text-foreground focus-visible:ring-2 focus-visible:ring-ring/60"
     >
       <ArrowLeftIcon className="size-4" />
     </button>
@@ -210,7 +211,7 @@ function Head({
     <header className="terminal-head">
       <div className="flex min-w-0 flex-col gap-1.5">
         <div className="rise flex items-center gap-2" style={rise(0)}>
-          {onBack && <BackButton onBack={onBack} />}
+          {onBack && <BackButton onBack={onBack} mode={mode} />}
           <span className="eyebrow">Terminal</span>
         </div>
         <div className="rise flex flex-wrap items-baseline gap-x-3 gap-y-1" style={rise(1)}>
@@ -295,7 +296,7 @@ function Hint({
     return (
       <span className="terminal-hint" data-control="">
         every key reaches the agent ·{" "}
-        {frame === "dialog" ? "close with ✕ or the back button" : "release stops sending"}
+        {frame === "dialog" ? "leave with ← Back to details or ✕" : "release stops sending"}
       </span>
     );
   }

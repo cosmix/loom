@@ -38,6 +38,8 @@ pub(crate) fn sanitize_token_flow(flow: &mut TokenFlow) {
     for entry in &mut flow.models {
         flatten(&mut entry.model);
         entry.effort.iter_mut().for_each(flatten);
+        // A blank effort would show as an empty label and share a key with `None`.
+        entry.effort = entry.effort.take().filter(|effort| !effort.is_empty());
         clamp_usage(&mut entry.total);
     }
     for stage in &mut flow.stages {

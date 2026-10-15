@@ -33,6 +33,16 @@ pub(super) struct Checkpoint {
     pub(super) threads: BTreeMap<String, ThreadLookup>,
 }
 
+/// The checkpoint's `version` alone.
+#[derive(Deserialize)]
+struct VersionProbe {
+    version: u32,
+}
+
+fn unparseable(error: serde_json::Error) -> String {
+    format!("checkpoint is unparseable ({error})")
+}
+
 impl Checkpoint {
     /// No state: the next pass reads every file from the start.
     pub(super) fn empty() -> Self {
@@ -71,12 +81,15 @@ impl Checkpoint {
             }
             Err(error) => return Err(format!("checkpoint is unreadable ({error:#})")),
         };
-        let checkpoint = serde_json::from_slice::<Self>(&bytes)
-            .map_err(|error| format!("checkpoint is unparseable ({error})"))?;
-        if checkpoint.version != CHECKPOINT_VERSION {
-            return Err(format!("checkpoint is version {}", checkpoint.version));
+        // The version first: an older checkpoint lacks fields the current one
+        // requires, so parsing it whole would blame a missing field.
+        let probe = serde_json::from_slice::<VersionProbe>(&bytes).map_err(unparseable)?;
+        if probe.version != CHECKPOINT_VERSION {
+            return Err(format!("checkpoint is version {}", probe.version));
         }
-        Ok(Some(checkpoint))
+        serde_json::from_slice::<Self>(&bytes)
+            .map(Some)
+            .map_err(unparseable)
     }
 
     /// [`Self::load_reporting`] without the reason.

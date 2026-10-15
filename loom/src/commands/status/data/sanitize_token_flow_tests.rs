@@ -168,6 +168,22 @@ fn model_entries_are_flattened_and_clamped() {
 }
 
 #[test]
+fn an_effort_that_flattens_to_nothing_becomes_absent() {
+    let mut flow = flow_of(1, vec![1]);
+    flow.models = vec![
+        model_entry("blank", Some(" \u{1b}\n\u{202e} "), 3),
+        model_entry("empty", Some(""), 4),
+        model_entry("kept", Some("high"), 5),
+    ];
+
+    sanitize_token_flow(&mut flow);
+
+    assert_eq!(flow.models[0], model_entry("blank", None, 3));
+    assert_eq!(flow.models[1], model_entry("empty", None, 4));
+    assert_eq!(flow.models[2], model_entry("kept", Some("high"), 5));
+}
+
+#[test]
 fn models_are_cut_to_the_row_cap_keeping_the_first_entries() {
     let mut flow = flow_of(1, vec![1]);
     flow.models = (0..MAX_MODEL_ROWS + 5)

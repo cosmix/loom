@@ -309,6 +309,60 @@ fn codex_turn_context_without_effort_clears_the_previous_one() {
     assert_eq!(model_key(&agent, "gpt-6.1-sol", None), usage(50, 0, 0, 5));
 }
 
+fn sonnet_effort_line(id: &str, effort: &str, spent: &TokenUsage) -> String {
+    claude_line_effort(id, NOW, SONNET, effort, spent)
+}
+
+fn turn_context(model: &str, effort: &str) -> String {
+    json!({"type": "turn_context", "payload": {"model": model, "effort": effort}}).to_string()
+}
+
+#[test]
+fn a_claude_effort_that_sanitizes_to_nothing_leaves_the_current_one() {
+    let mut agent = claude_agent();
+    agent.ingest(&sonnet_effort_line("m1", "high", &usage(1, 2, 3, 4)));
+    agent.ingest(&sonnet_effort_line("m2", " \t\n ", &usage(1, 1, 1, 1)));
+
+    assert_eq!(agent.effort.as_deref(), Some("high"));
+    assert_eq!(model_key(&agent, SONNET, Some("high")), usage(2, 3, 4, 5));
+}
+
+#[test]
+fn a_claude_model_that_sanitizes_to_nothing_leaves_the_current_one() {
+    let mut agent = claude_agent();
+    agent.ingest(&claude_line("m1", NOW, SONNET, &usage(1, 2, 3, 4)));
+    agent.ingest(&claude_line("m2", NOW, "  \n ", &usage(1, 1, 1, 1)));
+
+    assert_eq!(agent.model.as_deref(), Some(SONNET));
+    assert_eq!(model_key(&agent, SONNET, None), usage(2, 3, 4, 5));
+
+    let mut bare = claude_agent();
+    bare.ingest(&claude_line("m3", NOW, "\t", &usage(1, 0, 0, 1)));
+    assert_eq!(bare.model, None);
+    assert_eq!(model_key(&bare, UNKNOWN_MODEL, None), usage(1, 0, 0, 1));
+}
+
+#[test]
+fn a_codex_model_or_effort_that_sanitizes_to_nothing_is_absent() {
+    let mut no_effort = AgentState::new(AgentKind::Codex, "/r/rollout.jsonl");
+    no_effort.ingest(&turn_context("gpt-6.1-sol", "  \n"));
+    no_effort.ingest(&codex_count(NOW, [100, 40, 10]));
+    assert_eq!(no_effort.effort, None);
+    assert_eq!(
+        model_key(&no_effort, "gpt-6.1-sol", None),
+        usage(60, 0, 40, 10)
+    );
+
+    let mut no_model = AgentState::new(AgentKind::Codex, "/r/rollout.jsonl");
+    no_model.ingest(&turn_context(" \t ", "xhigh"));
+    no_model.ingest(&codex_count(NOW, [100, 40, 10]));
+    assert_eq!(no_model.model, None);
+    assert_eq!(
+        model_key(&no_model, UNKNOWN_MODEL, Some("xhigh")),
+        usage(60, 0, 40, 10)
+    );
+}
+
 #[test]
 fn restart_clears_the_model_split() {
     let mut agent = claude_agent();

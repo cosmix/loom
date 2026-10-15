@@ -80,6 +80,30 @@ fn version_one_checkpoint_is_refused_with_its_reason() {
 }
 
 #[test]
+fn a_real_version_one_body_is_refused_for_its_version_not_a_missing_field() {
+    let fx = Fixture::new();
+    let dir = fx.tokens_dir();
+    // Version 1 agents had neither `effort` nor `by_model`.
+    let mut body = serde_json::to_value(populated()).expect("serialize");
+    body["version"] = serde_json::json!(1);
+    for agents in body["stages"].as_object_mut().expect("stages").values_mut() {
+        for agent in agents.as_object_mut().expect("agents").values_mut() {
+            let agent = agent.as_object_mut().expect("agent");
+            agent.remove("effort");
+            agent.remove("by_model");
+        }
+    }
+    assert!(serde_json::from_value::<Checkpoint>(body.clone()).is_err());
+    fs::write(dir.join(CHECKPOINT_FILE), body.to_string()).expect("write");
+
+    let (loaded, warning) = Checkpoint::load_reporting(&dir);
+
+    assert_eq!(loaded, Checkpoint::empty());
+    let warning = warning.expect("a reason");
+    assert!(warning.starts_with("checkpoint is version 1;"), "{warning}");
+}
+
+#[test]
 fn symlinked_checkpoint_is_not_read_through() {
     let fx = Fixture::new();
     let dir = fx.tokens_dir();

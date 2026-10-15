@@ -3,15 +3,18 @@
 
 use crossterm::event::{KeyCode, KeyModifiers};
 
-use super::tests::{contains, fixture, render_view, screen};
+use super::tests::{contains, fixture, make_stage, render_view, screen};
 use super::LedgerView;
 use crate::commands::status::data::{StageSummary, StatusData};
 use crate::commands::status::render::attention_model::attention_entries;
 use crate::commands::status::ui::tui::event_handler::{handle_key_event, KeyEventResult};
 use crate::commands::status::ui::tui::state::{GraphState, TuiActivityLog};
+use crate::models::stage::StageStatus;
 use crate::plan::graph::levels;
+use crate::quota::{ProviderQuota, QuotaSnapshot, QuotaWindow, WindowKind};
 use crate::tokens::{
-    AgentFlow, AgentKind, PlanFlow, QuotaLeft, QuotaProvider, StageFlow, TokenFlow, TokenUsage,
+    AgentFlow, AgentKind, ModelUsage, PlanFlow, QuotaLeft, QuotaProvider, StageFlow, TokenFlow,
+    TokenUsage,
 };
 
 const NOW: i64 = 1_788_523_200;
@@ -237,4 +240,99 @@ fn t_toggles_the_tokens_pane() {
 fn footer_hints_offer_the_tokens_key() {
     let rows = render_view(&fixture(), 132, 40, false);
     assert!(rows.last().unwrap().ends_with("t tokens · q quit"));
+}
+
+/// One active stage with a main agent and a subagent (four live rows) and three
+/// models with one effort each (a seven-row by-model block).
+fn live_and_models_flow() -> TokenFlow {
+    let mut flow = flow_data().tokens.unwrap();
+    let mut stage = stage_flow("s-executing");
+    stage.agents.truncate(2);
+    flow.stages = vec![stage];
+    flow.models = [
+        ("claude-sonnet-5-5", "medium"),
+        ("claude-opus-5-5", "xhigh"),
+        ("gpt-6.1-sol", "xhigh"),
+    ]
+    .into_iter()
+    .map(|(model, effort)| ModelUsage {
+        model: model.to_owned(),
+        effort: Some(effort.to_owned()),
+        total: usage(50_000, 900_000, 13_000_000, 160_000),
+    })
+    .collect();
+    flow
+}
+
+/// Render the pane over one executing stage, one activity entry and a Claude quota
+/// line, so the footer takes two rows.
+fn render_pane_scenario(width: u16, height: u16) -> Vec<String> {
+    let data = StatusData {
+        stages: vec![make_stage("s-executing", StageStatus::Executing)],
+        tokens: Some(live_and_models_flow()),
+        quota: QuotaSnapshot {
+            claude: Some(ProviderQuota {
+                observed_at: NOW,
+                windows: vec![QuotaWindow {
+                    kind: WindowKind::FiveHour,
+                    used_percent: 48.0,
+                    resets_at: Some(NOW + 7_200),
+                }],
+                plan: None,
+                error: None,
+            }),
+            codex: None,
+        },
+        ..StatusData::default()
+    };
+    let levels = levels::compute_all_levels(
+        &data.stages,
+        |stage| stage.id.as_str(),
+        |stage| &stage.dependencies,
+    );
+    let ordered: Vec<&StageSummary> = data.stages.iter().collect();
+    let mut activity = TuiActivityLog::new();
+    activity.update(&ordered);
+    let view = LedgerView {
+        data: &data,
+        levels: &levels,
+        ordered: &ordered,
+        attention: &[],
+        activity: &activity,
+        alerts: &[],
+        spinner: '⠋',
+        scroll_y: 0,
+        legend_open: false,
+        tick_age_secs: Some(2),
+        last_error: None,
+        now_epoch: NOW,
+        scrollable: false,
+        show_tokens: true,
+    };
+    screen(width, height, &view)
+}
+
+#[test]
+fn a_short_terminal_keeps_the_live_rows_when_the_model_block_does_not_fit() {
+    // The whole pane is twelve rows, which leaves the table none at 24 rows; the four
+    // live rows alone leave it eight.
+    let rows = render_pane_scenario(100, 24);
+
+    assert!(contains(&rows, "fresh per 30 s cell"), "{rows:#?}");
+    assert!(
+        rows.iter()
+            .any(|row| row.contains("main") && row.contains("live")),
+        "{rows:#?}"
+    );
+    assert!(!contains(&rows, "BY MODEL"), "{rows:#?}");
+    assert!(!contains(&rows, "gpt-6.1-sol"), "{rows:#?}");
+}
+
+#[test]
+fn a_tall_terminal_shows_the_live_rows_and_the_model_block() {
+    let rows = render_pane_scenario(100, 40);
+
+    assert!(contains(&rows, "fresh per 30 s cell"), "{rows:#?}");
+    assert!(contains(&rows, "BY MODEL"), "{rows:#?}");
+    assert!(contains(&rows, "gpt-6.1-sol"), "{rows:#?}");
 }

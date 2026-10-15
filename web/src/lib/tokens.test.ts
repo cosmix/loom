@@ -18,6 +18,7 @@ import {
   quotaLeftText,
   rollingRate,
   stageFlow,
+  wholePercents,
 } from "@/lib/tokens";
 
 function usage(input: number, cache_write: number, cache_read: number, output: number): TokenUsage {
@@ -272,6 +273,17 @@ it("rollingRate ramps up over a young series and settles at the full-window rate
   expect(rate[11]).toBe(60);
 });
 
+it("rollingRate clamps a non-positive bucket length to one second", () => {
+  const series = [10, 20, 30];
+
+  for (const bucketSecs of [0, -30]) {
+    const rate = rollingRate(series, bucketSecs);
+
+    expect(rate.filter((value) => !Number.isFinite(value))).toEqual([]);
+    expect(rate).toEqual(rollingRate(series, 1));
+  }
+});
+
 it("cumulativeSeries ends at the total and never goes below zero", () => {
   expect(cumulativeSeries(100, [10, 20, 30])).toEqual([50, 70, 100]);
   expect(cumulativeSeries(10, [20, 30])).toEqual([0, 10]);
@@ -294,4 +306,29 @@ it("liveCounts counts agents active within the trailing window", () => {
   const idle = { ...codex, series: [] };
 
   expect(liveCounts([burst, idle], 8)).toEqual([0, 0, 0, 1, 1, 1, 1, 0]);
+});
+
+it("wholePercents gives three equal shares 34, 33, 33", () => {
+  expect(wholePercents([1 / 3, 1 / 3, 1 / 3])).toEqual([34, 33, 33]);
+});
+
+it("wholePercents gives eight equal shares 13 for the first four and 12 for the rest", () => {
+  const percents = wholePercents(Array<number>(8).fill(1 / 8));
+
+  expect(percents).toEqual([13, 13, 13, 13, 12, 12, 12, 12]);
+  expect(percents.reduce((total, percent) => total + percent, 0)).toBe(100);
+});
+
+it("wholePercents leaves the fixture's shares at 50, 33 and 17", () => {
+  expect(wholePercents(modelShares(models).map((s) => s.share))).toEqual([50, 33, 17]);
+});
+
+it("wholePercents gives a single model 100 and no models none", () => {
+  expect(wholePercents([1])).toEqual([100]);
+  expect(wholePercents([])).toEqual([]);
+});
+
+it("wholePercents hands the missing points to the largest remainders", () => {
+  expect(wholePercents([0.256, 0.254, 0.49])).toEqual([26, 25, 49]);
+  expect(wholePercents([0.29, 0.71])).toEqual([29, 71]);
 });
