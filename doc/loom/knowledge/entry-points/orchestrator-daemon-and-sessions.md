@@ -236,11 +236,12 @@ The legacy `ToolEvent` reader remains able to consume an older `.loom/work/tool-
 ## Token Flow (`loom/src/tokens/`)
 
 - `loom/src/tokens/model.rs` - wire and file model (`TokenFlow`, `TokenUsage`, `read_flow`, size and staleness consts)
-- `loom/src/tokens/tracker.rs` - `spawn_token_tracker`, the 30 s pass, `flow.json` and checkpoint writes
+- `loom/src/tokens/tracker.rs` - `spawn_token_tracker`, the 5 s pass, `flow.json` and checkpoint writes
+- `loom/src/tokens/pass_memo.rs` - `PassMemo`: what a pass reuses from the last (checkpoint, unchanged flow, quota time left)
 - `loom/src/tokens/discover.rs`, `tail.rs`, `accumulate.rs`, `claude_line.rs`, `codex_line.rs` - sources, incremental reads, dedupe, line parsers
 - `loom/src/tokens/flow_build.rs`, `quota_left.rs`, `quota_points.rs`, `checkpoint.rs` - buckets to rates and series, time-left estimate, restart state
 - `loom/src/commands/status/data/sanitize_token_flow.rs` - collector-side hygiene of the flow
-- `loom/src/commands/status/ui/tui/ledger/tokens_pane.rs`, `layout_tokens.rs` - the `t` pane and the row budget
-- `web/src/lib/tokens.ts`, `web/src/components/token-flow-panel.tsx`, `stage-tokens.tsx`, `graph/node-tokens.tsx` - web helpers and surfaces
+- `loom/src/commands/status/ui/tui/ledger/tokens_pane.rs`, `tokens_models.rs`, `layout_tokens.rs` - the `t` pane, its by-model block and the row budget
+- `web/src/lib/tokens.ts`, `web/src/components/token-flow-panel.tsx`, `token-models.tsx`, `stage-tokens.tsx`, `graph/node-tokens.tsx` - web helpers and surfaces
 
 Design and limits: [architecture/token-flow-sources.md](../architecture/token-flow-sources.md).

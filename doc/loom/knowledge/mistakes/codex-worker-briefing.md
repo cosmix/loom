@@ -92,3 +92,11 @@ waiting.
 
 **Prevention:** forward a codex unit that consumes a parallel worker's new module only after that module
 exists, or pin the interface inline in the brief so codex does not wait for it.
+
+## The Codex Lane Fails Inside a Stage Sandbox With No Network (2026-10-15)
+
+**What happened:** token-core and web-insights each forwarded a unit through `loom-codex-forwarder` and got `workspace routing discovery failed` (exit 125, no files written); both re-delegated the unit to `loom-software-engineer` (sonnet).
+
+**Why:** the stage sandbox grants no network, which the wrapper needs for its workspace routing.
+
+**Prevention:** when the signal's Sandbox section says "No network access", route terra-tier units to sonnet and luna-tier units to haiku from the start; a codex unit then costs a brief and a boot and returns nothing.

@@ -172,6 +172,9 @@ dialog's focus trap. In `view` mode nothing is stopped: Escape reaches `StageMod
 `HistoryView` never reports a frame, so `StageModal` keeps `IDLE_FRAME` (mode `view`) and Esc
 leaves the history view the same way. Both footers carry the hint `Esc back to details` in the
 dialog frame (`Hint` in `terminal-view.tsx`, the footer of `history-view.tsx`).
+Both views also put a `BackButton` in the dialog header (`terminal-view.tsx:178`, `aria-label`
+"Back to details", its `onBack` is `toDetails`): the way back in control mode, where Esc goes to
+the agent, and there the control hint reads "leave with ← Back to details or ✕".
 
 ## Viewer wheel sensitivity (2026-09-26)
 

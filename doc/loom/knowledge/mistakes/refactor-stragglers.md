@@ -144,3 +144,11 @@ before the parent's import can go.
 **Prevention:** Before raising a design question, or extending a method, on the strength of a doc comment that names a consumer, confirm the consumer exists: `loom map --impact <symbol>`, then `rg -n '<symbol>\(' loom/src` when the graph reports no resolved edge. When the operator asks what a question means, answer that first and in full before reporting other progress.
 
 **Fix:** `canonical_name`, its test and its doc comment were deleted. A future backend that needs a short language id can use the source graph's dialect ids (`context/extract/dialect.rs::DIALECTS`).
+
+## A Rate-Formula Change Broke Exact-Value Assertions the Plan Did Not List (2026-10-15)
+
+**What happened:** token-core replaced the fixed 300 s rate window with a span-based one (`flow_build.rs` `rate`). The plan's test-integrity list pinned only `token_flow_contracts.rs` and `flow_build_tests.rs`; `loom/tests/token_flow_bounds_contracts.rs:17` (`unix_now`) and `tracker_tests.rs` `two_stages_sum_into_the_plan_and_decay` also assert exact rates and broke about 1 run in 30, depending on where `now` fell inside a bucket.
+
+**Why:** an exact-rate assertion that reads `unix_now()` depends on the bucket phase, and a search for the old symbol finds none of them.
+
+**Prevention:** when a rate formula changes, `rg` every exact-rate assertion and every fixture that uses `unix_now()`, not only the files the plan lists, and run each such test repeatedly.
