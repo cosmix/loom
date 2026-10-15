@@ -172,6 +172,18 @@ pub(crate) mod tests {
         }
     }
 
+    /// A directory to pin with [`TmuxTmpDirGuard`] where a real tmux server
+    /// will start. Under `/tmp`, not `$TMPDIR`: on macOS `$TMPDIR` is a
+    /// ~50-byte `/var/folders/...` path, and `tmux-<uid>/loom-<session-id>`
+    /// below it takes the socket path past the 104-byte `sun_path` limit.
+    /// `$TMPDIR` is the fallback only where `/tmp` cannot be written.
+    pub(crate) fn server_socket_dir() -> TempDir {
+        tempfile::Builder::new()
+            .tempdir_in("/tmp")
+            .or_else(|_| TempDir::new())
+            .unwrap()
+    }
+
     /// Ends the tmux server on a socket when dropped, whether the test passed
     /// or panicked. loom's servers run with `remain-on-exit on`, so a server a
     /// failed test leaves behind never exits on its own.

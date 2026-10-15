@@ -25,6 +25,9 @@
 //! `remain-on-exit` keeps the pane, and with it the server, after an agent exits
 //! on its own, so there is still something to capture. The server then lives
 //! until [`TmuxBackend::kill_session`] ends it, which every end path reaches.
+//! The dead pane holds only what tmux read before it reaped the agent: tmux
+//! closes the pane's terminal then, so output still unread at that moment (a
+//! loaded host leaves some) never reaches the history.
 //!
 //! [`TmuxBackend::kill_session`]: super::TmuxBackend::kill_session
 

@@ -24,6 +24,8 @@ fn repo() -> TempDir {
     git_in(root, &["config", "user.name", "t"]);
     git_in(root, &["config", "commit.gpgsign", "false"]);
     git_in(root, &["config", "gpg.format", "openpgp"]);
+    // On by default on macOS, where it would store `e` + U+0301 as `é`.
+    git_in(root, &["config", "core.precomposeunicode", "false"]);
     stage(root, "README.md", "base\n");
     git_in(root, &["commit", "-m", "init"]);
     git_in(root, &["checkout", "-b", "loom/s1"]);
