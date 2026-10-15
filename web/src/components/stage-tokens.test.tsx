@@ -31,6 +31,9 @@ describe("StageTokens", () => {
     expect(lanes.filter((lane) => lane.textContent?.includes("codex"))).toHaveLength(1);
     expect(lanes[0]?.textContent).toContain("main session");
     expect(lanes[0]?.textContent).toContain("main-01ed9f4c · claude-opus-5-5 · live");
+    const dot = within(lanes[0] as HTMLElement).getByTestId("agent-dot");
+    expect(dot.dataset.state).toBe("live");
+    expect(dot.classList).toContain("dot-live");
   });
 
   it("shows the four chips from the stage flow", () => {
@@ -68,6 +71,9 @@ describe("StageTokens", () => {
     const lane = screen.getAllByTestId("token-lane")[2];
     expect(lane?.textContent).toContain("· idle");
     expect(lane?.textContent).toContain("—");
+    const dot = within(lane as HTMLElement).getByTestId("agent-dot");
+    expect(dot.dataset.state).toBe("idle");
+    expect(dot.classList).not.toContain("dot-live");
     expect(screen.getByText("2 of 3")).toBeTruthy();
   });
 

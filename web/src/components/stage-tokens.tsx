@@ -83,6 +83,12 @@ function Lane({ agent, series, max }: { agent: AgentFlow; series: number[]; max:
     >
       <div className="flex min-w-0 flex-col">
         <span className="flex items-center gap-1.5 text-sm font-medium">
+          <span
+            aria-hidden="true"
+            data-testid="agent-dot"
+            data-state={state}
+            className={`size-2 shrink-0 rounded-full bg-(--tone) ${agent.active ? "tone-completed dot-live" : "tone-dimmed"}`}
+          />
           <span className="truncate" title={label}>
             {label}
           </span>
