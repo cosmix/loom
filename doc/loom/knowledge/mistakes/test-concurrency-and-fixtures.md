@@ -215,3 +215,11 @@ refusal, not on the code under test. `relay_e2e.rs` uses a directory outside `/t
 **Prevention:** a fixture timestamp read by a now-relative filter is computed from `Utc::now()` (one hour ago, say). A literal date belongs only in a test that also pins the window, for example `time_range::parse_since_at(spec, fixed_now)`. When a test fails for the first time with no code change, compare its date literals with the clock before anything else.
 
 **Fix:** the fixture stamps its entry relative to `Utc::now()`; the old `UNIX_EPOCH` mtime, which is what the test is about, stays.
+
+## A Deadline Raised for a Fake Child's Start-Up Only Moves the Flake (2026-10-15)
+
+**What happened:** `quota::codex::tests::a_hanging_server_times_out_and_the_child_is_killed` and the flood test passed alone and failed in the full `--all-targets` run (pid file NotFound at `codex_tests.rs:133`; the flood test at its 10 s deadline). Integration-verify raised the hanging-server deadline from 1 s to 3 s, and it failed again: under full-suite load the fake `sh` child ran its first line 5 to 10 s or more after the spawn, so the process-group SIGKILL (`codex.rs:300-307`) landed before it wrote its pid.
+
+**Why:** a fixed deadline races process start-up, so raising it moves the threshold and nothing else. `codex_tests.rs:5-9` already documents multi-second fake-child start-up (`REPLY_DEADLINE` 60 s).
+
+**Prevention:** a test that reads a file its child writes waits for that file and times from the child's real start (a watcher that sees the pid file), never from the spawn call. The helper is `poll_timed_from_child_start` in `loom/src/quota/codex_tests.rs`. Never size such deadlines in single seconds.

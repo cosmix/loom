@@ -41,3 +41,13 @@ markdownlint fixer, leaving an unstaged edit to the plan file after every commit
 **Why:** `conventions/model-and-effort-config.md#key-level-vs-section-level-fallback` and the `config_api/workspace.rs` doc comments describe section-level shadowing as deliberate; the proposal took that as a constraint instead of checking it against the precedence the operator expects.
 **Prevention:** Every config key resolves per key, project -> user -> built-in: a tier that does not set a key resolves to, and displays, the next tier down, whether or not its section exists. A rule that derives built-ins for a key a present section omits is a defect to raise with the operator, not a design to preserve.
 **Fix:** Operator decision 2026-09-13: `[terminal]` and `[context]` move to key-level fallthrough in the runtime resolvers (`fs/work_dir/config_sections.rs`) and in `/api/config` (`config_api/workspace.rs`, `entries.rs`).
+
+## `as const satisfies` Narrows an Optional Field Away and Fails tsc (2026-10-15)
+
+**What happened:** web-insights typed `MIX` in `web/src/components/token-flow-panel.tsx:32` as `as const satisfies ReadonlyArray<{hint?: string}>`. Destructuring `hint` from the narrowed union failed `tsc` with TS2339.
+
+**Why:** the worker skipped the typecheck under the subagent rule of one narrow check.
+
+**Prevention:** a const array whose optional field sits on only some entries takes an explicit type annotation, not `as const satisfies`. Run the typecheck before reporting a TSX unit done.
+
+**Fix:** `MIX` is annotated.

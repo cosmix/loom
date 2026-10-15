@@ -369,3 +369,9 @@ TMPDIR placement is only one of two leaks into a live session: even with TMPDIR 
 **Prevention:** never `pkill -f` or `pgrep -f` a pattern typed literally on the same command line. Stop a background task by its task id (TaskStop) or its PID, or use the bracket form `pkill -f '[v]ite --port 5199'`, whose literal text no longer matches its own regex. Never write a wait loop for a background Bash task: its completion notification is the wait.
 
 **Fix:** re-run the lost commands on their own; `pgrep -af '[v]ite --port 5199'` confirms the target is gone. A stuck wait loop is stopped with TaskStop.
+
+## An Empty Size-Scan Result Can Mean the Scanner Never Ran (2026-10-15)
+
+**What happened:** a verifier's function-length scan printed nothing because the file list was passed as an unquoted `$files` in zsh, which does not word-split, so the script received one bogus path and skipped it. Silence read as "no function over the limit".
+
+**Prevention:** sanity-check a scanner with a lower threshold before trusting an empty result, and pass file lists through direct command substitution or `${=files}` in zsh.

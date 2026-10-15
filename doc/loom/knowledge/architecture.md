@@ -219,7 +219,7 @@ and the read-path merge: [architecture/memory-spool.md](architecture/memory-spoo
 
 ## Quota Poller
 
-A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoint and `codex app-server` every 180 s and caches one `ProviderQuota` per provider under `.loom/work/quota/`; `StatusData.quota` is read from that cache, never polled, and rendered in the `--live` and `--web` footers. Sources, backoff, cache hygiene, and the token-handling rules: [architecture/quota-poller.md](architecture/quota-poller.md). A second daemon thread (`loom/src/tokens/tracker.rs`) reads stage transcripts every 30 s into `.loom/work/tokens/flow.json`, which `StatusData.tokens` carries to the TUI and web (fresh tokens, rates, series, quota time left): [architecture/token-flow-sources.md](architecture/token-flow-sources.md).
+A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoint and `codex app-server` every 180 s and caches one `ProviderQuota` per provider under `.loom/work/quota/`; `StatusData.quota` is read from that cache, never polled, and rendered in the `--live` and `--web` footers. Sources, backoff, cache hygiene, and the token-handling rules: [architecture/quota-poller.md](architecture/quota-poller.md). A second daemon thread (`loom/src/tokens/tracker.rs`) reads stage transcripts every 5 s into `.loom/work/tokens/flow.json`, which `StatusData.tokens` carries to the TUI and web (fresh tokens, rates, series, quota time left): [architecture/token-flow-sources.md](architecture/token-flow-sources.md).
 
 ## Web Dashboard
 

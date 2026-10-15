@@ -128,3 +128,11 @@ the only reason attribution does not reach every commit.
 **Prevention**: check `git commit`'s own exit status (redirect its output to a file and test `$?`, or grep the output for `error`), and confirm with `git log --oneline -1` before staging the next group.
 
 **Fix**: unstaged, fixed the doc link, committed each group with its exit status checked.
+
+## An Integration-Verify Stage Spent 1.5M Subagent Tokens Re-Proving What the Sandbox Cannot Pass (2026-10-15)
+
+**What happened:** integration-verify of the live-token-insights plan ran 3 full gate rounds and 5 review rounds and spent about 1.5M subagent tokens.
+
+**Why:** (1) the full `cargo test` criterion cannot pass in the stage sandbox (about 60 environment failures: `ps`, the sysctl boot id, PTY, `/dev/fd`), and every opus verifier round re-proved that; (2) gate rounds ran in parallel with review rounds, which then produced more edits; (3) optional suggestions were implemented, which widened the review surface; (4) a guessed 1 s to 3 s deadline fix and a `bucket_secs` clamp that contradicted a base assertion (`sanitize_token_flow_tests.rs:76`, which test integrity forbids editing) each cost a round.
+
+**Prevention:** settle first whether each criterion is satisfiable in the sandbox, and block or dispute early when not. Batch every fix, then run one gate and one final review. Implement only findings and the suggestions the signal lists. Read the existing assertions before briefing a behaviour change. Environment failures: [Seatbelt Denials Read as Build Warnings and Test Failures](sandbox-tooling-and-network.md#seatbelt-denials-read-as-build-warnings-and-test-failures-that-are-environment-not-code-2026-10-15).

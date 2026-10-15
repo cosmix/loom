@@ -41,3 +41,11 @@ test pollution.
 **Prevention:** a test that can reach a HOME-resolving writer runs under a scratch HOME: `#[serial]` with an env guard, `startup_repairs_isolated`, or `helpers::create_worktree_isolated` in integration tests. To detect a leak, run `HOME=$(mktemp -d) CARGO_HOME=~/.cargo RUSTUP_HOME=~/.rustup cargo test --no-fail-fast` and list the scratch HOME afterwards; it must stay empty. `tests/integration/home_isolation.rs` pins the redirect.
 
 **Fix:** the tests above now run under a scratch HOME; `home_isolation.rs` asserts that `loom repair --fix` with `HOME` redirected installs into the scratch HOME. The existing `/tmp/.tmp*` entries in an operator's `~/.claude.json` are not removed automatically.
+
+## Credential-Lookup Tests Read the Host Keychain and Print the Real Token (2026-10-15)
+
+**What happened:** the `quota::credentials` tests are not hermetic on a logged-in Mac. `access_token` asks the macOS keychain (`loom/src/quota/credentials.rs:41-43`) before the temp `HOME`, so the five `access_token` tests failed and `a_token_present_in_the_credentials_file_is_returned` printed the host's live OAuth token in its `assert_eq!` output, into every captured cargo test log. Integration-verify deleted the leaked log and injected the keychain source in the tests.
+
+**Why:** the tests stubbed `HOME` only, and the lookup has a second host-global source.
+
+**Prevention:** a test of a credential lookup stubs every host secret source (keychain, environment, file), never only `HOME`. Treat a cargo test log captured on a macOS host as secret-bearing: delete it, never commit or quote it, and never assert with `assert_eq!` on a value that can be a host secret.
