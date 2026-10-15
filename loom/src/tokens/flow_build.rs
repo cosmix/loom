@@ -4,16 +4,15 @@
 use super::accumulate::{AgentState, StageAgents};
 use super::discover::{CODEX_PREFIX, MAIN_PREFIX};
 use super::model::{
-    AgentFlow, AgentKind, PlanFlow, StageFlow, TokenFlow, TokenUsage, ACTIVE_BUCKETS, BUCKET_SECS,
-    MAX_FLOW_BYTES, PLAN_SERIES_LEN, RATE_BUCKETS, STAGE_SERIES_LEN,
+    AgentFlow, AgentKind, ModelUsage, PlanFlow, StageFlow, TokenFlow, TokenUsage, ACTIVE_BUCKETS,
+    BUCKET_SECS, MAX_FLOW_BYTES, MAX_MODEL_ROWS, OTHER_MODEL, PLAN_SERIES_LEN, RATE_BUCKETS,
+    STAGE_SERIES_LEN,
 };
 use anyhow::{Context, Result};
 use std::collections::{BTreeMap, HashMap};
 
 /// Characters of the session uuid or thread id a short agent id keeps.
 const SHORT_ID_CHARS: usize = 8;
-/// Minutes the rate window spans: the divisor of a rate.
-const RATE_MINUTES: u64 = (RATE_BUCKETS as u64 * BUCKET_SECS as u64) / 60;
 
 type Buckets = BTreeMap<i64, TokenUsage>;
 
@@ -29,7 +28,7 @@ pub(super) fn build_flow(stages: &BTreeMap<String, StageAgents>, now: i64) -> To
         for agent in agents.values() {
             unreadable_lines = unreadable_lines.saturating_add(agent.unreadable);
         }
-        let (flow, stage_buckets) = stage_flow(stage_id, agents, now_bucket);
+        let (flow, stage_buckets) = stage_flow(stage_id, agents, now);
         total.add(&flow.total);
         merge(&mut buckets, &stage_buckets);
         flows.push(flow);
@@ -39,10 +38,11 @@ pub(super) fn build_flow(stages: &BTreeMap<String, StageAgents>, now: i64) -> To
         bucket_secs: BUCKET_SECS,
         plan: PlanFlow {
             total,
-            rate: rate(&buckets, now_bucket),
+            rate: rate(&buckets, now, now_bucket),
             series: series(&buckets, now_bucket, PLAN_SERIES_LEN),
         },
         stages: flows,
+        models: model_totals(stages),
         quota_left: Vec::new(),
         unreadable_lines,
     }
@@ -65,26 +65,29 @@ pub(super) fn fit_flow(flow: &mut TokenFlow) -> Result<Option<String>> {
 }
 
 /// One stage's flow and its summed buckets.
-fn stage_flow(stage_id: &str, agents: &StageAgents, now_bucket: i64) -> (StageFlow, Buckets) {
+fn stage_flow(stage_id: &str, agents: &StageAgents, now: i64) -> (StageFlow, Buckets) {
+    let now_bucket = now.div_euclid(BUCKET_SECS);
     let mut total = TokenUsage::default();
     let mut buckets = Buckets::new();
     let mut flows = Vec::with_capacity(agents.len());
     for (id, agent) in ordered(agents) {
         total.add(&agent.total);
         merge(&mut buckets, &agent.buckets);
-        flows.push(agent_flow(id, agent, now_bucket));
+        flows.push(agent_flow(id, agent, now));
     }
     let flow = StageFlow {
         stage_id: stage_id.to_owned(),
         total,
-        rate: rate(&buckets, now_bucket),
+        rate: rate(&buckets, now, now_bucket),
         series: series(&buckets, now_bucket, STAGE_SERIES_LEN),
+        hit_series: hit_series(&buckets, now_bucket, STAGE_SERIES_LEN),
         agents: flows,
     };
     (flow, buckets)
 }
 
-fn agent_flow(id: String, agent: &AgentState, now_bucket: i64) -> AgentFlow {
+fn agent_flow(id: String, agent: &AgentState, now: i64) -> AgentFlow {
+    let now_bucket = now.div_euclid(BUCKET_SECS);
     let series = series(&agent.buckets, now_bucket, STAGE_SERIES_LEN);
     let active = series
         .iter()
@@ -98,7 +101,7 @@ fn agent_flow(id: String, agent: &AgentState, now_bucket: i64) -> AgentFlow {
         model: agent.model.clone(),
         active,
         total: agent.total,
-        rate: rate(&agent.buckets, now_bucket),
+        rate: rate(&agent.buckets, now, now_bucket),
         series,
     }
 }
@@ -162,20 +165,105 @@ fn series(buckets: &Buckets, now_bucket: i64, len: usize) -> Vec<u64> {
         .collect()
 }
 
-/// Usage per minute over the last [`RATE_BUCKETS`] buckets, integer division
-/// per field.
-fn rate(buckets: &Buckets, now_bucket: i64) -> TokenUsage {
+/// Cache hit percent per bucket, oldest first, ending at `now_bucket`: `None`
+/// for a bucket without input-side tokens, else the share of `cache_read` in
+/// `cache_read + input + cache_write`, rounded half up.
+fn hit_series(buckets: &Buckets, now_bucket: i64, len: usize) -> Vec<Option<u8>> {
+    let first = now_bucket - (len as i64 - 1);
+    (first..=now_bucket)
+        .map(|bucket| buckets.get(&bucket).and_then(hit_percent))
+        .collect()
+}
+
+fn hit_percent(usage: &TokenUsage) -> Option<u8> {
+    let denominator = usage
+        .cache_read
+        .saturating_add(usage.input)
+        .saturating_add(usage.cache_write);
+    if denominator == 0 {
+        return None;
+    }
+    let doubled = usage
+        .cache_read
+        .saturating_mul(200)
+        .saturating_add(denominator);
+    let percent = (doubled / denominator.saturating_mul(2)).min(100);
+    Some(percent as u8)
+}
+
+/// Usage per minute over the last [`RATE_BUCKETS`] buckets up to `now`, integer
+/// division per field. The window runs from the start of the oldest bucket to
+/// `now`, so its span is 271 to 300 s and the rate does not drop when a new
+/// bucket starts.
+fn rate(buckets: &Buckets, now: i64, now_bucket: i64) -> TokenUsage {
     let first = now_bucket - (RATE_BUCKETS as i64 - 1);
     let mut sum = TokenUsage::default();
     for usage in buckets.range(first..=now_bucket).map(|(_, usage)| usage) {
         sum.add(usage);
     }
+    let elapsed = now - now_bucket * BUCKET_SECS;
+    let span = ((RATE_BUCKETS as i64 - 1) * BUCKET_SECS + elapsed + 1) as u64;
+    let per_minute = |field: u64| field.saturating_mul(60) / span;
     TokenUsage {
-        input: sum.input / RATE_MINUTES,
-        cache_write: sum.cache_write / RATE_MINUTES,
-        cache_read: sum.cache_read / RATE_MINUTES,
-        output: sum.output / RATE_MINUTES,
+        input: per_minute(sum.input),
+        cache_write: per_minute(sum.cache_write),
+        cache_read: per_minute(sum.cache_read),
+        output: per_minute(sum.output),
     }
+}
+
+/// Plan-wide usage per (model, effort), largest fresh total first, then model,
+/// then effort with `None` last. Past [`MAX_MODEL_ROWS`] entries, the tail and
+/// any existing `OTHER_MODEL` entry merge into one `OTHER_MODEL` entry placed
+/// last, so the entries still sum to the plan total.
+fn model_totals(stages: &BTreeMap<String, StageAgents>) -> Vec<ModelUsage> {
+    let mut merged: Vec<ModelUsage> = Vec::new();
+    for entry in stages
+        .values()
+        .flat_map(|agents| agents.values())
+        .flat_map(|agent| &agent.by_model)
+    {
+        match merged
+            .iter_mut()
+            .find(|seen| seen.model == entry.model && seen.effort == entry.effort)
+        {
+            Some(seen) => seen.total.add(&entry.total),
+            None => merged.push(entry.clone()),
+        }
+    }
+    merged.sort_by(|a, b| {
+        let effort_key = |entry: &ModelUsage| (entry.effort.is_none(), entry.effort.clone());
+        (std::cmp::Reverse(a.total.fresh()), &a.model, effort_key(a)).cmp(&(
+            std::cmp::Reverse(b.total.fresh()),
+            &b.model,
+            effort_key(b),
+        ))
+    });
+    if merged.len() > MAX_MODEL_ROWS {
+        fold_tail(&mut merged);
+    }
+    merged
+}
+
+/// Merges the entries from position `MAX_MODEL_ROWS - 1` on, and any
+/// `OTHER_MODEL` entry before it, into one `OTHER_MODEL` entry placed last.
+fn fold_tail(sorted: &mut Vec<ModelUsage>) {
+    let tail = sorted.split_off(MAX_MODEL_ROWS - 1);
+    let mut other = ModelUsage {
+        model: OTHER_MODEL.to_owned(),
+        effort: None,
+        total: TokenUsage::default(),
+    };
+    for entry in &tail {
+        other.total.add(&entry.total);
+    }
+    if let Some(at) = sorted
+        .iter()
+        .position(|entry| entry.model == OTHER_MODEL && entry.effort.is_none())
+    {
+        other.total.add(&sorted.remove(at).total);
+    }
+    sorted.push(other);
 }
 
 #[cfg(test)]

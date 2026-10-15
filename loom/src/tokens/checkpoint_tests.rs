@@ -65,6 +65,21 @@ fn other_version_loads_empty() {
 }
 
 #[test]
+fn version_one_checkpoint_is_refused_with_its_reason() {
+    let fx = Fixture::new();
+    let dir = fx.tokens_dir();
+    let mut checkpoint = populated();
+    checkpoint.version = 1;
+    checkpoint.save(&dir).expect("save");
+
+    let (loaded, warning) = Checkpoint::load_reporting(&dir);
+
+    assert_eq!(loaded, Checkpoint::empty());
+    let warning = warning.expect("a reason");
+    assert!(warning.starts_with("checkpoint is version 1;"), "{warning}");
+}
+
+#[test]
 fn symlinked_checkpoint_is_not_read_through() {
     let fx = Fixture::new();
     let dir = fx.tokens_dir();

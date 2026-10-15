@@ -5,8 +5,8 @@
 mod support;
 
 use loom::tokens::{
-    flow_path, read_flow, AgentKind, QuotaLeft, QuotaProvider, TokenUsage, MAX_FLOW_BYTES,
-    PLAN_SERIES_LEN, STAGE_SERIES_LEN,
+    flow_path, read_flow, AgentKind, QuotaLeft, QuotaProvider, TokenUsage, BUCKET_SECS,
+    MAX_FLOW_BYTES, PLAN_SERIES_LEN, STAGE_SERIES_LEN,
 };
 use std::fs;
 use support::*;
@@ -14,7 +14,7 @@ use support::*;
 #[test]
 fn plan_rate_sums_stages_and_expires() {
     let fx = Fx::new();
-    let now = unix_now();
+    let now = unix_now().div_euclid(BUCKET_SECS) * BUCKET_SECS - 1;
     let alpha = claude_line("msg_a", now - 60, &usage(0, 3000, 0, 0));
     let beta = claude_line("msg_b", now - 60, &usage(0, 1500, 0, 0));
     fx.add_stage("alpha", &uuid(1), &body(&[alpha]));

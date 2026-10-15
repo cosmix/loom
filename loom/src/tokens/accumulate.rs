@@ -3,7 +3,9 @@
 
 use super::claude_line::{self, ClaudeLine};
 use super::codex_line::{self, CodexLine, CodexTotals};
-use super::model::{AgentKind, TokenUsage, BUCKET_SECS};
+use super::model::{
+    AgentKind, ModelUsage, TokenUsage, BUCKET_SECS, MAX_MODEL_KEYS, OTHER_MODEL, UNKNOWN_MODEL,
+};
 use crate::commands::usage::transcript_types::SYNTHETIC_MODEL;
 use crate::context::untrusted::inline_safe;
 use serde::{Deserialize, Serialize};
@@ -21,9 +23,14 @@ pub(super) struct AgentState {
     pub(super) kind: AgentKind,
     pub(super) agent_type: Option<String>,
     pub(super) model: Option<String>,
+    /// The last reasoning effort a line named.
+    pub(super) effort: Option<String>,
     /// Line timestamp of the first usage read from the file.
     pub(super) first_seen: Option<i64>,
     pub(super) total: TokenUsage,
+    /// `total` split by (model, effort): at most [`MAX_MODEL_KEYS`] keys plus
+    /// one `(OTHER_MODEL, None)` key that absorbs the rest.
+    pub(super) by_model: Vec<ModelUsage>,
     /// Usage per bucket index (`unix_secs / BUCKET_SECS`).
     pub(super) buckets: BTreeMap<i64, TokenUsage>,
     pub(super) unreadable: u64,
@@ -161,8 +168,10 @@ impl AgentState {
             kind,
             agent_type: None,
             model: None,
+            effort: None,
             first_seen: None,
             total: TokenUsage::default(),
+            by_model: Vec::new(),
             buckets: BTreeMap::new(),
             unreadable: 0,
             file: FileCursor {
@@ -207,11 +216,15 @@ impl AgentState {
                 message_id,
                 timestamp,
                 model,
+                effort,
                 usage,
             } => {
                 // An API-error row names the `<synthetic>` sentinel, not a model.
                 if let Some(model) = model.filter(|model| model != SYNTHETIC_MODEL) {
                     self.model = Some(inline_safe(&model));
+                }
+                if let Some(effort) = effort {
+                    self.effort = Some(inline_safe(&effort));
                 }
                 let spent = match message_id {
                     Some(id) => self.file.messages.increase(&id, &usage),
@@ -237,7 +250,10 @@ impl AgentState {
                 self.file.codex_total = Some(total.into());
                 self.add(timestamp, &delta.to_usage());
             }
-            CodexLine::Model(model) => self.model = Some(inline_safe(&model)),
+            CodexLine::TurnContext { model, effort } => {
+                self.model = Some(inline_safe(&model));
+                self.effort = effort.as_deref().map(inline_safe);
+            }
             CodexLine::Unreadable => self.count_unreadable(),
             CodexLine::SessionMeta { .. } | CodexLine::Other => {}
         }
@@ -254,6 +270,40 @@ impl AgentState {
             .entry(timestamp.div_euclid(BUCKET_SECS))
             .or_default()
             .add(usage);
+        self.add_model_usage(usage);
+    }
+
+    /// Books `usage` under the agent's current (model, effort); a key past
+    /// [`MAX_MODEL_KEYS`] goes to the `(OTHER_MODEL, None)` entry.
+    fn add_model_usage(&mut self, usage: &TokenUsage) {
+        let model = self.model.as_deref().unwrap_or(UNKNOWN_MODEL);
+        let effort = self.effort.as_deref();
+        let same = |entry: &ModelUsage| entry.model == model && entry.effort.as_deref() == effort;
+        if let Some(entry) = self.by_model.iter_mut().find(|entry| same(entry)) {
+            entry.total.add(usage);
+            return;
+        }
+        let is_other = |entry: &ModelUsage| entry.model == OTHER_MODEL && entry.effort.is_none();
+        let keys = self
+            .by_model
+            .iter()
+            .filter(|entry| !is_other(entry))
+            .count();
+        if keys < MAX_MODEL_KEYS {
+            self.by_model.push(ModelUsage {
+                model: model.to_owned(),
+                effort: effort.map(str::to_owned),
+                total: *usage,
+            });
+        } else if let Some(other) = self.by_model.iter_mut().find(|entry| is_other(entry)) {
+            other.total.add(usage);
+        } else {
+            self.by_model.push(ModelUsage {
+                model: OTHER_MODEL.to_owned(),
+                effort: None,
+                total: *usage,
+            });
+        }
     }
 }
 

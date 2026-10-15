@@ -14,9 +14,17 @@ pub struct CodexTotals {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CodexLine {
-    TokenCount { timestamp: i64, total: CodexTotals },
-    Model(String),
-    SessionMeta { thread_id: String },
+    TokenCount {
+        timestamp: i64,
+        total: CodexTotals,
+    },
+    TurnContext {
+        model: String,
+        effort: Option<String>,
+    },
+    SessionMeta {
+        thread_id: String,
+    },
     Other,
     Unreadable,
 }
@@ -62,7 +70,10 @@ pub fn parse_line(line: &str) -> CodexLine {
         }
         Some("turn_context") => payload["model"]
             .as_str()
-            .map(|model| CodexLine::Model(model.to_owned()))
+            .map(|model| CodexLine::TurnContext {
+                model: model.to_owned(),
+                effort: payload["effort"].as_str().map(str::to_owned),
+            })
             .unwrap_or(CodexLine::Other),
         Some("session_meta") => payload["id"]
             .as_str()

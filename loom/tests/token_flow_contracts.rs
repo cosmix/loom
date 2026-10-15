@@ -5,7 +5,7 @@ mod support;
 
 use loom::tokens::quota_left::{estimate, QuotaEstimate};
 use loom::tokens::{
-    flow_path, AgentKind, QuotaLeft, QuotaProvider, FLOW_STALE_SECS, STAGE_SERIES_LEN,
+    flow_path, AgentKind, QuotaLeft, QuotaProvider, BUCKET_SECS, FLOW_STALE_SECS, STAGE_SERIES_LEN,
 };
 use serde_json::json;
 use std::fs;
@@ -237,8 +237,8 @@ fn collector_flattens_flow_strings() {
     let flow = json!({"observed_at": unix_now(), "bucket_secs": 30,
         "plan": {"total": zero, "rate": zero, "series": [0]},
         "stages": [{"stage_id": evil("alpha"), "total": zero, "rate": zero, "series": [0],
-            "agents": [agent]}],
-        "quota_left": [], "unreadable_lines": 0});
+            "hit_series": [null], "agents": [agent]}],
+        "models": [], "quota_left": [], "unreadable_lines": 0});
     fs::write(fx.tokens_dir().join("flow.json"), flow.to_string()).expect("flow.json");
 
     let tokens = fx.status_tokens().expect("flow published");
@@ -293,7 +293,7 @@ fn checkpoint_resumes_from_offset() {
 #[test]
 fn rate_is_five_minute_average() {
     let fx = Fx::new();
-    let now = unix_now();
+    let now = unix_now().div_euclid(BUCKET_SECS) * BUCKET_SECS - 1;
     let lines = [
         claude_line("msg_1", now - 420, &usage(0, 6000, 0, 0)),
         claude_line("msg_2", now - 60, &usage(0, 3000, 0, 0)),

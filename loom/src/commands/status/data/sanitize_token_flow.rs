@@ -9,8 +9,11 @@
 
 use super::flatten;
 use crate::tokens::model::{
-    TokenFlow, TokenUsage, FLOW_STALE_SECS, PLAN_SERIES_LEN, STAGE_SERIES_LEN,
+    TokenFlow, TokenUsage, FLOW_STALE_SECS, MAX_MODEL_ROWS, PLAN_SERIES_LEN, STAGE_SERIES_LEN,
 };
+
+/// The largest cache hit percent.
+const MAX_HIT_PERCENT: u8 = 100;
 
 /// The largest integer JavaScript holds exactly: 2^53 - 1.
 pub(crate) const MAX_SAFE_INTEGER: u64 = (1 << 53) - 1;
@@ -31,11 +34,18 @@ pub(crate) fn sanitize_token_flow(flow: &mut TokenFlow) {
     clamp_usage(&mut flow.plan.total);
     clamp_usage(&mut flow.plan.rate);
     bound_series(&mut flow.plan.series, PLAN_SERIES_LEN);
+    flow.models.truncate(MAX_MODEL_ROWS);
+    for entry in &mut flow.models {
+        flatten(&mut entry.model);
+        entry.effort.iter_mut().for_each(flatten);
+        clamp_usage(&mut entry.total);
+    }
     for stage in &mut flow.stages {
         flatten(&mut stage.stage_id);
         clamp_usage(&mut stage.total);
         clamp_usage(&mut stage.rate);
         bound_series(&mut stage.series, STAGE_SERIES_LEN);
+        bound_hit_series(&mut stage.hit_series, STAGE_SERIES_LEN);
         for agent in &mut stage.agents {
             flatten(&mut agent.id);
             agent.agent_type.iter_mut().for_each(flatten);
@@ -71,6 +81,15 @@ fn clamp_usage(usage: &mut TokenUsage) {
 fn bound_series(series: &mut Vec<u64>, len: usize) {
     series.drain(..series.len().saturating_sub(len));
     series.iter_mut().for_each(|value| *value = clamp(*value));
+}
+
+/// Cuts `series` (oldest first) to its newest `len` values and caps each
+/// percent.
+fn bound_hit_series(series: &mut Vec<Option<u8>>, len: usize) {
+    series.drain(..series.len().saturating_sub(len));
+    for value in series.iter_mut().flatten() {
+        *value = (*value).min(MAX_HIT_PERCENT);
+    }
 }
 
 #[cfg(test)]

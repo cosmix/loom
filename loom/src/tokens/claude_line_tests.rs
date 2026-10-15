@@ -12,6 +12,7 @@ fn test_parse_line_captured_sample_returns_usage() {
             message_id: Some("msg_011CfaJtKtxUSKsEhtf2ECes".into()),
             timestamp: 1_790_802_575,
             model: Some("claude-sonnet-5-5".into()),
+            effort: None,
             usage: TokenUsage {
                 input: 2,
                 cache_write: 14_477,
@@ -40,6 +41,7 @@ fn test_parse_line_missing_optional_fields_returns_defaults() {
             message_id: None,
             timestamp: 1_790_802_575,
             model: None,
+            effort: None,
             usage: TokenUsage {
                 input: 2,
                 cache_write: 0,
@@ -90,6 +92,7 @@ fn test_parse_line_zero_and_maximum_counts_are_preserved() {
             message_id: None,
             timestamp: 1_790_802_575,
             model: None,
+            effort: None,
             usage: TokenUsage {
                 input: 0,
                 cache_write: 0,
@@ -169,6 +172,7 @@ fn test_parse_line_null_cache_counts_are_zero() {
             message_id: None,
             timestamp: 1_790_802_575,
             model: None,
+            effort: None,
             usage: TokenUsage {
                 input: 2,
                 cache_write: 0,
@@ -177,6 +181,41 @@ fn test_parse_line_null_cache_counts_are_zero() {
             },
         }
     );
+}
+
+fn effort_of(extra: Value) -> Option<String> {
+    let mut line = assistant_usage();
+    for (key, value) in extra.as_object().unwrap() {
+        line[key] = value.clone();
+    }
+    match parse_line(&line.to_string()) {
+        ClaudeLine::Usage { effort, .. } => effort,
+        other => panic!("expected usage, got {other:?}"),
+    }
+}
+
+#[test]
+fn test_parse_line_per_turn_effort_wins_over_effort() {
+    let both = json!({"perTurnEffort": "xhigh", "effort": "low"});
+    assert_eq!(effort_of(both).as_deref(), Some("xhigh"));
+}
+
+#[test]
+fn test_parse_line_effort_alone_is_read() {
+    assert_eq!(
+        effort_of(json!({"effort": "high"})).as_deref(),
+        Some("high")
+    );
+}
+
+#[test]
+fn test_parse_line_without_effort_is_none() {
+    assert_eq!(effort_of(json!({})), None);
+}
+
+#[test]
+fn test_parse_line_numeric_per_turn_effort_is_absent() {
+    assert_eq!(effort_of(json!({"perTurnEffort": 3})), None);
 }
 
 #[test]

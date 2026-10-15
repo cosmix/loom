@@ -21,6 +21,7 @@ fn sample_flow() -> TokenFlow {
             total: usage,
             rate: usage,
             series: vec![70; STAGE_SERIES_LEN],
+            hit_series: Vec::new(),
             agents: vec![AgentFlow {
                 id: "main-01".into(),
                 kind: AgentKind::Main,
@@ -32,6 +33,7 @@ fn sample_flow() -> TokenFlow {
                 series: vec![70; STAGE_SERIES_LEN],
             }],
         }],
+        models: Vec::new(),
         quota_left: vec![QuotaLeft {
             provider: QuotaProvider::Claude,
             minutes_left: Some(127),
