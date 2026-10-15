@@ -8,7 +8,7 @@ use ratatui::{
 };
 
 use super::layout_tokens::{areas, budget, Budget};
-use super::tokens_pane::{no_data_lines, tokens_pane_lines, PANE_MAX_ROWS};
+use super::tokens_pane::{live_lines, no_data_lines, tokens_pane_lines, PANE_MAX_ROWS};
 use super::{
     columns, header, legend, panels, quota, rows, LedgerView, RenderOutcome, MIN_COLS, MIN_ROWS,
 };
@@ -34,27 +34,37 @@ pub fn render(frame: &mut Frame, view: &LedgerView) -> RenderOutcome {
 }
 
 /// The tokens pane's lines while it is toggled on, else none; without a flow it is
-/// the title and a note saying so.
-fn pane_lines(view: &LedgerView, width: u16) -> Vec<Line<'static>> {
+/// the title and a note saying so. `live_only` leaves out the by-model block.
+fn pane_lines(view: &LedgerView, width: u16, live_only: bool) -> Vec<Line<'static>> {
     if !view.show_tokens {
         return Vec::new();
     }
     match view.data.tokens.as_ref() {
+        Some(flow) if live_only => live_lines(flow, width),
         Some(flow) => tokens_pane_lines(flow, width, PANE_MAX_ROWS),
         None => no_data_lines(width, PANE_MAX_ROWS),
     }
 }
 
 fn render_dashboard(frame: &mut Frame, area: Rect, view: &LedgerView) -> Budget {
-    let mut pane = pane_lines(view, area.width);
-    let budget = budget(
-        area.height,
-        view.alerts.len(),
-        panels::attention_line_count(view.attention, area.width),
-        view.activity.len(),
-        quota::has_quota(&view.data.quota),
-        u16::try_from(pane.len()).unwrap_or(PANE_MAX_ROWS),
-    );
+    let budget_for = |pane: &[Line<'static>]| {
+        budget(
+            area.height,
+            view.alerts.len(),
+            panels::attention_line_count(view.attention, area.width),
+            view.activity.len(),
+            quota::has_quota(&view.data.quota),
+            u16::try_from(pane.len()).unwrap_or(PANE_MAX_ROWS),
+        )
+    };
+    let mut pane = pane_lines(view, area.width, false);
+    let mut budget = budget_for(&pane);
+    if budget.tokens == 0 && !pane.is_empty() {
+        // The whole pane does not fit; the live rows alone may, so the by-model block
+        // goes first and the pane only vanishes when even those do not fit.
+        pane = pane_lines(view, area.width, true);
+        budget = budget_for(&pane);
+    }
     let areas = areas(area, budget);
     header::render_header(frame, areas.header, view);
     renderer::render_scheduler_alerts(frame, areas.alerts, view.alerts);

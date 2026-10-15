@@ -176,8 +176,9 @@ pub(super) fn tokens_pane_lines(flow: &TokenFlow, width: u16, max_rows: u16) -> 
     lines
 }
 
-/// The title and the stage and agent rows of the stages with a live agent.
-fn live_lines(flow: &TokenFlow, width: u16) -> Vec<Line<'static>> {
+/// The title and the stage and agent rows of the stages with a live agent: the part of
+/// the pane that stays when the by-model block does not fit.
+pub(super) fn live_lines(flow: &TokenFlow, width: u16) -> Vec<Line<'static>> {
     let active: Vec<&StageFlow> = flow
         .stages
         .iter()
