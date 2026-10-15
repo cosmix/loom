@@ -1,16 +1,22 @@
 import { expect, it } from "vitest";
 
-import type { AgentFlow, StageFlow, TokenFlow, TokenUsage } from "@/api/schema";
+import type { AgentFlow, ModelUsage, StageFlow, TokenFlow, TokenUsage } from "@/api/schema";
 import {
   agentLabel,
   cacheHitPercent,
+  carryForward,
   compactTokens,
+  cumulativeSeries,
   fresh,
   lastValues,
+  liveCounts,
   maxOf,
+  modelGroups,
   modelRates,
+  modelShares,
   padLeft,
   quotaLeftText,
+  rollingRate,
   stageFlow,
 } from "@/lib/tokens";
 
@@ -201,4 +207,91 @@ it("lastValues keeps the last N values and pads a short series on the left", () 
   expect(lastValues([1, 2, 3, 4, 5], 3)).toEqual([3, 4, 5]);
   expect(lastValues([5, 6], 4)).toEqual([0, 0, 5, 6]);
   expect(lastValues([], 3)).toEqual([0, 0, 0]);
+});
+
+const models: ModelUsage[] = [
+  { model: "claude-sonnet-5-5", effort: "medium", total: usage(50000, 900000, 13000000, 160000) },
+  { model: "claude-opus-5-5", effort: "xhigh", total: usage(30000, 450000, 7000000, 80000) },
+  { model: "gpt-6.1-sol", effort: "xhigh", total: usage(30000, 300000, 4000000, 50000) },
+  { model: "claude-opus-5-5", effort: "high", total: usage(10000, 150000, 2000000, 20000) },
+];
+
+it("modelShares sums efforts per model and orders by fresh", () => {
+  const shares = modelShares(models);
+
+  expect(shares.map((s) => [s.model, s.fresh])).toEqual([
+    ["claude-sonnet-5-5", 1110000],
+    ["claude-opus-5-5", 740000],
+    ["gpt-6.1-sol", 380000],
+  ]);
+  expect(shares[0].share).toBeCloseTo(0.4978, 4);
+  expect(shares[1].share).toBeCloseTo(0.3318, 4);
+});
+
+it("modelShares breaks fresh ties by model name", () => {
+  const tied: ModelUsage[] = [
+    { model: "b", effort: null, total: usage(5, 0, 0, 0) },
+    { model: "a", effort: null, total: usage(5, 0, 0, 0) },
+  ];
+
+  expect(modelShares(tied).map((s) => s.model)).toEqual(["a", "b"]);
+});
+
+it("modelShares is empty for no models or no fresh tokens", () => {
+  const zero: ModelUsage[] = [{ model: "a", effort: null, total: usage(0, 0, 9, 0) }];
+
+  expect(modelShares([])).toEqual([]);
+  expect(modelShares(zero)).toEqual([]);
+  expect(modelGroups([])).toEqual([]);
+});
+
+it("modelGroups keeps each model's efforts in input order with cache reads", () => {
+  const groups = modelGroups(models);
+
+  expect(groups.map((g) => g.model)).toEqual([
+    "claude-sonnet-5-5",
+    "claude-opus-5-5",
+    "gpt-6.1-sol",
+  ]);
+  expect(groups[1]).toEqual({
+    model: "claude-opus-5-5",
+    fresh: 740000,
+    cacheRead: 9000000,
+    efforts: [
+      { effort: "xhigh", fresh: 560000, cacheRead: 7000000 },
+      { effort: "high", fresh: 180000, cacheRead: 2000000 },
+    ],
+  });
+});
+
+it("rollingRate ramps up over a young series and settles at the full-window rate", () => {
+  const rate = rollingRate(Array<number>(12).fill(30), 30);
+
+  expect(rate).toHaveLength(12);
+  expect(rate[0]).toBe(6);
+  expect(rate[11]).toBe(60);
+});
+
+it("cumulativeSeries ends at the total and never goes below zero", () => {
+  expect(cumulativeSeries(100, [10, 20, 30])).toEqual([50, 70, 100]);
+  expect(cumulativeSeries(10, [20, 30])).toEqual([0, 10]);
+});
+
+it("rollingRate and cumulativeSeries handle a series too long to spread", () => {
+  const long = Array<number>(200_000).fill(1);
+
+  expect(rollingRate(long, 30)).toHaveLength(200_000);
+  expect(cumulativeSeries(200_000, long).at(-1)).toBe(200_000);
+});
+
+it("carryForward holds the previous value and zeroes leading gaps", () => {
+  expect(carryForward([null, 5, null, 7])).toEqual([0, 5, 5, 7]);
+  expect(carryForward([])).toEqual([]);
+});
+
+it("liveCounts counts agents active within the trailing window", () => {
+  const burst = { ...main, series: [0, 0, 0, 1, 0, 0, 0, 0] };
+  const idle = { ...codex, series: [] };
+
+  expect(liveCounts([burst, idle], 8)).toEqual([0, 0, 0, 1, 1, 1, 1, 0]);
 });
