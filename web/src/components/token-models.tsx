@@ -1,5 +1,5 @@
 import type { TokenFlow } from "@/api/schema";
-import { compactTokens, modelGroups, modelRates, modelShares } from "@/lib/tokens";
+import { compactTokens, modelGroups, modelRates, modelShares, wholePercents } from "@/lib/tokens";
 
 /// Model colours: the state tones, cycled in pie order.
 const MODEL_PALETTE = [
@@ -28,6 +28,7 @@ const colorAt = (index: number) => MODEL_PALETTE[index % MODEL_PALETTE.length];
 export function TokenModels({ flow }: { flow: TokenFlow }) {
   const shares = modelShares(flow.models);
   if (shares.length === 0) return null;
+  const percents = wholePercents(shares.map(({ share }) => share));
   const rates = new Map(modelRates(flow).map(({ model, perMinute }) => [model, perMinute]));
   return (
     <div className="flex flex-col gap-3 border-t border-hairline pt-3">
@@ -39,7 +40,7 @@ export function TokenModels({ flow }: { flow: TokenFlow }) {
         <div className="flex min-w-[14rem] items-center gap-4">
           <Pie shares={shares} />
           <ul aria-label="models" className="flex min-w-0 flex-col gap-1 text-xs">
-            {shares.map(({ model, share }, index) => (
+            {shares.map(({ model }, index) => (
               <li key={model} className="flex items-center gap-1.5">
                 <span
                   aria-hidden="true"
@@ -47,7 +48,7 @@ export function TokenModels({ flow }: { flow: TokenFlow }) {
                   style={{ background: colorAt(index) }}
                 />
                 <span className="truncate font-mono">{model}</span>
-                <span className="font-mono tabular-nums">{Math.round(share * 100)}%</span>
+                <span className="font-mono tabular-nums">{percents[index]}%</span>
                 <span className="font-mono text-muted-foreground tabular-nums">
                   {compactTokens(rates.get(model) ?? 0)}/m
                 </span>

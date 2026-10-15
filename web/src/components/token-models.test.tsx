@@ -47,6 +47,20 @@ describe("TokenModels", () => {
     ]);
   });
 
+  it("makes the legend shares sum to 100 for equal models", () => {
+    renderPanel((raw) => {
+      raw.status.tokens.models = ["a", "b", "c"].map((model) => ({
+        model,
+        effort: "high",
+        total: { input: 10, cache_write: 0, cache_read: 0, output: 0 },
+      }));
+    });
+
+    const items = within(screen.getByRole("list", { name: "models" })).getAllByRole("listitem");
+    const percents = items.map((item) => Number(/(\d+)%/.exec(item.textContent ?? "")?.[1]));
+    expect(percents).toEqual([34, 33, 33]);
+  });
+
   it("tables the totals per effort, the model cell spanning its efforts", () => {
     renderPanel();
 

@@ -127,11 +127,30 @@ export function modelShares(models: readonly ModelUsage[]): ModelShare[] {
   return groups.map(({ model, fresh: used }) => ({ model, fresh: used, share: used / sum }));
 }
 
+/// `shares` (fractions summing to 1) as whole percents that sum to exactly 100, by
+/// largest remainder: every share is floored, then the missing points go one each to
+/// the largest fractional parts, the earlier position first on a tie. Empty for none.
+export function wholePercents(shares: readonly number[]): number[] {
+  const exact = shares.map((share) => share * 100);
+  const percents = exact.map((value) => Math.floor(value));
+  let missing = 100 - percents.reduce((total, percent) => total + percent, 0);
+  const byRemainder = exact
+    .map((value, index) => ({ index, remainder: value - percents[index] }))
+    .sort((a, b) => b.remainder - a.remainder || a.index - b.index);
+  for (const { index } of byRemainder) {
+    if (missing <= 0) break;
+    percents[index] += 1;
+    missing -= 1;
+  }
+  return percents;
+}
+
 /// Tokens per minute over a trailing window of `window` buckets: element `i` sums
 /// `series[i - window + 1 .. i]` (fewer at the start) and divides by the full window,
-/// so a young series ramps up. A running sum keeps it linear.
+/// so a young series ramps up. A running sum keeps it linear. `bucketSecs` is clamped to
+/// at least 1 second, so a malformed flow cannot produce Infinity or NaN.
 export function rollingRate(series: readonly number[], bucketSecs: number, window = 10): number[] {
-  const scale = 60 / (window * bucketSecs);
+  const scale = 60 / (window * Math.max(1, bucketSecs));
   const out: number[] = [];
   let sum = 0;
   for (let i = 0; i < series.length; i++) {
