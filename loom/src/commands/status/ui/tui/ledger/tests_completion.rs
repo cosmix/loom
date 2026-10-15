@@ -3,6 +3,8 @@ use super::tests::{make_blocker, make_stage};
 use crate::commands::status::data::{ActivityStatus, CompletionBlockerState, SessionExitReason};
 use crate::models::stage::StageStatus;
 
+#[path = "tests_models_contracts.rs"]
+mod models_contracts;
 #[path = "tests_tokens_contracts.rs"]
 mod tokens_contracts;
 
