@@ -7,7 +7,7 @@ import { fetchTerminalHistory, type HistoryLoader } from "@/api/terminal-history
 import type { StageSummary } from "@/api/schema";
 import { CopyCommand } from "@/components/copy-command";
 import { createHistoryEmulator } from "@/components/terminal/emulator";
-import { Line, Name, rise, terminalHref } from "@/components/terminal/terminal-view";
+import { BackButton, Line, Name, rise, terminalHref } from "@/components/terminal/terminal-view";
 import type { EmulatorFactory } from "@/components/terminal/use-terminal";
 import { Kbd } from "@/components/ui/kbd";
 import { toneClass } from "@/components/state-badge";
@@ -20,6 +20,8 @@ export interface HistoryViewProps {
   frame: "dialog" | "page";
   factory?: EmulatorFactory;
   load?: HistoryLoader;
+  /// Returns to the stage details; the header shows a back arrow only when given.
+  onBack?: () => void;
 }
 
 type Phase = "loading" | "shown" | "missing" | "failed";
@@ -43,16 +45,10 @@ export function historyCommand(session: string): string {
   return `less -R .loom/work/terminal-history/${session}.terminal`;
 }
 
-/// The last screen and scrollback of a session that has ended, replayed into a
-/// read-only terminal: no connection to the session, no input. The saved bytes
-/// are untrusted terminal output and go only to the emulator, never into markup.
-export function HistoryView({
-  stage,
-  session,
-  frame,
-  factory = createHistoryEmulator,
-  load = fetchTerminalHistory,
-}: HistoryViewProps): ReactElement {
+/// Replays the session's saved bytes into a read-only emulator mounted on the
+/// returned `hostRef`, and reports whether the replay is shown. Unmounting
+/// disposes the emulator and the resize observer.
+function useSavedScreen(session: string, factory: EmulatorFactory, load: HistoryLoader) {
   const hostRef = useRef<HTMLDivElement>(null);
   const [phase, setPhase] = useState<Phase>("loading");
 
@@ -86,6 +82,22 @@ export function HistoryView({
     };
   }, [session, factory, load]);
 
+  return { hostRef, phase };
+}
+
+/// The last screen and scrollback of a session that has ended, replayed into a
+/// read-only terminal: no connection to the session, no input. The saved bytes
+/// are untrusted terminal output and go only to the emulator, never into markup.
+export function HistoryView({
+  stage,
+  session,
+  frame,
+  factory = createHistoryEmulator,
+  load = fetchTerminalHistory,
+  onBack,
+}: HistoryViewProps): ReactElement {
+  const { hostRef, phase } = useSavedScreen(session, factory, load);
+
   return (
     <div
       className={cn("terminal-frame", toneClass(stateMeta(stage.status).tone))}
@@ -93,18 +105,7 @@ export function HistoryView({
       data-mode="view"
       data-phase={WELL_PHASE[phase]}
     >
-      <header className="terminal-head">
-        <div className="flex min-w-0 flex-col gap-1.5">
-          <span className="eyebrow rise" style={rise(0)}>
-            Terminal history
-          </span>
-          <div className="rise flex flex-wrap items-baseline gap-x-3 gap-y-1" style={rise(1)}>
-            <Name stage={stage} frame={frame} />
-            <span className="font-mono text-sm text-muted-foreground">{stage.id}</span>
-          </div>
-          <Line stage={stage} frame={frame} />
-        </div>
-      </header>
+      <HistoryHead stage={stage} frame={frame} onBack={onBack} />
       <div className="terminal-well-wrap">
         <div className="terminal-well" data-mode="view" data-phase={WELL_PHASE[phase]}>
           <div ref={hostRef} className="terminal-host" aria-label="Saved terminal history" />
@@ -115,29 +116,69 @@ export function HistoryView({
           )}
         </div>
       </div>
-      <footer className="terminal-foot">
-        <span className="terminal-hint">
-          read-only · the session ended · this is its saved screen
-          {frame === "dialog" && (
-            <>
-              {" · "}
-              <Kbd>Esc</Kbd> back to details
-            </>
-          )}
-        </span>
-        <div className="flex items-center gap-4">
-          <CopyCommand command={historyCommand(session)} />
-          {frame === "dialog" && (
-            <Link
-              to={terminalHref(stage.id)}
-              className="inline-flex items-center gap-1.5 text-foreground hover:underline"
-            >
-              open in a tab
-              <ExternalLinkIcon className="size-3.5" />
-            </Link>
-          )}
-        </div>
-      </footer>
+      <HistoryFoot stage={stage} session={session} frame={frame} />
     </div>
+  );
+}
+
+function HistoryHead({
+  stage,
+  frame,
+  onBack,
+}: {
+  stage: StageSummary;
+  frame: HistoryViewProps["frame"];
+  onBack?: () => void;
+}) {
+  return (
+    <header className="terminal-head">
+      <div className="flex min-w-0 flex-col gap-1.5">
+        <div className="rise flex items-center gap-2" style={rise(0)}>
+          {onBack && <BackButton onBack={onBack} />}
+          <span className="eyebrow">Terminal history</span>
+        </div>
+        <div className="rise flex flex-wrap items-baseline gap-x-3 gap-y-1" style={rise(1)}>
+          <Name stage={stage} frame={frame} />
+          <span className="font-mono text-sm text-muted-foreground">{stage.id}</span>
+        </div>
+        <Line stage={stage} frame={frame} />
+      </div>
+    </header>
+  );
+}
+
+function HistoryFoot({
+  stage,
+  session,
+  frame,
+}: {
+  stage: StageSummary;
+  session: string;
+  frame: HistoryViewProps["frame"];
+}) {
+  return (
+    <footer className="terminal-foot">
+      <span className="terminal-hint">
+        read-only · the session ended · this is its saved screen
+        {frame === "dialog" && (
+          <>
+            {" · "}
+            <Kbd>Esc</Kbd> back to details
+          </>
+        )}
+      </span>
+      <div className="flex items-center gap-4">
+        <CopyCommand command={historyCommand(session)} />
+        {frame === "dialog" && (
+          <Link
+            to={terminalHref(stage.id)}
+            className="inline-flex items-center gap-1.5 text-foreground hover:underline"
+          >
+            open in a tab
+            <ExternalLinkIcon className="size-3.5" />
+          </Link>
+        )}
+      </div>
+    </footer>
   );
 }

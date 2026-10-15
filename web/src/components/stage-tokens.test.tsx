@@ -43,6 +43,20 @@ describe("StageTokens", () => {
     expect(within(section).getByText("3 of 3")).toBeTruthy();
   });
 
+  it("draws one trend under each chip, named for its statistic", () => {
+    renderTokens("server");
+
+    const section = screen.getByRole("region", { name: "stage tokens" });
+    for (const label of [
+      "fresh rate, last 30 min",
+      "fresh so far, last 30 min",
+      "cache hit per 30 s, last 30 min",
+      "agents live, last 30 min",
+    ]) {
+      expect(within(section).getAllByRole("img", { name: label })).toHaveLength(1);
+    }
+  });
+
   it("reads idle and the rate dash from the active flag, not the series", () => {
     renderTokens("server", (raw) => {
       const agent = raw.status.tokens.stages[0]?.agents[2];

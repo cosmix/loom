@@ -1,20 +1,42 @@
 import { useAtomValue } from "jotai/react";
 
-import type { AgentFlow, StageFlow } from "@/api/schema";
-import { HeatStrip } from "@/components/sparkline";
+import type { AgentFlow, StageFlow, TokenFlow } from "@/api/schema";
+import { HeatStrip, Sparkline } from "@/components/sparkline";
 import {
   agentLabel,
   cacheHitPercent,
+  carryForward,
   compactTokens,
+  cumulativeSeries,
   fresh,
+  lastValues,
+  liveCounts,
   maxOf,
   padLeft,
+  rollingRate,
   stageFlow,
 } from "@/lib/tokens";
 import { snapshotAtom } from "@/state/atoms";
 
 const MIN_CELLS = 20;
 const RAMP = [0, 1, 2, 3, 4];
+/// The chips' trends show the last 60 buckets: 30 minutes of 30 s cells.
+const TREND_POINTS = 60;
+
+interface Trend {
+  values: number[];
+  label: string;
+}
+
+/// Each chip's trend over the last `TREND_POINTS` buckets of the stage's series.
+function chipTrends(tokens: TokenFlow, flow: StageFlow) {
+  return {
+    rate: lastValues(rollingRate(flow.series, tokens.bucket_secs), TREND_POINTS),
+    total: lastValues(cumulativeSeries(fresh(flow.total), flow.series), TREND_POINTS),
+    hit: lastValues(carryForward(flow.hit_series), TREND_POINTS),
+    live: lastValues(liveCounts(flow.agents, flow.series.length), TREND_POINTS),
+  };
+}
 
 /// The lanes' series (an idle agent's can be empty or short, so each is
 /// left-padded to the stage's length), trimmed of the leading buckets that are
@@ -35,11 +57,18 @@ function laneSeries(stage: StageFlow): { lanes: number[][]; max: number } {
   return { lanes, max };
 }
 
-function Chip({ value, label }: { value: string; label: string }) {
+function Chip({ value, label, trend }: { value: string; label: string; trend: Trend }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-hairline bg-background px-2.5 py-1.5">
       <span className="font-mono text-sm tabular-nums">{value}</span>
       <span className="text-[11px] text-muted-foreground">{label}</span>
+      <Sparkline
+        values={trend.values}
+        width={96}
+        height={20}
+        label={trend.label}
+        className="text-(--tone-executing)"
+      />
     </div>
   );
 }
@@ -86,15 +115,45 @@ function Lane({ agent, series, max }: { agent: AgentFlow; series: number[]; max:
   );
 }
 
+/// The four headline chips, each with the trend of its own statistic.
+function Chips({ tokens, flow }: { tokens: TokenFlow; flow: StageFlow }) {
+  const hit = cacheHitPercent(flow.total);
+  const live = flow.agents.filter((agent) => agent.active).length;
+  const trends = chipTrends(tokens, flow);
+  return (
+    <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
+      <Chip
+        value={`${compactTokens(fresh(flow.rate))}/m`}
+        label="fresh, 5 min avg"
+        trend={{ values: trends.rate, label: "fresh rate, last 30 min" }}
+      />
+      <Chip
+        value={compactTokens(fresh(flow.total))}
+        label="fresh so far"
+        trend={{ values: trends.total, label: "fresh so far, last 30 min" }}
+      />
+      <Chip
+        value={hit === null ? "—" : `${hit.toFixed(1)}%`}
+        label="cache hit"
+        trend={{ values: trends.hit, label: "cache hit per 30 s, last 30 min" }}
+      />
+      <Chip
+        value={`${live} of ${flow.agents.length}`}
+        label="agents live"
+        trend={{ values: trends.live, label: "agents live, last 30 min" }}
+      />
+    </div>
+  );
+}
+
 /// The stage's token flow: headline chips and one heat-strip lane per agent.
 /// Renders nothing for a stage the tracker has not seen.
 export function StageTokens({ stageId }: { stageId: string }) {
-  const flow = stageFlow(useAtomValue(snapshotAtom)?.status.tokens, stageId);
-  if (!flow) return null;
+  const tokens = useAtomValue(snapshotAtom)?.status.tokens;
+  const flow = stageFlow(tokens, stageId);
+  if (!tokens || !flow) return null;
 
   const { lanes, max } = laneSeries(flow);
-  const hit = cacheHitPercent(flow.total);
-  const live = flow.agents.filter((agent) => agent.active).length;
 
   return (
     <section
@@ -108,12 +167,7 @@ export function StageTokens({ stageId }: { stageId: string }) {
           <HeatStrip values={RAMP} max={4} label="intensity, low to high" className="w-16" />
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-2 md:grid-cols-4">
-        <Chip value={`${compactTokens(fresh(flow.rate))}/m`} label="fresh, 5 min avg" />
-        <Chip value={compactTokens(fresh(flow.total))} label="fresh so far" />
-        <Chip value={hit === null ? "—" : `${hit.toFixed(1)}%`} label="cache hit" />
-        <Chip value={`${live} of ${flow.agents.length}`} label="agents live" />
-      </div>
+      <Chips tokens={tokens} flow={flow} />
       <ul className="flex flex-col gap-2.5">
         {flow.agents.map((agent, index) => (
           <Lane key={agent.id} agent={agent} series={lanes[index] ?? []} max={max} />

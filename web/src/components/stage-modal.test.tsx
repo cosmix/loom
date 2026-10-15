@@ -209,4 +209,34 @@ describe("stage modal", () => {
     expect(screen.getByText(note)).toBeTruthy();
     expect(screen.queryByRole("button", { name: /^copy / })).toBeNull();
   });
+
+  it("returns from the terminal to the details with its back button", () => {
+    const stage = terminalStage();
+    const router = renderModal(stage, `/?stage=${stage.id}&view=terminal`);
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to details" }));
+
+    const params = new URLSearchParams(router.state.location.search);
+    expect(params.get("stage")).toBe(stage.id);
+    expect(params.has("view")).toBe(false);
+    expect(screen.getByRole("button", { name: "open terminal" })).toBeTruthy();
+    expect(screen.queryByLabelText("Agent terminal")).toBeNull();
+  });
+
+  it("returns from the terminal history to the details with its back button", () => {
+    const stage = terminalStage({
+      session_alive: false,
+      terminal_history_session: "session-ab12cd34-1700000000",
+    });
+    const router = renderModal(stage, `/?stage=${stage.id}&view=terminal`);
+    expect(screen.getByLabelText("Saved terminal history")).toBeTruthy();
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to details" }));
+
+    const params = new URLSearchParams(router.state.location.search);
+    expect(params.get("stage")).toBe(stage.id);
+    expect(params.has("view")).toBe(false);
+    expect(screen.getByRole("button", { name: "open terminal history" })).toBeTruthy();
+    expect(screen.queryByLabelText("Saved terminal history")).toBeNull();
+  });
 });

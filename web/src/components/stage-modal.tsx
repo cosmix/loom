@@ -1,10 +1,10 @@
 import { cn } from "cn";
 import { useAtomValue } from "jotai/react";
 import { ExternalLinkIcon } from "lucide-react";
-import { useCallback, useState, type KeyboardEvent } from "react";
+import { useCallback, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router";
 
-import type { StageSummary } from "@/api/schema";
+import type { Attention, StageSummary } from "@/api/schema";
 import { HazardHeader } from "@/aurora-ui/feedback/HazardPanel";
 import { OperatorGuidance, attentionCounts, attentionHazard } from "@/components/attention-panel";
 import { CopyCommand } from "@/components/copy-command";
@@ -79,9 +79,9 @@ function isTyping(target: EventTarget | null): boolean {
 /// The stage page's content in a dialog, opened from any view with
 /// `?stage=<id>`; upstream and downstream chips move the dialog along the
 /// thread without closing it. With `&view=terminal` the dialog becomes the
-/// window onto the agent: Esc goes back to the details in view mode and to
-/// the agent in control mode, where only the close button or the browser's
-/// back button leave.
+/// window onto the agent: the back arrow returns to the details in either
+/// mode, and Esc does too in view mode; in control mode Esc goes to the agent,
+/// and only the close button or the browser's back button leave.
 export interface StageModalProps {
   terminalFactory?: EmulatorFactory;
   terminalDeps?: TerminalDeps;
@@ -89,49 +89,68 @@ export interface StageModalProps {
   historyLoader?: HistoryLoader;
 }
 
-export function StageModal({
-  terminalFactory,
-  terminalDeps,
-  historyFactory,
-  historyLoader,
-}: StageModalProps = {}) {
-  const [params, setParams] = useSearchParams();
-  const id = params.get(STAGE_PARAM);
-  const terminal = params.get(STAGE_VIEW_PARAM) === TERMINAL_VIEW;
-  const snapshot = useAtomValue(snapshotAtom);
-  const openTerminal = useOpenTerminal();
-  const [frame, setFrame] = useState<TerminalFrameState>(IDLE_FRAME);
-  const stage = id === null ? undefined : selectStage(snapshot, id);
-  const terminalsEnabled = snapshot?.terminals ?? false;
-  const gate = stage === undefined ? null : terminalGate(terminalsEnabled, stage);
-  const history = stage === undefined ? null : terminalHistory(terminalsEnabled, stage);
-  const nativeBackend =
-    stage !== undefined && terminalsEnabled && stage.session_backend === "native";
-  const showTerminal = terminal && stage !== undefined;
-  const controlling = showTerminal && frame.mode === "control";
+interface StageView {
+  stage: StageSummary | undefined;
+  gate: string | null;
+  history: string | null;
+  nativeBackend: boolean;
+}
 
-  const close = () =>
-    setParams((current) => {
-      const next = new URLSearchParams(current);
-      next.delete(STAGE_PARAM);
-      next.delete(STAGE_VIEW_PARAM);
-      return next;
-    });
-  const toDetails = () =>
-    setParams((current) => {
-      const next = new URLSearchParams(current);
-      next.delete(STAGE_VIEW_PARAM);
-      return next;
-    });
-  const guard = (event: Event) => {
-    if (controlling) event.preventDefault();
+/// The stage behind `?stage=<id>` and what the terminal may do for it.
+function useStageView(id: string | null): StageView {
+  const snapshot = useAtomValue(snapshotAtom);
+  const stage = id === null ? undefined : selectStage(snapshot, id);
+  const enabled = snapshot?.terminals ?? false;
+  return {
+    stage,
+    gate: stage === undefined ? null : terminalGate(enabled, stage),
+    history: stage === undefined ? null : terminalHistory(enabled, stage),
+    nativeBackend: stage !== undefined && enabled && stage.session_backend === "native",
   };
-  const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
+}
+
+/// Closes the modal, or returns from the terminal to the details.
+function useStageNav(): { close: () => void; toDetails: () => void } {
+  const [, setParams] = useSearchParams();
+  const edit = (drop: string[]) =>
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      drop.forEach((key) => next.delete(key));
+      return next;
+    });
+  return {
+    close: () => edit([STAGE_PARAM, STAGE_VIEW_PARAM]),
+    toDetails: () => edit([STAGE_VIEW_PARAM]),
+  };
+}
+
+/// The `t` shortcut: opens the terminal (or its history) from the details.
+function useTerminalShortcut(
+  view: StageView,
+  showTerminal: boolean,
+): (event: KeyboardEvent<HTMLDivElement>) => void {
+  const openTerminal = useOpenTerminal();
+  const { stage, gate, history } = view;
+  return (event) => {
     if (showTerminal || event.key !== "t" || event.altKey || event.ctrlKey || event.metaKey) return;
     if (isTyping(event.target) || stage === undefined) return;
     if (gate !== null && history === null) return;
     event.preventDefault();
     openTerminal(stage.id);
+  };
+}
+
+export function StageModal(props: StageModalProps = {}) {
+  const [params] = useSearchParams();
+  const id = params.get(STAGE_PARAM);
+  const terminal = params.get(STAGE_VIEW_PARAM) === TERMINAL_VIEW;
+  const view = useStageView(id);
+  const { close, toDetails } = useStageNav();
+  const [frame, setFrame] = useState<TerminalFrameState>(IDLE_FRAME);
+  const showTerminal = terminal && view.stage !== undefined;
+  const onKeyDown = useTerminalShortcut(view, showTerminal);
+  const guard = (event: Event) => {
+    if (showTerminal && frame.mode === "control") event.preventDefault();
   };
 
   return (
@@ -159,37 +178,62 @@ export function StageModal({
         onInteractOutside={guard}
         onPointerDownOutside={guard}
       >
-        {id !== null && stage === undefined && <Missing id={id} />}
-        {stage && !terminal && (
-          <Body
-            stage={stage}
-            gate={gate}
-            history={history}
-            nativeBackend={nativeBackend}
-            onTerminal={openTerminal}
-          />
-        )}
-        {stage && terminal && history !== null && (
-          <HistoryView
-            stage={stage}
-            session={history}
-            frame="dialog"
-            factory={historyFactory}
-            load={historyLoader}
-          />
-        )}
-        {stage && terminal && history === null && (
-          <TerminalFrameContext.Provider value={setFrame}>
-            <TerminalView
-              stage={stage}
-              frame="dialog"
-              factory={terminalFactory}
-              deps={terminalDeps}
-            />
-          </TerminalFrameContext.Provider>
-        )}
+        <Panes
+          id={id}
+          terminal={terminal}
+          view={view}
+          toDetails={toDetails}
+          setFrame={setFrame}
+          {...props}
+        />
       </DialogContent>
     </Dialog>
+  );
+}
+
+/// What fills the dialog: the missing notice, details, saved screen or terminal.
+function Panes({
+  id,
+  terminal,
+  view,
+  toDetails,
+  setFrame,
+  ...props
+}: StageModalProps & {
+  id: string | null;
+  terminal: boolean;
+  view: StageView;
+  toDetails: () => void;
+  setFrame: (state: TerminalFrameState) => void;
+}) {
+  const { stage, gate, history, nativeBackend } = view;
+  if (id !== null && stage === undefined) return <Missing id={id} />;
+  if (!stage) return null;
+  if (!terminal) {
+    return <Body stage={stage} gate={gate} history={history} nativeBackend={nativeBackend} />;
+  }
+  if (history !== null) {
+    return (
+      <HistoryView
+        stage={stage}
+        session={history}
+        frame="dialog"
+        factory={props.historyFactory}
+        load={props.historyLoader}
+        onBack={toDetails}
+      />
+    );
+  }
+  return (
+    <TerminalFrameContext.Provider value={setFrame}>
+      <TerminalView
+        stage={stage}
+        frame="dialog"
+        factory={props.terminalFactory}
+        deps={props.terminalDeps}
+        onBack={toDetails}
+      />
+    </TerminalFrameContext.Provider>
   );
 }
 
@@ -198,71 +242,92 @@ function Body({
   gate,
   history,
   nativeBackend,
-  onTerminal,
 }: {
   stage: StageSummary;
   gate: string | null;
   history: string | null;
   nativeBackend: boolean;
-  onTerminal: (id: string) => void;
 }) {
-  const open = useOpenStage();
+  const openTerminal = useOpenTerminal();
   const ordered = useAtomValue(orderedStagesAtom);
   const attention = useAtomValue(attentionAtom).find((entry) => entry.id === stage.id);
   const level = ordered.find((entry) => entry.stage.id === stage.id)?.level ?? null;
-  const tone = stateMeta(stage.status).tone;
 
-  const counts = attention && attentionCounts(attention);
   return (
     <>
-      {attention && (
-        <HazardHeader
-          tone={attentionHazard(attention)}
-          title={attention.label}
-          className="pr-12 sm:pr-12"
-          action={counts && <span className="text-xs text-muted-foreground">{counts}</span>}
-        />
-      )}
-      <DialogHeader className={cn("stage-modal-head gap-2 p-5 pr-12", toneClass(tone))}>
-        <div className="flex items-center gap-x-3 gap-y-1">
-          <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-            <DialogTitle className="text-xl font-semibold tracking-tight text-foreground">
-              {stage.name}
-            </DialogTitle>
-            <span className="font-mono text-sm text-muted-foreground">{stage.id}</span>
-          </div>
+      {attention && <AttentionBanner attention={attention} />}
+      <BodyHead
+        stage={stage}
+        terminalButton={
           <TerminalButton
             reason={history === null ? gate : null}
             history={history !== null}
             nativeBackend={nativeBackend}
-            onOpen={() => onTerminal(stage.id)}
+            onOpen={() => openTerminal(stage.id)}
           />
-        </div>
-        <StageSummaryText summary={stage.summary} />
-        <DialogDescription asChild>
-          <StateLine stage={stage} className="text-foreground" />
-        </DialogDescription>
-        <ThreadRows stage={stage} pick={open} className="mt-1" />
-      </DialogHeader>
+        }
+      />
       <div className="max-h-[62dvh] overflow-y-auto p-5">
         <div className="flex flex-col gap-4">
           {attention && <OperatorGuidance entry={attention} />}
           <StageSectionGrid stage={stage} level={level} />
         </div>
       </div>
-      <footer className="flex items-center justify-between gap-3 border-t border-hairline bg-muted/40 px-5 py-2.5 text-xs text-muted-foreground">
-        <span>
-          <Kbd>Esc</Kbd> closes
-        </span>
-        <Link
-          to={stageHref(stage.id)}
-          className="inline-flex items-center gap-1.5 text-foreground hover:underline"
-        >
-          open as a page
-          <ExternalLinkIcon className="size-3.5" />
-        </Link>
-      </footer>
+      <BodyFoot id={stage.id} />
     </>
+  );
+}
+
+function AttentionBanner({ attention }: { attention: Attention }) {
+  const counts = attentionCounts(attention);
+  return (
+    <HazardHeader
+      tone={attentionHazard(attention)}
+      title={attention.label}
+      className="pr-12 sm:pr-12"
+      action={counts && <span className="text-xs text-muted-foreground">{counts}</span>}
+    />
+  );
+}
+
+function BodyHead({ stage, terminalButton }: { stage: StageSummary; terminalButton: ReactNode }) {
+  const open = useOpenStage();
+  return (
+    <DialogHeader
+      className={cn("stage-modal-head gap-2 p-5 pr-12", toneClass(stateMeta(stage.status).tone))}
+    >
+      <div className="flex items-center gap-x-3 gap-y-1">
+        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
+          <DialogTitle className="text-xl font-semibold tracking-tight text-foreground">
+            {stage.name}
+          </DialogTitle>
+          <span className="font-mono text-sm text-muted-foreground">{stage.id}</span>
+        </div>
+        {terminalButton}
+      </div>
+      <StageSummaryText summary={stage.summary} />
+      <DialogDescription asChild>
+        <StateLine stage={stage} className="text-foreground" />
+      </DialogDescription>
+      <ThreadRows stage={stage} pick={open} className="mt-1" />
+    </DialogHeader>
+  );
+}
+
+function BodyFoot({ id }: { id: string }) {
+  return (
+    <footer className="flex items-center justify-between gap-3 border-t border-hairline bg-muted/40 px-5 py-2.5 text-xs text-muted-foreground">
+      <span>
+        <Kbd>Esc</Kbd> closes
+      </span>
+      <Link
+        to={stageHref(id)}
+        className="inline-flex items-center gap-1.5 text-foreground hover:underline"
+      >
+        open as a page
+        <ExternalLinkIcon className="size-3.5" />
+      </Link>
+    </footer>
   );
 }
 

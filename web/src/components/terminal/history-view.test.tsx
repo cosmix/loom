@@ -1,6 +1,6 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type { HistoryLoader } from "@/api/terminal-history";
 import { HistoryView } from "@/components/terminal/history-view";
@@ -9,7 +9,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 
 const SESSION = "session-ab12cd34-1700000000";
 
-function renderHistory(load: HistoryLoader) {
+function renderHistory(load: HistoryLoader, onBack?: () => void) {
   const emulators = fakeFactory();
   const stage = terminalStage({ session_alive: false, terminal_history_session: SESSION });
   const router = createMemoryRouter([
@@ -23,6 +23,7 @@ function renderHistory(load: HistoryLoader) {
             frame="page"
             factory={emulators.factory}
             load={load}
+            onBack={onBack}
           />
         </TooltipProvider>
       ),
@@ -86,6 +87,23 @@ describe("HistoryView", () => {
 
     expect((await screen.findByRole("alert")).textContent).toContain("could not be loaded");
     expect(doubles[0].calls.disposed).toBe(1);
+  });
+
+  it("shows no back button without onBack", async () => {
+    const { doubles } = renderHistory(async () => new Uint8Array([104]));
+    await waitFor(() => expect(doubles[0]?.calls.written).toHaveLength(1));
+
+    expect(screen.queryByRole("button", { name: "Back to details" })).toBeNull();
+  });
+
+  it("calls onBack once from the back button", async () => {
+    const onBack = vi.fn();
+    const { doubles } = renderHistory(async () => new Uint8Array([104]), onBack);
+    await waitFor(() => expect(doubles[0]?.calls.written).toHaveLength(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "Back to details" }));
+
+    expect(onBack).toHaveBeenCalledTimes(1);
   });
 
   it("disposes the terminal when it unmounts", async () => {
