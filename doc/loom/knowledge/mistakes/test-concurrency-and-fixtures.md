@@ -243,3 +243,22 @@ refusal, not on the code under test. `relay_e2e.rs` uses a directory outside `/t
 **Prevention:** Model time explicitly. Use a past progress timestamp or an existing fixed test clock, rather than relying on a scheduling delay or adding sleep.
 
 **Fix:** The zero-timeout heartbeat branch receives an explicitly past progress timestamp, and the adjacent watcher fixture uses its fixed clock. Production staleness semantics, deadlines and sleep behavior stay unchanged; rerun the exhaustive suite after the fixture correction.
+
+## A Supervisor Test With Millisecond Deadlines Failed on a Loaded macOS Runner
+
+**What happened:** `loom-hooks/tests/codex-forward-direct.sh` ran `_codex-direct.py` with
+`--timeout-ms 80 --grace-ms 40`, and its signal case called `supervise(..., 30, 20)`. Hook tests
+(macos) failed with an empty `Output:`. With `yes > /dev/null` on twice the core count, 13 of 25
+local runs failed: the timeout case returned 125 (unknown) instead of 124, because the killed child
+was not confirmed reaped within 40 ms.
+
+**Why:** the deadlines fit an idle machine. Under `set -euo pipefail` a failed `[[ ]]`, `rg` or `jq`
+exits without printing, so the runner shows no output to diagnose.
+
+**Prevention:** a deadline the test expects to be met uses the production bound. `_retire` returns
+once the group is reaped, so a long grace costs nothing on a passing run. Only a deadline the test
+expects to expire stays short. Reproduce a timing failure by looping the test under CPU load, with
+`bash -x` to name the failing line.
+
+**Fix:** the timeout and signal cases use a 1000 ms timeout and the 5000 ms production grace; 0 of
+25 runs fail under the same load.

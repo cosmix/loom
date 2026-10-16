@@ -279,3 +279,21 @@ takes it first, then `/proc/sys/kernel/random/boot_id` or `kern.bootsessionuuid`
 **Why:** the sandbox `TMPDIR` does not cover `confstr(_CS_DARWIN_USER_TEMP_DIR)`, and Seatbelt denies `/dev/fd`, process listing and PTY allocation.
 
 **Prevention:** classify by the denial text ("couldn't create cache file", `Operation not permitted`, `PermissionDenied` on a PTY) before treating a warning or failure as a defect, and confirm the failing tests sit outside the modules the diff touches. Run the stage's own modules (`cargo test --lib tokens::`) for evidence, record the environment failures once, and settle early whether a criterion is satisfiable in the sandbox: see [An Integration-Verify Stage Spent 1.5M Subagent Tokens](subagent-orchestration.md).
+
+## Linux CI Had No bubblewrap After Confined Verification Began Requiring It
+
+**What happened:** `56f4d32d` made `verify/criteria/confine_host.rs` fail closed without `bwrap` on
+Linux. The Linux test jobs in `.github/workflows/ci.yml` and `.github/workflows/release.yml`
+installed only tmux and ripgrep, so 108 lib tests failed with `confined verification requires
+bubblewrap (bwrap)`. A Linux-only compile error in the same push hid this for one run.
+
+**Why:** the host requirement changed in code and the CI images did not follow. The macOS jobs
+passed because Seatbelt ships with the OS.
+
+**Prevention:** a change that adds a host tool to a tested code path updates every workflow job
+that runs those tests, in the same commit.
+
+**Fix:** both Linux test jobs install `bubblewrap` and set
+`kernel.apparmor_restrict_unprivileged_userns=0`, because Ubuntu 24.04 AppArmor denies the
+unprivileged user namespace `bwrap` creates. The sysctl step is unconfirmed until a Linux CI run
+passes with it.
