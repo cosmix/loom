@@ -5,7 +5,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output, Stdio};
 
-use loom::fs::permissions::constants::HOOK_SKILL_TRIGGER;
+use loom::fs::permissions::constants::{HOOK_BOUNDED_INPUT, HOOK_SKILL_TRIGGER};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
@@ -38,6 +38,7 @@ impl Fixture {
         for client in [".claude", ".codex"] {
             let root = home.path().join(client);
             write(&root, "hooks/loom/skill-trigger.sh", HOOK_SKILL_TRIGGER);
+            write(&root, "hooks/loom/_bounded_input.py", HOOK_BOUNDED_INPUT);
             write(
                 &root,
                 "hooks/loom/skill-keywords.json",

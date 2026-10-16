@@ -79,6 +79,10 @@ pub(super) fn transcript_row(text: &str) -> Value {
 pub(super) fn install_hooks(hooks: &Path) {
     fs::create_dir_all(hooks).expect("create hooks directory");
     for (name, content) in [
+        (
+            "_bounded.sh",
+            loom::fs::permissions::constants::HOOK_BOUNDED,
+        ),
         ("_common.sh", HOOK_COMMON),
         ("_lifecycle.sh", HOOK_LIFECYCLE),
         ("_read_ledger.sh", HOOK_READ_LEDGER),

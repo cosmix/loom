@@ -166,6 +166,15 @@ fn python3_available() -> bool {
 
 pub fn install_hook() -> (TempDir, PathBuf) {
     let dir = TempDir::new().expect("create hook dir");
+    fs::write(
+        dir.path().join("_bounded_input.py"),
+        loom::fs::permissions::constants::HOOK_BOUNDED_INPUT,
+    )
+    .expect("write bounded Python input helper");
+    write_exec(
+        &dir.path().join("_bounded.sh"),
+        loom::fs::permissions::constants::HOOK_BOUNDED,
+    );
     let path = dir.path().join("skill-trigger.sh");
     write_exec(&path, HOOK_SKILL_TRIGGER);
     // The once-per-session ledger sources these siblings at runtime

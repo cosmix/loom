@@ -14,6 +14,11 @@ use tempfile::TempDir;
 /// Install hook script and its dependencies to temp directory and return path
 fn setup_hook() -> (TempDir, std::path::PathBuf) {
     let temp = TempDir::new().expect("create temp dir");
+    fs::write(
+        temp.path().join("_bounded.sh"),
+        loom::fs::permissions::constants::HOOK_BOUNDED,
+    )
+    .expect("write _bounded.sh");
 
     // Install _common.sh first (commit-filter.sh sources it via dirname)
     let common_path = temp.path().join("_common.sh");

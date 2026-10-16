@@ -45,9 +45,13 @@ fn write_exec(path: &Path, content: &str) {
     fs::set_permissions(path, fs::Permissions::from_mode(0o755)).expect("chmod");
 }
 
-/// Install poll-guard.sh plus its four sourced dependencies into a temp dir.
+/// Install poll-guard.sh and its sourced dependencies into a temp dir.
 fn setup_hook() -> (TempDir, PathBuf) {
     let temp = TempDir::new().expect("create temp dir");
+    write_exec(
+        &temp.path().join("_bounded.sh"),
+        loom::fs::permissions::constants::HOOK_BOUNDED,
+    );
     write_exec(&temp.path().join("_common.sh"), HOOK_COMMON);
     write_exec(
         &temp.path().join("_read_discipline.sh"),
@@ -375,26 +379,4 @@ fn non_bash_tool_and_unmatched_command_are_silently_ignored() {
     let out = run_bash_hook(&hook, "rg -n foo src/", &session, None);
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     assert!(out.stdout.trim().is_empty(), "stdout={}", out.stdout);
-}
-
-// Direct check of the polls ledger's TSV row shape used by the repeat counter.
-#[test]
-fn polls_ledger_row_is_tab_separated_key_timestamp() {
-    let (_hook_dir, hook) = setup_hook();
-    let session = Session::new();
-
-    let out = run_bash_hook(&hook, "git status", &session, None);
-    assert_eq!(out.code, 0, "stderr={}", out.stderr);
-
-    let ledger = session.work_dir().join(format!(
-        "hooks/polls/{}/{}.tsv",
-        session.session_id, session.agent_id
-    ));
-    let content = fs::read_to_string(&ledger).unwrap_or_else(|e| panic!("read ledger: {e}"));
-    let lines: Vec<&str> = content.lines().collect();
-    assert_eq!(lines.len(), 1, "content={content:?}");
-    let fields: Vec<&str> = lines[0].split('\t').collect();
-    assert_eq!(fields.len(), 2, "row={fields:?}");
-    assert_eq!(fields[0], "git status");
-    assert!(!fields[1].is_empty());
 }

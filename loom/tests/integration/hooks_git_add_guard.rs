@@ -22,6 +22,11 @@ use tempfile::TempDir;
 /// Install the guard and its `_common.sh` dependency into a temp dir.
 fn setup_hook() -> (TempDir, std::path::PathBuf) {
     let temp = TempDir::new().expect("create temp dir");
+    fs::write(
+        temp.path().join("_bounded.sh"),
+        loom::fs::permissions::constants::HOOK_BOUNDED,
+    )
+    .expect("write _bounded.sh");
 
     // _common.sh first - the guard sources it via dirname
     let common_path = temp.path().join("_common.sh");

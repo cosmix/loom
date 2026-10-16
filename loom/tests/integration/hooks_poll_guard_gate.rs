@@ -7,6 +7,28 @@
 
 use super::*;
 
+// Direct check of the polls ledger's TSV row shape used by the repeat counter.
+#[test]
+fn polls_ledger_row_is_tab_separated_key_timestamp() {
+    let (_hook_dir, hook) = setup_hook();
+    let session = Session::new();
+
+    let out = run_bash_hook(&hook, "git status", &session, None);
+    assert_eq!(out.code, 0, "stderr={}", out.stderr);
+
+    let ledger = session.work_dir().join(format!(
+        "hooks/polls/{}/{}.tsv",
+        session.session_id, session.agent_id
+    ));
+    let content = fs::read_to_string(&ledger).unwrap_or_else(|e| panic!("read ledger: {e}"));
+    let lines: Vec<&str> = content.lines().collect();
+    assert_eq!(lines.len(), 1, "content={content:?}");
+    let fields: Vec<&str> = lines[0].split('\t').collect();
+    assert_eq!(fields.len(), 2, "row={fields:?}");
+    assert_eq!(fields[0], "git status");
+    assert!(!fields[1].is_empty());
+}
+
 // 2. Build/test/lint runners are exempt from the repeat-command rule
 //    outright - the acceptance loop is SUPPOSED to rerun them. Never denied,
 //    never warned, not even on the 5th run, not even with the switch on and

@@ -17,6 +17,11 @@ use tempfile::TempDir;
 
 fn setup_hook() -> (TempDir, std::path::PathBuf) {
     let temp = TempDir::new().expect("create temp dir");
+    fs::write(
+        temp.path().join("_bounded.sh"),
+        loom::fs::permissions::constants::HOOK_BOUNDED,
+    )
+    .expect("write _bounded.sh");
 
     let common_path = temp.path().join("_common.sh");
     fs::write(&common_path, HOOK_COMMON).expect("write _common.sh");

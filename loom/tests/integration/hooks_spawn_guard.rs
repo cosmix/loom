@@ -32,6 +32,10 @@ const SPAWN_KEYS: &[&str] = &[
 fn setup_hook() -> (TempDir, std::path::PathBuf) {
     let temp = TempDir::new().expect("create temp dir");
     for (name, content) in [
+        (
+            "_bounded.sh",
+            loom::fs::permissions::constants::HOOK_BOUNDED,
+        ),
         ("_common.sh", HOOK_COMMON),
         ("_read_discipline.sh", HOOK_READ_DISCIPLINE),
         ("_read_ledger.sh", HOOK_READ_LEDGER),
@@ -379,21 +383,8 @@ fn prompt_without_preamble_gains_it_once_in_the_same_input_as_the_model() {
     assert_eq!(v["hookSpecificOutput"]["updatedInput"]["prompt"], rewritten);
 }
 
-#[test]
-fn codex_bound_types_never_receive_the_preamble() {
-    let (_temp, hook) = setup_hook();
-    let (home, cwd) = (temp(), temp());
-    for subagent_type in ["loom-codex-forwarder", "codex:codex-rescue"] {
-        let input = json!({"subagent_type": subagent_type, "model": "sonnet", "prompt": "task"});
-        let out = run_hook(&hook, "Agent", input, cwd.path(), home.path(), &[]);
-        assert_eq!(out.code, 0, "stderr={}", out.stderr);
-        assert!(
-            !out.stdout.contains("updatedInput") && !out.stdout.contains("LOOM_HOOK_WARN"),
-            "{subagent_type}: stdout={}",
-            out.stdout
-        );
-    }
-}
+#[path = "hooks_spawn_guard_codex.rs"]
+mod codex;
 
 #[path = "hooks_spawn_guard_gate.rs"]
 mod gate;

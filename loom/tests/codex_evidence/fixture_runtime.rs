@@ -25,8 +25,10 @@ impl Fixture {
         input.write_all(payload.to_string().as_bytes())?;
         input.flush()?;
         let stdin = File::open(input.path())?;
-        let mut command = Command::new(self.hooks.join("codex-forward-guard.sh"));
-        command.stdin(Stdio::from(stdin));
+        let mut command = Command::new("bash");
+        command
+            .arg(self.hooks.join("codex-forward-guard.sh"))
+            .stdin(Stdio::from(stdin));
         self.configure_child(&mut command, active);
         command.output().context("running real Codex guard")
     }

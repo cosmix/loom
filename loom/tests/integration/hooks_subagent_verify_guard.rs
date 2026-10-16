@@ -78,6 +78,10 @@ fn write_exec(path: &Path, content: &str) {
 /// Mirrors `hooks_commit_filter.rs::setup_hook()` (knowledge mistakes.md,
 /// "Hook Integration Tests Need _common.sh").
 fn install_hook(dir: &Path) -> PathBuf {
+    write_exec(
+        &dir.join("_bounded.sh"),
+        loom::fs::permissions::constants::HOOK_BOUNDED,
+    );
     write_exec(&dir.join("_common.sh"), HOOK_COMMON);
     let hook_path = dir.join("subagent-verify-guard.sh");
     write_exec(&hook_path, HOOK_SUBAGENT_VERIFY_GUARD);

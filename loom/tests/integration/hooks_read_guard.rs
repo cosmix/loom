@@ -28,6 +28,10 @@ fn write_exec(path: &Path, content: &str) {
 
 fn setup_hook() -> (TempDir, PathBuf) {
     let temp = TempDir::new().expect("create temp dir");
+    write_exec(
+        &temp.path().join("_bounded.sh"),
+        loom::fs::permissions::constants::HOOK_BOUNDED,
+    );
     write_exec(&temp.path().join("_common.sh"), HOOK_COMMON);
     write_exec(
         &temp.path().join("_read_discipline.sh"),

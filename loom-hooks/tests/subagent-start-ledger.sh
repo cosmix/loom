@@ -8,7 +8,6 @@ trap 'rm -rf "$TMP"' EXIT
 mkdir -p "$TMP/work" "$TMP/bin" "$TMP/parent/subagents"
 BIND_CALLS="$TMP/bind-calls"
 cat >"$TMP/bin/loom" <<'SH'
-#!/usr/bin/env bash
 printf '%s\n' "$*" >>"$BIND_CALLS"
 exit 0
 SH

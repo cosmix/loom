@@ -18,6 +18,10 @@ use crate::fixture::{Forwarder, EFFORT, LOOM_SESSION, MODEL, STAGE};
 
 pub fn install_hooks(hooks: &Path) -> Result<()> {
     for (name, contents) in [
+        (
+            "_bounded.sh",
+            loom::fs::permissions::constants::HOOK_BOUNDED,
+        ),
         ("_common.sh", HOOK_COMMON),
         ("_codex_forward.sh", HOOK_CODEX_FORWARD_COMMON),
         ("_lifecycle.sh", HOOK_LIFECYCLE),
