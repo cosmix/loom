@@ -5,131 +5,18 @@ from __future__ import annotations
 
 import argparse
 import ctypes
-import datetime as dt
 import errno
-import json
 import os
-import re
 import selectors
 import signal
 import subprocess
 import sys
 import time
-from dataclasses import dataclass
 
-RESULT_PREFIX = "LOOM-CODEX-DIRECT-RESULT "
-SAFE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$")
-MAX_EVENT_BYTES = 65_536
-MAX_OUTPUT_BYTES = 65_536
-MAX_STDERR_BYTES = 16_384
+from _codex_direct_events import DirectResult, EventState, JsonStream, utc_now
+
 POLL_SECONDS = 0.05
-
-
-def utc_now() -> str:
-    value = dt.datetime.now(dt.timezone.utc).isoformat(timespec="milliseconds")
-    return value.replace("+00:00", "Z")
-
-
-@dataclass(frozen=True)
-class DirectResult:
-    state: str
-    thread_id: str | None
-    turn_id: str | None
-    terminal_at: str
-    exit_code: int
-    ownership_retained: bool
-
-    def line(self) -> str:
-        value = {
-            "v": 1,
-            "state": self.state,
-            "thread_id": self.thread_id,
-            "turn_id": self.turn_id,
-            "terminal_at": self.terminal_at,
-            "exit_code": self.exit_code,
-            "ownership_retained": self.ownership_retained,
-        }
-        return RESULT_PREFIX + json.dumps(value, separators=(",", ":"))
-
-
-class EventState:
-    def __init__(self) -> None:
-        self.thread_id: str | None = None
-        self.turn_id: str | None = None
-        self.terminal: str | None = None
-        self.terminal_at: str | None = None
-        self.invalid = False
-
-    def _bind(self, field: str, value: object) -> None:
-        if not isinstance(value, str) or SAFE_ID.fullmatch(value) is None:
-            self.invalid = True
-            return
-        known = getattr(self, field)
-        if known is not None and known != value:
-            self.invalid = True
-            return
-        setattr(self, field, value)
-
-    def accept(self, event: object) -> None:
-        if not isinstance(event, dict) or not isinstance(event.get("type"), str):
-            self.invalid = True
-            return
-        kind = event["type"]
-        if kind == "thread.started":
-            self._bind("thread_id", event.get("thread_id"))
-        if kind.startswith("turn.") and event.get("turn_id") is not None:
-            self._bind("turn_id", event.get("turn_id"))
-        if kind in {"turn.completed", "turn.failed", "turn.cancelled"}:
-            if self.terminal is not None and self.terminal != kind:
-                self.invalid = True
-            self.terminal = kind
-            self.terminal_at = self.terminal_at or utc_now()
-
-
-class JsonStream:
-    def __init__(self, events: EventState) -> None:
-        self.events = events
-        self.buffer = bytearray()
-        self.discarding = False
-        self.emitted = 0
-
-    def feed(self, chunk: bytes, eof: bool = False) -> None:
-        for part in chunk.splitlines(keepends=True):
-            self._feed_part(part)
-        if eof and (self.buffer or self.discarding):
-            self.events.invalid = True
-            self.buffer.clear()
-            self.discarding = False
-
-    def _feed_part(self, part: bytes) -> None:
-        ended = part.endswith(b"\n")
-        payload = part[:-1] if ended else part
-        if not self.discarding:
-            self.buffer.extend(payload)
-            if len(self.buffer) > MAX_EVENT_BYTES:
-                self.events.invalid = True
-                self.buffer.clear()
-                self.discarding = True
-        if not ended:
-            return
-        if self.discarding:
-            self.discarding = False
-            return
-        self._consume_line(bytes(self.buffer))
-        self.buffer.clear()
-
-    def _consume_line(self, line: bytes) -> None:
-        try:
-            event = json.loads(line)
-        except (UnicodeDecodeError, json.JSONDecodeError):
-            self.events.invalid = True
-            return
-        self.events.accept(event)
-        encoded = json.dumps(event, separators=(",", ":")).encode() + b"\n"
-        if self.emitted + len(encoded) <= MAX_OUTPUT_BYTES:
-            sys.stdout.buffer.write(encoded)
-            sys.stdout.buffer.flush()
-            self.emitted += len(encoded)
+MAX_STDERR_BYTES = 16_384
 
 
 def _linux_snapshot() -> dict[int, tuple[int, str, str]] | None:
@@ -280,37 +167,37 @@ def _reap_adopted() -> None:
             return
 
 
-def _retire(proc: subprocess.Popen[bytes], tracker: Descendants, grace_ms: int, tick) -> bool:
-    signal_ok = _signal_group(proc.pid, signal.SIGTERM)
-    joined = _wait_until(proc, time.monotonic() + grace_ms / 1000, tick)
-    group_ok, group_alive = _probe_group(proc.pid)
-    if group_alive:
-        signal_ok = _signal_group(proc.pid, signal.SIGKILL) and signal_ok
+def _retire(proc: subprocess.Popen[bytes], tracker: Descendants, deadline: float, tick) -> bool:
+    # Same ownership contract as Rust OwnedProcess: kill the owned group on
+    # timeout or leader exit, reap and drain within one cleanup deadline.
+    # Snapshot identities also cover observed descendants that escaped the group.
+    signal_ok = _signal_group(proc.pid, signal.SIGKILL)
     living = tracker.living()
-    if living:
-        for pid in living:
-            try:
-                os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                continue
-            except OSError:
-                signal_ok = False
-    if not joined:
-        joined = _wait_until(proc, time.monotonic() + 2, tick)
-    if joined:
+    for pid in living or []:
+        try:
+            os.kill(pid, signal.SIGKILL)
+        except ProcessLookupError:
+            continue
+        except OSError:
+            signal_ok = False
+    joined = _wait_until(proc, deadline, tick)
+    while joined:
         _reap_adopted()
-    group_ok2, group_alive2 = _probe_group(proc.pid)
-    living2 = tracker.living()
-    probes_ok = group_ok and group_ok2 and living is not None and living2 is not None
-    retired = joined and not group_alive2 and living2 == []
-    return signal_ok and probes_ok and retired and not tracker.probe_failed
+        group_ok, group_alive = _probe_group(proc.pid)
+        living_now = tracker.living()
+        if group_ok and not group_alive and living_now == []:
+            return signal_ok and living is not None and not tracker.probe_failed
+        if time.monotonic() >= deadline:
+            break
+        tick()
+    return False
 
 
 def _normal_result(proc: subprocess.Popen[bytes], events: EventState, tracker: Descendants) -> DirectResult:
     group_ok, group_alive = _probe_group(proc.pid)
     living = tracker.living()
     retained = not group_ok or group_alive or living is None or bool(living) or tracker.probe_failed
-    complete = not events.invalid and events.thread_id is not None and events.turn_id is not None
+    complete = not events.invalid and events.thread_id is not None and events.started
     if retained or not complete:
         state, code = "unknown", 125
     elif proc.returncode == 0 and events.terminal == "turn.completed":
@@ -322,6 +209,13 @@ def _normal_result(proc: subprocess.Popen[bytes], events: EventState, tracker: D
     else:
         state, code = "unknown", 125
     return DirectResult(state, events.thread_id, events.turn_id, events.terminal_at or utc_now(), code, retained)
+
+
+def _close_streams(proc: subprocess.Popen[bytes], selector: selectors.BaseSelector) -> None:
+    selector.close()
+    for pipe in (proc.stdout, proc.stderr):
+        if pipe is not None:
+            pipe.close()
 
 
 def supervise(command: list[str], timeout_ms: int, grace_ms: int = 5000) -> DirectResult:
@@ -350,22 +244,34 @@ def supervise(command: list[str], timeout_ms: int, grace_ms: int = 5000) -> Dire
         tracker.refresh()
         _drain(selector, stream, stderr)
 
+    try:
+        return _collect_result(proc, tracker, events, selector, stream, stderr,
+                               timeout_ms, grace_ms, tick)
+    except BaseException:
+        _retire(proc, tracker, time.monotonic() + grace_ms / 1000,
+                lambda: time.sleep(0.005))
+        raise
+    finally:
+        _close_streams(proc, selector)
+
+
+def _collect_result(proc, tracker, events, selector, stream, stderr, timeout_ms, grace_ms, tick):
     joined = _wait_until(proc, time.monotonic() + timeout_ms / 1000, tick)
     timed_out = not joined
-    retired = _retire(proc, tracker, grace_ms, tick) if timed_out else False
-    if joined:
-        proc.wait()
-        _reap_adopted()
-    end = time.monotonic() + 0.25
+    end = time.monotonic() + grace_ms / 1000
+    retired = _retire(proc, tracker, end, tick)
     while selector.get_map() and time.monotonic() < end:
         _drain(selector, stream, stderr)
+    retired = retired and not selector.get_map()
     tracker.refresh()
     if timed_out:
         result = DirectResult("cancelled" if retired else "unknown", events.thread_id,
                               events.turn_id, utc_now(), 124 if retired else 125, not retired)
     else:
         result = _normal_result(proc, events, tracker)
-    selector.close()
+        if not retired:
+            result = DirectResult("unknown", events.thread_id, events.turn_id,
+                                  events.terminal_at or utc_now(), 125, True)
     return result
 
 

@@ -271,13 +271,8 @@ _loom_poll_rule_git_pathless() {
 
 # --- Main ----------------------------------------------------------------
 
-if command -v gtimeout &>/dev/null; then
-	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
-elif command -v timeout &>/dev/null; then
-	INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
-else
-	INPUT_JSON=$(cat 2>/dev/null || true)
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
+INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
 
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 if [[ "$TOOL_NAME" != "Bash" ]]; then

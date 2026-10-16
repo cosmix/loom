@@ -1,7 +1,7 @@
 //! Adversarial regression tests for security-sensitive hook policy.
 
 use crate::fs::permissions::constants::{
-    HOOK_CODEX_FORWARD_COMMON, HOOK_CODEX_FORWARD_GUARD, HOOK_COMMON, HOOK_LIFECYCLE,
+    HOOK_BOUNDED, HOOK_CODEX_FORWARD_COMMON, HOOK_CODEX_FORWARD_GUARD, HOOK_COMMON, HOOK_LIFECYCLE,
     HOOK_POST_TOOL_HEARTBEAT, HOOK_POST_TOOL_USE, HOOK_PROGRESS_CLASSIFICATION,
     HOOK_READ_DISCIPLINE, HOOK_READ_LEDGER, HOOK_WORKTREE_FILE_GUARD,
 };
@@ -41,6 +41,7 @@ impl HookFixture {
             fs::create_dir_all(path).unwrap();
         }
         fs::write(hooks.join("_common.sh"), HOOK_COMMON).unwrap();
+        fs::write(hooks.join("_bounded.sh"), HOOK_BOUNDED).unwrap();
         fs::write(hooks.join("_lifecycle.sh"), HOOK_LIFECYCLE).unwrap();
         fs::write(hooks.join("_codex_forward.sh"), HOOK_CODEX_FORWARD_COMMON).unwrap();
         fs::write(

@@ -11,6 +11,7 @@ LOG="$TMP/guards.log"
 LOOM_LOG="$TMP/loom.log"
 mkdir -p "$HOOK_DIR" "$BIN_DIR"
 cp "$SOURCE" "$HOOK_DIR/codex-apply-patch.sh"
+cp "$(dirname "$SOURCE")/_bounded.sh" "$HOOK_DIR/_bounded.sh"
 
 for guard in worktree-file-guard.sh credential-guard.sh plans-path-guard.sh stage-terminal-guard.sh; do
 	printf '%s\n' \

@@ -42,13 +42,8 @@ set -euo pipefail
 source "$(dirname "$0")/_common.sh"
 loom_require_jq "credential-guard.sh"
 
-if command -v gtimeout &>/dev/null; then
-	INPUT_JSON=$(gtimeout 5 cat 2>/dev/null || true)
-elif command -v timeout &>/dev/null; then
-	INPUT_JSON=$(timeout 5 cat 2>/dev/null || true)
-else
-	INPUT_JSON=$(cat 2>/dev/null || true)
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
+INPUT_JSON=$(loom_read_input 5 2>/dev/null || true)
 
 TOOL_NAME=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 

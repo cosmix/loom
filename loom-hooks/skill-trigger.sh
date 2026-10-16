@@ -5,11 +5,8 @@ Claude uses Skill-tool invocations; --codex emits native SKILL.md read paths.
 Project discovery is bounded and delegated to loom hook project-types.
 The hook is advisory: unavailable discovery never blocks a user prompt.
 
-A detected repository type is a tie-breaker, never a qualifier: it adds one
-point to a skill's score, which only clears MIN_SCORE alongside a prompt
-keyword hit of its own. A repo-type skill never qualifies from detection
-alone, so a prompt with no matching keywords gets no suggestions just
-because a technology exists somewhere in the tree.
+Repository detection adds one tie-breaking point only alongside a skill's
+own prompt keyword hit; detection alone never qualifies a suggestion.
 """
 
 import json
@@ -18,6 +15,7 @@ import re
 import subprocess
 import sys
 from datetime import datetime, timezone
+from _bounded_input import read_input
 
 CODEX = "--codex" in sys.argv[1:]
 MAX_SUGGESTIONS = 5
@@ -363,8 +361,8 @@ def main():
     if sys.stdin.isatty():
         return
     try:
-        data = json.loads(sys.stdin.read(1024 * 1024 + 1))
-    except ValueError:
+        data = json.loads(read_input())
+    except (OSError, ValueError):
         return
     if not isinstance(data, dict) or not isinstance(data.get("prompt"), str) or not data["prompt"]:
         return

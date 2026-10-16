@@ -130,13 +130,14 @@ parse_supervisor_result() {
 		select($r != null and ($r | type == "object") and
 		 ($r | keys | sort) == (["exit_code","ownership_retained","state","terminal_at","thread_id","turn_id","v"] | sort) and
 		 $r.v == 1 and ($r.state | IN("succeeded","failed","cancelled","unknown")) and
-		 ($r.thread_id | type == "string") and ($r.turn_id | type == "string") and
+		 ($r.thread_id | type == "string") and ($r.turn_id == null or ($r.turn_id | type == "string")) and
 		 ($r.terminal_at | type == "string") and ($r.exit_code | type == "number" and floor == .) and
 		 ($r.ownership_retained | type == "boolean")) |
-		[$r.state,$r.thread_id,$r.turn_id,$r.terminal_at,($r.exit_code|tostring),
+		[$r.state,$r.thread_id,($r.turn_id // "-"),$r.terminal_at,($r.exit_code|tostring),
 		 ($r.ownership_retained|tostring)] | @tsv' 2>/dev/null) || return 1
 	IFS=$'\t' read -r STATE THREAD_ID TURN_ID TERMINAL_AT RESULT_STATUS RETAINED <<<"$fields"
-	loom_lifecycle_safe_id "$THREAD_ID" && loom_lifecycle_safe_id "$TURN_ID" || return 1
+	loom_lifecycle_safe_id "$THREAD_ID" || return 1
+	if [[ "$TURN_ID" == - ]]; then TURN_ID=; else loom_lifecycle_safe_id "$TURN_ID" || return 1; fi
 	[[ "$TERMINAL_AT" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}\.[0-9]{3}Z$ ]] || return 1
 	case "$STATE:$RESULT_STATUS:$RETAINED" in
 	succeeded:0:false | cancelled:124:false | unknown:125:true) ;;

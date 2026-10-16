@@ -153,29 +153,62 @@ assert_stderr 'E1 environment, jq unavailable' 'jq is not installed'
 # E2: an ancestor's environment, with the guard's own environment scrubbed.
 # This is the nested-session masquerade: `env -i claude ...` launched from a
 # stage gives the nested session's hooks nothing of loom's, but the stage
-# identity is still above them in the process tree.
-cat >"$d/ancestor.sh" <<EOF
-#!/usr/bin/env bash
-set -euo pipefail
-code=0
-printf '%s' "\$1" | env -i PATH="$CLEAN_PATH" HOME="$HOME_DIR" \\
-	"$BASH_BIN" "$HOOK" >"$d/stdout" 2>"$d/stderr" || code=\$?
-# No exec above: this process has to stay alive as the guard's parent.
-exit "\$code"
-EOF
-CODE=0
-LOOM_STAGE_ID=ancestor-stage "$BASH_BIN" "$d/ancestor.sh" "$RESCUE_EDIT" || CODE=$?
-assert_code 2 'E2 ancestor environment'
-assert_stderr 'E2 ancestor environment' 'forwarders may use Bash only'
-assert_stderr 'E2 ancestor environment' 'ancestor pid'
+# identity is still above them in the process tree. macOS can hide the entire
+# environment of protected system executables (including /bin/bash). Use a
+# real Python parent and establish visibility independently before asserting
+# anything about the guard's ancestor probe; unavailable is not absent.
+cat >"$d/ancestor.py" <<'PY'
+import os
+from pathlib import Path
+import subprocess
+import sys
 
-if [[ -n "$AMBIENT" ]]; then
+if sys.platform == "darwin":
+    probe = subprocess.run(
+        ["/bin/ps", "eww", "-o", "command=", "-p", str(os.getpid())],
+        capture_output=True,
+    )
+    visible = probe.returncode == 0 and (
+        b" LOOM_ANCESTOR_PROBE=visible" in probe.stdout
+    )
+else:
+    try:
+        visible = b"LOOM_ANCESTOR_PROBE=visible\0" in Path(
+            f"/proc/{os.getpid()}/environ"
+        ).read_bytes()
+    except OSError:
+        visible = False
+if not visible:
+    print("SKIP: E2 parent environment is unavailable to the OS probe")
+    sys.exit(77)
+command, payload = sys.argv[1:-1], sys.argv[-1]
+sys.exit(subprocess.run(command, input=payload.encode()).returncode)
+PY
+
+run_ancestor_guard() {
+	CODE=0
+	env LOOM_ANCESTOR_PROBE=visible "$@" python3 "$d/ancestor.py" \
+		env -i PATH="$CLEAN_PATH" HOME="$HOME_DIR" "$BASH_BIN" "$HOOK" \
+		"$RESCUE_EDIT" >"$d/stdout" 2>"$d/stderr" || CODE=$?
+}
+
+run_ancestor_guard LOOM_STAGE_ID=ancestor-stage
+if [[ $CODE -eq 77 ]]; then
+	printf 'SKIP: E2 ancestor environment unavailable; confinement coverage follows\n'
+else
+	assert_code 2 'E2 ancestor environment'
+	assert_stderr 'E2 ancestor environment' 'forwarders may use Bash only'
+	assert_stderr 'E2 ancestor environment' 'ancestor pid'
+fi
+
+if [[ $CODE -eq 77 ]]; then
+	printf 'SKIP: E2 negative requires an observable parent environment\n'
+elif [[ -n "$AMBIENT" ]]; then
 	printf 'SKIP: stage evidence present in the test'"'"'s own ancestry (%s)\n' "$AMBIENT"
 else
 	# E2 negative: LOOM_TERMINAL travels further than a stage, so it is not
 	# evidence of one.
-	CODE=0
-	LOOM_TERMINAL=x "$BASH_BIN" "$d/ancestor.sh" "$RESCUE_EDIT" || CODE=$?
+	run_ancestor_guard LOOM_TERMINAL=x
 	assert_code 0 'E2 negative, LOOM_TERMINAL ancestor'
 	assert_silent 'E2 negative, LOOM_TERMINAL ancestor'
 fi

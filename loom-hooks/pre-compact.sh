@@ -37,13 +37,8 @@ set -euo pipefail
 # this hook is registered globally regardless of LOOM_STAGE_ID. `loom hook
 # pre-compact` is fail-open by contract, and `|| true` guards this call too:
 # nothing here may ever block compaction over delivery-record bookkeeping.
-if command -v gtimeout &>/dev/null; then
-	STDIN_PAYLOAD=$(gtimeout 1 cat 2>/dev/null || true)
-elif command -v timeout &>/dev/null; then
-	STDIN_PAYLOAD=$(timeout 1 cat 2>/dev/null || true)
-else
-	STDIN_PAYLOAD=$(cat 2>/dev/null || true)
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
+STDIN_PAYLOAD=$(loom_read_input 1 2>/dev/null || true)
 if command -v "${LOOM_BIN:-loom}" &>/dev/null; then
 	printf '%s' "$STDIN_PAYLOAD" | LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" hook pre-compact >/dev/null 2>&1 || true
 fi

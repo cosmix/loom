@@ -42,15 +42,8 @@ loom_require_jq "commit-filter.sh"
 # LOOM_HOOK_DEBUG=1 or the legacy COMMIT_FILTER_DEBUG=1.
 
 # Read JSON input from stdin (Claude Code passes tool info via stdin)
-# Use gtimeout (macOS with coreutils) or timeout (Linux), or just cat
-if command -v gtimeout &>/dev/null; then
-	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
-elif command -v timeout &>/dev/null; then
-	INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
-else
-	# No timeout available - just read stdin (Claude Code closes it properly)
-	INPUT_JSON=$(cat 2>/dev/null || true)
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
+INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
 
 loom_debug "=== $(date) ==="
 loom_debug "INPUT_JSON: $INPUT_JSON"

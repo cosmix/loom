@@ -47,7 +47,7 @@ source "$(dirname "$0")/_common.sh"
 source "$(dirname "$0")/_read_discipline.sh"
 loom_warn_no_jq "spawn-guard.sh"
 
-INPUT_JSON=$(loom_run_bounded 1 cat 2>/dev/null || true)
+INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
 
 TOOL_NAME=$(printf '%s' "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 case "$TOOL_NAME" in

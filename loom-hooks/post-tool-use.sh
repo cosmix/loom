@@ -211,7 +211,7 @@ _loom_bash_output_notice() {
 }
 
 # Bound stdin in case the hook runner leaves it open.
-INPUT_JSON=$(loom_run_bounded 1 cat 2>/dev/null || true)
+INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
 
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 TOOL_NAME="${TOOL_NAME:-unknown}"

@@ -25,14 +25,8 @@ source "$(dirname "$0")/_common.sh"
 loom_require_jq "plans-path-guard.sh"
 
 # Read stdin JSON (Claude Code provides tool input)
-# Cross-platform timeout: gtimeout (macOS+coreutils), timeout (Linux), or plain cat
-if command -v gtimeout &>/dev/null; then
-    INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
-elif command -v timeout &>/dev/null; then
-    INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
-else
-    INPUT_JSON=$(cat 2>/dev/null || true)
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
+INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
 
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 FILE_PATH=$(echo "$INPUT_JSON" | jq -r '.tool_input.file_path // empty' 2>/dev/null || true)

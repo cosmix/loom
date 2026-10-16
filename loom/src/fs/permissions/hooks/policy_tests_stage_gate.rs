@@ -2,7 +2,7 @@
 //! Split out from policy_tests.rs, which is already at its line-count ceiling.
 
 use crate::fs::permissions::constants::{
-    HOOK_CODEX_FORWARD_COMMON, HOOK_CODEX_FORWARD_GUARD, HOOK_COMMON, HOOK_LIFECYCLE,
+    HOOK_BOUNDED, HOOK_CODEX_FORWARD_COMMON, HOOK_CODEX_FORWARD_GUARD, HOOK_COMMON, HOOK_LIFECYCLE,
 };
 use serde_json::{json, Value};
 use std::fs;
@@ -84,6 +84,7 @@ fn parent_pid(pid: u32) -> Option<u32> {
 
 fn install_guard(dir: &Path) -> PathBuf {
     fs::write(dir.join("_common.sh"), HOOK_COMMON).unwrap();
+    fs::write(dir.join("_bounded.sh"), HOOK_BOUNDED).unwrap();
     fs::write(dir.join("_lifecycle.sh"), HOOK_LIFECYCLE).unwrap();
     fs::write(dir.join("_codex_forward.sh"), HOOK_CODEX_FORWARD_COMMON).unwrap();
     let script = dir.join("codex-forward-guard.sh");

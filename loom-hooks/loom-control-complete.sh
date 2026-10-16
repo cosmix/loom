@@ -10,13 +10,8 @@ set -euo pipefail
 source "$(dirname "$0")/_common.sh"
 
 read_input() {
-	if command -v gtimeout &>/dev/null; then
-		gtimeout 1 cat 2>/dev/null || true
-	elif command -v timeout &>/dev/null; then
-		timeout 1 cat 2>/dev/null || true
-	else
-		cat 2>/dev/null || true
-	fi
+	source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
+	loom_read_input 1 2>/dev/null || true
 }
 
 fail_closed() {

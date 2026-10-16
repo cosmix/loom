@@ -158,8 +158,9 @@ _loom_parent_pid() {
 # An ancestor's initial environment still carries the stage identity when the
 # hook's own process was launched with a scrubbed one, which is what a nested
 # `env -i claude ...` started from inside a stage produces. An ancestor whose
-# environment cannot be read belongs to another user, and a loom session runs
-# as the user, so it is skipped rather than counted.
+# environment cannot be read supplies no evidence: macOS can hide environments
+# of protected system executables even from the same user. That is unknown,
+# not proof of an ordinary session; inherited confinement is probed separately.
 _loom_ancestor_stage_evidence() {
 	local pid="$$" depth=0
 	while ((depth < 12)); do

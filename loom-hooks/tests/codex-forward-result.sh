@@ -45,9 +45,9 @@ LOOM-FORWARD-START {"v":1,"backend":"direct","thread_id":"thread-exact"}
 LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"thread-exact","outcome":"succeeded","exit_code":0}
 --- LOOM-FORWARD-OUTPUT ---
 {"type":"thread.started","thread_id":"thread-exact"}
-{"type":"turn.started","turn_id":"turn-exact"}
-{"type":"turn.completed","turn_id":"turn-exact"}
-LOOM-CODEX-DIRECT-RESULT {"v":1,"state":"succeeded","thread_id":"thread-exact","turn_id":"turn-exact","terminal_at":"$TERMINAL_AT","exit_code":0,"ownership_retained":false}
+{"type":"turn.started"}
+{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3}}
+LOOM-CODEX-DIRECT-RESULT {"v":1,"state":"succeeded","thread_id":"thread-exact","turn_id":null,"terminal_at":"$TERMINAL_AT","exit_code":0,"ownership_retained":false}
 note: the outer sandbox refuses a nested Seatbelt profile; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)
 --- LOOM-CODEX-EVIDENCE ---
 exit: 0
@@ -84,7 +84,7 @@ run_hook "$(payload "$ACK" false 0 "$PERSISTED")"
 EXPECTED="$d/expected.jsonl"
 cat >"$EXPECTED" <<'EOF'
 {"version":1,"event_id":"sha256:a795a3c76bbfffa7e3f029b578d369e304cb77543d0c482fa25b8f66f1f0d7d6","producer":"codex_direct","identity":{"kind":"codex","stage_id":"stage-one","loom_session_id":"session-one","parent_session_id":"parent-uuid","forwarder_agent_id":"forwarder-7","unit_id":"unit-a","invocation_id":"inv-0123456789abcdef0123456789abcdef","workspace_root":"/","execution":{"mode":"direct","thread_id":"thread-exact","tool_use_id":"tool-direct"}},"observed_at":"2026-09-14T12:00:00.000Z","state":"running","evidence":{"evidence_kind":"authorization","requested_model":"gpt-5.6-terra","requested_effort":"xhigh","invocation_id":"inv-0123456789abcdef0123456789abcdef","job_id":null,"thread_id":"thread-exact","turn_id":null,"tool_use_id":"tool-direct","terminal_at":null,"outcome":"running","detail":null}}
-{"version":1,"event_id":"sha256:cdeb7f7c6f6660a4524b508aefd6a0dff4b9621caccba67e065edc5c67f38c91","producer":"codex_direct","identity":{"kind":"codex","stage_id":"stage-one","loom_session_id":"session-one","parent_session_id":"parent-uuid","forwarder_agent_id":"forwarder-7","unit_id":"unit-a","invocation_id":"inv-0123456789abcdef0123456789abcdef","workspace_root":"/","execution":{"mode":"direct","thread_id":"thread-exact","tool_use_id":"tool-direct"}},"observed_at":"2026-09-14T12:01:02.345Z","state":"completed","evidence":{"evidence_kind":"observation","requested_model":"gpt-5.6-terra","requested_effort":"xhigh","invocation_id":"inv-0123456789abcdef0123456789abcdef","job_id":null,"thread_id":"thread-exact","turn_id":"turn-exact","tool_use_id":"tool-direct","terminal_at":"2026-09-14T12:01:02.345Z","outcome":"succeeded","detail":null}}
+{"version":1,"event_id":"sha256:107a4a28f53906bc9b0b4c478e0cf4ab9b0846b6f10a9ee2776c88b27c99ebc1","producer":"codex_direct","identity":{"kind":"codex","stage_id":"stage-one","loom_session_id":"session-one","parent_session_id":"parent-uuid","forwarder_agent_id":"forwarder-7","unit_id":"unit-a","invocation_id":"inv-0123456789abcdef0123456789abcdef","workspace_root":"/","execution":{"mode":"direct","thread_id":"thread-exact","tool_use_id":"tool-direct"}},"observed_at":"2026-09-14T12:01:02.345Z","state":"completed","evidence":{"evidence_kind":"observation","requested_model":"gpt-5.6-terra","requested_effort":"xhigh","invocation_id":"inv-0123456789abcdef0123456789abcdef","job_id":null,"thread_id":"thread-exact","turn_id":null,"tool_use_id":"tool-direct","terminal_at":"2026-09-14T12:01:02.345Z","outcome":"succeeded","detail":null}}
 EOF
 cmp "$EXPECTED" "$JOURNAL"
 

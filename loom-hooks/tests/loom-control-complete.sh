@@ -289,6 +289,7 @@ production_hook="$TMP/installed/loom-control-complete.sh"
 mkdir -p "$(dirname "$production_hook")"
 cp "$HOOK" "$production_hook"
 cp "$ROOT/loom-hooks/_common.sh" "$(dirname "$production_hook")/_common.sh"
+cp "$ROOT/loom-hooks/_bounded.sh" "$(dirname "$production_hook")/_bounded.sh"
 set +e
 production_output=$(jq -n --arg command "$PINNED" '{tool_name:"Bash",tool_input:{command:$command}}' |
 	env PATH="/usr/bin:/bin" HOME="$TMP/empty-home" LOOM_CONTROL_TESTING=1 \

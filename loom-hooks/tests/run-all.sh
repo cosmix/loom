@@ -43,6 +43,8 @@ run_test() {
 }
 
 echo "Running hook tests..."
+run_test "hook stdin: held-open pipes without GNU timeout" "$SCRIPT_DIR/bounded-stdin.sh"
+run_test "direct Codex: retire descendants after leader exit" "$SCRIPT_DIR/codex-direct-lifecycle.sh"
 run_test "prefer-modern-tools: grep triggers warning" "$SCRIPT_DIR/prefer-modern-tools-grep.sh"
 run_test "prefer-modern-tools: find triggers warning" "$SCRIPT_DIR/prefer-modern-tools-find.sh"
 run_test "prefer-modern-tools: rg has no warning" "$SCRIPT_DIR/prefer-modern-tools-rg.sh"

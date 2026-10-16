@@ -34,14 +34,8 @@ set -euo pipefail
 umask 077
 
 # Read JSON input from stdin (Claude Code passes prompt info via stdin)
-# Cross-platform timeout: gtimeout (macOS+coreutils), timeout (Linux), or plain cat
-if command -v gtimeout &>/dev/null; then
-	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
-elif command -v timeout &>/dev/null; then
-	INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
-else
-	INPUT_JSON=$(cat 2>/dev/null || true)
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
+INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
 
 if ! command -v "${LOOM_BIN:-loom}" &>/dev/null; then
 	exit 0

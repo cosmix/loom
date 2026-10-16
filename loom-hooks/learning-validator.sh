@@ -23,14 +23,8 @@ set -uo pipefail
 # hook must not cause a non-zero exit that kills the session.
 
 # Drain stdin to prevent blocking (Stop hooks receive JSON from Claude Code)
-# Cross-platform: gtimeout (macOS+coreutils), timeout (Linux), or cat
-if command -v gtimeout &>/dev/null; then
-	gtimeout 1 cat >/dev/null 2>&1 || true
-elif command -v timeout &>/dev/null; then
-	timeout 1 cat >/dev/null 2>&1 || true
-else
-	cat >/dev/null 2>&1 || true
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
+loom_read_input 1 >/dev/null 2>&1 || true
 
 # Validate required environment variables
 if [[ -z "${LOOM_STAGE_ID:-}" ]] || [[ -z "${LOOM_SESSION_ID:-}" ]] || [[ -z "${LOOM_WORK_DIR:-}" ]]; then

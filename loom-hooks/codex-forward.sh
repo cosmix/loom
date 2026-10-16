@@ -268,14 +268,14 @@ run_direct() {
 			 (.turn_id == null or (.turn_id | type == "string")) and
 			 (.terminal_at | type == "string") and (.exit_code | type == "number" and floor == .) and
 			 (.ownership_retained | type == "boolean")) |
-			[.state, (.thread_id // ""), (.turn_id // ""), .terminal_at,
+			[.state, (.thread_id // ""), (.turn_id // "-"), .terminal_at,
 			 (.exit_code | tostring), (.ownership_retained | tostring)] | @tsv' 2>/dev/null); then
 		{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
 		finish_without_end 1 '' 'codex direct supervisor returned no valid result line'
 	fi
 	IFS=$'\t' read -r state thread_id turn_id terminal_at result_status retained <<<"$fields"
-	if [[ "$result_status" != "$direct_status" || -z "$thread_id" || -z "$turn_id" ]] ||
-		! valid_backend_id "$thread_id" || ! valid_backend_id "$turn_id"; then
+	if [[ "$result_status" != "$direct_status" || -z "$thread_id" ]] ||
+		! valid_backend_id "$thread_id" || { [[ "$turn_id" != - ]] && ! valid_backend_id "$turn_id"; }; then
 		{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
 		finish_without_end 1 '' 'codex direct supervisor result was incomplete or inconsistent'
 	fi

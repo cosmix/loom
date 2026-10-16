@@ -1,6 +1,7 @@
 //! Permission constants for loom
 
 /// Common utilities shared across loom hooks (source guard, strip_embedded_content)
+pub const HOOK_BOUNDED: &str = include_str!("../../../../loom-hooks/_bounded.sh");
 pub const HOOK_COMMON: &str = include_str!("../../../../loom-hooks/_common.sh");
 
 /// Claude worker lifecycle evidence utilities shared by lifecycle hooks
@@ -137,6 +138,9 @@ pub const HOOK_CODEX_FORWARD_GUARD: &str =
 pub const HOOK_CODEX_FORWARD: &str = include_str!("../../../../loom-hooks/codex-forward.sh");
 
 /// Bounded process supervisor used by the direct macOS forwarding lane.
+pub const HOOK_CODEX_DIRECT_EVENTS: &str =
+    include_str!("../../../../loom-hooks/_codex_direct_events.py");
+pub const HOOK_BOUNDED_INPUT: &str = include_str!("../../../../loom-hooks/_bounded_input.py");
 pub const HOOK_CODEX_DIRECT: &str = include_str!("../../../../loom-hooks/_codex-direct.py");
 
 /// StageTerminalGuard hook - blocks Write/Edit/Task/Agent once a stage's own
@@ -182,6 +186,7 @@ pub const HOOK_LOOM_RELAY: &str = include_str!("../../../../loom-hooks/loom-rela
 pub const LOOM_HOOKS: &[(&str, &str)] = &[
     // Common utilities (sourced by other hooks)
     ("_common.sh", HOOK_COMMON),
+    ("_bounded.sh", HOOK_BOUNDED),
     ("_lifecycle.sh", HOOK_LIFECYCLE),
     ("_codex_forward.sh", HOOK_CODEX_FORWARD_COMMON),
     ("_read_discipline.sh", HOOK_READ_DISCIPLINE),
@@ -217,6 +222,8 @@ pub const LOOM_HOOKS: &[(&str, &str)] = &[
     ("codex-forward-guard.sh", HOOK_CODEX_FORWARD_GUARD),
     ("codex-forward.sh", HOOK_CODEX_FORWARD),
     ("_codex-direct.py", HOOK_CODEX_DIRECT),
+    ("_codex_direct_events.py", HOOK_CODEX_DIRECT_EVENTS),
+    ("_bounded_input.py", HOOK_BOUNDED_INPUT),
     ("stage-terminal-guard.sh", HOOK_STAGE_TERMINAL_GUARD),
     ("spawn-guard.sh", HOOK_SPAWN_GUARD),
     ("read-guard.sh", HOOK_READ_GUARD),

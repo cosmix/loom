@@ -113,13 +113,8 @@ drop_control_kinds() {
 
 [[ -n "${LOOM_SESSION_ID:-}" && -n "${LOOM_SCRATCH_DIR:-}" ]] || exit 0
 
-if command -v gtimeout &>/dev/null; then
-	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null)
-elif command -v timeout &>/dev/null; then
-	INPUT_JSON=$(timeout 1 cat 2>/dev/null)
-else
-	INPUT_JSON=$(cat 2>/dev/null)
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
+INPUT_JSON=$(loom_read_input 1 2>/dev/null)
 
 # Fast path, pure bash: almost every Bash call ends here. A `loom memory`
 # write command must reach the helper even when its relay line never lands in

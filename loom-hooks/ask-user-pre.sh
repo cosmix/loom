@@ -21,14 +21,8 @@ PATH="${LOOM_HOOK_PATH:-$PATH}"
 # able to tell a real AskUserQuestion call from Claude Code's other internal
 # paths onto the same permission pipeline (a `confirmWithUser` helper, a
 # plugin `ui.ask` bridge) that never log a tool_use at all.
-# Cross-platform: gtimeout (macOS+coreutils), timeout (Linux), or cat
-if command -v gtimeout &>/dev/null; then
-	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
-elif command -v timeout &>/dev/null; then
-	INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
-else
-	INPUT_JSON=$(cat 2>/dev/null || true)
-fi
+source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
+INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
 
 # Only run if this is a loom-managed session
 if [ -z "$LOOM_STAGE_ID" ] || [ -z "$LOOM_SESSION_ID" ]; then

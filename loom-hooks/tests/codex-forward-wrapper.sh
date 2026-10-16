@@ -225,7 +225,8 @@ run_companion completed "$OUT" "$ERR" "$UNWRITABLE_HOME"
 ! rg -q '^LOOM-FORWARD-START ' "$OUT"
 rg -qF 'canonical plugin data state root is not writable' "$OUT"
 
-# Direct lane behavior remains a joined foreground child with the existing markers.
+# Direct exec schema: Codex 0.162.1, commit 092d3acd6bec3e3a14bdc7e7a2810ab628ab759d.
+# A joined foreground child retains invocation/thread evidence without a turn ID.
 DIRECT_BIN="$d/direct-bin"
 mkdir -p "$DIRECT_BIN"
 cat >"$DIRECT_BIN/sandbox-exec" <<'STUB'
@@ -237,13 +238,13 @@ cat >"$DIRECT_BIN/codex" <<'STUB'
 printf '%q\n' "$@" >"$DIRECT_ARGV"
 [[ /dev/stdin -ef /dev/null ]] || exit 66
 [[ "${DIRECT_SCENARIO:-success}" == missing-thread ]] || printf '%s\n' '{"type":"thread.started","thread_id":"thread-exact"}'
-printf '%s\n' '{"type":"turn.started","turn_id":"turn-exact"}'
+printf '%s\n' '{"type":"turn.started"}'
 printf '%s\n' '{"type":"item.completed","item":{"type":"agent_message","text":"direct final"}}'
 if [[ "${DIRECT_SCENARIO:-success}" == failed ]]; then
-	printf '%s\n' '{"type":"turn.failed","turn_id":"turn-exact"}'
+	printf '%s\n' '{"type":"turn.failed","error":{"message":"fixture failure"}}'
 	exit 9
 fi
-printf '%s\n' '{"type":"turn.completed","turn_id":"turn-exact"}'
+printf '%s\n' '{"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3}}'
 STUB
 chmod +x "$DIRECT_BIN/codex" "$DIRECT_BIN/sandbox-exec"
 

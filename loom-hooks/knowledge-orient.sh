@@ -32,15 +32,9 @@
 set -euo pipefail
 umask 077
 
-# Read stdin JSON. Cross-platform timeout: gtimeout (macOS+coreutils),
-# timeout (Linux), or plain cat - same pattern as session-start.sh.
-if command -v gtimeout &>/dev/null; then
-	INPUT_JSON=$(gtimeout 1 cat 2>/dev/null || true)
-elif command -v timeout &>/dev/null; then
-	INPUT_JSON=$(timeout 1 cat 2>/dev/null || true)
-else
-	INPUT_JSON=$(cat 2>/dev/null || true)
-fi
+# Read stdin JSON under the shared deadline.
+source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
+INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
 
 # A stage session reads its signal's Knowledge Brief; loom-hooks/session-start.sh
 # (the worktree-only hook) handles its own re-anchor on compact/resume.
