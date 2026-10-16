@@ -43,7 +43,8 @@ fn rejects_one_byte_over_the_limit() {
 /// `run_server` writes the ready byte once its socket is bound, then closes
 /// the readiness pipe. The shutdown flag is set first, so the accept loop and
 /// every background thread stop at once: a live quota poller would read this
-/// host's credentials and poll the provider.
+/// host's credentials and poll the provider. The tmux lane keeps orchestrator
+/// construction from probing for a terminal emulator a headless host lacks.
 #[test]
 fn run_server_writes_the_ready_byte_once_its_socket_is_bound() {
     let dir = TempDir::new().expect("temp dir");
@@ -54,6 +55,11 @@ fn run_server_writes_the_ready_byte_once_its_socket_is_bound() {
     ) {
         return;
     }
+    std::fs::write(
+        dir.path().join("config.toml"),
+        "[terminal]\nbackend = \"tmux\"\n",
+    )
+    .unwrap();
     let stages = dir.path().join("stages");
     std::fs::create_dir(&stages).unwrap();
     let mut stage = crate::models::stage::Stage::new("Ready fixture".into(), None);
