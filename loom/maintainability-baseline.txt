@@ -26,7 +26,6 @@ file src/orchestrator/signals/tests.rs 551
 file src/orchestrator/signals/tests_cache.rs 630
 file src/orchestrator/terminal/emulator.rs 611
 file src/orchestrator/terminal/native/pid_tracking.rs 452
-file src/orchestrator/terminal/native/window_ops.rs 575
 file src/plan/parser/extraction.rs 410
 file src/plan/schema/tests/validation_tests.rs 826
 file src/plan/schema/types.rs 416
