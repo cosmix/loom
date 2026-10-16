@@ -14,12 +14,14 @@ use tempfile::TempDir;
 /// mount `/tmp` world-writable, so a root there would let any sandboxed
 /// process on the host plant tickets), and this suite's own `$TMPDIR` can
 /// live under `/tmp` (`relay/scratch.rs`'s own tests hit the same
-/// constraint). `target/` is gitignored scratch space that is not.
+/// constraint). The bounded runner supplies a trusted sibling of TMPDIR;
+/// direct Cargo invocations retain gitignored `target/` scratch space.
 pub(super) fn tempdir_outside_tmp(prefix: &str) -> TempDir {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("target")
-        .join("relay-e2e-tmp");
-    fs::create_dir_all(&base).expect("create target/relay-e2e-tmp");
+    let base = std::env::var_os("LOOM_TEST_ROOT")
+        .map(PathBuf::from)
+        .map(|root| root.join("trusted"))
+        .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target/relay-e2e-tmp"));
+    fs::create_dir_all(&base).expect("create trusted relay fixture root");
     let dir = tempfile::Builder::new()
         .prefix(prefix)
         .tempdir_in(&base)

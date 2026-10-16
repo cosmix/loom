@@ -172,9 +172,9 @@ pub fn loom_bin_path() -> &'static str {
 ///
 /// The `TempDir` lives in a `static OnceLock` so every test in this binary
 /// shares one scratch home; since statics are never destructed at process
-/// exit, that directory is never cleaned up and is left behind in the system
-/// temp dir after each test run — an accepted trade for a process-wide shared
-/// home, not a leak to fix.
+/// exit, Rust does not remove this directory. The host-load runner owns the
+/// outer temporary root and must remove it after the test binary and its
+/// children retire. Direct Cargo invocations leave this scratch home behind.
 pub fn loom_cmd() -> Command {
     static SCRATCH_HOME: OnceLock<TempDir> = OnceLock::new();
     let home = SCRATCH_HOME.get_or_init(|| {

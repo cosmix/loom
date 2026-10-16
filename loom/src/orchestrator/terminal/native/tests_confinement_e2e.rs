@@ -41,16 +41,13 @@ const LATENCY_SCRIPT: &str = r#"for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 
 done
 "#;
 /// Below this median, in microseconds, a spawn is not held to the 2x ratio.
-/// Spawning `/bin/true` takes around a millisecond, where one scheduler
-/// hiccup doubles a sample, so a ratio of two such medians measures noise
-/// rather than the sandbox.
+/// Sub-millisecond scheduler noise makes the ratio uninformative.
 const LATENCY_FLOOR_MICROS: u64 = 5_000;
 
-/// A fake home, a git repository with its state root, a stage worktree with
-/// the state-root symlink, and a host whose facts point into them. All of it
-/// lives under `target/`, never `/tmp` or `$TMPDIR`: those are
-/// session-writable, so the spawn preflight refuses hooks or a loom binary
-/// there, and the relay refuses a scratch root under `/tmp`.
+/// A fake home, repository, linked stage worktree, and matching host facts
+/// lives in the runner-owned trusted sibling, outside session-writable
+/// `$TMPDIR`. Direct Cargo runs use `target/`; neither fixture may be under
+/// `/tmp`, which the relay refuses.
 pub(super) struct Fixture {
     pub(super) _temp: TempDir,
     pub(super) base: PathBuf,
@@ -62,9 +59,12 @@ pub(super) struct Fixture {
 }
 
 fn tempdir_outside_tmp() -> TempDir {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR"))
-        .join("target")
-        .join("confinement-e2e-tmp");
+    let base = std::env::var_os("LOOM_TEST_ROOT")
+        .map(PathBuf::from)
+        .map(|root| root.join("trusted"))
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR")).join("target/confinement-e2e-tmp")
+        });
     std::fs::create_dir_all(&base).unwrap();
     tempfile::Builder::new()
         .prefix("fixture-")

@@ -1,0 +1,6 @@
+[build]
+jobs = 4
+
+[env]
+# Libtest workers, not Cargo build jobs; explicit environment/CLI values win.
+RUST_TEST_THREADS = { value = "4", force = false }

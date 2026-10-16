@@ -12,10 +12,8 @@ env:
   RUSTFLAGS: "-Dwarnings"
 
 jobs:
-  # The filters below are the only list of paths CI reacts to; every job keys
-  # off one of them. The rust filter names each repo-root path the crate reads:
-  # the asset roots build/assets.rs embeds, the files src/ and tests/
-  # include_str!, and the scripts the Rust jobs run. A new one goes here too.
+  # Every job uses these filters. Include every root-level crate input:
+  # embedded assets, include_str! files, Cargo configuration, and Rust-job scripts.
   changes:
     name: Detect changes
     runs-on: ubuntu-latest
@@ -36,6 +34,9 @@ jobs:
         with:
           filters: |
             rust:
+              - ".cargo/**"
+              - "scripts/run-rust-tests.py"
+              - "scripts/rust_test_*.py"
               - "loom/**"
               - "agents/**"
               - "commands/**"
@@ -59,9 +60,7 @@ jobs:
               - "loom/.githooks/**"
               - ".github/workflows/ci.yml"
 
-  # Each Rust job compiles the loom crate once, in its own mode. The cache
-  # holds dependencies only: a fresh checkout gives every source file a new
-  # mtime, so cargo rebuilds the workspace crate whatever target/ holds.
+  # Rust jobs cache dependencies; fresh source mtimes rebuild the workspace.
   lint:
     name: Lint
     runs-on: ubuntu-latest
@@ -98,7 +97,6 @@ jobs:
           RUSTDOCFLAGS: "-D warnings"
         run: cargo doc --workspace --all-features --no-deps
 
-  # cargo test --all-targets also runs the maintainability limits target.
   test:
     name: Test (linux)
     runs-on: ubuntu-latest

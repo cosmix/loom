@@ -178,7 +178,8 @@ impl Drop for ClaudeOnPathGuard {
 }
 
 /// Installs this build's hook scripts into a fresh directory under this
-/// crate's own `target/`, then points `LOOM_HOOKS_DIR` at it for the duration
+/// runner-owned trusted root (or `target/` for direct Cargo), then points
+/// `LOOM_HOOKS_DIR` at it for the duration
 /// of the guard, restoring the previous value (or clearing it) on drop —
 /// including on a panic, mirroring [`ClaudeOnPathGuard`].
 ///
@@ -189,7 +190,7 @@ impl Drop for ClaudeOnPathGuard {
 /// (absent on CI, and drifted from this build whenever the hooks change)
 /// would make this test flaky or wrongly refused before it ever reaches the
 /// tmux step it exists to pin — this guard gives it a directory that always
-/// verifies. `target/`, not `/tmp` or `$TMPDIR`: the latter is always a
+/// verifies. The trusted root must be outside `/tmp` and `$TMPDIR`: each is a
 /// session-writable root (`session_writable_roots` includes it), which check
 /// 3 would refuse.
 struct LoomHooksDirGuard {
@@ -199,11 +200,15 @@ struct LoomHooksDirGuard {
 
 impl LoomHooksDirGuard {
     fn install() -> Self {
-        let target_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+        let target_dir = std::env::var_os("LOOM_TEST_ROOT")
+            .map(PathBuf::from)
+            .map(|root| root.join("trusted"))
+            .unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("target"));
+        std::fs::create_dir_all(&target_dir).unwrap();
         let dir = tempfile::Builder::new()
             .prefix("tmux-abort-hooks-")
             .tempdir_in(&target_dir)
-            .expect("this crate's target directory must exist and accept a temp dir");
+            .expect("trusted fixture root must accept a temp dir");
         crate::fs::permissions::install_loom_hooks_to(dir.path())
             .expect("installing this build's hook scripts must succeed");
 

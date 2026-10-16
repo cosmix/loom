@@ -8,18 +8,12 @@
 //! run the full suite); git commits are never blocked by this hook even
 //! when their message body mentions a verification command.
 //!
-//! GOTCHA 1 (temp dir): do NOT use the default temp directory
-//! (`TempDir::new()` / `std::env::temp_dir()`) for the process trees below.
-//! In this harness `$TMPDIR` is `/tmp/claude-1000`, and the detector matches
-//! "claude" case-insensitively anywhere in a process's cmdline (it only
-//! excludes `.claude/hooks`). A temp dir under `/tmp/claude-1000/...` makes
-//! EVERY script's cmdline contain "claude" - including the hook script
-//! itself - which collapses the "claude"-named vs plain-named distinction
-//! the process-tree simulation below depends on. Tests here build their temp
-//! directory under `CARGO_MANIFEST_DIR/target/` instead, which is free of
-//! the substring "claude" - and assert that at runtime (see
-//! `temp_dir_no_claude`), since a checkout path containing "claude" would
-//! silently reproduce the same collapse.
+//! GOTCHA 1 (temp dir): the detector matches "claude" case-insensitively
+//! anywhere in a process's cmdline (it only excludes `.claude/hooks`). A
+//! fixture under a temp root containing "claude" makes every script look
+//! like a Claude ancestor and collapses the distinction these tests need.
+//! `temp_dir_no_claude` uses `std::env::temp_dir()` and asserts that its path
+//! does not contain "claude"; runners must choose a matching `TMPDIR`.
 //!
 //! GOTCHA 2 (env leak): `run_hook_in_tree` spawns real child processes via
 //! `Command::new("bash")`, which inherits the *entire* environment of the
@@ -43,24 +37,20 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
-/// Create a temp dir under `loom/target/` (never under `$TMPDIR`) so the
-/// path never contains the substring "claude" - see module doc comment,
-/// GOTCHA 1. Asserts the invariant instead of silently trusting it, since a
-/// checkout path containing "claude" would otherwise fail these tests with a
-/// baffling "main agent was blocked" message far from the real cause.
+/// Keep fixture writes under the runner's temporary root while rejecting a
+/// path that would make every simulated ancestor look Claude-named.
 fn temp_dir_no_claude() -> TempDir {
-    let base = Path::new(env!("CARGO_MANIFEST_DIR")).join("target");
+    let base = std::env::temp_dir();
     assert!(
         !base.to_string_lossy().to_lowercase().contains("claude"),
-        "CARGO_MANIFEST_DIR ({}) contains \"claude\" - the claude-name-based \
+        "temporary root ({}) contains \"claude\" - the claude-name-based \
          process-tree simulation in this file would misclassify every \
          process under it (including the hook script itself) as a \
          claude-named ancestor, collapsing the main-agent vs subagent \
-         distinction these tests depend on. Move the checkout to a path \
-         without \"claude\" in it.",
+         distinction these tests depend on. Set TMPDIR to a path without \
+         \"claude\" in it.",
         base.display()
     );
-    fs::create_dir_all(&base).expect("create target dir");
     tempfile::Builder::new()
         .prefix("subagent-verify-guard-test-")
         .tempdir_in(&base)

@@ -398,7 +398,7 @@ This selects Loom's installation destinations only. It does not configure Claude
 
 ### Build from source
 
-Required on Linux ARM64, and what you want when working on loom itself:
+Required on Linux ARM64 and for development; run tests with `/usr/bin/python3 scripts/run-rust-tests.py` as described in [the testing guide](doc/testing.md):
 
 ```bash
 git clone https://github.com/cosmix/loom.git

@@ -10,10 +10,14 @@ pub(super) struct Fixture {
 
 impl Fixture {
     pub(super) fn new() -> Self {
-        // Short /tmp root keeps AF_UNIX below Darwin's 104-byte limit.
+        // The runner provides a short owned socket root for Darwin AF_UNIX.
+        let base = std::env::var_os("LOOM_TEST_ROOT")
+            .map(|root| PathBuf::from(root).join("s"))
+            .unwrap_or_else(|| PathBuf::from("/tmp"));
+        std::fs::create_dir_all(&base).unwrap();
         let temp = tempfile::Builder::new()
             .prefix("inh-")
-            .tempdir_in("/tmp")
+            .tempdir_in(base)
             .unwrap();
         let repo = temp.path().canonicalize().unwrap();
         let root = repo.join(".loom/work");

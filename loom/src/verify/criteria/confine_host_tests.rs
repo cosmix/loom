@@ -89,7 +89,9 @@ fn run_canary(
 }
 
 #[test]
+#[serial_test::serial]
 fn actual_host_launcher_builds_cargo_offline_with_private_cache_state() {
+    let _toolchain = ToolchainReadRoot::from_runner();
     if crate::process::sandbox_probe::skip_unless(
         super::launcher().is_some(),
         "actual_host_launcher_builds_cargo_offline_with_private_cache_state",
@@ -171,4 +173,29 @@ fn private_cargo_home_uses_read_only_sources_and_hides_credentials() {
     );
     assert!(!cargo.join(".package-cache").exists());
     assert!(!cargo.join(".global-cache").exists());
+}
+
+/// The isolated harness uses an empty Rustup home. This fixture grants the
+/// installed compiler tree read access through the normal confinement input.
+struct ToolchainReadRoot(Option<Option<std::ffi::OsString>>);
+
+impl ToolchainReadRoot {
+    fn from_runner() -> Self {
+        let saved = std::env::var_os("LOOM_TEST_TOOLCHAIN").map(|toolchain| {
+            let previous = std::env::var_os("RUSTUP_HOME");
+            std::env::set_var("RUSTUP_HOME", toolchain);
+            previous
+        });
+        Self(saved)
+    }
+}
+
+impl Drop for ToolchainReadRoot {
+    fn drop(&mut self) {
+        match &self.0 {
+            Some(Some(previous)) => std::env::set_var("RUSTUP_HOME", previous),
+            Some(None) => std::env::remove_var("RUSTUP_HOME"),
+            None => {}
+        }
+    }
 }

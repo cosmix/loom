@@ -173,13 +173,15 @@ pub(crate) mod tests {
     }
 
     /// A directory to pin with [`TmuxTmpDirGuard`] where a real tmux server
-    /// will start. Under `/tmp`, not `$TMPDIR`: on macOS `$TMPDIR` is a
-    /// ~50-byte `/var/folders/...` path, and `tmux-<uid>/loom-<session-id>`
-    /// below it takes the socket path past the 104-byte `sun_path` limit.
-    /// `$TMPDIR` is the fallback only where `/tmp` cannot be written.
+    /// will start. The runner supplies a short owned socket root; direct
+    /// Cargo runs use `/tmp` to stay below Darwin's 104-byte socket limit.
     pub(crate) fn server_socket_dir() -> TempDir {
+        let base = std::env::var_os("LOOM_TEST_ROOT")
+            .map(|root| PathBuf::from(root).join("s"))
+            .unwrap_or_else(|| PathBuf::from("/tmp"));
+        std::fs::create_dir_all(&base).unwrap();
         tempfile::Builder::new()
-            .tempdir_in("/tmp")
+            .tempdir_in(base)
             .or_else(|_| TempDir::new())
             .unwrap()
     }
