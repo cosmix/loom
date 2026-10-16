@@ -109,25 +109,21 @@ pub(super) fn append_verifier_completion_header(content: &mut String) {
 /// doc), so there is no code to review. Covers the six required review dimensions.
 pub(crate) fn append_adversarial_review(content: &mut String) {
     content.push_str("**Mini Adversarial Code Review (MANDATORY before completing):**\n\n");
-    content.push_str("Assume a defect EXISTS in what you wrote; for non-trivial changes spawn a read-only `loom-code-reviewer`. Fix every finding first. Six dimensions:\n\n");
+    content.push_str("For non-trivial changes spawn a read-only `loom-code-reviewer`; fix every finding. Six dimensions:\n\n");
     content.push_str(
-        "1. **Code quality & architecture** — SOLID, right abstraction level, error and edge paths handled\n",
+        "1. **Code quality & architecture** — smallest complete design; failure paths and expected load\n",
     );
+    content.push_str("2. **Idiomatic code** — project conventions and language idioms\n");
     content.push_str(
-        "2. **Idiomatic code** — the language's idioms AND this project's patterns/conventions\n",
+        "3. **Security** — boundary validation, data-loss handling, accessibility; no secrets or injection\n",
     );
+    content.push_str("4. **Wiring** — trace real callers through changed behavior and failures\n");
     content.push_str(
-        "3. **Security** — inputs validated at boundaries, no secrets, no injection, no leaky errors\n",
+        "5. **Dead & unnecessary code** — no stubs, unused code or speculative layers/options\n",
     );
+    content.push_str("6. **No duplication (DRY)** — search the WHOLE codebase (`rg`/`fd`); reuse project/platform/dependency facilities\n\n");
     content.push_str(
-        "4. **Wiring** — every new unit imported, registered, reachable by a real caller\n",
-    );
-    content.push_str(
-        "5. **Dead & unnecessary code** — no stubs, no unused imports, no leftover scaffolding\n",
-    );
-    content.push_str("6. **No duplication (DRY)** — search the WHOLE codebase (`rg`/`fd`) and REUSE what exists\n\n");
-    content.push_str(
-        "Confirm your tests actually exercise the change — not just that it compiles.\n\n",
+        "Confirm tests actually exercise the change. Findings need a failure scenario or rule; taste is a suggestion.\n\n",
     );
 }
 

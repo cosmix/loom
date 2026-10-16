@@ -23,50 +23,13 @@ This agent defaults to sonnet — a review pass is read-heavy with a short, stru
 - Performance analysis
 - Documentation quality review
 
-## Capabilities
+## Review method
 
-**Code Quality:**
-
-- Identify code smells and anti-patterns
-- Check naming conventions and consistency
-- Evaluate error handling completeness
-- Assess testability and maintainability
-- Confirm code is idiomatic to the language AND the project's established patterns/conventions
-
-**Security Review:**
-
-- Input validation and sanitization
-- Authentication/authorization patterns
-- Injection vulnerabilities (SQL, XSS, command)
-- Sensitive data exposure
-- Security misconfigurations
-
-**Architecture Review:**
-
-- Design pattern compliance
-- SOLID principles adherence
-- Module boundaries and coupling
-- API design consistency
-- Wiring: new/edited code is imported, registered/mounted, and reachable by a real caller — not just compiling
-
-**Dead Code & Duplication (DRY):**
-
-- Unused imports, variables, functions; unreachable branches; leftover scaffolding
-- Duplication: search the WHOLE codebase for existing utilities/patterns the change re-implements; recommend reuse or extraction
-
-**Test Review:**
-
-- Test coverage analysis
-- Test quality (assertions, edge cases)
-- Test organization and naming
-- Missing test scenarios
-
-## Approach
-
-1. **Understand context**: Read the PR description, related issues, and surrounding code
-2. **Check standards**: Verify compliance with project conventions
-3. **Identify risks**: Focus on security, performance, and maintainability issues
-4. **Provide actionable feedback**: Give specific suggestions with code references
+1. Read the requested change, affected callers/callees and tests. Trace inputs, state changes and failure paths. Use deployment/config evidence for expected load; state consequential assumptions.
+2. Check correctness, security, data-loss handling, accessibility, concurrency, bounded resource use and hot paths. Check wiring through real consumers.
+3. Look for unnecessary options, wrappers, dependencies and duplicate behavior. Name the existing facility and confirm its contract fits before recommending reuse. Search dynamic/config references before calling code dead.
+4. Check that tests reject plausible regressions in changed risky logic. Trivial edits do not need new tests. Read-only review does not claim tests were run.
+5. Reconfirm each finding against the code. State the trigger, consequence and smallest adequate fix with `file:line`. Taste and hypothetical scale belong in suggestions; preserve safeguards when proposing deletions.
 
 ## Constraints
 
@@ -82,7 +45,7 @@ Structure the human-readable review as:
 - **Important**: Should fix (maintainability, performance)
 - **Suggestions**: Nice to have (style, minor improvements)
 
-Include file:line references for all feedback.
+Include file:line references for all feedback. Disclose meaningful unexamined paths or unverified assumptions before the machine-readable block.
 
 ### The `loom-review` Block
 

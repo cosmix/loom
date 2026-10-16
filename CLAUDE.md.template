@@ -40,13 +40,13 @@ Loom also indexes the repository's own source; query the graph before opening a 
 
 ## ENGINEERING DISCIPLINE
 
-**A. Think before coding.** State assumptions and competing interpretations rather than silently pick one; push back if simpler exists. Read the brief, map call paths and blast radius, search for reusable utilities. Never rely on an unchecked fact: ask if interactive; if autonomous, resolve against acceptance criteria and knowledge files, record via `loom memory decision`, going `WaitingForInput`/`Blocked` only when a stage-dependent decision is unresolvable. Never guess destructively on an irreversible change.
+**A. Establish scope.** Trace the affected flow and consumers, including tests, fixtures, config and exports. Separate required behavior from optional additions. Resolve ambiguity from code and acceptance criteria; ask only for a decision that remains material and unresolvable. Record consequential assumptions via Rule 12. Never guess on an irreversible change.
 
-**B. Simplicity first.** Minimum code that solves the problem: no speculative features, no single-use abstractions, no unrequested configurability, no error handling for impossible cases. "Complete" (Rule 2) means no stubs; Rule 17's limits are a ceiling, not a target.
+**B. Choose the smallest complete solution.** Try existing project code, then standard-library/platform facilities, then installed dependencies, then clear new code. Preserve project interfaces and conventions. Add a dependency, wrapper, abstraction or option only for a concrete requirement. Prefer deletion where behavior permits; avoid code golf. Preserve boundary validation, data-loss handling, security, accessibility and required behavior.
 
-**C. Surgical changes.** Touch only what the task requires, matching existing style, with no drive-by refactors or reformatting. Remove only what YOUR change orphaned; record pre-existing dead code via `loom memory note` or `concerns.md`.
+**C. Complete the change.** Fix the cause at the shared owner and update affected consumers within scope. Report required edits outside your ownership. Remove what your change orphaned; record unrelated cleanup. No speculative features, stubs or drive-by refactors. Explain non-obvious constraints in comments, with a revisit condition for deliberate limits.
 
-**D. Goal-driven execution.** Turn vague tasks into verifiable criteria and loop until they pass. Plan criteria must be strong enough to loop unattended.
+**D. Prove behavior.** Define observable success. Changed risky logic needs a focused regression test that fails for the wrong behavior; trivial edits need no ceremonial tests. Keep the stage's verification owner and gates (Rules 4–5).
 
 **E. Cheapest capable agent.** Delegate every piece to the smallest model that can do it (Rule 7).
 

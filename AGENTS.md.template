@@ -72,8 +72,19 @@ consistent: `cargo add`, `bun add`, `uv add`, or `go get`.
 
 ## Implementation discipline
 
-Deliver complete code. Do not leave placeholders, stubs, `pass` bodies, empty functions, or
-pseudocode. If a unit is too large to implement cleanly, decompose it into complete units.
+Trace the affected flow and consumers, including tests, fixtures, config and exports. Define
+observable success; resolve material ambiguity before an irreversible change.
+
+Choose the smallest complete solution: existing project code, standard-library/platform
+facilities, installed dependencies, then clear new code. Keep project interfaces and conventions.
+Add dependencies, wrappers, abstractions or options only for a concrete requirement. Avoid code
+golf. Preserve boundary validation, data-loss handling, security, accessibility and required behavior.
+
+Fix the cause at the shared owner; update affected consumers within your assigned scope and
+report required edits outside it. Remove what your change orphaned. No speculative features,
+stubs or drive-by refactors. Comment on non-obvious constraints and when deliberate limits need
+revisiting. Changed risky logic needs a focused regression test that fails for the wrong behavior;
+trivial edits need no ceremonial tests. Stage verification boundaries above still apply.
 
 Keep files at or below 400 lines, functions at or below 50 lines, and classes at or below 300
 lines. Refactor when an edit would exceed a limit.

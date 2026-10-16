@@ -31,130 +31,79 @@ triggers:
 
 # Code Review
 
-## Overview
-
-Review a change for correctness, security, performance, and maintainability, then produce prioritized, actionable feedback. Optimize signal: gate on what breaks users; comment (don't gate) on the rest.
-
-## Review vs. adversarial security audit
-
-Different jobs — don't conflate:
-
-- **Code review (this skill):** holistic, author-empathetic. Reviews the *diff and its blast radius* against stated intent across four lenses. Assumes good faith; catches the bugs a careful peer catches.
-- **Security audit (`Skill(skill="loom-skills", args="loom-security-audit")`, `Skill(skill="loom-skills", args="loom-threat-model")`):** attacker mindset, threat model, whole-attack-surface. Assumes hostile input everywhere.
-
-For auth, crypto, payments, deserialization, or anything touching a trust boundary: do the code review AND trigger a security audit. A passing code review is not a security sign-off.
-
-## Severity taxonomy
-
-Label every comment. BLOCKER, SILENT_FAILURE, and CRITICAL gate the merge.
-
-| Severity           | Gate? | Meaning                                                                            |
-| ------------------ | ----- | --------------------------------------------------------------------------------- |
-| **BLOCKER**        | ✅     | Security hole, data loss, crash, corruption. Merge is unsafe.                      |
-| **SILENT_FAILURE** | ✅     | Exit 0 but the operation actually failed (sandbox-blocked download, partial fetch, stale cache, swallowed error). Always investigate before merge. |
-| **CRITICAL**       | ✅     | Logic error / real bug that will bite in normal use.                              |
-| **MAJOR**          | ❌     | Maintainability, tech debt, missing test for a real path. Fix soon.               |
-| **MINOR / nit**    | ❌     | Style, naming, micro-optimization. Prefix with `nit:` so the author can skip it.  |
-
-**Approve-with-comments discipline:** if nothing is BLOCKER/SILENT_FAILURE/CRITICAL, approve and leave the MAJOR/MINOR notes as non-blocking. Don't hold a PR hostage over nits or personal style. Blocking on taste is the top reviewer anti-pattern — it trains authors to ignore you.
+Review the requested change and its affected behavior. Prioritize correctness, security,
+expected load, useful tests and maintainability. Give concrete findings and the smallest
+adequate repairs; disclose consequential gaps in what you checked.
 
 ## Method
 
-1. **Read intent first.** PR description, linked issue, commit messages. Review against what the change *claims* to do; flag scope creep separately from bugs.
-2. **Review the diff AND its blast radius.** A hunk is not self-contained. For every changed symbol, `rg` its callers and callees — a signature change, a new early-return, a changed default, or a widened type ripples outward. Bugs hide at the seams the diff doesn't show.
-3. **Four lenses per hunk:** correctness → security → performance → maintainability (below).
-4. **Missing-tests / missing-error-path pass** (separate sweep — easy to skip).
-5. **Verdict:** approve / approve-with-comments / request-changes, each comment severity-tagged.
+1. Read intent and locate the affected flow: entry points, callers/callees, state, tests,
+   fixtures and config. Use source-graph queries where available, then targeted reads.
+2. Trace success and failure paths beyond the diff. Confirm new preconditions are enforced
+   and changed defaults, signatures or formats reach every consumer.
+3. Establish expected load from repository/deployment evidence. Check concurrency and resource
+   growth against it; state assumptions that affect a finding.
+4. Apply the four lenses below, including missing tests and error handling.
+5. Reconfirm each finding: the caller exists, the input/state is possible, and the cited code
+   produces the consequence. Include a concrete scenario or violated requirement and a repair.
 
-### Blast-radius checklist
+For a requested repository audit, map entry points and data flows first, then inspect the
+highest-risk paths deeply. Report unexamined areas; do not page every file.
 
-- [ ] Callers of every changed function/signature updated (search, don't assume)
-- [ ] Callees: are new preconditions actually guaranteed by callers?
-- [ ] Changed default value / enum variant / error type — who relied on the old one?
-- [ ] Concurrency: new shared state, lock ordering, `await` points holding a guard?
-- [ ] Public API / serialized format / DB schema change — back-compat and consumers?
-- [ ] Tests, docs, and types updated alongside behavior?
+## Four lenses
 
-### Four lenses
+- **Correctness:** boundary values, parsing, cleanup on early returns, idempotency, retry safety,
+  races, lock ordering and compatibility. Follow errors through callers.
+- **Security:** validation at trust boundaries, authorization, injection, secret exposure and
+  data-loss prevention. Preserve these and accessibility when simplifying. For substantive
+  auth/crypto/payment or trust-boundary changes, use `loom-security-audit` or `loom-threat-model`
+  through `loom-skills`; a routine review does not establish security assurance.
+- **Performance:** unbounded state, query-per-item patterns, repeated work and allocation on
+  hot paths. Ground scale claims in expected inputs and deployment; speculative scale is a suggestion.
+- **Maintainability:** remove unnecessary options, wrappers and duplication. Prefer an existing
+  project facility, then standard/platform facilities or installed dependencies. Name the reuse
+  target and verify its contract. Search callers, config and dynamic references before declaring
+  code unused. Preserve project boundaries; avoid abstraction for hypothetical consumers.
 
-- **Correctness:** edge cases (empty, null, zero, negative, overflow, unicode, TZ/DST), off-by-one, error paths, resource cleanup (files/locks/connections on *every* return incl. early ones), idempotency/retry safety, race conditions. Trace the unhappy path, not just the happy one.
-- **Security:** input validation at the boundary, injection (SQL/command/path/SSRF/XSS), authz on every sensitive op, secrets not logged, crypto-grade randomness. (Deep dive → security audit.)
-- **Performance:** algorithmic complexity, N+1 queries, unnecessary allocation/clone in hot paths, missing pagination/streaming for unbounded data, `O(n)`-in-a-loop membership checks (want a set/map). Don't nitpick micro-perf off the hot path.
-- **Maintainability:** does the abstraction fit the problem? single responsibility, honest naming, no copy-paste of logic that will drift, no dead/speculative code, comments explain *why* not *what*.
+## Tests and evidence
 
-### Missing tests & error paths
+Changed risky logic needs a test that fails on a plausible wrong implementation: parsers,
+branches, data writes, money, security, concurrency and bug fixes deserve particular attention.
+Prefer extending existing tests. Trivial edits need no ceremonial tests. Inspect failure
+assertions and external-call timeout/error handling; a passing suite alone proves neither.
 
-The most common real defect in a passing PR: an untested error path. Ask:
+Follow the task's verification boundary. A read-only review can inspect tests but must not
+claim they ran. Stage implementers keep their one-check limit; the assigned verifier owns the gate.
 
-- [ ] New branch / early-return / `catch` with no test exercising it?
-- [ ] External call (network/db/fs) — what happens on timeout, 500, empty result?
-- [ ] Does a returned `Result`/`Err`/rejected promise get handled, or silently dropped?
-- [ ] New public function without a test for its failure mode, not just success?
+## Loom stages
 
-## Loom orchestration review
+- **Silent failure:** investigate exit 0 with failure evidence on stderr, partial downloads,
+  sandbox denials, swallowed errors and stale evidence.
+- **Wiring:** follow the real entry point to the changed behavior. A declaration, import or
+  isolated unit test does not prove registration, mounting, dispatch or execution.
+- **Dependencies:** confirm required packages/data/services exist; a manifest or config entry
+  alone does not establish availability.
+- **Review protocol:** the `loom-code-reviewer` agent's `loom-review` schema governs stage
+  output. Every recorded finding blocks completion regardless of severity; suggestions do not.
+  Classify taste or unproven concerns as suggestions, and account for all open finding IDs.
 
-For code produced by loom stages, add these (they catch the "compiles + tests pass but doesn't work" class):
+## Findings and verdict
 
-- **Silent failure (BLOCKER):** exit 0 with error/warning on stderr; sandbox blocked a download but stage completed; external dep referenced but not installed/reachable.
-- **Wiring (CRITICAL):** feature compiles and tests pass but is never imported / registered / mounted / reachable by a real user. Verify: is the module imported at the entry point? command/route registered? event handler connected? DI binding present? Can a user actually invoke it? (See `/loom-wiring-test`.)
-- **Dependency reality:** package actually installed (not just in manifest); data file actually downloaded (not just referenced); endpoint actually reachable (not just configured).
+Outside the stage protocol, use these severities:
 
-## Domain quick-checklists
+| Severity | Gate? | Evidence |
+| --- | --- | --- |
+| BLOCKER | Yes | Security exposure, data loss, crash or corruption |
+| SILENT_FAILURE | Yes | Reported success despite an actual failure |
+| CRITICAL | Yes | Concrete incorrect behavior in a reachable scenario |
+| MAJOR | No | Substantiated maintainability debt or a missing test for a real risk |
+| MINOR / nit | No | Optional style or small optimization |
 
-Compressed — expand the relevant one only when the diff touches that domain.
+Lead with findings ordered by impact; omit empty groups. For each, give `file:line`, the
+trigger, wrong outcome or violated requirement, and the smallest adequate fix. Distinguish
+established defects from assumptions. A known limitation needs a finding when current
+requirements exceed it; otherwise retain its limit and revisit condition.
 
-- **Infra/IaC:** no hardcoded secrets; least-privilege IAM; state backend secured; resource limits/requests (k8s); non-root, minimal base image, no secrets in layers (Docker); rollback path (CI/CD).
-- **Data pipeline:** schema validation; null/dup handling; idempotent + exactly-once where claimed; dead-letter queue; partitioning/batching; storage lifecycle for cost.
-- **ML:** seed set for reproducibility; train/val/test split has no leakage; data + model versioned; drift monitoring and rollback in prod; bias/fairness on training data.
-
-## Reviewer output format
-
-Group by severity, cite `file:line`, state issue → impact → fix. Keep it scannable.
-
-```markdown
-# Review: auth/login.py
-
-## BLOCKER
-- **L45 SQL injection** — `f"... WHERE email = '{email}'"` interpolates user input.
-  Impact: arbitrary SQL. Fix: `cursor.execute("... WHERE email = %s", (email,))`.
-
-## MAJOR
-- **L112 unchecked None** — `send_email(user.email, ...)` after `.first()` can `None`-deref
-  when the user doesn't exist. Add a guard returning 404.
-
-## nit
-- **L23** `GetUser` → `get_user` (snake_case).
-
-## Good
-- Clean validation split (L30-40); solid test coverage on the happy path.
-```
-
-Two tiny wrong→right patterns worth internalizing:
-
-```python
-# perf: O(n·m) — membership check rebuilds nothing but scans a list each pass
-if user.id in active_ids:      # list → O(n) per lookup
-# → hoist once:
-active = set(active_ids)       # O(1) per lookup
-if user.id in active:
-```
-
-## Author-empathy phrasing
-
-Same fact, better delivery — critique the code, ask don't command, give the reason:
-
-- ❌ "This is wrong." → ✅ "This deref crashes when `user` is None (L112) — guard it?"
-- ❌ "Why didn't you use a set?" → ✅ "A `set` here makes this O(1) per lookup; worth it on the hot path."
-- ❌ "Bad naming." → ✅ "nit: `data` is vague — `active_orders`?"
-
-Acknowledge good work explicitly; it makes the blocking comments land.
-
-## Verify before done
-
-- [ ] Read the PR intent; scope creep flagged separately from bugs
-- [ ] Every changed symbol's callers/callees checked (blast radius, not just the hunk)
-- [ ] All four lenses applied; unhappy paths traced
-- [ ] Missing-test / error-path sweep done
-- [ ] Loom: wiring + silent-failure + dependency-reality checks (if orchestrated code)
-- [ ] Every comment severity-tagged; nits marked `nit:`; verdict matches (only BLOCKER/CRITICAL gate)
-- [ ] Security-sensitive surface → security audit triggered, not just reviewed
+End with approve / approve-with-comments / request-changes and material unchecked areas.
+Do not manufacture nits, praise, line-savings estimates or a larger redesign to fill a report.
+In a Loom stage, put this human-readable material before the required final `loom-review` block.
