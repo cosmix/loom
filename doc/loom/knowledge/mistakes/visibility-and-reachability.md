@@ -121,3 +121,21 @@ Same trap as above, this time causing duplication rather than an inert feature:
 `guard_not_in_stage` (`commands/knowledge/bootstrap/mod.rs:133`) could not call the existing
 `non_empty_env` and inlined its own copy of the same `LOOM_STAGE_ID` check instead. Widening
 the module (`pub(crate) mod target` or a re-export) to de-duplicate is tracked in `concerns.md`.
+
+## A Re-Export Whose Only Users Are macOS-Gated Breaks the Linux Build
+
+**What happened:** `loom/src/daemon/server/mod.rs` re-exported `peer_identity::peer_pid`
+unconditionally. Its only users, `daemon/inherited/transport.rs` and `daemon/inherited/tests.rs`, sit
+behind `#[cfg(target_os = "macos")]`, so on Linux the re-export was unused and every Linux CI job
+(clippy, test, flake check, build) failed to compile under `-D warnings` while every macOS job passed.
+
+**Why:** macOS clippy sees the users and reports nothing; only a Linux compile sees the dead
+re-export. The Homebrew `cargo` used locally has no Linux standard library, so
+`cargo clippy --target x86_64-unknown-linux-gnu` stops at `E0463 can't find crate for core` and
+cannot stand in for the Linux job.
+
+**Prevention:** when every consumer of a `use`/re-export is cfg-gated, gate the re-export with the
+same `cfg`. Before adding a re-export, `rg` its path to list consumers and their gates.
+
+**Fix:** the re-export is split, `caller_is_inside_session` unconditional and `peer_pid` under
+`#[cfg(target_os = "macos")]`.

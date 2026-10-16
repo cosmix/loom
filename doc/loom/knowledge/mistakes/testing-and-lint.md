@@ -253,26 +253,26 @@ self-contained and order-independent.
 
 ## A Test Substring That Crosses a `colored` Segment Boundary Passes Under a Pipe and Fails in the Pre-Push Hook
 
-**What happened:** `cleanup_warning_renders_as_a_single_line_with_a_stage_file_hint` in
-`loom/src/commands/status/render/attention_tests.rs` passed under plain `cargo test` and in CI but
-failed inside the pre-push hook, blocking `git push`. Its assertion looked for `"Cleanup warning:
-failed: worktree busy\nretrying next cycle"`, a substring that starts in the plain label and
-continues into the `warning.yellow()` argument.
+**What happened:** twice in `loom/src/commands/status/render/attention_tests.rs`. First,
+`cleanup_warning_renders_as_a_single_line_with_a_stage_file_hint` asserted a substring running from
+the plain label into the `warning.yellow()` argument, and failed only inside the pre-push hook. Later,
+five guidance tests compared whole lines with `assert_eq!` and line widths with `chars().count()`,
+and failed in the pre-push hook while GitHub CI passed them.
 
 **Why:** the `colored` crate emits ANSI escapes whenever stdout is a terminal and
-`CLICOLOR`/`NO_COLOR` are unset. Git runs hook stdout on the terminal, so `cargo test` inside
-`loom/.githooks/pre-push` renders with colors and an escape sequence lands between the label and the
-text. Under a pipe, a sandbox, or CI the same test sees no escapes and passes, so the failure
-surfaces only at push time.
+`CLICOLOR`/`NO_COLOR` are unset, so escapes land between a label and its colored text and count
+toward a line's width. `loom/.githooks/pre-push` runs `cargo test` with stdout on the terminal.
+Under a pipe, a sandbox, an agent's Bash tool, or CI the same test sees no escapes and passes.
 
-**Prevention:** in a test that renders through `colored`, assert on substrings that lie wholly inside
-one colored segment or wholly in plain text, never across the boundary between a label and a
-`.yellow()`/`.dimmed()`/etc. argument. To reproduce the hook's environment locally, run
-`CLICOLOR_FORCE=1 cargo test --lib <test-name>`. `loom/src/commands/graph/tests.rs` has a private
-`strip_ansi` helper if a test genuinely must match across segments.
+**Prevention:** a test that renders through `colored` asserts only on substrings wholly inside one
+colored segment or wholly in plain text, or strips escapes first with
+`crate::testrun::recognize::strip_ansi`. A test comparing whole lines, line counts, or widths always
+strips. Run a rendering test once with `CLICOLOR_FORCE=1 cargo test --lib <test-name>` before calling
+it done; a green run from a non-terminal shell proves nothing about color.
 
-**Fix:** split the assertion into `contains("Cleanup warning: ")` and `contains("failed: worktree
-busy\nretrying next cycle")`.
+**Fix:** the cleanup-warning assertion was split into `contains("Cleanup warning: ")` and
+`contains("failed: worktree busy\nretrying next cycle")`; the guidance tests' shared helper
+`guidance_output` returns `strip_ansi` of the rendered text.
 
 ## A cargo test Filter Written Against the Test File's Own Name Selects Zero Tests, Silently (2026-09-10)
 
