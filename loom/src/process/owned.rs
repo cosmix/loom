@@ -30,8 +30,17 @@ impl OwnedProcess {
         &mut self.child
     }
 
+    /// `wait_timeout` rounds its poll down to whole milliseconds and can return
+    /// `None` up to 1 ms early, so wait again until the deadline has passed.
     pub(crate) fn wait(&mut self, timeout: Duration) -> std::io::Result<Option<ExitStatus>> {
-        self.child.wait_timeout(timeout)
+        let deadline = Instant::now() + timeout;
+        loop {
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            let status = self.child.wait_timeout(remaining)?;
+            if status.is_some() || remaining.is_zero() {
+                return Ok(status);
+            }
+        }
     }
 
     pub(crate) fn try_wait(&mut self) -> std::io::Result<Option<ExitStatus>> {

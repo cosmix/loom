@@ -342,7 +342,7 @@ pub fn is_process_alive(pid: u32) -> bool {
     // Send null signal (signal 0) to check process existence without
     // actually delivering a signal. The kernel returns different errors
     // depending on whether the process exists vs. permission denied.
-    let exists = match kill(Pid::from_raw(pid_i32), None) {
+    let exists = || match kill(Pid::from_raw(pid_i32), None) {
         Ok(()) => true,             // Process exists and we can signal it
         Err(Errno::EPERM) => true,  // Process exists but we lack permission
         Err(Errno::ESRCH) => false, // No such process
@@ -352,7 +352,9 @@ pub fn is_process_alive(pid: u32) -> bool {
     // A zombie still answers the null signal: the PID entry survives until the
     // parent reaps it. It cannot run, so it is not alive for any question loom
     // asks (crash detection, session liveness, daemon singleton ownership).
-    exists && !identity::process_is_zombie(pid)
+    // A zombie reaped between the two probes reads as "not a zombie", so the
+    // null signal is sent again before the process is called alive.
+    exists() && !identity::process_is_zombie(pid) && exists()
 }
 
 #[cfg(test)]
