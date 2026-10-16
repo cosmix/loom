@@ -201,3 +201,10 @@ session-planted one must still count as a change.
 
 **Fix:** `is_tool_artifact` gate added to every in-session git-status reader that lists untracked
 paths for a contract freeze or a review fingerprint, and to the daemon's special-file walk.
+
+## Landing verified work after task steering
+
+**What happened:** The operator requested landing the reviewed macOS test-host branch on main and resuming the original full-suite verification task.
+**Why:** Diagnosis required a separate branch; its final verification also completed the original five Rust gates.
+**Prevention:** Check ancestry and retained evidence, preserve unrelated working-tree files, and require fresh verification if integration changes implementation sources.
+**Fix:** Choose an ancestry-checked fast-forward of the reviewed commits, retain their normal-hook history, and compare the landed source tree with the verified branch before declaring completion.
