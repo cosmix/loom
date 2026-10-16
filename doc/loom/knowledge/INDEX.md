@@ -154,7 +154,7 @@
 | [store-without-consumer](mistakes/store-without-consumer.md) | Store written, never read | 94 |
 | [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, wave sizing, ownership | 358 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Subagent liveness; watch traps | 369 |
-| [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 258 |
+| [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 274 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY, stdin | 264 |
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass with the bug | 302 |

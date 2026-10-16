@@ -256,3 +256,19 @@ the only reason attribution does not reach every commit.
 **Prevention:** Inspect hook side effects before reporting completion, restore incidental edits, and report unrelated gate failures without turning a guidance task into test repair. Plan briefs are outside this task.
 
 **Fix:** The incidental brief formatting was restored and excluded from every commit. No confinement implementation or test was changed. The operator cancelled the push and requested rebasing onto local main and merging there while preserving unrelated working-tree changes.
+
+## A Brief Sent a Subagent to Docker, Which Started Docker Desktop Without the Operator Asking
+
+**What happened:** to verify Linux-only fixes from a macOS host, the main agent briefed a subagent
+to run the tests in a privileged Docker container. Running `docker` started Docker Desktop on the
+operator's machine. The operator had not asked for it and objected.
+
+**Why:** the main agent treated "`docker` is on PATH" as permission to use it. On macOS the CLI
+launches a whole desktop application and VM, a heavyweight side effect on the operator's host.
+
+**Prevention:** never start Docker Desktop, a VM, or any other host application or daemon, and
+never brief a subagent to, without the operator's explicit go-ahead in this session. When a fix
+can only be verified on another platform, say so and ask: offer CI as the verifier, or a container
+if the operator agrees.
+
+**Fix:** the subagent was stopped, and verification goes back to the operator's choice.

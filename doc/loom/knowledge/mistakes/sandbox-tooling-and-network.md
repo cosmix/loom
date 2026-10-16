@@ -295,5 +295,5 @@ that runs those tests, in the same commit.
 
 **Fix:** both Linux test jobs install `bubblewrap` and set
 `kernel.apparmor_restrict_unprivileged_userns=0`, because Ubuntu 24.04 AppArmor denies the
-unprivileged user namespace `bwrap` creates. The sysctl step is unconfirmed until a Linux CI run
-passes with it.
+unprivileged user namespace `bwrap` creates. With both steps the confined tests run on
+`ubuntu-latest`; whether the sysctl alone is required was not isolated.
