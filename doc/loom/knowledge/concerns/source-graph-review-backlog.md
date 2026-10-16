@@ -234,6 +234,11 @@ Anchors are `path:line` at merge time; locate by symbol (`loom map --find-all`).
   `commands::repair::tests_local_keys::repair_strips_exactly_the_loom_written_keys_and_keeps_the_rest` (byte-identical
   left and right at `:89`), and one `cargo test --all-targets` failure in `--lib` whose test name the check output did not
   print. Capture the check output to a file so the failing test name survives.
+- Timing assertions that fail under full-suite load and pass alone (3/3 isolated runs):
+  `verify::criteria::executor::lifecycle_tests::verification_timeout_kills_before_collecting_and_reports_elapsed`
+  (`executor_lifecycle_tests.rs:36`, the 100 ms wall-vs-reported gap, failed in 2 of 3 full runs) and
+  `quota::codex::lifecycle_tests::leader_exit_with_stdout_inheritor_without_reply_is_bounded` (`process/lifecycle_tests.rs:31`,
+  `assert_retired`'s 2 s deadline, failed in 1 of 3 full runs).
 - The `loom plan verify` base-tree check does not warn on a criterion such as `rg -q -F -- '--field acceptance|wiring'
   README.md` that already passes at HEAD: a pattern starting with `--` after `-F --` escapes the passes-at-HEAD warning, so
   run every `rg` criterion at HEAD by hand.
