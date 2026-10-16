@@ -5,6 +5,7 @@ use crate::commands::status::data::{
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::session::SessionExitReason;
 use crate::models::stage::StageStatus;
+use crate::testrun::recognize::strip_ansi;
 use chrono::Utc;
 
 fn make_stage_summary(id: &str, status: StageStatus) -> StageSummary {
@@ -283,11 +284,13 @@ fn completion_blockers_render_recovery_details_and_distinct_exit_reasons() {
     );
 }
 
+/// The guidance as plain text: `colored` emits escapes whenever stdout is a
+/// terminal, and the tests below compare whole lines and their widths.
 fn guidance_output(stage: StageSummary, width: usize) -> String {
     let entry = attention_entries(&[stage]).remove(0);
     let mut output = Vec::new();
     write_guidance(&mut output, &entry, width).unwrap();
-    String::from_utf8(output).unwrap()
+    strip_ansi(&String::from_utf8(output).unwrap()).into_owned()
 }
 
 const LONG_REASON: &str = "Criterion 5 (stack:ephemeral --with objectstore) cannot pass in this \
