@@ -93,8 +93,12 @@ jobs:
       # The suite runs again here because the tag commit builds a release
       # version, which some tests branch on. The flake check is left to CI on
       # main: timing races do not depend on the version.
-      - name: Install tmux
-        run: sudo apt-get update && sudo apt-get install -y tmux
+      # Confined verification runs criteria under bubblewrap on Linux, and
+      # Ubuntu's AppArmor denies the unprivileged user namespace it needs.
+      - name: Install tmux and bubblewrap
+        run: |
+          sudo apt-get update && sudo apt-get install -y tmux bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Run tests
         working-directory: loom

@@ -115,8 +115,12 @@ jobs:
           workspaces: loom
           save-if: ${{ github.ref == 'refs/heads/main' }}
 
-      - name: Install tmux and ripgrep
-        run: sudo apt-get update && sudo apt-get install -y tmux ripgrep
+      # Confined verification runs criteria under bubblewrap on Linux, and
+      # Ubuntu's AppArmor denies the unprivileged user namespace it needs.
+      - name: Install tmux, ripgrep and bubblewrap
+        run: |
+          sudo apt-get update && sudo apt-get install -y tmux ripgrep bubblewrap
+          sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
 
       - name: Run tests
         working-directory: loom
