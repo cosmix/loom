@@ -13,10 +13,8 @@ use anyhow::Result;
 use chrono::Utc;
 
 use crate::fs::session_files::mark_session_terminal_reason;
-use crate::git::branch::branch_name_for_stage;
 use crate::git::merge::control_path_violation;
 use crate::models::session::{Session, SessionExitReason, SessionStatus, SessionType};
-use crate::orchestrator::core::persistence::Persistence;
 use crate::orchestrator::core::recovery_guards::too_young_to_judge;
 use crate::orchestrator::core::Orchestrator;
 use crate::orchestrator::signals::remove_signal;
@@ -65,33 +63,6 @@ impl Orchestrator {
                 );
                 None
             }
-        }
-    }
-
-    /// Persists `completed_commit` from branch HEAD before a merge attempt,
-    /// so ancestry can be verified even if the merge later conflicts.
-    /// Relocated out of `try_auto_merge` to keep it within its
-    /// maintainability-ledger line budget — unrelated to the gate itself.
-    pub(super) fn capture_completed_commit(
-        &mut self,
-        stage: &mut crate::models::stage::Stage,
-        stage_id: &str,
-    ) {
-        if stage.completed_commit.is_some() {
-            return;
-        }
-        let branch_name = branch_name_for_stage(stage_id);
-        let Ok(head) = crate::git::get_branch_head(&branch_name, &self.config.repo_root) else {
-            return;
-        };
-        match self.update_stage(stage_id, |current| {
-            if current.completed_commit.is_none() {
-                current.completed_commit = Some(head);
-            }
-            Ok(())
-        }) {
-            Ok(updated) => *stage = updated,
-            Err(error) => eprintln!("Warning: Failed to save completed_commit: {error}"),
         }
     }
 

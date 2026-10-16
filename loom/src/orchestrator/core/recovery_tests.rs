@@ -1,18 +1,6 @@
-//! Focused unit tests for the building blocks of the recovery-path
-//! phantom-merge fix (PLAN-fix-phantom-merge.md Fix 1).
-//!
-//! Full integration coverage of `sync_graph_with_stage_files` requires a
-//! live `Orchestrator` with a real `Backend` and `Monitor`, which is too
-//! heavy for a unit test. Instead, we exercise the exact helper calls the
-//! recovery path makes in sequence:
-//!
-//! 1. `get_branch_head(&loom/<id>, repo_root)` to derive HEAD when
-//!    `completed_commit` is missing.
-//! 2. `is_ancestor_of(commit, target, repo_root)` to verify the derived
-//!    commit actually landed in the target branch.
-//!
-//! End-to-end recovery behavior (including the one-shot retry and stuck
-//! stage handling) is exercised by `loom/tests/phantom_merge.rs`.
+//! Stage-store locking and Git ancestry primitives used by recovery.
+//! Ancestry alone never supplies missing completion proof. Full daemon
+//! recovery coverage also lives in merge-handler and phantom-merge tests.
 use super::*;
 use std::process::Command;
 use tempfile::TempDir;
@@ -52,7 +40,7 @@ fn stage_enumeration_and_direct_load_remain_linear_at_scale() {
 }
 
 #[test]
-fn recovery_commit_and_merge_reconciliation_preserve_each_other() {
+fn verified_commit_and_merge_reconciliation_preserve_each_other() {
     use std::sync::{Arc, Barrier};
 
     let temp = TempDir::new().unwrap();
@@ -65,11 +53,14 @@ fn recovery_commit_and_merge_reconciliation_preserve_each_other() {
     let recovery_barrier = Arc::clone(&barrier);
     let recovery = std::thread::spawn(move || {
         recovery_barrier.wait();
-        persist_recovery_completed_commit(
+        update_stage_at_path(
             "recovery-merge-race",
             &recovery_path,
             &recovery_dir,
-            "verified-commit".to_string(),
+            |stage| {
+                stage.completed_commit = Some("verified-commit".to_string());
+                Ok(())
+            },
         )
         .unwrap();
     });
@@ -178,13 +169,7 @@ fn init_repo() -> TempDir {
     tmp
 }
 
-/// Fix 1: when `completed_commit` is missing but the loom branch exists,
-/// recovery derives HEAD and checks ancestry. If the commit is NOT in the
-/// target branch, `merged` must stay false.
-///
-/// This test stands in for the recovery-path decision: it verifies the
-/// helpers produce the exact (branch_head, is_ancestor=false) pair that
-/// the production code relies on to REFUSE to set merged=true.
+/// A branch tip outside the target cannot establish landed ancestry.
 #[test]
 fn derive_head_and_ancestry_reports_not_ancestor_when_unmerged() {
     let repo = init_repo();
@@ -223,14 +208,11 @@ fn derive_head_and_ancestry_reports_not_ancestor_when_unmerged() {
     let is_anc = is_ancestor_of(&head, "main", root).expect("ancestry check");
     assert!(
         !is_anc,
-        "derived HEAD must NOT be an ancestor of main when branch is unmerged — \
-             this is the exact signal that recovery uses to refuse merged=true (Fix 1)"
+        "branch HEAD must not be an ancestor of main when the branch is unmerged"
     );
 }
 
-/// Fix 1: when `completed_commit` is missing AND the loom branch is
-/// missing, recovery has no way to derive HEAD. The helper must surface
-/// the failure so the caller leaves the stage at Completed + !merged.
+/// Looking up a missing branch must report failure.
 #[test]
 fn derive_head_fails_when_branch_missing() {
     let repo = init_repo();
@@ -240,14 +222,11 @@ fn derive_head_fails_when_branch_missing() {
     let result = get_branch_head(&branch, root);
     assert!(
         result.is_err(),
-        "branch HEAD derivation must fail when branch does not exist — \
-             recovery relies on this to log an error and leave stage as Completed + !merged"
+        "branch HEAD lookup must fail when the branch does not exist"
     );
 }
 
-/// Fix 1 happy path: if the loom branch exists AND has been merged into
-/// main, the ancestry check returns true. The recovery path is allowed
-/// to set `merged = true` only in this case.
+/// A merged branch supplies ancestry evidence, independently of completion proof.
 #[test]
 fn ancestry_true_after_branch_merged_into_main() {
     let repo = init_repo();
@@ -294,8 +273,7 @@ fn ancestry_true_after_branch_merged_into_main() {
     let is_anc = is_ancestor_of(&head, "main", root).expect("ancestry check");
     assert!(
         is_anc,
-        "after branch is merged into main, ancestry must be true — \
-             recovery is then allowed to set merged=true"
+        "after the branch is merged into main, ancestry must be true"
     );
 }
 

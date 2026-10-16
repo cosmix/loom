@@ -1,8 +1,5 @@
 //! Project complete stage snapshots into the disposable graph and apply guarded retries.
-use super::{
-    recovery::{check_retry_eligibility, persist_recovery_completed_commit},
-    Orchestrator,
-};
+use super::{recovery::check_retry_eligibility, Orchestrator};
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::verify::transitions::update_stage_at_path;
 use anyhow::Result;
@@ -83,7 +80,6 @@ impl Orchestrator {
         if stage.merged || stage.status != StageStatus::Completed {
             return;
         }
-        self.derive_completed_commit(stage, path);
         let Some(commit) = stage.completed_commit.clone() else {
             return;
         };
@@ -109,20 +105,6 @@ impl Orchestrator {
                 }
             }
             Err(error) => tracing::warn!(%error, "Cannot save verified merge state"),
-        }
-    }
-
-    fn derive_completed_commit(&self, stage: &mut Stage, path: &Path) {
-        if stage.completed_commit.is_some() {
-            return;
-        }
-        let branch = crate::git::branch::branch_name_for_stage(&stage.id);
-        let Ok(commit) = crate::git::get_branch_head(&branch, &self.config.repo_root) else {
-            return;
-        };
-        match persist_recovery_completed_commit(&stage.id, path, &self.config.work_dir, commit) {
-            Ok(updated) => *stage = updated,
-            Err(error) => tracing::warn!(%error, "Cannot save derived completed commit"),
         }
     }
 }

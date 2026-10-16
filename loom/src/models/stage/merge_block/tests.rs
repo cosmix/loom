@@ -144,16 +144,6 @@ fn clear_merge_block_keeps_an_unrelated_failure_info() {
 }
 
 #[test]
-fn a_missing_completed_commit_is_recorded_and_an_existing_one_kept() {
-    let mut stage = stage_in(StageStatus::Completed);
-    stage.record_completed_commit_if_missing(Some("aaa"));
-    assert_eq!(stage.completed_commit.as_deref(), Some("aaa"));
-    stage.record_completed_commit_if_missing(Some("bbb"));
-    stage.record_completed_commit_if_missing(None);
-    assert_eq!(stage.completed_commit.as_deref(), Some("aaa"));
-}
-
-#[test]
 fn zero_commit_reason_names_the_branch_target_and_requeue_command() {
     let reason = Stage::zero_commit_reason("s1", "main");
     assert!(reason.contains("loom/s1"), "{reason}");

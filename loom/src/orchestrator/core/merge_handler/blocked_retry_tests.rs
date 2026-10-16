@@ -45,6 +45,7 @@ fn blocked_stage() -> (TempDir, Orchestrator) {
     let mut orchestrator = orchestrator_with_conflict(root, ID);
     update_stage(ID, &orchestrator.config.work_dir, |stage| {
         stage.status = StageStatus::Completed;
+        stage.completed_commit = Some(crate::git::get_branch_head("loom/s", root)?);
         Ok(())
     })
     .unwrap();

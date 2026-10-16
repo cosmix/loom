@@ -8,7 +8,6 @@ use chrono::Utc;
 use std::path::Path;
 
 use crate::git::branch::branch_name_for_stage;
-use crate::git::get_branch_head;
 use crate::git::merge::{MergeBlock, MergeGate};
 use crate::models::failure::{FailureInfo, FailureType};
 use crate::models::stage::Stage;
@@ -80,7 +79,7 @@ pub fn attempt_progressive_merge(
     if route_if_no_commits(stage, &merge_point, repo_root, work_dir, gate)? {
         return Ok(MergeOutcome::NoCommits);
     }
-    let completed_commit = capture_completed_commit(stage, repo_root);
+    let completed_commit = stage.completed_commit.clone();
 
     println!("Attempting progressive merge into '{merge_point}'...");
     match merge_completed_stage(stage, repo_root, &merge_point, gate) {
@@ -144,15 +143,12 @@ fn mark_landed(stage: &mut Stage, merge_point: &str, repo_root: &Path) -> Result
     Ok(MergeOutcome::Success)
 }
 
-/// Capture the completed commit SHA from the stage branch HEAD and return the
-/// commit to re-apply onto the fresh on-disk stage. The stage is only updated
-/// when `get_branch_head` succeeds: overwriting a previously persisted
-/// `completed_commit` with `None` would lose the ancestry proof.
-fn capture_completed_commit(stage: &mut Stage, repo_root: &Path) -> Option<String> {
-    if stage.completed_commit.is_none() {
-        stage.completed_commit = get_branch_head(&branch_name_for_stage(&stage.id), repo_root).ok();
-    }
-    stage.completed_commit.clone()
+fn preserve_completion_proof(stage: &Stage, completed_commit: Option<&str>) -> Result<()> {
+    anyhow::ensure!(
+        stage.completed_commit.as_deref() == completed_commit,
+        "completion proof changed during merge handling"
+    );
+    Ok(())
 }
 
 /// The merge could not be attempted: block the stage and say how to retry.
@@ -211,7 +207,7 @@ fn mark_blocked(
 ) -> Result<MergeOutcome> {
     block_untyped(stage, reason)?;
     update_stage(&stage.id, work_dir, |s| {
-        s.completed_commit = completed_commit.clone();
+        preserve_completion_proof(s, completed_commit.as_deref())?;
         block_untyped(s, reason)
     })?;
     Ok(MergeOutcome::Blocked)
@@ -227,7 +223,7 @@ fn hold_for_review(
 ) -> Result<MergeOutcome> {
     stage.route_to_review(reason);
     update_stage(&stage.id, work_dir, |s| {
-        s.completed_commit = completed_commit.clone();
+        preserve_completion_proof(s, completed_commit.as_deref())?;
         s.route_to_review(reason);
         Ok(())
     })?;
@@ -247,7 +243,7 @@ fn hold_blocked_merge(
     stage.block_merge(block.clone());
     let persisted = block.clone();
     update_stage(&stage.id, work_dir, |s| {
-        s.completed_commit = completed_commit.clone();
+        preserve_completion_proof(s, completed_commit.as_deref())?;
         s.block_merge(persisted.clone());
         Ok(())
     })?;
@@ -281,7 +277,7 @@ fn record_conflict(
     // Re-apply only the merge-conflict transition + commit onto the fresh
     // on-disk stage (A-5).
     update_stage(&stage.id, target.work_dir, |s| {
-        s.completed_commit = completed_commit.clone();
+        preserve_completion_proof(s, completed_commit.as_deref())?;
         s.clear_merge_block();
         s.try_mark_merge_conflict()
     })?;

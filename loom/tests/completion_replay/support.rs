@@ -53,6 +53,32 @@ impl ReplayFixture {
             .expect("completion replay binary must start and wait successfully")
     }
 
+    pub fn run_operator_completion(&self) -> Output {
+        self.run_operator_completion_with_args(&[])
+    }
+
+    pub fn run_operator_completion_with_args(&self, args: &[&str]) -> Output {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_loom"));
+        self.configure_child(&mut command, false);
+        command
+            .env_remove("LOOM_STAGE_ID")
+            .env_remove("LOOM_SESSION_ID")
+            .env_remove("LOOM_WORKTREE_PATH")
+            .current_dir(self.root())
+            .args(["stage", "complete", &self.stage_id])
+            .args(args)
+            .output()
+            .expect("operator completion must run")
+    }
+
+    pub fn root(&self) -> &Path {
+        self._root.path()
+    }
+
+    pub fn write_stage(&self, stage: &Stage) -> Result<()> {
+        write_record(&self.stage_file, stage, "Stage")
+    }
+
     pub fn run_hook_post(&self, command: &str, stdout: &str, is_error: bool) -> Output {
         let hook =
             Path::new(env!("CARGO_MANIFEST_DIR")).join("../loom-hooks/loom-control-complete.sh");
@@ -204,7 +230,7 @@ fn write_record<T: serde::Serialize>(path: &Path, value: &T, title: &str) -> Res
         .with_context(|| format!("writing {}", path.display()))
 }
 
-fn run_git<S: AsRef<OsStr>>(root: &Path, args: &[S]) -> Result<()> {
+pub fn run_git<S: AsRef<OsStr>>(root: &Path, args: &[S]) -> Result<()> {
     let output = Command::new("git")
         .args(args)
         .current_dir(root)

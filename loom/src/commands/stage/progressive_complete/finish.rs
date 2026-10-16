@@ -18,16 +18,22 @@ pub(super) fn finish_completion(
 ) -> Result<bool> {
     // Mark stage as completed - only after merge succeeds.
     stage.try_complete(None)?;
-    // Re-apply only the completion-owned fields (merged, completed_commit,
-    // and the Completed transition) onto the FRESH on-disk stage, so a
+    // Re-apply only the merged flag and Completed transition after checking
+    // the recorded completion proof on the FRESH on-disk stage, so a
     // concurrent daemon/dispute write during the multi-minute acceptance
     // run is not reverted (A-5). `try_complete` recomputes duration from
     // the on-disk `started_at` (owned by the executor) and validates the
     // transition against the current on-disk status — if a dispute moved
     // the stage to NeedsAdjudication meanwhile, it correctly refuses.
-    let completed_commit = stage.completed_commit.clone();
+    let completed_commit = stage
+        .completed_commit
+        .as_deref()
+        .context("completion proof is missing during merge finalization")?;
     update_stage(&stage.id, work_dir, |s| {
-        s.completed_commit = completed_commit.clone();
+        anyhow::ensure!(
+            s.completed_commit.as_deref() == Some(completed_commit),
+            "completion proof changed during merge finalization"
+        );
         s.merged = true;
         s.try_complete(None)
     })?;

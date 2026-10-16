@@ -118,6 +118,9 @@ fn conflict_stage(fx: &Fixture, completed_commit: Option<&str>) {
     fx.stage(StageStatus::MergeConflict, None);
     update_stage(STAGE, &fx.work_dir, |stage| {
         stage.completed_commit = completed_commit.map(str::to_string);
+        stage.acceptance = vec![crate::models::stage::AcceptanceCriterion::Simple(
+            "true".into(),
+        )];
         Ok(())
     })
     .unwrap();
@@ -162,6 +165,10 @@ fn merge_resolved_lands_the_merge_and_leaves_the_worktree_for_the_resolver_exit(
     let stage = load_stage(STAGE, &fx.work_dir).unwrap();
     assert_eq!(stage.status, StageStatus::Completed);
     assert!(stage.merged);
+    assert_eq!(
+        stage.completed_commit,
+        Some(git(&worktree_of(&fx), &["rev-parse", "HEAD"]))
+    );
     assert_eq!(
         git(&fx.repo_root, &["cat-file", "-t", "main:b.txt"]),
         "blob"
@@ -356,4 +363,27 @@ mod settle_for_landing {
             _ => panic!("expected Refused"),
         }
     }
+}
+
+#[test]
+fn merge_resolved_refuses_failing_completion_without_replacing_original_proof() {
+    let fx = fixture();
+    let mut orchestrator = resolved_stage(&fx);
+    update_stage(STAGE, &fx.work_dir, |stage| {
+        stage.acceptance = vec![crate::models::stage::AcceptanceCriterion::Simple(
+            "false".into(),
+        )];
+        Ok(())
+    })
+    .unwrap();
+    let original = load_stage(STAGE, &fx.work_dir).unwrap().completed_commit;
+    let main = git(&fx.repo_root, &["rev-parse", "main"]);
+    assert_eq!(
+        resolve(&fx, &mut orchestrator),
+        Some(LedgerOutcome::Refused)
+    );
+    let stage = load_stage(STAGE, &fx.work_dir).unwrap();
+    assert!(!stage.merged);
+    assert_eq!(stage.completed_commit, original);
+    assert_eq!(git(&fx.repo_root, &["rev-parse", "main"]), main);
 }

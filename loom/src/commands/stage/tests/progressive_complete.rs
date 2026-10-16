@@ -206,7 +206,9 @@ fn control_path_stage(repo_root: &std::path::Path, id: &str) -> Stage {
     git(&["add", ".claude/settings.json"]);
     git(&["commit", "-q", "-m", "stage work"]);
     git(&["checkout", "-q", "main"]);
-    let stage = make_stage(id);
+    let mut stage = make_stage(id);
+    stage.completed_commit =
+        Some(crate::git::get_branch_head(&format!("loom/{id}"), repo_root).unwrap());
     save_stage(&stage, &repo_root.join(".loom").join("work")).expect("save stage");
     stage
 }

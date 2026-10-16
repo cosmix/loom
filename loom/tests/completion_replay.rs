@@ -9,3 +9,6 @@ mod hook_broker;
 
 #[path = "completion_replay/rejections.rs"]
 mod rejections;
+
+#[path = "completion_replay/resolver.rs"]
+mod resolver;

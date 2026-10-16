@@ -70,7 +70,12 @@ fn save_completed_unmerged_stage(stage_id: &str, work_dir: &Path) {
     stage.id = stage_id.to_string();
     stage.status = StageStatus::Completed;
     stage.merged = false;
-    stage.completed_commit = None;
+    let root = crate::fs::work_dir::WorkDir::new(work_dir)
+        .unwrap()
+        .main_project_root()
+        .unwrap();
+    stage.completed_commit =
+        Some(crate::git::get_branch_head(&format!("loom/{stage_id}"), &root).unwrap());
     crate::verify::transitions::save_stage(&stage, work_dir).unwrap();
 }
 

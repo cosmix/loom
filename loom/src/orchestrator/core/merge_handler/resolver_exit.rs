@@ -6,7 +6,7 @@
 
 use anyhow::Result;
 
-use crate::git::branch::{branch_name_for_stage, resolve_target_branch};
+use crate::git::branch::resolve_target_branch;
 use crate::git::merge::{check_resolved_worktree, verify_merge_succeeded};
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::core::persistence::Persistence;
@@ -81,12 +81,8 @@ impl Orchestrator {
         if stage.stage_type == StageType::Knowledge {
             return true;
         }
-        let commit = stage.completed_commit.clone().or_else(|| {
-            crate::git::get_branch_head(&branch_name_for_stage(&stage.id), &self.config.repo_root)
-                .ok()
-        });
-        commit.is_some_and(|commit| {
-            verify_merge_succeeded(&commit, target, &self.config.repo_root).unwrap_or(false)
+        stage.completed_commit.as_deref().is_some_and(|commit| {
+            verify_merge_succeeded(commit, target, &self.config.repo_root).unwrap_or(false)
         })
     }
 
@@ -126,6 +122,21 @@ impl Orchestrator {
             check_resolved_worktree(&self.config.repo_root, stage_id, completed_commit)
         {
             self.report_unresolved_merge(stage_id, &reason);
+            return;
+        }
+        let verification = self.load_stage(stage_id).and_then(|stage| {
+            crate::commands::stage::complete::verify_resolved_completion(
+                &stage,
+                &self.config.work_dir,
+            )
+        });
+        if let Err(error) = verification {
+            let reason = format!(
+                "resolver content failed completion verification: {error:#}; fix the failure \
+                 and run `loom stage complete {stage_id}` before landing"
+            );
+            self.route_merge_stage_to_review(stage_id, reason.clone(), None);
+            eprintln!("Stage '{stage_id}': {reason}");
             return;
         }
         match self.land_stage_merge(stage_id, target) {

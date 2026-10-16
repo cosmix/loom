@@ -141,9 +141,8 @@ pub(super) fn complete_retried_merge(
 }
 
 /// Write `merged = true` and `Completed` on the fresh on-disk stage (A-5), but
-/// only after `verify_or_derive_completed_commit` shows the stage's commit (or
-/// the branch head, when none is recorded) is in `target_branch`. A refusal
-/// writes nothing and propagates.
+/// only after ancestry proves its recorded completion commit is in the target.
+/// A refusal writes nothing and propagates.
 ///
 /// PHANTOM-MERGE INVARIANT: no `merged = true` without that proof.
 fn prove_and_mark_merged(
@@ -152,16 +151,20 @@ fn prove_and_mark_merged(
     repo_root: &Path,
     target_branch: &str,
 ) -> Result<()> {
+    anyhow::ensure!(
+        stage.completed_commit.is_some(),
+        "completion proof is missing; rerun completion before landing"
+    );
     let verified = crate::commands::stage::merge_verify::verify_or_derive_completed_commit(
         stage,
         target_branch,
         repo_root,
     )?;
-    let persist_commit = verified.persist_commit.clone();
     update_stage(&stage.id, work_dir, |s| {
-        if let Some(commit) = persist_commit.clone() {
-            s.completed_commit = Some(commit);
-        }
+        anyhow::ensure!(
+            s.completed_commit.as_deref() == Some(verified.commit.as_str()),
+            "completion proof changed during merge finalization"
+        );
         s.merge_conflict = false;
         s.clear_merge_block();
         s.try_complete_merge()

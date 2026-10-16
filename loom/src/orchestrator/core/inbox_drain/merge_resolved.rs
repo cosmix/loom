@@ -50,6 +50,14 @@ impl Orchestrator {
         ) {
             return Settle::Refused(reason);
         }
+        if let Err(error) = crate::commands::stage::complete::verify_resolved_completion(
+            &stage,
+            &self.config.work_dir,
+        ) {
+            return Settle::Refused(format!(
+                "resolved content failed completion verification: {error:#}"
+            ));
+        }
         match self.land_stage_merge(stage_id, &target) {
             // The landing recorded why it held the merge; say that.
             Landing::Held => {

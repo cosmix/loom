@@ -1,4 +1,5 @@
 use super::*;
+use crate::handoff::completion::content::VerificationSnapshot;
 
 /// Run verification phase (goal-backward verification and change impact comparison)
 ///
@@ -65,12 +66,33 @@ fn merge_verified_stage(
 fn complete_without_verification(stage: &mut Stage, stage_id: &str, work_dir: &Path) -> Result<()> {
     let cwd = std::env::current_dir().context("Failed to get current directory")?;
     let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
-    let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, &repo_root)?;
+    let snapshot = no_verify_snapshot(stage, &repo_root, work_dir)?;
+    *stage = update_stage(stage_id, work_dir, |current| {
+        if let Some(snapshot) = &snapshot {
+            snapshot.validate_locked(current, work_dir)?;
+            current.completed_commit = Some(snapshot.commit.clone());
+        }
+        current.try_complete(None)
+    })?;
+    println!("Stage '{stage_id}' completed (skipped verification).");
+    println!("The orchestrator will handle merge and dependent triggering.");
+    Ok(())
+}
+
+// An explicit operator skip still names the exact committed content authorized
+// for landing. Automatic recovery must never manufacture this authorization.
+fn no_verify_snapshot(
+    stage: &Stage,
+    repo_root: &Path,
+    work_dir: &Path,
+) -> Result<Option<VerificationSnapshot>> {
+    let stage_id = &stage.id;
+    let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, repo_root)?;
     let stage_branch = crate::git::branch::branch_name_for_stage(stage_id);
     let branch_exists =
-        crate::git::branch::branch_exists(&stage_branch, &repo_root).unwrap_or(false);
+        crate::git::branch::branch_exists(&stage_branch, repo_root).unwrap_or(false);
     if branch_exists {
-        match crate::git::branch::commits_ahead_of(&stage_branch, &target_branch, &repo_root) {
+        match crate::git::branch::commits_ahead_of(&stage_branch, &target_branch, repo_root) {
             Ok(0) => {
                 anyhow::bail!(
                     "Refusing to --no-verify-complete stage '{stage_id}': branch \
@@ -93,11 +115,9 @@ fn complete_without_verification(stage: &mut Stage, stage_id: &str, work_dir: &P
             }
         }
     }
-    stage.try_complete(None)?;
-    update_stage(stage_id, work_dir, |s| s.try_complete(None))?;
-    println!("Stage '{stage_id}' completed (skipped verification).");
-    println!("The orchestrator will handle merge and dependent triggering.");
-    Ok(())
+    branch_exists
+        .then(|| VerificationSnapshot::capture(stage, work_dir))
+        .transpose()
 }
 
 fn emit_control_completion_evidence(

@@ -35,6 +35,7 @@ fn worktree_stage() -> (TempDir, Orchestrator) {
     commit_file(&worktree, "stage.txt", "stage");
     let orchestrator = orchestrator_with_conflict(repo.path(), ID);
     set_status(&orchestrator, StageStatus::Completed);
+    record_verified_head(&orchestrator, &repo);
     (repo, orchestrator)
 }
 
@@ -110,6 +111,7 @@ fn resolve_in_worktree(repo: &TempDir) {
 fn an_auto_merge_conflict_spawns_nothing_and_the_spawn_pass_counts_the_first_resolver() {
     let (repo, mut orchestrator) = worktree_stage();
     make_conflict(&repo);
+    record_verified_head(&orchestrator, &repo);
 
     assert!(!orchestrator.try_auto_merge(ID));
 
@@ -217,6 +219,7 @@ fn the_resolver_exit_removes_the_worktree_of_a_merge_already_landed() {
     let (repo, mut orchestrator) = worktree_stage();
     enter_conflict(&orchestrator, &repo);
     resolve_in_worktree(&repo);
+    record_verified_head(&orchestrator, &repo);
     assert_eq!(orchestrator.land_stage_merge(ID, "main"), Landing::Merged);
     assert!(worktree(&repo).is_dir());
 
@@ -229,25 +232,14 @@ fn the_resolver_exit_removes_the_worktree_of_a_merge_already_landed() {
 }
 
 #[test]
-fn the_resolver_exit_lands_a_resolved_worktree_and_cleans_up() {
-    let (repo, mut orchestrator) = worktree_stage();
-    enter_conflict(&orchestrator, &repo);
-    resolve_in_worktree(&repo);
-
-    orchestrator
-        .handle_merge_session_completed("session", ID)
-        .unwrap();
-
-    let stage = on_disk(&orchestrator);
-    assert_eq!(stage.status, StageStatus::Completed);
-    assert!(stage.merged);
-    assert!(!worktree(&repo).exists());
-}
-
-#[test]
 fn the_resolver_exit_without_a_recorded_commit_merges_nothing() {
     let (repo, mut orchestrator) = worktree_stage();
-    set_status(&orchestrator, StageStatus::MergeConflict);
+    update_stage(ID, &orchestrator.config.work_dir, |stage| {
+        stage.status = StageStatus::MergeConflict;
+        stage.completed_commit = None;
+        Ok(())
+    })
+    .unwrap();
     resolve_in_worktree(&repo);
     let main_before = main_tip(&repo);
 
@@ -285,6 +277,7 @@ fn a_conflict_records_the_branch_head_once() {
     let (repo, mut orchestrator) = worktree_stage();
     make_conflict(&repo);
     let head = crate::git::runner::run_git_checked(&["rev-parse", "loom/s"], repo.path()).unwrap();
+    record_verified_head(&orchestrator, &repo);
 
     orchestrator.record_merge_conflict(ID, 1);
 
@@ -327,6 +320,7 @@ fn a_landing_that_stashed_the_operators_changes_records_the_outcome() {
     commit_file(&worktree(&repo), "multi.txt", &stage_side);
     let operator_side = lines.concat().replace("line 1\n", "operator edit\n");
     std::fs::write(repo.path().join("multi.txt"), &operator_side).unwrap();
+    record_verified_head(&orchestrator, &repo);
 
     assert!(orchestrator.try_auto_merge(ID));
 
@@ -387,3 +381,6 @@ fn record_verified_head(orchestrator: &Orchestrator, repo: &TempDir) {
     })
     .unwrap();
 }
+
+#[path = "landing_verification_tests.rs"]
+mod verification;

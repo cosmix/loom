@@ -139,6 +139,7 @@ pub(super) fn orchestrator_with_completed_stage(root: &Path) -> Orchestrator {
     let stage = Stage {
         id: ID.to_string(),
         status: StageStatus::Completed,
+        completed_commit: Some(branch_tip(root)),
         ..Stage::default()
     };
     save_stage(&stage, &orchestrator.config.work_dir).unwrap();

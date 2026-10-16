@@ -44,6 +44,10 @@ pub(crate) use super::admin_proof::{
     mint_completion_proof_from_env, strip_privileged_env_for_runtime,
 };
 
+#[path = "complete_resolved.rs"]
+mod complete_resolved;
+pub(crate) use complete_resolved::verify_resolved_completion;
+
 #[path = "complete_route.rs"]
 mod complete_route;
 use complete_route::{print_daemon_managed_notice, spawn_resolver_for_route};

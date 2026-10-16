@@ -160,15 +160,6 @@ impl Stage {
         }
     }
 
-    /// Record `commit`, the stage branch head, as `completed_commit` unless one
-    /// is already recorded. A stage entering a merge conflict calls this before
-    /// any resolver touches the branch, so the stage's own work stays provable.
-    pub fn record_completed_commit_if_missing(&mut self, commit: Option<&str>) {
-        if self.completed_commit.is_none() {
-            self.completed_commit = commit.map(str::to_string);
-        }
-    }
-
     /// Move the stage to `MergeConflict`, clearing any merge block.
     pub fn enter_merge_conflict(&mut self) {
         self.clear_merge_block();

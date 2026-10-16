@@ -4,7 +4,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::save_stage;
 
 #[test]
-fn changed_tip_requires_explicit_conflict_state_and_clean_registered_worktree() {
+fn changed_resolver_tip_requires_new_completion_proof_even_when_clean() {
     use super::test_support::{commit_file, git_ok};
     let repo = init_repo();
     let work = lock_dir();
@@ -34,9 +34,10 @@ fn changed_tip_requires_explicit_conflict_state_and_clean_registered_worktree() 
     let dirty = merge_stage("api", "main", repo.path(), work.path(), MergeGate::Enforce);
     assert!(format!("{:#}", dirty.unwrap_err()).contains("uncommitted changes"));
     std::fs::write(checkout.join("api.rs"), "resolution").unwrap();
-    let resolved =
-        merge_stage("api", "main", repo.path(), work.path(), MergeGate::Enforce).unwrap();
-    assert!(matches!(resolved, super::MergeResult::Success { .. }));
+    let main_before = rev(repo.path(), "main");
+    let resolved = merge_stage("api", "main", repo.path(), work.path(), MergeGate::Enforce);
+    assert!(format!("{:#}", resolved.unwrap_err()).contains("changed after verification"));
+    assert_eq!(rev(repo.path(), "main"), main_before);
     let stage = crate::verify::transitions::load_stage("api", work.path()).unwrap();
     assert_eq!(stage.completed_commit.as_deref(), Some(verified.as_str()));
 }
@@ -72,20 +73,27 @@ fn merge_refuses_missing_stage_in_initialized_store() {
 }
 
 #[test]
-fn merge_refuses_completed_stage_without_verified_commit() {
-    let repo = init_repo();
-    let work = lock_dir();
-    let original = rev(repo.path(), "main");
-    stage_branch(repo.path(), "api", &[("api.rs", "unverified")]);
-    let stage = Stage {
-        id: "api".into(),
-        status: StageStatus::Completed,
-        ..Default::default()
-    };
-    save_stage(&stage, work.path()).unwrap();
-    let result = merge_stage("api", "main", repo.path(), work.path(), MergeGate::Enforce);
-    assert!(format!("{:#}", result.unwrap_err()).contains("no verified commit"));
-    assert_eq!(rev(repo.path(), "main"), original);
+fn merge_refuses_every_landing_state_without_verified_commit() {
+    for status in [
+        StageStatus::Completed,
+        StageStatus::MergeBlocked,
+        StageStatus::MergeConflict,
+        StageStatus::NeedsHumanReview,
+    ] {
+        let repo = init_repo();
+        let work = lock_dir();
+        let original = rev(repo.path(), "main");
+        stage_branch(repo.path(), "api", &[("api.rs", "unverified")]);
+        let stage = Stage {
+            id: "api".into(),
+            status,
+            ..Default::default()
+        };
+        save_stage(&stage, work.path()).unwrap();
+        let result = merge_stage("api", "main", repo.path(), work.path(), MergeGate::Enforce);
+        assert!(format!("{:#}", result.unwrap_err()).contains("no verified commit"));
+        assert_eq!(rev(repo.path(), "main"), original);
+    }
 }
 
 #[test]

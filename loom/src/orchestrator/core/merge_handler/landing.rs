@@ -7,7 +7,6 @@
 //! [`Orchestrator::finalize_merge_resolution`], after git ancestry proves the
 //! stage's commit is in the target.
 
-use crate::git::branch::branch_name_for_stage;
 use crate::git::cleanup::CleanupConfig;
 use crate::git::merge::{
     merge_stage, verify_merge_succeeded, MergeBlock, MergeGate, MergeResult, StashReapply,
@@ -161,9 +160,8 @@ impl Orchestrator {
     /// caller: the resolver may still be running.
     ///
     /// PHANTOM-MERGE INVARIANT: this is a daemon-side automated path, so it MUST
-    /// NOT write `merged=true` without git ancestry proof. Before finalizing it
-    /// derives `completed_commit` from the stage branch HEAD when missing and
-    /// requires `verify_merge_succeeded(commit, merge_point)` to return
+    /// NOT write `merged=true` without a recorded completion commit and git
+    /// ancestry proof. It requires `verify_merge_succeeded(commit, merge_point)` to return
     /// `Ok(true)`. If that proof is unavailable the stage is left unchanged and
     /// the function returns `false`. Mirrors `verify_and_finalize_merge`.
     ///
@@ -198,29 +196,8 @@ impl Orchestrator {
         true
     }
 
-    /// The stage's commit once git ancestry proves it is in `merge_point`.
-    /// `completed_commit` is derived from the stage branch HEAD when missing;
-    /// with neither, or without the proof, `None`.
-    fn provable_commit(
-        &self,
-        stage: &mut Stage,
-        stage_id: &str,
-        merge_point: &str,
-    ) -> Option<String> {
-        if stage.completed_commit.is_none() {
-            let branch = branch_name_for_stage(stage_id);
-            match crate::git::get_branch_head(&branch, &self.config.repo_root) {
-                Ok(head) => stage.completed_commit = Some(head),
-                Err(_) => {
-                    tracing::error!(
-                        stage_id = %stage_id,
-                        "Cannot finalize merge: no completed_commit and branch HEAD \
-                         unavailable; refusing to write merged=true (phantom-merge prevention)"
-                    );
-                    return None;
-                }
-            }
-        }
+    /// The recorded completion commit once ancestry proves it is in `merge_point`.
+    fn provable_commit(&self, stage: &Stage, stage_id: &str, merge_point: &str) -> Option<String> {
         let commit = stage.completed_commit.clone()?;
         match verify_merge_succeeded(&commit, merge_point, &self.config.repo_root) {
             Ok(true) => Some(commit),
@@ -245,14 +222,8 @@ impl Orchestrator {
         stage_id: &str,
         conflicts: usize,
     ) {
-        // The branch head now is the stage's own work, before any resolver
-        // touches the branch; `check_resolved_worktree` holds it to that.
-        let head =
-            crate::git::get_branch_head(&branch_name_for_stage(stage_id), &self.config.repo_root)
-                .ok();
         let saved = self.update_stage(stage_id, |current| {
             ensure_unmerged(current)?;
-            current.record_completed_commit_if_missing(head.as_deref());
             current.enter_merge_conflict();
             Ok(())
         });
@@ -360,13 +331,10 @@ fn apply_finalized(current: &mut Stage, completed_commit: &str) -> anyhow::Resul
             current.status
         );
     }
-    match current.completed_commit.as_deref() {
-        Some(fresh) if fresh != completed_commit => {
-            anyhow::bail!("completed_commit changed during merge verification")
-        }
-        None => current.completed_commit = Some(completed_commit.to_string()),
-        Some(_) => {}
-    }
+    anyhow::ensure!(
+        current.completed_commit.as_deref() == Some(completed_commit),
+        "completed_commit changed during merge verification"
+    );
     current.merged = true;
     current.merge_conflict = false;
     current.clear_merge_block();

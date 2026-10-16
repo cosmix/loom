@@ -13,7 +13,7 @@ mod resolved;
 mod status;
 mod tree;
 
-use anyhow::{bail, Result};
+use anyhow::{bail, Context, Result};
 use std::path::Path;
 use std::time::Duration;
 
@@ -134,8 +134,8 @@ pub fn merge_stage(
     )
 }
 
-/// Ordinary completion pins the stage tip. Explicit conflict resolution keeps
-/// its separate clean-worktree and original-work ancestry requirements.
+/// Every landing pins the verified tip. Conflict resolution additionally keeps
+/// its clean-worktree and original-work ancestry requirements.
 fn verify_completed_tip(
     stage_id: &str,
     repo_root: &Path,
@@ -148,22 +148,17 @@ fn verify_completed_tip(
         return Ok(());
     }
     let stage = crate::verify::transitions::load_stage(stage_id, work_dir)?;
+    let verified = stage
+        .completed_commit
+        .as_deref()
+        .context("stage has no verified commit; rerun completion before landing")?;
     if stage.status == crate::models::stage::StageStatus::MergeConflict {
-        return check_resolved_worktree(repo_root, stage_id, stage.completed_commit.as_deref())
-            .map_err(anyhow::Error::msg);
+        check_resolved_worktree(repo_root, stage_id, Some(verified)).map_err(anyhow::Error::msg)?;
     }
-    if stage.status == crate::models::stage::StageStatus::Completed || stage.merged {
-        anyhow::ensure!(
-            stage.completed_commit.is_some(),
-            "completed stage has no verified commit; rerun completion before landing"
-        );
-    }
-    if let Some(verified) = stage.completed_commit.as_deref() {
-        anyhow::ensure!(
-            verified == branch_tip,
-            "stage branch changed after verification; rerun completion before landing"
-        );
-    }
+    anyhow::ensure!(
+        verified == branch_tip,
+        "stage branch changed after verification; rerun completion before landing"
+    );
     Ok(())
 }
 

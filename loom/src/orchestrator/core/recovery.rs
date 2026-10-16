@@ -46,20 +46,6 @@ pub(super) fn load_stage_at_path(path: &Path) -> Result<Stage> {
         .with_context(|| format!("Failed to parse stage from: {}", path.display()))
 }
 
-pub(super) fn persist_recovery_completed_commit(
-    stage_id: &str,
-    stage_path: &Path,
-    work_dir: &Path,
-    commit: String,
-) -> Result<Stage> {
-    update_stage_at_path(stage_id, stage_path, work_dir, |stage| {
-        if stage.completed_commit.is_none() {
-            stage.completed_commit = Some(commit);
-        }
-        Ok(())
-    })
-}
-
 /// Trait for recovery operations
 pub(super) trait Recovery: Persistence {
     /// Reconcile any active main-repo merge with stage state on disk and
@@ -201,10 +187,7 @@ impl Orchestrator {
         target: &str,
     ) -> bool {
         let original_commit = stage.completed_commit.clone();
-        let branch_name = crate::git::branch::branch_name_for_stage(&stage.id);
-        let commit = original_commit
-            .clone()
-            .or_else(|| crate::git::get_branch_head(&branch_name, &self.config.repo_root).ok());
+        let commit = original_commit.clone();
         let Some(verified) = self.probe_merged(&stage.id, commit.as_deref(), target) else {
             return false;
         };
@@ -222,15 +205,7 @@ impl Orchestrator {
         let mut applicable = false;
         let result =
             update_stage_at_path(&stage.id, stage_path, &self.config.work_dir, |current| {
-                let commit_matches = match (&original_commit, &current.completed_commit) {
-                    (Some(probed), Some(fresh)) => probed == fresh,
-                    (None, None) => {
-                        current.completed_commit.clone_from(&commit);
-                        true
-                    }
-                    (None, Some(fresh)) => commit.as_ref() == Some(fresh),
-                    (Some(_), None) => false,
-                };
+                let commit_matches = current.completed_commit == original_commit;
                 applicable = commit_matches;
                 if commit_matches && !verified {
                     current.merged = false;

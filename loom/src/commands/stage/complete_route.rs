@@ -190,6 +190,9 @@ fn status_route(
     if !conflict_status && merge.is_none() {
         return Ok(CompleteConflictRoute::Proceed);
     }
+    if conflict_status && merge.is_none() && resolved_worktree_ready(stage, repo_root) {
+        return Ok(CompleteConflictRoute::Proceed);
+    }
     if daemon_running {
         return Ok(CompleteConflictRoute::DaemonManaged {
             stage_id: stage.id.clone(),
@@ -211,6 +214,17 @@ fn status_route(
             target_branch,
         })
     }
+}
+
+// Resolution changes the certified content: run every completion gate again
+// before updating the commit proof, even when the daemon is live.
+fn resolved_worktree_ready(stage: &Stage, repo_root: &Path) -> bool {
+    crate::git::merge::check_resolved_worktree(
+        repo_root,
+        &stage.id,
+        stage.completed_commit.as_deref(),
+    )
+    .is_ok()
 }
 
 /// Shared "the daemon owns merge resolution; the stage is not yet completed"

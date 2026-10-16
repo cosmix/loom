@@ -4,7 +4,6 @@
 use anyhow::Result;
 use std::path::Path;
 
-use crate::git::branch::{branch_name_for_stage, get_branch_head};
 use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::update_stage;
 
@@ -34,10 +33,7 @@ pub(super) fn record_conflict_and_report(
     }
     println!();
 
-    // The branch head now is the stage's own work, before any resolver
-    // touches the branch; `check_resolved_worktree` holds it to that.
-    let head = get_branch_head(&branch_name_for_stage(stage_id), repo_root).ok();
-    let recorded = update_stage(stage_id, work_dir, |s| mark_conflict(s, head.as_deref()))?;
+    let recorded = update_stage(stage_id, work_dir, mark_conflict)?;
     if recorded.status == StageStatus::MergeConflict {
         println!("Stage '{stage_id}' is now MergeConflict.");
         print_daemon_next_step(&recorded, work_dir, repo_root);
@@ -50,18 +46,16 @@ pub(super) fn record_conflict_and_report(
 /// Record the conflict on the fresh on-disk stage: `MergeConflict` with
 /// `merge_conflict` set, and `failure_info` and `merge_block` cleared (no
 /// conflict path records one, and the error an earlier `MergeBlocked` stored
-/// would misdescribe the stage). A missing `completed_commit` is set to
-/// `branch_head`; an existing one is kept.
+/// would misdescribe the stage). Completion proof is preserved as recorded.
 ///
 /// A `Completed` stage that was never merged (its plan disables auto-merge)
 /// is left untouched: no edge leads from `Completed` to `MergeConflict`, and
 /// a `MergeConflict` stage gets the daemon resolver the plan opted out of.
-fn mark_conflict(stage: &mut Stage, branch_head: Option<&str>) -> Result<()> {
+fn mark_conflict(stage: &mut Stage) -> Result<()> {
     if stage.status == StageStatus::Completed && !stage.merged {
         return Ok(());
     }
     stage.try_mark_merge_conflict()?;
-    stage.record_completed_commit_if_missing(branch_head);
     stage.clear_merge_block();
     stage.failure_info = None;
     Ok(())
@@ -115,7 +109,7 @@ mod tests {
         let mut stage = stage_with(StageStatus::MergeBlocked);
         stage.failure_info = Some(infrastructure_failure());
         stage.merge.block = Some(MergeBlock::TargetMoved);
-        mark_conflict(&mut stage, None).unwrap();
+        mark_conflict(&mut stage).unwrap();
         assert_eq!(stage.status, StageStatus::MergeConflict);
         assert!(stage.merge_conflict);
         assert!(stage.failure_info.is_none());
@@ -123,18 +117,19 @@ mod tests {
     }
 
     #[test]
-    fn a_missing_completed_commit_is_recorded_and_an_existing_one_kept() {
+    fn conflict_recording_preserves_existing_or_missing_completion_proof() {
         let mut stage = stage_with(StageStatus::MergeBlocked);
-        mark_conflict(&mut stage, Some("aaa")).unwrap();
-        assert_eq!(stage.completed_commit.as_deref(), Some("aaa"));
-        mark_conflict(&mut stage, Some("bbb")).unwrap();
+        mark_conflict(&mut stage).unwrap();
+        assert_eq!(stage.completed_commit, None);
+        stage.completed_commit = Some("aaa".into());
+        mark_conflict(&mut stage).unwrap();
         assert_eq!(stage.completed_commit.as_deref(), Some("aaa"));
     }
 
     #[test]
     fn a_merge_conflict_stage_stays_with_its_flag_set() {
         let mut stage = stage_with(StageStatus::MergeConflict);
-        mark_conflict(&mut stage, None).unwrap();
+        mark_conflict(&mut stage).unwrap();
         assert_eq!(stage.status, StageStatus::MergeConflict);
         assert!(stage.merge_conflict);
     }
@@ -143,7 +138,7 @@ mod tests {
     fn an_unmerged_completed_stage_is_left_untouched() {
         let mut stage = stage_with(StageStatus::Completed);
         stage.failure_info = Some(infrastructure_failure());
-        mark_conflict(&mut stage, None).unwrap();
+        mark_conflict(&mut stage).unwrap();
         assert_eq!(stage.status, StageStatus::Completed);
         assert!(!stage.merge_conflict);
         assert!(stage.failure_info.is_some());
@@ -153,7 +148,7 @@ mod tests {
     fn a_stage_merged_meanwhile_is_left_alone() {
         let mut stage = stage_with(StageStatus::Completed);
         stage.merged = true;
-        assert!(mark_conflict(&mut stage, None).is_err());
+        assert!(mark_conflict(&mut stage).is_err());
         assert_eq!(stage.status, StageStatus::Completed);
         assert!(!stage.merge_conflict);
     }

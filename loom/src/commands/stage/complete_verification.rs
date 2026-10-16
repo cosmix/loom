@@ -1,6 +1,5 @@
 //! Verification-only checks used by the stage completion command.
 
-use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::plan::parser::{load_stage_definition_from_plan, parse_plan, ParsedPlan};
 use crate::plan::schema::{
@@ -37,8 +36,9 @@ impl VerificationChecks<'_> {
 }
 
 pub(super) fn run(checks: &VerificationChecks<'_>) -> Result<()> {
-    let cwd = std::env::current_dir().context("Failed to get current directory")?;
-    let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or(cwd);
+    let repo_root = crate::fs::work_dir::WorkDir::new(checks.work_dir)?
+        .main_project_root()
+        .context("completion repository is unavailable")?;
     let base_branch = crate::fs::resolve_target_branch_from_config(checks.work_dir, &repo_root)?;
     let stage_def = load_stage_definition_from_plan(checks.stage_id, checks.work_dir)?;
 

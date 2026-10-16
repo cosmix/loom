@@ -78,6 +78,7 @@ fn merge_resolved(stage_id: Option<String>) -> Result<()> {
     check_resolved_worktree(&repo_root, &stage_id, stage.completed_commit.as_deref())
         .map_err(|reason| anyhow!("The stage worktree is not ready to merge: {reason}"))?;
 
+    let stage = super::complete::verify_resolved_completion(&stage, work_dir)?;
     match merge_stage(&stage_id, &target, &repo_root, work_dir, MergeGate::Enforce)? {
         MergeResult::Success { stash, .. } => {
             note_merge_stash(&stage_id, work_dir, stash);
