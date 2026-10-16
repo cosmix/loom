@@ -19,6 +19,7 @@ import {
   type ConfigSnapshot,
   type ConfigValue,
 } from "@/api/config";
+import { SettingsWriteCoordinator } from "@/components/settings-write-coordinator";
 import { SettingsCards } from "@/components/settings-cards";
 import { SettingsLanes } from "@/components/settings-lanes";
 import { SettingsWebui, webuiMatches } from "@/components/settings-webui";
@@ -175,6 +176,7 @@ function useSnapshot(client: ConfigClient) {
 /// drives the footer toast. A CSRF rejection re-fetches the snapshot.
 function useSettingsWrites(client: ConfigClient) {
   const { load, retry, applyEntry } = useSnapshot(client);
+  const coordinator = useMemo(() => new SettingsWriteCoordinator(), [client]);
   const [statuses, setStatuses] = useState<Record<string, WriteStatus>>({});
   const [toast, setToast] = useState("each cell writes on its own");
 
@@ -186,9 +188,13 @@ function useSettingsWrites(client: ConfigClient) {
     const key = statusKey(scope, name);
     setStatus(key, { phase: "pending", value });
     setToast(`writing ${name} at ${scope}…`);
-    const result = await client.write(load.data.csrf_token, { scope, name, value });
+    const result = await coordinator.write(
+      client,
+      load.data.csrf_token,
+      { scope, name, value },
+      applyEntry,
+    );
     if (result.ok) {
-      applyEntry(result.entry);
       setStatus(key, { phase: "saved" });
       setToast(savedToast(result.entry, scope, value));
       return;

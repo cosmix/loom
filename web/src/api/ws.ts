@@ -30,6 +30,7 @@ class StatusSocketConnection {
   private reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   private socket: WebSocket | undefined;
   private stopped = false;
+  private generation = 0;
   private readonly request: typeof fetch;
   private readonly schedule: typeof setTimeout;
   private readonly cancel: typeof clearTimeout;
@@ -55,15 +56,25 @@ class StatusSocketConnection {
 
   start(): void {
     this.setConnection("connecting");
+    this.openSocket();
+    const generation = this.generation;
     void this.request("/api/status", { cache: "no-store" })
       .then((response) => response.json())
-      .then((snapshot) => this.receiveSnapshot(snapshot))
-      .catch((error: unknown) => console.error("dashboard: status fetch failed", error));
-    this.openSocket();
+      .then((snapshot) => {
+        if (!this.stopped && this.generation === generation) {
+          this.receiveSnapshot(snapshot, false);
+        }
+      })
+      .catch((error: unknown) => {
+        if (!this.stopped && this.generation === generation) {
+          console.error("dashboard: status fetch failed", error);
+        }
+      });
   }
 
   dispose(): void {
     this.stopped = true;
+    this.generation += 1;
     if (this.reconnectTimer !== undefined) {
       this.cancel(this.reconnectTimer);
     }
@@ -89,20 +100,20 @@ class StatusSocketConnection {
     // opened a fresh one, and reacting to that stale event would schedule a
     // second, untracked reconnect loop.
     socket.onopen = () => {
-      if (this.socket !== socket) return;
+      if (this.stopped || this.socket !== socket) return;
       this.attempts = 0;
       this.setConnection("live");
     };
     socket.onmessage = (event) => {
-      if (this.socket !== socket) return;
+      if (this.stopped || this.socket !== socket) return;
       this.receiveMessage(event.data);
     };
     socket.onclose = (event) => {
-      if (this.socket !== socket) return;
+      if (this.stopped || this.socket !== socket) return;
       this.reconnect(event.reason || "socket closed");
     };
     socket.onerror = () => {
-      if (this.socket !== socket) return;
+      if (this.stopped || this.socket !== socket) return;
       this.reconnect("socket error");
     };
   }
@@ -116,7 +127,7 @@ class StatusSocketConnection {
     }
   }
 
-  private receiveSnapshot(value: unknown): void {
+  private receiveSnapshot(value: unknown, live = true): void {
     const result = parseSnapshot(value);
     if (result.success) {
       applySnapshot(this.store, result.data);
@@ -125,12 +136,12 @@ class StatusSocketConnection {
       // distinction), so calling setConnection on every frame would stamp a
       // new `since` and break it. This also clears a stale error `message`
       // once the feed recovers.
-      if (this.store.get(connectionAtom).phase !== "live") {
+      if (live && this.store.get(connectionAtom).phase !== "live") {
         this.setConnection("live");
       }
       return;
     }
-    this.setConnection("error", issueMessage(result.error.issues));
+    if (live) this.setConnection("error", issueMessage(result.error.issues));
     console.error("dashboard: bad frame", result.error.issues);
   }
 
@@ -138,6 +149,10 @@ class StatusSocketConnection {
     if (this.stopped || this.reconnectTimer !== undefined) {
       return;
     }
+    this.generation += 1;
+    const previous = this.socket;
+    this.socket = undefined;
+    previous?.close();
     const phase = this.attempts >= OFFLINE_AFTER_ATTEMPTS ? "offline" : "reconnecting";
     this.setOutagePhase(phase, message);
     const delay = BACKOFF_MS[Math.min(this.attempts, BACKOFF_MS.length - 1)];
