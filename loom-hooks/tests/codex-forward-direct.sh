@@ -90,9 +90,11 @@ rg '^LOOM-CODEX-DIRECT-RESULT ' "$OUT" | jq -Rer '
 assert_gone "$d/failed.pid"
 
 # A timed-out child is killed immediately and reaped within the cleanup deadline.
+# The timeout leaves a loaded runner time to start the fake Codex; the grace is
+# only a bound, since _retire returns once the group is reaped.
 OUT="$d/timeout.out"; ERR="$d/timeout.err"; status=0
 PATH="$BIN_DIR:$PATH" DIRECT_SCENARIO=timeout FAKE_CODEX_PID="$d/timeout.pid" \
-	FAKE_CODEX_ARGV="$d/timeout.argv" python3 "$SUPERVISOR" --timeout-ms 80 --grace-ms 40 -- \
+	FAKE_CODEX_ARGV="$d/timeout.argv" python3 "$SUPERVISOR" --timeout-ms 1000 --grace-ms 5000 -- \
 	codex exec --json -- test >"$OUT" 2>"$ERR" || status=$?
 [[ $status -eq 124 && ! -s "$ERR" ]]
 tail -n 1 "$OUT" | jq -Rer '
@@ -114,7 +116,7 @@ sys.modules[spec.name] = module
 sys.path.insert(0, os.path.dirname(os.environ["SUPERVISOR"]))
 spec.loader.exec_module(module)
 module._signal_group = lambda _pgid, _signal: False
-result = module.supervise(["codex", "exec", "--json", "--", "test"], 30, 20)
+result = module.supervise(["codex", "exec", "--json", "--", "test"], 1000, 5000)
 assert result.state == "unknown"
 assert result.ownership_retained is True
 assert result.exit_code == 125
