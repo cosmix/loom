@@ -3,6 +3,8 @@ mod protocol;
 mod rpc;
 mod server;
 mod socket;
+#[cfg(test)]
+mod test_support;
 mod wire;
 
 pub use protocol::{

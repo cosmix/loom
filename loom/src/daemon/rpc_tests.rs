@@ -91,19 +91,9 @@ fn a_stale_socket_file_with_nothing_bound_is_not_listening() {
     ) {
         return;
     }
-    // A REAL stale socket, not a plain file: a plain file answers
-    // ENOTSOCK on macOS (XNU's unp_connect rejects a non-socket path)
-    // rather than the ECONNREFUSED a dead daemon actually produces.
-    // Binding and immediately dropping the listener leaves a
-    // socket-typed file on disk with nothing accepting on it, which is
-    // exactly what a daemon that died without unlinking its socket
-    // leaves behind. The listener is shut down before the drop: a process
-    // another test forks meanwhile inherits a copy of the fd that would
-    // keep accepting until its exec, and a shut-down listener refuses.
-    let listener = std::os::unix::net::UnixListener::bind(socket_path(temp.path())).unwrap();
-    // SAFETY: shutdown(2) on an fd this test owns and keeps open until the drop below.
-    unsafe { libc::shutdown(std::os::fd::AsRawFd::as_raw_fd(&listener), libc::SHUT_RDWR) };
-    drop(listener);
+    // A real socket inode that never listened cannot accept a connection,
+    // including while another test forks and inherits its descriptor.
+    crate::daemon::test_support::stale_socket(&socket_path(temp.path()));
 
     match try_send_request(temp.path(), &ping()).unwrap() {
         DaemonReach::NotListening => {}
