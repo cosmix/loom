@@ -216,3 +216,13 @@ the only reason attribution does not reach every commit.
 **Prevention:** Tie each corrective change to an already-finished repair under review. Document unrelated failures, environmental gaps and unfinished findings without implementing them.
 
 **Fix:** Limit remaining checks to completed completion-proof, process and confinement repairs. The stronger B09 resolver-content proof remains deferred; finish the active bounded checks and required commit gates, commit supported work plus all knowledge/report updates, and end.
+
+## Final sweep verification follows finished implementation
+
+**What happened:** The operator requires the full test suite after all implementation is finished, a dedicated final verifier responsible for failures, and logically grouped Conventional Commits without generated attribution.
+
+**Why:** Focused passes and broad runs made before later edits do not certify the final tree.
+
+**Prevention:** Settle implementer edits first, give one verifier ownership of the full gate and corrective work, and commit only after absorbing its results.
+
+**Fix:** Exhaustive gates use `cargo test --all-targets --no-fail-fast` under wall-clock and 2 GiB headroom watchdogs. Four test threads bound observed process/fork pressure; a serial exhaustive run is also authorized if diagnostics justify reducing host executable-assessment concurrency. Neither skips tests nor changes their own deadlines or internal concurrency. Reap superseded runs first. The coordinator preserves unrelated work, updates the original report and creates grouped commits.

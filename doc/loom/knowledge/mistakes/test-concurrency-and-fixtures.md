@@ -223,3 +223,23 @@ refusal, not on the code under test. `relay_e2e.rs` uses a directory outside `/t
 **Why:** a fixed deadline races process start-up, so raising it moves the threshold and nothing else. `codex_tests.rs:5-9` already documents multi-second fake-child start-up (`REPLY_DEADLINE` 60 s).
 
 **Prevention:** a test that reads a file its child writes waits for that file and times from the child's real start (a watcher that sees the pid file), never from the spawn call. The helper is `poll_timed_from_child_start` in `loom/src/quota/codex_tests.rs`. Never size such deadlines in single seconds.
+
+## Stale sockets must never listen during fixture setup
+
+**What happened:** A full-suite daemon stale-socket test expected ProcessOnly but observed Running. It created a listener, ignored shutdown failure, and dropped only its own descriptor.
+
+**Why:** A concurrent fork can inherit a listening descriptor, keeping connection acceptance live after fixture cleanup.
+
+**Prevention:** Construct stale AF_UNIX fixture paths with bind only, never listen, and own the descriptor with RAII.
+
+**Fix:** The fixture binds a stream socket without listening and then closes it; production status checks and the exact ProcessOnly assertion stay intact.
+
+## Zero-timeout assertions need explicit clock separation
+
+**What happened:** The full serial suite failed heartbeat staleness because creating a heartbeat and immediately checking a zero timeout shared the same clock tick.
+
+**Why:** Production correctly uses strict age greater than timeout; the fixture assumed a positive elapsed interval without establishing one.
+
+**Prevention:** Model time explicitly. Use a past progress timestamp or an existing fixed test clock, rather than relying on a scheduling delay or adding sleep.
+
+**Fix:** The zero-timeout heartbeat branch receives an explicitly past progress timestamp, and the adjacent watcher fixture uses its fixed clock. Production staleness semantics, deadlines and sleep behavior stay unchanged; rerun the exhaustive suite after the fixture correction.

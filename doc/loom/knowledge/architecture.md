@@ -197,7 +197,7 @@ cheap, and its incremental relink is proven equal to a cold build.
 
 ## Execution Containment (`loom/src/verify/criteria/confine.rs`)
 
-Plan-authored commands run through `spawn_confined` — environment scrubbing, not isolation.
+Plan-authored commands run through `spawn_confined`, which scrubs the environment and enforces OS isolation for fresh host commands through Seatbelt or bubblewrap. Authenticated macOS stage inheritance retains the approved capsule permissions. The environment-only description is incorrect; `verify/criteria/confine_host.rs::wrap` chooses the actual launcher or authenticated inherited boundary.
 
 → [Execution Containment](architecture/execution-containment.md)
 

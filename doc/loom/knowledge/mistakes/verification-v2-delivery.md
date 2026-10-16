@@ -326,3 +326,33 @@ tests parent, `rg` the name in sibling files that glob-import `super::*`.
 - `loom-code-reviewer` rounds recorded twice for two of four parallel reviewers (identical findings at one fingerprint): a re-review lists every duplicate id under `resolved` ([subagent-liveness-and-watch.md](subagent-liveness-and-watch.md)).
 - `loom subagents watch --worker codex:<unit>` exiting 5 or 3 beside Claude forwarder ids ("companion request cwd mismatch", a low pid from a PID namespace mismatch): wait on the Agent completion notifications ([subagent-liveness-and-watch.md](subagent-liveness-and-watch.md)).
 - Codex output that was not rustfmt-clean: `cargo fmt --all` after the wave ([codex-worker-briefing.md](codex-worker-briefing.md)).
+
+## Resolver content needs fresh completion evidence
+
+**What happened:** The sweep left resolver-produced content eligible to land on the original completed commit proof. A first follow-up blocked unverified resolution without connecting the automatic resolver workflow; a scripted edit also assumed obsolete rustfmt layout.
+
+**Why:** Ancestry and clean-worktree checks establish ownership, not verification. Resolver sessions have different ownership from ordinary completion broker sessions.
+
+**Prevention:** Require fresh completion gates for resolver content through the existing trusted MergeResolved handler; preserve broker ownership checks. Inspect files after a partial edit instead of assuming every replacement applied.
+
+**Fix:** A shared resolver verifier brackets acceptance and all completion gates with input/policy snapshots, validates under the stage lock, and records completed_commit. CLI resolved merge, daemon relay and resolver exit use it; landing compares the branch tip under the merge lock. Ordinary operator completion also accepts clean resolved worktrees.
+
+## Auto merge must not manufacture completion proof
+
+**What happened:** The follow-up audit found try_auto_merge calling capture_completed_commit after prechecks that do not require verification proof, allowing a Completed stage with missing completed_commit to acquire the current branch tip as proof.
+
+**Why:** A legacy merge convenience confused discovering a branch tip with certifying that its content passed completion gates.
+
+**Prevention:** Missing proof must route to fresh completion verification or review before merge; only verified content may create completed_commit for landing.
+
+**Fix:** Remove proof manufacture from the automatic landing path and add a missing-proof regression alongside resolver re-verification.
+
+## Every landing entry point must reject missing proof
+
+**What happened:** Final review found automatic HEAD-derived proof in blocked retry, restart recovery, merged-state validation, resolver-exit ancestry checks, progressive completion and locked landing finalization, beyond the first automatic-merge guard.
+
+**Why:** Closing one caller leaves other producers able to manufacture the proof consumed by the shared merge boundary.
+
+**Prevention:** Trace every automatic completed_commit producer and require persisted proof to survive locked validation. Keep explicit authorized operator overrides distinct from successful verification.
+
+**Fix:** The final verifier removes automatic fallback derivations, guards the shared landing boundary, and adds regression coverage. Existing authenticated operator no-verify and force-unsafe/assume-merged paths retain their intentional skip semantics at the explicit command boundary; a recorded commit in such a path does not mean tests ran. Full final-tree gates follow the complete fix.

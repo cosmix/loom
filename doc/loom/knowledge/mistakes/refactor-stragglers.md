@@ -235,20 +235,50 @@ before the parent's import can go.
 
 ## Runtime fixtures must preserve authoritative state invariants
 
-**What happened:** Full runtime tests exposed fixtures without required persisted graph stages, assertions expecting malformed-stage omission or blocked-stage requeue, and a dependency-output check using a knowledge brief that intentionally does not render those outputs.
+**What happened:** Full runtime tests exposed fixtures without required persisted graph stages, assertions expecting malformed-stage omission or blocked-stage requeue, and a dependency-output check using a knowledge brief that intentionally does not render those outputs. Follow-up verification also exposed merge and progressive-completion fixtures invoking landing without recorded completion proof, including control-path enforcement and bypass cases.
 
 **Why:** Fixtures encoded superseded lifecycle assumptions or exercised the wrong consumer surface.
 
-**Prevention:** Construct the persisted state that production requires and assert strict refusal, preserved operator intent and the real output-rendering path. Keep safety side-effect assertions when adapting platform error text.
+**Prevention:** Construct the persisted state that production requires and assert strict refusal, preserved operator intent and the real output-rendering path. Keep safety side-effect assertions and each test's intended negative guard when adapting fixture prerequisites.
 
-**Fix:** The verifier persists required graph records, tests malformed-state refusal and durable blocks, uses an ordinary downstream brief for output clearing, and keeps no-follow/limit plus untouched-victim/no-partial-write spool assertions. Resolver regression coverage rejects a newer ordinary tip and a dirty resolver tree while allowing only the explicit guarded clean resolution route.
+**Fix:** Persist required graph records and verified fixture commits; retain malformed-state refusal, durable blocks, control-path enforce/bypass assertions and no-follow/limit plus untouched-victim/no-partial-write spool checks. Use an ordinary downstream brief for output clearing. Resolver regressions reject a newer ordinary tip and a dirty resolver tree while requiring fresh gates for resolved content. Rerun the full suite after fixture corrections.
 
 ## Completion regressions must respect stage-store creation semantics
 
-**What happened:** New resolver-boundary fixtures called save_stage for records already created, causing duplicate-record failures during the focused completion review.
+**What happened:** New resolver-boundary fixtures called save_stage for records already created, causing duplicate-record failures. Final verification repeated that mistake in a multi-status missing-proof table (`Stage already exists: api`) and built a recovery test with an empty graph (`Unexpected persisted stage: s`); both failed before reaching their intended assertions.
 
-**Why:** The fixture treated a create-only persistence API as an upsert and omitted committed initialized knowledge inputs in related completion cases. A broad text replacement also populated proof in an intentional missing-proof negative fixture.
+**Why:** The fixtures treated a create-only API as an upsert or omitted the authoritative persisted graph definition. Related completion cases omitted committed initialized knowledge inputs. A broad replacement also populated proof in an intentional missing-proof negative fixture.
 
-**Prevention:** Scope fixture edits by test function instead of matching repeated text; preserve negative setup conditions. Use update_stage for existing records and make completion fixtures establish the same committed checkout and initialized inputs required by production.
+**Prevention:** Scope fixture edits by test function and preserve negative setup conditions. Use update_stage for existing records or isolated stores for table cases; establish the same committed checkout, graph and initialized inputs required by production.
 
-**Fix:** Correct the fixtures while preserving strict proof and dirty-input assertions; keep missing-original-commit resolver behavior fail-closed and route it to review.
+**Fix:** Use fresh stores for each missing-proof state and seed the recovery graph from the persisted stage definition. Preserve strict proof, unchanged-target and dirty-input assertions; missing original proof stays fail-closed and routes to review.
+
+## Removing a mutating helper can leave another mutable consumer
+
+**What happened:** The sweep follow-up removed proof capture and also removed mut from try_auto_merge stage binding, but apply_auto_merge_outcome still borrows that stage mutably. Compilation caught E0596 before runtime checks. The first memory entry guessed the obsolete import before reading its diagnostic.
+
+**Why:** The edit considered the removed consumer without tracing the remaining one; the coordinator recorded an inferred import name as fact.
+
+**Prevention:** Inspect all uses before changing binding mutability, and read exact diagnostics before naming fixes.
+
+**Fix:** Restore the mutable binding needed by outcome application and remove the obsolete Persistence import in merge_gate.rs.
+
+## Integration must check the size ledger after adding guards
+
+**What happened:** The missing-proof guard grew merge_handler.rs from its ledgered 556 lines to 563 despite the repository no-growth rule.
+
+**Why:** A small semantic fix was added to an already oversized coordinator file.
+
+**Prevention:** Check file and function limits after formatting, and extract cohesive modules before verification.
+
+**Fix:** Move automatic-merge handling and embedded tests into focused modules rather than expanding any size allowance.
+
+## Ordered patch hunks and copied hook dependencies
+
+**What happened:** Final verification encountered an out-of-order patch hunk and 171 failing integration tests whose copied hooks omitted `_bounded.sh`: codex_evidence (21), integration (140), worker_evidence (10). Adding it left an outdated dependency-count comment and pushed two test files past 400 lines. The next complete run exposed 25 skill-trigger cases failing `ModuleNotFoundError: _bounded_input`; the fixture repair had omitted the Python sibling module.
+
+**Why:** Patch context was applied in source order. Fixture copy lists, comments and size limits had drifted from the production dependency graph, and checking only shell dependencies missed Python imports.
+
+**Prevention:** Order hunks by source position, inspect partial application, and audit every copied entry point and its transitive shell/Python dependencies. Update fixture documentation and check file limits before the final run.
+
+**Fix:** Complete only unapplied hunks; install `_bounded.sh` at ten fixture sites and `_bounded_input.py` at both skill-trigger installers. Correct the comment and extract test groups without growing allowances. Audit every HOOK_SKILL_TRIGGER copy site and rerun static checks plus exhaustive tests after the finished source.
