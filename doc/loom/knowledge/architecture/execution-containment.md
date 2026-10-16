@@ -4,64 +4,28 @@
 
 ## Read This First: What "Containment" Means In Loom
 
-**Loom's execution containment is environment scrubbing. Nothing else.** It is least-privilege
-hygiene, not a security boundary: no namespace isolation, no seccomp filter, no landlock, no cgroup
-and no network restriction is applied to any command loom spawns. Three independent proofs:
+`CommandConfinement::Confined` prepares an OS boundary in `verify/criteria/confine_host.rs` as well as rebuilding the child environment. Fresh host commands use macOS Seatbelt or Linux bubblewrap, allow selected runtime/toolchain reads and worktree writes, and deny network access. Missing containment support is an error.
 
-1. An exhaustive `rg 'unshare|CLONE_NEW|netns|seccomp|landlock'` over `loom/src`
-   returns only comments and unrelated matches — no syscall, no crate.
-2. `verify/criteria/confine.rs` `spawn_confined` has exactly TWO levels (below);
-   neither touches namespaces, the filesystem, or sockets.
-3. Empirically, `readlink /proc/self/ns/net` is byte-identical between the parent
-   and a `sh -c` child — the exact spawn shape used for `CommandSpec::Shell` — so
-   the child shares the host network namespace.
+On macOS, an already sandboxed stage can reuse its inherited capsule only through `daemon/inherited`: positive kernel sandbox evidence, protected daemon and stage/session/capsule records, authenticated socket peer identity, live process ancestry and reciprocal stage ownership must agree. Environment strings and tokens alone cannot authorize inheritance. Session settings grant the exact daemon socket; existing sessions without that grant require relaunch.
 
-`spawn_confined` itself adds no confinement, but a criterion run by
-`loom stage complete` inside a stage session inherits that session's bubblewrap
-sandbox (filesystem and network allowlist): `commands/stage/acceptance_runner.rs`
-calls `run_acceptance_with_config` in the agent's own process. Only the daemon's
-host-side runs are unconfined.
+Inherited execution retains the approved stage capsule permissions, including any network or shared-cache grants. Fresh host execution uses the stricter command policy. Stage `NetworkConfig` controls the session capsule; it is not a per-command network override.
 
-**Consequence for plan authors:** do not write an acceptance criterion that
-presumes a containment level loom never implemented. "Prove an outbound
-connection is denied" cannot be satisfied by `spawn_confined` or a daemon-side
-run, and the honest verdict for such an item is "did not run", not "the host
-could not provide it". Inside a stage session the inherited sandbox does deny
-outbound connections outside the allowlist.
-
-**There is also no `network: none` syntax for a spawned command.**
-`models/stage/types.rs:340` `NetworkConfig` carries `allowed_domains`,
-`additional_domains`, `allow_local_binding` and `allow_unix_sockets`, and an
-empty `allowed_domains` does mean "no network allowed" — but that config is only
-emitted into the Claude Code `settings.json` sandbox for the agent **session**.
-It never reaches `spawn_confined`, so a plan-authored command is not
-network-restricted by loom at all.
+Host Cargo execution uses a private RAII-owned Cargo home with read-only shared registry/git sources. `ConfinedChild` and the criterion executor retain resources until owned-process retirement. Current verification outcomes and platform coverage are recorded in `doc/astra-bug-sweep-2026-10-15.md`.
 
 ## The Two Confinement Levels
 
-`CommandConfinement` (`models/stage/types.rs:255-263`, serde `kebab-case`):
+`CommandConfinement` lives in `models/stage/sandbox_config.rs` and uses kebab-case YAML.
 
-| Level | YAML | What it mechanically does |
+| Level | YAML | Behavior |
 | --- | --- | --- |
-| `Confined` | `confined` (**default**) | `command.env_clear()`, then re-adds only the variables on the host allowlist, via `crate::process::apply_stage_environment` |
-| `Inherit` | `inherit` | no-op — the child gets loom's ambient environment. Explicit plan opt-in only |
+| `Confined` | `confined` (default) | Rebuild the allowlisted environment and apply the host OS boundary or authenticate an existing macOS stage boundary. |
+| `Inherit` | `inherit` | Explicitly retain the invoking environment and containment. |
 
-Configured plan-wide as `command_confinement` (`plan/schema/types.rs:52`,
-defaulted) and overridable per stage as `command_confinement`
-(`models/stage/types.rs:305`, `Option<_>` — unset means the plan-level value
-applies). `confine.rs` owns the policy half too: `resolve_confinement` and
-`plan_confinement` answer "which level applies to this stage?" so no caller
-reimplements the precedence.
+The plan sets `command_confinement`; a stage may override it. `resolve_confinement` and `plan_confinement` centralize precedence.
 
 ## What Goes Through `spawn_confined`
 
-`spawn_confined` is the **single leaf primitive** for the whole family of
-plan-authored commands: every acceptance criterion, setup command, truth check,
-wiring test, dead-code check and change-impact command in a loom plan becomes a
-process through it (`verify/criteria/confine.rs:1-14`).
-
-Plans are trusted artifacts, but **trusted is not privileged**: a plan line must not read
-`GITHUB_TOKEN`, `AWS_*` or `ANTHROPIC_API_KEY` merely because loom was started from a shell that had them.
+Plan-authored acceptance, setup, truth, wiring, dead-code and change-impact commands use the shared command preparation and criterion executor in `verify/criteria`. `spawn_confined` exposes an owned `ConfinedChild`; executor paths retain `PreparedCommand` resources while managing process retirement and bounded output. Environment allowlisting prevents ambient credentials from becoming plan privileges.
 
 ## The Host Environment Allowlist
 
@@ -99,19 +63,9 @@ that cannot run `cargo` fails the stage as loudly as a real defect.
 
 ## Honest Limits
 
-A `Confined` command **cannot** read an ambient environment variable outside the
-allowlist — that is the entire guarantee. It **can** still:
+Fresh host containment and authenticated inherited containment have different permissions. Inheritance preserves the stage capsule, including its approved network and package-cache grants. `Inherit` is an explicit opt-in to the caller environment/boundary.
 
-- open outbound network connections (shares the host network namespace) and connect to any host Unix socket;
-- read and write any path the invoking user can, including outside `allow_write`;
-- signal or inspect other processes owned by the user;
-- reach `org.freedesktop.secrets` and the X11 session via the forwarded
-  `DBUS_SESSION_BUS_ADDRESS` and `XAUTHORITY`.
-
-`DBUS_SESSION_BUS_ADDRESS` is a live credential surface, the argument used to withhold
-`SSH_AUTH_SOCK`. Root cause: **one list serves consumers with different needs** (the terminal spawner
-needs display variables, `spawn_confined` does not); see
-[Confined Commands Still Reach a Live Credential Bus](../concerns/sandbox-and-confinement-gaps.md#confined-commands-still-reach-a-live-credential-bus).
+The policy is OS-specific and permits the runtime/toolchain paths needed to execute commands. It is not a CPU/memory quota or an immutable-input snapshot. Generated dependencies can remain ambient, and before/after verification snapshots do not detect transient mutate-and-restore behavior. Boundary tests must exercise actual launchers with readable/writable outside canaries and report platform skips; unit tests of environment construction alone do not prove confinement.
 
 ## Sandbox Settings Emission — `Edit(path)`, Never `Write(path)`
 
@@ -270,7 +224,7 @@ produced.
 | --- | --- |
 | `loom/src/verify/criteria/confine.rs` | `spawn_confined`, `resolve_confinement`, `plan_confinement` — start here |
 | `loom/src/process/environment.rs` | the allowlist and `apply_stage_environment` |
-| `loom/src/models/stage/types.rs:255` | `CommandConfinement`; `:340` `NetworkConfig` |
+| `loom/src/models/stage/sandbox_config.rs:17` | `CommandConfinement`; `:100` `NetworkConfig` |
 | `loom/src/plan/schema/types.rs:52` | plan-level `command_confinement` |
 | `loom/src/sandbox/settings.rs` | per-stage session sandbox emission |
 | `loom/src/orchestrator/terminal/native/wrapper.rs:181` | the **second**, diverging copy of the allowlist (see `concerns.md`) |
@@ -301,7 +255,7 @@ Package-manager cache paths are not checked here; their own signal note covers t
 
 Running `loom status` FROM INSIDE a stage's own sandboxed session reports that stage's session as orphaned/dead (`session_alive` false, `render/graph.rs:133-137`), even though it is the live session asking the question. **Why:** bubblewrap's PID namespace hides the host PID from the sandboxed process, so the liveness check (which compares against a host PID) cannot see its own process as alive. This is a sandbox artifact of the caller inspecting itself from inside its own namespace, not evidence the session actually died — treat a self-reported "orphaned" from inside a stage sandbox as uninformative, never as a signal to intervene.
 
-**Sanctioned proxies for what a live-host smoke test cannot verify inside a stage sandbox:** a real daemon Unix-socket round trip is blocked (`socket(AF_UNIX)` is `EPERM`; a stage granted `allow_all_unix_sockets` finds the socket masked instead) — verify via an in-memory transport test instead (e.g. `completion_dispatch` tests) or a daemon-offline path (`completion_replay/hook_broker.rs`); a live Codex companion is unreachable — `codex_evidence` installs a fake companion; local TCP listeners for `loom status --web` are blocked (`allow_local_binding=false`) — drive the pure route directly instead (`web/tests/embedded.rs`); the tmux backend needs its own per-test `TmuxTmpDirGuard` workaround (see [Sandbox and Settings](../mistakes/sandbox-and-settings.md)).
+**Boundary-aware tests:** macOS capsules grant the exact daemon socket for authenticated inherited-confinement requests; sessions started without that grant require relaunch. Unix-socket availability on other sandbox paths depends on their emitted policy, so tests must report the actual boundary they exercise. A live companion, local TCP listener or tmux server can still require host execution. Use focused transport/route fixtures where the caller sandbox prevents the real boundary, and do not count a skipped boundary test as successful execution.
 
 ## macOS: the stage sandbox refuses a nested Seatbelt, so the wrapper runs codex exec directly (2026-09-02)
 

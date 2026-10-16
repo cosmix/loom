@@ -288,3 +288,43 @@ name, which APFS refuses. The web-terminal tests assumed Linux PTY buffering and
 `relay::scratch_root`, the census test is gated off macOS, the PTY tests use raw mode and squeeze `od`
 spacing, and the stalled-client test sizes its output from `sockets::stalled_client_capacity`. CI
 run 38397957790 is the first with every macOS job green.
+
+## A loader stall outlived a memory-only watchdog
+
+**What happened:** The full runtime suite and an isolated commit check stalled in newly launched binaries. A host process sample showed the main test target at _dyld_start with no Rust frames and negligible memory after more than five minutes.
+
+**Why:** A memory-headroom watchdog does not detect elapsed-time stalls; static gate success does not prove a new executable can start on the host.
+
+**Prevention:** Distinguish loader startup from a Rust deadlock, sample a stalled process once, and use elapsed-time bounds as well as owned process-group cleanup.
+
+**Fix:** Preserve logs and terminate/reap the stalled groups. Continue only focused repairs and affected checks; record any unresolved loader boundary separately from behavioral failures and do not bypass commit hooks.
+
+## Use the crate manifest from the repository root
+
+**What happened:** A formatter invocation from the repository root failed because Cargo.toml is under loom/.
+
+**Why:** Repository and crate working directories were confused during the corrective batch.
+
+**Prevention:** Run Cargo inside loom/ or pass --manifest-path loom/Cargo.toml explicitly.
+
+**Fix:** The worker used the explicit manifest; the failed command made no source changes and was not a failed verification result.
+
+## Diagnostic sampling must not bypass child cleanup
+
+**What happened:** A bounded sampling command timed out inside the disposable quota startup probe and interrupted its cleanup; the leftover process group was immediately terminated.
+
+**Why:** Cleanup followed diagnostics instead of running unconditionally.
+
+**Prevention:** Place owned-process retirement in a finally block even when every diagnostic has its own timeout.
+
+**Fix:** The probe now always retires its child group. Repository timeout assertions remain intact; the independent executable startup timeout is recorded separately from quota behavior.
+
+## Stop redundant verification after independent host startup evidence
+
+**What happened:** The corrective full-library run stalled in fresh executable fixtures with 300-second command limits after thousands of tests had completed; bounded independent Python probes also could not start trivial executable scripts.
+
+**Why:** Repeating every broad-suite timeout would consume time without distinguishing code behavior from the host startup failure.
+
+**Prevention:** Preserve the incomplete result and independent evidence, retire the run, then check concrete logic failures with explicit elapsed-time bounds. Never count unexecuted or interrupted tests as passing.
+
+**Fix:** Stop and reap the stalled run, retain its exact tally and log, use focused corrective checks plus required static gates, and document unresolved coverage before committing the reviewed batch.

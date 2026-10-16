@@ -134,3 +134,13 @@ The pre-commit hook runs markdownlint with automatic fixes on every staged markd
 **Prevention:** for each remedy in a bug report, find the code that already serves it and the actor who would carry it out before adopting it. Keep only remedies that close a gap the tree has.
 
 **Fix:** the scope was rebuilt from the failure chain: run-dir resolution, freeze acceptance of unreadable reds, plan verify, dispute granularity, stale `contracts show`.
+
+## Match each audit claim to its cited symbol
+
+**What happened:** The audit draft attached the settings response replacement claim to settings-model.ts, which actually defines pending-key helpers; replaceEntry lives in settings-dialog.tsx.
+
+**Why:** Adjacent source citations were transposed while condensing reviewer notes.
+
+**Prevention:** Validate the symbol-to-claim association as well as file existence and line bounds before finalizing an audit.
+
+**Fix:** Cite settings-model.ts for statusKey and settings-dialog.tsx for replaceEntry; keep the independently confirmed UI race finding.

@@ -6,7 +6,7 @@
 
 ## Progressive Merge Pattern
 
-Dependencies merged to main before dependent stages execute: `Stage A completes -> Merge A to main -> Stage B starts`. Base branch resolution: no deps = init_base_branch or default; all deps merged = main; single dep not merged = dependency branch (legacy fallback). MergeLock prevents concurrent merges (30s timeout, 5min stale cleanup).
+Dependencies merge to the target branch before dependent stages execute: `Stage A completes -> Merge A to target -> Stage B starts`. Base branch resolution: no deps = init_base_branch or default; all deps merged = target branch; single dep not merged = dependency branch (legacy fallback). `MergeLock` serializes loom merges with a stable-inode OS advisory lock and a 30-second acquisition timeout (`loom/src/git/merge/lock.rs:25-95`). The lock file is not unlinked or reclaimed after five minutes; process exit releases the OS lock.
 
 ## Merge Anti-Respawn Pattern
 
@@ -86,20 +86,11 @@ If the agent could write both request and verdict, it could pre-fill `verdict: A
 
 ## Plan Amendment Atomic Write Pattern
 
-For amending the IN_PROGRESS plan file safely (Stage 3):
+Amendments serialize under the plan-version lock and persist a full snapshot plus an atomic audit publication before reconciling live policy. The audit row records prepared work; only the per-version .applied receipt proves both the live plan and target stage fields were written.
 
-```text
-1. Acquire .loom/work/plan_versions/.lock  (file lock — serializes concurrent amendments)
-2. Compute new plan content in memory
-3. Atomic-write .loom/work/plan_versions/<n>.md  (full snapshot)
-4. Append to .loom/work/plan_versions/audit.md  (O_APPEND — atomic for small rows)
-5. Atomic temp+rename of IN_PROGRESS plan file to new content
-6. Release lock
-```
+plan/amendment/transaction.rs::finish_pending completes audited snapshots in version order before new amendments. Field reconciliation preserves unrelated edits and never replays index-based patches. Both retry and startup recovery use this path. Adjudication preserves the committed policy instead of writing a cached copy over a newer amendment.
 
-Recovery on crash: scan audit.md for latest amendment; verify plan file matches snapshot. If mismatch → restore from `<n>.md`. If `<n>.md` missing → discard audit row, use `<n-1>.md`.
-
-Note: `plan/graph/loader.rs:60-86` PREFERS `.loom/work/stages/` files over the plan file. Plan-file amendment MUST also update the corresponding `.loom/work/stages/<stage_id>.md` for the change to be reflected in the running orchestrator graph.
+Completion policy identity includes the stage amendment revision, so a policy changed and later restored cannot revive an earlier checkpoint. Audit readers can observe only complete atomic publications.
 
 ## Merge Resolver Spawn Loop
 

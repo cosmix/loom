@@ -211,7 +211,7 @@ structural instead of a rule twelve `extract()` implementations each have to rem
 
 Three layers of identity stop a cached extraction from an older build being reused.
 
-**Graph schema.** `GRAPH_SCHEMA_VERSION` (`context/source_graph/mod.rs`, currently 2) is stamped
+**Graph schema.** `GRAPH_SCHEMA_VERSION` (`context/source_graph/mod.rs`, currently 3) is stamped
 into every `GraphLayer.schema_version`. A layer whose version differs is never current and never a
 reuse source: `layer_is_current`, `build_layer` (as a previous layer) and `build_worktree_graph`
 (treats it as absent) all refuse it. A layer file that fails to deserialize is **corrupt**, not an

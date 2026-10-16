@@ -37,12 +37,9 @@
 
 ## Settings lanes (2026-09-12)
 
-Reviewed during the settings-lanes integration-verify and deliberately left unchanged:
+Current settings behavior and remaining concerns:
 
-1. **`useSettingsWrites` has no per-key sequence guard.** An architecture-review finding
-   ("out-of-order responses clobber a newer write") is real in principle but unreachable
-   from the current UI — nothing lets a user issue two writes to the same key fast
-   enough to race. Left as a latent risk rather than fixed pre-emptively.
+1. **Concurrent settings writes reconcile after completion.** `settings-write-coordinator.ts` tracks overlapping writes and refetches authoritative entries after they settle. Delayed cross-scope responses cannot remain the final displayed state; concurrency regressions cover this path.
 2. **Phone cards mark BOTH tiers `data-effective` when a row's model and effort resolve
    at different tiers.** The effective marker is computed per row via
    `entries.some(...)`, not per lane, so a pair split across user/project tiers shows

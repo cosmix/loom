@@ -25,15 +25,7 @@ The Rust `strip_embedded_content` in `bash.rs:79` uses `line.trim() == marker` (
 
 ## Remote Releases Do Not Deliver Hooks (PRE-EXISTING, 2026-07-28)
 
-`install.sh::install_hooks_remote` fetches each hook from `${GITHUB_RELEASES}/<name>`, but
-`.github/workflows/release.yml` publishes **no hook assets**. A clean remote install now fails
-when all downloads miss rather than falsely reporting hook success, but the underlying delivery
-contract is still broken: remote installation cannot install token-governance hooks, and
-self-update has no hook update path either. This is currently low priority because development
-installation (`dev-install.sh`) uses the repository's local hook files.
-
-**Fix shape:** publish and checksum a complete hook bundle (or embed hooks in the binary), verify
-its exact `LOOM_HOOKS` inventory before an atomic replacement, and add a clean-install fixture.
+Remote releases deliver hooks through the embedded-assets binary. `install.sh` downloads or builds the binary, checks that it exposes `install-assets`, then invokes `loom install-assets --skills "$SKILLS_MODE"` (`install.sh:354-366`). There is no `install_hooks_remote` function or separate per-hook release download. Hook inventory comes from `LOOM_HOOKS` in `loom/src/fs/permissions/constants.rs`, consumed by the asset installer.
 
 ## No-Verify Doctrine Block Carries Only a Rust Example (2026-07-28)
 
@@ -61,23 +53,9 @@ Silently Narrows It" before starting, and budget for the differential testing it
 
 ## Three Hook Files Exceed Rule 17's 400-Line Cap
 
-Over CLAUDE.md Rule 17's 400-line file limit (`wc -l`, 2026-08-26):
+Several shell hooks exceed the repository file-size limit. Refactor by responsibility while preserving shell sourcing order and hook registration.
 
-| File                             | Lines |
-| -------------------------------- | ----- |
-| `loom-hooks/_common.sh`               | 1197  |
-| `loom-hooks/commit-filter.sh`         | 489   |
-| `loom-hooks/subagent-verify-guard.sh` | 416   |
-
-`_common.sh` roughly doubled when the token-scanning helpers landed; it was already over the cap
-before that.
-
-Splitting any of them needs a new hook file, and a new hook file needs FOUR registrations: an
-`include_str!` const plus a `LOOM_HOOKS` entry in `loom/src/fs/permissions/constants.rs`, the
-hooks config builder, BOTH copies of the `all_hooks` array in `install.sh`, and the exact-length
-assertion in `loom/src/fs/permissions/tests/hooks_tests.rs`. Miss any one and the hook is
-**silently dead** rather than broken — it simply never runs, and nothing reports it. That is why
-this is a deliberate, separate change and not a drive-by trim.
+`loom/src/fs/permissions/constants.rs` embeds hook sources and lists `LOOM_HOOKS`; the hook configuration builder registers invoked hooks, and asset tests check installed inventory. `install.sh` invokes the binary asset installer and has no duplicated `all_hooks` arrays. Add a new embedded helper to the inventory, and register it as an event hook only if it is invoked directly.
 
 ## Duplicated Manifest-to-Language Tables
 

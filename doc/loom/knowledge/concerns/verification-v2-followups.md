@@ -39,8 +39,9 @@ Open parser and command gaps found while writing the language skills, checked ag
   `contract-<id>`; `orphan_candidates.rs:21-34` matches pid-file stems by prefix, so after a daemon restart the scanner
   can adopt one stage's process into the other. Same class as the `merge-`, `knowledge-` and `adjudication-` prefixes;
   `validation.rs` `RESERVED_NAMES` reserves none of them.
-- **Escalated contract stage.** `loom stage retry` refuses `NeedsHumanReview`; the stage reaches retry only through
-  `human-review --reject` (`Blocked`), and `human-review --approve` requeues without resetting the contract budget.
+- **Escalated contract stage recovery.** `loom stage retry` refuses `NeedsHumanReview`; `human-review --approve` resets
+  the contract budget inside the locked stage update that queues the stage (`loom/src/commands/stage/human_review.rs:95-111`).
+  Approval does not retain the exhausted contract budget.
 - **Continuation writer.** After a ceiling handoff the replacement contract writer gets a fresh contract signal without
   its predecessor's handoff (`generate_contract_signal` takes no handoff file).
 - **Stale wiring pin from another stage.** Integration-verify has no self-service channel for it: `dispute-criteria` takes an

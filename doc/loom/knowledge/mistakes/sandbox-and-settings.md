@@ -298,3 +298,43 @@ commands (e.g. `loom map`'s overlay). See `concerns/sandbox-and-confinement-gaps
 **Why:** the absolute spelling is needed because Bash allow rules do not expand `~` and `codex-forward-guard.sh` accepts both spellings; it was placed in the only file the fold already wrote.
 **Prevention:** machine-specific absolute paths go only in the per-session capsule (`session_settings/contents.rs` `capsule_settings`), never in `.claude/settings.json`.
 **Fix:** `capsule_settings` adds the entry when implementers include codex; `merge_permissions` strips it from `settings.json`.
+
+## Host Seatbelt denied dyld root-directory discovery
+
+**What happened:** Fresh confined commands on macOS27 aborted before application startup, causing many runtime test failures. Crash reports located dyld CacheFinder startup; authenticated inherited-sandbox execution still worked.
+
+**Why:** The deny-default profile allowed runtime trees but omitted reading the root directory itself, which dyld needs for Cryptex discovery.
+
+**Prevention:** Test the actual launcher on current host runtimes, retain narrow outside-file/network canaries, and distinguish directory metadata/discovery from descendant access.
+
+**Fix:** Bounded probes showed that adding only `(allow file-read* (literal "/"))` permits startup; broad mach/sysctl/ipc/map grants did not. The worker added the literal root-directory grant (no descendants), bumped containment cache identity to v4 and is rerunning affected boundary checks.
+
+## Host Cargo needs the selected macOS developer toolchain
+
+**What happened:** After fixing dyld startup, the confined offline Cargo canary reached compilation but could not read the SDK selected by Xcode.
+
+**Why:** Runtime read grants did not include the selected Developer directory, which toolchain discovery can place outside standard system roots.
+
+**Prevention:** Exercise a real offline build in confinement and derive toolchain paths through bounded trusted system discovery, retaining read-only access and outside-file denial canaries.
+
+**Fix:** The verifier added bounded xcode-select discovery and a read-only grant for the selected Developer directory. Sibling read/write/network and private-cache/credential canaries already pass; offline build verification is being rerun.
+
+## Confined build fixtures need permitted inputs and private scratch
+
+**What happened:** Focused verification passed 349 tests but failed 28 after the loader fix; remaining failures included Xcode shared-framework reads, xcrun temporary writes, and fixtures reading or writing outside their declared working directory.
+
+**Why:** Toolchain dependencies extend outside the selected Developer subtree, while tests had assumed unrestricted ambient filesystem access.
+
+**Prevention:** Grant trusted toolchain reads explicitly, keep generated scratch inside the owned private directory, and make fixtures obey the same confinement contract as production. External cache inputs do not themselves grant execution access.
+
+**Fix:** The verifier uses read-only selected Xcode Contents and private TMPDIR, relocates fixture counters/captured output inside their working tree, preserves external-read denial checks, and restores the timeout diagnostic lost in extraction. Affected checks are rerun after these changes.
+
+## Subdirectory execution must retain the assigned worktree boundary
+
+**What happened:** A provisioning entry executed from web could not write ../order even though that path remained inside its assigned worktree.
+
+**Why:** The execution directory also became the confinement root, unintentionally shrinking the authorized workspace to the subdirectory.
+
+**Prevention:** Distinguish the validated command working directory from the assigned filesystem boundary; test a relative parent path that remains inside that boundary.
+
+**Fix:** Prepare the sandbox at the assigned worktree root and change to the validated entry directory inside the shell before executing its command. Sibling worktrees remain outside the boundary.

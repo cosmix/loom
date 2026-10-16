@@ -57,9 +57,13 @@ drives the same builder.
   (`refresh/source_graph.rs`), matched against the FIRST path segment only, applied to
   enumerated, untracked and dirty paths alike. `.loom` and `.work` are two separate
   top-level entries; there is no compound `.loom/work` entry.
-- `context` reaches `git` only through `git::runner::run_git_checked`, from
-  `enumerate.rs`, `generation.rs` and `layer.rs` under `refresh/source_graph/`. That
-  is a deliberate downward edge, not a layering violation.
+- Git scalar results use `run_git_checked`; NUL-delimited enumeration and status
+  use untrimmed `run_git_records`. Dirty base blobs use `run_git_stream` and
+  `SourceRead::read`, preserving leading/trailing whitespace and non-UTF8 bytes.
+  On-disk refresh and verification graph reads share `source_graph::read`:
+  fixed-buffer full-input hashes and line counts, with at most 512 KiB retained.
+  Oversized entries retain full byte identity without allocating the whole file.
+  These Git/filesystem edges are below retrieval; consumers call into `context`.
 
 ## Freshness States
 

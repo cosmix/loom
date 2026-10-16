@@ -152,3 +152,45 @@ codex home's AGENTS.md in knowledge without backticks, as
 an added line is a knowledge defect to fix.
 
 **Fix:** `continues_name` rejects a prefix followed by `.` and an identifier character, with a test for the backticked template name.
+
+## Knowledge replacement uses logical topic names
+
+**What happened:** An audit passed repository-relative doc/loom/knowledge paths to replace-section; the CLI rejected the first path component. A later replacement body beginning with a Markdown list was also parsed as an option.
+
+**Why:** The file argument is a logical knowledge topic, and option parsing still applies to positional text.
+
+**Prevention:** Pass architecture.md for a summary or architecture/orchestrator-loop for a topic, and put -- before arbitrary replacement text.
+
+**Fix:** Use logical topic identifiers and a positional-argument terminator.
+
+**Additional check:** A relative link from a knowledge topic to the audit report outside the knowledge root failed knowledge validation. Keep the topic self-contained and verify external-topic links with the knowledge checker before retaining them.
+
+## A knowledge topic exceeded the aggregate index budget
+
+**What happened:** Adding a repair-decision topic and tier-1 summary pushed INDEX.md beyond 16 KiB and the mistakes summary beyond 250 lines.
+
+**Why:** Existing files were already close to their aggregate limits.
+
+**Prevention:** Prefer the existing topic whose blurb covers the entry; check the generated index and tier-1 limits after writes.
+
+**Fix:** Consolidate the repair contracts into the existing subagent orchestration topic and remove the redundant summary.
+
+## Replacement text beginning with a list needs an argument terminator
+
+**What happened:** A section replacement whose body began with a Markdown dash was parsed as a CLI option and rejected before writing.
+
+**Why:** Passing a separate subprocess argument avoids shell expansion but does not disable the CLI option parser.
+
+**Prevention:** Insert -- before replacement content, including when invoking the CLI through subprocess argument arrays.
+
+**Fix:** The remaining knowledge replacements use an explicit argument terminator; successful earlier replacements are retained.
+
+## Wait for knowledge synchronization before final validation
+
+**What happened:** A knowledge integrity check began after the sync command yielded a running session, before its completion was collected.
+
+**Why:** A tool returning a session identifier was treated like completed sequential work.
+
+**Prevention:** Wait for the running operation to exit before starting a dependent validation or write.
+
+**Fix:** Collect successful sync completion and rerun the final integrity check after all knowledge writes.

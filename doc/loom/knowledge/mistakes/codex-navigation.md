@@ -50,3 +50,13 @@ that lands in the tree is `100644`.
 **Prevention:** For each graph view, trace the displayed line field to its originating span and state whether it names a declaration or a reference site.
 
 **Fix:** Describe the current field as the neighboring declaration line and propose a separate reference-site span.
+
+## Source outline accepts one path per invocation
+
+**What happened:** The codebase audit attempted two --outline flags in one loom map invocation and the CLI rejected the command.
+
+**Why:** Independent queries were combined as repeated flags without checking whether the option was repeatable.
+
+**Prevention:** Run one loom map --outline command per file; batch independent commands through the tool orchestrator.
+
+**Fix:** Reissue each outline as its own read-only command.

@@ -78,7 +78,9 @@ exactly like one that has nothing to write (see the forward-receipt tokenizer bu
 ## Provider Ledger (`loom usage`)
 
 `loom usage` normalizes each provider's telemetry into `NormalizedEvent` rows and a
-`ProviderLedger` (`loom/src/commands/usage/provider_types.rs`, schema 1). Rules:
+`ProviderLedger` (`loom/src/commands/usage/provider_types.rs`, schema 1). The neutral
+`provider_data` module owns shared session/Codex inventory and Claude normalization;
+CLI, status and live token discovery consume it without core-to-command dependencies. Rules:
 
 - **Providers stay separate.** `Provider` is Claude or Codex; `--provider` defaults to claude.
   Claude and Codex vectors are never added together or translated into each other's accounting.
@@ -90,12 +92,15 @@ exactly like one that has nothing to write (see the forward-receipt tokenizer bu
   `AmbiguousConflict` (`provider_normalization.rs::classify_by_id`). Other states: `Synthetic`,
   `ZeroUsage`, `UnknownUsage`, `FallbackCoverage`.
 - **Claude streams.** Duplicate rows of one streamed message merge to the latest whole usage
-  vector by `(timestamp, line_ordinal)` (`transcript_merge.rs:10-31`). When the 5m/1h cache-write
+  vector by `(timestamp, line_ordinal)` (`provider_data::supersedes`, consumed by
+  `transcript_merge.rs` and the live tracker). Nested cache-write counters supply an absent
+  flat total through the shared `provider_data::claude` parser. When the 5m/1h cache-write
   split contradicts the cache-creation total, the split is nulled rather than guessed; the legacy
   `TokenUsage` keeps the reconciled value (`claude_provider.rs::claude_tokens`).
-- **Codex.** `CodexDirect` rows come from per-turn `last_token_usage`; `CodexFallback` rows derive
-  from cumulative `total_token_usage` and are coverage evidence only, tagged `FallbackCoverage` and
-  reported as `fallback_coverage_totals` (`codex_provider.rs`).
+- **Codex.** `CodexDirect` rows normalize `token_usage_record` `payload.usage`. `CodexFallback` rows
+  normalize `token_count` `last_token_usage` and use the last/total pair only to suppress consecutive duplicate
+  snapshots (`loom/src/commands/usage/codex_provider.rs:128-208`). Fallback rows remain coverage evidence, tagged
+  `FallbackCoverage` and reported as `fallback_coverage_totals`; they are not derived cumulative deltas.
 - **Execution receipts** (`--receipts-root`, `loom/src/models/execution_receipt.rs`, schema 1) are
   a protocol for an external producer; nothing in the tree writes them. A 5m/1h split mismatch
   marks the split unknown instead of rejecting the receipt (`receipt_provider.rs`).

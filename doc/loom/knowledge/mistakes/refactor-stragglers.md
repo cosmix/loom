@@ -152,3 +152,103 @@ before the parent's import can go.
 **Why:** an exact-rate assertion that reads `unix_now()` depends on the bucket phase, and a search for the old symbol finds none of them.
 
 **Prevention:** when a rate formula changes, `rg` every exact-rate assertion and every fixture that uses `unix_now()`, not only the files the plan lists, and run each such test repeatedly.
+
+## Interrupted extraction leaves module wiring unfinished
+
+**What happened:** Resuming a broad repair after interruption found extracted modules with missing imports and a trailing doc comment unattached to an item.
+
+**Why:** Files persisted before their integration and verification handoffs completed.
+
+**Prevention:** Treat persisted edits as unfinished until the complete tree compiles, and include module declarations, imports, and adjacent documentation in extraction reviews.
+
+**Fix:** Reassign ownership from the actual tree and compiler diagnostics, finish the moves, then run the full gate before committing.
+
+## Shared repair seams need fault-path review
+
+**What happened:** Integration review found a spool receipt written after its disk effect, a source stream loop that did not retry interrupted reads, and a child supervisor that could accept incomplete pipe retirement.
+
+**Why:** Extracting shared mechanisms preserved happy paths while exposing previously implicit error and ownership assumptions.
+
+**Prevention:** Review failure before and after each persistent effect and require EOF, reaping, and stable request identity as separate invariants.
+
+**Fix:** Reserve dispute identity before request-file creation, persist effect receipts with stage updates, retry Interrupted reads, and fail closed on retained pipes. Keep compiler locks in private scratch while sharing dependency data read-only.
+
+## Completion snapshot validation reacquired its own stage lock
+
+**What happened:** Completion update closures called VerificationSnapshot::validate, which reloads the stage with locked_read while update_stage already holds the exclusive directory lock. A standalone content test also briefly imported an unused inaccessible merge helper.
+
+**Why:** Extracted validation hid a lock acquisition; a copied import outlived its use.
+
+**Prevention:** Validate the authoritative object passed into a locked closure directly and keep fixture imports local to actual calls.
+
+**Fix:** B09 adds validate_locked(current, work_dir) for completion and knowledge-completion update closures and removes the unused test import. Integration verification remains separate from this repair record.
+
+## Completion commit identity passed as a close reason
+
+**What happened:** The interrupted daemon completion repair passed the verified commit to Stage::try_complete, whose argument is a close reason. completed_commit remained empty, so the new landing guard rejected broker-completed stages.
+
+**Why:** Two optional string fields were confused during integration.
+
+**Prevention:** Trace mutator argument semantics and assert the persisted completed_commit in end-to-end completion fixtures.
+
+**Fix:** B09 explicitly sets completed_commit to the verified commit and calls try_complete(None); knowledge completion uses the same separation. Targeted verification remains required.
+
+## Stage fixture mutation used a creation API
+
+**What happened:** An inherited-confinement wrong-session fixture initially tried to overwrite a stage with save_stage, which is creation-only.
+
+**Why:** The fixture reused a constructor helper for a later mutation.
+
+**Prevention:** Use update_stage for changes to persisted stage records, including tests.
+
+**Fix:** The final confinement worker changed the fixture before verification; no test result is implied.
+
+## Detector extraction left an unused stderr warning helper
+
+**What happened:** verify/utils.rs retained bounded_stderr_warning and tests after both duplicate and wiring detectors stopped using it.
+
+**Why:** The extraction moved consumers without removing their old shared helper or its ownership comment.
+
+**Prevention:** Search production references after extraction; tests calling only an unused helper do not establish a live consumer.
+
+**Fix:** The verification worker removes the dead helper and its helper-only tests before Clippy verification.
+
+## Compiled repairs still failed strict lint
+
+**What happened:** The final test-compilation gate passed, but strict Clippy found errors across inherited transport, content guards, wiring tests, shared dispute handling and completion replay fixture borrows. Rustdoc also rejected two public links to the extracted private daemon-state helper.
+
+**Why:** Compilation does not enforce unsafe-comment placement, needless lifetime/borrow cleanup, question-mark simplification or the internal argument-count limit or public documentation visibility.
+
+**Prevention:** Keep strict Clippy separate from compilation evidence and rerun only after the reported code changes.
+
+**Fix:** Assigned workers corrected their own diagnostics and refroze the tree; maintainability independently passed all eight checks without growing its allowance ledger.
+
+## Shared parsers need real source and provider forms
+
+**What happened:** Runtime regressions found that external Rust mod declarations did not produce import bindings, and nullable optional provider cache counts were rejected.
+
+**Why:** Extracted shared parsers omitted input forms that real consumers accept; detector-specific workarounds would leave consumers inconsistent.
+
+**Prevention:** Fix the common source/provider interpretation and keep fixtures for external module declarations and explicit null optionals.
+
+**Fix:** The verifier adds real external-module import bindings in the Rust source extractor with extractor revision5, and treats optional null cache counts as absent in the shared provider parser. A confinement fixture executable also moves inside its permitted tree while staying outside fingerprinted inputs.
+
+## Runtime fixtures must preserve authoritative state invariants
+
+**What happened:** Full runtime tests exposed fixtures without required persisted graph stages, assertions expecting malformed-stage omission or blocked-stage requeue, and a dependency-output check using a knowledge brief that intentionally does not render those outputs.
+
+**Why:** Fixtures encoded superseded lifecycle assumptions or exercised the wrong consumer surface.
+
+**Prevention:** Construct the persisted state that production requires and assert strict refusal, preserved operator intent and the real output-rendering path. Keep safety side-effect assertions when adapting platform error text.
+
+**Fix:** The verifier persists required graph records, tests malformed-state refusal and durable blocks, uses an ordinary downstream brief for output clearing, and keeps no-follow/limit plus untouched-victim/no-partial-write spool assertions. Resolver regression coverage rejects a newer ordinary tip and a dirty resolver tree while allowing only the explicit guarded clean resolution route.
+
+## Completion regressions must respect stage-store creation semantics
+
+**What happened:** New resolver-boundary fixtures called save_stage for records already created, causing duplicate-record failures during the focused completion review.
+
+**Why:** The fixture treated a create-only persistence API as an upsert and omitted committed initialized knowledge inputs in related completion cases. A broad text replacement also populated proof in an intentional missing-proof negative fixture.
+
+**Prevention:** Scope fixture edits by test function instead of matching repeated text; preserve negative setup conditions. Use update_stage for existing records and make completion fixtures establish the same committed checkout and initialized inputs required by production.
+
+**Fix:** Correct the fixtures while preserving strict proof and dirty-input assertions; keep missing-original-commit resolver behavior fail-closed and route it to review.

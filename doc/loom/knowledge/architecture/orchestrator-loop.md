@@ -6,25 +6,27 @@
 
 ## Orchestrator Main-Loop Tick Sequence (Exact Call Order)
 
-Main loop at `orchestrator/core/orchestrator.rs:258-376` — 5s poll cycle (100ms chunks for shutdown responsiveness):
+The runtime loop lives in `loom/src/orchestrator/core/run.rs`. `run_tick` (lines 77–109) executes the following sequence; `poll_run_events` (lines 111–124) then handles monitor events in automatic mode.
 
 ```text
-1. reconcile_and_update_graph()              [recovery.rs]       — catch phantom merges pre-sync
-2. sync_graph_with_stage_files()             [recovery.rs]       — disk → in-memory graph
-3. sync_queued_status_to_files()             [recovery.rs]       — graph Queued → disk
-4. check_pending_disputes()                  [adjudicator]       — scan .loom/work/disputes for new requests
-5. apply_pending_verdicts()                  [adjudicator]       — apply ready verdicts, re-queue stages
-6. drain_completed_adjudicator_workers()     [adjudicator]       — reap finished worker threads
-7. spawn_merge_resolution_sessions()         [merge_handler.rs]  — detect/spawn merge resolvers
-8. start_ready_stages()                      [stage_executor.rs] — worktrees + sessions for Queued
-9. monitor.poll() → handle_events()          [event_handler.rs]  — completion/crash events
+1. check_target_guard()
+2. reconcile_and_update_graph()
+3. sync_graph_with_stage_files()
+4. sync_queued_status_to_files()
+5. check_pending_disputes()
+6. apply_pending_verdicts()
+7. spawn_merge_resolution_sessions()
+8. drain_stage_spools()
+9. drain_session_inboxes()
+10. sweep_merged_leftovers()
+11. hand_off_frozen_contract_phases()
+12. start_ready_stages()
+13. monitor.poll() → handle_events() [automatic mode]
 ```
 
-**Corrected 2026-07-30.** This section previously carried a plan-authoring note — `*** INSERT: check_pending_disputes() + apply_pending_verdicts() HERE ***` — proposing an insertion point _after_ merge resolution. The adjudicator hooks shipped and sit **before** merge resolution (steps 4-6), not after. The ordering property that matters is unchanged and still holds: verdicts are applied before `start_ready_stages()`, so a stage re-queued by a verdict is picked up in the same cycle.
+The constructor and configuration live in `core/orchestrator.rs`; that file does not own the loop. Worker draining is not a separate call in this sequence. Verdicts are applied before scheduling, so a stage re-queued by a verdict can start in the same tick. Spools, inboxes, and frozen-contract handoff also run in manual mode.
 
-The same three calls also run once during startup init, after `refresh_ready_status()` / `sync_queued_status_to_files()`. All three are idempotent and cheap no-ops when no disputes exist on disk.
-
-The adjudicator is the codebase's first worker-thread + mpsc pattern; the rest of the loop remains polling-based. See patterns.md § Worker Thread + mpsc Pattern.
+`initialize_run` (lines 45–73) validates state, starts the target guard, reconciles and synchronizes stages, recovers orphaned sessions, refreshes readiness, synchronizes queued stages, checks disputes, applies verdicts, spawns merge resolvers, and sweeps leftovers. `wait_for_next_tick` uses the configured poll interval with 100 ms shutdown checks.
 
 ## Monitor Subsystem (orchestrator/monitor/)
 

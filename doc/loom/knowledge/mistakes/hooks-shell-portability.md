@@ -282,3 +282,33 @@ tools run under `ulimit -u` and a hard kill.
 
 **Fix:** each shim resolves "next after me" and stops with exit 125 when `LOOM_BSD_SHIM_DEPTH`
 reaches 3.
+
+## Regex replacement interrupted a mechanical hook edit
+
+**What happened:** An overescaped, unbalanced replacement regex stopped a hook cleanup after one file changed; no source content was lost.
+
+**Why:** A literal line transformation was expressed as a more complicated regular expression.
+
+**Prevention:** Use literal line-based edits for known source patterns and inspect every changed caller.
+
+**Fix:** Continue the remaining indentation and fixture dependency edits with line-based transformations.
+
+## EXIT cleanup lost a local staging path
+
+**What happened:** Installer failure tests preserved the active binary but left staging directories behind.
+
+**Why:** Bash unwound a function-local staging variable before running the subshell EXIT trap; conditional callers could also suppress implicit errexit behavior.
+
+**Prevention:** Keep cleanup state at subshell scope and explicitly propagate failures of security and installation operations.
+
+**Fix:** Preserve the staging path through EXIT and explicitly abort on failed signature, copy, permission, validation, backup, and rename operations.
+
+## Protected macOS executables hide environment evidence
+
+**What happened:** Both guard ancestor-evidence E2 fixtures failed on the host, expected refusal but observed success. ps eww returned argv but no controlled environment markers for /bin/bash and /usr/bin/python3; installed Python exposed the same marker.
+
+**Why:** Protected macOS executables make process environment evidence unobservable even for same-user children. An empty ps environment is not proof of another user or absence of stage identity.
+
+**Prevention:** Ancestor-environment regression fixtures must independently prove marker visibility and use a real inspectable parent; keep immutable sandbox enforcement separately covered. Report platform evidence limits explicitly.
+
+**Fix:** The hook verifier uses an observable Python parent, permits an explicit capability skip only when visibility is unavailable, and corrects the misleading helper comment. This does not make protected parent environments observable or replace kernel containment.

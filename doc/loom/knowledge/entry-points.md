@@ -208,7 +208,7 @@ dedupe, the overlay lifecycle, and `loom map`'s views and flags (`--callers`, `-
 | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `verify/criteria/confine.rs`                  | `spawn_confined` (the single leaf primitive for every plan-authored command), `resolve_confinement`, `plan_confinement` |
 | `process/environment.rs`                      | `STAGE_HOST_ENV_ALLOWLIST`, `apply_stage_environment`                                                                   |
-| `models/stage/types.rs:255`                   | `CommandConfinement`; `:340` `NetworkConfig`                                                                            |
+| `models/stage/sandbox_config.rs:17`                   | `CommandConfinement`; `:100` `NetworkConfig`                                                                            |
 | `orchestrator/terminal/native/wrapper.rs:181` | a SECOND, diverging copy of the env allowlist                                                                           |
 
 Start from `architecture/execution-containment.md` — it states precisely what these do and

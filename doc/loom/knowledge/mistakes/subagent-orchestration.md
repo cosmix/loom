@@ -136,3 +136,83 @@ the only reason attribution does not reach every commit.
 **Why:** (1) the full `cargo test` criterion cannot pass in the stage sandbox (about 60 environment failures: `ps`, the sysctl boot id, PTY, `/dev/fd`), and every opus verifier round re-proved that; (2) gate rounds ran in parallel with review rounds, which then produced more edits; (3) optional suggestions were implemented, which widened the review surface; (4) a guessed 1 s to 3 s deadline fix and a `bucket_secs` clamp that contradicted a base assertion (`sanitize_token_flow_tests.rs:76`, which test integrity forbids editing) each cost a round.
 
 **Prevention:** settle first whether each criterion is satisfiable in the sandbox, and block or dispute early when not. Batch every fix, then run one gate and one final review. Implement only findings and the suggestions the signal lists. Read the existing assertions before briefing a behaviour change. Environment failures: [Seatbelt Denials Read as Build Warnings and Test Failures](sandbox-tooling-and-network.md#seatbelt-denials-read-as-build-warnings-and-test-failures-that-are-environment-not-code-2026-10-15).
+
+## Repair contracts across shared subsystems
+
+**What happened:** A repository-wide audit identified inconsistent lifecycle decisions, verification evidence, process retirement, source reading, provider accounting, and persistence transactions across consumers.
+
+**Why:** Independently maintained representations allowed one consumer to enforce a condition while another silently omitted it.
+
+**Prevention:** Assign disjoint implementation ownership and require the orchestrator to verify the complete tree before grouped Conventional Commits. Architectural repairs must route existing consumers through the shared implementation and retire the duplicate policy.
+
+**Fix:** The repair contracts require complete authoritative stage snapshots; cause-aware block recovery; ordered prepared/applied amendment recovery; immutable checkout and complete versioned verification policy binding; one fail-closed assertion evaluator; bounded source hashing preserving exact blob bytes; shared owned-process retirement with real host containment; bounded JSONL spools with stable delivery identity; real exec thread/terminal evidence without invented turn IDs; bounded hook stdin; atomic signature-verified installation; transport-aware UI state; and shared provider normalization/inventory. These are implementation acceptance contracts, not a claim that verification has passed.
+
+## Concrete boundary choices
+
+**What happened:** Repairs require shared contracts spanning asynchronous and host-side consumers.
+
+**Why:** Partial fixes can preserve the original race or trust gap in a second entry point.
+
+**Prevention:** Stable spool identities need a receipt persisted atomically with a non-idempotent effect; a receipt written only after the effect leaves a replay window. Amendment recovery must reconcile audited snapshots in order. Verification pins a clean checkout before and after execution and binds the same revision at landing. Host confinement requires real Seatbelt or namespace containment and fails closed when unavailable.
+
+**Fix:** Keep nullable provider turn identity and use genuine exec thread/start/terminal evidence. Require a trusted external signature verifier before executing a downloaded bootstrap candidate. Normalize provider message revisions as timestamp/ordinal-selected whole observations and retract prior live attribution. Let HTTP snapshots populate data without asserting WebSocket health, and refetch settings after concurrent mutations settle.
+
+## Stop boundary and final scoped repairs
+
+**What happened:** The operator stopped the broad bug repair run and requested a cold-start handoff and grouped commits, then authorized only B09 and A09 to finish in two high-effort workers.
+
+**Why:** Many repairs existed without a passing integrated Rust gate; implementation and validated closure needed separate counts.
+
+**Prevention:** Preserve unfinished changes and report explicit validation evidence. A scoped continuation does not resume the other findings. Serialize shared report edits and retain normal commit hooks.
+
+**Fix:** Record 4 validated findings, 29 implemented but unverified, and 2 unfinished at the stop boundary in the original report. Two workers own only B09 and A09. Generated completion-output exceptions must yield to explicit stage input declarations; shell commands can still consume undeclared cache inputs. Commit independently verified dashboard and installer changes in a clean checkout, preserving the broader working tree.
+
+## Verification ownership after a scoped stop
+
+**What happened:** After stopping broad implementation and authorizing only B09/A09 completion, the operator explicitly requested three high-effort workers to verify finished uncommitted work.
+
+**Why:** Persisted implementation needs independent evidence before any further closure or commits.
+
+**Prevention:** Keep verification read-only, separate failures from fixes, and serialize heavyweight Rust jobs. A verification request does not authorize resuming all repairs.
+
+**Fix:** Assign separate build/static, Rust behavior/security, and hooks/documentation verification workers; wait for the two active implementations before dependent checks. The orchestrator retains commit ownership and records outcomes in the original report.
+
+## Verification expanded into owned repair work
+
+**What happened:** The operator expanded the three verification assignments to include fixing discovered issues and returning verified work for orchestrator commits, and required the main agent to keep the original bugs report current.
+
+**Why:** Read-only findings would leave completed-looking repairs unready to commit.
+
+**Prevention:** Explicitly update file ownership when verification becomes implementation, serialize Cargo jobs, and keep one writer for the authoritative report.
+
+**Fix:** The three workers now own disjoint Rust infrastructure, Rust verification/security, and hooks/maintainability repairs. The main agent alone updates doc/astra-bug-sweep-2026-10-15.md, records results as they arrive, and commits verified groups without attribution.
+
+## End after verified commits and the authoritative report
+
+**What happened:** The operator clarified that addressed, verified findings should be committed and the session should end once the original report is current.
+
+**Why:** Continuing optional investigation after the agreed repair and verification assignments would exceed the requested stopping point.
+
+**Prevention:** Finish the active assigned checks and necessary fixes, commit only supported results in logical groups, and record unresolved limitations without opening new work.
+
+**Fix:** The orchestrator will commit the active workers’ verified changes, update the original report with exact results and remaining work, and end the session.
+
+## Include knowledge changes in the final commit scope
+
+**What happened:** The operator explicitly required the Loom knowledge updates to be committed along with the repair work and original report.
+
+**Why:** Leaving recorded corrections only in the working tree would make the handoff incomplete.
+
+**Prevention:** Include knowledge CLI edits and its regenerated index in the final documentation group, validate the corpus, and distinguish unrelated files.
+
+**Fix:** The final commit scope includes doc/loom/knowledge and doc/astra-bug-sweep-2026-10-15.md. The unrelated pre-existing doc/RETRIEVAL-AB-METHOD.md remains untouched.
+
+## Verification fixes are limited to finished repair work
+
+**What happened:** The operator clarified that regression verification and fixes must concern the finished work awaiting commit, not resume unfinished findings.
+
+**Why:** A broad runtime run exposed both regressions from completed repair changes and host execution failures; pursuing every failure would expand the stopping scope.
+
+**Prevention:** Tie each corrective change to an already-finished repair under review. Document unrelated failures, environmental gaps and unfinished findings without implementing them.
+
+**Fix:** Limit remaining checks to completed completion-proof, process and confinement repairs. The stronger B09 resolver-content proof remains deferred; finish the active bounded checks and required commit gates, commit supported work plus all knowledge/report updates, and end.

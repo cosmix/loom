@@ -346,3 +346,13 @@ reports. Read SKIP lines before calling a test green. The cap now sits at `maxTu
 `agents/*.md`, so the turn cap no longer forces a split; context still does.
 
 **Fix:** the stopped workers' diffs were reviewed and verified by the orchestrator instead of re-spawning.
+
+## A status fixture assumed a nonexistent field
+
+**What happened:** A provider-inventory regression fixture assumed StatusData exposed a sessions field.
+
+**Why:** The test was drafted from the intended behavior before checking the consumer schema.
+
+**Prevention:** Inspect the actual public result shape before writing a consumer fixture.
+
+**Fix:** Assert the inventory through the status fields the consumer actually produces.

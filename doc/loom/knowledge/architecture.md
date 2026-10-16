@@ -6,7 +6,7 @@
 
 ## Project Overview
 
-Loom is a Rust CLI (~15K lines) for orchestrating parallel Claude Code sessions across git worktrees. It enables concurrent task execution with automatic crash recovery, context handoffs, and progressive merging.
+Loom is a Rust CLI for orchestrating parallel agent sessions across Git worktrees, with crash recovery, context handoffs, verification, and progressive merging. Module structure is documented in [Directory Structure](architecture/directory-structure.md).
 
 ## Directory Structure
 
@@ -223,7 +223,7 @@ A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoi
 
 ## Web Dashboard
 
-`loom status --web [PORT] [--host HOST]` serves an embedded React SPA over HTTP/WebSocket, streaming the same `StatusData` the live TUI renders; a non-loopback `--host` bind requires the printed startup token on every route.
+`loom status --web [PORT] [--host HOST]` serves an embedded React SPA over HTTP/WebSocket, streaming the same `StatusData` the live TUI renders. Viewing routes remain public on remote binds; the startup token protects configuration writes and terminal access (`loom/src/commands/status/web/connection.rs:132-161`).
 
 → [Web Dashboard](architecture/web-dashboard.md)
 

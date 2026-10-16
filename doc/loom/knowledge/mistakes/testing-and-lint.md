@@ -359,3 +359,23 @@ never by adding a baseline entry.
 **Prevention:** git-repo tests that check non-ASCII path bytes set `core.precomposeunicode false` (`git/stage_commit/tests.rs::repo`).
 
 **Fix:** that config line in the stage_commit test `repo()`.
+
+## Test compilation sounded like completed behavioral verification
+
+**What happened:** Progress reports called several checks complete while the first full Rust runtime test execution had not yet run, leaving the operator expecting immediate commits.
+
+**Why:** Compile-only test gates, lint/documentation checks and runtime tests were not distinguished clearly enough in the summary.
+
+**Prevention:** State explicitly whether tests were compiled or executed and name the sole remaining gate; do not imply an additional review round.
+
+**Fix:** Finish the already-started Rust suite, correct only failures it finds with affected rechecks, commit verified groups, update the original report, and end. Other verifiers have finished, so the active behavior verifier owns necessary Rust fixes without competing writers.
+
+## Pre-commit maintainability invokes Cargo
+
+**What happened:** An isolated commit was started while the host runtime suite was active, assuming its maintainability hook used the standalone test binary. The hook actually invokes cargo test --test maintainability.
+
+**Why:** The standalone verification command was confused with the repository hook implementation.
+
+**Prevention:** Read the active hook before overlapping a commit with an exclusive Cargo gate, even when the checkout has a separate target directory.
+
+**Fix:** Keep the normal hook and memory watchdog, inform the active verifier, and serialize subsequent commits after verification completes.

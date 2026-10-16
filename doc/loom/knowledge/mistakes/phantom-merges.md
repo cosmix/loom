@@ -255,3 +255,33 @@ a fake signer asserts the signature on each path (stage commit, merge commit, pl
 **Fix:** sessions relay `loom stage commit` and the daemon commits and signs; `commit_merge` signs; a signing
 failure parks the stage for the operator
 ([Daemon-Owned Commits](../architecture/daemon-owned-commits.md)).
+
+## A completion pin assumed an unnumbered stage filename
+
+**What happened:** A merge guard checked stages/<id>.md before loading completed_commit, so normal numbered stage files bypassed the new guard.
+
+**Why:** A caller reconstructed persistence layout instead of using the canonical stage lookup.
+
+**Prevention:** Use find_stage_file/load_stage for stage identity and test landing through real save_stage plus merge_stage.
+
+**Fix:** Resolve the actual stage record and enforce the verified commit against the candidate branch tip.
+
+## Confinement protection guessed a stage filename
+
+**What happened:** Inherited-confinement checks initially constructed stages/<id>.md, while persisted records use depth-prefixed names.
+
+**Why:** A guessed storage path diverged from the authoritative stage loader.
+
+**Prevention:** Resolve every stage record with fs::stage_files::find_stage_file before checking its identity or protection.
+
+**Fix:** The final worker checks the actual resolved record and the stages directory for kernel write denial before verification.
+
+## Exact-tip verification must cover conflict resolver commits
+
+**What happened:** The new exact verified-tip guard rejected legitimate conflict-resolver merge commits in runtime regressions because their branch tip differs from the original stage proof.
+
+**Why:** A merge-resolution commit changes the content being landed and needs its own verified authority; the original stage commit cannot certify it.
+
+**Prevention:** Preserve exact-input verification and integrate resolution proof at the resolver completion boundary. An ancestry-only exception silently reopens the verified-input gap.
+
+**Fix:** Preserve strict equality for ordinary completed-stage landing. The explicit MergeConflict resolver route retains its existing ancestry, ownership and guarded control-path checks as a separate trusted-resolution boundary; this compatibility exception must never apply to ordinary completion. Resolver edits are not claimed to have been reverified. The original report keeps the stronger exact-input guarantee for resolver-produced commits explicitly unresolved instead of weakening the claim silently.

@@ -321,19 +321,16 @@ consumer means calling that function, not reimplementing the pipeline.
 
 ## Layering
 
-`context` depends only on `crate::context`, `crate::fs`, `crate::language`,
-`crate::models`, one `crate::utils::truncate_for_display` call (inside
-`context::untrusted::inline_safe`) and — deliberately — `crate::git`:
-`git::runner::run_git_checked` in the three files under `refresh/source_graph/`
-(`enumerate.rs`, `generation.rs`, `layer.rs`), needed to list tracked and
-untracked files, read committed blobs and fingerprint the working tree. There is
-**no** production edge up to `orchestrator`, `commands` or `daemon`: the one
-`crate::orchestrator` import is in the test module `context/tests/overlay_key.rs`,
-and `crate::commands` appears only in doc comments. Verified with
-`rg -o 'crate::[a-z_]+' loom/src/context`, excluding tests and doc comments. Keep
-it that way: the orchestrator calls into `context`, never the reverse. An earlier
-version of this section put the single `git` edge in `refresh/source_graph.rs`
-itself.
+`context` uses the neutral filesystem, model, language and Git layers. Source graph
+refresh reads scalar Git values through `run_git_checked`, NUL-delimited records
+through `run_git_records`, and committed source bytes through `run_git_stream`.
+`context::worktree_graph` also uses branch/worktree helpers and byte-preserving
+record readers. `source_graph::read::SourceRead` hashes the complete input through
+a fixed buffer while retaining at most the extraction cap.
+
+Production retrieval has no dependency on `orchestrator`, `commands` or `daemon`;
+the orchestrator calls into `context`. Test imports and documentation references
+do not establish production dependencies.
 
 ## Retrieval Evaluation Harness (A.20)
 

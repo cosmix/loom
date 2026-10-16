@@ -112,7 +112,7 @@ Open items from PLAN-token-flow; the design is in [token-flow-sources](../archit
 
 ### Hardening Backlog
 
-- **FIFO at a quota cache path blocks the tracker and the collector.** `quota/cache.rs` `read_provider` (and `history_store.rs`) open with `fs::metadata` plus a blocking `File::open` and no `is_file` check, and both the tracker pass (`quota_points.rs`) and the 1 s collector call it. Switching to `crate::fs::safe_read::read_bounded` fixes both.
+- **Quota cache/history file reads refuse nonregular files.** `quota/cache.rs:45-60` and `quota/history_store.rs:74-88` use `fs::safe_read::read_to_string_bounded`; a FIFO at either path is rejected, so the readers do not retain the blocking `File::open` gap.
 - **Writes by path after the symlink check.** `checkpoint.save` and `write_flow` write by path seconds after `ensure_tokens_dir` checked the directory (a first pass can take seconds); recheck before each write or write through a directory fd. Exploiting it needs write access to `.loom/work`, which sandboxed sessions lack.
 - **Unbounded fan-out and id length.** `discover.rs` does not cap subagent files per directory or agents per stage, and `MessageTable` (`accumulate.rs`) caps the number of ids (4096) but not their length.
 - **`by_model` is capped at ingest, not when a checkpoint loads.** `add_model_usage` holds an agent to `MAX_MODEL_KEYS` keys plus `other`, but a hand-planted 8 MiB checkpoint can carry tens of thousands of entries per agent, and `add_model_usage` finds its key by a linear scan on every ingested line. `model_totals` aggregates in a `BTreeMap`, so only that scan and the flow size grow. Truncate `by_model` on load. It needs write access to the 0700 tokens directory.

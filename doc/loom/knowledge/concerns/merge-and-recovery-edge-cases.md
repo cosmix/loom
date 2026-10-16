@@ -84,7 +84,7 @@ a completed stage should refuse when `commits_ahead_of(branch, base) > 0` and ro
 Gaps around the [Merge Resolver Spawn Loop](../patterns/merge-and-recovery.md#merge-resolver-spawn-loop) that are known and unfixed:
 
 - **No ancestry check before missing-branch routing.** `missing_branch_blocks_spawn` (`orchestrator/core/merge_handler/resolver_spawn.rs`) sends a stage whose `loom/<id>` branch is gone to review, even when its work already landed in the target. The outcome is safe against a phantom merge, but noisy; the manual step is `loom stage human-review <id> --force-complete`.
-- **An unreadable stage file keeps the watch-mode daemon up forever.** `all_stages_terminal` (`orchestrator/core/recovery.rs`) returns false on a stage-file load error, whatever that stage's status.
+- **Unreadable stages fail closed.** Strict stage loading and the locked lifecycle snapshot reject malformed records before graph construction or terminal-state decisions; completed graph nodes do not exempt unreadable persisted state.
 - **Liveness is judged by raw PID.** `find_live_merge_session_for_stage` (`orchestrator/signals/merge.rs`) calls `is_process_alive` on the recorded PID, so a reused PID can hold a stage until that unrelated process exits.
 - **The gate stops resolvers before the guarded route.** `gate_holds_merge_stage` kills a live resolver, then routes the stage. A stage that moved on in between (for example, merged by `--resolved`) still loses its resolver. The window is narrow, and the branch is control-path-gated in any case.
 - **Merge signal writes are not atomic.** `write_signal_file` (`orchestrator/signals/helpers.rs`) uses `fs::write`. A torn signal with no session record routes the stage to review. Only the daemon writes merge signals while it runs.

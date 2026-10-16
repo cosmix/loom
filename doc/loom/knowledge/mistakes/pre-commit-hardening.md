@@ -51,3 +51,13 @@ from newline enumeration: git does not C-quote a bare space, and `read -r` keeps
 that enumerates by newline still passed the space case. Use a name git *does* C-quote without
 `-z` (a double quote, a backslash, a tab, or non-ASCII under default `core.quotePath`) to make a
 newline-enumeration mutant actually fail.
+
+## Commit formatting can change unrelated unstaged Markdown
+
+**What happened:** The core repair commit hook reformatted an unrelated tracked plan brief while linting all tracked Markdown, leaving that change unstaged.
+
+**Why:** The hook formats the whole tracked Markdown set and only restages paths already selected for the commit.
+
+**Prevention:** Compare the post-commit working tree with the reviewed path inventory; preserve unrelated original content instead of absorbing formatter drift into a documentation commit.
+
+**Fix:** Revert only the newly introduced formatting diff in doc/plans/briefs/live-token-insights/token-core/c2-model-block.md, leaving all prior user work untouched.
