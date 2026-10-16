@@ -1,13 +1,12 @@
 //! The zero-test guard (DESIGN D10): a v2 criterion whose runner selected no
 //! test fails; a v1 criterion keeps passing on its exit code.
 
-use std::os::unix::fs::PermissionsExt;
-use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use tempfile::TempDir;
 
 use crate::models::stage::{AcceptanceCriterion, CommandConfinement, Stage};
+use crate::testrun::command::shell_quote;
 use crate::verify::criteria::cache_contract::{CachedCriterionPass, CriterionContract};
 use crate::verify::criteria::cache_fingerprint::InputFingerprint;
 use crate::verify::criteria::confine::CommandSpec;
@@ -15,38 +14,30 @@ use crate::verify::criteria::result::CriterionResult;
 use crate::verify::criteria::runner::run_acceptance;
 use crate::verify::criteria::AcceptanceResult;
 
-const NO_MATCH_STDOUT: &str = concat!(
+const NO_MATCH_STDOUT: &str = include_str!(concat!(
     env!("CARGO_MANIFEST_DIR"),
     "/src/testrun/fixtures/cargo-test/no-match.stdout"
-);
+));
 
-/// A `cargo` stand-in in `dir` that prints the captured no-match run of
-/// `cargo test` and exits 0.
-fn fake_cargo(dir: &Path) -> PathBuf {
-    let cargo = dir.join("cargo");
-    let output = dir.join("no-match.stdout");
-    std::fs::copy(NO_MATCH_STDOUT, &output).unwrap();
-    let script = format!("#!/bin/sh\ncat '{}'\n", output.display());
-    std::fs::write(&cargo, script).unwrap();
-    std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
-    cargo
-}
-
-fn no_match_stage(dir: &Path, plan_version: u32) -> Stage {
-    let command = format!(
-        "{} test tests::delta_missing -- --exact",
-        fake_cargo(dir).display()
-    );
+fn no_match_stage(plan_version: u32) -> Stage {
     let mut stage = Stage::new("zero-tests".to_string(), None);
     stage.plan_version = plan_version;
-    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(command));
+    // Use the system shell and its builtin printf, avoiding host-dependent
+    // startup of newly-created executable fixtures while exercising execution.
+    stage.setup.push(format!(
+        "cargo() {{ printf '%s' {}; }}",
+        shell_quote(NO_MATCH_STDOUT)
+    ));
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(
+        "cargo test tests::delta_missing -- --exact".to_string(),
+    ));
     stage
 }
 
 #[test]
 fn zero_test_criterion_fails_in_v2() {
     let dir = TempDir::new().unwrap();
-    let stage = no_match_stage(dir.path(), 2);
+    let stage = no_match_stage(2);
 
     let result = run_acceptance(&stage, Some(dir.path())).unwrap();
 
@@ -66,7 +57,7 @@ fn zero_test_criterion_fails_in_v2() {
 #[test]
 fn zero_test_criterion_passes_in_v1() {
     let dir = TempDir::new().unwrap();
-    let stage = no_match_stage(dir.path(), 1);
+    let stage = no_match_stage(1);
 
     let result = run_acceptance(&stage, Some(dir.path())).unwrap();
 

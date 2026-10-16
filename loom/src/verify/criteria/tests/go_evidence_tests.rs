@@ -1,8 +1,8 @@
 //! Captured Go package results reach the live acceptance gate.
 use crate::models::stage::{AcceptanceCriterion, Stage};
+use crate::testrun::command::shell_quote;
 use crate::testrun::{registry, RunOutput};
 use crate::verify::criteria::{run_acceptance, AcceptanceResult};
-use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
 const EMPTY: &str = "?\texample.invalid/astra/empty\t[no test files]\n";
@@ -12,17 +12,15 @@ const EMPTY_JSON: &str = concat!(
     "{\"Action\":\"skip\",\"Package\":\"example.invalid/astra/empty\"}\n",
 );
 
-fn go_stage(dir: &std::path::Path, output: &str, prefix: &str) -> Stage {
-    std::fs::write(dir.join("go-output"), output).unwrap();
-    let executable = dir.join("go");
-    std::fs::write(&executable, format!("#!/bin/sh\n{prefix}cat go-output\n")).unwrap();
-    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+fn go_stage(output: &str, prefix: &str) -> Stage {
     let mut stage = Stage::new("go-evidence".into(), None);
     stage.plan_version = 2;
-    stage.add_acceptance_criterion(AcceptanceCriterion::Simple(format!(
-        "{} test ./...",
-        executable.display()
-    )));
+    // Keep real shell execution without launching a newly-created executable.
+    stage.setup.push(format!(
+        "go() {{ {prefix}printf '%s' {}; }}",
+        shell_quote(output)
+    ));
+    stage.add_acceptance_criterion(AcceptanceCriterion::Simple("go test ./...".into()));
     stage
 }
 
@@ -30,11 +28,14 @@ fn go_stage(dir: &std::path::Path, output: &str, prefix: &str) -> Stage {
 fn empty_go_packages_text_and_json_fail_live_acceptance() {
     for output in [EMPTY, EMPTY_JSON] {
         let dir = TempDir::new().unwrap();
-        let stage = go_stage(dir.path(), output, "");
+        let stage = go_stage(output, "");
         let result = run_acceptance(&stage, Some(dir.path())).unwrap();
-        let AcceptanceResult::Failed { failures, .. } = result else {
+        let AcceptanceResult::Failed { results, failures } = result else {
             panic!("empty Go package passed");
         };
+        assert_eq!(results[0].exit_code, Some(0));
+        assert!(!results[0].timed_out);
+        assert!(results[0].output_complete);
         assert!(
             failures
                 .iter()
@@ -47,9 +48,23 @@ fn empty_go_packages_text_and_json_fail_live_acceptance() {
 #[test]
 fn first_live_run_rejects_zero_test_summary_beyond_capture_cap() {
     let dir = TempDir::new().unwrap();
-    let stage = go_stage(dir.path(), EMPTY, "head -c 10485761 /dev/zero\n");
+    let stage = go_stage(EMPTY, "head -c 10485761 /dev/zero\n");
     let result = run_acceptance(&stage, Some(dir.path())).unwrap();
-    assert!(!result.all_passed());
+    let AcceptanceResult::Failed { results, failures } = result else {
+        panic!("a summary beyond the capture limit must not certify acceptance");
+    };
+    assert_eq!(results[0].exit_code, Some(0));
+    assert!(!results[0].timed_out);
+    assert!(!results[0].output_complete);
+    assert!(results[0]
+        .stdout
+        .contains(crate::verify::criteria::executor::OUTPUT_TRUNCATED_MARKER));
+    assert!(
+        failures
+            .iter()
+            .any(|failure| failure.contains("output capture incomplete")),
+        "{failures:?}"
+    );
 }
 
 #[test]
@@ -62,7 +77,7 @@ fn mixed_go_packages_preserve_execution_evidence() {
         let adapter = registry::recognize("go test ./...", dir.path()).unwrap();
         let summary = adapter.parse(&RunOutput { stdout: &output, stderr: "", exit_code: Some(0) });
         assert_eq!(summary.executed, Some(1));
-        let stage = go_stage(dir.path(), &output, "");
+        let stage = go_stage(&output, "");
         assert!(run_acceptance(&stage, Some(dir.path())).unwrap().all_passed());
     }
 }

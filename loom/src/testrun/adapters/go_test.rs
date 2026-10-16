@@ -132,10 +132,13 @@ impl TestRunnerAdapter for GoTest {
     fn parse(&self, out: &RunOutput<'_>) -> RunSummary {
         let raw = combined_output(out);
         let (text, counts) = decoded_output(&raw);
-        let (passed, failed, skipped) = counts.unwrap_or_else(|| (
-            count_matches(&PASSED, &text), count_matches(&FAILED, &text),
-            count_matches(&SKIPPED, &text),
-        ));
+        let (passed, failed, skipped) = counts.unwrap_or_else(|| {
+            (
+                count_matches(&PASSED, &text),
+                count_matches(&FAILED, &text),
+                count_matches(&SKIPPED, &text),
+            )
+        });
         let counted = passed > 0 || failed > 0 || skipped > 0;
         let no_tests = NO_MATCH.is_match(&text) || text.contains("[no test files]");
         // A non-verbose tested package gives no count. An empty sibling must
@@ -172,11 +175,22 @@ fn decoded_output(raw: &str) -> (String, Option<(u64, u64, u64)>) {
         let Some(test) = event["Test"].as_str().filter(|test| !test.contains('/')) else {
             continue;
         };
-        if test.is_empty() { continue; }
+        if test.is_empty() {
+            continue;
+        }
         match event["Action"].as_str() {
-            Some("pass") => { counts.0 += 1; saw_test = true; }
-            Some("fail") => { counts.1 += 1; saw_test = true; }
-            Some("skip") => { counts.2 += 1; saw_test = true; }
+            Some("pass") => {
+                counts.0 += 1;
+                saw_test = true;
+            }
+            Some("fail") => {
+                counts.1 += 1;
+                saw_test = true;
+            }
+            Some("skip") => {
+                counts.2 += 1;
+                saw_test = true;
+            }
             _ => {}
         }
     }
@@ -265,6 +279,71 @@ mod tests {
             exit_code: Some(0),
         };
         let summary = ADAPTER.parse(&output);
+        assert_eq!((summary.executed, summary.passed), (Some(1), Some(1)));
+    }
+
+    #[test]
+    fn empty_and_mixed_packages_preserve_test_count_evidence() {
+        let empty = "?\texample/empty\t[no test files]\n";
+        let cases = [
+            (empty.to_string(), Some(0)),
+            (
+                format!("{empty}?\texample/other\t[no test files]\n"),
+                Some(0),
+            ),
+            (format!("{empty}ok\texample/tested\t0.001s\n"), None),
+            (format!("ok  \texample/tested\t(cached)\n{empty}"), None),
+            (
+                format!("{empty}--- PASS: TestOne (0.00s)\nok\texample/tested\t0.001s\n"),
+                Some(1),
+            ),
+            (
+                format!("{empty}ok\texample/filtered\t0.001s [no tests to run]\n"),
+                Some(0),
+            ),
+        ];
+        for (text, expected) in cases {
+            // test2json wraps package output in Output events. Both transports
+            // must retain the distinction between explicit zero and unknown.
+            let json = text
+                .lines()
+                .map(|line| {
+                    serde_json::json!({"Action": "output", "Output": format!("{line}\n")})
+                        .to_string()
+                })
+                .collect::<Vec<_>>()
+                .join("\n");
+            for stdout in [&text, &json] {
+                let summary = ADAPTER.parse(&RunOutput {
+                    stdout,
+                    stderr: "",
+                    exit_code: Some(0),
+                });
+                assert_eq!(summary.executed, expected, "{stdout}");
+            }
+        }
+    }
+
+    #[test]
+    fn json_test_events_count_once_with_empty_siblings_and_subtests() {
+        let events = [
+            serde_json::json!({"Action": "output", "Output": "?\texample/empty\t[no test files]\n"}),
+            serde_json::json!({"Action": "skip", "Package": "example/empty"}),
+            serde_json::json!({"Action": "output", "Output": "--- PASS: TestParent (0.00s)\n"}),
+            serde_json::json!({"Action": "pass", "Test": "TestParent/child"}),
+            serde_json::json!({"Action": "pass", "Test": "TestParent"}),
+            serde_json::json!({"Action": "pass", "Package": "example/tested"}),
+        ];
+        let stdout = events
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>()
+            .join("\n");
+        let summary = ADAPTER.parse(&RunOutput {
+            stdout: &stdout,
+            stderr: "",
+            exit_code: Some(0),
+        });
         assert_eq!((summary.executed, summary.passed), (Some(1), Some(1)));
     }
 

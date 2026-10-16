@@ -297,20 +297,23 @@ fn resolved_nested_executable_change_misses_after_neighboring_hit() {
     let _guard = PathGuard::set(&joined);
     let stage = extended("cache-probe-tool", "");
     let first = run(&fixture, &stage);
+    assert!(first.all_passed(), "initial execution: {first:?}");
+    assert_eq!(first.results()[0].stdout.trim(), "first");
     let hit = run(&fixture, &stage);
+    assert!(hit.all_passed(), "neighboring cache hit: {hit:?}");
+    assert_eq!(hit.results()[0].stdout.trim(), "first");
     write_tool(&tool, "second");
     let changed = run(&fixture, &stage);
-
-    assert!(first.all_passed() && hit.all_passed() && changed.all_passed());
+    assert!(changed.all_passed(), "changed executable: {changed:?}");
+    assert_eq!(changed.results()[0].stdout.trim(), "second");
     assert!(hit.results()[0].cached && !changed.results()[0].cached);
     assert_eq!(fixture.executions(), 2);
 
     fn write_tool(path: &Path, label: &str) {
-        std::fs::write(
-            path,
-            format!("#!/bin/sh\n# {label}\nexec /bin/sh scripts/probe.sh\n"),
-        )
-        .unwrap();
+        // Executable text without a shebang uses the invoking shell's ENOEXEC
+        // fallback. Keep a real PATH lookup and byte fingerprint without a
+        // fresh interpreter exec for this temporary fixture on macOS.
+        std::fs::write(path, format!("printf '{label}\\n'\n. ./scripts/probe.sh\n")).unwrap();
         let mut permissions = path.metadata().unwrap().permissions();
         permissions.set_mode(0o700);
         std::fs::set_permissions(path, permissions).unwrap();

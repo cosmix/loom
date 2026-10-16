@@ -91,9 +91,7 @@ fn extract_window(value: Option<&serde_json::Value>) -> Option<QuotaWindow> {
 /// Spawn `codex app-server` in its own process group with both pipes taken,
 /// so the caller owns the request and reply ends and can still kill the whole
 /// group on any exit path.
-fn spawn_app_server(codex_bin: &Path) -> Result<(Child, ChildStdin, ChildStdout)> {
-    let mut command = Command::new(codex_bin);
-    command.arg("app-server");
+fn spawn_app_server(mut command: Command) -> Result<(Child, ChildStdin, ChildStdout)> {
     command.stdin(Stdio::piped());
     command.stdout(Stdio::piped());
     command.stderr(Stdio::null());
@@ -103,8 +101,12 @@ fn spawn_app_server(codex_bin: &Path) -> Result<(Child, ChildStdin, ChildStdout)
         command.process_group(0);
     }
 
-    let mut child = spawn_retrying_text_busy(&mut command)
-        .with_context(|| format!("failed to spawn {}", codex_bin.display()))?;
+    let mut child = spawn_retrying_text_busy(&mut command).with_context(|| {
+        format!(
+            "failed to spawn {}",
+            command.get_program().to_string_lossy()
+        )
+    })?;
     let stdin = child
         .stdin
         .take()
@@ -133,7 +135,18 @@ pub fn poll_once(
     shutdown: &AtomicBool,
     now: i64,
 ) -> Result<ProviderQuota> {
-    let (child, mut stdin, stdout) = spawn_app_server(codex_bin)?;
+    let mut command = Command::new(codex_bin);
+    command.arg("app-server");
+    poll_command(command, deadline, shutdown, now)
+}
+
+fn poll_command(
+    command: Command,
+    deadline: Duration,
+    shutdown: &AtomicBool,
+    now: i64,
+) -> Result<ProviderQuota> {
+    let (child, mut stdin, stdout) = spawn_app_server(command)?;
 
     let mut child = OwnedProcess::new(child);
     let write_result = write_requests(&mut stdin);
@@ -151,10 +164,10 @@ pub fn poll_once(
         _ => await_reply(&receiver, &mut child, deadline, shutdown, now),
     };
 
-    // Dropped before the join below: `spawn_reader`'s channel has a capacity
+    // Dropped before waiting for the reader: its channel has a capacity
     // of 16, and once `await_reply` stops draining it a chatty child (more
     // than 16 lines after the reply) blocks the reader thread inside
-    // `sender.send`, which would hang this join forever. Dropping the
+    // `sender.send`, which would leave the reader thread alive. Dropping the
     // receiver first disconnects the channel, so a blocked `send` fails
     // immediately and the reader thread exits on its own.
     drop(receiver);

@@ -63,12 +63,13 @@ fn optional_liveness_fields_are_omitted_and_activity_kind_is_snake_case() {
 
 #[test]
 fn test_heartbeat_staleness() {
-    let hb = Heartbeat::new("stage-1".to_string(), "session-abc".to_string());
+    let mut hb = Heartbeat::new("stage-1".to_string(), "session-abc".to_string());
 
     // Fresh heartbeat should not be stale
     assert!(!hb.is_stale(Duration::from_secs(300)));
 
-    // Any heartbeat is stale with 0 timeout
+    // Past progress is stale with zero timeout, even within the same clock tick.
+    hb.progress_at = Some(hb.timestamp - chrono::Duration::seconds(1));
     assert!(hb.is_stale(Duration::from_secs(0)));
 }
 
@@ -118,7 +119,8 @@ fn test_heartbeat_watcher_poll() -> Result<()> {
 #[test]
 fn test_heartbeat_watcher_check_hung() {
     let budget = Duration::from_secs(60);
-    let mut watcher = HeartbeatWatcher::new();
+    let now = Utc::now();
+    let mut watcher = HeartbeatWatcher::with_now(now);
 
     // No heartbeat
     assert_eq!(
@@ -127,7 +129,9 @@ fn test_heartbeat_watcher_check_hung() {
     );
 
     // Add a fresh heartbeat
-    let hb = Heartbeat::new("stage-1".to_string(), "session-1".to_string());
+    let mut hb = Heartbeat::new("stage-1".to_string(), "session-1".to_string());
+    hb.timestamp = now - chrono::Duration::seconds(1);
+    hb.progress_at = Some(hb.timestamp);
     watcher.heartbeats.insert("stage-1".to_string(), hb);
 
     assert_eq!(

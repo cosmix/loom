@@ -2,30 +2,29 @@ use crate::models::stage::CommandConfinement;
 use crate::verify::criteria::{run_spec_with_timeout, CommandSpec};
 use std::time::Duration;
 
-#[test]
-fn host_canary_child() {
-    let cwd = std::env::current_dir().unwrap();
-    let Ok(port) = std::fs::read_to_string(cwd.join("canary-port")) else {
-        return;
-    };
-    println!("HOST_CANARY_STARTED");
-    std::fs::write(cwd.join("allowed"), "inside").unwrap();
-    let sibling = cwd.parent().unwrap().join("secret");
-    assert!(
-        std::fs::read(&sibling).is_err(),
-        "sibling read escaped confinement"
-    );
-    assert!(
-        std::fs::write(&sibling, "escaped").is_err(),
-        "sibling write escaped confinement"
-    );
-    let address = format!("127.0.0.1:{}", port.trim()).parse().unwrap();
-    assert!(
-        std::net::TcpStream::connect_timeout(&address, Duration::from_secs(1)).is_err(),
-        "network escaped confinement"
-    );
-    println!("HOST_CANARY_DENIED");
+// Use installed bash builtins so the canary does not depend on startup of a
+// newly linked/copied Mach-O test executable. Both modes exercise the same I/O.
+const HOST_CANARY: &str = r#"
+mode=$1
+port=$2
+printf 'HOST_CANARY_STARTED\n'
+printf inside > allowed || exit 1
+read_secret() { IFS= read -r -n 1 value < ../secret && [[ $value == u ]]; }
+write_secret() { printf escaped > ../secret; }
+connect_network() { : > /dev/tcp/127.0.0.1/$port; }
+check() {
+    if "$@"; then
+        [[ $mode == control ]] || exit 2
+    else
+        [[ $mode == denied ]] || exit 3
+    fi
+    printf '%s_CHECKED\n' "$1"
 }
+check read_secret
+check write_secret
+check connect_network
+printf 'HOST_CANARY_%s\n' "$mode"
+"#;
 
 #[test]
 fn actual_host_launcher_denies_sibling_read_write_and_network() {
@@ -44,16 +43,19 @@ fn actual_host_launcher_denies_sibling_read_write_and_network() {
     assert_eq!(std::fs::read_to_string(&secret).unwrap(), "untouched");
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let address = listener.local_addr().unwrap();
-    let _positive_control = std::net::TcpStream::connect(address).unwrap();
-    std::fs::write(cwd.join("canary-port"), address.port().to_string()).unwrap();
-    let result = run_canary(&cwd);
+    let control = run_canary(&cwd, address.port(), CommandConfinement::Inherit);
+    assert!(control.success, "positive control: {control:?}");
+    assert!(control.stdout.contains("HOST_CANARY_control"));
+    assert_eq!(std::fs::read_to_string(&secret).unwrap(), "escaped");
+    std::fs::write(&secret, "untouched").unwrap();
+    let result = run_canary(&cwd, address.port(), CommandConfinement::Confined);
     assert!(
         result.success,
         "stdout={} stderr={}",
         result.stdout, result.stderr
     );
     assert!(result.stdout.contains("HOST_CANARY_STARTED"));
-    assert!(result.stdout.contains("HOST_CANARY_DENIED"));
+    assert!(result.stdout.contains("HOST_CANARY_denied"));
     assert_eq!(std::fs::read_to_string(secret).unwrap(), "untouched");
     assert_eq!(
         std::fs::read_to_string(cwd.join("allowed")).unwrap(),
@@ -61,25 +63,29 @@ fn actual_host_launcher_denies_sibling_read_write_and_network() {
     );
 }
 
-fn run_canary(cwd: &std::path::Path) -> crate::verify::criteria::CriterionResult {
-    // Copy only this test executable into the allowed tree: no sibling grant.
-    let executable = cwd.join("probe");
-    std::fs::copy(std::env::current_exe().unwrap(), &executable).unwrap();
+fn run_canary(
+    cwd: &std::path::Path,
+    port: u16,
+    confinement: CommandConfinement,
+) -> crate::verify::criteria::CriterionResult {
+    let mode = match confinement {
+        CommandConfinement::Inherit => "control",
+        CommandConfinement::Confined => "denied",
+    };
+    let port = port.to_string();
     let spec = CommandSpec::program(
-        executable.to_str().unwrap(),
+        "/bin/bash",
         [
-            "--exact",
-            "verify::criteria::confine::host::tests::host_canary_child",
-            "--nocapture",
+            "--noprofile",
+            "--norc",
+            "-c",
+            HOST_CANARY,
+            "canary",
+            mode,
+            &port,
         ],
     );
-    run_spec_with_timeout(
-        &spec,
-        Some(cwd),
-        Duration::from_secs(15),
-        CommandConfinement::Confined,
-    )
-    .unwrap()
+    run_spec_with_timeout(&spec, Some(cwd), Duration::from_secs(15), confinement).unwrap()
 }
 
 #[test]

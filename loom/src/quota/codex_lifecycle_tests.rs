@@ -1,29 +1,18 @@
 use super::*;
 use crate::process::lifecycle_tests::InheritorGuard;
-use std::os::unix::fs::PermissionsExt;
 
 fn parent_exit_fixture(reply: bool) {
     let temp = tempfile::tempdir().unwrap();
     let guard = InheritorGuard::new(temp.path());
-    let executable = temp.path().join("fake-codex");
     let response = if reply {
         "echo '{\"id\":1,\"result\":{}}'"
     } else {
         "true"
     };
-    std::fs::write(
-        &executable,
-        format!("#!/bin/sh\n{} {response}\n", guard.shell()),
-    )
-    .unwrap();
-    std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let mut command = Command::new("/bin/sh");
+    command.args(["-c", &format!("{} {response}", guard.shell())]);
     let start = Instant::now();
-    let result = poll_once(
-        &executable,
-        Duration::from_secs(10),
-        &AtomicBool::new(false),
-        0,
-    );
+    let result = poll_command(command, Duration::from_secs(10), &AtomicBool::new(false), 0);
     assert!(start.elapsed() < Duration::from_secs(4));
     assert_eq!(result.is_ok(), reply, "unexpected reply: {result:?}");
     guard.assert_retired();
