@@ -22,10 +22,13 @@ fn plan_writer_references_are_embedded() {
         !references.is_empty(),
         "SKILLS must embed loom-plan-writer/references/*.md"
     );
-    assert!(
-        references.contains(&"loom-plan-writer/references/sandbox.md"),
-        "SKILLS is missing loom-plan-writer/references/sandbox.md: {references:?}"
-    );
+    for name in ["sandbox.md", "plan-template.md"] {
+        let key = format!("{REFERENCES_PREFIX}{name}");
+        assert!(
+            references.contains(&key.as_str()),
+            "SKILLS is missing {key}: {references:?}"
+        );
+    }
 }
 
 #[test]
@@ -33,12 +36,18 @@ fn installed_plan_writer_keeps_the_references_directory() {
     let temp = TempDir::new().unwrap();
     install(&temp, SkillLayout::Core);
 
-    let reference = paths(&temp)
-        .claude_dir
-        .join("skills/loom-plan-writer/references/sandbox.md");
-    assert!(
-        reference.is_file(),
-        "{} must be installed beside SKILL.md",
-        reference.display()
-    );
+    let paths = paths(&temp);
+    for root in [paths.claude_dir, paths.codex_dir] {
+        for name in ["sandbox.md", "plan-template.md"] {
+            let key = format!("{REFERENCES_PREFIX}{name}");
+            let reference = root.join("skills").join(&key);
+            let (_, expected) = SKILLS.iter().find(|(path, _)| *path == key).unwrap();
+            assert_eq!(
+                std::fs::read_to_string(&reference).unwrap(),
+                *expected,
+                "{} must be installed intact beside SKILL.md",
+                reference.display()
+            );
+        }
+    }
 }

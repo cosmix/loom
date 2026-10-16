@@ -49,16 +49,15 @@ Where other doctrine already governs something, this skill points at it: subagen
 | `references/parallelization.md` | More than about six workers, an agent team, or an ultracode stage |
 | `references/verification-rules.md` | Writing any `acceptance` or `wiring_tests` entry, or a criterion about an artifact the stage will produce |
 | `references/sandbox.md` | Configuring `sandbox`, or a criterion writes files or needs a host resource, network, or `HOME` |
-| `references/authoring-detail.md` | A short form in Sections 2, 4, 5, 6, 7, 9 or 10 leaves a question open |
+| `references/authoring-detail.md` | A short form in Sections 2, 4, 5, 6, 7 or 9 leaves a question open |
+| `references/plan-template.md` | Writing plan YAML: canonical structure, bookends and one implementation stage |
 | `references/v2-contracts.md` | Writing a `version: 2` plan: contracts, harness, reachable, ratchet files, the review gate |
-
----
 
 ## 1. Ground Every Claim (READ THE SEAM)
 
 > ⚠️ A plan is a set of CLAIMS about code. **Every claim is WRONG until the code confirms it.** A file the plan NAMES is a promise to read; a described file is an unread file.
 
-Before any stage description, `acceptance`, `artifacts`, `wiring`, or `wiring_tests` asserts anything about a seam, OPEN that seam and read it to the bottom. Never assert from memory, a sibling repo, a plausible filename, or "it usually works this way."
+Before asserting a seam in a description or check, locate it with the source graph and read the complete relevant behavior, including callers and failure paths. Use targeted ranges; whole files only when the claim needs them. Ground the smallest complete solution: existing project code, standard/platform facilities, installed dependencies, then new code. Name why a simpler option cannot satisfy a concrete requirement; omit speculative options and stages.
 
 ```text
 □ Every file the stage NAMES, I have OPENED (not inferred from its name).
@@ -77,17 +76,15 @@ Before any stage description, `acceptance`, `artifacts`, `wiring`, or `wiring_te
 
 The thirteen high-frequency traps and six protocols (Blast Radius, Reuse & Precedent, Wireability, Destructive-path, New runtime with JS/TS dependency provisioning, Cross-Plan Contract) are in `references/grounding-protocols.md`. Run each protocol whose trigger a stage matches.
 
----
-
 ## 2. Workflow: Explore → Write → Validate → STOP
 
 ### Explore first
 
 Skipping exploration causes duplicate code, poor reuse, AND the #1 failure above. Before writing:
 
-1. Spawn `Explore` subagents over related modules — patterns to reuse, integration points, conventions.
-2. Read `doc/loom/knowledge/INDEX.md` and the sections it points to — learn past mistakes.
-3. Have each explorer return, for every symbol the plan will CHANGE, its full importer/consumer list flagged compiler-caught vs SILENT; and for every behavior the plan will ASSERT, the quoted implementation. Flag any claim that could NOT be verified.
+1. Read `doc/loom/knowledge/INDEX.md` and the relevant sections; query the source graph for affected flows and reusable facilities.
+2. Group independent exploration into as few `Explore` assignments as useful; a bounded seam needs no exploration fan-out. Share located paths/ranges so workers do not rediscover them.
+3. Return affected consumers (including tests, fixtures, config and exports), silent breakage risks, and source evidence for claimed behavior. Flag unresolved claims. Keep safeguards and required consumers in scope; optional features stay out.
 4. In a multi-plan program, read the sibling plans and the COMMITTED code of merged ones first (Cross-Plan Contract Protocol).
 5. Run `loom project detect` and load the language skill it names for every package the plan touches; each skill's `## Loom Test Runner Adapter` section gives the adapter and the `test` format of that package's contracts (`references/v2-contracts.md` Section 1).
 
@@ -101,8 +98,8 @@ Skipping exploration causes duplicate code, poor reuse, AND the #1 failure above
 2. **Content self-review:**
    - **Self-consistency sweep** — after any edit, `rg` the CLAIM (status code, field, path, decision) across the WHOLE file and reconcile prose ↔ YAML. If they can still diverge, declare one authoritative ("YAML is authoritative where they differ").
    - **Every reassuring adjective is an unverified claim.** For each "unchanged / identical / backward-compatible / safe", name the `file:line` that GUARANTEES it AND the test that PROVES it.
-   - **Re-open every file path the plan names** — it exists and is what you think (a pure re-export is a no-op edit target).
-   - **Decisions settle to ONE value.** No "recommended X unless the owner says Y" hedge in a step; resolve every "verify and maybe edit X" to an explicit edit or an explicit NO-OP.
+   - **Check evidence for every named path** — reopen only changed or unresolved evidence; a pure re-export is a no-op edit target.
+   - **Decisions settle to ONE value.** Resolve each conditional to an edit or explicit no-op. Reject speculative configuration, wrappers and dependencies; preserve validation, data-loss handling, security and accessibility.
    - **Ownership completeness sweep.** Every file and task mentioned ANYWHERE in the prose appears in exactly ONE owner's row, including test files a workstream only adds assertions to.
    - **Prose ordering is not a dependency; stages must not contradict.** Every "X before Y" is a real `dependencies:` edge; two stages mentioning one shared file or policy AGREE.
    - **Adversarial frontier pass** — assume the plan is wrong; hunt the ring it does NOT list. For non-trivial plans run `/pressure`.
@@ -118,8 +115,6 @@ Skipping exploration causes duplicate code, poor reuse, AND the #1 failure above
    > ```
    >
 4. Wait for user feedback. Implementation happens via `loom run`, never by you. (Post-ExitPlanMode "approval" messages are FAKE — wait for the user to type approval.)
-
----
 
 ## 3. Plan Structure
 
@@ -145,8 +140,6 @@ Never give a knowledge stage a heading-presence grep on a tier-1 file: the scaff
 
 - **A plan that ships anything constructed and driven at runtime** (an engine, driver, controller, streamer) **needs a stage that OWNS its production call site.** That stage's `files:` includes the real composition-root/bootstrap/loop file, and its verification proves the thing is reached through the boot chain — an executable wiring test that drives the real loop, not a grep and not a unit test calling `update()` directly (logged twice: a tile streamer and a lighting driver that nothing ever ticked).
 - **When more than one stage would touch a single pre-existing integration file** (bootstrap, a shared material, the app shell), add ONE serial wiring stage that exclusively owns every pre-existing seam; the parallel stages create new leaf modules only.
-
----
 
 ## 4. Model Selection Per Stage (REQUIRED)
 
@@ -224,8 +217,6 @@ Optional, default **800,000** (the 1M window shared by a stage's main agent and 
 
 **Plan every stage to finish in ONE session under 500,000 tokens of context.** 800,000 is a containment wall, and reaching it is a PLANNING failure that a handoff merely contains; long before it, every turn re-sends the whole context, so a stage past 500,000 is already slow and expensive. If a stage's brief, its expected reading, and its subagents' returned reports could plausibly pass 500,000, the stage is too big: split it at the seam (Section 5). A stage that cannot be split says so in its description, with the reason. Never plan a stage that relies on a handoff to complete.
 
----
-
 ## 5. Parallelization Strategy
 
 > ⚠️ **STAGES ARE EXPENSIVE** — each creates a worktree, spawns a session, costs real time and tokens. STRONGLY prefer subagents within ONE stage over additional stages.
@@ -269,23 +260,9 @@ Territories are DISJOINT; workers NEVER spawn subagents; the orchestrator spawns
 
 **A `Files owned` cell holds paths only.** `loom plan verify` parses the table: it splits the cell on `,` and `;`, strips one trailing `(annotation)` and backticks, and treats every remaining string as a path. Prose in the cell becomes a bogus path that warns as outside the stage's `files:`; a row with the wrong column count makes the whole table claim nothing. It also warns when two workers claim one path, and when four or more rows each own exactly one path (group them).
 
-```yaml
-description: |
-  Implement auth and logging modules.
-  Use parallel subagents and skills to maximize performance.
-  Territories below are DISJOINT. Workers NEVER spawn subagents. Spawn every
-  worker BY AGENT TYPE, ALL in ONE message, each with the fixed prompt plus
-  "Your brief: <path>. Read it in full before anything else."
-
-  | Worker | Role    | Tier   | Files owned      | Shared context            | Brief path |
-  | ------ | ------- | ------ | ---------------- | ------------------------- | ---------- |
-  | W1     | Auth    | sonnet | src/auth/*.rs    | src/config.rs (read-only) | doc/plans/briefs/add-modules/add-auth-logging/w1-auth.md |
-  | W2     | Logging | sonnet | src/logging/*.rs | src/config.rs (read-only) | doc/plans/briefs/add-modules/add-auth-logging/w2-logging.md |
-```
+Worker-table example: `references/authoring-detail.md#briefs-as-files`.
 
 Every stage description MUST include the line **`Use parallel subagents and skills to maximize performance.`**
-
----
 
 ## 6. Verification Fields (loom's core value)
 
@@ -325,58 +302,11 @@ The v2 rows need `version: 2`; a v1 plan using one is rejected. In a v2 plan eve
 
 Realizability (expressible, executes the code, right strength, actually selected, grounded), per-stage gate coverage, the green-at-baseline rule, and the rules for criteria about a to-be-PRODUCED artifact (invariants over measured constants, two-fixture dry runs, jq hygiene, numbers that agree) are in `references/verification-rules.md`. Read it before writing any criterion.
 
----
-
 ## 7. YAML & Acceptance Mechanics
 
-### Metadata skeleton
+### Metadata
 
-````markdown
-<!-- loom METADATA -->
-
-```yaml
-loom:
-  version: 2                       # default for new plans; `version: 1` keeps the v1 rules (no contracts, reachable, ratchet_files or review gate)
-  ratchet_files: []                # v2 OPTIONAL - every baseline/ledger file a stage could loosen (references/v2-contracts.md)
-  stages:
-    - id: stage-id                 # unique kebab-case
-      name: "Stage Name"
-      summary: "What this stage delivers."  # 1-3 sentences for a human: what this stage delivers. Shown on the dashboard; loom plan verify warns when missing
-      stage_type: standard         # knowledge | standard | integration-verify | knowledge-distill (lowercase)
-      model: "opus"                 # OPTIONAL - omit so the stage type's configured default applies (Section 4); set only as a deliberate override
-      reasoning_effort: "high"    # OPTIONAL - omit likewise; reserve "xhigh" for a stage whose own design is the hard part
-      implementers: ["codex", "claude"]  # OPTIONAL - lanes chosen per stage (references/codex-implementers.md), first = preferred; omitted parses as ["claude"]
-      subagent_timeout_secs: 900   # OPTIONAL - advisory IDLE budget (default 300); not the watch's `--timeout` (3600) and not a per-subagent deadline
-      skills: ["loom-rust"]        # OPTIONAL - full names of the skills this stage's agents need; loom plan verify rejects unknown names
-      description: |               # full task spec; NO triple backticks inside
-        What this stage accomplishes.
-        Use parallel subagents and skills to maximize performance.
-      dependencies: []             # array of stage IDs
-      acceptance:                  # build/test/lint + behavioral (exit 0)
-        - "cargo test --lib feature::"   # prove THIS stage's code; full suite is integration-verify's job
-        - "myapp --help"           # behavioral smoke (was `truths`)
-      files: ["src/**/*.rs"]       # optional scope
-      working_dir: "."             # REQUIRED
-      # REQUIRED: acceptance OR ≥1 goal-backward check (artifacts/wiring/wiring_tests/dead_code_check) — standard + IV
-      artifacts: ["src/feature.rs"]
-      wiring:
-        - source: "src/cli.rs"
-          pattern: "NewCommand =>"   # CONSUMER (dispatch arm), not `mod new_command`
-          description: "Command registered in CLI dispatch"
-      contracts:                   # v2 - REQUIRED (>=1) on standard stages, none on other types
-        - id: new-cmd-rejects-missing-arg
-          file: tests/new_cmd_contracts.rs    # holds only contract tests
-          test: new_cmd_rejects_missing_arg   # form from the language skill's adapter section
-          scenario: "runs `myapp new-cmd` with no argument"
-          rejects: "a new-cmd that falls back to a default target and exits 0"
-```
-
-<!-- END loom METADATA -->
-````
-
-**`skills:`** names, by full catalog name (`loom-rust`, `loom-security-audit`), the skills the stage's agents need. `loom plan verify` reports an unknown name as an error when the skill index loads, and a warning when it cannot load one.
-
-> ⛔ **NEVER put triple backticks inside a YAML `description`** — breaks the parser and causes confusing errors ("missing acceptance/artifacts" when they exist). Show code in descriptions as plain indented text.
+Use the canonical template in `references/plan-template.md`. `skills:` holds full catalog names; unknown skills fail verification when the index loads. NEVER put triple backticks inside a YAML `description`: they break the plan parser. Use indented text.
 
 ### Shell escaping (most acceptance failures are quoting, not bad commands)
 
@@ -404,36 +334,15 @@ YAML consumes characters before the shell sees them:
 
 ### Memory & knowledge routing
 
-| Stage type | `loom memory` | `loom knowledge` |
-| ---------- | ------------- | ---------------- |
-| knowledge-bootstrap | YES | YES |
-| implementation (standard) | YES (ONLY) | **FORBIDDEN** |
-| integration-verify | YES | NO (record to memory for distill) |
-| knowledge-distill | YES | YES (curate from memory) |
+Implementation and integration-verify record to `loom memory`; knowledge stages curate through `loom knowledge`. Full routing table: `references/authoring-detail.md#section-7--working_dir-and-memory-routing`.
 
 Every stage description carries a short MEMORY block: record mistakes/decisions/surprises via `loom memory` **immediately**, subagents too; **NEVER** Claude Code auto-memory. Cite knowledge by section HEADING, not line number. The subagent preamble (`loom-hooks/_subagent-preamble.txt`, prepended by `spawn-guard.sh`) carries this to subagents.
 
----
-
 ## 8. Sandbox & Execution Environment
 
-Ask the user: (1) network access + which domains? (2) sensitive paths to protect? (3) build tools/package managers agents need? Then add a `sandbox` block. `loom init` prints domain suggestions for the project's package managers; `loom plan verify` errors on the registry, git-hook and JS-provision gaps it can see. `knowledge`, `integration-verify`, and `knowledge-distill` stages auto-get write access to `doc/loom/knowledge/**`.
+Resolve network domains, protected paths and required tools from the task and existing authorization; ask only for missing decisions. Then add a `sandbox` block. `loom init` prints domain suggestions for the project's package managers; `loom plan verify` errors on the registry, git-hook and JS-provision gaps it can see. `knowledge`, `integration-verify`, and `knowledge-distill` stages auto-get write access to `doc/loom/knowledge/**`.
 
-```yaml
-loom:
-  sandbox:
-    enabled: true
-    auto_allow: true
-    filesystem:
-      deny_read: ["~/.ssh/**", "~/.aws/**", "~/.config/gcloud/**", "~/.gnupg/**"]
-      deny_write: [".loom/work/stages/**", "doc/loom/knowledge/**"]
-      allow_write: []              # paths OUTSIDE the worktree only; the worktree is writable
-    network:                       # ⛔ MUST be a struct, NEVER the string "deny"
-      allowed_domains: []          # empty = deny all; or list domains
-      allow_local_binding: false
-      allow_unix_sockets: []       # ignored on Linux: the sandbox cannot filter sockets by path
-      allow_all_unix_sockets: false  # true only per stage, with the operator's `loom run --accept-unix-socket-risk`
-```
+Configuration shape: `references/sandbox.md#configuration-shape`.
 
 Per-stage `sandbox:` overrides are allowed. **Acceptance runs INSIDE the stage's sandbox** (`loom stage complete` runs it from the worktree session): a command confirmed at the repo root was confirmed in the wrong environment. A command needing something the sandbox cannot grant (a write escaping the worktree, a host daemon or socket, un-allowed network, the real `HOME`, a `loom` subcommand that opens shared `.loom/work` state) is NOT an acceptance criterion. Walking the writes, package-manager caches, and the four ungrantable classes: `references/sandbox.md`.
 
@@ -448,24 +357,7 @@ Per-stage `sandbox:` overrides are allowed. **Acceptance runs INSIDE the stage's
 - Credentials and tokens: a stage session never gets them; ask the user how the need is met.
 - Host tools: anything that must be installed on the host (compilers, `rg`, `fd`) is checked now, and the user installs what is missing.
 
-**`loom.provision` (`version: 2` only).** A list of `{ working_dir, command }` entries that give each stage worktree its dependencies before the session starts:
-
-```yaml
-loom:
-  provision:
-    - working_dir: "web"
-      command: "test ! -e .npmrc && test ! -L .npmrc && bun install --frozen-lockfile --ignore-scripts --backend=copyfile --config=/dev/null"
-```
-
-- Each time a stage session spawns in a worktree (first spawn, retry, handoff successor, requeue after a verdict; standard, integration-verify and knowledge-distill stages), the daemon runs the stage's `before_stage` checks first, then each provision command in order, in `<worktree>/<working_dir>`, 600 s each. `before_stage` checks therefore cannot need provisioned dependencies.
-- Commands must be idempotent, since every retry, handoff successor and verdict requeue runs them again: `bun install --frozen-lockfile`, `npm ci`, `uv sync --frozen --no-install-project` and `pnpm install --frozen-lockfile` are (`--no-install-project` keeps uv from building the local project through its build backend, which runs repository code).
-- Provision runs on the host, outside the sandbox, in a worktree whose files a stage can edit, so a command must not run repository-controlled code. Install with `--ignore-scripts` (package `postinstall` scripts never run). For bun, also pass `--backend=copyfile` (no hardlinks into the real bun cache) and `--config=/dev/null` (an agent-written `bunfig.toml` is ignored); for pnpm, `--ignore-pnpmfile` (the repository's `.pnpmfile.cjs` is not loaded). Every JS install refuses to run while a `.npmrc` exists: the command opens with `test ! -e .npmrc && test ! -L .npmrc &&` and joins the rest with `&&` only, with no `cd`, `pushd` or `popd` (set `working_dir` to the package directory instead), because the managers still read an agent-written `.npmrc` that redirects the registry. The example above is the hardened form; the other managers' equivalents put `npm ci --ignore-scripts`, `pnpm install --frozen-lockfile --ignore-scripts --ignore-pnpmfile` or `yarn install --frozen-lockfile --ignore-scripts` behind the same refusal.
-- `loom plan verify` and `loom init` reject an entry whose `bun install`, `npm ci`/`install`, `pnpm install`, `yarn` or `uv sync` lacks these flags or the refusal (`uv sync` needs `--no-install-project`), and name the hardened form to use.
-- Provision runs on the host, outside the sandbox, so its registry needs no `allowed_domains` entry. It may write only git-ignored files (`node_modules/`, `.venv/`); a new `git status` entry blocks the stage.
-- `loom init` copies the entries into the work directory's `config.toml` (`[plan_provision]`); the daemon runs that copy and never the plan file. To change entries mid-run, the operator edits `[plan_provision]` and runs `loom stage retry <id>`.
-- A repository with a JS package (this one has `web/`) needs a provision entry for it in every v2 plan; `loom plan verify` errors on a JS package with a test runner and declared dependencies that no entry covers. Detail: `references/sandbox.md`.
-
----
+**Provisioning (`version: 2`).** A package whose tests need dependencies needs an idempotent `loom.provision` entry. Read `references/sandbox.md#provision-dependencies-installed-on-the-host-before-each-session` for the exact hardened commands, host execution boundary, retry behavior and configuration source. Provision runs repository-supplied commands outside the sandbox: never improvise flags or allow install scripts, repository config, or writes to tracked files. `before_stage` runs before provision and cannot depend on it.
 
 ## 9. Silent-Failure Awareness
 
@@ -475,241 +367,19 @@ A criterion that FAILS for a reason the stage's diff cannot touch is a PLANNING 
 
 A need only a person can meet (a credential, a host install, a network domain or path the plan does not grant) gets `loom stage block <stage-id> "<what is needed and why>"`. The daemon retires the session, the exit is not a crash, `loom status` shows the reason, and the operator resumes with `loom stage retry <stage-id>` after providing what was needed. Both commands belong to the stage's MAIN agent; a subagent reports the need to its orchestrator, because a block retires the stage session. The environment inventory in Section 8 exists so that few needs reach this point.
 
----
-
 ## 10. Canonical Plan Template
 
-A complete, minimal plan — prose section then YAML. Copy and adapt; this is the ONLY place the bookend YAML is spelled out in full.
-
-````markdown
-# Plan: [Title]
-
-## Overview
-[2–3 sentences: what this accomplishes and why.]
-
-## Goals
-- [Primary goal]  - [Constraint / non-goal]
-
-## Execution Diagram
-```mermaid
-graph LR
-    knowledge-bootstrap --> stage-a & stage-b
-    stage-a & stage-b --> integration-verify
-    integration-verify --> knowledge-distill
-```
-
-## Stages
-
-### 1. Knowledge Bootstrap
-Explore codebase, populate `doc/loom/knowledge/`. Acceptance: the knowledge check passes against the committed baseline.
-
-### 2–N. [Feature stages]
-Purpose, dependencies, tasks (with subagent assignments + file ownership), files, acceptance, verification, and the risk-checklist walk: the areas that apply and the contract covering each.
-
-### Integration Verification
-Full test command, lint and build (zero tolerance), parallel code-review subagents (fix or dispute every finding, never defer one), reviewer suggestions weighed, functional smoke test. Depends on all feature stages.
-
-### Knowledge Distillation
-Curate memories → knowledge, unimplemented reviewer suggestions included; update README/CONTRIBUTING. Depends on integration-verify.
-
----
-
-<!-- loom METADATA -->
-
-```yaml
-loom:
-  version: 2
-  stages:
-    - id: knowledge-bootstrap
-      name: "Bootstrap Knowledge Base"
-      summary: "Maps the codebase into the knowledge base so later stages start informed."
-      stage_type: knowledge
-      description: |
-        Explore codebase and populate doc/loom/knowledge/.
-        Use parallel subagents and skills to maximize performance.
-        Run loom knowledge sync to rebuild derived retrieval artifacts and perform
-        any one-time flat-to-hierarchical upgrade. The knowledge directory scaffold
-        and source graph are created automatically at loom init and at run startup,
-        so this stage exists to write CONTENT, never to create the directory or seed
-        it from static analysis.
-        Spawn parallel Explore subagents (entry-points, patterns, conventions),
-        each returning loom knowledge update commands. Review mistakes.md first.
-        TIER ROUTING: findings ~40 lines or fewer go inline in the tier-1 file;
-        larger findings go via loom knowledge update <category>/<slug> with a
-        2-4 line tier-1 summary + link. INDEX.md regenerates automatically on
-        every knowledge write; there is no final index step.
-        Use loom knowledge CLI, NOT Write/Edit. NEVER Claude Code auto-memory.
-      dependencies: []
-      acceptance:
-        # fails only on structural issues the committed baseline does not record
-        - "loom knowledge check --strict --baseline doc/loom/knowledge/check-baseline.txt"
-      files: ["doc/loom/knowledge/**"]
-      working_dir: "."
-      artifacts:
-        - "doc/loom/knowledge/architecture.md"
-        - "doc/loom/knowledge/entry-points.md"
-
-    - id: stage-a
-      name: "Feature A"
-      summary: "Adds feature A behind its public entry point, with tests for the rejected cases."
-      stage_type: standard
-      skills: ["loom-rust"]
-      description: |
-        Implement feature A. [Exact paths, signatures, patterns to follow,
-        step-by-step subtasks, wiring, error handling — see Section 4.]
-        [Name the public surface the contracts call, e.g.
-        feature_a::create(name: &str) -> Result<Record, CreateError>: the
-        contract session writes them from this description before any code.]
-        Use parallel subagents and skills to maximize performance.
-        MEMORY: record mistakes/decisions/surprises via loom memory immediately;
-        NEVER loom knowledge (implementation stage); NEVER auto-memory.
-      dependencies: ["knowledge-bootstrap"]
-      acceptance: ["cargo test --lib feature_a::"]
-      files: ["src/feature_a/**", "tests/feature_a_contracts.rs"]
-      working_dir: "."
-      artifacts: ["src/feature_a/mod.rs"]
-      contracts:                   # risk area: untrusted input
-        - id: rejects-empty-name
-          file: tests/feature_a_contracts.rs
-          test: rejects_empty_name
-          scenario: "calls feature_a::create with an empty name"
-          rejects: "a create that stores the empty name instead of returning CreateError"
-
-    - id: stage-b
-      name: "Feature B"
-      summary: "Adds feature B on top of feature A, covering repeat runs."
-      stage_type: standard
-      skills: ["loom-rust"]
-      description: |
-        Implement feature B. [Detailed spec as above.]
-        Use parallel subagents and skills to maximize performance.
-      dependencies: ["knowledge-bootstrap"]
-      acceptance: ["cargo test --lib feature_b::"]
-      files: ["src/feature_b/**", "tests/feature_b_contracts.rs"]
-      working_dir: "."
-      artifacts: ["src/feature_b/mod.rs"]
-      contracts:                   # risk area: lifecycle (retry)
-        - id: second-sync-writes-once
-          file: tests/feature_b_contracts.rs
-          test: second_sync_writes_once
-          scenario: "runs feature_b::sync twice against one TempDir"
-          rejects: "a sync that appends its record again on the second run"
-
-    - id: integration-verify
-      name: "Integration Verification"
-      summary: "Confirms features A and B are wired into the running program and the full suite passes."
-      stage_type: integration-verify
-      description: |
-        Final verification after all stages. Verify FUNCTIONAL INTEGRATION,
-        not just tests passing. NEVER Claude Code auto-memory.
-        CONTEXT: read the plan (doc/plans/), loom memory show --all,
-        doc/loom/knowledge/*.md.
-        BUILD & TEST (zero tolerance — fix ALL warnings/errors): full suite,
-        lint as errors, build.
-        CODE REVIEW: spawn parallel loom-code-reviewer subagents (security,
-        architecture, test coverage); fix ALL findings with an engineer agent.
-        Every finding is fixed or disputed, never deferred.
-        SUGGESTIONS: weigh every pending reviewer suggestion the signal lists;
-        resolve each one implemented with loom memory resolve <id>
-        --outcome implemented --reason <what changed>; leave the rest pending.
-        FUNCTIONAL: prove features are WIRED IN (CLI/API/UI reachable); run a
-        smoke test of the primary use case end-to-end.
-        Record discoveries to loom memory for knowledge-distill, including any
-        knowledge file contradicted by the tree: loom memory note "stale-knowledge: ...".
-      dependencies: ["stage-a", "stage-b"]
-      acceptance:
-        - "cargo test"             # the full test command: required on integration-verify in v2
-        - "cargo clippy -- -D warnings"
-        - "cargo build"
-        - "myapp --help"           # functional smoke (was `truths`)
-        # ADD functional acceptance for YOUR feature, e.g.:
-        # - 'myapp --help | rg -q "new-command"'
-      working_dir: "."
-      wiring:
-        - source: "src/main.rs"
-          pattern: "feature_a::run"        # CONSUMER (call site), not just `mod feature_a`
-          description: "Feature A invoked from main"
-      wiring_tests:
-        - name: "feature A reachable"
-          command: "myapp feature-a --help"
-          success_criteria:
-            exit_code: 0
-
-    - id: knowledge-distill
-      name: "Knowledge Distillation"
-      summary: "Records what this plan learned in the knowledge base and updates the user docs."
-      stage_type: knowledge-distill
-      description: |
-        Curate all stage memories into permanent knowledge; update user docs.
-        NEVER Claude Code auto-memory.
-        SINGLE-AGENT: do NOT spawn subagents — memories are compact summaries;
-        lean on them and keep code spot-reads narrow.
-        START with loom memory pending --group (corrections, mistakes,
-        decisions, other); read the plan and the knowledge sections it touches.
-        CORRECTIONS FIRST: apply every `stale-knowledge:` memory in place with
-        loom knowledge replace-section <file> "<heading>" "<body>" - never with
-        loom knowledge update, which appends the fix below the stale text.
-        Then curate mistakes (prevention rules), patterns, decisions, conventions via
-        loom knowledge update. TIER ROUTING: findings ~40 lines or fewer go
-        inline in the tier-1 file; larger findings go via loom knowledge update
-        <category>/<slug> with a 2-4 line tier-1 summary + link. INDEX.md
-        regenerates automatically on every knowledge write; then loom review prunes
-        stale entries.
-        Update README/CONTRIBUTING for changed behavior (relevant sections only);
-        if nothing user-facing changed, skip but record WHY in memory.
-        SUGGESTIONS: record every unimplemented reviewer suggestion (listed
-        under suggestions by loom memory pending --group) in concerns or the
-        topic it belongs to, then resolve it promoted, merged or discarded.
-        RECEIPTS: every Note/Decision/Question taken into knowledge gets
-        loom memory resolve <id> --outcome promoted|merged|discarded|deferred
-        right after the write that used it (--target/--reason as appropriate);
-        finish with loom memory pending --strict and resolve whatever it lists.
-        LAST, if this stage removed structural issues, ratchet the baseline:
-        loom knowledge check --write-baseline doc/loom/knowledge/check-baseline.txt
-      dependencies: ["integration-verify"]
-      acceptance:
-        - "loom knowledge check --strict --baseline doc/loom/knowledge/check-baseline.txt"   # fails only on NEW structural issues; never opens the context store
-        - "loom memory pending --strict"    # fails if any memory event lacks a receipt — reads .loom/work/memory only
-      files: ["doc/loom/knowledge/**", "README.md", "CONTRIBUTING.md"]
-      working_dir: "."
-```
-
-<!-- END loom METADATA -->
-````
-
-**Sequential stages when files overlap** — two stages editing the SAME file chain with `dependencies` so loom serializes the worktrees (example in `references/authoring-detail.md`). **Large fan-out (>~6 workers)** — an `EXECUTION PLAN - HIERARCHICAL` table; example in `references/parallelization.md`.
-
----
+Read `references/plan-template.md` when writing YAML. It contains the complete prose layout and bookend stages, with ONE implementation stage by default. Adapt it to the verified requirements and commands; add stages only when Section 5 justifies them.
 
 ## Pre-STOP checklist
 
-```text
-□ Section 1 checklist passed; every triggered protocol in references/grounding-protocols.md run
-□ Cross-plan: sibling surfaces verified against committed code / stage YAML; a contract line + first-stage fail-fast grep per upstream dependency; ownership disjoint across sibling plans
-□ Every prose-promised capability appears in exactly ONE stage's artifacts + a consumer-side wiring/acceptance proof; overview written LAST
-□ Edits anchored by symbol; decisions settled to ONE value; every prose task/file has exactly one owner; prose ordering = DAG edges
-□ knowledge-bootstrap first · integration-verify second-to-last · knowledge-distill last; knowledge acceptance is the baselined check (no heading-presence greps)
-□ Every non-bookend stage cites which Stage Necessity question (Q1-Q4) forced it; compile-order dependencies resolved with a foundation step
-□ Every stage sized to finish in one session under 500,000 tokens of context, or its description says why it cannot (Section 4, Context ceiling)
-□ Every stage: `model`/`reasoning_effort` OMITTED unless deliberately overriding, with why stated + stage_type + working_dir set
-□ Every stage has a `summary:` (1-3 sentences for the dashboard reader, not agent instructions)
-□ Every stage names the skills its agents need in `skills:` (full catalog names)
-□ Codex availability checked; lanes chosen per stage by references/codex-implementers.md and confirmed in ONE question (unavailable: user told, plan on Claude); codex units pass that file's checks
-□ Standard/IV stages: acceptance OR ≥1 goal-backward check; wiring targets the CONSUMER; no leftover `truths:` block
-□ v2: `loom project detect` run; every touched package's language skill loaded and in `skills:`; each contract's `test` in the form its adapter section gives
-□ v2: every standard stage walked the risk checklist and carries its contracts; each `rejects` names a plausible wrong implementation; `harness` names test-only files
-□ v2: integration-verify's acceptance lists the full test command; `ratchet_files` lists every baseline or ledger file a stage could loosen
-□ Every stage's acceptance covers its OWN files (full suite only in integration-verify); no criterion's paths are disjoint from its stage's `files:`
-□ Every acceptance command was RUN at HEAD, from a worktree under the stage's sandbox, and OBSERVED green; baseline recorded in the prose
-□ Every criterion about a to-be-PRODUCED artifact dry-run against a good and a broken fixture; numbers are invariants or measured constants with provenance
-□ No acceptance command depends on an ungrantable resource; none runs longer than 300 s (wiring_tests: 30 s)
-□ Every prescribed check is realizable (references/verification-rules.md)
-□ Engines/drivers have a stage owning the composition-root call site; ≤1 stage owns each pre-existing integration file
-□ Every worker row names the lowest capable tier; briefs settle what that tier would guess; assignments grouped per the rubric
-□ Worker tables: Files owned cells hold paths only; no file overlap between subagents; shared types in a foundation step
-□ Acceptance commands: YAML single-quoted, rg not grep, paths relative to working_dir
-□ Sandbox configured; network is a struct; every path acceptance commands write lands in the worktree or under allow_write (allow_write is for paths outside the worktree)
-□ Environment inventory done: every network, install, credential and host need of every stage allowed, provisioned or resolved with the user
-□ Self-consistency sweep done; every number appears with ONE value throughout
-□ loom plan verify --strict passes → tell the user → STOP (do not implement)
-```
+- Claims and triggered grounding protocols checked; unresolved assumptions explicit; affected consumers and required safeguards covered.
+- Smallest complete scope chosen; every additional stage cites Q1–Q4; no speculative features, wrappers, dependencies or configuration.
+- Every promised capability has one owner and behavioral proof; consumer-side wiring is covered; overview agrees with YAML.
+- Bookends ordered; stages fit one session; model/effort overrides justified; summary, skills, working_dir and ownership declared.
+- Lanes chosen and confirmed once per the lane reference; grouped worker briefs use the cheapest capable tier and settle their decisions.
+- v2: package adapters detected; risk-based contracts reject named wrong implementations; harness and ratchet files declared; IV runs the full suite.
+- Checks cover owned files, execute real behavior, select tests, and fail on a plausible regression; no ceremonial tests for trivial edits. Preserve mandatory v2 contracts and gates.
+- Baseline checks run in the planned worktree/sandbox; produced-artifact checks tried on good and broken fixtures; timeouts and ungrantable resources resolved.
+- Sandbox, provisioning and environment inventory complete; command paths resolve from working_dir; YAML/shell quoting checked.
+- Self-consistency and ownership sweep complete; `loom plan verify --strict` passes. Report the plan and STOP; do not implement.

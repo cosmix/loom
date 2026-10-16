@@ -64,10 +64,10 @@ Widening a type is NEVER "just the type." Run all six:
 
 ## Reuse & Precedent Protocol ("reuse X" is a claim with five checks)
 
-"Reuse X from file A" / "model new path N on existing path Y" failed more pressure passes than any claim except type-widening. Before prescribing reuse:
+Check existing project facilities before standard/platform facilities, installed dependencies and new code. Choose the first that meets the requirement without weakening its contract. Before prescribing reuse:
 
-1. **Importable.** X is actually `export`ed — grep the export, not the definition (a private helper means "replicate," not "import"). If the plan ADDS the export, export the TRANSITIVE CLOSURE of X's own private callees too — exporting `f` that calls three file-local helpers does not compile for the importer.
-2. **Reachable.** The stage whose work needs the edit can actually touch the file — "reuse a helper from holes.ts" is dead if another stage's `files:` owns holes.ts. Put the export in the stage that owns the file, ordered FIRST in the DAG.
+1. **Importable.** Check the actual visibility and import path. A private helper needs an owned visibility change or a suitable existing public seam. Internal callees can remain private; expose only what the caller must name, and verify the language's visibility rules.
+2. **Owned.** Assign any required export or adaptation to its file owner before consumers start. Use a foundation step within one stage for compile-order dependencies; a separate stage needs the Stage Necessity Test.
 3. **Embedded assumptions hold.** Read X for caller-specific copy ("Choose screw…"), closed-over config, invariants it does NOT enforce (an unchecked fuse the caller depends on), and calibrated constants (a threshold tuned to one topology is un-reusable for another). If any fails for the new use, the task is "extract + adapt" with the delta specified — not "reuse."
 4. **Failure path read.** "Mirrors existing behavior" requires reading Y's FAILURE path, not just its happy path — the flow you cite may THROW where your plan promises auto-fallback.
 5. **Full-body diff for paralleled flows.** A new path "like existing atom/handler Y" must enumerate EVERY side-effect of Y (rollback staging, commit-after-success ordering, history reset, disposal, revision bumps) and state which the new path replicates, which it omits, and WHY. And pick the SAFE template — check concerns.md/mistakes.md for known defects in the sibling you copy; the nearest complex sibling may carry the bug.

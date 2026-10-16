@@ -134,3 +134,21 @@ the same suggestions.
 | `cargo install`, `cargo fetch` | `crates.io`, `index.crates.io`, `static.crates.io` |
 | `uv sync`, `uv add`, `uv pip install`, `uvx`, `pip install` | `pypi.org`, `files.pythonhosted.org` |
 | `go get`, `go mod download` | `proxy.golang.org` |
+
+## Configuration shape
+
+```yaml
+loom:
+  sandbox:
+    enabled: true
+    auto_allow: true
+    filesystem:
+      deny_read: ["~/.ssh/**", "~/.aws/**", "~/.config/gcloud/**", "~/.gnupg/**"]
+      deny_write: [".loom/work/stages/**", "doc/loom/knowledge/**"]
+      allow_write: []              # paths OUTSIDE the worktree only; the worktree is writable
+    network:                       # ⛔ MUST be a struct, NEVER the string "deny"
+      allowed_domains: []          # empty = deny all; or list domains
+      allow_local_binding: false
+      allow_unix_sockets: []       # ignored on Linux: the sandbox cannot filter sockets by path
+      allow_all_unix_sockets: false  # true only per stage, with the operator's `loom run --accept-unix-socket-risk`
+```

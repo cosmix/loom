@@ -6,16 +6,16 @@ Read when: a short form in `SKILL.md` Sections 2, 4, 5, 6, 7, 9 or 10 leaves a q
 
 Skipping exploration causes duplicate code, poor reuse, AND the #1 failure above (asserting a seam without reading it). Before writing:
 
-1. Spawn `Explore` subagents over related modules — find patterns to reuse, integration points, conventions.
-2. Read `doc/loom/knowledge/*.md` (architecture first) — learn past mistakes.
+1. Read `doc/loom/knowledge/INDEX.md`, the relevant sections, and source-graph ranges for the affected flow.
+2. Group independent exploration into as few assignments as useful. A bounded seam needs no fan-out; share located paths and evidence.
 3. Have each explorer return, for every symbol the plan will CHANGE, its full importer/consumer list flagged compiler-caught vs SILENT; and for every behavior the plan will ASSERT, the quoted implementation. Flag any claim that could NOT be verified against the code.
 4. In a multi-plan program, read the sibling plans (and the COMMITTED code of merged ones) before designing stages — the Cross-Plan Contract Protocol (`grounding-protocols.md`) governs every claim about them.
 
-5. **Run `loom plan verify doc/plans/PLAN-<name>.md`** — parses YAML, validates structure (bookends, dependencies, required fields), checks sandbox, builds the DAG. It is READ-ONLY (does not create `.loom/work/`). Fix and re-run until it passes. Structural validity does NOT mean the claims are true.
+5. **Run `loom plan verify --strict doc/plans/PLAN-<name>.md`** — parses YAML, validates structure (bookends, dependencies, required fields), checks sandbox, builds the DAG. It is READ-ONLY (does not create `.loom/work/`). Fix and re-run until it passes. Structural validity does NOT mean the claims are true.
 6. **Content self-review** (`loom plan verify` checks structure only):
    - **Self-consistency sweep** — a plan is prose + YAML. After any edit, `rg` the CLAIM (status code, field, path, decision) across the WHOLE file and reconcile prose ↔ YAML. A half-applied correction, or a corrections overlay left on a stale draft, is worse than either alone. If they can still diverge, declare one authoritative in-document ("YAML is authoritative where they differ").
    - **Every reassuring adjective is an unverified claim until backed.** For each "unchanged / identical / backward-compatible / safe / no change needed" the plan asserts, name the exact `file:line` that GUARANTEES it AND the test that PROVES it. A soothing property traced to nothing is an assumption — and it hides the exact behavior change it denies (e.g. "renders identically" while a different code path now writes the output).
-   - **Re-open every file path the plan names** — confirm it exists and is what you think (a pure re-export is a no-op edit target).
+   - **Check the evidence for every named path** — reopen only changed or unresolved evidence; a pure re-export is a no-op edit target.
    - **Decisions settle to ONE value.** Every product decision the plan surfaces must resolve to a single concrete value in the executable instruction (rationale recorded; owner-overridable) — a "recommended X unless the owner says Y" hedge left in a step ships the un-recommended value. Resolve every "verify and maybe edit X" conditional to an explicit edit or an explicit NO-OP, especially when X is another stage's territory.
    - **Ownership completeness sweep.** For every file and task mentioned ANYWHERE in the plan's prose (architecture sections, corrections, asides), confirm it appears in exactly ONE owner's row — including test files a workstream only ADDS assertions to. A sentence with no owner does not happen.
    - **Prose ordering is not a dependency; stages must not contradict.** Every "X before Y" / "docs change first" claim must be a real `dependencies:` edge. For each shared type/file/policy that two stages mention, confirm their instructions AGREE — one stage permitting what another forbids is a self-review miss.
