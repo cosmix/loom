@@ -218,6 +218,11 @@ fn platform_command(original: &Command, cwd: &Path, program: &Path) -> Result<Co
     {
         command.arg("--ro-bind").arg(&root).arg(&root);
     }
+    // The new root is a writable tmpfs in which `--bind` created the working
+    // directory's parents; left writable, writes outside the working tree would
+    // succeed privately instead of failing as the Seatbelt profile makes them.
+    // The remount is not recursive: the binds above keep their own modes.
+    command.args(["--remount-ro", "/"]);
     command.arg("--").arg(program).args(original.get_args());
     Ok(command)
 }
