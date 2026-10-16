@@ -1,3 +1,0 @@
-command: bunx mocha fixture.test.js --grep 'delta_missing' --no-color
-exit: 0
-cwd: .

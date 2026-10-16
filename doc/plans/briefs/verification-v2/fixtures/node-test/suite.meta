@@ -1,3 +1,0 @@
-command: node --test fixture.test.js
-exit: 1
-cwd: .

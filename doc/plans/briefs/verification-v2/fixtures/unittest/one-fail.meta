@@ -1,3 +1,0 @@
-command: python3 -m unittest test_fixture.FixtureTests.test_beta_fails -v
-exit: 1
-cwd: .

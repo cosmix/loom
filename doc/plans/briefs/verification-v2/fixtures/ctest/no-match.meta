@@ -1,3 +1,0 @@
-command: /usr/bin/ctest --test-dir build -R '^delta_missing$' --output-on-failure
-exit: 0
-cwd: .

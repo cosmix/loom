@@ -1,3 +1,0 @@
-command: python3 -m pytest 'test_fixture.py::test_beta_fails' -q --color=no
-exit: 1
-cwd: .

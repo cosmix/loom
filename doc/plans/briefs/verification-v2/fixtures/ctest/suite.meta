@@ -1,3 +1,0 @@
-command: /usr/bin/ctest --test-dir build --output-on-failure
-exit: 8
-cwd: .

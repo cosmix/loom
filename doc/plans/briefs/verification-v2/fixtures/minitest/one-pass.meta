@@ -1,3 +1,0 @@
-command: ruby fixture_test.rb -n '/^test_alpha_passes$/'
-exit: 0
-cwd: .

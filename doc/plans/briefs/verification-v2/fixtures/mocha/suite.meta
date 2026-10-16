@@ -1,3 +1,0 @@
-command: bunx mocha fixture.test.js
-exit: 1
-cwd: .

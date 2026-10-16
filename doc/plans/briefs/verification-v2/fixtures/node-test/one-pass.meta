@@ -1,3 +1,0 @@
-command: node --test --test-name-pattern='^alpha_passes$' fixture.test.js
-exit: 0
-cwd: .

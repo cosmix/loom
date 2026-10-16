@@ -1,3 +1,0 @@
-command: bun test fixture.test.js -t 'alpha_passes'
-exit: 0
-cwd: .

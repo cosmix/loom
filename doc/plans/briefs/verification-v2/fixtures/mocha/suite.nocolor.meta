@@ -1,3 +1,0 @@
-command: bunx mocha fixture.test.js --no-color
-exit: 1
-cwd: .

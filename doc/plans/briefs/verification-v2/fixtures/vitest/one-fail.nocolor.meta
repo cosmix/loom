@@ -1,3 +1,0 @@
-command: CI=1 NO_COLOR=1 bunx vitest run fixture.test.js -t 'beta_fails'
-exit: 1
-cwd: .

@@ -1,3 +1,0 @@
-command: cargo test tests::alpha_passes --color=never -- --exact --color=never
-exit: 0
-cwd: .

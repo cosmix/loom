@@ -1,3 +1,0 @@
-command: python3 -m unittest test_fixture.FixtureTests.test_alpha_passes -v
-exit: 0
-cwd: .
