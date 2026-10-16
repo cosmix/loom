@@ -17,20 +17,27 @@ env:
   MINISIGN_VERSION: "0.11"
 
 jobs:
+  release-contract:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.contract.outputs.matrix }}
+    steps:
+      - uses: actions/checkout@v7
+      - name: Read supported release targets
+        id: contract
+        shell: bash
+        run: |
+          LOOM_INSTALL_LIB_ONLY=1 source ./install.sh
+          export RELEASE_ASSETS
+          matrix=$(python3 -c 'import json, os; runners = {"Linux": "ubuntu-latest", "Darwin": "macos-latest"}; print(json.dumps({"include": [{"name": asset, "target": target, "os": runners[platform], "binary_name": asset} for target, platform, arch, asset in (row.split(",") for row in os.environ["RELEASE_ASSETS"].splitlines())]}))')
+          echo "matrix=$matrix" >> "$GITHUB_OUTPUT"
+
   build:
+    needs: release-contract
     name: Build ${{ matrix.name }}
     strategy:
       fail-fast: false
-      matrix:
-        include:
-          - name: linux-x86_64
-            target: x86_64-unknown-linux-gnu
-            os: ubuntu-latest
-            binary_name: loom-linux-x86_64
-          - name: darwin-arm64
-            target: aarch64-apple-darwin
-            os: macos-latest
-            binary_name: loom-darwin-arm64
+      matrix: ${{ fromJSON(needs.release-contract.outputs.matrix) }}
 
     runs-on: ${{ matrix.os }}
 
@@ -39,6 +46,13 @@ jobs:
         uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Check release asset contract
+        shell: bash
+        run: |
+          LOOM_INSTALL_LIB_ONLY=1 source ./install.sh
+          expected=$(printf '%s\n' "$RELEASE_ASSETS" | awk -F, -v target='${{ matrix.target }}' '$1 == target {print $4}')
+          test "$expected" = '${{ matrix.binary_name }}'
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -149,6 +163,7 @@ jobs:
           MINISIGN_PRIVATE_KEY: ${{ secrets.MINISIGN_PRIVATE_KEY }}
         run: |
           set -e
+          LOOM_INSTALL_LIB_ONLY=1 source ./install.sh
 
           KEYFILE=$(mktemp)
           trap 'rm -f "$KEYFILE"' EXIT
@@ -159,7 +174,7 @@ jobs:
           for binary in loom-*; do
             if [ -f "$binary" ] && [ ! "${binary##*.}" = "minisig" ]; then
               echo "Signing $binary..."
-              minisign -Sm "$binary" -s "$KEYFILE" -t "loom release binary"
+              minisign -Sm "$binary" -x "$binary$SIGNATURE_SUFFIX" -s "$KEYFILE" -t "loom release binary"
             fi
           done
 
@@ -167,27 +182,21 @@ jobs:
 
           ls -la
 
-      # The public key is read out of the source that `loom update` trusts, so a
-      # signing secret from a different keypair fails the release here instead of
-      # after publishing - and the release notes below quote the same value rather
-      # than a copy that can drift. `grep` rather than `rg`: the runner image
-      # guarantees only POSIX tools.
+      # Bootstrap, updater and CI all read the installer's pinned contract.
       - name: Verify signatures against the embedded public key
         id: pubkey
         run: |
           set -euo pipefail
 
-          PUBKEY=$(grep -oE -m1 'RW[A-Za-z0-9+/=]{40,}' loom/src/commands/self_update/signature.rs) || {
-            echo "Could not read MINISIGN_PUBLIC_KEY from loom/src/commands/self_update/signature.rs"
-            exit 1
-          }
+          LOOM_INSTALL_LIB_ONLY=1 source ./install.sh
+          PUBKEY="$MINISIGN_PUBLIC_KEY"
           echo "public_key=${PUBKEY}" >> "$GITHUB_OUTPUT"
 
           cd release
           for binary in loom-*; do
             if [ -f "$binary" ] && [ ! "${binary##*.}" = "minisig" ]; then
               echo "Verifying $binary..."
-              minisign -Vm "$binary" -P "$PUBKEY"
+              minisign -Vm "$binary" -x "$binary$SIGNATURE_SUFFIX" -P "$PUBKEY"
             fi
           done
 
@@ -246,7 +255,7 @@ jobs:
           curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/install.sh | bash
           ```
 
-          Installs the signed binary for your platform to `~/.local/bin/loom` and runs `loom install-assets`, which writes loom's agents, skills, commands and hooks into `~/.claude/` and `~/.codex/` — the binary alone is not a working install. Requires `jq`.
+          Installs the signed binary for your platform to `~/.local/bin/loom` and runs `loom install-assets`, which writes loom's agents, skills, commands and hooks into `~/.claude/` and `~/.codex/` — the binary alone is not a working install. Requires `jq` and `minisign`.
 
           Pinned downloads, WSL2 notes, signature verification with minisign and `SHA256SUMS.txt` checksums: [Installation](https://github.com/${{ github.repository }}/blob/${{ steps.version.outputs.tag }}/README.md#1-install-loom). Signed binaries and `.minisig` files are attached below.
           RELEASE_NOTES_EOF
@@ -261,10 +270,7 @@ jobs:
           generate_release_notes: true
           body_path: release_notes.md
           files: |
-            release/loom-linux-x86_64
-            release/loom-linux-x86_64.minisig
-            release/loom-darwin-arm64
-            release/loom-darwin-arm64.minisig
+            release/loom-*
             release/SHA256SUMS.txt
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -10,7 +10,7 @@ use tempfile::TempDir;
 
 use crate::commands::self_update::client::create_http_client;
 use crate::commands::self_update::signature::{
-    compute_sha256_checksum, verify_binary_signature, MINISIGN_PUBLIC_KEY,
+    compute_sha256_checksum, minisign_public_key, verify_binary_signature,
 };
 use crate::commands::self_update::{
     asset_download_url, latest_release_url, release_asset_for_target, run_asset_install,
@@ -45,12 +45,12 @@ fn test_rejects_malformed_public_key() {
     assert!(result.is_err());
 }
 
-/// A corrupted `MINISIGN_PUBLIC_KEY` would otherwise pass the whole suite:
+/// A corrupted `minisign_public_key` would otherwise pass the whole suite:
 /// every other signature test only asserts rejection, so a broken key still
 /// fails those "correctly". This is the one positive case.
 #[test]
 fn embedded_public_key_parses() {
-    assert!(minisign_verify::PublicKey::from_base64(MINISIGN_PUBLIC_KEY).is_ok());
+    assert!(minisign_verify::PublicKey::from_base64(minisign_public_key()).is_ok());
 }
 
 #[test]

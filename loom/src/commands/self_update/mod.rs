@@ -6,6 +6,7 @@
 pub(crate) mod client;
 mod daemon_notice;
 pub(crate) mod install;
+mod release_contract;
 pub(crate) mod signature;
 
 #[cfg(test)]
@@ -26,42 +27,34 @@ use install::install_binary;
 use signature::{compute_sha256_checksum, verify_binary_signature};
 
 // Repository and version constants
-const GITHUB_REPO: &str = "cosmix/loom";
 const CURRENT_VERSION: &str = env!("LOOM_VERSION");
 
-/// Single source of truth for which platforms self-update supports and what
-/// the release workflow (`.github/workflows/release.yml`) names their
-/// binaries: (target triple, published binary asset base name).
-const RELEASE_ASSETS: &[(&str, &str)] = &[
-    ("x86_64-unknown-linux-gnu", "loom-linux-x86_64"),
-    ("aarch64-apple-darwin", "loom-darwin-arm64"),
-];
-
-/// Resolve a target triple to its published release binary asset name.
+/// Resolve the target using the same contract as bootstrap and release CI.
 fn release_asset_for_target(target: &str) -> Result<&'static str> {
-    RELEASE_ASSETS
-        .iter()
-        .find(|(triple, _)| *triple == target)
-        .map(|(_, name)| *name)
-        .ok_or_else(|| anyhow::anyhow!("No release asset for this platform ({target})"))
+    release_contract::asset_for_target(target)
 }
 
 /// Signature asset name for a given published binary asset name.
 fn signature_asset_name(binary_name: &str) -> String {
-    format!("{binary_name}.minisig")
+    format!(
+        "{binary_name}{}",
+        release_contract::value("SIGNATURE_SUFFIX")
+    )
 }
 
 /// GitHub web URL that redirects to this repository's latest release tag.
 /// Unlike GitHub's JSON API endpoint, this URL is not subject to
 /// GitHub's anonymous per-IP rate limit.
 fn latest_release_url() -> String {
-    format!("https://github.com/{GITHUB_REPO}/releases/latest")
+    let github_repo = release_contract::value("GITHUB_REPO");
+    format!("https://github.com/{github_repo}/releases/latest")
 }
 
 /// GitHub web URL for a release asset download, which redirects to the CDN
 /// serving the file.
 fn asset_download_url(tag: &str, asset: &str) -> String {
-    format!("https://github.com/{GITHUB_REPO}/releases/download/{tag}/{asset}")
+    let github_repo = release_contract::value("GITHUB_REPO");
+    format!("https://github.com/{github_repo}/releases/download/{tag}/{asset}")
 }
 
 // Download size limits (exported for tests)

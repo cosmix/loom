@@ -42,7 +42,7 @@ Loom is for engineers who would rather spend their own judgment than someone els
 curl -fsSL https://raw.githubusercontent.com/cosmix/loom/main/install.sh | bash
 ```
 
-You need `git`, the `claude` CLI, and `jq`. Signed binaries cover Linux x86_64 and macOS Apple Silicon; every other platform builds from source — see [Installation](#installation).
+You need `git`, the `claude` CLI, and `jq`, plus `minisign` for release downloads. Signed binaries cover Linux x86_64 and macOS Apple Silicon; every other platform builds from source — see [Installation](#installation).
 
 ### 2. Write a plan
 
@@ -357,6 +357,7 @@ Loom is under active development. Signed binaries are published for Linux x86_64
 | `git`                      | worktrees, merges, crash reports                                  | yes, 2.40 or newer; `loom run` refuses older versions                                   |
 | `claude` (Claude Code CLI) | every orchestrated session                                        | yes                                                                                     |
 | `jq`                       | every loom hook parses the Claude Code hook payload with it       | yes; `install.sh` and `loom run` refuse to proceed without it, `loom repair` reports it |
+| `minisign`                 | verifies downloaded release binaries before execution             | required for release downloads; install with `brew install minisign` or `sudo apt install minisign` |
 | `rg` (ripgrep) and `fd`    | the installed CLAUDE.md steers agents to these over `grep`/`find` | recommended; `install.sh` and `loom run` warn when missing                              |
 | `tmux`                     | the tmux terminal backend                                         | optional                                                                                |
 | `sccache`                  | shared dependency compiles across stage worktrees                 | optional                                                                                |
@@ -369,6 +370,8 @@ curl -fsSL https://raw.githubusercontent.com/cosmix/loom/main/install.sh | bash
 ```
 
 This downloads the signed release binary for your platform to `~/.local/bin/loom`, then installs Loom's agents, skills, commands, hooks, and orchestration rules into the default asset roots, `~/.claude/` and `~/.codex/`, from the assets embedded in that binary. Codex asks you to review new or changed non-managed hooks with `/hooks` before they run.
+
+The installer requires an independently installed `minisign` and verifies the release against its pinned public key before executing it. It validates the staged executable before atomically replacing `loom`, retaining the previous executable at `~/.local/bin/loom.previous` for recovery.
 
 ### Custom asset roots
 

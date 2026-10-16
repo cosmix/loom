@@ -18,7 +18,12 @@ fi
 CLAUDE_DIR="${LOOM_CLAUDECODE_INSTALL_DIR:-$HOME/.claude}"
 CODEX_DIR="${LOOM_CODEX_INSTALL_DIR:-$HOME/.codex}"
 
+# Release identity contract: the updater embeds this script and release CI reads it.
 GITHUB_REPO="cosmix/loom"
+MINISIGN_PUBLIC_KEY="RWTHfjV12CKdjuXF6DPYXsOoneV6zG4nt4Qd1DFe7JzSIXTXKfRJPHjJ"
+SIGNATURE_SUFFIX=".minisig"
+RELEASE_ASSETS="x86_64-unknown-linux-gnu,Linux,x86_64,loom-linux-x86_64
+aarch64-apple-darwin,Darwin,arm64,loom-darwin-arm64"
 GITHUB_RELEASES="https://github.com/${GITHUB_REPO}/releases/latest/download"
 
 SKILLS_MODE=""
@@ -216,97 +221,86 @@ confirm_overwrites() {
 	fi
 }
 
-install_loom_local() {
+# The private directory is on the destination filesystem. A failure before
+# rename leaves the existing executable untouched, including its inode/mode.
+install_candidate() (
+	local source="$1" signature="${2:-}"
 	local install_dir="$HOME/.local/bin"
-	local loom_bin="$install_dir/loom"
-	local local_loom="$SCRIPT_DIR/loom/target/release/loom"
-
-	# Check for local binary first
-	if [[ -x "$local_loom" ]]; then
-		mkdir -p "$install_dir"
-		# Remove old binary first to avoid "Text file busy" when loom is running
-		rm -f "$loom_bin"
-		cp "$local_loom" "$loom_bin"
-		chmod 0755 "$loom_bin"
-		ok "loom"
-
-		if [[ ":$PATH:" != *":$install_dir:"* ]]; then
-			info "add ~/.local/bin to PATH"
-		fi
-		return 0
+	mkdir -p "$install_dir" || exit 1
+	# EXIT can run after Bash unwinds function locals on failure. This variable
+	# belongs to the subshell so cleanup retains its path on every exit.
+	staging="$(mktemp -d "$install_dir/.loom-install.XXXXXX")" || exit 1
+	trap 'rm -rf "$staging"' EXIT
+	cp "$source" "$staging/loom" || exit 1
+	if [[ -n "$signature" ]]; then
+		minisign -Vm "$staging/loom" -x "$signature" -P "$MINISIGN_PUBLIC_KEY" || exit 1
 	fi
+	chmod 0755 "$staging/loom" || exit 1
+	"$staging/loom" install-assets --help >/dev/null 2>&1 || {
+		err "candidate does not support install-assets"
+		exit 1
+	}
+	# Keep the last working executable available for manual recovery. Copy it
+	# before either rename so a failed backup cannot remove the active binary.
+	if [[ -e "$install_dir/loom" ]]; then
+		cp -p "$install_dir/loom" "$staging/previous" || exit 1
+		mv -f "$staging/previous" "$install_dir/loom.previous" || exit 1
+	fi
+	# rename replaces the directory entry without unlinking a running binary.
+	mv -f "$staging/loom" "$install_dir/loom" || exit 1
+	ok "loom"
+)
 
-	# No local binary, fall back to the released binary and its embedded assets.
-	info "no local build; downloading the release binary and using its embedded assets"
-	install_loom_remote
+install_loom_local() {
+	local local_loom="$SCRIPT_DIR/loom/target/release/loom"
+	if [[ -x "$local_loom" ]]; then
+		install_candidate "$local_loom"
+	else
+		info "no local build; downloading the release binary and using its embedded assets"
+		install_loom_remote
+	fi
 }
 
-install_loom_remote() {
-	local install_dir="$HOME/.local/bin"
-	local loom_bin="$install_dir/loom"
+release_asset() {
+	local os="$1" arch="$2" triple platform machine asset
+	[[ "$arch" != aarch64 || "$os" != Darwin ]] || arch=arm64
+	while IFS=, read -r triple platform machine asset; do
+		if [[ "$os" == "$platform" && "$arch" == "$machine" ]]; then
+			printf '%s\n' "$asset"
+			return 0
+		fi
+	done <<< "$RELEASE_ASSETS"
+	err "no published loom binary for $os/$arch" >&2
+	return 1
+}
 
-	mkdir -p "$install_dir"
-
-	# Detect platform and architecture. The release workflow
-	# (.github/workflows/release.yml) publishes exactly two binaries; the
-	# updater's RELEASE_ASSETS (loom/src/commands/self_update/mod.rs)
-	# is the other place naming them. Change all three together.
-	local os arch target
-	os="$(uname -s)"
-	arch="$(uname -m)"
-
-	case "$os" in
-	Linux)
-		case "$arch" in
-		x86_64) target="loom-linux-x86_64" ;;
-		esac
-		;;
-	Darwin)
-		case "$arch" in
-		arm64 | aarch64) target="loom-darwin-arm64" ;;
-		esac
-		;;
-	esac
-
-	if [[ -z "${target:-}" ]]; then
-		err "no published loom binary for $os/$arch"
-		info "build from source: git clone https://github.com/${GITHUB_REPO} && cd loom/loom && cargo build --release && cd .., then rerun install.sh"
-		exit 1
-	fi
-
-	local download_url="${GITHUB_RELEASES}/$target"
-	local temp_bin="${loom_bin}.tmp.$$"
-
+download_release_file() {
 	if command -v curl &>/dev/null; then
-		if ! curl -fsSL "$download_url" -o "$temp_bin"; then
-			rm -f "$temp_bin"
-			err "download failed"
-			info "manual install: $download_url"
-			exit 1
-		fi
+		curl -fsSL "$1" -o "$2"
 	elif command -v wget &>/dev/null; then
-		if ! wget -q "$download_url" -O "$temp_bin"; then
-			rm -f "$temp_bin"
-			err "download failed"
-			info "manual install: $download_url"
-			exit 1
-		fi
+		wget -q "$1" -O "$2"
 	else
 		err "curl or wget required"
-		exit 1
-	fi
-
-	# Remove old binary first to avoid "Text file busy" when loom is running
-	rm -f "$loom_bin"
-	mv "$temp_bin" "$loom_bin"
-
-	chmod 0755 "$loom_bin"
-	ok "loom"
-
-	if [[ ":$PATH:" != *":$install_dir:"* ]]; then
-		info "add ~/.local/bin to PATH"
+		return 1
 	fi
 }
+
+install_loom_remote() (
+	# A downloaded binary cannot establish its own authenticity. Use an
+	# independently installed verifier and the key pinned in this installer.
+	command -v minisign &>/dev/null || {
+		err "minisign is required to verify releases (brew install minisign / apt install minisign)"
+		exit 1
+	}
+	local target
+	target="$(release_asset "$(uname -s)" "$(uname -m)")" || exit 1
+	mkdir -p "$HOME/.local/bin" || exit 1
+	staging="$(mktemp -d "$HOME/.local/bin/.loom-download.XXXXXX")" || exit 1
+	trap 'rm -rf "$staging"' EXIT
+	download_release_file "$GITHUB_RELEASES/$target" "$staging/binary" || exit 1
+	download_release_file "$GITHUB_RELEASES/$target$SIGNATURE_SUFFIX" "$staging/signature" || exit 1
+	install_candidate "$staging/binary" "$staging/signature"
+)
 
 print_summary() {
 	echo ""
@@ -353,11 +347,6 @@ main() {
 	local loom_bin="$HOME/.local/bin/loom"
 	[[ -x "$loom_bin" ]] || {
 		err "loom binary was not installed at $loom_bin"
-		exit 1
-	}
-
-	"$loom_bin" install-assets --help >/dev/null 2>&1 || {
-		err "installed loom binary does not support install-assets (version skew; update the binary and rerun install.sh)"
 		exit 1
 	}
 

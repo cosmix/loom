@@ -6,11 +6,10 @@ use anyhow::Result;
 use minisign_verify::{PublicKey, Signature};
 use sha2::{Digest, Sha256};
 
-/// Minisign public key for verifying release signatures.
-/// Key ID: 8E9D22D875357EC7
-/// Generated: 2026-01-06
-pub(crate) const MINISIGN_PUBLIC_KEY: &str =
-    "RWTHfjV12CKdjuXF6DPYXsOoneV6zG4nt4Qd1DFe7JzSIXTXKfRJPHjJ";
+/// Trust anchor shared with the standalone bootstrap installer.
+pub(crate) fn minisign_public_key() -> &'static str {
+    super::release_contract::value("MINISIGN_PUBLIC_KEY")
+}
 
 /// Verify the cryptographic signature of downloaded binary content.
 /// Uses minisign signature format for verification.
@@ -19,7 +18,7 @@ pub(crate) fn verify_binary_signature(
     binary_content: &[u8],
     signature_content: &str,
 ) -> Result<()> {
-    let public_key = PublicKey::from_base64(MINISIGN_PUBLIC_KEY)
+    let public_key = PublicKey::from_base64(minisign_public_key())
         .map_err(|e| anyhow::anyhow!("Invalid embedded public key: {e}"))?;
 
     let signature = Signature::decode(signature_content)
