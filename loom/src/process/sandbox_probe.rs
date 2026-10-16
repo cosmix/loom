@@ -171,8 +171,20 @@ mod tests {
     }
 
     #[test]
-    fn skip_unless_skips_when_the_probe_failed() {
-        assert!(skip_unless(false, "probe_test", "should skip"));
+    fn skip_unless_obeys_policy_when_the_probe_failed() {
+        let strict = std::env::var("LOOM_TEST_REQUIRE_SANDBOX_FREE").as_deref() == Ok("1");
+        let result = std::panic::catch_unwind(|| skip_unless(false, "probe_test", "unavailable"));
+        if strict {
+            let panic = result.expect_err("strict mode must refuse a failed probe");
+            assert_eq!(
+                panic.downcast_ref::<String>().map(String::as_str),
+                Some(
+                    "probe_test: unavailable (LOOM_TEST_REQUIRE_SANDBOX_FREE=1 demands a real run)"
+                )
+            );
+        } else {
+            assert!(result.expect("default mode must return the skip decision"));
+        }
     }
 
     #[test]
