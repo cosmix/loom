@@ -208,3 +208,24 @@ paths for a contract freeze or a review fingerprint, and to the daemon's special
 **Why:** Diagnosis required a separate branch; its final verification also completed the original five Rust gates.
 **Prevention:** Check ancestry and retained evidence, preserve unrelated working-tree files, and require fresh verification if integration changes implementation sources.
 **Fix:** Choose an ancestry-checked fast-forward of the reviewed commits, retain their normal-hook history, and compare the landed source tree with the verified branch before declaring completion.
+
+## Full-suite evidence must follow the last runner edit
+
+**What happened:** The completed Rust run preceded a final optional-environment-flag change in its Python launcher; an unchanged Rust tree alone did not satisfy the requested final-source verification.
+**Why:** The evidence comparison covered Rust implementation identity but did not account for the executable verification harness timeline.
+**Prevention:** Include runners and environment setup in the final-source boundary. A focused wrapper check supplements, rather than replaces, a requested fresh complete suite after implementation changes.
+**Fix:** Run the bounded full Rust gates on main after all testing fixes are committed, retain fresh logs and exits, and preserve the earlier successful run as historical evidence.
+
+## Strict verification controls need compatible helper tests
+
+**What happened:** Enabling LOOM_TEST_REQUIRE_SANDBOX_FREE on macOS failed the helper unit fixture and six pre-existing Linux-only confinement guards across library and integration targets.
+**Why:** The helper fixture assumed the default skip policy; the global strict flag also treats an unsupported operating system as a failure, so it cannot certify Linux cases on macOS.
+**Prevention:** Check the strict flag scope before enabling it. Preserve unsupported-platform outcomes explicitly and retain real native confinement controls.
+**Fix:** Preserve the failed strict invocation, correct the helper fixture to assert its selected policy without changing production behavior, and run the requested native gates without the optional global flag. Report the six Linux-only cases separately from executed macOS confinement tests.
+
+## Format a fixture repair before the complete gate
+
+**What happened:** The fresh suite passed after the strict-helper fixture repair, but cargo fmt --check then rejected the layout of its long expected panic string.
+**Why:** The small test edit went straight to execution before its required formatting check.
+**Prevention:** Format repairs before the complete gate so later checks do not invalidate source fingerprints or cause avoidable host load.
+**Fix:** Apply only the formatter-required line wrapping, retain the failed formatting log, and verify formatting plus the remaining gates against the corrected source.

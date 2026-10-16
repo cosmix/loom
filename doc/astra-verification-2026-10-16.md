@@ -1,13 +1,15 @@
 # Loom verification continuation — 2026-10-16
 
-**The five required Rust gates pass on the repaired final sources.** All 47 test targets completed: 8,509 passed, zero failed, seven ignored. Doctests separately passed three executed and three compile-only examples, with seven existing ignores. Formatting, Clippy and warnings-denied rustdoc passed. The earlier native-startup stalls below remain historical evidence; the later host audit and bounded runs are recorded in [the macOS test-host report](macos-test-host-2026-10-16.md).
+**The five required native macOS Rust gates pass after the fixture repairs.** All 47 test targets completed: libtest reported 8,509 passed, zero failed, seven explicit ignores. Six Linux-only tests returned at runtime platform guards and are included in those passes; their Linux bodies did not execute. Doctests separately passed three executed and three compile-only examples, with seven existing ignores. Formatting, Clippy and warnings-denied rustdoc passed. The source boundary and failed strict attempt are recorded below; the [macOS test-host report](macos-test-host-2026-10-16.md) covers diagnosis and metrics.
 
-This developer verification record continues the [bug sweep and repair handoff](astra-bug-sweep-2026-10-15.md). That report preserves the original 35 findings, repair inventory, historical check scope, and execution chronology. This continuation does not replace those historical results with the latest partial counts.
+This developer verification record continues the [bug sweep and repair handoff](astra-bug-sweep-2026-10-15.md). That report preserves the original 35 findings, repair inventory, historical check scope, and execution chronology. This continuation records complete native results separately from the earlier partial attempts.
 
 ## Source and execution scope
 
 - Initial source: `079ce9b5`, including repair commits `f94aa14a`, `483c2e93`, and `bc5adc8b`. The initial attempts made no source changes. The later host-diagnosis work on `fix/macos-test-host-load` isolated fixtures, reduced load, and corrected a stale-socket fixture before fresh final-source verification.
-- Final source commits: `19441ba4`, `bff898bd`, `9c6067b5`, and `0b635718`; all used normal hooks. The host report describes their scope.
+- Host-repair commits: `19441ba4`, `bff898bd`, `9c6067b5`, and `0b635718`; all used normal hooks. Local `main` includes these and the prior documentation through `cdf26982`, with no push. The host report describes their scope.
+- The strict-helper fixture repair is committed on `main` as `9fba8088`, with normal hooks.
+- The latest full invocation records `cdf26982` plus the reviewed `process/sandbox_probe.rs` test repair in `invocation.json` and `source.diff`. Its production helper is unchanged. A later rustfmt-only wrap of the expected panic string precedes the passing static gates; the full-run source snapshot preserves the exact pre-wrap bytes. Independent review confirmed unchanged implementation by reconstructing the tested helper hash; `main-final-checks-20261016/format-equivalence.json` preserves the proof.
 - Required Cargo commands run from `/Users/dkaponis/src/loom/loom`.
 - Host: Apple Silicon, `aarch64-apple-darwin`; Homebrew Rust `1.99.0 (b940084d7 2026-09-28)` and Cargo `1.99.0 (5f94df478 2026-08-27)`.
 - `tmux`, Bun, and `cargo-audit` were present in the recorded environment; `cargo-deny` was absent. No Loom stage environment variables were present.
@@ -18,18 +20,81 @@ This developer verification record continues the [bug sweep and repair handoff](
 
 | Required command from `loom/` | Final evidence | Status |
 | --- | --- | --- |
-| `cargo test --all-targets --no-fail-fast -- --test-threads=4` | Isolated invocation with `LOOM_E2E_REQUIRE_TMUX=1`, Cargo runner override and `--color never`: 47 targets, 8,509 passed, 0 failed, 7 ignored; exit 0; `/usr/bin/time -l` 252.62 s. | Passed |
-| `cargo test --doc --workspace --all-features -- --test-threads=1` | Isolated rustdoc invocation, also `--no-fail-fast --color never`: 13 registered, 3 executed + 3 compile-only passed, 7 ignored; exit 0; 3.96 s. | Passed |
-| `cargo fmt --all -- --check` | Exit 0, 1.78 s. | Passed |
-| `cargo clippy --all-targets -- -D warnings` | Exit 0, 11.71 s. | Passed |
-| `RUSTDOCFLAGS='-D warnings' cargo doc --workspace --all-features --no-deps` | Exit 0, 4.84 s; environment override recorded in result JSON. | Passed |
+| `cargo test --all-targets --no-fail-fast -- --test-threads=4` | Isolated invocation with `LOOM_E2E_REQUIRE_TMUX=1`, strict sandbox flag absent, runner override and `--color never`: 47 targets, 8,509 reported passes, 0 failed, 7 ignored; exit 0; `/usr/bin/time -l` 220.07 s. | Passed within native scope |
+| `cargo test --doc --workspace --all-features -- --test-threads=1` | Isolated rustdoc invocation, also `--no-fail-fast --color never`: 13 registered, 3 executed + 3 compile-only passed, 7 ignored; exit 0; `/usr/bin/time -l` 3.28 s. | Passed |
+| `cargo fmt --all -- --check` | Exit 0, supervisor 1.82 s, after the whitespace-only wrap. | Passed |
+| `cargo clippy --all-targets -- -D warnings` | Exit 0, supervisor 9.38 s. | Passed |
+| `RUSTDOCFLAGS='-D warnings' cargo doc --workspace --all-features --no-deps` | Exit 0, supervisor 4.43 s; environment override recorded in result JSON. | Passed |
 
-The bounded launcher provides these Cargo scopes from the crate directory;
-its exact argv, `/usr/bin/time -l` output and exits are retained. Both test runs
-had no cleanup signals, sampling errors, or survivors, and removed their roots.
-The first host-diagnosis run completed all targets but failed the stale-socket
-fixture and obsolete maintainability ledger entry (8,507 passed, 2 failed,
-7 ignored). Those failures prompted corrections and the fresh passing run above.
+Exact latest launcher commands from the repository root:
+
+```bash
+env -u LOOM_TEST_REQUIRE_SANDBOX_FREE LOOM_E2E_REQUIRE_TMUX=1 /usr/bin/python3 scripts/run-rust-tests.py --test-threads 4 --wall-seconds 1200 --idle-seconds 120
+env -u LOOM_TEST_REQUIRE_SANDBOX_FREE /usr/bin/python3 scripts/run-rust-tests.py --doc --test-threads 1 --wall-seconds 300 --idle-seconds 120
+```
+
+The launcher provides the required Cargo scopes from the crate directory. Latest
+evidence under `loom/target/test-runs/` is `20261016-185107-1i2x6xjr` (all targets),
+`20261016-185513-3lguk83x` (doctests), and `main-final-checks-20261016` (static gates
+and strict-helper regression). Exact argv, time output, exits, and cleanup remain
+in those artifacts. Both test runs had no cleanup signals, sampling errors, or
+survivors and removed their roots. The all-target invocation also records the
+actual wrapper environment; it required tmux and had the optional strict sandbox
+flag absent. No test filter was used in either required test gate.
+
+The first host-diagnosis run completed 47 targets but failed the stale-socket
+fixture and obsolete maintainability entry (8,507 passed, 2 failed, 7 ignored).
+The subsequent 252.62 s run passed 8,509 with seven ignores; its 3.96 s doctest
+run and static gates also passed. Those remain valid for their recorded sources,
+but preceded the final optional-flag handling edit in the Python launcher.
+Fresh whole-suite execution was therefore required. The final static check first
+failed only the helper's expected-string wrapping; `fmt-before-wrap.*` preserves
+that exit 1, followed by the whitespace correction and the passing gates above.
+
+## Strict attempt and runtime exclusions
+
+With `LOOM_TEST_REQUIRE_SANDBOX_FREE=1`, the fresh attempt
+`20261016-184548-kojx3fvc` completed all 47 targets: **8,502 passed, 7 failed,
+7 ignored**, exit 101. It took 223.35 s by `/usr/bin/time -l` and 223.586008042 s
+under supervision, with 77 sampled peak threads and 2,205,704,192 sampled written
+bytes. No owned process survived and its root was removed.
+
+Its exact launcher command from the repository root was:
+
+```bash
+LOOM_E2E_REQUIRE_TMUX=1 LOOM_TEST_REQUIRE_SANDBOX_FREE=1 /usr/bin/python3 scripts/run-rust-tests.py --test-threads 4 --wall-seconds 1200 --idle-seconds 120
+```
+
+Six failures are existing Linux-only guards that strict mode intentionally
+refuses on macOS. These same guards return early under ordinary native policy,
+so libtest includes them in its passing count, separately from explicit ignores:
+
+| Target | Linux-only test |
+| --- | --- |
+| library, `orchestrator::terminal::native::launch::tests_confinement_e2e` | `a_codex_lane_capsule_refuses_the_codex_hook_config_present_or_missing` |
+| same module | `a_knowledge_capsule_refuses_every_control_surface_and_writes_the_checkout` |
+| same module | `a_stage_capsule_refuses_every_control_surface_and_writes_its_worktree` |
+| same module | `a_spawn_under_a_stage_capsule_stays_within_twice_the_unsandboxed_latency` |
+| library, `orchestrator::terminal::native::launch::tests_confinement_target` | `a_sandboxed_target_move_is_refused_or_left_unattested_and_held` |
+| integration, `confinement_status` | `loom_status_runs_with_the_state_dir_write_denied_and_changes_nothing` |
+
+The seventh failure, `skip_unless_skips_when_the_probe_failed`, exposed a helper
+unit fixture that always expected a skip.
+`skip_unless_obeys_policy_when_the_probe_failed` now asserts either the actual
+default `true` result or the exact strict-mode panic, without mutating the
+environment or changing production policy. The supplementary bounded command
+from `loom/` passed **1 test, 0 failed**, exit 0, with strict mode enabled:
+
+```bash
+LOOM_TEST_REQUIRE_SANDBOX_FREE=1 cargo test --lib process::sandbox_probe::tests::skip_unless_obeys_policy_when_the_probe_failed -- --exact --test-threads=1
+```
+
+The subsequent unfiltered native run exercised the default branch. Real macOS
+confinement tests `actual_host_launcher_denies_sibling_read_write_and_network`
+and `actual_host_launcher_builds_cargo_offline_with_private_cache_state` passed
+in both strict and ordinary runs. Their positive controls, denials, and private
+cache assertions executed; they were not platform skips. Linux body execution
+remains outside this Mac's coverage.
 
 ## Initial static checks and startup recovery
 
@@ -84,7 +149,7 @@ The 120-second idle watchdog terminated the attempt after **131.01 seconds**: su
 
 The captured Cargo metadata lists 48 target entries. `build-script-build` is a `custom-build` entry, leaving **47 test targets: one library, one binary, and 45 integration targets**. It is not a 48-test-target suite. Doctests are a separate required command.
 
-The recovered pre-diagnosis attempt completed only the library; main and all 45 integrations remained unverified at that point. The final bounded invocation completed every target below, including all eight maintainability checks. Cargo metadata and raw harness summaries were matched by source path with no missing or duplicate target.
+The recovered pre-diagnosis attempt completed only the library; main and all 45 integrations remained unverified at that point. The latest bounded invocation completed every target below, including all eight maintainability checks. Cargo metadata and raw harness summaries were matched by source path with no missing or duplicate target. Counts below are libtest reports and include the six runtime exclusions listed above. The library completed in 122.97 s.
 
 | Kind | Target | Passed | Failed | Ignored |
 | --- | --- | ---: | ---: | ---: |
@@ -181,13 +246,18 @@ Historical results remain: dashboard checks **646 tests across 59 files**, produ
 
 ## Evidence boundaries
 
-All five requested native macOS Rust gates are complete. Seven all-target and
-seven doctest ignores are explicitly accounted for; they are not passes. The
-original failure repairs, resolver Completed assertion, successful Go execution
+All five requested native macOS Rust gates are complete within the recorded
+source boundary. Seven all-target and seven doctest ignores are explicitly
+accounted for; the six Linux-only runtime exclusions are within reported passes.
+The original failure repairs, resolver Completed assertion, successful Go execution
 and intended semantic rejection, real descendant retirement, confinement
 controls, executable-byte mutation, and zero-test semantics passed independent
 source/evidence review. No repeated flake stress run was performed during host
 recovery. Additional platform/component checks retain the scope above.
+
+The fresh knowledge sync and check both exited 0. The check reported **0 issues,
+335 review notes**; `main-final-checks-20261016/knowledge-{sync,check}.{log,json}`
+retains the evidence. This does not establish corpus-wide semantic freshness.
 
 The host's WindowServer/TCC root cause remains unproven. The audit found no
 Input Monitoring API caller, removed incidental AppleScript calls from unit
