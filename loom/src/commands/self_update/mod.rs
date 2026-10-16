@@ -58,7 +58,7 @@ fn asset_download_url(tag: &str, asset: &str) -> String {
 }
 
 // Download size limits (exported for tests)
-pub(crate) const MAX_BINARY_SIZE: u64 = 50 * 1024 * 1024; // 50MB for binaries
+pub(crate) const MAX_BINARY_SIZE: u64 = 150 * 1024 * 1024; // 150MB for binaries
 pub(crate) const MAX_SIGNATURE_SIZE: u64 = 4 * 1024; // 4KB for signature files
 
 /// GitHub release information: just the tag, resolved from the

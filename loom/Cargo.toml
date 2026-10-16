@@ -99,3 +99,9 @@ source-graph-wave-c = [
     "dep:tree-sitter-c",
     "dep:tree-sitter-cpp",
 ]
+
+# Whole-program optimization keeps the stripped release binary under the
+# self-updater's download cap of older installs (50 MiB).
+[profile.release]
+lto = "fat"
+codegen-units = 1
