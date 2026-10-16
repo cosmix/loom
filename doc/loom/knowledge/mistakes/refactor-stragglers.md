@@ -282,3 +282,13 @@ before the parent's import can go.
 **Prevention:** Order hunks by source position, inspect partial application, and audit every copied entry point and its transitive shell/Python dependencies. Update fixture documentation and check file limits before the final run.
 
 **Fix:** Complete only unapplied hunks; install `_bounded.sh` at ten fixture sites and `_bounded_input.py` at both skill-trigger installers. Correct the comment and extract test groups without growing allowances. Audit every HOOK_SKILL_TRIGGER copy site and rerun static checks plus exhaustive tests after the finished source.
+
+## Multi-file prose patches need exact source anchors
+
+**What happened:** a guidance patch matched the worker file but failed on a senior-agent block whose source lines were copied inaccurately.
+
+**Why:** a large deletion used reconstructed context instead of exact boundaries.
+
+**Prevention:** anchor prose rewrites on verified headings and check which earlier files changed after a multi-file patch failure.
+
+**Fix:** inspect the diff, then replace only the remaining exact sections.

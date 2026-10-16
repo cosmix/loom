@@ -50,7 +50,7 @@
 | [quota-poller](architecture/quota-poller.md) | Usage-quota polling and rendering | 35 |
 | [remote-control](architecture/remote-control.md) | Capability detection, preflight, naming | 81 |
 | [security-and-isolation](architecture/security-and-isolation.md) | 4-layer worktree defense | 212 |
-| [signal-generation](architecture/signal-generation.md) | Signal assembly, cache, prefixes | 236 |
+| [signal-generation](architecture/signal-generation.md) | Signal assembly, cache, prefixes | 172 |
 | [skill-catalog](architecture/skill-catalog.md) | Two skill roots; 65 catalogued skills | 153 |
 | [source-graph](architecture/source-graph.md) | Source graph contract, limits | 368 |
 | [source-graph-build](architecture/source-graph-build.md) | Layer builder, freshness, lease | 128 |
@@ -101,7 +101,7 @@
 | [commits](conventions/commits.md) | Grouped Conventional Commits | 25 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute authority, budgets | 119 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, cargo, CI paths, size ledger | 227 |
-| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, plugin scope | 143 |
+| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, plugin scope | 153 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] precedence, value types | 103 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML, hook I/O, skills | 168 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard type and CSS gotchas | 23 |
@@ -136,9 +136,9 @@
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) | Resolver kept stage write denies | 15 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races | 231 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merge lessons: merged=true unverified | 287 |
-| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 303 |
+| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 313 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions, edges | 63 |
-| [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 284 |
+| [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 294 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync | 340 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | hooks/ dir is sandbox-protected | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers vs work state | 298 |
@@ -154,9 +154,9 @@
 | [store-without-consumer](mistakes/store-without-consumer.md) | Store written, never read | 94 |
 | [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, wave sizing, ownership | 358 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Subagent liveness; watch traps | 369 |
-| [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 228 |
+| [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 258 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY, stdin | 245 |
-| [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 381 |
+| [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass with the bug | 302 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn failures, cleanup | 146 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server gotchas | 53 |

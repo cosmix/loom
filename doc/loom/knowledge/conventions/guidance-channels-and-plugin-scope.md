@@ -141,3 +141,13 @@ The root CONTRIBUTING.md is the canonical contribution guide. The former nested 
 ## Cumulative series changelog coverage
 
 The user requested all substantial user-facing 0.8.x work in the cumulative series section, including post-tag changes. Keep post-tag changes explicitly marked unreleased and preserve the last release date rather than inventing a release. Verify release membership with tag ancestry before labeling an entry unreleased: the changelog command commit d4078f31 is already in v0.8.7. Verify claims against focused source ranges: initialization recovery removes specific stale Git lock files and backs up unreadable configuration; it does not delete arbitrary .git files or directories.
+
+## Small complete changes across executors
+
+The engineering sections in `CLAUDE.md.template` and `AGENTS.md.template` prioritize complete behavior and affected consumers, then reuse of project code, standard/platform facilities, installed dependencies and clear new code. Required validation, data-loss handling, security and accessibility remain constraints. Codex forwarding carries a compact implementation contract even without installed doctrine; Claude worker agents apply the same choices in their existing approach sections.
+
+`skills/loom-plan-writer/SKILL.md` grounds scope and reuse before decomposition, groups exploration, and defaults the canonical example to one implementation stage. The full example is in `references/plan-template.md`, read when authoring YAML; sandbox configuration/provisioning detail stays in `references/sandbox.md`. Pinned model-allocation text and stage verification/ownership boundaries remain intact.
+
+`skills/loom-code-review/SKILL.md`, `agents/loom-code-reviewer.md` and `signals/cache/blocks.rs` require evidence from affected flows and expected load. Review recommendations name a concrete defect or rule and the smallest adequate repair. Loom stage findings still block regardless of severity; suggestions do not. Known limitations carry a revisit condition in existing comments or memory, without a new debt subsystem.
+
+Design reference: [Ponytail core and review skills](https://github.com/DietrichGebert/ponytail/tree/6f1c2bfff0c837d268929a7c4e490918eb4fab29/skills), MIT, Copyright (c) 2026 DietrichGebert. Loom adapts the decision rules in its existing delivery channels; it does not install Ponytail hooks, modes or telemetry. Upstream benchmark percentages are not evidence of Loom or Codex savings. Compare prompt bytes separately from measured cost per accepted change.

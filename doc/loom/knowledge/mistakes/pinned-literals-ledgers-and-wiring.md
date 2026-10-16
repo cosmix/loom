@@ -301,3 +301,13 @@ The repo CLAUDE.md rule against backward-compatibility and migration work govern
 code is developed. Plan fields and verification layers are product surface for every project loom
 plans and maintains, and that rule never justifies removing one. A substantial plan-structure
 change bumps the plan `version` (conventions/plan-yaml-and-hooks).
+
+## Guidance rewrites must fit the emitted prompt budget
+
+**What happened:** the first Ponytail-inspired stage-review rewrite passed 246 signal tests but exceeded the existing stable-prefix and boilerplate size ceilings.
+
+**Why:** preserving every dimension while expanding its wording increased the always-loaded signal text.
+
+**Prevention:** measure rendered guidance against existing byte ceilings; replace redundant words instead of raising the budget.
+
+**Fix:** compress the review block while retaining its six dimensions, evidence requirement and verification contract, then rerun the failing signal tests.

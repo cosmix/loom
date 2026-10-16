@@ -12,94 +12,30 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 
 ## Signal Generation Pipeline (orchestrator/signals/) [DETAILED]
 
-The signal system assembles agent prompt files in a **4-section Manus KV-cache pattern** for token efficiency.
+Signals use four sections: stable prefix, semi-stable context, dynamic stage details and recitation. `format/mod.rs::format_signal_with_metrics` assembles them and computes `SignalMetrics`. `cache.rs::stable_prefix_for` selects the prefix for Standard, IntegrationVerify, KnowledgeDistill or Knowledge; `recovery_format.rs` uses the same selector.
 
-### Call Hierarchy
+The standard prefix contains worktree and path boundaries, the working-directory reminder, execution rules and knowledge navigation, the orchestration-skill pointer, the subagent verification and context-ceiling blocks, adversarial review, and verifier/completion rules. Its generator is `generate_stable_prefix`; there is no `generate_standard_stable_prefix`.
 
-```text
-generate_signal_with_skills() [generate.rs]
-  └─ build_signal_context()           # assembles EmbeddedContext
-       └─ build_embedded_context_with_stage_and_session()
-            ├─ reads handoff (V1 prose / V2 structured)
-            ├─ read_plan_overview()
-            ├─ KnowledgeDir::has_content()
-            └─ format_memory_for_signal(last 10 entries only)
-  └─ format_signal_content() [format/mod.rs]
-       └─ format_signal_with_metrics()
-            ├─ select stable prefix from cache.rs (by stage type)
-            ├─ format_semi_stable_section() [sections.rs:15]
-            ├─ format_dynamic_section() [sections.rs:382]
-            ├─ format_recitation_section() [sections.rs:665]
-            └─ SignalMetrics::from_sections() → SHA-256 hash first 16 hex chars
-```
+Integration verification adds its mission, review dimensions, and one canonical verifier for the complete gate. Knowledge distillation has a single curator and memory-ordering guidance. Knowledge/bootstrap has its own mission and completion workflow. Documentation prefixes omit the code-review block.
 
-Knowledge stages use a SEPARATE path: `generate_knowledge_signal()` [knowledge.rs:23].
+Delegation details live in `skills/loom-orchestration/SKILL.md`. The prefix uses `LOAD_ORCHESTRATION_SKILL`; it does not emit a separate delegation paragraph. The signal assemblers do not call `append_subagent_restrictions`, `append_anti_slop_guidance`, `append_git_staging_full`, `append_git_staging_rules` or `append_common_footer`. Source: `loom/src/orchestrator/signals/cache.rs`, `cache/blocks.rs`, `helpers.rs`.
 
-### Four Stable-Prefix Generators (cache.rs)
+## Shared signal helpers
 
-All generators are composed from shared `append_*` helpers and produce immutable KV-cached text.
+Shared signal blocks live in `cache/blocks.rs` and `signals/helpers.rs`.
 
-| Generator          | Function                                      | Line | Stage Type                     |
-| ------------------ | --------------------------------------------- | ---- | ------------------------------ |
-| Standard           | `generate_stable_prefix()`                    | 225  | `StageType::Standard`          |
-| Integration-Verify | `generate_integration_verify_stable_prefix()` | 360  | `StageType::IntegrationVerify` |
-| Knowledge-Distill  | `generate_knowledge_distill_stable_prefix()`  | 510  | `StageType::KnowledgeDistill`  |
-| Knowledge          | `generate_knowledge_stable_prefix()`          | 658  | `StageType::Knowledge`         |
+| Location | Helpers and responsibility |
+| --- | --- |
+| `cache/blocks.rs` | `append_path_boundaries`, `append_isolation_boundaries_simple`: confinement |
+| `cache/blocks.rs` | `append_execution_rules_header`: binding rules pointer and knowledge/source navigation |
+| `cache/blocks.rs` | `append_no_verify_block`, `append_subagent_ceiling_block`: pinned worker contracts |
+| `cache/blocks.rs` | `append_adversarial_review`: six review dimensions for code-producing stages |
+| `cache/blocks.rs` | `append_review_dimension_details`: integration-verification dimensions |
+| `cache/blocks.rs` | `append_verifier_completion_header`: standard-stage gate owner |
+| `helpers.rs` | `append_commit_timing_rules`, `append_completion_rules`, `append_settled_completion_rules`: completion ordering |
+| `helpers.rs` | `append_knowledge_commit_header`, `append_knowledge_commit_bullet`, `append_knowledge_mission`: knowledge workflow |
 
-**Standard prefix section order (approx lines 225-355):**
-
-1. Worktree Context header
-2. Isolation Boundaries (3 bullets)
-3. `append_path_boundaries()` — ALLOWED/FORBIDDEN paths table
-4. working_dir reminder
-5. Execution Rules header
-6. Worktree Isolation detail
-7. Delegation & Efficiency paragraph — DELETED (doctrine-surfaces stage), including its codex-lane forward-reference; the stable prefix points at `~/.claude/CLAUDE.md` Rule 6 instead of restating delegation guidance inline
-8. `append_subagent_restrictions()` — NO commit/complete/add-A rules
-9. When to Commit block (`append_commit_timing_rules()`, `signals/helpers.rs`) — commits are the ORCHESTRATOR's, ONLY at the end, after every subagent has returned and the gate is green
-10. `append_completion_rules()`
-11. `append_adversarial_review()` — Mini Adversarial Code Review (6 dimensions)
-12. Dedicated Silent Failure Check block (Standard only; IV has its own section)
-13. Stage Memory guidance
-14. `append_git_staging_full()`/`append_git_staging_rules()` — DELETED (doctrine-surfaces stage); git-staging rules are stripped to a CLAUDE.md pointer, not emitted inline, on every stage type
-15. `append_common_footer()`
-
-**Integration-Verify key differences:** ZERO TOLERANCE box at top; no full git-staging box; now requires agent teams (MUST).
-
-**Knowledge-Distill:** Mission = curate memories → knowledge; includes documentation update reminder.
-
-**Knowledge prefix key differences:** No worktree; COMMITS REQUIRED; "Your Mission = build briefing document"; 6-step workflow; agent teams for bootstrap.
-
-### Shared append_* Helpers
-
-The full table lives in the `## Shared append_* Helpers (cache.rs:51-~180)` section below — an abridged copy that predated `append_anti_slop_guidance()` and `append_adversarial_review()` was deleted from this spot on 2026-07-30. Consult the one table; do not re-inline a second.
-
-## Shared append_* Helpers (cache.rs:51-~180)
-
-| Helper                                 | Lines    | Content                                                                                                                                                                                            | Used By                                                                                                                                                                                                                                                                                                                               |
-| -------------------------------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `append_path_boundaries()`             | 54-63    | ALLOWED/FORBIDDEN paths table                                                                                                                                                                      | Standard, IV, KnowledgeDistill                                                                                                                                                                                                                                                                                                        |
-| `append_subagent_restrictions()`       | 66-93    | NO git/loom/add-A rules; memory recording guide                                                                                                                                                    | Standard (233), IV (424)                                                                                                                                                                                                                                                                                                              |
-| `append_completion_rules()`            | signals/helpers.rs | Settled-stage doctrine (via `append_settled_completion_rules`) + acceptance, handoff, no retry rules                                                                                     | Standard, IV, KnowledgeDistill                                                                                                                                                                                                                                                                                                        |
-| `append_settled_completion_rules()`    | signals/helpers.rs | "`loom stage complete` is the LAST act" / settled-stage checklist / "post-completion work is LOST WORK" + verify-acceptance line                                                          | `append_completion_rules()`, Knowledge prefix (directly)                                                                                                                                                                                                                                                                              |
-| `append_isolation_boundaries_simple()` | 108-113  | 2-bullet version                                                                                                                                                                                   | IV (408), KnowledgeDistill (508)                                                                                                                                                                                                                                                                                                      |
-| `append_execution_rules_intro()`       | 119-124  | "Follow CLAUDE.md" short header                                                                                                                                                                    | IV (412), KnowledgeDistill (512), Knowledge (594)                                                                                                                                                                                                                                                                                     |
-| `append_common_footer()`               | 127-142  | Binary usage, state files, context recovery                                                                                                                                                        | ALL 4 prefixes                                                                                                                                                                                                                                                                                                                        |
-| `append_git_staging_full()`            | signals/helpers.rs (moved 2026-08-26, same reason as `append_completion_rules`) | Full staging rules + danger box                                                                                                                                          | Standard only                                                                                                                                                                                                                                                                                                                         |
-| `append_git_staging_rules()`           | signals/helpers.rs (moved 2026-08-26, same reason as `append_completion_rules`) | Shorter version                                                                                                                                                          | IV, KnowledgeDistill                                                                                                                                                                                                                                                                                                                  |
-| `append_commit_timing_rules()`         | signals/helpers.rs | "When to Commit" doctrine — commits are the ORCHESTRATOR's, made ONLY as the final step of the stage, after every subagent has returned and the verification gate is green; `gate`/`review` params interpolate the per-stage-family wording                                             | ALL 4 prefixes, called right after the `**Completion:**` header line                                                                                                                                                                                                                                                                  |
-| `append_anti_slop_guidance()`          | ~171+    | ZERO TOLERANCE anti-slop rules box                                                                                                                                                                 | ALL 4 prefixes (after exec-rules intro, before Delegation)                                                                                                                                                                                                                                                                            |
-| `append_adversarial_review()`          | ~104-122 | Mini adversarial code review — 6 dimensions (quality/architecture·SOLID, idiomatic, security, wiring, dead code, DRY across whole codebase) + a closing "tests actually exercise the change" check | Standard (replaces old "Self-Review" block), IV (after Mission). **Code-producing prefixes ONLY** — NOT knowledge or knowledge-distill (both emit only markdown). NOTE: silent-failure detection is NOT in this helper — Standard has its own dedicated block right after the call; IV has its own `SILENT FAILURE DETECTION` section |
-| `append_stage_end_sequence()`          | format/helpers.rs | Recites the commit order (subagents returned → gate green → review returned/fixed → gate green again → commit → `loom stage complete`) at the end of "## Immediate Tasks" for maximum attention                                                                                     | `format_recitation_section()` (all stage types)                                                                                                                                                                                                                                                                                       |
-| `append_package_cache_note()`          | format/helpers.rs | Names the package-manager caches (bun/npm/pnpm/yarn/deno/cargo/rustup/uv/pip/go) writable inside the sandbox, and the two carve-out limits (not-yet-existing cache dirs, relocated cache env vars)                                                                                    | `format_sandbox_section()` (`format/sandbox_section.rs`), when the sandbox is enabled                                                                                                                                                                                                                                                |
-
-**Adding a new helper:** Follow same `fn append_xxx(content: &mut String)` pattern. Call it explicitly from each generator where wanted — it's NOT auto-injected. Placement: cache.rs's "Shared content blocks" cluster is the historical home, but cache.rs carries a maintainability-ledger FILE entry, so new helpers (and any that need to grow) go to the unledgered `signals/helpers.rs` instead — `append_completion_rules`/`append_settled_completion_rules` moved there 2026-08-14. Same rule in format/: the recitation section's budget-exceeded box lives in `format/helpers.rs::append_budget_exceeded_box` because `sections.rs` is ledgered.
-
-**Per-stage code review:** The mandatory mini adversarial code review lives in `append_adversarial_review()` (`pub(crate)`) and is injected into the two code-producing stable prefixes (Standard, IntegrationVerify). It supersedes the older standard-prefix "Self-Review Before Completion" block. Documentation stages (Knowledge, KnowledgeDistill) deliberately omit it — they produce only markdown, so there is no code to review; the cache tests negative-assert its absence there.
-
-**Stable prefix selection — single source of truth:** `cache::stable_prefix_for(stage_type)` is the ONE place that maps stage type → prefix generator (explicit 4-arm match). Both the regular path (`format/mod.rs::format_signal_with_metrics`) and the recovery path (`recovery_format.rs`) call it, so they can never drift.
-
-**Resume-path coverage (important):** The review (and all execution guidance) must reach a stage no matter which signal spawns it. Three paths: (1) regular spawn + automatic crash retry → `format_signal_with_metrics()` → `stable_prefix_for()`; (2) continuation/handoff → `generate_signal()` → same path; (3) **manual recovery** (`loom stage recover`, `loom stage retry`) → `recovery_format.rs::format_recovery_signal()`. The recovery signal is built outside the KV-cache path; it now embeds the FULL stable prefix via `stable_prefix_for(stage.stage_type)` (replacing its old hand-rolled "## Worktree Context" stub), so a resumed stage gets the same rules — review, subagent restrictions, git-staging, anti-slop, completion — as a fresh spawn, correctly gated by stage type (Knowledge/KnowledgeDistill prefixes carry no review). Tests: `recovery.rs::test_generate_recovery_signal` (Standard → review + subagent restrictions + execution rules present) and `test_recovery_signal_omits_review_for_documentation_stage` (KnowledgeDistill → no review). `tests_commit_timing.rs` covers the commit-timing doctrine itself: presence/wording across all 4 stable prefixes, the code-vs-documentation gate condition, `CLAUDE.md.template` agreement, the retired header-bullet wording being gone, the recitation's stage-end-sequence ordering, and the sandbox section's package-cache note.
+Call helpers explicitly from the intended prefix generators. Keep pinned worker blocks identical across their delivery surfaces; the doctrine tests enforce that contract. Standard and IntegrationVerify receive adversarial review; Knowledge and KnowledgeDistill do not. The recovery formatter embeds `stable_prefix_for(stage.stage_type)`, preserving the same selection on resume. The removed staging, anti-slop and subagent-restriction helpers are not extension points.
 
 ## Soft Signals
 

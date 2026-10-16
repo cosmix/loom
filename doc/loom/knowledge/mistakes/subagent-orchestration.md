@@ -226,3 +226,33 @@ the only reason attribution does not reach every commit.
 **Prevention:** Settle implementer edits first, give one verifier ownership of the full gate and corrective work, and commit only after absorbing its results.
 
 **Fix:** Exhaustive gates use `cargo test --all-targets --no-fail-fast` under wall-clock and 2 GiB headroom watchdogs. Four test threads bound observed process/fork pressure; a serial exhaustive run is also authorized if diagnostics justify reducing host executable-assessment concurrency. Neither skips tests nor changes their own deadlines or internal concurrency. Reap superseded runs first. The coordinator preserves unrelated work, updates the original report and creates grouped commits.
+
+## Delegate external reference research when requested
+
+**What happened:** the primary agent began exploring Ponytail directly; the user directed a Sol or Terra subagent to explore the repository and fetch its skills.
+
+**Why:** reference collection does not require the primary agent to spend its context on raw upstream material.
+
+**Prevention:** assign external exploration and skill retrieval to the requested model; keep local integration design and implementation with the primary agent.
+
+**Fix:** delegate Ponytail research to Sol and use its bounded findings and fetched artifacts.
+
+## Keep guidance integration with the primary editor
+
+**What happened:** the user clarified that Ponytail research belongs to a Sol or Terra subagent, while the primary agent decides and edits Loom guidance.
+
+**Why:** the desired result is tighter existing guidance across executors and planning, rather than another instruction layer.
+
+**Prevention:** keep the primary agent responsible for coherent edits across CLAUDE.md.template, AGENTS.md.template, relevant skills, loom-plan-writer, signal prose and delivery surfaces. Delegate upstream collection only.
+
+**Fix:** retain the upstream research assignment and integrate by rewriting existing guidance; measure the prompt-size change and preserve execution boundaries.
+
+## Keep guidance work within its requested scope
+
+**What happened:** The guidance branch pre-commit hook reformatted an unrelated plan brief, and an unrelated macOS confinement test failure during pre-push prompted investigation beyond the requested guidance work. The operator corrected both scope expansions.
+
+**Why:** Repository-wide hooks were treated as a reason to inspect or repair unrelated files.
+
+**Prevention:** Inspect hook side effects before reporting completion, restore incidental edits, and report unrelated gate failures without turning a guidance task into test repair. Plan briefs are outside this task.
+
+**Fix:** The incidental brief formatting was restored and excluded from every commit. No confinement implementation or test was changed. The operator cancelled the push and requested rebasing onto local main and merging there while preserving unrelated working-tree changes.

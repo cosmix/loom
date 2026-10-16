@@ -379,3 +379,20 @@ never by adding a baseline entry.
 **Prevention:** Read the active hook before overlapping a commit with an exclusive Cargo gate, even when the checkout has a separate target directory.
 
 **Fix:** Keep the normal hook and memory watchdog, inform the active verifier, and serialize subsequent commits after verification completes.
+
+## Lint agent templates under their actual file policy
+
+**What happened:** an explicit Markdown lint invocation included .template files and reported their existing mixed indented/fenced blocks, alongside one new extra blank line in the plan-writer skill.
+
+**Why:** the normal Markdown gate targets .md files; extending it to templates applied a new style expectation to pinned doctrine text.
+
+**Prevention:** use the existing gate scope for Markdown and the doctrine/asset checks for templates. Inspect every diagnostic rather than changing pinned text to satisfy an unrelated style rule.
+
+**Fix:** remove the extra blank line and run Markdown lint on the changed .md guidance and references.
+
+## Format after the final prose shortening
+
+**What happened:** shortening Rust strings changed rustfmt wrapping after an earlier check passed.
+**Why:** the prompt-budget edit followed formatting verification.
+**Prevention:** format after the last source edit. Keep appended lessons within the topic size limit.
+**Fix:** apply rustfmt only to the changed Rust files.
