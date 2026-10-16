@@ -262,3 +262,13 @@ expects to expire stays short. Reproduce a timing failure by looping the test un
 
 **Fix:** the timeout and signal cases use a 1000 ms timeout and the 5000 ms production grace; 0 of
 25 runs fail under the same load.
+
+## A Zombie Reaped Mid-Probe Read as Alive, and wait_timeout Returned Early (2026-10-16)
+
+**What happened:** the pre-push gate failed on lifecycle tests in about half of full `cargo test --lib` runs, never in isolation. `assert_retired` reported `owned descendant <pid> survived` (process/lifecycle_tests.rs), and `verification_timeout_kills_before_collecting_and_reports_elapsed` saw `timed_out` with a duration of 199.85-199.99 ms for a 200 ms timeout. A first attempt loosened the wrong assertion: the panicking line was misread from memory.
+
+**Why:** `is_process_alive` sent the null signal, then read `/proc/<pid>/stat` for the zombie check. An orphaned zombie (parent 1) reaped between the two reads made `process_is_zombie` fail its read and return false, so the function returned alive for a dead process. Separately, `wait-timeout` 0.2.1 truncates its poll timeout to whole milliseconds and treats a poll timeout as final, so `wait_timeout` returns `None` up to 1 ms before the requested duration.
+
+**Prevention:** a liveness check built from two probes must re-confirm the first probe after the second. Read the panicking line number against the file before changing any assertion. To diagnose a load-only failure, put the raw probe results (each syscall's return, elapsed loop time, `/proc` state) in the assertion message and loop the full suite.
+
+**Fix:** `is_process_alive` (loom/src/process/mod.rs) repeats the null signal after the zombie check. `OwnedProcess::wait` (loom/src/process/owned.rs) calls `wait_timeout` again until its own deadline has passed. Ten consecutive full lib runs passed afterwards.
