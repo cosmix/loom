@@ -22,18 +22,8 @@
 //!   the caller IS session A; only this proves stage X is A's to act on.
 //!   Without it, a live agent could reach across into another stage.
 
-use std::path::{Path, PathBuf};
-
-use anyhow::{bail, Context, Result};
-
 use crate::daemon::protocol::Request;
-use crate::models::session::{Session, SessionStatus, SessionType};
-use crate::parser::frontmatter::parse_from_markdown;
-use crate::verify::transitions::load_stage;
-
-/// Upper bound on a session record, matching the other readers of the same
-/// files (`peer_identity`, `control_complete`).
-const MAX_SESSION_FILE_BYTES: usize = 1024 * 1024;
+use crate::models::session::SessionType;
 
 /// The session a request claims to be running inside, for the RPCs a
 /// stage agent is entitled to make about its OWN stage.
@@ -53,7 +43,8 @@ pub(super) fn self_service_session(request: &Request) -> Option<&str> {
         | Request::FileDispute { session_id, .. }
         | Request::BlockStage { session_id, .. }
         | Request::FreezeContracts { session_id, .. }
-        | Request::ObserveChanges { session_id, .. } => Some(session_id),
+        | Request::ObserveChanges { session_id, .. }
+        | Request::ValidateInheritedConfinement { session_id, .. } => Some(session_id),
         _ => None,
     }
 }
@@ -131,37 +122,7 @@ pub(super) fn ownership_to_enforce(
 /// authorization pre-check whose handlers re-read under their own locks: the
 /// window is between two facts about the same session, not a way to smuggle a
 /// different one through.
-pub(super) fn session_owns_stage_as(
-    work_dir: &Path,
-    stage_id: &str,
-    session_id: &str,
-    allowed: &[SessionType],
-) -> Result<()> {
-    // Both ids arrive unvalidated from the wire and both are turned into
-    // paths below, so traversal shapes have to die before any file is touched.
-    crate::validation::validate_id(stage_id).context("invalid stage id")?;
-    crate::validation::validate_id(session_id).context("invalid session id")?;
-
-    let stage = load_stage(stage_id, work_dir)?;
-    if stage.session.as_deref() != Some(session_id) {
-        bail!("session '{session_id}' is not active for stage '{stage_id}'");
-    }
-
-    let relative = PathBuf::from("sessions").join(format!("{session_id}.md"));
-    let content =
-        crate::fs::safe_read::read_to_string_bounded(work_dir, &relative, MAX_SESSION_FILE_BYTES)
-            .with_context(|| format!("failed to read active session '{session_id}'"))?;
-    let session: Session =
-        parse_from_markdown(&content, "session").context("invalid active session file")?;
-    if session.id != session_id
-        || session.stage_id.as_deref() != Some(stage_id)
-        || !allowed.contains(&session.session_type)
-        || session.status != SessionStatus::Running
-    {
-        bail!("request does not match the active running stage session");
-    }
-    Ok(())
-}
+pub(super) use crate::stage_service::ownership::session_owns_stage_as;
 
 #[cfg(test)]
 #[path = "self_service_tests.rs"]

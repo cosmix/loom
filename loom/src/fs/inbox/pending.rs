@@ -8,7 +8,7 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result};
 
 use super::paths::session_inbox;
-use crate::daemon::MAX_REQUEST_BYTES;
+use crate::stage_service::MAX_REQUEST_BYTES;
 use crate::validation::validate_id;
 
 /// Entries safe to drain, and the names of `*.json` entries skipped because
@@ -22,7 +22,7 @@ pub struct PendingEntries {
 
 /// List `<id>.json` files under `session_id`'s inbox, sorted by file name.
 /// Only regular, single-link, non-symlink files within
-/// [`crate::daemon::MAX_REQUEST_BYTES`] are returned as entries; every other
+/// [`crate::stage_service::MAX_REQUEST_BYTES`] are returned as entries; every other
 /// `*.json` name is reported in `skipped` so the drain can refuse it rather
 /// than silently ignore it. A non-`.json` name is neither an entry nor a
 /// skip — it is not part of the relay protocol's own naming at all.

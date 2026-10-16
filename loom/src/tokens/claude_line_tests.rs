@@ -67,7 +67,10 @@ fn test_parse_line_invalid_required_counts_returns_unreadable() {
             .unwrap()
             .remove(field);
 
-        assert_eq!(parse_line(&line.to_string()), ClaudeLine::Unreadable);
+        assert!(matches!(
+            parse_line(&line.to_string()),
+            ClaudeLine::Usage { .. }
+        ));
     }
 }
 

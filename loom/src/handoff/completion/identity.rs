@@ -10,19 +10,71 @@ use crate::models::stage::{Stage, StageType};
 
 pub const STAGE_ENVIRONMENT_POLICY: &str = "stage-host-allowlist-v2";
 
+/// Versioned projection shared by evidence producers and consumers. Runtime
+/// status/session/timestamps are deliberately absent.
+#[derive(Serialize)]
+struct GatePolicy<'a> {
+    version: u32,
+    stage_id: &'a str,
+    plan_version: u32,
+    stage_type: StageType,
+    acceptance: &'a [crate::models::stage::AcceptanceCriterion],
+    setup: &'a [String],
+    working_dir: &'a Option<String>,
+    artifacts: &'a [String],
+    wiring: &'a [crate::models::stage::WiringCheck],
+    wiring_tests: &'a [crate::models::stage::WiringTest],
+    dead_code_check: &'a Option<crate::models::stage::DeadCodeCheck>,
+    before_stage: &'a [crate::models::stage::TruthCheck],
+    after_stage: &'a [crate::models::stage::TruthCheck],
+    contracts: &'a [crate::plan::schema::ContractSpec],
+    reachable: &'a [crate::plan::schema::ReachableCheck],
+    code_review: &'a Option<crate::plan::schema::CodeReviewConfig>,
+    sandbox: &'a crate::models::stage::StageSandboxConfig,
+    harness: &'a [String],
+    ratchet_files: &'a [String],
+    files: &'a [String],
+    dependencies: &'a [String],
+    base_branch: &'a Option<String>,
+    resolved_base: &'a Option<String>,
+    worktree: &'a Option<String>,
+    regression_test: &'a Option<crate::models::stage::RegressionTest>,
+    bug_fix: Option<bool>,
+    environment_policy: &'static str,
+}
+
 pub fn check_definition_hash(stage: &Stage) -> String {
+    let policy = GatePolicy {
+        version: 2,
+        stage_id: &stage.id,
+        plan_version: stage.plan_version,
+        stage_type: stage.stage_type,
+        acceptance: &stage.acceptance,
+        setup: &stage.setup,
+        working_dir: &stage.working_dir,
+        artifacts: &stage.artifacts,
+        wiring: &stage.wiring,
+        wiring_tests: &stage.wiring_tests,
+        dead_code_check: &stage.dead_code_check,
+        before_stage: &stage.before_stage,
+        after_stage: &stage.after_stage,
+        contracts: &stage.contracts,
+        reachable: &stage.reachable,
+        code_review: &stage.code_review,
+        sandbox: &stage.sandbox,
+        harness: &stage.harness,
+        ratchet_files: &stage.ratchet_files,
+        files: &stage.files,
+        dependencies: &stage.dependencies,
+        base_branch: &stage.base_branch,
+        resolved_base: &stage.resolved_base,
+        worktree: &stage.worktree,
+        regression_test: &stage.regression_test,
+        bug_fix: stage.bug_fix,
+        environment_policy: STAGE_ENVIRONMENT_POLICY,
+    };
     let mut hash = Sha256::new();
-    hash_field(&mut hash, b"loom-check-definition-v1");
-    hash_json(&mut hash, &stage.id);
-    hash_json(&mut hash, &stage.acceptance);
-    hash_json(&mut hash, &stage.setup);
-    hash_json(&mut hash, &stage.working_dir);
-    hash_json(&mut hash, &stage.artifacts);
-    hash_json(&mut hash, &stage.wiring);
-    hash_json(&mut hash, &stage.wiring_tests);
-    hash_json(&mut hash, &stage.dead_code_check);
-    hash_json(&mut hash, &stage.before_stage);
-    hash_json(&mut hash, &stage.after_stage);
+    hash_json(&mut hash, &policy);
     hex::encode(hash.finalize())
 }
 

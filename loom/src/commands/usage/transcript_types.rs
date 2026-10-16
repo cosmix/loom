@@ -96,7 +96,7 @@ pub struct TranscriptDiagnostics {
 /// error as a model choice -- must skip this sentinel itself: see
 /// `subagents::metrics::extract` and `usage::sections::{agents, by_model,
 /// rewrites, totals}`.
-pub(crate) const SYNTHETIC_MODEL: &str = "<synthetic>";
+pub(crate) use crate::provider_data::SYNTHETIC_MODEL;
 
 #[derive(Debug, Clone)]
 pub struct UserEntry {

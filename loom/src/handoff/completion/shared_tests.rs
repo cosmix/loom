@@ -86,6 +86,19 @@ fn check_definition_hash_tracks_only_verification_definition() {
         check_definition_hash(&changed_acceptance)
     );
 
+    let mut contracts = stage.clone();
+    contracts.contracts.push(
+        serde_json::from_value(serde_json::json!({
+            "id": "contract", "file": "tests/api.rs", "test": "rejects_invalid",
+            "scenario": "invalid input", "rejects": "accepting invalid input"
+        }))
+        .unwrap(),
+    );
+    assert_ne!(
+        check_definition_hash(&stage),
+        check_definition_hash(&contracts)
+    );
+
     let mut runtime_only = stage.clone();
     runtime_only.status = StageStatus::Blocked;
     runtime_only.session = Some("another-session".to_string());

@@ -54,6 +54,15 @@ fn run_server_writes_the_ready_byte_once_its_socket_is_bound() {
     ) {
         return;
     }
+    let stages = dir.path().join("stages");
+    std::fs::create_dir(&stages).unwrap();
+    let mut stage = crate::models::stage::Stage::new("Ready fixture".into(), None);
+    stage.id = "ready-fixture".into();
+    std::fs::write(
+        stages.join("ready-fixture.md"),
+        crate::verify::serialize_stage_to_markdown(&stage).unwrap(),
+    )
+    .unwrap();
     let server = DaemonServer::with_config(dir.path(), DaemonConfig::default());
     let lock = server.acquire_exclusive_lock().expect("singleton lock");
     let (mut reader, writer) = std::io::pipe().expect("readiness pipe");

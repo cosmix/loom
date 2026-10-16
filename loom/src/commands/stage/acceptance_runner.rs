@@ -7,7 +7,7 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 use super::criterion_output::format_criterion_result;
-use crate::git::worktree::{find_repo_root_from_cwd, find_worktree_root_from_cwd};
+use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::stage::Stage;
 use crate::verify::criteria::{
     plan_confinement, run_acceptance_with_config, CriteriaConfig, CriterionResult,
@@ -53,32 +53,9 @@ pub(crate) fn resolve_acceptance_dir(
             let full_path = root.join(subdir);
 
             // Canonicalize and check containment for path traversal defense
-            let canonical = full_path.canonicalize().with_context(|| {
-                let mut msg = format!(
-                    "Failed to resolve acceptance directory: {} (working_dir='{}')",
-                    full_path.display(),
-                    subdir
-                );
-                // Check where build files actually are to provide hints
-                for build_file in ["Cargo.toml", "package.json", "go.mod", "pyproject.toml"] {
-                    if root.join(build_file).exists() {
-                        msg.push_str(&format!(
-                            "\n  HINT: {} found at worktree root — working_dir should probably be \".\"",
-                            build_file
-                        ));
-                    }
-                    // Also check common subdirectories
-                    for subdir_name in ["loom", "app", "src", "packages"] {
-                        if root.join(subdir_name).join(build_file).exists() && subdir != subdir_name {
-                            msg.push_str(&format!(
-                                "\n  HINT: {} found at {}/{} — working_dir should probably be \"{}\"",
-                                build_file, subdir_name, build_file, subdir_name
-                            ));
-                        }
-                    }
-                }
-                msg
-            })?;
+            let canonical = full_path
+                .canonicalize()
+                .with_context(|| missing_acceptance_dir(root, &full_path, subdir))?;
 
             // Defense-in-depth: verify resolved path is within worktree
             let canonical_root = root.canonicalize().unwrap_or_else(|_| root.to_path_buf());
@@ -100,38 +77,49 @@ pub(crate) fn resolve_acceptance_dir(
     }
 }
 
-/// Resolve both worktree root and acceptance directory for a standard stage.
-pub(crate) fn resolve_stage_execution_paths(stage: &Stage) -> Result<StageExecutionPaths> {
-    let expected_worktree_id = stage.worktree.as_deref();
-    let cwd = std::env::current_dir().ok();
-    let repo_root = cwd.as_ref().and_then(|p| find_repo_root_from_cwd(p));
-    let cwd_worktree_root: Option<PathBuf> =
-        cwd.as_ref().and_then(|p| find_worktree_root_from_cwd(p));
-    let stage_worktree_root: Option<PathBuf> = stage
-        .worktree
-        .as_ref()
-        .map(|w| {
-            repo_root
-                .as_ref()
-                .map(|root| root.join(".worktrees").join(w))
-                .unwrap_or_else(|| PathBuf::from(".worktrees").join(w))
-        })
-        .filter(|p| p.exists());
-
-    // Prefer cwd worktree only when it matches the stage's assigned worktree.
-    let worktree_root: Option<PathBuf> = match (cwd_worktree_root, stage_worktree_root) {
-        (Some(cwd_root), Some(stage_root)) => {
-            let cwd_stage_id = cwd_root.file_name().and_then(|s| s.to_str());
-            if cwd_stage_id == expected_worktree_id {
-                Some(cwd_root)
-            } else {
-                Some(stage_root)
+fn missing_acceptance_dir(root: &Path, full_path: &Path, subdir: &str) -> String {
+    let mut message = format!(
+        "Failed to resolve acceptance directory: {} (working_dir='{subdir}')",
+        full_path.display()
+    );
+    for build_file in ["Cargo.toml", "package.json", "go.mod", "pyproject.toml"] {
+        for candidate in [".", "loom", "app", "src", "packages"] {
+            if candidate != subdir && root.join(candidate).join(build_file).exists() {
+                message.push_str(&format!(
+                    "\n  HINT: {build_file} found at {candidate}/ — working_dir should probably be \"{candidate}\""
+                ));
             }
         }
-        (Some(cwd_root), None) => Some(cwd_root),
-        (None, Some(stage_root)) => Some(stage_root),
-        (None, None) => None,
-    };
+    }
+    message
+}
+
+/// Resolve both worktree root and acceptance directory for a standard stage.
+pub(crate) fn resolve_stage_execution_paths(stage: &Stage) -> Result<StageExecutionPaths> {
+    let cwd = std::env::current_dir().context("Failed to get current directory")?;
+    let repo_root = find_repo_root_from_cwd(&cwd)
+        .context("Cannot resolve the repository for stage acceptance")?;
+    let assigned = stage
+        .worktree
+        .as_deref()
+        .context("Stage has no assigned worktree; recover the stage before verification")?;
+    crate::validation::validate_id(assigned)?;
+    let root = repo_root.join(".worktrees").join(assigned);
+    anyhow::ensure!(
+        root.is_dir(),
+        "Assigned worktree '{}' is missing; recover the stage worktree before verification",
+        root.display()
+    );
+    let git = crate::git::worktree::WorktreeGit::pinned(&repo_root, &root)?;
+    let branch = git.run(&["symbolic-ref", "--short", "HEAD"])?;
+    anyhow::ensure!(
+        branch.status.success()
+            && String::from_utf8_lossy(&branch.stdout).trim()
+                == crate::git::branch::branch_name_for_stage(&stage.id),
+        "Assigned worktree does not belong to stage '{}'",
+        stage.id
+    );
+    let worktree_root = Some(root);
 
     let acceptance_dir =
         resolve_acceptance_dir(worktree_root.as_deref(), stage.working_dir.as_deref())?;
@@ -244,149 +232,5 @@ pub(crate) fn print_acceptance_failure_guidance(stage_id: &str) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::models::stage::Stage;
-    use serial_test::serial;
-    use tempfile::TempDir;
-
-    #[test]
-    fn failure_guidance_names_every_route() {
-        let text = failure_guidance("s1");
-        for route in [
-            "loom stage dispute-criteria s1 --criterion-index",
-            "--field wiring --criterion-index",
-            "--field wiring-tests --criterion-index",
-            "loom stage block s1",
-        ] {
-            assert!(text.contains(route), "missing `{route}` in:\n{text}");
-        }
-    }
-
-    #[test]
-    fn test_resolve_acceptance_dir_dot_uses_worktree_root() {
-        let temp_dir = TempDir::new().unwrap();
-        let worktree_root = temp_dir.path();
-
-        let result = resolve_acceptance_dir(Some(worktree_root), Some(".")).unwrap();
-
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), worktree_root.to_path_buf());
-    }
-
-    #[test]
-    fn test_resolve_acceptance_dir_subdir_uses_worktree_root_joined() {
-        let temp_dir = TempDir::new().unwrap();
-        let worktree_root = temp_dir.path();
-
-        // Create the subdirectory
-        let subdir_path = worktree_root.join("loom");
-        std::fs::create_dir_all(&subdir_path).unwrap();
-
-        let result = resolve_acceptance_dir(Some(worktree_root), Some("loom")).unwrap();
-
-        assert!(result.is_some());
-        // Canonicalize for comparison
-        let expected = subdir_path.canonicalize().unwrap();
-        assert_eq!(result.unwrap(), expected);
-    }
-
-    #[test]
-    fn test_resolve_acceptance_dir_missing_subdir_returns_error() {
-        let temp_dir = TempDir::new().unwrap();
-        let worktree_root = temp_dir.path();
-
-        // Don't create the subdirectory - should return error
-        let result = resolve_acceptance_dir(Some(worktree_root), Some("nonexistent"));
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn test_resolve_acceptance_dir_none_working_dir_uses_worktree_root() {
-        let temp_dir = TempDir::new().unwrap();
-        let worktree_root = temp_dir.path();
-
-        let result = resolve_acceptance_dir(Some(worktree_root), None).unwrap();
-
-        assert!(result.is_some());
-        assert_eq!(result.unwrap(), worktree_root.to_path_buf());
-    }
-
-    #[test]
-    fn test_resolve_acceptance_dir_no_worktree_returns_none() {
-        let result = resolve_acceptance_dir(None, Some(".")).unwrap();
-
-        assert!(result.is_none());
-    }
-
-    #[test]
-    fn test_resolve_acceptance_dir_nested_subdir() {
-        let temp_dir = TempDir::new().unwrap();
-        let worktree_root = temp_dir.path();
-
-        // Create a nested subdirectory
-        let subdir_path = worktree_root.join("packages/core");
-        std::fs::create_dir_all(&subdir_path).unwrap();
-
-        let result = resolve_acceptance_dir(Some(worktree_root), Some("packages/core")).unwrap();
-
-        assert!(result.is_some());
-        // Canonicalize for comparison
-        let expected = subdir_path.canonicalize().unwrap();
-        assert_eq!(result.unwrap(), expected);
-    }
-
-    #[test]
-    #[serial]
-    fn test_resolve_stage_execution_paths_prefers_stage_worktree_when_cwd_mismatched() {
-        let temp_dir = TempDir::new().unwrap();
-        let expected_root = temp_dir.path().join(".worktrees/expected-stage");
-        let other_root = temp_dir.path().join(".worktrees/other-stage");
-
-        std::fs::create_dir_all(&expected_root).unwrap();
-        std::fs::create_dir_all(&other_root).unwrap();
-
-        let stage = Stage {
-            worktree: Some("expected-stage".to_string()),
-            ..Default::default()
-        };
-
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&other_root).unwrap();
-
-        let resolved = resolve_stage_execution_paths(&stage).unwrap();
-
-        std::env::set_current_dir(original_dir).unwrap();
-
-        assert_eq!(
-            resolved.worktree_root.unwrap().canonicalize().unwrap(),
-            expected_root.canonicalize().unwrap()
-        );
-    }
-
-    #[test]
-    #[serial]
-    fn test_resolve_stage_execution_paths_uses_cwd_when_matching_stage_worktree() {
-        let temp_dir = TempDir::new().unwrap();
-        let expected_root = temp_dir.path().join(".worktrees/expected-stage");
-        std::fs::create_dir_all(&expected_root).unwrap();
-
-        let stage = Stage {
-            worktree: Some("expected-stage".to_string()),
-            ..Default::default()
-        };
-
-        let original_dir = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&expected_root).unwrap();
-
-        let resolved = resolve_stage_execution_paths(&stage).unwrap();
-
-        std::env::set_current_dir(original_dir).unwrap();
-
-        assert_eq!(
-            resolved.worktree_root.unwrap().canonicalize().unwrap(),
-            expected_root.canonicalize().unwrap()
-        );
-    }
-}
+#[path = "acceptance_runner_tests.rs"]
+mod tests;

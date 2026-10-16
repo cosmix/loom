@@ -25,6 +25,8 @@ mod comparison_quota;
 mod comparison_schema;
 mod comparison_token;
 mod comparison_validation;
+#[cfg(test)]
+mod cross_surface_tests;
 mod discovery;
 mod forward_join;
 mod json;

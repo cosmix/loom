@@ -25,7 +25,9 @@ impl Orchestrator {
         self.graph.mark_status(stage_id, StageStatus::Blocked)?;
 
         let stage = self.load_stage(stage_id)?;
-        if stage.status != StageStatus::Blocked || stage.failure_info.is_some() {
+        if super::super::lifecycle_snapshot::block_cause(&stage)
+            != Some(super::super::lifecycle_snapshot::BlockCause::Intentional)
+        {
             return Ok(());
         }
         // A daemon restart re-emits `StageBlocked` for every Blocked stage: one with

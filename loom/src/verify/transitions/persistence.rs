@@ -222,16 +222,10 @@ pub fn list_all_stages(work_dir: &Path) -> Result<Vec<Stage>> {
         let path = entry.path();
 
         if path.extension().and_then(|s| s.to_str()) == Some("md") {
-            match load_stage_from_path(&path) {
-                Ok(stage) => stages.push(stage),
-                Err(e) => {
-                    eprintln!(
-                        "Warning: Failed to load stage from {}: {}",
-                        path.display(),
-                        e
-                    );
-                }
-            }
+            let stage = load_stage_from_path(&path)
+                .with_context(|| format!("Failed to load stage from {}", path.display()))?;
+            crate::validation::validate_id(&stage.id)?;
+            stages.push(stage);
         }
     }
 

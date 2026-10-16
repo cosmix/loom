@@ -12,7 +12,7 @@ use anyhow::{Context, Result};
 #[cfg(test)]
 use chrono::Utc;
 
-use crate::commands::subagents::resolve::project_slug;
+use crate::provider_data::resolve::project_slug;
 
 #[derive(Debug, Clone)]
 pub struct DiscoveredFile {

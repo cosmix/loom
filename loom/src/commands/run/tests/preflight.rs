@@ -91,7 +91,7 @@ fn test_load_stages_from_work_dir_ignores_non_markdown() {
 }
 
 #[test]
-fn test_load_stages_from_work_dir_skips_invalid() {
+fn test_load_stages_from_work_dir_refuses_invalid() {
     let temp_dir = TempDir::new().unwrap();
     let stages_dir = temp_dir.path().join("stages");
     fs::create_dir(&stages_dir).unwrap();
@@ -102,10 +102,8 @@ fn test_load_stages_from_work_dir_skips_invalid() {
 
     let result = load_stages_from_work_dir(&stages_dir);
 
-    assert!(result.is_ok());
-    let stages = result.unwrap();
-    assert_eq!(stages.len(), 1);
-    assert_eq!(stages[0].id, "valid");
+    let error = result.unwrap_err();
+    assert!(format!("{error:#}").contains("invalid.md"));
 }
 
 #[test]

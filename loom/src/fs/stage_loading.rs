@@ -116,20 +116,17 @@ pub fn load_stages_from_work_dir(stages_dir: &Path) -> Result<Vec<StageDefinitio
         // stage_type, auto_merge, sandbox, context_ceiling_tokens, plan_overview,
         // before/after_stage
         // all survive).
-        let stage_def = match extract_stage_definition(&content) {
-            Ok(def) => {
-                // Validate the stage ID before using it
-                if let Err(e) = validate_id(&def.id) {
-                    eprintln!("Warning: Invalid stage ID in {}: {}", path.display(), e);
-                    continue;
-                }
-                def
-            }
-            Err(e) => {
-                eprintln!("Warning: Could not parse {}: {}", path.display(), e);
-                continue;
-            }
-        };
+        let stage_def = extract_stage_definition(&content)
+            .with_context(|| format!("Could not parse stage record {}", path.display()))?;
+        validate_id(&stage_def.id)
+            .with_context(|| format!("Invalid stage ID in {}", path.display()))?;
+        anyhow::ensure!(
+            !stages
+                .iter()
+                .any(|existing: &StageDefinition| existing.id == stage_def.id),
+            "Duplicate persisted stage ID: {}",
+            stage_def.id
+        );
 
         stages.push(stage_def);
     }

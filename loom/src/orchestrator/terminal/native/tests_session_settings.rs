@@ -266,6 +266,13 @@ fn write_session_capsule_renders_the_approved_list_and_the_scratch_grant() {
     .unwrap();
 
     let capsule = read_capsule(&write_merge_capsule(&checkout, "session-app1").unwrap());
+    #[cfg(target_os = "macos")]
+    assert_eq!(
+        strings(&capsule, "/sandbox/network/allowUnixSockets"),
+        BTreeSet::from([crate::daemon::socket_path(&checkout.work_dir)
+            .display()
+            .to_string()]),
+    );
 
     let allow = strings(&capsule, "/permissions/allow");
     let scratch = checkout.scratch_root.join("session-app1");

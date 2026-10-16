@@ -18,6 +18,7 @@ mod event_handler;
 mod heartbeat_apply;
 mod inbox_drain;
 mod judge_close;
+mod lifecycle_snapshot;
 mod merge_handler;
 #[cfg(test)]
 #[path = "merge_lifecycle_e2e_tests.rs"]
@@ -29,6 +30,8 @@ mod provision_gate;
 mod recovery;
 mod recovery_guards;
 mod recovery_queued_sync;
+mod recovery_sessions;
+mod recovery_sync;
 mod run;
 mod run_result;
 mod session_adoption;
@@ -37,6 +40,9 @@ mod spawn_setup;
 mod spool_drain;
 mod stage_executor;
 mod stage_handoff;
+mod stage_knowledge;
+mod stage_launch_policy;
+mod stage_preflight;
 mod stage_spawn;
 mod stage_telemetry;
 pub mod state_identity;
@@ -336,3 +342,6 @@ name: Test Stage
         assert!(result.is_err());
     }
 }
+
+#[cfg(test)]
+mod lifecycle_regression_tests;

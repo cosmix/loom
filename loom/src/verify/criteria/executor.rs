@@ -1,5 +1,6 @@
 //! Low-level command execution for acceptance criteria
 
+use crate::process::OwnedProcess;
 use anyhow::{Context, Result};
 use std::io::Read;
 use std::path::Path;
@@ -7,16 +8,12 @@ use std::process::Child;
 use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
-use wait_timeout::ChildExt;
 
 use crate::models::stage::CommandConfinement;
 
 use super::config::DEFAULT_COMMAND_TIMEOUT;
 use super::confine::{self, CommandSpec, PreparedCommand};
 use super::result::CriterionResult;
-
-/// Timeout for collecting output from child process pipes
-const OUTPUT_COLLECTION_TIMEOUT: Duration = Duration::from_secs(10);
 
 /// Maximum output size for acceptance criteria commands (10MB)
 const MAX_OUTPUT_SIZE: usize = 10 * 1024 * 1024;
@@ -77,51 +74,35 @@ pub fn run_spec_with_timeout(
 
 /// Execute a command already prepared by the confinement path.
 pub(super) fn run_prepared_with_timeout(
-    prepared: PreparedCommand,
+    mut prepared: PreparedCommand,
     timeout: Duration,
 ) -> Result<CriterionResult> {
     let start = Instant::now();
     let display = prepared.display().to_string();
-    let mut child = prepared.spawn()?;
-    let output = OutputReaders::spawn(&mut child);
-
+    let mut child = OwnedProcess::new(prepared.spawn_retaining_resources()?);
+    let output = OutputReaders::spawn(child.child());
     let wait_result = child
-        .wait_timeout(timeout)
+        .wait(timeout)
         .with_context(|| format!("Failed to wait for command: {display}"))?;
-
-    let duration = start.elapsed();
-    let (stdout, stderr) = output.collect();
-
-    match wait_result {
-        // Command completed within timeout
-        Some(status) => Ok(CriterionResult::new(
-            display,
-            status.success(),
-            stdout,
-            stderr,
-            status.code(),
-            duration,
-            false, // not timed out
-        )),
-        None => {
-            // Command timed out - kill the process
-            kill_child_process(&mut child);
-
-            Ok(CriterionResult::new(
-                display,
-                false, // failed due to timeout
-                stdout,
-                format!(
-                    "{}\n[Process killed after {}s timeout]",
-                    stderr,
-                    timeout.as_secs()
-                ),
-                None, // no exit code for killed process
-                duration,
-                true, // timed out
-            ))
-        }
+    let cleanup_deadline = child.retire();
+    let (stdout, mut stderr) = output.collect(cleanup_deadline);
+    let complete = stdout.complete && stderr.complete;
+    if wait_result.is_none() {
+        stderr
+            .text
+            .push_str(&format!("\n[command timeout after {timeout:?}]"));
     }
+    let mut result = CriterionResult::new(
+        display,
+        wait_result.is_some_and(|status| status.success()) && complete,
+        stdout.text,
+        stderr.text,
+        wait_result.and_then(|status| status.code()),
+        start.elapsed(),
+        wait_result.is_none(),
+    );
+    result.output_complete = complete;
+    Ok(result)
 }
 
 /// Concurrent readers draining a child's piped stdout and stderr.
@@ -130,8 +111,8 @@ pub(super) fn run_prepared_with_timeout(
 /// first, the child may block on write() once the pipe buffer fills up (~64KB
 /// on Linux) and never exit, deadlocking the wait.
 struct OutputReaders {
-    stdout: mpsc::Receiver<String>,
-    stderr: mpsc::Receiver<String>,
+    stdout: mpsc::Receiver<Captured>,
+    stderr: mpsc::Receiver<Captured>,
 }
 
 impl OutputReaders {
@@ -145,30 +126,39 @@ impl OutputReaders {
 
     /// Collect (stdout, stderr). The reader threads should finish promptly once
     /// the process exits; a stalled one yields a marker rather than hanging.
-    fn collect(self) -> (String, String) {
-        (collect_stream(self.stdout), collect_stream(self.stderr))
+    fn collect(self, deadline: Instant) -> (Captured, Captured) {
+        (
+            collect_stream(self.stdout, deadline),
+            collect_stream(self.stderr, deadline),
+        )
     }
 }
 
-fn spawn_reader<R: Read + Send + 'static>(stream: Option<R>) -> mpsc::Receiver<String> {
+fn spawn_reader<R: Read + Send + 'static>(stream: Option<R>) -> mpsc::Receiver<Captured> {
     let (tx, rx) = mpsc::channel();
     match stream {
         Some(stream) => {
             thread::spawn(move || {
-                let _ = tx.send(read_stream_to_string(stream));
+                let _ = tx.send(read_stream(stream));
             });
         }
         None => {
-            let _ = tx.send(String::new());
+            let _ = tx.send(Captured {
+                text: String::new(),
+                complete: true,
+            });
         }
     }
     rx
 }
 
-fn collect_stream(stream: mpsc::Receiver<String>) -> String {
+fn collect_stream(stream: mpsc::Receiver<Captured>, deadline: Instant) -> Captured {
     stream
-        .recv_timeout(OUTPUT_COLLECTION_TIMEOUT)
-        .unwrap_or_else(|_| OUTPUT_COLLECTION_TIMEOUT_MARKER.to_string())
+        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        .unwrap_or_else(|_| Captured {
+            text: OUTPUT_COLLECTION_TIMEOUT_MARKER.to_string(),
+            complete: false,
+        })
 }
 
 /// Read a stream to string, handling errors gracefully
@@ -176,76 +166,44 @@ fn collect_stream(stream: mpsc::Receiver<String>) -> String {
 /// Reads output in chunks with a maximum size limit to prevent OOM attacks.
 /// If output exceeds MAX_OUTPUT_SIZE, the remaining data is discarded and
 /// a truncation message is appended.
-fn read_stream_to_string<R: Read>(mut stream: R) -> String {
+struct Captured {
+    text: String,
+    complete: bool,
+}
+
+fn read_stream<R: Read>(mut stream: R) -> Captured {
+    let mut complete = true;
+    let mut truncated = false;
     let mut buf = Vec::new();
     let mut chunk = [0u8; 8192];
-
     loop {
         match stream.read(&mut chunk) {
-            Ok(0) => break, // EOF
+            Ok(0) => break,
             Ok(n) => {
-                let remaining = MAX_OUTPUT_SIZE.saturating_sub(buf.len());
-                if remaining == 0 {
-                    // Already at limit, discard remaining data but drain the stream
-                    // to prevent broken pipe errors
-                    let mut discard = [0u8; 8192];
-                    while stream.read(&mut discard).unwrap_or(0) > 0 {}
-                    buf.extend_from_slice(b"\n");
-                    buf.extend_from_slice(OUTPUT_TRUNCATED_MARKER.as_bytes());
-                    break;
-                }
-                let to_copy = n.min(remaining);
-                buf.extend_from_slice(&chunk[..to_copy]);
-                if to_copy < n {
-                    // Hit the limit mid-chunk
-                    let mut discard = [0u8; 8192];
-                    while stream.read(&mut discard).unwrap_or(0) > 0 {}
-                    buf.extend_from_slice(b"\n");
-                    buf.extend_from_slice(OUTPUT_TRUNCATED_MARKER.as_bytes());
-                    break;
-                }
+                let keep = n.min(MAX_OUTPUT_SIZE.saturating_sub(buf.len()));
+                buf.extend_from_slice(&chunk[..keep]);
+                truncated |= keep < n;
             }
             Err(_) => {
-                if buf.is_empty() {
-                    return OUTPUT_READ_ERROR_MARKER.to_string();
-                }
+                buf.extend_from_slice(OUTPUT_READ_ERROR_MARKER.as_bytes());
+                complete = false;
                 break;
             }
         }
     }
-
-    String::from_utf8_lossy(&buf).to_string()
+    if truncated {
+        buf.extend_from_slice(b"\n");
+        buf.extend_from_slice(OUTPUT_TRUNCATED_MARKER.as_bytes());
+    }
+    Captured {
+        text: String::from_utf8_lossy(&buf).into_owned(),
+        complete: complete && !truncated,
+    }
 }
 
-/// Terminate a child process and its entire process group.
-///
-/// On Unix, sends SIGKILL to the negative PID (the process group) so that
-/// grandchildren spawned by compound commands (e.g. `cargo test` in `a && b`)
-/// are also killed. Falls back to killing only the direct child if the group
-/// kill fails (e.g. the child already exited).
-///
-/// On Windows, calls TerminateProcess on the direct child.
-fn kill_child_process(child: &mut Child) {
-    #[cfg(unix)]
-    {
-        // Kill the entire process group — the child was spawned with
-        // setpgid(0,0) so its pgid equals its pid. Negative pid targets
-        // the whole group.
-        if let Ok(pid) = i32::try_from(child.id()) {
-            let pgid = nix::unistd::Pid::from_raw(-pid);
-            let _ = nix::sys::signal::kill(pgid, nix::sys::signal::Signal::SIGKILL);
-        }
-        // Also kill the direct child (covers the edge case where setpgid
-        // raced with the child exec-ing into a new pgid).
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-
-    #[cfg(not(unix))]
-    {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
+#[cfg(test)]
+fn read_stream_to_string<R: Read>(stream: R) -> String {
+    read_stream(stream).text
 }
 
 #[cfg(test)]
@@ -294,3 +252,7 @@ mod tests {
         assert_eq!(MAX_OUTPUT_SIZE, 10 * 1024 * 1024);
     }
 }
+
+#[cfg(all(test, unix))]
+#[path = "executor_lifecycle_tests.rs"]
+mod lifecycle_tests;

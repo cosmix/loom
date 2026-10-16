@@ -38,10 +38,13 @@ fn accepts_one_exact_active_completion_and_rejects_replay() {
         fixture.complete(nonce, EVIDENCE_NONCE).unwrap(),
         Response::Ok
     ));
+    let completed = load_stage("build-api", &fixture.work).unwrap();
+    assert_eq!(completed.status, StageStatus::Completed);
     assert_eq!(
-        load_stage("build-api", &fixture.work).unwrap().status,
-        StageStatus::Completed
+        completed.completed_commit,
+        Some(crate::handoff::expected_stage_commit(&fixture.stage, fixture.repo()).unwrap())
     );
+    assert_eq!(completed.close_reason, None);
     assert!(fixture
         .complete(nonce, EVIDENCE_NONCE)
         .unwrap_err()
@@ -198,11 +201,6 @@ fn completion_refuses_a_staged_but_uncommitted_change() {
         EVIDENCE_NONCE,
     );
     let worktree = crate::git::get_worktree_path("build-api", fixture.repo());
-    let relative = ".worktrees/build-api";
-    let _ = scratch_git(
-        fixture.repo(),
-        &["worktree", "add", "-q", relative, "loom/build-api"],
-    );
     fs::write(worktree.join("a.txt"), "a\n").unwrap();
     let _ = scratch_git(&worktree, &["add", "a.txt"]);
 

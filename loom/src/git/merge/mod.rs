@@ -109,6 +109,7 @@ pub fn merge_stage(
     }
 
     let (old, branch_tip) = merge_tips(stage_id, target_branch, repo_root)?;
+    verify_completed_tip(stage_id, repo_root, work_dir, &branch_tip)?;
     if let Some(block) = target_hold(repo_root, work_dir, target_branch, &old)? {
         return Ok(MergeResult::Blocked(block));
     }
@@ -131,6 +132,39 @@ pub fn merge_stage(
         (&old, &branch_tip),
         gate,
     )
+}
+
+/// Ordinary completion pins the stage tip. Explicit conflict resolution keeps
+/// its separate clean-worktree and original-work ancestry requirements.
+fn verify_completed_tip(
+    stage_id: &str,
+    repo_root: &Path,
+    work_dir: &Path,
+    branch_tip: &str,
+) -> Result<()> {
+    // Standalone merge callers have no stage store. Once initialized, missing
+    // or unreadable stage state must not silently disable the completion guard.
+    if !work_dir.join("stages").try_exists()? {
+        return Ok(());
+    }
+    let stage = crate::verify::transitions::load_stage(stage_id, work_dir)?;
+    if stage.status == crate::models::stage::StageStatus::MergeConflict {
+        return check_resolved_worktree(repo_root, stage_id, stage.completed_commit.as_deref())
+            .map_err(anyhow::Error::msg);
+    }
+    if stage.status == crate::models::stage::StageStatus::Completed || stage.merged {
+        anyhow::ensure!(
+            stage.completed_commit.is_some(),
+            "completed stage has no verified commit; rerun completion before landing"
+        );
+    }
+    if let Some(verified) = stage.completed_commit.as_deref() {
+        anyhow::ensure!(
+            verified == branch_tip,
+            "stage branch changed after verification; rerun completion before landing"
+        );
+    }
+    Ok(())
 }
 
 /// The target's tip and the stage branch's tip, resolved by full ref name so
@@ -296,3 +330,6 @@ mod target_guard_tests;
 mod test_support;
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod completion_tests;

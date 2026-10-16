@@ -1,19 +1,15 @@
 //! Append/read/drain mechanics for the stage-request spool.
 //!
-//! Kept deliberately close to `fs/memory/spool.rs`: same relative-path shape,
-//! same locking, same size bound, same "a malformed line is skipped, never an
-//! error" rule. A reader of one should recognise the other.
+//! Storage mechanics are shared with memory spools through `fs::jsonl_spool`.
+//! Requests retain stable identities so application receipts suppress replay.
 
 use anyhow::{Context, Result};
-use fs2::FileExt;
-use std::fs;
-use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use super::types::StageRequest;
-use crate::daemon::MAX_REQUEST_BYTES;
-use crate::fs::safe_read::open_regular_no_follow;
+use crate::fs::jsonl_spool;
 use crate::git::worktree::find_worktree_root_from_cwd;
+use crate::stage_service::MAX_REQUEST_BYTES;
 
 /// Spool location relative to a worktree root.
 pub const SPOOL_RELPATH: &str = ".loom/stage-request-spool.jsonl";
@@ -67,54 +63,12 @@ pub fn spool_target_from_cwd() -> Result<PathBuf> {
 /// reason exceeds that, so two concurrent appends could otherwise interleave
 /// their bytes on one line.
 pub fn append_to_spool(worktree_root: &Path, request: &StageRequest) -> Result<()> {
-    // `to_string` (not `to_string_pretty`) so the payload is guaranteed to be
-    // a single line - serde_json escapes any newline inside a reason.
-    let line = serde_json::to_string(request).context("Failed to serialize stage request")?;
-    // Parity with the socket path, which refuses a request frame over
-    // MAX_REQUEST_BYTES: without this the spool would accept what a live
-    // daemon would have rejected, making the fallback the weaker gate.
-    if line.len() > MAX_REQUEST_BYTES {
-        anyhow::bail!(
-            "Stage request is {} bytes, over the {MAX_REQUEST_BYTES}-byte limit the daemon \
-             accepts; shorten the reason or the failure output",
-            line.len()
-        );
-    }
-
-    let path = spool_path(worktree_root);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create spool directory: {}", parent.display()))?;
-    }
-
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .with_context(|| format!("Failed to open stage request spool: {}", path.display()))?;
-    file.lock_exclusive()
-        .with_context(|| format!("Failed to lock stage request spool: {}", path.display()))?;
-
-    let size = file
-        .metadata()
-        .with_context(|| format!("Failed to stat stage request spool: {}", path.display()))?
-        .len();
-    if size >= SPOOL_MAX_BYTES {
-        anyhow::bail!(
-            "Stage request spool {} has reached its {SPOOL_MAX_BYTES}-byte cap; \
-             the loom daemon has not drained it yet",
-            path.display()
-        );
-    }
-
-    writeln!(file, "{line}").with_context(|| {
-        format!(
-            "Failed to append to stage request spool: {}",
-            path.display()
-        )
-    })?;
-
-    Ok(())
+    jsonl_spool::append(
+        worktree_root,
+        SPOOL_RELPATH,
+        &super::types::QueuedRequest::new(request.clone()),
+        MAX_REQUEST_BYTES,
+    )
 }
 
 /// Pending requests, WITHOUT applying or removing them. Empty vec when no
@@ -124,25 +78,15 @@ pub fn append_to_spool(worktree_root: &Path, request: &StageRequest) -> Result<(
 /// every stage that has queued nothing) so this must stay cheap and must never
 /// create the file or the `.loom/` directory. Exercised only by tests -
 /// production code learns about spooled requests solely through
-/// [`drain_spool`].
+/// [`super::apply::drain_requests`].
 #[cfg(test)]
 pub(crate) fn read_pending(worktree_root: &Path) -> Result<Vec<StageRequest>> {
-    let path = spool_path(worktree_root);
-    if !path.exists() {
-        return Ok(Vec::new());
-    }
-
-    let file = fs::File::open(&path)
-        .with_context(|| format!("Failed to open stage request spool: {}", path.display()))?;
-    file.lock_shared()
-        .with_context(|| format!("Failed to lock stage request spool: {}", path.display()))?;
-
-    let mut contents = String::new();
-    (&file)
-        .read_to_string(&mut contents)
-        .with_context(|| format!("Failed to read stage request spool: {}", path.display()))?;
-
-    Ok(parse_requests(&contents).0)
+    Ok(
+        jsonl_spool::read::<super::types::QueuedRequest>(worktree_root, SPOOL_RELPATH)?
+            .into_iter()
+            .map(|entry| entry.payload)
+            .collect(),
+    )
 }
 
 /// Hand every pending request to `sink`, then truncate the spool.
@@ -165,57 +109,28 @@ pub(crate) fn read_pending(worktree_root: &Path) -> Result<Vec<StageRequest>> {
 /// directory), a hard link, or a FIFO is refused with an `Err` and left
 /// untouched (see `open_regular_no_follow` in `fs::safe_read`), so the
 /// trusted daemon never reads or truncates a file outside the worktree.
+#[cfg(test)]
 pub(super) fn drain_spool(
     worktree_root: &Path,
     sink: &mut dyn FnMut(&StageRequest) -> Result<()>,
 ) -> Result<DrainOutcome> {
-    let path = spool_path(worktree_root);
-    let opened = open_regular_no_follow(worktree_root, SPOOL_RELPATH, libc::O_RDWR)
-        .with_context(|| format!("Stage request spool {} was not drained", path.display()))?;
-    let Some(mut file) = opened else {
-        return Ok(DrainOutcome::default());
-    };
-    file.lock_exclusive()
-        .with_context(|| format!("Failed to lock stage request spool: {}", path.display()))?;
-
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)
-        .with_context(|| format!("Failed to read stage request spool: {}", path.display()))?;
-
-    let (requests, skipped) = parse_requests(&contents);
-    for request in &requests {
-        sink(request)?;
-    }
-
-    file.set_len(0)
-        .with_context(|| format!("Failed to truncate stage request spool: {}", path.display()))?;
-
-    // `applied` counts what the sink was handed; the sink knows how many of
-    // those the daemon actually took, and adjusts both numbers on the way out.
-    Ok(DrainOutcome {
-        applied: requests.len(),
-        skipped,
-    })
-}
-
-/// Parse spool contents into (successfully-parsed requests, malformed-line
-/// count). Blank lines are ignored entirely - not counted as malformed.
-fn parse_requests(contents: &str) -> (Vec<StageRequest>, usize) {
-    let mut requests = Vec::new();
-    let mut skipped = 0;
-    for line in contents.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        match serde_json::from_str::<StageRequest>(line) {
-            Ok(request) => requests.push(request),
-            Err(_) => skipped += 1,
-        }
-    }
-    (requests, skipped)
+    let (applied, skipped) = jsonl_spool::drain::<super::types::QueuedRequest>(
+        worktree_root,
+        SPOOL_RELPATH,
+        &mut |entry| sink(&entry.payload),
+    )?;
+    Ok(DrainOutcome { applied, skipped })
 }
 
 #[cfg(test)]
 #[path = "tests/spool.rs"]
 mod tests;
+
+/// Production drain exposes stable identities to the application checkpoint.
+pub(super) fn drain_identified(
+    root: &Path,
+    sink: &mut dyn FnMut(&super::types::QueuedRequest) -> Result<()>,
+) -> Result<DrainOutcome> {
+    let (applied, skipped) = jsonl_spool::drain(root, SPOOL_RELPATH, sink)?;
+    Ok(DrainOutcome { applied, skipped })
+}

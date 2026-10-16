@@ -78,22 +78,22 @@ impl Orchestrator {
         worktree: Worktree,
         base: Option<String>,
         kind: AgentKind,
-    ) -> Result<()> {
+    ) -> Result<super::stage_executor::StartDisposition> {
         let stage_id = stage.id.clone();
         let handover = stage.status == StageStatus::Executing;
         let outgoing_session_id = stage.session.clone();
         let Some((session, recovery_signal)) = self.write_ahead_agent_session(&stage, kind) else {
-            return Ok(());
+            return Ok(super::stage_executor::StartDisposition::Deferred);
         };
         let Some(stage) = self.mark_agent_executing(&stage_id, &session.id)? else {
-            return Ok(());
+            return Ok(super::stage_executor::StartDisposition::Deferred);
         };
         if !self.validate_stage_sandbox(&stage, &stage_id, &session.id) {
-            return Ok(());
+            return Ok(super::stage_executor::StartDisposition::Deferred);
         }
         refresh_stage_overlay(&stage_id, &self.config.repo_root, &self.config.work_dir);
         if !self.require_stage_hooks(&stage_id, &session.id) {
-            return Ok(());
+            return Ok(super::stage_executor::StartDisposition::Deferred);
         }
 
         let signal_path = match recovery_signal {
@@ -103,7 +103,7 @@ impl Orchestrator {
                 let outgoing = outgoing_session_id.as_deref();
                 match self.write_agent_signal(&stage, &worktree, &session, outgoing, kind) {
                     Some(path) => path,
-                    None => return Ok(()),
+                    None => return Ok(super::stage_executor::StartDisposition::Deferred),
                 }
             }
         };
@@ -114,8 +114,9 @@ impl Orchestrator {
         let launched = self.launch_agent(&stage, &worktree, session, &signal_path, kind, handover);
         if let Some(spawned) = launched {
             self.record_spawned_agent(&stage, worktree, base, spawned);
+            return Ok(super::stage_executor::StartDisposition::Launched);
         }
-        Ok(())
+        Ok(super::stage_executor::StartDisposition::Deferred)
     }
 
     /// Resolve the session `kind` runs as and write its record ahead of the

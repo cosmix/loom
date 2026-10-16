@@ -25,11 +25,8 @@
 use super::persistence::{validate_content, validate_evidence};
 use super::storage::append_entry;
 use super::types::MemoryEntry;
-use crate::fs::safe_read::open_regular_no_follow;
-use anyhow::{Context, Result};
-use fs2::FileExt;
-use std::fs;
-use std::io::{Read, Write};
+use crate::fs::jsonl_spool;
+use anyhow::Result;
 use std::path::{Path, PathBuf};
 
 /// Spool location relative to a worktree root.
@@ -60,39 +57,12 @@ pub fn spool_path(worktree_root: &Path) -> PathBuf {
 /// content plus a 2000-char context can exceed that, so two concurrent
 /// appends could otherwise interleave their bytes on one line.
 pub fn append_to_spool(worktree_root: &Path, entry: &MemoryEntry) -> Result<()> {
-    let path = spool_path(worktree_root);
-    if let Some(parent) = path.parent() {
-        fs::create_dir_all(parent)
-            .with_context(|| format!("Failed to create spool directory: {}", parent.display()))?;
-    }
-
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .with_context(|| format!("Failed to open memory spool: {}", path.display()))?;
-    file.lock_exclusive()
-        .with_context(|| format!("Failed to lock memory spool: {}", path.display()))?;
-
-    let size = file
-        .metadata()
-        .with_context(|| format!("Failed to stat memory spool: {}", path.display()))?
-        .len();
-    if size >= SPOOL_MAX_BYTES {
-        anyhow::bail!(
-            "Memory spool {} has reached its {SPOOL_MAX_BYTES}-byte cap; \
-             the loom daemon has not drained it yet",
-            path.display()
-        );
-    }
-
-    // `to_string` (not `to_string_pretty`) so the payload is guaranteed to
-    // be a single line - serde_json escapes any newline inside content/context.
-    let line = serde_json::to_string(entry).context("Failed to serialize memory entry")?;
-    writeln!(file, "{line}")
-        .with_context(|| format!("Failed to append to memory spool: {}", path.display()))?;
-
-    Ok(())
+    jsonl_spool::append(
+        worktree_root,
+        SPOOL_RELPATH,
+        entry,
+        SPOOL_MAX_BYTES as usize,
+    )
 }
 
 /// Pending entries, WITHOUT removing them. Empty vec when no spool exists.
@@ -101,21 +71,7 @@ pub fn append_to_spool(worktree_root: &Path, entry: &MemoryEntry) -> Result<()> 
 /// every stage that has spooled nothing) so this must stay cheap and must
 /// never create the file or the `.loom/` directory.
 pub fn read_pending(worktree_root: &Path) -> Result<Vec<MemoryEntry>> {
-    let path = spool_path(worktree_root);
-    let opened = open_regular_no_follow(worktree_root, SPOOL_RELPATH, libc::O_RDONLY)
-        .with_context(|| format!("Failed to open memory spool: {}", path.display()))?;
-    let Some(file) = opened else {
-        return Ok(Vec::new());
-    };
-    file.lock_shared()
-        .with_context(|| format!("Failed to lock memory spool: {}", path.display()))?;
-
-    let mut contents = String::new();
-    (&file)
-        .read_to_string(&mut contents)
-        .with_context(|| format!("Failed to read memory spool: {}", path.display()))?;
-
-    Ok(parse_entries(&contents).0)
+    jsonl_spool::read(worktree_root, SPOOL_RELPATH)
 }
 
 /// Hand every pending entry to `sink`, then truncate the spool.
@@ -141,29 +97,9 @@ pub fn drain_spool(
     worktree_root: &Path,
     sink: &mut dyn FnMut(&MemoryEntry) -> Result<()>,
 ) -> Result<DrainOutcome> {
-    let path = spool_path(worktree_root);
-    let opened = open_regular_no_follow(worktree_root, SPOOL_RELPATH, libc::O_RDWR)
-        .with_context(|| format!("Memory spool {} was not drained", path.display()))?;
-    let Some(mut file) = opened else {
-        return Ok(DrainOutcome::default());
-    };
-    file.lock_exclusive()
-        .with_context(|| format!("Failed to lock memory spool: {}", path.display()))?;
-
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)
-        .with_context(|| format!("Failed to read memory spool: {}", path.display()))?;
-
-    let (entries, skipped_malformed) = parse_entries(&contents);
-    for entry in &entries {
-        sink(entry)?;
-    }
-
-    file.set_len(0)
-        .with_context(|| format!("Failed to truncate memory spool: {}", path.display()))?;
-
+    let (drained, skipped_malformed) = jsonl_spool::drain(worktree_root, SPOOL_RELPATH, sink)?;
     Ok(DrainOutcome {
-        drained: entries.len(),
+        drained,
         skipped_malformed,
     })
 }
@@ -237,24 +173,6 @@ pub(crate) fn validate_spooled_entry(entry: &MemoryEntry) -> Result<()> {
     }
     validate_evidence(&entry.evidence)?;
     Ok(())
-}
-
-/// Parse spool contents into (successfully-parsed entries, malformed-line count).
-/// Blank lines are ignored entirely - not counted as malformed.
-fn parse_entries(contents: &str) -> (Vec<MemoryEntry>, usize) {
-    let mut entries = Vec::new();
-    let mut skipped = 0;
-    for line in contents.lines() {
-        let line = line.trim();
-        if line.is_empty() {
-            continue;
-        }
-        match serde_json::from_str::<MemoryEntry>(line) {
-            Ok(entry) => entries.push(entry),
-            Err(_) => skipped += 1,
-        }
-    }
-    (entries, skipped)
 }
 
 #[cfg(test)]

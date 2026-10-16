@@ -4,14 +4,15 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+use chrono::Utc;
 use tempfile::TempDir;
 
 use super::*;
-use crate::daemon::handle_dispute_criteria;
 use crate::fs::work_dir::WorkDir;
 use crate::models::dispute::{CriterionField, FindingSnapshot};
 use crate::models::stage::StageStatus;
 use crate::plan::schema::AcceptanceCriterion;
+use crate::stage_service::handle_dispute_criteria;
 use crate::verify::contracts::store::{write_freeze, FreezeRecord, FrozenContract};
 use crate::verify::contracts::test_support::{red_reports, CONTRACT_ID};
 use crate::verify::review::report::Finding;

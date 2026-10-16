@@ -5,13 +5,13 @@ use std::path::Path;
 use std::time::Instant;
 
 use super::{elapsed_ms, Enumeration, SourceGraphCounters, SourceGraphScope, WorkingTree};
-use crate::context::extract::{self, extract_file, extractor_for, Lookup};
+use crate::context::extract::{self, extractor_for, Lookup};
 use crate::context::graph_store::{FileEntry, GraphLayer, GraphStore};
 use crate::context::refresh::BoxedExtractor;
-use crate::context::source_graph::{body_hash, FileCoverage, GRAPH_SCHEMA_VERSION};
+use crate::context::source_graph::read::{read_source, SourceRead};
+use crate::context::source_graph::{FileCoverage, GRAPH_SCHEMA_VERSION};
 use crate::context::store::canonical_json;
-use crate::fs::safe_read::read_bounded;
-use crate::git::runner::run_git_checked;
+use crate::git::runner::run_git_stream;
 
 pub(super) struct LayerBuild {
     pub layer: GraphLayer,
@@ -130,20 +130,20 @@ fn resolve_file_entry(
     };
     counters.bytes_read = counters
         .bytes_read
-        .saturating_add(u64::try_from(bytes.len()).unwrap_or(u64::MAX));
-    let hash = body_hash(&bytes);
+        .saturating_add(u64::try_from(bytes.size).unwrap_or(u64::MAX));
+    let hash = &bytes.hash;
     counters.hash_ms = counters.hash_ms.saturating_add(elapsed_ms(hash_started));
     counters.files_hashed += 1;
-    if let Some(entry) = reuse_by_hash(path, &hash, ctx.previous, ctx.base, ctx.extractors) {
+    if let Some(entry) = reuse_by_hash(path, hash, ctx.previous, ctx.base, ctx.extractors) {
         counters.files_reused += 1;
         return entry;
     }
 
     let parse_started = Instant::now();
-    let extraction = extract_file(ctx.extractors, Path::new(path), &bytes);
+    let entry = bytes.entry(ctx.extractors, Path::new(path));
     counters.parse_ms = counters.parse_ms.saturating_add(elapsed_ms(parse_started));
     counters.files_parsed += 1;
-    FileEntry::from_extraction(&bytes, extraction)
+    entry
 }
 
 fn active_paths(
@@ -238,18 +238,13 @@ fn read_bytes(
     scope: &SourceGraphScope,
     tree: &WorkingTree,
     path: &str,
-) -> std::result::Result<Vec<u8>, String> {
+) -> std::result::Result<SourceRead, String> {
     if matches!(scope, SourceGraphScope::Base { .. }) && tree.dirty.contains_key(path) {
         let object = format!("HEAD:{path}");
-        return run_git_checked(&["show", &object], project_root)
-            .map(String::into_bytes)
+        return run_git_stream(&["show", &object], project_root, SourceRead::read)
             .map_err(|error| error.to_string());
     }
-    // The working tree is a sandboxed stage's to write, so a symlink there -
-    // tracked, untracked, or swapped in after enumeration - is refused at every
-    // component instead of followed out of the repository; the refusal lands in
-    // `unreadable_entry` like any other unreadable file. Unbounded, as before.
-    read_bounded(project_root, Path::new(path), usize::MAX).map_err(|error| format!("{error:#}"))
+    read_source(project_root, Path::new(path)).map_err(|error| format!("{error:#}"))
 }
 
 fn unreadable_entry(error: String) -> FileEntry {

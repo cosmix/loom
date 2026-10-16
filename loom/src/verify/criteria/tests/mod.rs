@@ -13,3 +13,6 @@ mod setup_tests;
 mod variable_tests;
 mod working_dir_tests;
 mod zero_test_tests;
+
+mod go_evidence_tests;
+mod shared_assertion_tests;

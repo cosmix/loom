@@ -11,13 +11,10 @@
 //! dispute's own directory settles it for good, and [`is_closed`] is the one
 //! predicate every reader of dispute state consults.
 
-use anyhow::{Context, Result};
 use std::fs::OpenOptions;
 use std::io::ErrorKind;
-use std::os::fd::OwnedFd;
 use std::path::Path;
 
-use crate::fs::safe_fs::flock_exclusive;
 use crate::models::dispute::{applied_marker, dispute_dir};
 
 use super::scan::dispute_ids;
@@ -31,25 +28,7 @@ pub(super) fn is_closed(dispute_dir: &Path) -> bool {
     std::fs::symlink_metadata(dispute_dir.join(CLOSED_MARKER)).is_ok()
 }
 
-/// Take the per-stage lock that serialises dispute filings for the stage
-/// whose dispute directory is `stage_dir`, creating the directory and its
-/// `.lock` file if needed. The lock is held until the descriptor drops.
-pub(crate) fn lock_stage_dispute_dir(stage_dir: &Path) -> Result<OwnedFd> {
-    std::fs::create_dir_all(stage_dir)
-        .with_context(|| format!("Failed to create {}", stage_dir.display()))?;
-    let lock_path = stage_dir.join(".lock");
-    let lock_file = OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .read(true)
-        .write(true)
-        .open(&lock_path)
-        .with_context(|| format!("Failed to open {}", lock_path.display()))?;
-    let lock = OwnedFd::from(lock_file);
-    flock_exclusive(&lock)
-        .with_context(|| format!("Failed to acquire dispute lock at {}", lock_path.display()))?;
-    Ok(lock)
-}
+pub(crate) use crate::fs::dispute_lock::lock_stage_dispute_dir;
 
 /// Close every dispute of `stage_id` that has no applied outcome, under the
 /// lock its filings take.

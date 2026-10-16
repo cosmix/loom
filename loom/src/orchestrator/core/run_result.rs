@@ -1,8 +1,8 @@
 //! Read final persisted states, including stages completed outside active sessions.
+use super::lifecycle_snapshot::StageSnapshot;
 use super::OrchestratorResult;
-use crate::verify::transitions::load_stage;
 use crate::{models::stage::StageStatus, plan::ExecutionGraph};
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::{DateTime, Utc};
 use std::path::Path;
 
@@ -21,9 +21,7 @@ pub(super) fn collect_result(
         started_at,
         completed_at: Utc::now(),
     };
-    for node in graph.all_nodes() {
-        let stage = load_stage(&node.id, work_dir)
-            .with_context(|| format!("Failed to read final state of stage '{}'", node.id))?;
+    for (stage, _) in StageSnapshot::load(work_dir, graph)?.records.into_values() {
         match stage.status {
             StageStatus::Completed => result.completed_stages.push(stage.id),
             StageStatus::Skipped => {}
@@ -105,6 +103,24 @@ mod tests {
 
         fs::write(dir.path().join("stages/test.md"), "broken").unwrap();
         assert!(collect_result(dir.path(), &graph, 0, Utc::now()).is_err());
+    }
+
+    #[test]
+    fn unexpected_stage_record_prevents_final_success() {
+        let (dir, graph) = fixture();
+        write_status(dir.path(), StageStatus::Completed);
+        for content in [
+            "broken".to_string(),
+            serialize_stage_to_markdown(&Stage {
+                id: "untracked".into(),
+                status: StageStatus::Completed,
+                ..Stage::default()
+            })
+            .unwrap(),
+        ] {
+            fs::write(dir.path().join("stages/untracked.md"), content).unwrap();
+            assert!(collect_result(dir.path(), &graph, 0, Utc::now()).is_err());
+        }
     }
 
     #[test]

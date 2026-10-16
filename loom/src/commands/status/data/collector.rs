@@ -1,4 +1,4 @@
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::Utc;
 use std::fs;
 
@@ -8,7 +8,6 @@ use crate::models::session::{Session, SessionType};
 use crate::models::stage::{Stage, StageStatus, StatusBucket};
 use crate::orchestrator::coherence::executing_stage_incoherence;
 use crate::orchestrator::get_merge_point;
-use crate::parser::frontmatter::parse_from_markdown;
 use crate::plan::parser::extract_plan_name;
 use crate::verify::transitions::list_all_stages;
 
@@ -29,49 +28,7 @@ use super::SessionSummary;
 #[cfg(test)]
 use crate::process::is_process_alive;
 
-/// Load all sessions from the state directory's sessions/ directory
-pub fn load_all_sessions(work_dir: &WorkDir) -> Result<Vec<Session>> {
-    let sessions_dir = work_dir.sessions_dir();
-    if !sessions_dir.exists() {
-        return Ok(Vec::new());
-    }
-
-    let mut sessions = Vec::new();
-    let entries = fs::read_dir(&sessions_dir).with_context(|| {
-        format!(
-            "Failed to read sessions directory: {}",
-            sessions_dir.display()
-        )
-    })?;
-
-    for entry in entries {
-        let entry = entry?;
-        let path = entry.path();
-
-        if path.extension().and_then(|s| s.to_str()) == Some("md") {
-            match load_session_from_file(&path) {
-                Ok(session) => sessions.push(session),
-                Err(e) => {
-                    eprintln!(
-                        "Warning: Failed to load session from {}: {}",
-                        path.display(),
-                        e
-                    );
-                }
-            }
-        }
-    }
-
-    Ok(sessions)
-}
-
-/// Load a single session from a markdown file
-fn load_session_from_file(path: &std::path::Path) -> Result<Session> {
-    let content = fs::read_to_string(path)
-        .with_context(|| format!("Failed to read session file: {}", path.display()))?;
-
-    parse_from_markdown(&content, "Session")
-}
+pub use crate::provider_data::sessions::load_all_sessions;
 
 /// The session that speaks for this stage.
 ///
@@ -387,3 +344,7 @@ mod resolver_tests;
 #[cfg(test)]
 #[path = "collector_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "inventory_tests.rs"]
+mod inventory_tests;

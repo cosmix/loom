@@ -1,5 +1,8 @@
+pub(crate) mod daemon_state;
+pub(crate) mod dispute_lock;
 pub(crate) mod git_marker;
 pub mod inbox;
+pub(crate) mod jsonl_spool;
 pub mod knowledge;
 pub mod locking;
 pub mod memory;

@@ -251,7 +251,8 @@ fn truncated_evaluation_output_is_never_publishable() {
         CommandConfinement::Confined,
     );
     let output = format!("ok\n{OUTPUT_TRUNCATED_MARKER}");
-    let result = result(0, &output, "");
+    let mut result = result(0, &output, "");
+    result.output_complete = false;
     let verdict = contract.verdict(&result);
 
     assert!(CachedCriterionPass::from_result(

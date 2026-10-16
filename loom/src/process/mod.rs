@@ -5,6 +5,8 @@
 pub mod boot_id;
 mod environment;
 mod identity;
+mod owned;
+pub(crate) use owned::OwnedProcess;
 #[doc(hidden)]
 pub mod sandbox_probe;
 
@@ -16,7 +18,6 @@ use std::io::Read;
 use std::process::{Child, Command, ExitStatus, Output, Stdio};
 use std::sync::mpsc::{self, Receiver};
 use std::time::{Duration, Instant};
-use wait_timeout::ChildExt;
 
 pub use environment::{
     agent_session_environment_from, apply_stage_environment, apply_stage_environment_from,
@@ -109,13 +110,9 @@ impl BoundedOutput {
 ///
 /// # Deadline scope
 ///
-/// `timeout` bounds the *whole call*, not just the child's run time: once the
-/// child exits, collecting its buffered stdout/stderr from the reader
-/// threads still has to happen before this function can return, and a
-/// descendant that inherited a pipe and outlived the direct child can hold
-/// that collection open indefinitely. The remaining time budget (`timeout`
-/// minus time already spent) bounds that collection too; running past it is
-/// reported the same way as the child itself running past the deadline.
+/// `timeout` bounds execution. Direct-child exit or timeout retires the owned
+/// group immediately; reaping and both pipes then share a one-second cleanup
+/// deadline. A successful leader retains its status after descendants are killed.
 pub fn run_bounded(command: &mut Command, timeout: Duration) -> Result<BoundedOutput> {
     #[cfg(unix)]
     {
@@ -123,33 +120,34 @@ pub fn run_bounded(command: &mut Command, timeout: Duration) -> Result<BoundedOu
         command.process_group(0);
     }
 
-    let started = Instant::now();
-    let mut child = command
+    let child = command
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .spawn()
         .with_context(|| format!("Failed to spawn {:?}", command.get_program()))?;
 
-    let (stdout_reader, stderr_reader) = start_readers(&mut child, command)?;
+    let mut child = OwnedProcess::new(child);
+    let (stdout_reader, stderr_reader) = start_readers(child.child(), command)?;
 
     match child
-        .wait_timeout(timeout)
+        .wait(timeout)
         .with_context(|| format!("Failed to wait for {:?}", command.get_program()))?
     {
         Some(status) => {
-            let remaining = timeout.saturating_sub(started.elapsed());
-            collect_output(
-                &mut child,
-                status,
-                stdout_reader,
-                stderr_reader,
-                remaining,
-                command,
-            )
+            let deadline = child.retire();
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            collect_output(status, stdout_reader, stderr_reader, remaining, command)
         }
         None => {
-            kill_group(&mut child);
-            let _ = child.wait();
+            let deadline = child.retire();
+            let _ = recv_stream(
+                &stdout_reader,
+                deadline.saturating_duration_since(Instant::now()),
+            );
+            let _ = recv_stream(
+                &stderr_reader,
+                deadline.saturating_duration_since(Instant::now()),
+            );
             Ok(BoundedOutput::TimedOut)
         }
     }
@@ -158,22 +156,6 @@ pub fn run_bounded(command: &mut Command, timeout: Duration) -> Result<BoundedOu
 /// A reader thread's eventual result, or `None` if its pipe was never
 /// attached (see [`drain`]).
 type ReaderHandle = Option<Receiver<std::io::Result<Vec<u8>>>>;
-
-/// Grace period given to the reader threads to unblock once the process
-/// group has been killed after a post-exit deadline was already exceeded.
-const READER_GRACE: Duration = Duration::from_secs(1);
-
-/// Kill the whole process group of `child` so a control command cannot leave
-/// descendants behind, whether the deadline expired while it was still
-/// running or a reader thread failed to start after it did.
-fn kill_group(child: &mut Child) {
-    #[cfg(unix)]
-    if let Ok(pid) = i32::try_from(child.id()) {
-        let _ = kill(Pid::from_raw(-pid), Signal::SIGKILL);
-    }
-    #[cfg(not(unix))]
-    let _ = child.kill();
-}
 
 /// Start the stdout/stderr reader threads for an already-spawned `child`.
 ///
@@ -184,23 +166,16 @@ fn kill_group(child: &mut Child) {
 fn start_readers(child: &mut Child, command: &Command) -> Result<(ReaderHandle, ReaderHandle)> {
     let stdout = match drain(child.stdout.take()) {
         Ok(reader) => reader,
-        Err(error) => return Err(reader_spawn_failed(child, "stdout", error, command)),
+        Err(error) => return Err(reader_spawn_failed("stdout", error, command)),
     };
     let stderr = match drain(child.stderr.take()) {
         Ok(reader) => reader,
-        Err(error) => return Err(reader_spawn_failed(child, "stderr", error, command)),
+        Err(error) => return Err(reader_spawn_failed("stderr", error, command)),
     };
     Ok((stdout, stderr))
 }
 
-fn reader_spawn_failed(
-    child: &mut Child,
-    stream: &str,
-    error: std::io::Error,
-    command: &Command,
-) -> anyhow::Error {
-    kill_group(child);
-    let _ = child.wait();
+fn reader_spawn_failed(stream: &str, error: std::io::Error, command: &Command) -> anyhow::Error {
     anyhow::Error::new(error).context(format!(
         "Failed to start {stream} reader for {:?}",
         command.get_program()
@@ -225,30 +200,26 @@ fn drain<R: Read + Send + 'static>(pipe: Option<R>) -> std::io::Result<ReaderHan
     Ok(Some(rx))
 }
 
-/// Receive both readers' output within `remaining`. If either hasn't
-/// delivered by then, the direct child has already exited but a descendant
-/// still holds a pipe open: the caller's deadline was exceeded while output
-/// was held open, so this reports [`BoundedOutput::TimedOut`] regardless of
-/// whether the descendant, once the process group is killed, still manages
-/// to unblock the reader. [`READER_GRACE`] only bounds that cleanup attempt
-/// so the reader threads exit promptly instead of lingering past return.
+/// Receive both pipes against the same retirement deadline.
 fn collect_output(
-    child: &mut Child,
     status: ExitStatus,
     stdout_reader: ReaderHandle,
     stderr_reader: ReaderHandle,
     remaining: Duration,
     command: &Command,
 ) -> Result<BoundedOutput> {
-    let stdout = recv_stream(&stdout_reader, remaining);
-    let stderr = recv_stream(&stderr_reader, remaining);
+    let deadline = Instant::now() + remaining;
+    let stdout = recv_stream(
+        &stdout_reader,
+        deadline.saturating_duration_since(Instant::now()),
+    );
+    let stderr = recv_stream(
+        &stderr_reader,
+        deadline.saturating_duration_since(Instant::now()),
+    );
     if let (Some(stdout), Some(stderr)) = (stdout, stderr) {
         return finish_output(status, stdout, stderr, command).map(BoundedOutput::Completed);
     }
-    kill_group(child);
-    let _ = child.wait();
-    let _ = recv_stream(&stdout_reader, READER_GRACE);
-    let _ = recv_stream(&stderr_reader, READER_GRACE);
     Ok(BoundedOutput::TimedOut)
 }
 
@@ -386,3 +357,6 @@ pub fn is_process_alive(pid: u32) -> bool {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(all(test, unix))]
+pub(crate) mod lifecycle_tests;

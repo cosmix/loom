@@ -1,5 +1,6 @@
 //! Dead code detection verification
 
+use crate::verify::criteria::assertions::{evaluate, AssertionSpec};
 use anyhow::Result;
 use std::path::Path;
 use std::time::Duration;
@@ -25,62 +26,46 @@ pub fn run_dead_code_check(
     working_dir: &Path,
     confinement: CommandConfinement,
 ) -> Result<Vec<VerificationGap>> {
+    run_with_timeout(check, working_dir, confinement, DEAD_CODE_TIMEOUT)
+}
+
+fn run_with_timeout(
+    check: &DeadCodeCheck,
+    working_dir: &Path,
+    confinement: CommandConfinement,
+    timeout: Duration,
+) -> Result<Vec<VerificationGap>> {
     let mut gaps = Vec::new();
 
     // Run the command and capture all output
     let spec = CommandSpec::shell(check.command.as_str());
-    let result = run_spec_with_timeout(&spec, Some(working_dir), DEAD_CODE_TIMEOUT, confinement)?;
+    let result = run_spec_with_timeout(&spec, Some(working_dir), timeout, confinement)?;
 
-    // Even if the command fails, we should still check the output for patterns
-    // Commands like cargo build may return non-zero with warnings
+    for failure in evaluate(&AssertionSpec::default(), &result).failures {
+        gaps.push(VerificationGap::new(
+            GapType::DeadCodeFound,
+            format!("Dead code analysis unavailable: {failure}"),
+            format!("Repair analyzer command: {}", check.command),
+        ));
+    }
 
     // Combine stdout and stderr for pattern matching
     let combined_output = format!("{}\n{}", result.stdout, result.stderr);
 
-    // Process each line of output
-    for line in combined_output.lines() {
-        // Skip empty lines
-        if line.trim().is_empty() {
-            continue;
-        }
-
-        // Check if any fail_pattern matches this line
-        let mut has_fail_pattern = false;
-        for fail_pattern in &check.fail_patterns {
-            if line.contains(fail_pattern) {
-                has_fail_pattern = true;
-                break;
-            }
-        }
-
-        // If no fail pattern matched, skip this line
-        if !has_fail_pattern {
-            continue;
-        }
-
-        // Check if any ignore_pattern matches (to filter false positives)
-        let mut should_ignore = false;
-        for ignore_pattern in &check.ignore_patterns {
-            if line.contains(ignore_pattern) {
-                should_ignore = true;
-                break;
-            }
-        }
-
-        // If this line should be ignored, skip it
-        if should_ignore {
-            continue;
-        }
-
-        // This is a violation - create a gap
-        let description = format!("Dead code detected: {}", line.trim());
-        let suggestion =
-            "Remove the unused code or add to ignore_patterns if intentional".to_string();
-
+    for line in combined_output.lines().filter(|line| {
+        check
+            .fail_patterns
+            .iter()
+            .any(|pattern| line.contains(pattern))
+            && !check
+                .ignore_patterns
+                .iter()
+                .any(|pattern| line.contains(pattern))
+    }) {
         gaps.push(VerificationGap::new(
             GapType::DeadCodeFound,
-            description,
-            suggestion,
+            format!("Dead code detected: {}", line.trim()),
+            "Remove the unused code or add to ignore_patterns if intentional".to_string(),
         ));
     }
 
@@ -182,3 +167,7 @@ mod tests {
         assert!(result.is_empty(), "Expected no gaps for empty output");
     }
 }
+
+#[cfg(test)]
+#[path = "dead_code_execution_tests.rs"]
+mod execution_tests;

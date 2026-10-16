@@ -12,8 +12,10 @@ use crate::fs::locking::locked_write;
 use crate::models::session::Session;
 use crate::parser::markdown::MarkdownDocument;
 
+mod enumerate;
 #[path = "session_files/exact.rs"]
 mod exact;
+pub use enumerate::{enumerate_sessions, SessionEnumeration, SessionRecord};
 pub(crate) use exact::validate_session_file_id;
 pub use exact::{
     load_session_exact, mark_session_terminal_reason, record_session_context_exact,
@@ -217,45 +219,16 @@ pub fn find_session_for_stage(stage_id: &str, work_dir: &Path) -> Option<String>
 /// println!("Found {} session(s)", sessions.len());
 /// ```
 pub fn find_sessions_for_stage(stage_id: &str, work_dir: &Path) -> Result<Vec<String>> {
-    let sessions_dir = work_dir.join("sessions");
-    let mut session_ids = Vec::new();
-
-    if !sessions_dir.exists() {
-        return Ok(session_ids);
+    let enumeration = enumerate_sessions(work_dir)?;
+    for warning in &enumeration.diagnostics {
+        tracing::warn!("{warning}");
     }
-
-    let entries = fs::read_dir(&sessions_dir).with_context(|| {
-        format!(
-            "Failed to read sessions directory: {}",
-            sessions_dir.display()
-        )
-    })?;
-
-    for entry in entries.flatten() {
-        let path = entry.path();
-        if !path.is_file() || path.extension().and_then(|e| e.to_str()) != Some("md") {
-            continue;
-        }
-
-        let content = match fs::read_to_string(&path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        let doc = match MarkdownDocument::parse(&content) {
-            Ok(d) => d,
-            Err(_) => continue,
-        };
-
-        let session_stage_id = doc.get_frontmatter("stage_id");
-        if session_stage_id.map(|s| s.as_str()) == Some(stage_id) {
-            if let Some(session_id) = doc.get_frontmatter("id").cloned() {
-                session_ids.push(session_id);
-            }
-        }
-    }
-
-    Ok(session_ids)
+    Ok(enumeration
+        .records
+        .into_iter()
+        .filter(|record| record.stage_id.as_deref() == Some(stage_id))
+        .map(|record| record.id)
+        .collect())
 }
 
 #[cfg(test)]

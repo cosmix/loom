@@ -23,3 +23,6 @@ pub use types::{
     StageOutput, StageStatus, StageType, StatusBucket, SuccessCriteria, WiringTest,
     ALLOWED_REASONING_EFFORTS,
 };
+
+/// Default timeout before a stage session is considered hung.
+pub const DEFAULT_HUNG_TIMEOUT_SECS: u64 = 300;

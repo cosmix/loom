@@ -156,9 +156,14 @@ fn a_stage_merged_while_the_pass_held_a_stale_copy_is_left_untouched() {
 
 #[test]
 fn a_conflict_that_became_clean_is_landed_without_a_resolver() {
-    let (repo, _head) = repo_with_clean_stage_branch("healed");
+    let (repo, head) = repo_with_clean_stage_branch("healed");
     let mut orchestrator = orchestrator_with_conflict(repo.path(), "healed");
     use_real_worktree(repo.path(), "healed");
+    update_stage("healed", &orchestrator.config.work_dir, |stage| {
+        stage.completed_commit = Some(head);
+        Ok(())
+    })
+    .unwrap();
     let work_dir = orchestrator.config.work_dir.clone();
 
     assert_eq!(orchestrator.spawn_merge_resolution_sessions().unwrap(), 0);
@@ -191,7 +196,7 @@ fn a_clean_merge_with_no_proof_of_the_recorded_commit_goes_to_review() {
 
     let reason = review_reason_after_one_pass(&mut orchestrator, "unproven");
 
-    assert!(reason.contains("the merge landed in main"), "{reason}");
+    assert!(reason.contains("recorded commit is not in"), "{reason}");
     assert!(reason.contains("inspect loom/unproven"), "{reason}");
 }
 

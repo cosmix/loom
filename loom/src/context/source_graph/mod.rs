@@ -23,6 +23,7 @@
 mod edge;
 mod imports;
 mod node;
+pub(crate) mod read;
 
 pub use edge::{site_id, EdgeProvenance, SourceEdge, SourceEdgeKind};
 pub use imports::ImportBinding;
@@ -36,7 +37,7 @@ pub const UNRESOLVED_TARGET: &str = "<unresolved>";
 /// Version of the persisted graph layer format. A layer written under another
 /// version is never current and never a reuse source, so an old cache is
 /// rebuilt instead of read.
-pub const GRAPH_SCHEMA_VERSION: u32 = 2;
+pub const GRAPH_SCHEMA_VERSION: u32 = 3;
 
 /// Confidence of a [`EdgeProvenance::Structural`] edge. Numeric confidence is
 /// an evidence ranking, not a calibrated probability; only structural (and the

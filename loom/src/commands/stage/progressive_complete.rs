@@ -149,8 +149,8 @@ fn mark_landed(stage: &mut Stage, merge_point: &str, repo_root: &Path) -> Result
 /// when `get_branch_head` succeeds: overwriting a previously persisted
 /// `completed_commit` with `None` would lose the ancestry proof.
 fn capture_completed_commit(stage: &mut Stage, repo_root: &Path) -> Option<String> {
-    if let Ok(commit) = get_branch_head(&branch_name_for_stage(&stage.id), repo_root) {
-        stage.completed_commit = Some(commit);
+    if stage.completed_commit.is_none() {
+        stage.completed_commit = get_branch_head(&branch_name_for_stage(&stage.id), repo_root).ok();
     }
     stage.completed_commit.clone()
 }

@@ -65,6 +65,29 @@ fn other_version_loads_empty() {
 }
 
 #[test]
+fn version_two_maxima_are_rebuilt_instead_of_migrated_without_attribution() {
+    let fx = Fixture::new();
+    let dir = fx.tokens_dir();
+    let mut body = serde_json::to_value(populated()).unwrap();
+    body["version"] = serde_json::json!(2);
+    for agents in body["stages"].as_object_mut().unwrap().values_mut() {
+        for agent in agents.as_object_mut().unwrap().values_mut() {
+            for message in agent["file"]["messages"].as_array_mut().unwrap() {
+                message.as_array_mut().unwrap().truncate(2);
+            }
+        }
+    }
+    fs::write(
+        dir.join(CHECKPOINT_FILE),
+        serde_json::to_vec(&body).unwrap(),
+    )
+    .unwrap();
+    let (loaded, warning) = Checkpoint::load_reporting(&dir);
+    assert_eq!(loaded, Checkpoint::empty());
+    assert!(warning.unwrap().starts_with("checkpoint is version 2;"));
+}
+
+#[test]
 fn version_one_checkpoint_is_refused_with_its_reason() {
     let fx = Fixture::new();
     let dir = fx.tokens_dir();

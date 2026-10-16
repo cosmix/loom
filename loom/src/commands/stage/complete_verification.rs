@@ -113,7 +113,7 @@ fn run_after_checks(
 }
 
 fn run_unwired_check(checks: &VerificationChecks<'_>, base_branch: &str) -> Result<()> {
-    let Some(verification_dir) = checks.acceptance_dir else {
+    let Some(verification_dir) = checks.worktree_root else {
         return Ok(());
     };
     let result = match detect_unwired_files(verification_dir, base_branch) {
@@ -160,7 +160,7 @@ fn report_unwired_files(files: &[UnwiredFile]) {
 }
 
 fn run_duplicate_check(checks: &VerificationChecks<'_>, base_branch: &str) -> Result<()> {
-    let Some(verification_dir) = checks.acceptance_dir else {
+    let Some(verification_dir) = checks.worktree_root else {
         return Ok(());
     };
     let duplicates = match detect_duplicate_symbols(verification_dir, base_branch) {

@@ -13,6 +13,8 @@ pub struct CriterionResult {
     pub duration: Duration,
     /// Whether the command was terminated due to timeout
     pub timed_out: bool,
+    /// Both output streams were captured completely without read errors.
+    pub output_complete: bool,
     /// Whether this result came from the acceptance pass cache rather than a
     /// real execution — see `super::cache`. Always `false` for results
     /// built via [`Self::new`]; the internal cache-hit constructor sets it.
@@ -38,6 +40,7 @@ impl CriterionResult {
             exit_code,
             duration,
             timed_out,
+            output_complete: true,
             cached: false,
         }
     }
@@ -57,6 +60,7 @@ impl CriterionResult {
             exit_code,
             duration,
             timed_out: false,
+            output_complete: true,
             cached: true,
         }
     }

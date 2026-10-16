@@ -31,10 +31,10 @@
 //! - **Isolated Working Directory**: Commands can be scoped to a specific worktree
 //!   directory, limiting their filesystem context.
 //!
-//! - **Environment Confinement**: Commands run with a rebuilt, allowlisted
-//!   environment rather than the daemon's ambient one, so a plan line does not
-//!   inherit whatever credentials loom's own shell happened to export. A plan
-//!   or stage can opt out with `sandbox.command_confinement: inherit`. See
+//! - **Host Confinement**: Commands run inside an OS boundary with an allowlisted
+//!   environment, restricted filesystem access, and denied network access.
+//!   Missing host containment fails before repository code runs. A plan or
+//!   stage can opt out with `sandbox.command_confinement: inherit`. See
 //!   [`resolve_confinement`] for the level resolution and [`spawn_confined`]
 //!   for the spawn primitive.
 //!
@@ -45,6 +45,7 @@
 //! - The criterion is marked as failed with a timeout-specific error message
 //! - Subsequent criteria continue to execute (fail-fast is not the default)
 
+pub(crate) mod assertions;
 mod cache;
 mod cache_contract;
 mod cache_executable;
@@ -65,7 +66,9 @@ mod tests;
 // Re-export public types and functions
 pub use cache::CachePolicy;
 pub use config::{CriteriaConfig, DEFAULT_COMMAND_TIMEOUT};
-pub use confine::{plan_confinement, resolve_confinement, spawn_confined, CommandSpec};
+pub use confine::{
+    plan_confinement, resolve_confinement, spawn_confined, CommandSpec, ConfinedChild,
+};
 pub use executor::{
     run_single_criterion, run_single_criterion_with_timeout, run_spec_with_timeout,
 };

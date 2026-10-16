@@ -59,6 +59,11 @@ fn setup_work_dir_with_plan(temp_dir: &TempDir) -> (PathBuf, WorkDir) {
     };
 
     let plan_path = create_test_plan(temp_dir.path(), vec![stage_def]);
+    fs::write(
+        work_dir.root().join("stages/test-stage.md"),
+        stage_markdown("test-stage", "Test Stage"),
+    )
+    .unwrap();
 
     let config_content = format!(
         "[plan]\nsource_path = \"{}\"\nplan_id = \"test-plan\"\nplan_name = \"Test Plan\"\n",

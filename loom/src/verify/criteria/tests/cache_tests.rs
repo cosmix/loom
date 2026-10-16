@@ -153,8 +153,11 @@ fn missing_executable_identity_and_inherited_environment_are_ineligible() {
         ),
         Some(repo.path()),
         CommandConfinement::Confined,
-    )
-    .unwrap();
+    );
+    assert!(
+        missing.is_err(),
+        "missing executables must fail before cache lookup"
+    );
     let inherited = prepare_confined(
         &CommandSpec::shell("true"),
         Some(repo.path()),
@@ -168,7 +171,6 @@ fn missing_executable_identity_and_inherited_environment_are_ineligible() {
     )
     .unwrap();
 
-    assert!(ExecutionIdentity::from_prepared(&missing, CommandConfinement::Confined).is_none());
     assert!(ExecutionIdentity::from_prepared(&inherited, CommandConfinement::Inherit).is_none());
     assert!(ExecutionIdentity::from_prepared(&dynamic, CommandConfinement::Confined).is_none());
 }

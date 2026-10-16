@@ -24,7 +24,9 @@ const NO_MATCH_STDOUT: &str = concat!(
 /// `cargo test` and exits 0.
 fn fake_cargo(dir: &Path) -> PathBuf {
     let cargo = dir.join("cargo");
-    let script = format!("#!/bin/sh\ncat '{NO_MATCH_STDOUT}'\n");
+    let output = dir.join("no-match.stdout");
+    std::fs::copy(NO_MATCH_STDOUT, &output).unwrap();
+    let script = format!("#!/bin/sh\ncat '{}'\n", output.display());
     std::fs::write(&cargo, script).unwrap();
     std::fs::set_permissions(&cargo, std::fs::Permissions::from_mode(0o755)).unwrap();
     cargo

@@ -200,6 +200,62 @@ fn prepare_client_stream(stream: &UnixStream) -> Result<bool> {
     }
 }
 
+#[path = "client_dispatch.rs"]
+mod dispatch;
+
+struct AuthorizedRequest {
+    preface: RequestPreface,
+    authorization: Authorization,
+    peer_pid: Option<u32>,
+    request: Request,
+    _permit: super::admission::BytePermit,
+}
+
+fn receive_request(
+    stream: &mut UnixStream,
+    work_dir: &Path,
+    byte_budget: &Arc<ByteBudget>,
+) -> Result<Option<AuthorizedRequest>> {
+    let mut reader = DeadlineReader::new(&*stream, CLIENT_READ_TIMEOUT);
+    let Ok(preface) = read_request_preface(&mut reader) else {
+        return Ok(None);
+    };
+    let authorization = authorize_preface(work_dir, &preface);
+    if authorization == Authorization::Denied {
+        write_message(stream, &refuse_unauthenticated(&preface))?;
+        return Ok(None);
+    }
+    let Ok(length) = read_request_length(&mut reader) else {
+        return Ok(None);
+    };
+    let Some(permit) = byte_budget.try_reserve(length) else {
+        write_message(stream, &capacity_exhausted())?;
+        return Ok(None);
+    };
+    let request = match read_request_body(&mut reader, length) {
+        Ok(request) if preface.matches(&request) => request,
+        Ok(_) => {
+            write_message(stream, &Response::AuthenticationFailed)?;
+            return Ok(None);
+        }
+        Err(_) => return Ok(None),
+    };
+    let peer_pid = match authorize_body(stream, work_dir, authorization, &preface, &request) {
+        Ok(peer_pid) => peer_pid,
+        Err(refusal) => {
+            write_message(stream, &refusal)?;
+            return Ok(None);
+        }
+    };
+    Ok(Some(AuthorizedRequest {
+        preface,
+        authorization,
+        peer_pid,
+        request,
+        _permit: permit,
+    }))
+}
+
 /// Handle a client connection.
 pub fn handle_client_connection(
     mut stream: UnixStream,
@@ -212,78 +268,17 @@ pub fn handle_client_connection(
     if !prepare_client_stream(&stream)? {
         return Ok(());
     }
-
-    loop {
-        let mut reader = DeadlineReader::new(&stream, CLIENT_READ_TIMEOUT);
-        let preface = match read_request_preface(&mut reader) {
-            Ok(preface) => preface,
-            Err(_) => break,
-        };
-        let authorization = authorize_preface(work_dir, &preface);
-        if authorization == Authorization::Denied {
-            write_message(&mut stream, &refuse_unauthenticated(&preface))?;
+    let dispatch = dispatch::ClientDispatch {
+        shutdown_flag: &shutdown_flag,
+        status_subscribers: &status_subscribers,
+        log_subscribers: &log_subscribers,
+        work_dir,
+    };
+    while let Some(request) = receive_request(&mut stream, work_dir, &byte_budget)? {
+        if !dispatch.serve(&mut stream, request)? {
             break;
-        }
-        let length = match read_request_length(&mut reader) {
-            Ok(length) => length,
-            Err(_) => break,
-        };
-        let Some(_permit) = byte_budget.try_reserve(length) else {
-            write_message(&mut stream, &capacity_exhausted())?;
-            break;
-        };
-        let request = match read_request_body(&mut reader, length) {
-            Ok(request) if preface.matches(&request) => request,
-            Ok(_) => {
-                write_message(&mut stream, &Response::AuthenticationFailed)?;
-                break;
-            }
-            Err(_) => break,
-        };
-
-        let peer_pid = match authorize_body(&stream, work_dir, authorization, &preface, &request) {
-            Ok(peer_pid) => peer_pid,
-            Err(refusal) => {
-                write_message(&mut stream, &refusal)?;
-                break;
-            }
-        };
-
-        match request {
-            Request::Ping { .. } => write_message(&mut stream, &Response::Pong)?,
-            Request::Stop { .. } => {
-                // Capability::Admin already verified above — stop the daemon.
-                write_message(&mut stream, &Response::Ok)?;
-                shutdown_flag.store(true, Ordering::SeqCst);
-                break;
-            }
-            Request::SubscribeStatus { .. } => {
-                subscribe(&mut stream, &status_subscribers, "Status")?;
-            }
-            Request::SubscribeLogs { .. } => {
-                subscribe(&mut stream, &log_subscribers, "Log")?;
-            }
-            Request::Unsubscribe { .. } => {
-                write_message(&mut stream, &Response::Ok)?;
-                break;
-            }
-            request @ (Request::DisputeCriteria { .. }
-            | Request::FileDispute { .. }
-            | Request::BlockStage { .. }
-            | Request::FreezeContracts { .. }
-            | Request::ObserveChanges { .. }) => {
-                write_message(&mut stream, &serve_stage_control(work_dir, request))?;
-                break;
-            }
-            request
-            @ (Request::CompleteStage { .. } | Request::RecordCompletionEvidence { .. }) => {
-                let response = complete(&preface, authorization, peer_pid, request, work_dir);
-                write_message(&mut stream, &response)?;
-                break;
-            }
         }
     }
-
     Ok(())
 }
 

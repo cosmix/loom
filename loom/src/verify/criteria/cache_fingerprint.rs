@@ -25,6 +25,7 @@ pub(super) struct InputFingerprint {
 pub(super) struct ExecutionIdentity {
     executable_paths: Vec<PathBuf>,
     environment_digest: String,
+    containment_policy: String,
 }
 
 impl ExecutionIdentity {
@@ -36,9 +37,12 @@ impl ExecutionIdentity {
             return None;
         }
         let command = prepared.command();
+        let mut executable_paths = cache_executable::resolve(prepared)?;
+        executable_paths.push(prepared.containment_executable()?);
         Some(Self {
-            executable_paths: cache_executable::resolve(prepared)?,
+            executable_paths,
             environment_digest: hash_environment(command)?,
+            containment_policy: prepared.containment_policy_revision(),
         })
     }
 }
@@ -71,12 +75,13 @@ pub(super) fn capture_with_budget(
     }
 
     let mut hasher = Sha256::new();
-    hash_field(&mut hasher, b"acceptance-cache-input-v2");
+    hash_field(&mut hasher, b"acceptance-cache-input-v3");
     hash_field(&mut hasher, acceptance_dir.as_os_str().as_encoded_bytes());
     hash_field(&mut hasher, repo_root.as_os_str().as_encoded_bytes());
     hash_field(&mut hasher, head.as_bytes());
     hash_field(&mut hasher, &status);
     hash_field(&mut hasher, identity.environment_digest.as_bytes());
+    hash_field(&mut hasher, identity.containment_policy.as_bytes());
     let mut remaining = hash_budget;
     for executable in &identity.executable_paths {
         hash_field(&mut hasher, executable.as_os_str().as_encoded_bytes());

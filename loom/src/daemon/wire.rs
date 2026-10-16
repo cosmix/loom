@@ -11,7 +11,7 @@ const REQUEST_PREFACE_VERSION: u8 = 1;
 const REQUEST_PREFACE_HEADER_BYTES: usize = 8;
 
 pub const MAX_CREDENTIAL_BYTES: usize = 256;
-pub const MAX_REQUEST_BYTES: usize = 64 * 1024;
+pub use crate::stage_service::MAX_REQUEST_BYTES;
 pub const MAX_RESPONSE_BYTES: usize = 2 * 1024 * 1024;
 
 mod sealed {

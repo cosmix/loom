@@ -49,7 +49,7 @@ fn initialize_zero_commit_repo(repo: &Path) {
     run_git(&["config", "user.email", "test@test.com"]);
     run_git(&["config", "user.name", "Test"]);
     std::fs::write(repo.join("README.md"), "x").unwrap();
-    run_git(&["add", "README.md"]);
+    run_git(&["add", "README.md", "doc/loom/knowledge"]);
     run_git(&["commit", "-m", "initial"]);
     run_git(&["branch", "loom/test-stage"]);
 }
@@ -192,6 +192,7 @@ fn test_complete_no_verify_refuses_zero_commits_ahead() {
 
     let mut stage = create_test_stage("test-stage", StageStatus::Executing);
     stage.acceptance = vec![AcceptanceCriterion::Simple("exit 1".to_string())];
+    register_stage_worktree(repo, &mut stage, false);
     save_test_stage(&work_dir_path, &stage);
 
     let _guard = EnvGuard::new();
@@ -212,8 +213,10 @@ fn test_complete_with_no_verify_flag() {
     // test so it reaches the (non-bypass) completion path.
     write_admin_token(&work_dir_path, "admin-secret-token");
 
+    initialize_zero_commit_repo(temp_dir.path());
     let mut stage = create_test_stage("test-stage", StageStatus::Executing);
     stage.acceptance = vec![AcceptanceCriterion::Simple("exit 1".to_string())];
+    register_stage_worktree(temp_dir.path(), &mut stage, true);
     save_test_stage(&work_dir_path, &stage);
 
     let _guard = EnvGuard::new();
@@ -222,262 +225,10 @@ fn test_complete_with_no_verify_flag() {
     let proof = completion_proof("test-stage", true, false, false, "no-verify-test-01");
     let result = complete_stage("test-stage", true, Some(proof));
 
-    assert!(result.is_ok());
+    assert!(result.is_ok(), "{result:?}");
 
     let loaded_stage = load_stage("test-stage", &work_dir_path).unwrap();
     assert_eq!(loaded_stage.status, StageStatus::Completed);
-}
-
-#[test]
-#[serial]
-fn test_complete_knowledge_stage_sets_merged_true() {
-    let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".loom").join("work");
-
-    // Create a knowledge stage (no acceptance criteria)
-    let mut stage = create_test_stage("knowledge-stage", StageStatus::Executing);
-    stage.stage_type = StageType::Knowledge;
-    save_test_stage(&work_dir_path, &stage);
-
-    let _guard = EnvGuard::new();
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-
-    let result = complete_stage("knowledge-stage", false, None);
-
-    assert!(result.is_ok(), "complete() failed: {:?}", result.err());
-
-    let loaded_stage = load_stage("knowledge-stage", &work_dir_path).unwrap();
-    assert_eq!(loaded_stage.status, StageStatus::Completed);
-    // Key assertion: merged=true is auto-set for knowledge stages
-    assert!(
-        loaded_stage.merged,
-        "Knowledge stage should auto-set merged=true"
-    );
-}
-
-#[test]
-#[serial]
-fn test_complete_knowledge_stage_with_passing_acceptance() {
-    let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".loom").join("work");
-
-    // Create a knowledge stage with passing acceptance criteria
-    let mut stage = create_test_stage("knowledge-stage", StageStatus::Executing);
-    stage.stage_type = StageType::Knowledge;
-    stage.acceptance = vec![AcceptanceCriterion::Simple("exit 0".to_string())];
-    save_test_stage(&work_dir_path, &stage);
-
-    let _guard = EnvGuard::new();
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-
-    let result = complete_stage("knowledge-stage", false, None);
-
-    assert!(result.is_ok(), "complete() failed: {:?}", result.err());
-
-    let loaded_stage = load_stage("knowledge-stage", &work_dir_path).unwrap();
-    assert_eq!(loaded_stage.status, StageStatus::Completed);
-    assert!(loaded_stage.merged);
-}
-
-#[test]
-#[serial]
-fn test_complete_knowledge_stage_with_failing_acceptance() {
-    let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".loom").join("work");
-
-    // Create a knowledge stage with failing acceptance criteria
-    let mut stage = create_test_stage("knowledge-stage", StageStatus::Executing);
-    stage.stage_type = StageType::Knowledge;
-    stage.acceptance = vec![AcceptanceCriterion::Simple("exit 1".to_string())];
-    save_test_stage(&work_dir_path, &stage);
-
-    let _guard = EnvGuard::new();
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-
-    let result = complete_stage("knowledge-stage", false, None);
-
-    // New behavior: acceptance failure returns Err and stage stays Executing
-    assert!(
-        result.is_err(),
-        "complete() should return Err when acceptance fails"
-    );
-
-    let loaded_stage = load_stage("knowledge-stage", &work_dir_path).unwrap();
-    // Stage should remain Executing (not transition to CompletedWithFailures)
-    assert_eq!(loaded_stage.status, StageStatus::Executing);
-    // merged should NOT be set when acceptance fails
-    assert!(!loaded_stage.merged);
-}
-
-#[test]
-#[serial]
-fn test_complete_knowledge_stage_triggers_dependents() {
-    let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".loom").join("work");
-
-    // Create a knowledge stage
-    let mut knowledge_stage = create_test_stage("knowledge-stage", StageStatus::Executing);
-    knowledge_stage.stage_type = StageType::Knowledge;
-    save_test_stage(&work_dir_path, &knowledge_stage);
-
-    // Create a dependent stage waiting for the knowledge stage
-    let mut dependent_stage = create_test_stage("dependent-stage", StageStatus::WaitingForDeps);
-    dependent_stage.dependencies = vec!["knowledge-stage".to_string()];
-    save_test_stage(&work_dir_path, &dependent_stage);
-
-    let _guard = EnvGuard::new();
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-
-    let result = complete_stage("knowledge-stage", false, None);
-
-    assert!(result.is_ok(), "complete() failed: {:?}", result.err());
-
-    // Verify knowledge stage is completed with merged=true
-    let loaded_knowledge = load_stage("knowledge-stage", &work_dir_path).unwrap();
-    assert_eq!(loaded_knowledge.status, StageStatus::Completed);
-    assert!(loaded_knowledge.merged);
-
-    // Verify dependent stage was triggered to Queued
-    let loaded_dependent = load_stage("dependent-stage", &work_dir_path).unwrap();
-    assert_eq!(
-        loaded_dependent.status,
-        StageStatus::Queued,
-        "Dependent stage should be triggered to Queued when knowledge stage completes with merged=true"
-    );
-}
-
-#[test]
-#[serial]
-fn no_verify_succeeds_with_matching_one_time_proof() {
-    let tmp = TempDir::new().unwrap();
-    let work_dir = tmp.path().join(".loom").join("work");
-    write_admin_token(&work_dir, "admin-secret-token");
-
-    let proof = completion_proof("test-stage", true, false, false, "admin-gate-test1");
-    let result =
-        require_admin_capability(&work_dir, "test-stage", true, false, false, Some(&proof));
-
-    assert!(
-        result.is_ok(),
-        "require_admin_capability must pass when admin.token exists: {:?}",
-        result.err()
-    );
-}
-
-#[test]
-#[serial]
-fn no_verify_rejected_when_operator_proof_absent() {
-    let tmp = TempDir::new().unwrap();
-    let work_dir = tmp.path().join(".loom").join("work");
-    std::fs::create_dir_all(&work_dir).unwrap();
-    // No admin.token written.
-
-    let result = require_admin_capability(&work_dir, "test-stage", true, false, false, None);
-
-    assert!(
-        result.is_err(),
-        "require_admin_capability must fail when its caller supplies no proof"
-    );
-    let err = format!("{:#}", result.unwrap_err());
-    assert!(
-        err.contains("operator proof") || err.contains("LOOM_ADMIN_PROOF"),
-        "expected error mentioning the operator proof, got: {err}"
-    );
-}
-
-#[test]
-#[serial]
-fn force_unsafe_rejected_when_operator_proof_absent() {
-    let tmp = TempDir::new().unwrap();
-    let work_dir = tmp.path().join(".loom").join("work");
-    std::fs::create_dir_all(&work_dir).unwrap();
-
-    let result = require_admin_capability(&work_dir, "test-stage", false, true, false, None);
-
-    assert!(
-        result.is_err(),
-        "force_unsafe path must reject when the proof is absent"
-    );
-    let err = format!("{:#}", result.unwrap_err());
-    assert!(
-        err.contains("operator proof") || err.contains("LOOM_ADMIN_PROOF"),
-        "expected error mentioning the operator proof, got: {err}"
-    );
-}
-
-#[test]
-#[serial]
-fn assume_merged_rejected_when_operator_proof_absent() {
-    // --assume-merged path exercises the same gate.
-    let tmp = TempDir::new().unwrap();
-    let work_dir = tmp.path().join(".loom").join("work");
-    std::fs::create_dir_all(&work_dir).unwrap();
-
-    let result = require_admin_capability(&work_dir, "test-stage", false, true, true, None);
-
-    assert!(
-        result.is_err(),
-        "assume_merged path must reject when the proof is absent"
-    );
-    let err = format!("{:#}", result.unwrap_err());
-    assert!(
-        err.contains("operator proof") || err.contains("LOOM_ADMIN_PROOF"),
-        "expected error mentioning the operator proof, got: {err}"
-    );
-}
-
-#[test]
-#[serial]
-fn verify_path_succeeds_without_admin_token() {
-    // When no_verify / force_unsafe / assume_merged are all false, complete()
-    // must NOT invoke require_admin_capability. Run complete() without any
-    // verification-bypass flags in a tempdir with no admin.token: the error
-    // (if any) must NOT mention the admin token. Other failure modes (no git
-    // repo, etc.) are acceptable — we only assert the gate did not fire.
-    let temp_dir = setup_work_dir();
-    let work_dir_path = temp_dir.path().join(".loom").join("work");
-    // No admin.token present in the work dir.
-
-    let mut stage = create_test_stage("verify-path-stage", StageStatus::Executing);
-    stage.acceptance = vec![AcceptanceCriterion::Simple("exit 0".to_string())];
-    save_test_stage(&work_dir_path, &stage);
-
-    let _guard = EnvGuard::new();
-    std::env::set_current_dir(temp_dir.path()).unwrap();
-
-    let result = complete_stage("verify-path-stage", false, None);
-
-    // We don't require Ok — the test setup has no real git repo and other
-    // checks may fail. The critical invariant: the admin-token gate must
-    // NOT fire when no bypass flag is set.
-    if let Err(e) = result {
-        let msg = format!("{:#}", e);
-        assert!(
-            !msg.contains("admin token") && !msg.contains("admin.token"),
-            "complete() with no bypass flags must not invoke admin gate, got: {msg}"
-        );
-    }
-}
-
-#[test]
-#[serial]
-fn cli_without_operator_proof_fails_admin_check() {
-    let tmp = TempDir::new().unwrap();
-    let work_dir = tmp.path().join(".loom").join("work");
-    std::fs::create_dir_all(&work_dir).unwrap();
-    // Deliberately do NOT write admin.token.
-
-    let result = require_admin_capability(&work_dir, "test-stage", true, false, false, None);
-
-    assert!(
-        result.is_err(),
-        "missing caller proof must fail the admin gate"
-    );
-    let err = format!("{:#}", result.unwrap_err());
-    assert!(
-        err.contains("operator proof") || err.contains("LOOM_ADMIN_PROOF"),
-        "expected error mentioning the operator proof, got: {err}"
-    );
 }
 
 #[test]
@@ -531,4 +282,37 @@ fn verified_evidence_record_has_broker_boundaries() {
     assert!(output.starts_with(EVIDENCE_RECORD_PREFIX));
     assert_eq!(output.trim_end().lines().last(), Some(EVIDENCE_EOF_MARKER));
     assert_eq!(parse_evidence_record(&output).unwrap(), evidence);
+}
+
+#[path = "complete_authorization_tests.rs"]
+mod authorization;
+#[path = "complete_knowledge_tests.rs"]
+mod knowledge;
+
+fn register_stage_worktree(repo: &Path, stage: &mut crate::models::stage::Stage, advance: bool) {
+    let path = repo.join(".worktrees").join(&stage.id);
+    let output = std::process::Command::new("git")
+        .args(["worktree", "add"])
+        .arg(&path)
+        .arg(format!("loom/{}", stage.id))
+        .current_dir(repo)
+        .output()
+        .unwrap();
+    assert!(output.status.success(), "{output:?}");
+    stage.worktree = Some(stage.id.clone());
+    stage.base_branch = Some("main".into());
+    if advance {
+        std::fs::write(path.join("README.md"), "implemented").unwrap();
+        for args in [
+            ["add", "README.md"].as_slice(),
+            ["commit", "-m", "implementation"].as_slice(),
+        ] {
+            let output = std::process::Command::new("git")
+                .args(args)
+                .current_dir(&path)
+                .output()
+                .unwrap();
+            assert!(output.status.success(), "{output:?}");
+        }
+    }
 }

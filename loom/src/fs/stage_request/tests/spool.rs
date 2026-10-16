@@ -157,7 +157,9 @@ fn a_request_larger_than_the_daemon_accepts_is_refused_before_it_is_written() {
     let error = append_to_spool(dir.path(), &oversized).unwrap_err();
 
     assert!(
-        error.to_string().contains("limit the daemon accepts"),
+        error
+            .to_string()
+            .contains(&format!("{MAX_REQUEST_BYTES}-byte limit")),
         "the refusal must name the daemon's limit: {error}"
     );
     assert!(
@@ -193,7 +195,7 @@ fn drain_refuses_a_spool_symlinked_outside_the_worktree() {
     let error = drain_spool(worktree.path(), &mut |_| Ok(())).unwrap_err();
 
     assert!(
-        format!("{error:#}").contains("was not drained"),
+        format!("{error:#}").contains("no-follow open failed"),
         "{error:#}"
     );
     assert_eq!(fs::read_to_string(&victim).unwrap(), VICTIM);
@@ -208,7 +210,7 @@ fn drain_refuses_a_spool_under_a_symlinked_loom_directory() {
     let error = drain_spool(worktree.path(), &mut |_| Ok(())).unwrap_err();
 
     assert!(
-        format!("{error:#}").contains("was not drained"),
+        format!("{error:#}").contains("no-follow open failed"),
         "{error:#}"
     );
     assert_eq!(fs::read_to_string(&victim).unwrap(), VICTIM);

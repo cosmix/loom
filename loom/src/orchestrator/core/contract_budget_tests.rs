@@ -157,16 +157,14 @@ fn a_manual_mode_dead_looking_writer_below_budget_is_requeued_uncharged() {
     );
 }
 
-/// A `Blocked` stage has no edge to `NeedsHumanReview`, so
-/// `charge_orphaned_contract_writer` only ever charges an `Executing`
-/// stage's writer: recovery requeues a dead `Blocked` writer uncharged.
+/// A dead writer cannot clear a persisted block or charge a respawn.
 #[test]
-fn a_dead_writer_on_a_blocked_stage_requeues_uncharged() {
+fn a_dead_writer_on_a_blocked_stage_remains_blocked_uncharged() {
     let (temp, work) = dead_contract_writer(StageStatus::Blocked, 0);
 
     let stage = recover_after_restart(&temp, &work);
 
-    assert_eq!(stage.status, StageStatus::Queued);
+    assert_eq!(stage.status, StageStatus::Blocked);
     assert_eq!(attempts_spent(&work, STAGE).unwrap(), 0);
 }
 

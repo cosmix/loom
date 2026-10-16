@@ -1,5 +1,6 @@
 //! Execution graph for managing stage dependencies and execution order
 
+mod build;
 mod cycle;
 pub mod levels;
 mod loader;
@@ -16,8 +17,6 @@ use std::collections::HashMap;
 
 use crate::models::stage::StageStatus;
 
-use super::schema::StageDefinition;
-
 pub use loader::build_execution_graph;
 pub use nodes::StageNode;
 
@@ -33,65 +32,6 @@ pub struct ExecutionGraph {
 }
 
 impl ExecutionGraph {
-    /// Build an execution graph from stage definitions
-    pub fn build(stages: Vec<StageDefinition>) -> Result<Self> {
-        let mut nodes = HashMap::new();
-        let mut edges: HashMap<String, Vec<String>> = HashMap::new();
-        let mut parallel_groups: HashMap<String, Vec<String>> = HashMap::new();
-
-        // First pass: create all nodes
-        for stage in &stages {
-            let node = StageNode {
-                id: stage.id.clone(),
-                name: stage.name.clone(),
-                dependencies: stage.dependencies.clone(),
-                parallel_group: stage.parallel_group.clone(),
-                status: StageStatus::WaitingForDeps,
-                description: stage.description.clone(),
-                acceptance: stage.acceptance.clone(),
-                setup: stage.setup.clone(),
-                files: stage.files.clone(),
-                auto_merge: stage.auto_merge,
-                outputs: Vec::new(),
-                merged: false,
-            };
-            nodes.insert(stage.id.clone(), node);
-
-            // Add to parallel group if specified
-            if let Some(group) = &stage.parallel_group {
-                parallel_groups
-                    .entry(group.clone())
-                    .or_default()
-                    .push(stage.id.clone());
-            }
-
-            // Initialize edges entry
-            edges.entry(stage.id.clone()).or_default();
-        }
-
-        // Second pass: build edges (reverse dependencies)
-        for stage in &stages {
-            for dep in &stage.dependencies {
-                edges.entry(dep.clone()).or_default().push(stage.id.clone());
-            }
-        }
-
-        let graph = Self {
-            nodes,
-            edges,
-            parallel_groups,
-        };
-
-        // Check for cycles
-        cycle::detect_cycles(&graph.nodes)?;
-
-        // Update initial ready status
-        let mut graph = graph;
-        let _ = scheduling::update_ready_status(&mut graph.nodes);
-
-        Ok(graph)
-    }
-
     /// Update which stages are ready (all deps satisfied and merged).
     ///
     /// # Returns

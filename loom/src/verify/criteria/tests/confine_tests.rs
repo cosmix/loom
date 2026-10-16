@@ -9,11 +9,7 @@ use serial_test::serial;
 use tempfile::TempDir;
 
 #[cfg(unix)]
-use std::io::Read;
-#[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
-#[cfg(unix)]
-use std::process::Child;
 
 use crate::models::stage::CommandConfinement;
 use crate::verify::criteria::confine::{plan_confinement, resolve_confinement, CommandSpec};
@@ -149,25 +145,21 @@ fn confined_spawn_excludes_an_ambient_rustc_wrapper() {
 
     let original_wrapper = std::env::var_os("RUSTC_WRAPPER");
     std::env::set_var("RUSTC_WRAPPER", &wrapper);
-    let child = crate::verify::criteria::spawn_confined(
+    let output = run_spec_with_timeout(
         &CommandSpec::shell(
             r#"if [ -n "${RUSTC_WRAPPER:-}" ]; then "$RUSTC_WRAPPER"; exit 1; else touch criterion-sentinel; fi"#,
         ),
         Some(scratch.path()),
+        TEST_TIMEOUT,
         CommandConfinement::Confined,
     )
     .expect("the confined criterion should spawn");
-    let output = child.wait_with_output().expect("the criterion should exit");
     match original_wrapper {
         Some(value) => std::env::set_var("RUSTC_WRAPPER", value),
         None => std::env::remove_var("RUSTC_WRAPPER"),
     }
 
-    assert!(
-        output.status.success(),
-        "criterion failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
+    assert!(output.success, "criterion failed: {}", output.stderr);
     assert!(scratch.path().join("criterion-sentinel").exists());
     assert!(!scratch.path().join("wrapper-sentinel").exists());
 }
@@ -212,34 +204,26 @@ fn spawned_child_leads_its_own_process_group() {
     // The timeout path kills `-pgid`, which only reaches grandchildren of a
     // compound command when the child is a process group leader.
     let mut child = crate::verify::criteria::spawn_confined(
-        &CommandSpec::shell("ps -o pgid= -p $$"),
+        &CommandSpec::shell("sleep 1"),
         None,
         CommandConfinement::Confined,
     )
     .expect("the shell should spawn");
 
-    let reported_pgid = read_stdout(&mut child);
-    child.wait().expect("the child should exit");
-
-    let child_pid = i32::try_from(child.id()).unwrap();
+    let child_pid = i32::try_from(child.child().id()).unwrap();
+    let reported_pgid = nix::unistd::getpgid(Some(nix::unistd::Pid::from_raw(child_pid)))
+        .expect("the host should read the child's process group")
+        .as_raw();
+    child.child().wait().expect("the child should exit");
     assert_eq!(
-        reported_pgid.trim(),
-        child_pid.to_string(),
+        reported_pgid, child_pid,
         "child pgid should equal its own pid"
     );
     assert_ne!(
-        reported_pgid.trim(),
-        nix::unistd::getpgrp().to_string(),
+        reported_pgid,
+        nix::unistd::getpgrp().as_raw(),
         "child must not share loom's process group"
     );
-}
-
-#[cfg(unix)]
-fn read_stdout(child: &mut Child) -> String {
-    let mut stdout = child.stdout.take().expect("stdout should be piped");
-    let mut buffer = String::new();
-    stdout.read_to_string(&mut buffer).unwrap();
-    buffer
 }
 
 #[test]

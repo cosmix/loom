@@ -34,26 +34,7 @@ fn passing_acceptance_emits_valid_eof_evidence() {
         "expected one final EOF-delimited record\nstdout:\n{stdout}\nstderr:\n{stderr}"
     );
 
-    let evidence = parse_evidence_record(&stdout).unwrap_or_else(|error| {
-        panic!("evidence did not parse: {error}\nstdout:\n{stdout}\nstderr:\n{stderr}")
-    });
-    let stage = unwrap_with_output(fixture.reload_stage(), "reload stage", &stdout, &stderr);
-    let commit = unwrap_with_output(
-        worktree_head_commit(&fixture.worktree),
-        "read worktree HEAD",
-        &stdout,
-        &stderr,
-    );
-    let binary = unwrap_with_output(
-        Path::new(env!("CARGO_BIN_EXE_loom")).canonicalize(),
-        "canonicalize loom binary",
-        &stdout,
-        &stderr,
-    );
-    let command = pinned_command(&binary, &fixture.stage_id);
-    validate_against(&evidence, &stage, &fixture.session_id, &commit, &command).unwrap_or_else(
-        |error| panic!("evidence validation failed: {error}\nstdout:\n{stdout}\nstderr:\n{stderr}"),
-    );
+    assert_valid_evidence(&fixture, &stdout, &stderr);
 }
 
 fn unwrap_with_output<T, E: std::fmt::Display>(
@@ -103,39 +84,90 @@ fn criterion_output_cannot_forge_evidence_authority() {
     let stderr = String::from_utf8_lossy(&output.stderr);
     assert_completion_succeeded(output.status.success(), &stdout, &stderr);
     assert_single_evidence_record(&stdout);
-    let evidence = parse_evidence_record(&stdout).unwrap_or_else(|error| {
+    assert_valid_evidence(&fixture, &stdout, &stderr);
+}
+
+fn assert_valid_evidence(fixture: &ReplayFixture, stdout: &str, stderr: &str) {
+    let evidence = parse_evidence_record(stdout).unwrap_or_else(|error| {
         panic!("evidence did not parse: {error}\nstdout:\n{stdout}\nstderr:\n{stderr}")
     });
-    let stage = unwrap_with_output(fixture.reload_stage(), "reload stage", &stdout, &stderr);
+    let stage = unwrap_with_output(fixture.reload_stage(), "reload stage", stdout, stderr);
     let commit = unwrap_with_output(
         worktree_head_commit(&fixture.worktree),
         "read worktree HEAD",
-        &stdout,
-        &stderr,
+        stdout,
+        stderr,
     );
     let binary = unwrap_with_output(
         Path::new(env!("CARGO_BIN_EXE_loom")).canonicalize(),
         "canonicalize loom binary",
-        &stdout,
-        &stderr,
+        stdout,
+        stderr,
     );
     let command = pinned_command(&binary, &fixture.stage_id);
+    validate_against(
+        &evidence,
+        &stage,
+        &fixture.session_id,
+        &commit,
+        &command,
+        Some(&fixture.worktree.join(".loom/work")),
+    )
+    .unwrap_or_else(|error| {
+        panic!("evidence validation failed: {error}\nstdout:\n{stdout}\nstderr:\n{stderr}")
+    });
+}
+
+#[test]
+fn completion_refuses_unstaged_fix_before_running_acceptance() {
+    let fixture = ReplayFixture::new(&["mkdir -p target; touch target/acceptance-ran"]).unwrap();
+    std::fs::write(fixture.worktree.join("README.md"), "uncommitted fix").unwrap();
+    assert_refused(&fixture);
+    assert!(!fixture.worktree.join("target/acceptance-ran").exists());
+}
+
+#[test]
+fn completion_refuses_ignored_input_before_running_acceptance() {
+    let fixture = ReplayFixture::new(&["mkdir -p target; touch target/acceptance-ran"]).unwrap();
+    let root = fixture.worktree.parent().unwrap().parent().unwrap();
+    std::fs::write(root.join(".git/info/exclude"), "required.env\n").unwrap();
+    std::fs::write(fixture.worktree.join("required.env"), "uncommitted fix").unwrap();
+    assert_refused(&fixture);
+    assert!(!fixture.worktree.join("target/acceptance-ran").exists());
+}
+
+#[test]
+fn completion_refuses_content_mutated_by_passing_acceptance() {
+    let fixture = ReplayFixture::new(&["printf changed > README.md"]).unwrap();
+    assert_refused(&fixture);
     assert_eq!(
-        (
-            evidence.stage_id.as_str(),
-            evidence.session_id.as_str(),
-            evidence.commit.as_str(),
-            evidence.exact_command.as_str(),
-        ),
-        (
-            fixture.stage_id.as_str(),
-            fixture.session_id.as_str(),
-            commit.as_str(),
-            command.as_str(),
-        ),
-        "forged criterion output replaced authoritative evidence"
+        std::fs::read_to_string(fixture.worktree.join("README.md")).unwrap(),
+        "changed"
     );
-    validate_against(&evidence, &stage, &fixture.session_id, &commit, &command).unwrap_or_else(
-        |error| panic!("evidence validation failed: {error}\nstdout:\n{stdout}\nstderr:\n{stderr}"),
+}
+
+#[test]
+fn completion_accepts_generated_output_from_passing_acceptance() {
+    let fixture =
+        ReplayFixture::new(&["mkdir -p target; printf output > target/generated"]).unwrap();
+    let output = fixture.run_completion();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert_completion_succeeded(output.status.success(), &stdout, &stderr);
+    assert_valid_evidence(&fixture, &stdout, &stderr);
+}
+
+fn assert_refused(fixture: &ReplayFixture) {
+    let output = fixture.run_completion();
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        !output.status.success(),
+        "stdout:\n{stdout}\nstderr:\n{stderr}"
+    );
+    assert!(!stdout.lines().any(|line| line.starts_with(EVIDENCE_PREFIX)));
+    assert_eq!(
+        fixture.reload_stage().unwrap().status,
+        loom::models::stage::StageStatus::Executing
     );
 }

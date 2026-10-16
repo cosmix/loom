@@ -5,8 +5,8 @@ use std::path::Path;
 
 use super::excluded;
 use crate::context::source_graph::body_hash;
-use crate::fs::safe_read::read_bounded;
-use crate::git::runner::run_git_checked;
+use crate::context::source_graph::read::read_source;
+use crate::git::runner::{run_git_checked, run_git_records};
 
 pub(crate) struct WorkingTree {
     pub head: String,
@@ -18,7 +18,7 @@ pub(crate) struct WorkingTree {
 
 pub(crate) fn working_tree(project_root: &Path) -> Result<WorkingTree> {
     let head = run_git_checked(&["rev-parse", "HEAD"], project_root)?;
-    let status = run_git_checked(
+    let status = run_git_records(
         &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
         project_root,
     )?;
@@ -52,8 +52,8 @@ fn generation(project_root: &Path, head: &str, dirty: &BTreeMap<String, String>)
         // marker is hashed rather than embedding the raw error (which could
         // vary by platform or leak path detail), while still changing the
         // generation if the refusal state itself changes.
-        let identity = match read_bounded(project_root, Path::new(path), usize::MAX) {
-            Ok(bytes) => body_hash(&bytes),
+        let identity = match read_source(project_root, Path::new(path)) {
+            Ok(source) => source.hash,
             Err(_) if !full_path.exists() => "deleted".to_string(),
             Err(_) => body_hash(format!("{path}\0unreadable").as_bytes()),
         };

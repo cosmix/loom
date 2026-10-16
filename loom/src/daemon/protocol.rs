@@ -82,17 +82,7 @@ impl Default for DaemonConfig {
     }
 }
 
-/// How one contract test ran when the contract session froze it.
-///
-/// `outcome` is `failed`, `build_failed` or `exit_nonzero_unverified`: a
-/// contract is frozen only while it fails.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub struct ContractRunReport {
-    pub contract_id: String,
-    pub adapter: Option<String>,
-    pub outcome: String,
-    pub exit_code: Option<i32>,
-}
+pub use crate::stage_service::ContractRunReport;
 
 /// Authorization capability required by a request.
 ///
@@ -207,6 +197,13 @@ pub enum Request {
         session_id: String,
         reports: Vec<ContractRunReport>,
     },
+    /// Prove a live sandboxed session may inherit its protected launch capsule.
+    ValidateInheritedConfinement {
+        auth_token: String,
+        stage_id: String,
+        session_id: String,
+        working_dir: std::path::PathBuf,
+    },
     /// Ask for a stage's change fingerprint, which only the daemon computes
     /// (`verify::review::observer`). The request names the stage alone; the
     /// daemon resolves its worktree and target branch itself. `session_id`
@@ -236,7 +233,8 @@ impl Request {
             | Request::CompleteStage { .. }
             | Request::RecordCompletionEvidence { .. }
             | Request::FreezeContracts { .. }
-            | Request::ObserveChanges { .. } => Capability::User,
+            | Request::ObserveChanges { .. }
+            | Request::ValidateInheritedConfinement { .. } => Capability::User,
         }
     }
 
@@ -256,7 +254,8 @@ impl Request {
             | Request::CompleteStage { auth_token, .. }
             | Request::RecordCompletionEvidence { auth_token, .. }
             | Request::FreezeContracts { auth_token, .. }
-            | Request::ObserveChanges { auth_token, .. } => auth_token,
+            | Request::ObserveChanges { auth_token, .. }
+            | Request::ValidateInheritedConfinement { auth_token, .. } => auth_token,
         }
     }
 }
@@ -300,3 +299,16 @@ pub use super::wire::{
     read_message, read_request_body, read_request_length, read_request_preface, write_message,
     RequestPreface, WireMessage,
 };
+
+impl From<crate::stage_service::Response> for Response {
+    fn from(value: crate::stage_service::Response) -> Self {
+        match value {
+            crate::stage_service::Response::Ok => Self::Ok,
+            crate::stage_service::Response::Error { message } => Self::Error { message },
+            crate::stage_service::Response::DisputeCreated { id } => Self::DisputeCreated { id },
+            crate::stage_service::Response::ContractsFrozen { files } => {
+                Self::ContractsFrozen { files }
+            }
+        }
+    }
+}

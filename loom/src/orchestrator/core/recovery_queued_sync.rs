@@ -3,15 +3,14 @@
 //! `Recovery` trait method) stays a one-line delegation to
 //! [`Orchestrator::sync_queued_files`].
 
-use std::collections::HashMap;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
 use anyhow::Result;
 
 use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::update_stage_at_path;
 
-use super::recovery::{load_stage_at_path, scan_stage_paths, StageScanCounter};
+use super::recovery::load_stage_at_path;
 use super::recovery_guards;
 use super::Orchestrator;
 
@@ -20,27 +19,8 @@ impl Orchestrator {
     /// files reflect when dependencies are satisfied. Syncs FROM graph TO
     /// files.
     pub(super) fn sync_queued_files(&mut self) -> Result<()> {
-        // Get all nodes that are Queued in the graph
-        let queued_stage_ids: Vec<String> = self
-            .graph
-            .all_nodes()
-            .iter()
-            .filter(|node| node.status == StageStatus::Queued)
-            .map(|node| node.id.clone())
-            .collect();
-
-        let stages_dir = self.config.work_dir.join("stages");
-        if !stages_dir.exists() {
-            return Ok(());
-        }
-        let mut scan = StageScanCounter::default();
-        let stage_paths: HashMap<String, PathBuf> = scan_stage_paths(&stages_dir, &mut scan)?
-            .into_iter()
-            .filter_map(|path| {
-                let filename = path.file_name()?.to_str()?;
-                crate::fs::stage_files::extract_stage_id(filename).map(|id| (id, path))
-            })
-            .collect();
+        let snapshot = self.stage_snapshot()?;
+        let queued_stage_ids = snapshot.ready_ids();
 
         // Resolve once per pass, matching `sync_graph_with_stage_files` (P-3):
         // otherwise a Completed-stage git call would run once per queued
@@ -52,13 +32,7 @@ impl Orchestrator {
 
         // For each queued stage, update the file if it's still WaitingForDeps
         for stage_id in queued_stage_ids {
-            let Some(stage_path) = stage_paths.get(&stage_id) else {
-                tracing::error!(
-                    stage_id = %stage_id,
-                    "Failed to locate stage during queued-status sync"
-                );
-                continue;
-            };
+            let (_, stage_path) = &snapshot.records[&stage_id];
             self.sync_one_queued_stage(&stage_id, stage_path, &target_branch);
         }
 

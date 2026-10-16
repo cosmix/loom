@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use super::result::{GapType, VerificationGap};
 use crate::plan::schema::{CommandConfinement, TruthCheck};
-use crate::utils::truncate;
+use crate::verify::criteria::assertions::{evaluate, AssertionSpec};
 use crate::verify::criteria::{run_spec_with_timeout, CommandSpec};
 
 /// Default timeout for truth commands (30 seconds)
@@ -21,115 +21,27 @@ pub fn verify_truth_checks(
     confinement: CommandConfinement,
 ) -> Result<Vec<VerificationGap>> {
     let mut gaps = Vec::new();
-
-    for truth_check in truth_checks {
-        let spec = CommandSpec::shell(truth_check.command.as_str());
+    for check in truth_checks {
+        let spec = CommandSpec::shell(check.command.as_str());
         let result = run_spec_with_timeout(&spec, Some(working_dir), TRUTH_TIMEOUT, confinement)?;
-
-        // Check if timed out
-        if result.timed_out {
-            let description = match &truth_check.description {
-                Some(desc) => format!("Truth check timed out: {}", desc),
-                None => format!("Truth check timed out: {}", truth_check.command),
-            };
+        let assertions = AssertionSpec {
+            expected_exit: check.exit_code.unwrap_or(0),
+            stdout_contains: &check.stdout_contains,
+            stdout_not_contains: &check.stdout_not_contains,
+            stderr_empty: check.stderr_empty == Some(true),
+            ..Default::default()
+        };
+        for failure in evaluate(&assertions, &result).failures {
             gaps.push(VerificationGap::new(
                 GapType::TruthFailed,
-                description,
-                format!("Command exceeded {}s timeout", TRUTH_TIMEOUT.as_secs()),
+                format!(
+                    "Truth check failed: {}: {failure}",
+                    check.description.as_deref().unwrap_or(&check.command)
+                ),
+                format!("Check command: {}", check.command),
             ));
-            continue;
-        }
-
-        // Check exit code
-        let expected_exit = truth_check.exit_code.unwrap_or(0);
-        let actual_exit = result.exit_code.unwrap_or(-1);
-        if actual_exit != expected_exit {
-            let description = match &truth_check.description {
-                Some(desc) => format!("Truth check failed: {}", desc),
-                None => format!("Truth check failed: {}", truth_check.command),
-            };
-            let suggestion = format!(
-                "Expected exit code {}, got {}. Command: {}",
-                expected_exit, actual_exit, truth_check.command
-            );
-            gaps.push(VerificationGap::new(
-                GapType::TruthFailed,
-                description,
-                suggestion,
-            ));
-            continue;
-        }
-
-        // Check stdout_contains patterns
-        for pattern in &truth_check.stdout_contains {
-            if !result.stdout.contains(pattern) {
-                let description = match &truth_check.description {
-                    Some(desc) => {
-                        format!(
-                            "Truth check failed: stdout missing expected pattern - {}",
-                            desc
-                        )
-                    }
-                    None => format!(
-                        "Truth check failed: stdout missing expected pattern '{}'",
-                        pattern
-                    ),
-                };
-                let output_preview = truncate(&result.stdout, 200);
-                let suggestion = format!(
-                    "Command output: {}. Expected to contain: '{}'",
-                    output_preview, pattern
-                );
-                gaps.push(VerificationGap::new(
-                    GapType::TruthFailed,
-                    description,
-                    suggestion,
-                ));
-            }
-        }
-
-        // Check stdout_not_contains patterns
-        for pattern in &truth_check.stdout_not_contains {
-            if result.stdout.contains(pattern) {
-                let description = match &truth_check.description {
-                    Some(desc) => {
-                        format!(
-                            "Truth check failed: stdout contains forbidden pattern - {}",
-                            desc
-                        )
-                    }
-                    None => format!(
-                        "Truth check failed: stdout contains forbidden pattern '{}'",
-                        pattern
-                    ),
-                };
-                let suggestion = format!("Remove or fix the code causing: '{}'", pattern);
-                gaps.push(VerificationGap::new(
-                    GapType::TruthFailed,
-                    description,
-                    suggestion,
-                ));
-            }
-        }
-
-        // Check stderr_empty if specified
-        if let Some(true) = truth_check.stderr_empty {
-            if !result.stderr.is_empty() {
-                let description = match &truth_check.description {
-                    Some(desc) => format!("Truth check failed: stderr was not empty - {}", desc),
-                    None => "Truth check failed: stderr was not empty".to_string(),
-                };
-                let stderr_preview = truncate(&result.stderr, 200);
-                let suggestion = format!("stderr output: {}", stderr_preview);
-                gaps.push(VerificationGap::new(
-                    GapType::TruthFailed,
-                    description,
-                    suggestion,
-                ));
-            }
         }
     }
-
     Ok(gaps)
 }
 

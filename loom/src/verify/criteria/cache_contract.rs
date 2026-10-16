@@ -5,11 +5,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::time::Duration;
 
+use super::assertions::{self, AssertionSpec};
 use super::cache_fingerprint::InputFingerprint;
 use super::confine::CommandSpec;
-use super::executor::{
-    OUTPUT_COLLECTION_TIMEOUT_MARKER, OUTPUT_READ_ERROR_MARKER, OUTPUT_TRUNCATED_MARKER,
-};
 use super::result::CriterionResult;
 use crate::models::stage::CommandConfinement;
 use crate::plan::schema::AcceptanceCriterion;
@@ -123,34 +121,24 @@ impl CriterionContract {
     }
 
     pub(super) fn verdict(&self, result: &CriterionResult) -> AssertionVerdict {
-        let timed_out = result.timed_out;
-        let exit_code_matched = result.exit_code == Some(self.expected_exit);
-        let stdout_contains_matched = self
-            .stdout_contains
-            .iter()
-            .map(|pattern| result.stdout.contains(pattern.as_str()))
-            .collect::<Vec<_>>();
-        let stdout_not_contains_matched = self
-            .stdout_not_contains
-            .iter()
-            .map(|pattern| !result.stdout.contains(pattern.as_str()))
-            .collect::<Vec<_>>();
-        let stderr_empty_matched = self
-            .stderr_must_be_empty
-            .then_some(result.stderr.is_empty());
-        let passed = !timed_out
-            && exit_code_matched
-            && stdout_contains_matched.iter().all(|matched| *matched)
-            && stdout_not_contains_matched.iter().all(|matched| *matched)
-            && stderr_empty_matched.unwrap_or(true);
+        let evaluated = assertions::evaluate(
+            &AssertionSpec {
+                expected_exit: self.expected_exit,
+                stdout_contains: &self.stdout_contains,
+                stdout_not_contains: &self.stdout_not_contains,
+                stderr_empty: self.stderr_must_be_empty,
+                ..Default::default()
+            },
+            result,
+        );
         AssertionVerdict {
-            passed,
-            timed_out,
-            output_complete: output_is_complete(result),
-            exit_code_matched,
-            stdout_contains_matched,
-            stdout_not_contains_matched,
-            stderr_empty_matched,
+            passed: evaluated.passed,
+            timed_out: result.timed_out,
+            output_complete: evaluated.output_complete,
+            exit_code_matched: evaluated.exit_code_matched,
+            stdout_contains_matched: evaluated.stdout_contains_matched,
+            stdout_not_contains_matched: evaluated.stdout_not_contains_matched,
+            stderr_empty_matched: evaluated.stderr_empty_matched,
             tests_executed: None,
         }
     }
@@ -269,17 +257,6 @@ impl CachedCriterionPass {
 
 fn all_true_with_len(values: &[bool], expected_len: usize) -> bool {
     values.len() == expected_len && values.iter().all(|matched| *matched)
-}
-
-fn output_is_complete(result: &CriterionResult) -> bool {
-    const INCOMPLETE_MARKERS: [&str; 3] = [
-        OUTPUT_TRUNCATED_MARKER,
-        OUTPUT_COLLECTION_TIMEOUT_MARKER,
-        OUTPUT_READ_ERROR_MARKER,
-    ];
-    INCOMPLETE_MARKERS
-        .iter()
-        .all(|marker| !result.stdout.contains(*marker) && !result.stderr.contains(*marker))
 }
 
 fn diagnostic_tail(value: &str) -> (String, bool) {

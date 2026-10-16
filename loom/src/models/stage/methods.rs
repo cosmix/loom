@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 
-use crate::orchestrator::monitor::heartbeat::DEFAULT_HUNG_TIMEOUT_SECS;
+use super::DEFAULT_HUNG_TIMEOUT_SECS;
 use crate::plan::schema::{detect_stage_type, StageDefinition};
 
 use super::checks::{AcceptanceCriterion, PlanIdentity};

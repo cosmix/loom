@@ -9,6 +9,7 @@ use crate::context::source_graph::{FileCoverage, NodeLanguage, SourceNode};
 use crate::context::store::StoreState;
 use tempfile::TempDir;
 
+mod blob_reads;
 mod enumeration;
 mod layer_reuse;
 mod tombstones_freshness;

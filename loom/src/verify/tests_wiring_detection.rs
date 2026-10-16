@@ -1,146 +1,115 @@
-//! Tests for wiring detection.
-//!
-//! Relocated out of `wiring_detection.rs` to keep that file under the 400-line
-//! limit; see `loom/maintainability-baseline.txt`.
-
 use super::*;
+use crate::context::extract::{extract_file, registry};
+use crate::context::graph_store::FileEntry;
+use crate::context::view::{build_cold, ViewIdentity};
 
-#[test]
-fn test_extract_importable_name_nested() {
-    assert_eq!(extract_importable_name("src/cache/store.rs"), "store");
-}
-
-#[test]
-fn test_extract_importable_name_top_level() {
-    assert_eq!(extract_importable_name("src/cache.rs"), "cache");
-}
-
-#[test]
-fn test_extract_importable_name_no_extension() {
-    assert_eq!(extract_importable_name("src/cache"), "cache");
-}
-
-#[test]
-fn test_has_source_extension_rs() {
-    assert!(has_source_extension("src/foo.rs"));
-}
-
-#[test]
-fn test_has_source_extension_ts() {
-    assert!(has_source_extension("src/foo.ts"));
-}
-
-#[test]
-fn test_has_source_extension_txt() {
-    assert!(!has_source_extension("src/foo.txt"));
-}
-
-#[test]
-fn test_is_test_file_tests_dir() {
-    assert!(is_test_file("src/tests/foo.rs"));
-}
-
-#[test]
-fn test_is_test_file_suffix() {
-    assert!(is_test_file("src/foo_test.rs"));
-}
-
-#[test]
-fn test_is_test_file_spec() {
-    assert!(is_test_file("src/foo.spec.ts"));
-}
-
-#[test]
-fn test_is_not_test_file() {
-    assert!(!is_test_file("src/cache/store.rs"));
-}
-
-#[test]
-fn test_excluded_stem_mod() {
-    let stem = file_stem("src/cache/mod.rs");
-    assert!(EXCLUDED_STEMS.contains(&stem.as_str()));
-}
-
-#[test]
-fn test_build_search_patterns_rust() {
-    let patterns = build_search_patterns("rs", "store");
-    assert!(patterns.iter().any(|p| p.contains("mod store")));
-    assert!(patterns.iter().any(|p| p.contains("use .*store")));
-}
-
-#[test]
-fn test_build_search_patterns_typescript() {
-    let patterns = build_search_patterns("ts", "client");
-    assert!(patterns.iter().any(|p| p.contains("client")));
-}
-
-#[test]
-fn test_build_search_patterns_python() {
-    let patterns = build_search_patterns("py", "utils");
-    assert!(patterns.iter().any(|p| p.contains("import utils")));
-}
-
-#[test]
-fn test_build_search_patterns_go() {
-    let patterns = build_search_patterns("go", "cache");
-    assert!(patterns.iter().any(|p| p.contains("cache")));
-}
-
-#[test]
-fn test_is_safe_identifier_valid() {
-    assert!(is_safe_identifier("store"));
-    assert!(is_safe_identifier("my_module"));
-    assert!(is_safe_identifier("Module123"));
-}
-
-#[test]
-fn test_is_safe_identifier_invalid() {
-    assert!(!is_safe_identifier(""));
-    assert!(!is_safe_identifier("foo-bar"));
-    assert!(!is_safe_identifier("foo.bar"));
-    assert!(!is_safe_identifier("foo bar"));
-    assert!(!is_safe_identifier("foo*"));
-    assert!(!is_safe_identifier("../etc/passwd"));
-}
-
-// Regression test for a false "unwired" report: grep exits 2 whenever ANY file
-// under the search root is unreadable, even when the search itself found a
-// real reference. The old code treated exit 2 as fatal and `continue`d past
-// stdout, so a file that genuinely was referenced elsewhere in the tree was
-// silently reported as unwired whenever the tree also contained an unreadable
-// file (e.g. under a sandbox that denies read on dotfiles).
-#[cfg(unix)]
-#[test]
-fn test_is_referenced_survives_unreadable_sibling_file() {
-    use std::os::unix::fs::PermissionsExt;
-
-    let dir = tempfile::tempdir().unwrap();
-    std::fs::write(dir.path().join("caller.rs"), "mod target_mod;\n").unwrap();
-
-    let unreadable = dir.path().join("blocked.rs");
-    std::fs::write(&unreadable, "mod other;\n").unwrap();
-    std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o000)).unwrap();
-
-    // Root (and some sandboxes) ignore file permission bits entirely, in which
-    // case this environment cannot exercise the unreadable-file path. Skip
-    // loudly rather than silently asserting nothing.
-    if std::fs::read_to_string(&unreadable).is_ok() {
-        let _ = std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644));
-        eprintln!(
-            "SKIP test_is_referenced_survives_unreadable_sibling_file: this \
-             environment does not enforce 0o000 file permissions (running as \
-             root, or a sandbox that ignores mode bits)"
+fn extracted(files: &[(&str, &str)]) -> ResolvedGraph {
+    let extractors = registry();
+    let mut graph = ResolvedGraph::default();
+    for (path, source) in files {
+        graph.files.insert(
+            path.to_string(),
+            FileEntry::from_extraction(
+                source.as_bytes(),
+                extract_file(&extractors, Path::new(path), source.as_bytes()),
+            ),
         );
-        return;
     }
+    build_cold(graph, ViewIdentity::current("test", "worktree")).graph
+}
 
-    let result = is_referenced(dir.path(), "target_mod.rs", "target_mod");
+#[cfg(feature = "source-graph")]
+#[test]
+fn comments_and_unrelated_names_do_not_wire_a_module() {
+    let graph = extracted(&[
+        ("src/lib.rs", "// mod store;\nfn store() {}"),
+        ("src/store.rs", "pub fn normalize_settings() {}"),
+    ]);
+    let result = inspect_wiring(&graph, &["src/store.rs".into()].into_iter().collect());
+    assert_eq!(result.unwired_files.len(), 1);
+    assert!(result.uncertain_files.is_empty());
+}
 
-    std::fs::set_permissions(&unreadable, std::fs::Permissions::from_mode(0o644)).unwrap();
+#[cfg(feature = "source-graph")]
+#[test]
+fn resolved_module_reference_wires_the_exact_path() {
+    let graph = extracted(&[
+        ("src/lib.rs", "mod store;"),
+        ("src/store.rs", "pub fn normalize_settings() {}"),
+        ("other/store.rs", "pub fn other_function() {}"),
+    ]);
+    assert!(is_referenced(&graph, "src/store.rs"));
+    assert!(!is_referenced(&graph, "other/store.rs"));
+}
 
-    assert!(
-        result.unwrap(),
-        "expected target_mod to be found referenced in caller.rs despite an \
-         unreadable sibling file causing grep to exit 2"
-    );
+#[test]
+fn incomplete_graph_reports_uncertainty_instead_of_absence() {
+    let mut graph = ResolvedGraph::default();
+    graph
+        .files
+        .insert("src/store.rs".into(), FileEntry::default());
+    let result = inspect_wiring(&graph, &["src/store.rs".into()].into_iter().collect());
+    assert!(result.unwired_files.is_empty());
+    assert_eq!(result.uncertain_files, ["src/store.rs"]);
+}
+
+#[test]
+fn unavailable_graph_returns_an_error() {
+    let temp = tempfile::tempdir().unwrap();
+    assert!(detect_unwired_files(temp.path(), "main").is_err());
+}
+
+#[cfg(feature = "source-graph")]
+#[test]
+fn unreadable_sibling_preserves_positive_reference_evidence() {
+    let mut graph = extracted(&[
+        ("src/lib.rs", "mod store;"),
+        ("src/store.rs", "pub fn helper() {}"),
+    ]);
+    graph
+        .files
+        .insert("blocked.rs".into(), FileEntry::default());
+    let result = inspect_wiring(&graph, &["src/store.rs".into()].into_iter().collect());
+    assert!(result.unwired_files.is_empty());
+    assert!(result.uncertain_files.is_empty());
+}
+
+#[cfg(feature = "source-graph")]
+#[test]
+fn nested_package_invocation_uses_repository_wiring_coordinates() {
+    use crate::git::runner::run_git_checked;
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    for args in [
+        vec!["init", "-b", "main"],
+        vec!["config", "user.email", "test@example.com"],
+        vec!["config", "user.name", "Test"],
+    ] {
+        run_git_checked(&args, root).unwrap();
+    }
+    let package = root.join("package");
+    std::fs::create_dir_all(package.join("src")).unwrap();
+    std::fs::write(package.join("src/lib.rs"), "// seed\n").unwrap();
+    run_git_checked(&["add", "."], root).unwrap();
+    run_git_checked(
+        &["-c", "commit.gpgsign=false", "commit", "-m", "seed"],
+        root,
+    )
+    .unwrap();
+    std::fs::write(
+        package.join("src/store.rs"),
+        "pub fn normalize_settings() {}\n",
+    )
+    .unwrap();
+    for directory in [root, package.as_path()] {
+        let result = detect_unwired_files(directory, "main").unwrap();
+        assert_eq!(result.unwired_files.len(), 1);
+        assert_eq!(result.unwired_files[0].path, "package/src/store.rs");
+    }
+    std::fs::write(package.join("src/lib.rs"), "mod store;\n").unwrap();
+    for directory in [root, package.as_path()] {
+        let result = detect_unwired_files(directory, "main").unwrap();
+        assert!(result.unwired_files.is_empty());
+        assert!(result.uncertain_files.is_empty());
+    }
 }

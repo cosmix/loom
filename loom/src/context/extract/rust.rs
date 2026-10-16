@@ -54,6 +54,10 @@ const QUERY: &str = r#"
 (mod_item
   name: (identifier) @name) @definition.module
 
+(mod_item
+  name: (identifier) @import.path
+  !body) @import.statement
+
 (const_item
   name: (identifier) @name) @definition.constant
 
@@ -145,7 +149,7 @@ impl QueryHarness for RustExtractor {
             dialect: "rust",
             grammar_version: "0.24.2",
             query_digest: crate::context::source_graph::body_hash(QUERY.as_bytes()),
-            extractor_version: 4,
+            extractor_version: 5,
         }
     }
 
@@ -165,7 +169,17 @@ impl QueryHarness for RustExtractor {
         }
     }
 
-    fn import_bindings(&self, _statement: &str, path: &str, site: Span) -> Vec<ImportBinding> {
+    fn import_bindings(&self, statement: &str, path: &str, site: Span) -> Vec<ImportBinding> {
+        if statement.split_whitespace().any(|word| word == "mod") {
+            return vec![ImportBinding {
+                path: path.into(),
+                name: None,
+                alias: None,
+                glob: false,
+                exported_as: None,
+                site,
+            }];
+        }
         imports::use_bindings(path, site)
     }
 }

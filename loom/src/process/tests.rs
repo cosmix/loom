@@ -158,22 +158,15 @@ fn bounded_output_returns_structured_timeout() {
 
 #[cfg(unix)]
 #[test]
-fn run_bounded_times_out_when_a_descendant_holds_the_pipe_after_exit() {
-    // The backgrounded `sleep 30` inherits the shell's stdout, so it keeps
-    // the pipe open long after `sh` itself exits. With the old
-    // join-after-wait implementation this hangs for ~30s; the fix must
-    // notice the post-exit collection is itself running past the deadline.
+fn run_bounded_retires_descendant_holding_pipe_after_exit() {
+    // Leader exit retires its descendants before collecting the pipes.
     let mut cmd = Command::new("sh");
     cmd.args(["-c", "sleep 30 & echo done"]);
 
     let started = std::time::Instant::now();
     let outcome = run_bounded(&mut cmd, Duration::from_secs(1)).unwrap();
 
-    assert!(
-        matches!(outcome, BoundedOutput::TimedOut),
-        "a descendant holding stdout open past the deadline must report TimedOut, not hang \
-         until it exits on its own"
-    );
+    assert!(matches!(outcome, BoundedOutput::Completed(ref output) if output.status.success()));
     assert!(
         started.elapsed() < Duration::from_secs(5),
         "run_bounded returned after {:?}; it must not wait for the backgrounded descendant",

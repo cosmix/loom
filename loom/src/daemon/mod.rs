@@ -1,3 +1,4 @@
+pub(crate) mod inherited;
 mod protocol;
 mod rpc;
 mod server;

@@ -1,7 +1,6 @@
 //! Persistence and trust checks for completion evidence.
 
 use std::path::{Path, PathBuf};
-use std::process::Output;
 
 use anyhow::{bail, Context, Result};
 
@@ -9,14 +8,12 @@ use crate::daemon::protocol::Response;
 use crate::fs::locking::locked_dir_update;
 use crate::fs::session_files::validate_session_file_id;
 use crate::fs::work_dir::WorkDir;
-use crate::git::target_guard::knowledge_prefix;
-use crate::git::worktree::{stage_worktree_path, WorktreeGit};
 use crate::handoff::generator::load_trusted_session_checkpoint;
 use crate::handoff::{
-    check_definition_hash, expected_stage_commit, record_accepted_handoff, record_attempt_handoff,
-    AcceptedReceipt, CompletionAttemptEvidence, CompletionPhase,
+    record_accepted_handoff, record_attempt_handoff, AcceptedReceipt, CompletionAttemptEvidence,
+    CompletionPhase,
 };
-use crate::models::stage::{Stage, StageType};
+use crate::models::stage::Stage;
 use crate::parser::frontmatter::parse_from_markdown;
 use crate::verify::transitions::load_stage;
 
@@ -46,6 +43,16 @@ pub(crate) fn handle_record(
     locked_dir_update(&sessions_dir, || {
         super::control_complete::validate_active_identity(work_dir, stage_id, session_id)?;
         let stage = load_stage(stage_id, work_dir)?;
+        if evidence.phase == CompletionPhase::VerifiedPendingAck {
+            verify_evidence_bindings(
+                &evidence,
+                &stage,
+                &repo_root(work_dir)?,
+                session_id,
+                &evidence.evidence_nonce,
+                work_dir,
+            )?;
+        }
         let session = exact_session(work_dir, session_id)?;
         record_attempt_handoff(&session, &stage, &evidence, work_dir)?;
         Ok(())
@@ -88,7 +95,14 @@ fn require_verified_checkpoint(
     let evidence = checkpoint
         .latest
         .context("completion checkpoint latest-attempt binding is missing")?;
-    verify_evidence_bindings(&evidence, stage, repo_root, session_id, evidence_nonce)?;
+    verify_evidence_bindings(
+        &evidence,
+        stage,
+        repo_root,
+        session_id,
+        evidence_nonce,
+        work_dir,
+    )?;
     Ok(evidence)
 }
 
@@ -127,6 +141,7 @@ fn verify_evidence_bindings(
     repo_root: &Path,
     session_id: &str,
     evidence_nonce: &str,
+    work_dir: &Path,
 ) -> Result<()> {
     if evidence.stage_id != stage.id || evidence.session_id != session_id {
         bail!("completion checkpoint identity binding failed");
@@ -140,73 +155,17 @@ fn verify_evidence_bindings(
     if !evidence.verification.all_passed() {
         bail!("completion checkpoint verification binding failed");
     }
-    if evidence.check_definition_hash != check_definition_hash(stage) {
+    if evidence.check_definition_hash
+        != crate::handoff::completion::policy::effective_policy_hash(stage, work_dir)?
+    {
         bail!("completion checkpoint check-definition binding failed");
     }
-    let expected = expected_stage_commit(stage, repo_root)
+    let expected = crate::handoff::completion::content::committed_content(stage, repo_root)
         .context("completion checkpoint commit binding failed")?;
     if evidence.commit != expected {
         bail!("completion checkpoint commit binding failed");
     }
-    refuse_uncommitted_index(stage, repo_root)
-}
-
-/// A relayed commit is applied asynchronously: a session that completed
-/// before its commit applied would bind the old HEAD, and the late commit is
-/// then refused because the stage is no longer executing. So completion waits
-/// for the index the stage commits from to match its HEAD.
-fn refuse_uncommitted_index(stage: &Stage, repo_root: &Path) -> Result<()> {
-    const UNCOMMITTED: &str = "staged changes are not committed: run loom stage commit and wait \
-                               for it with loom request status <id> --wait 90";
-    let Some(output) = staged_index_diff(stage, repo_root)? else {
-        return Ok(());
-    };
-    match output.status.code() {
-        Some(0) => Ok(()),
-        Some(1) if stage.stage_type == StageType::Knowledge => bail!(
-            "{UNCOMMITTED}; a knowledge stage commits in the main checkout, so any staged \
-             change under {} there blocks completion, including one staged by another session",
-            knowledge_prefix()
-        ),
-        Some(1) => bail!("{UNCOMMITTED}"),
-        _ => bail!(
-            "completion staged-index check failed: {}",
-            String::from_utf8_lossy(&output.stderr).trim()
-        ),
-    }
-}
-
-/// `git diff --cached --quiet HEAD` where the stage commits. A knowledge
-/// stage commits in the main checkout under the knowledge prefix, so only
-/// that prefix is compared. Any other stage commits in its worktree, through
-/// git pinned to the worktree's registered git directory, because the
-/// session can rewrite the worktree's `.git` file; `None` when no worktree
-/// exists at its path.
-fn staged_index_diff(stage: &Stage, repo_root: &Path) -> Result<Option<Output>> {
-    const DIFF: [&str; 5] = [
-        "diff",
-        "--cached",
-        "--quiet",
-        "--ignore-submodules=none",
-        "HEAD",
-    ];
-    let output = if stage.stage_type == StageType::Knowledge {
-        let mut args = DIFF.to_vec();
-        args.extend(["--", knowledge_prefix()]);
-        WorktreeGit::discovered(repo_root).run(&args)
-    } else {
-        let worktree = stage_worktree_path(stage, repo_root)
-            .context("completion staged-index check could not name the stage worktree")?;
-        if !worktree.exists() {
-            return Ok(None);
-        }
-        WorktreeGit::pinned(repo_root, &worktree)
-            .context("completion staged-index check could not pin the stage worktree")?
-            .run(&DIFF)
-    };
-    output
-        .context("completion staged-index check failed")
-        .map(Some)
+    Ok(())
 }
 
 fn exact_session(work_dir: &Path, session_id: &str) -> Result<crate::models::session::Session> {
@@ -283,7 +242,9 @@ pub(crate) fn trusted_checkpoint_fixture(
     stage.acceptance = vec![AcceptanceCriterion::Simple("true".to_string())];
     if stage_type != crate::models::stage::StageType::Knowledge {
         let branch = crate::git::branch::branch_name_for_stage(stage_id);
-        let _ = scratch_git(repo, &["branch", &branch]);
+        let relative = format!(".worktrees/{stage_id}");
+        let _ = scratch_git(repo, &["worktree", "add", "-q", "-b", &branch, &relative]);
+        stage.worktree = Some(stage_id.to_string());
     }
     save_stage(&stage, work).unwrap();
     crate::fs::session_files::save_session(&session, work).unwrap();
@@ -338,7 +299,7 @@ pub(crate) fn scratch_git_fixture() -> ScratchGitFixture {
 }
 
 #[cfg(test)]
-fn record_trusted_test_checkpoint(
+pub(crate) fn record_trusted_test_checkpoint(
     repo: &Path,
     work: &Path,
     stage: &Stage,
@@ -351,8 +312,11 @@ fn record_trusted_test_checkpoint(
         version: COMPLETION_EVIDENCE_VERSION,
         stage_id: stage.id.clone(),
         session_id: session.id.clone(),
-        commit: expected_stage_commit(stage, repo).unwrap(),
-        check_definition_hash: check_definition_hash(stage),
+        commit: crate::handoff::expected_stage_commit(stage, repo).unwrap(),
+        check_definition_hash: crate::handoff::completion::policy::effective_policy_hash(
+            stage, work,
+        )
+        .unwrap(),
         exact_command: format!("loom check {}", stage.id),
         evidence_nonce: evidence_nonce.to_string(),
         verification: VerificationCheckpoint {
@@ -390,3 +354,7 @@ pub(crate) fn scratch_git(repo: &Path, args: &[&str]) -> String {
     );
     String::from_utf8(output.stdout).unwrap().trim().to_string()
 }
+
+#[cfg(test)]
+#[path = "completion_content_tests.rs"]
+mod content_tests;

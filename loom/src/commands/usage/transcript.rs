@@ -1,8 +1,10 @@
 //! Reads Claude Code transcripts without treating their JSONL framing as a
 //! transaction log. Assistant responses are flushed in several lines, and
 //! real transcripts show that counting each line overstates usage by about
-//! 2.3x. We therefore keep the last complete usage vector for each
-//! `message.id` while merging every line's content blocks into one request.
+//! 2.3x. We therefore select the whole usage vector with the latest timestamp
+//! for each `message.id`, breaking ties by arrival order, while merging every
+//! line's content blocks into one request. Absent counters in a partial vector
+//! are zero, as in the live tracker.
 //!
 //! A transcript can also be read while Claude Code is appending its final
 //! line. Parsing independently and ignoring an unparseable line makes that

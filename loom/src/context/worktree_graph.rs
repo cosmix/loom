@@ -16,17 +16,17 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::io::ErrorKind;
 use std::path::{Path, PathBuf};
 
-use crate::context::extract::{self, extract_file, extractor_for, Lookup};
+use crate::context::extract::{self, extractor_for, Lookup};
 use crate::context::graph_store::{FileEntry, GraphLayer, GraphStore, ResolvedGraph};
 use crate::context::refresh::snapshot::parser_version_matches;
 use crate::context::refresh::BoxedExtractor;
+use crate::context::source_graph::read::{read_source as read_snapshot, SourceRead};
 use crate::context::source_graph::FileCoverage;
 use crate::context::store::CACHE_RELATIVE_DIR;
 use crate::context::view::{build_cold, relink, ResolvedView, ViewIdentity};
-use crate::fs::safe_read::read_bounded;
 use crate::fs::work_dir::WorkDir;
 use crate::git::branch::{commits_between, is_ancestor_of};
-use crate::git::runner::run_git_checked;
+use crate::git::runner::{run_git_checked, run_git_records};
 use crate::git::worktree::is_worktree_scaffold_path;
 
 /// Overlay generation of the in-memory view a worktree graph is built as, so
@@ -234,11 +234,11 @@ fn is_object_id(value: &str) -> bool {
 /// nothing; the cost is that a stat-dirty but unchanged file is listed too.
 /// Without rename detection a move lists both its old and its new path.
 fn changed_paths(worktree: &Path, base_revision: &str) -> Result<Vec<PathBuf>> {
-    let diff = run_git_checked(
+    let diff = run_git_records(
         &["diff-index", "--name-only", "-z", base_revision, "--"],
         worktree,
     )?;
-    let untracked = run_git_checked(
+    let untracked = run_git_records(
         &["ls-files", "-z", "--others", "--exclude-standard"],
         worktree,
     )?;
@@ -256,7 +256,7 @@ fn from_scratch(
     working_dir: &Path,
     extractors: &[BoxedExtractor],
 ) -> Result<ResolvedGraph> {
-    let listing = run_git_checked(
+    let listing = run_git_records(
         &[
             "ls-files",
             "-z",
@@ -293,7 +293,7 @@ fn apply_file(
             files.remove(&key);
             return None;
         }
-        Ok(Some(bytes)) => extracted_entry(extractors, path, &bytes),
+        Ok(Some(source)) => source.entry(extractors, path),
         Err(error) => unreadable_entry(&error),
     };
     files.insert(key.clone(), entry);
@@ -303,20 +303,15 @@ fn apply_file(
 /// The bytes of the regular file at `path` beneath `worktree`, `None` when
 /// the path is absent or not a regular file (deleted, a symlink, a
 /// submodule), which the refresh path never treats as source either. The
-/// read refuses a symlink at any component. It is unbounded, as the refresh
-/// path's is: `extract_file` records a file over the extraction cap as
-/// `FileCoverage::Oversized` with its file node and the hash of all its bytes.
-fn read_source(worktree: &Path, path: &Path) -> Result<Option<Vec<u8>>> {
+/// read refuses symlinks and retains only capped source bytes while hashing
+/// the complete file, exactly as the refresh path does.
+fn read_source(worktree: &Path, path: &Path) -> Result<Option<SourceRead>> {
     match std::fs::symlink_metadata(worktree.join(path)) {
-        Ok(metadata) if metadata.is_file() => read_bounded(worktree, path, usize::MAX).map(Some),
+        Ok(metadata) if metadata.is_file() => read_snapshot(worktree, path).map(Some),
         Ok(_) => Ok(None),
         Err(error) if error.kind() == ErrorKind::NotFound => Ok(None),
         Err(error) => Err(error).with_context(|| format!("Failed to inspect {}", path.display())),
     }
-}
-
-fn extracted_entry(extractors: &[BoxedExtractor], path: &Path, bytes: &[u8]) -> FileEntry {
-    FileEntry::from_extraction(bytes, extract_file(extractors, path, bytes))
 }
 
 /// A file that could not be read keeps an entry naming why, the shape the

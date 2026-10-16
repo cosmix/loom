@@ -1,6 +1,7 @@
 //! Codex quota polling over the `codex app-server` JSON-RPC subprocess.
 
 use crate::context::untrusted::inline_safe;
+use crate::process::OwnedProcess;
 use crate::quota::model::{self, ProviderQuota, QuotaWindow, WindowKind};
 use anyhow::{anyhow, Context, Result};
 use std::io::{BufRead, BufReader, Write};
@@ -8,9 +9,8 @@ use std::path::Path;
 use std::process::{Child, ChildStdin, ChildStdout, Command, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
-use std::thread::{self, JoinHandle};
+use std::thread;
 use std::time::{Duration, Instant};
-use wait_timeout::ChildExt;
 
 /// A single JSON-RPC line from `codex app-server` is never trusted past this
 /// size; the remainder of an over-long line is discarded without blocking
@@ -19,9 +19,6 @@ const MAX_LINE_BYTES: usize = 64 * 1024;
 
 /// How often the reply-wait loop re-checks the deadline and shutdown flag.
 const RECV_SLICE: Duration = Duration::from_millis(250);
-
-/// Wall-clock bound on a clean exit before the process group is killed.
-const CHILD_WAIT_TIMEOUT: Duration = Duration::from_secs(2);
 
 /// Extract a [`ProviderQuota`] from the `result` of an
 /// `account/rateLimits/read` JSON-RPC reply.
@@ -138,6 +135,7 @@ pub fn poll_once(
 ) -> Result<ProviderQuota> {
     let (child, mut stdin, stdout) = spawn_app_server(codex_bin)?;
 
+    let mut child = OwnedProcess::new(child);
     let write_result = write_requests(&mut stdin);
     let (receiver, reader_handle) = spawn_reader(stdout);
 
@@ -150,7 +148,7 @@ pub fn poll_once(
         Err(e) if e.kind() != std::io::ErrorKind::BrokenPipe => {
             Err(anyhow::Error::new(e).context("failed to write to codex app-server stdin"))
         }
-        _ => await_reply(&receiver, deadline, shutdown, now),
+        _ => await_reply(&receiver, &mut child, deadline, shutdown, now),
     };
 
     // Dropped before the join below: `spawn_reader`'s channel has a capacity
@@ -202,9 +200,10 @@ fn write_requests(stdin: &mut ChildStdin) -> std::io::Result<()> {
     stdin.flush()
 }
 
-fn spawn_reader(stdout: ChildStdout) -> (mpsc::Receiver<String>, JoinHandle<()>) {
+fn spawn_reader(stdout: ChildStdout) -> (mpsc::Receiver<String>, mpsc::Receiver<()>) {
     let (sender, receiver) = mpsc::sync_channel(16);
-    let handle = thread::spawn(move || {
+    let (done, finished) = mpsc::channel();
+    thread::spawn(move || {
         let mut reader = BufReader::new(stdout);
         let mut buf = Vec::new();
         while let Ok(true) = read_bounded_line(&mut reader, &mut buf, MAX_LINE_BYTES) {
@@ -213,8 +212,9 @@ fn spawn_reader(stdout: ChildStdout) -> (mpsc::Receiver<String>, JoinHandle<()>)
                 break;
             }
         }
+        let _ = done.send(());
     });
-    (receiver, handle)
+    (receiver, finished)
 }
 
 /// Read one newline-terminated line, capping retained bytes at `max_bytes`
@@ -250,16 +250,22 @@ fn read_bounded_line<R: BufRead>(
 
 fn await_reply(
     receiver: &mpsc::Receiver<String>,
+    child: &mut OwnedProcess,
     deadline: Duration,
     shutdown: &AtomicBool,
     now: i64,
 ) -> Result<ProviderQuota> {
-    let deadline_instant = Instant::now() + deadline;
+    let mut deadline_instant = Instant::now() + deadline;
     loop {
+        if child.try_wait()?.is_some() {
+            deadline_instant = deadline_instant.min(child.retire());
+        }
         if shutdown.load(Ordering::SeqCst) || Instant::now() >= deadline_instant {
             return Err(anyhow!("codex app-server timed out"));
         }
-        match receiver.recv_timeout(RECV_SLICE) {
+        match receiver.recv_timeout(
+            RECV_SLICE.min(deadline_instant.saturating_duration_since(Instant::now())),
+        ) {
             Ok(line) => {
                 if let Some(outcome) = handle_line(&line, now) {
                     return outcome;
@@ -295,24 +301,16 @@ fn handle_line(line: &str, now: i64) -> Option<Result<ProviderQuota>> {
     None
 }
 
-fn teardown(mut child: Child, stdin: ChildStdin, reader_handle: JoinHandle<()>) {
+fn teardown(mut child: OwnedProcess, stdin: ChildStdin, reader_done: mpsc::Receiver<()>) {
     drop(stdin);
-    let exited = matches!(child.wait_timeout(CHILD_WAIT_TIMEOUT), Ok(Some(_)));
-    if !exited {
-        #[cfg(unix)]
-        if let Ok(pid) = i32::try_from(child.id()) {
-            let _ = nix::sys::signal::kill(
-                nix::unistd::Pid::from_raw(-pid),
-                nix::sys::signal::Signal::SIGKILL,
-            );
-        }
-        #[cfg(not(unix))]
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-    let _ = reader_handle.join();
+    let deadline = child.retire();
+    let _ = reader_done.recv_timeout(deadline.saturating_duration_since(Instant::now()));
 }
 
 #[cfg(test)]
 #[path = "codex_tests.rs"]
 mod tests;
+
+#[cfg(all(test, unix))]
+#[path = "codex_lifecycle_tests.rs"]
+mod lifecycle_tests;

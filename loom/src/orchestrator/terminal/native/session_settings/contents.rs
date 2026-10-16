@@ -82,6 +82,14 @@ pub(super) fn capsule_settings(inputs: &CapsuleInputs<'_>) -> Result<Value> {
             cwd: Some(inputs.cwd),
         },
     )?;
+    // Seatbelt cannot nest. The read-only inheritance RPC needs this one
+    // socket; all daemon mutations retain their own authorization gates.
+    #[cfg(target_os = "macos")]
+    extend_strings(
+        &mut settings,
+        &["sandbox", "network", "allowUnixSockets"],
+        &[utf8(&crate::daemon::socket_path(inputs.state_root))?.to_string()],
+    );
     let plans = inputs.repo_root.join("doc").join("plans");
     let plans_read = format!("Read(/{}/**)", utf8(&plans)?);
     extend_strings(&mut settings, &["permissions", "allow"], &[plans_read]);

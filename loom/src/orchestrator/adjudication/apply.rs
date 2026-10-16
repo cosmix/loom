@@ -122,10 +122,9 @@ impl AdjudicatorRegistry {
 /// concurrent dispute-thread write (e.g. dispute_count for a parallel filing)
 /// or CLI write is not reverted (A-5). The verdict owns: status (+
 /// review_reason via try_request_human_review), evidence_rounds,
-/// amendments_applied, and acceptance/wiring/wiring_tests (the three lists an
-/// accepted criterion dispute amends, already written to disk by
-/// apply_amendment's own locked update; re-applying the in-memory copy keeps
-/// them coherent under this lock).
+/// and amendments_applied. Amendment policy stays on disk: the amendment
+/// transaction already persisted it, and a cached copy could overwrite a
+/// newer amendment. The amendment tally is monotonic for the same reason.
 ///
 /// The status write itself is skipped entirely when the on-disk status
 /// already matches (the common "hold in NeedsAdjudication while a sibling
@@ -150,9 +149,6 @@ fn persist_verdict_result(
     let verdict_review_reason = stage.review_reason.clone();
     let verdict_evidence_rounds = stage.tally.evidence_rounds;
     let verdict_amendments_applied = stage.tally.amendments_applied;
-    let verdict_acceptance = stage.acceptance.clone();
-    let verdict_wiring = stage.wiring.clone();
-    let verdict_wiring_tests = stage.wiring_tests.clone();
     let persisted = update_stage(stage_id, work_dir, |s| {
         if s.status != verdict_status {
             if s.status.can_transition_to(&verdict_status) {
@@ -163,10 +159,7 @@ fn persist_verdict_result(
         }
         s.review_reason = verdict_review_reason.clone();
         s.tally.evidence_rounds = verdict_evidence_rounds;
-        s.tally.amendments_applied = verdict_amendments_applied;
-        s.acceptance = verdict_acceptance.clone();
-        s.wiring = verdict_wiring.clone();
-        s.wiring_tests = verdict_wiring_tests.clone();
+        s.tally.amendments_applied = s.tally.amendments_applied.max(verdict_amendments_applied);
         Ok(())
     })
     .context("save amended stage after verdict apply")?;
@@ -220,7 +213,7 @@ pub(super) fn amend_plan(
         }
         Err(e) => return Err(e).context("apply plan amendment from accept verdict"),
     }
-    resync_after_amendment(work_dir, stage);
+    resync_after_amendment(work_dir, stage)?;
     Ok(true)
 }
 
@@ -242,10 +235,8 @@ fn escalate_amendment_cap(work_dir: &Path, stage: &mut Stage, error: &anyhow::Er
 
 /// Resync the stage's amendable lists from disk (the amendment also rewrites
 /// the stage file).
-fn resync_after_amendment(work_dir: &Path, stage: &mut Stage) {
-    let Ok(reloaded) = load_stage(&stage.id, work_dir) else {
-        return;
-    };
+fn resync_after_amendment(work_dir: &Path, stage: &mut Stage) -> Result<()> {
+    let reloaded = load_stage(&stage.id, work_dir)?;
     stage.acceptance = reloaded.acceptance;
     stage.wiring = reloaded.wiring;
     stage.wiring_tests = reloaded.wiring_tests;
@@ -256,8 +247,8 @@ fn resync_after_amendment(work_dir: &Path, stage: &mut Stage) {
     // (returns the prior result), but the increment-on-reload would have
     // re-bumped each pass.
     stage.tally.amendments_applied =
-        crate::plan::amendment::count_amendments_for_stage(work_dir, &stage.id)
-            .unwrap_or_else(|_| reloaded.tally.amendments_applied.saturating_add(1));
+        crate::plan::amendment::count_amendments_for_stage(work_dir, &stage.id)?;
+    Ok(())
 }
 
 /// The disputed check stands and the implementation is wrong — the deadlock
@@ -350,5 +341,35 @@ fn write_applied_marker_after_apply_cap(work_dir: &Path, stage_id: &str, dispute
             %error,
             "failed to write applied.marker after apply-cap escalation; verdict will be retried",
         );
+    }
+}
+
+#[cfg(test)]
+mod persistence_tests {
+    use super::*;
+    use crate::plan::schema::AcceptanceCriterion;
+
+    #[test]
+    fn cached_verdict_preserves_newer_policy_and_amendment_tally() {
+        let temp = tempfile::tempdir().unwrap();
+        let work = temp.path();
+        let mut cached = Stage {
+            id: "a".into(),
+            name: "a".into(),
+            status: StageStatus::Queued,
+            acceptance: vec![AcceptanceCriterion::Simple("old".into())],
+            ..Stage::default()
+        };
+        cached.tally.amendments_applied = 1;
+        let mut fresh = cached.clone();
+        fresh.acceptance = vec![AcceptanceCriterion::Simple("new".into())];
+        fresh.tally.amendments_applied = 2;
+        crate::verify::transitions::save_stage(&fresh, work).unwrap();
+        let marker = work.join("applied.marker");
+        persist_verdict_result(work, "a", &cached, &marker, Ok(())).unwrap();
+        let persisted = load_stage("a", work).unwrap();
+        assert_eq!(persisted.acceptance, fresh.acceptance);
+        assert_eq!(persisted.tally.amendments_applied, 2);
+        assert!(marker.exists());
     }
 }

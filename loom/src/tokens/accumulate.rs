@@ -3,23 +3,26 @@
 
 use super::claude_line::{self, ClaudeLine};
 use super::codex_line::{self, CodexLine, CodexTotals};
+pub(super) use super::messages::MessageTable;
+use super::messages::Observation;
 use super::model::{
     AgentKind, ModelUsage, TokenUsage, BUCKET_SECS, MAX_MODEL_KEYS, OTHER_MODEL, UNKNOWN_MODEL,
 };
-use crate::commands::usage::transcript_types::SYNTHETIC_MODEL;
 use crate::context::untrusted::inline_safe;
+use crate::provider_data::SYNTHETIC_MODEL;
 use serde::{Deserialize, Serialize};
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::BTreeMap;
 
 /// Message ids remembered per Claude transcript; older ids are evicted.
-pub(super) const MESSAGE_TABLE_CAP: usize = 4096;
+#[cfg(test)]
+pub(super) use super::messages::MESSAGE_TABLE_CAP;
 
 /// A stage's agents by agent key.
 pub(super) type StageAgents = BTreeMap<String, AgentState>;
 
 /// One agent's accumulated usage and the state of reading its file.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-pub(super) struct AgentState {
+pub(crate) struct AgentState {
     pub(super) kind: AgentKind,
     pub(super) agent_type: Option<String>,
     pub(super) model: Option<String>,
@@ -27,12 +30,12 @@ pub(super) struct AgentState {
     pub(super) effort: Option<String>,
     /// Line timestamp of the first usage read from the file.
     pub(super) first_seen: Option<i64>,
-    pub(super) total: TokenUsage,
+    pub(crate) total: TokenUsage,
     /// `total` split by (model, effort): at most [`MAX_MODEL_KEYS`] keys plus
     /// one `(OTHER_MODEL, None)` key that absorbs the rest.
-    pub(super) by_model: Vec<ModelUsage>,
+    pub(crate) by_model: Vec<ModelUsage>,
     /// Usage per bucket index (`unix_secs / BUCKET_SECS`).
-    pub(super) buckets: BTreeMap<i64, TokenUsage>,
+    pub(crate) buckets: BTreeMap<i64, TokenUsage>,
     pub(super) unreadable: u64,
     pub(super) file: FileCursor,
 }
@@ -80,90 +83,8 @@ impl From<SavedTotals> for CodexTotals {
     }
 }
 
-/// A message id with its usage as `[input, cache_write, cache_read, output]`,
-/// the compact form a checkpoint stores.
-type SavedMessage = (String, [u64; 4]);
-
-/// The field-wise maximum usage seen per Claude `message.id`, for the most
-/// recent [`MESSAGE_TABLE_CAP`] ids, oldest first.
-#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
-#[serde(from = "Vec<SavedMessage>", into = "Vec<SavedMessage>")]
-pub(super) struct MessageTable {
-    order: VecDeque<String>,
-    max: HashMap<String, TokenUsage>,
-}
-
-impl MessageTable {
-    /// Records `usage` into the field-wise maximum for `id` and returns how far
-    /// it exceeds what was recorded before: all of it for an id not seen yet.
-    pub(super) fn increase(&mut self, id: &str, usage: &TokenUsage) -> TokenUsage {
-        let seen = match self.max.get(id) {
-            Some(seen) => *seen,
-            None => {
-                self.remember(id);
-                TokenUsage::default()
-            }
-        };
-        let gain = TokenUsage {
-            input: usage.input.saturating_sub(seen.input),
-            cache_write: usage.cache_write.saturating_sub(seen.cache_write),
-            cache_read: usage.cache_read.saturating_sub(seen.cache_read),
-            output: usage.output.saturating_sub(seen.output),
-        };
-        let mut max = seen;
-        max.add(&gain);
-        self.max.insert(id.to_owned(), max);
-        gain
-    }
-
-    /// Appends a new id, evicting the oldest one past the cap.
-    fn remember(&mut self, id: &str) {
-        self.order.push_back(id.to_owned());
-        if self.order.len() > MESSAGE_TABLE_CAP {
-            if let Some(oldest) = self.order.pop_front() {
-                self.max.remove(&oldest);
-            }
-        }
-    }
-}
-
-impl From<Vec<SavedMessage>> for MessageTable {
-    fn from(saved: Vec<SavedMessage>) -> Self {
-        let mut table = Self::default();
-        for (id, [input, cache_write, cache_read, output]) in saved {
-            let usage = TokenUsage {
-                input,
-                cache_write,
-                cache_read,
-                output,
-            };
-            table.increase(&id, &usage);
-        }
-        table
-    }
-}
-
-impl From<MessageTable> for Vec<SavedMessage> {
-    fn from(table: MessageTable) -> Self {
-        let MessageTable { order, mut max } = table;
-        order
-            .into_iter()
-            .map(|id| {
-                let usage = max.remove(&id).unwrap_or_default();
-                let fields = [
-                    usage.input,
-                    usage.cache_write,
-                    usage.cache_read,
-                    usage.output,
-                ];
-                (id, fields)
-            })
-            .collect()
-    }
-}
-
 impl AgentState {
-    pub(super) fn new(kind: AgentKind, path: &str) -> Self {
+    pub(crate) fn new(kind: AgentKind, path: &str) -> Self {
         Self {
             kind,
             agent_type: None,
@@ -193,7 +114,7 @@ impl AgentState {
     }
 
     /// Adds one complete line of the agent's file.
-    pub(super) fn ingest(&mut self, line: &str) {
+    pub(crate) fn ingest(&mut self, line: &str) {
         match self.kind {
             AgentKind::Main | AgentKind::Subagent => self.ingest_claude(line),
             AgentKind::Codex => self.ingest_codex(line),
@@ -219,6 +140,9 @@ impl AgentState {
                 effort,
                 usage,
             } => {
+                if self.file.messages.is_stale(message_id.as_deref(), line) {
+                    return;
+                }
                 // An API-error row names the `<synthetic>` sentinel, not a model. A
                 // value that sanitizes to nothing leaves the current one, as a line
                 // without it does.
@@ -231,14 +155,44 @@ impl AgentState {
                 if let Some(effort) = effort.and_then(|effort| visible(&effort)) {
                     self.effort = Some(effort);
                 }
-                let spent = match message_id {
-                    Some(id) => self.file.messages.increase(&id, &usage),
-                    None => usage,
-                };
-                self.add(timestamp, &spent);
+                self.revise_claude(line, message_id, timestamp, usage);
             }
             ClaudeLine::Unreadable => self.count_unreadable(),
             ClaudeLine::Other => {}
+        }
+    }
+
+    fn revise_claude(&mut self, line: &str, id: Option<String>, timestamp: i64, usage: TokenUsage) {
+        let observation = Observation::new(line, timestamp, usage, &self.model, &self.effort);
+        if let Some(id) = id {
+            if let Some(previous) = self.file.messages.observations.get(&id).cloned() {
+                if !crate::provider_data::supersedes(previous.stamp, observation.stamp) {
+                    return;
+                }
+                self.retract(&previous);
+            }
+            self.file.messages.increase(&id, &usage);
+            self.file.messages.observations.insert(id, observation);
+        }
+        self.add(timestamp, &usage);
+    }
+
+    fn retract(&mut self, previous: &Observation) {
+        super::messages::subtract(&mut self.total, &previous.usage);
+        if let Some(bucket) = self.buckets.get_mut(&previous.bucket) {
+            super::messages::subtract(bucket, &previous.usage);
+        }
+        let key = self
+            .by_model
+            .iter()
+            .position(|entry| entry.model == previous.model && entry.effort == previous.effort)
+            .or_else(|| {
+                self.by_model
+                    .iter()
+                    .position(|entry| entry.model == OTHER_MODEL && entry.effort.is_none())
+            });
+        if let Some(key) = key {
+            super::messages::subtract(&mut self.by_model[key].total, &previous.usage);
         }
     }
 

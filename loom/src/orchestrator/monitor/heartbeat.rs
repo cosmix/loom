@@ -26,7 +26,7 @@ pub use super::heartbeat_store::{
 };
 
 /// Default timeout for considering a session hung (5 minutes)
-pub const DEFAULT_HUNG_TIMEOUT_SECS: u64 = 300;
+pub use crate::models::stage::DEFAULT_HUNG_TIMEOUT_SECS;
 
 /// Default polling interval for heartbeat checks (10 seconds)
 pub const DEFAULT_HEARTBEAT_POLL_SECS: u64 = 10;

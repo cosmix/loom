@@ -156,6 +156,7 @@ pub fn validate_against(
     session_id: &str,
     commit: &str,
     exact_command: &str,
+    work_dir: Option<&Path>,
 ) -> Result<()> {
     evidence.validate().context("invalid completion evidence")?;
     ensure!(
@@ -171,7 +172,12 @@ pub fn validate_against(
         "completion evidence commit mismatch"
     );
     ensure!(
-        evidence.check_definition_hash == check_definition_hash(stage),
+        evidence.check_definition_hash
+            == match work_dir {
+                Some(work) =>
+                    crate::handoff::completion::policy::effective_policy_hash(stage, work)?,
+                None => check_definition_hash(stage),
+            },
         "completion evidence check definition hash mismatch"
     );
     ensure!(

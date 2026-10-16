@@ -105,6 +105,9 @@ impl Orchestrator {
                 return false;
             }
         }
+        if self.clean_merge_lacks_original_work(stage_id, branch) {
+            return true;
+        }
         match self.land_stage_merge(stage_id, target) {
             Landing::Merged => self.cleanup_resolved_merge(stage_id, target),
             Landing::Held | Landing::Conflict(_) | Landing::Blocked(_) => {}
@@ -121,6 +124,24 @@ impl Orchestrator {
             }
         }
         true
+    }
+
+    fn clean_merge_lacks_original_work(&mut self, stage_id: &str, branch: &str) -> bool {
+        let Ok(stage) = self.load_stage(stage_id) else {
+            return false;
+        };
+        let survived = stage.completed_commit.as_deref().is_some_and(|commit| {
+            crate::git::branch::is_ancestor_of(commit, branch, &self.config.repo_root)
+                .unwrap_or(false)
+        });
+        if !survived {
+            let reason = format!(
+                "the stage's recorded commit is not in {branch}, or ancestry cannot be verified; \
+                 no merge was attempted: inspect {branch}"
+            );
+            self.route_merge_stage_to_review(stage_id, reason, None);
+        }
+        !survived
     }
 
     /// Returns true — after stopping any resolver running for `stage_id` and

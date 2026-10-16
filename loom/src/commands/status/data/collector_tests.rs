@@ -5,6 +5,7 @@ use crate::handoff::{
     CriterionResult, HandoffOrigin, HandoffV2, VerificationCheckpoint, COMPLETION_EVIDENCE_VERSION,
 };
 use crate::models::session::{SessionExitReason, SessionStatus};
+use crate::parser::frontmatter::parse_from_markdown;
 
 pub(super) fn make_test_stage(id: &str, status: StageStatus) -> Stage {
     Stage {

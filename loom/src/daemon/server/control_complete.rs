@@ -68,6 +68,9 @@ fn complete_under_lock(
         if stage.stage_type == StageType::Knowledge {
             stage.merged = true;
         }
+        // Recheck under the stage lock, including concurrent policy amendments.
+        super::completion_evidence::verified_commit(work_dir, stage, session_id, evidence_nonce)?;
+        stage.completed_commit = Some(verified_commit.clone());
         stage.try_complete(None)
     })?;
     consume_nonce(work_dir, nonce)?;

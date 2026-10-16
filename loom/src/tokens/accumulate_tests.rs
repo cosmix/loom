@@ -67,10 +67,10 @@ fn message_table_round_trips_in_order() {
     let json = serde_json::to_value(&table).expect("serialize");
     let back: MessageTable = serde_json::from_value(json.clone()).expect("deserialize");
 
-    assert_eq!(
-        json,
-        json!([["msg_b", [1, 2, 3, 4]], ["msg_a", [5, 6, 7, 8]]])
-    );
+    assert_eq!(json[0][0], "msg_b");
+    assert_eq!(json[1][0], "msg_a");
+    assert_eq!(json[0][1]["cache_write"], 2);
+    assert_eq!(json[1][1]["output"], 8);
     assert_eq!(back, table);
 }
 

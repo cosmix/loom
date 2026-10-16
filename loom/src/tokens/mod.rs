@@ -1,12 +1,13 @@
 //! Token flow: per-stage, per-agent token usage read from Claude transcripts
 //! and Codex rollouts, bucketed into rate series and published as `flow.json`.
 
-mod accumulate;
+pub(crate) mod accumulate;
 mod checkpoint;
 pub mod claude_line;
 pub mod codex_line;
 mod discover;
 mod flow_build;
+mod messages;
 pub mod model;
 mod pass_memo;
 pub mod quota_left;

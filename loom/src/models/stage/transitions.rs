@@ -3,100 +3,9 @@ use anyhow::{bail, Result};
 use super::types::StageStatus;
 
 impl StageStatus {
-    /// Check if transitioning from the current status to the new status is valid.
-    ///
-    /// Valid transitions:
-    /// - `WaitingForDeps` -> `Queued` | `Skipped` (when dependencies satisfied or user skips)
-    /// - `Queued` -> `Executing` | `Skipped` | `Blocked` (when session spawns, user skips, or pre-execution failure)
-    /// - `Executing` -> `Completed` | `Blocked` | `NeedsHandoff` | `WaitingForInput` | `MergeConflict` | `CompletedWithFailures` | `MergeBlocked` | `NeedsHumanReview` | `NeedsAdjudication`
-    /// - `Blocked` -> `Queued` | `Skipped` | `NeedsHandoff` (when unblocked, user skips, or a session resumes a blocked stage via handoff)
-    /// - `NeedsHandoff` -> `Queued` (when resumed)
-    /// - `WaitingForInput` -> `Executing` (when input provided)
-    /// - `MergeConflict` -> `Completed` | `Blocked` (when conflicts resolved or resolution fails)
-    /// - `CompletedWithFailures` -> `Queued` | `Executing` | `Completed` | `MergeConflict` | `MergeBlocked` | `NeedsAdjudication` | `NeedsHumanReview` (for retry, re-verify, progressive-merge conflict/error after a fixed stage, dispute, or dispute-budget escalation)
-    /// - `MergeBlocked` -> `Queued` | `Executing` | `Completed` | `MergeConflict` (retry, merge completed, or a retried merge hit a conflict)
-    /// - `NeedsHumanReview` -> `Queued` | `Executing` | `Completed` | `Blocked` (approve queues a fresh session; force-complete steps through `Executing`; reject blocks)
-    /// - `NeedsAdjudication` -> `Queued` | `NeedsAdjudication` | `NeedsHumanReview` (verdict applied, evidence loop, or escalation)
-    /// - `Completed` is a terminal state
-    /// - `Skipped` is a terminal state
-    ///
-    /// # Arguments
-    /// * `new_status` - The target status to transition to
-    ///
-    /// # Returns
-    /// `true` if the transition is valid, `false` otherwise
+    /// Self transitions are accepted as no-ops in every state.
     pub fn can_transition_to(&self, new_status: &StageStatus) -> bool {
-        // Same status is always valid (no-op)
-        if self == new_status {
-            return true;
-        }
-
-        match self {
-            StageStatus::WaitingForDeps => {
-                matches!(new_status, StageStatus::Queued | StageStatus::Skipped)
-            }
-            StageStatus::Queued => {
-                matches!(
-                    new_status,
-                    StageStatus::Executing | StageStatus::Skipped | StageStatus::Blocked
-                )
-            }
-            StageStatus::Executing => matches!(
-                new_status,
-                StageStatus::Completed
-                    | StageStatus::Blocked
-                    | StageStatus::NeedsHandoff
-                    | StageStatus::WaitingForInput
-                    | StageStatus::MergeConflict
-                    | StageStatus::CompletedWithFailures
-                    | StageStatus::MergeBlocked
-                    | StageStatus::NeedsHumanReview
-                    | StageStatus::NeedsAdjudication
-            ),
-            StageStatus::WaitingForInput => matches!(new_status, StageStatus::Executing),
-            StageStatus::Completed => false, // Terminal state
-            StageStatus::Blocked => matches!(
-                new_status,
-                StageStatus::Queued | StageStatus::Skipped | StageStatus::NeedsHandoff
-            ),
-            StageStatus::NeedsHandoff => matches!(new_status, StageStatus::Queued),
-            StageStatus::Skipped => false, // Terminal state
-            StageStatus::MergeConflict => {
-                matches!(new_status, StageStatus::Completed | StageStatus::Blocked)
-            }
-            StageStatus::CompletedWithFailures => matches!(
-                new_status,
-                StageStatus::Queued
-                    | StageStatus::Executing
-                    | StageStatus::Completed
-                    | StageStatus::MergeConflict
-                    | StageStatus::MergeBlocked
-                    | StageStatus::NeedsAdjudication
-                    | StageStatus::NeedsHumanReview
-            ),
-            StageStatus::MergeBlocked => matches!(
-                new_status,
-                StageStatus::Queued
-                    | StageStatus::Executing
-                    | StageStatus::Completed
-                    | StageStatus::MergeConflict
-            ),
-            StageStatus::NeedsHumanReview => matches!(
-                new_status,
-                StageStatus::Executing
-                    | StageStatus::Completed
-                    | StageStatus::Blocked
-                    | StageStatus::Queued
-            ),
-            StageStatus::NeedsAdjudication => {
-                matches!(
-                    new_status,
-                    StageStatus::Queued
-                        | StageStatus::NeedsAdjudication
-                        | StageStatus::NeedsHumanReview
-                )
-            }
-        }
+        self == new_status || self.outgoing_edges().contains(new_status)
     }
 
     /// Attempt to transition to a new status, returning an error if invalid.
@@ -114,62 +23,88 @@ impl StageStatus {
         }
     }
 
-    /// Returns the list of valid statuses this status can transition to.
+    /// Returns outgoing state changes, excluding no-op self transitions.
     pub fn valid_transitions(&self) -> Vec<StageStatus> {
+        self.outgoing_edges().to_vec()
+    }
+
+    fn outgoing_edges(&self) -> &'static [StageStatus] {
+        use StageStatus::*;
         match self {
-            StageStatus::WaitingForDeps => vec![StageStatus::Queued, StageStatus::Skipped],
-            StageStatus::Queued => vec![
-                StageStatus::Executing,
-                StageStatus::Skipped,
-                StageStatus::Blocked,
+            WaitingForDeps => &[Queued, Skipped],
+            Queued => &[Executing, Skipped, Blocked],
+            Executing => &[
+                Completed,
+                Blocked,
+                NeedsHandoff,
+                WaitingForInput,
+                MergeConflict,
+                CompletedWithFailures,
+                MergeBlocked,
+                NeedsHumanReview,
+                NeedsAdjudication,
             ],
-            StageStatus::Executing => vec![
-                StageStatus::Completed,
-                StageStatus::Blocked,
-                StageStatus::NeedsHandoff,
-                StageStatus::WaitingForInput,
-                StageStatus::MergeConflict,
-                StageStatus::CompletedWithFailures,
-                StageStatus::MergeBlocked,
-                StageStatus::NeedsHumanReview,
-                StageStatus::NeedsAdjudication,
+            WaitingForInput => &[Executing],
+            Completed => &[], // Terminal state
+            Blocked => &[Queued, Skipped, NeedsHandoff],
+            NeedsHandoff => &[Queued],
+            Skipped => &[], // Terminal state
+            MergeConflict => &[Completed, Blocked],
+            CompletedWithFailures => &[
+                Queued,
+                Executing,
+                Completed,
+                MergeConflict,
+                MergeBlocked,
+                NeedsAdjudication,
+                NeedsHumanReview,
             ],
-            StageStatus::WaitingForInput => vec![StageStatus::Executing],
-            StageStatus::Completed => vec![], // Terminal state
-            StageStatus::Blocked => vec![
-                StageStatus::Queued,
-                StageStatus::Skipped,
-                StageStatus::NeedsHandoff,
-            ],
-            StageStatus::NeedsHandoff => vec![StageStatus::Queued],
-            StageStatus::Skipped => vec![], // Terminal state
-            StageStatus::MergeConflict => vec![StageStatus::Completed, StageStatus::Blocked],
-            StageStatus::CompletedWithFailures => vec![
-                StageStatus::Queued,
-                StageStatus::Executing,
-                StageStatus::Completed,
-                StageStatus::MergeConflict,
-                StageStatus::MergeBlocked,
-                StageStatus::NeedsAdjudication,
-                StageStatus::NeedsHumanReview,
-            ],
-            StageStatus::MergeBlocked => vec![
-                StageStatus::Queued,
-                StageStatus::Executing,
-                StageStatus::Completed,
-                StageStatus::MergeConflict,
-            ],
-            StageStatus::NeedsHumanReview => vec![
-                StageStatus::Executing,
-                StageStatus::Completed,
-                StageStatus::Blocked,
-                StageStatus::Queued,
-            ],
-            StageStatus::NeedsAdjudication => vec![
-                StageStatus::Queued,
-                StageStatus::NeedsAdjudication,
-                StageStatus::NeedsHumanReview,
-            ],
+            MergeBlocked => &[Queued, Executing, Completed, MergeConflict],
+            NeedsHumanReview => &[Executing, Completed, Blocked, Queued],
+            NeedsAdjudication => &[Queued, NeedsHumanReview],
+        }
+    }
+}
+
+#[cfg(test)]
+mod exhaustive_policy_tests {
+    use super::*;
+
+    #[test]
+    fn enforcing_api_matches_every_state_pair() {
+        use StageStatus::*;
+        let states = [
+            WaitingForDeps,
+            Queued,
+            Executing,
+            Completed,
+            Blocked,
+            NeedsHandoff,
+            Skipped,
+            WaitingForInput,
+            MergeConflict,
+            CompletedWithFailures,
+            MergeBlocked,
+            NeedsHumanReview,
+            NeedsAdjudication,
+        ];
+        // Bit j of row i permits the non-self edge states[i] -> states[j].
+        let outgoing: [u16; 13] = [66, 84, 8120, 0, 98, 2, 0, 4, 24, 7438, 270, 30, 2050];
+        for (i, from) in states.iter().enumerate() {
+            assert!(
+                !from.valid_transitions().contains(from),
+                "self is a no-op, not an edge"
+            );
+            for (j, to) in states.iter().enumerate() {
+                let expected = i == j || outgoing[i] & (1 << j) != 0;
+                assert_eq!(
+                    from.try_transition(to.clone()).is_ok(),
+                    expected,
+                    "{from} -> {to}"
+                );
+                assert_eq!(from.can_transition_to(to), expected);
+                assert_eq!(from.valid_transitions().contains(to), i != j && expected);
+            }
         }
     }
 }

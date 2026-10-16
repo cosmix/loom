@@ -3,16 +3,13 @@
 //! These functions translate an [`AmendmentField`] into the concrete
 //! `acceptance` / `wiring` / `wiring_tests` / `contracts` array on a
 //! [`StageDefinition`] or runtime [`Stage`], apply an [`AmendmentPatch`] to
-//! that array, and persist an amended stage back to disk.
-
-use std::path::Path;
+//! that array, and synchronize the amended runtime field.
 
 use anyhow::{bail, Context, Result};
 use serde::de::DeserializeOwned;
 
 use crate::models::stage::Stage;
 use crate::plan::schema::StageDefinition;
-use crate::verify::transitions::update_stage;
 
 use super::amendment::{AmendmentField, AmendmentPatch, AmendmentRequest, ParsedAmendmentValue};
 
@@ -57,48 +54,6 @@ fn parse_yaml<T: DeserializeOwned>(value: &str, type_name: &str, stage_id: &str)
 
 pub(super) fn apply_patch_to_stage_def(
     stage: &mut StageDefinition,
-    field: AmendmentField,
-    patch: &AmendmentPatch,
-    value: &ParsedAmendmentValue,
-) -> Result<()> {
-    match field {
-        AmendmentField::Acceptance => apply_patch_vec(
-            &mut stage.acceptance,
-            patch,
-            match value {
-                ParsedAmendmentValue::Acceptance(v) => Some(v.clone()),
-                _ => None,
-            },
-        ),
-        AmendmentField::Wiring => apply_patch_vec(
-            &mut stage.wiring,
-            patch,
-            match value {
-                ParsedAmendmentValue::Wiring(v) => Some(v.clone()),
-                _ => None,
-            },
-        ),
-        AmendmentField::WiringTests => apply_patch_vec(
-            &mut stage.wiring_tests,
-            patch,
-            match value {
-                ParsedAmendmentValue::WiringTest(v) => Some(v.clone()),
-                _ => None,
-            },
-        ),
-        AmendmentField::Contracts => apply_patch_vec(
-            &mut stage.contracts,
-            patch,
-            match value {
-                ParsedAmendmentValue::Contract(v) => Some(v.clone()),
-                _ => None,
-            },
-        ),
-    }
-}
-
-pub(super) fn apply_patch_to_runtime_stage(
-    stage: &mut Stage,
     field: AmendmentField,
     patch: &AmendmentPatch,
     value: &ParsedAmendmentValue,
@@ -198,6 +153,9 @@ pub(super) fn sync_stage_from_definition(
     def: &StageDefinition,
     field: AmendmentField,
 ) {
+    if !stage_field_matches(stage, def, field) {
+        stage.completed_commit = None;
+    }
     match field {
         AmendmentField::Acceptance => {
             stage.acceptance = def.acceptance.clone();
@@ -212,29 +170,4 @@ pub(super) fn sync_stage_from_definition(
             stage.contracts = def.contracts.clone();
         }
     }
-}
-
-/// Persist the amended `acceptance`/`wiring`/`wiring_tests`/`contracts` onto
-/// the stage file. Re-reads the on-disk stage under `update_stage`'s lock so a
-/// concurrent dispute-thread / orchestrator write to other fields
-/// (dispute_count, status, session, …) is not reverted (A-5). Without this,
-/// the runtime keeps stale criteria via `sync_graph_with_stage_files`.
-pub(super) fn persist_amended_stage(
-    stage: &Stage,
-    request_stage_id: &str,
-    work_dir: &Path,
-) -> Result<()> {
-    let amended_acceptance = stage.acceptance.clone();
-    let amended_wiring = stage.wiring.clone();
-    let amended_wiring_tests = stage.wiring_tests.clone();
-    let amended_contracts = stage.contracts.clone();
-    update_stage(request_stage_id, work_dir, |s| {
-        s.acceptance = amended_acceptance.clone();
-        s.wiring = amended_wiring.clone();
-        s.wiring_tests = amended_wiring_tests.clone();
-        s.contracts = amended_contracts.clone();
-        Ok(())
-    })
-    .with_context(|| format!("Failed to save amended stage '{request_stage_id}'"))?;
-    Ok(())
 }

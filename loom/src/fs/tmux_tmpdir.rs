@@ -26,7 +26,7 @@ use std::ffi::OsString;
 use std::os::unix::ffi::{OsStrExt, OsStringExt};
 use std::path::Path;
 
-use crate::daemon::DaemonServer;
+use crate::fs::daemon_state;
 
 /// File name of the recorded value under `.loom/work/`.
 const RECORD_FILE: &str = "tmux-tmpdir";
@@ -75,7 +75,7 @@ pub fn remove_tmux_tmpdir_record(work_dir: &Path) {
 #[derive(Debug, PartialEq, Eq)]
 pub enum TmuxTmpdirAdoption {
     /// No daemon is alive for this `.loom/work/` (per
-    /// [`DaemonServer::is_running`]). Any record present is presumed stale —
+    /// `daemon_state::is_running`). Any record present is presumed stale —
     /// left behind by an orchestrator that has since exited — so it is never
     /// adopted and the process env is left untouched.
     DaemonNotRunning,
@@ -138,7 +138,7 @@ fn read_recorded(work_dir: &Path) -> Option<Option<OsString>> {
 }
 
 /// While an orchestrator is alive for this `.loom/work/` (per
-/// [`DaemonServer::is_running`]), read `.loom/work/tmux-tmpdir`; if it exists and
+/// `daemon_state::is_running`), read `.loom/work/tmux-tmpdir`; if it exists and
 /// differs from this process's `TMUX_TMPDIR` (present vs absent counts as
 /// differing), set/unset `TMUX_TMPDIR` in THIS process so every later
 /// `loom_socket_dir()` call and every tmux subprocess this process spawns
@@ -146,7 +146,7 @@ fn read_recorded(work_dir: &Path) -> Option<Option<OsString>> {
 /// is presumed stale and is never adopted — see
 /// [`TmuxTmpdirAdoption::DaemonNotRunning`].
 pub fn adopt_recorded_tmux_tmpdir(work_dir: &Path) -> TmuxTmpdirAdoption {
-    let daemon_alive = DaemonServer::is_running(work_dir);
+    let daemon_alive = daemon_state::is_running(work_dir);
     let recorded = read_recorded(work_dir);
     let ambient = std::env::var_os("TMUX_TMPDIR");
     let decision = decide(daemon_alive, recorded, ambient);
@@ -283,7 +283,7 @@ mod tests {
 
     // ----- adopt_recorded_tmux_tmpdir: real daemon-liveness gate -----
     //
-    // No daemon lock is ever held in these tests, so `DaemonServer::is_running`
+    // No daemon lock is ever held in these tests, so `daemon_state::is_running`
     // is always `false` here — exactly the scenario this gate exists for
     // (task A): a record left by an earlier run must not be adopted once
     // nothing is listening on it anymore.

@@ -110,11 +110,16 @@ pub(crate) fn display_safe(text: &str) -> String {
 
 fn run_entry(entry: &ProvisionEntry, worktree: &Path) -> Result<(), String> {
     let dir = resolve_dir(entry, worktree)?;
-    // The way `before_stage` checks run: on the host, in the daemon's process. `Confined`
-    // keeps HOME and PATH, so `bun` finds its cache.
+    // The assigned worktree is the boundary; an entry may use sibling workspace
+    // packages while executing from its validated subdirectory.
+    let command = format!(
+        "cd -- {} && {}",
+        shell_escape::escape(dir.to_string_lossy()),
+        entry.command
+    );
     let result = run_spec_with_timeout(
-        &CommandSpec::shell(entry.command.as_str()),
-        Some(&dir),
+        &CommandSpec::shell(command),
+        Some(worktree),
         PROVISION_TIMEOUT,
         CommandConfinement::Confined,
     )

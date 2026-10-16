@@ -1,304 +1,138 @@
-//! Wiring detection - identify new source files that are not referenced anywhere in the codebase.
-//!
-//! At stage completion, newly added source files should be imported or referenced by at least
-//! one other file. Files that exist but are never referenced are "unwired" and likely indicate
-//! a forgotten module declaration or import.
-
-use crate::git::runner::run_git;
-use crate::verify::utils::bounded_stderr_warning;
-use anyhow::{bail, Context, Result};
+//! Advisory wiring evidence from the shared source graph.
+use super::duplicate_detection::graph;
+use crate::context::extract::dialect::dialect_for_path;
+use crate::context::graph_store::ResolvedGraph;
+use crate::context::source_graph::{EdgeProvenance, FileCoverage, SourceEdgeKind};
+use anyhow::Result;
+use std::collections::BTreeSet;
 use std::path::Path;
-use std::process::Command;
 
-/// A new source file that appears to be unwired (not referenced by any other file).
 #[derive(Debug)]
 pub struct UnwiredFile {
-    /// Repository-relative path to the file (e.g. `src/cache/store.rs`)
     pub path: String,
-    /// The importable name extracted from the path (e.g. `store`)
     pub importable_name: String,
 }
 
-/// Result of wiring detection for all newly added files.
 #[derive(Debug)]
 pub struct WiringDetectionResult {
-    /// Files that were added in the diff but have no references in the codebase
     pub unwired_files: Vec<UnwiredFile>,
-    /// Total number of new source files inspected
     pub total_new_files: usize,
+    /// Missing parser support or unresolved evidence cannot establish absence.
+    pub uncertain_files: Vec<String>,
 }
 
-/// Source file extensions considered when scanning for new files.
-const SOURCE_EXTENSIONS: &[&str] = &["rs", "ts", "tsx", "jsx", "js", "py", "go"];
-
-/// Structural files that are excluded from unwired detection because they do not
-/// need to be referenced by a sibling (they ARE the entrypoint for their directory).
 const EXCLUDED_STEMS: &[&str] = &["mod", "lib", "main", "index"];
 
-/// Common generic names that produce too many false positives when grepped.
-const GENERIC_NAMES: &[&str] = &[
-    "new", "default", "from", "into", "build", "test", "main", "run", "init", "error", "config",
-    "types", "utils", "helpers", "common",
-];
-
-/// Detect new source files that are not referenced anywhere in the codebase.
-///
-/// Steps:
-/// 1. Run `git diff --name-status <base_branch>..HEAD` in `worktree_path`.
-/// 2. Collect newly added files (status `A`) with a known source extension.
-/// 3. Skip structural files (`mod.rs`, `lib.rs`, `main.rs`, `index.*`) and test files.
-/// 4. Skip files whose importable name is too generic to search for meaningfully.
-/// 5. For each remaining file, search the worktree for language-appropriate import
-///    references to its importable name.
-/// 6. Return every file for which no reference was found.
-pub fn detect_unwired_files(
-    worktree_path: &Path,
-    base_branch: &str,
-) -> Result<WiringDetectionResult> {
-    let new_files = collect_added_source_files(worktree_path, base_branch)?;
-
-    let mut unwired_files = Vec::new();
-
-    // Filter generic names first, then count remaining candidates (fix #6).
-    let candidate_files: Vec<String> = new_files
-        .into_iter()
-        .filter(|file_path| {
-            let importable_name = extract_importable_name(file_path);
-            !GENERIC_NAMES.contains(&importable_name.as_str())
-        })
-        .collect();
-
-    // total_new_files reflects candidates after filtering generic names (fix #6).
-    let total_new_files = candidate_files.len();
-
-    for file_path in &candidate_files {
-        let importable_name = extract_importable_name(file_path);
-
-        // Validate that importable_name is safe to interpolate into regex patterns.
-        // Names with special characters could inject into grep patterns (fix #2).
-        if !is_safe_identifier(&importable_name) {
-            continue;
-        }
-
-        if !is_referenced(worktree_path, file_path, &importable_name)? {
-            unwired_files.push(UnwiredFile {
-                path: file_path.clone(),
-                importable_name,
-            });
-        }
+pub fn detect_unwired_files(directory: &Path, base_branch: &str) -> Result<WiringDetectionResult> {
+    let root = graph::repository_root(directory)?;
+    let added = graph::changed_files(&root, base_branch, true)?;
+    let built = graph::graph(&root)?;
+    let result = inspect_wiring(&built.graph, &added);
+    for file in &result.uncertain_files {
+        eprintln!("Wiring analysis uncertain for {file}: incomplete or unresolved graph evidence");
     }
-
-    Ok(WiringDetectionResult {
-        unwired_files,
-        total_new_files,
-    })
-}
-
-// ---------------------------------------------------------------------------
-// Internal helpers
-// ---------------------------------------------------------------------------
-
-/// Return `true` if `name` contains only characters safe for regex interpolation.
-/// Accepts identifiers matching `^[a-zA-Z0-9_]+$` (fix #2).
-fn is_safe_identifier(name: &str) -> bool {
-    !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
-}
-
-/// Run `git diff --name-status <base>..HEAD` and return the paths of files
-/// whose status is `A` (added) and whose extension is a known source extension.
-/// Files identified as test files or structural entrypoints are excluded.
-fn collect_added_source_files(worktree_path: &Path, base_branch: &str) -> Result<Vec<String>> {
-    let output = run_git(
-        &["diff", "--name-status", &format!("{}..HEAD", base_branch)],
-        worktree_path,
-    )
-    .with_context(|| format!("Failed to run git diff in {}", worktree_path.display()))?;
-
-    // Check that git itself succeeded (fix #1).
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        bail!(
-            "git diff failed in {}: {}",
-            worktree_path.display(),
-            stderr.trim()
-        );
-    }
-
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let mut result = Vec::new();
-
-    for line in stdout.lines() {
-        // Lines look like "A\tsrc/cache/store.rs" or "M\tsrc/existing.rs"
-        let parts: Vec<&str> = line.splitn(2, '\t').collect();
-        if parts.len() != 2 {
-            continue;
-        }
-
-        let status = parts[0].trim();
-        let file_path = parts[1].trim();
-
-        // Only newly added files
-        if status != "A" {
-            continue;
-        }
-
-        // Filter by source extension
-        if !has_source_extension(file_path) {
-            continue;
-        }
-
-        // Exclude structural entrypoint files
-        let stem = file_stem(file_path);
-        if EXCLUDED_STEMS.contains(&stem.as_str()) {
-            continue;
-        }
-
-        // Exclude test files (path contains "test" or "_test")
-        if is_test_file(file_path) {
-            continue;
-        }
-
-        result.push(file_path.to_string());
-    }
-
     Ok(result)
 }
 
-/// Return `true` if the file path has a recognised source extension.
-fn has_source_extension(path: &str) -> bool {
-    let ext = path.rsplit('.').next().unwrap_or("");
-    SOURCE_EXTENSIONS.contains(&ext)
+fn inspect_wiring(graph: &ResolvedGraph, added: &BTreeSet<String>) -> WiringDetectionResult {
+    let mut result = WiringDetectionResult {
+        unwired_files: Vec::new(),
+        total_new_files: 0,
+        uncertain_files: Vec::new(),
+    };
+    for path in added {
+        let name = file_stem(path);
+        if EXCLUDED_STEMS.contains(&name.as_str()) || is_test_file(path) {
+            continue;
+        }
+        if dialect_for_path(Path::new(path)).is_none() {
+            continue;
+        }
+        let Some(entry) = graph.files.get(path) else {
+            result.total_new_files += 1;
+            result.uncertain_files.push(path.clone());
+            continue;
+        };
+        result.total_new_files += 1;
+        if is_referenced(graph, path) {
+            continue;
+        }
+        let incomplete = !matches!(entry.coverage, FileCoverage::Full)
+            || graph.files.iter().any(|(path, file)| {
+                dialect_for_path(Path::new(path)).is_some()
+                    && !matches!(file.coverage, FileCoverage::Full)
+            })
+            || unresolved_reference(graph, path, &name);
+        if incomplete {
+            result.uncertain_files.push(path.clone());
+        } else {
+            result.unwired_files.push(UnwiredFile {
+                path: path.clone(),
+                importable_name: name,
+            });
+        }
+    }
+    result
 }
 
-/// Return `true` if the file is a test file based on its path segments.
+/// Only resolved, import/receiver/compiler evidence from another file counts.
+/// Unique spelling matches do not establish actual integration.
+fn is_referenced(graph: &ResolvedGraph, path: &str) -> bool {
+    graph
+        .files
+        .iter()
+        .filter(|(source, _)| source.as_str() != path)
+        .any(|(_, file)| {
+            file.edges.iter().any(|edge| {
+                edge.kind != SourceEdgeKind::Contains
+                    && matches!(
+                        edge.provenance,
+                        EdgeProvenance::Import
+                            | EdgeProvenance::Receiver
+                            | EdgeProvenance::Compiler
+                    )
+                    && edge.to.split('#').next() == Some(path)
+            })
+        })
+}
+
+fn unresolved_reference(graph: &ResolvedGraph, path: &str, name: &str) -> bool {
+    graph
+        .files
+        .iter()
+        .filter(|(source, _)| source.as_str() != path)
+        .any(|(_, file)| {
+            file.edges.iter().any(|edge| {
+                matches!(
+                    edge.provenance,
+                    EdgeProvenance::Syntax | EdgeProvenance::UniqueName
+                ) && (edge.kind == SourceEdgeKind::Imports
+                    || edge.symbol.split([':', '.', '/']).any(|part| part == name)
+                    || edge
+                        .candidates
+                        .iter()
+                        .any(|id| id.split('#').next() == Some(path)))
+            })
+        })
+}
+
 fn is_test_file(path: &str) -> bool {
     let lower = path.to_lowercase();
-    lower.contains("/test/")
-        || lower.contains("/tests/")
+    lower
+        .split('/')
+        .any(|part| matches!(part, "test" | "tests"))
         || lower.contains("_test.")
         || lower.ends_with("_test")
         || lower.contains(".test.")
         || lower.contains(".spec.")
 }
 
-/// Extract the importable name from a file path.
-///
-/// For `src/cache/store.rs` this is `store`.
-/// For `src/cache.rs` this is `cache`.
-fn extract_importable_name(path: &str) -> String {
-    file_stem(path)
-}
-
-/// Extract the file stem (filename without extension) from a path string.
 fn file_stem(path: &str) -> String {
-    let filename = path.rsplit('/').next().unwrap_or(path);
-    // Strip extension
-    match filename.rfind('.') {
-        Some(dot) => filename[..dot].to_string(),
-        None => filename.to_string(),
-    }
-}
-
-/// Search the worktree for references to `importable_name` in files other than
-/// the file that was added. Returns `true` if at least one reference is found.
-///
-/// Each grep invocation uses `-r -l -m 1 -s --binary-files=without-match`:
-/// recursive, filenames-only, stop after the first match to avoid unbounded
-/// output, skip binary files, and suppress grep's own per-file "Permission
-/// denied" messages for nonexistent/unreadable files (see the exit-code-2
-/// handling below).
-///
-/// Exit code 2 fires both for a genuine grep error AND whenever ANY file
-/// under the search root is unreadable (permission denied) - the `-s` flag
-/// suppresses grep's own per-file message, but the exit code itself still
-/// reflects it. stdout still holds every match grep DID find in the files it
-/// could read, so it must still be parsed rather than skipped: `continue`-ing
-/// here previously turned "some file is unreadable" into a silent false
-/// "unwired" report even when a real reference existed. Only warn (bounded)
-/// and fall through to parsing stdout.
-fn is_referenced(worktree_path: &Path, added_file: &str, importable_name: &str) -> Result<bool> {
-    // Build language-aware patterns based on the file extension
-    let ext = added_file.rsplit('.').next().unwrap_or("").to_lowercase();
-    let patterns = build_search_patterns(&ext, importable_name);
-
-    for pattern in &patterns {
-        let output = Command::new("grep")
-            .args([
-                "-r",
-                "-l",
-                "-m",
-                "1",
-                "-s",
-                "--binary-files=without-match",
-                "--include=*.rs",
-                "--include=*.ts",
-                "--include=*.tsx",
-                "--include=*.js",
-                "--include=*.jsx",
-                "--include=*.py",
-                "--include=*.go",
-                "--exclude-dir=.git",
-                "--exclude-dir=target",
-                "--exclude-dir=node_modules",
-                "--exclude-dir=.worktrees",
-                pattern,
-                ".",
-            ])
-            .current_dir(worktree_path)
-            .output();
-
-        let output = match output {
-            Ok(o) => o,
-            Err(_) => continue, // grep not available or failed to spawn; skip this pattern
-        };
-
-        if output.status.code() == Some(2) {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            if !stderr.trim().is_empty() {
-                eprintln!(
-                    "wiring_detection: grep warning for pattern {:?}: {}",
-                    pattern,
-                    bounded_stderr_warning(&stderr)
-                );
-            }
-        }
-
-        let stdout = String::from_utf8_lossy(&output.stdout);
-
-        for matched_file in stdout.lines() {
-            let matched_file = matched_file.trim();
-            // Normalise: strip leading "./"
-            let normalised = matched_file.trim_start_matches("./");
-
-            // Exclude the file itself
-            if normalised == added_file {
-                continue;
-            }
-
-            // Found a reference in another file
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
-}
-
-/// Build a list of grep patterns for detecting references to `name` in files
-/// of the given `extension`.
-fn build_search_patterns(ext: &str, name: &str) -> Vec<String> {
-    match ext {
-        "rs" => vec![format!(r"mod {}", name), format!(r"use .*{}", name)],
-        "ts" | "tsx" | "js" | "jsx" => vec![
-            format!(r#"from.*['"'].*{}['"']"#, name),
-            format!(r"require.*{}", name),
-        ],
-        "py" => vec![format!(r"import {}", name), format!(r"from {} ", name)],
-        "go" => vec![format!(r#"import.*".*{}"#, name)],
-        _ => vec![
-            // Generic fallback: just look for the name
-            name.to_string(),
-        ],
-    }
+    Path::new(path)
+        .file_stem()
+        .unwrap_or_default()
+        .to_string_lossy()
+        .into_owned()
 }
 
 #[cfg(test)]

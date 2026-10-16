@@ -185,7 +185,9 @@ fn gated_repo() -> (TempDir, std::path::PathBuf, Stage) {
     git_in(root, &["commit", "-m", "stage work"]);
     git_in(root, &["checkout", "main"]);
     let work_dir = root.join(".loom").join("work");
-    let stage = create_test_stage("gated", StageStatus::MergeConflict);
+    git_in(root, &["worktree", "add", ".worktrees/gated", "loom/gated"]);
+    let mut stage = create_test_stage("gated", StageStatus::MergeConflict);
+    stage.completed_commit = Some(crate::git::branch::get_branch_head("loom/gated", root).unwrap());
     crate::verify::transitions::save_stage(&stage, &work_dir).unwrap();
     (temp_dir, work_dir, stage)
 }

@@ -309,6 +309,7 @@ impl Orchestrator {
             }
         };
         self.spawn_stage_agent(stage, worktree, None, kind)
+            .map(|_| ())
     }
 }
 

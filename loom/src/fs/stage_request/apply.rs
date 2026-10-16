@@ -1,4 +1,4 @@
-//! Applying drained requests, through the daemon's own handlers.
+//! Applying drained requests through the shared stage service.
 //!
 //! Nothing here reimplements a state transition. A spooled block goes through
 //! the same `handle_block_stage` the `BlockStage` RPC calls, a spooled
@@ -12,11 +12,11 @@
 use anyhow::Result;
 use std::path::Path;
 
-use super::spool::{drain_spool, DrainOutcome};
+use super::spool::{drain_identified, DrainOutcome};
 use super::types::StageRequest;
-use crate::daemon::{
-    handle_block_stage, handle_dispute_criteria, handle_file_dispute, handle_freeze_contracts,
-    ContractRunReport, Response,
+use crate::stage_service::{
+    handle_block_stage, handle_dispute_criteria_identified, handle_file_dispute_identified,
+    handle_freeze_contracts, ContractRunReport, Response,
 };
 use crate::verify::transitions::load_stage;
 
@@ -39,8 +39,14 @@ pub fn drain_requests(
     worktree_root: &Path,
 ) -> Result<DrainOutcome> {
     let mut refused = 0usize;
-    let outcome = drain_spool(worktree_root, &mut |request| {
-        apply_request(work_dir, stage_id, request, &mut refused)
+    let outcome = drain_identified(worktree_root, &mut |request| {
+        apply_request(
+            work_dir,
+            stage_id,
+            &request.payload,
+            &request.identity(),
+            &mut refused,
+        )
     })?;
     Ok(DrainOutcome {
         applied: outcome.applied.saturating_sub(refused),
@@ -54,6 +60,7 @@ fn apply_request(
     work_dir: &Path,
     stage_id: &str,
     request: &StageRequest,
+    request_id: &str,
     refused: &mut usize,
 ) -> Result<()> {
     let response = match request {
@@ -64,14 +71,14 @@ fn apply_request(
             reason,
             evidence_commit,
             failure_output,
-        } => handle_dispute_criteria(
+        } => handle_dispute_criteria_identified(
             work_dir,
             stage_id,
-            *field,
-            *criterion_index,
+            (*field, *criterion_index),
             reason.clone(),
             evidence_commit.clone(),
             failure_output.clone(),
+            Some(request_id),
         )?,
         StageRequest::FreezeContracts { reports } => {
             freeze_as_current_session(work_dir, stage_id, reports)?
@@ -80,12 +87,13 @@ fn apply_request(
             kind,
             reason,
             evidence_commit,
-        } => handle_file_dispute(
+        } => handle_file_dispute_identified(
             work_dir,
             stage_id,
             kind.clone(),
             reason.clone(),
             evidence_commit.clone(),
+            Some(request_id),
         )?,
     };
     record_response(stage_id, request, response, refused);
@@ -100,14 +108,7 @@ fn freeze_as_current_session(
     stage_id: &str,
     reports: &[ContractRunReport],
 ) -> Result<Response> {
-    let session = match load_stage(stage_id, work_dir) {
-        Ok(stage) => stage.session.unwrap_or_default(),
-        Err(error) => {
-            return Ok(Response::Error {
-                message: format!("{error:#}"),
-            })
-        }
-    };
+    let session = load_stage(stage_id, work_dir)?.session.unwrap_or_default();
     handle_freeze_contracts(work_dir, stage_id, &session, reports)
 }
 
@@ -145,15 +146,6 @@ fn record_response(
                 request = request.kind(),
                 reason = %message,
                 "Refused a spooled stage request; it is discarded, not retried"
-            );
-        }
-        other => {
-            *refused += 1;
-            tracing::warn!(
-                stage_id = %stage_id,
-                request = request.kind(),
-                response = ?other,
-                "Unexpected daemon answer to a spooled stage request; it is discarded"
             );
         }
     }

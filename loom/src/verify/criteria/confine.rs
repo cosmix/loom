@@ -13,6 +13,9 @@
 //! [`plan_confinement`] answer "which level applies to this stage?" so no
 //! caller has to reimplement the precedence.
 
+#[path = "confine_host.rs"]
+mod host;
+
 use anyhow::{Context, Result};
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -49,15 +52,20 @@ pub enum CommandSpec {
 }
 
 /// A one-shot command whose environment and working directory are already
-/// fixed. Cache fingerprinting inspects this exact value before it is spawned.
+/// fixed. Cache fingerprinting records its stable inputs and wrapper policy;
+/// only the generated private Cargo-home pathname is excluded from identity.
 pub(super) struct PreparedCommand {
     command: Command,
     working_dir: Option<PathBuf>,
     display: String,
     spec: CommandSpec,
+    wrapped: Option<Command>,
+    scratch: Option<host::CargoScratch>,
 }
 
 impl PreparedCommand {
+    // This is the stable input environment. The wrapper maps its Cargo home to
+    // a private generated directory under the versioned containment policy.
     pub(super) fn command(&self) -> &Command {
         &self.command
     }
@@ -74,10 +82,58 @@ impl PreparedCommand {
         &self.spec
     }
 
-    pub(super) fn spawn(mut self) -> Result<Child> {
+    pub(super) fn containment_executable(&self) -> Option<PathBuf> {
+        self.wrapped
+            .as_ref()
+            .map(|command| PathBuf::from(command.get_program()))
+    }
+
+    pub(super) fn containment_policy_revision(&self) -> String {
+        format!(
+            "host-os-boundary-v4:{:?}",
+            self.wrapped
+                .as_ref()
+                .map(|cmd| cmd.get_args().collect::<Vec<_>>())
+        )
+    }
+
+    pub(super) fn spawn(mut self) -> Result<ConfinedChild> {
+        let child = self.spawn_retaining_resources()?;
+        Ok(ConfinedChild {
+            process: crate::process::OwnedProcess::new(child),
+            _scratch: self.scratch.take(),
+        })
+    }
+
+    pub(super) fn spawn_retaining_resources(&mut self) -> Result<Child> {
+        if let Some(scratch) = &self.scratch {
+            scratch.populate()?;
+        }
+        if let Some(wrapped) = self.wrapped.take() {
+            self.command = wrapped;
+        }
         self.command
             .spawn()
             .with_context(|| format!("Failed to spawn command: {}", self.display))
+    }
+}
+
+/// An owned confined child: dropping it retires its process group before
+/// removing its private Cargo home. Borrow the child for pipe and wait APIs.
+pub struct ConfinedChild {
+    process: crate::process::OwnedProcess,
+    _scratch: Option<host::CargoScratch>,
+}
+
+impl fmt::Debug for ConfinedChild {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("ConfinedChild").finish_non_exhaustive()
+    }
+}
+
+impl ConfinedChild {
+    pub fn child(&mut self) -> &mut Child {
+        self.process.child()
     }
 }
 
@@ -130,7 +186,7 @@ pub fn spawn_confined(
     spec: &CommandSpec,
     working_dir: Option<&Path>,
     confinement: CommandConfinement,
-) -> Result<Child> {
+) -> Result<ConfinedChild> {
     prepare_confined(spec, working_dir, confinement)?.spawn()
 }
 
@@ -150,17 +206,7 @@ pub(super) fn prepare_confined(
         CommandConfinement::Inherit => {}
     }
     #[cfg(unix)]
-    {
-        // Place the child in its own process group so kill(-pgid, SIGKILL) on
-        // timeout kills the entire subtree including grandchildren.
-        // Safety: setpgid(0,0) is async-signal-safe per POSIX.
-        unsafe {
-            cmd.pre_exec(|| {
-                nix::unistd::setpgid(nix::unistd::Pid::from_raw(0), nix::unistd::Pid::from_raw(0))
-                    .map_err(|e| std::io::Error::from_raw_os_error(e as i32))
-            });
-        }
-    }
+    cmd.process_group(0);
 
     cmd.stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -170,12 +216,24 @@ pub(super) fn prepare_confined(
         .or_else(|| std::env::current_dir().ok());
     if let Some(dir) = &resolved_working_dir {
         cmd.current_dir(dir);
+        if confinement == CommandConfinement::Confined {
+            cmd.env("TMPDIR", dir).env("TMP", dir).env("TEMP", dir);
+        }
     }
+    let (wrapped, scratch) = if confinement == CommandConfinement::Confined {
+        let (wrapped, scratch) =
+            host::wrap(&cmd).with_context(|| format!("Failed to confine command: {spec}"))?;
+        (Some(wrapped), Some(scratch))
+    } else {
+        (None, None)
+    };
     Ok(PreparedCommand {
         command: cmd,
         working_dir: resolved_working_dir,
         display: spec.to_string(),
         spec: spec.clone(),
+        wrapped,
+        scratch,
     })
 }
 

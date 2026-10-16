@@ -160,22 +160,38 @@ fn validate_against_rejects_all_identity_and_verification_mismatches() {
     let evidence = verified(&stage, &session);
     let mut other_stage = stage.clone();
     other_stage.id = "other-stage".to_string();
-    assert!(validate_against(&evidence, &other_stage, &session.id, COMMIT, COMMAND).is_err());
-    assert!(validate_against(&evidence, &stage, "other-session", COMMIT, COMMAND).is_err());
-    assert!(validate_against(&evidence, &stage, &session.id, &"b".repeat(40), COMMAND).is_err());
-    assert!(validate_against(&evidence, &stage, &session.id, COMMIT, "/other command").is_err());
+    assert!(validate_against(&evidence, &other_stage, &session.id, COMMIT, COMMAND, None).is_err());
+    assert!(validate_against(&evidence, &stage, "other-session", COMMIT, COMMAND, None).is_err());
+    assert!(validate_against(
+        &evidence,
+        &stage,
+        &session.id,
+        &"b".repeat(40),
+        COMMAND,
+        None
+    )
+    .is_err());
+    assert!(validate_against(
+        &evidence,
+        &stage,
+        &session.id,
+        COMMIT,
+        "/other command",
+        None
+    )
+    .is_err());
 
     let mut wrong_hash = evidence.clone();
     wrong_hash.check_definition_hash = "b".repeat(64);
-    assert!(validate_against(&wrong_hash, &stage, &session.id, COMMIT, COMMAND).is_err());
+    assert!(validate_against(&wrong_hash, &stage, &session.id, COMMIT, COMMAND, None).is_err());
 
     let mut wrong_phase = evidence.clone();
     wrong_phase.phase = CompletionPhase::ToolFailed;
-    assert!(validate_against(&wrong_phase, &stage, &session.id, COMMIT, COMMAND).is_err());
+    assert!(validate_against(&wrong_phase, &stage, &session.id, COMMIT, COMMAND, None).is_err());
 
     let mut failing = evidence;
     failing.verification.criteria[0].passed = false;
-    assert!(validate_against(&failing, &stage, &session.id, COMMIT, COMMAND).is_err());
+    assert!(validate_against(&failing, &stage, &session.id, COMMIT, COMMAND, None).is_err());
 }
 
 #[test]

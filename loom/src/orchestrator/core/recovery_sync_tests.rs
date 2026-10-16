@@ -5,6 +5,7 @@
 //! maintainability limit — the same trick `recovery_adoption_tests.rs` uses.
 
 use super::*;
+use crate::orchestrator::core::orphan_adoption::register_live_current_session;
 use tempfile::TempDir;
 
 use crate::fs::work_dir::write_terminal_config;
@@ -214,15 +215,22 @@ fn dependent_definitions() -> Vec<StageDefinition> {
 }
 
 fn waiting_orchestrator(temp: &TempDir, definitions: &[StageDefinition]) -> Orchestrator {
+    for definition in definitions {
+        save_stage(
+            &stage_with_status(&definition.id, StageStatus::Queued),
+            temp.path(),
+        )
+        .unwrap();
+    }
     let mut graph = ExecutionGraph::build(definitions.to_vec()).unwrap();
     graph.mark_executing("alpha").unwrap();
     graph
         .mark_status("alpha", StageStatus::WaitingForInput)
         .unwrap();
-    save_stage(
-        &stage_with_status("alpha", StageStatus::WaitingForInput),
-        temp.path(),
-    )
+    update_stage("alpha", temp.path(), |stage| {
+        stage.status = StageStatus::WaitingForInput;
+        Ok(())
+    })
     .unwrap();
     let mut orchestrator = resume_orchestrator(temp, graph);
     EventHandler::handle_events(

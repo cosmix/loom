@@ -264,3 +264,6 @@ fn a_spooled_file_dispute_the_daemon_refuses_is_skipped() {
     assert_eq!(stage.status, StageStatus::Executing);
     assert!(read_pending(&worktree_root).unwrap().is_empty());
 }
+
+#[path = "replay.rs"]
+mod replay;

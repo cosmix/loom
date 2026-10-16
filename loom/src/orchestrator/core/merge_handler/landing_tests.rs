@@ -203,6 +203,7 @@ fn a_blocked_merge_that_now_conflicts_becomes_a_merge_conflict() {
     assert!(!orchestrator.try_auto_merge(ID));
     make_conflict(&repo);
 
+    record_verified_head(&orchestrator, &repo);
     let landing = orchestrator.land_stage_merge(ID, "main");
 
     assert_eq!(landing, Landing::Conflict(vec!["seed.txt".to_string()]));
@@ -214,7 +215,7 @@ fn a_blocked_merge_that_now_conflicts_becomes_a_merge_conflict() {
 #[test]
 fn the_resolver_exit_removes_the_worktree_of_a_merge_already_landed() {
     let (repo, mut orchestrator) = worktree_stage();
-    set_status(&orchestrator, StageStatus::MergeConflict);
+    enter_conflict(&orchestrator, &repo);
     resolve_in_worktree(&repo);
     assert_eq!(orchestrator.land_stage_merge(ID, "main"), Landing::Merged);
     assert!(worktree(&repo).is_dir());
@@ -299,6 +300,7 @@ fn landing_a_control_path_branch_holds_it_for_human_review() {
     let (repo, mut orchestrator) = worktree_stage();
     std::fs::create_dir_all(worktree(&repo).join(".claude")).unwrap();
     commit_file(&worktree(&repo), ".claude/settings.json", "{}");
+    record_verified_head(&orchestrator, &repo);
     let main_before = main_tip(&repo);
 
     assert_eq!(orchestrator.land_stage_merge(ID, "main"), Landing::Held);
@@ -356,6 +358,7 @@ fn note_merge_stash_persists_an_unrestored_stash_and_ignores_none() {
 fn a_merge_signing_failure_holds_without_a_resolver() {
     let (repo, mut orchestrator) = worktree_stage();
     fake_signer(repo.path(), true);
+    record_verified_head(&orchestrator, &repo);
     let main_before = main_tip(&repo);
 
     assert_eq!(orchestrator.land_stage_merge(ID, "main"), Landing::Held);
@@ -375,3 +378,12 @@ fn a_merge_signing_failure_holds_without_a_resolver() {
 
 #[path = "landing_signing_tests.rs"]
 mod signing;
+
+fn record_verified_head(orchestrator: &Orchestrator, repo: &TempDir) {
+    let head = crate::git::runner::run_git_checked(&["rev-parse", "loom/s"], repo.path()).unwrap();
+    update_stage(ID, &orchestrator.config.work_dir, |stage| {
+        stage.completed_commit = Some(head);
+        Ok(())
+    })
+    .unwrap();
+}

@@ -70,7 +70,7 @@ use crate::verify::transitions::load_stage;
 use closed_disputes::is_closed;
 use scan::{read_dispute_request, scan_pending_requests};
 
-pub(crate) use closed_disputes::{close_open_disputes, lock_stage_dispute_dir};
+pub(crate) use closed_disputes::close_open_disputes;
 pub use escalation::Escalation;
 pub use session::{
     attempt_count, persist_verdict, read_request, resolve_model, scratch_verdict_draft,

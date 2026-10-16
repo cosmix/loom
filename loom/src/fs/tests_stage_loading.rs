@@ -121,3 +121,35 @@ fn test_load_stages_from_work_dir_parses_realistic_stage_files() {
     assert_eq!(stages.len(), 1);
     assert_eq!(stages[0].id, "stage-1");
 }
+
+#[test]
+fn graph_load_rejects_corrupt_independent_stage_and_accepts_repair() {
+    let temp = TempDir::new().unwrap();
+    let dir = temp.path().join("stages");
+    fs::create_dir_all(&dir).unwrap();
+    fs::write(
+        dir.join("a.md"),
+        stage_file_content("a", "A", |stage| {
+            stage.status = StageStatus::Completed;
+            stage.merged = true;
+        }),
+    )
+    .unwrap();
+    for bad in [
+        "---\ninvalid: [\n---".to_string(),
+        stage_file_content("../invalid", "B", |_| {}),
+    ] {
+        fs::write(dir.join("b.md"), bad).unwrap();
+        assert!(crate::plan::graph::build_execution_graph(temp.path()).is_err());
+        assert!(crate::verify::transitions::list_all_stages(temp.path()).is_err());
+    }
+    fs::write(dir.join("b.md"), stage_file_content("b", "B", |_| {})).unwrap();
+    assert_eq!(
+        crate::plan::graph::build_execution_graph(temp.path())
+            .unwrap()
+            .0
+            .all_nodes()
+            .len(),
+        2
+    );
+}

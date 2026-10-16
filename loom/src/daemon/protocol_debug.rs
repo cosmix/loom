@@ -120,6 +120,9 @@ impl fmt::Debug for Request {
             Request::Stop { .. } => credential_only(formatter, "Stop"),
             Request::Unsubscribe { .. } => credential_only(formatter, "Unsubscribe"),
             Request::Ping { .. } => credential_only(formatter, "Ping"),
+            Request::ValidateInheritedConfinement { .. } => {
+                credential_only(formatter, "ValidateInheritedConfinement")
+            }
             Request::DisputeCriteria { .. } => debug_dispute(self, formatter),
             Request::FileDispute { .. } => debug_file_dispute(self, formatter),
             Request::BlockStage {

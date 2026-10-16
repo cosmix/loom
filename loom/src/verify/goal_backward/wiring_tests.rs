@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use super::result::{GapType, VerificationGap};
 use crate::plan::schema::{CommandConfinement, WiringTest};
-use crate::utils::truncate;
+use crate::verify::criteria::assertions::{evaluate, AssertionSpec};
 use crate::verify::criteria::{run_spec_with_timeout, CommandSpec};
 
 /// Default timeout for wiring test commands (30 seconds)
@@ -24,109 +24,25 @@ pub fn verify_wiring_tests(
     confinement: CommandConfinement,
 ) -> Result<Vec<VerificationGap>> {
     let mut gaps = Vec::new();
-
-    for test in wiring_tests {
-        // Run the test command
-        let spec = CommandSpec::shell(test.command.as_str());
+    for check in wiring_tests {
+        let spec = CommandSpec::shell(check.command.as_str());
         let result =
             run_spec_with_timeout(&spec, Some(working_dir), WIRING_TEST_TIMEOUT, confinement)?;
-
-        // Check if timed out
-        if result.timed_out {
+        let assertions = AssertionSpec {
+            expected_exit: check.success_criteria.exit_code.unwrap_or(0),
+            stdout_contains: &check.success_criteria.stdout_contains,
+            stdout_not_contains: &check.success_criteria.stdout_not_contains,
+            stderr_contains: &check.success_criteria.stderr_contains,
+            stderr_empty: check.success_criteria.stderr_empty == Some(true),
+        };
+        for failure in evaluate(&assertions, &result).failures {
             gaps.push(VerificationGap::new(
                 GapType::WiringBroken,
-                format!(
-                    "Wiring test '{}' timed out after {}s",
-                    test.name,
-                    WIRING_TEST_TIMEOUT.as_secs()
-                ),
-                format!("Check command: {}", test.command),
+                format!("Wiring test failed: {}: {failure}", check.name),
+                format!("Check command: {}", check.command),
             ));
-            continue;
-        }
-
-        // Validate exit code
-        let expected_exit_code = test.success_criteria.exit_code.unwrap_or(0);
-        let actual_exit_code = result.exit_code.unwrap_or(-1);
-        if actual_exit_code != expected_exit_code {
-            gaps.push(VerificationGap::new(
-                GapType::WiringBroken,
-                format!(
-                    "Wiring test '{}' failed: exit code {} (expected {})",
-                    test.name, actual_exit_code, expected_exit_code
-                ),
-                format!("Check command: {}", test.command),
-            ));
-            continue;
-        }
-
-        // Validate stdout_contains
-        for pattern in &test.success_criteria.stdout_contains {
-            if !result.stdout.contains(pattern) {
-                let preview = truncate(&result.stdout, 200);
-                gaps.push(VerificationGap::new(
-                    GapType::WiringBroken,
-                    format!(
-                        "Wiring test '{}' failed: stdout missing '{}'",
-                        test.name, pattern
-                    ),
-                    format!(
-                        "Expected stdout to contain: '{}'. Got: {}",
-                        pattern, preview
-                    ),
-                ));
-            }
-        }
-
-        // Validate stdout_not_contains
-        for pattern in &test.success_criteria.stdout_not_contains {
-            if result.stdout.contains(pattern) {
-                let preview = truncate(&result.stdout, 200);
-                gaps.push(VerificationGap::new(
-                    GapType::WiringBroken,
-                    format!(
-                        "Wiring test '{}' failed: stdout contains forbidden pattern '{}'",
-                        test.name, pattern
-                    ),
-                    format!(
-                        "Expected stdout to NOT contain: '{}'. Got: {}",
-                        pattern, preview
-                    ),
-                ));
-            }
-        }
-
-        // Validate stderr_contains
-        for pattern in &test.success_criteria.stderr_contains {
-            if !result.stderr.contains(pattern) {
-                let preview = truncate(&result.stderr, 200);
-                gaps.push(VerificationGap::new(
-                    GapType::WiringBroken,
-                    format!(
-                        "Wiring test '{}' failed: stderr missing '{}'",
-                        test.name, pattern
-                    ),
-                    format!(
-                        "Expected stderr to contain: '{}'. Got: {}",
-                        pattern, preview
-                    ),
-                ));
-            }
-        }
-
-        // Validate stderr_empty
-        if let Some(true) = test.success_criteria.stderr_empty {
-            if !result.stderr.is_empty() {
-                let preview = truncate(&result.stderr, 200);
-                gaps.push(VerificationGap::new(
-                    GapType::WiringBroken,
-                    format!("Wiring test '{}' failed: stderr not empty", test.name),
-                    format!("Expected empty stderr. Got: {}", preview),
-                ));
-            }
         }
     }
-
     Ok(gaps)
 }
 
@@ -200,7 +116,9 @@ mod tests {
             verify_wiring_tests(&[test], &working_dir, CommandConfinement::default()).unwrap();
 
         assert_eq!(gaps.len(), 1);
-        assert!(gaps[0].description.contains("stdout missing 'goodbye'"));
+        assert!(gaps[0]
+            .description
+            .contains("stdout missing expected pattern 'goodbye'"));
     }
 
     #[test]
@@ -244,6 +162,6 @@ mod tests {
             verify_wiring_tests(&[test], &working_dir, CommandConfinement::default()).unwrap();
 
         assert_eq!(gaps.len(), 1);
-        assert!(gaps[0].description.contains("stderr not empty"));
+        assert!(gaps[0].description.contains("stderr was not empty"));
     }
 }

@@ -1,8 +1,8 @@
 //! Parser for token-usage lines of a Claude transcript.
 
-use crate::tokens::model::{optional_count, TokenUsage};
+use crate::tokens::model::TokenUsage;
 use chrono::DateTime;
-use serde_json::{Map, Value};
+use serde_json::Value;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ClaudeLine {
@@ -28,7 +28,7 @@ pub fn parse_line(line: &str) -> ClaudeLine {
         return ClaudeLine::Other;
     }
     let message = &value["message"];
-    let Some(fields) = message.get("usage").and_then(Value::as_object) else {
+    let Some(fields) = message.get("usage").filter(|value| value.is_object()) else {
         return ClaudeLine::Other;
     };
     let Some(usage) = parse_usage(fields) else {
@@ -56,12 +56,16 @@ pub fn parse_line(line: &str) -> ClaudeLine {
     }
 }
 
-fn parse_usage(fields: &Map<String, Value>) -> Option<TokenUsage> {
+fn parse_usage(fields: &Value) -> Option<TokenUsage> {
+    if crate::provider_data::claude::invalid_usage(fields) {
+        return None;
+    }
+    let (usage, _) = crate::provider_data::claude::parse(fields);
     Some(TokenUsage {
-        input: fields.get("input_tokens")?.as_u64()?,
-        cache_write: optional_count(fields.get("cache_creation_input_tokens"))?,
-        cache_read: optional_count(fields.get("cache_read_input_tokens"))?,
-        output: fields.get("output_tokens")?.as_u64()?,
+        input: usage.input,
+        cache_write: usage.cache_creation,
+        cache_read: usage.cache_read,
+        output: usage.output,
     })
 }
 

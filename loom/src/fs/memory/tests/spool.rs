@@ -291,7 +291,7 @@ fn drain_refuses_a_spool_symlinked_outside_the_worktree() {
     let error = drain_spool(worktree.path(), &mut |_| Ok(())).unwrap_err();
 
     assert!(
-        format!("{error:#}").contains("was not drained"),
+        format!("{error:#}").contains("no-follow open failed"),
         "{error:#}"
     );
     assert_eq!(fs::read_to_string(&victim).unwrap(), VICTIM);

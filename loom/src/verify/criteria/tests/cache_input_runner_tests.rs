@@ -23,7 +23,7 @@ impl InputFixture {
     fn new(script_body: &str) -> Self {
         let repo = TempDir::new().unwrap();
         let cache = TempDir::new().unwrap();
-        let marker = cache.path().join("executions.log");
+        let marker = repo.path().join(".git/executions.log");
         git(&["init", "-q"], repo.path());
         std::fs::create_dir_all(repo.path().join("scripts")).unwrap();
         write_probe(repo.path(), &marker, script_body);
@@ -123,7 +123,8 @@ fn truncated_command_output_is_not_cached_and_reexecutes() {
     assert_eq!(fixture.cache_records(), 0);
     let second = run(&fixture, &stage);
 
-    assert!(first.all_passed() && second.all_passed());
+    assert!(!first.all_passed() && !second.all_passed());
+    assert!(!first.results()[0].output_complete && !second.results()[0].output_complete);
     assert!(first.results()[0].stdout.contains(OUTPUT_TRUNCATED_MARKER));
     assert!(second.results()[0].stdout.contains(OUTPUT_TRUNCATED_MARKER));
     assert!(!first.results()[0].cached && !second.results()[0].cached);
@@ -172,7 +173,8 @@ fn ignored_and_external_inputs_bypass_and_reexecute_after_mutation() {
     std::fs::write(&external, "bravo").unwrap();
     let external_changed = run(&fixture, &external_stage);
 
-    assert!(external_first.all_passed() && !external_changed.all_passed());
+    assert!(!external_first.all_passed() && !external_changed.all_passed());
+    assert!(external_first.results().iter().all(|result| !result.cached));
     assert!(changed.results().iter().all(|result| !result.cached));
     assert!(external_changed
         .results()
@@ -287,7 +289,7 @@ fn resolved_nested_executable_change_misses_after_neighboring_hit() {
     use std::os::unix::fs::PermissionsExt;
 
     let fixture = InputFixture::new(":");
-    let bin = TempDir::new().unwrap();
+    let bin = TempDir::new_in(fixture.repo.path().join(".git")).unwrap();
     let tool = bin.path().join("cache-probe-tool");
     write_tool(&tool, "first");
     let joined =

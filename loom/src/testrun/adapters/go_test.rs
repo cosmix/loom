@@ -130,12 +130,21 @@ impl TestRunnerAdapter for GoTest {
     /// top-level test; subtests do not add to the count. A no-match warning
     /// matters even when `go test` exits successfully.
     fn parse(&self, out: &RunOutput<'_>) -> RunSummary {
-        let text = combined_output(out);
-        let passed = count_matches(&PASSED, &text);
-        let failed = count_matches(&FAILED, &text);
-        let skipped = count_matches(&SKIPPED, &text);
-        let saw_result = passed > 0 || failed > 0 || skipped > 0 || NO_MATCH.is_match(&text);
-        let mut summary = if saw_result {
+        let raw = combined_output(out);
+        let (text, counts) = decoded_output(&raw);
+        let (passed, failed, skipped) = counts.unwrap_or_else(|| (
+            count_matches(&PASSED, &text), count_matches(&FAILED, &text),
+            count_matches(&SKIPPED, &text),
+        ));
+        let counted = passed > 0 || failed > 0 || skipped > 0;
+        let no_tests = NO_MATCH.is_match(&text) || text.contains("[no test files]");
+        // A non-verbose tested package gives no count. An empty sibling must
+        // not turn that unknown evidence into a known zero.
+        let uncounted_package = text.lines().any(|line| {
+            (line.starts_with("ok\t") || line.starts_with("ok "))
+                && !line.contains("[no tests to run]")
+        });
+        let mut summary = if counted || (no_tests && !uncounted_package) {
             summary_from_counts(Some(passed), Some(failed), (skipped > 0).then_some(skipped))
         } else {
             RunSummary::default()
@@ -143,6 +152,35 @@ impl TestRunnerAdapter for GoTest {
         summary.build_failed = BUILD_ERROR.is_match(&text);
         summary
     }
+}
+
+/// Go JSON carries both output lines and test events; count events once,
+/// excluding subtests, rather than counting their echoed output twice.
+fn decoded_output(raw: &str) -> (String, Option<(u64, u64, u64)>) {
+    let mut text = String::new();
+    let mut counts = (0, 0, 0);
+    let mut saw_test = false;
+    for line in raw.lines() {
+        let Ok(event) = serde_json::from_str::<serde_json::Value>(line) else {
+            text.push_str(line);
+            text.push('\n');
+            continue;
+        };
+        if let Some(output) = event["Output"].as_str() {
+            text.push_str(output);
+        }
+        let Some(test) = event["Test"].as_str().filter(|test| !test.contains('/')) else {
+            continue;
+        };
+        if test.is_empty() { continue; }
+        match event["Action"].as_str() {
+            Some("pass") => { counts.0 += 1; saw_test = true; }
+            Some("fail") => { counts.1 += 1; saw_test = true; }
+            Some("skip") => { counts.2 += 1; saw_test = true; }
+            _ => {}
+        }
+    }
+    (text, saw_test.then_some(counts))
 }
 
 #[cfg(test)]

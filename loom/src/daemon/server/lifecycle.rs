@@ -164,18 +164,17 @@ impl DaemonServer {
         // failure never deletes the winning daemon's files.
         self.was_running.store(true, Ordering::SeqCst);
 
-        // Tell `loom run` the daemon is ready now that the socket is bound and
-        // its permissions set; dropping `ready` closes the pipe's last write end.
-        let _ = nix::unistd::write(&ready, &[READY_BYTE]);
-        drop(ready);
-
         // Set socket to non-blocking mode for graceful shutdown
         listener
             .set_nonblocking(true)
             .context("Failed to set socket to non-blocking")?;
 
         // Spawn the orchestrator thread to actually run stages
-        let orchestrator_handle = spawn_orchestrator(self, lock_identity);
+        let orchestrator_handle = spawn_orchestrator(self, lock_identity)?;
+
+        // Announce readiness only after both the socket and scheduler initialize.
+        let _ = nix::unistd::write(&ready, &[READY_BYTE]);
+        drop(ready);
 
         let log_tail_handle = spawn_log_tailer(self);
         let status_broadcast_handle = spawn_status_broadcaster(self);

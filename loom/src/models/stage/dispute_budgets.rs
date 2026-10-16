@@ -16,8 +16,11 @@ pub const MAX_DISPUTES_PER_KIND: u32 = 3;
 /// of evidence answered, amendments applied, and the plan v2 disputes filed
 /// per kind. Flattened into `Stage`, so each stays a top-level key of the
 /// stage file.
-#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct DisputeTally {
+    /// Durable request receipts, committed atomically with the dispute budget.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub request_receipts: std::collections::BTreeMap<String, u32>,
     /// Number of evidence-loop rounds (NeedsMoreEvidence -> Executing -> NeedsAdjudication).
     #[serde(default)]
     pub evidence_rounds: u32,

@@ -169,7 +169,14 @@ pub fn run_broker(ctx: BrokerContext, tool_status_failed: bool, output: &str) ->
         );
     }
 
-    let evidence = match parse_verified(output, ctx.stage, ctx.session, &commit, &exact_command) {
+    let evidence = match parse_verified(
+        output,
+        ctx.stage,
+        ctx.session,
+        &commit,
+        &exact_command,
+        ctx.work_dir,
+    ) {
         Ok(evidence) => evidence,
         Err(error) => {
             return record_diagnostic(
@@ -195,9 +202,17 @@ fn parse_verified(
     session: &Session,
     commit: &str,
     exact_command: &str,
+    work_dir: &Path,
 ) -> Result<CompletionAttemptEvidence> {
     let evidence = parse_evidence_record(output)?;
-    validate_against(&evidence, stage, &session.id, commit, exact_command)?;
+    validate_against(
+        &evidence,
+        stage,
+        &session.id,
+        commit,
+        exact_command,
+        Some(work_dir),
+    )?;
     Ok(evidence)
 }
 

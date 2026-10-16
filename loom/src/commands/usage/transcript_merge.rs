@@ -15,7 +15,9 @@ fn merge_usage_observation(first: &mut Request, duplicate: &Request) {
     record_first_usage(first, duplicate);
     let current_key = (first.timestamp, first.normalization.line_ordinal);
     let duplicate_key = (duplicate.timestamp, duplicate.normalization.line_ordinal);
-    if !first.normalization.usage_observed || duplicate_key >= current_key {
+    if !first.normalization.usage_observed
+        || crate::provider_data::supersedes(current_key, duplicate_key)
+    {
         first.usage = duplicate.usage;
         first.timestamp = duplicate.timestamp;
         first.model.clone_from(&duplicate.model);

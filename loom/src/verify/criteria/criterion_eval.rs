@@ -48,6 +48,12 @@ fn check_criterion(
             check_extended_criterion(contract, result, command.written, verdict)
         }
     };
+    if !verdict.output_complete {
+        failures.push(format!(
+            "Command '{}': output capture incomplete",
+            command.written
+        ));
+    }
     if contract.rejects_zero_tests(verdict.tests_executed) {
         let failure = zero_test_failure(command.expanded, command.cwd, result);
         failures.extend(failure.map(|reason| format!("Command '{}': {reason}", command.written)));

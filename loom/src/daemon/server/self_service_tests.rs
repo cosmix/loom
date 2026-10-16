@@ -2,8 +2,11 @@
 
 use super::*;
 use crate::fs::session_files::save_session;
+use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::save_stage;
+use anyhow::Result;
+use std::path::Path;
 use tempfile::TempDir;
 
 /// The rule a socket dispute keeps: the stage session only.

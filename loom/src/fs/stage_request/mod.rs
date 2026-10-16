@@ -29,10 +29,8 @@
 //! is what stands in for the peer-identity check the socket path performs when
 //! there is no connection to identify.
 //!
-//! [`drain_requests`] applies each request through the daemon's own handlers
-//! rather than reimplementing the transitions, so the spooled path and the RPC
-//! path cannot drift apart on what a block or a dispute actually does. The
-//! resulting `fs` → `daemon::server` dependency is deliberate for that reason.
+//! [`drain_requests`] applies each request through the shared stage service.
+//! The RPC adapter uses that same service for transitions and policy.
 
 mod apply;
 mod spool;

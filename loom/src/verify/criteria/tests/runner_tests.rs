@@ -25,7 +25,7 @@ impl Fixture {
     fn new(body: &str) -> Self {
         let repo = TempDir::new().unwrap();
         let cache = TempDir::new().unwrap();
-        let marker = cache.path().join("executions.log");
+        let marker = repo.path().join(".git/executions.log");
         let script = repo.path().join("scripts/probe.sh");
         std::fs::create_dir_all(script.parent().unwrap()).unwrap();
         git(&["init", "-q"], repo.path());

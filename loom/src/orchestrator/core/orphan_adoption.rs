@@ -15,7 +15,7 @@ use crate::orchestrator::session_registry::{adopt_orphan, OrphanEvidence};
 use crate::verify::transitions::update_stage_at_path;
 
 use super::contract_budget::charge_orphaned_contract_writer;
-use super::recovery::{load_stage_at_path, scan_stage_paths, Recovery, StageScanCounter};
+use super::recovery::Recovery;
 use super::{clear_status_line, Orchestrator};
 
 pub(super) fn session_is_current_for_stage(stage: &Stage, session: &Session) -> bool {
@@ -65,6 +65,13 @@ pub(super) fn recover_orphaned_stage(
     target_branch: &str,
     manual_mode: bool,
 ) -> bool {
+    // Retire stale ownership only. Retry policy belongs to the normal blocked
+    // lifecycle, preserving the original reason, retry budget and backoff.
+    if super::lifecycle_snapshot::block_cause(stage).is_some() {
+        stage.session = None;
+        stage.updated_at = chrono::Utc::now();
+        return true;
+    }
     match charge_orphaned_contract_writer(stage, session, work_dir, manual_mode) {
         Ok(true) => return true,
         Ok(false) => {}
@@ -175,29 +182,7 @@ fn rebuild_orphan_session(
 impl Orchestrator {
     /// Index all current stage files by ID for the orphan-recovery pass.
     pub(super) fn index_stages_for_recovery(&self) -> Result<HashMap<String, (Stage, PathBuf)>> {
-        let stages_dir = self.config.work_dir.join("stages");
-        let mut scan = StageScanCounter::default();
-        let mut stages_by_id: HashMap<String, (Stage, PathBuf)> = HashMap::new();
-        if stages_dir.exists() {
-            for stage_path in scan_stage_paths(&stages_dir, &mut scan)? {
-                match load_stage_at_path(&stage_path) {
-                    Ok(stage) => {
-                        stages_by_id.insert(stage.id.clone(), (stage, stage_path));
-                    }
-                    Err(error) => tracing::error!(
-                        path = %stage_path.display(),
-                        error = %error,
-                        "Failed to index stage during orphan recovery; skipping"
-                    ),
-                }
-            }
-        }
-        tracing::debug!(
-            directory_reads = scan.directory_reads,
-            entries_visited = scan.entries_visited,
-            "Indexed current stage sessions for recovery"
-        );
-        Ok(stages_by_id)
+        Ok(self.stage_snapshot()?.records)
     }
 
     /// Re-adopt live agents with no session record, logging once if any were
@@ -352,5 +337,31 @@ mod tests {
             "{reason}"
         );
         assert!(!reason.contains("commit(s)"), "{reason}");
+    }
+    #[test]
+    fn intentional_blocks_survive_all_orphan_branch_dispositions() {
+        let temp = tempfile::TempDir::new().unwrap();
+        for reason in ["prerequisite needs operator", "human review rejected"] {
+            for ahead in [Ok(0), Ok(2), Err("unknown branch".to_string())] {
+                let mut stage = Stage {
+                    id: "alpha".into(),
+                    status: StageStatus::Blocked,
+                    session: Some("old-session".into()),
+                    close_reason: Some(reason.into()),
+                    ..Default::default()
+                };
+                assert!(recover_orphaned_stage(
+                    &mut stage,
+                    &Session::new(),
+                    temp.path(),
+                    ahead,
+                    "main",
+                    false
+                ));
+                assert_eq!(stage.status, StageStatus::Blocked);
+                assert_eq!(stage.close_reason.as_deref(), Some(reason));
+                assert!(stage.session.is_none());
+            }
+        }
     }
 }

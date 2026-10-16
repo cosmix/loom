@@ -67,6 +67,7 @@ fn build_graph_impl(
     // plan-declared sandbox rules are lost on restart.
     if stages_dir.exists() {
         let stages = load_stages_from_stages_dir(&stages_dir)?;
+        validate_persisted_manifest(work_dir_path, &stages)?;
         if !stages.is_empty() {
             let graph = ExecutionGraph::build(stages)
                 .context("Failed to build execution graph from stage files")?;
@@ -120,4 +121,30 @@ fn load_graph_from_plan_file(
 fn load_stages_from_stages_dir(stages_dir: &Path) -> Result<Vec<StageDefinition>> {
     // Delegate to the shared implementation in fs module
     crate::fs::load_stages_from_work_dir(stages_dir)
+}
+
+/// When the initialized plan is available, losing an independent stage record
+/// must fail startup just as losing a dependency does.
+fn validate_persisted_manifest(work_dir: &Path, stages: &[StageDefinition]) -> Result<()> {
+    let Some(config) = crate::fs::load_config(work_dir)? else {
+        return Ok(());
+    };
+    let Some(source) = config.source_path() else {
+        return Ok(());
+    };
+    if !source.exists() {
+        return Ok(());
+    }
+    let plan = parse_plan(&source).context("Cannot validate persisted stage manifest")?;
+    let actual: std::collections::HashSet<_> =
+        stages.iter().map(|stage| stage.id.as_str()).collect();
+    let expected: std::collections::HashSet<_> =
+        plan.stages.iter().map(|stage| stage.id.as_str()).collect();
+    anyhow::ensure!(
+        actual == expected,
+        "Persisted stages do not match initialized plan: missing {:?}, unexpected {:?}",
+        expected.difference(&actual).collect::<Vec<_>>(),
+        actual.difference(&expected).collect::<Vec<_>>()
+    );
+    Ok(())
 }

@@ -1,7 +1,10 @@
 mod attest;
 mod checkpoint;
+pub mod content;
+mod content_inputs;
 mod current;
 pub(crate) mod identity;
+pub mod policy;
 mod record;
 
 pub use attest::{attestation_key, AttestationKey, ATTESTATION_KEY_FILE};
