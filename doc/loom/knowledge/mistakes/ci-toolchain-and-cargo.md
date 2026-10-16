@@ -311,13 +311,13 @@ run 38397957790 is the first with every macOS job green.
 
 ## Diagnostic sampling must not bypass child cleanup
 
-**What happened:** A bounded sampling command timed out inside the disposable quota startup probe and interrupted its cleanup; the leftover process group was immediately terminated.
+**What happened:** A bounded sampling command interrupted cleanup after timing out in a quota startup probe. A later verification supervisor launched `ps` on every monitoring iteration; `ps` itself stalled at startup, preventing the supervisor from applying its elapsed-time bound.
 
-**Why:** Cleanup followed diagnostics instead of running unconditionally.
+**Why:** A subprocess timeout cannot bound a launch that blocks before returning a child handle. Diagnostic subprocesses became part of the watchdog critical path.
 
-**Prevention:** Place owned-process retirement in a finally block even when every diagnostic has its own timeout.
+**Prevention:** On hosts with executable-startup stalls, inspect process identities through OS APIs without launching fresh executables. Keep diagnostic failures outside the cleanup path and preserve explicit process ownership.
 
-**Fix:** The probe now always retires its child group. Repository timeout assertions remain intact; the independent executable startup timeout is recorded separately from quota behavior.
+**Fix:** Retire owned diagnostic and verification processes using independently obtained identities, replace subprocess-based monitoring with native process queries, and preserve incomplete counts. Repository test deadlines and assertions remain unchanged.
 
 ## Stop redundant verification after independent host startup evidence
 
@@ -378,3 +378,17 @@ run 38397957790 is the first with every macOS job green.
 **Prevention:** Check doctest configuration and source examples when defining a full Rust verification gate. Include the separate documentation test command when examples are enabled.
 
 **Fix:** A separate `cargo test --doc --workspace --all-features -- --test-threads=1` attempt reached `Doc-tests loom`, then rustdoc stalled before harness entry; a process sample showed `_dyld_start+0`. Its 300-second watchdog retired the owned process tree with exit 124 after 301.65 seconds. Executed, compile-only and ignored doctest counts remain unreported; this is not a passing documentation-test gate.
+
+## Bound reads and discover hook paths before navigation
+
+**What happened:** A verification continuation truncated combined long reads, assumed the hook location, and ran metadata outside the crate (exit 101). A knowledge replacement then passed a literal escaped apostrophe and temporary body; the CLI appended an unwanted section because the heading did not match.
+
+**Why:** Output budgets, working directories and shell quoting were assumed; the replacement body was not prepared before mutation.
+
+**Prevention:** Bound reads, discover paths, set each Cargo cwd, and send complete knowledge bodies and exact existing headings through structured subprocess arguments. Inspect replacement confirmation.
+
+**Fix:** Re-read needed content and rerun metadata from `loom/`; remove the erroneous section and replace the actual gate guidance with a complete body. No test gate ran from the wrong directory. A relative Markdown link escaping the knowledge directory also triggered the knowledge checker despite resolving on disk; use the report as a repository-relative code path instead.
+
+A later inventory repeated the nonexistent `.githooks/*` glob and used a pathless `git diff --numstat`. Discover hook files with repository-wide `rg --files`, without naming unverified directories (even a guessed `hooks` search root repeats the mistake), before opening them; use `git diff --stat` for aggregate summaries and explicit paths for further diff reads.
+
+Rust test module names also need graph lookup: `orchestrator::core::tests` does not imply a `core/tests.rs` file. Use `loom map --find-all` for its symbol instead of guessing a search path.

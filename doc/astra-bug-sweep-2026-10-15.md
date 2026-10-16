@@ -1,6 +1,6 @@
 # Loom bug, duplication, and architecture sweep — 2026-10-15
 
-Reviewed source revision: `d273a4386dcc6098d6a15cd83e934476b079a1bc`. The historical findings below describe that revision. This handoff is authoritative for repair status; original source line references may have moved. The unrelated untracked `doc/RETRIEVAL-AB-METHOD.md` remains untouched.
+Reviewed source revision: `d273a4386dcc6098d6a15cd83e934476b079a1bc`. The historical findings below describe that revision; original source line references may have moved. Final native macOS Rust verification after the host-diagnosis fixture repairs passes all five required gates: 8,509 tests across all 47 targets, zero failures, seven explicit ignores; doctests separately pass three executed and three compile-only examples with seven existing ignores. See the [verification continuation](astra-verification-2026-10-16.md) for exact commands and target accounting, and the [macOS host report](macos-test-host-2026-10-16.md) for diagnosis, changes, and metrics. The repair handoff and historical chronology below remain unchanged. The unrelated untracked `doc/RETRIEVAL-AB-METHOD.md` remains untouched.
 
 ## Repair handoff — 2026-10-16
 

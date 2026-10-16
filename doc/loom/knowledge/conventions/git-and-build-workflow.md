@@ -20,73 +20,57 @@ Loom never runs a three-way merge in the operator's main checkout; the only merg
 
 ## Formatting and Test Invocation in a Shared Worktree
 
-- **Never run `cargo fmt` while sibling subagents are live.** `cargo fmt -- <path>`
-  **IGNORES its path arguments** and formats the ENTIRE crate, silently reformatting files
-  another agent owns — which shows up in `git status` as an ownership violation and can
-  collide with an in-flight edit. Use `rustfmt --edition 2021 <file>` for your own files.
-  Only the main agent runs repo-wide `cargo fmt`, and only after every subagent has landed.
-- **`cargo test` accepts exactly ONE testname filter.** Extra filters are rejected with
-  "unexpected argument" BEFORE compiling, so zero tests run. Use one common prefix
-  (`cargo test --lib context::`) or separate invocations chained with `&&`.
-- **Filter by the real module path.** Tests under a `tests` submodule need it spelled out:
-  `context::tests::delivery`, not `context::delivery`, which matches nothing.
-- **`rustfmt`'s `fn_call_width = 60` is what forces a call vertical, not `max_width = 100`.**
-  Sum the argument names including `,` separators; over 60 and rustfmt goes one-arg-per-line,
-  which can explode a match arm and trip the 50-line function gate. Renaming in the pattern
-  (`budget_tokens: budget`) is a legitimate way back under the limit.
-- **Only the main agent runs `cargo` at all**, and it runs under a RAM watchdog rather than
-  a job-count throttle. Measured on this 32-core machine, a full `cargo build --all-targets`
-  peaks around 3 GB and the whole test suite barely moves the needle — so throttling `-j` is
-  the wrong lever and just wastes the machine. What actually exhausted 125 GB was **leaked
-  detached child processes**, not build parallelism (see
-  [Never Spawn a Surviving Process From a Test](../mistakes/detached-spawn-in-tests.md)).
-  Run cargo wrapped in a watchdog that samples `free`, kills the whole **process group** on a
-  low-headroom trip (killing cargo alone orphans the `rustc` children holding the pages), and
-  reports any `loom` process still alive after exit.
-- **A test may never create a process that outlives the test harness.** `cargo test` gives no
-  warning for a leaked detached child; it simply exits green while the child keeps running.
-  See [Never Spawn a Surviving Process From a Test](../mistakes/detached-spawn-in-tests.md) —
-  this cost a reboot once already.
+Only the main agent runs Cargo, formatters, and exhaustive verification in a shared checkout. Retire and reap a superseded command tree before starting its replacement; keep complete logs and exit codes.
+
+The root `.cargo/config.toml` defaults to four Cargo build jobs and `RUST_TEST_THREADS=4`. These limit build-job and libtest concurrency separately; individual tests and compilers can create more threads. Job limits control concurrency and the watchdog controls command lifetime; both apply.
+
+Use `/usr/bin/python3 scripts/run-rust-tests.py` for the complete all-target suite with isolated homes and an owned short OS temporary root. Use its separate `--doc` mode for workspace/all-feature doctests. The invocation-scoped wrappers preserve ordinary product execution outside tests. Direct Cargo calls inherit the concurrency default but do not provide aggregate fixture ownership or home isolation.
+
+The supervisor uses native PID/start-time identities, wall and output-idle deadlines, and per-run cleanup journals. It retains actual command status and sampled process-tree thread/write metrics; samples are lower bounds and do not replace per-test child guards. A timeout, missing harness, surviving process, or zero-executed-test result cannot certify coverage. Do not use global name-based process killing or rely on a subprocess-based process monitor during native-startup stalls. See `doc/testing.md` for commands, limits, and opt-in output exclusions.
 
 ## `cargo test` Is Not This Repo's Test Gate — `--all-targets --no-fail-fast` Is
 
-Never write plain `cargo test` into a loom plan's acceptance criteria. The gate is:
+Run Rust gates from `loom/`, the crate directory. The exhaustive target gate is:
 
 ```bash
-cargo test --all-targets --no-fail-fast
+cargo test --all-targets --no-fail-fast -- --test-threads=4
 ```
 
-What each flag does:
+`--no-fail-fast` continues after a failed target. `--all-targets` selects the
+library, binary, integration, example and benchmark test targets that exist in
+the manifest. Plain `cargo test` also includes the enabled integration targets;
+the claim that integration tests require `--all-targets` is incorrect.
 
-- **`--no-fail-fast` is what makes the report exhaustive.** Stopping at the first
-  failing target hides how much else is red; an agent then fixes one failure, re-runs,
-  and discovers the next — one round trip at a time.
-- **`--all-targets` keeps the command identical to the pre-push hook, CI and
-  `release.yml`.** Correction 2026-09-14: this bullet used to say that without
-  `--all-targets` the `loom/tests/**` integration tests are never built. That is wrong
-  for `cargo test`: every target in `loom/Cargo.toml` has `test = true` (check with
-  `cargo metadata --no-deps`), so plain `cargo test` builds and runs every `loom/tests/`
-  target. The flag does change `cargo build` and `cargo clippy`, which default to the lib
-  and bin only (see "Clippy --all-targets Required to Catch Test-Module Lints" in
-  [Testing & Lint](../mistakes/testing-and-lint.md)). It also disables doctests, as any
-  target-selection flag does, so none of the three gates runs them; `cargo test --doc`
-  does.
+Target selection excludes doctests. Documentation generation alone does not
+execute examples. Run the separate documentation test and static gates:
 
-Know the two non-hermetic tests, so a red run inside a stage session is not
-misdiagnosed as your own breakage. The stage-finalisation tests
-(`commands/stage/tests/complete.rs`) route through `sandbox_control_session`
-(`control_session.rs:70,94`), which reads `LOOM_STAGE_ID` / `LOOM_SESSION_ID` /
-`LOOM_WORKTREE_PATH` from the ambient process environment. Running the suite from
-INSIDE a loom worktree session leaves those set, silently routing the call down the
-sandboxed worktree path instead of the host-side one the test means to exercise, and
-it fails with a wrapper-identity mismatch. It is also order-dependent: it failed in
-one full `--all-targets` run and passed in the next.
+```bash
+cargo test --doc --workspace --all-features -- --test-threads=1
+cargo fmt --all -- --check
+cargo clippy --all-targets -- -D warnings
+RUSTDOCFLAGS='-D warnings' cargo doc --workspace --all-features --no-deps
+```
 
-Re-run with `env -u LOOM_STAGE_ID -u LOOM_SESSION_ID` BEFORE concluding your change
-broke it. The durable fix is an RAII env guard at test start — mirroring `EnvGuard`
-in `commands/memory/handlers/tests.rs` — that restores on `Drop`, so a panic mid-test
-cannot leak state into later tests. Do not apply that fix from an unrelated stage:
-touching a file outside your territory is cross-stage merge-conflict bait.
+Reconcile Cargo metadata with completed harness summaries, retaining counts for
+passed, failed and existing ignored tests. Account separately for executed,
+compile-only and ignored doctests. A timeout before harness entry leaves that
+target unverified. Retain full output, exit codes and process cleanup evidence;
+never combine earlier-source subsets into a final-source suite pass.
+
+CI (`.github/workflows/ci.yml`) runs platform test/lint jobs, the default
+`scripts/flake-check.sh` workload, dashboard/terminal smoke checks, hook tests,
+security audit, cargo-deny and dashboard checks under their path filters.
+`loom/.githooks/pre-push` also requires Markdown lint, dependency audit and the
+flake workload. The Linux and macOS test jobs require tmux through
+`LOOM_E2E_REQUIRE_TMUX=1`; local platform coverage must be stated explicitly.
+Doctests need the explicit command above because the CI all-target test jobs do
+not select them. The current sweep outcomes and platform limits are recorded in
+`doc/astra-bug-sweep-2026-10-15.md`.
+
+Before interpreting failures from a stage environment, inspect ambient
+`LOOM_STAGE_ID`, `LOOM_SESSION_ID` and `LOOM_WORKTREE_PATH`: control-session paths
+can depend on these identities. Do not weaken identity or confinement assertions
+to make a host run pass.
 
 ## The Maintainability Ledger Is Shared State, and Only One Concurrent Stage May Own It
 

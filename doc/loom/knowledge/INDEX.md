@@ -100,7 +100,7 @@
 | [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, errors, size limits | 276 |
 | [commits](conventions/commits.md) | Grouped Conventional Commits | 25 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute authority, budgets | 119 |
-| [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, cargo, CI paths, size ledger | 243 |
+| [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, cargo, CI paths, size ledger | 227 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, plugin scope | 143 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] precedence, value types | 103 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML, hook I/O, skills | 168 |
@@ -113,7 +113,7 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock | 200 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | A .git dir is not evidence of a repo | 156 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Stage bug reports; brief guard flags | 146 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, cargo audit, install.sh | 380 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, cargo audit, install.sh | 394 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented, not forwarded | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Slow reader fixed by forbidding reads | 62 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 102 |
@@ -129,7 +129,7 @@
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants live in constructor | 196 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why distillation cannot write directly | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Ledger TUI padding, fan-out, panics | 83 |
-| [live-state-pollution](mistakes/live-state-pollution.md) | Tests wrote live state and HOME | 51 |
+| [live-state-pollution](mistakes/live-state-pollution.md) | Tests wrote live state and HOME | 117 |
 | [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay tickets leaked past the hook | 34 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | A cleanup-boundary bug and its fix | 171 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Git in operator checkout; plan errors | 70 |
@@ -161,7 +161,7 @@
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn failures, cleanup | 146 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server gotchas | 53 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Producers of a rendered field | 188 |
-| [verification-harness](mistakes/verification-harness.md) | Many checks failing: suspect harness | 387 |
+| [verification-harness](mistakes/verification-harness.md) | Many checks failing: suspect harness | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 358 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) capped by path | 123 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server concurrency | 348 |
