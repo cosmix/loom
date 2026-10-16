@@ -120,31 +120,40 @@ fn a_successful_exchange_parses_both_windows_and_the_plan() {
 }
 
 #[test]
-#[cfg(unix)]
 fn a_json_rpc_error_reply_surfaces_the_message() {
-    let dir = tempdir().unwrap();
-    let script = "#!/bin/sh\n\
-        printf '%s\\n' '{\"id\":1,\"error\":{\"code\":-32000,\"message\":\"not logged in\"}}'\n";
-    let command = fake_codex_command(dir.path(), script);
-    let shutdown = AtomicBool::new(false);
-
-    let error = poll_command(command, REPLY_DEADLINE, &shutdown, 0).unwrap_err();
+    let error = handle_line(
+        r#"{"id":1,"error":{"code":-32000,"message":"not logged in"}}"#,
+        0,
+    )
+    .unwrap()
+    .unwrap_err();
     assert!(error.to_string().contains("not logged in"));
 }
 
 #[test]
-#[cfg(unix)]
 fn garbage_and_an_over_long_line_are_skipped_before_the_reply() {
-    let dir = tempdir().unwrap();
-    let script = "#!/bin/sh\n\
-        printf '%s\\n' 'hello'\n\
-        printf '%70000s\\n' ''\n\
-        printf '%s\\n' '{\"id\":1,\"result\":{\"rateLimits\":{}}}'\n";
-    let command = fake_codex_command(dir.path(), script);
-    let shutdown = AtomicBool::new(false);
+    let transcript = format!(
+        "hello\n{}\n{}\n",
+        " ".repeat(70_000),
+        r#"{"id":1,"result":{"rateLimits":{}}}"#,
+    );
+    let mut reader = BufReader::with_capacity(1024, transcript.as_bytes());
+    let mut buf = Vec::new();
 
-    let quota = poll_command(command, REPLY_DEADLINE, &shutdown, 0).unwrap();
+    assert!(read_bounded_line(&mut reader, &mut buf, MAX_LINE_BYTES).unwrap());
+    assert_eq!(buf, b"hello");
+    assert!(handle_line(&String::from_utf8_lossy(&buf), 0).is_none());
+
+    assert!(read_bounded_line(&mut reader, &mut buf, MAX_LINE_BYTES).unwrap());
+    assert_eq!(buf.len(), MAX_LINE_BYTES);
+    assert!(handle_line(&String::from_utf8_lossy(&buf), 0).is_none());
+
+    assert!(read_bounded_line(&mut reader, &mut buf, MAX_LINE_BYTES).unwrap());
+    let quota = handle_line(&String::from_utf8_lossy(&buf), 0)
+        .unwrap()
+        .unwrap();
     assert!(quota.windows.is_empty());
+    assert!(!read_bounded_line(&mut reader, &mut buf, MAX_LINE_BYTES).unwrap());
 }
 
 #[test]

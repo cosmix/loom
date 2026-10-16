@@ -14,6 +14,7 @@ use tempfile::TempDir;
 
 use super::execute::{startup_repair_lines, startup_repairs};
 use crate::commands::repair::workspace::AppliedRepair;
+use crate::fs::permissions::scratch_home::ScratchHome;
 use crate::fs::permissions::LOOM_PERMISSIONS;
 use crate::fs::work_integrity::validate_work_dir_state;
 use crate::git::hooks::install_reference_transaction_hook;
@@ -34,15 +35,8 @@ fn startup_repairs_isolated(
     root: &std::path::Path,
     no_repair: bool,
 ) -> anyhow::Result<Vec<AppliedRepair>> {
-    let fake_home = TempDir::new().unwrap();
-    let original = std::env::var_os("HOME");
-    std::env::set_var("HOME", fake_home.path());
-    let result = startup_repairs(root, no_repair);
-    match original {
-        Some(value) => std::env::set_var("HOME", value),
-        None => std::env::remove_var("HOME"),
-    }
-    result
+    let _home = ScratchHome::set();
+    startup_repairs(root, no_repair)
 }
 
 /// Write a `.gitignore` complete enough that neither `.loom/work` nor

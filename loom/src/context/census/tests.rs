@@ -294,14 +294,44 @@ fn display_lists_totals_dialects_and_unsupported_extensions() {
     assert!(xyz < abc, "largest extension first: {text}");
 }
 
-#[test]
-fn census_handles_thousands_of_long_paths() {
-    const FILES: usize = 3000;
+fn long_paths(files: usize) -> Vec<String> {
     let deep: Vec<String> = (0..13)
         .map(|level| format!("d{level:02}{}", "x".repeat(57)))
         .collect();
     let dir = deep.join("/");
-    let paths: Vec<String> = (0..FILES).map(|n| format!("{dir}/f{n}.rs")).collect();
+    (0..files).map(|n| format!("{dir}/f{n}.rs")).collect()
+}
+
+#[test]
+fn census_handles_long_paths_beyond_the_argument_limit() {
+    const FILES: usize = 32;
+    let paths = long_paths(FILES);
+    let files: Vec<(&str, &str)> = paths
+        .iter()
+        .map(|path| (path.as_str(), "pub fn f() {}\n"))
+        .collect();
+    let temp = repo(&files);
+
+    assert_eq!(census(temp.path()).totals.eligible.files, FILES as u64);
+
+    // Repeating owned fixture paths preserves the argv-size boundary without
+    // creating and parsing thousands of identical source files.
+    let repeated: Vec<&str> = paths
+        .iter()
+        .map(String::as_str)
+        .cycle()
+        .take(3000)
+        .collect();
+    let total: usize = repeated.iter().map(|path| path.len() + 1).sum();
+    assert!(total > 2 * 1024 * 1024, "paths total {total} bytes");
+    classify::attributes(temp.path(), &repeated).expect("paths travel through stdin");
+}
+
+#[test]
+#[ignore = "stress fixture creates and parses 3,000 files; run explicitly"]
+fn census_handles_thousands_of_long_paths() {
+    const FILES: usize = 3000;
+    let paths = long_paths(FILES);
     let total: usize = paths.iter().map(String::len).sum();
     assert!(total > 2 * 1024 * 1024, "paths total {total} bytes");
     let files: Vec<(&str, &str)> = paths

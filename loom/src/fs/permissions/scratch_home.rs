@@ -1,6 +1,7 @@
 //! Test fixture: `HOME` pinned to a scratch directory.
 
 use std::ffi::OsString;
+use std::path::Path;
 use tempfile::TempDir;
 
 /// Points `HOME` at a scratch directory for its lifetime: creating a
@@ -20,6 +21,10 @@ impl ScratchHome {
             _dir: dir,
             original,
         }
+    }
+
+    pub(crate) fn path(&self) -> &Path {
+        self._dir.path()
     }
 }
 

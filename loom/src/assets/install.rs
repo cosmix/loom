@@ -147,7 +147,7 @@ fn ensure_distinct_dirs(claude_dir: &Path, codex_dir: &Path) -> Result<()> {
 }
 
 /// Write the two managed doctrine files, returning any backups they displaced.
-fn install_doctrine(paths: &InstallPaths) -> Result<Vec<PathBuf>> {
+pub(super) fn install_doctrine(paths: &InstallPaths) -> Result<Vec<PathBuf>> {
     let mut backups = Vec::new();
     for (dest, body) in [
         (

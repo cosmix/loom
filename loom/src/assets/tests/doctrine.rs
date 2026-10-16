@@ -5,42 +5,36 @@
 use std::fs;
 
 use super::{backup_count, first_distinctive_line, paths};
-use crate::assets::install::install_all;
-use crate::skills::SkillLayout;
+use crate::assets::install::{install_doctrine, InstallPaths};
 use tempfile::TempDir;
+
+fn doctrine_paths(temp: &TempDir) -> InstallPaths {
+    let paths = paths(temp);
+    fs::create_dir_all(&paths.claude_dir).unwrap();
+    fs::create_dir_all(&paths.codex_dir).unwrap();
+    paths
+}
 
 #[test]
 fn changed_managed_body_keeps_only_one_backup() {
     let temp = TempDir::new().unwrap();
-    let paths = paths(&temp);
-    install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+    let paths = doctrine_paths(&temp);
+    install_doctrine(&paths).unwrap();
     fs::write(paths.claude_dir.join("CLAUDE.md"), "first change").unwrap();
 
-    assert_eq!(
-        install_all(&paths, Some(SkillLayout::Core), false)
-            .unwrap()
-            .backups
-            .len(),
-        1
-    );
+    assert_eq!(install_doctrine(&paths).unwrap().len(), 1);
     assert_eq!(backup_count(&paths.claude_dir, "CLAUDE.md"), 1);
     fs::write(paths.claude_dir.join("CLAUDE.md"), "second change").unwrap();
 
-    assert_eq!(
-        install_all(&paths, Some(SkillLayout::Core), false)
-            .unwrap()
-            .backups
-            .len(),
-        1
-    );
+    assert_eq!(install_doctrine(&paths).unwrap().len(), 1);
     assert_eq!(backup_count(&paths.claude_dir, "CLAUDE.md"), 1);
 }
 
 #[test]
 fn stale_managed_body_is_rewritten_without_backup() {
     let temp = TempDir::new().unwrap();
-    let paths = paths(&temp);
-    install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+    let paths = doctrine_paths(&temp);
+    install_doctrine(&paths).unwrap();
     let dest = paths.claude_dir.join("CLAUDE.md");
     fs::write(
         &dest,
@@ -48,9 +42,9 @@ fn stale_managed_body_is_rewritten_without_backup() {
     )
     .unwrap();
 
-    let report = install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+    let backups = install_doctrine(&paths).unwrap();
 
-    assert!(report.backups.is_empty());
+    assert!(backups.is_empty());
     assert_eq!(backup_count(&paths.claude_dir, "CLAUDE.md"), 0);
     let content = fs::read_to_string(&dest).unwrap();
     assert!(content.contains(first_distinctive_line(crate::assets::CLAUDE_MD_TEMPLATE)));
@@ -61,9 +55,8 @@ fn stale_managed_body_is_rewritten_without_backup() {
 #[test]
 fn install_sh_header_is_recognised_as_managed() {
     let temp = TempDir::new().unwrap();
-    let paths = paths(&temp);
+    let paths = doctrine_paths(&temp);
     let dest = paths.claude_dir.join("CLAUDE.md");
-    fs::create_dir_all(&paths.claude_dir).unwrap();
     let rule = "───────────────────────────────────────────────────────────";
     fs::write(
         &dest,
@@ -71,9 +64,9 @@ fn install_sh_header_is_recognised_as_managed() {
     )
     .unwrap();
 
-    let report = install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+    let backups = install_doctrine(&paths).unwrap();
 
-    assert!(report.backups.is_empty());
+    assert!(backups.is_empty());
     assert_eq!(backup_count(&paths.claude_dir, "CLAUDE.md"), 0);
     let content = fs::read_to_string(&dest).unwrap();
     assert!(content.contains(first_distinctive_line(crate::assets::CLAUDE_MD_TEMPLATE)));
@@ -82,26 +75,22 @@ fn install_sh_header_is_recognised_as_managed() {
 #[test]
 fn symlinked_doctrine_file_is_written_through() {
     let temp = TempDir::new().unwrap();
-    let paths = paths(&temp);
+    let paths = doctrine_paths(&temp);
     let target = temp.path().join("dotfiles/CLAUDE.md");
     fs::create_dir_all(target.parent().unwrap()).unwrap();
     fs::write(&target, "operator content").unwrap();
-    fs::create_dir_all(&paths.claude_dir).unwrap();
     let link = paths.claude_dir.join("CLAUDE.md");
     std::os::unix::fs::symlink(&target, &link).unwrap();
 
-    let report = install_all(&paths, Some(SkillLayout::Core), false).unwrap();
+    let backups = install_doctrine(&paths).unwrap();
 
     assert!(link.symlink_metadata().unwrap().file_type().is_symlink());
     assert!(fs::read_to_string(&target)
         .unwrap()
         .contains(first_distinctive_line(crate::assets::CLAUDE_MD_TEMPLATE)));
     assert_eq!(backup_count(&paths.claude_dir, "CLAUDE.md"), 1);
-    assert_eq!(report.backups.len(), 1);
-    assert_eq!(
-        fs::read_to_string(&report.backups[0]).unwrap(),
-        "operator content"
-    );
+    assert_eq!(backups.len(), 1);
+    assert_eq!(fs::read_to_string(&backups[0]).unwrap(), "operator content");
 }
 
 /// Writing through a dangling link would create the file at the link's target,
@@ -109,13 +98,12 @@ fn symlinked_doctrine_file_is_written_through() {
 #[test]
 fn dangling_symlinked_doctrine_file_is_rejected() {
     let temp = TempDir::new().unwrap();
-    let paths = paths(&temp);
+    let paths = doctrine_paths(&temp);
     let target = temp.path().join("dotfiles/CLAUDE.md");
-    fs::create_dir_all(&paths.claude_dir).unwrap();
     let link = paths.claude_dir.join("CLAUDE.md");
     std::os::unix::fs::symlink(&target, &link).unwrap();
 
-    let error = install_all(&paths, Some(SkillLayout::Core), false).unwrap_err();
+    let error = install_doctrine(&paths).unwrap_err();
 
     let message = format!("{error:#}");
     assert!(message.contains(&link.display().to_string()), "{message}");

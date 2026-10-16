@@ -157,20 +157,15 @@ pub fn migrate_legacy_trust(repo_root: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::fs::permissions::scratch_home::ScratchHome;
     use serial_test::serial;
     use tempfile::TempDir;
 
     fn with_test_home(test_fn: impl FnOnce(&Path, &Path)) {
-        let home = TempDir::new().unwrap();
+        let home = ScratchHome::set();
         let worktree = TempDir::new().unwrap();
 
-        let old_home = std::env::var("HOME").ok();
-        std::env::set_var("HOME", home.path());
         test_fn(home.path(), worktree.path());
-        // Restore HOME
-        if let Some(h) = old_home {
-            std::env::set_var("HOME", h);
-        }
     }
 
     #[test]
