@@ -357,3 +357,13 @@ unprivileged user namespace `bwrap` creates. With both steps the confined tests 
 **Prevention:** exercise the real provisioning boundary with a cold cache and preserve resolver symlink targets when granting provisioning network access.
 
 **Fix:** expose only the canonical resolver file read-only during provisioning, retain verification network denial, and install the rebuilt launcher before retrying.
+
+## Shell setup can prevent read-only queries
+
+**What happened:** A Python here-document could not start because the shell could not create a temporary file; optional zsh wildcard paths prevented rg queries when no match existed. A lint log redirection into /tmp also failed under the outer sandbox.
+
+**Why:** Shell preparation can require writes before launching a tool; the outer sandbox can deny /tmp even when the repository is writable. Zsh rejects unmatched globs before invoking rg.
+
+**Prevention:** Use Python -c for short read-only probes, known directory roots for rg, and an allowed diagnostic destination or approved host execution for build gates.
+
+**Fix:** Reissue affected read queries without shell temporary files or unmatched wildcards; run the lint gate with approved host cache/log access.

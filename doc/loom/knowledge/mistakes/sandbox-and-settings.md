@@ -338,3 +338,23 @@ commands (e.g. `loom map`'s overlay). See `concerns/sandbox-and-confinement-gaps
 **Prevention:** Distinguish the validated command working directory from the assigned filesystem boundary; test a relative parent path that remains inside that boundary.
 
 **Fix:** Prepare the sandbox at the assigned worktree root and change to the validated entry directory inside the shell before executing its command. Sibling worktrees remain outside the boundary.
+
+## Verifier scratch participates in project lint traversal
+
+**What happened:** A realistic Biome fixture reproduced the ignore crate path-under-root panic when a verifier-shaped .loom-cargo scratch directory contained an external registry symlink with an ignore file and JavaScript source. The same fixture without that scratch passed both direct and confined execution.
+
+**Why:** The verifier introduced Cargo cache symlinks inside the project input tree; lint traversal followed those extra paths. External Git metadata and the work-state symlink alone did not reproduce the panic.
+
+**Prevention:** Put command scratch outside the lint input tree and grant only that private directory writable. Exercise actual tools against the resulting filesystem view.
+
+**Fix:** Relocate verifier scratch outside the project and provide scoped writable tool-cache paths while preserving read-only runtime inputs and acceptance network denial.
+
+## Scratch relocation must support a temporary-root working directory
+
+**What happened:** The full regression gate found sixteen confinement failures after moving scratch outside the command working directory. Existing callers execute simple checks with the OS temporary root itself as working directory.
+
+**Why:** The fallback selected /tmp again when the working directory already contained the default temporary root, so the outside-worktree guard rejected ordinary commands.
+
+**Prevention:** Test scratch selection when cwd equals the OS temporary root, not only an isolated child directory. Select another supported private temporary root without putting scratch in the input tree.
+
+**Fix:** Add a valid alternate temporary-root fallback and preserve private scratch mounts and cleanup.

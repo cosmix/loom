@@ -43,7 +43,7 @@
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | fs/knowledge, INDEX.md, checks | 263 |
 | [memory-spool](architecture/memory-spool.md) | Read before touching loom memory | 188 |
 | [merge-checkout-state](architecture/merge-checkout-state.md) | Guarded fast-forward; blocked retry | 28 |
-| [merge-flow](architecture/merge-flow.md) | Finished stage to target branch | 130 |
+| [merge-flow](architecture/merge-flow.md) | Finished stage to target branch | 134 |
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Tick order, Monitor, liveness | 58 |
 | [owned-waits](architecture/owned-waits.md) | Worker-set waits, lease, boot ID | 57 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) | Plan fields v1/v2, checks, lints | 254 |
@@ -139,10 +139,10 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 313 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions, edges | 63 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 294 |
-| [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync | 340 |
+| [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync | 360 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | hooks/ dir is sandbox-protected | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers vs work state | 298 |
-| [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Sandbox tool failures | 359 |
+| [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Sandbox tool failures | 369 |
 | [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) | Only Edit(path) rules are enforced | 57 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) | deny_unknown_fields | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | LOOM_* wrapper exports contract | 126 |
@@ -155,9 +155,9 @@
 | [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, wave sizing, ownership | 358 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Subagent liveness; watch traps | 369 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 274 |
-| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY, stdin | 274 |
+| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY, stdin | 314 |
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 398 |
-| [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass with the bug | 352 |
+| [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass with the bug | 382 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn failures, cleanup | 146 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server gotchas | 53 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Producers of a rendered field | 188 |

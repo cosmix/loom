@@ -128,3 +128,7 @@ Conflict entry preserves the existing `completed_commit`; the claim that it reco
 ## Merge Lock (git/merge/lock.rs)
 
 `MergeLock` serializes loom-driven merges (the daemon's auto-merge, resolved landing and blocked retry, and the CLI merge paths) with an exclusive OS advisory lock (`fs2::try_lock_exclusive`) on the stable `.loom/work/merge.lock` inode. The file is created once and never unlinked; the holder's pid and timestamp are written into it for diagnosis only. `acquire` polls every 100 ms up to the caller's timeout (30 s from `merge_stage`). Release is by `Drop` or process exit, so there is no stale-lock reclamation and a pid left in the file after a merge is not a held lock.
+
+## Completion generated-output policy
+
+Completion validates committed tracked content and rejects untracked inputs even when Git ignores them. Known sandbox mount placeholders are classified by the shared tool-artifact owner, with declared inputs taking precedence. Generated dependency/cache exemptions use exact directory components (node_modules, .venv, .ruff_cache, .pytest_cache, and __pycache__) rather than blanket apps/packages/vendor or ignore-rule exemptions. Stage declarations, including working-directory-relative directory and glob declarations, override these exemptions. Verification snapshots and merge landing remain bound to the exact verified commit.

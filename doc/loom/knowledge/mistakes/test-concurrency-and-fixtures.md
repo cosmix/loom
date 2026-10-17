@@ -272,3 +272,43 @@ expects to expire stays short. Reproduce a timing failure by looping the test un
 **Prevention:** a liveness check built from two probes must re-confirm the first probe after the second. Read the panicking line number against the file before changing any assertion. To diagnose a load-only failure, put the raw probe results (each syscall's return, elapsed loop time, `/proc` state) in the assertion message and loop the full suite.
 
 **Fix:** `is_process_alive` (loom/src/process/mod.rs) repeats the null signal after the zombie check. `OwnedProcess::wait` (loom/src/process/owned.rs) calls `wait_timeout` again until its own deadline has passed. Ten consecutive full lib runs passed afterwards.
+
+## A read-only root mount hides writable device semantics
+
+**What happened:** The real null-device completion regression failed before reaching completion validation: Git could not open /dev/null for reading and writing inside the fixture.
+
+**Why:** The Bubblewrap fixture mounted the whole root read-only without creating its normal device filesystem.
+
+**Prevention:** Give boundary fixtures an explicit /dev mount, as the production launcher does, before testing device placeholders.
+
+**Fix:** Correct the fixture device mount and rerun the focused boundary test; do not change completion validation to accommodate a broken fixture.
+
+## Completion integration fixtures must enable the normal merge policy
+
+**What happened:** The end-to-end fixture reached verified daemon acceptance with the exact completed commit but never merged; the daemon exited after reporting all stages complete.
+
+**Why:** The fixture started the daemon with --manual, which finishes after its first tick, racing hook acceptance and preventing the next merge tick. Its base_branch setting was also outside the required [plan] TOML table.
+
+**Prevention:** Use normal daemon mode and the actual configuration schema when testing scheduler-owned landing. A Completed state alone is not landing evidence.
+
+**Fix:** Preserve exact commit/landing assertions, remove manual mode, and write [plan] base_branch in the fixture config.
+
+## Daemon fixtures must use sanctioned binary spawners
+
+**What happened:** The integration guard rejected a new completion fixture that constructed the Loom binary command directly, even though the fixture manually removed LOOM environment variables.
+
+**Why:** The repository centralizes binary spawning in sanctioned helpers so every child receives consistent session-environment filtering.
+
+**Prevention:** Reuse the established helper when adding daemon fixtures and include the binary-spawn guard in integration validation.
+
+**Fix:** Route the fixture startup through its sanctioned support helper without broadening the guard allowlist.
+
+## Exact Rust test filters require the module path
+
+**What happened:** A focused integration invocation used --exact with an unqualified function name and selected zero tests.
+
+**Why:** Libtest compares the exact filter to the full module-qualified test name.
+
+**Prevention:** Use the full module path with --exact and check the executed test count.
+
+**Fix:** Invoke generated::standard_completion_verifies_accepts_and_merges_with_generated_dependencies explicitly; a zero-test run provides no verification.

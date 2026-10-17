@@ -350,3 +350,33 @@ the emulation's effect first.
 **Prevention:** reproduce the failing command and harness environment before accepting a standalone pass. Keep host-tool fixtures synchronized with environment-mutating tests and explicitly grant their installed toolchain read roots.
 
 **Fix:** share the existing `ToolchainReadRoot` guard through `verify::test_support` and use it in all four formatter execution fixtures plus the offline Cargo fixture. The formatter tests use the shared serial lock while the guard is active. Production confinement and isolated test homes remain enforced; the complete supervised suite is the completion gate.
+
+## Inspect new test declarations before compiling
+
+**What happened:** A generated-output policy test initially had a malformed function declaration, noticed before verification. Recording that mistake in a nearly full topic exceeded its 400-line limit.
+
+**Why:** The declaration joined the fn keyword to the test name; the memory write did not check topic capacity.
+
+**Prevention:** Inspect added test declarations before compiling and check topic size before appending knowledge.
+
+**Fix:** Correct the declaration before the regression run and move this entry into a topic with available capacity.
+
+## Git untracked enumeration omits special files
+
+**What happened:** A new completion regression rejected populated config and symlink inputs but accepted a FIFO at a protected root name; the focused run passed nine cases and failed this assertion.
+
+**Why:** Git ls-files --others omits FIFOs, so the shared artifact classifier never received the entry even though it correctly rejects FIFO shapes.
+
+**Prevention:** Test the complete enumeration boundary, including file types Git omits. Directly inspect the shared protected-name set when validating sandbox placeholders.
+
+**Fix:** Keep the failing regression and add explicit validation of protected root entries before granting completion exemptions.
+
+## Inspect formatted fixture function sizes
+
+**What happened:** Formatting expanded a new monorepo fixture setup beyond the 50-line function limit during self-review; a later scratch-selector error arm also needed formatter-added braces.
+
+**Why:** Repetitive fixture writes were kept in one function and manual formatting did not match rustfmt output.
+
+**Prevention:** Use small data tables/helpers and apply rustfmt before inspecting final function ranges.
+
+**Fix:** Split repetitive setup and apply the reported match-arm formatting before final validation.
