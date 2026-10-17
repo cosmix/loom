@@ -356,3 +356,13 @@ tests parent, `rg` the name in sibling files that glob-import `super::*`.
 **Prevention:** Trace every automatic completed_commit producer and require persisted proof to survive locked validation. Keep explicit authorized operator overrides distinct from successful verification.
 
 **Fix:** The final verifier removes automatic fallback derivations, guards the shared landing boundary, and adds regression coverage. Existing authenticated operator no-verify and force-unsafe/assume-merged paths retain their intentional skip semantics at the explicit command boundary; a recorded commit in such a path does not mean tests ran. Full final-tree gates follow the complete fix.
+
+## The Impact Gate Hid a Monorepo Package's Siblings
+
+**What happened:** in a monorepo stage (collaterai shared-contracts) every acceptance criterion passed from the worktree root, but `loom stage complete` failed on impact-selected tests. The impact runner starts each test group in its package directory, and the confinement bound only the command's working directory, so sibling packages (a uv editable path dependency), shared fixtures and the root Bun store were invisible. The stage had no dispute for the impact gate and blocked.
+
+**Why:** the confinement treated the working directory as the writable tree. That held while every caller ran from the worktree root; the impact gate was the first to start below it.
+
+**Prevention:** a confined command's start directory and its visible tree are separate inputs. A caller that starts below the worktree root passes the root explicitly; never infer it from the nearest `.git`, which a vendored submodule also has.
+
+**Fix:** see [execution containment](../architecture/execution-containment.md#read-this-first-what-containment-means-in-loom).

@@ -392,3 +392,13 @@ run 38397957790 is the first with every macOS job green.
 A later inventory repeated the nonexistent `.githooks/*` glob and used a pathless `git diff --numstat`. Discover hook files with repository-wide `rg --files`, without naming unverified directories (even a guessed `hooks` search root repeats the mistake), before opening them; use `git diff --stat` for aggregate summaries and explicit paths for further diff reads.
 
 Rust test module names also need graph lookup: `orchestrator::core::tests` does not imply a `core/tests.rs` file. Use `loom map --find-all` for its symbol instead of guessing a search path.
+
+## A Daemon Test Fixture Overran the macOS Socket Path Limit
+
+**What happened:** `0539705c` added `tests/completion_replay/generated.rs`, the first completion-replay test to start a real daemon. The fixture's temp root used the prefix `loom-completion-replay-`; under the macOS runner's 49-byte `$TMPDIR` (`/var/folders/xx/<28 chars>/T/`) the daemon socket `<root>/.loom/work/orchestrator.sock` reached 107 bytes, over the 104-byte `sun_path` limit, and the daemon exited before ready (`src/daemon/socket.rs::socket_path_fits`). Linux passed locally because `/tmp` is short.
+
+**Why:** the prefix was harmless until a test bound a socket under it, and Linux CI and local runs never approach the limit.
+
+**Prevention:** any fixture whose tests start the daemon keeps its temp-root prefix short: macOS leaves under 25 bytes for the root name. A local Linux pass says nothing about socket path length.
+
+**Fix:** the prefix is `lcr-` (`tests/completion_replay/support.rs`), 88 bytes on the same runner.
