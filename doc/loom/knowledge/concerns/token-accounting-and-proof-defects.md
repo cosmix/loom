@@ -97,16 +97,18 @@ Open items from PLAN-token-flow; the design is in [token-flow-sources](../archit
 
 ### Measurement Limits
 
+- **Codex jobs require retained correlation evidence.** `tokens/discover.rs` combines legacy receipt threads with `codex_lifecycle/token_threads.rs` validated authorization-to-companion-job discovery. It includes running and completed jobs and historical stage sessions without Claude transcripts, and deduplicates threads before rollout lookup. If the companion job record is removed and no legacy receipt names its thread, an undiscovered rollout remains absent. Arbitrary lifecycle journal thread strings are not trusted.
+
 - **Numbers are a lower bound.** The tracker reads local transcripts only. Compaction and auxiliary API calls may be missing from them, and a session whose transcript is not found keeps its stage out of `stages` (the UIs show `—`).
 - **Other config homes are invisible.** Sessions under another `CLAUDE_CONFIG_DIR` or `CODEX_HOME` than the daemon's are not discovered: the daemon's environment allowlist (`daemon/server/environment.rs`) forwards `HOME` but not those two.
 - **Codex fork rollouts would double count.** A forked rollout replays its parent's history and the tracker has no fork handling, so a forked thread counts the replayed turns again.
-- **A running Codex job is invisible until its forward returns.** The tracker learns `codex_thread_id` only from forward receipts, and PostToolUse writes one after the forwarder's foreground Bash call returns (`loom-hooks/post-tool-use.sh` near line 250; `loom/src/models/forward_receipt.rs` skips a call without a result): up to the 540 s wrapper deadline, after which the job back-fills its own past buckets by line timestamp. A live source exists and is not used: companion job records under `~/.codex/plugin-data/state/*/jobs/*.json` carry `threadId` while the job runs, and `loom/src/codex_lifecycle/jobs.rs` `locate_job` (`pub(super)`) matches them to authorization rows.
+- **Running Codex jobs are discovered before forward receipts.** Validated companion job records provide `threadId` while the job runs. The legacy PostToolUse receipt still requires a forwarding result (`commands/hook/forward_receipt.rs:66-69`), but receipt lag no longer blocks an authorized job with a retained companion record.
 - **A thread in two stages' receipts counts once.** `discover.rs` dedupes by path under the alphabetically first stage; if the other stage already accumulated it, its state is kept and the thread double counts across stages. Needs a thread forwarded from two stages.
 - **Flat usage can lose the time-left label.** With no history row inside the 30-minute window only the snapshot point remains, and fewer than 2 points gives no label although a slope-0 "lasts to reset" would be the better answer (`quota_points.rs`).
 
 ### Silent Degradation
 
-- **A stage's Codex agents vanish when its receipts file is unreadable.** `discover.rs` `stage_threads` drops them when `load_receipts` returns an error (unreadable file, failed open, non-regular file; malformed lines are only counted). `discover()` returns `Result<Vec<Source>>` with no warning channel into `Pass.warning`/`log_change`; fixing it needs `discover` to return sources plus an optional warning.
+- **Receipt discovery failures remain silent.** Legacy receipt load errors skip receipt-only threads without a warning. Authorized companion-job discovery can still supply the same thread; previously accumulated state remains in the checkpoint.
 - **A checkpoint over 8 MiB means a full rescan every pass.** Each Claude transcript keeps up to 4096 message ids (about 55 bytes each, around 225 KB per long transcript), so about 35 long main transcripts in one checkpoint pass `MAX_CHECKPOINT_BYTES`. The tracker sheds the id tables of idle agents and warns once; active agents' tables are never shed.
 - **A deterministic panic prints every pass.** The `catch_unwind` arm in `guarded_pass` has no test, and the default panic hook prints a line per pass, defeating `log_change`'s dedupe.
 
@@ -121,7 +123,7 @@ Open items from PLAN-token-flow; the design is in [token-flow-sources](../archit
 
 ### Structure
 
-- **`tokens` depends upward on `commands::*` and forms a cycle with `commands::status::data`.** `discover.rs` imports `collect_jsonl`, `codex_root` and `CodexDiscovery` from `commands::usage::codex_discovery` (plan-mandated reuse, widened to `pub(crate)`), and `commands::status::data` imports `tokens`; this contradicts [core-abstractions](../architecture/core-abstractions.md) layering. Moving the three items to a lower module resolves it. `rollout_files` builds a `CodexDiscovery` only to read `.files` and drops its `unreadable_directories`.
+- **Shared discovery is below the commands layer.** The claim that `tokens` imports discovery from `commands::usage::codex_discovery` is incorrect: `tokens/discover.rs:9` imports `codex_root`, `collect_jsonl` and `CodexDiscovery` from `provider_data::codex_discovery`. `rollout_files` still drops unreadable-directory diagnostics.
 - **Small couplings.** `checkpoint.rs` imports `CHECKPOINT_FILE` from `tracker.rs` while `tracker.rs` imports `Checkpoint`; the bucket index `div_euclid(BUCKET_SECS)` is inlined in `accumulate.rs`, `flow_build.rs` and `tracker.rs`; `tracker.rs` carries a `thread_local` `TrackerLocal` only because `scan_pass`'s signature is pinned (`guarded_pass` and `scan_until` share a module and could pass the flag directly); `CodexLine::SessionMeta` is parsed and never consumed, `tokens/accumulate_tests.rs` sits at 399 of the 400-line limit (the next test there needs a sibling test file), and `claude_line`, `codex_line` and `TRACKER_INTERVAL_SECS` are `pub` with no outside user, which hides dead code from rustc.
 - **Layering of TUI helpers.** `compact_tokens`, `spark` and `quota_left_text` are shared by `header.rs`, `cells.rs` and `quota.rs` but live in `tokens_pane.rs`. The `watch_lock_identity` doc comment in `daemon/server/lifecycle.rs` names only `tick::record` and the quota poller as path-writing threads, not the tracker.
 
@@ -152,3 +154,19 @@ Open items from PLAN-token-flow; the design is in [token-flow-sources](../archit
 - **Commit-output filter.** A PreToolUse hook that refuses `loom stage commit` followed by a pipe or redirect would end the lost commit ticket, which stages of two plans hit (token-core and tui-tokens, then web-insights of the live-token-insights plan) after [Memory Relay Drain Gap](../mistakes/memory-relay-drain-gap.md) was written.
 - **Wiring detector and `#[path]` test modules** (first recorded in [Test Modules Wired by `#[path]` Read as Unwired](../mistakes/verification-v2-delivery.md), now failing a stage's finish step). `verify/wiring_detection.rs` `detect_unwired_files` matches only `mod <stem>` or `use .*<stem>`, and its `is_test_file` misses file names ending in _tests or starting with tests_, so a test file wired by a `#[path]` attribute on `mod tests;` is flagged and the stage's finish step fails; the error is lost when impact-test notes overflow the tool output.
 - **Integrity events.** `loom stage review integrity` reported no events after a commit although width-test assertion numbers changed in several `tui/ledger` test files; the gap is in the detector's reading of a numeric edit.
+
+## Token Model Blank-Row Investigation
+
+`web/src/components/token-models.tsx:114-123` groups rows by model and uses a row-spanning model cell rendered only on the first effort row. Subsequent effort rows look blank in the Model column, but retain the same model. The xhigh row below claude-opus-5-5 is an effort continuation, not a missing model; repeating the label or strengthening group styling would remove the ambiguity.
+
+## Stage Token Metric Layout
+
+Stage-modal token metrics align values left and labels right, with a full-width sparkline below. Sparkline stretching is opt-in so other consumers retain their fixed sizing. Narrow metric containers allow labels to wrap while remaining right-aligned.
+
+## Codex Token Discovery Repair
+
+Token discovery combines legacy forward receipts with validated authorization-to-companion-job correlation in codex_lifecycle/token_threads.rs. Running and completed jobs contribute to agent, stage, model and plan totals even without a Claude transcript. Duplicate thread sources count once. Regression coverage verifies a 98,821 fresh-token Terra fixture and rejects unrelated jobs, wrong state roots and ambiguous authorizations. Companion records must remain available unless a legacy receipt names the thread.
+
+## Model Legend Layout
+
+The by-model legend aligns swatches, model names, shares and rates in shared grid columns. Shares and rates align right. Below a container width of 26rem, the donut stacks above the full-width legend; wider containers display them side by side. Palette and token calculations are unchanged.
