@@ -88,6 +88,7 @@ fn a_failed_attempt_lists_its_problems_for_the_operator() {
 
 /// A site whose working directory holds `tests/no_follow.rs` with `source`, and
 /// whose acceptance is one `rustfmt --check` over that file.
+/// Callers share the environment-test lock because toolchain lookup reads HOME/PATH.
 fn site_checking_formatting_of(source: &str) -> (tempfile::TempDir, ContractSite) {
     let temp = tempfile::TempDir::new().unwrap();
     let dir = temp.path().canonicalize().unwrap();
@@ -113,7 +114,9 @@ fn site_checking_formatting_of(source: &str) -> (tempfile::TempDir, ContractSite
 /// fails the stage's own formatter check; the refusal names the check's command,
 /// and with it the file.
 #[test]
+#[serial_test::serial]
 fn freeze_refuses_a_contract_file_that_fails_the_formatter_check() {
+    let _toolchain = crate::verify::test_support::ToolchainReadRoot::from_runner();
     let (_temp, site) = site_checking_formatting_of("pub fn  add(a:u32,b:u32)->u32{a+b}\n");
 
     let error = check_formatting(&site, CommandConfinement::Confined).expect_err("unformatted");
@@ -129,7 +132,9 @@ fn freeze_refuses_a_contract_file_that_fails_the_formatter_check() {
 }
 
 #[test]
+#[serial_test::serial]
 fn freeze_goes_on_when_the_contract_files_are_formatted() {
+    let _toolchain = crate::verify::test_support::ToolchainReadRoot::from_runner();
     let (_temp, site) =
         site_checking_formatting_of("pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n");
 

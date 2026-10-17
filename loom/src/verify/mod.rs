@@ -9,6 +9,9 @@ pub mod impact_tests;
 pub mod integrity;
 pub mod review;
 pub mod tool_artifacts;
+
+#[cfg(test)]
+pub(crate) mod test_support;
 pub mod transitions;
 pub mod utils;
 pub mod wiring_detection;

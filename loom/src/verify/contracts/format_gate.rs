@@ -193,7 +193,9 @@ mod tests {
         temp
     }
 
+    // Toolchain lookup reads process-wide HOME/PATH; callers share the environment-test lock.
     fn problems_for(temp: &TempDir) -> Vec<String> {
+        let _toolchain = crate::verify::test_support::ToolchainReadRoot::from_runner();
         let acceptance = [
             AcceptanceCriterion::Simple("cargo fmt --check".to_string()),
             AcceptanceCriterion::Simple("false".to_string()),
@@ -203,6 +205,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn an_unformatted_file_gives_one_problem_naming_the_check() {
         let problems = problems_for(&crate_with("pub fn  add(a:u32,b:u32)->u32{a+b}\n"));
         assert_eq!(problems.len(), 1, "{problems:?}");
@@ -210,6 +213,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn a_formatted_file_gives_no_problem() {
         let formatted = "pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n";
         let problems = problems_for(&crate_with(formatted));

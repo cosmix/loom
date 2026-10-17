@@ -340,3 +340,13 @@ the emulation's effect first.
 **Prevention:** place test worktrees outside session-writable temporary roots before running the full suite. A separate Cargo target directory does not move fixtures derived from `CARGO_MANIFEST_DIR`.
 
 **Fix:** move the isolated checkout to a sibling of the normal repository and rerun the full suite there.
+
+## Standalone Passes Do Not Clear Full-Suite Failures
+
+**What happened:** the supervised all-target run failed `freeze_goes_on_when_the_contract_files_are_formatted` and `a_formatted_file_gives_no_problem`, although both passed outside the harness. A raw Cargo rerun also passed and did not reproduce the failing environment.
+
+**Why:** `scripts/rust_test_environment.py` supplies isolated `HOME`, `CARGO_HOME` and `RUSTUP_HOME` directories while exposing the installed toolchain through `PATH` and `LOOM_TEST_TOOLCHAIN`. The confined formatter subprocess cannot read the installed toolchain from those empty home roots. Both failures reproduce deterministically with the harness wrapper. The fixtures also lacked synchronization with tests that change the process environment.
+
+**Prevention:** reproduce the failing command and harness environment before accepting a standalone pass. Keep host-tool fixtures synchronized with environment-mutating tests and explicitly grant their installed toolchain read roots.
+
+**Fix:** share the existing `ToolchainReadRoot` guard through `verify::test_support` and use it in all four formatter execution fixtures plus the offline Cargo fixture. The formatter tests use the shared serial lock while the guard is active. Production confinement and isolated test homes remain enforced; the complete supervised suite is the completion gate.
