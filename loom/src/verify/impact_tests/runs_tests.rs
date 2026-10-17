@@ -121,3 +121,32 @@ fn selected_lists_the_first_ten_names() {
     assert!(!listed.contains("t10"), "{listed}");
     assert_eq!(selected(&targets[..3]), "selected: t0, t1, t2");
 }
+
+/// `uv run` cannot build a missing `.venv` with the network denied, so a uv
+/// package without one is a note and never runs; a workspace `.venv` in an
+/// ancestor counts.
+#[test]
+fn a_uv_package_without_a_venv_is_a_note() {
+    let root = TempDir::new().unwrap();
+    let package = Path::new("deps/kit");
+    std::fs::create_dir_all(root.path().join(package)).unwrap();
+    std::fs::write(root.path().join(package).join("uv.lock"), "").unwrap();
+    let pytest = registry::by_name("pytest").unwrap();
+    let targets = [TestTarget {
+        file: "tests/test_kit.py".to_string(),
+        name: None,
+    }];
+    let notes_after_run = || {
+        let mut selection = Selection::new(root.path(), &CannotSpawn, BTreeSet::new());
+        selection.run_group(package, pytest, &targets);
+        selection.finish("s").unwrap().notes
+    };
+
+    let notes = notes_after_run();
+    assert_eq!(notes.len(), 1, "{notes:?}");
+    assert!(notes[0].starts_with("`deps/kit` has no .venv"), "{notes:?}");
+
+    std::fs::create_dir(root.path().join(".venv")).unwrap();
+    let notes = notes_after_run();
+    assert!(notes[0].contains("could not be run"), "{notes:?}");
+}

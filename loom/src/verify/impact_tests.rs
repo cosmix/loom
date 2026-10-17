@@ -5,12 +5,13 @@
 //! full suite. Every node in a changed file is walked backwards through the
 //! worktree graph, starting from every node in a file the stage changed since
 //! its merge base with the target branch (the graph itself is still layered on
-//! the nearest published base); the nodes met in test files, and the changed
-//! test nodes themselves, become runner targets grouped by the runner detected
-//! for their package. `runs` runs each runner's selection through the
+//! the nearest published base); the nodes met in test files through bound
+//! edges, and the changed test nodes themselves, become runner targets grouped
+//! by the runner detected for their package. A test file met only through an
+//! ambiguous call's candidate set is a note. `runs` runs each runner's selection through the
 //! acceptance-criteria runner, so an identical earlier run is reused from the
 //! certified cache. A runner that cannot select, a JS package without
-//! `node_modules`, a runner that exits 127, a timeout, or no reached test
+//! `node_modules` or a uv package without `.venv`, a runner that exits 127, a timeout, or no reached test
 //! leaves a note: the full suite still runs in integration-verify.
 
 mod libtest;
@@ -23,7 +24,9 @@ use std::time::Duration;
 
 use crate::context::graph_store::ResolvedGraph;
 use crate::context::resolve::{impact_with, ImpactOptions};
-use crate::context::source_graph::{file_node_id, SourceNode, SourceNodeKind};
+use crate::context::source_graph::{
+    file_node_id, SourceNode, SourceNodeKind, UNIQUE_NAME_CONFIDENCE,
+};
 use crate::context::worktree_graph::{build_for_worktree, WorktreeGraph};
 use crate::git::runner::run_git_checked;
 use crate::models::stage::Stage;
@@ -116,12 +119,18 @@ fn run_with(
         .iter()
         .map(|reason| format!("the source graph is degraded: {reason}"))
         .collect();
-    if reached.is_empty() {
+    if reached.selected.is_empty() {
         notes.insert(format!(
-            "no test reaches the files this stage changed; {FULL_SUITE}"
+            "no test reaches the files this stage changed through bound edges; {FULL_SUITE}"
         ));
     }
-    let groups = group_targets(&graph.graph, &profile, &reached, &mut notes);
+    notes.extend(reached.namesakes.iter().map(|file| {
+        format!(
+            "tests in {file} are not selected: they reach this stage's changes only through an \
+             ambiguous call matched by name; {FULL_SUITE}"
+        )
+    }));
+    let groups = group_targets(&graph.graph, &profile, &reached.selected, &mut notes);
     let mut selection = Selection::new(&profile.root, runner, notes);
     for ((package, _), (adapter, targets)) in &groups {
         selection.run_group(package, *adapter, targets);
@@ -144,23 +153,69 @@ fn contract_files(stage: &Stage, working_dir: &Path, root: &Path) -> Result<BTre
         .collect())
 }
 
+/// Test nodes keyed by id.
+type TestNodes<'g> = BTreeMap<&'g str, &'g SourceNode>;
+
+/// The test nodes a stage's change reaches, split by the evidence of the path.
+struct Reached<'g> {
+    /// Reached through bound edges only, or changed themselves: these run.
+    selected: TestNodes<'g>,
+    /// Test files with a node reached only through a step into an ambiguous
+    /// call's candidate set: noted, never run.
+    namesakes: BTreeSet<String>,
+}
+
 /// Every node in a test file that reaches a node of a changed file, or is
-/// one, contract files excluded; keyed by id.
+/// one, contract files excluded. A test selects only when every step of its
+/// path is a bound edge; one reached only by guessing which namesake an
+/// ambiguous call means is a namesake note.
 fn reached_test_nodes<'g>(
     graph: &'g ResolvedGraph,
     changed: &[PathBuf],
     contracts: &BTreeSet<String>,
-) -> BTreeMap<&'g str, &'g SourceNode> {
-    let options = ImpactOptions {
-        max_depth: usize::MAX,
-        kinds: REACHABLE_KINDS.to_vec(),
-        ..ImpactOptions::default()
+) -> Reached<'g> {
+    let walk = |options: ImpactOptions| {
+        let options = ImpactOptions {
+            max_depth: usize::MAX,
+            kinds: REACHABLE_KINDS.to_vec(),
+            ..options
+        };
+        walk_tests(graph, changed, contracts, &options)
     };
+    // A candidate step trusts AMBIGUOUS_CANDIDATE_CONFIDENCE (0.2) and an
+    // unbound syntax edge has no target to walk, so the weakest step left is
+    // a unique-name bind. A test failing in a package the stage never touched,
+    // reached through `validate` matching some other `validate`, would block
+    // the stage on a guess; the full suite in integration-verify still runs it.
+    let selected = walk(ImpactOptions {
+        min_confidence: UNIQUE_NAME_CONFIDENCE,
+        follow_candidates: false,
+        ..ImpactOptions::default()
+    });
+    let namesakes = walk(ImpactOptions::default())
+        .into_iter()
+        .filter(|(id, _)| !selected.contains_key(id))
+        .map(|(_, node)| file_node_id(&node.path))
+        .collect();
+    Reached {
+        selected,
+        namesakes,
+    }
+}
+
+/// The test nodes of a changed file, and those reaching a node of a changed
+/// file through `options`' edges.
+fn walk_tests<'g>(
+    graph: &'g ResolvedGraph,
+    changed: &[PathBuf],
+    contracts: &BTreeSet<String>,
+    options: &ImpactOptions,
+) -> TestNodes<'g> {
     let is_test = |file: &str| languages::for_path(file).is_some() && !contracts.contains(file);
-    // A node an earlier walk reached is not walked again: with no depth
-    // limit, everything reaching it was reached by that walk too.
+    // A node an earlier walk reached is not walked again: with no depth limit
+    // and a per-step filter, everything reaching it was reached by that walk too.
     let mut seen: BTreeSet<String> = BTreeSet::new();
-    let mut reached = BTreeMap::new();
+    let mut reached = TestNodes::new();
     for file in changed.iter().map(|path| file_node_id(path)) {
         let Some(entry) = graph.files.get(&file) else {
             continue;
@@ -172,7 +227,7 @@ fn reached_test_nodes<'g>(
             if !seen.insert(node.id.clone()) {
                 continue;
             }
-            for hit in impact_with(graph, &node.id, &options).hits {
+            for hit in impact_with(graph, &node.id, options).hits {
                 let path = file_node_id(&hit.path);
                 if seen.insert(hit.id.clone()) && is_test(&path) {
                     let found = node_in(graph, &path, &hit.id);
@@ -201,7 +256,7 @@ type Groups = BTreeMap<(PathBuf, &'static str), (&'static dyn TestRunnerAdapter,
 fn group_targets(
     graph: &ResolvedGraph,
     profile: &ProjectProfile,
-    reached: &BTreeMap<&str, &SourceNode>,
+    reached: &TestNodes<'_>,
     notes: &mut BTreeSet<String>,
 ) -> Groups {
     let packages = profile.package_details();

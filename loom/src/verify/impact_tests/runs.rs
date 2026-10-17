@@ -50,10 +50,10 @@ impl<'a> Selection<'a> {
         targets: &[TestTarget],
     ) {
         let package_dir = self.root.join(package);
-        if adapter.language() == "javascript" && missing_node_modules(&package_dir, self.root) {
+        if let Some(missing) = missing_environment(&package_dir, self.root, adapter) {
             let name = package_label(package);
             let note = format!(
-                "`{name}` has no node_modules in this worktree (a plan `provision` entry \
+                "`{name}` has no {missing} in this worktree (a plan `provision` entry \
                  installs it); {FULL_SUITE}"
             );
             self.notes.insert(note);
@@ -161,16 +161,28 @@ fn package_label(package: &Path) -> String {
     }
 }
 
-/// Whether the JS package in `package_dir` declares dependencies yet has no
-/// `node_modules` there or in any ancestor up to and including `root`. A
-/// dependency-free package needs no install, so it never counts as missing; an
-/// unreadable or unparsable manifest counts as declaring dependencies.
-fn missing_node_modules(package_dir: &Path, root: &Path) -> bool {
-    declares_dependencies(root, package_dir)
-        && !package_dir
-            .ancestors()
-            .take_while(|dir| dir.starts_with(root))
-            .any(|dir| dir.join("node_modules").is_dir())
+/// The installed environment `adapter`'s run in `package_dir` needs and lacks,
+/// there and in every ancestor up to and including `root`. The confined runner
+/// denies the network, so a missing one cannot be built and the run proves
+/// nothing about the change. A JS package needs `node_modules` only when it
+/// declares dependencies (an unreadable or unparsable manifest counts as
+/// declaring them); a Python package with a `uv.lock`, run by `uv run`, needs
+/// its `.venv`.
+fn missing_environment(
+    package_dir: &Path,
+    root: &Path,
+    adapter: &dyn TestRunnerAdapter,
+) -> Option<&'static str> {
+    let needed = match adapter.language() {
+        "javascript" if declares_dependencies(root, package_dir) => "node_modules",
+        "python" if package_dir.join("uv.lock").is_file() => ".venv",
+        _ => return None,
+    };
+    let present = package_dir
+        .ancestors()
+        .take_while(|dir| dir.starts_with(root))
+        .any(|dir| dir.join(needed).is_dir());
+    (!present).then_some(needed)
 }
 
 /// The command as a note shows it: a long one cut to its first
