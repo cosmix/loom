@@ -337,3 +337,13 @@ unprivileged user namespace `bwrap` creates. With both steps the confined tests 
 **Prevention:** test provisioning through its real runner against a reachable local server and assert that sibling files stay inaccessible. Smoke-test a real frozen Bun install with an empty cache. Keep verification's network-denial regression.
 
 **Fix:** approved provision entries use `run_provision_with_timeout`, retaining environment and filesystem confinement while permitting host networking on Linux and outbound networking on macOS. Bun receives a private cache in the command's temporary directory, removed when the process retires. A real local-server Bun install and the runner regression pass on Linux.
+
+## Sandboxed gh authentication is inconclusive
+
+**What happened:** I treated a sandboxed `gh auth status` failure and an API connection failure as proof that the user was logged out.
+
+**Why:** The shell can lack access to the credential or network available to the user outside the sandbox.
+
+**Prevention:** Recheck `gh auth status` and a read-only GitHub API request with the required permissions before asking a logged-in user to authenticate again.
+
+**Fix:** Use the verified access path for issue creation; if it remains unavailable, report the exact boundary.
