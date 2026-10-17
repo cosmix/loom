@@ -12,3 +12,6 @@ mod rejections;
 
 #[path = "completion_replay/resolver.rs"]
 mod resolver;
+
+#[path = "completion_replay/generated.rs"]
+mod generated;

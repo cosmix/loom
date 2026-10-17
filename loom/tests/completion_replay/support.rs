@@ -75,6 +75,24 @@ impl ReplayFixture {
         self._root.path()
     }
 
+    pub fn release_daemon_lock(&self) -> Result<()> {
+        FileExt::unlock(&self._daemon_lock).context("releasing fixture daemon lock")
+    }
+
+    pub fn daemon_command(&self) -> Command {
+        let mut command = Command::new(env!("CARGO_BIN_EXE_loom"));
+        for (key, _) in std::env::vars_os() {
+            if key.to_string_lossy().starts_with("LOOM_") {
+                command.env_remove(key);
+            }
+        }
+        command
+            .current_dir(self.root())
+            .args(["run", "--daemon-child"])
+            .arg(self.root().join(".loom/work"));
+        command
+    }
+
     pub fn write_stage(&self, stage: &Stage) -> Result<()> {
         write_record(&self.stage_file, stage, "Stage")
     }
@@ -166,8 +184,10 @@ fn init_repository(root: &Path) -> Result<()> {
     run_git(root, &["init", "-b", "main"])?;
     run_git(root, &["config", "user.email", "completion-replay@test"])?;
     run_git(root, &["config", "user.name", "Completion Replay"])?;
+    fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n")?;
     fs::write(root.join("README.md"), "# Completion replay fixture\n")?;
-    run_git(root, &["add", "README.md"])?;
+    loom::fs::knowledge::KnowledgeDir::new(root).initialize()?;
+    run_git(root, &["add", "README.md", "doc/loom/knowledge"])?;
     run_git(root, &["commit", "-m", "fixture"])
 }
 

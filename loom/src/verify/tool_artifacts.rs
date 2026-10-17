@@ -17,6 +17,7 @@
 
 use std::io::ErrorKind;
 use std::os::unix::fs::FileTypeExt;
+use std::os::unix::fs::MetadataExt;
 use std::path::Path;
 
 /// Worktree-root names Claude Code's sandbox protects from writes: its
@@ -40,7 +41,7 @@ pub const NAMES: [&str; 11] = [
 /// sandbox artifact to leave out of a change listing.
 ///
 /// True only for an entry at the worktree root whose name is in [`NAMES`] and
-/// which is a device node (the sandbox's `/dev/null` mount seen from inside),
+/// which is the `/dev/null` character device (the mount seen from inside),
 /// an empty regular file or an empty directory (the mount point seen from the
 /// host), or no longer there at all (a mount point removed after git listed
 /// it). A listed name holding content, a symlink, a FIFO or a socket is a real
@@ -62,12 +63,17 @@ fn artifact_among(names: &[&str], worktree_root: &Path, path: &str) -> bool {
         Err(error) => error.kind() == ErrorKind::NotFound,
         Ok(metadata) => {
             let kind = metadata.file_type();
-            kind.is_char_device()
-                || kind.is_block_device()
+            is_null_device(&metadata)
                 || (kind.is_file() && metadata.len() == 0)
                 || (kind.is_dir() && is_empty_dir(&entry))
         }
     }
+}
+
+fn is_null_device(metadata: &std::fs::Metadata) -> bool {
+    metadata.file_type().is_char_device()
+        && std::fs::metadata("/dev/null")
+            .is_ok_and(|null| null.file_type().is_char_device() && metadata.rdev() == null.rdev())
 }
 
 fn is_empty_dir(dir: &Path) -> bool {
@@ -95,6 +101,7 @@ mod tests {
     fn a_device_node_at_a_listed_name_is_an_artifact() {
         assert!(artifact_among(&["null"], Path::new("/dev"), "null"));
         assert!(!artifact_among(&[".bashrc"], Path::new("/dev"), "null"));
+        assert!(!artifact_among(&["zero"], Path::new("/dev"), "zero"));
     }
 
     #[test]

@@ -3,6 +3,7 @@ mod checkpoint;
 pub mod content;
 mod content_inputs;
 mod current;
+mod generated;
 pub(crate) mod identity;
 pub mod policy;
 mod record;

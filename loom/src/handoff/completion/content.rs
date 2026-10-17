@@ -1,4 +1,4 @@
-//! Bind checks to committed content. Generated untracked Loom scaffolding is
+//! Bind checks to committed content. Generated untracked output and scaffolding are
 //! excluded; tracked scaffolding is never exempt. Ignore rules do not grant
 //! input exemptions: only named generated output locations are permitted.
 use crate::git::worktree::{stage_worktree_path, WorktreeGit};
@@ -67,13 +67,45 @@ fn reject_untracked(stage: &Stage, git: &WorktreeGit) -> Result<()> {
         .filter(|p| !p.is_empty())
     {
         let path = std::str::from_utf8(path).context("non-UTF-8 untracked completion input")?;
-        if !completion_scaffold(path, git.work_tree())
-            || super::content_inputs::declared_input(stage, path)?
+        reject_untracked_input(stage, git.work_tree(), path)?;
+    }
+    reject_unlisted_tool_entries(stage, git)
+}
+
+fn reject_untracked_input(stage: &Stage, root: &Path, path: &str) -> Result<()> {
+    ensure!(
+        completion_scaffold(path, root) && !super::content_inputs::declared_input(stage, path)?,
+        "untracked completion input '{path}': commit required inputs before verification"
+    );
+    Ok(())
+}
+
+fn reject_unlisted_tool_entries(stage: &Stage, git: &WorktreeGit) -> Result<()> {
+    if stage.stage_type == StageType::Knowledge {
+        return Ok(());
+    }
+    let mut args = vec!["ls-files", "--cached", "-z", "--"];
+    args.extend(crate::verify::tool_artifacts::NAMES);
+    let output = git.run(&args)?;
+    ensure!(
+        output.status.success(),
+        "cannot enumerate tracked sandbox paths"
+    );
+    for name in crate::verify::tool_artifacts::NAMES {
+        let prefix = format!("{name}/");
+        let tracked = output
+            .stdout
+            .split(|byte| *byte == 0)
+            .any(|path| path == name.as_bytes() || path.starts_with(prefix.as_bytes()));
+        if tracked
+            || matches!(std::fs::symlink_metadata(git.work_tree().join(name)),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound)
         {
-            bail!(
-                "untracked completion input '{path}': commit required inputs before verification"
-            );
+            continue;
         }
+        // Git omits special files and empty directories. Inspect known mount
+        // names explicitly so their shape and declared-input status still count.
+        reject_untracked_input(stage, git.work_tree(), name)?;
     }
     Ok(())
 }
@@ -94,20 +126,20 @@ fn verify_checkout_branch(stage: &Stage, git: &WorktreeGit) -> Result<()> {
 
 // Keep this list narrower than cleanup's directory-level scaffold exemptions.
 fn completion_scaffold(path: &str, root: &Path) -> bool {
+    if crate::verify::tool_artifacts::is_tool_artifact(root, path)
+        || super::generated::is_generated_dependency(path)
+    {
+        return true;
+    }
     match path {
         "CLAUDE.md" | ".claude/CLAUDE.md" | ".loom/work" | ".work" => root.join(path).is_symlink(),
         ".claude/settings.json" | ".claude/settings.local.json" => true,
         crate::fs::memory::SPOOL_RELPATH
         | crate::fs::stage_request::SPOOL_RELPATH
         | crate::telemetry::TELEMETRY_SPOOL_RELPATH => true,
-        _ => [
-            ".loom/cache/",
-            "target/",
-            "loom/target/",
-            "web/node_modules/",
-        ]
-        .iter()
-        .any(|prefix| path.starts_with(prefix)),
+        _ => [".loom/cache/", "target/", "loom/target/"]
+            .iter()
+            .any(|prefix| path.starts_with(prefix)),
     }
 }
 

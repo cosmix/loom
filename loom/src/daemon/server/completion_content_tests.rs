@@ -114,11 +114,24 @@ fn contracts_only_amendment_invalidates_checkpoint_with_unchanged_head() {
 
 #[test]
 fn completion_refuses_ignored_required_input() {
+    for path in [
+        "required.env",
+        "apps/api/src/input.py",
+        "packages/ui/package.json",
+        "deps/tool.py",
+        "node_modules_backup/input.js",
+    ] {
+        ignored_input_is_refused(path);
+    }
+}
+
+fn ignored_input_is_refused(path: &str) {
     let fixture =
         trusted_checkpoint_fixture("api", StageType::Standard, SessionType::Stage, EVIDENCE);
     let checkout = fixture.repo().join(".worktrees/api");
-    std::fs::write(fixture.repo().join(".git/info/exclude"), "required.env\n").unwrap();
-    std::fs::write(checkout.join("required.env"), "uncommitted fix").unwrap();
+    std::fs::write(fixture.repo().join(".git/info/exclude"), "*\n").unwrap();
+    std::fs::create_dir_all(checkout.join(path).parent().unwrap()).unwrap();
+    std::fs::write(checkout.join(path), "uncommitted fix").unwrap();
     let error = fixture.complete(COMPLETION, EVIDENCE).unwrap_err();
     assert!(format!("{error:#}").contains("untracked completion input"));
     assert_eq!(
@@ -132,14 +145,62 @@ fn completion_accepts_generated_outputs_with_unchanged_proof() {
     let fixture =
         trusted_checkpoint_fixture("api", StageType::Standard, SessionType::Stage, EVIDENCE);
     let checkout = fixture.repo().join(".worktrees/api");
-    std::fs::create_dir_all(checkout.join("target/debug")).unwrap();
-    std::fs::write(checkout.join("target/debug/generated"), "output").unwrap();
+    let snapshot = VerificationSnapshot::capture(&fixture.stage, &fixture.work).unwrap();
+    for path in [
+        "target/debug/generated",
+        "node_modules/.bun/pkg@1/node_modules/pkg/index.js",
+        "apps/web/node_modules/pkg/index.js",
+        "packages/api/.venv/pyvenv.cfg",
+        ".ruff_cache/.gitignore",
+        ".pytest_cache/v/cache/nodeids",
+        "deps/tool/__pycache__/tool.cpython-314.pyc",
+    ] {
+        let output = checkout.join(path);
+        std::fs::create_dir_all(output.parent().unwrap()).unwrap();
+        std::fs::write(output, "output").unwrap();
+    }
+    for name in crate::verify::tool_artifacts::NAMES {
+        std::fs::write(checkout.join(name), "").unwrap();
+    }
+    snapshot.validate(&fixture.stage, &fixture.work).unwrap();
     fixture.complete(COMPLETION, EVIDENCE).unwrap();
     let stage = load_stage("api", &fixture.work).unwrap();
     assert_eq!(stage.status, StageStatus::Completed);
     assert_eq!(
         stage.completed_commit.unwrap(),
         scratch_git(&checkout, &["rev-parse", "HEAD"])
+    );
+}
+
+#[test]
+fn completion_refuses_declared_generated_input_with_current_proof() {
+    let fixture =
+        trusted_checkpoint_fixture("api", StageType::Standard, SessionType::Stage, EVIDENCE);
+    let checkout = fixture.repo().join(".worktrees/api");
+    let declared = update_stage("api", &fixture.work, |stage| {
+        stage.working_dir = Some("apps/api".into());
+        stage.files.push(".venv/**".into());
+        Ok(())
+    })
+    .unwrap();
+    let fresh_evidence = "33333333333333333333333333333333";
+    super::record_trusted_test_checkpoint(
+        fixture.repo(),
+        &fixture.work,
+        &declared,
+        &fixture.session,
+        fresh_evidence,
+    );
+    std::fs::create_dir_all(checkout.join("apps/api/.venv")).unwrap();
+    std::fs::write(checkout.join("apps/api/.venv/required.py"), "input").unwrap();
+    let error = fixture.complete(COMPLETION, fresh_evidence).unwrap_err();
+    assert!(
+        format!("{error:#}").contains("untracked completion input"),
+        "{error:#}"
+    );
+    assert_eq!(
+        load_stage("api", &fixture.work).unwrap().status,
+        StageStatus::Executing
     );
 }
 
