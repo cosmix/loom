@@ -259,3 +259,5 @@ the issue count, but gates nothing.
 
 There is no per-link form requirement — a human title pointing to a topic path is
 simply the house style (see `patterns.md`), not something an audit enforces.
+
+Evidence freshness probes run Git through the bounded process runner and `OwnedProcess` (`loom/src/process/owned.rs`). Its deadline-based `Child::try_wait` polling works without a SIGCHLD notification socket, including in restricted sandboxes; timeout retirement still kills and reaps the owned group.

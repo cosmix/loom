@@ -50,6 +50,25 @@ impl Drop for InheritorGuard {
 }
 
 #[test]
+fn ownership_waits_for_a_child_that_exits_after_wait_begins() {
+    use std::os::unix::process::CommandExt;
+
+    let child = std::process::Command::new("sh")
+        .args(["-c", "sleep 0.1; exit 0"])
+        .process_group(0)
+        .spawn()
+        .unwrap();
+    let mut owner = OwnedProcess::new(child);
+
+    let status = owner
+        .wait(Duration::from_secs(1))
+        .expect("wait must not depend on a SIGCHLD handler")
+        .expect("completed child must return its exit status");
+
+    assert!(status.success());
+}
+
+#[test]
 fn ownership_drop_retires_group_after_leader_exit() {
     use std::os::unix::process::CommandExt;
     let temp = tempfile::tempdir().unwrap();

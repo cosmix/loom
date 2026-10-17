@@ -194,3 +194,13 @@ an added line is a knowledge defect to fix.
 **Prevention:** Wait for the running operation to exit before starting a dependent validation or write.
 
 **Fix:** Collect successful sync completion and rerun the final integrity check after all knowledge writes.
+
+## Leading list content needs an option terminator
+
+**What happened:** A `replace-section` body beginning with a Markdown list was parsed as a CLI option and rejected.
+
+**Why:** Passing an argument as a structured subprocess value does not stop the CLI parser from interpreting its leading hyphen.
+
+**Prevention:** Put `--` immediately before a positional Markdown body that may begin with a hyphen.
+
+**Fix:** Repeat the replacement with the option terminator and confirm the CLI reports that the existing heading was replaced.

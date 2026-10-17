@@ -23,3 +23,7 @@ messages with no trailers and no attribution line.
 ## Attribution Is Off in Project Settings
 
 `loom init` (`fs/permissions/settings/merge.rs::ensure_no_attribution`) writes `"attribution": {"commit": "", "pr": "", "sessionUrl": false}` into the repo's committed `.claude/settings.json`, and worktree settings inherit it. Claude Code then adds no Co-Authored-By trailer or PR footer, matching the no-attribution rule. It is inserted only when the key is absent: a repo that sets its own `attribution` keeps it. Owner decision (2026-09-19): project scope, not `~/.claude/settings.json`, which loom does not own.
+
+## Commit scope in a shared checkout
+
+An instruction to commit completed task work covers the task changes and their knowledge updates. Keep unrelated pre-existing edits and untracked artifacts out of those commits; clarify scope when the user says to commit everything and unrelated work is present.

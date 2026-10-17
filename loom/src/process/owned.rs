@@ -8,9 +8,9 @@
 //! report partial output; they must never extend the operation with an unbounded join.
 use std::process::{Child, ExitStatus};
 use std::time::{Duration, Instant};
-use wait_timeout::ChildExt;
 
 pub(crate) const CLEANUP_GRACE: Duration = Duration::from_secs(1);
+const WAIT_POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 pub(crate) struct OwnedProcess {
     child: Child,
@@ -30,16 +30,19 @@ impl OwnedProcess {
         &mut self.child
     }
 
-    /// `wait_timeout` rounds its poll down to whole milliseconds and can return
-    /// `None` up to 1 ms early, so wait again until the deadline has passed.
+    /// Polls instead of installing `wait_timeout`'s SIGCHLD handler. Some
+    /// sandboxes reject its signal-pipe write and abort the whole process.
     pub(crate) fn wait(&mut self, timeout: Duration) -> std::io::Result<Option<ExitStatus>> {
         let deadline = Instant::now() + timeout;
         loop {
-            let remaining = deadline.saturating_duration_since(Instant::now());
-            let status = self.child.wait_timeout(remaining)?;
-            if status.is_some() || remaining.is_zero() {
-                return Ok(status);
+            if let Some(status) = self.child.try_wait()? {
+                return Ok(Some(status));
             }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return Ok(None);
+            }
+            std::thread::sleep(remaining.min(WAIT_POLL_INTERVAL));
         }
     }
 
@@ -56,9 +59,7 @@ impl OwnedProcess {
         {
             self.retired = Some(deadline);
             kill_group(&mut self.child);
-            let _ = self
-                .child
-                .wait_timeout(deadline.saturating_duration_since(Instant::now()));
+            let _ = self.wait(deadline.saturating_duration_since(Instant::now()));
         }
         deadline
     }

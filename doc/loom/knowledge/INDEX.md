@@ -40,7 +40,7 @@
 | [execution-containment](architecture/execution-containment.md) | Sandboxed command containment, limits | 349 |
 | [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 292 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Deterministic phase, digest, receipts | 86 |
-| [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | fs/knowledge, INDEX.md, checks | 261 |
+| [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | fs/knowledge, INDEX.md, checks | 263 |
 | [memory-spool](architecture/memory-spool.md) | Read before touching loom memory | 188 |
 | [merge-checkout-state](architecture/merge-checkout-state.md) | Guarded fast-forward; blocked retry | 28 |
 | [merge-flow](architecture/merge-flow.md) | Finished stage to target branch | 130 |
@@ -82,7 +82,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [cli-process-and-conventions](patterns/cli-process-and-conventions.md) | CLI registration, TUI, errors | 253 |
+| [cli-process-and-conventions](patterns/cli-process-and-conventions.md) | CLI registration, TUI, errors | 238 |
 | [doctrine-cross-surface](patterns/doctrine-cross-surface.md) | Pinning multi-surface guidance | 135 |
 | [hook-content-stripping](patterns/hook-content-stripping.md) | How hooks read a Bash command | 161 |
 | [merge-and-recovery](patterns/merge-and-recovery.md) | Progressive merge, conflict recovery | 113 |
@@ -98,7 +98,7 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, errors, size limits | 276 |
-| [commits](conventions/commits.md) | Grouped Conventional Commits | 25 |
+| [commits](conventions/commits.md) | Grouped Conventional Commits | 29 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute authority, budgets | 119 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, cargo, CI paths, size ledger | 227 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, plugin scope | 153 |
@@ -126,7 +126,7 @@
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine drift, acceptance | 367 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability, hook tests | 314 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How knowledge goes stale | 229 |
-| [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants live in constructor | 196 |
+| [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants live in constructor | 206 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why distillation cannot write directly | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Ledger TUI padding, fan-out, panics | 83 |
 | [live-state-pollution](mistakes/live-state-pollution.md) | Tests wrote live state and HOME | 117 |
@@ -134,7 +134,7 @@
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | A cleanup-boundary bug and its fix | 171 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Git in operator checkout; plan errors | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) | Resolver kept stage write denies | 15 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races | 231 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races | 251 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merge lessons: merged=true unverified | 287 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 313 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions, edges | 63 |
@@ -142,7 +142,7 @@
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync | 340 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | hooks/ dir is sandbox-protected | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers vs work state | 298 |
-| [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Sandbox tool failures | 299 |
+| [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Sandbox tool failures | 329 |
 | [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) | Only Edit(path) rules are enforced | 57 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) | deny_unknown_fields | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | LOOM_* wrapper exports contract | 126 |

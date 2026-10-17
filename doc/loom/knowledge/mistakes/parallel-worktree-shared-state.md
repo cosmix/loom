@@ -229,3 +229,23 @@ paths for a contract freeze or a review fingerprint, and to the daemon's special
 **Why:** The small test edit went straight to execution before its required formatting check.
 **Prevention:** Format repairs before the complete gate so later checks do not invalidate source fingerprints or cause avoidable host load.
 **Fix:** Apply only the formatter-required line wrapping, retain the failed formatting log, and verify formatting plus the remaining gates against the corrected source.
+
+## Generated-asset patches need exact line endings
+
+**What happened:** A task-only staging patch generated with Python did not apply to the minified web bundle, and the next file header was absorbed into a line lacking its final newline.
+
+**Why:** Python `splitlines` recognizes Unicode separators that Git does not, and unified diffs need an explicit no-newline marker for unterminated lines.
+
+**Prevention:** Split patch input only at LF, preserve unterminated lines with the standard marker, and run `git apply --cached --check` before staging a generated patch.
+
+**Fix:** Repair the patch generator and validate both scoped patches against an isolated index before changing the shared index.
+
+## Shared Cargo output can replace a verified executable
+
+**What happened:** A sandbox check passed with the fixed executable, then appeared to regress when the same debug path was invoked later. Both the replaced executable and a copy captured from a subsequent build named another checkout and the old implementation in their backtraces.
+
+**Why:** Concurrent checkouts shared the Cargo target directory. A later Cargo invocation treated the shared artifact as fresh, so copying its compiler-artifact event still captured the wrong build.
+
+**Prevention:** Use a separate Cargo target directory for final command verification when concurrent checkouts share output. A pathname or a successful fresh-build report alone does not establish source provenance.
+
+**Fix:** Build with explicit manifest and task-specific target paths, then verify that isolated executable.

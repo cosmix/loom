@@ -297,3 +297,33 @@ that runs those tests, in the same commit.
 `kernel.apparmor_restrict_unprivileged_userns=0`, because Ubuntu 24.04 AppArmor denies the
 unprivileged user namespace `bwrap` creates. With both steps the confined tests run on
 `ubuntu-latest`; whether the sysctl alone is required was not isolated.
+
+## GitHub authentication checks under network restriction
+
+**What happened:** A sandboxed `gh auth status` reported an invalid GitHub token while the user confirmed the account was logged in.
+
+**Why:** Network restrictions can prevent credential validation and make the CLI result misleading.
+
+**Prevention:** Retry the required GitHub read with network access before diagnosing credentials or requesting login.
+
+**Fix:** Retry issue retrieval outside the restricted sandbox.
+
+## Knowledge checks must tolerate restricted process operations
+
+**What happened:** `loom knowledge check` aborted in `wait-timeout` after its SIGCHLD notification socket write failed with `EPERM` in the sandbox.
+
+**Why:** Catalog evidence probes invoke Git through `OwnedProcess`; its dependency installed a process-wide signal handler that panicked from a non-unwinding context when socket writes were restricted.
+
+**Prevention:** Bounded subprocess waiting must not require a notification channel that the execution environment can deny. Exercise a child that exits after waiting begins under the restricted sandbox, using an executable preserved from the intended build.
+
+**Fix:** `OwnedProcess::wait` and retirement use deadline-bounded `Child::try_wait` polling, preserving process-group cleanup. A later apparent recurrence came from another checkout overwriting the shared debug executable; its backtrace names that checkout and the old wait implementation. The direct `wait_timeout` use in `verify/criteria/cache_ignore.rs` remains outside this fix.
+
+## Formatter checks can fail only under the isolated test harness
+
+**What happened:** The supervised all-target run passed 8511 tests but failed `freeze_goes_on_when_the_contract_files_are_formatted` and `a_formatted_file_gives_no_problem`. Both passed individually outside the harness on the same compiled test binary.
+
+**Why:** The failure depends on the harness environment or full-suite execution; the exact cause is not isolated. These tests invoke confined Rust formatter commands, while the harness supplies isolated home directories.
+
+**Prevention:** Preserve the failing suite result and distinguish it from standalone reruns. Do not claim a complete suite pass by combining those results.
+
+**Fix:** Record the limitation separately from the verified dashboard and subprocess-wait fixes; investigate formatter availability and confinement in the isolated harness as a separate task.
