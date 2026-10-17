@@ -189,4 +189,4 @@ Plan YAML gained `command_confinement: confined | inherit` at plan level
 | `loom/src/commands/hook/review_harvest.rs` | `loom hook review-harvest`, called by `subagent-stop.sh` |
 | `loom/src/orchestrator/adjudication/{verdict_kinds,apply_kinds,prompt/*}.rs`, `daemon/server/{contracts,dispute_kinds}.rs` | dispute kinds: verdicts, apply, judge prompts, daemon handlers |
 | `loom/src/plan/schema/{types_v2.rs,validation/v2_lints/}` | v2 fields and `plan verify` lints |
-| `doc/plans/briefs/verification-v2/DESIGN.md` | the authoritative design (D0-D17) |
+| `doc/loom/knowledge/architecture/verification-v2-gates.md` | current gate order, owners and runtime inputs |

@@ -330,3 +330,13 @@ the emulation's effect first.
 **Prevention:** commit the initialized knowledge tree before exercising real completion, and inspect the error to ensure a red test reaches the intended defect.
 
 **Fix:** commit the fixture's generated knowledge files before invoking completion with the restricted PATH.
+
+## Hook Trust Fixtures Need a Checkout Outside Temporary Roots
+
+**What happened:** the full hook suite and one Rust spawn test failed in an isolated checkout under `/tmp`, rejecting the fixture binary or hook directory as session writable.
+
+**Why:** these trust-boundary fixtures create trusted resources under the checkout’s `loom/target` directory. Production validation rejects `/tmp` as a trusted installation root, regardless of the fixture subdirectory.
+
+**Prevention:** place test worktrees outside session-writable temporary roots before running the full suite. A separate Cargo target directory does not move fixtures derived from `CARGO_MANIFEST_DIR`.
+
+**Fix:** move the isolated checkout to a sibling of the normal repository and rerun the full suite there.

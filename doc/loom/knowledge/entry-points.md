@@ -242,4 +242,4 @@ do not guarantee, which is narrower than the word "containment" suggests.
 
 ## Verification v2 Entry Points
 
-Contract, integrity, review and impact gates, the 23 test-runner adapters, `loom project detect`, review harvest and the dispute-kind handlers. Table of paths: [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md). Design: `doc/plans/briefs/verification-v2/DESIGN.md`.
+Contract, integrity, review and impact gates, the 23 test-runner adapters, `loom project detect`, review harvest and the dispute-kind handlers. Table of paths: [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md). Gate order and owners: [Verification v2 gates](architecture/verification-v2-gates.md).
