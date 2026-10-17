@@ -23,6 +23,52 @@ function renderPanel(mutate?: (raw: typeof fixture) => void) {
 afterEach(cleanup);
 
 describe("TokenModels", () => {
+  it("spaces model hues evenly without cycling after six models", () => {
+    renderPanel((raw) => {
+      raw.status.tokens.models = Array.from({ length: 7 }, (_, index) => ({
+        model: `model-${index}`,
+        effort: "high",
+        total: { input: 10, cache_write: 0, cache_read: 0, output: 0 },
+      }));
+    });
+    const pie = screen.getByRole("img", { name: "fresh tokens by model" });
+    const colors = Array.from(pie.querySelectorAll("[data-model]"), (slice) =>
+      slice.getAttribute("stroke")!,
+    );
+    expect(new Set(colors).size).toBe(7);
+    const hues = colors.map((color) => Number(color.split(" ")[2]?.replace(")", "")));
+    for (let index = 0; index < hues.length; index++) {
+      const gap = (hues[(index + 1) % hues.length]! - hues[index]! + 360) % 360;
+      expect(gap).toBeCloseTo(360 / 7);
+    }
+    const swatches = screen.getByRole("list", { name: "models" }).querySelectorAll("[aria-hidden]");
+    swatches.forEach((swatch, index) => {
+      const expected = document.createElement("span");
+      expected.style.background = colors[index]!;
+      expect((swatch as HTMLElement).style.background).toBe(expected.style.background);
+    });
+  });
+
+  it("keeps model colours when token shares change order", () => {
+    const colors = () =>
+      Object.fromEntries(
+        Array.from(
+          screen
+            .getByRole("img", { name: "fresh tokens by model" })
+            .querySelectorAll("[data-model]"),
+          (slice) => [slice.getAttribute("data-model"), slice.getAttribute("stroke")],
+        ),
+      );
+    renderPanel();
+    const before = colors();
+    cleanup();
+    renderPanel((raw) => {
+      raw.status.tokens.models.find((entry) => entry.model === "gpt-6.1-sol")!.total.input =
+        99999999;
+    });
+    expect(colors()).toEqual(before);
+  });
+
   it("draws one pie slice per model in share order", () => {
     renderPanel();
 

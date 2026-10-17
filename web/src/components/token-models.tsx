@@ -1,15 +1,17 @@
 import type { TokenFlow } from "@/api/schema";
 import { compactTokens, modelGroups, modelRates, modelShares, wholePercents } from "@/lib/tokens";
 
-/// Model colours: the state tones, cycled in pie order.
-const MODEL_PALETTE = [
-  "var(--tone-completed)",
-  "var(--tone-contract)",
-  "var(--tone-warning)",
-  "var(--tone-merged)",
-  "var(--tone-queued)",
-  "var(--tone-executing)",
-] as const;
+/// Equal hue spacing maximizes minimum separation: five models get 72°.
+/// Name order keeps colours stable as token shares and slice order change.
+function modelColors(shares: ReturnType<typeof modelShares>): Map<string, string> {
+  const names = shares.map(({ model }) => model).sort();
+  return new Map(
+    names.map((model, index) => [
+      model,
+      `oklch(0.7 0.15 ${(25 + (360 * index) / names.length) % 360})`,
+    ]),
+  );
+}
 
 /// Radius of a circle whose circumference is 100, so a dash length is a percentage.
 const RADIUS = 15.91549;
@@ -20,13 +22,12 @@ const HEADERS = [
   { text: "Cache read", numeric: true },
 ] as const;
 
-const colorAt = (index: number) => MODEL_PALETTE[index % MODEL_PALETTE.length];
-
 /// The plan's token totals by model: a pie of fresh tokens per model, a legend
 /// with each share and current rate, and a table per model and effort. Renders
 /// nothing while no model has fresh tokens.
 export function TokenModels({ flow }: { flow: TokenFlow }) {
   const shares = modelShares(flow.models);
+  const colors = modelColors(shares);
   if (shares.length === 0) return null;
   const percents = wholePercents(shares.map(({ share }) => share));
   const rates = new Map(modelRates(flow).map(({ model, perMinute }) => [model, perMinute]));
@@ -38,7 +39,7 @@ export function TokenModels({ flow }: { flow: TokenFlow }) {
       </div>
       <div className="@container flex flex-wrap items-start gap-4">
         <div className="flex min-w-0 basis-[26rem] flex-col items-stretch gap-4 @min-[26rem]:flex-row @min-[26rem]:items-center">
-          <Pie shares={shares} />
+          <Pie shares={shares} colors={colors} />
           <ul
             aria-label="models"
             className="grid min-w-0 flex-1 grid-cols-[0.5rem_minmax(0,1fr)_max-content_max-content] gap-x-2 gap-y-1 text-xs"
@@ -48,7 +49,7 @@ export function TokenModels({ flow }: { flow: TokenFlow }) {
                 <span
                   aria-hidden="true"
                   className="size-2 shrink-0 rounded-sm"
-                  style={{ background: colorAt(index) }}
+                  style={{ background: colors.get(model) }}
                 />
                 <span className="truncate font-mono" title={model}>
                   {model}
@@ -70,7 +71,13 @@ export function TokenModels({ flow }: { flow: TokenFlow }) {
 }
 
 /// A donut of ring slices, one per model, starting at twelve o'clock.
-function Pie({ shares }: { shares: ReturnType<typeof modelShares> }) {
+function Pie({
+  shares,
+  colors,
+}: {
+  shares: ReturnType<typeof modelShares>;
+  colors: Map<string, string>;
+}) {
   let before = 0;
   return (
     <svg
@@ -82,7 +89,7 @@ function Pie({ shares }: { shares: ReturnType<typeof modelShares> }) {
       className="shrink-0 self-center"
     >
       <circle cx={21} cy={21} r={RADIUS} fill="none" stroke="var(--muted)" strokeWidth={6} />
-      {shares.map(({ model, share }, index) => {
+      {shares.map(({ model, share }) => {
         const pct = share * 100;
         const offset = 25 - before;
         before += pct;
@@ -94,7 +101,7 @@ function Pie({ shares }: { shares: ReturnType<typeof modelShares> }) {
             cy={21}
             r={RADIUS}
             fill="none"
-            stroke={colorAt(index)}
+            stroke={colors.get(model)}
             strokeWidth={6}
             strokeDasharray={`${pct} ${100 - pct}`}
             strokeDashoffset={offset}
