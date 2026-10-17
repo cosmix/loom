@@ -240,17 +240,9 @@ are YAML-indented and have no Markdown divider row; the parser accepts that shap
 
 ## Signal Caps and the IV Canonical Verifier
 
-The plan changed no prompt budgets. `loom/src/orchestrator/signals/tests_size.rs` pins
-`CLAUDE_MD_TEMPLATE_MAX_BYTES` 20,480 (lowered from 29,696 when the orchestrator-only rules moved to `skills/loom-orchestration/SKILL.md`), `STABLE_PREFIX_MAX_BYTES` 7,168,
-`STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` 10,240 and `PLAN_OVERVIEW_MAX_BYTES` 4,096, which
-mirrors `MAX_PLAN_OVERVIEW_BYTES` in `orchestrator/signals/generate/context.rs:98`. Trim doctrine
-before raising a cap.
+`loom/src/orchestrator/signals/tests_size.rs` pins `CLAUDE_MD_TEMPLATE_MAX_BYTES` at 20,480, `STABLE_PREFIX_MAX_BYTES` at 8,192, `STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` at 10,240 and `PLAN_OVERVIEW_MAX_BYTES` at 4,096. The claim that the stable-prefix cap is 7,168 is incorrect. The overview cap mirrors `MAX_PLAN_OVERVIEW_BYTES` in `orchestrator/signals/generate/context.rs:98`. Trim doctrine before raising a cap.
 
-The IV stable prefix (`INTEGRATION_VERIFY_OVERRIDE`, `orchestrator/signals/cache.rs:112-123`) names
-ONE canonical verifier that runs the complete suite per immutable tree, environment and criterion
-contract; other reviewers run only targeted discriminating checks, which never substitute for the
-gate. After a review fix the owner re-evaluates invalidated checks, and only the repaired criteria
-cache decides reuse.
+The IV stable prefix (`INTEGRATION_VERIFY_OVERRIDE`, `orchestrator/signals/cache.rs`) names ONE canonical verifier that runs the complete suite per immutable tree, environment and criterion contract; other reviewers run only targeted discriminating checks, which never substitute for the gate. After a review fix the owner re-evaluates invalidated checks, and only the repaired criteria cache decides reuse.
 
 ## Open Runtime Uncertainties
 

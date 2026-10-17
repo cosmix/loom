@@ -60,3 +60,43 @@ that lands in the tree is `100644`.
 **Prevention:** Run one loom map --outline command per file; batch independent commands through the tool orchestrator.
 
 **Fix:** Reissue each outline as its own read-only command.
+
+## Unbounded report-heading search
+
+**What happened:** A report review searched heading patterns across all of doc/ while also naming selected reports; the command returned over 100,000 tokens and its output was truncated.
+
+**Why:** The broad directory operand expanded an otherwise narrow heading lookup to every document.
+
+**Prevention:** Query headings only in the named documents. Search a directory separately for an exact filename or literal reference, using rg -l when only paths are needed.
+
+**Fix:** Keep subsequent report reads bounded to identified sections and search rename references with the exact old basename.
+
+## Mechanical knowledge replacement duplicated a word
+
+**What happened:** A substring replacement introduced a duplicated article in the context-ceiling topic.
+
+**Why:** The replacement included a sentence boundary while retaining the following article.
+
+**Prevention:** Inspect the complete edited paragraph after a substring replacement.
+
+**Fix:** Remove the duplicate through replace-section and check the rendered paragraph.
+
+## Abbreviated review paths produced invalid report links
+
+**What happened:** Four source links in an optimization-report draft used incomplete directory prefixes from review notes. The document check caught and corrected them before delivery.
+
+**Why:** Abbreviated evidence paths were expanded from memory instead of resolved against repository paths.
+
+**Prevention:** Resolve the exact path with rg --files before creating links from abbreviated review references, then check every local target.
+
+**Fix:** Correct the prefixes and verify the final report links against the filesystem.
+
+## Fence validation confused closing and opening delimiters
+
+**What happened:** A document check incorrectly rejected a correctly typed code block.
+
+**Why:** The regular expression matched the closing fence and let whitespace consume the following blank line.
+
+**Prevention:** Track whether a fence is opening or closing before requiring a language tag.
+
+**Fix:** Use a stateful fence check; the report itself required no fence change.

@@ -61,3 +61,13 @@ newline-enumeration mutant actually fail.
 **Prevention:** Compare the post-commit working tree with the reviewed path inventory; preserve unrelated original content instead of absorbing formatter drift into a documentation commit.
 
 **Fix:** Revert only the newly introduced formatting diff in doc/plans/briefs/live-token-insights/token-core/c2-model-block.md, leaving all prior user work untouched.
+
+## Commit requests can include existing tracked changes
+
+**What happened:** A request to commit the work and docs was interpreted as limited to the current fix, leaving existing README, installer, and knowledge edits uncommitted; the user clarified that all modified files were intended.
+
+**Why:** Task ownership was used to narrow commit scope beyond the requested scope.
+
+**Prevention:** Apply an explicit request covering all modified files to existing tracked changes too, reviewing and grouping them before committing.
+
+**Fix:** Review and commit the remaining modified tracked files in logical Conventional Commits while keeping unrelated untracked artifacts separate.

@@ -194,6 +194,8 @@ of the file's style.
 
 The operator installs a freshly built `loom` (`dev-install.sh`) only once the plan being executed has completed, never between its stages: `dev-install.sh` stops the daemon, and a plan runs to completion on the binary it started with. Fixes committed to `main` mid-plan therefore take effect only for the next plan. Anything measured with the installed binary before then, such as `loom knowledge eval` scores, measures the older code. Re-measure after the install.
 
+`dev-install.sh` keeps release optimization but overrides the build invocation with LTO off, 16 codegen units, and incremental compilation. Cargo jobs default to the available CPU count (`nproc`, then `getconf _NPROCESSORS_ONLN`, then four); an explicit `CARGO_BUILD_JOBS` takes precedence. These command-local environment overrides preserve the ordinary release profile (fat LTO and one codegen unit) and the installer contract at `loom/target/release/loom`. The first build with these settings rebuilds affected artifacts; later dev installs reuse the incremental cache.
+
 ## CI Jobs Run on Path Filters; the `rust` Filter Must Name Every Repo-Root Path the Crate Reads
 
 `.github/workflows/ci.yml` triggers on every push to main and every pull request; its `changes` job (`dorny/paths-filter`) decides which jobs run. `rust` gates lint, test, flake-check, their macOS counterparts lint-macos, test-macos and flake-check-macos, audit and deny; `web` gates the dashboard job; `shell` gates hook-syntax and hooks-macos. The workflow has no `paths:` trigger, so the filter list is the only place CI names paths. A new gate whose result can depend on the target OS gets a `macos-latest` job beside its Linux one.

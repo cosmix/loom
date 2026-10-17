@@ -72,13 +72,13 @@ model's own context window.
 
 ## Handoff System (Full Chain)
 
-Fully functional handoff chain, of which `loom-hooks/pre-compact.sh` (above) is one link:
+The handoff chain includes:
 
-1. **`loom handoff create`** — CLI command accepting `--stage`, `--session`, `--trigger`, `--message` flags
-2. **`pre-compact.sh`** — two-phase block-then-allow pattern (see above); no longer creates a recovery marker file
-3. **`session-end.sh`** — uses glob `*-${LOOM_STAGE_ID}.md` for stage file lookup (handles depth prefixes)
-4. **Signals** — `cache.rs`'s `append_common_footer()` adds compaction recovery instructions to ALL signal types
-5. **`session-start.sh`** — on `SessionStart` with `.source == "compact"` or `"resume"`, emits `hookSpecificOutput` `additionalContext` re-anchor pointer so the agent finds its signal file after compaction
+1. **`loom handoff create`** — CLI command accepting `--stage`, `--session`, `--trigger`, and `--message`.
+2. **`pre-compact.sh`** — two-phase block-then-allow interception, with a handoff written before each phase.
+3. **`session-end.sh`** — uses glob `*-${LOOM_STAGE_ID}.md` for stage file lookup, including depth prefixes.
+4. **Signals** — shared `CONTEXT_CEILING_HANDOFF` guidance tells the agent to hand off when the hook reports the ceiling (`orchestrator/signals/helpers.rs:36`, `cache.rs:269`, `contract.rs:265`); dynamic sections embed prior handoffs (`format/sections.rs:445-464`). The claim that `append_common_footer()` supplies these instructions is incorrect: that helper does not exist.
+5. **`session-start.sh`** — on compact or resume, emits an additionalContext re-anchor pointer to the signal file.
 
 ## How the Ceiling Reaches the Shell Hook, and the Last Resort
 
@@ -98,7 +98,7 @@ intentional availability defense, not a second config parser.
 all three thresholds above (it fires whenever Claude Code's native compaction actually engages,
 by whatever trigger): the FIRST `PreCompact` invocation in a session drops a
 `.loom/work/compaction-pending/<session-id>` flag file, writes a handoff, and BLOCKS (exit 2) with an
-instruction to record a memory note of the working state before continuing; the SECOND
+instruction to keep task state in the handoff and record only durable lessons in memory (loom-hooks/pre-compact.sh:129-142); the claim that it requests a memory note of working state is incorrect. The SECOND
 invocation (flag file present) removes the flag, writes an updated handoff, and ALLOWS (exit 0).
 This guarantees at least one forced context-preserving checkpoint before Claude Code discards
 anything, even if all three ceiling-based mechanisms above somehow never fired.

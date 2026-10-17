@@ -41,7 +41,7 @@
 | [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 292 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Deterministic phase, digest, receipts | 86 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | fs/knowledge, INDEX.md, checks | 263 |
-| [memory-spool](architecture/memory-spool.md) | Read before touching loom memory | 188 |
+| [memory-spool](architecture/memory-spool.md) | Read before touching loom memory | 176 |
 | [merge-checkout-state](architecture/merge-checkout-state.md) | Guarded fast-forward; blocked retry | 28 |
 | [merge-flow](architecture/merge-flow.md) | Finished stage to target branch | 134 |
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Tick order, Monitor, liveness | 58 |
@@ -61,7 +61,7 @@
 | [target-guard](architecture/target-guard.md) | Accepted-tip record, hook, holds | 127 |
 | [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends | 293 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) | 23 adapters, profiles, quoting, detect | 57 |
-| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, compare, cache | 265 |
+| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, compare, cache | 257 |
 | [token-flow-sources](architecture/token-flow-sources.md) | Token flow: sources, tracker, surfaces | 75 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 135 |
 | [web-dashboard](architecture/web-dashboard.md) | status --web server, SPA, streams | 99 |
@@ -100,7 +100,7 @@
 | [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, errors, size limits | 276 |
 | [commits](conventions/commits.md) | Grouped Conventional Commits | 24 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute authority, budgets | 119 |
-| [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, cargo, CI paths, size ledger | 227 |
+| [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, cargo, CI paths, size ledger | 229 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, plugin scope | 153 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] precedence, value types | 103 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML, hook I/O, skills | 168 |
@@ -115,7 +115,7 @@
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Stage bug reports; brief guard flags | 146 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, cargo audit, install.sh | 394 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented, not forwarded | 157 |
-| [codex-navigation](mistakes/codex-navigation.md) | Slow reader fixed by forbidding reads | 62 |
+| [codex-navigation](mistakes/codex-navigation.md) | Slow reader fixed by forbidding reads | 102 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 102 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) | Broker fallback, dup naming | 225 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread | 245 |
@@ -137,7 +137,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races | 251 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merge lessons: merged=true unverified | 287 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 313 |
-| [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions, edges | 63 |
+| [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions, edges | 73 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 294 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync | 360 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | hooks/ dir is sandbox-protected | 37 |
@@ -159,7 +159,7 @@
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass with the bug | 382 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn failures, cleanup | 146 |
-| [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server gotchas | 53 |
+| [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server gotchas | 52 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Producers of a rendered field | 188 |
 | [verification-harness](mistakes/verification-harness.md) | Many checks failing: suspect harness | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 358 |

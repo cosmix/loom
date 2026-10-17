@@ -27,21 +27,9 @@ gets a say. See the mistakes entry for the full diagnosis.
 
 ## Why Not Just Widen the Allowlist
 
-The sandbox filter is **path-based, not binary-based** — there is no knob that
-says "let the loom executable write here". The two available levers both
-overshoot:
+The sandbox filter is path-based, not binary-based: allowing writes to `.loom/work/memory` grants them to every process in the session. Exempting the loom executable from confinement also exposes shell commands reachable through loom, so it is broader than a memory append capability.
 
-- Adding `.loom/work/memory` to `allowWrite` grants it to **every** process in the
-  session, including the agent's own `Write`/`Edit` tools.
-- `excludedCommands` does not grant a path; it runs the command **entirely
-  outside** the sandbox. And `loom` is not a leaf command — `loom stage complete`
-  executes the stage's acceptance criteria as shell (`verify/criteria/`), so
-  exempting the binary exempts arbitrary shell reachable through it.
-
-This matters because memory is not a private scratchpad: `orchestrator/signals/
-generate.rs` reads `.loom/work/memory/<dep-id>.md` for each dependency and embeds it
-into **downstream stages' prompts**. A memory directory writable by any process
-in a stage session is a prompt-injection channel between stages.
+Memory can enter prompts across stages through the wiring checklist for `IntegrationVerify` and `KnowledgeDistill` (`orchestrator/signals/generate.rs`, `generate/enrichment.rs`). Ordinary stages receive their own journal plus dependency outputs and artifacts separately (`generate/context.rs:65-68`). The claim that every dependency journal is embedded in every downstream stage is incorrect. A writable shared memory directory nevertheless remains a cross-stage prompt-injection channel; attribution and writes belong to the trusted drain.
 
 ## The Design
 
@@ -112,7 +100,7 @@ down worktrees and three have no orchestrator in scope (`loom stage merge`,
 failure must never wedge a merge.
 
 **Locking is exclusive, not `O_APPEND`.** Content and context are each capped at
-2000 chars, so one entry can exceed the platform's atomic-append window (~4096
+2000 bytes, so one entry can exceed the platform's atomic-append window (~4096
 bytes) and concurrent subagents would interleave bytes on a line.
 
 **Reads merge the spool.** `loom memory list` is step one of post-compaction

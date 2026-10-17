@@ -5,14 +5,13 @@
 
 ## A Verification Brief's Negative Expectation Must Trace to the Plan, Not an Assumption
 
-**What happened:** an integration-verify functional-verifier brief demanded that a fixture with
-`update.check`'s user value as the string `"true"` fail `configResponseSchema.parse`, and reported a
-FAIL when it didn't. The plan's own brief (`w4-web-model.md:44`) specified `configValueSchema` as a
-kind-agnostic `z.union`, which parses that fixture successfully by design.
+**What happened:** An integration-verify functional-verifier brief demanded that a fixture with `update.check` set to the string `"true"` fail `configResponseSchema.parse`, and reported a failure when it did not. The plan worker brief specified `configValueSchema` as a kind-agnostic `z.union`, which accepts that fixture by design. The former source pointer to the removed worker brief is historical evidence, not an existing repository path.
 
-**Prevention:** before writing a negative expectation into a verification brief, check that the plan
-or worker brief actually states that behaviour is required — a verifier's own assumption about what
-"typed" should mean is not a substitute for the plan's stated contract.
+**Why:** The verification brief assumed that a typed value must also be checked against the configuration key kind.
+
+**Prevention:** Before writing a negative expectation, verify that the plan or worker brief requires that behavior. An assumption about what typed should mean does not establish the contract.
+
+**Fix:** Align the negative expectation with the declared schema contract and remove the obsolete source pointer from this historical entry.
 
 ## A Backgrounded Dev Server Is Invisible to the Next Bash Call
 
