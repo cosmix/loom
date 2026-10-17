@@ -406,7 +406,9 @@ cd loom
 bash ./dev-install.sh
 ```
 
-`dev-install.sh` builds the release binary (`cargo build --release`) and runs `install.sh`, which installs `loom-*` prefixed agents and skills (non-destructively, preserving user customizations), hooks, and configuration into the default `~/.claude/` root and the CLI binary to `~/.local/bin/loom`. Orchestration rules are written directly to the default `~/.claude/CLAUDE.md` (existing file is backed up). It inherits the custom asset-root variables above when they are exported.
+`dev-install.sh` builds an optimized development binary (`cargo build --release`) with LTO disabled, 16 codegen units, incremental compilation, and one Cargo job per available CPU. Set `CARGO_BUILD_JOBS=4 bash ./dev-install.sh` to limit concurrency. These settings apply only to this script; ordinary release builds retain fat LTO and one codegen unit. The first dev install rebuilds affected artifacts; subsequent builds reuse the incremental cache.
+
+It then runs `install.sh`, which installs `loom-*` prefixed agents and skills (non-destructively, preserving user customizations), hooks, and configuration into the default `~/.claude/` root and the CLI binary to `~/.local/bin/loom`. Orchestration rules are written directly to the default `~/.claude/CLAUDE.md` (existing file is backed up). It inherits the custom asset-root variables above when they are exported.
 
 `install.sh` takes an optional `--skills core|all` flag (default `core`): `core` installs a small set of always-loaded core skills to `~/.claude/skills/` and catalogs the rest under `~/.claude/loom-skill-catalog/`, loaded on demand; `all` installs every loom skill directly to `~/.claude/skills/`.
 

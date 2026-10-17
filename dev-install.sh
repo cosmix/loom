@@ -2,7 +2,7 @@
 set -euo pipefail
 
 # Build and install loom locally for development
-# This compiles the release binary and runs install.sh
+# This compiles an optimized development binary and runs install.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CLAUDE_DIR="${LOOM_CLAUDECODE_INSTALL_DIR:-$HOME/.claude}"
@@ -58,8 +58,17 @@ if pgrep -x loom &>/dev/null; then
     sleep 1
 fi
 
-echo "Building release binary..."
+# Override the repository's four-job cap for local installs, while allowing
+# callers to limit concurrency on machines with less memory.
+build_jobs="${CARGO_BUILD_JOBS:-$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
+echo "Building development binary (jobs: $build_jobs, LTO off)..."
 cd "$SCRIPT_DIR/loom"
+# Keep release optimization and the installer's target/release path, but avoid
+# whole-program LTO and single-unit codegen on every development rebuild.
+CARGO_BUILD_JOBS="$build_jobs" \
+CARGO_PROFILE_RELEASE_LTO=off \
+CARGO_PROFILE_RELEASE_CODEGEN_UNITS=16 \
+CARGO_PROFILE_RELEASE_INCREMENTAL=true \
 cargo build --release
 
 echo ""
