@@ -6,7 +6,7 @@
 
 `CommandConfinement::Confined` prepares an OS boundary in `verify/criteria/confine_host.rs` as well as rebuilding the child environment. Fresh host verification commands use macOS Seatbelt or Linux bubblewrap, allow selected runtime/toolchain reads and worktree writes, and deny network access. Missing containment support is an error.
 
-Approved plan provision entries use `run_provision_with_timeout`: the same filesystem and environment boundary, with host networking on Linux and outbound networking on macOS. Their dependency downloads do not depend on the stage session's domain allowlist. Bun uses a private `BUN_INSTALL_CACHE_DIR` under the command scratch directory; it is removed after process retirement.
+Approved plan provision entries use `run_provision_with_timeout`: the same filesystem and environment boundary, with host networking on Linux and outbound networking on macOS. Linux provisioning also binds the canonical target of a symlinked `/etc/resolv.conf` read-only before remounting the sandbox root; this preserves DNS when the target is under hidden `/run` without exposing host sockets. Their dependency downloads do not depend on the stage session's domain allowlist. Bun uses a private `BUN_INSTALL_CACHE_DIR` under the command scratch directory; it is removed after process retirement.
 
 The confined command preparer derives `LOOM_BIN` from the running executable, prepends its directory to `PATH`, and exposes only that binary as a read-only runtime path. Ordinary `loom ...` criteria need no absolute path or placeholder, and an ambient `LOOM_BIN` cannot select a different binary. The containment cache policy revision is `host-os-boundary-v5`.
 

@@ -174,3 +174,65 @@ fn private_cargo_home_uses_read_only_sources_and_hides_credentials() {
     assert!(!cargo.join(".package-cache").exists());
     assert!(!cargo.join(".global-cache").exists());
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn provisioning_exposes_only_the_resolver_symlink_target_read_only() {
+    let root = tempfile::tempdir().unwrap();
+    let cwd = root.path().join("worktree");
+    let resolver = cwd.join("resolv.conf");
+    let target = root.path().join("resolver-config");
+    let secret = root.path().join("secret");
+    std::fs::create_dir(&cwd).unwrap();
+    std::fs::write(&target, "nameserver 127.0.0.53\n").unwrap();
+    std::fs::write(&secret, "private").unwrap();
+    std::os::unix::fs::symlink(&target, &resolver).unwrap();
+    let mut original = std::process::Command::new("/bin/bash");
+    original.current_dir(&cwd).args([
+        "--noprofile", "--norc", "-c",
+        "[[ $(cat resolv.conf) == 'nameserver 127.0.0.53' ]] && ! echo changed > resolv.conf && ! cat ../secret",
+    ]);
+    crate::process::apply_stage_environment(&mut original);
+    let wrapped = super::platform_command(
+        &original,
+        &cwd,
+        std::path::Path::new("/bin/bash"),
+        super::NetworkAccess::Provision,
+    )
+    .unwrap();
+    // Inject a resolver symlink outside /etc so this reproduces the missing
+    // target even on hosts whose real resolv.conf is a regular file.
+    let args: Vec<_> = wrapped.get_args().map(|arg| arg.to_os_string()).collect();
+    let delimiter = args.iter().position(|arg| arg == "--remount-ro").unwrap();
+    let mut wrapped = std::process::Command::new(wrapped.get_program());
+    wrapped.args(&args[..delimiter]);
+    super::bind_resolver_target(&mut wrapped, &resolver).unwrap();
+    wrapped.args(&args[delimiter..]);
+    let output = wrapped.output().unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert_eq!(
+        std::fs::read_to_string(target).unwrap(),
+        "nameserver 127.0.0.53\n"
+    );
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn provisioning_can_read_the_host_dns_configuration() {
+    let cwd = tempfile::tempdir().unwrap();
+    let result = crate::verify::criteria::run_provision_with_timeout(
+        &CommandSpec::shell("cat /etc/resolv.conf"),
+        cwd.path(),
+        Duration::from_secs(15),
+    )
+    .unwrap();
+    assert!(result.success, "{}", result.stderr);
+    assert_eq!(
+        result.stdout,
+        std::fs::read_to_string("/etc/resolv.conf").unwrap()
+    );
+}

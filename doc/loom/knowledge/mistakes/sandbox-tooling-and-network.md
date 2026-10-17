@@ -347,3 +347,13 @@ unprivileged user namespace `bwrap` creates. With both steps the confined tests 
 **Prevention:** Recheck `gh auth status` and a read-only GitHub API request with the required permissions before asking a logged-in user to authenticate again.
 
 **Fix:** Use the verified access path for issue creation; if it remains unavailable, report the exact boundary.
+
+## Provision DNS Requires Resolver Symlink Targets
+
+**What happened:** collaterai workspace-scaffold provisioning could not fetch npm tarballs although the registry was allowed and host curl succeeded.
+
+**Why:** Linux provisioning shares networking but binds /etc without /run. On this system /etc/resolv.conf points to /run/systemd/resolve/stub-resolv.conf, leaving the resolver unreadable inside bubblewrap. The installed binary also predates the source change that grants provisioning host networking.
+
+**Prevention:** exercise the real provisioning boundary with a cold cache and preserve resolver symlink targets when granting provisioning network access.
+
+**Fix:** expose only the canonical resolver file read-only during provisioning, retain verification network denial, and install the rebuilt launcher before retrying.

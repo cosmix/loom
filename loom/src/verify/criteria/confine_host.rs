@@ -253,6 +253,9 @@ fn platform_command(
     {
         command.arg("--ro-bind").arg(&root).arg(&root);
     }
+    if network == NetworkAccess::Provision {
+        bind_resolver_target(&mut command, Path::new("/etc/resolv.conf"))?;
+    }
     // The new root is a writable tmpfs in which `--bind` created the working
     // directory's parents; left writable, writes outside the working tree would
     // succeed privately instead of failing as the Seatbelt profile makes them.
@@ -260,6 +263,19 @@ fn platform_command(
     command.args(["--remount-ro", "/"]);
     command.arg("--").arg(program).args(original.get_args());
     Ok(command)
+}
+
+/// /etc can contain a resolver symlink into /run, which stays hidden. Expose
+/// only its target file for provisioning, without granting access to host sockets.
+#[cfg(target_os = "linux")]
+fn bind_resolver_target(command: &mut Command, resolver: &Path) -> Result<()> {
+    if resolver.is_symlink() {
+        let target = resolver
+            .canonicalize()
+            .context("resolve provisioning DNS configuration")?;
+        command.arg("--ro-bind").arg(&target).arg(&target);
+    }
+    Ok(())
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
