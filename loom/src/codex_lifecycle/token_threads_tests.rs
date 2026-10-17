@@ -7,7 +7,9 @@ use std::fs;
 fn live_and_completed_jobs_need_exact_authorized_session_and_trusted_state_root() {
     let fixture = Fixture::new().unwrap();
     let row = fixture.authorization_value("unit", INV_A);
-    fixture.write_authorizations(&[row.clone()]).unwrap();
+    fixture
+        .write_authorizations(std::slice::from_ref(&row))
+        .unwrap();
     let authorization = fixture.authorization("unit", INV_A).unwrap();
     let job = fixture.write_job(&authorization, "job", "running").unwrap();
     let mut value: serde_json::Value = serde_json::from_slice(&fs::read(&job).unwrap()).unwrap();
