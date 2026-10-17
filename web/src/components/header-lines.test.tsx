@@ -23,20 +23,21 @@ function renderTokenLine(mutate?: (raw: typeof fixture) => void) {
 afterEach(cleanup);
 
 describe("TokenLine", () => {
-  it("shows the numbers without a sparkline", () => {
+  it("shows the plan total and cache hit without a sparkline", () => {
     renderTokenLine();
 
     const rail = screen.getByRole("region", { name: "tokens" });
-    for (const text of ["43.2k", "2.23M", "93%"]) expect(rail.textContent).toContain(text);
+    for (const text of ["2.23M", "93%"]) expect(rail.textContent).toContain(text);
+    expect(rail.textContent).not.toContain("43.2k");
     expect(within(rail).queryAllByRole("img")).toHaveLength(0);
   });
 
-  it("keeps the three cells in one row with no wrap rules", () => {
+  it("keeps the two cells in one row with no wrap rules", () => {
     renderTokenLine();
 
     const rail = screen.getByRole("region", { name: "tokens" });
     const cells = within(rail).getAllByRole("listitem");
-    expect(cells).toHaveLength(3);
+    expect(cells).toHaveLength(2);
     for (const cell of cells) expect(cell.className).not.toContain("max-sm:");
   });
 });

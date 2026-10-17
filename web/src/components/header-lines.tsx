@@ -142,9 +142,9 @@ export function MergeLine({ snapshot }: { snapshot: Snapshot }) {
   );
 }
 
-/// The plan's token flow as a rail beside the merge rail: fresh tokens per
-/// minute, the plan total and the cache hit. Absent while the snapshot carries
-/// no token flow.
+/// The plan's token summary rail beside the merge rail: the plan total and
+/// cache hit. The sidebar token-flow panel owns the fresh-rate display.
+/// Absent while the snapshot carries no token flow.
 export function TokenLine() {
   const tokens = useAtomValue(snapshotAtom)?.status.tokens;
   if (!tokens) return null;
@@ -152,8 +152,7 @@ export function TokenLine() {
   return (
     <section aria-label="tokens" className="flex w-full min-w-0 flex-col gap-1 sm:w-auto">
       <h2 className="eyebrow text-[10px]">tokens</h2>
-      <ol className="grid grid-cols-3 rounded-lg border border-hairline bg-card/60 shadow-xs sm:inline-grid sm:grid-cols-[repeat(3,auto)]">
-        <TokenCell label="fresh / min">{compactTokens(fresh(tokens.plan.rate))}</TokenCell>
+      <ol className="grid grid-cols-2 rounded-lg border border-hairline bg-card/60 shadow-xs sm:inline-grid sm:grid-cols-[repeat(2,auto)]">
         <TokenCell label="plan total">{compactTokens(fresh(tokens.plan.total))}</TokenCell>
         <TokenCell label="cache hit">{hit === null ? "—" : `${Math.round(hit)}%`}</TokenCell>
       </ol>

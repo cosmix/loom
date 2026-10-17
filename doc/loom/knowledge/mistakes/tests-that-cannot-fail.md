@@ -300,3 +300,13 @@ The padded-`wc` contract for the hook suite asserts that the `wc` shim really pa
 so it cannot pass vacuously when the shim is missing from `PATH`. It was checked in shell: the base hook
 exits 0 and the hook without its `tr` strip exits 1. A contract that runs against an emulated tool states
 the emulation's effect first.
+
+## Header assertions duplicated across UI suites
+
+**What happened:** Removing the redundant Tokens header rate updated its colocated test but missed three existing component and contract assertions, so the complete web test suite failed.
+
+**Why:** The same header behavior is asserted in several suites, including tests named for the sidebar and token insights.
+
+**Prevention:** Search affected component names, fixture values, and labels across all tests before declaring a UI change complete.
+
+**Fix:** Update every header expectation to require only plan total and cache hit, while retaining coverage that the sidebar shows the fresh rate.

@@ -133,15 +133,18 @@ it("token insights stage dialog draws a trend under each chip", () => {
   }
 });
 
-it("token insights header rail shows numbers without a sparkline", () => {
+it("token insights header keeps totals while the sidebar owns the fresh rate", () => {
   renderAt("/");
 
   const rail = within(shellBanner()).getByRole("region", { name: "tokens" });
   const text = rail.textContent ?? "";
-  expect(text).toContain("43.2k");
+  expect(text).not.toContain("43.2k");
   expect(text).toContain("2.23M");
   expect(text).toContain("93%");
   expect(within(rail).queryAllByRole("img")).toHaveLength(0);
+
+  const panel = screen.getByRole("region", { name: "Token flow" });
+  expect(panel.textContent).toContain("43.2k");
 });
 
 it("token insights terminal back button returns to the stage details", () => {

@@ -126,15 +126,18 @@ it("token flow ledger row and graph card show the executing stage rate", () => {
   expect(card.textContent).toContain("43.2k/m");
 });
 
-it("token flow header rail shows the plan rate total and cache hit", () => {
+it("token flow header keeps plan total and cache hit while the sidebar owns the fresh rate", () => {
   renderAt("/");
 
   const header = screen.getAllByRole("banner").find(notCard);
   if (!header) throw new Error("the shell header is missing");
   const text = header.textContent ?? "";
-  expect(text).toContain("43.2k");
+  expect(text).not.toContain("43.2k");
   expect(text).toContain("2.23M");
   expect(text).toContain("93%");
+
+  const panel = screen.getByRole("region", { name: "Token flow" });
+  expect(panel.textContent).toContain("43.2k");
 });
 
 it("token flow snapshot without token data renders no token flow panel", () => {

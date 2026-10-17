@@ -122,11 +122,11 @@ describe("TokenFlowPanel", () => {
 });
 
 describe("TokenLine", () => {
-  it("shows the plan rate, total and cache hit", () => {
+  it("shows the plan total and cache hit without the fresh rate", () => {
     renderWith(fixture, <TokenLine />);
 
     const rail = screen.getByRole("region", { name: "tokens" });
-    expect(rail.textContent).toContain("43.2k");
+    expect(rail.textContent).not.toContain("43.2k");
     expect(rail.textContent).toContain("2.23M");
     expect(rail.textContent).toContain("93%");
   });
