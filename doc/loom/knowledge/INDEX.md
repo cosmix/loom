@@ -164,7 +164,7 @@
 | [verification-harness](mistakes/verification-harness.md) | Many checks failing: suspect harness | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 368 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) capped by path | 141 |
-| [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server concurrency | 369 |
+| [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server concurrency | 376 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Layer written under an ignored key | 94 |
 
 ### concerns

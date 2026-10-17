@@ -346,3 +346,31 @@ the spawn fails; the other candidates stay as listed.
 **Prevention:** Chart series take identity colours apart from the state tones, and a series keeps its colour when the set of series changes. Validate a categorical palette with the dataviz validator against the card surface in both themes.
 
 **Fix:** `--series-1..6` in `web/src/index.css`, assigned in `token-flow-panel.tsx` `stageColors` by the stage's place among all plan stage ids in id order. Test: `token-flow-panel.test.tsx` "keeps a stage's colour as other stages join the flow".
+
+## Header icon review scope
+
+**What happened**: A request to review other icons referred specifically to the header.
+**Why**: The surrounding conversation concerned the header attention indicator.
+**Prevention**: Keep follow-up visual reviews within the established component unless broader scope is requested.
+**Fix**: Limit the icon updates to the header rails and controls.
+
+## Model pie keeps effort totals combined
+
+**What happened**: The requested model colour review initially included separate effort shades; the user clarified that efforts should remain combined.
+**Why**: The confusing colours belong to different models sharing nearby state tones.
+**Prevention**: Keep one slice per model and maximise hue separation across the model set.
+**Fix**: Use evenly spaced model hues for both pie slices and legend swatches.
+
+## CSS colour assertions allow browser normalization
+
+**What happened**: A model pie swatch assertion compared a raw SVG colour with a CSS serialized colour and failed on decimal rounding.
+**Why**: CSS serialization rounds hue values while SVG attributes retain the source string.
+**Prevention**: Normalize expected colours through the same CSS API before comparing.
+**Fix**: Compare swatches with a CSS-normalized expected background.
+
+## Commit task memory with the implementation
+
+**What happened**: Task memory notes and their generated index update remained uncommitted after the implementation commits.
+**Why**: Shared knowledge changes were excluded instead of separating the task-owned edits.
+**Prevention**: Include task-owned memory and index hunks in the requested commit scope while preserving unrelated changes.
+**Fix**: Commit the dashboard notes with only their matching index row.
