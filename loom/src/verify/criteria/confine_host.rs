@@ -1,4 +1,4 @@
-//! OS boundary for host verification. Only the working tree is writable;
+//! OS boundary for host verification. Only the working tree and private scratch are writable;
 //! runtime and compiler installation directories are readable. Verification denies
 //! network access; plan-approved provisioning can fetch dependencies.
 //! A missing or unusable OS facility fails before executing repository code.
@@ -27,25 +27,18 @@ pub(super) fn wrap(original: &Command, network: NetworkAccess) -> Result<(Comman
         &cwd,
     )
     .with_context(|| format!("Failed to resolve confined command: {:?}", program))?;
+    let scratch = CargoScratch::prepare(original, &cwd)?;
     let mut command =
         if network == NetworkAccess::Denied && crate::daemon::inherited::available(&cwd) {
             let mut command = Command::new(&resolved_program);
             command.args(original.get_args());
             command
         } else {
-            platform_command(original, &cwd, &resolved_program, network)?
+            platform_command(original, &cwd, &resolved_program, scratch.path(), network)?
         };
-    let scratch = CargoScratch::prepare(original, &cwd)?;
     command.env_clear();
     command.envs(original.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))));
-    command.env("CARGO_HOME", scratch.directory.path());
-    command.env("TMPDIR", scratch.directory.path());
-    if network == NetworkAccess::Provision {
-        command.env(
-            "BUN_INSTALL_CACHE_DIR",
-            scratch.directory.path().join("bun-cache"),
-        );
-    }
+    scratch.apply_environment(&mut command);
     command
         .current_dir(&cwd)
         .stdin(Stdio::null())
@@ -88,7 +81,14 @@ fn read_roots(command: &Command) -> Vec<PathBuf> {
     .map(PathBuf::from)
     .collect();
     if let Some(home) = environment_path(command, "HOME") {
-        roots.extend([home.join(".rustup"), home.join(".bun/bin")]);
+        roots.extend([
+            home.join(".rustup"),
+            home.join(".bun/bin"),
+            home.join(".bun/install/cache"),
+            home.join(".cache/uv"),
+            home.join("Library/Caches/uv"),
+            home.join(".local/share/uv/python"),
+        ]);
     }
     if let Some(rustup) = environment_path(command, "RUSTUP_HOME") {
         roots.push(rustup);
@@ -138,8 +138,9 @@ fn developer_tools() -> &'static Option<PathBuf> {
     })
 }
 
-/// Freeze source paths at preparation, but leave the directory empty until spawn
-/// so cache fingerprinting does not mistake runtime artifacts for repository input.
+/// Keep tool state outside the input tree: recursive linters follow the Cargo
+/// source symlinks, and Biome's Git ignore matcher panics on their external paths.
+/// Populate only at spawn; no repository inputs or host credentials are copied.
 pub(super) struct CargoScratch {
     directory: tempfile::TempDir,
     sources: Vec<(String, PathBuf)>,
@@ -147,9 +148,7 @@ pub(super) struct CargoScratch {
 
 impl CargoScratch {
     fn prepare(command: &Command, cwd: &Path) -> Result<Self> {
-        let directory = tempfile::Builder::new()
-            .prefix(".loom-cargo-")
-            .tempdir_in(cwd)?;
+        let directory = private_temporary_directory(cwd)?;
         let mut sources = Vec::new();
         if let Some(cargo) = cargo_home(command) {
             for name in ["registry", "git"] {
@@ -162,6 +161,23 @@ impl CargoScratch {
         Ok(Self { directory, sources })
     }
 
+    pub(super) fn path(&self) -> &Path {
+        self.directory.path()
+    }
+
+    fn apply_environment(&self, command: &mut Command) {
+        for key in ["CARGO_HOME", "TMPDIR", "TMP", "TEMP"] {
+            command.env(key, self.path());
+        }
+        for (key, child) in [
+            ("XDG_CACHE_HOME", "cache"),
+            ("UV_CACHE_DIR", "uv-cache"),
+            ("BUN_INSTALL_CACHE_DIR", "bun-cache"),
+        ] {
+            command.env(key, self.path().join(child));
+        }
+    }
+
     pub(super) fn populate(&self) -> Result<()> {
         #[cfg(unix)]
         for (name, source) in &self.sources {
@@ -171,11 +187,37 @@ impl CargoScratch {
     }
 }
 
+fn private_temporary_directory(cwd: &Path) -> Result<tempfile::TempDir> {
+    let mut failure = None;
+    // Keep the default first for inherited macOS temporary-directory grants.
+    // /var/tmp also supports callers whose working directory is /tmp itself.
+    for root in [std::env::temp_dir(), "/tmp".into(), "/var/tmp".into()] {
+        let root = match root.canonicalize() {
+            Ok(root) if !root.starts_with(cwd) => root,
+            _ => continue,
+        };
+        match tempfile::Builder::new()
+            .prefix(".loom-command-")
+            .tempdir_in(&root)
+        {
+            Ok(directory) => return Ok(directory),
+            Err(error) => failure = Some(error),
+        }
+    }
+    match failure {
+        Some(error) => {
+            Err(error).context("create private command scratch outside its working tree")
+        }
+        None => anyhow::bail!("command scratch must be outside its working tree"),
+    }
+}
+
 #[cfg(target_os = "macos")]
 fn platform_command(
     original: &Command,
     cwd: &Path,
     program: &Path,
+    scratch: &Path,
     network: NetworkAccess,
 ) -> Result<Command> {
     let launcher = Path::new("/usr/bin/sandbox-exec");
@@ -190,7 +232,7 @@ fn platform_command(
     }
     for root in read_roots(original)
         .into_iter()
-        .chain(std::iter::once(cwd.to_path_buf()))
+        .chain([cwd.to_path_buf(), scratch.to_path_buf()])
     {
         profile.push_str(&format!(
             "(allow file-read* (subpath {}))",
@@ -198,8 +240,8 @@ fn platform_command(
         ));
     }
     profile.push_str(&format!(
-        "(allow file-write* (subpath {}))(allow file-write-data (literal \"/dev/null\"))",
-        quote(cwd)
+        "(allow file-write* (subpath {})(subpath {}))(allow file-write-data (literal \"/dev/null\"))",
+        quote(cwd), quote(scratch)
     ));
     for root in read_roots(original)
         .into_iter()
@@ -224,6 +266,7 @@ fn platform_command(
     original: &Command,
     cwd: &Path,
     program: &Path,
+    scratch: &Path,
     network: NetworkAccess,
 ) -> Result<Command> {
     let launcher =
@@ -245,6 +288,9 @@ fn platform_command(
         .arg("--bind")
         .arg(cwd)
         .arg(cwd)
+        .arg("--bind")
+        .arg(scratch)
+        .arg(scratch)
         .arg("--chdir")
         .arg(cwd);
     for root in read_roots(original)
@@ -279,7 +325,13 @@ fn bind_resolver_target(command: &mut Command, resolver: &Path) -> Result<()> {
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn platform_command(_: &Command, _: &Path, _: &Path, _: NetworkAccess) -> Result<Command> {
+fn platform_command(
+    _: &Command,
+    _: &Path,
+    _: &Path,
+    _: &Path,
+    _: NetworkAccess,
+) -> Result<Command> {
     anyhow::bail!("confined verification is unsupported on this platform")
 }
 
@@ -298,3 +350,7 @@ pub(super) fn launcher() -> Option<PathBuf> {
 #[cfg(test)]
 #[path = "confine_host_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "confine_host_tool_tests.rs"]
+mod tool_tests;

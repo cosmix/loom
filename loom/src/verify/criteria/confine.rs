@@ -53,7 +53,7 @@ pub enum CommandSpec {
 
 /// A one-shot command whose environment and working directory are already
 /// fixed. Cache fingerprinting records its stable inputs and wrapper policy;
-/// only the generated private Cargo-home pathname is excluded from identity.
+/// only the generated private tool-state pathname is excluded from identity.
 pub(super) struct PreparedCommand {
     command: Command,
     working_dir: Option<PathBuf>,
@@ -89,12 +89,18 @@ impl PreparedCommand {
     }
 
     pub(super) fn containment_policy_revision(&self) -> String {
-        format!(
-            "host-os-boundary-v5:{:?}",
-            self.wrapped
-                .as_ref()
-                .map(|cmd| cmd.get_args().collect::<Vec<_>>())
-        )
+        let arguments = self
+            .wrapped
+            .as_ref()
+            .map(|command| command.get_args().collect::<Vec<_>>());
+        let revision = format!("host-os-boundary-v6:{arguments:?}");
+        match &self.scratch {
+            Some(scratch) => revision.replace(
+                scratch.path().to_string_lossy().as_ref(),
+                "$LOOM_COMMAND_SCRATCH",
+            ),
+            None => revision,
+        }
     }
 
     pub(super) fn spawn(mut self) -> Result<ConfinedChild> {
@@ -119,7 +125,7 @@ impl PreparedCommand {
 }
 
 /// An owned confined child: dropping it retires its process group before
-/// removing its private Cargo home. Borrow the child for pipe and wait APIs.
+/// removing its private tool state. Borrow the child for pipe and wait APIs.
 pub struct ConfinedChild {
     process: crate::process::OwnedProcess,
     _scratch: Option<host::CargoScratch>,

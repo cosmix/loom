@@ -126,7 +126,7 @@ fn actual_host_launcher_builds_cargo_offline_with_private_cache_state() {
         .unwrap()
         .file_name()
         .to_string_lossy()
-        .starts_with(".loom-cargo-")));
+        .starts_with(".loom-")));
 }
 
 #[cfg(unix)]
@@ -184,6 +184,7 @@ fn provisioning_exposes_only_the_resolver_symlink_target_read_only() {
     let target = root.path().join("resolver-config");
     let secret = root.path().join("secret");
     std::fs::create_dir(&cwd).unwrap();
+    std::fs::create_dir(root.path().join("scratch")).unwrap();
     std::fs::write(&target, "nameserver 127.0.0.53\n").unwrap();
     std::fs::write(&secret, "private").unwrap();
     std::os::unix::fs::symlink(&target, &resolver).unwrap();
@@ -197,6 +198,7 @@ fn provisioning_exposes_only_the_resolver_symlink_target_read_only() {
         &original,
         &cwd,
         std::path::Path::new("/bin/bash"),
+        &root.path().join("scratch"),
         super::NetworkAccess::Provision,
     )
     .unwrap();
