@@ -21,8 +21,12 @@ pub struct ReplayFixture {
 
 impl ReplayFixture {
     pub fn new(acceptance: &[&str]) -> Result<Self> {
+        // Short prefix: tests that start the daemon bind
+        // `<root>/.loom/work/orchestrator.sock`, and macOS `$TMPDIR`
+        // (`/var/folders/xx/<28 chars>/T/`, 49 bytes) leaves little room under
+        // the 104-byte `sun_path` limit. A longer prefix fails the bind there.
         let root = tempfile::Builder::new()
-            .prefix("loom-completion-replay-")
+            .prefix("lcr-")
             .tempdir()
             .context("creating completion replay root")?;
         init_repository(root.path())?;
