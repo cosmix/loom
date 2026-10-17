@@ -1,5 +1,15 @@
 import { cn } from "cn";
 import { useAtomValue } from "jotai/react";
+import {
+  Check,
+  Circle,
+  Clock3,
+  Diamond,
+  Play,
+  TriangleAlert,
+  Zap,
+  type LucideIcon,
+} from "lucide-react";
 import type { CSSProperties, ReactNode } from "react";
 
 import type { Snapshot, StageStatus } from "@/api/schema";
@@ -7,7 +17,6 @@ import { useNow } from "@/components/hooks/use-now";
 import { StageStrip } from "@/components/stage-strip";
 import { toneClass } from "@/components/state-badge";
 import { daemonLine, progressPercent, stateMeta, summaryCounts, type Tone } from "@/lib/format";
-import { STAGE_STATES } from "@/lib/states";
 import { cacheHitPercent, compactTokens, fresh } from "@/lib/tokens";
 import { connectionAtom, snapshotAtom, type ConnectionPhase } from "@/state/atoms";
 
@@ -75,7 +84,7 @@ export function ProgressLine({ snapshot }: { snapshot: Snapshot }) {
 
 type Cell = {
   key: string;
-  glyph: string;
+  glyph: ReactNode;
   count: number;
   label: string;
   tone: Tone;
@@ -85,12 +94,17 @@ type Cell = {
 };
 
 /// The stage counts as a ruled rail: executing, queued, waiting, attention,
-/// done. Glyphs are the state glyphs used everywhere else.
+/// done. Rounded outline icons match the header controls.
 export function SummaryLine({ snapshot, attention }: { snapshot: Snapshot; attention: number }) {
   const counts = summaryCounts(snapshot.status.stages, attention);
-  const cell = (key: keyof typeof counts, status: StageStatus, label: string): Cell => ({
+  const cell = (
+    key: keyof typeof counts,
+    status: StageStatus,
+    label: string,
+    Icon: LucideIcon,
+  ): Cell => ({
     key,
-    glyph: STAGE_STATES[status].icon,
+    glyph: <Icon className="inline-block size-3.5 align-[-1px]" />,
     count: counts[key],
     label,
     tone: stateMeta(status).tone,
@@ -99,29 +113,35 @@ export function SummaryLine({ snapshot, attention }: { snapshot: Snapshot; atten
     <StatRail
       title="stages"
       cells={[
-        cell("executing", "executing", "executing"),
-        cell("queued", "queued", "queued"),
-        cell("waiting", "waiting-for-deps", "waiting"),
+        cell("executing", "executing", "executing", Play),
+        cell("queued", "queued", "queued", Circle),
+        cell("waiting", "waiting-for-deps", "waiting", Clock3),
         {
           key: "attention",
-          glyph: "⚠",
+          glyph: <TriangleAlert className="inline-block size-3.5 align-[-1px]" />,
           count: counts.attention,
           label: "attention",
           tone: "blocked",
           alarm: true,
         },
-        cell("done", "completed", "done"),
+        cell("done", "completed", "done", Check),
       ]}
     />
   );
 }
 
-/// The merge counts as a rail beside the stage rail. The diamonds pair
-/// filled/hollow the way ● and ○ do; ⚡ is the merge-conflict state glyph.
+/// The merge counts as a rail beside the stage rail. Rounded diamonds pair
+/// filled/hollow; the lightning bolt identifies merge conflicts.
 /// Hovering a count lists its stage ids.
 export function MergeLine({ snapshot }: { snapshot: Snapshot }) {
   const { merged, pending, conflicts } = snapshot.status.merge;
-  const cell = (key: string, glyph: string, ids: string[], tone: Tone, alarm: boolean): Cell => ({
+  const cell = (
+    key: string,
+    glyph: ReactNode,
+    ids: string[],
+    tone: Tone,
+    alarm: boolean,
+  ): Cell => ({
     key,
     glyph,
     count: ids.length,
@@ -134,9 +154,27 @@ export function MergeLine({ snapshot }: { snapshot: Snapshot }) {
     <StatRail
       title="merge"
       cells={[
-        cell("merged", "◆", merged, "merged", false),
-        cell("unmerged", "◇", pending, "warning", true),
-        cell("conflicts", "⚡", conflicts, "warning", true),
+        cell(
+          "merged",
+          <Diamond className="inline-block size-3.5 align-[-1px]" fill="currentColor" />,
+          merged,
+          "merged",
+          false,
+        ),
+        cell(
+          "unmerged",
+          <Diamond className="inline-block size-3.5 align-[-1px]" />,
+          pending,
+          "warning",
+          true,
+        ),
+        cell(
+          "conflicts",
+          <Zap className="inline-block size-3.5 align-[-1px]" />,
+          conflicts,
+          "warning",
+          true,
+        ),
       ]}
     />
   );
