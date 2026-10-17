@@ -90,7 +90,7 @@ pub fn complete_knowledge_stage(
     finish_knowledge_stage(&stage, session_id, snapshot.as_ref(), work_dir)
 }
 
-fn finish_knowledge_stage(
+pub(super) fn finish_knowledge_stage(
     stage: &Stage,
     session_id: Option<&str>,
     snapshot: Option<&crate::handoff::completion::content::VerificationSnapshot>,

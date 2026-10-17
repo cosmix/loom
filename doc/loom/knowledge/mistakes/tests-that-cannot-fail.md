@@ -310,3 +310,13 @@ the emulation's effect first.
 **Prevention:** Search affected component names, fixture values, and labels across all tests before declaring a UI change complete.
 
 **Fix:** Update every header expectation to require only plan total and cache hit, while retaining coverage that the sidebar shows the fresh rate.
+
+## Exact Test Filters Must Use the Declared Module Name
+
+**What happened:** a focused human-review regression command compiled successfully but ran zero tests because its `--exact` path guessed `knowledge_tests` while `complete.rs` declares the file as `mod knowledge`.
+
+**Why:** the file name does not determine the Rust module path when a `#[path]` attribute is present.
+
+**Prevention:** read the module declaration before choosing an exact filter, and require a nonzero executed-test count. A unique test-name filter avoids guessing the module path.
+
+**Fix:** run the unique regression name without `--exact` and inspect the executed count and failure before changing production code.

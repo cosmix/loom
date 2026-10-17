@@ -8,7 +8,7 @@ use std::path::Path;
 
 use super::progressive_complete::complete_with_merge;
 use crate::git::{worktree::find_repo_root_from_cwd, MergeGate};
-use crate::models::stage::{Stage, StageStatus};
+use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::adjudication::close_open_disputes;
 use crate::orchestrator::coherence::live_worker_sessions;
 use crate::verify::transitions::{load_stage, update_stage};
@@ -132,7 +132,7 @@ fn refuse_live_worker(stage_id: &str, work_dir: &Path) -> Result<()> {
     )
 }
 
-/// Force-complete the review: skip acceptance criteria and merge, then mark as completed.
+/// Force-complete the review: skip acceptance and finish the stage's normal landing path.
 ///
 /// Merge runs BEFORE the Completed transition, so a conflict takes the legal
 /// Executing→MergeConflict/MergeBlocked edges. No operator proof guards this command: `human-review` is not relayed and
@@ -152,6 +152,11 @@ fn handle_force_complete(stage_id: &str, work_dir: &Path) -> Result<()> {
         stage.review_reason = None;
         Ok(())
     })?;
+
+    // Knowledge bootstrap writes in the main checkout and has no stage branch.
+    if stage.stage_type == StageType::Knowledge {
+        return super::knowledge_complete::finish_knowledge_stage(&stage, None, None, work_dir);
+    }
 
     let cwd = std::env::current_dir().context("Failed to get current directory")?;
     let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());

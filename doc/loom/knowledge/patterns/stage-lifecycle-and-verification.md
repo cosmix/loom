@@ -43,6 +43,8 @@ Underlying primitives (`fs/locking.rs`): `locked_dir_update(dir, f)` locks a dir
 
 **Regular stages**: Load stage, run acceptance criteria (unless --no-verify), sync worktree permissions, run task verifications, progressive merge, mark Completed, trigger dependents. **Knowledge stages**: No worktree, commits required (directly to main), auto merged=true, skips merge. Acceptance commands: 5-min timeout, support `${WORKTREE}`, `${PROJECT_ROOT}`, `${STAGE_ID}` variables.
 
+`human-review --force-complete` dispatches `StageType::Knowledge` to `knowledge_complete::finish_knowledge_stage`: it skips acceptance, marks the stage completed with `merged=true`, and releases dependents without resolving a branch. Standard, integration-verify and knowledge-distill stages keep the progressive merge path.
+
 ## Field Propagation Checklist
 
 When adding new fields to StageDefinition: (1) plan/schema/types.rs, (2) models/stage/types.rs + Default, (3) commands/init/plan_setup.rs mapping, (4) plan/schema/tests/mod.rs make_stage(), (5) ALL test files constructing Stage, (6) validation.rs rules, (7) fs/stage_loading.rs, plan/graph/tests.rs, models/stage/methods.rs.

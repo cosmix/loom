@@ -193,3 +193,13 @@ conventions must not advise `run_in_background` for the completion.
 
 **Fix:** run the completion again as a foreground command; the plan-writer gate conventions should drop the
 `run_in_background` advice.
+
+## Human Review Force Completion Assumes Every Stage Has a Branch
+
+**What happened:** `loom stage human-review knowledge-bootstrap --force-complete` attempted to merge a nonexistent `loom/knowledge-bootstrap` branch and parked the stage in a merge failure.
+
+**Why:** `human_review::handle_force_complete` sent every stage through progressive merge, although `StageType::Knowledge` writes in the main repository and has no stage branch.
+
+**Prevention:** exercise the public human-review command with a knowledge stage, failing acceptance, no stage branch and a waiting dependent. Assert completion, `merged=true`, cleared review reason and dependency release.
+
+**Fix:** after the validated review transition, knowledge stages use `knowledge_complete::finish_knowledge_stage`; branch-backed stage types retain progressive merge. The focused regression reproduces the former missing-branch failure and passes with the dispatch.

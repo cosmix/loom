@@ -2,6 +2,38 @@ use super::*;
 
 #[test]
 #[serial]
+fn human_review_force_completes_knowledge_without_a_branch() {
+    let temp = setup_work_dir();
+    initialize_zero_commit_repo(temp.path());
+    let work_dir = temp.path().join(".loom/work");
+    let mut stage = create_test_stage("knowledge-bootstrap", StageStatus::NeedsHumanReview);
+    stage.stage_type = StageType::Knowledge;
+    stage.review_reason = Some("Acceptance cannot run in the stage environment".into());
+    stage.acceptance = vec![AcceptanceCriterion::Simple("exit 1".into())];
+    save_test_stage(&work_dir, &stage);
+    let mut dependent = create_test_stage("implementation", StageStatus::WaitingForDeps);
+    dependent.dependencies = vec![stage.id.clone()];
+    save_test_stage(&work_dir, &dependent);
+
+    let _guard = EnvGuard::new();
+    std::env::set_current_dir(temp.path()).unwrap();
+    let result = crate::commands::stage::human_review(stage.id.clone(), false, true, None);
+    assert!(result.is_ok(), "force completion failed: {result:?}");
+
+    let completed = load_stage(&stage.id, &work_dir).unwrap();
+    assert_eq!(completed.status, StageStatus::Completed);
+    assert!(completed.merged);
+    assert!(completed.review_reason.is_none());
+    assert!(completed.completed_at.is_some());
+    assert!(completed.completed_commit.is_none());
+    assert_eq!(
+        load_stage(&dependent.id, &work_dir).unwrap().status,
+        StageStatus::Queued
+    );
+}
+
+#[test]
+#[serial]
 fn test_complete_knowledge_stage_sets_merged_true() {
     let temp_dir = setup_work_dir();
     initialize_zero_commit_repo(temp_dir.path());
