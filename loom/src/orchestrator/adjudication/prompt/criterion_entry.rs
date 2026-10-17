@@ -110,6 +110,12 @@ fn build_instructions(input: &KindPromptInput<'_>, entry: &Entry) -> String {
     s.push_str(&judge_not_fix());
     s.push_str(&format!("## Step 1 — RUN THE {}\n\n", noun.to_uppercase()));
     s.push_str(&run_before_judging());
+    s.push_str(&format!(
+        "First run `loom check {} --no-cache` from {} and inspect the disputed\n\
+         {noun}'s reported result. Use the direct checks below to diagnose differences.\n\n",
+        input.stage.id,
+        shell_quote(&input.site.path.to_string_lossy())
+    ));
     match &entry.observe {
         Some(observe) => s.push_str(observe),
         None => s.push_str(&format!(

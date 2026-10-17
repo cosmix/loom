@@ -1,8 +1,7 @@
 //! The briefing for a disputed acceptance criterion: run the criterion, then
 //! decide whether a correct implementation would pass it as written.
 //!
-//! `tests_golden.rs` pins its output byte for byte: a criterion dispute reads
-//! exactly as it did before disputes gained kinds. The `pub(super)` parts
+//! `tests_golden.rs` pins the complete briefing. The `pub(super)` parts
 //! (the verdict rules, the reading of the run, the schema and the evidence
 //! sections) are shared with `criterion_entry.rs`, whose wiring and
 //! wiring-test briefings define "the criterion" as the disputed entry.
@@ -87,6 +86,14 @@ fn run_the_criterion(input: &KindPromptInput<'_>, criterion_index: usize) -> Str
         Some(criterion) => {
             s.push_str("```bash\n");
             s.push_str(&format!("cd {}\n", site.path.display()));
+            s.push_str(&format!("loom check {} --no-cache\n", input.stage.id));
+            s.push_str("```\n\n");
+            s.push_str(&format!(
+                "Use the reported result for acceptance criterion {criterion_index}; other checks and\n\
+                 the aggregate command exit status do not decide this dispute. This runs\n\
+                 the criterion through Loom's setup, environment and confinement policy.\n\
+                 Compare with this direct run only to diagnose a difference:\n\n```bash\n"
+            ));
             s.push_str(criterion.command());
             s.push_str("\necho \"exit: $?\"\n");
             s.push_str("```\n\n");
@@ -153,8 +160,15 @@ pub(super) fn what_the_run_decides() -> String {
     s.push_str("- It runs, fails, and a correct implementation WOULD pass it as written:\n");
     s.push_str("  the implementation is what must change. Reject, at the cost set out\n");
     s.push_str("  under Verdict semantics below.\n");
-    s.push_str("- It PASSES (exit 0): the criterion is satisfiable as written, so the\n");
-    s.push_str("  dispute does not stand. Reject, citing the passing run.\n");
+    s.push_str("- It passes through Loom's criterion runner with the expected result:\n");
+    s.push_str("  the criterion is satisfiable as written. Reject, citing that run.\n");
+    s.push_str("- It passes directly but fails through Loom: compare setup, PATH, binary\n");
+    s.push_str("  visibility and sandbox permissions. A direct-shell pass alone cannot\n");
+    s.push_str("  justify rejection or a claim that the implementation must change.\n");
+    s.push_str("  If a portable amendment preserves the assertion and runs under Loom,\n");
+    s.push_str("  accept with that plan_patch; the system applies it automatically. Do\n");
+    s.push_str("  not ask the operator to edit criteria or weaken the assertion. If no\n");
+    s.push_str("  such amendment is established, request the missing runner evidence.\n");
     s.push_str("- You are blocked from running it — a tool or fixture you lack, a\n");
     s.push_str("  worktree that is gone. This is not a criterion that cannot run:\n");
     s.push_str("  needs-more-evidence, naming the blocker.\n\n");

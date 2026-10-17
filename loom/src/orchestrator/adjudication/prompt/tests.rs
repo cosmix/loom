@@ -84,6 +84,10 @@ fn build_tells_the_session_to_run_the_criterion() {
     let p = build(&plan, &stage, &dispute(0), &work);
 
     assert!(p.instructions.contains("RUN THE CRITERION"));
+    assert!(p.instructions.contains("loom check demo --no-cache"));
+    assert!(p
+        .instructions
+        .contains("reported result for acceptance criterion 0"));
     assert!(
         p.instructions
             .contains(&format!("cd {}", exec_dir.display())),
@@ -95,6 +99,24 @@ fn build_tells_the_session_to_run_the_criterion() {
         .contains("jq -e '[.cities | keys[]] | unique' out.json"));
     assert!(p.instructions.contains("echo \"exit: $?\""));
     assert!(p.evidence.contains("working_dir: `loom`"));
+}
+
+#[test]
+fn a_direct_shell_pass_cannot_reject_a_runner_environment_dispute() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plan, work) = fixture(&tmp);
+    let stage = stage_with_criteria(vec!["loom knowledge check --strict"]);
+    let prompt = build(&plan, &stage, &dispute(0), &work);
+    assert!(prompt
+        .instructions
+        .contains("A direct-shell pass alone cannot\n  justify rejection"));
+    assert!(prompt
+        .instructions
+        .contains("portable amendment preserves the assertion"));
+    assert!(prompt
+        .instructions
+        .contains("the system applies it automatically"));
+    assert!(!prompt.instructions.contains("It PASSES (exit 0)"));
 }
 
 /// A criterion can execute cleanly and still assert a falsehood — a value

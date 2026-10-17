@@ -213,3 +213,13 @@ conventions must not advise `run_in_background` for the completion.
 **Prevention:** inspect both the effective environment and the child filesystem namespace when a host-installed command is missing. Reproduce through the actual confined runner before naming an absolute path as a sufficient recovery.
 
 **Fix:** make the executing Loom binary available to confined commands through an explicit read-only runtime mount and ensure its directory is discoverable, with a regression test covering a restricted PATH.
+
+## Runner Failures Must Not Require Operator Criterion Surgery
+
+**What happened:** the operator had to force-complete a knowledge stage whose criterion could not invoke Loom. Its adjudicator rejected the dispute after a passing direct-shell run and asked a human to repair the runner. The operator clarified that Loom must handle recoverable criterion problems through its dispute machinery.
+
+**Why:** the briefing instructed the adjudicator to reject any passing direct run, without reproducing the completion runner's environment and filesystem boundary. Recommending an absolute path or new placeholder would also leave existing plans broken.
+
+**Prevention:** preserve ordinary `loom ...` criteria. Require evidence from `loom check <stage> --no-cache`, inspect the disputed entry's result, and distinguish a direct-shell diagnostic from the runner's verdict.
+
+**Fix:** the command runner supplies its own executable path and read-only binary mount automatically. Adjudication instructions require runner evidence and permit a portable assertion-preserving amendment through `plan_patch`; a direct-shell pass alone cannot justify rejection or operator criterion edits.

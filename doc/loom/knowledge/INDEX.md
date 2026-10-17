@@ -22,7 +22,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | Dispute to verdict, per-kind rulings | 143 |
+| [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | Dispute to verdict, per-kind rulings | 145 |
 | [codex-concurrency](architecture/codex-concurrency.md) | Codex fan-out limits and degradation | 128 |
 | [codex-plugin](architecture/codex-plugin.md) | Codex plugin install, forwarding | 364 |
 | [completion-recovery](architecture/completion-recovery.md) | HMAC attestation, exit_reason | 34 |
@@ -117,7 +117,7 @@
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented, not forwarded | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Slow reader fixed by forbidding reads | 62 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 102 |
-| [completion-broker-credential](mistakes/completion-broker-credential.md) | Broker fallback, dup naming | 215 |
+| [completion-broker-credential](mistakes/completion-broker-credential.md) | Broker fallback, dup naming | 225 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread | 245 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes, save races | 46 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork after threads, early ready byte | 38 |

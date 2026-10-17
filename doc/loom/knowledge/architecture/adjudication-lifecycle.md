@@ -79,6 +79,8 @@ An accepted amendment's audit row stores the dispute id and the optional reason 
 `plan_patch`; that reason is not necessarily the verdict's full `reasoning` field. For the complete
 adjudication record, use `disputes/<stage>/<n>/verdict.md`.
 
+Criterion adjudicators first run `loom check <stage> --no-cache` and inspect the disputed entry's reported result, including its setup and command boundary. A direct-shell pass alone cannot justify rejection of a failure inside Loom. A portable amendment that preserves the assertion is an `Accept` with `plan_patch`, applied automatically by the existing amendment path. Missing runner evidence produces specific evidence questions instead of a demand for operator criterion edits.
+
 ## Source Path
 
 1. `commands/stage/adjudicate.rs::record_verdict` establishes the guarded verdict record.

@@ -1,5 +1,4 @@
-//! The criterion briefing, byte for byte, as the builder rendered it before
-//! disputes gained kinds. [`GOLDEN`] is that builder's output for the input
+//! The complete criterion briefing. [`GOLDEN`] is the builder's output for the input
 //! below, captured by running it; `{exec}`, `{draft}` and `{listing}` stand
 //! for the parts that depend on the tmp tree.
 
@@ -8,7 +7,7 @@ use crate::plan::schema::AcceptanceCriterion;
 use chrono::Utc;
 
 #[test]
-fn criterion_briefing_matches_the_pre_kind_builder_byte_for_byte() {
+fn criterion_briefing_matches_the_expected_instructions_and_evidence() {
     let tmp = tempfile::tempdir().unwrap();
     let plan = tmp.path().join("PLAN.md");
     std::fs::write(&plan, "stub plan").unwrap();
@@ -69,6 +68,15 @@ execution settles it.
 
 ```bash
 cd {exec}
+loom check demo --no-cache
+```
+
+Use the reported result for acceptance criterion 0; other checks and
+the aggregate command exit status do not decide this dispute. This runs
+the criterion through Loom's setup, environment and confinement policy.
+Compare with this direct run only to diagnose a difference:
+
+```bash
 cargo test
 echo "exit: $?"
 ```
@@ -102,8 +110,15 @@ CRITERION AS WRITTEN?
 - It runs, fails, and a correct implementation WOULD pass it as written:
   the implementation is what must change. Reject, at the cost set out
   under Verdict semantics below.
-- It PASSES (exit 0): the criterion is satisfiable as written, so the
-  dispute does not stand. Reject, citing the passing run.
+- It passes through Loom's criterion runner with the expected result:
+  the criterion is satisfiable as written. Reject, citing that run.
+- It passes directly but fails through Loom: compare setup, PATH, binary
+  visibility and sandbox permissions. A direct-shell pass alone cannot
+  justify rejection or a claim that the implementation must change.
+  If a portable amendment preserves the assertion and runs under Loom,
+  accept with that plan_patch; the system applies it automatically. Do
+  not ask the operator to edit criteria or weaken the assertion. If no
+  such amendment is established, request the missing runner evidence.
 - You are blocked from running it — a tool or fixture you lack, a
   worktree that is gone. This is not a criterion that cannot run:
   needs-more-evidence, naming the blocker.
