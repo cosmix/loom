@@ -11,7 +11,7 @@ use std::time::Duration;
 use super::capture::{load_baseline, save_baseline};
 use super::types::ChangeImpact;
 use crate::plan::schema::{ChangeImpactConfig, CommandConfinement};
-use crate::verify::criteria::{run_spec_with_timeout, CommandSpec};
+use crate::verify::criteria::{run_spec_in_optional_tree, CommandSpec};
 use crate::verify::utils::extract_matching_lines;
 
 /// Default timeout for comparison commands (5 minutes)
@@ -26,6 +26,7 @@ const COMPARE_COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
 /// * `stage_id` - The stage ID to compare
 /// * `config` - Change impact configuration
 /// * `working_dir` - Directory to run commands from
+/// * `tree` - Stage worktree root the commands may use in full
 /// * `work_dir` - Path to .loom/work directory (for loading baseline)
 /// * `confinement` - The stage's resolved level for plan-authored commands
 ///
@@ -35,6 +36,7 @@ pub fn compare_to_baseline(
     stage_id: &str,
     config: &ChangeImpactConfig,
     working_dir: Option<&Path>,
+    tree: Option<&Path>,
     work_dir: &Path,
     confinement: CommandConfinement,
 ) -> Result<ChangeImpact> {
@@ -49,14 +51,19 @@ pub fn compare_to_baseline(
         .unwrap_or(&config.baseline_command);
 
     let spec = CommandSpec::shell(compare_command);
-    let result =
-        match run_spec_with_timeout(&spec, working_dir, COMPARE_COMMAND_TIMEOUT, confinement) {
-            Ok(result) => result,
-            Err(e) => {
-                eprintln!("Warning: Comparison command failed to run: {e}");
-                return Ok(ChangeImpact::failed());
-            }
-        };
+    let result = match run_spec_in_optional_tree(
+        &spec,
+        tree,
+        working_dir,
+        COMPARE_COMMAND_TIMEOUT,
+        confinement,
+    ) {
+        Ok(result) => result,
+        Err(e) => {
+            eprintln!("Warning: Comparison command failed to run: {e}");
+            return Ok(ChangeImpact::failed());
+        }
+    };
 
     // Combine stdout and stderr for pattern matching
     let combined_output = format!("{}\n{}", result.stdout, result.stderr);
@@ -68,39 +75,8 @@ pub fn compare_to_baseline(
     let warning_patterns: Vec<String> = Vec::new();
     let current_warnings = extract_matching_lines(&combined_output, &warning_patterns)?;
 
-    // Compute diff between baseline and current
-    let baseline_failure_set: HashSet<_> = baseline.failure_lines.iter().collect();
-    let current_failure_set: HashSet<_> = current_failures.iter().collect();
-
-    let new_failures: Vec<String> = current_failures
-        .iter()
-        .filter(|f| !baseline_failure_set.contains(f))
-        .cloned()
-        .collect();
-
-    let fixed_failures: Vec<String> = baseline
-        .failure_lines
-        .iter()
-        .filter(|f| !current_failure_set.contains(f))
-        .cloned()
-        .collect();
-
-    // Same for warnings
-    let baseline_warning_set: HashSet<_> = baseline.warning_lines.iter().collect();
-    let current_warning_set: HashSet<_> = current_warnings.iter().collect();
-
-    let new_warnings: Vec<String> = current_warnings
-        .iter()
-        .filter(|w| !baseline_warning_set.contains(w))
-        .cloned()
-        .collect();
-
-    let fixed_warnings: Vec<String> = baseline
-        .warning_lines
-        .iter()
-        .filter(|w| !current_warning_set.contains(w))
-        .cloned()
-        .collect();
+    let (new_failures, fixed_failures) = diff_lines(&baseline.failure_lines, &current_failures);
+    let (new_warnings, fixed_warnings) = diff_lines(&baseline.warning_lines, &current_warnings);
 
     Ok(ChangeImpact::new(
         new_failures,
@@ -109,6 +85,23 @@ pub fn compare_to_baseline(
         fixed_warnings,
         result.exit_code,
     ))
+}
+
+/// Lines only in `current` (new) and lines only in `baseline` (fixed).
+fn diff_lines(baseline: &[String], current: &[String]) -> (Vec<String>, Vec<String>) {
+    let baseline_set: HashSet<_> = baseline.iter().collect();
+    let current_set: HashSet<_> = current.iter().collect();
+    let new = current
+        .iter()
+        .filter(|l| !baseline_set.contains(l))
+        .cloned()
+        .collect();
+    let fixed = baseline
+        .iter()
+        .filter(|l| !current_set.contains(l))
+        .cloned()
+        .collect();
+    (new, fixed)
 }
 
 /// Capture baseline at stage start if not already captured.
@@ -120,12 +113,14 @@ pub fn compare_to_baseline(
 /// * `stage_id` - The stage ID
 /// * `config` - Change impact configuration
 /// * `working_dir` - Directory to run commands from
+/// * `tree` - Stage worktree root the commands may use in full
 /// * `work_dir` - Path to .loom/work directory
 /// * `confinement` - The stage's resolved level for plan-authored commands
 pub fn ensure_baseline_captured(
     stage_id: &str,
     config: &ChangeImpactConfig,
     working_dir: Option<&Path>,
+    tree: Option<&Path>,
     work_dir: &Path,
     confinement: CommandConfinement,
 ) -> Result<()> {
@@ -136,7 +131,8 @@ pub fn ensure_baseline_captured(
 
     // Capture new baseline
     println!("Capturing baseline for change impact analysis...");
-    let baseline = super::capture::capture_baseline(stage_id, config, working_dir, confinement)?;
+    let baseline =
+        super::capture::capture_baseline(stage_id, config, working_dir, tree, confinement)?;
 
     println!(
         "  Baseline captured: {} failure(s), {} warning(s)",
@@ -233,6 +229,7 @@ mod tests {
         let result = ensure_baseline_captured(
             "test-stage",
             &config,
+            None,
             None,
             work_dir,
             CommandConfinement::default(),

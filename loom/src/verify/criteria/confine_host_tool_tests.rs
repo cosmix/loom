@@ -84,7 +84,7 @@ fn private_caches_preserve_installed_reads_network_policy_and_cleanup() {
         ]);
         crate::process::apply_stage_environment(&mut original);
         original.env("HOME", &home);
-        let (mut wrapped, scratch) = super::wrap(&original, network).unwrap();
+        let (mut wrapped, scratch) = super::wrap(&original, None, network).unwrap();
         let scratch_path = scratch.path().to_path_buf();
         scratch.populate().unwrap();
         let output = wrapped.output().unwrap();
@@ -112,8 +112,10 @@ fn private_scratch_does_not_change_acceptance_cache_identity() {
     }
     let root = tempfile::tempdir().unwrap();
     let spec = CommandSpec::program("/bin/bash", ["-c", "true"]);
-    let first = prepare_confined(&spec, Some(root.path()), CommandConfinement::Confined).unwrap();
-    let second = prepare_confined(&spec, Some(root.path()), CommandConfinement::Confined).unwrap();
+    let first =
+        prepare_confined(&spec, Some(root.path()), None, CommandConfinement::Confined).unwrap();
+    let second =
+        prepare_confined(&spec, Some(root.path()), None, CommandConfinement::Confined).unwrap();
     assert_eq!(
         first.containment_policy_revision(),
         second.containment_policy_revision()
@@ -267,7 +269,7 @@ fn actual_biome_git_worktree_keeps_cargo_sources_outside_lint_coverage() {
     original.current_dir(&cwd).args(["ci", "."]);
     crate::process::apply_stage_environment(&mut original);
     original.env("CARGO_HOME", cargo);
-    let (mut command, scratch) = super::wrap(&original, NetworkAccess::Denied).unwrap();
+    let (mut command, scratch) = super::wrap(&original, None, NetworkAccess::Denied).unwrap();
     scratch.populate().unwrap();
     let output = command.output().unwrap();
     assert!(

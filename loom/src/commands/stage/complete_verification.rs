@@ -66,6 +66,7 @@ fn run_goal_checks(
     let result = crate::commands::verify::run_and_verify_stage_goal(
         checks.stage_id,
         verification_dir,
+        checks.worktree_root,
         checks.work_dir,
         checks.stage.plan_version,
     )?;
@@ -96,6 +97,7 @@ fn run_after_checks(
     let gaps = crate::verify::before_after::run_after_stage_checks(
         &stage_def.after_stage,
         verification_dir,
+        checks.worktree_root,
         checks.command_confinement(),
     )?;
     if gaps.is_empty() {
@@ -265,6 +267,7 @@ fn run_change_impact(checks: &VerificationChecks<'_>) -> Result<()> {
         checks.stage_id,
         &config,
         checks.acceptance_dir,
+        checks.worktree_root,
         checks.work_dir,
         checks.command_confinement(),
     ) {

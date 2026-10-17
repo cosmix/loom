@@ -2,6 +2,8 @@
 //! runtime and compiler installation directories are readable. Verification denies
 //! network access; plan-approved provisioning can fetch dependencies.
 //! A missing or unusable OS facility fails before executing repository code.
+//! A command may start below its working tree's root (a package of a monorepo);
+//! the whole tree stays visible so sibling packages and shared stores resolve.
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
@@ -12,29 +14,36 @@ pub(super) enum NetworkAccess {
     Provision,
 }
 
-pub(super) fn wrap(original: &Command, network: NetworkAccess) -> Result<(Command, CargoScratch)> {
+/// Wrap `original` to start in its working directory with read-write access to
+/// `tree`, the working tree containing it (the working directory when `None`).
+pub(super) fn wrap(
+    original: &Command,
+    tree: Option<&Path>,
+    network: NetworkAccess,
+) -> Result<(Command, CargoScratch)> {
     let cwd = original
         .get_current_dir()
         .context("confined command needs a working directory")?
         .canonicalize()
         .context("resolve confined working directory")?;
-    let program = original.get_program();
-    let resolved_program = which::which_in(
-        program,
-        original
-            .get_envs()
-            .find_map(|(k, v)| (k == "PATH").then_some(v).flatten()),
-        &cwd,
-    )
-    .with_context(|| format!("Failed to resolve confined command: {:?}", program))?;
-    let scratch = CargoScratch::prepare(original, &cwd)?;
+    let tree = confined_tree(tree, &cwd)?;
+    let resolved_program = resolve_program(original, &cwd)?;
+    let scratch = CargoScratch::prepare(original, &tree)?;
+    // The outer boundary is reused only when it covers the whole granted tree.
     let mut command =
-        if network == NetworkAccess::Denied && crate::daemon::inherited::available(&cwd) {
+        if network == NetworkAccess::Denied && crate::daemon::inherited::available(&tree) {
             let mut command = Command::new(&resolved_program);
             command.args(original.get_args());
             command
         } else {
-            platform_command(original, &cwd, &resolved_program, scratch.path(), network)?
+            platform_command(
+                original,
+                &tree,
+                &cwd,
+                &resolved_program,
+                scratch.path(),
+                network,
+            )?
         };
     command.env_clear();
     command.envs(original.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))));
@@ -50,6 +59,33 @@ pub(super) fn wrap(original: &Command, network: NetworkAccess) -> Result<(Comman
         command.process_group(0);
     }
     Ok((command, scratch))
+}
+
+fn resolve_program(original: &Command, cwd: &Path) -> Result<PathBuf> {
+    let program = original.get_program();
+    let path = original
+        .get_envs()
+        .find_map(|(k, v)| (k == "PATH").then_some(v).flatten());
+    which::which_in(program, path, cwd)
+        .with_context(|| format!("Failed to resolve confined command: {:?}", program))
+}
+
+/// The tree a command starting in the canonical `cwd` may use: `tree`, which
+/// must contain `cwd`, else `cwd` itself.
+fn confined_tree(tree: Option<&Path>, cwd: &Path) -> Result<PathBuf> {
+    let Some(tree) = tree else {
+        return Ok(cwd.to_path_buf());
+    };
+    let tree = tree
+        .canonicalize()
+        .context("resolve confined working tree")?;
+    anyhow::ensure!(
+        cwd.starts_with(&tree),
+        "confined working directory {} is outside its working tree {}",
+        cwd.display(),
+        tree.display()
+    );
+    Ok(tree)
 }
 
 fn environment_path(command: &Command, key: &str) -> Option<PathBuf> {
@@ -147,8 +183,8 @@ pub(super) struct CargoScratch {
 }
 
 impl CargoScratch {
-    fn prepare(command: &Command, cwd: &Path) -> Result<Self> {
-        let directory = private_temporary_directory(cwd)?;
+    fn prepare(command: &Command, tree: &Path) -> Result<Self> {
+        let directory = private_temporary_directory(tree)?;
         let mut sources = Vec::new();
         if let Some(cargo) = cargo_home(command) {
             for name in ["registry", "git"] {
@@ -187,13 +223,13 @@ impl CargoScratch {
     }
 }
 
-fn private_temporary_directory(cwd: &Path) -> Result<tempfile::TempDir> {
+fn private_temporary_directory(tree: &Path) -> Result<tempfile::TempDir> {
     let mut failure = None;
     // Keep the default first for inherited macOS temporary-directory grants.
-    // /var/tmp also supports callers whose working directory is /tmp itself.
+    // /var/tmp also supports callers whose working tree is /tmp itself.
     for root in [std::env::temp_dir(), "/tmp".into(), "/var/tmp".into()] {
         let root = match root.canonicalize() {
-            Ok(root) if !root.starts_with(cwd) => root,
+            Ok(root) if !root.starts_with(tree) => root,
             _ => continue,
         };
         match tempfile::Builder::new()
@@ -215,7 +251,9 @@ fn private_temporary_directory(cwd: &Path) -> Result<tempfile::TempDir> {
 #[cfg(target_os = "macos")]
 fn platform_command(
     original: &Command,
-    cwd: &Path,
+    tree: &Path,
+    // Seatbelt keeps the process's own working directory, set by `wrap`.
+    _cwd: &Path,
     program: &Path,
     scratch: &Path,
     network: NetworkAccess,
@@ -232,7 +270,7 @@ fn platform_command(
     }
     for root in read_roots(original)
         .into_iter()
-        .chain([cwd.to_path_buf(), scratch.to_path_buf()])
+        .chain([tree.to_path_buf(), scratch.to_path_buf()])
     {
         profile.push_str(&format!(
             "(allow file-read* (subpath {}))",
@@ -241,7 +279,7 @@ fn platform_command(
     }
     profile.push_str(&format!(
         "(allow file-write* (subpath {})(subpath {}))(allow file-write-data (literal \"/dev/null\"))",
-        quote(cwd), quote(scratch)
+        quote(tree), quote(scratch)
     ));
     for root in read_roots(original)
         .into_iter()
@@ -264,6 +302,7 @@ fn platform_command(
 #[cfg(target_os = "linux")]
 fn platform_command(
     original: &Command,
+    tree: &Path,
     cwd: &Path,
     program: &Path,
     scratch: &Path,
@@ -286,8 +325,8 @@ fn platform_command(
     }
     command
         .arg("--bind")
-        .arg(cwd)
-        .arg(cwd)
+        .arg(tree)
+        .arg(tree)
         .arg("--bind")
         .arg(scratch)
         .arg(scratch)
@@ -303,7 +342,7 @@ fn platform_command(
         bind_resolver_target(&mut command, Path::new("/etc/resolv.conf"))?;
     }
     // The new root is a writable tmpfs in which `--bind` created the working
-    // directory's parents; left writable, writes outside the working tree would
+    // tree's parents; left writable, writes outside the working tree would
     // succeed privately instead of failing as the Seatbelt profile makes them.
     // The remount is not recursive: the binds above keep their own modes.
     command.args(["--remount-ro", "/"]);
@@ -327,6 +366,7 @@ fn bind_resolver_target(command: &mut Command, resolver: &Path) -> Result<()> {
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
 fn platform_command(
     _: &Command,
+    _: &Path,
     _: &Path,
     _: &Path,
     _: &Path,

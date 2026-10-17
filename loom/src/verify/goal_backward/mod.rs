@@ -30,12 +30,14 @@ use std::path::Path;
 
 /// Run complete goal-backward verification for a stage
 ///
-/// `confinement` is the stage's resolved level for the plan-authored commands
-/// this runs (truth checks, wiring tests, dead-code checks). `plan_version`
+/// `tree` is the stage worktree root those commands may use in full (`None`:
+/// `working_dir` is the tree). `confinement` is the stage's resolved level for
+/// the plan-authored commands this runs (truth checks, wiring tests, dead-code checks). `plan_version`
 /// is the plan's `loom.version`, which selects the wiring rules.
 pub fn run_goal_backward_verification(
     stage_def: &StageDefinition,
     working_dir: &Path,
+    tree: Option<&Path>,
     confinement: CommandConfinement,
     plan_version: u32,
 ) -> Result<GoalBackwardResult> {
@@ -52,6 +54,7 @@ pub fn run_goal_backward_verification(
     gaps.extend(wiring_gaps(
         stage_def,
         working_dir,
+        tree,
         confinement,
         plan_version,
     )?);
@@ -61,6 +64,7 @@ pub fn run_goal_backward_verification(
         gaps.extend(run_dead_code_check(
             dead_code_check,
             working_dir,
+            tree,
             confinement,
         )?);
     }
@@ -85,6 +89,7 @@ pub fn run_goal_backward_verification(
 fn wiring_gaps(
     stage_def: &StageDefinition,
     working_dir: &Path,
+    tree: Option<&Path>,
     confinement: CommandConfinement,
     plan_version: u32,
 ) -> Result<Vec<VerificationGap>> {
@@ -94,7 +99,8 @@ fn wiring_gaps(
         gaps.extend(indexed_gaps(CriterionField::Wiring, index, found));
     }
     for (index, test) in stage_def.wiring_tests.iter().enumerate() {
-        let found = verify_wiring_tests(std::slice::from_ref(test), working_dir, confinement)?;
+        let found =
+            verify_wiring_tests(std::slice::from_ref(test), working_dir, tree, confinement)?;
         gaps.extend(indexed_gaps(CriterionField::WiringTests, index, found));
     }
     Ok(gaps)
@@ -162,6 +168,7 @@ mod tests {
         let result = run_goal_backward_verification(
             &stage_def,
             tmp.path(),
+            None,
             CommandConfinement::default(),
             1,
         )

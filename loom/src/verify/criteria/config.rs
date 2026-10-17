@@ -1,6 +1,6 @@
 //! Configuration types for acceptance criteria execution
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::time::Duration;
 
 use crate::models::stage::CommandConfinement;
@@ -34,6 +34,11 @@ pub struct CriteriaConfig {
     /// default so a bare `CriteriaConfig::default()` (as used by tests and by
     /// [`super::run_acceptance`]) never touches disk for caching.
     pub cache_dir: Option<PathBuf>,
+
+    /// The working tree a confined command may read and write: the stage's
+    /// worktree root, which contains the directory the command starts in.
+    /// `None` confines each command to its own working directory.
+    pub tree_root: Option<PathBuf>,
 }
 
 impl Default for CriteriaConfig {
@@ -43,6 +48,7 @@ impl Default for CriteriaConfig {
             plan_confinement: None,
             cache: CachePolicy::from_env(),
             cache_dir: None,
+            tree_root: None,
         }
     }
 }
@@ -72,6 +78,13 @@ impl CriteriaConfig {
     /// produced.
     pub fn with_cache_policy(mut self, policy: CachePolicy) -> Self {
         self.cache = policy;
+        self
+    }
+
+    /// Let confined commands use all of `tree_root`, the working tree
+    /// containing their working directory.
+    pub fn with_tree_root(mut self, tree_root: Option<&Path>) -> Self {
+        self.tree_root = tree_root.map(Path::to_path_buf);
         self
     }
 }

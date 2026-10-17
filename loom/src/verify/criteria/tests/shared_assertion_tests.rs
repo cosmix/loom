@@ -32,13 +32,13 @@ fn assert_surfaces(truth: TruthCheck, passed: bool) {
     );
     let wiring = wiring(&truth);
     assert_eq!(
-        verify_truth_checks(&[truth], dir.path(), CommandConfinement::default())
+        verify_truth_checks(&[truth], dir.path(), None, CommandConfinement::default())
             .unwrap()
             .is_empty(),
         passed
     );
     assert_eq!(
-        verify_wiring_tests(&[wiring], dir.path(), CommandConfinement::default())
+        verify_wiring_tests(&[wiring], dir.path(), None, CommandConfinement::default())
             .unwrap()
             .is_empty(),
         passed

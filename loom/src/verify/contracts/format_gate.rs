@@ -71,10 +71,12 @@ fn is_script_check(argv: &[String]) -> bool {
 }
 
 /// The stage's acceptance commands that are formatter checks, run as
-/// acceptance runs them; one problem per check that fails, naming its command.
+/// acceptance runs them (from `working_dir`, inside `worktree_root`); one
+/// problem per check that fails, naming its command.
 pub fn format_problems(
     acceptance: &[AcceptanceCriterion],
     setup: &[String],
+    worktree_root: &Path,
     working_dir: &Path,
     confinement: CommandConfinement,
 ) -> Result<Vec<String>> {
@@ -95,7 +97,7 @@ pub fn format_problems(
         },
         ..Stage::default()
     };
-    let config = CriteriaConfig::default();
+    let config = CriteriaConfig::default().with_tree_root(Some(worktree_root));
     let outcome = run_acceptance_with_config(&stage, Some(working_dir), &config)
         .context("Failed to run the stage's formatter checks")?;
     Ok(outcome
@@ -201,7 +203,7 @@ mod tests {
             AcceptanceCriterion::Simple("false".to_string()),
         ];
         let dir = temp.path().canonicalize().unwrap();
-        format_problems(&acceptance, &[], &dir, CommandConfinement::Confined).unwrap()
+        format_problems(&acceptance, &[], &dir, &dir, CommandConfinement::Confined).unwrap()
     }
 
     #[test]
@@ -224,8 +226,9 @@ mod tests {
     fn no_formatter_check_runs_nothing() {
         let acceptance = [AcceptanceCriterion::Simple("false".to_string())];
         let temp = TempDir::new().unwrap();
+        let dir = temp.path();
         let problems =
-            format_problems(&acceptance, &[], temp.path(), CommandConfinement::Confined).unwrap();
+            format_problems(&acceptance, &[], dir, dir, CommandConfinement::Confined).unwrap();
         assert!(problems.is_empty());
     }
 }

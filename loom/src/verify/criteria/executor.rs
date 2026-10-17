@@ -68,7 +68,22 @@ pub fn run_spec_with_timeout(
     timeout: Duration,
     confinement: CommandConfinement,
 ) -> Result<CriterionResult> {
-    let prepared = confine::prepare_confined(spec, working_dir, confinement)?;
+    let prepared = confine::prepare_confined(spec, working_dir, None, confinement)?;
+    run_prepared_with_timeout(prepared, timeout)
+}
+
+/// [`run_spec_with_timeout`] for a command that starts in `working_dir` and
+/// may read and write all of `tree`, the working tree containing it. `None`
+/// makes the working directory (or the process cwd) the tree, as
+/// [`run_spec_with_timeout`] does.
+pub fn run_spec_in_optional_tree(
+    spec: &CommandSpec,
+    tree: Option<&Path>,
+    working_dir: Option<&Path>,
+    timeout: Duration,
+    confinement: CommandConfinement,
+) -> Result<CriterionResult> {
+    let prepared = confine::prepare_confined(spec, working_dir, tree, confinement)?;
     run_prepared_with_timeout(prepared, timeout)
 }
 

@@ -68,9 +68,12 @@ fn worktree<'a>(checks: &VerificationChecks<'a>, purpose: &str) -> Result<&'a Pa
 fn run_impact_tests(checks: &VerificationChecks<'_>, target_branch: &str) -> Result<()> {
     println!("Running impact-selected tests...");
     let working_dir = checks.acceptance_dir.unwrap_or(Path::new("."));
+    // A selection runs in its package directory with the whole worktree
+    // visible, as acceptance does: packages use their siblings and root stores.
     let config = CriteriaConfig::default()
         .with_plan_confinement(plan_confinement(checks.work_dir))
-        .with_cache_dir(checks.work_dir);
+        .with_cache_dir(checks.work_dir)
+        .with_tree_root(checks.worktree_root);
     let outcome = impact_tests::run(checks.stage, working_dir, &config, target_branch)?;
     for note in &outcome.notes {
         println!("  Note: {note}");

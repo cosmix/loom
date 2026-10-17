@@ -130,15 +130,26 @@ pub(crate) fn resolve_stage_execution_paths(stage: &Stage) -> Result<StageExecut
     })
 }
 
-/// Resolve acceptance directory for knowledge stages in main repository context.
-pub(crate) fn resolve_knowledge_acceptance_dir(stage: &Stage) -> Result<Option<PathBuf>> {
+/// Resolve execution paths for knowledge stages in main repository context.
+/// The tree is the acceptance directory itself (no `worktree_root`), so a
+/// `working_dir` below the repository root does not grant `.git`, `.loom` or
+/// `.worktrees` read-write.
+pub(crate) fn resolve_knowledge_execution_paths(stage: &Stage) -> Result<StageExecutionPaths> {
     let cwd = std::env::current_dir().context("Failed to get current directory")?;
     let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or(cwd);
-
-    resolve_acceptance_dir(Some(repo_root.as_path()), stage.working_dir.as_deref())
+    let acceptance_dir =
+        resolve_acceptance_dir(Some(repo_root.as_path()), stage.working_dir.as_deref())?;
+    Ok(StageExecutionPaths {
+        worktree_root: None,
+        acceptance_dir,
+    })
 }
 
 /// Run acceptance criteria and print standardized output.
+///
+/// Criteria start in `paths.acceptance_dir` and may use all of
+/// `paths.worktree_root`, so a stage whose `working_dir` is one package of a
+/// monorepo still reaches its sibling packages and root-level stores.
 ///
 /// `work_dir` is the state directory, used to pick up the plan-level
 /// command confinement default; the stage's own override still wins over it.
@@ -147,10 +158,11 @@ pub(crate) fn resolve_knowledge_acceptance_dir(stage: &Stage) -> Result<Option<P
 pub(crate) fn run_acceptance_with_display(
     stage: &Stage,
     stage_id: &str,
-    acceptance_dir: Option<&Path>,
+    paths: &StageExecutionPaths,
     work_dir: &Path,
     options: AcceptanceDisplayOptions<'_>,
 ) -> Result<bool> {
+    let acceptance_dir = paths.acceptance_dir.as_deref();
     if stage.acceptance.is_empty() {
         if options.show_empty_message {
             println!("No acceptance criteria defined, treating as passed.");
@@ -167,7 +179,8 @@ pub(crate) fn run_acceptance_with_display(
 
     let config = CriteriaConfig::default()
         .with_plan_confinement(plan_confinement(work_dir))
-        .with_cache_dir(work_dir);
+        .with_cache_dir(work_dir)
+        .with_tree_root(paths.worktree_root.as_deref());
     let result = run_acceptance_with_config(stage, acceptance_dir, &config)
         .context("Failed to run acceptance criteria")?;
 

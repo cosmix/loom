@@ -16,6 +16,12 @@
 #[path = "confine_host.rs"]
 mod host;
 
+/// The OS sandbox launcher tests need, when installed.
+#[cfg(test)]
+pub(crate) fn host_launcher() -> Option<std::path::PathBuf> {
+    host::launcher()
+}
+
 use anyhow::{Context, Result};
 use std::fmt;
 use std::path::{Path, PathBuf};
@@ -93,7 +99,7 @@ impl PreparedCommand {
             .wrapped
             .as_ref()
             .map(|command| command.get_args().collect::<Vec<_>>());
-        let revision = format!("host-os-boundary-v6:{arguments:?}");
+        let revision = format!("host-os-boundary-v7:{arguments:?}");
         match &self.scratch {
             Some(scratch) => revision.replace(
                 scratch.path().to_string_lossy().as_ref(),
@@ -193,16 +199,20 @@ pub fn spawn_confined(
     working_dir: Option<&Path>,
     confinement: CommandConfinement,
 ) -> Result<ConfinedChild> {
-    prepare_confined(spec, working_dir, confinement)?.spawn()
+    prepare_confined(spec, working_dir, None, confinement)?.spawn()
 }
 
-/// Resolve a confined command once, without spawning it yet.
+/// Resolve a confined command once, without spawning it yet. It starts in
+/// `working_dir` and may read and write `tree`, the working tree containing
+/// `working_dir`; with no `tree`, the working directory is the whole tree.
 pub(super) fn prepare_confined(
     spec: &CommandSpec,
     working_dir: Option<&Path>,
+    tree: Option<&Path>,
     confinement: CommandConfinement,
 ) -> Result<PreparedCommand> {
-    prepare(spec, working_dir, confinement, host::NetworkAccess::Denied)
+    let network = host::NetworkAccess::Denied;
+    prepare(spec, working_dir, tree, confinement, network)
 }
 
 /// Provision entries are approved package setup: retain the command boundary
@@ -211,6 +221,7 @@ pub(super) fn prepare_provision(spec: &CommandSpec, working_dir: &Path) -> Resul
     prepare(
         spec,
         Some(working_dir),
+        None,
         CommandConfinement::Confined,
         host::NetworkAccess::Provision,
     )
@@ -219,6 +230,7 @@ pub(super) fn prepare_provision(spec: &CommandSpec, working_dir: &Path) -> Resul
 fn prepare(
     spec: &CommandSpec,
     working_dir: Option<&Path>,
+    tree: Option<&Path>,
     confinement: CommandConfinement,
     network: host::NetworkAccess,
 ) -> Result<PreparedCommand> {
@@ -247,7 +259,7 @@ fn prepare(
         }
     }
     let (wrapped, scratch) = if confinement == CommandConfinement::Confined {
-        let (wrapped, scratch) = host::wrap(&cmd, network)
+        let (wrapped, scratch) = host::wrap(&cmd, tree, network)
             .with_context(|| format!("Failed to confine command: {spec}"))?;
         (Some(wrapped), Some(scratch))
     } else {

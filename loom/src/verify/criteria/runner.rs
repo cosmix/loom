@@ -177,7 +177,8 @@ fn run_with_cache(
     config: &CriteriaConfig,
 ) -> Result<RunOutcome> {
     let started = Instant::now();
-    let prepared = prepare_confined(spec, working_dir, confinement)?;
+    let tree = config.tree_root.as_deref();
+    let prepared = prepare_confined(spec, working_dir, tree, confinement)?;
     let Some(work_dir) = enabled_cache_dir(config) else {
         return execute(prepared, timeout, started, None);
     };

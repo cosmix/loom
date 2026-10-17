@@ -23,7 +23,7 @@ fn failed_analyzers_fail_helper_and_goal_gate() {
     ] {
         let check = check(command);
         let result =
-            run_dead_code_check(&check, dir.path(), CommandConfinement::default()).unwrap();
+            run_dead_code_check(&check, dir.path(), None, CommandConfinement::default()).unwrap();
         assert_eq!(result.is_empty(), passed, "helper: {command}");
         let stage = StageDefinition {
             id: "analyzer".into(),
@@ -32,9 +32,14 @@ fn failed_analyzers_fail_helper_and_goal_gate() {
             dead_code_check: Some(check),
             ..Default::default()
         };
-        let goal =
-            run_goal_backward_verification(&stage, dir.path(), CommandConfinement::default(), 1)
-                .unwrap();
+        let goal = run_goal_backward_verification(
+            &stage,
+            dir.path(),
+            None,
+            CommandConfinement::default(),
+            1,
+        )
+        .unwrap();
         assert_eq!(goal.is_passed(), passed, "goal gate: {command}");
     }
 }
@@ -46,6 +51,7 @@ fn timed_out_analyzer_is_unavailable_analysis() {
     let gaps = run_with_timeout(
         &check("exec sleep 10"),
         dir.path(),
+        None,
         CommandConfinement::default(),
         Duration::from_millis(25),
     )
@@ -59,6 +65,7 @@ fn incomplete_analyzer_output_cannot_certify_absence() {
     let gaps = run_dead_code_check(
         &check("head -c 10485761 /dev/zero; printf unused"),
         dir.path(),
+        None,
         CommandConfinement::default(),
     )
     .unwrap();

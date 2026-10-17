@@ -73,7 +73,7 @@ function src/commands/status/render/completion.rs render_completion_screen 84
 function src/commands/status/render/graph.rs format_stage_annotations 78
 function src/commands/status/render/graph.rs render_graph 64
 function src/commands/status/ui/tui/renderer.rs render_completion 128
-function src/commands/verify.rs execute 72
+function src/commands/verify.rs execute 67
 function src/completions/dynamic/mod.rs complete_after_subcommand 56
 function src/completions/install.rs install 52
 function src/context/refresh/tests_source_graph/enumeration.rs an_unreadable_file_survives_as_a_reported_lexical_only_entry 62
@@ -143,7 +143,7 @@ function src/sandbox/settings/tests.rs test_generate_settings_emits_network_bloc
 function src/sandbox/settings/tests_read_denies.rs test_build_settings_adds_resolved_work_symlink_permissions_nested_layout 74
 function src/sandbox/settings/tests_read_denies.rs test_build_settings_main_repo_drops_stale_escape_from_existing 67
 function src/skills/matcher.rs match_skills 62
-function src/verify/baseline/compare.rs compare_to_baseline 79
+function src/verify/baseline/compare.rs compare_to_baseline 54
 function src/verify/goal_backward/artifacts.rs verify_artifacts 67
 function src/verify/goal_backward/artifacts.rs verify_regression_test 52
 function src/verify/transitions/state.rs are_all_dependencies_satisfied 67

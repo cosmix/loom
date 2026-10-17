@@ -115,14 +115,12 @@ impl Orchestrator {
         }
         let stage_id = stage.id.clone();
 
-        let check_dir = match &stage.working_dir {
-            Some(wd) if wd != "." && !wd.is_empty() => worktree_path.join(wd),
-            _ => worktree_path.to_path_buf(),
-        };
-
         println!("  Running before-stage checks for '{stage_id}'...");
-        match crate::verify::before_after::run_before_stage_checks(&stage.before_stage, &check_dir)
-        {
+        match crate::verify::before_after::run_before_stage_checks(
+            &stage.before_stage,
+            &before_stage_check_dir(stage, worktree_path),
+            Some(worktree_path),
+        ) {
             Ok(gaps) if !gaps.is_empty() => {
                 for gap in &gaps {
                     eprintln!("  ✗ Before-stage: {}", gap.description);
@@ -174,5 +172,13 @@ impl Orchestrator {
         }
 
         false
+    }
+}
+
+/// Directory the stage's `before_stage` checks start in.
+fn before_stage_check_dir(stage: &Stage, worktree_path: &std::path::Path) -> std::path::PathBuf {
+    match &stage.working_dir {
+        Some(wd) if wd != "." && !wd.is_empty() => worktree_path.join(wd),
+        _ => worktree_path.to_path_buf(),
     }
 }

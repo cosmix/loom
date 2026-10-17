@@ -1,6 +1,64 @@
 use crate::models::stage::CommandConfinement;
-use crate::verify::criteria::{run_spec_with_timeout, CommandSpec};
+use crate::verify::criteria::{run_spec_in_optional_tree, run_spec_with_timeout, CommandSpec};
 use std::time::Duration;
+
+// From `<tree>/pkg`: the sibling package reads, the tree root writes, and the
+// file beside the tree stays unreadable and unwritable.
+const TREE_CANARY: &str = "[ \"$(cat ../sibling/file)\" = shared ] && printf root > ../written \
+    && ! cat ../../outside && ! printf escaped > ../../outside";
+
+#[test]
+fn a_package_working_directory_uses_its_whole_tree_and_nothing_beside_it() {
+    if crate::process::sandbox_probe::skip_unless(
+        super::launcher().is_some(),
+        "a_package_working_directory_uses_its_whole_tree_and_nothing_beside_it",
+        "OS sandbox launcher absent",
+    ) {
+        return;
+    }
+    let parent = tempfile::tempdir().unwrap();
+    let tree = parent.path().join("worktree");
+    let package = tree.join("pkg");
+    std::fs::create_dir_all(&package).unwrap();
+    std::fs::create_dir(tree.join("sibling")).unwrap();
+    std::fs::write(tree.join("sibling/file"), "shared").unwrap();
+    let outside = parent.path().join("outside");
+    std::fs::write(&outside, "untouched").unwrap();
+    let result = run_spec_in_optional_tree(
+        &CommandSpec::shell(TREE_CANARY),
+        Some(&tree),
+        Some(&package),
+        Duration::from_secs(15),
+        CommandConfinement::Confined,
+    )
+    .unwrap();
+    assert!(
+        result.success,
+        "stdout={} stderr={}",
+        result.stdout, result.stderr
+    );
+    assert_eq!(
+        std::fs::read_to_string(tree.join("written")).unwrap(),
+        "root"
+    );
+    assert_eq!(std::fs::read_to_string(outside).unwrap(), "untouched");
+}
+
+#[test]
+fn a_working_directory_outside_its_tree_is_refused() {
+    let tree = tempfile::tempdir().unwrap();
+    let elsewhere = tempfile::tempdir().unwrap();
+    let error = run_spec_in_optional_tree(
+        &CommandSpec::shell("true"),
+        Some(tree.path()),
+        Some(elsewhere.path()),
+        Duration::from_secs(15),
+        CommandConfinement::Confined,
+    )
+    .unwrap_err();
+    let message = format!("{error:#}");
+    assert!(message.contains("is outside its working tree"), "{message}");
+}
 
 // Use installed bash builtins so the canary does not depend on startup of a
 // newly linked/copied Mach-O test executable. Both modes exercise the same I/O.
@@ -151,10 +209,12 @@ fn private_cargo_home_uses_read_only_sources_and_hides_credentials() {
         "cat \"$CARGO_HOME/registry/sentinel\" && ! echo changed > \"$CARGO_HOME/registry/sentinel\" && ! cat '{}' && touch \"$CARGO_HOME/.package-cache\" \"$CARGO_HOME/.global-cache\"",
         cargo.join("credentials.toml").display());
     let spec = CommandSpec::shell(line);
-    let mut prepared = prepare_confined(&spec, Some(&cwd), CommandConfinement::Inherit).unwrap();
+    let mut prepared =
+        prepare_confined(&spec, Some(&cwd), None, CommandConfinement::Inherit).unwrap();
     crate::process::apply_stage_environment(&mut prepared.command);
     prepared.command.env("CARGO_HOME", &cargo);
-    let (wrapped, scratch) = host::wrap(&prepared.command, host::NetworkAccess::Denied).unwrap();
+    let (wrapped, scratch) =
+        host::wrap(&prepared.command, None, host::NetworkAccess::Denied).unwrap();
     prepared.wrapped = Some(wrapped);
     prepared.scratch = Some(scratch);
     let result = crate::verify::criteria::executor::run_prepared_with_timeout(
@@ -196,6 +256,7 @@ fn provisioning_exposes_only_the_resolver_symlink_target_read_only() {
     crate::process::apply_stage_environment(&mut original);
     let wrapped = super::platform_command(
         &original,
+        &cwd,
         &cwd,
         std::path::Path::new("/bin/bash"),
         &root.path().join("scratch"),

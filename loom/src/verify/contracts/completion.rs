@@ -33,7 +33,8 @@ pub fn check(
         stage,
         config: CriteriaConfig::default()
             .with_plan_confinement(plan_confinement(work_dir))
-            .with_cache_dir(work_dir),
+            .with_cache_dir(work_dir)
+            .with_tree_root(Some(worktree_root)),
     };
     check_with(stage, work_dir, acceptance_dir, worktree_root, &runner)
 }

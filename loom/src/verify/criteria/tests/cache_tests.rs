@@ -41,6 +41,7 @@ fn execution_identity(repo: &Path) -> ExecutionIdentity {
     let prepared = prepare_confined(
         &CommandSpec::shell("printf ok"),
         Some(repo),
+        None,
         CommandConfinement::Confined,
     )
     .unwrap();
@@ -114,7 +115,7 @@ fn executable_content_change_invalidates_execution_identity() {
     make_executable(&executable);
     let spec = CommandSpec::program(executable.to_string_lossy(), std::iter::empty::<&str>());
     let prepared =
-        prepare_confined(&spec, Some(repo.path()), CommandConfinement::Confined).unwrap();
+        prepare_confined(&spec, Some(repo.path()), None, CommandConfinement::Confined).unwrap();
     let identity =
         ExecutionIdentity::from_prepared(&prepared, CommandConfinement::Confined).unwrap();
     let before = capture(repo.path(), &identity).unwrap();
@@ -152,6 +153,7 @@ fn missing_executable_identity_and_inherited_environment_are_ineligible() {
             std::iter::empty::<&str>(),
         ),
         Some(repo.path()),
+        None,
         CommandConfinement::Confined,
     );
     assert!(
@@ -161,12 +163,14 @@ fn missing_executable_identity_and_inherited_environment_are_ineligible() {
     let inherited = prepare_confined(
         &CommandSpec::shell("true"),
         Some(repo.path()),
+        None,
         CommandConfinement::Inherit,
     )
     .unwrap();
     let dynamic = prepare_confined(
         &CommandSpec::shell("eval dynamic-command"),
         Some(repo.path()),
+        None,
         CommandConfinement::Confined,
     )
     .unwrap();

@@ -364,8 +364,14 @@ fn freeze_refuses_unformatted_contract_files() {
         AcceptanceCriterion::Simple("cargo fmt --check".to_string()),
         AcceptanceCriterion::Simple("false".to_string()),
     ];
-    let problems =
-        format_problems(&acceptance, &[], &crate_dir, CommandConfinement::Confined).unwrap();
+    let problems = format_problems(
+        &acceptance,
+        &[],
+        &crate_dir,
+        &crate_dir,
+        CommandConfinement::Confined,
+    )
+    .unwrap();
     assert_eq!(
         problems.len(),
         1,

@@ -15,6 +15,7 @@ use crate::verify::transitions::{list_all_stages, load_stage, update_stage};
 
 use super::acceptance_runner::{
     resolve_stage_execution_paths, run_acceptance_with_display, AcceptanceDisplayOptions,
+    StageExecutionPaths,
 };
 use super::knowledge_complete::{complete_knowledge_stage, verify_knowledge_for_broker};
 use super::merge_resolver::{spawn_merge_resolver, MergeResolverResult};
@@ -259,7 +260,7 @@ fn run_acceptance_phase(
     stage: &crate::models::stage::Stage,
     stage_id: &str,
     no_verify: bool,
-    acceptance_dir: Option<&Path>,
+    paths: &StageExecutionPaths,
     work_dir: &Path,
 ) -> Result<Option<bool>> {
     // Track whether acceptance criteria passed (None = skipped via --no-verify)
@@ -270,7 +271,7 @@ fn run_acceptance_phase(
         Some(run_acceptance_with_display(
             stage,
             stage_id,
-            acceptance_dir,
+            paths,
             work_dir,
             AcceptanceDisplayOptions {
                 stage_label: Some("stage"),

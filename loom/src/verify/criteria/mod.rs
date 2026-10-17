@@ -66,12 +66,15 @@ mod tests;
 // Re-export public types and functions
 pub use cache::CachePolicy;
 pub use config::{CriteriaConfig, DEFAULT_COMMAND_TIMEOUT};
+#[cfg(test)]
+pub(crate) use confine::host_launcher;
 pub use confine::{
     plan_confinement, resolve_confinement, spawn_confined, CommandSpec, ConfinedChild,
 };
 pub(crate) use executor::run_provision_with_timeout;
 pub use executor::{
-    run_single_criterion, run_single_criterion_with_timeout, run_spec_with_timeout,
+    run_single_criterion, run_single_criterion_with_timeout, run_spec_in_optional_tree,
+    run_spec_with_timeout,
 };
 pub(in crate::verify) use probe::{CriteriaProbe, ProbeRun, ProbeRunner};
 pub use result::{AcceptanceResult, CriterionResult};

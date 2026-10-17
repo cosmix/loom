@@ -163,24 +163,26 @@ fn complete_normal_stage(
         .or_else(|| stage.session.clone())
         .or_else(|| find_session_for_stage(&stage_id, work_dir));
     let execution_paths = resolve_stage_execution_paths(&stage)?;
-    let working_dir: Option<PathBuf> = execution_paths.worktree_root;
-    let acceptance_dir: Option<PathBuf> = execution_paths.acceptance_dir;
+    let StageExecutionPaths {
+        worktree_root,
+        acceptance_dir,
+    } = &execution_paths;
     if control_session.is_none() {
-        sync_worktree_permissions(&working_dir, &acceptance_dir);
+        sync_worktree_permissions(worktree_root, acceptance_dir);
     }
     let snapshot = if no_verify {
         None
     } else {
         Some(crate::handoff::completion::content::VerificationSnapshot::capture(&stage, work_dir)?)
     };
-    verify_acceptance(&stage, no_verify, acceptance_dir.as_deref(), work_dir)?;
+    verify_acceptance(&stage, no_verify, &execution_paths, work_dir)?;
     run_verification_phase(VerificationPhase {
         snapshot: snapshot.as_ref(),
         stage: &mut stage,
         stage_id: &stage_id,
         no_verify,
-        acceptance_dir: &acceptance_dir,
-        worktree_root: &working_dir,
+        acceptance_dir,
+        worktree_root,
         session_id: session_id.as_deref(),
         control_session: control_session.as_deref(),
         work_dir,
@@ -191,9 +193,9 @@ fn complete_normal_stage(
 fn verify_acceptance(
     stage: &Stage,
     no_verify: bool,
-    dir: Option<&Path>,
+    paths: &StageExecutionPaths,
     work_dir: &Path,
 ) -> Result<()> {
-    let result = run_acceptance_phase(stage, &stage.id, no_verify, dir, work_dir)?;
+    let result = run_acceptance_phase(stage, &stage.id, no_verify, paths, work_dir)?;
     ensure_acceptance_passed(result, &stage.id)
 }

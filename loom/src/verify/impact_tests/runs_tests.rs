@@ -72,6 +72,32 @@ fn an_oversized_selection_fails_exec_and_becomes_a_note() {
     assert!(note.len() < 1_000, "{} bytes", note.len());
 }
 
+/// A selection runs in its package with the whole checkout visible, so the
+/// package's sibling packages resolve as they do for acceptance at the root.
+#[test]
+fn a_probe_with_a_tree_root_reads_sibling_packages() {
+    if crate::process::sandbox_probe::skip_unless(
+        crate::verify::criteria::host_launcher().is_some(),
+        "a_probe_with_a_tree_root_reads_sibling_packages",
+        "OS sandbox launcher absent",
+    ) {
+        return;
+    }
+    let root = TempDir::new().unwrap();
+    let package = root.path().join("pkg");
+    std::fs::create_dir(&package).unwrap();
+    std::fs::create_dir(root.path().join("contracts")).unwrap();
+    std::fs::write(root.path().join("contracts/schema"), "shared").unwrap();
+    let stage = Stage::default();
+    let probe = CriteriaProbe {
+        stage: &stage,
+        config: CriteriaConfig::default().with_tree_root(Some(root.path())),
+    };
+    let run = probe.run("cat ../contracts/schema", &package).unwrap();
+    assert_eq!(run.exit_code, Some(0), "{}", run.stderr);
+    assert_eq!(run.stdout, "shared");
+}
+
 #[test]
 fn a_short_command_displays_unchanged() {
     assert_eq!(shown_command("cargo test -- a", 1), "cargo test -- a");

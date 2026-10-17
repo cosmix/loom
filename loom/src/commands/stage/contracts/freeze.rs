@@ -21,7 +21,7 @@ use crate::verify::contracts::format_gate::format_problems;
 use crate::verify::contracts::run_dir::resolve_run;
 use crate::verify::contracts::{is_contract_or_harness, refusal, resolve_adapter};
 use crate::verify::criteria::{
-    plan_confinement, resolve_confinement, run_spec_with_timeout, CommandSpec,
+    plan_confinement, resolve_confinement, run_spec_in_optional_tree, CommandSpec,
 };
 
 use super::{send_freeze, ContractSite};
@@ -184,6 +184,7 @@ fn check_formatting(site: &ContractSite, confinement: CommandConfinement) -> Res
     let unformatted = format_problems(
         &stage.acceptance,
         &stage.setup,
+        &site.worktree_root,
         &site.working_dir,
         confinement,
     )?;
@@ -290,8 +291,9 @@ fn run_contract(
         "Running contract `{}` in {}: {}",
         contract.id, resolved.cwd, resolved.command
     );
-    let run = run_spec_with_timeout(
+    let run = run_spec_in_optional_tree(
         &CommandSpec::shell(resolved.command),
+        Some(worktree_root),
         Some(&resolved.dir),
         CONTRACT_TIMEOUT,
         confinement,

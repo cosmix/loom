@@ -10,7 +10,7 @@ use crate::models::stage::{Stage, StageType};
 use crate::verify::transitions::{load_stage, trigger_dependents, update_stage};
 
 use super::acceptance_runner::{
-    print_acceptance_failure_guidance, resolve_knowledge_acceptance_dir,
+    print_acceptance_failure_guidance, resolve_knowledge_execution_paths,
     run_acceptance_with_display, AcceptanceDisplayOptions,
 };
 use super::complete::print_sandboxed_completion_pending_notice;
@@ -170,11 +170,11 @@ fn trigger_knowledge_dependents(stage_id: &str, work_dir: &Path) -> Result<()> {
 }
 
 fn verify_knowledge_acceptance(stage: &Stage, work_dir: &Path) -> Result<()> {
-    let acceptance_dir = resolve_knowledge_acceptance_dir(stage)?;
+    let paths = resolve_knowledge_execution_paths(stage)?;
     let passed = run_acceptance_with_display(
         stage,
         &stage.id,
-        acceptance_dir.as_deref(),
+        &paths,
         work_dir,
         AcceptanceDisplayOptions {
             stage_label: Some("knowledge stage"),

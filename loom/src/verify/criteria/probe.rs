@@ -21,7 +21,8 @@ pub(in crate::verify) trait ProbeRunner {
     fn run(&self, command: &str, package_dir: &Path) -> Result<ProbeRun>;
 }
 
-/// The acceptance-criteria runner, cache included.
+/// The acceptance-criteria runner, cache included. A command starting in a
+/// package directory may use all of `config.tree_root`, the stage's worktree.
 pub(in crate::verify) struct CriteriaProbe<'a> {
     pub(in crate::verify) stage: &'a Stage,
     pub(in crate::verify) config: CriteriaConfig,

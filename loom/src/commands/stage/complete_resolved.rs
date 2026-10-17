@@ -11,18 +11,21 @@ pub(crate) fn verify_resolved_completion(stage: &Stage, work_dir: &Path) -> Resu
     crate::git::merge::check_resolved_worktree(&repo, &stage.id, stage.completed_commit.as_deref())
         .map_err(anyhow::Error::msg)?;
     let root = crate::git::worktree::stage_worktree_path(stage, &repo)?;
-    let acceptance = super::super::acceptance_runner::resolve_acceptance_dir(
-        Some(&root),
-        stage.working_dir.as_deref(),
-    )?;
+    let paths = StageExecutionPaths {
+        acceptance_dir: super::super::acceptance_runner::resolve_acceptance_dir(
+            Some(&root),
+            stage.working_dir.as_deref(),
+        )?,
+        worktree_root: Some(root),
+    };
     let snapshot = VerificationSnapshot::capture(stage, work_dir)?;
-    let passed = run_acceptance_phase(stage, &stage.id, false, acceptance.as_deref(), work_dir)?;
+    let passed = run_acceptance_phase(stage, &stage.id, false, &paths, work_dir)?;
     ensure_acceptance_passed(passed, &stage.id)?;
     complete_verification::run(&complete_verification::VerificationChecks {
         stage,
         stage_id: &stage.id,
-        acceptance_dir: acceptance.as_deref(),
-        worktree_root: Some(&root),
+        acceptance_dir: paths.acceptance_dir.as_deref(),
+        worktree_root: paths.worktree_root.as_deref(),
         control_session: None,
         work_dir,
     })?;

@@ -10,6 +10,7 @@ use std::path::Path;
 
 use crate::commands::stage::acceptance_runner::{
     resolve_stage_execution_paths, run_acceptance_with_display, AcceptanceDisplayOptions,
+    StageExecutionPaths,
 };
 use crate::plan::parser::parse_plan;
 use crate::verify::criteria::resolve_confinement;
@@ -43,7 +44,6 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
 
     // Resolve acceptance directory using shared stage execution logic
     let execution_paths = resolve_stage_execution_paths(&stage)?;
-    let acceptance_dir = execution_paths.acceptance_dir;
 
     println!(
         "{} Running goal-backward verification for '{}'...\n",
@@ -56,7 +56,7 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
     let acceptance_passed = run_acceptance_with_display(
         &stage,
         stage_id,
-        acceptance_dir.as_deref(),
+        &execution_paths,
         &work_dir,
         AcceptanceDisplayOptions {
             stage_label: None,
@@ -66,18 +66,14 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
 
     // 2. Run goal-backward verification
     if stage_def.has_any_goal_checks() {
-        println!("\n{}", "Goal-Backward Verification:".bold());
-
-        // Use acceptance_dir or fall back to current directory
-        let verify_dir = acceptance_dir
-            .as_deref()
-            .context("No working directory available for goal-backward verification")?;
-
-        // Use shared helper for verification
-        let goal_result =
-            run_and_verify_stage_goal(stage_id, verify_dir, &work_dir, stage.plan_version)?;
-        print_goal_result(&goal_result, suggest);
-        print_summary(acceptance_passed, goal_result.is_passed());
+        run_goal_section(
+            stage_id,
+            &execution_paths,
+            &work_dir,
+            stage.plan_version,
+            suggest,
+            acceptance_passed,
+        )?;
     } else {
         println!("\n{}", "Goal-Backward Verification:".dimmed());
         println!("  {} No artifacts or wiring defined", "−".dimmed());
@@ -115,6 +111,34 @@ fn print_goal_result(result: &GoalBackwardResult, suggest: bool) {
     }
 }
 
+/// Run goal-backward verification and print its result and the summary.
+fn run_goal_section(
+    stage_id: &str,
+    execution_paths: &StageExecutionPaths,
+    work_dir: &Path,
+    plan_version: u32,
+    suggest: bool,
+    acceptance_passed: bool,
+) -> Result<()> {
+    println!("\n{}", "Goal-Backward Verification:".bold());
+
+    let verify_dir = execution_paths
+        .acceptance_dir
+        .as_deref()
+        .context("No working directory available for goal-backward verification")?;
+
+    let goal_result = run_and_verify_stage_goal(
+        stage_id,
+        verify_dir,
+        execution_paths.worktree_root.as_deref(),
+        work_dir,
+        plan_version,
+    )?;
+    print_goal_result(&goal_result, suggest);
+    print_summary(acceptance_passed, goal_result.is_passed());
+    Ok(())
+}
+
 /// Print the final acceptance and goal-backward summary
 fn print_summary(acceptance_passed: bool, goal_passed: bool) {
     println!();
@@ -137,6 +161,7 @@ fn print_summary(acceptance_passed: bool, goal_passed: bool) {
 /// - `loom stage complete` (with verification)
 /// - `loom check` (standalone verification command)
 ///
+/// `tree` is the stage worktree root the plan-authored commands may use in full.
 /// `plan_version` is the runtime stage's plan version, which selects the
 /// wiring rules.
 ///
@@ -144,6 +169,7 @@ fn print_summary(acceptance_passed: bool, goal_passed: bool) {
 pub fn run_and_verify_stage_goal(
     stage_id: &str,
     verification_dir: &Path,
+    tree: Option<&Path>,
     work_dir: &Path,
     plan_version: u32,
 ) -> Result<GoalBackwardResult> {
@@ -168,5 +194,5 @@ pub fn run_and_verify_stage_goal(
     );
 
     // Run goal-backward verification
-    run_goal_backward_verification(stage_def, verification_dir, confinement, plan_version)
+    run_goal_backward_verification(stage_def, verification_dir, tree, confinement, plan_version)
 }
