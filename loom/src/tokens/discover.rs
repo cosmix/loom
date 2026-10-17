@@ -52,9 +52,34 @@ pub(super) fn discover(
     threads: &mut BTreeMap<String, ThreadLookup>,
     now: i64,
 ) -> Result<Vec<Source>> {
-    let mut sources = claude_sources(work_root)?;
-    let stages: BTreeSet<&str> = sources.iter().map(|s| s.stage_id.as_str()).collect();
-    let stage_threads = stage_threads(work_root, &stages);
+    discover_with(
+        work_root,
+        codex_sessions_root,
+        threads,
+        now,
+        crate::codex_lifecycle::authorized_threads,
+    )
+}
+
+fn discover_with(
+    work_root: &Path,
+    codex_sessions_root: Option<&Path>,
+    threads: &mut BTreeMap<String, ThreadLookup>,
+    now: i64,
+    authorized: impl FnOnce(&Path, &[crate::models::session::Session]) -> Vec<(String, String)>,
+) -> Result<Vec<Source>> {
+    let mut sessions = load_all_sessions(&WorkDir::new(work_root)?)?;
+    sessions.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
+    let mut sources = claude_sources(work_root, &sessions);
+    let stages: BTreeSet<&str> = sessions
+        .iter()
+        .filter_map(|s| s.stage_id.as_deref())
+        .filter(|stage| is_safe_id(stage))
+        .collect();
+    let mut stage_threads = stage_threads(work_root, &stages);
+    stage_threads.extend(authorized(work_root, &sessions));
+    let mut seen = HashSet::new();
+    stage_threads.retain(|(_, thread)| seen.insert(thread.clone()));
     resolve_threads(threads, &stage_threads, codex_sessions_root, now);
     let codex: Vec<Source> = stage_threads
         .into_iter()
@@ -72,12 +97,10 @@ pub(super) fn discover(
 /// Main and subagent transcripts of every session record with a safe stage id
 /// and a transcript path, oldest session first. A handed-off stage has several
 /// records; each counts.
-fn claude_sources(work_root: &Path) -> Result<Vec<Source>> {
-    let mut sessions = load_all_sessions(&WorkDir::new(work_root)?)?;
-    sessions.sort_by(|a, b| (a.created_at, &a.id).cmp(&(b.created_at, &b.id)));
+fn claude_sources(work_root: &Path, sessions: &[crate::models::session::Session]) -> Vec<Source> {
     let index = StartedAgentTypeIndex::load(Some(work_root));
     let mut sources = Vec::new();
-    for session in &sessions {
+    for session in sessions {
         let (Some(stage_id), Some(transcript)) = (
             session.stage_id.as_deref(),
             session.transcript_path.as_deref(),
@@ -88,7 +111,7 @@ fn claude_sources(work_root: &Path) -> Result<Vec<Source>> {
             session_sources(stage_id, transcript, &index, &mut sources);
         }
     }
-    Ok(sources)
+    sources
 }
 
 /// One session's main transcript and the `agent-<id>.jsonl` files under
@@ -251,6 +274,9 @@ fn codex_source(
     })
 }
 
+#[cfg(test)]
+#[path = "discover_authorized_tests.rs"]
+mod authorized_tests;
 #[cfg(test)]
 #[path = "discover_tests.rs"]
 mod tests;

@@ -13,9 +13,11 @@ mod jobs;
 mod ledger;
 mod progress;
 mod reconcile;
+mod token_threads;
 
 pub use authorization::CodexAuthorization;
 pub(crate) use ledger::{read_authorization_rows, read_lifecycle_records, LedgerRow};
+pub(crate) use token_threads::authorized_threads;
 
 #[derive(Debug, Default)]
 pub struct ReconcileReport {
@@ -105,6 +107,8 @@ pub(crate) fn has_correlated_lifecycle(work_dir: &Path, identity: &CodexAuthoriz
 }
 
 #[cfg(test)]
-mod test_support;
+pub(crate) mod test_support;
+#[cfg(test)]
+pub(crate) use token_threads::threads_with_state_root;
 #[cfg(test)]
 mod tests;
