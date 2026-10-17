@@ -60,12 +60,15 @@ function laneSeries(stage: StageFlow): { lanes: number[][]; max: number } {
 function Chip({ value, label, trend }: { value: string; label: string; trend: Trend }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-hairline bg-background px-2.5 py-1.5">
-      <span className="font-mono text-sm tabular-nums">{value}</span>
-      <span className="text-[11px] text-muted-foreground">{label}</span>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-2">
+        <span className="font-mono text-sm tabular-nums">{value}</span>
+        <span className="ml-auto text-right text-[11px] text-muted-foreground">{label}</span>
+      </div>
       <Sparkline
         values={trend.values}
         width={96}
         height={20}
+        stretch
         label={trend.label}
         className="text-(--tone-executing)"
       />

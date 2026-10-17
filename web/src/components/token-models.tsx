@@ -36,20 +36,27 @@ export function TokenModels({ flow }: { flow: TokenFlow }) {
         <h3 className="eyebrow">By model</h3>
         <span className="text-xs text-muted-foreground">fresh so far</span>
       </div>
-      <div className="flex flex-wrap items-start gap-4">
-        <div className="flex min-w-[14rem] items-center gap-4">
+      <div className="@container flex flex-wrap items-start gap-4">
+        <div className="flex min-w-0 basis-[26rem] flex-col items-stretch gap-4 @min-[26rem]:flex-row @min-[26rem]:items-center">
           <Pie shares={shares} />
-          <ul aria-label="models" className="flex min-w-0 flex-col gap-1 text-xs">
+          <ul
+            aria-label="models"
+            className="grid min-w-0 flex-1 grid-cols-[0.5rem_minmax(0,1fr)_max-content_max-content] gap-x-2 gap-y-1 text-xs"
+          >
             {shares.map(({ model }, index) => (
-              <li key={model} className="flex items-center gap-1.5">
+              <li key={model} className="col-span-4 grid grid-cols-subgrid items-center">
                 <span
                   aria-hidden="true"
                   className="size-2 shrink-0 rounded-sm"
                   style={{ background: colorAt(index) }}
                 />
-                <span className="truncate font-mono">{model}</span>
-                <span className="font-mono tabular-nums">{percents[index]}%</span>
-                <span className="font-mono text-muted-foreground tabular-nums">
+                <span className="truncate font-mono" title={model}>
+                  {model}
+                </span>
+                <span className="text-right font-mono whitespace-nowrap tabular-nums">
+                  {percents[index]}%
+                </span>
+                <span className="text-right font-mono whitespace-nowrap text-muted-foreground tabular-nums">
                   {compactTokens(rates.get(model) ?? 0)}/m
                 </span>
               </li>
@@ -66,7 +73,14 @@ export function TokenModels({ flow }: { flow: TokenFlow }) {
 function Pie({ shares }: { shares: ReturnType<typeof modelShares> }) {
   let before = 0;
   return (
-    <svg role="img" aria-label="fresh tokens by model" viewBox="0 0 42 42" width={112} height={112}>
+    <svg
+      role="img"
+      aria-label="fresh tokens by model"
+      viewBox="0 0 42 42"
+      width={112}
+      height={112}
+      className="shrink-0 self-center"
+    >
       <circle cx={21} cy={21} r={RADIUS} fill="none" stroke="var(--muted)" strokeWidth={6} />
       {shares.map(({ model, share }, index) => {
         const pct = share * 100;

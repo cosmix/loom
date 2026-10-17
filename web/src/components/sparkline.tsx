@@ -2,19 +2,23 @@ import { cn } from "cn";
 
 import { maxOf } from "@/lib/tokens";
 
+interface SparklineProps {
+  values: readonly number[];
+  width: number;
+  height: number;
+  label: string;
+  className?: string;
+  stretch?: boolean;
+}
+
 export function Sparkline({
   values,
   width,
   height,
   label,
   className,
-}: {
-  values: readonly number[];
-  width: number;
-  height: number;
-  label: string;
-  className?: string;
-}) {
+  stretch = false,
+}: SparklineProps) {
   const max = maxOf(values);
   const points = values.map((value, index) => ({
     x: values.length === 1 ? width : (index / (values.length - 1)) * width,
@@ -31,8 +35,9 @@ export function Sparkline({
       role="img"
       aria-label={label}
       viewBox={`0 0 ${width} ${height}`}
-      width={width}
+      width={stretch ? "100%" : width}
       height={height}
+      preserveAspectRatio={stretch ? "none" : undefined}
       className={cn("overflow-visible", className)}
     >
       <path
@@ -40,9 +45,29 @@ export function Sparkline({
         fill="currentColor"
         fillOpacity={0.2}
       />
-      <path d={line} stroke="currentColor" strokeWidth={1.25} fill="none" />
-      <circle cx={last.x} cy={last.y} r={1.75} fill="currentColor" />
+      <path
+        d={line}
+        stroke="currentColor"
+        strokeWidth={1.25}
+        fill="none"
+        vectorEffect="non-scaling-stroke"
+      />
+      <SparklineDot x={last.x} y={last.y} stretch={stretch} />
     </svg>
+  );
+}
+
+function SparklineDot({ x, y, stretch }: { x: number; y: number; stretch: boolean }) {
+  if (!stretch) return <circle cx={x} cy={y} r={1.75} fill="currentColor" />;
+  // A round, non-scaling stroke keeps the endpoint circular as the chart stretches.
+  return (
+    <path
+      d={`M ${x} ${y} h 0`}
+      stroke="currentColor"
+      strokeWidth={3.5}
+      strokeLinecap="round"
+      vectorEffect="non-scaling-stroke"
+    />
   );
 }
 
