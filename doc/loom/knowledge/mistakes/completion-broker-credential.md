@@ -203,3 +203,13 @@ conventions must not advise `run_in_background` for the completion.
 **Prevention:** exercise the public human-review command with a knowledge stage, failing acceptance, no stage branch and a waiting dependent. Assert completion, `merged=true`, cleared review reason and dependency release.
 
 **Fix:** after the validated review transition, knowledge stages use `knowledge_complete::finish_knowledge_stage`; branch-backed stage types retain progressive merge. The focused regression reproduces the former missing-branch failure and passes with the dispatch.
+
+## Command Lookup Failures Can Be Missing Sandbox Mounts
+
+**What happened:** the initial investigation attributed `loom: not found` during knowledge acceptance to a missing PATH entry and recommended an absolute path without testing the command sandbox.
+
+**Why:** `verify/criteria/confine_host.rs::read_roots` exposes selected toolchain directories but omits the running Loom binary under `~/.local/bin`. Linux always adds the bubblewrap boundary (`daemon/inherited.rs::available` returns false), even inside a stage session. A present PATH entry cannot find a binary hidden from that filesystem view; an absolute path alone cannot fix that.
+
+**Prevention:** inspect both the effective environment and the child filesystem namespace when a host-installed command is missing. Reproduce through the actual confined runner before naming an absolute path as a sufficient recovery.
+
+**Fix:** make the executing Loom binary available to confined commands through an explicit read-only runtime mount and ensure its directory is discoverable, with a regression test covering a restricted PATH.

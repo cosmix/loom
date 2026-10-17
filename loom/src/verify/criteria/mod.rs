@@ -69,6 +69,7 @@ pub use config::{CriteriaConfig, DEFAULT_COMMAND_TIMEOUT};
 pub use confine::{
     plan_confinement, resolve_confinement, spawn_confined, CommandSpec, ConfinedChild,
 };
+pub(crate) use executor::run_provision_with_timeout;
 pub use executor::{
     run_single_criterion, run_single_criterion_with_timeout, run_spec_with_timeout,
 };

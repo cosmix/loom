@@ -37,7 +37,7 @@
 | [daemon-launch](architecture/daemon-launch.md) | Re-exec launch, readiness, socket path | 65 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) | Relayed signed commits | 157 |
 | [directory-structure](architecture/directory-structure.md) | Module tree, state layout, root assets | 50 |
-| [execution-containment](architecture/execution-containment.md) | Sandboxed command containment, limits | 349 |
+| [execution-containment](architecture/execution-containment.md) | Sandboxed command containment, limits | 353 |
 | [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 292 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Deterministic phase, digest, receipts | 86 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | fs/knowledge, INDEX.md, checks | 263 |
@@ -46,7 +46,7 @@
 | [merge-flow](architecture/merge-flow.md) | Finished stage to target branch | 130 |
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Tick order, Monitor, liveness | 58 |
 | [owned-waits](architecture/owned-waits.md) | Worker-set waits, lease, boot ID | 57 |
-| [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) | Plan fields v1/v2, checks, lints | 252 |
+| [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) | Plan fields v1/v2, checks, lints | 254 |
 | [quota-poller](architecture/quota-poller.md) | Usage-quota polling and rendering | 35 |
 | [remote-control](architecture/remote-control.md) | Capability detection, preflight, naming | 81 |
 | [security-and-isolation](architecture/security-and-isolation.md) | 4-layer worktree defense | 212 |
@@ -117,7 +117,7 @@
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented, not forwarded | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Slow reader fixed by forbidding reads | 62 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 102 |
-| [completion-broker-credential](mistakes/completion-broker-credential.md) | Broker fallback, dup naming | 205 |
+| [completion-broker-credential](mistakes/completion-broker-credential.md) | Broker fallback, dup naming | 215 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread | 245 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes, save races | 46 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork after threads, early ready byte | 38 |
@@ -142,7 +142,7 @@
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync | 340 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | hooks/ dir is sandbox-protected | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers vs work state | 298 |
-| [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Sandbox tool failures | 329 |
+| [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Sandbox tool failures | 339 |
 | [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) | Only Edit(path) rules are enforced | 57 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) | deny_unknown_fields | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | LOOM_* wrapper exports contract | 126 |
@@ -157,7 +157,7 @@
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 274 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY, stdin | 274 |
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 398 |
-| [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass with the bug | 322 |
+| [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass with the bug | 332 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn failures, cleanup | 146 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server gotchas | 53 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Producers of a rendered field | 188 |

@@ -327,3 +327,13 @@ unprivileged user namespace `bwrap` creates. With both steps the confined tests 
 **Prevention:** Preserve the failing suite result and distinguish it from standalone reruns. Do not claim a complete suite pass by combining those results.
 
 **Fix:** Record the limitation separately from the verified dashboard and subprocess-wait fixes; investigate formatter availability and confinement in the isolated harness as a separate task.
+
+## Provisioned Bun Installs Fail Before the Stage Can Start
+
+**What happened:** in `../collaterai`, `workspace-scaffold` failed during the guarded frozen Bun install. Several `registry.npmjs.org` downloads returned `ConnectionRefused` even though the saved plan allowed that registry. The plan author had no provisioning-network choice.
+
+**Why:** `orchestrator/provision.rs::run_entry` used the verification command policy. Fresh host verification denies network access, so package provisioning could not fetch missing dependencies; stage domain permissions govern a different sandbox.
+
+**Prevention:** test provisioning through its real runner against a reachable local server and assert that sibling files stay inaccessible. Smoke-test a real frozen Bun install with an empty cache. Keep verification's network-denial regression.
+
+**Fix:** approved provision entries use `run_provision_with_timeout`, retaining environment and filesystem confinement while permitting host networking on Linux and outbound networking on macOS. Bun receives a private cache in the command's temporary directory, removed when the process retires. A real local-server Bun install and the runner regression pass on Linux.

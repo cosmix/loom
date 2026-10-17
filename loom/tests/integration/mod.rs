@@ -5,6 +5,7 @@
 
 pub mod binary_spawn_guard;
 pub mod capsule;
+pub mod confined_loom_runtime;
 pub mod confinement_status;
 pub mod context_catalog;
 pub mod daemon_child_readiness;

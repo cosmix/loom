@@ -1,6 +1,6 @@
 //! Package installs in a plan `provision` command must be hardened: provision runs
-//! on the host, outside the sandbox, in a worktree a stage can edit, so an install
-//! that runs lifecycle scripts or reads repository config runs code the stage wrote.
+//! with network access in a worktree a stage can edit, so an install that runs
+//! lifecycle scripts or reads repository config runs code the stage wrote.
 
 use super::super::shell_lex::{lex, simple_commands, Token, Word};
 use super::super::v2_lints::visit_argvs;

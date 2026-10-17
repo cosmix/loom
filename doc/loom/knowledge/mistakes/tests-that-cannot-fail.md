@@ -320,3 +320,13 @@ the emulation's effect first.
 **Prevention:** read the module declaration before choosing an exact filter, and require a nonzero executed-test count. A unique test-name filter avoids guessing the module path.
 
 **Fix:** run the unique regression name without `--exact` and inspect the executed count and failure before changing production code.
+
+## Completion Fixtures Must Commit Initialized Knowledge Inputs
+
+**What happened:** the binary-lookup regression stopped at the completion snapshot gate before executing its criterion because `WorkDir::initialize` created untracked knowledge files after the fixture's initial commit.
+
+**Why:** completion requires tracked inputs to be committed; a fixture created before workspace initialization does not meet that precondition.
+
+**Prevention:** commit the initialized knowledge tree before exercising real completion, and inspect the error to ensure a red test reaches the intended defect.
+
+**Fix:** commit the fixture's generated knowledge files before invoking completion with the restricted PATH.

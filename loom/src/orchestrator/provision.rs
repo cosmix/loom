@@ -14,8 +14,8 @@ use toml_edit::DocumentMut;
 
 use crate::context::untrusted::flatten_char;
 use crate::fs::work_dir::{read_config, update_config, write_plan_sandbox};
-use crate::plan::schema::{CommandConfinement, LoomConfig, ProvisionEntry};
-use crate::verify::criteria::{run_spec_with_timeout, CommandSpec, CriterionResult};
+use crate::plan::schema::{LoomConfig, ProvisionEntry};
+use crate::verify::criteria::{run_provision_with_timeout, CommandSpec, CriterionResult};
 
 /// How long one provision command may run.
 pub const PROVISION_TIMEOUT: Duration = Duration::from_secs(600);
@@ -117,13 +117,9 @@ fn run_entry(entry: &ProvisionEntry, worktree: &Path) -> Result<(), String> {
         shell_escape::escape(dir.to_string_lossy()),
         entry.command
     );
-    let result = run_spec_with_timeout(
-        &CommandSpec::shell(command),
-        Some(worktree),
-        PROVISION_TIMEOUT,
-        CommandConfinement::Confined,
-    )
-    .map_err(|e| failure(entry, &tail_lines(&format!("{e:#}"))))?;
+    let result =
+        run_provision_with_timeout(&CommandSpec::shell(command), worktree, PROVISION_TIMEOUT)
+            .map_err(|e| failure(entry, &tail_lines(&format!("{e:#}"))))?;
     if result.success {
         Ok(())
     } else {

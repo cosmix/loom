@@ -32,6 +32,43 @@ fn runs_in_the_working_dir() {
 }
 
 #[test]
+fn provision_reaches_network_without_exposing_sibling_files() {
+    use std::io::Read;
+    use std::net::TcpListener;
+
+    let root = TempDir::new().unwrap();
+    let worktree = root.path().join("worktree");
+    fs::create_dir(&worktree).unwrap();
+    let secret = root.path().join("secret");
+    fs::write(&secret, "untouched").unwrap();
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    listener.set_nonblocking(true).unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let command = format!(
+        "/bin/bash --noprofile --norc -c 'test ! -r ../secret && \
+         ! printf escaped > ../secret && \
+         printf fetched > /dev/tcp/127.0.0.1/{port} && printf installed > dependency'"
+    );
+
+    run_provision(&[entry(".", &command)], &worktree).unwrap();
+
+    let (mut connection, _) = listener
+        .accept()
+        .expect("provision connected to the registry");
+    connection
+        .set_read_timeout(Some(Duration::from_secs(2)))
+        .unwrap();
+    let mut request = String::new();
+    connection.read_to_string(&mut request).unwrap();
+    assert_eq!(request, "fetched");
+    assert_eq!(
+        fs::read_to_string(worktree.join("dependency")).unwrap(),
+        "installed"
+    );
+    assert_eq!(fs::read_to_string(secret).unwrap(), "untouched");
+}
+
+#[test]
 fn runs_the_entries_in_order() {
     let worktree = worktree_with_web();
     let entries = [

@@ -1,11 +1,18 @@
 //! OS boundary for host verification. Only the working tree is writable;
-//! runtime and compiler installation directories are readable, network is denied.
+//! runtime and compiler installation directories are readable. Verification denies
+//! network access; plan-approved provisioning can fetch dependencies.
 //! A missing or unusable OS facility fails before executing repository code.
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
-pub(super) fn wrap(original: &Command) -> Result<(Command, CargoScratch)> {
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(super) enum NetworkAccess {
+    Denied,
+    Provision,
+}
+
+pub(super) fn wrap(original: &Command, network: NetworkAccess) -> Result<(Command, CargoScratch)> {
     let cwd = original
         .get_current_dir()
         .context("confined command needs a working directory")?
@@ -20,18 +27,25 @@ pub(super) fn wrap(original: &Command) -> Result<(Command, CargoScratch)> {
         &cwd,
     )
     .with_context(|| format!("Failed to resolve confined command: {:?}", program))?;
-    let mut command = if crate::daemon::inherited::available(&cwd) {
-        let mut command = Command::new(&resolved_program);
-        command.args(original.get_args());
-        command
-    } else {
-        platform_command(original, &cwd, &resolved_program)?
-    };
+    let mut command =
+        if network == NetworkAccess::Denied && crate::daemon::inherited::available(&cwd) {
+            let mut command = Command::new(&resolved_program);
+            command.args(original.get_args());
+            command
+        } else {
+            platform_command(original, &cwd, &resolved_program, network)?
+        };
     let scratch = CargoScratch::prepare(original, &cwd)?;
     command.env_clear();
     command.envs(original.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))));
     command.env("CARGO_HOME", scratch.directory.path());
     command.env("TMPDIR", scratch.directory.path());
+    if network == NetworkAccess::Provision {
+        command.env(
+            "BUN_INSTALL_CACHE_DIR",
+            scratch.directory.path().join("bun-cache"),
+        );
+    }
     command
         .current_dir(&cwd)
         .stdin(Stdio::null())
@@ -81,6 +95,11 @@ fn read_roots(command: &Command) -> Vec<PathBuf> {
     }
     if let Some(cargo) = cargo_home(command) {
         roots.extend([cargo.join("bin"), cargo.join("registry"), cargo.join("git")]);
+    }
+    // Expose only the running binary, not its installation directory (which
+    // can contain unrelated user files). The preparer owns this environment entry.
+    if let Some(executable) = environment_path(command, "LOOM_BIN") {
+        roots.push(executable);
     }
     #[cfg(target_os = "macos")]
     roots.extend(developer_tools().iter().cloned());
@@ -153,7 +172,12 @@ impl CargoScratch {
 }
 
 #[cfg(target_os = "macos")]
-fn platform_command(original: &Command, cwd: &Path, program: &Path) -> Result<Command> {
+fn platform_command(
+    original: &Command,
+    cwd: &Path,
+    program: &Path,
+    network: NetworkAccess,
+) -> Result<Command> {
     let launcher = Path::new("/usr/bin/sandbox-exec");
     if !launcher.is_file() {
         anyhow::bail!("confined verification requires sandbox-exec");
@@ -161,6 +185,9 @@ fn platform_command(original: &Command, cwd: &Path, program: &Path) -> Result<Co
     let quote = |path: &Path| serde_json::to_string(&path.to_string_lossy()).unwrap();
     // dyld opens the root directory while discovering the system Cryptex cache.
     let mut profile = String::from("(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read-metadata)(allow file-read* (literal \"/\"))");
+    if network == NetworkAccess::Provision {
+        profile.push_str("(allow network-outbound)");
+    }
     for root in read_roots(original)
         .into_iter()
         .chain(std::iter::once(cwd.to_path_buf()))
@@ -193,7 +220,12 @@ fn platform_command(original: &Command, cwd: &Path, program: &Path) -> Result<Co
 }
 
 #[cfg(target_os = "linux")]
-fn platform_command(original: &Command, cwd: &Path, program: &Path) -> Result<Command> {
+fn platform_command(
+    original: &Command,
+    cwd: &Path,
+    program: &Path,
+    network: NetworkAccess,
+) -> Result<Command> {
     let launcher =
         which::which("bwrap").context("confined verification requires bubblewrap (bwrap)")?;
     let mut command = Command::new(launcher);
@@ -206,6 +238,9 @@ fn platform_command(original: &Command, cwd: &Path, program: &Path) -> Result<Co
         "--dev",
         "/dev",
     ]);
+    if network == NetworkAccess::Provision {
+        command.arg("--share-net");
+    }
     command
         .arg("--bind")
         .arg(cwd)
@@ -228,7 +263,7 @@ fn platform_command(original: &Command, cwd: &Path, program: &Path) -> Result<Co
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-fn platform_command(_: &Command, _: &Path, _: &Path) -> Result<Command> {
+fn platform_command(_: &Command, _: &Path, _: &Path, _: NetworkAccess) -> Result<Command> {
     anyhow::bail!("confined verification is unsupported on this platform")
 }
 

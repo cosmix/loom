@@ -4,11 +4,15 @@
 
 ## Read This First: What "Containment" Means In Loom
 
-`CommandConfinement::Confined` prepares an OS boundary in `verify/criteria/confine_host.rs` as well as rebuilding the child environment. Fresh host commands use macOS Seatbelt or Linux bubblewrap, allow selected runtime/toolchain reads and worktree writes, and deny network access. Missing containment support is an error.
+`CommandConfinement::Confined` prepares an OS boundary in `verify/criteria/confine_host.rs` as well as rebuilding the child environment. Fresh host verification commands use macOS Seatbelt or Linux bubblewrap, allow selected runtime/toolchain reads and worktree writes, and deny network access. Missing containment support is an error.
+
+Approved plan provision entries use `run_provision_with_timeout`: the same filesystem and environment boundary, with host networking on Linux and outbound networking on macOS. Their dependency downloads do not depend on the stage session's domain allowlist. Bun uses a private `BUN_INSTALL_CACHE_DIR` under the command scratch directory; it is removed after process retirement.
+
+The confined command preparer derives `LOOM_BIN` from the running executable, prepends its directory to `PATH`, and exposes only that binary as a read-only runtime path. Ordinary `loom ...` criteria need no absolute path or placeholder, and an ambient `LOOM_BIN` cannot select a different binary. The containment cache policy revision is `host-os-boundary-v5`.
 
 On macOS, an already sandboxed stage can reuse its inherited capsule only through `daemon/inherited`: positive kernel sandbox evidence, protected daemon and stage/session/capsule records, authenticated socket peer identity, live process ancestry and reciprocal stage ownership must agree. Environment strings and tokens alone cannot authorize inheritance. Session settings grant the exact daemon socket; existing sessions without that grant require relaunch.
 
-Inherited execution retains the approved stage capsule permissions, including any network or shared-cache grants. Fresh host execution uses the stricter command policy. Stage `NetworkConfig` controls the session capsule; it is not a per-command network override.
+Inherited execution retains the approved stage capsule permissions, including any network or shared-cache grants. Fresh host verification uses the stricter command policy. Stage `NetworkConfig` controls the session capsule; it is not a per-command network override.
 
 Host Cargo execution uses a private RAII-owned Cargo home with read-only shared registry/git sources. `ConfinedChild` and the criterion executor retain resources until owned-process retirement. Current verification outcomes and platform coverage are recorded in `doc/astra-bug-sweep-2026-10-15.md`.
 

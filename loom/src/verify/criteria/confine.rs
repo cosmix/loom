@@ -90,7 +90,7 @@ impl PreparedCommand {
 
     pub(super) fn containment_policy_revision(&self) -> String {
         format!(
-            "host-os-boundary-v4:{:?}",
+            "host-os-boundary-v5:{:?}",
             self.wrapped
                 .as_ref()
                 .map(|cmd| cmd.get_args().collect::<Vec<_>>())
@@ -196,12 +196,32 @@ pub(super) fn prepare_confined(
     working_dir: Option<&Path>,
     confinement: CommandConfinement,
 ) -> Result<PreparedCommand> {
+    prepare(spec, working_dir, confinement, host::NetworkAccess::Denied)
+}
+
+/// Provision entries are approved package setup: retain the command boundary
+/// while permitting the network needed to fetch dependencies.
+pub(super) fn prepare_provision(spec: &CommandSpec, working_dir: &Path) -> Result<PreparedCommand> {
+    prepare(
+        spec,
+        Some(working_dir),
+        CommandConfinement::Confined,
+        host::NetworkAccess::Provision,
+    )
+}
+
+fn prepare(
+    spec: &CommandSpec,
+    working_dir: Option<&Path>,
+    confinement: CommandConfinement,
+    network: host::NetworkAccess,
+) -> Result<PreparedCommand> {
     let mut cmd = build_command(spec);
 
     match confinement {
         // Rebuild the child's environment from the documented host allowlist so
         // plan-authored commands never inherit loom's ambient credentials.
-        CommandConfinement::Confined => crate::process::apply_stage_environment(&mut cmd),
+        CommandConfinement::Confined => apply_confined_environment(&mut cmd)?,
         // Explicit plan opt-in: the command genuinely needs what loom was given.
         CommandConfinement::Inherit => {}
     }
@@ -221,8 +241,8 @@ pub(super) fn prepare_confined(
         }
     }
     let (wrapped, scratch) = if confinement == CommandConfinement::Confined {
-        let (wrapped, scratch) =
-            host::wrap(&cmd).with_context(|| format!("Failed to confine command: {spec}"))?;
+        let (wrapped, scratch) = host::wrap(&cmd, network)
+            .with_context(|| format!("Failed to confine command: {spec}"))?;
         (Some(wrapped), Some(scratch))
     } else {
         (None, None)
@@ -235,6 +255,25 @@ pub(super) fn prepare_confined(
         wrapped,
         scratch,
     })
+}
+
+/// The running executable is a runtime dependency of `loom ...` criteria.
+/// Derive it from this process, never from a caller-supplied `LOOM_BIN`.
+fn apply_confined_environment(command: &mut Command) -> Result<()> {
+    crate::process::apply_stage_environment(command);
+    let executable = std::env::current_exe().context("resolve the running Loom executable")?;
+    let directory = executable
+        .parent()
+        .context("Loom executable has no parent directory")?;
+    let path = command
+        .get_envs()
+        .find_map(|(key, value)| (key == "PATH").then_some(value).flatten())
+        .unwrap_or_else(|| std::ffi::OsStr::new("/usr/bin:/bin"));
+    let directories = std::iter::once(directory.to_path_buf())
+        .chain(std::env::split_paths(path).filter(|entry| entry != directory));
+    let path = std::env::join_paths(directories).context("build the confined command PATH")?;
+    command.env("PATH", path).env("LOOM_BIN", executable);
+    Ok(())
 }
 
 /// Effective confinement for one stage's plan-authored commands.

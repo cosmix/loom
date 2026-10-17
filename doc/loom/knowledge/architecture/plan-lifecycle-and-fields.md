@@ -238,6 +238,8 @@ absent from every stage worktree: a plan whose briefs cite a doc commits it with
 
 Every JS install also needs the leading `.npmrc` refusal: `test ! -e .npmrc && test ! -L .npmrc && ...` as the first two commands with every top-level operator `&&` (a newline after `&&` or at the end is allowed), because `test ! -e .npmrc; npm ci` or `... || true && ...` accepts a refusal that gates nothing. `changes_directory` walks `visit_argvs` (nested scripts, wrapper-stripped argv) and rejects `cd`, `pushd` and `popd` after the refusal, since the refusal tests only the entry's working directory. The JS-provision lint suggests exactly these forms from the same constants and skips dependency-free packages (`skills::project::probe::declares_dependencies`, which reads `package.json` root-anchored through `safe_read`; a symlinked or over 256 KiB manifest counts as declaring dependencies).
 
+- **Command boundary.** Approved provision entries run through `run_provision_with_timeout`, with the verification runner's filesystem and environment confinement plus dependency-download networking. Linux shares host networking and macOS allows outbound connections. The stage session's domain allowlist is separate. Bun's cache is private to the provision command and removed on retirement.
+
 ## Plan Environment Lints
 
 `loom plan verify` judges the environment a stage needs, not only its fields (`plan/schema/validation/v2_lints/`):

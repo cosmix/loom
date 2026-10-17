@@ -72,6 +72,17 @@ pub fn run_spec_with_timeout(
     run_prepared_with_timeout(prepared, timeout)
 }
 
+/// Execute an approved provision entry with network access and the same
+/// filesystem, environment, timeout and process-retirement protections.
+pub(crate) fn run_provision_with_timeout(
+    spec: &CommandSpec,
+    working_dir: &Path,
+    timeout: Duration,
+) -> Result<CriterionResult> {
+    let prepared = confine::prepare_provision(spec, working_dir)?;
+    run_prepared_with_timeout(prepared, timeout)
+}
+
 /// Execute a command already prepared by the confinement path.
 pub(super) fn run_prepared_with_timeout(
     mut prepared: PreparedCommand,
