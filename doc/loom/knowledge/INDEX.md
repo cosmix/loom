@@ -98,7 +98,7 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [code-style-and-structure](conventions/code-style-and-structure.md) | Rust naming, errors, size limits | 276 |
-| [commits](conventions/commits.md) | Grouped Conventional Commits | 29 |
+| [commits](conventions/commits.md) | Grouped Conventional Commits | 24 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute authority, budgets | 119 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, cargo, CI paths, size ledger | 227 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, plugin scope | 153 |
