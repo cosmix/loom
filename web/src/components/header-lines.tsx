@@ -104,7 +104,7 @@ export function SummaryLine({ snapshot, attention }: { snapshot: Snapshot; atten
         cell("waiting", "waiting-for-deps", "waiting"),
         {
           key: "attention",
-          glyph: "!",
+          glyph: "⚠",
           count: counts.attention,
           label: "attention",
           tone: "blocked",
