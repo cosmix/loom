@@ -2,10 +2,7 @@
 
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::plan::parser::{load_stage_definition_from_plan, parse_plan, ParsedPlan};
-use crate::plan::schema::{
-    ChangeImpactConfig, ChangeImpactPolicy, CommandConfinement, StageDefinition,
-};
-use crate::verify::baseline::{compare_to_baseline, ChangeImpact};
+use crate::plan::schema::{CommandConfinement, StageDefinition};
 use crate::verify::criteria::{plan_confinement, resolve_confinement};
 use crate::verify::duplicate_detection::detect_duplicate_symbols;
 use crate::verify::wiring_detection::{detect_unwired_files, UnwiredFile};
@@ -50,7 +47,6 @@ pub(super) fn run(checks: &VerificationChecks<'_>) -> Result<()> {
     run_unwired_check(checks, &base_branch)?;
     run_duplicate_check(checks, &base_branch)?;
     run_aggregated_check(checks)?;
-    run_change_impact(checks)?;
     Ok(())
 }
 
@@ -255,79 +251,6 @@ fn stage_wiring_gaps(
     Ok(gaps)
 }
 
-fn run_change_impact(checks: &VerificationChecks<'_>) -> Result<()> {
-    let Some(config) = load_change_impact_config(checks.work_dir)? else {
-        return Ok(());
-    };
-    if config.policy == ChangeImpactPolicy::Skip {
-        return Ok(());
-    }
-    println!("Running change impact comparison...");
-    let impact = match compare_to_baseline(
-        checks.stage_id,
-        &config,
-        checks.acceptance_dir,
-        checks.worktree_root,
-        checks.work_dir,
-        checks.command_confinement(),
-    ) {
-        Ok(impact) => impact,
-        Err(error) => {
-            fail_closed_or_warn(checks, "Change impact comparison", error)?;
-            return Ok(());
-        }
-    };
-    if !impact.comparison_succeeded {
-        return fail_closed_or_warn(
-            checks,
-            "Change impact comparison",
-            anyhow::anyhow!("comparison command did not complete successfully"),
-        );
-    }
-    report_change_impact(&impact);
-    enforce_change_impact(checks.stage_id, config.policy, &impact)
-}
-
-fn report_change_impact(impact: &ChangeImpact) {
-    println!("  {}", impact.summary());
-    if impact.has_new_failures() {
-        println!("  New failures detected:");
-        for failure in &impact.new_failures {
-            println!("    - {failure}");
-        }
-    }
-    if !impact.fixed_failures.is_empty() {
-        println!("  Fixed failures:");
-        for fixed in &impact.fixed_failures {
-            println!("    + {fixed}");
-        }
-    }
-}
-
-fn enforce_change_impact(
-    stage_id: &str,
-    policy: ChangeImpactPolicy,
-    impact: &ChangeImpact,
-) -> Result<()> {
-    if !impact.has_new_failures() {
-        return Ok(());
-    }
-    match policy {
-        ChangeImpactPolicy::Fail => {
-            eprintln!(
-                "Change impact check FAILED for stage '{stage_id}' - new failures introduced"
-            );
-            eprintln!("  Fix the issues and run 'loom stage complete {stage_id}' again");
-            bail!("Change impact check failed for stage '{stage_id}' - new failures introduced");
-        }
-        ChangeImpactPolicy::Warn => {
-            eprintln!("⚠️  Warning: New failures introduced, but continuing due to 'warn' policy")
-        }
-        ChangeImpactPolicy::Skip => {}
-    }
-    Ok(())
-}
-
 fn fail_closed_or_warn(
     checks: &VerificationChecks<'_>,
     label: &str,
@@ -378,8 +301,4 @@ fn load_parsed_plan(work_dir: &Path) -> Result<Option<ParsedPlan>> {
         return Ok(None);
     };
     parse_plan(&plan_path).map(Some)
-}
-
-fn load_change_impact_config(work_dir: &Path) -> Result<Option<ChangeImpactConfig>> {
-    Ok(load_parsed_plan(work_dir)?.and_then(|plan| plan.metadata.loom.change_impact))
 }

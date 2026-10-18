@@ -1,7 +1,7 @@
 //! Confinement for plan-authored commands.
 //!
-//! Every acceptance criterion, setup command, truth check, wiring test,
-//! dead-code check and change-impact command in a loom plan becomes a process
+//! Every acceptance criterion, setup command, truth check, wiring test and
+//! dead-code check in a loom plan becomes a process
 //! through [`spawn_confined`] — it is the single leaf primitive for that whole
 //! family. Plans are trusted artifacts (see the trust model in [`super`]), but
 //! trusted is not privileged: by default their commands run with a rebuilt,

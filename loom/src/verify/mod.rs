@@ -1,4 +1,3 @@
-pub mod baseline;
 pub mod before_after;
 pub mod context;
 pub mod contracts;
@@ -16,10 +15,6 @@ pub mod transitions;
 pub mod utils;
 pub mod wiring_detection;
 
-pub use baseline::{
-    baseline_exists, compare_to_baseline, ensure_baseline_captured, load_baseline, save_baseline,
-    ChangeImpact, TestBaseline,
-};
 pub use before_after::{run_after_stage_checks, run_before_stage_checks};
 pub use context::CriteriaContext;
 pub use criteria::{

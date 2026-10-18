@@ -15,9 +15,7 @@ the deleted PLAN-sandbox-escape-hardening, recoverable with `git show e6f00616^:
 
 ## ReDoS Potential in Plan Pattern Regex
 
-User-provided regex patterns in plan files (failure_patterns, wiring patterns) are compiled and executed without complexity checks. While mitigated by trust model (plan authors = trusted), consider adding regex timeout or complexity limits for defense in depth.
-
-Files: src/verify/baseline/capture.rs:76-79, src/verify/baseline/compare.rs:155-158
+User-provided regex patterns in plan wiring checks are compiled and executed without complexity checks. While mitigated by trust model (plan authors = trusted), consider adding regex timeout or complexity limits for defense in depth.
 
 ## Three Stage Environment Allowlists
 

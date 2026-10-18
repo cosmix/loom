@@ -153,9 +153,6 @@ pub struct LoomConfig {
     /// Plan-level sandbox configuration (defaults for all stages)
     #[serde(default)]
     pub sandbox: SandboxConfig,
-    /// Plan-level change impact configuration
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub change_impact: Option<ChangeImpactConfig>,
     /// Plan-level adjudication configuration (autonomous criteria amendment
     /// limits). When omitted, defaults apply via [`AdjudicationConfig::default`].
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -357,38 +354,6 @@ pub use stage_reexports::{
     AcceptanceCriterion, ContractSpec, DeadCodeCheck, Implementer, Implementers, ReachableCheck,
     RegressionTest, SuccessCriteria, TruthCheck, WiringCheck, WiringTest,
 };
-
-/// Policy for handling change impact failures.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ChangeImpactPolicy {
-    /// Fail the stage if impact check fails
-    #[default]
-    Fail,
-    /// Warn but allow stage to continue
-    Warn,
-    /// Skip impact checking entirely
-    Skip,
-}
-
-/// Configuration for change impact analysis.
-///
-/// Compares before/after states to detect unintended changes.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
-pub struct ChangeImpactConfig {
-    /// Command to generate baseline (run before changes)
-    pub baseline_command: String,
-    /// Command to generate comparison (run after changes)
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub compare_command: Option<String>,
-    /// Patterns in diff output that indicate failure
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub failure_patterns: Vec<String>,
-    /// Policy for handling failures
-    #[serde(default)]
-    pub policy: ChangeImpactPolicy,
-}
 
 /// Allowed values for `reasoning_effort` on a stage.
 ///

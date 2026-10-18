@@ -8,8 +8,8 @@ use super::types::PermissionMode;
 /// How far loom confines a plan-authored command when it executes it.
 ///
 /// Plan YAML is a trusted artifact, but it is not daemon-authority code:
-/// acceptance criteria, setup commands, truth checks, wiring tests, dead-code
-/// checks and baseline commands all run as child processes of loom itself.
+/// acceptance criteria, setup commands, truth checks, wiring tests and
+/// dead-code checks all run as child processes of loom itself.
 /// `Confined` (the default) rebuilds a minimal environment for those children
 /// instead of handing them the daemon's ambient one.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]

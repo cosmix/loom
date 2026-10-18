@@ -1,7 +1,7 @@
 use super::*;
 use crate::handoff::completion::content::VerificationSnapshot;
 
-/// Run verification phase (goal-backward verification and change impact comparison)
+/// Run verification phase (goal-backward verification)
 ///
 /// If verifications pass, performs progressive merge. If --no-verify is used, skips all checks.
 pub(super) struct VerificationPhase<'a> {
