@@ -13,3 +13,5 @@ mod merge_lifecycle_e2e_tests_conflict;
 mod merge_lifecycle_e2e_tests_guard_contracts;
 #[path = "merge_lifecycle_e2e_tests_support.rs"]
 mod merge_lifecycle_e2e_tests_support;
+#[path = "merge_lifecycle_e2e_tests_sync.rs"]
+mod merge_lifecycle_e2e_tests_sync;

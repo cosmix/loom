@@ -330,3 +330,23 @@ fn restart_restores_multiple_surviving_sessions_into_capacity_accounting() {
     assert_eq!(active.len(), 3);
     assert_eq!(max_parallel_sessions.saturating_sub(active.len()), 1);
 }
+
+#[test]
+fn marking_the_graph_executing_forces_a_node_the_stage_file_has_already_passed() {
+    let temp = TempDir::new().unwrap();
+    let mut orchestrator = resume_orchestrator(
+        &temp,
+        ExecutionGraph::build(dependent_definitions()).unwrap(),
+    );
+    assert_eq!(
+        orchestrator.graph.get_node("beta").unwrap().status,
+        StageStatus::WaitingForDeps
+    );
+
+    orchestrator.mark_graph_executing("beta").unwrap();
+
+    assert_eq!(
+        orchestrator.graph.get_node("beta").unwrap().status,
+        StageStatus::Executing
+    );
+}

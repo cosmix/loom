@@ -8,7 +8,7 @@
 //! sibling `session_adoption.rs`, split out to keep this file under the
 //! maintainability limit too. Behavior is unchanged from before the move.
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use chrono::Utc;
 
 use crate::models::failure::{FailureInfo, FailureType};
@@ -106,9 +106,7 @@ impl Orchestrator {
             );
             return Ok(None);
         }
-        self.graph
-            .mark_executing(stage_id)
-            .context("Failed to mark stage as executing in graph")?;
+        self.mark_graph_executing(stage_id)?;
 
         Ok(Some(session))
     }

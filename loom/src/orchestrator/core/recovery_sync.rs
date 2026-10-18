@@ -1,8 +1,8 @@
 //! Project complete stage snapshots into the disposable graph and apply guarded retries.
 use super::{recovery::check_retry_eligibility, Orchestrator};
 use crate::models::stage::{Stage, StageStatus, StageType};
-use crate::verify::transitions::update_stage_at_path;
-use anyhow::Result;
+use crate::verify::transitions::{load_stage, update_stage_at_path};
+use anyhow::{Context, Result};
 use std::path::Path;
 
 impl Orchestrator {
@@ -28,9 +28,38 @@ impl Orchestrator {
         for id in merge_candidates {
             if self.merge_retry_attempted.insert(id.clone()) {
                 let _ = self.try_auto_merge(&id);
+                self.reproject_from_file(&id)?;
             }
         }
         self.graph.refresh_ready_status();
+        Ok(())
+    }
+
+    /// Re-project a stage whose file changed during this pass (auto-merge
+    /// writes `merged` and may change status) so readiness is computed from
+    /// the same state the file-based schedulers see. A failed reload is
+    /// logged and skipped; the next pass re-projects it.
+    fn reproject_from_file(&mut self, stage_id: &str) -> Result<()> {
+        match load_stage(stage_id, &self.config.work_dir) {
+            Ok(stage) => self.project_stage(&stage),
+            Err(error) => {
+                tracing::warn!(stage_id, %error, "Cannot reload stage after auto-merge");
+                Ok(())
+            }
+        }
+    }
+
+    /// Bring the graph node to Executing after the stage file already is. The
+    /// file is authoritative and a session is about to run, so a node that is
+    /// not Queued (stale projection) is forced rather than killing the daemon
+    /// with the file Executing and no live session.
+    pub(super) fn mark_graph_executing(&mut self, stage_id: &str) -> Result<()> {
+        if let Err(error) = self.graph.mark_executing(stage_id) {
+            tracing::warn!(stage_id, %error, "Graph disagrees with Executing stage file; forcing node");
+            self.graph
+                .force_status(stage_id, StageStatus::Executing)
+                .context("Failed to mark stage as executing in graph")?;
+        }
         Ok(())
     }
 
