@@ -1,6 +1,7 @@
-//! Bind checks to committed content. Generated untracked output and scaffolding are
-//! excluded; tracked scaffolding is never exempt. Ignore rules do not grant
-//! input exemptions: only named generated output locations are permitted.
+//! Bind checks to committed content. Untracked output the committed `.gitignore`
+//! files ignore (`generated`) and loom's own scaffolding are excluded; tracked
+//! files are never exempt, and a stage declaration that names a path makes it
+//! a required input.
 use crate::git::worktree::{stage_worktree_path, WorktreeGit};
 use crate::models::stage::{Stage, StageType};
 use anyhow::{bail, ensure, Context, Result};
@@ -56,26 +57,24 @@ fn scope(stage: &Stage, args: &mut Vec<&str>) {
 fn reject_untracked(stage: &Stage, git: &WorktreeGit) -> Result<()> {
     let mut args = vec!["ls-files", "--others", "-z"];
     scope(stage, &mut args);
-    let output = git.run(&args)?;
-    ensure!(
-        output.status.success(),
-        "cannot enumerate untracked completion inputs"
-    );
-    for path in output
-        .stdout
-        .split(|byte| *byte == 0)
-        .filter(|p| !p.is_empty())
-    {
-        let path = std::str::from_utf8(path).context("non-UTF-8 untracked completion input")?;
-        reject_untracked_input(stage, git.work_tree(), path)?;
+    let ignored = super::generated::ignored_output(stage, git)?;
+    let mut outputs = Vec::new();
+    for path in super::generated::listed_paths(git, &args)? {
+        if ignored.contains(&path) {
+            outputs.push(path);
+        } else {
+            reject_untracked_input(stage, git.work_tree(), &path)?;
+        }
     }
+    super::generated::reject_declared_output(stage, git, &outputs)?;
     reject_unlisted_tool_entries(stage, git)
 }
 
 fn reject_untracked_input(stage: &Stage, root: &Path, path: &str) -> Result<()> {
     ensure!(
         completion_scaffold(path, root) && !super::content_inputs::declared_input(stage, path)?,
-        "untracked completion input '{path}': commit required inputs before verification"
+        "untracked completion input '{path}': commit required inputs, or commit a .gitignore \
+         rule for generated output, before verification"
     );
     Ok(())
 }
@@ -124,11 +123,10 @@ fn verify_checkout_branch(stage: &Stage, git: &WorktreeGit) -> Result<()> {
     Ok(())
 }
 
-// Keep this list narrower than cleanup's directory-level scaffold exemptions.
+// Loom's own state in the checkout, whatever the project ignores. Keep this
+// list narrower than cleanup's directory-level scaffold exemptions.
 fn completion_scaffold(path: &str, root: &Path) -> bool {
-    if crate::verify::tool_artifacts::is_tool_artifact(root, path)
-        || super::generated::is_generated_dependency(path)
-    {
+    if crate::verify::tool_artifacts::is_tool_artifact(root, path) {
         return true;
     }
     match path {
@@ -137,9 +135,7 @@ fn completion_scaffold(path: &str, root: &Path) -> bool {
         crate::fs::memory::SPOOL_RELPATH
         | crate::fs::stage_request::SPOOL_RELPATH
         | crate::telemetry::TELEMETRY_SPOOL_RELPATH => true,
-        _ => [".loom/cache/", "target/", "loom/target/"]
-            .iter()
-            .any(|prefix| path.starts_with(prefix)),
+        _ => path.starts_with(".loom/cache/"),
     }
 }
 
@@ -186,3 +182,7 @@ impl VerificationSnapshot {
 #[cfg(test)]
 #[path = "content_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "content_ignore_tests.rs"]
+mod ignore_tests;

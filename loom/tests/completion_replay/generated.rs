@@ -1,4 +1,5 @@
-//! Generated dependencies survive the ordinary verified completion and landing path.
+//! Output the committed `.gitignore` names survives the ordinary verified completion
+//! and landing path, in any language layout, under a broad stage declaration.
 use std::fs;
 use std::path::Path;
 use std::process::{Child, Command, Stdio};
@@ -19,6 +20,9 @@ const GENERATED: &[&str] = &[
     "apps/api/.venv/lib/python3.12/site-packages/example/__init__.py",
     ".ruff_cache/.gitignore",
     "apps/api/.ruff_cache/0.14.0/cache",
+    "apps/api/__pycache__/main.cpython-312.pyc",
+    "apps/ex/_build/dev/lib/ex/ebin/ex.beam",
+    "apps/jvm/build/classes/java/main/Main.class",
 ];
 
 #[test]
@@ -78,8 +82,8 @@ fn prepare_monorepo(fixture: &ReplayFixture) {
         &fixture.stage_id,
         &fixture.root().join(".loom/work"),
         |stage| {
-            stage.files = vec!["apps/web/src/index.ts".into(), "apps/api/main.py".into()];
-            stage.artifacts = stage.files.clone();
+            stage.files = vec!["apps/**".into()];
+            stage.artifacts = vec!["apps/web/src/index.ts".into(), "apps/api/main.py".into()];
             Ok(())
         },
     )
@@ -101,7 +105,7 @@ fn write_monorepo_sources(root: &Path) {
     let files = [
         (
             ".gitignore",
-            "node_modules/\n.venv/\n.ruff_cache/\n.loom/\n.worktrees/\n",
+            "node_modules/\n.venv/\n.ruff_cache/\n__pycache__/\n_build/\nbuild/\n.loom/\n.worktrees/\n",
         ),
         (
             "package.json",
@@ -115,6 +119,8 @@ fn write_monorepo_sources(root: &Path) {
             "[project]\nname = 'api'\nversion = '0.1.0'\n",
         ),
         ("apps/api/uv.lock", "version = 1\n"),
+        ("apps/ex/mix.exs", "defmodule Ex.MixProject do\nend\n"),
+        ("apps/jvm/build.gradle", "plugins { id 'java' }\n"),
     ];
     for (path, contents) in files {
         write(root, path, contents);
@@ -243,9 +249,10 @@ fn assert_no_generated_commits(root: &Path) {
     let tracked = git_text(root, &["ls-tree", "-r", "--name-only", "main"]);
     for path in tracked.lines() {
         assert!(
-            !path
-                .split('/')
-                .any(|part| matches!(part, "node_modules" | ".venv" | ".ruff_cache")),
+            !path.split('/').any(|part| matches!(
+                part,
+                "node_modules" | ".venv" | ".ruff_cache" | "__pycache__" | "_build" | "build"
+            )),
             "generated dependency/cache was committed: {path}"
         );
         assert!(

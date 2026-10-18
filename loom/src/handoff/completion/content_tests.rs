@@ -3,7 +3,7 @@ use crate::models::stage::Stage;
 
 // Use public Git operations through a disposable repository; no process cwd or
 // environment changes, so these tests can run alongside completion fixtures.
-fn fixture() -> (tempfile::TempDir, Stage, std::path::PathBuf) {
+pub(super) fn fixture() -> (tempfile::TempDir, Stage, std::path::PathBuf) {
     let repo = tempfile::TempDir::new().unwrap();
     git(repo.path(), &["init", "-b", "main"]);
     git(
@@ -32,7 +32,7 @@ fn fixture() -> (tempfile::TempDir, Stage, std::path::PathBuf) {
     (repo, stage, checkout)
 }
 
-fn git(root: &std::path::Path, args: &[&str]) {
+pub(super) fn git(root: &std::path::Path, args: &[&str]) {
     let output = crate::git::runner::run_git(args, root).unwrap();
     assert!(
         output.status.success(),
@@ -41,10 +41,32 @@ fn git(root: &std::path::Path, args: &[&str]) {
     );
 }
 
-fn write(root: &std::path::Path, path: &str) {
+pub(super) fn write(root: &std::path::Path, path: &str) {
     let path = root.join(path);
     std::fs::create_dir_all(path.parent().unwrap()).unwrap();
     std::fs::write(path, "input").unwrap();
+}
+
+pub(super) fn commit(checkout: &std::path::Path, message: &str) {
+    git(
+        checkout,
+        &[
+            "-c",
+            "user.name=T",
+            "-c",
+            "user.email=t@t",
+            "commit",
+            "-qm",
+            message,
+        ],
+    );
+}
+
+/// Commit `rules` as the checkout's root `.gitignore`.
+pub(super) fn ignore(checkout: &std::path::Path, rules: &str) {
+    std::fs::write(checkout.join(".gitignore"), rules).unwrap();
+    git(checkout, &["add", ".gitignore"]);
+    commit(checkout, "ignore generated output");
 }
 
 #[test]
@@ -74,23 +96,10 @@ fn ignored_inputs_and_arbitrary_scaffold_children_are_refused() {
 }
 
 #[test]
-fn exact_generated_outputs_are_accepted() {
+fn loom_state_is_accepted_without_project_ignore_rules() {
     let (repo, stage, checkout) = fixture();
     for path in [
         ".loom/cache/map",
-        "target/debug/build-output",
-        "loom/target/debug/build-output",
-        "web/node_modules/dependency/index.js",
-        "node_modules/.bun/pkg@1/node_modules/pkg/index.js",
-        "apps/web/node_modules/pkg/index.js",
-        "packages/ui/node_modules/.bin/compiler",
-        "deps/aurora-ui/node_modules/pkg/index.js",
-        "vendor/tool/.venv/lib/python3/site-packages/tool.py",
-        ".venv/pyvenv.cfg",
-        "apps/api/.ruff_cache/.gitignore",
-        ".ruff_cache/0.14/cache",
-        ".pytest_cache/v/cache/nodeids",
-        "deps/product-media-kit/tool/__pycache__/tool.cpython-314.pyc",
         ".claude/settings.json",
         ".claude/settings.local.json",
         ".loom/memory-spool.jsonl",
@@ -157,18 +166,7 @@ fn committed_protected_configs_and_editor_directories_are_accepted() {
     write(&checkout, ".mcp.json");
     write(&checkout, ".vscode/settings.json");
     git(&checkout, &["add", ".mcp.json", ".vscode/settings.json"]);
-    git(
-        &checkout,
-        &[
-            "-c",
-            "user.name=T",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "-qm",
-            "configs",
-        ],
-    );
+    commit(&checkout, "configs");
     committed_content(&stage, repo.path()).unwrap();
 }
 
@@ -235,6 +233,10 @@ fn explicit_required_inputs_override_generated_output_paths() {
         ".pytest_cache/required-input",
     ] {
         let (repo, mut stage, checkout) = fixture();
+        ignore(
+            &checkout,
+            "target/\nnode_modules/\n.venv/\n.pytest_cache/\n",
+        );
         stage.artifacts.push(path.into());
         write(&checkout, path);
         if path == ".bashrc" {
@@ -248,6 +250,7 @@ fn explicit_required_inputs_override_generated_output_paths() {
 fn every_declared_input_owner_overrides_package_cache_directories() {
     for declaration in 0..7 {
         let (repo, mut stage, checkout) = fixture();
+        ignore(&checkout, ".ruff_cache/\n");
         stage.working_dir = Some("apps/api".into());
         let pattern = ".ruff_cache".to_owned();
         match declaration {
@@ -287,14 +290,15 @@ fn every_declared_input_owner_overrides_package_cache_directories() {
 }
 
 #[test]
-fn declared_parent_directories_and_globs_include_generated_descendants() {
+fn declarations_naming_an_ignored_directory_include_its_descendants() {
     for pattern in [
-        "apps/api",
-        "apps/*",
         "apps/**/.venv/**",
         "./apps/api/.venv/../.venv",
+        "apps/*/.venv",
+        "apps/api/.venv/lib/*.py",
     ] {
         let (repo, mut stage, checkout) = fixture();
+        ignore(&checkout, ".venv/\n");
         stage.files.push(pattern.into());
         write(&checkout, "apps/api/.venv/lib/input.py");
         assert!(committed_content(&stage, repo.path()).is_err(), "{pattern}");
@@ -304,6 +308,7 @@ fn declared_parent_directories_and_globs_include_generated_descendants() {
 #[test]
 fn declared_globs_and_working_directory_override_generated_outputs() {
     let (repo, mut stage, checkout) = fixture();
+    ignore(&checkout, "target/\n");
     stage.working_dir = Some("loom".into());
     stage.files.push("target/**".into());
     write(&checkout, "loom/target/required-input");
@@ -312,7 +317,12 @@ fn declared_globs_and_working_directory_override_generated_outputs() {
 
 #[test]
 fn tracked_generated_outputs_are_never_exempt() {
-    for path in ["target/input", "node_modules/input", ".gitmodules"] {
+    for path in [
+        "target/input",
+        "node_modules/input",
+        ".gitmodules",
+        ".gitignore",
+    ] {
         for staged in [false, true] {
             tracked_change_is_refused(path, staged);
         }
@@ -330,18 +340,7 @@ fn tracked_change_is_refused(path: &str, staged: bool) {
         .unwrap();
     }
     git(&checkout, &["add", path]);
-    git(
-        &checkout,
-        &[
-            "-c",
-            "user.name=T",
-            "-c",
-            "user.email=t@t",
-            "commit",
-            "-qm",
-            "input",
-        ],
-    );
+    commit(&checkout, "input");
     std::fs::write(
         checkout.join(path),
         if path == ".gitmodules" { "" } else { "changed" },

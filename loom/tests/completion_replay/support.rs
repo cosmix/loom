@@ -190,8 +190,14 @@ fn init_repository(root: &Path) -> Result<()> {
     run_git(root, &["config", "user.name", "Completion Replay"])?;
     fs::write(root.join(".git/info/exclude"), ".loom/\n.worktrees/\n")?;
     fs::write(root.join("README.md"), "# Completion replay fixture\n")?;
+    // Acceptance commands write build output here; the committed rule is what
+    // lets completion treat it as generated.
+    fs::write(root.join(".gitignore"), "target/\n")?;
     loom::fs::knowledge::KnowledgeDir::new(root).initialize()?;
-    run_git(root, &["add", "README.md", "doc/loom/knowledge"])?;
+    run_git(
+        root,
+        &["add", "README.md", ".gitignore", "doc/loom/knowledge"],
+    )?;
     run_git(root, &["commit", "-m", "fixture"])
 }
 

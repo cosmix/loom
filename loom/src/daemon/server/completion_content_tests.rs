@@ -48,7 +48,11 @@ fn completion_refuses_unstaged_fix_and_untracked_required_input() {
 
 fn commit_input(checkout: &std::path::Path) {
     std::fs::write(checkout.join("input"), "broken").unwrap();
-    scratch_git(checkout, &["add", "input"]);
+    commit_file(checkout, "input");
+}
+
+fn commit_file(checkout: &std::path::Path, path: &str) {
+    scratch_git(checkout, &["add", path]);
     scratch_git(
         checkout,
         &[
@@ -58,9 +62,30 @@ fn commit_input(checkout: &std::path::Path) {
             "user.email=t@t",
             "commit",
             "-qm",
-            "broken",
+            path,
         ],
     );
+}
+
+/// Commit `rules` as the stage checkout's `.gitignore`, then bind a fresh
+/// checkpoint to that commit and return its evidence nonce.
+fn commit_ignore_rules(
+    fixture: &super::TrustedCheckpointFixture,
+    stage: &crate::models::stage::Stage,
+    rules: &str,
+) -> &'static str {
+    let checkout = fixture.repo().join(".worktrees/api");
+    std::fs::write(checkout.join(".gitignore"), rules).unwrap();
+    commit_file(&checkout, ".gitignore");
+    let fresh_evidence = "33333333333333333333333333333333";
+    super::record_trusted_test_checkpoint(
+        fixture.repo(),
+        &fixture.work,
+        stage,
+        &fixture.session,
+        fresh_evidence,
+    );
+    fresh_evidence
 }
 
 #[test]
@@ -145,14 +170,19 @@ fn completion_accepts_generated_outputs_with_unchanged_proof() {
     let fixture =
         trusted_checkpoint_fixture("api", StageType::Standard, SessionType::Stage, EVIDENCE);
     let checkout = fixture.repo().join(".worktrees/api");
+    let evidence = commit_ignore_rules(
+        &fixture,
+        &fixture.stage,
+        "target/\n_build/\nbuild/\nnode_modules/\n.venv/\n.ruff_cache/\n__pycache__/\n",
+    );
     let snapshot = VerificationSnapshot::capture(&fixture.stage, &fixture.work).unwrap();
     for path in [
         "target/debug/generated",
-        "node_modules/.bun/pkg@1/node_modules/pkg/index.js",
+        "_build/dev/lib/app/ebin/app.beam",
+        "apps/jvm/build/classes/java/main/Main.class",
         "apps/web/node_modules/pkg/index.js",
         "packages/api/.venv/pyvenv.cfg",
         ".ruff_cache/.gitignore",
-        ".pytest_cache/v/cache/nodeids",
         "deps/tool/__pycache__/tool.cpython-314.pyc",
     ] {
         let output = checkout.join(path);
@@ -163,7 +193,7 @@ fn completion_accepts_generated_outputs_with_unchanged_proof() {
         std::fs::write(checkout.join(name), "").unwrap();
     }
     snapshot.validate(&fixture.stage, &fixture.work).unwrap();
-    fixture.complete(COMPLETION, EVIDENCE).unwrap();
+    fixture.complete(COMPLETION, evidence).unwrap();
     let stage = load_stage("api", &fixture.work).unwrap();
     assert_eq!(stage.status, StageStatus::Completed);
     assert_eq!(
@@ -183,19 +213,12 @@ fn completion_refuses_declared_generated_input_with_current_proof() {
         Ok(())
     })
     .unwrap();
-    let fresh_evidence = "33333333333333333333333333333333";
-    super::record_trusted_test_checkpoint(
-        fixture.repo(),
-        &fixture.work,
-        &declared,
-        &fixture.session,
-        fresh_evidence,
-    );
+    let fresh_evidence = commit_ignore_rules(&fixture, &declared, ".venv/\n");
     std::fs::create_dir_all(checkout.join("apps/api/.venv")).unwrap();
     std::fs::write(checkout.join("apps/api/.venv/required.py"), "input").unwrap();
     let error = fixture.complete(COMPLETION, fresh_evidence).unwrap_err();
     assert!(
-        format!("{error:#}").contains("untracked completion input"),
+        format!("{error:#}").contains("declares this ignored output"),
         "{error:#}"
     );
     assert_eq!(
