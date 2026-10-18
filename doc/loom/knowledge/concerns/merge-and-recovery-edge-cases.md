@@ -126,10 +126,10 @@ The paths git names in a refused fast-forward are parsed line by line, so a path
 When one of loom's own completion gates cannot evaluate (its run errors), nothing in loom recovers the stage. This holds in every project loom runs, loom-on-loom plans included.
 
 - **The stage agent cannot fix the gate.** `loom stage complete` runs the installed `loom` binary, so the worktree's copy of `src/verify` has no effect; in a loom-on-loom plan that directory is usually outside the stage's `files` as well.
-- **The stage agent cannot dispute the gate.** `dispute-criteria`, `dispute-findings`, `dispute-contract` and `dispute-integrity` cover plan-authored checks, review findings, frozen contracts and integrity events. Loom's own gates (impact-selected tests, reachable re-verification, the checks every stage gets) have no dispute, so the adjudicator never sees them.
+- **Most of loom's own gates have no dispute.** `dispute-criteria`, `dispute-findings`, `dispute-contract` and `dispute-integrity` cover plan-authored checks, review findings, frozen contracts and integrity events, and `dispute-criteria --field impact-tests --test <id>` covers a failing impact-selected test the stage did not cause. Reachable re-verification and the checks every stage gets have no dispute, and an impact dispute covers a selection that ran and failed, never a gate run that errored before any selection could be judged, so the adjudicator never sees those.
 - **A block is untyped and terminal.** `loom stage block <id> <reason>` takes free text and clears `failure_info` (`commands/status/render/attention_model.rs:265-266`). The daemon auto-retries only `SessionCrash` and `Timeout` (`orchestrator/retry.rs::should_auto_retry`). A gate defect and a missing credential look identical, and both wait for a person. A manual `loom stage retry` re-runs the same deterministic gate and blocks again.
 
-Observed on guard-core of PLAN-target-ref-guard (2026-10-02): blocked twice on the impact gate's E2BIG spawn error. See [[mistakes/verification-v2-delivery]], "The Impact Gate Failed a Stage on Its Own Spawn Error".
+See [[mistakes/verification-v2-delivery]], "The Impact Gate Failed a Stage on Its Own Spawn Error".
 
 ## Gate Defect Recovery: Proposed Long-Term Fix (Unimplemented)
 

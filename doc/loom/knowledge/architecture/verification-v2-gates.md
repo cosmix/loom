@@ -10,7 +10,7 @@ none of them.
 
 **Completion order** (`commands/stage/complete_verification.rs::run`): goal-backward checks
 (`run_goal_checks`), then `complete_verification_v2::run_v2` for v2 stages, then `after_stage`, the unwired
-and duplicate checks, the aggregated check (integration-verify only) and change impact. Inside `run_v2`
+and duplicate checks, the aggregated check (integration-verify only). Inside `run_v2`
 (`complete_verification_v2.rs`): contract check (standard stages with contracts), test integrity (standard and
 integration-verify), impact-selected tests (standard), reachable re-verification (integration-verify), and
 the review gate last. A stage session runs inside a sandbox that cannot reach the daemon's socket
@@ -53,7 +53,7 @@ layer that is an ancestor of HEAD, plus files changed by `git diff-index --name-
 renames as the new path only). With no base layer it extracts every supported tracked and untracked file
 under `working_dir` and diffs against HEAD.
 
-## Verification v2 Gates, Continued: Integrity, Impact Tests, Review Gate
+## Verification v2 Gates, Continued: Integrity, Change Fingerprint, Review Gate
 
 **Test integrity** (`verify/integrity/`): events `TI-decl-<lang>`, `TI-assert-<lang>`, `TI-edit-<path>`,
 `TI-ratchet-<path>`. `TI-edit` matches removed assertion lines against added lines as a multiset, so deleting
@@ -64,25 +64,7 @@ paths (no glob) and any change, tightening included, raises `TI-ratchet`. The ga
 event id because `gate::shortfall` reads the FIRST record per event. The evidence snapshot filed with the
 dispute is what an accept records, not a re-scan.
 
-**Impact-selected tests** (`verify/impact_tests.rs`): tests reaching the changed nodes through `impact_with`,
-run per adapter through the criteria runner (300 s, certified cache). The selection set is every node in a file the
-stage changed since its merge base with the target branch (`git merge-base HEAD <target>`, via
-`verify/review/fingerprint.rs::changes_since_merge_base`), not since the nearest published graph base; the graph itself
-is still layered on that base, and a commit that lands on the target after the stage branched is not a stage change.
-A runner's package comes from project detection, which skips `fixtures` directories, so test-data manifests are no
-packages. A JS package that declares dependencies but has no `node_modules` in its directory or any ancestor up to the
-root (`impact_tests/runs.rs::missing_node_modules`; a dependency-free package, or an unreadable or unparsable
-manifest, counts per `skills::project::probe::declares_dependencies`) is a note, as is any runner run that exits 127,
-and so is every error the runner returns (E2BIG on an exec of thousands of names, for one; no length bound is configured,
-exec reports the OS limit): `run_group` names only its root cause. Notes cut the command at 200 bytes and list 10 names.
-Exit 127 cannot tell a missing runner from a suite that itself exits 127. Yarn PnP packages declare dependencies and
-have no `node_modules`, so they get the same note. It also selects the nodes of changed
-test files, since `impact_with` never returns its start node, but skips every test inside a contract FILE,
-so non-contract tests placed in a contract file run nowhere before integration-verify. Cargo targets are
-`Function` nodes named by a libtest path derived from `mod` declarations, `#[path]` included. The Rust
-extractor does not model macros (`context/extract/rust.rs:19`), so a test whose only use of the changed code
-sits inside `assert_eq!(...)` is not selected; write fixtures with the call outside the macro. No selection,
-a timeout or no `select_command` is a note, not a failure.
+Impact-selected tests have their own section below.
 
 **One observer for the change fingerprint** (`verify/review/observer.rs`, `verify/review/fingerprint.rs`,
 `daemon/server/observer.rs`). Both the review gate (comparing a round's fingerprint with the current one) and
@@ -133,3 +115,66 @@ from the plan file and re-runs it on the merged tree, and re-verifies every v2 s
 early for any other stage type. A stage that moves a call another stage's wiring pins must amend that wiring
 (operator `loom stage amend --field wiring`), leave the call in place, or name it in a comment at its new site
 ([pinned literals](../mistakes/pinned-literals-ledgers-and-wiring.md)); pin wiring to the entry module or use `reachable`.
+
+## Impact-Selected Tests: Selection, Base Comparison, Observed Record
+
+**Impact-selected tests** (`verify/impact_tests.rs`, `verify/impact_tests/`): tests reaching the changed nodes
+through `impact_with`, run per adapter through the criteria runner (300 s, certified cache). A test selects only
+when every step of its path is a bound edge (`impact_tests/reach.rs`); one reached only through an ambiguous call's
+candidate set is a namesake note, never run. The selection set is every node in a file the
+stage changed since its merge base with the target branch (`git merge-base HEAD <target>`, via
+`verify/review/fingerprint.rs::changes_since_merge_base`), not since the nearest published graph base; the graph itself
+is still layered on that base, and a commit that lands on the target after the stage branched is not a stage change.
+A runner's package comes from project detection, which skips `fixtures` directories, so test-data manifests are no
+packages. The gate names no language: each adapter declares what it needs and how it selects
+(`TestRunnerAdapter::required_environment`, `selection_names`). The JS adapters need `node_modules` when the
+package declares dependencies (an unreadable or unparsable manifest counts, per
+`skills::project::probe::declares_dependencies`), pytest and unittest need `.venv` beside a `uv.lock`; a package
+missing it in its directory and every ancestor up to the root (`impact_tests/runs.rs::missing_environment`) is a
+note, as is any runner run that exits 127,
+and so is every error the runner returns (E2BIG on an exec of thousands of names, for one; no length bound is configured,
+exec reports the OS limit): `run_group` names only its root cause. Notes cut the command at 200 bytes and list 10 names.
+Exit 127 cannot tell a missing runner from a suite that itself exits 127. Yarn PnP packages declare dependencies and
+have no `node_modules`, so they get the same note. It also selects the nodes of changed
+test files, since `impact_with` never returns its start node, but skips every test inside a contract FILE,
+so non-contract tests placed in a contract file run nowhere before integration-verify. Cargo targets are
+`Function` nodes named by a libtest path derived from `mod` declarations, `#[path]` included
+(`impact_tests/libtest.rs`); which files are crate roots is the cargo adapters' Cargo layout rule
+(`SelectionNames::LibtestPaths { is_crate_root }`, `testrun/adapters/cargo_test.rs::is_crate_root`). The Rust
+extractor does not model macros (`context/extract/rust.rs:19`), so a test whose only use of the changed code
+sits inside `assert_eq!(...)` is not selected; write fixtures with the call outside the macro. No selection,
+a timeout or no `select_command` is a note, not a failure.
+
+**Judging an impact failure** (`impact_tests/{report,accepted,base,failure}.rs`). A failed selection is
+`IT-<runner>:<package>` (`failure::failure_id`; no runner name holds `:`, so the first one splits the id whatever the
+package path holds, and `check_failure_id` refuses any other shape, at the CLI and in the daemon). An accepted dispute
+(`reviews/<stage>/impact.json`) notes it only while it fails exactly as accepted: the same `FailureKind` (variant and
+count or exit code) over the same set of selected tests (`AcceptedImpact::standing`). A smaller count is judged again,
+since the accepted record is the stage session's unauthenticated report. Otherwise it is re-run in a shared clone of
+the merge base in a scratch directory (`base.rs::BaseCheckout`; it writes nothing into the repository's git directory,
+a linked worktree's included). Only `fails` with a known count at both, the stage's no higher, is pre-existing and a
+note (`FailureKind::covers`, used only for this comparison of two runs the gate made). The comparison is by count
+only: an untracked fixture missing from the base checkout can inflate the base count. A selection that does not build,
+or whose output or count the adapter could not read, stays a failure with the base result in its message even when
+the base ended the same way: the base checkout holds tracked files only and often cannot build, which would hide a
+compile error the stage made. Each remaining failure fails the gate with `ImpactTestsFailed`, naming
+`loom stage dispute-criteria <stage> --field impact-tests --test <id>` for the first 32; the message names the ids past
+that as not disputable after this run.
+
+**The observed record** (`impact_tests/observed.rs`, `reviews/<stage>/impact-observed.json`) holds the failures the
+stage's latest failing completion run reported, each bounded and stripped of control characters
+(`ImpactFailure::bounded`: 32 failures, 64 test names, 4 KiB output tail keeping `\n` and `\t`, 1 KiB texts). A
+dispute names ids only and the daemon copies its evidence from this record (see
+[adjudication-lifecycle](adjudication-lifecycle.md#dispute-kinds-criterion-findings-contract-integrity-impact-tests)),
+so the filing agent's request adds nothing to `impact.json` or the judge's evidence. The record is not authenticated.
+A stage session's sandbox writes no state: its failing `loom stage complete` prints the record as the last two
+non-empty lines of its stdout (`completion_evidence/impact_record.rs`), and the completion broker, run by the
+PostToolUse hook outside the sandbox on the exact pinned command's output, writes it. That run executes the stage's
+own code, which can write a forged record to loom's stdout and kill loom before loom prints its own; the broker then
+keeps the forgery. The adjudicator is the trust gate: its prompt labels every field as reported by the stage session
+and tells it to re-run each disputed selection in the worktree, and the base in a separate checkout, before accepting
+(`orchestrator/adjudication/prompt/impact.rs`). An accepted forgery excuses only the exact failure it claims. A host
+completion writes the record directly. Every failing completion clears the record when it reports no impact failure,
+prints no record, or prints one that does not parse, so a dispute names only failures of the latest run. The hook
+hands the broker one output field (the first string of `stdout`/`output` the harness filled), never a join of them.
+A pinned command piped or redirected gives no record, and a dispute of its failures is refused.

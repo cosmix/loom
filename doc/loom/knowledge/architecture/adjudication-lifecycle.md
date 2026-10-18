@@ -90,7 +90,7 @@ Criterion adjudicators first run `loom check <stage> --no-cache` and inspect the
 5. `orchestrator/adjudication/feedback.rs` owns the transient successor-facing feedback file.
 6. `orchestrator/core/stage_executor.rs::start_stage` selects the handoff and calls `orchestrator/signals/generate.rs::generate_signal_with_skills`, which appends feedback last.
 
-## Dispute Kinds: Criterion, Findings, Contract, Integrity
+## Dispute Kinds: Criterion, Findings, Contract, Integrity, Impact Tests
 
 `DisputeRequest` carries a `DisputeKind` (`models/dispute.rs`, serde tag `kind`, kebab-case). `Criterion { criterion_index, field }`
 disputes one entry of the list `field` names (`CriterionField`: `acceptance`, `wiring`, `wiring-tests`; the request file carries
@@ -100,43 +100,63 @@ unreadable at apply time, the kind falls back to the acceptance criterion path. 
 acceptance dispute may amend `acceptance` or `wiring`. The wiring and wiring-tests briefings reuse the criterion
 briefing's verdict rules, run reading, schema and evidence sections, with "the criterion" meaning the disputed entry, so
 the acceptance briefing stays byte-identical (`prompt/tests_golden.rs`). `CriterionField` keeps `Default` because
-test code builds `DisputeKind::criterion(Default::default(), 0)`. The three v2 kinds:
+test code builds `DisputeKind::criterion(Default::default(), 0)`. The four v2 kinds:
 
 | Kind | Filed with | Budget field | Judge verdicts | Durable effect |
 | --- | --- | --- | --- | --- |
 | Findings | `loom stage dispute-findings <stage> --finding <id>... --reason` | `finding_disputes` | `rulings` (per finding `uphold`, `dismiss`, `defer`) or `needs-more-evidence` | rulings append to `reviews/<stage>/rulings.json`; a `defer` appends to `reviews/<target>/carried.json`; feedback lists upheld findings |
 | Contract | `loom stage dispute-contract <stage> --contract <id> --reason` | `contract_disputes` | `accept`, `reject`, `needs-more-evidence` | accept re-freezes that contract's files at current worktree content and may apply a `plan_patch` to `contracts` (`AmendmentField::Contracts`); reject sends the agent to `loom stage contracts restore` |
 | Integrity | `loom stage dispute-integrity <stage> --event <id>... --reason` | `integrity_disputes` | `accept`, `reject`, `needs-more-evidence` | accept upserts `reviews/<stage>/integrity.json` with the evidence snapshot filed with the dispute |
+| Impact tests | `loom stage dispute-criteria <stage> --field impact-tests --test <id>... --reason` (standard stages) | `impact_disputes` | `accept`, `reject`, `needs-more-evidence` | accept upserts `reviews/<stage>/impact.json` by id with the failure as the observed record holds it (`apply_impact.rs`); reject tells the agent the failures stand |
 
-Each request may name several ids, so one retire-and-respawn covers a whole review round. The three counters
+Each request may name several ids, so one retire-and-respawn covers a whole review round. The four counters
 plus `evidence_rounds` and `amendments_applied` live in one `#[serde(flatten)]` struct
 (`models/stage/dispute_budgets.rs`, `stage.tally`), which keeps the on-disk YAML keys unchanged and keeps the
 ledgered `Stage::default` literal (`models/stage/defaults.rs`) from growing; `dispute_count` stays a top-level
 field because 35 files read it. Each counter allows `MAX_DISPUTES_PER_KIND` (3); exhaustion goes to
-`NeedsHumanReview`. The daemon handler is `daemon/server/dispute_kinds.rs` (`Request::FileDispute`); it checks
-every id exists (an open or carried finding, a frozen contract, a current integrity event) before spending.
+`NeedsHumanReview`. The handler is `stage_service/dispute_kinds.rs` (`Request::FileDispute`, reached through
+`daemon/server/dispute_kinds.rs`); it checks every id against what loom itself holds (an open or carried finding, a
+frozen contract, a current integrity event, a failure in `reviews/<stage>/impact-observed.json`) before spending, and
+cuts the reason to `DISPUTE_REASON_MAX_BYTES`.
+
+**Impact-test evidence comes from the observed record, never the filing agent's request.** The CLI sends ids
+alone (`IT-<runner>:<package>`, checked by `verify::impact_tests::check_failure_id`), and the handler drops any
+evidence a request carries and copies each named failure from the observed record
+(`verify/impact_tests/observed.rs`). That record is the stage session's unauthenticated report: its failing
+`loom stage complete` prints it as the last two non-empty lines, a `LOOM_CONTROL_IMPACT_V1` line and a
+`LOOM_CONTROL_IMPACT_EOF` line (`commands/stage/completion_evidence/impact_record.rs`), and the completion broker,
+which the PostToolUse hook runs outside the sandbox on the exact pinned command's output, writes it. The run executes
+the stage's code, which can print a forged record and kill loom before loom prints its own, so the adjudicator is the
+trust gate: it re-runs each disputed selection before accepting, and an accepted failure excuses only a later
+failure identical to it (kind, count and test set; `verify/impact_tests/accepted.rs`). A host completion (no stage
+session) writes the record directly. An id the record does not hold is refused; every failing completion replaces
+the record, so only failures of the latest run can be disputed.
 
 **Verdict rules** (`orchestrator/adjudication/verdict.rs`, `verdict_kinds.rs`, `apply.rs`, `apply_kinds.rs`).
 `FindingRuling.ruling` reuses `verify::review::store::RulingKind`. `defer` is valid only when the disputing
 stage is not integration-verify and `target_stage` transitively depends on it and is not already finished;
-anything else is coerced to `needs-more-evidence` naming why. Integration-verify never defers. A contract or
-integrity `accept` without a plan patch stores `PlanPatch { inner: {} }` because `{}` is the only
+anything else is coerced to `needs-more-evidence` naming why. Integration-verify never defers. A contract,
+integrity or impact-test `accept` without a plan patch stores `PlanPatch { inner: {} }` because `{}` is the only
 round-trip-stable "none" (a flattened `Null` serialises as `{}`). Rulings and carried entries append if absent;
-integrity acceptance is an upsert by event id. Requeue still goes through
+integrity and impact acceptance are upserts by id. Requeue still goes through
 `requeue_or_hold_for_remaining_disputes`, so a sibling dispute holds the stage. `parse_and_validate(raw)` remains
 the criterion and relay pre-check; `parse_and_validate_for(raw, kind)` is the kind-aware entry (a signature change
 made after a truncated caller search broke `commands/stage/adjudicate.rs:109`).
 
-**Prompts** (`orchestrator/adjudication/prompt.rs` and `prompt/{findings,contract,integrity}.rs`) keep the shared
+**Prompts** (`orchestrator/adjudication/prompt.rs` and `prompt/{findings,contract,integrity,impact}.rs`) keep the shared
 instructions, the 100,000-byte cap and the JSON contract per kind. `prompt::build` computes the verdict draft
 path itself. `ExecutionSite` carries `root` (worktree root, or repo root once the worktree is gone) and
 `worktree()`; deriving the root from `path` minus `working_dir` breaks on `./x` or `../x`. Findings prompts
 quote the file ±20 lines around each finding, the round and the stage diff; contract prompts quote the spec,
-frozen and current content and their diff; integrity prompts quote the event and the removed lines.
+frozen and current content and their diff; integrity prompts quote the event and the removed lines; impact prompts
+give the stage base loom reads at adjudication time, quote each failure with every field (outcome, command, base
+result, tests, output) labelled as reported by the stage session, tell the adjudicator to reproduce each selection in
+the worktree and the base in a separate checkout before accepting, label the reason as the agent's, then add the stage
+diff (`truncate` halves the diff first).
 `prompt/tests_golden.rs` pins the criterion prompt byte for byte.
 
-**Relay.** `loom-hooks/loom-relay.sh` `relay_kind_at` maps `stage:dispute-findings|dispute-contract|dispute-integrity`
-to `file-dispute`. A new `RequestKind` needs a `relay_kind_at` case, a `drop_control_kinds` entry when
+**Relay.** `loom-hooks/loom-relay.sh` `relay_kind_at` maps `stage:dispute-findings|dispute-contract|dispute-integrity`,
+and `dispute-criteria` with `--field impact-tests`, to `file-dispute`. A new `RequestKind` needs a `relay_kind_at` case, a `drop_control_kinds` entry when
 `is_control()`, and a `loom-hooks/tests/*.sh` test registered in `run-all.sh` (a static `run_test` list, not a
 glob) in the same change; the dispute kinds shipped without the first, and the regression test never ran until
 the second was found.

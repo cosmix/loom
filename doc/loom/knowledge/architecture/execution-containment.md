@@ -31,7 +31,7 @@ The plan sets `command_confinement`; a stage may override it. `resolve_confineme
 
 ## What Goes Through `spawn_confined`
 
-Plan-authored acceptance, setup, truth, wiring, dead-code and change-impact commands use the shared command preparation and criterion executor in `verify/criteria`. `spawn_confined` exposes an owned `ConfinedChild`; executor paths retain `PreparedCommand` resources while managing process retirement and bounded output. Environment allowlisting prevents ambient credentials from becoming plan privileges.
+Plan-authored acceptance, setup, truth, wiring and dead-code commands use the shared command preparation and criterion executor in `verify/criteria`. `spawn_confined` exposes an owned `ConfinedChild`; executor paths retain `PreparedCommand` resources while managing process retirement and bounded output. Environment allowlisting prevents ambient credentials from becoming plan privileges.
 
 ## The Host Environment Allowlist
 

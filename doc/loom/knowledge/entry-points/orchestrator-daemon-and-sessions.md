@@ -162,7 +162,7 @@ pub fn dispute_criteria(
 - `--failure-output` is a path; the client loads it and truncates to 4KB on a UTF-8 char boundary. `models/dispute.rs` holds the one `truncate_to_byte_limit` and `FAILURE_OUTPUT_MAX_BYTES`; the daemon truncates again defensively.
 - The agent never writes `.loom/work/disputes/<stage>/<n>/verdict.md` or `applied.marker` — both are daemon-only.
 - With no daemon listening the dispute cannot be filed at all (the daemon is what persists it), and the command says so rather than reporting a bare connect error.
-- Server-side handler: `daemon/server/dispute.rs`. On-disk schema: `models/dispute.rs`. Verdict rules per field: [adjudication-lifecycle](../architecture/adjudication-lifecycle.md#dispute-kinds-criterion-findings-contract-integrity).
+- Server-side handler: `daemon/server/dispute.rs`. On-disk schema: `models/dispute.rs`. Verdict rules per field: [adjudication-lifecycle](../architecture/adjudication-lifecycle.md#dispute-kinds-criterion-findings-contract-integrity-impact-tests).
 - Open: `DisputeField` (`cli/types_stage_disputes.rs`), `AmendField` and `CriterionField` mirror one enum three times, and `dispute_criteria_with_mode` takes nine arguments under `allow(too_many_arguments)` (see [code-quality-and-hook-debt](../concerns/code-quality-and-hook-debt.md)).
 
 ## Fix Attempts Counter — Current Usage

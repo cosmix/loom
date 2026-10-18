@@ -11,7 +11,7 @@
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 249 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 245 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 190 |
-| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 247 |
+| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 251 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 247 |
@@ -22,7 +22,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | Dispute to verdict, per-kind rulings | 145 |
+| [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | Dispute to verdict, per-kind rulings | 165 |
 | [codex-concurrency](architecture/codex-concurrency.md) | Codex fan-out limits and degradation | 128 |
 | [codex-plugin](architecture/codex-plugin.md) | Codex plugin install, forwarding | 364 |
 | [completion-recovery](architecture/completion-recovery.md) | HMAC attestation, exit_reason | 34 |
@@ -63,7 +63,7 @@
 | [test-runner-adapters](architecture/test-runner-adapters.md) | 23 adapters, profiles, quoting, detect | 57 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, compare, cache | 257 |
 | [token-flow-sources](architecture/token-flow-sources.md) | Token flow: sources, tracker, surfaces | 75 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 135 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 180 |
 | [web-dashboard](architecture/web-dashboard.md) | status --web server, SPA, streams | 99 |
 | [web-terminal](architecture/web-terminal.md) | loom status --web terminals | 181 |
 
@@ -71,7 +71,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch, plan pipeline | 192 |
+| [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch, plan pipeline | 191 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) | Context retrieval, source graph | 79 |
 | [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs, handoff, sandbox | 126 |
 | [hooks](entry-points/hooks.md) | Hook scripts, events, matching | 147 |
@@ -180,7 +180,7 @@
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry edge cases | 147 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Open gaps: commits, launch, stalls | 213 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | tmux, orphan adoption edge cases | 150 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: canary, creds, env | 325 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: canary, creds, env | 323 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Language limits, open decisions | 79 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Unimplemented reviewer suggestions | 242 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package caches session-writable | 17 |
