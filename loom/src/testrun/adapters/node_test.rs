@@ -10,7 +10,7 @@ use crate::testrun::recognize::{
     combined_output, command_args, count_matches, has_flag, last_match, pattern, positionals,
     summary_from_counts,
 };
-use crate::testrun::{RunOutput, RunSummary, TestRunnerAdapter, TestTarget};
+use crate::testrun::{environment, RunOutput, RunSummary, TestRunnerAdapter, TestTarget};
 
 pub struct NodeTest;
 
@@ -51,6 +51,10 @@ impl TestRunnerAdapter for NodeTest {
 
     fn language(&self) -> &'static str {
         "javascript"
+    }
+
+    fn required_environment(&self, root: &Path, package_dir: &Path) -> Option<&'static str> {
+        environment::node_modules(root, package_dir)
     }
 
     fn recognizes(&self, argv: &[String]) -> bool {

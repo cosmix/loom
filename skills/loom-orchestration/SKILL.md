@@ -284,12 +284,12 @@ the worktree. A contract that is itself wrong is disputed, never edited:
 4. Dispute a round's findings in one command:
    `loom stage dispute-findings <stage-id> --finding <id> ... --reason "..."`. Filing ends this
    session by design; the daemon starts a fresh session with the verdict. A stage may file 3
-   disputes of each kind (findings, contract, integrity); one more escalates it to
-   `NeedsHumanReview`.
+   disputes of each kind (findings, contract, integrity, impact tests); one more escalates it
+   to `NeedsHumanReview`.
 
 **Review order (plan v2):** fix every finding, run the full gate, then run the final review round, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.
 
-**When the stage cannot finish.** Fix what the stage can fix. A criterion, wiring check, contract, review finding or test-integrity event that is wrong gets a dispute: `loom stage dispute-criteria` (with `--field` for wiring and wiring-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session by design: the daemon starts a fresh session with the verdict, so waiting gains nothing. Never revert, weaken or postpone correct work to avoid a dispute. A need only a person can meet (a credential, a host install, a network domain or path the plan does not grant) gets `loom stage block <stage-id> "<what is needed and why>"`: the daemon retires the session and shows the reason to the operator. Commit your work before filing either. Never end a turn asking the operator to act while the stage is executing.
+**When the stage cannot finish.** Fix what the stage can fix. A criterion, wiring check, contract, review finding or test-integrity event that is wrong gets a dispute: `loom stage dispute-criteria` (with `--field` for wiring, wiring-tests and impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session by design: the daemon starts a fresh session with the verdict, so waiting gains nothing. Never revert, weaken or postpone correct work to avoid a dispute. A need only a person can meet (a credential, a host install, a network domain or path the plan does not grant) gets `loom stage block <stage-id> "<what is needed and why>"`: the daemon retires the session and shows the reason to the operator. Commit your work before filing either. Never end a turn asking the operator to act while the stage is executing.
 
 **Test integrity** (standard and integration-verify stages). Completion compares the stage's test
 files with the base. Fewer test declarations or assertions in a language, assertion lines removed
@@ -308,12 +308,17 @@ accepted while it gets no worse.
    test passes.
 4. Test integrity (standard and integration-verify).
 5. Standard stages: the tests that reach the stage's changed code pass. A test loom cannot select
-   or run only prints a note.
+   or run only prints a note, and so does a selection whose tests fail at the stage's base with
+   at least as many failures counted (a build failure or unreadable output at both still fails).
+   A failure the stage did not cause is disputed, never blocked:
+   `loom stage dispute-criteria <stage-id> --field impact-tests --test <id> ... --reason "..."`,
+   with the ids (`IT-<runner>:<package>`) the last failing run of the exact
+   `loom stage complete <stage-id>` listed: loom recorded those failures, and the dispute names
+   them. An accepted failure stays accepted while it gets no worse.
 6. Integration-verify: every completed stage's `reachable` checks, re-run on the merged tree.
 7. The review gate (standard and integration-verify): the latest well-formed round matches the
    current change fingerprint, and no finding, own or carried, is open.
-8. The checks every stage gets: `after_stage` commands, unwired files, duplicate symbols and
-   change impact. Integration-verify also re-runs every completed stage's `wiring` checks.
+8. The checks every stage gets: `after_stage` commands, unwired files and duplicate symbols. Integration-verify also re-runs every completed stage's `wiring` checks.
 
 **Integration-verify.** Its signal lists every pending reviewer suggestion of the plan's stages,
 with its id. Consider each one: implement it, or leave it pending for knowledge-distill to record.

@@ -21,7 +21,8 @@ use crate::relay::emit::{RelayContext, RelayMode, RelaySink};
 use crate::relay::RequestKind;
 
 /// One dispute on its way to the daemon. A criterion dispute travels as
-/// `DisputeCriteria`, every other kind as `FileDispute`.
+/// `DisputeCriteria`, every other kind as `FileDispute`: an impact-test
+/// dispute too, though `dispute-criteria --field impact-tests` files it.
 pub(super) struct Dispute {
     stage_id: String,
     kind: DisputeKind,
@@ -50,7 +51,8 @@ impl Dispute {
         }
     }
 
-    /// `loom stage dispute-findings`, `dispute-contract` or `dispute-integrity`.
+    /// `loom stage dispute-findings`, `dispute-contract`, `dispute-integrity`
+    /// or `dispute-criteria --field impact-tests`.
     pub(super) fn of_kind(
         stage_id: String,
         kind: DisputeKind,
@@ -127,7 +129,32 @@ impl Dispute {
     }
 
     fn wording(&self) -> Wording {
-        let (subject, stands, command) = match &self.kind {
+        let (subject, stands, command) = self.subject();
+        let (successor, rpc, relay_kind) = match self.kind {
+            DisputeKind::Criterion { .. } => (
+                "against the amended criteria",
+                "DisputeCriteria",
+                RequestKind::Dispute,
+            ),
+            _ => (
+                "with the verdict applied",
+                "FileDispute",
+                RequestKind::FileDispute,
+            ),
+        };
+        Wording {
+            subject,
+            stands,
+            successor,
+            command,
+            rpc,
+            relay_kind,
+        }
+    }
+
+    /// What the dispute names, the refusal's `stands` phrase, and its command.
+    fn subject(&self) -> (String, &'static str, &'static str) {
+        match &self.kind {
             DisputeKind::Criterion {
                 criterion_index,
                 field,
@@ -154,26 +181,11 @@ impl Dispute {
                 "The integrity events stand",
                 "stage dispute-integrity",
             ),
-        };
-        let (successor, rpc, relay_kind) = match self.kind {
-            DisputeKind::Criterion { .. } => (
-                "against the amended criteria",
-                "DisputeCriteria",
-                RequestKind::Dispute,
+            DisputeKind::ImpactTests { test_ids, .. } => (
+                format!("impact tests {}", test_ids.join(", ")),
+                "The impact-test failures stand",
+                "stage dispute-criteria",
             ),
-            _ => (
-                "with the verdict applied",
-                "FileDispute",
-                RequestKind::FileDispute,
-            ),
-        };
-        Wording {
-            subject,
-            stands,
-            successor,
-            command,
-            rpc,
-            relay_kind,
         }
     }
 }

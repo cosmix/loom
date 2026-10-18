@@ -8,7 +8,7 @@ use super::{completed_definitions, VerificationChecks};
 use crate::context::worktree_graph::build_for_worktree;
 use crate::models::stage::StageType;
 use crate::plan::schema::StageDefinition;
-use crate::verify::criteria::{plan_confinement, CriteriaConfig};
+use crate::verify::criteria::plan_confinement;
 use crate::verify::goal_backward::reachable::verify_reachable;
 use crate::verify::{contracts::completion, impact_tests, integrity, review::gate};
 use anyhow::{bail, Context, Result};
@@ -63,18 +63,17 @@ fn worktree<'a>(checks: &VerificationChecks<'a>, purpose: &str) -> Result<&'a Pa
 }
 
 /// DESIGN D14: the tests that reach what the stage changed since its merge
-/// base with `target_branch` pass. A test that cannot be selected or run is a
-/// note, never a failure.
+/// base with `target_branch` pass. A test that cannot be selected or run, one
+/// whose tests fail at the base with at least as many failures counted, and
+/// one a dispute accepted are notes, never failures. A failure is
+/// `impact_tests::ImpactTestsFailed`, which `complete` records for a dispute.
 fn run_impact_tests(checks: &VerificationChecks<'_>, target_branch: &str) -> Result<()> {
     println!("Running impact-selected tests...");
     let working_dir = checks.acceptance_dir.unwrap_or(Path::new("."));
-    // A selection runs in its package directory with the whole worktree
-    // visible, as acceptance does: packages use their siblings and root stores.
-    let config = CriteriaConfig::default()
-        .with_plan_confinement(plan_confinement(checks.work_dir))
-        .with_cache_dir(checks.work_dir)
-        .with_tree_root(checks.worktree_root);
-    let outcome = impact_tests::run(checks.stage, working_dir, &config, target_branch)?;
+    let work_dir = checks.work_dir;
+    let config =
+        impact_tests::criteria_config(work_dir, plan_confinement(work_dir), checks.worktree_root);
+    let outcome = impact_tests::run(checks.stage, work_dir, working_dir, &config, target_branch)?;
     for note in &outcome.notes {
         println!("  Note: {note}");
     }

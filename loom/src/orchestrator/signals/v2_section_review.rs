@@ -48,15 +48,17 @@ pub(super) fn append_review_gate(content: &mut String, stage: &Stage, work_dir: 
          findings. A finding closes when a later round lists its id under `resolved`.\n\n",
         id = stage.id
     ));
-    append_dispute_commands(content, &stage.id);
+    append_dispute_commands(content, stage);
     content.push_str(REVIEW_ORDER);
     content.push('\n');
     append_carried_findings(content, &stage.id, work_dir);
 }
 
-/// The disputes open to a stage the review gate covers: its findings, and
-/// the test-integrity events `loom stage complete` also checks.
-fn append_dispute_commands(content: &mut String, stage_id: &str) {
+/// The disputes open to a stage the review gate covers: its findings, the
+/// test-integrity events `loom stage complete` also checks, and on a standard
+/// stage the impact-selected tests it runs.
+fn append_dispute_commands(content: &mut String, stage: &Stage) {
+    let stage_id = &stage.id;
     content.push_str(&format!(
         "- A finding you judge wrong can be disputed instead of fixed: \
          `loom stage dispute-findings {stage_id} --finding <id> ... --reason ...`, repeating \
@@ -66,8 +68,19 @@ fn append_dispute_commands(content: &mut String, stage_id: &str) {
          - `loom stage complete` also fails on a test-integrity event (tests or assertions \
          removed, an assertion or ratchet file changed); `loom stage review integrity \
          {stage_id}` lists them. Revert the change behind each one, or dispute them with \
-         `loom stage dispute-integrity {stage_id} --event <id> ... --reason ...`.\n\n"
+         `loom stage dispute-integrity {stage_id} --event <id> ... --reason ...`.\n"
     ));
+    if stage.stage_type == StageType::Standard {
+        content.push_str(&format!(
+            "- `loom stage complete` also runs the tests that reach your changes. One whose tests \
+             fail at the stage's base with at least as many failures counted is noted, not \
+             failed; a build failure stays a failure. A failure your changes did not cause is \
+             disputed, never blocked: `loom stage dispute-criteria {stage_id} --field \
+             impact-tests --test <id> ... --reason ...`, with each id the last failing run of \
+             the exact `loom stage complete {stage_id}` lists.\n"
+        ));
+    }
+    content.push('\n');
 }
 
 /// The findings deferred to this stage from an earlier one, with their ids.

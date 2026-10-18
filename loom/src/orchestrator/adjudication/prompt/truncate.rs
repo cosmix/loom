@@ -19,6 +19,7 @@ pub(super) fn truncate_to_budget(prompt: &mut Prompt) {
     // Strategy: repeatedly halve the diff fence first, then the failure
     // output fence, then the listing fence, then the plan excerpt.
     let candidates = [
+        super::impact::STAGE_DIFF_HEADING,
         "## Evidence commit diff (git show)",
         "## Failure output (what the criterion produced)",
         "## Worktree top-level files (3-deep listing)",

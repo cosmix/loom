@@ -32,6 +32,7 @@
 
 mod apply;
 mod apply_contract;
+mod apply_impact;
 mod apply_kinds;
 mod closed_disputes;
 mod escalation;

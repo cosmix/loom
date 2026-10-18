@@ -1,9 +1,10 @@
 //! What an applied dispute verdict records in `.loom/work/reviews/<stage>/`
-//! (DESIGN D12, D13, D15): the rulings of a findings dispute, the findings it
-//! deferred to a later stage, and the integrity events a dispute accepted.
+//! (DESIGN D12, D13, D14, D15): the rulings of a findings dispute, the
+//! findings it deferred to a later stage, and the integrity events and
+//! impact-test failures a dispute accepted.
 //!
 //! Each write is a locked read-modify-write of the whole file, replaced
-//! atomically. The daemon re-applies a verdict whose apply crashed half way,
+//! atomically; `impact_tests::observed` writes its record the same way. The daemon re-applies a verdict whose apply crashed half way,
 //! so every write is idempotent: an entry already recorded is not added again.
 
 use anyhow::Result;
@@ -13,6 +14,7 @@ use std::path::Path;
 use super::store::{self, CarriedFinding, Ruling};
 use crate::fs::locking::{atomic_write_locked, locked_dir_update};
 use crate::verify::contracts::store::canonical_work_dir;
+use crate::verify::impact_tests::{self, AcceptedFailure};
 use crate::verify::integrity::{self, AcceptedEvent, ACCEPTED_FILE};
 
 /// Append `rulings` to `rulings.json` of `stage_id`.
@@ -64,9 +66,26 @@ pub fn append_integrity_acceptance(
     })
 }
 
+/// Record `failures` in `impact.json` of `stage_id`. A later acceptance of the
+/// same selection replaces the earlier one, as for integrity events.
+pub fn append_impact_acceptance(
+    work_dir: &Path,
+    stage_id: &str,
+    failures: &[AcceptedFailure],
+) -> Result<()> {
+    update(work_dir, stage_id, impact_tests::ACCEPTED_FILE, || {
+        let mut record = impact_tests::load_accepted(work_dir, stage_id)?;
+        for failure in failures {
+            record.accepted.retain(|known| known.id != failure.id);
+            record.accepted.push(failure.clone());
+        }
+        Ok(record)
+    })
+}
+
 /// Under the stage's `reviews/` directory lock, build the new content of
 /// `file` and replace it atomically.
-fn update<T: Serialize>(
+pub(in crate::verify) fn update<T: Serialize>(
     work_dir: &Path,
     stage_id: &str,
     file: &str,

@@ -114,7 +114,13 @@ fn js_runner_without_node_modules_is_a_note() {
          test(\"x\", boom);\n",
     );
 
-    let outcome = run(&Stage::default(), &root, &CriteriaConfig::default(), "main")
+    let work_dir = TempDir::new().unwrap();
+    let stage = Stage {
+        id: "s".to_string(),
+        ..Stage::default()
+    };
+    let config = CriteriaConfig::default();
+    let outcome = run(&stage, work_dir.path(), &root, &config, "main")
         .unwrap_or_else(|e| panic!("a package with no node_modules must not fail: {e:#}"));
     assert!(
         outcome.ran.is_empty(),

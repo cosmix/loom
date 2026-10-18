@@ -11,7 +11,7 @@ use anyhow::Result;
 
 use super::dispatch::{print_minted_proof, resolve_completion_proof};
 use super::types::{OutputCommands, StageCommands};
-use super::types_stage::{ContractsCommands, ReviewCommands};
+use super::types_stage::{ContractsCommands, CriteriaDispute, ReviewCommands};
 use crate::commands::stage;
 use crate::commands::stage::commit;
 
@@ -48,21 +48,24 @@ fn dispatch_stage_transitions(command: StageCommands) -> Result<()> {
 /// its line ceiling again.
 fn dispatch_stage_criteria(command: StageCommands) -> Result<()> {
     match command {
-        StageCommands::DisputeCriteria {
-            stage_id,
-            field,
-            criterion_index,
-            reason,
-            evidence_commit,
-            failure_output,
-        } => stage::dispute_criteria(
-            stage_id,
-            field.to_field(),
-            criterion_index,
-            reason,
-            evidence_commit,
-            failure_output,
-        ),
+        StageCommands::DisputeCriteria(args) => match CriteriaDispute::try_from(args)? {
+            CriteriaDispute::Entry {
+                stage_id,
+                field,
+                criterion_index,
+                reason,
+                evidence_commit,
+                failure_output,
+            } => stage::dispute_criteria(
+                stage_id,
+                field,
+                criterion_index,
+                reason,
+                evidence_commit,
+                failure_output,
+            ),
+            CriteriaDispute::ImpactTests(filing) => stage::file_dispute(filing),
+        },
         StageCommands::Adjudicate {
             stage,
             dispute,
@@ -160,7 +163,7 @@ pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
             force_complete,
             reject,
         } => stage::human_review(stage_id, approve, force_complete, reject),
-        cmd @ (StageCommands::DisputeCriteria { .. }
+        cmd @ (StageCommands::DisputeCriteria(_)
         | StageCommands::Adjudicate { .. }
         | StageCommands::Amend { .. }) => dispatch_stage_criteria(cmd),
         StageCommands::DisputeFindings(args) => stage::file_dispute(args.into()),

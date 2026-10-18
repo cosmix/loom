@@ -12,6 +12,7 @@ use std::path::Path;
 
 mod adapters;
 pub mod command;
+mod environment;
 #[cfg(test)]
 mod fixture_support;
 pub mod languages;
@@ -65,6 +66,18 @@ pub struct TestTarget {
     pub name: Option<String>,
 }
 
+/// How a runner's selection names its tests.
+#[derive(Debug, Clone, Copy)]
+pub enum SelectionNames {
+    /// By the file declaring them: each target's `name` is unset.
+    Files,
+    /// By libtest path (`module::test`): [`TestRunnerAdapter::select_command`]
+    /// takes one target per test function, each with its `name` set. A path
+    /// starts at a crate root; `is_crate_root` says whether a file, relative
+    /// to its package, is one.
+    LibtestPaths { is_crate_root: fn(&Path) -> bool },
+}
+
 /// One test runner. Each implementation is a unit struct exposed as
 /// `pub static ADAPTER` from its module in `adapters/`.
 pub trait TestRunnerAdapter: Sync {
@@ -93,6 +106,19 @@ pub trait TestRunnerAdapter: Sync {
     /// empty list keeps the stage's working directory.
     fn run_root_markers(&self) -> &'static [&'static str] {
         &[]
+    }
+
+    /// How a selection names the tests it runs ([`SelectionNames`]).
+    fn selection_names(&self) -> SelectionNames {
+        SelectionNames::Files
+    }
+
+    /// The installed directory a run in `package_dir` needs, found there or
+    /// in an ancestor up to `root`, when the package uses one. The confined
+    /// runner denies the network, so a run without it cannot build it and
+    /// proves nothing. `None` when the run needs no installed environment.
+    fn required_environment(&self, _root: &Path, _package_dir: &Path) -> Option<&'static str> {
+        None
     }
 
     /// One shell command running every target, or `None` when the runner

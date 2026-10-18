@@ -192,6 +192,20 @@ assert_output 'diagnostic evidence was recorded; fix the failing check'
 assert_log 'STATUS=failed'
 assert_log 'failed check details'
 
+# A harness filling two output fields with the same text hands the broker
+# that text once: the impact-test record it keeps only as the last lines
+# reaches it once, never twice.
+reset_log
+IMPACT=$'tests failed\nLOOM_CONTROL_IMPACT_V1 {"version":1,"failures":[]}\nLOOM_CONTROL_IMPACT_EOF'
+payload=$(jq -n --arg command "$PINNED" --arg output "$IMPACT" \
+	'{tool_name:"Bash",tool_input:{command:$command},tool_response:{stdout:$output,output:$output,is_error:true}}')
+FAKE_BROKER_OUTPUT='LOOM_CONTROL_OUTCOME tool_failed_recorded' run_payload "$payload"
+assert_rc 2
+[[ "$(rg -c '^LOOM_CONTROL_IMPACT_V1 ' "$LOG")" == 1 ]] ||
+	{ echo "the impact record reached the broker more than once: $(<"$LOG")" >&2; exit 1; }
+[[ "$(rg -c '^LOOM_CONTROL_IMPACT_EOF$' "$LOG")" == 1 ]] ||
+	{ echo "the impact marker reached the broker more than once: $(<"$LOG")" >&2; exit 1; }
+
 while IFS='|' read -r outcome rc phrase; do
 	reset_log
 	FAKE_BROKER_OUTPUT="LOOM_CONTROL_OUTCOME $outcome" run_post "$PINNED" "$EVIDENCE" false

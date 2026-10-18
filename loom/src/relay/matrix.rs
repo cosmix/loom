@@ -33,8 +33,9 @@ pub enum MatrixVerdict {
 /// `freeze-contracts` kind. `Contract` follows `Stage` except that it may not
 /// dispute or record a verdict, and `freeze-contracts` is its alone.
 ///
-/// `file-dispute` (DESIGN D15) disputes a plan v2 stage's findings, contract
-/// or integrity events; only a `Stage` session may relay it.
+/// `file-dispute` (DESIGN D15) disputes a plan v2 stage's findings, contract,
+/// integrity events or failing impact tests; only a `Stage` session may relay
+/// it.
 ///
 /// `commit` hands the daemon a session's staged index to commit. The three
 /// sessions that write a branch relay it: `Stage` (its stage branch),

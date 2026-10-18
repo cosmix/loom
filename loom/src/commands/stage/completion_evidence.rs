@@ -16,6 +16,7 @@ use crate::models::session::Session;
 use crate::models::stage::Stage;
 
 pub mod broker;
+pub mod impact_record;
 
 pub const EVIDENCE_RECORD_PREFIX: &str = "LOOM_CONTROL_EVIDENCE_V1 ";
 pub const EVIDENCE_EOF_MARKER: &str = "LOOM_CONTROL_EVIDENCE_EOF";

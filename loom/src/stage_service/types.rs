@@ -32,7 +32,8 @@ pub enum StageRequest {
     },
     /// `loom stage contracts freeze <id>`.
     FreezeContracts { reports: Vec<ContractRunReport> },
-    /// `loom stage dispute-findings|dispute-contract|dispute-integrity <id> ...`.
+    /// `loom stage dispute-findings|dispute-contract|dispute-integrity <id> ...`, and
+    /// `loom stage dispute-criteria --field impact-tests --test <id> ...`.
     FileDispute {
         kind: DisputeKind,
         reason: String,

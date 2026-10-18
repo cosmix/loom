@@ -17,6 +17,9 @@
 //! * integrity `accept`: records each event in `reviews/<stage>/integrity.json`
 //!   with the counts and hashes the adjudicator judged; `reject`: feedback to
 //!   revert the changes behind the events.
+//! * impact-tests `accept`: records each failure in `reviews/<stage>/impact.json`
+//!   as the dispute's evidence showed it; `reject`: feedback that the failures
+//!   stand (`apply_impact.rs`).
 
 use anyhow::{bail, Context, Result};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -35,7 +38,7 @@ use crate::verify::transitions::list_all_stages;
 
 use super::apply::{apply_accept, apply_needs_more_evidence, apply_reject};
 use super::requeue::requeue_or_hold_for_remaining_disputes;
-use super::{apply_contract, feedback, read_request};
+use super::{apply_contract, apply_impact, feedback, read_request};
 
 /// Apply `record` to `stage` by the kind of the dispute it answers.
 pub(super) fn apply_by_kind(
@@ -59,6 +62,10 @@ pub(super) fn apply_by_kind(
                 event_ids,
                 evidence,
             }) => apply_integrity_accept(work_dir, stage, dispute, &event_ids, &evidence),
+            Some(DisputeKind::ImpactTests { test_ids, evidence }) => {
+                let body = apply_impact::accept(work_dir, stage, dispute, &test_ids, &evidence)?;
+                notify_and_requeue(work_dir, stage, &body)
+            }
             _ => apply_accept(work_dir, stage, plan_patch, dispute),
         },
         DisputeVerdict::Reject {
@@ -71,6 +78,10 @@ pub(super) fn apply_by_kind(
             }
             Some(DisputeKind::Integrity { event_ids, .. }) => {
                 let body = integrity_reject_notice(&stage.id, &event_ids, reasoning);
+                notify_and_requeue(work_dir, stage, &body)
+            }
+            Some(DisputeKind::ImpactTests { test_ids, .. }) => {
+                let body = apply_impact::reject_notice(&test_ids, reasoning);
                 notify_and_requeue(work_dir, stage, &body)
             }
             _ => apply_reject(work_dir, stage, dispute, reasoning, citations),

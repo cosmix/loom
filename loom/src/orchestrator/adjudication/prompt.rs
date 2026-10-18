@@ -6,9 +6,10 @@
 //!
 //! Each kind of dispute has its own builder: `criterion` (a disputed
 //! acceptance criterion), `criterion_entry` (a disputed wiring check or wiring
-//! test), `findings` (review findings), `contract` (a frozen contract) and
-//! `integrity` (test-integrity events). [`build`] routes by the request's kind
-//! and, for a criterion dispute, its field.
+//! test), `findings` (review findings), `contract` (a frozen contract),
+//! `integrity` (test-integrity events) and `impact` (failing impact-selected
+//! tests). [`build`] routes by the request's kind and, for a criterion
+//! dispute, its field.
 //!
 //! The whole thing is hard-capped to roughly 100 KiB (see `truncate`), with
 //! the instructions never trimmed. `signals/adjudication.rs` wraps the result
@@ -20,6 +21,7 @@ mod criterion_entry;
 mod diff;
 mod execution_site;
 mod findings;
+mod impact;
 mod integrity;
 mod sources;
 mod truncate;
@@ -149,6 +151,7 @@ pub fn build(plan_path: &Path, stage: &Stage, dispute: &DisputeRequest, work_dir
         DisputeKind::Findings { .. } => findings::build(&input),
         DisputeKind::Contract { .. } => contract::build(&input),
         DisputeKind::Integrity { .. } => integrity::build(&input),
+        DisputeKind::ImpactTests { .. } => impact::build(&input),
     };
     truncate::truncate_to_budget(&mut prompt);
     prompt

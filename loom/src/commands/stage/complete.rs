@@ -17,6 +17,7 @@ use super::acceptance_runner::{
     resolve_stage_execution_paths, run_acceptance_with_display, AcceptanceDisplayOptions,
     StageExecutionPaths,
 };
+use super::completion_evidence::impact_record::after_failed_completion;
 use super::knowledge_complete::{complete_knowledge_stage, verify_knowledge_for_broker};
 use super::merge_resolver::{spawn_merge_resolver, MergeResolverResult};
 use super::merge_verify::verify_or_derive_completed_commit;
@@ -96,6 +97,7 @@ pub fn complete(
         );
     }
 
+    let stage_session = control_session.is_some();
     complete_pipeline::complete_stage(
         stage,
         session_id,
@@ -105,6 +107,7 @@ pub fn complete(
         control_session,
         work_dir,
     )
+    .inspect_err(|error| after_failed_completion(&stage_id, stage_session, work_dir, error))
 }
 
 fn prepare_completion(

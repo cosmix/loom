@@ -2,9 +2,11 @@
 //! them, derived from the `mod` declarations the source graph records.
 //!
 //! A function's path is its file's module path from the crate root, then its
-//! enclosing inline modules and its name. A file's module path follows the
-//! declaration that makes it a module: the conventional parent file first,
-//! then a `#[path]` attribute naming it from its directory or the one above.
+//! enclosing inline modules and its name. Which files are crate roots is the
+//! runner's layout (`SelectionNames::LibtestPaths`). A file's module path
+//! follows the declaration that makes it a module: the conventional parent
+//! file first, then a `#[path]` attribute naming it from its directory or the
+//! one above.
 //! A step no declaration supports leaves the path underived; none is guessed.
 
 use regex::Regex;
@@ -32,6 +34,9 @@ static PATH_ATTRIBUTE: LazyLock<Regex> = LazyLock::new(|| {
     .expect("Invalid regex")
 });
 
+/// A package (checkout-relative) and its runner's crate-root rule.
+type Crate<'p> = (&'p Path, fn(&Path) -> bool);
+
 /// Libtest paths over one graph; each file's module path is derived once.
 pub(super) struct LibtestPaths<'a> {
     graph: &'a ResolvedGraph,
@@ -50,9 +55,15 @@ impl<'a> LibtestPaths<'a> {
     }
 
     /// The libtest path of Rust function `node` in the package at `package`
-    /// (checkout-relative), or `None` when a step towards its crate root is
-    /// not a module declaration the graph records.
-    pub(super) fn of(&mut self, node: &SourceNode, package: &Path) -> Option<String> {
+    /// (checkout-relative), whose crate roots `is_crate_root` names, or
+    /// `None` when a step towards its crate root is not a module declaration
+    /// the graph records.
+    pub(super) fn of(
+        &mut self,
+        node: &SourceNode,
+        package: &Path,
+        is_crate_root: fn(&Path) -> bool,
+    ) -> Option<String> {
         if node.language != NodeLanguage::Rust {
             return None;
         }
@@ -63,17 +74,17 @@ impl<'a> LibtestPaths<'a> {
         if !(1..=enclosing).all(|depth| declares_module(entry, &node.scope[..depth])) {
             return None;
         }
-        let mut path = self.module_path(&file, package, 0)?;
+        let mut path = self.module_path(&file, (package, is_crate_root), 0)?;
         path.extend(node.scope.iter().cloned());
         Some(path.join("::"))
     }
 
-    fn module_path(&mut self, file: &str, package: &Path, depth: usize) -> Option<Vec<String>> {
+    fn module_path(&mut self, file: &str, krate: Crate<'_>, depth: usize) -> Option<Vec<String>> {
         if let Some(known) = self.memo.get(file) {
             return known.clone();
         }
         let path = if depth < MAX_MODULE_DEPTH {
-            self.derive_module_path(file, package, depth)
+            self.derive_module_path(file, krate, depth)
         } else {
             None
         };
@@ -84,14 +95,15 @@ impl<'a> LibtestPaths<'a> {
     fn derive_module_path(
         &mut self,
         file: &str,
-        package: &Path,
+        krate: Crate<'_>,
         depth: usize,
     ) -> Option<Vec<String>> {
+        let (package, is_crate_root) = krate;
         if is_crate_root(Path::new(file).strip_prefix(package).ok()?) {
             return Some(Vec::new());
         }
         let (parent, name) = self.declaring_file(file)?;
-        let mut path = self.module_path(&parent, package, depth + 1)?;
+        let mut path = self.module_path(&parent, krate, depth + 1)?;
         path.push(name);
         Some(path)
     }
@@ -161,22 +173,6 @@ impl<'a> LibtestPaths<'a> {
                 .then(|| name.to_string())
         })
     }
-}
-
-/// Whether `relative` (to its package) is a crate root by Cargo's layout: the
-/// library, a binary, an integration test, a bench, an example, or the build
-/// script.
-fn is_crate_root(relative: &Path) -> bool {
-    let parts: Vec<&str> = relative.iter().filter_map(|part| part.to_str()).collect();
-    matches!(
-        parts.as_slice(),
-        ["src", "lib.rs" | "main.rs"]
-            | ["build.rs"]
-            | ["src", "bin", _]
-            | ["src", "bin", _, "main.rs"]
-            | ["tests" | "benches" | "examples", _]
-            | ["tests" | "benches" | "examples", _, "main.rs"]
-    )
 }
 
 /// Whether `entry` declares a module whose scope is `scope`.

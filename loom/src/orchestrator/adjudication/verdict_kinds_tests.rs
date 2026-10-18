@@ -126,3 +126,29 @@ fn a_verdict_foreign_to_the_kind_is_turned_into_a_question() {
     ));
     assert!(asked.contains("findings dispute"), "{asked}");
 }
+
+#[test]
+fn an_impact_test_dispute_takes_accept_without_a_patch_or_reject_but_no_rulings() {
+    let impact = DisputeKind::ImpactTests {
+        test_ids: vec!["IT-cargo-test:.".to_string()],
+        evidence: Vec::new(),
+    };
+    let accept = json!({"verdict": "accept", "citations": citation(), "reasoning": "not ours"});
+    match parse_and_validate(&accept.to_string(), &impact) {
+        ValidationOutcome::Verdict(DisputeVerdict::Accept { plan_patch, .. }) => {
+            assert_eq!(plan_patch.inner, json!({}));
+        }
+        other => panic!("expected an accept, got {other:?}"),
+    }
+    let reject = json!({"verdict": "reject", "citations": citation(), "reasoning": "ours"});
+    assert!(matches!(
+        parse_and_validate(&reject.to_string(), &impact),
+        ValidationOutcome::Verdict(DisputeVerdict::Reject { .. })
+    ));
+    let rulings = json!({"verdict": "rulings", "rulings": []});
+    let asked = question(parse_and_validate(&rulings.to_string(), &impact));
+    assert!(
+        asked.contains("impact-tests dispute does not take"),
+        "{asked}"
+    );
+}

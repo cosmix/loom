@@ -11,7 +11,7 @@ use crate::testrun::command::{shell_word, shell_words};
 use crate::testrun::recognize::{
     command_args, combined_output, has_flag, pattern, positionals, split_double_dash, sum_matches,
 };
-use crate::testrun::{RunOutput, RunSummary, TestRunnerAdapter, TestTarget};
+use crate::testrun::{RunOutput, RunSummary, SelectionNames, TestRunnerAdapter, TestTarget};
 
 pub struct CargoTest;
 
@@ -89,6 +89,10 @@ impl TestRunnerAdapter for CargoTest {
         "rust"
     }
 
+    fn selection_names(&self) -> SelectionNames {
+        SelectionNames::LibtestPaths { is_crate_root }
+    }
+
     /// Cargo finds its package from the cwd upward and builds the one it is in.
     fn run_root_markers(&self) -> &'static [&'static str] {
         &["Cargo.toml"]
@@ -143,6 +147,22 @@ impl TestRunnerAdapter for CargoTest {
             build_failed: running.is_none() && BUILD_ERROR.is_match(&text),
         }
     }
+}
+
+/// Whether `relative` (to its package) is a crate root by Cargo's layout: the
+/// library, a binary, an integration test, a bench, an example, or the build
+/// script.
+pub(super) fn is_crate_root(relative: &Path) -> bool {
+    let parts: Vec<&str> = relative.iter().filter_map(|part| part.to_str()).collect();
+    matches!(
+        parts.as_slice(),
+        ["src", "lib.rs" | "main.rs"]
+            | ["build.rs"]
+            | ["src", "bin", _]
+            | ["src", "bin", _, "main.rs"]
+            | ["tests" | "benches" | "examples", _]
+            | ["tests" | "benches" | "examples", _, "main.rs"]
+    )
 }
 
 #[cfg(test)]

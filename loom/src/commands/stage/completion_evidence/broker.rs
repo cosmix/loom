@@ -8,6 +8,7 @@ use super::{
 };
 use crate::daemon::Response;
 use crate::handoff::{load_trusted_session_checkpoint, CompletionAttemptEvidence, CompletionPhase};
+use crate::models::dispute::strip_control;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::load_stage;
@@ -158,6 +159,7 @@ pub fn run_broker(ctx: BrokerContext, tool_status_failed: bool, output: &str) ->
         Err(error) => return BrokerOutcome::Uncertain(error.to_string()),
     };
     if tool_status_failed {
+        keep_impact_record(ctx, output);
         let diagnostic = output.lines().find(|line| !line.trim().is_empty());
         return record_diagnostic(
             ctx,
@@ -194,6 +196,15 @@ pub fn run_broker(ctx: BrokerContext, tool_status_failed: bool, output: &str) ->
         return BrokerOutcome::EvidenceRecordFailed(error.to_string());
     }
     complete_verified(ctx, evidence)
+}
+
+/// Record the failing run's impact-test failures, for a dispute to name. A
+/// record that cannot be kept leaves that dispute refused, never this
+/// completion's outcome changed.
+fn keep_impact_record(ctx: BrokerContext, output: &str) {
+    if let Err(error) = super::impact_record::record_from_output(ctx.stage, ctx.work_dir, output) {
+        eprintln!("Warning: the impact-test record was not kept: {error:#}");
+    }
 }
 
 fn parse_verified(
@@ -345,9 +356,5 @@ fn reconcile_completed(
 }
 
 fn sanitize_detail(detail: &str) -> String {
-    detail
-        .chars()
-        .filter(|character| !character.is_control())
-        .take(300)
-        .collect()
+    strip_control(detail, &[]).chars().take(300).collect()
 }

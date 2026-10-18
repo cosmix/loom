@@ -22,11 +22,12 @@ fn rendered(stage: &Stage) -> String {
 
 #[test]
 fn feedback_renders_after_a_dispute_of_any_kind() {
-    let counters: [fn(&mut Stage); 4] = [
+    let counters: [fn(&mut Stage); 5] = [
         |stage| stage.dispute_count = 1,
         |stage| stage.tally.finding_disputes = 1,
         |stage| stage.tally.contract_disputes = 1,
         |stage| stage.tally.integrity_disputes = 1,
+        |stage| stage.tally.impact_disputes = 1,
     ];
     for (i, set) in counters.iter().enumerate() {
         let mut stage = Stage {

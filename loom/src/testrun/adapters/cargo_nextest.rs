@@ -10,7 +10,7 @@ use crate::testrun::command::shell_quote;
 use crate::testrun::recognize::{
     combined_output, command_args, has_flag, last_match, pattern, positionals,
 };
-use crate::testrun::{RunOutput, RunSummary, TestRunnerAdapter, TestTarget};
+use crate::testrun::{RunOutput, RunSummary, SelectionNames, TestRunnerAdapter, TestTarget};
 
 pub struct CargoNextest;
 
@@ -106,6 +106,12 @@ impl TestRunnerAdapter for CargoNextest {
 
     fn language(&self) -> &'static str {
         "rust"
+    }
+
+    fn selection_names(&self) -> SelectionNames {
+        SelectionNames::LibtestPaths {
+            is_crate_root: super::cargo_test::is_crate_root,
+        }
     }
 
     /// Cargo finds its package from the cwd upward and builds the one it is in.

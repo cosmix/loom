@@ -51,6 +51,19 @@ segment_has_arg() {
 	return 1
 }
 
+# segment_has_option <index> <option> <value> - True when the command segment
+# whose command word sits at LOOM_TOKENS[<index>] passes <option> <value>, as
+# two words or as <option>=<value>.
+segment_has_option() {
+	local k=$(($1 + 1)) n=${#LOOM_TOKENS[@]}
+	while ((k < n)) && [[ "${LOOM_TOKENS[$k]}" != "%%SEP%%" ]]; do
+		[[ "${LOOM_TOKENS[$k]}" == "$2=$3" ]] && return 0
+		[[ "${LOOM_TOKENS[$k]}" == "$2" && "${LOOM_TOKENS[$((k + 1))]:-}" == "$3" ]] && return 0
+		k=$((k + 1))
+	done
+	return 1
+}
+
 # relay_kind_at <index> - Echo the request kind written by the loom invocation
 # whose command word sits at LOOM_TOKENS[<index>], or nothing (section 5).
 relay_kind_at() {
@@ -62,7 +75,10 @@ relay_kind_at() {
 	memory:note | memory:decision | memory:change | memory:question | memory:resolve) echo memory ;;
 	stage:block) echo block ;;
 	stage:commit) echo commit ;;
-	stage:dispute-criteria) echo dispute ;;
+	stage:dispute-criteria)
+		# --field impact-tests files a plan v2 dispute kind, not a criterion.
+		if segment_has_option "$j" --field impact-tests; then echo file-dispute; else echo dispute; fi
+		;;
 	stage:dispute-findings | stage:dispute-contract | stage:dispute-integrity) echo file-dispute ;;
 	stage:merge) segment_has_arg "$j" --resolved && echo merge-resolved ;;
 	stage:adjudicate) echo verdict ;;

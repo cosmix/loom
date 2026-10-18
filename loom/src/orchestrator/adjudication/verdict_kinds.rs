@@ -1,15 +1,16 @@
-//! Validating the verdict on a findings, contract or integrity dispute
-//! (DESIGN D15), with the self-correcting rule `verdict.rs` applies to a
-//! criterion dispute: a shape defect becomes `NeedsMoreEvidence` with a
+//! Validating the verdict on a findings, contract, integrity or impact-test
+//! dispute (DESIGN D15), with the self-correcting rule `verdict.rs` applies to
+//! a criterion dispute: a shape defect becomes `NeedsMoreEvidence` with a
 //! question naming it.
 //!
 //! - findings: `rulings`, one per disputed finding id and none for another id,
 //!   `defer` naming a `target_stage`; or `needs-more-evidence`. Whether the
 //!   target may take the finding is checked when the verdict is applied, since
 //!   stages move on meanwhile.
-//! - contract and integrity: `accept`, `reject` or `needs-more-evidence`. A
-//!   contract `accept` may carry a `plan_patch` on `contracts`; an empty
-//!   `plan_patch` object stands for none.
+//! - contract, integrity and impact-tests: `accept`, `reject` or
+//!   `needs-more-evidence`. A contract `accept` may carry a `plan_patch` on
+//!   `contracts`; an empty `plan_patch` object stands for none, and the only
+//!   `plan_patch` an integrity or impact-test `accept` takes.
 
 use serde::Deserialize;
 use serde_json::{Map, Value};
@@ -29,6 +30,7 @@ pub(super) fn classify_for_kind(json: &Value, kind: &DisputeKind) -> ValidationO
         DisputeKind::Findings { .. } => ("findings", "rulings|needs-more-evidence"),
         DisputeKind::Contract { .. } => ("contract", "accept|reject|needs-more-evidence"),
         DisputeKind::Integrity { .. } => ("integrity", "accept|reject|needs-more-evidence"),
+        DisputeKind::ImpactTests { .. } => ("impact-tests", "accept|reject|needs-more-evidence"),
         DisputeKind::Criterion { .. } => ("criterion", "accept|reject|needs-more-evidence"),
     };
     let Some(tag) = verdict_tag(json) else {
@@ -41,11 +43,16 @@ pub(super) fn classify_for_kind(json: &Value, kind: &DisputeKind) -> ValidationO
         (DisputeKind::Findings { finding_ids, .. }, "rulings") => {
             validate_rulings(json, finding_ids)
         }
-        (DisputeKind::Contract { .. } | DisputeKind::Integrity { .. }, "reject") => {
-            validate_reject(json)
-        }
+        (
+            DisputeKind::Contract { .. }
+            | DisputeKind::Integrity { .. }
+            | DisputeKind::ImpactTests { .. },
+            "reject",
+        ) => validate_reject(json),
         (DisputeKind::Contract { .. }, "accept") => validate_accept(json, contracts_patch(json)),
-        (DisputeKind::Integrity { .. }, "accept") => validate_accept(json, Ok(no_patch())),
+        (DisputeKind::Integrity { .. } | DisputeKind::ImpactTests { .. }, "accept") => {
+            validate_accept(json, Ok(no_patch()))
+        }
         (_, other) => needs_more_evidence(format!(
             "Adjudicator emitted verdict '{other}', which a {name} dispute does not take. \
              Must be {allowed}."

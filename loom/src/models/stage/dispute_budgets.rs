@@ -27,14 +27,16 @@ pub struct DisputeTally {
     /// Number of accepted plan amendments applied for this stage.
     #[serde(default)]
     pub amendments_applied: u32,
-    /// Plan v2 findings, contract and integrity disputes filed, each capped by
-    /// `dispute_budgets`.
+    /// Plan v2 findings, contract, integrity and impact-test disputes filed,
+    /// each capped by `dispute_budgets`.
     #[serde(default)]
     pub finding_disputes: u32,
     #[serde(default)]
     pub contract_disputes: u32,
     #[serde(default)]
     pub integrity_disputes: u32,
+    #[serde(default)]
+    pub impact_disputes: u32,
 }
 
 impl Stage {
@@ -57,6 +59,7 @@ pub fn filed(stage: &Stage, kind: &DisputeKind) -> u32 {
         DisputeKind::Findings { .. } => stage.tally.finding_disputes,
         DisputeKind::Contract { .. } => stage.tally.contract_disputes,
         DisputeKind::Integrity { .. } => stage.tally.integrity_disputes,
+        DisputeKind::ImpactTests { .. } => stage.tally.impact_disputes,
     }
 }
 
@@ -73,6 +76,7 @@ pub fn spend(stage: &mut Stage, kind: &DisputeKind) {
         DisputeKind::Findings { .. } => &mut stage.tally.finding_disputes,
         DisputeKind::Contract { .. } => &mut stage.tally.contract_disputes,
         DisputeKind::Integrity { .. } => &mut stage.tally.integrity_disputes,
+        DisputeKind::ImpactTests { .. } => &mut stage.tally.impact_disputes,
     };
     *counter = counter.saturating_add(1);
 }

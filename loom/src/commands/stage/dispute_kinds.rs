@@ -1,10 +1,13 @@
-//! `loom stage dispute-findings`, `dispute-contract` and `dispute-integrity`
-//! (DESIGN D15): a plan v2 stage disputes review findings, a frozen contract
-//! or test-integrity events, one request for the whole batch.
+//! `loom stage dispute-findings`, `dispute-contract`, `dispute-integrity` and
+//! `dispute-criteria --field impact-tests` (DESIGN D15): a plan v2 stage
+//! disputes review findings, a frozen contract, test-integrity events or
+//! failing impact-selected tests, one request for the whole batch.
 //!
 //! The client snapshots the disputed findings or events into the request; the
 //! daemon checks every id again and records its own snapshot
-//! (`daemon/server/dispute_kinds.rs`). The transport is the one
+//! (`stage_service/dispute_kinds.rs`). An impact-test dispute carries the ids
+//! alone: the daemon copies each failure from the record loom's own gate run
+//! wrote (`verify::impact_tests::observed`). The transport is the one
 //! `dispute-criteria` uses (`dispute_transport.rs`).
 
 use anyhow::{Context, Result};
@@ -27,9 +30,12 @@ pub enum DisputeTarget {
     Contract(String),
     /// Current test-integrity event ids.
     Integrity(Vec<String>),
+    /// Ids of failing impact-selected tests, `IT-<runner>:<package>`.
+    ImpactTests(Vec<String>),
 }
 
-/// One `loom stage dispute-{findings,contract,integrity}` invocation.
+/// One `loom stage dispute-{findings,contract,integrity}` or
+/// `dispute-criteria --field impact-tests` invocation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DisputeFiling {
     pub stage_id: String,
@@ -71,5 +77,9 @@ fn snapshot(work_dir: &Path, stage_id: &str, target: DisputeTarget) -> Result<Di
                 evidence,
             })
         }
+        DisputeTarget::ImpactTests(test_ids) => Ok(DisputeKind::ImpactTests {
+            test_ids,
+            evidence: Vec::new(),
+        }),
     }
 }

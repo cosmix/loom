@@ -43,7 +43,8 @@ fn build_instructions(input: &KindPromptInput<'_>) -> String {
     s
 }
 
-fn verdict_schema() -> &'static str {
+/// The accept, reject and needs-more-evidence shapes, none with a plan_patch.
+pub(super) fn verdict_schema() -> &'static str {
     "```json\n\
 {\"verdict\":\"accept\",\"citations\":[{\"file\":\"src/a.rs\",\"line\":42,\"excerpt\":\"...\",\"claim\":\"...\"}],\"reasoning\":\"...\"}\n\
 {\"verdict\":\"reject\",\"citations\":[{\"file\":\"src/a.rs\",\"line\":42,\"excerpt\":\"...\",\"claim\":\"...\"}],\"reasoning\":\"...\"}\n\

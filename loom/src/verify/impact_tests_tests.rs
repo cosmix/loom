@@ -6,6 +6,7 @@ use crate::context::graph_store::GraphStore;
 use crate::context::refresh::{reconcile_source_graph, SourceGraphScope};
 use crate::context::store::{ContextStore, CACHE_RELATIVE_DIR};
 use crate::verify::criteria::ProbeRun;
+use crate::verify::impact_tests::base::BaseRunner;
 use std::cell::RefCell;
 use std::fs;
 use tempfile::TempDir;
@@ -65,8 +66,42 @@ impl ProbeRunner for NotFound {
     }
 }
 
+/// Never makes a base runner: a test whose selections all pass, or whose base
+/// is unknown, never needs one.
+struct NoBaseRunner;
+
+impl BaseRunner for NoBaseRunner {
+    fn runner_for(&self, _root: &Path) -> Box<dyn ProbeRunner + '_> {
+        unreachable!("no selection is re-run at the base")
+    }
+}
+
+/// Select what reaches `changed` in the worktree at `root` with `runner`,
+/// judging failures against `accepted` and an unknown base.
+fn select(
+    root: &Path,
+    graph: &WorktreeGraph,
+    changed: &[PathBuf],
+    runner: &dyn ProbeRunner,
+    accepted: AcceptedImpact,
+) -> Report {
+    let stage = Stage::default();
+    let check = Check {
+        stage: &stage,
+        working_dir: root,
+        runner,
+        base: BaseProbe {
+            worktree: root,
+            commit: Err("not under test".to_string()),
+            runner: &NoBaseRunner,
+        },
+        accepted,
+    };
+    run_with(&check, graph, changed).unwrap()
+}
+
 /// Run git in `root` with ambient config neutralised; returns trimmed stdout.
-fn git(root: &Path, args: &[&str]) -> String {
+pub(super) fn git(root: &Path, args: &[&str]) -> String {
     let output = std::process::Command::new("git")
         .args(args)
         .current_dir(root)
@@ -123,7 +158,14 @@ fn select_after_changing_add(root: &Path, recorder: &Recorder) -> ImpactOutcome 
     let graph = build_for_worktree(root).unwrap();
     assert_eq!(graph.degraded, None);
     assert_eq!(graph.changed, vec![PathBuf::from("src/lib.rs")]);
-    run_with(&Stage::default(), root, &graph, &graph.changed, recorder).unwrap()
+    select(
+        root,
+        &graph,
+        &graph.changed,
+        recorder,
+        AcceptedImpact::default(),
+    )
+    .outcome
 }
 
 #[test]
@@ -188,7 +230,7 @@ fn web_repo(manifest: &str) -> (TempDir, PathBuf) {
 fn select_web(root: &Path, runner: &dyn ProbeRunner) -> ImpactOutcome {
     let graph = build_for_worktree(root).unwrap();
     let changed = [PathBuf::from("web/src/a.test.ts")];
-    run_with(&Stage::default(), root, &graph, &changed, runner).unwrap()
+    select(root, &graph, &changed, runner, AcceptedImpact::default()).outcome
 }
 
 #[test]
@@ -248,12 +290,26 @@ fn exit_127_is_a_note() {
     write(&root, "src/lib.rs", &LIB.replace("a + b", "b + a"));
     let graph = build_for_worktree(&root).unwrap();
 
-    let outcome = run_with(&Stage::default(), &root, &graph, &graph.changed, &NotFound).unwrap();
+    let report = select(
+        &root,
+        &graph,
+        &graph.changed,
+        &NotFound,
+        AcceptedImpact::default(),
+    );
+    let outcome = report.outcome;
 
     assert!(outcome.ran.is_empty(), "{:?}", outcome.ran);
     let notes = outcome.notes.join("\n");
     assert!(notes.contains("could not start (exit 127)"), "{notes}");
     assert!(notes.contains(FULL_SUITE), "{notes}");
+}
+
+fn stage(id: &str) -> Stage {
+    Stage {
+        id: id.to_string(),
+        ..Stage::default()
+    }
 }
 
 /// A repository on `main` with `web/src/a.test.ts` committed, then a `loom/s`
@@ -280,9 +336,18 @@ fn committed_stage_repo() -> (TempDir, PathBuf) {
 
 #[test]
 fn run_selects_the_committed_stage_diff() {
-    let (_temp, root) = committed_stage_repo();
+    let (temp, root) = committed_stage_repo();
+    let work = temp.path().join(".loom/work");
+    fs::create_dir_all(&work).unwrap();
 
-    let outcome = run(&Stage::default(), &root, &CriteriaConfig::default(), "main").unwrap();
+    let outcome = run(
+        &stage("s"),
+        &work,
+        &root,
+        &CriteriaConfig::default(),
+        "main",
+    )
+    .unwrap();
 
     assert!(outcome.ran.is_empty(), "{:?}", outcome.ran);
     assert!(
@@ -299,10 +364,13 @@ fn run_selects_the_committed_stage_diff() {
 /// target falls back to the files changed since the published base.
 #[test]
 fn an_unresolvable_target_is_a_note_not_a_failure() {
-    let (_temp, root) = committed_stage_repo();
+    let (temp, root) = committed_stage_repo();
+    let work = temp.path().join(".loom/work");
+    fs::create_dir_all(&work).unwrap();
 
     let outcome = run(
-        &Stage::default(),
+        &stage("s"),
+        &work,
         &root,
         &CriteriaConfig::default(),
         "no-such-branch",
@@ -315,55 +383,5 @@ fn an_unresolvable_target_is_a_note_not_a_failure() {
         )),
         "{:?}",
         outcome.notes
-    );
-}
-
-/// A common name is no evidence: a test reaching the change only through an
-/// ambiguous call's candidate set is noted, while bound paths, including the
-/// weakest bind (unique-name), still select.
-#[test]
-fn a_namesake_reached_only_through_a_candidate_is_noted_not_selected() {
-    use crate::context::resolve::fixtures::{edge_at, func_id, graph_from, unresolved_edge};
-    use crate::context::source_graph::{EdgeProvenance, SourceEdgeKind, IMPORT_CONFIDENCE};
-
-    let validate = func_id("src/lib.rs", "validate");
-    let vendored = func_id("deps/kit/src/kit.rs", "validate");
-    let call = |from: &str, provenance, confidence| {
-        vec![edge_at(
-            from,
-            &validate,
-            SourceEdgeKind::Calls,
-            provenance,
-            confidence,
-        )]
-    };
-    let bound = func_id("tests/bound_test.rs", "checks");
-    let unique = func_id("tests/unique_test.rs", "checks");
-    let namesake = func_id("deps/kit/tests/kit_test.rs", "checks");
-    let ambiguous = unresolved_edge(namesake.as_str(), SourceEdgeKind::Calls, "validate")
-        .with_candidates(vec![vendored, validate.clone()]);
-    let graph = graph_from(vec![
-        ("src/lib.rs", &["validate"], vec![]),
-        ("deps/kit/src/kit.rs", &["validate"], vec![]),
-        (
-            "tests/bound_test.rs",
-            &["checks"],
-            call(&bound, EdgeProvenance::Import, IMPORT_CONFIDENCE),
-        ),
-        (
-            "tests/unique_test.rs",
-            &["checks"],
-            call(&unique, EdgeProvenance::UniqueName, UNIQUE_NAME_CONFIDENCE),
-        ),
-        ("deps/kit/tests/kit_test.rs", &["checks"], vec![ambiguous]),
-    ]);
-
-    let reached = reached_test_nodes(&graph, &[PathBuf::from("src/lib.rs")], &BTreeSet::new());
-
-    let selected: Vec<&str> = reached.selected.keys().copied().collect();
-    assert_eq!(selected, vec![bound.as_str(), unique.as_str()]);
-    assert_eq!(
-        reached.namesakes,
-        BTreeSet::from(["deps/kit/tests/kit_test.rs".to_string()])
     );
 }

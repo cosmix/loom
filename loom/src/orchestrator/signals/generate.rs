@@ -337,6 +337,7 @@ fn has_disputes(stage: &Stage) -> bool {
         stage.tally.finding_disputes,
         stage.tally.contract_disputes,
         stage.tally.integrity_disputes,
+        stage.tally.impact_disputes,
     ]
     .iter()
     .any(|&count| count > 0)

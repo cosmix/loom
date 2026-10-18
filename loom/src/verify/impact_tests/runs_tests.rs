@@ -4,6 +4,7 @@ use super::*;
 use crate::models::stage::Stage;
 use crate::testrun::registry;
 use crate::verify::criteria::{CriteriaConfig, CriteriaProbe};
+use anyhow::Result;
 use tempfile::TempDir;
 
 fn cargo() -> &'static dyn TestRunnerAdapter {
@@ -40,10 +41,10 @@ fn a_selection_that_cannot_start_is_a_note() {
     let mut selection = Selection::new(root.path(), &CannotSpawn, BTreeSet::new());
     let targets = named(["a", "b", "c"].map(String::from));
     selection.run_group(Path::new(""), cargo(), &targets);
-    let outcome = selection.finish("s").unwrap();
-    assert!(outcome.ran.is_empty());
-    assert_eq!(outcome.notes.len(), 1);
-    let note = &outcome.notes[0];
+    assert!(selection.ran.is_empty());
+    assert!(selection.failed.is_empty());
+    assert_eq!(selection.notes.len(), 1);
+    let note = selection.notes.first().unwrap();
     assert!(note.contains("could not be run"), "{note}");
     assert!(note.contains(FULL_SUITE), "{note}");
     assert!(note.len() < 1_000, "{} bytes", note.len());
@@ -60,10 +61,9 @@ fn an_oversized_selection_fails_exec_and_becomes_a_note() {
     let mut selection = Selection::new(root.path(), &probe, BTreeSet::new());
     let targets = named(["a".repeat(4 << 20)]);
     selection.run_group(Path::new(""), cargo(), &targets);
-    let outcome = selection.finish("s").unwrap();
-    assert!(outcome.ran.is_empty());
-    assert_eq!(outcome.notes.len(), 1);
-    let note = &outcome.notes[0];
+    assert!(selection.ran.is_empty());
+    assert_eq!(selection.notes.len(), 1);
+    let note = selection.notes.first().unwrap();
     assert!(
         note.contains("could not be run"),
         "{}",
@@ -114,12 +114,13 @@ fn a_long_command_is_shortened_with_its_target_count() {
 
 #[test]
 fn selected_lists_the_first_ten_names() {
-    let targets = named((0..25).map(|n| format!("t{n}")));
-    let listed = selected(&targets);
-    assert!(listed.starts_with("selected: t0, t1,"), "{listed}");
-    assert!(listed.contains("t9, and 15 more"), "{listed}");
-    assert!(!listed.contains("t10"), "{listed}");
-    assert_eq!(selected(&targets[..3]), "selected: t0, t1, t2");
+    use super::super::failure::listed;
+    let tests = labels(&named((0..25).map(|n| format!("t{n}"))));
+    let shown = listed(&tests);
+    assert!(shown.starts_with("selected: t0, t1,"), "{shown}");
+    assert!(shown.contains("t9, and 15 more"), "{shown}");
+    assert!(!shown.contains("t10"), "{shown}");
+    assert_eq!(listed(&tests[..3]), "selected: t0, t1, t2");
 }
 
 /// `uv run` cannot build a missing `.venv` with the network denied, so a uv
@@ -139,7 +140,7 @@ fn a_uv_package_without_a_venv_is_a_note() {
     let notes_after_run = || {
         let mut selection = Selection::new(root.path(), &CannotSpawn, BTreeSet::new());
         selection.run_group(package, pytest, &targets);
-        selection.finish("s").unwrap().notes
+        selection.notes.into_iter().collect::<Vec<_>>()
     };
 
     let notes = notes_after_run();

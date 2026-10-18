@@ -12,6 +12,7 @@ use std::collections::HashSet;
 use std::path::PathBuf;
 
 use crate::plan::amendment::AmendmentField;
+use crate::verify::impact_tests::ImpactFailure;
 use crate::verify::integrity::IntegrityEvent;
 use crate::verify::review::report::Finding;
 use crate::verify::review::store::{OpenFinding, RulingKind};
@@ -29,6 +30,11 @@ pub struct FindingSnapshot {
 
 /// A disputed test-integrity event as it stood when the dispute was filed.
 pub type IntegritySnapshot = IntegrityEvent;
+
+/// A disputed impact-selected test failure as loom's own gate run recorded it
+/// (`reviews/<stage>/impact-observed.json`), base comparison included. The
+/// daemon copies it from that record; the filing client sends only ids.
+pub type ImpactSnapshot = ImpactFailure;
 
 /// Which list of a stage a criterion dispute contests.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize)]
@@ -94,6 +100,14 @@ pub enum DisputeKind {
         event_ids: Vec<String>,
         evidence: Vec<IntegritySnapshot>,
     },
+    /// Failing impact-selected tests the stage did not cause:
+    /// `loom stage dispute-criteria --field impact-tests`. The filing client
+    /// leaves `evidence` empty; the daemon fills it from loom's record.
+    ImpactTests {
+        test_ids: Vec<String>,
+        #[serde(default)]
+        evidence: Vec<ImpactSnapshot>,
+    },
 }
 
 impl DisputeKind {
@@ -112,6 +126,7 @@ impl DisputeKind {
             DisputeKind::Findings { .. } => "findings",
             DisputeKind::Contract { .. } => "contract",
             DisputeKind::Integrity { .. } => "integrity",
+            DisputeKind::ImpactTests { .. } => "impact-tests",
         }
     }
 }
@@ -135,6 +150,17 @@ pub fn select_events(events: &[IntegrityEvent], ids: &[String]) -> Result<Vec<In
             .iter()
             .find(|event| event.id == id)
             .map(|event| Ok(event.clone()))
+    })
+}
+
+/// The failures `ids` names among the impact-test `failures` loom observed
+/// for the stage, under the same rules as [`select_findings`].
+pub fn select_impact(failures: &[ImpactFailure], ids: &[String]) -> Result<Vec<ImpactSnapshot>> {
+    select(ids, "impact-test failure loom observed", |id| {
+        failures
+            .iter()
+            .find(|failure| failure.id == id)
+            .map(|failure| Ok(failure.clone()))
     })
 }
 
@@ -181,6 +207,10 @@ fn review_round(id: &str) -> Option<u32> {
 /// whichever side ran the cut.
 pub(crate) const FAILURE_OUTPUT_MAX_BYTES: usize = 4096;
 
+/// Most bytes of a dispute's reason the daemon records. The CLI caps a reason
+/// at 500 characters; a request from the wire can carry anything.
+pub(crate) const DISPUTE_REASON_MAX_BYTES: usize = 4096;
+
 /// `s` reduced to at most `max_bytes`, cut on the last char boundary that fits
 /// so the result stays valid UTF-8 (a raw byte slice panics inside a
 /// multi-byte character).
@@ -190,6 +220,21 @@ pub(crate) fn truncate_to_byte_limit(s: &str, max_bytes: usize) -> String {
         end -= 1;
     }
     s[..end].to_string()
+}
+
+/// `s` without its control characters but those in `kept` (`\n` and `\t`
+/// for multi-line output): text a stage's code wrote reaches a terminal and
+/// an adjudicator's prompt, where an escape sequence could rewrite it.
+pub(crate) fn strip_control(s: &str, kept: &[char]) -> String {
+    s.chars()
+        .filter(|character| !character.is_control() || kept.contains(character))
+        .collect()
+}
+
+/// The last at most `max_bytes` of `s`, cut on a char boundary: the end of a
+/// test run's output is where its verdict and failures are.
+pub(crate) fn tail_to_byte_limit(s: &str, max_bytes: usize) -> String {
+    s[s.ceil_char_boundary(s.len().saturating_sub(max_bytes))..].to_string()
 }
 
 /// Request to dispute part of a stage's verification. Written by the daemon

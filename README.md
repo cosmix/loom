@@ -186,7 +186,6 @@ Everything loom does, one line each, grouped by what you are doing at the time. 
 - Run every acceptance criterion itself before letting a stage finish. ([Verification Is Enforced, Not Self-Reported](#verification-is-enforced-not-self-reported))
 - Check that the outcome actually exists: real artifacts, live wiring, passing wiring tests, no dead code. ([Verification Model](#verification-model))
 - Gate a stage before spawn and after acceptance with `before_stage`/`after_stage` checks. ([Verification Model](#verification-model))
-- Capture a baseline when a stage starts and charge the stage only for failures it introduced. ([Change Impact](#change-impact))
 - Require a regression test on any stage marked as a bug fix. ([Bug-Fix Stages](#bug-fix-stages))
 - Let an agent dispute a wrong criterion instead of weakening it, through adjudication to a verdict. ([Disputes, Adjudication, and Amendments](#disputes-adjudication-and-amendments))
 - Reserve the verification bypass flags for a one-time, operator-only proof. ([Verification Is Enforced, Not Self-Reported](#verification-is-enforced-not-self-reported))
@@ -505,6 +504,7 @@ loom stage dispute-criteria <stage-id> [--field acceptance|wiring|wiring-tests] 
 loom stage dispute-findings <stage-id> --finding <id>... --reason <text>       # Plan version 2: challenge open review findings
 loom stage dispute-contract <stage-id> --contract <id> --reason <text>        # Plan version 2: challenge a frozen contract
 loom stage dispute-integrity <stage-id> --event <id>... --reason <text>       # Plan version 2: challenge a test-integrity event
+loom stage dispute-criteria <stage-id> --field impact-tests --test <id>... --reason <text>  # Plan version 2: challenge failing impact-selected tests the stage did not cause
 loom stage adjudicate --stage <stage-id> --dispute <n> --verdict-file <path>
 loom stage contracts freeze|show|restore <stage-id> [--contract <id>]         # Plan version 2: freeze (contract session), inspect, or restore frozen contract files
 loom stage review status|integrity <stage-id>                                 # Plan version 2: review rounds and open findings; test-integrity events
@@ -783,7 +783,6 @@ into `.loom/work/config.toml`'s `[context]` section at `loom init`.
 | `context_ceiling_tokens`  | No       | Default ceiling for a stage's main agent session (default 150000)                                                                                                                                 |
 | `subagent_ceiling_tokens` | No       | Ceiling for subagents spawned by a stage session (default 120000); never read from a stage                                                                                                        |
 | `auto_merge`              | No       | Plan-wide default for automatic merge on completion; a stage's own `auto_merge` overrides it, and both fall back to the orchestrator's own setting (`loom run --no-merge` disables it) when unset |
-| `change_impact`           | No       | Nested block comparing before/after state; see [Change Impact](#change-impact)                                                                                                                    |
 
 ### Stage Fields
 
@@ -921,24 +920,6 @@ Two things worth knowing:
 
 A stage with `bug_fix: true` requires a `regression_test` block naming the test that pins the fix: `file` (path to the test, relative to `working_dir`) and optional `must_contain` (patterns the file's content must include). Verification checks the file exists and carries those patterns, so a bug-fix stage cannot complete on a fix with no test guarding the regression.
 
-### Change Impact
-
-A plan-level `change_impact` block separates the failures a stage introduced from the ones it inherited. Loom runs `baseline_command` when a stage starts executing and saves the output; at `loom stage complete` it runs the command again and compares the lines matching `failure_patterns`:
-
-```yaml
-loom:
-  version: 1
-  change_impact:
-    baseline_command: "cargo test --no-fail-fast 2>&1 || true"
-    compare_command: "cargo test --no-fail-fast 2>&1 || true" # optional; defaults to baseline_command
-    failure_patterns:
-      - "FAILED"
-      - "error\\[E"
-    policy: fail # fail (default) | warn | skip
-```
-
-The comparison reports new failures and fixed failures. `policy` decides what a new failure does to the stage: `fail` blocks completion, `warn` reports it and continues, `skip` turns the check off. Failures already present in the baseline do not count against the stage.
-
 ### Disputes, Adjudication, and Amendments
 
 `loom stage dispute-criteria` is how an agent challenges a criterion instead of quietly weakening it; `--field wiring` or `--field wiring-tests` makes the index point into those lists instead of `acceptance`. The daemon moves the stage to `NeedsAdjudication` and spawns a real session — with the full tool surface, running the disputed criterion itself — to judge it; `loom stage adjudicate` records that session's verdict, and a stage's own worktree session is refused so it can never judge its own dispute.
@@ -947,7 +928,7 @@ A need only a person can meet (a credential, a host install, a network domain th
 
 A verdict does one of three things: `Accept` patches the disputed list (`acceptance`, `wiring` or `wiring_tests`; an acceptance dispute may also patch `wiring`) and re-queues the stage; `NeedsMoreEvidence` appends the judge's questions to the next signal and re-queues, up to a capped number of rounds; `Reject` moves the stage to `NeedsHumanReview`. Every accepted amendment writes a numbered snapshot under `.loom/work/plan_versions/` plus an audit row.
 
-Version 2 plans add three more dispute kinds, each filed once per review round with several ids: `dispute-findings` (a judge rules each finding `uphold`, `dismiss` or `defer` to a dependent stage that is not yet finished; integration-verify never defers), `dispute-contract` (`Accept` re-freezes the contract and may amend `contracts`; `Reject` sends the agent to `loom stage contracts restore`) and `dispute-integrity` (`Accept` records the event as accepted at its current count or hash). Each kind has its own budget of three disputes per stage.
+Version 2 plans add four more dispute kinds, each filed once per review round with several ids: `dispute-findings` (a judge rules each finding `uphold`, `dismiss` or `defer` to a dependent stage that is not yet finished; integration-verify never defers), `dispute-contract` (`Accept` re-freezes the contract and may amend `contracts`; `Reject` sends the agent to `loom stage contracts restore`), `dispute-integrity` (`Accept` records the event as accepted at its current count or hash) and `dispute-criteria --field impact-tests` (for a failing impact-selected test selection the stage did not cause; `Accept` records the failure, and completion notes it while it fails no worse). A selection whose tests fail at the stage's merge base with at least as many failures counted is noted without a dispute; a build failure or unreadable output there still fails. The dispute names the ids (`IT-<runner>:<package>`) the last failing `loom stage complete` listed, and the judge reads loom's own record of those failures. Each kind has its own budget of three disputes per stage.
 
 The plan-level `adjudication.max_amendments_per_stage` field bounds autonomous amendments per stage (default 10), so a multi-fix plan is not sent to a human part-way through. `loom stage amend` gives an operator the same audited path directly: it replaces, inserts, or deletes one element of a stage's `acceptance`, `wiring`, or `wiring_tests` array, snapshotting and logging the change the same way.
 
@@ -1110,7 +1091,7 @@ Note: knowledge file writes are intentionally protected by sandbox defaults; kno
 
 ### Command Confinement
 
-The `sandbox:` block above bounds the **agent session**. A separate control bounds the commands **loom itself runs from your plan** — every acceptance criterion, setup command, truth check, wiring test, dead-code check and change-impact command:
+The `sandbox:` block above bounds the **agent session**. A separate control bounds the commands **loom itself runs from your plan** — every acceptance criterion, setup command, truth check, wiring test and dead-code check:
 
 ```yaml
 loom:

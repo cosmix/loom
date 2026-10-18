@@ -267,10 +267,14 @@ fi
 case "$STAGE_ID" in *[!A-Za-z0-9_-]* | '') fail_closed "invalid wrapper stage identity" ;; esac
 case "$SESSION_ID" in *[!A-Za-z0-9_-]* | '') fail_closed "invalid wrapper session identity" ;; esac
 
+# The command's stdout, from the first field the harness filled (Claude Code
+# fills .tool_response.stdout), as codex-forward-result.sh reads it. Never a
+# join: a harness filling two fields with the same text would hand the broker
+# every record twice, and it keeps a record only as the last lines.
 collect_output_text() {
 	printf '%s' "$INPUT_JSON" | jq -r '
       [.tool_result.stdout, .tool_result.output, .tool_response.stdout, .tool_response.output]
-      | map(select(type == "string")) | join("\n")'
+      | map(select(type == "string")) | first // empty'
 }
 
 find_persisted_path() {

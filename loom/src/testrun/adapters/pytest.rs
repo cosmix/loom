@@ -10,7 +10,7 @@ use crate::testrun::command::{distinct_files, marker_choice, shell_quote, shell_
 use crate::testrun::recognize::{
     combined_output, command_args, has_flag, last_match, pattern, positionals, summary_from_counts,
 };
-use crate::testrun::{RunOutput, RunSummary, TestRunnerAdapter, TestTarget};
+use crate::testrun::{environment, RunOutput, RunSummary, TestRunnerAdapter, TestTarget};
 
 pub struct Pytest;
 
@@ -82,6 +82,10 @@ impl TestRunnerAdapter for Pytest {
 
     fn language(&self) -> &'static str {
         "python"
+    }
+
+    fn required_environment(&self, _root: &Path, package_dir: &Path) -> Option<&'static str> {
+        environment::uv_venv(package_dir)
     }
 
     fn recognizes(&self, argv: &[String]) -> bool {
