@@ -402,3 +402,13 @@ Rust test module names also need graph lookup: `orchestrator::core::tests` does 
 **Prevention:** any fixture whose tests start the daemon keeps its temp-root prefix short: macOS leaves under 25 bytes for the root name. A local Linux pass says nothing about socket path length.
 
 **Fix:** the prefix is `lcr-` (`tests/completion_replay/support.rs`), 88 bytes on the same runner.
+
+## Raw Tempdir Fixtures Recurred With the Install-Root Resolver (2026-10-19)
+
+**What happened:** commit e747e9dc made the install-root resolver canonicalize (`canonical_or_lexical`, `assets/install/resolve.rs`). Three tests (`hooks::tests::generator_tests::find_hooks_dir_*`, `settings_tests::codex_forward_allow_entry_names_the_relocated_hooks_dir`) built their expectations from a raw `TempDir::new()` path, so macOS CI compared `/private/var/...` against `/var/...`. Linux passed.
+
+**Why:** the canonical-temp-root rule in the 2026-10-13 entry above was not applied to new fixtures; `assets/install/tests_resolve.rs` already had a `canonical_temp()` helper the new tests did not use.
+
+**Prevention:** any test that compares a path produced by the install-root resolver (or any canonicalizing production code) builds it from `temp.path().canonicalize()`. To reproduce on Linux, point `TMPDIR` at a symlink to a real directory under a SHORT path (for example `/tmp/lt`): a long path breaks the unix-socket length tests, and the sandbox confinement tests fail under a symlinked temp root on Linux regardless, so judge only the tests under investigation.
+
+**Fix:** commit 61a1a8fc canonicalizes the temp home in the three tests.
