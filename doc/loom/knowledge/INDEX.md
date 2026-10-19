@@ -152,7 +152,7 @@
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Stages flipped to waiting-for-input | 35 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Frame overflow, read desync | 74 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Store written, never read | 94 |
-| [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, wave sizing, ownership | 358 |
+| [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, wave sizing, ownership | 368 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Subagent liveness; watch traps | 369 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 274 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY, stdin | 314 |

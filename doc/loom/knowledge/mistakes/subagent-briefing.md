@@ -356,3 +356,13 @@ reports. Read SKIP lines before calling a test green. The cap now sits at `maxTu
 **Prevention:** Inspect the actual public result shape before writing a consumer fixture.
 
 **Fix:** Assert the inventory through the status fields the consumer actually produces.
+
+## A Web Change Shipped Without the Rebuilt Bundle (2026-10-19)
+
+**What happened:** a brief for a status fix that touched `web/src` listed `bun run typecheck`, `lint`, `format:check` and `test` but not `bun run build`. The fix was committed and pushed with a stale `web/dist/assets/index.js`, and CI job "Web dashboard", step "Verify the committed bundle is current", failed.
+
+**Why:** the rebuild rule lives only in `conventions/web-dashboard-typography.md` ("Rebuilding the bundle"), which a reader of a non-typography task never opens, and the orchestrator ran only `cargo test` before committing.
+
+**Prevention:** any brief or commit touching `web/src` ends with `cd web && bun run build` and a `git status --short web/dist` check; a changed bundle goes in its own `chore(web): rebuild the dashboard bundle ...` commit.
+
+**Fix:** commit 283c1615.
