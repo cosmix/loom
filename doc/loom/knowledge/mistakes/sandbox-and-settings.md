@@ -358,3 +358,10 @@ commands (e.g. `loom map`'s overlay). See `concerns/sandbox-and-confinement-gaps
 **Prevention:** Test scratch selection when cwd equals the OS temporary root, not only an isolated child directory. Select another supported private temporary root without putting scratch in the input tree.
 
 **Fix:** Add a valid alternate temporary-root fallback and preserve private scratch mounts and cleanup.
+
+## Write denies must never cover a client's runtime state
+
+**What happened:** while extending relocated-root write denies, a brief told the implementer to deny `skills/**` and `rules/**` under the Codex root. The user caught it: Claude Code and Codex update their own state, transcripts and caches.
+**Why:** the codex lane runs `codex exec` inside the sandboxed Bash call, so Codex's own writes to its home pass through the session denies; Codex writes `skills/.system/` (bundled system skills) and `rules/default.rules` (exec-policy approvals). Claude Code's own process is not sandboxed, so `.claude` denies only bind the session's Bash and Edit tool.
+**Prevention:** a control-surface deny names only files loom installs or that inject instructions (hooks, the Codex hooks file and config, the AGENTS/CLAUDE instruction files, `prompts/**`, `loom-skill-catalog/**`, and one entry per loom-installed skill dir from the asset table), never a whole client directory. Before adding a deny under a client root, check what the client writes there at runtime.
+**Fix:** `CODEX_ROOT_SURFACES` (`loom/src/sandbox/control_surfaces/agent_roots.rs`) and the `.codex` home surfaces deny per-skill dirs from `codex_skill_dir_names()`; tests assert `skills/.system`, `rules`, `sessions`, `log`, `history.jsonl` and the auth file stay writable.
