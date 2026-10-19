@@ -74,6 +74,15 @@ pub fn catalog_dir_for(skills_dir: &Path) -> PathBuf {
     }
 }
 
+/// The installed Claude skills directory: `<claude_dir>/skills`, where `claude_dir`
+/// is a nonempty `LOOM_CLAUDECODE_INSTALL_DIR`, else the root recorded in
+/// `install-roots.toml`, else `~/.claude`.
+pub fn installed_skills_dir() -> Option<PathBuf> {
+    crate::assets::install::default_paths()
+        .ok()
+        .map(|paths| paths.claude_dir.join("skills"))
+}
+
 /// Load the index from `skills_dir` and its sibling catalog directory.
 pub fn load_with_catalog(skills_dir: &Path) -> Result<SkillIndex> {
     load_from_roots(skills_dir, &catalog_dir_for(skills_dir))

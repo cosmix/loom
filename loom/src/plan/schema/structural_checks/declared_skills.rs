@@ -3,10 +3,11 @@
 //! stage's agents need, resolved the way the orchestrator resolves them by
 //! default at runtime (`Orchestrator::load_skill_index`): every construction
 //! site leaves `OrchestratorConfig.skills_dir` as `None`, so at runtime that
-//! resolves to `~/.claude/skills` plus its sibling catalog, same as here.
+//! resolves to the installed Claude skills dir (`installed_skills_dir`) plus
+//! its sibling catalog, same as here.
 
 use std::collections::HashSet;
-use std::path::PathBuf;
+use std::path::Path;
 
 use crate::skills::SkillIndex;
 
@@ -31,14 +32,21 @@ pub struct DeclaredSkillsReport {
 /// skill — the common case, and the reason this never costs a filesystem
 /// walk for a plan that doesn't use the field.
 pub fn check_declared_skills(stages: &[StageDefinition]) -> DeclaredSkillsReport {
-    check_declared_skills_with_index(stages, load_skill_index().as_ref())
+    if stages.iter().all(|stage| stage.skills.is_empty()) {
+        return DeclaredSkillsReport::default();
+    }
+    let skills_dir = crate::skills::installed_skills_dir();
+    let index = skills_dir.as_deref().and_then(load_skill_index);
+    check_declared_skills_with_index(stages, index.as_ref(), skills_dir.as_deref())
 }
 
 /// Same check, against an explicit index — the seam that keeps this
-/// hermetic in tests and independent of the loader above.
+/// hermetic in tests and independent of the loader above. `skills_dir` is
+/// only used to name the searched location in the warning.
 fn check_declared_skills_with_index(
     stages: &[StageDefinition],
     index: Option<&SkillIndex>,
+    skills_dir: Option<&Path>,
 ) -> DeclaredSkillsReport {
     let mut report = DeclaredSkillsReport::default();
     let declaring_stages: Vec<&StageDefinition> = stages
@@ -61,8 +69,12 @@ fn check_declared_skills_with_index(
         }
         None => {
             let stage_ids: Vec<&str> = declaring_stages.iter().map(|s| s.id.as_str()).collect();
+            let searched = match skills_dir {
+                Some(dir) => format!("looked under {}", dir.display()),
+                None => "the Claude install root could not be resolved".to_string(),
+            };
             report.warnings.push(format!(
-                "No skill index could be loaded (looked under ~/.claude/skills) — declared \
+                "No skill index could be loaded ({searched}) — declared \
                  skill names could not be validated for stage(s): {}",
                 stage_ids.join(", ")
             ));
@@ -110,14 +122,13 @@ fn check_unknown_names(
 
 /// Resolve the skill index the way the orchestrator resolves it by default
 /// at runtime (`Orchestrator::load_skill_index`): `OrchestratorConfig.skills_dir`
-/// is `None` at every construction site, so runtime reads `~/.claude/skills`
-/// plus its sibling catalog, nothing else.
-fn load_skill_index() -> Option<SkillIndex> {
-    let home_dir: PathBuf = dirs::home_dir()?.join(".claude").join("skills");
-    if !home_dir.exists() {
+/// is `None` at every construction site, so runtime reads the installed Claude
+/// skills dir (`installed_skills_dir`) plus its sibling catalog, nothing else.
+fn load_skill_index(skills_dir: &Path) -> Option<SkillIndex> {
+    if !skills_dir.exists() {
         return None;
     }
-    crate::skills::load_with_catalog(&home_dir)
+    crate::skills::load_with_catalog(skills_dir)
         .ok()
         .filter(|index| !index.is_empty())
 }
@@ -126,7 +137,6 @@ fn load_skill_index() -> Option<SkillIndex> {
 mod tests {
     use super::*;
     use std::io::Write;
-    use std::path::Path;
     use tempfile::TempDir;
 
     fn stage_with_skills(id: &str, skills: Vec<&str>) -> StageDefinition {
@@ -160,7 +170,7 @@ mod tests {
     #[test]
     fn no_declarations_is_a_silent_no_op() {
         let stages = vec![crate::plan::schema::tests::make_stage("a", "a")];
-        let report = check_declared_skills_with_index(&stages, None);
+        let report = check_declared_skills_with_index(&stages, None, None);
         assert!(report.errors.is_empty());
         assert!(report.warnings.is_empty());
     }
@@ -169,7 +179,7 @@ mod tests {
     fn known_skill_is_silent() {
         let index = index_with_skills(&["loom-rust"]);
         let stages = vec![stage_with_skills("a", vec!["loom-rust"])];
-        let report = check_declared_skills_with_index(&stages, Some(&index));
+        let report = check_declared_skills_with_index(&stages, Some(&index), None);
         assert!(report.errors.is_empty(), "{:?}", report.errors);
         assert!(report.warnings.is_empty());
     }
@@ -178,7 +188,7 @@ mod tests {
     fn unknown_skill_with_loaded_index_errors() {
         let index = index_with_skills(&["loom-rust"]);
         let stages = vec![stage_with_skills("a", vec!["loom-does-not-exist"])];
-        let report = check_declared_skills_with_index(&stages, Some(&index));
+        let report = check_declared_skills_with_index(&stages, Some(&index), None);
         assert_eq!(report.errors.len(), 1);
         assert_eq!(report.errors[0].0, "a");
         assert!(report.errors[0].1.contains("loom-does-not-exist"));
@@ -187,7 +197,7 @@ mod tests {
     #[test]
     fn empty_skill_name_errors() {
         let stages = vec![stage_with_skills("a", vec!["  "])];
-        let report = check_declared_skills_with_index(&stages, None);
+        let report = check_declared_skills_with_index(&stages, None, None);
         assert_eq!(report.errors.len(), 1);
         assert!(report.errors[0].1.contains("empty"));
     }
@@ -196,7 +206,7 @@ mod tests {
     fn duplicate_skill_name_errors() {
         let index = index_with_skills(&["loom-rust"]);
         let stages = vec![stage_with_skills("a", vec!["loom-rust", "loom-rust"])];
-        let report = check_declared_skills_with_index(&stages, Some(&index));
+        let report = check_declared_skills_with_index(&stages, Some(&index), None);
         assert_eq!(report.errors.len(), 1);
         assert!(report.errors[0].1.contains("more than once"));
     }
@@ -204,9 +214,11 @@ mod tests {
     #[test]
     fn unresolvable_index_warns_once_naming_the_stage() {
         let stages = vec![stage_with_skills("a", vec!["loom-rust"])];
-        let report = check_declared_skills_with_index(&stages, None);
+        let dir = Path::new("/custom/claude/skills");
+        let report = check_declared_skills_with_index(&stages, None, Some(dir));
         assert!(report.errors.is_empty());
         assert_eq!(report.warnings.len(), 1);
         assert!(report.warnings[0].contains('a'));
+        assert!(report.warnings[0].contains("/custom/claude/skills"));
     }
 }

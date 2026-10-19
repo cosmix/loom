@@ -37,7 +37,7 @@ pub struct OrchestratorConfig {
     pub auto_merge: bool,
     /// Base branch to use for stages with no dependencies (from config.toml)
     pub base_branch: Option<String>,
-    /// Directory containing skill files (default: ~/.claude/skills/)
+    /// Directory containing skill files (default: the installed Claude skills dir)
     pub skills_dir: Option<PathBuf>,
     /// Enable skill routing recommendations in signals (default: true)
     pub enable_skill_routing: bool,
@@ -77,7 +77,7 @@ impl Default for OrchestratorConfig {
             status_update_interval: Duration::from_secs(30),
             auto_merge: true,
             base_branch: None,
-            skills_dir: None, // Will default to ~/.claude/skills/ when loading
+            skills_dir: None, // Defaults to the installed Claude skills dir
             enable_skill_routing: true,
             max_skill_recommendations: 8,
             sandbox_config: SandboxConfig::default(),
@@ -261,12 +261,11 @@ impl Orchestrator {
 
     /// Load the skill index from the configured or default directory
     fn load_skill_index(config: &OrchestratorConfig) -> Option<SkillIndex> {
-        // Determine skills directory: use config or default to ~/.claude/skills/
-        let skills_dir = config.skills_dir.clone().unwrap_or_else(|| {
-            dirs::home_dir()
-                .map(|h| h.join(".claude").join("skills"))
-                .unwrap_or_else(|| PathBuf::from(".claude/skills"))
-        });
+        // Use the configured directory, else wherever the last install put the skills.
+        let skills_dir = config
+            .skills_dir
+            .clone()
+            .or_else(crate::skills::installed_skills_dir)?;
 
         if !skills_dir.exists() {
             return None;
