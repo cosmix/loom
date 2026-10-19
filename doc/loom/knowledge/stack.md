@@ -1,7 +1,7 @@
 # Stack & Dependencies
 
 > Dependencies, frameworks, tooling
-> This file is append-only - agents add discoveries, never delete.
+> Agents add discoveries with `loom knowledge update`, and correct or remove a stale section in place with `loom knowledge replace-section` or `loom knowledge delete-section`.
 >
 > **Related files:** [architecture.md](architecture.md) for how dependencies are used.
 

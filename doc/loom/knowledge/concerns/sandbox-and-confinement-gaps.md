@@ -189,10 +189,13 @@ symlinked `doc/loom/knowledge` or `.loom` directory is still followed and writte
 
 A stage agent's Bash is confined by the bubblewrap sandbox (the file-tool guard `worktree-file-guard.sh` does not see Bash), but
 the allow-list still reaches beyond the worktree. The harness adds the whole git common directory: `HEAD`, `refs/heads/main`,
-`packed-refs`, `objects`, `info` and other worktrees' metadata are writable, and loom denies only `.git/hooks` and `.git/config`
-(`sandbox/control_surfaces/session_denies.rs`). `package_caches.rs` grants the operator's cargo, bun and npm caches, so a tampered
+`packed-refs`, `objects`, `info` and other worktrees' metadata are writable. Under it loom denies only `.git/hooks`, `.git/config`
+and the `config.worktree` of every worktree registered at spawn (`worktree_admin_dirs` in
+`sandbox/control_surfaces/session_denies.rs`), so a sibling worktree's administrative directory stays writable apart from that
+one file. `package_caches.rs` grants the operator's cargo, bun and npm caches, so a tampered
 `~/.cargo/registry/src` crate would run on the host at the next build. `denyRead` covers only five credential paths, so
-`~/.config/gh/hosts.yml`, `~/.netrc` and `~/.npmrc` are readable. The gap is open and no plan addresses it. The
+`~/.config/gh/hosts.yml`, `~/.netrc` and `~/.npmrc` are readable. The gap is open; metaplan section 7
+(`doc/plans/optim-token-metaplan.md`) plans the credential-file and sibling-administrative-directory denies. The
 withdrawn PLAN-sandbox-escape-hardening (see above for recovery) holds the
 measurements (Claude Code 2.1.286 adds the git common dir itself; `allowWrite`/`denyWrite` globs are skipped on Linux; a deny
 on an absent path shows the host an empty placeholder file; a deny cannot be reopened by a nested allow) and a design, D1-D7.

@@ -59,7 +59,7 @@ early with an actionable message instead of mid-run.
 
 → [Remote Control Pattern](patterns/remote-control.md)
 
-## Subagent Hierarchy + Ultracode Guidance (2026-06-12)
+## Subagent Hierarchy + Ultracode Guidance
 
 When to fan out flat, when to use a 2-level coordinator→worker hierarchy, and when to reach
 for agent teams; the model mix for each; and the file-exclusivity rule that makes parallel

@@ -322,7 +322,7 @@ Loom's savings come from **delegation, not downgrade**:
 - **Context budgets prevent compaction**, which is the expensive failure: an uncached re-read that costs more and produces worse work.
 - **Tiered knowledge and a skill index** keep the working set small — at most 5 matched skills are injected per stage, out of 75 installed.
 - **Waits and repeat reads are settled by receipts, not by polling.** An orchestrator waits on a backgrounded Codex forward by its exact receipt (`loom subagents wait --receipt <id>`), and repeated `loom subagents list` polling is counted by the poll guard. A repeated file read is warned or denied only when a transcript receipt proves the earlier result was delivered.
-- **Consumption is measured, not assumed.** `loom usage` reports Claude and Codex separately from provider-native telemetry, and `loom usage --compare` judges a candidate policy offline against paired runs. A token-proxy gain alone never counts as a subscription saving, and any quality or latency regression rejects the candidate; see [the evaluation protocol](doc/token-optimization-evaluation.md).
+- **Consumption is measured, not assumed.** `loom usage` reports Claude and Codex separately from provider-native telemetry, and `loom usage --compare` judges a candidate policy offline against paired runs. A token-proxy gain alone never counts as a subscription saving, and any quality or latency regression rejects the candidate; see [the evaluation contract](doc/loom/knowledge/architecture/token-accounting-and-receipts.md#offline-comparison-loom-usage---compare).
 
 Per-stage `model`, `reasoning_effort`, and `ultracode` fields let you override any of this explicitly.
 
@@ -566,7 +566,7 @@ loom usage [--since <duration|date>] [--until <rfc3339>] [--provider claude|code
                                                                              # Report what agent sessions actually consumed, per provider (Claude and Codex are never summed), including peak resident context by scope in a `peaks` section (main vs subagent p50/p90/max, share above 250k and 400k tokens)
 loom usage [--claude-root <dir>] [--codex-root <dir>] [--receipts-root <dir>] [--forward-receipts-root <dir>]
                                                                              # Read explicit telemetry roots; a supplied root never falls back
-loom usage --compare <artifact.json> [--json]                                # Offline paired evaluation: exit 0 supported, 1 rejected, 2 inconclusive (doc/token-optimization-evaluation.md)
+loom usage --compare <artifact.json> [--json]                                # Offline paired evaluation: exit 0 supported, 1 rejected, 2 inconclusive (doc/loom/knowledge/architecture/token-accounting-and-receipts.md)
 loom subagents list | harvest [--id <id>] [--json]                           # One-shot diagnostics only: list shows liveness, harvest prints a terminal report (optionally one agent's); watch/wait below are the blocking waits
 loom subagents watch --worker <kind>:<id> [--worker <kind>:<id> ...] [--session <claude-parent-uuid>] --timeout <secs> [--json]
                                                                              # One owned wait, inside a loom stage only (needs LOOM_STAGE_ID/LOOM_SESSION_ID/LOOM_WORK_DIR): exit 0 all bound workers have fresh correlated success; 2 deadline passed; 3 worker failed/cancelled

@@ -33,8 +33,8 @@ Memory can enter prompts across stages through the wiring checklist for `Integra
 
 ## The Design
 
-Earlier text described direct-write-then-spool-fallback as the only path. Since the session-inbox
-relay (`relay/emit.rs`), that is the fallback for pre-relay sessions; the relay is the default.
+The session-inbox relay (`relay/emit.rs`) is the default write path. Direct write with a spool
+fallback serves only sessions spawned without `LOOM_SCRATCH_DIR` (`RelayMode::Legacy`).
 
 ```text
 RelayMode::Relay (default: LOOM_SESSION_ID + LOOM_SCRATCH_DIR set, no hook/control-broker)

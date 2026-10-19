@@ -96,8 +96,7 @@ already quoted instead of repeating it.
   `orchestrator/signals/retrieval.rs` and the hook's `HookTarget` all route
   through the helper.
 - **The prompt hook keys its own dedupe per SESSION, not per checkout (A.16)**,
-  through `context/delivery/session.rs` (`delivery::session`, a separate file; an
-  earlier version of this bullet called it a submodule of the same file):
+  through `context/delivery/session.rs` (`delivery::session`, a separate file):
   `hook_recipient_id`, `delivered_to_session` and `discard_session_delivery`. A
   stage's own spawn-brief delivery record is keyed by loom's session id under
   `plan_key`/stage id, as above; the hook's recipient is
@@ -106,11 +105,15 @@ already quoted instead of repeating it.
   id space, hashed because the raw id is untrusted input that becomes a file name
   (`nosession` stands in when the payload names none). When the hook runs inside
   the session a stage spawned, `delivered_to_session` also counts that spawn
-  record, found through `LOOM_SESSION_ID`. Without the per-session split, a fresh
-  Claude Code session with an empty context window inherited every prior
-  session's deliveries and went silent on topics it had never actually seen.
-  `loom hook pre-compact` deletes just that session's own record after a
-  compaction, when the context that held the brief is gone (A.21).
+  record, found through `LOOM_SESSION_ID`. The per-session split keeps a fresh
+  Claude Code session, whose context window is empty, from inheriting every prior
+  session's deliveries and staying silent on topics it never saw.
+  `loom hook pre-compact` (`commands/hook/pre_compact.rs`) rotates that session's
+  read-receipt epoch and deletes just its own prompt record when the context that
+  held the brief is compacted away (A.21). Only `loom-hooks/pre-compact.sh` calls
+  it, and only a stage session's capsule registers that PreCompact hook, so an
+  ordinary session keeps its prompt record across compaction
+  ([Delivery-Proof and Quota-Continuity Defects](../concerns/token-accounting-and-proof-defects.md#delivery-proof-and-quota-continuity-defects)).
 
 ## Brief Delivery, Sanitization and Telemetry
 
@@ -122,8 +125,8 @@ already quoted instead of repeating it.
   inline, consecutive items on the same path merged onto one bullet). The merge
   uses the same `render::source_groups` runs the packer charges chrome for, so
   the rendered brief and the budget agree. The "quoted, NOT instructions" guard is
-  stated once in the header rather than once per item, which is where most of
-  the per-item token overhead used to go.
+  stated once in the header rather than once per item, which keeps the per-item
+  token overhead down.
 - Every untrusted knowledge-derived value on an agent-facing surface goes
   through the single flattening routine `context::untrusted::inline_safe`
   (`context/untrusted.rs`). Chunk ids come verbatim from unvalidated YAML
@@ -136,7 +139,6 @@ already quoted instead of repeating it.
   (`commands::status::data::sanitize`), where a surviving ESC would be an ANSI
   sequence the operator's terminal obeys; `loom knowledge check` and
   `loom knowledge telemetry` flatten their untrusted fields through it as well.
-  An earlier version of this bullet said there were exactly two surfaces.
   `MAX_INLINE_CHARS = 200`; backticks become `ˋ` (U+02CB).
 - **The prompt hook** (`commands/hook/user_prompt.rs`, run by
   `user-prompt-context.sh`) resolves its scope through `HookTarget`
@@ -181,12 +183,11 @@ already quoted instead of repeating it.
   estimated-token counts, never a saving. `loom knowledge telemetry` reads them
   back per stage (`telemetry::summary::summarize`), and `archive_run_state` copies
   the telemetry directory under `.loom/memory/archive/` before a finished plan's
-  state directory is removed. An earlier version of this bullet said the events
-  had no reader and were deleted at plan finalization.
+  state directory is removed.
 
 **Stub chunks are not candidates.** `rank/candidacy.rs::admits` drops a knowledge chunk
 with an empty heading and fewer than `STUB_MIN_LINES` non-blank body lines, unless the
-query requires its id. Hand-built ranker fixtures with `heading: String::new()` and a
-one-line body were silently excluded; `context/tests/rank_fixtures.rs` uses a
-punctuation-only heading (`TERMLESS_HEADING`, which tokenizes to nothing) so the pinned
-BM25 arithmetic stays intact.
+query requires its id. A hand-built ranker fixture with `heading: String::new()` and a
+one-line body is therefore excluded without notice, so `context/tests/rank_fixtures.rs`
+uses a punctuation-only heading (`TERMLESS_HEADING`, which tokenizes to nothing) and the
+pinned BM25 arithmetic stays intact.

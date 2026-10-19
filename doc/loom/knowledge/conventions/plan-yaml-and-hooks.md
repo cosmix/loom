@@ -70,13 +70,18 @@ Claude Code hooks communicate with the host process via stdin/stdout and exit co
 - Any other exit code — treated as an error (non-blocking, but logged)
 
 **hookSpecificOutput (JSON response for warnings):**
-To issue a warning without blocking (exit 0 with advisory), write a JSON object to stdout with a `hookSpecificOutput` field. Claude Code appends this to the tool result as additional context. Example:
+To issue a warning without blocking, exit 0 and write one JSON object to stdout whose
+`hookSpecificOutput` is an object naming the hook event and carrying the text in
+`additionalContext`; Claude Code adds that text to the model's context. Example (a PreToolUse
+hook; a PostToolUse or SessionStart hook names its own event):
 
 ```json
-{ "hookSpecificOutput": "LOOM_HOOK_WARN: consider using rg instead of grep" }
+{ "hookSpecificOutput": { "hookEventName": "PreToolUse", "additionalContext": "LOOM_HOOK_WARN: consider using rg instead of grep" } }
 ```
 
-The `LOOM_HOOK_WARN:` prefix is recognized by the loom hook system and surfaced as a warning in output.
+`LOOM_HOOK_WARN:` is the prefix loom's hooks put on warning text (for example
+`loom-hooks/_read_discipline.sh`, which builds this object with `jq`); it is a convention for the
+reader, not a field Claude Code parses.
 
 **PostToolUse stdin schema:**
 

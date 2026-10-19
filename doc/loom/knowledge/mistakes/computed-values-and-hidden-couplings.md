@@ -243,3 +243,20 @@ same settings file, the strip must run first — this function does not do it fo
 **Prevention:** a flag whose purpose is to hand text to an agent needs a test that reads the delivered artifact, the written signal, for that text.
 
 **Fix:** `commands/stage/recover.rs` `with_operator_answer` inserts the answer verbatim as the first recovery action before `generate_recovery_signal`, with a test on the written file.
+
+## A Global Read Guard and the Skill Catalog Collided Across Stages
+
+**What happened:** the guard-hooks stage's `read-guard.sh` (warn above 400 lines, deny a repeated
+full read) merged one commit before the skills-catalog stage, whose loader tells the model to read
+an oversized catalogued `SKILL.md` in full. Neither stage's own tests could see the other's change;
+integration-verify found that the guard would argue the model into partial loads and could block a
+popular oversized skill outright.
+
+**Why:** a global Read-class hook and a large-file read path were built in parallel stages, each
+tested only against its own code.
+
+**Prevention:** drive a new large-file read path against a real oversized example under every
+global Read-class hook before trusting the build.
+
+**Fix:** `loom-hooks/_read_discipline.sh` rule 0 exempts `SKILL.md` under both skill roots from
+every line-count rule ([Skill Catalog](../architecture/skill-catalog.md#why-most-skills-live-outside-claudeskills)).

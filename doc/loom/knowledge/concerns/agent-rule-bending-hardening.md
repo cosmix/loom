@@ -2,15 +2,12 @@
 
 > Bendable checks backlog
 
-## Why This Entry Exists (2026-09-16)
+## Why This Entry Exists
 
-A review put the claim: *"some operations are forbidden if `LOOM_*` env vars are set, and an agent
-is smart enough to unset them, so loom has no security."* Examined against the tree at base
-`7504369c` on 2026-09-16.
-
-The claim is accurate for one of three enforcement classes and wrong about the other two. The
-classes are below, then the gaps the review actually turned up. **No incident is reported here** —
-this is a read of the code, and every item states what was verified and what was not.
+An agent can unset or forge `LOOM_*` variables in its own shell. That defeats the checks of one of
+the three enforcement classes below and none of the other two; the classes follow, then the open
+gaps. **No incident is reported here**: each item states what the tree shows and what is
+unverified.
 
 ## The Three Enforcement Classes
 
@@ -81,26 +78,34 @@ call site*, without reading three modules to find out which class it is in.
 ### G1 — Commits are policed by text matching rather than by who can commit
 
 `commit-filter.sh`, `commit-guard.sh`, `git-add-guard.sh` and the installed pre-commit hook all
-exist to police who commits and which paths get staged. All four are class 2: text matching, best
-effort by their own headers, and `--no-verify` walks past the last one.
+police who commits and which paths get staged. All four are class 2: text matching, best effort by
+their own headers.
 
-**Fix direction:** route commits through the relay that already exists (`relay/*`, `fs/inbox/*`,
-`orchestrator/core/inbox_drain/*`). The agent requests "commit these paths, this message"; the
-daemon commits on the host from the worktree. Subagent commits become impossible rather than
-discouraged, `git add -A` staging `.loom` becomes impossible, `--no-verify` becomes meaningless,
-and path policy applies where the commit actually happens. A withdrawn design for this
-(the deleted PLAN-sandbox-escape-hardening, recoverable with `git show e6f00616^:` plus its `doc/plans` path; decision D1, `loom commit`) is not planned. A
-daemon-owned commit must never run `git add` on agent-written paths: git `lstat`s a path and then `open`s it without `O_NOFOLLOW`, so an agent
-swapping a file for a symlink to a host secret between the two would have the daemon, outside the
-sandbox, commit the secret. The daemon opens each file itself with a no-follow walk and hashes it.
+Commits are daemon-owned ([Daemon-Owned Commits](../architecture/daemon-owned-commits.md)). A
+session stages with `git add` and runs `loom stage commit`, which runs the pre-commit and
+commit-msg hooks in the session's own sandbox and relays the staged tree (`git write-tree`) with
+the HEAD it saw. The daemon writes the commit outside the sandbox with `commit-tree` (signed when
+`commit.gpgsign` is set) and moves the one ref the session's scope allows with a compare-and-swap
+`update-ref` (`git/stage_commit.rs`, `orchestrator/core/inbox_drain/commit.rs`), refusing a staged
+path under `.loom/`, `.work/` or `.worktrees/` and any gitlink. The daemon runs no repository hook
+and stages nothing itself: it checks that the index still writes the tree the session named and
+commits that tree, so it never reads an agent-written file through a symlink swapped in between
+git's `lstat` and `open`.
+
+What stays class 2: `commit-filter.sh` blocks a direct `git commit` in a stage session
+(`git_runs_commit`), and the relay mode comes from the session's own environment, so a session
+that unsets `LOOM_HOOK_CONTEXT` and `LOOM_SCRATCH_DIR` sends `loom stage commit` down
+`commit_in_process` with its own privileges. It still cannot sign there, so the daemon-owned
+commit is doctrine plus a best-effort hook, not a boundary.
 
 ### G2 — The worktree git-directory surface is not denied
 
 - **The grant.** Claude Code adds the whole git common directory (`R/.git`) to the `allowWrite`
   of every session whose cwd is a linked worktree, denying only `hooks`, `config*`, `commondir`
   and the alternates files ([Execution Containment](../architecture/execution-containment.md),
-  "Claude Code Grants a Linked Worktree Its Whole Git Common Directory"). Loom adds only
-  `R/.git/hooks` and `R/.git/config` (`sandbox/control_surfaces/session_denies.rs`).
+  "Claude Code Grants a Linked Worktree Its Whole Git Common Directory"). Loom adds
+  `R/.git/hooks`, `R/.git/config` and the `config.worktree` of every worktree registered at spawn
+  (`sandbox/control_surfaces/session_denies.rs`).
 - **What a stage can do**, each shown in a scratch repository: move `main` or any branch and
   rewrite sibling stages' `refs/heads/loom/*`; replace a loose object that `git show` and
   `git checkout` then serve with exit 0 (only a full `git fsck` notices); plant `MERGE_HEAD` so the
@@ -112,12 +117,16 @@ sandbox, commit the secret. The daemon opens each file itself with a no-follow w
   `reference-transaction` hook and held by the daemon until the operator accepts or restores it
   ([Target Guard](../architecture/target-guard.md)). Loom's own git ignores session-planted replace
   refs, grafts and commit-graphs ([Sandbox gaps](sandbox-and-confinement-gaps.md)).
-- **Still open:** sibling branches, tags and other refs; objects; `R`'s index, `HEAD` and
-  `MERGE_HEAD`; a planted `commondir`; host-side git following `T/.git` (below); daemon-owned
-  commits. The guard's own residuals: [Target Guard, Residuals](../architecture/target-guard.md).
-- **No deny-list narrows it:** denies cannot be reopened for the stage's own ref, write globs are
-  skipped on Linux, an absent-path deny shows the host an empty placeholder file, and a commit
-  needs `R/.git` itself writable for `packed-refs.lock`.
+- **Still open:** sibling branches, tags and other refs; objects; sibling worktrees'
+  administrative directories apart from `config.worktree`; `R`'s index, `HEAD` and `MERGE_HEAD`; a
+  planted `commondir`; host-side git following `T/.git` (below). The guard's own residuals:
+  [Target Guard, Residuals](../architecture/target-guard.md).
+- **No deny-list narrows it yet:** denies cannot be reopened for the stage's own ref, write globs
+  are skipped on Linux, and an absent-path deny shows the host an empty placeholder file. Commits
+  are daemon-owned ([Daemon-Owned Commits](../architecture/daemon-owned-commits.md)), but sessions
+  still write the object store and their own index through `git add`, and a merge resolver runs
+  `git merge --no-commit --no-ff` in its worktree, so those paths stay writable; whether a `refs/`
+  deny holds under the current grant is unmeasured.
 - **Host-side git follows the agent's pointer.** A rewritten `T/.git` naming a directory whose
   config defines a clean filter makes a host `git status` in `T` run it
   (`verify/contracts/test_support.rs::plant_foreign_git_dir`); `git/runner.rs` disables hooks and
@@ -133,9 +142,13 @@ sandbox, commit the secret. The daemon opens each file itself with a no-follow w
   `GIT_COMMON_DIR` stops it, `GIT_DIR` alone does not. Checkout-rooted sessions (knowledge stages,
   merge resolution, an adjudicator in `R`) can plant it.
 
-**Fix direction for the rest (not planned):** deny the whole common directory to stage, contract and
-adjudication sessions and let the daemon commit, pin host-side git, verify checkout-rooted
-sessions' effect on `R/.git`, and fail the merge gate closed.
+**Fix direction for the rest:** metaplan section 7 (`doc/plans/optim-token-metaplan.md`) plans
+whole-directory denies on sibling worktrees' administrative directories. Not planned: narrowing
+the common-directory grant to what `git add` and a merge resolver need once a `refs/` deny is
+measured, pinning host-side git, verifying checkout-rooted sessions' effect on `R/.git`, and
+failing the merge gate closed.
+
+## Gaps Found (continued): G3
 
 ### G3 — No end-to-end proof that any denial holds
 
@@ -205,28 +218,32 @@ locations and `CARGO_HOME`.
 
 ### G6 — Acceptance commands execute agent-written code on the host
 
-`spawn_confined` is environment scrubbing and nothing else — no namespace, no seccomp, no network
-restriction ([Execution Containment](../architecture/execution-containment.md) states this with
-three proofs). Plan-authored commands are trusted text, but they compile and run agent-authored
-code (`cargo test` runs the stage's own `build.rs`), so where they run decides the exposure:
+Plan-authored commands (acceptance, setup, truth checks, wiring tests, dead-code checks) run
+agent-authored code: `cargo test` runs the stage's own `build.rs`. Where they run decides the
+exposure.
 
+- **Default boundary.** `CommandConfinement::Confined` (the default,
+  `models/stage/sandbox_config.rs:17`) does more than rebuild a minimal environment:
+  `verify/criteria/confine.rs::prepare_confined` wraps the child in an OS boundary
+  (`verify/criteria/confine_host.rs`: Linux bubblewrap with `--unshare-all` and a read-only root,
+  macOS `sandbox-exec`), allows worktree writes and selected toolchain reads, and denies network.
+  Missing containment support is an error. [Execution Containment](../architecture/execution-containment.md)
+  is the owner of this contract.
 - **In a session.** `loom stage complete` runs as a sandboxed control session
-  (`commands/stage/control_session.rs::sandbox_control_session`), so acceptance, setup, wiring
-  tests, contract runs and impact-selected tests execute inside the session's own sandbox. The
-  daemon's `CompleteStage` (`daemon/server/control_complete.rs`) runs no plan or worktree command:
-  it reads files and runs pinned git.
-- **On the host.** Worktree content executes when an operator runs `loom stage complete`,
-  `loom verify` or `loom check` outside a session (no `LOOM_STAGE_ID` or `LOOM_SESSION_ID`, so
-  `sandbox_control_session` returns no session), and when the daemon runs a stage's
-  `before_stage` truth commands at spawn (`orchestrator/core/stage_executor.rs` →
-  `verify/before_after.rs`). `before_stage` is skipped when `find_prior_stage_work` reports
-  commits or changes in a reused worktree, and that probe discovers git through `T/.git` (G2).
+  (`commands/stage/control_session.rs::sandbox_control_session`), so those commands run inside
+  both the session sandbox and the command boundary. The daemon's `CompleteStage`
+  (`daemon/server/control_complete.rs`) runs no plan or worktree command: it reads files and runs
+  pinned git.
+- **Residual exposure.** A plan that sets `command_confinement: inherit` opts out of the OS
+  boundary and hands children loom's ambient environment; on the host (an operator's
+  `loom stage complete`/`verify`/`check` outside a session, or the daemon's `before_stage` truth
+  checks at spawn) that code then runs with the operator's full access. `before_stage` is skipped
+  when `find_prior_stage_work` reports commits or changes in a reused worktree, and that probe
+  discovers git through `T/.git` (G2).
 
-**Fix direction:** run host-side acceptance under the stage's own sandbox profile — `srt` is
-invokable from the daemon, and doing so would make "prove this outbound connection is denied" an
-expressible criterion instead of an unsatisfiable one — or state the boundary where an operator
-reads it rather than only in `concerns/`. Fix direction (not planned): pin
-`find_prior_stage_work` and leave the operator's host path as it is.
+**Fix direction:** make `inherit` visible where an operator reviews a plan (a `loom plan verify`
+warning naming the stage), and state the boundary in the README, which still describes
+environment scrubbing only.
 
 ### G7 — Standing accepted risks that deserve a decision
 

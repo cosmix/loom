@@ -30,19 +30,22 @@ maintainability test fails. `index.rs` itself only widened two visibility keywor
 
 ### Why Most Skills Live Outside `~/.claude/skills`
 
-Keeping the primary directory small is necessary but not sufficient — the split also exists
-because of a hook interaction that would otherwise make most of the catalog unusable:
-`loom-hooks/read-guard.sh` is a GLOBAL `PreToolUse:Read` hook that warns above 400 lines and DENIES the
-THIRD full read of a file past that limit. 22 catalogued skills exceed 400 lines (`loom-react`
-1619 lines, `loom-istio` 1205) and the loader instructs the model to read a catalogued `SKILL.md`
-IN FULL — without an exemption, rule 1 would argue the model into a partial (and useless) load,
-and rule 2 would hard-block the third invocation of any popular oversized skill outright. The fix
-was to exempt `SKILL.md` under BOTH skill roots from `read-guard.sh`'s line-count rules entirely,
-rather than shrinking 22 skills or weakening the "read it in full" instruction. This was a
-cross-stage collision found only at integration-verify: the guard-hooks stage's `read-guard.sh`
-merged one commit before the skills-catalog stage, so no single stage's own tests could have
-caught it — a lesson to drive a new large-file READ path against a real oversized example before
-trusting the build.
+Keeping the primary directory small is necessary but not sufficient: the split also exists
+because of a hook interaction that would otherwise make most of the catalog unusable.
+`loom-hooks/read-guard.sh` is a GLOBAL `PreToolUse:Read` hook, and its shared core
+`loom_read_discipline_check` (`loom-hooks/_read_discipline.sh`) applies rule 1 to an unbounded
+read of a file over `READ_GUARD_LINE_LIMIT` (400 lines): it redirects the read to
+`loom map --outline`, as a deny when the source graph covers the file and a warning otherwise.
+A deny blocks only when `[hooks] deny_enabled = true` and a live loom main agent is an ancestor
+of the hook (`loom_hook_deny_or_warn`); otherwise it is queued as a warning. Rule 2 advises on a
+repeated read only after a Rust read receipt proves the earlier result, and receipts do not form
+([Delivery-Proof and Quota-Continuity Defects](../concerns/token-accounting-and-proof-defects.md#delivery-proof-and-quota-continuity-defects)).
+27 catalogued skills exceed 400 lines (`loom-react` 1618, `loom-istio` 1203), and the loader
+instructs the model to read a catalogued `SKILL.md` IN FULL, so rule 1 would argue the model into
+a partial and useless load. Rule 0 therefore exempts `SKILL.md` under both skill roots
+(`~/.claude/skills/*/` and `~/.claude/loom-skill-catalog/*/`, plus the `.codex` and `.agents`
+equivalents) from every line-count rule, with no warning, rather than shrinking the skills or
+weakening the "read it in full" instruction.
 
 ### A Second, Independent Exemption Was Needed for the Same Reason
 

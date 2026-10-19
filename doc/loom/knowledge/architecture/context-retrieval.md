@@ -55,10 +55,17 @@ exact-rung machinery.** `context/rank_source.rs`:
   score identically; only their document construction differs (`node_document`
   builds a source document from `node.scope` at `WEIGHT_SYMBOLS` plus
   `node.signature` at `WEIGHT_BODY`).
-- A source node in a file a dependency stage owns earns `StageDependency`
+- A source node in a file a dependency stage names earns `StageDependency`
   (`BOOST_STAGE_DEPENDENCY = 30.0`), matched on exact normalized paths — a
   prefix match would hand the boost to an entire tree
-  (`paths::names_dependency_path`).
+  (`paths::names_dependency_path`). The producer,
+  `StageQuery::dependency_paths` (`orchestrator/signals/retrieval.rs`), passes each
+  dependency's declared `files` and `artifacts` through `normalize_dependency_path`
+  unchanged: they are relative to the dependency's `working_dir` and may be globs,
+  while node paths are repository-relative. A glob matches nothing, and a declared
+  path matches only when the dependency's `working_dir` is `.`, so in this
+  repository, whose code stages declare paths relative to `working_dir: loom`, the
+  rung never fires.
 - A node whose path or scope follows a test convention has its FINAL score
   (rungs plus lexical) multiplied by `config.test_path_factor` (default
   `0.4`) — ordering pressure so implementation outranks the tests that

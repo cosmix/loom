@@ -59,12 +59,9 @@ Found during the plan's stages and integration-verify, verified against the tree
   the forwarder transcript is missing or unreadable (the harness may not have written it yet when
   PreToolUse fires); worker-bound brief records are never reset by compaction. Both stay until
   runtime evidence justifies failing closed.
-- **Read-receipt runtime assumptions** (adjacent rows; transcript written before PostToolUse) are
-  unmeasured; see the last section of the architecture page.
-- **Hook size.** `loom-hooks/poll-guard.sh` grew past 400 lines. Hook scripts ship as
-  `include_str!` constants (`loom/src/fs/permissions/constants.rs`) and are registered in
-  `fs/permissions/hooks/config.rs`, so splitting a helper out needs ownership of both files, and
-  `loom-hooks/tests/run-all.sh` lists every hook test explicitly.
+- **Read receipts do not form** (missing `is_error` on successful results); the adjacency and
+  PostToolUse-ordering assumptions stay unmeasured until they do. See "Delivery-Proof and
+  Quota-Continuity Defects" below and the last section of the architecture page.
 - **Operator cleanup.** Knowledge-bootstrap left stray fixture state and 11 fake forward records in
   the live `.loom/work` (recorded in [Verification Harness](../mistakes/verification-harness.md));
   agents never edit `.loom/work` directly.
@@ -133,9 +130,7 @@ Open items from PLAN-token-flow; the design is in [token-flow-sources](../archit
 - Below 74 columns the pane title row's "no active agent" note is cut; put the note before the legend text or drop the legend text when a note is present.
 - On phones the ledger's mobile card layout always shows `tokens —` because the cell is never `:empty`.
 - The 20-point 56x12 sparkline config is duplicated between `ledger-row.tsx` and the node tray; sparklines share `lastValues` padding.
-- `token-flow-panel.tsx` `StageChart` is 94 lines (the 50-line guideline is not enforced for TSX) and zero-window stages draw zero-area stroked polygons; the six-colour palette repeats after six stages.
-- **By-model palette.** `MODEL_PALETTE` has six entries and cycles, so a seventh model's slice takes the first slice's colour and sits beside it in the ring; palette slots 1 and 4 share a hue, and the stage chart's `--series-1` and the palette's first tone are both green.
-- **Legend rate.** `modelRates` keys each agent's 5-minute rate by its last model while shares key by per-line model, so an agent that switched models attributes its whole rate to the new one and `other` always reads 0/m.
+- `token-flow-panel.tsx` `StageChart` is 94 lines (the 50-line guideline is not enforced for TSX) and zero-window stages draw zero-area stroked polygons; the six-colour palette repeats after six stages.- **Legend rate.** `modelRates` keys each agent's 5-minute rate by its last model while shares key by per-line model, so an agent that switched models attributes its whole rate to the new one and `other` always reads 0/m.
 - **Chip trends.** The "fresh so far" trend on a 0-based sparkline is nearly flat at the top for a stage older than an hour (subtract the window minimum), and the leading null buckets of the cache-hit trend carry forward as 0%, so a young stage appears to climb from 0.
 - **TUI by-model block.** `model_lines` cuts at `MODEL_BLOCK_MAX_ROWS` (10) with no "more" marker: past four models with efforts the smallest vanish silently and the visible shares stop adding to 100%, and `name_cells` is measured over groups the cut may hide. `render` (`layout.rs:62`) also rebuilds the pane and re-runs `budget` for the live-only fallback when the pane has no by-model block, where the second build is identical.
 - **Hint and types.** The uncached-input hint is a `title` attribute, unavailable on touch and keyboard (an accessible disclosure would replace it). `Pie` types its prop as `ReturnType<typeof modelShares>` although `ModelShare` is exported.
@@ -170,3 +165,45 @@ Token discovery combines legacy forward receipts with validated authorization-to
 ## Model Legend Layout
 
 The by-model legend aligns swatches, model names, shares and rates in shared grid columns. Shares and rates align right. Below a container width of 26rem, the donut stacks above the full-width legend; wider containers display them side by side. Palette and token calculations are unchanged.
+
+## Delivery-Proof and Quota-Continuity Defects
+
+Verified against the tree and this machine's transcripts; each blocks a token-saving claim that
+depends on it. The remediation sequence is `doc/plans/optim-token-metaplan.md`.
+
+- **Read receipts cannot form.** `result_body` (`loom/src/context/read_receipts/transcript.rs:142`)
+  returns `None` when a tool_result has no `is_error` field, and successful `Read` results have
+  none. Independently, Claude Code writes a call's tool_result row only after its PostToolUse hooks
+  finish (828 of 831 sampled hook rows precede their result row), so completion at
+  `loom-hooks/post-tool-use.sh:257` never sees the result. Fixtures mask both by writing the pair
+  before calling complete. Identical same-agent rereads are about 0.4% of Read characters.
+- **Receipt intents are stranded.** The Read PreToolUse path prepares intents in every session,
+  and `post-tool-use.sh` exits before `read-receipt --complete` when the stage environment is
+  absent; stage sessions strand them too (18 in one session).
+- **Forward receipts never form.** Two causes, each enough alone. `loom hook forward-receipt`
+  reads the transcript at PostToolUse, before the call's result row exists, and skips calls with no
+  result (`loom/src/commands/hook/forward_receipt.rs`, `process`). Its argv parser
+  `exact_forward_argv` (`loom/src/models/forward_receipt/transcript.rs`) accepts only the 8-word
+  wrapper argv, while recorded forwards carry `--unit-id` (10 words) and `codex-forward-guard.sh`
+  (`emit_authorized_input`) rewrites the executed command to 12 words with `--invocation-id`. No
+  `forward-receipts.jsonl` exists, and Codex rows have no thread linkage.
+- **Worker-brief records never bind.** 201 `worker-brief/*.pending` files and 0 bound `*.json`
+  records exist across this machine's projects; the record loader reads only `*.json`
+  (`loom/src/context/delivery.rs:273-277`). This repository's own stages issued no brief at all
+  (0 of 44 subagents in two plans carry the marker); the cause is not established.
+- **Compaction keeps spawn-brief credit.** `loom hook pre-compact` rotates the Read epoch and
+  deletes only the prompt recipient's delivery record (`loom/src/commands/hook/pre_compact.rs:61-96`).
+  `already_delivered` (`loom/src/commands/hook/user_prompt.rs:239-248`) still passes the
+  `LOOM_SESSION_ID` spawn recipient, and `delivered_to_session` (`loom/src/context/delivery/session.rs:116-123`)
+  credits its records while the context epoch is unchanged. The case has not occurred: 0 of 282
+  stage transcripts on this machine compacted, and a compacted stage session re-reads its signal
+  (`loom-hooks/session-start.sh:147-155`).
+- **PreCompact is not registered globally.** `loom/src/fs/permissions/hooks/config.rs` `build()`
+  registers no PreCompact hook; only stage sessions get one, so ordinary sessions, which do compact
+  (11 transcripts on this machine), keep their prompt delivery record after compaction.
+- **Quota continuity reads jitter as a reset.** `continuity_from_windows`
+  (`loom/src/quota/history.rs:211-212`) marks any `resets_at` change as a reset, and
+  `reset_incomparable` (`loom/src/commands/usage/comparison_quota.rs:121-128`) compares `resets_at`
+  exactly across arms. The Claude five-hour and seven-day `resets_at` values alternate by one
+  second between polls. Quota is also reported in whole percents, so a subscription verdict cannot
+  resolve a plausible saving even once the jitter is tolerated.

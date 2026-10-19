@@ -119,19 +119,57 @@ CLI, status and live token discovery consume it without core-to-command dependen
 
 ## Offline Comparison (`loom usage --compare`)
 
-The artifact contract, verdicts and canary protocol live in `doc/token-optimization-evaluation.md`.
+`loom usage --compare <artifact.json> [--json]` evaluates a version-1 paired experiment offline. It
+discovers no transcripts, polls no provider, and changes no model, cache policy or stage; it never
+rolls anything back.
+
+**Artifact contract** (`commands/usage/comparison_schema.rs`, `deny_unknown_fields`):
+`schema_version: 1`, an `intervention` manifest and `pairs`. The manifest names the intervention,
+the baseline and candidate implementation revisions, and the changed dimensions
+(`implementation-revision`, `provider-assignment`, `model-assignment`, `effort-assignment`); any
+unlisted workload, input, environment, contract, model or effort difference makes a pair
+incomparable. Each pair holds an opaque `work_unit_id` plus `baseline` and `candidate` runs. A run
+records workload and fixture ids, source-input revision and digest, environment and
+acceptance-contract ids, implementation revision, provider/model/effort assignments, acceptance and
+semantic-completion evidence, required checks, independent review dimensions, unresolved findings,
+omissions, retry/fix counts, both latency measures, accounting provenance, provider-native token
+vectors and optional quota intervals. Identifiers are bounded and may not contain path separators,
+so prompts, output, paths, secrets, prices and account identity stay out of the artifact.
+Artifacts over 16 MiB are refused.
+
+**Token-proxy verdict** (`comparison_token.rs`): raw normalized dimensions compared within each
+provider. Claude and Codex vectors stay separate, composite totals are not added to their
+components, Codex reasoning is not added to output, and Codex tokens never pass through Claude
+S1/S2/S3 weights. An improvement needs no increase in any comparable dimension and a strict
+decrease in at least one; a provider transfer, a cache-category trade-off, a missing dimension or
+an unchanged vector is inconclusive.
+
+**Subscription verdict**: quota observations only, never token weights or API prices. Support
+needs matching provider/window sets and reset identities, same-reset continuity, known precision,
+no unrelated concurrent use, no worse consumption in any interval, and a reduction larger than the
+combined measurement uncertainty in at least one. A token-proxy improvement never becomes a
+subscription verdict on its own; the overall verdict also needs complete quality and latency
+evidence, and one regression in any pair rejects the candidate (no averaging).
+
+**Exit codes**: 0 supported, 1 rejected (an observed quality, latency or consumption regression), 2
+inconclusive, including malformed or oversized artifacts (reason code in `--json`).
+
 Implementation choices behind it:
 
-- Exit 0 supported, 1 rejected (an observed quality, latency or consumption regression), 2
-  inconclusive. A duplicate run id is a data-integrity failure, so it is inconclusive, never a
-  rejection (`comparison_validation.rs`).
-- Comparison mode rejects explicit selection flags. `UsageArgs` keeps them as `Option` and applies
+- A duplicate run id is a data-integrity failure, so it is inconclusive, never a rejection
+  (`comparison_validation.rs`).
+- Comparison mode rejects explicit selection flags (transcript selection, provider, root, project,
+  stage, plan, window); `--json` stays allowed. `UsageArgs` keeps them as `Option` and applies
   defaults at the use site, so `has_explicit_selection` (`usage/mod.rs:147-160`) is a pure function
   of what clap parsed; an argv rescan against a hand-kept flag list would drift silently.
 - The artifact reader is local to `comparison.rs` (`take(limit + 1)` plus a post-read recheck,
   16 MiB). `fs/safe_read.rs::read_bounded` cannot serve it: it takes a root plus a relative path
   and opens every component no-follow, so an operator path through a symlinked `/tmp` would be
   refused.
+
+Known gaps (no artifact producer, dominance-only verdict, quota reset jitter) are listed in
+`concerns/token-accounting-and-proof-defects.md`; the paired canary protocol is plan 2 of
+`doc/plans/optim-token-metaplan.md`.
 
 ## Criterion Cache Contract
 
@@ -144,27 +182,32 @@ a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
 
 ## Forward Receipt Lifecycle and Exact Wait Authority
 
-- **Identity.** `ForwardIdentity` (`loom/src/models/forward_receipt.rs:79-129`) is parent session,
+- **Identity.** `ForwardIdentity` (`loom/src/models/forward_receipt.rs`) is parent session,
   agent id, tool-use id, stage id and loom session; the receipt id is the SHA-256 hex of those
   fields under the `loom.forward-receipt.v1` tag.
 - **File.** `.loom/work/subagents/<stage>/forward-receipts.jsonl`, one JSON observation per line,
   folded into a `ForwardReceipt`. States: `queued`, `running`, `succeeded`, `failed`, `canceled`,
-  `timed_out`, `unknown` (`ForwardState`, since `ea6d3d32` added `TimedOut` for a wrapper-cancelled
-  companion job at its own deadline); `is_terminal()` is `succeeded`, `failed`, `canceled` or
-  `timed_out`. Backends: `companion`, `direct`.
+  `timed_out` (a companion job the wrapper cancelled at its own deadline), `unknown`
+  (`ForwardState`); `is_terminal()` is `succeeded`, `failed`, `canceled` or `timed_out`.
+  Backends: `companion`, `direct`.
 - **Writer.** `loom hook forward-receipt --transcript <path>`
   (`loom/src/commands/hook/forward_receipt.rs`) reads the forwarder transcript and the wrapper's
   markers, and appends under its own sidecar lock with an `O_NOFOLLOW` regular-file append, since
-  `fs::locking` opens targets with a plain `File::open` that follows symlinks. Its argv parser
-  matches `codex-forward-guard.sh`'s authorization boundary exactly (the 8-word wrapper argv, the
-  same quoting rules): a reader wider than the guard would record forwards the guard never allowed.
+  `fs::locking` opens targets with a plain `File::open` that follows symlinks. It recognises a
+  forwarding call through `exact_forward_argv` (`loom/src/models/forward_receipt/transcript.rs`),
+  which accepts only the 8-word wrapper argv. `codex-forward-guard.sh` is wider:
+  `is_exact_forward_command` accepts 8 or 10 words from the forwarder (the 10-word form adds
+  `--unit-id <unit>`), and `emit_authorized_input` rewrites the executed command to 12 words with
+  `--unit-id` and `--invocation-id inv-<32 hex>`. Recorded forwards carry `--unit-id`, so the
+  writer recognises none of them; it also runs at PostToolUse, before Claude Code writes the call's
+  result row, and skips calls with no result. No receipt forms
+  ([Delivery-Proof and Quota-Continuity Defects](../concerns/token-accounting-and-proof-defects.md#delivery-proof-and-quota-continuity-defects)).
 - **Wait.** `loom subagents wait --receipt <64 hex> [--timeout <secs>] [--json]`
   (`loom/src/commands/subagents/forward_jobs_wait.rs`) polls every 2 s, default timeout 300 s, and
   never starts, cancels or retries anything. The stage comes from `LOOM_STAGE_ID`, else from a scan
   of `subagents/*/forward-receipts.jsonl` for the id. `wait_exit_code` (`forward_jobs_wait.rs:143`):
   exit 0 succeeded, 1 failed, canceled or timed out, 2 queued, running or unknown.
-- **Who waits (owned-waits contract, 2026-09-13, supersedes the untimed-blob-scan and bare-timeout
-  forms below).** The orchestrator, only, and only through one bound `loom subagents watch --worker
+- **Who waits.** The orchestrator, only, and only through one bound `loom subagents watch --worker
   claude:<agent-id> --worker codex:<unit-id> --timeout 3600` — one `--worker` per worker, `--session`
   naming only the Claude parent UUID. The forwarder makes ONE foreground wrapper call; if the harness
   backgrounds it, the forwarder makes no further tool call and ends its turn
@@ -176,7 +219,7 @@ a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
   unit; the bare `--timeout <secs>`-only form with no `--worker` is REJECTED
   (`loom/src/commands/subagents/mod.rs`), and `codex-companion.mjs status --all` is never used. Exit
   2 (deadline passed) is not proof any worker died — see
-  [Subagent Hierarchy](../patterns/subagent-hierarchy.md).
+  [\Subagent Hierarchy](../patterns/subagent-hierarchy.md).
 - **Status overlay.** For a `loom-codex-forwarder`, the daemon-reconciled Codex lifecycle outcome
   alone decides `SubagentState`, via an intermediate `ForwardOverlay`
   (`loom/src/commands/subagents/forward_jobs.rs::marker_overlay`/`overlay_from_state`):
@@ -198,13 +241,18 @@ is warned or denied. The shell attempt TSV is no longer a repeat qualifier.
 1. **Prepare** (PreToolUse). An intent records the identity (session, agent, normalized path,
    range), the source generation and a nonce.
 2. **Complete** (PostToolUse). The receipt exists only when the `Read` tool_use and its tool_result
-   sit in adjacent rows of the bounded transcript tail (`read_receipts/transcript.rs:33-37`) and the
-   source generation is unchanged. It records a text or media class, the result hash and size, and
-   up to 8 distinct proven tool-use ids (`MAX_PROVEN_TOOL_USES`).
+   sit in adjacent rows of the bounded transcript tail (`read_receipts/transcript.rs:33-37`), the
+   result carries `"is_error": false` (`result_body`, `transcript.rs:142`), and the source
+   generation is unchanged. It records a text or media class, the result hash and size, and up to
+   8 distinct proven tool-use ids (`MAX_PROVEN_TOOL_USES`). Completion runs only inside a stage:
+   `post-tool-use.sh` exits before it when `LOOM_STAGE_ID`, `LOOM_SESSION_ID` or `LOOM_WORK_DIR`
+   is unset, so intents prepared in ordinary sessions are never completed.
 3. **Check.** `--check` returns the number of proven deliveries only for a schema-2, text-class
    receipt whose identity and generation are current; media, persisted or uncorrelatable results
-   never justify reuse. Rule 2 (`_read_discipline.sh`): a full read proven once warns, proven
-   twice or more denies; a range read proven twice or more warns.
+   never justify reuse. Rule 2 (`_read_discipline.sh`): a full read proven once warns; proven twice
+   or more it denies only when the repo sets `[hooks] deny_enabled = true` AND a live loom
+   main-agent ancestor exists (`_read_discipline.sh:230`), otherwise it warns. A range read proven
+   twice or more warns.
 4. **Reset.** The generation includes a per-session epoch that `loom hook pre-compact` rotates, so
    compaction makes every earlier receipt ineligible; a failed rotation is a no-op.
 
@@ -219,16 +267,27 @@ nothing, so every mode silently no-ops: fixtures must carry the common hook fiel
 
 `loom/src/commands/hook/worker_brief.rs` gives each typed Task/Agent worker a scoped retrieval
 brief. `spawn-guard.sh` runs `loom hook worker-brief` only after its untyped-spawn gate passes.
-The delegate builds a query from the stage, the worker description and paths the prompt declares,
-calls `retrieve_for_stage` once per spawn, drops plan documents from the pack (required items
-removed that way are reported as unmet), and returns `{nonce, brief}` capped at the retrieval
-payload limit. It stores a `<key>.pending` delivery record under a directory lock, keyed by
+The delegate builds a query from the stage, the worker description and paths the prompt declares
+(plus `StageQuery::dependency_paths`), calls `retrieve_for_stage` once per spawn, drops plan
+documents from the pack (required items removed that way are reported as unmet), and returns
+`{nonce, brief}`. `issue` (`worker_brief.rs:127-148`) returns nothing when the pack is empty with
+no declared skills, when the encoded envelope exceeds `max_payload_bytes` (16,384), or when
+`store_pending` fails. It stores a `<key>.pending` delivery record under a directory lock, keyed by
 `worker_recipient_id(stage, parent session, nonce)`. `spawn-guard.sh` accepts only an object with
-exactly `brief` and a 32-hex `nonce`. On SubagentStart, `subagent-start.sh` passes the child
+exactly `brief` and a 32-hex `nonce`, and appends the brief to every typed spawn, including
+`loom-codex-forwarder` spawns. On SubagentStart, `subagent-start.sh:132-137` passes the child
 transcript (`*/subagents/agent-<id>.jsonl`, regular file, not a symlink) to
-`worker-brief --bind-agent`, which finds the nonce marker and renames the record to `<key>.json`
-with the agent as recipient. Worker-bound records have no compaction reset; no caller re-checks
-them today.
+`worker-brief --bind-agent`, which looks for the nonce marker to rename the record to `<key>.json`.
+
+**The bind never succeeds in practice.** Across this machine's projects there are 201
+`worker-brief/*.pending` files and 0 bound records, and `load_deliveries` reads only `*.json`
+(`context/delivery.rs:273-277`), so worker deliveries never reach `dependency_chunk_ids` or an
+audit. The cause is not established. In this repository's own runs no brief was issued at all:
+0 of 44 subagents in PLAN-token-flow and guard-integration carry a `loom-worker-brief nonce=`
+marker, while 541 transcripts in other projects carry one. Codex forwarders received a brief of
+about 10,000 characters in 94 of 187 transcripts and relayed it in 18; Codex units get their own
+brief from loom's Codex `UserPromptSubmit` hook (`fs/permissions/codex_hooks.rs:114-121`).
+`doc/plans/optim-token-metaplan.md` plan 1 owns all three.
 
 A Rust hook writer must resolve the state root through `WorkDir` the way `context::delivery` does:
 inside a worktree `.loom/work` is a symlink, and loom's safe writers open roots `O_NOFOLLOW`, so a
@@ -246,12 +305,24 @@ The IV stable prefix (`INTEGRATION_VERIFY_OVERRIDE`, `orchestrator/signals/cache
 
 ## Open Runtime Uncertainties
 
-- Receipts correlate only ADJACENT tool_use and tool_result rows. If Claude Code writes parallel
-  `Read` calls and their results as separate non-adjacent rows, parallel reads never form a receipt:
-  fail-closed, but the repeat-read saving then covers serial reads only.
-- Whether Claude Code writes the tool_result row before PostToolUse hooks run is unproven. If it
-  does not, `--complete` never correlates and repeat escalation never fires; the forward-receipt
-  writer reads the transcript at the same point.
+- **Receipts cannot form in real sessions, for two independent reasons.** `result_body`
+  (`read_receipts/transcript.rs:142`) requires an `is_error` field, but Claude Code writes
+  successful `Read` results without one (1,114 of 1,128 stage Read results lack it; the 14 present
+  are `true`). And Claude Code writes a call's tool_result row only after that call's PostToolUse
+  hooks finish: in 828 of 831 sampled hook rows across all projects (99 of 99 in this repository's
+  stage transcripts) the PostToolUse hook row precedes its result row, so `--complete` at
+  `post-tool-use.sh:257` never sees the result it correlates. The fixtures write the use/result
+  pair before calling complete (`read_receipts/tests.rs:78,143`), so the suite passes. No
+  `receipt-*.json` is written and rule-2 repeat escalation never fires.
+- **Forward receipts never form, for the same ordering.** `loom hook forward-receipt` reads the
+  forwarder transcript at PostToolUse and skips a call with no result
+  (`commands/hook/forward_receipt.rs:62-70`); a forwarder makes one wrapper call, so no
+  `forward-receipts.jsonl` exists and `forward_join.rs` joins nothing. The PostToolUse payload's
+  own `tool_response` carries the result (`loom-hooks/codex-forward-result.sh:32-40` reads it).
+- Receipts correlate only ADJACENT tool_use and tool_result rows (`transcript.rs:33-37`). Real
+  transcripts interleave PreToolUse `attachment` rows and metadata rows between a use and its
+  result, and parallel calls are written A, A, U, U.
 
-Both need sampling of real transcripts before any savings claim; see the canary protocol in
-`doc/token-optimization-evaluation.md`.
+The saving at stake is small: identical same-agent rereads are 29 of 7,612 stage Read results,
+about 0.4% of Read characters. `doc/plans/optim-token-metaplan.md` plan 1 removes the receipt
+path, and plan 2 moves the forward receipt onto the payload.

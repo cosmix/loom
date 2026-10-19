@@ -120,41 +120,44 @@ average budget/items and unmet-required count, last event time).
 
 ## Signal Sections: Semi-Stable, Dynamic, Recitation and EmbeddedContext
 
-### Semi-Stable Section (format/sections.rs:15-378)
+### Semi-Stable Section (`format/sections.rs::format_semi_stable_section`)
 
-Changes per **stage type**, not per session. Key sub-sections:
+Changes per **stage type**, not per session. Sub-sections, in order:
 
-- **Knowledge reference box** (lines 22-32): the Knowledge Brief footer emits `loom knowledge context --stage <id> --query "<question>" --budget-tokens <n>` (`format/brief.rs::format_knowledge_brief`) when knowledge exists
-- **Stage-type-aware reminder box** (lines 35-140): Knowledge/IV/KnowledgeDistill → "KNOWLEDGE UPDATES REQUIRED"; Standard → "SESSION MEMORY REQUIRED"
-- **Knowledge management section** (lines 142-290): If knowledge empty → 4-step exploration order; if present → "Extend as you work"
-- ~~**Delegation Choices**~~ — REMOVED (doctrine-surfaces stage; it duplicated CLAUDE.md Rule 6). The semi-stable section carries no delegation guidance of its own any more; the signal points at `~/.claude/CLAUDE.md` instead
-- **Ultracode License** (lines 388-413): Gated on `embedded_context.ultracode`; now also states the Claude-only Workflow-fan-out rule — the codex lane (`gpt-5.6-terra`/`gpt-6-luna`) is not addressable from a Workflow script, so on a stage licensed for both, codex-tier work goes through normal `loom-codex-forwarder` Agent spawns outside the Workflow
-- **Sandbox Restrictions** (lines 417-419): Sandbox summary if present, rendered by `format_sandbox_section()` in `format/sandbox_section.rs` (moved out of `sections.rs` 2026-08-26 — `sections.rs` carries a maintainability-ledger FILE entry). When the sandbox is enabled, it always carries `append_package_cache_note()` — the package-manager-cache carve-out note — after the filesystem deny/allow-write block and before the network section
-- **Skill Recommendations** (lines 421-426): Skill index matches
+- **Knowledge Brief**: the stage's retrieved pack (`format/brief.rs::format_stage_brief`), only when retrieval selected anything; its footer names `loom knowledge context --stage <id> --query "<question>" --budget-tokens <n>`.
+- **Reminder box**: Knowledge, IntegrationVerify and KnowledgeDistill stages get "KNOWLEDGE UPDATES REQUIRED" (`append_knowledge_updates_required_box`). A Standard stage gets no box; its memory reminder sits in `## Stage Memory`.
+- **`## Knowledge Management`** (Knowledge, IntegrationVerify, KnowledgeDistill): with `knowledge_tree_empty` a "KNOWLEDGE BASE IS EMPTY" warning and the exploration order, otherwise "Extend the knowledge base as you work"; then the `loom knowledge update` command table. KnowledgeDistill adds `loom review` and the DOCUMENTATION UPDATE REQUIRED box.
+- **`## Stage Memory`** (Standard): the SESSION MEMORY REQUIRED table (`mistake:`, `found:` and `gotcha:` notes, decisions, changes, questions, with `--evidence`), "NEVER use 'loom knowledge' in implementation stages" and the auto-memory prohibition.
+- **Codex implementers** (`format/codex.rs::format_codex_implementers_section`): only when `implementers` includes codex.
+- **`## Ultracode Mode`**: only when `embedded_context.ultracode`. It licenses the Workflow tool and states that Workflow fan-out spawns Claude subagents only: the codex lane (`gpt-5.6-terra`/`gpt-6-luna`) is not addressable from a Workflow script, so on a stage licensed for both, codex-tier work goes through ordinary `loom-codex-forwarder` Agent spawns outside the Workflow.
+- **Sandbox restrictions** (`format/sandbox_section.rs::format_sandbox_section`): when a sandbox summary exists. With the sandbox enabled it always carries `append_package_cache_note()`, the package-manager-cache carve-out, after the filesystem deny/allow-write block and before the network section.
+- **Skill recommendations** (`format/skills.rs::format_skill_recommendations`): skill-index matches, when there are any.
 
-### Dynamic Section (format/sections.rs:382-661)
+The semi-stable section carries no delegation guidance of its own.
 
-Per-session content. Includes Target (session/stage/plan IDs, working_dir, execution path), Plan Overview, Assignment, Dependency Status + Outputs, Handoff Content, Acceptance Criteria, Goal-Backward Verification (artifacts, wiring, wiring_tests, dead_code).
+### Dynamic Section (`format/sections.rs::format_dynamic_section`)
 
-### Recitation Section (format/sections.rs:665-765)
+Per-session content: Target (session, stage and plan ids, working_dir, execution path), Worktree Isolation, Plan Overview, the cross-stage summary and the wiring checklist (IntegrationVerify and KnowledgeDistill only), Assignment, Dependencies Status and Dependency Outputs, the previous session's handoff (structured, prose, or a pointer to `.loom/work/handoffs/<file>.md`), Acceptance Criteria, Goal-Backward Verification (artifacts, wiring, wiring_tests, dead_code; `format/sections/goal_backward_section.rs`) and Files to Modify.
 
-End of signal for maximum attention. Includes: a single `Context: {tokens} of {ceiling} tokens` line (absolute resident tokens against the resolved ceiling — replaces the old `Compaction Imminent warning (>=75% usage)` / `Context Budget Warning` pair, both deleted with `append_budget_exceeded_box`, their last caller), Immediate Tasks, Stage end sequence line (`append_stage_end_sequence()`, `format/helpers.rs` — recited right after the task list, before the trailing blank line), Stage Memory (with PROMINENT WARNING if empty).
+### Recitation Section (`format/sections.rs::format_recitation_section`)
 
-### EmbeddedContext Struct (types.rs:25-61)
+End of the signal, for maximum attention: a single `Context: {tokens} of {ceiling} tokens` line (absolute resident tokens against the resolved ceiling), `## Immediate Tasks`, the stage end sequence line (`append_stage_end_sequence()`, `format/helpers.rs`, recited right after the task list, before the trailing blank line), and `## Stage Memory` (with a prominent warning when it is empty).
 
-Single container flowing through all 4 sections. The struct is currently `types.rs:24-73`.
+### EmbeddedContext Struct (`types.rs`, `EmbeddedContext`)
+
+Single container flowing through all four sections.
 
 ```rust
 pub struct EmbeddedContext {
     pub handoff_content: Option<String>,      // V1 prose handoff
     pub parsed_handoff: Option<HandoffV2>,    // V2 structured handoff
     pub plan_overview: Option<String>,
-    pub context_pack: Option<ContextPack>,    // types.rs:35 - this stage's retrieved brief, when retrieval selected anything
-    pub knowledge_tree_empty: bool,           // types.rs:45 - doc/loom/knowledge/ has no real content; distinct from context_pack (see doc comment at the field)
+    pub context_pack: Option<ContextPack>,    // this stage's retrieved brief, when retrieval selected anything
+    pub knowledge_tree_empty: bool,           // doc/loom/knowledge/ has no real content; distinct from context_pack (see the field's doc comment)
     pub memory_content: Option<String>,       // Last 10 entries
     pub skill_recommendations: Vec<SkillMatch>,
-    pub context_ceiling_tokens: Option<u32>,  // types.rs:51 - absolute resident-token ceiling, not a percentage
-    pub context_tokens: Option<u32>,          // types.rs:53 - absolute resident tokens read from the heartbeat
+    pub context_ceiling_tokens: Option<u32>,  // absolute resident-token ceiling, not a percentage
+    pub context_tokens: Option<u32>,          // absolute resident tokens read from the heartbeat
     pub sandbox_summary: Option<SandboxSummary>,
     pub cross_stage_summary: Option<String>,  // IV/KnowledgeDistill only
     pub wiring_checklist: Option<String>,     // IV/KnowledgeDistill only
@@ -164,8 +167,6 @@ pub struct EmbeddedContext {
     pub subagent_timeout_secs: Option<u64>,   // Per-stage override; None emits nothing
 }
 ```
-
-`context_budget: Option<f32>` and `context_usage: Option<f32>` were renamed to the two absolute-token fields above as part of the context-ceiling migration (see architecture.md "Context Budget Enforcement").
 
 ### Caching
 

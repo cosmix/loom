@@ -195,26 +195,29 @@ Codex registers `user-prompt-context.sh` as well, through
   task touches <kind>" (`skill-trigger.sh:207-212`). Plain mode only suggests loads
   under a neutral "skills matching this request" header and makes no mandatory
   claim. The 4+ character prefix rule still counts toward ranking on both surfaces;
-  only the Codex read-in-full directive is gated (2026-09-13).
+  only the Codex read-in-full directive is gated.
 - **`user-prompt-context.sh`** — a thin wrapper around `loom hook user-prompt`. It
-  exits silently unless `LOOM_WORK_DIR` names a directory or a `.loom/work`,
-  `.loom/work`, `doc/loom/knowledge` or `.loom/cache/context-v1` directory exists walking
+  exits silently unless `LOOM_WORK_DIR` names a directory or a `.loom/work`, the legacy
+  `.work`, `doc/loom/knowledge` or `.loom/cache/context-v1` directory exists walking
   up from the working directory, runs the delegate under a 5 s timeout, and re-checks
   the 16 KiB payload ceiling on its own side because the `loom` on PATH may be older
   than the script. All retrieval, gating and delivery logic is Rust — see
   [Context Retrieval](context-retrieval.md).
 
 **The delegates** (`commands/hook/`, filesystem-only — no subcommand may make a
-model or network call): `user-prompt`, `pre-compact` (deletes only the compacting
-session's own delivery record), `reconcile-graph` (the detached, debounced
-source-graph self-heal), `context-ceilings` (the `<main>:<subagent>` pair
-`post-tool-use.sh` caches), `project-types`, and three receipt/brief delegates added on
-2026-09-13: `read-receipt --prepare|--check|--complete` (`read-guard.sh` and
-`post-tool-use.sh`), `forward-receipt --transcript` (`post-tool-use.sh`, after a forwarding Bash
-call) and `worker-brief [--bind-agent]` (`spawn-guard.sh`, then `subagent-start.sh`). The shell
-runs each through `loom_run_bounded` (defined in `_read_ledger.sh`) with a 2-5 s bound, and every
-failure is a silent no-op. Phases and state files:
-[Token Accounting and Receipts](token-accounting-and-receipts.md).
+model or network call; `loom hook --help` lists only `user-prompt`, `reconcile-graph` and
+`pre-compact`, the rest are hidden): `user-prompt`, `pre-compact` (rotates the compacting
+session's read-receipt epoch and deletes only its own prompt delivery record),
+`reconcile-graph` (the detached, debounced source-graph self-heal), `context-ceilings` (the
+`<main>:<subagent>` pair `post-tool-use.sh` caches), `project-types`, `relay` (behind
+`loom-relay.sh`), `review-harvest` (`subagent-stop.sh`), and the receipt and brief delegates:
+`read-receipt` (`--prepare` and `--check` from `read-guard.sh` through `_read_ledger.sh`,
+`--complete` from `post-tool-use.sh`), `forward-receipt --transcript` (`post-tool-use.sh`, after
+a forwarding Bash call) and `worker-brief` (`spawn-guard.sh`; `--bind-agent` from
+`subagent-start.sh`). The shell runs the hook-called delegates through `loom_run_bounded`
+(`_bounded.sh`): 2 s for `read-receipt`, 3 s for `context-ceilings` and both `worker-brief`
+calls, 5 s for `forward-receipt`, 10 s for `review-harvest`; every failure is a silent no-op.
+Phases and state files: [Token Accounting and Receipts](token-accounting-and-receipts.md).
 
 **`HookTarget`** (`commands/hook/target.rs`) is the one environment-to-scope
 resolution the `user-prompt`, `pre-compact` and `reconcile-graph` delegates share,
