@@ -22,7 +22,15 @@ export const stageTypeSchema = z.enum([
   "integration-verify",
   "knowledge-distill",
 ]);
-export const activityStatusSchema = z.enum(["Idle", "Working", "Error", "Stale", "Orphaned"]);
+export const activityStatusSchema = z.enum([
+  "Idle",
+  "Working",
+  "Error",
+  "Stale",
+  "Busy",
+  "Quiet",
+  "Orphaned",
+]);
 export const failureTypeSchema = z.enum([
   "session-crash",
   "context-exhausted",

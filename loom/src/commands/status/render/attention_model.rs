@@ -269,12 +269,14 @@ fn status_guidance(stage: &StageSummary) -> Option<(&'static str, Guidance)> {
 /// the stage to human review.
 ///
 /// A live resolver is told apart from one whose turn ended by its tool calls:
-/// `Stale` is no tool call for the staleness threshold, measured from its own
-/// heartbeat or from its spawn. A resolver that ended its turn without running
-/// `loom stage merge --resolved` stays alive and waits at its prompt forever,
-/// so that state is the operator's to act on, not the daemon's. The heartbeat
-/// is written after a tool call, so one command running past the threshold
-/// (an acceptance rerun) reads the same: the note sends the operator to look
+/// `Stale` is no tool call for the stage's `subagent_timeout_secs` budget with
+/// no call open, measured from its own heartbeat or from its spawn. A resolver
+/// that ended its turn without running `loom stage merge --resolved` stays
+/// alive and waits at its prompt forever, so that state is the operator's to
+/// act on, not the daemon's. One command running past the budget (an
+/// acceptance rerun) reads `Busy` while its transcript shows the call open, and
+/// `Quiet` inside the budget; neither is an entry. Stale can still be a long
+/// call the transcript did not show, so the note sends the operator to look
 /// before it offers the kill, which spends a resolver attempt.
 fn merge_guidance(stage: &StageSummary) -> Guidance {
     let used = stage.merge_resolver_attempts.unwrap_or(0);

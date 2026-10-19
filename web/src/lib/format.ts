@@ -112,10 +112,22 @@ function retryText(stage: StageSummary, label: string): { text: string; tone: To
   };
 }
 
+/// A session with a tool call open is working even though its heartbeat is
+/// silent, so the activity instruments treat it like `Working`.
+export function sessionIsWorking(stage: StageSummary): boolean {
+  return stage.activity_status === "Working" || stage.activity_status === "Busy";
+}
+
 function executingActivity(stage: StageSummary): { text: string; tone: Tone } {
   if (isContractPhase(stage)) {
     if (stage.activity_status === "Stale") {
       return stalenessText("contract writer idle", stage.staleness_secs, "warning");
+    }
+    if (stage.activity_status === "Quiet") {
+      return stalenessText("contract writer quiet", stage.staleness_secs, "dimmed");
+    }
+    if (stage.activity_status === "Busy") {
+      return busyText(stage, "contract writer ", "contract");
     }
     if (stage.activity_status !== "Orphaned" && stage.activity_status !== "Error") {
       return { text: "writing contract tests", tone: "contract" };
@@ -127,8 +139,12 @@ function executingActivity(stage: StageSummary): { text: string; tone: Tone } {
         text: stage.last_tool ? `working · ${stage.last_tool}` : "working",
         tone: "completed",
       };
+    case "Busy":
+      return busyText(stage, "", "completed");
     case "Idle":
       return stalenessText("idle", stage.staleness_secs, "dimmed");
+    case "Quiet":
+      return stalenessText("quiet", stage.staleness_secs, "dimmed");
     case "Stale":
       return stalenessText("stale", stage.staleness_secs, "warning");
     case "Orphaned":
@@ -136,6 +152,14 @@ function executingActivity(stage: StageSummary): { text: string; tone: Tone } {
     case "Error":
       return { text: "crashed", tone: "blocked" };
   }
+}
+
+/// `running <tool> 12m`, or `in tool call 12m` when the open call's name is
+/// unknown. The silence stays in the text so a command that never returns is
+/// still visible.
+function busyText(stage: StageSummary, lead: string, tone: Tone): { text: string; tone: Tone } {
+  const action = stage.last_tool ? `running ${stage.last_tool}` : "in tool call";
+  return stalenessText(`${lead}${action}`, stage.staleness_secs, tone);
 }
 
 function stalenessText(

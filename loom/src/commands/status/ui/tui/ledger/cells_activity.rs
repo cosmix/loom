@@ -94,7 +94,7 @@ fn standard_activity_cell(stage: &StageSummary, width: u16) -> Cell {
 
 fn executing_activity(stage: &StageSummary, width: u16) -> Cell {
     if is_contract_phase(stage) {
-        if let Some(cell) = contract_writer_activity(stage) {
+        if let Some(cell) = contract_writer_activity(stage, width) {
             return cell;
         }
     }
@@ -119,6 +119,8 @@ fn executing_activity(stage: &StageSummary, width: u16) -> Cell {
         ActivityStatus::Stale => {
             staleness_activity("stale", stage.staleness_secs, Theme::status_warning())
         }
+        ActivityStatus::Busy => busy_activity(stage, width, "", Theme::status_completed()),
+        ActivityStatus::Quiet => staleness_activity("quiet", stage.staleness_secs, Theme::dimmed()),
         ActivityStatus::Orphaned => Cell {
             text: "orphaned".to_owned(),
             style: Theme::status_blocked(),
@@ -131,12 +133,12 @@ fn executing_activity(stage: &StageSummary, width: u16) -> Cell {
 }
 
 /// Activity text for the contract-writer phase: styled distinctly (magenta,
-/// never yellow/red) so it does not read as a warning or an error. A stale
-/// contract writer keeps the same "no heartbeat" duration suffix as any
-/// other stale session, just under different wording. `None` for an
-/// orphaned or crashed writer, so the caller falls back to the ordinary
-/// orphaned/crashed cell instead of reading as healthy.
-fn contract_writer_activity(stage: &StageSummary) -> Option<Cell> {
+/// never yellow/red) so it does not read as a warning or an error. A stale,
+/// quiet or busy contract writer keeps the same silence duration suffix as any
+/// other session, just under different wording. `None` for an orphaned or
+/// crashed writer, so the caller falls back to the ordinary orphaned/crashed
+/// cell instead of reading as healthy.
+fn contract_writer_activity(stage: &StageSummary, width: u16) -> Option<Cell> {
     match stage.activity_status {
         ActivityStatus::Working | ActivityStatus::Idle => Some(Cell {
             text: "writing contract tests".to_owned(),
@@ -147,7 +149,44 @@ fn contract_writer_activity(stage: &StageSummary) -> Option<Cell> {
             stage.staleness_secs,
             Theme::status_contract(),
         )),
+        ActivityStatus::Quiet => Some(staleness_activity(
+            "contract writer quiet",
+            stage.staleness_secs,
+            Theme::status_contract(),
+        )),
+        ActivityStatus::Busy => Some(busy_activity(
+            stage,
+            width,
+            "contract writer ",
+            Theme::status_contract(),
+        )),
         ActivityStatus::Orphaned | ActivityStatus::Error => None,
+    }
+}
+
+/// `running <tool> 12m`, or `in tool call 12m` when the open call's name is
+/// unknown. The silence stays in the text so a command that never returns is
+/// still visible; the tool name gives way to it when the column is narrow.
+fn busy_activity(stage: &StageSummary, width: u16, lead: &str, style: Style) -> Cell {
+    let silence = stage.staleness_secs.map_or_else(String::new, |seconds| {
+        format!(
+            " {}",
+            format_elapsed(seconds.try_into().unwrap_or(i64::MAX))
+        )
+    });
+    let action = match &stage.last_tool {
+        Some(tool) => {
+            let prefix = format!("{lead}running ");
+            let room = usize::from(width)
+                .saturating_sub(text_width(&prefix))
+                .saturating_sub(text_width(&silence));
+            format!("{prefix}{}", truncate(tool, room))
+        }
+        None => format!("{lead}in tool call"),
+    };
+    Cell {
+        text: format!("{action}{silence}"),
+        style,
     }
 }
 

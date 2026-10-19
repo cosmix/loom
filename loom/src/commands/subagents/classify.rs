@@ -46,7 +46,7 @@
 //! background agents get an immediate spawn-acknowledgement `tool_result`
 //! there, so its presence proves spawn, never completion.
 
-use std::fs;
+use std::fs::{self, File};
 use std::path::Path;
 use std::time::SystemTime;
 
@@ -65,6 +65,25 @@ pub(super) mod forward;
 pub(super) mod lifecycle;
 
 pub(crate) use entry::{is_assistant, text_blocks};
+
+/// A tool call a transcript's last turn left without a result.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct OpenToolCall {
+    /// The tool's name, when the `tool_use` block carries one.
+    pub name: Option<String>,
+}
+
+/// The tool call open at the end of an opened transcript, from a bounded tail
+/// read: the last conversation turn is an assistant `tool_use` -- the
+/// [`SubagentState::ToolWait`] shape. Bookkeeping rows after it do not close
+/// the call. An unreadable transcript reports nothing open.
+pub(crate) fn open_tool_call(file: &mut File) -> Option<OpenToolCall> {
+    let entries = entry::read_tail_entries(file).ok()?;
+    let last = entries.iter().rev().find(|row| entry::is_message(row))?;
+    (entry::classify_last(last) == SubagentState::ToolWait).then(|| OpenToolCall {
+        name: entry::last_tool_used(std::slice::from_ref(last)),
+    })
+}
 
 pub(super) fn is_done_entry(entry: &Value) -> bool {
     entry::classify_last(entry) == SubagentState::Done

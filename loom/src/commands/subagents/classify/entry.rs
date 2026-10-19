@@ -1,6 +1,7 @@
 //! JSONL-entry parsing and structural liveness classification for `classify`.
 
-use std::fs;
+use std::fs::{self, File};
+use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
 use anyhow::{Context, Result};
@@ -16,6 +17,32 @@ pub(super) fn read_entries(path: &Path) -> Result<Vec<Value>> {
         .with_context(|| format!("reading subagent transcript {}", path.display()))?;
     let content = String::from_utf8_lossy(&bytes);
     Ok(parse_lines(&content))
+}
+
+/// Most bytes read from the end of a transcript by [`read_tail_entries`].
+///
+/// Deliberate limit: a final entry larger than this (a `Write` of a huge file)
+/// is dropped with the partial line, so the tail then ends on the entry before
+/// it. Revisit if open-tool detection misses calls that carry large inputs.
+const TAIL_BYTES: u64 = 512 * 1024;
+
+/// Parse the rows in the last [`TAIL_BYTES`] of an open transcript. The first
+/// row of a tail that starts mid-file is cut, so it is discarded.
+pub(super) fn read_tail_entries(file: &mut File) -> Result<Vec<Value>> {
+    let length = file.metadata().context("inspecting transcript")?.len();
+    let start = length.saturating_sub(TAIL_BYTES);
+    file.seek(SeekFrom::Start(start))
+        .context("seeking transcript")?;
+    let mut bytes = Vec::new();
+    file.take(TAIL_BYTES)
+        .read_to_end(&mut bytes)
+        .context("reading transcript tail")?;
+    let whole_rows = match (start, bytes.iter().position(|byte| *byte == b'\n')) {
+        (0, _) => &bytes[..],
+        (_, Some(newline)) => &bytes[newline + 1..],
+        (_, None) => &[],
+    };
+    Ok(parse_lines(&String::from_utf8_lossy(whole_rows)))
 }
 
 /// Parse every non-blank JSONL row independently, discarding malformed rows.
@@ -37,6 +64,12 @@ pub(super) fn timestamp(entry: &Value) -> Option<DateTime<Utc>> {
 
 pub(crate) fn is_assistant(entry: &Value) -> bool {
     entry_type(entry) == Some("assistant")
+}
+
+/// A conversation turn (`assistant` or `user`), as opposed to the bookkeeping
+/// rows (`attachment`, `system`, `last-prompt`, ...) Claude Code interleaves.
+pub(super) fn is_message(entry: &Value) -> bool {
+    matches!(entry_type(entry), Some("assistant" | "user"))
 }
 
 pub(crate) fn text_blocks(entry: &Value) -> Vec<&str> {

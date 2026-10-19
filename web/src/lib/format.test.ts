@@ -120,18 +120,33 @@ describe("TUI formatter ports", () => {
     ["Idle", "idle 1m1s", "dimmed"],
     ["Error", "crashed", "blocked"],
     ["Stale", "stale 1m1s", "warning"],
+    ["Quiet", "quiet 1m1s", "dimmed"],
+    ["Busy", "running Bash 1m1s", "completed"],
     ["Orphaned", "orphaned", "blocked"],
   ])("formats executing %s activity", (activity_status, text, tone) => {
     const result = activityText(
       stage({
         status: "executing",
         activity_status,
-        last_tool: activity_status === "Working" ? "Bash" : null,
-        staleness_secs: ["Idle", "Stale"].includes(activity_status) ? 61 : null,
+        last_tool: ["Working", "Busy"].includes(activity_status) ? "Bash" : null,
+        staleness_secs: ["Idle", "Stale", "Quiet", "Busy"].includes(activity_status) ? 61 : null,
       }),
     );
 
     expect(result).toEqual({ text, tone });
+  });
+
+  it("names no tool for a busy session whose open call is unknown", () => {
+    expect(
+      activityText(
+        stage({
+          status: "executing",
+          activity_status: "Busy",
+          last_tool: null,
+          staleness_secs: 730,
+        }),
+      ),
+    ).toEqual({ text: "in tool call 12m10s", tone: "completed" });
   });
 
   it("uses the short working form when no tool is known", () => {
@@ -147,6 +162,8 @@ describe("TUI formatter ports", () => {
     ["Working", "writing contract tests", "contract"],
     ["Idle", "writing contract tests", "contract"],
     ["Stale", "contract writer idle 1m1s", "warning"],
+    ["Quiet", "contract writer quiet 1m1s", "dimmed"],
+    ["Busy", "contract writer running Bash 1m1s", "contract"],
     ["Orphaned", "orphaned", "blocked"],
     ["Error", "crashed", "blocked"],
   ])("formats a contract-phase stage's %s activity", (activity_status, text, tone) => {
@@ -156,8 +173,8 @@ describe("TUI formatter ports", () => {
           status: "executing",
           session_type: "contract",
           activity_status,
-          last_tool: activity_status === "Working" ? "Bash" : null,
-          staleness_secs: ["Idle", "Stale"].includes(activity_status) ? 61 : null,
+          last_tool: ["Working", "Busy"].includes(activity_status) ? "Bash" : null,
+          staleness_secs: ["Idle", "Stale", "Quiet", "Busy"].includes(activity_status) ? 61 : null,
         }),
       ),
     ).toEqual({ text, tone });

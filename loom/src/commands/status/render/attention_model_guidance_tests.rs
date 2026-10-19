@@ -73,6 +73,28 @@ fn a_resolver_with_no_recent_tool_call_is_not_automatic_and_says_to_look_first()
 }
 
 #[test]
+fn a_resolver_inside_a_long_call_or_within_its_budget_is_still_automatic() {
+    for activity in [ActivityStatus::Busy, ActivityStatus::Quiet] {
+        let mut stage = make_stage_summary("docs", StageStatus::MergeConflict);
+        stage.merge_resolver_session = Some("session-abc".to_string());
+        stage.merge_resolver_attempts = Some(1);
+        stage.activity_status = activity;
+        stage.staleness_secs = Some(12 * 60);
+
+        let entry = entry_for(stage);
+
+        assert_eq!(
+            guidance(&entry),
+            (
+                None,
+                Some("merge resolver session-abc is working (attempt 1 of 6)"),
+                true
+            )
+        );
+    }
+}
+
+#[test]
 fn the_running_resolver_note_survives_the_daemon_wire() {
     // The daemon ships `StatusData` as JSON; the TUI and the web server build
     // attention from the copy they deserialize.

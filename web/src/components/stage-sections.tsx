@@ -44,8 +44,9 @@ const HINT = {
     "What the session was spawned to do: stage work, a merge, a base-conflict fix, knowledge, adjudication, or writing contract tests.",
   exitReason: "Why the outgoing session ended, independently of the stage's workflow status.",
   activity:
-    "Working: a tool ran recently. Idle: no live session, or the stage is finished. Stale: no heartbeat for 5 min. Orphaned: executing with no session record. Error: the process died.",
-  lastTool: "The tool the session used most recently, from its heartbeat.",
+    "Working: a tool ran recently. Busy: a tool call is still open; the time is the silence so far. Quiet: no heartbeat for 5 min, but within the stage's budget. Stale: no heartbeat past the stage's budget (5 min by default) and no tool call open. Idle: no live session, or the stage is finished. Orphaned: executing with no session record. Error: the process died.",
+  lastTool:
+    "The tool the session used most recently, from its heartbeat; while busy, the tool call that is still open.",
   lastActivity:
     "The last heartbeat event that is not already stated by last tool, such as session start or a subagent finishing.",
   staleness: "Time since the last heartbeat.",

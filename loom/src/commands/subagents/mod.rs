@@ -30,8 +30,9 @@ mod summary;
 mod table;
 
 // `commands::hook::review_harvest` reads a reviewer's final text with the same
-// transcript-entry rules `classify` applies.
-pub(crate) use classify::{is_assistant, text_blocks};
+// transcript-entry rules `classify` applies; `commands::status` asks the same
+// classifier whether a tool call is still open.
+pub(crate) use classify::{is_assistant, open_tool_call, text_blocks, OpenToolCall};
 
 use std::path::PathBuf;
 

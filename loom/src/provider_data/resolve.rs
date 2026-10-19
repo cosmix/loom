@@ -88,7 +88,8 @@ pub fn agent_id_from_path(path: &Path) -> String {
     stem.strip_prefix("agent-").unwrap_or(stem).to_string()
 }
 
-fn projects_root() -> Option<PathBuf> {
+/// `~/.claude/projects`, where Claude Code keeps every session transcript.
+pub fn projects_root() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(".claude").join("projects"))
 }
 

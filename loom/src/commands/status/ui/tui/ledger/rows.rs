@@ -33,6 +33,7 @@ pub fn stage_row(
 #[cfg(test)]
 mod tests {
     use super::super::cells::{activity_cell, context_cell, model_parts};
+    use super::super::text::text_width;
     use super::*;
     use crate::{
         commands::status::{data::ActivityStatus, ui::tui::ledger::columns::columns_for_width},
@@ -223,6 +224,45 @@ mod tests {
         stage.activity_status = ActivityStatus::Stale;
         stage.staleness_secs = Some(61);
         assert_eq!(activity_cell(&stage, 40).text, "contract writer idle 1m1s");
+    }
+
+    #[test]
+    fn busy_activity_names_the_open_tool_and_the_silence() {
+        let mut stage = summary(StageStatus::Executing);
+        stage.activity_status = ActivityStatus::Busy;
+        stage.staleness_secs = Some(12 * 60);
+        assert_eq!(activity_cell(&stage, 40).text, "in tool call 12m0s");
+        stage.last_tool = Some("Bash".to_owned());
+        assert_eq!(activity_cell(&stage, 40).text, "running Bash 12m0s");
+        stage.last_tool = Some("mcp__a_very_long_tool_name__that_overflows".to_owned());
+        let text = activity_cell(&stage, 20).text;
+        assert!(
+            text.ends_with(" 12m0s") && text_width(&text) <= 20,
+            "{text}"
+        );
+    }
+
+    #[test]
+    fn quiet_activity_is_neutral_and_keeps_the_silence() {
+        let mut stage = summary(StageStatus::Executing);
+        stage.activity_status = ActivityStatus::Quiet;
+        stage.staleness_secs = Some(6 * 60);
+        assert_eq!(activity_cell(&stage, 40).text, "quiet 6m0s");
+    }
+
+    #[test]
+    fn contract_phase_activity_busy_and_quiet_keep_the_writer_wording() {
+        let mut stage = summary(StageStatus::Executing);
+        stage.session_type = Some(SessionType::Contract);
+        stage.staleness_secs = Some(6 * 60);
+        stage.activity_status = ActivityStatus::Busy;
+        stage.last_tool = Some("Bash".to_owned());
+        assert_eq!(
+            activity_cell(&stage, 60).text,
+            "contract writer running Bash 6m0s"
+        );
+        stage.activity_status = ActivityStatus::Quiet;
+        assert_eq!(activity_cell(&stage, 60).text, "contract writer quiet 6m0s");
     }
 
     #[test]

@@ -10,7 +10,7 @@ pub mod progress;
 pub mod summary;
 pub(crate) mod wrap;
 
-pub use activity::{render_activity_status, render_orphaned_warning, render_staleness_warning};
+pub use activity::{render_activity_status, render_orphaned_warning};
 pub use attention::render_attention;
 pub use attention_model::{attention_entries, failure_label};
 pub use compact::render_compact;

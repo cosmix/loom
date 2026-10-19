@@ -2,15 +2,15 @@ import { useAtomValue } from "jotai/react";
 
 import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
 import type { StageSummary } from "@/api/schema";
+import { sessionIsWorking } from "@/lib/format";
 import { snapshotAtom } from "@/state/atoms";
 
 /// The header's disc: the whole run's activity. It turns while any session
-/// is working and rests when every session is idle or none is alive.
+/// is working or inside a tool call and rests when every session is idle or
+/// none is alive.
 export function WorkRoundel({ size = 16 }: { size?: number }) {
   const stages = useAtomValue(snapshotAtom)?.status.stages ?? [];
-  const working = stages.filter(
-    (stage) => stage.status === "executing" && stage.activity_status === "Working",
-  );
+  const working = stages.filter((stage) => stage.status === "executing" && sessionIsWorking(stage));
   const live = stages.some((stage) => stage.session_alive);
   const title =
     working.length > 0
@@ -42,7 +42,7 @@ export function ActivityRoundel({ stage, size = 12 }: { stage: StageSummary; siz
   if (!watched) return null;
   return (
     <BusyRoundel
-      busy={stage.activity_status === "Working"}
+      busy={sessionIsWorking(stage)}
       size={size}
       busyLabel="session working"
       idleLabel="session idle"

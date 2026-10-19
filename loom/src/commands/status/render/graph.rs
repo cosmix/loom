@@ -71,10 +71,8 @@ fn format_stage_annotations(stage: &StageSummary) -> String {
         parts.push(activity_icon.to_string());
 
         // Staleness warning
-        if let Some(staleness) = stage.staleness_secs {
-            if staleness > 300 {
-                parts.push(format!("{}", "(stale)".yellow()));
-            }
+        if stage.activity_status == ActivityStatus::Stale {
+            parts.push(format!("{}", "(stale)".yellow()));
         }
 
         push_session_annotations(stage, &mut parts);

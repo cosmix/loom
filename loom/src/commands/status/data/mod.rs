@@ -1,3 +1,4 @@
+mod busy;
 mod collector;
 pub(crate) mod completion_view;
 mod execution_models;
@@ -34,8 +35,17 @@ pub enum ActivityStatus {
     Working,
     /// Session encountered an error or crashed
     Error,
-    /// Session may be hung (no recent heartbeat but PID alive)
+    /// Session may be hung: its heartbeat has been silent past the stage's
+    /// `subagent_timeout_secs` budget (the threshold the monitor acts on) and
+    /// no tool call is open.
     Stale,
+    /// A tool call is open (the main agent's or a subagent's transcript ends
+    /// in a `tool_use` with no result), so a silent heartbeat is expected. The
+    /// silence is still reported so a stuck command stays visible.
+    Busy,
+    /// Heartbeat silent past the default staleness threshold but within the
+    /// stage's larger budget, with no tool call open. Neutral, not a warning.
+    Quiet,
     /// Stage status claims Executing but no session record exists for it —
     /// e.g. the daemon was killed and restarted while the file that would
     /// have named the running agent's session was never written or was lost.
@@ -52,6 +62,8 @@ impl ActivityStatus {
             Self::Working => "\u{1F504}",  // arrows counterclockwise
             Self::Error => "\u{274C}",     // cross mark
             Self::Stale => "\u{26A0}",     // warning
+            Self::Busy => "\u{2699}",      // gear
+            Self::Quiet => "\u{1F4A4}",    // zzz
             Self::Orphaned => "\u{1F480}", // skull
         }
     }
@@ -63,6 +75,8 @@ impl ActivityStatus {
             Self::Working => "WORKING",
             Self::Error => "ERROR",
             Self::Stale => "STALE",
+            Self::Busy => "BUSY",
+            Self::Quiet => "QUIET",
             Self::Orphaned => "ORPHANED",
         }
     }
@@ -119,7 +133,8 @@ pub struct StageSummary {
     pub failure_info: Option<FailureInfo>,
     /// Activity status derived from heartbeat
     pub activity_status: ActivityStatus,
-    /// Last tool used (from heartbeat)
+    /// Last tool used (from heartbeat); while `activity_status` is `Busy`,
+    /// the tool call that is open instead, `None` when its name is unknown
     pub last_tool: Option<String>,
     /// Human-readable activity description
     pub last_activity: Option<String>,
