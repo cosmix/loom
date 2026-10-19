@@ -133,7 +133,7 @@ impl HooksConfig {
     /// Get the full path to a hook script.
     ///
     /// Sessions see host-absolute paths — the hooks are installed at
-    /// `~/.claude/hooks/loom/...` on the host.
+    /// `<claude_dir>/hooks/loom/...` on the host (`assets::install::claude_hooks_dir`).
     pub fn script_path(&self, event: HookEvent) -> PathBuf {
         self.hooks_dir.join(event.script_name())
     }

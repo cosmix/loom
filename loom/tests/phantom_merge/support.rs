@@ -114,6 +114,12 @@ impl EnvVarGuard {
         std::env::set_var(key, value);
         Self { key, original }
     }
+
+    fn unset(key: &'static str) -> Self {
+        let original = std::env::var(key).ok();
+        std::env::remove_var(key);
+        Self { key, original }
+    }
 }
 
 impl Drop for EnvVarGuard {
@@ -148,6 +154,9 @@ pub(crate) struct HomeGuard {
     _temp: TempDir,
     _home_env: EnvVarGuard,
     _loom_home_env: EnvVarGuard,
+    /// The install-root overrides a developer shell may export, which would
+    /// move the hooks out of the scratch `HOME`.
+    _root_overrides: [EnvVarGuard; 2],
     home: PathBuf,
 }
 
@@ -173,6 +182,10 @@ pub(crate) fn isolate_home() -> HomeGuard {
         _temp: temp,
         _home_env,
         _loom_home_env,
+        _root_overrides: [
+            EnvVarGuard::unset("LOOM_CLAUDECODE_INSTALL_DIR"),
+            EnvVarGuard::unset("LOOM_CODEX_INSTALL_DIR"),
+        ],
         home,
     }
 }

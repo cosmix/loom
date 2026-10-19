@@ -14,13 +14,12 @@ pub fn execute_quiet() -> Result<()> {
     execute_default(false)
 }
 
+/// Both roots come from the installer's resolver (`assets::install::default_paths`),
+/// so the index is rebuilt where `install-assets` placed the skills.
 fn execute_default(verbose: bool) -> Result<()> {
-    let home = dirs::home_dir().context("Cannot determine home directory")?;
-    let codex = std::env::var_os("CODEX_HOME")
-        .map(std::path::PathBuf::from)
-        .unwrap_or_else(|| home.join(".codex"));
-    execute_in_agent_dir(&home.join(".claude"), verbose)?;
-    execute_in_agent_dir(&codex, verbose)
+    let paths = crate::assets::install::default_paths()?;
+    execute_in_agent_dir(&paths.claude_dir, verbose)?;
+    execute_in_agent_dir(&paths.codex_dir, verbose)
 }
 
 pub fn execute_in_agent_dir(root: &Path, verbose: bool) -> Result<()> {

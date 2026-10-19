@@ -5,6 +5,7 @@ use chrono::Utc;
 use serde_json::json;
 
 use super::*;
+use crate::assets::install::test_env::InstallRootsEnv;
 use crate::models::forward_receipt::{ForwardIdentity, ForwardObservation};
 
 const STAGE: &str = "stage-a";
@@ -15,6 +16,7 @@ const TOOL: &str = "tool-a";
 const JOB: &str = "job-a";
 
 #[test]
+#[serial_test::serial]
 fn adapter_reads_fixtures_without_writing() {
     let fixture = Fixture::new("queued", None);
     let before = fixture.snapshot();
@@ -29,6 +31,7 @@ fn adapter_reads_fixtures_without_writing() {
 }
 
 #[test]
+#[serial_test::serial]
 fn deterministic_id_isolates_same_model_siblings() {
     let fixture = Fixture::new("queued", None);
     fixture.write_job("job-b", "failed", None);
@@ -51,6 +54,7 @@ fn deterministic_id_isolates_same_model_siblings() {
 }
 
 #[test]
+#[serial_test::serial]
 fn foreign_companion_locator_is_unknown() {
     let fixture = Fixture::new("queued", Some("/tmp/foreign-job.json"));
     fixture.write_transcript(AGENT, TOOL, &start_marker(JOB), true);
@@ -62,6 +66,7 @@ fn foreign_companion_locator_is_unknown() {
 }
 
 #[test]
+#[serial_test::serial]
 fn exact_companion_record_states_map_to_overlay() {
     for (status, phase, expected) in [
         ("queued", None, ForwardOverlay::ForwardWait),
@@ -81,6 +86,7 @@ fn exact_companion_record_states_map_to_overlay() {
 }
 
 #[test]
+#[serial_test::serial]
 fn foreground_inline_marker_reconstructs_a_completed_direct_forward() {
     let fixture = Fixture::empty();
     fixture.write_transcript(
@@ -97,6 +103,7 @@ fn foreground_inline_marker_reconstructs_a_completed_direct_forward() {
 }
 
 #[test]
+#[serial_test::serial]
 fn background_acknowledgement_reads_only_validated_task_output() {
     let fixture = Fixture::empty();
     let output = fixture.task_output("task-a");
@@ -111,6 +118,7 @@ fn background_acknowledgement_reads_only_validated_task_output() {
 }
 
 #[test]
+#[serial_test::serial]
 fn forwarding_use_without_receipt_or_marker_blocks_settlement() {
     let fixture = Fixture::empty();
     fixture.write_transcript(AGENT, TOOL, "", false);
@@ -122,6 +130,7 @@ fn forwarding_use_without_receipt_or_marker_blocks_settlement() {
 }
 
 #[test]
+#[serial_test::serial]
 fn empty_transcript_does_not_settle_a_completed_expected_receipt() {
     let fixture = Fixture::new("completed", Some("done"));
     fs::write(&fixture.transcript, "").unwrap();
@@ -133,6 +142,7 @@ fn empty_transcript_does_not_settle_a_completed_expected_receipt() {
 }
 
 struct Fixture {
+    _env: InstallRootsEnv,
     _temp: tempfile::TempDir,
     work: PathBuf,
     state_root: PathBuf,
@@ -145,6 +155,7 @@ impl Fixture {
         let temp = tempfile::tempdir().unwrap();
         let root = temp.path().to_path_buf();
         let fixture = Self {
+            _env: InstallRootsEnv::isolate(&root),
             work: root.join("work"),
             state_root: root.join("state"),
             task_root: root.join("task-output"),

@@ -26,6 +26,7 @@ fn build_with_interpreters(python3: Option<&Path>, python_hooks: &[PathBuf]) -> 
         python3,
         python_hooks,
         hidden_sockets: &[],
+        agent_roots: &Default::default(),
     })
     .unwrap()
 }

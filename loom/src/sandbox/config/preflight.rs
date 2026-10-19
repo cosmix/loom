@@ -157,12 +157,15 @@ pub(crate) fn require_confined_host(facts: &HostFacts) -> Result<(), SandboxPref
 /// and matches the copy embedded in this build.
 fn hook_script_refusals(hooks_dir: Option<&Path>) -> Vec<String> {
     let Some(dir) = hooks_dir else {
-        return vec![
-            "no verified loom hooks directory: neither LOOM_HOOKS_DIR nor ~/.claude/hooks/loom \
-             is a directory the operator owns. Install the hooks from this loom build \
-             (`loom repair --fix`)."
-                .to_string(),
-        ];
+        let reason = match crate::assets::install::try_claude_hooks_dir() {
+            Ok(dir) => format!(
+                "neither LOOM_HOOKS_DIR nor {} is a directory the operator owns. Install the \
+                 hooks from this loom build (`loom repair --fix`).",
+                dir.display()
+            ),
+            Err(error) => format!("{error:#}. Fix the install root, then `loom install-assets`."),
+        };
+        return vec![format!("no verified loom hooks directory: {reason}")];
     };
     let drifted = crate::fs::permissions::hook_scripts_needing_install(dir);
     if drifted.is_empty() {
@@ -170,9 +173,10 @@ fn hook_script_refusals(hooks_dir: Option<&Path>) -> Vec<String> {
     }
     vec![format!(
         "loom hook scripts in {} are missing or differ from this loom build: {}. Reinstall \
-         them from this build (`loom repair --fix` installs into ~/.claude/hooks/loom).",
+         them from this build (`loom repair --fix` installs into {}).",
         dir.display(),
-        drifted.join(", ")
+        drifted.join(", "),
+        crate::assets::install::claude_hooks_dir_text()
     )]
 }
 

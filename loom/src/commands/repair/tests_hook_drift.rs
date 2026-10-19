@@ -12,6 +12,8 @@ use super::*;
 #[test]
 #[serial_test::serial]
 fn repair_fixes_partially_registered_hooks() {
+    let isolated_home = tempfile::tempdir().unwrap();
+    let _env = crate::assets::install::test_env::InstallRootsEnv::isolate(isolated_home.path());
     let root = tempfile::tempdir().unwrap();
     crate::fs::permissions::ensure_loom_hooks_local(root.path()).unwrap();
 
@@ -49,13 +51,15 @@ fn repair_fixes_partially_registered_hooks() {
 #[test]
 #[serial_test::serial]
 fn repair_fixes_an_obsolete_hook_registration() {
+    let isolated_home = tempfile::tempdir().unwrap();
+    let _env = crate::assets::install::test_env::InstallRootsEnv::isolate(isolated_home.path());
     let root = tempfile::tempdir().unwrap();
     crate::fs::permissions::ensure_loom_hooks_local(root.path()).unwrap();
 
     let settings_path = root.path().join(".claude/settings.local.json");
     let mut settings: serde_json::Value =
         serde_json::from_str(&fs::read_to_string(&settings_path).unwrap()).unwrap();
-    let hooks_dir = dirs::home_dir().unwrap().join(".claude/hooks/loom");
+    let hooks_dir = crate::assets::install::claude_hooks_dir().unwrap();
     let ghost_command = hooks_dir.join("obsolete-ghost.sh").display().to_string();
     settings["hooks"]["Stop"]
         .as_array_mut()
@@ -93,6 +97,8 @@ fn repair_fixes_an_obsolete_hook_registration() {
 #[test]
 #[serial_test::serial]
 fn repair_fixes_missing_worktree_bg_isolation() {
+    let isolated_home = tempfile::tempdir().unwrap();
+    let _env = crate::assets::install::test_env::InstallRootsEnv::isolate(isolated_home.path());
     let root = tempfile::tempdir().unwrap();
     crate::fs::permissions::ensure_loom_hooks_local(root.path()).unwrap();
 
@@ -128,6 +134,8 @@ fn repair_fixes_missing_worktree_bg_isolation() {
 #[test]
 #[serial_test::serial]
 fn repair_scrubs_stale_session_identity_env() {
+    let isolated_home = tempfile::tempdir().unwrap();
+    let _env = crate::assets::install::test_env::InstallRootsEnv::isolate(isolated_home.path());
     let root = tempfile::tempdir().unwrap();
     let claude_dir = root.path().join(".claude");
     fs::create_dir_all(&claude_dir).unwrap();

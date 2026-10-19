@@ -134,9 +134,13 @@ fn test_ensure_loom_permissions_adds_hooks_to_settings_local() {
     assert!(settings.get("hooks").is_none());
 }
 
+/// Both runs resolve the same hooks directory: the resolver is pinned, since
+/// a registration under another home is not recognised as loom's.
 #[test]
+#[serial]
 fn test_hooks_not_duplicated_on_rerun() {
     let temp_dir = TempDir::new().unwrap();
+    let _env = crate::assets::install::test_env::InstallRootsEnv::isolate(temp_dir.path());
     let repo_root = temp_dir.path();
     let hooks_dir = temp_dir.path().join("hooks");
 
@@ -206,12 +210,34 @@ fn test_scrub_stale_work_dir_env_noop_missing_key() {
 
 const FORWARD_TILDE_ENTRY: &str = "Bash(~/.claude/hooks/loom/codex-forward.sh:*)";
 
+/// The absolute capsule entry, through the same resolver production uses;
+/// callers pin the resolver with `InstallRootsEnv::isolate` first.
 fn home_forward_entry() -> String {
-    let home = dirs::home_dir().expect("test environment must have a resolvable home dir");
-    format!(
+    let hooks_dir = crate::assets::install::claude_hooks_dir()
+        .expect("test environment must have a resolvable home dir");
+    format!("Bash({}:*)", hooks_dir.join("codex-forward.sh").display())
+}
+
+/// A relocated Claude root moves the capsule's forwarding-wrapper allow entry
+/// with it; the old `<home>/.claude/...` spelling would name a missing script.
+#[test]
+#[serial]
+fn codex_forward_allow_entry_names_the_relocated_hooks_dir() {
+    use crate::assets::install::test_env::{InstallRootsEnv, CLAUDE_OVERRIDE};
+    use crate::fs::permissions::settings::codex_forward_home_allow_entry;
+    let home = TempDir::new().unwrap();
+    let mut env = InstallRootsEnv::isolate(home.path());
+    let default = format!(
         "Bash({}/.claude/hooks/loom/codex-forward.sh:*)",
-        home.display()
-    )
+        home.path().display()
+    );
+    assert_eq!(codex_forward_home_allow_entry(), Some(default));
+
+    env.set(CLAUDE_OVERRIDE, "/opt/agents/claude");
+    assert_eq!(
+        codex_forward_home_allow_entry().as_deref(),
+        Some("Bash(/opt/agents/claude/hooks/loom/codex-forward.sh:*)")
+    );
 }
 
 #[test]
@@ -224,6 +250,8 @@ fn test_ensure_loom_permissions_omits_home_expanded_codex_forward_entry() {
     ) {
         return;
     }
+    let isolated_home = TempDir::new().unwrap();
+    let _env = crate::assets::install::test_env::InstallRootsEnv::isolate(isolated_home.path());
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path();
     let hooks_dir = temp_dir.path().join("hooks");
@@ -252,6 +280,8 @@ fn test_ensure_loom_permissions_removes_existing_home_expanded_entry() {
     ) {
         return;
     }
+    let isolated_home = TempDir::new().unwrap();
+    let _env = crate::assets::install::test_env::InstallRootsEnv::isolate(isolated_home.path());
     let temp_dir = TempDir::new().unwrap();
     let repo_root = temp_dir.path();
     let hooks_dir = temp_dir.path().join("hooks");

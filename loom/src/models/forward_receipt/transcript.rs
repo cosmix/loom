@@ -10,7 +10,9 @@ use super::is_safe_id;
 use super::locator::{read_bounded_prefix, validate_task_output_path};
 use super::marker::{decode_marker_channel, MarkerChannel, MAX_PREFIX_BYTES};
 
+mod argv;
 mod identity;
+pub use argv::exact_forward_argv;
 pub use identity::TranscriptIdentity;
 
 const MAX_TRANSCRIPT_BYTES: usize = 16 * 1024 * 1024;
@@ -261,65 +263,6 @@ fn insert_unique<T>(items: &mut BTreeMap<String, Option<T>>, id: &str, value: T)
         .entry(id.to_owned())
         .and_modify(|existing| *existing = None)
         .or_insert(Some(value));
-}
-
-pub fn exact_forward_argv(command: &str) -> Option<(String, String)> {
-    if !safe_shell_syntax(command) {
-        return None;
-    }
-    let words = shell_words::split(command).ok()?;
-    if words.len() != 8
-        || !words[0].contains('/')
-        || Path::new(&words[0]).file_name()?.to_str()? != "codex-forward.sh"
-        || words[1] != "task"
-        || words[2].is_empty()
-        || words[3] != "--model"
-        || words[5] != "--effort"
-        || words[7] != "--write"
-        || !bounded_diagnostic(&words[4])
-        || !bounded_diagnostic(&words[6])
-    {
-        return None;
-    }
-    Some((words[4].clone(), words[6].clone()))
-}
-
-fn safe_shell_syntax(input: &str) -> bool {
-    #[derive(Clone, Copy)]
-    enum State {
-        Plain,
-        Single,
-        Double,
-        Escape,
-        DoubleEscape,
-    }
-    let mut state = State::Plain;
-    for character in input.chars() {
-        state = match (state, character) {
-            (State::Plain, '\'') => State::Single,
-            (State::Plain, '"') => State::Double,
-            (State::Plain, '\\') => State::Escape,
-            (State::Plain, c) if "\n\r\t\u{b}\u{c};|&<>`$()#*?[]{}".contains(c) => return false,
-            (State::Plain, _) => State::Plain,
-            (State::Single, '\'') => State::Plain,
-            (State::Single, _) => State::Single,
-            (State::Double, '"') => State::Plain,
-            (State::Double, '\\') => State::DoubleEscape,
-            (State::Double, c) if "\n\r\t\u{b}\u{c}$`".contains(c) => return false,
-            (State::Double, _) => State::Double,
-            (State::Escape, c) if !c.is_control() => State::Plain,
-            (State::DoubleEscape, '"' | '\\') => State::Double,
-            _ => return false,
-        };
-    }
-    matches!(state, State::Plain)
-}
-
-fn bounded_diagnostic(value: &str) -> bool {
-    (1..=64).contains(&value.len())
-        && value
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
 }
 
 pub fn evidence_channel(

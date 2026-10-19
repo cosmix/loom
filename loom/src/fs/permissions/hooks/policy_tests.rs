@@ -30,11 +30,13 @@ impl HookFixture {
     fn new() -> Self {
         let temp = TempDir::new().unwrap();
         let repo = temp.path().join("repo");
-        let hooks = temp.path().join("hooks");
+        let home = temp.path().join("home");
+        // The default install location: the forward guard accepts the
+        // `~/.claude/hooks/loom/...` spelling only from a tree that is it.
+        let hooks = home.join(".claude/hooks/loom");
         let worktree = repo.join(".worktrees/stage");
         let sibling = repo.join(".worktrees/stage-sibling");
         let outside = temp.path().join("outside.txt");
-        let home = temp.path().join("home");
         let work_dir = repo.join(".loom").join("work");
 
         for path in [&hooks, &worktree, &sibling, &home, &work_dir] {

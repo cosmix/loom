@@ -5,8 +5,9 @@ unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AG
 d=$(mktemp -d "${TMPDIR:-/tmp}/codex-result.XXXXXX") && [[ -n "$d" ]]
 trap 'rm -rf "$d"' EXIT
 
-HOOK=$(cd "$(dirname "$0")/.." && pwd)/codex-forward-result.sh
 HOME_DIR="$d/home"
+source "$(dirname "$0")/_stage_hooks.sh"
+HOOK="$(stage_hooks "$HOME_DIR/.claude")/codex-forward-result.sh"
 WORK_DIR="$d/work"
 STAGE=stage-one
 SESSION=session-one

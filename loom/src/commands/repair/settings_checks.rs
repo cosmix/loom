@@ -50,7 +50,7 @@ pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
 
 /// Hook scripts on disk. The registrations in settings.local.json can be
 /// perfect and every one of them a dead path: nothing else in repair reads
-/// ~/.claude/hooks/loom, so a missing/stale/non-executable script fails
+/// the installed hooks directory, so a missing/stale/non-executable script fails
 /// silently at runtime instead of being caught here. Checked regardless of
 /// whether settings.local.json exists.
 fn hook_scripts_issue() -> Option<RepairIssue> {
@@ -61,7 +61,8 @@ fn hook_scripts_issue() -> Option<RepairIssue> {
     Some(RepairIssue {
         severity: Severity::Warning,
         description: format!(
-            "Loom hook scripts missing or outdated in ~/.claude/hooks/loom ({} of {})",
+            "Loom hook scripts missing or outdated in {} ({} of {})",
+            crate::assets::install::claude_hooks_dir_text(),
             needing_install.len(),
             LOOM_HOOKS.len()
         ),

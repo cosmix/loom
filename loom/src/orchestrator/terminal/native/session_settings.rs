@@ -117,6 +117,7 @@ pub(super) fn write_session_capsule(request: &CapsuleRequest<'_>) -> Result<Stri
         python3: request.python3,
         python_hooks: request.python_hooks,
         hidden_sockets: &hidden_sockets,
+        agent_roots: request.surfaces.agent_roots(),
     })?;
     let path = write_capsule_file(request.work_dir, request.session_id, &settings)?;
     path.to_str().map(str::to_owned).with_context(|| {
@@ -127,23 +128,34 @@ pub(super) fn write_session_capsule(request: &CapsuleRequest<'_>) -> Result<Stri
     })
 }
 
-/// The refusal of a spawn with no verified hooks directory, naming the one
-/// `find_hooks_dir` found when that one failed verification.
+/// The refusal of a spawn with no verified hooks directory.
 fn missing_hooks_dir(request: &CapsuleRequest<'_>) -> anyhow::Error {
-    let reason = match crate::hooks::find_hooks_dir() {
+    anyhow::anyhow!(
+        "refusing to spawn {} session {}: {}; run `loom install-assets` and retry",
+        request.kind,
+        request.session_id,
+        missing_hooks_reason()
+    )
+}
+
+/// Why no verified hooks directory exists: the one `find_hooks_dir` found
+/// failed verification, none is installed, or the install root does not
+/// resolve (a relative root names its source).
+fn missing_hooks_reason() -> String {
+    match crate::hooks::find_hooks_dir() {
         Some(dir) => format!(
             "the loom hooks directory {} failed verification (it must resolve to a \
              directory the operator owns)",
             dir.display()
         ),
-        None => "no loom hooks directory is installed ($LOOM_HOOKS_DIR, ~/.claude/hooks/loom)"
-            .to_string(),
-    };
-    anyhow::anyhow!(
-        "refusing to spawn {} session {}: {reason}; run `loom install-assets` and retry",
-        request.kind,
-        request.session_id
-    )
+        None => match crate::assets::install::try_claude_hooks_dir() {
+            Ok(dir) => format!(
+                "no loom hooks directory is installed ($LOOM_HOOKS_DIR, {})",
+                dir.display()
+            ),
+            Err(error) => format!("the loom hooks directory does not resolve: {error:#}"),
+        },
+    }
 }
 
 /// The session's write denies (`sandbox::control_surfaces::session_denies`):
@@ -172,6 +184,7 @@ fn capsule_denies(
         executable_dirs: &executable_dirs,
         plugin_entries: plugin_entries.as_deref(),
         writable_roots: request.writable_roots,
+        agent_roots: request.surfaces.agent_roots(),
     })
 }
 
@@ -274,6 +287,9 @@ pub(crate) fn cleanup_session_settings(work_dir: &Path, session_id: &str) {
 }
 
 #[cfg(test)]
+#[path = "tests_capsule_agent_roots.rs"]
+mod tests_capsule_agent_roots;
+#[cfg(test)]
 #[path = "tests_capsule_checkout.rs"]
 mod tests_capsule_checkout;
 #[cfg(test)]
@@ -285,6 +301,9 @@ mod tests_capsule_denies;
 #[cfg(test)]
 #[path = "tests_capsule_interpreters.rs"]
 mod tests_capsule_interpreters;
+#[cfg(test)]
+#[path = "tests_capsule_unresolved_root.rs"]
+mod tests_capsule_unresolved_root;
 #[cfg(test)]
 #[path = "tests_capsule_contents.rs"]
 mod tests_contents;

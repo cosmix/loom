@@ -62,24 +62,23 @@ fn require_object<'a>(value: &'a mut Value, label: &str) -> Result<&'a mut Map<S
         .ok_or_else(|| anyhow::anyhow!("{label} must be a JSON object"))
 }
 
-/// Home-expanded twin of `LOOM_PERMISSIONS`'s static
-/// `Bash(~/.claude/hooks/loom/codex-forward.sh:*)` allow entry.
+/// Absolute twin of `LOOM_PERMISSIONS`'s static
+/// `Bash(~/.claude/hooks/loom/codex-forward.sh:*)` allow entry, naming the
+/// wrapper in the installed hooks directory (`assets::install::claude_hooks_dir`).
 ///
-/// `loom-hooks/codex-forward-guard.sh` accepts both the literal `~/...` and the
-/// `$HOME`-expanded absolute spelling of the wrapper path, but Claude Code Bash
-/// allow rules do not expand `~`. The absolute spelling embeds the user's home
-/// directory, so it is placed in the session capsule settings (see
-/// `capsule_settings`), which are generated at launch and never committed.
-/// It must never be written to the project's committed `settings.json`, which
-/// would leak the home path; `merge_permissions` removes it from there.
+/// `loom-hooks/codex-forward-guard.sh` accepts this absolute wrapper path, but
+/// Claude Code Bash allow rules do not expand `~`, and a relocated Claude root
+/// is not under `~/.claude` at all. The spelling embeds the home directory or
+/// install root, so it goes in the session capsule settings
+/// (`capsule_settings`), generated at launch and never committed; it must
+/// never reach the committed `settings.json` (`merge_permissions` removes it).
 ///
-/// Returns `None` if the home directory can't be determined; callers skip the
-/// entry rather than fail.
+/// `None` if the home directory can't be determined; callers skip the entry.
 pub(crate) fn codex_forward_home_allow_entry() -> Option<String> {
-    let home = dirs::home_dir()?;
+    let hooks_dir = crate::assets::install::claude_hooks_dir()?;
     Some(format!(
-        "Bash({}/.claude/hooks/loom/codex-forward.sh:*)",
-        home.display()
+        "Bash({}:*)",
+        hooks_dir.join("codex-forward.sh").display()
     ))
 }
 
@@ -186,7 +185,7 @@ pub fn scrub_main_repo_settings_identity(repo_root: &Path) -> Vec<std::path::Pat
 /// Ensure `.claude/settings.json` has loom permissions configured
 ///
 /// This function:
-/// 1. Installs loom hook scripts to ~/.claude/hooks/loom/
+/// 1. Installs loom hook scripts to the installed hooks directory
 /// 2. Creates `.claude/` directory if it doesn't exist
 /// 3. Creates `settings.json` if it doesn't exist
 /// 4. Merges loom permissions into existing file without duplicates
@@ -199,7 +198,7 @@ pub fn ensure_loom_permissions(repo_root: &Path) -> Result<()> {
 }
 
 /// Testable variant: pass `Some(dir)` to redirect hook installation to a temp directory.
-/// Production callers use `ensure_loom_permissions` which passes `None` (installs to ~/.claude/hooks/loom/).
+/// Production callers use `ensure_loom_permissions` which passes `None` (installs to `assets::install::claude_hooks_dir`).
 pub fn ensure_loom_permissions_to(repo_root: &Path, hooks_dir: Option<&Path>) -> Result<()> {
     ensure_loom_permissions_inner(repo_root, hooks_dir, true)
 }

@@ -5,7 +5,7 @@ use super::contents::{capsule_settings, CapsuleInputs};
 use crate::models::session::SessionType;
 use crate::models::stage::{Implementer, Implementers, Stage, StageType};
 use crate::plan::schema::PermissionMode;
-use crate::sandbox::control_surfaces::{session_denies, DenyInputs, SessionDenies};
+use crate::sandbox::control_surfaces::{session_denies, AgentRoots, DenyInputs, SessionDenies};
 use crate::sandbox::MergedSandboxConfig;
 use serde_json::{json, Value};
 use serial_test::serial;
@@ -52,6 +52,7 @@ pub(super) fn denies(worktree_rooted: bool, codex: bool) -> SessionDenies {
         executable_dirs: &[PathBuf::from(HOOKS_DIR)],
         plugin_entries: codex.then_some(entries.as_slice()),
         writable_roots: &[],
+        agent_roots: &AgentRoots::default(),
     })
     .unwrap()
 }
@@ -83,6 +84,7 @@ fn try_build(
         python3: None,
         python_hooks: &[],
         hidden_sockets: &[],
+        agent_roots: &Default::default(),
     })
 }
 
@@ -361,14 +363,15 @@ fn a_config_validate_config_refuses_is_refused_for_every_kind() {
     }
 }
 
-/// Reads `HOME` here and again inside `build`, so it must not overlap a test
-/// that points `HOME` elsewhere (`ScratchHome`, `#[serial]`).
+/// Reads the install roots here and again inside `build`: both pinned to one
+/// scratch home (`InstallRootsEnv`, `#[serial]`).
 #[test]
 #[serial]
 fn the_home_expanded_forward_entry_is_allowed_only_with_the_codex_lane() {
-    let Some(entry) = crate::fs::permissions::settings::codex_forward_home_allow_entry() else {
-        return;
-    };
+    let home = tempfile::tempdir().unwrap();
+    let _env = crate::assets::install::test_env::InstallRootsEnv::isolate(home.path());
+    let entry = crate::fs::permissions::settings::codex_forward_home_allow_entry()
+        .expect("an isolated home resolves the hooks directory");
     for kind in ALL_KINDS {
         let with_codex = build(kind, &sandbox(true), &[], None, true);
         assert_has(&with_codex, "/permissions/allow", &entry, kind);

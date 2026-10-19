@@ -1,5 +1,5 @@
 use std::fs;
-use std::process::Command;
+use std::process::{Command, Output};
 
 use tempfile::TempDir;
 
@@ -143,4 +143,76 @@ fn dev_install_cleanup_scans_custom_roots() {
         !stdout.contains(&default_backup.display().to_string()),
         "{stdout}"
     );
+}
+
+/// `resolve_root` as `script` defines it at its head, before the first call.
+fn resolve_root_definition(script: &str) -> &str {
+    let start = script
+        .find("resolve_root() {")
+        .expect("installer defines resolve_root");
+    let end = script
+        .find("CLAUDE_DIR=\"$(resolve_root")
+        .expect("installer resolves CLAUDE_DIR");
+    &script[start..end]
+}
+
+/// `resolve_root "${LOOM_CLAUDECODE_INSTALL_DIR:-}" claude_dir /fb` from
+/// `script`, under a temporary `HOME` whose install-roots record holds
+/// `record`, with the Claude override set to `env_override` or unset.
+fn resolve_claude_root(script: &str, record: &str, env_override: Option<&str>) -> Output {
+    let temp = TempDir::new().unwrap();
+    let home = temp.path().join("home");
+    let record_path = home.join(".config/loom/install-roots.toml");
+    fs::create_dir_all(record_path.parent().unwrap()).unwrap();
+    fs::write(&record_path, record).unwrap();
+    let lib = temp.path().join("resolve-root.sh");
+    fs::write(&lib, resolve_root_definition(script)).unwrap();
+    let mut command = Command::new("bash");
+    command
+        .arg("-c")
+        .arg(r#"source "$RESOLVE_ROOT_LIB"; resolve_root "${LOOM_CLAUDECODE_INSTALL_DIR:-}" claude_dir /fb"#)
+        .env("HOME", &home)
+        .env("RESOLVE_ROOT_LIB", &lib)
+        .env_remove(CLAUDE_OVERRIDE);
+    if let Some(value) = env_override {
+        command.env(CLAUDE_OVERRIDE, value);
+    }
+    command.output().unwrap()
+}
+
+#[test]
+fn both_installers_resolve_the_recorded_root_as_install_assets_does() {
+    let accepted = [
+        ("claude_dir = '/lit/x'\n", "/lit/x"),
+        ("claude_dir = \"/a b\"\n", "/a b"),
+        ("codex_dir = '/elsewhere'\n", "/fb"),
+    ];
+    let refused = [
+        ("claude_dir = \"/a\\\\b\"\n", None, "backslash"),
+        ("claude_dir = \"rel\"\n", None, "absolute"),
+        ("", Some("relative/claude"), "absolute"),
+    ];
+    for (name, script) in [
+        ("dev-install.sh", DEV_INSTALL_SH),
+        ("install.sh", INSTALL_SH),
+    ] {
+        for (record, expected) in accepted {
+            let output = resolve_claude_root(script, record, None);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(output.status.success(), "{name} {record:?}: {stderr}");
+            assert_eq!(
+                String::from_utf8_lossy(&output.stdout),
+                expected,
+                "{name} {record:?}"
+            );
+        }
+        for (record, env_override, message) in refused {
+            let output = resolve_claude_root(script, record, env_override);
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            assert!(
+                !output.status.success() && stderr.contains(message),
+                "{name} {record:?} {env_override:?}: {stderr}"
+            );
+        }
+    }
 }

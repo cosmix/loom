@@ -10,8 +10,7 @@
 file src/commands/graph/tests.rs 425
 file src/commands/init/tests.rs 448
 file src/commands/plan/verify.rs 555
-file src/fs/permissions/hooks.rs 446
-file src/fs/permissions/settings.rs 413
+file src/fs/permissions/settings.rs 412
 file src/fs/safe_fs.rs 1019
 file src/fs/work_dir.rs 429
 file src/fs/work_dir/tests.rs 873

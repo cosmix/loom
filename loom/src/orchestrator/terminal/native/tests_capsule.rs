@@ -269,18 +269,37 @@ fn capsule_from_append_system_prompt_file_requires_support_and_a_resolved_path()
 
 /// Plan section 10's write denies, whitespace-separated, with `{R}` the
 /// repository, `{T}` the stage worktree and `{H}` the hooks directory: those
-/// every capsule carries, then `[denyWrite, Edit]` for each location.
+/// every capsule carries, then `[denyWrite, Edit]` for each location. Each
+/// skill directory loom installs under `~/.codex/skills` is added apart
+/// (`codex_skill_denies`).
 const SHARED_DENY_WRITE: &str = "{R}/.loom {R}/.git/hooks {R}/.git/config {H} \
-    ~/.claude/hooks ~/.claude/settings.json ~/.claude.json ~/.loom ~/.claude/projects \
-    ~/.claude/agents ~/.claude/skills ~/.claude/commands ~/.claude/loom-skill-catalog \
-    ~/.claude/plugins ~/.codex/hooks ~/.codex/hooks.json ~/.codex/config.toml";
+    ~/.claude/hooks ~/.claude/settings.json ~/.claude/CLAUDE.md ~/.claude.json ~/.loom \
+    ~/.claude/projects ~/.claude/agents ~/.claude/skills ~/.claude/commands \
+    ~/.claude/loom-skill-catalog ~/.claude/plugins ~/.codex/hooks ~/.codex/hooks.json \
+    ~/.codex/config.toml ~/.codex/AGENTS.md ~/.codex/loom-skill-catalog ~/.codex/prompts \
+    ~/.config/loom/install-roots.toml";
 const SHARED_EDIT_DENIES: &str = "Edit(/{R}/.loom/**) Edit(.loom/**) \
     Edit(/{R}/.git/hooks/**) Edit(/{R}/.git/config) Edit(/{H}/**) Edit(~/.claude/hooks/**) \
-    Edit(~/.claude/settings.json) Edit(~/.claude.json) Edit(~/.loom/**) \
-    Edit(~/.claude/projects/**) Edit(~/.claude/agents/**) Edit(~/.claude/skills/**) \
-    Edit(~/.claude/commands/**) Edit(~/.claude/loom-skill-catalog/**) \
-    Edit(~/.claude/plugins/**) Edit(~/.codex/hooks/**) Edit(~/.codex/hooks.json) \
-    Edit(~/.codex/config.toml)";
+    Edit(~/.claude/settings.json) Edit(~/.claude/CLAUDE.md) Edit(~/.claude.json) \
+    Edit(~/.loom/**) Edit(~/.claude/projects/**) Edit(~/.claude/agents/**) \
+    Edit(~/.claude/skills/**) Edit(~/.claude/commands/**) \
+    Edit(~/.claude/loom-skill-catalog/**) Edit(~/.claude/plugins/**) \
+    Edit(~/.codex/hooks/**) Edit(~/.codex/hooks.json) Edit(~/.codex/config.toml) \
+    Edit(~/.codex/AGENTS.md) Edit(~/.codex/loom-skill-catalog/**) Edit(~/.codex/prompts/**) \
+    Edit(~/.config/loom/install-roots.toml)";
+
+/// `[denyWrite, Edit]` for each skill directory loom installs into `~/.codex/skills`.
+fn codex_skill_denies() -> [BTreeSet<String>; 2] {
+    let names = crate::assets::install::codex_skill_dir_names();
+    let path = |name: &&str| format!("~/.codex/skills/{name}");
+    [
+        names.iter().map(path).collect(),
+        names
+            .iter()
+            .map(|name| format!("Edit({}/**)", path(name)))
+            .collect(),
+    ]
+}
 const CHECKOUT_DENIES: [&str; 2] = [
     "{R}/.worktrees {R}/.claude",
     "Edit(/{R}/.worktrees/**) Edit(.worktrees/**) Edit(/{R}/.claude/**) Edit(.claude/**)",
@@ -321,8 +340,11 @@ fn every_kind_gets_exactly_the_section_10_write_denies_for_its_location() {
         for (cwd, [own_deny_write, own_edit]) in locations {
             let path = write_capsule(&checkout, "session-d1", kind, cwd, &sandbox, hooks);
             let capsule = read_capsule(&path.unwrap());
-            let deny_write = expand(&[SHARED_DENY_WRITE, own_deny_write], &checkout);
-            let edit = expand(&[SHARED_EDIT_DENIES, own_edit], &checkout);
+            let [skill_writes, skill_edits] = codex_skill_denies();
+            let mut deny_write = expand(&[SHARED_DENY_WRITE, own_deny_write], &checkout);
+            deny_write.extend(skill_writes);
+            let mut edit = expand(&[SHARED_EDIT_DENIES, own_edit], &checkout);
+            edit.extend(skill_edits);
             let label = format!("{kind} in {}", cwd.display());
             let written = strings(&capsule, "/sandbox/filesystem/denyWrite");
             assert_eq!(written, deny_write, "{label}");

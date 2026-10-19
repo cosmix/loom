@@ -2,7 +2,10 @@
 // or `codex::` inside this module resolves to the sibling below, not to them.
 mod claude;
 mod codex;
+mod resolve;
 mod roots;
+#[cfg(test)]
+pub(crate) mod test_env;
 // `pub(in crate::assets)`: the symlink-escape regression test in
 // `assets::tests` calls `place_skill` directly with a synthetic asset table.
 pub(in crate::assets) mod placement;
@@ -15,6 +18,13 @@ use crate::commands::skill_index;
 use crate::completions;
 use crate::fs::permissions::install_loom_hooks_to;
 use crate::skills::SkillLayout;
+
+pub(crate) use codex::codex_skill_dir_names;
+pub(crate) use resolve::{absolute_root, canonical_or_lexical, is_default_claude_hooks_dir};
+pub use resolve::{
+    claude_hooks_dir, claude_hooks_dir_text, default_paths, record_roots, try_claude_hooks_dir,
+};
+pub(crate) use roots::RECORD_PATH as INSTALL_ROOTS_RECORD;
 
 #[derive(Debug)]
 pub struct InstallPaths {
@@ -36,50 +46,6 @@ pub struct InstallReport {
     pub layout: SkillLayout,
 }
 
-/// Return the Claude and Codex installation directories.
-///
-/// Each directory is resolved independently: `LOOM_CLAUDECODE_INSTALL_DIR` /
-/// `LOOM_CODEX_INSTALL_DIR` wins when set to a nonempty path; otherwise the
-/// root recorded by the last bare install (`record_roots`, at
-/// `<home>/.config/loom/install-roots.toml`) wins; otherwise the default,
-/// `~/.claude` and `~/.codex`.
-pub fn default_paths() -> Result<InstallPaths> {
-    let claude_dir = install_dir_from_env("LOOM_CLAUDECODE_INSTALL_DIR");
-    let codex_dir = install_dir_from_env("LOOM_CODEX_INSTALL_DIR");
-    match (claude_dir, codex_dir) {
-        (Some(claude_dir), Some(codex_dir)) => Ok(InstallPaths {
-            claude_dir,
-            codex_dir,
-        }),
-        (claude_dir, codex_dir) => {
-            let home = dirs::home_dir().context("Failed to determine home directory")?;
-            let (recorded_claude, recorded_codex) = roots::read(&home);
-            Ok(InstallPaths {
-                claude_dir: claude_dir
-                    .or(recorded_claude)
-                    .unwrap_or_else(|| home.join(".claude")),
-                codex_dir: codex_dir
-                    .or(recorded_codex)
-                    .unwrap_or_else(|| home.join(".codex")),
-            })
-        }
-    }
-}
-
-/// Persist `paths` as the roots a future bare install (no env override, no
-/// explicit `--claude-dir`/`--codex-dir`) should resolve to, instead of the
-/// `~/.claude` / `~/.codex` defaults.
-pub fn record_roots(paths: &InstallPaths) -> Result<()> {
-    let home = dirs::home_dir().context("Failed to determine home directory")?;
-    roots::write(&home, paths)
-}
-
-fn install_dir_from_env(variable: &str) -> Option<PathBuf> {
-    std::env::var_os(variable)
-        .filter(|path| !path.is_empty())
-        .map(PathBuf::from)
-}
-
 /// Place every embedded asset into the supplied Claude and Codex directories.
 ///
 /// A failure between skill placement and `write_layout` leaves the recorded
@@ -99,7 +65,7 @@ pub fn install_all(
         crate::assets::CLAUDE_AGENTS,
         crate::assets::CLAUDE_COMMANDS,
     )?;
-    let hooks = install_loom_hooks_to(&paths.claude_dir.join("hooks/loom"))?;
+    let hooks = install_loom_hooks_to(&paths.claude_hooks_dir())?;
     let codex_hooks = crate::fs::permissions::install_codex_hooks_to(&paths.codex_dir)?;
     let (skills_resident, skills_catalogued) =
         claude::install_skills(&paths.claude_dir, crate::assets::SKILLS, layout)?;

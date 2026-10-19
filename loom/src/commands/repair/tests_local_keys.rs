@@ -27,7 +27,7 @@ fn find_issue(root: &Path, starts_with: &str) -> RepairIssue {
 /// sandbox block, `env.LOOM_WORK_DIR`, and the permission rules the issue
 /// text below counts.
 fn plant_loom_written_keys(settings: &mut Value, root: &Path, work_dir: &str) {
-    let hooks_dir = dirs::home_dir().unwrap().join(".claude/hooks/loom");
+    let hooks_dir = crate::assets::install::claude_hooks_dir().unwrap();
     let session = HooksConfig::new(hooks_dir, work_dir.into(), PermissionMode::Auto);
     for (event, rules) in session.to_settings_hooks() {
         let slot = &mut settings["hooks"][event.as_str()];
@@ -62,6 +62,8 @@ fn plant_loom_written_keys(settings: &mut Value, root: &Path, work_dir: &str) {
 #[test]
 #[serial_test::serial]
 fn repair_strips_exactly_the_loom_written_keys_and_keeps_the_rest() {
+    let isolated_home = tempfile::tempdir().unwrap();
+    let _env = crate::assets::install::test_env::InstallRootsEnv::isolate(isolated_home.path());
     let root = tempfile::tempdir().unwrap();
     crate::fs::permissions::ensure_loom_hooks_local(root.path()).unwrap();
     let kept = read_settings_local(root.path());
@@ -100,6 +102,8 @@ fn repair_strips_exactly_the_loom_written_keys_and_keeps_the_rest() {
 #[test]
 #[serial_test::serial]
 fn no_settings_fix_writes_a_sandbox_block_into_the_main_settings_file() {
+    let isolated_home = tempfile::tempdir().unwrap();
+    let _env = crate::assets::install::test_env::InstallRootsEnv::isolate(isolated_home.path());
     let root = tempfile::tempdir().unwrap();
 
     let issue = find_issue(

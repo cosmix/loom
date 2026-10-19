@@ -4,6 +4,7 @@ use anyhow::Result;
 use serde_json::json;
 
 use super::*;
+use crate::assets::install::test_env::InstallRootsEnv;
 
 const PARENT: &str = "parent-session";
 const AGENT: &str = "agent-one";
@@ -34,29 +35,6 @@ fn tool_use(command: &str) -> serde_json::Value {
 }
 
 #[test]
-fn production_argv_with_quoted_metacharacters_is_accepted() {
-    let command = r#"~/.claude/hooks/loom/codex-forward.sh task 'prompt containing '\'' and
-$ ( *' --model gpt-5.6-terra --effort xhigh --write"#;
-
-    assert_eq!(
-        exact_forward_argv(command),
-        Some(("gpt-5.6-terra".to_owned(), "xhigh".to_owned()))
-    );
-}
-
-#[test]
-fn forwarding_argv_with_redirection_is_rejected() {
-    assert_eq!(exact_forward_argv(&format!("{COMMAND} 2>&1")), None);
-}
-
-#[test]
-fn forwarding_argv_with_double_quoted_variable_is_rejected() {
-    let command = "~/.claude/hooks/loom/codex-forward.sh task \"$var\" --model gpt-5.6-terra --effort xhigh --write";
-
-    assert_eq!(exact_forward_argv(command), None);
-}
-
-#[test]
 fn bash_command_that_only_mentions_forwarder_is_not_an_invocation() -> Result<()> {
     let decoded = transcript(&[tool_use(r#"rg -n "codex-forward.sh task" doc/"#)])?;
 
@@ -65,16 +43,23 @@ fn bash_command_that_only_mentions_forwarder_is_not_an_invocation() -> Result<()
 }
 
 #[test]
+#[serial_test::serial]
 fn duplicate_tool_use_id_is_unknown() -> Result<()> {
+    let home = tempfile::tempdir()?;
+    let _env = InstallRootsEnv::isolate(home.path());
     let decoded = transcript(&[tool_use(COMMAND), tool_use(COMMAND)])?;
 
     assert!(decoded.invocations.is_empty());
     Ok(())
 }
 
+/// `COMMAND` uses the `~` spelling, which counts only while the hooks
+/// directory resolves to the default root: the environment is pinned there.
 #[test]
+#[serial_test::serial]
 fn nested_task_output_path_is_resolved() -> Result<()> {
     let temp = tempfile::tempdir()?;
+    let _env = InstallRootsEnv::isolate(temp.path());
     let output = temp
         .path()
         .join("workspace-one")

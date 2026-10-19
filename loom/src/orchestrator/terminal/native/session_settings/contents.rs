@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 use crate::hooks::HookEvent;
 use crate::models::session::SessionType;
-use crate::sandbox::control_surfaces::SessionDenies;
+use crate::sandbox::control_surfaces::{AgentRoots, SessionDenies};
 use crate::sandbox::{MergedSandboxConfig, SettingsTarget};
 
 /// The relay hook every kind registers (PostToolUse, matcher `Bash`).
@@ -56,6 +56,8 @@ pub(super) struct CapsuleInputs<'a> {
     /// The host's Unix sockets to hide, when the stage is granted every Unix
     /// socket (`sandbox::hidden_socket_paths`); empty otherwise.
     pub hidden_sockets: &'a [String],
+    /// The relocated install roots (`ControlSurfaces::agent_roots`).
+    pub agent_roots: &'a AgentRoots,
 }
 
 /// The capsule document: what `sandbox::build_settings` builds from the
@@ -94,10 +96,7 @@ pub(super) fn capsule_settings(inputs: &CapsuleInputs<'_>) -> Result<Value> {
     let plans_read = format!("Read(/{}/**)", utf8(&plans)?);
     extend_strings(&mut settings, &["permissions", "allow"], &[plans_read]);
     add_scratch_grant(&mut settings, inputs.scratch_dir)?;
-    if inputs.sandbox.implementers.includes_codex() {
-        let forward = crate::fs::permissions::settings::codex_forward_home_allow_entry();
-        extend_strings(&mut settings, &["permissions", "allow"], forward.as_slice());
-    }
+    add_install_root_rules(&mut settings, inputs)?;
     extend_strings(&mut settings, &["permissions", "allow"], inputs.approved);
     let denies = inputs.denies;
     let deny_write = ["sandbox", "filesystem", "denyWrite"];
@@ -149,6 +148,34 @@ fn add_scratch_grant(settings: &mut Value, scratch_dir: &Path) -> Result<()> {
         &["permissions", "allow"],
         &[format!("Edit(/{dir}/**)")],
     );
+    Ok(())
+}
+
+/// The rules naming the install roots by absolute path, which the committed
+/// settings must not carry: with the codex lane the forwarding wrapper's allow
+/// entry; for a relocated Claude root the twins of `LOOM_PERMISSIONS`'
+/// `Read(~/.claude/...)` rules; and with the codex lane a relocated Codex
+/// root beside its `~/.codex` write grant (`codex::CODEX_SANDBOX_WRITE_PATHS`).
+/// The capsule's denies on the surfaces inside each root still win.
+fn add_install_root_rules(settings: &mut Value, inputs: &CapsuleInputs<'_>) -> Result<()> {
+    let codex_lane = inputs.sandbox.implementers.includes_codex();
+    if codex_lane {
+        let forward = crate::fs::permissions::settings::codex_forward_home_allow_entry();
+        extend_strings(settings, &["permissions", "allow"], forward.as_slice());
+    }
+    if let Some(claude) = inputs.agent_roots.claude() {
+        let root = utf8(claude)?;
+        let reads: Vec<String> = crate::fs::permissions::LOOM_PERMISSIONS
+            .iter()
+            .filter_map(|rule| rule.strip_prefix("Read(~/.claude/"))
+            .map(|rest| format!("Read(/{root}/{rest}"))
+            .collect();
+        extend_strings(settings, &["permissions", "allow"], &reads);
+    }
+    if let Some(codex) = inputs.agent_roots.codex().filter(|_| codex_lane) {
+        let grant = [utf8(codex)?.to_string()];
+        extend_strings(settings, &["sandbox", "filesystem", "allowWrite"], &grant);
+    }
     Ok(())
 }
 

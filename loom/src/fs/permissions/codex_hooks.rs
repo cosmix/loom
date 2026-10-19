@@ -21,10 +21,10 @@ const BASH_HOOKS: &[&str] = &[
     "poll-guard.sh",
 ];
 
-/// Install Codex hook scripts and merge their registrations into hooks.json.
+/// Install Codex hook scripts and merge their registrations into hooks.json,
+/// in the Codex root `assets::install::default_paths` resolves.
 pub fn install_codex_hooks() -> Result<usize> {
-    let home = dirs::home_dir().context("Failed to determine home directory")?;
-    install_codex_hooks_to(&home.join(".codex"))
+    install_codex_hooks_to(&crate::assets::install::default_paths()?.codex_dir)
 }
 
 /// Testable counterpart to [`install_codex_hooks`] for an explicit Codex root.
@@ -35,9 +35,11 @@ pub fn install_codex_hooks_to(codex_dir: &Path) -> Result<usize> {
     Ok(installed)
 }
 
-/// Whether the default Codex tree is missing current scripts or registrations.
+/// Whether the resolved Codex tree (`assets::install::default_paths`) is
+/// missing current scripts or registrations.
 pub fn codex_hooks_need_install() -> bool {
-    dirs::home_dir().is_some_and(|home| codex_hooks_need_install_in(&home.join(".codex")))
+    crate::assets::install::default_paths()
+        .is_ok_and(|paths| codex_hooks_need_install_in(&paths.codex_dir))
 }
 
 /// Testable drift check for an explicit Codex configuration root.

@@ -45,9 +45,8 @@ done
 const LATENCY_FLOOR_MICROS: u64 = 5_000;
 
 /// A fake home, repository, linked stage worktree, and matching host facts
-/// lives in the runner-owned trusted sibling, outside session-writable
-/// `$TMPDIR`. Direct Cargo runs use `target/`; neither fixture may be under
-/// `/tmp`, which the relay refuses.
+/// lives in the runner-owned trusted sibling, outside session-writable `$TMPDIR`.
+/// Direct Cargo runs use `target/`; neither fixture may be under `/tmp`, which the relay refuses.
 pub(super) struct Fixture {
     pub(super) _temp: TempDir,
     pub(super) base: PathBuf,
@@ -103,6 +102,7 @@ pub(super) fn fixture() -> Fixture {
         // SAFETY: `getuid` has no preconditions and cannot fail.
         uid: unsafe { libc::getuid() },
         home: Some(home.clone()),
+        agent_roots: Default::default(),
     };
     Fixture {
         _temp: temp,
@@ -184,14 +184,14 @@ fn repo_with_worktree(repo: &Path, worktree: &Path) {
 /// What the preflight checks the fixture's hooks and binary against: every
 /// root a session of this fixture could write, the codex lane included.
 fn writable_roots(repo: &Path, scratch_root: &Path, home: &Path) -> Vec<PathBuf> {
-    let tmpdir = std::env::var_os("TMPDIR").map(PathBuf::from);
     session_writable_roots(&WritableRootInputs {
         repo_root: repo,
         allow_write: &[],
         codex_licensed: true,
+        codex_root: None,
         scratch_root,
         home: Some(home),
-        tmpdir: tmpdir.as_deref(),
+        tmpdir: std::env::var_os("TMPDIR").map(PathBuf::from).as_deref(),
     })
 }
 

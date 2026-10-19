@@ -4,7 +4,7 @@
 //! or installed hook scripts have fallen out of sync with the canonical loom
 //! configuration lives here: hook registration drift (missing/obsolete
 //! entries in a settings document's `hooks` block), hook script drift (the
-//! scripts installed under `~/.claude/hooks/loom/`), and settings-document
+//! scripts installed under `<claude_dir>/hooks/loom/`), and settings-document
 //! drift (agent-teams env, worktree isolation, stale per-session identity).
 
 use serde_json::{json, Map, Value};
@@ -164,12 +164,10 @@ pub fn hook_drift_for_dir(settings: &Value, hooks_dir: &str) -> HookDrift {
     HookDrift { missing, obsolete }
 }
 
-/// [`hook_drift_for_dir`] against the host hooks directory (`~/.claude/hooks/loom`).
+/// [`hook_drift_for_dir`] against the installed hooks directory
+/// (`assets::install::claude_hooks_dir`).
 pub fn hook_drift(settings: &Value) -> HookDrift {
-    let hooks_dir = dirs::home_dir()
-        .map(|h| h.join(".claude/hooks/loom").display().to_string())
-        .unwrap_or_else(|| "~/.claude/hooks/loom".to_string());
-    hook_drift_for_dir(settings, &hooks_dir)
+    hook_drift_for_dir(settings, &crate::assets::install::claude_hooks_dir_text())
 }
 
 /// Whether an installed hook script matches the embedded copy and is executable.
@@ -210,10 +208,11 @@ pub fn hook_scripts_needing_install(hooks_dir: &Path) -> Vec<&'static str> {
     needing
 }
 
-/// [`hook_scripts_needing_install`] against the host hooks directory.
-/// Returns an empty vec if the home directory cannot be determined.
+/// [`hook_scripts_needing_install`] against the installed hooks directory
+/// (`assets::install::claude_hooks_dir`). Returns an empty vec if the home
+/// directory cannot be determined.
 pub fn loom_hook_scripts_needing_install() -> Vec<&'static str> {
-    match super::hooks::get_installed_hooks_dir() {
+    match crate::assets::install::claude_hooks_dir() {
         Some(dir) => hook_scripts_needing_install(&dir),
         None => Vec::new(),
     }

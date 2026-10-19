@@ -2,10 +2,11 @@
 //! permission may name, and the write denies every session capsule carries
 //! (`doc/plans/PLAN-loom-state-confinement.md`, sections 10 to 12).
 //!
-//! Pure: every input is a parameter. Nothing here reads the process
-//! environment, and only `codex_plugin_entries` touches the filesystem (it
-//! lists `~/.claude/plugins` at spawn), so the per-spawn checks and the
-//! `loom run` refusals can share one answer.
+//! Pure: every input is a parameter. Only `AgentRoots::resolve` reads the
+//! process environment (the install-root overrides, through
+//! `assets::install::default_paths`), and only `codex_plugin_entries` touches
+//! the filesystem (it lists `~/.claude/plugins` at spawn), so the per-spawn
+//! checks and the `loom run` refusals can share one answer.
 //!
 //! Accepted gap: the propagation filter reads rule TEXT only, so a rule
 //! naming a path that is itself a symlink into a control surface is not
@@ -20,8 +21,10 @@ use std::path::{Component, Path, PathBuf};
 use super::PACKAGE_MANAGER_CACHE_WRITE_PATHS;
 use crate::codex::CODEX_SANDBOX_WRITE_PATHS;
 
+mod agent_roots;
 mod session_denies;
 
+pub(crate) use agent_roots::AgentRoots;
 pub(crate) use session_denies::{codex_plugin_entries, session_denies, DenyInputs, SessionDenies};
 
 /// Characters that end the literal part of a path pattern.
@@ -55,10 +58,15 @@ const WORD_SEPARATORS: [char; 12] = ['\'', '"', '=', ':', ';', ',', '(', ')', '<
 /// not. Every capsule denies writing each one, the codex lane's hook and
 /// configuration files included even inside its `~/.codex` grant, and no
 /// propagated rule may name one. `~/.claude/plugins` is not listed: the
-/// codex lane writes inside it, so `session_denies` handles it apart.
-const HOME_SURFACES: [&str; 12] = [
+/// codex lane writes inside it, so `session_denies` handles it apart. A
+/// relocated install root's equivalents come from [`AgentRoots`], and each
+/// skill directory loom installs under `~/.codex/skills` from
+/// [`home_surfaces`]. The install-roots record is listed because it steers
+/// where the hooks, skills and these denies resolve.
+const HOME_SURFACES: [&str; 17] = [
     ".claude/hooks/**",
     ".claude/settings.json",
+    ".claude/CLAUDE.md",
     ".claude.json",
     ".loom/**",
     ".claude/projects/**",
@@ -69,7 +77,31 @@ const HOME_SURFACES: [&str; 12] = [
     ".codex/hooks/**",
     ".codex/hooks.json",
     ".codex/config.toml",
+    ".codex/AGENTS.md",
+    ".codex/loom-skill-catalog/**",
+    ".codex/prompts/**",
+    crate::assets::install::INSTALL_ROOTS_RECORD,
 ];
+
+/// Each skill directory loom installs into a Codex root (under either skill
+/// layout), relative to it, in rule form. Codex writes its own
+/// `skills/.system`, so the `skills` directory itself is never denied whole.
+fn codex_skill_surfaces() -> impl Iterator<Item = String> {
+    crate::assets::install::codex_skill_dir_names()
+        .into_iter()
+        .map(|name| format!("skills/{name}/**"))
+}
+
+/// Every control surface under the home directory: [`HOME_SURFACES`] and
+/// [`codex_skill_surfaces`] under `.codex/`.
+fn home_surfaces() -> Vec<String> {
+    let codex_skills = codex_skill_surfaces().map(|surface| format!(".codex/{surface}"));
+    HOME_SURFACES
+        .iter()
+        .map(|surface| surface.to_string())
+        .chain(codex_skills)
+        .collect()
+}
 
 /// Inputs to [`session_writable_roots`].
 pub(crate) struct WritableRootInputs<'a> {
@@ -80,6 +112,9 @@ pub(crate) struct WritableRootInputs<'a> {
     pub allow_write: &'a [String],
     /// Whether any stage licenses the codex lane.
     pub codex_licensed: bool,
+    /// The relocated Codex root (`AgentRoots::codex`), which the codex lane's
+    /// grant covers beside `~/.codex`.
+    pub codex_root: Option<&'a Path>,
     /// The root every session scratch directory lives under.
     pub scratch_root: &'a Path,
     /// The operator's home directory, for `~/` entries.
@@ -90,7 +125,8 @@ pub(crate) struct WritableRootInputs<'a> {
 
 /// Every root a loom session could write: the repository, each stage's
 /// granted `allowWrite` directory, the package-manager caches, the codex
-/// state directories when that lane is licensed, the scratch root, `/tmp` and
+/// state directories (a relocated Codex root included) when that lane is
+/// licensed, the scratch root, `/tmp` and
 /// `$TMPDIR`. A glob entry contributes its literal directory; an entry that
 /// climbs with `../` is never granted, so it contributes nothing.
 pub(crate) fn session_writable_roots(inputs: &WritableRootInputs<'_>) -> Vec<PathBuf> {
@@ -104,6 +140,9 @@ pub(crate) fn session_writable_roots(inputs: &WritableRootInputs<'_>) -> Vec<Pat
         if let Some(root) = grant_root(grant, inputs.repo_root, inputs.home) {
             push_unique(&mut roots, root);
         }
+    }
+    if let Some(codex_root) = inputs.codex_root.filter(|_| inputs.codex_licensed) {
+        push_unique(&mut roots, codex_root.to_path_buf());
     }
     push_unique(&mut roots, inputs.scratch_root.to_path_buf());
     push_unique(&mut roots, PathBuf::from("/tmp"));
@@ -189,33 +228,38 @@ pub(crate) struct ControlSurfaces {
     roots: Vec<PathBuf>,
     executable_dirs: Vec<PathBuf>,
     home: Option<PathBuf>,
+    agent_roots: AgentRoots,
 }
 
 impl ControlSurfaces {
     /// The resolved state root, the scratch root, every directory holding an
     /// executable loom's hooks run (the hooks directory, plus the
     /// operator-owned `LOOM_HOOK_PATH` entries and `dirname(LOOM_BIN)` where
-    /// the caller knows them), and under `home` every `HOME_SURFACES` entry.
+    /// the caller knows them), under `home` every [`home_surfaces`] entry, and
+    /// every surface under a relocated install root (`AgentRoots::surfaces`).
     pub(crate) fn new(
         state_root: &Path,
         scratch_root: Option<&Path>,
         executable_dirs: &[PathBuf],
         home: Option<&Path>,
+        agent_roots: &AgentRoots,
     ) -> Self {
         let mut roots = vec![state_root.to_path_buf()];
         roots.extend(scratch_root.map(Path::to_path_buf));
         roots.extend(executable_dirs.iter().cloned());
         if let Some(home) = home {
             roots.extend(
-                HOME_SURFACES
+                home_surfaces()
                     .iter()
                     .map(|surface| home.join(surface_path(surface).0)),
             );
         }
+        roots.extend(agent_roots.surfaces().into_iter().map(|(path, _)| path));
         Self {
             roots,
             executable_dirs: executable_dirs.to_vec(),
             home: home.map(Path::to_path_buf),
+            agent_roots: agent_roots.clone(),
         }
     }
 
@@ -228,6 +272,11 @@ impl ControlSurfaces {
     /// The operator's home directory, when known.
     pub(crate) fn home(&self) -> Option<&Path> {
         self.home.as_deref()
+    }
+
+    /// The relocated install roots whose surfaces every capsule also denies.
+    pub(crate) fn agent_roots(&self) -> &AgentRoots {
+        &self.agent_roots
     }
 
     /// Whether `rule`, a `permissions.allow` entry, names a control surface.
@@ -293,3 +342,6 @@ fn split_rule(rule: &str) -> Option<(&str, &str)> {
 
 #[cfg(test)]
 mod tests;
+#[cfg(test)]
+#[path = "control_surfaces/tests_home_surfaces.rs"]
+mod tests_home_surfaces;

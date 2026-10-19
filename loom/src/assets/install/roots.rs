@@ -17,7 +17,8 @@ use std::path::{Path, PathBuf};
 
 use super::InstallPaths;
 
-const RECORD_PATH: &str = ".config/loom/install-roots.toml";
+/// The record, relative to the home directory.
+pub(crate) const RECORD_PATH: &str = ".config/loom/install-roots.toml";
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 struct Record {

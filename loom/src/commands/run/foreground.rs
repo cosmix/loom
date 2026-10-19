@@ -127,7 +127,7 @@ fn foreground_orchestrator_config(
         status_update_interval: Duration::from_secs(30),
         auto_merge,
         base_branch,
-        skills_dir: None, // Use default ~/.claude/skills/
+        skills_dir: None, // `skills::installed_skills_dir`
         enable_skill_routing: true,
         max_skill_recommendations: 8,
         sandbox_config: plan_sandbox,

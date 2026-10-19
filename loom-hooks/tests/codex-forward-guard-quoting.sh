@@ -5,9 +5,10 @@ unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AG
 d=$(mktemp -d "${TMPDIR:-/tmp}/cfw-quoting.XXXXXX") && [[ -n "$d" ]]
 trap 'rm -rf "$d"' EXIT
 
-HOOK="$(cd "$(dirname "$0")/.." && pwd)/codex-forward-guard.sh"
-FORWARD_LIB="$(dirname "$HOOK")/_codex_forward.sh"
 HOME_DIR="$d/home"
+source "$(dirname "$0")/_stage_hooks.sh"
+HOOK="$(stage_hooks "$HOME_DIR/.claude")/codex-forward-guard.sh"
+FORWARD_LIB="$(dirname "$HOOK")/_codex_forward.sh"
 WORK_DIR="$d/work"
 WORKSPACE="$d/workspace"
 STAGE_ID=quote-stage
@@ -32,18 +33,21 @@ payload_for() {
 }
 
 run_guard() {
-	local input="$1" home="$2" active="$3"
+	local input="$1" home="$2" active="$3" hook
 	CODE=0
+	# Each HOME gets its own staged hook tree: the wrapper spelling is only
+	# authorized when the hooks live under that HOME.
+	hook="$(stage_hooks "$home/.claude")/codex-forward-guard.sh"
 	if [[ "$active" == 1 ]]; then
 		printf '%s' "$input" | HOME="$home" LOOM_WORK_DIR="$WORK_DIR" \
 			LOOM_STAGE_ID="$STAGE_ID" LOOM_SESSION_ID="$LOOM_SESSION" \
-			bash "$HOOK" >"$d/stdout" 2>"$d/stderr" || CODE=$?
+			bash "$hook" >"$d/stdout" 2>"$d/stderr" || CODE=$?
 	else
 		# Stage evidence without a resolvable stage: the guard enforces and
 		# blocks on the incomplete identity. With no evidence at all it would
 		# have no policy to apply and would allow the call.
 		printf '%s' "$input" | HOME="$home" LOOM_SESSION_ID="$LOOM_SESSION" \
-			bash "$HOOK" >"$d/stdout" 2>"$d/stderr" || CODE=$?
+			bash "$hook" >"$d/stdout" 2>"$d/stderr" || CODE=$?
 	fi
 }
 

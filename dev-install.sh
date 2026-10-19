@@ -5,8 +5,45 @@ set -euo pipefail
 # This compiles an optimized development binary and runs install.sh
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-CLAUDE_DIR="${LOOM_CLAUDECODE_INSTALL_DIR:-$HOME/.claude}"
-CODEX_DIR="${LOOM_CODEX_INSTALL_DIR:-$HOME/.codex}"
+# Asset root resolution mirrors `loom install-assets`: the env override, else
+# the root the last install recorded in install-roots.toml, else the default.
+resolve_root() {
+    local override="$1" key="$2" fallback="$3" file="$HOME/.config/loom/install-roots.toml"
+    local line="" value=""
+    if [[ -n "$override" ]]; then
+        case "$override" in
+        /*) printf '%s' "$override"; return 0 ;;
+        *) echo "error: install root override '$override' must be an absolute path" >&2; return 1 ;;
+        esac
+    fi
+    line=$(sed -n "s/^${key}[[:space:]]*=[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*\$/\1/p" \
+        "$file" 2>/dev/null | head -n 1 || true)
+    if [[ -z "$line" ]]; then
+        printf '%s' "$fallback"
+        return 0
+    fi
+    # TOML: a literal '...' string is verbatim; a "..." basic string may carry
+    # escapes, which are refused rather than guessed at.
+    if [[ "$line" =~ ^\"([^\"]*)\"$ ]]; then
+        value="${BASH_REMATCH[1]}"
+        if [[ "$value" == *\\* ]]; then
+            echo "error: $file: $key uses a backslash escape; write the path as a literal '...' string" >&2
+            return 1
+        fi
+    elif [[ "$line" =~ ^\'([^\']*)\'$ ]]; then
+        value="${BASH_REMATCH[1]}"
+    else
+        echo "error: $file: $key must be a quoted string" >&2
+        return 1
+    fi
+    if [[ "$value" != /* ]]; then
+        echo "error: $file: $key '$value' must be an absolute path" >&2
+        return 1
+    fi
+    printf '%s' "$value"
+}
+CLAUDE_DIR="$(resolve_root "${LOOM_CLAUDECODE_INSTALL_DIR:-}" claude_dir "$HOME/.claude")"
+CODEX_DIR="$(resolve_root "${LOOM_CODEX_INSTALL_DIR:-}" codex_dir "$HOME/.codex")"
 
 cleanup_backups() {
     local backups=()

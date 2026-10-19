@@ -5,7 +5,7 @@ use colored::Colorize;
 use std::path::{Path, PathBuf};
 
 use crate::assets::install::{
-    default_paths, install_all, record_roots, InstallPaths, InstallReport,
+    absolute_root, default_paths, install_all, record_roots, InstallPaths, InstallReport,
 };
 use crate::skills::SkillLayout;
 
@@ -31,7 +31,14 @@ pub fn execute(
 
 /// Fill in whichever directory was not passed explicitly, resolving the
 /// shared default paths at most once rather than once per missing directory.
+/// An explicit directory must be absolute, as every resolved root is.
 fn resolve_paths(claude_dir: Option<PathBuf>, codex_dir: Option<PathBuf>) -> Result<InstallPaths> {
+    let claude_dir = claude_dir
+        .map(|dir| absolute_root(dir, "--claude-dir"))
+        .transpose()?;
+    let codex_dir = codex_dir
+        .map(|dir| absolute_root(dir, "--codex-dir"))
+        .transpose()?;
     match (claude_dir, codex_dir) {
         (Some(claude_dir), Some(codex_dir)) => Ok(InstallPaths {
             claude_dir,

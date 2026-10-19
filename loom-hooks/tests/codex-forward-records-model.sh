@@ -2,11 +2,12 @@
 set -euo pipefail
 
 unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AGENT_PID
-GUARD="$(cd "$(dirname "$0")/.." && pwd)/codex-forward-guard.sh"
 d=$(mktemp -d "${TMPDIR:-/tmp}/cfw-records.XXXXXX") && [[ -n "$d" ]]
 trap 'rm -rf "$d"' EXIT
 
 HOME_DIR="$d/home"
+source "$(dirname "$0")/_stage_hooks.sh"
+GUARD="$(stage_hooks "$HOME_DIR/.claude")/codex-forward-guard.sh"
 WORKSPACE="$d/workspace"
 WORK_DIR="$d/work"
 COMPANION_DIR="$HOME_DIR/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts"
@@ -122,7 +123,7 @@ printf '%s\n' '// unsupported' >"$UNSUPPORTED_HOME/.claude/plugins/cache/openai-
 status=0
 printf '%s' "$(payload "$WITH_UNIT" tool-unsupported)" | HOME="$UNSUPPORTED_HOME" \
 	LOOM_WORK_DIR="$d/unsupported-work" LOOM_STAGE_ID=my-stage LOOM_SESSION_ID=session-abc \
-	bash "$GUARD" >"$d/unsupported.stdout" 2>"$d/unsupported.stderr" || status=$?
+	bash "$(stage_hooks "$UNSUPPORTED_HOME/.claude")/codex-forward-guard.sh" >"$d/unsupported.stdout" 2>"$d/unsupported.stderr" || status=$?
 [[ $status -eq 2 && ! -s "$d/unsupported.stdout" ]]
 rg -qF 'supported codex companion 1.0.6 is missing or unsafe' "$d/unsupported.stderr"
 

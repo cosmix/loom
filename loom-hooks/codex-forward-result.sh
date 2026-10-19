@@ -11,13 +11,7 @@ command -v jq >/dev/null 2>&1 || exit 0
 parse_forward_command() {
 	parse_shell_words "$1" || return 1
 	[[ ${#PARSED_WORDS[@]} -eq 12 ]] || return 1
-	local wrapper=${PARSED_WORDS[0]}
-	if [[ -n "${HOME:-}" ]]; then
-		[[ "$wrapper" == "~/.claude/hooks/loom/codex-forward.sh" ||
-			"$wrapper" == "$HOME/.claude/hooks/loom/codex-forward.sh" ]] || return 1
-	else
-		[[ "$wrapper" == "~/.claude/hooks/loom/codex-forward.sh" ]] || return 1
-	fi
+	loom_is_forward_wrapper "${PARSED_WORDS[0]}" "$PARSED_WORD0_PLAIN" || return 1
 	[[ "${PARSED_WORDS[1]}" == task && -n "${PARSED_WORDS[2]}" &&
 		"${PARSED_WORDS[3]}" == --model && "${PARSED_WORDS[5]}" == --effort &&
 		"${PARSED_WORDS[7]}" == --write && "${PARSED_WORDS[8]}" == --unit-id &&

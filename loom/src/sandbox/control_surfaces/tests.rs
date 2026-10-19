@@ -8,6 +8,7 @@ fn inputs(allow_write: &[String], codex_licensed: bool) -> WritableRootInputs<'_
         repo_root: Path::new("/repo"),
         allow_write,
         codex_licensed,
+        codex_root: None,
         scratch_root: Path::new("/home/op/.cache/loom/scratch"),
         home: Some(Path::new("/home/op")),
         tmpdir: Some(Path::new("/var/tmp/op")),
@@ -74,6 +75,7 @@ fn surfaces() -> ControlSurfaces {
         Some(Path::new("/run/user/1000/loom/scratch")),
         &[PathBuf::from("/opt/loom-hooks")],
         Some(Path::new("/home/op")),
+        &AgentRoots::default(),
     )
 }
 
@@ -182,4 +184,44 @@ fn exposes_the_executable_dirs_and_home_it_was_built_with() {
         [PathBuf::from("/opt/loom-hooks")]
     );
     assert_eq!(surfaces.home(), Some(Path::new("/home/op")));
+}
+
+#[test]
+fn a_relocated_codex_root_is_a_writable_root_only_with_the_codex_lane() {
+    let codex = Path::new("/opt/agents/codex");
+    for licensed in [true, false] {
+        let mut inputs = inputs(&[], licensed);
+        inputs.codex_root = Some(codex);
+        let roots = session_writable_roots(&inputs);
+        assert_eq!(roots.contains(&codex.to_path_buf()), licensed, "{roots:?}");
+    }
+}
+
+/// A propagated rule naming a surface under a relocated install root is
+/// refused like its `~/.claude` / `~/.codex` twin.
+#[test]
+fn rules_under_a_relocated_install_root_name_a_control_surface() {
+    let home = Path::new("/home/op");
+    let roots = AgentRoots::relocated(
+        Path::new("/opt/agents/claude"),
+        Path::new("/opt/agents/codex"),
+        Some(home),
+    );
+    let state = Path::new("/repo/.loom/work");
+    let relocated = ControlSurfaces::new(state, None, &[], Some(home), &roots);
+    let default = ControlSurfaces::new(state, None, &[], Some(home), &AgentRoots::default());
+    for rule in [
+        "Edit(//opt/agents/claude/skills/**)",
+        "Edit(//opt/agents/claude/settings.json)",
+        "Edit(//opt/agents/codex/hooks.json)",
+        "Edit(//opt/agents/**)",
+        "Bash(cp evil.md /opt/agents/claude/agents/loom-x.md)",
+    ] {
+        assert!(relocated.names(rule), "{rule} must name a control surface");
+        assert!(
+            !default.names(rule),
+            "{rule} names nothing without relocation"
+        );
+    }
+    assert!(!relocated.names("Edit(//opt/agents/claude/projects/**)"));
 }

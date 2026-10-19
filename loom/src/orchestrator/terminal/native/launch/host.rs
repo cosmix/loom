@@ -1,8 +1,8 @@
 //! The host facts a launch resolves from the daemon's own environment before
 //! anything is written: where claude is and which capsule flags it takes, the
 //! project root, the verified loom hooks directory, the session scratch root,
-//! and the daemon's own accepted binary and filtered PATH, which the wrapper
-//! exports as `LOOM_BIN` and `LOOM_HOOK_PATH`.
+//! the relocated install roots, and the daemon's own accepted binary and
+//! filtered PATH, which the wrapper exports as `LOOM_BIN` and `LOOM_HOOK_PATH`.
 //!
 //! [`LaunchHost::from_env`], and `run_host_facts` for `loom run`, are the only
 //! readers of the process environment; everything downstream takes these
@@ -20,7 +20,7 @@ use super::super::wrapper::{
 };
 use crate::relay::{ensure_dir_0700, session_dir};
 use crate::sandbox::control_surfaces::{
-    session_writable_roots, ControlSurfaces, WritableRootInputs,
+    session_writable_roots, AgentRoots, ControlSurfaces, WritableRootInputs,
 };
 use crate::sandbox::preflight::{
     find_executable, python_hook_scripts, HostFacts, SandboxPreflightRefusal,
@@ -40,19 +40,29 @@ pub(super) struct LaunchHost {
     /// The operator's uid, which every verified path must be owned by.
     pub(super) uid: u32,
     pub(super) home: Option<PathBuf>,
+    /// The Claude and Codex install roots, where relocated from the home defaults.
+    pub(super) agent_roots: AgentRoots,
 }
 
 impl LaunchHost {
-    /// Resolve every host fact from the daemon's process. A missing claude,
-    /// an unresolvable scratch root, or a loom binary `accepted_loom_bin`
-    /// refuses fails the spawn.
+    /// Resolve every host fact from the daemon's process. Unresolvable install
+    /// roots, a missing claude, an unresolvable scratch root, or a loom binary
+    /// `accepted_loom_bin` refuses fails the spawn.
     pub(super) fn from_env(work_dir: &Path, cwd: &Path) -> Result<Self> {
+        let home = dirs::home_dir();
+        let agent_roots = host_agent_roots(home.as_deref())?;
         let claude_path = crate::claude::find_claude_path()?;
         let uid = current_uid();
-        let home = dirs::home_dir();
         let repo_root = project_root(work_dir).unwrap_or_else(|| absolute(cwd));
         let scratch_root = host_scratch_root(work_dir)?;
-        let facts = host_facts(work_dir, &repo_root, &scratch_root, uid, home.as_deref())?;
+        let facts = host_facts(
+            work_dir,
+            &repo_root,
+            &scratch_root,
+            uid,
+            home.as_deref(),
+            &agent_roots,
+        )?;
         Ok(Self {
             capsule_support: probed_capsule_support(&claude_path),
             claude_path,
@@ -61,6 +71,7 @@ impl LaunchHost {
             scratch_root,
             uid,
             home,
+            agent_roots,
         })
     }
 
@@ -99,6 +110,7 @@ impl LaunchHost {
             Some(&self.scratch_root),
             &hooks_dirs,
             self.home.as_deref(),
+            &self.agent_roots,
         )
     }
 
@@ -117,17 +129,32 @@ impl LaunchHost {
 /// The facts a spawn from `work_dir` checks, resolved before any session
 /// exists, so `loom run` refuses on exactly what a spawn would.
 pub(crate) fn run_host_facts(work_dir: &Path) -> Result<HostFacts> {
+    let home = dirs::home_dir();
+    let agent_roots = host_agent_roots(home.as_deref())?;
     let repo_root =
         project_root(work_dir).context("cannot resolve the project root of the state directory")?;
     let scratch_root = host_scratch_root(work_dir)?;
-    let home = dirs::home_dir();
     host_facts(
         work_dir,
         &repo_root,
         &scratch_root,
         current_uid(),
         home.as_deref(),
+        &agent_roots,
     )
+}
+
+/// The relocated install roots, or a sandbox preflight refusal carrying why
+/// they do not resolve: the capsule would otherwise lack every relocated-root
+/// deny, whatever hooks directory `LOOM_HOOKS_DIR` supplies.
+fn host_agent_roots(home: Option<&Path>) -> Result<AgentRoots> {
+    AgentRoots::resolve(home).map_err(|error| {
+        SandboxPreflightRefusal::new(vec![format!(
+            "the Claude and Codex install roots do not resolve, so their control \
+             surfaces cannot be denied: {error:#}"
+        )])
+        .into()
+    })
 }
 
 /// The verified hooks directory and accepted loom binary, every
@@ -140,9 +167,11 @@ fn host_facts(
     scratch_root: &Path,
     uid: u32,
     home: Option<&Path>,
+    agent_roots: &AgentRoots,
 ) -> Result<HostFacts> {
     let exe = binary_to_accept(DAEMON_BINARY.get().map(PathBuf::as_path))?;
-    let roots = writable_roots(work_dir, repo_root, scratch_root, home);
+    let codex_root = agent_roots.codex();
+    let roots = writable_roots(work_dir, repo_root, scratch_root, home, codex_root);
     let path_var = std::env::var_os("PATH").unwrap_or_default();
     let loom_bin = accepted_loom_bin(&exe, uid, &roots)
         .map_err(|error| SandboxPreflightRefusal::new(vec![format!("{error:#}")]))?;
@@ -241,12 +270,14 @@ fn owned_dir(path: &Path, uid: u32) -> Result<PathBuf> {
 }
 
 /// Every root a session could write, over every stage in the plan (their
-/// merged `allowWrite` entries, and whether any licenses the codex lane).
+/// merged `allowWrite` entries, and whether any licenses the codex lane, whose
+/// grant covers a relocated `codex_root` too).
 fn writable_roots(
     work_dir: &Path,
     repo_root: &Path,
     scratch_root: &Path,
     home: Option<&Path>,
+    codex_root: Option<&Path>,
 ) -> Vec<PathBuf> {
     let plan = crate::fs::work_dir::read_plan_sandbox(work_dir)
         .ok()
@@ -270,6 +301,7 @@ fn writable_roots(
         repo_root,
         allow_write: &allow_write,
         codex_licensed,
+        codex_root,
         scratch_root,
         home,
         tmpdir: tmpdir.as_deref(),
@@ -297,21 +329,5 @@ pub(super) fn hook_path_entries(path_var: &OsStr, writable_roots: &[PathBuf]) ->
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn a_recorded_binary_wins_over_the_running_executable() {
-        let dir = tempfile::tempdir().unwrap();
-        let recorded = dir.path().join("loom");
-        assert_eq!(binary_to_accept(Some(&recorded)).unwrap(), recorded);
-    }
-
-    #[test]
-    fn without_a_recording_the_running_executable_is_used() {
-        assert_eq!(
-            binary_to_accept(None).unwrap(),
-            std::env::current_exe().unwrap()
-        );
-    }
-}
+#[path = "tests_host.rs"]
+mod tests;

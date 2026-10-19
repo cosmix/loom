@@ -198,18 +198,55 @@ mod events_tests {
 
 mod generator_tests {
     use super::*;
+    use crate::assets::install::test_env::{InstallRootsEnv, CLAUDE_OVERRIDE};
+    use serial_test::serial;
 
     #[test]
+    #[serial]
     fn test_find_hooks_dir_env_var() {
         let temp_dir = TempDir::new().unwrap();
         let hooks_dir = temp_dir.path().join("hooks");
         std::fs::create_dir(&hooks_dir).unwrap();
 
-        std::env::set_var("LOOM_HOOKS_DIR", hooks_dir.to_str().unwrap());
+        let mut env = InstallRootsEnv::isolate(temp_dir.path());
+        env.set("LOOM_HOOKS_DIR", &hooks_dir);
         let found = generator::find_hooks_dir();
-        std::env::remove_var("LOOM_HOOKS_DIR");
 
-        assert!(found.is_some());
-        assert_eq!(found.unwrap(), hooks_dir);
+        assert_eq!(found, Some(hooks_dir));
+    }
+
+    /// A relocated Claude root resolves to its own `hooks/loom`, and a stale
+    /// `~/.claude/hooks/loom` left by an earlier default install is ignored.
+    #[test]
+    #[serial]
+    fn find_hooks_dir_follows_a_relocated_claude_root_past_a_stale_default() {
+        let home = TempDir::new().unwrap();
+        let stale = home.path().join(".claude/hooks/loom");
+        std::fs::create_dir_all(&stale).unwrap();
+        let custom = home.path().join("agents/claude");
+        let installed = custom.join("hooks/loom");
+
+        let mut env = InstallRootsEnv::isolate(home.path());
+        env.set(CLAUDE_OVERRIDE, &custom);
+        assert_eq!(
+            generator::find_hooks_dir(),
+            None,
+            "a relocated root without hooks must not fall back to {}",
+            stale.display()
+        );
+
+        std::fs::create_dir_all(&installed).unwrap();
+        assert_eq!(generator::find_hooks_dir(), Some(installed));
+    }
+
+    #[test]
+    #[serial]
+    fn find_hooks_dir_defaults_to_the_home_claude_root() {
+        let home = TempDir::new().unwrap();
+        let default = home.path().join(".claude/hooks/loom");
+        std::fs::create_dir_all(&default).unwrap();
+
+        let _env = InstallRootsEnv::isolate(home.path());
+        assert_eq!(generator::find_hooks_dir(), Some(default));
     }
 }

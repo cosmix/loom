@@ -5,6 +5,7 @@ use chrono::Utc;
 use serde_json::json;
 
 use super::*;
+use crate::assets::install::test_env::InstallRootsEnv;
 use crate::models::forward_receipt::{
     receipts_path, ForwardBackend, ForwardIdentity, ForwardObservation, ForwardState,
 };
@@ -22,6 +23,7 @@ const JOB: &str = "job-a";
 const INVOCATION: &str = "invocation-a";
 
 #[test]
+#[serial_test::serial]
 fn receipt_activity_cannot_set_forwarder_state_without_lifecycle() {
     let fixture = Fixture::new("running", false);
     let summaries = fixture.gather();
@@ -30,6 +32,7 @@ fn receipt_activity_cannot_set_forwarder_state_without_lifecycle() {
 }
 
 #[test]
+#[serial_test::serial]
 fn receipt_failure_cannot_set_forwarder_terminal_state() {
     let fixture = Fixture::new("failed", false);
     let summaries = fixture.gather();
@@ -39,6 +42,7 @@ fn receipt_failure_cannot_set_forwarder_terminal_state() {
 }
 
 #[test]
+#[serial_test::serial]
 fn unknown_receipt_stays_forward_unknown() {
     let fixture = Fixture::new("running", true);
     let summaries = fixture.gather();
@@ -48,6 +52,7 @@ fn unknown_receipt_stays_forward_unknown() {
 }
 
 #[test]
+#[serial_test::serial]
 fn empty_transcript_directory_keeps_expected_receipt_unsettled() {
     let fixture = Fixture::new("running", false);
     fs::remove_file(fixture.transcript()).unwrap();
@@ -59,6 +64,7 @@ fn empty_transcript_directory_keeps_expected_receipt_unsettled() {
 }
 
 #[test]
+#[serial_test::serial]
 fn forwarder_json_carries_exact_receipt_backend_and_state() {
     let fixture = Fixture::new("running", false);
     let summary = fixture.gather().remove(0);
@@ -70,6 +76,7 @@ fn forwarder_json_carries_exact_receipt_backend_and_state() {
 }
 
 #[test]
+#[serial_test::serial]
 fn non_forwarder_keeps_human_state_while_forwarding_use_drives_other_views() {
     let fixture = Fixture::new("running", false);
     fixture.set_agent_type("ordinary-worker");
@@ -89,6 +96,7 @@ fn non_forwarder_keeps_human_state_while_forwarding_use_drives_other_views() {
 }
 
 #[test]
+#[serial_test::serial]
 fn lifecycle_evidenced_forwarder_is_done_while_legacy_forwarder_is_unsettled() {
     let fixture = Fixture::new("running", false);
     let legacy = fixture.gather().remove(0);
@@ -103,6 +111,7 @@ fn lifecycle_evidenced_forwarder_is_done_while_legacy_forwarder_is_unsettled() {
 }
 
 #[test]
+#[serial_test::serial]
 fn lifecycle_failure_cancellation_and_active_have_distinct_harvest_evidence() {
     let mut failed = super::super::summary::empty("failed-agent".into(), 0, None);
     failed.state = SubagentState::Failed;
@@ -127,6 +136,7 @@ fn lifecycle_failure_cancellation_and_active_have_distinct_harvest_evidence() {
 }
 
 struct Fixture {
+    _env: InstallRootsEnv,
     _temp: tempfile::TempDir,
     root: PathBuf,
     work: PathBuf,
@@ -156,6 +166,7 @@ impl Fixture {
         )
         .unwrap();
         let mut fixture = Self {
+            _env: InstallRootsEnv::isolate(&root),
             _temp: temp,
             root,
             work,

@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 use tempfile::TempDir;
 
 use super::*;
+use crate::assets::install::test_env::InstallRootsEnv;
 
 const PARENT: &str = "parent-session";
 const AGENT: &str = "forwarder-one";
@@ -15,6 +16,7 @@ const JOB: &str = "job-one";
 const THREAD: &str = "thread-one";
 
 struct Fixture {
+    _env: InstallRootsEnv,
     _temp: TempDir,
     work: PathBuf,
     transcript: PathBuf,
@@ -38,6 +40,7 @@ impl Fixture {
         fs::create_dir_all(&work)?;
         fs::create_dir_all(transcript.parent().unwrap())?;
         Ok(Self {
+            _env: InstallRootsEnv::isolate(temp.path()),
             _temp: temp,
             work,
             transcript,
@@ -62,7 +65,7 @@ impl Fixture {
         tool_id: &str,
         result: Option<(String, Option<Value>)>,
     ) -> Result<()> {
-        let command = "/hooks/codex-forward.sh task 'do the work' --model gpt-5.6-terra --effort xhigh --write";
+        let command = "~/.claude/hooks/loom/codex-forward.sh task 'do the work' --model gpt-5.6-terra --effort xhigh --write";
         let assistant = json!({"type":"assistant","timestamp":"2026-09-13T10:00:00Z",
             "sessionId":PARENT,"agentId":self.agent,"message":{"content":[
                 {"type":"tool_use","id":tool_id,"name":"Bash","input":{"command":command}}]}});
@@ -118,6 +121,7 @@ fn states(observations: &[ForwardObservation]) -> Vec<ForwardState> {
 }
 
 #[test]
+#[serial_test::serial]
 fn foreground_companion_completed_writes_start_and_success() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     let locator = fixture.write_job(JOB, "completed", "done")?;
@@ -135,6 +139,7 @@ fn foreground_companion_completed_writes_start_and_success() -> Result<()> {
 }
 
 #[test]
+#[serial_test::serial]
 fn missing_companion_record_writes_only_start() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     fixture.write_transcript(TOOL, Some((companion_channel(JOB, "succeeded", 0), None)))?;
@@ -148,6 +153,7 @@ fn missing_companion_record_writes_only_start() -> Result<()> {
 }
 
 #[test]
+#[serial_test::serial]
 fn failed_and_cancelled_records_control_terminal_state() -> Result<()> {
     for (status, outcome, expected) in [
         ("failed", "failed", ForwardState::Failed),
@@ -166,6 +172,7 @@ fn failed_and_cancelled_records_control_terminal_state() -> Result<()> {
 }
 
 #[test]
+#[serial_test::serial]
 fn companion_end_disagreement_writes_no_terminal() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     fixture.write_job(JOB, "failed", "failed")?;
@@ -180,6 +187,7 @@ fn companion_end_disagreement_writes_no_terminal() -> Result<()> {
 }
 
 #[test]
+#[serial_test::serial]
 fn direct_requires_finished_end_marker_for_success() -> Result<()> {
     let completed = Fixture::new(AGENT)?;
     completed.write_transcript(TOOL, Some((direct_channel(THREAD, true), None)))?;
@@ -200,6 +208,7 @@ fn direct_requires_finished_end_marker_for_success() -> Result<()> {
 }
 
 #[test]
+#[serial_test::serial]
 fn structured_stdout_takes_precedence_over_tool_result_text() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     let stdout = direct_channel(THREAD, false);
@@ -215,6 +224,7 @@ fn structured_stdout_takes_precedence_over_tool_result_text() -> Result<()> {
 }
 
 #[test]
+#[serial_test::serial]
 fn absent_tool_result_writes_nothing() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     fixture.write_transcript(TOOL, None)?;
@@ -225,6 +235,7 @@ fn absent_tool_result_writes_nothing() -> Result<()> {
 }
 
 #[test]
+#[serial_test::serial]
 fn validated_background_output_supplies_start_marker() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     let task = "background-one";
@@ -254,6 +265,7 @@ fn validated_background_output_supplies_start_marker() -> Result<()> {
 }
 
 #[test]
+#[serial_test::serial]
 fn marker_after_separator_cannot_create_terminal_observation() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     fixture.write_job(JOB, "completed", "done")?;
@@ -269,6 +281,7 @@ fn marker_after_separator_cannot_create_terminal_observation() -> Result<()> {
 }
 
 #[test]
+#[serial_test::serial]
 fn rerun_is_idempotent_and_raw_result_is_not_persisted() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     fixture.write_job(JOB, "completed", "done")?;
@@ -284,6 +297,7 @@ fn rerun_is_idempotent_and_raw_result_is_not_persisted() -> Result<()> {
 }
 
 #[test]
+#[serial_test::serial]
 fn symlinked_receipts_file_is_refused() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     fixture.write_transcript(TOOL, Some((direct_channel(THREAD, true), None)))?;
@@ -299,6 +313,7 @@ fn symlinked_receipts_file_is_refused() -> Result<()> {
 }
 
 #[test]
+#[serial_test::serial]
 fn same_model_siblings_receive_distinct_receipt_ids() -> Result<()> {
     let first = Fixture::new("forwarder-a")?;
     first.write_transcript(TOOL, Some((direct_channel("thread-a", true), None)))?;

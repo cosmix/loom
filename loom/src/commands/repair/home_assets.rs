@@ -1,7 +1,9 @@
-//! Old unprefixed `$HOME/.claude` skills, agents, and skill-name references
-//! left behind by a pre-`loom-` install.
+//! Old unprefixed skills and agents in the installed Claude root
+//! (`assets::install::default_paths`), and skill-name references in
+//! `$HOME/.claude/settings.json`, left behind by a pre-`loom-` install.
 
 use std::fs;
+use std::path::PathBuf;
 
 use anyhow::{Context, Result};
 
@@ -80,13 +82,20 @@ pub(super) fn check() -> Vec<RepairIssue> {
     issues
 }
 
+/// The installed Claude root's `subdir`, where `install-assets` placed loom's
+/// skills and agents.
+fn installed_dir(subdir: &str) -> Result<PathBuf> {
+    Ok(crate::assets::install::default_paths()?
+        .claude_dir
+        .join(subdir))
+}
+
 /// Check 7: old unprefixed skills that have a loom- counterpart.
 fn check_old_skills() -> Vec<RepairIssue> {
     let mut issues = Vec::new();
-    let Some(home) = dirs::home_dir() else {
+    let Ok(skills_dir) = installed_dir("skills") else {
         return issues;
     };
-    let skills_dir = home.join(".claude/skills");
     let Ok(entries) = fs::read_dir(&skills_dir) else {
         return issues;
     };
@@ -104,8 +113,9 @@ fn check_old_skills() -> Vec<RepairIssue> {
                     name, name
                 ),
                 fix_description: format!(
-                    "Remove ~/.claude/skills/{} (loom-{} already installed)",
-                    name, name
+                    "Remove {} (loom-{} already installed)",
+                    skills_dir.join(&name).display(),
+                    name
                 ),
             });
         }
@@ -116,10 +126,9 @@ fn check_old_skills() -> Vec<RepairIssue> {
 /// Check 8: old unprefixed agents that have a loom- counterpart.
 fn check_old_agents() -> Vec<RepairIssue> {
     let mut issues = Vec::new();
-    let Some(home) = dirs::home_dir() else {
+    let Ok(agents_dir) = installed_dir("agents") else {
         return issues;
     };
-    let agents_dir = home.join(".claude/agents");
     let Ok(entries) = fs::read_dir(&agents_dir) else {
         return issues;
     };
@@ -138,8 +147,9 @@ fn check_old_agents() -> Vec<RepairIssue> {
                     bare, bare
                 ),
                 fix_description: format!(
-                    "Remove ~/.claude/agents/{} (loom-{} already installed)",
-                    name, name
+                    "Remove {} (loom-{} already installed)",
+                    agents_dir.join(&name).display(),
+                    name
                 ),
             });
         }
@@ -178,8 +188,7 @@ pub(super) fn fix_old_skill(description: &str) -> Result<()> {
         .and_then(|s| s.split('\'').next())
         .with_context(|| format!("Cannot parse skill name from: {}", description))?;
 
-    let home = dirs::home_dir().context("Cannot determine home directory")?;
-    let old_path = home.join(".claude/skills").join(name);
+    let old_path = installed_dir("skills")?.join(name);
     fs::remove_dir_all(&old_path)
         .with_context(|| format!("Failed to remove {}", old_path.display()))?;
     Ok(())
@@ -192,8 +201,7 @@ pub(super) fn fix_old_agent(description: &str) -> Result<()> {
         .and_then(|s| s.split('\'').next())
         .with_context(|| format!("Cannot parse agent name from: {}", description))?;
 
-    let home = dirs::home_dir().context("Cannot determine home directory")?;
-    let old_path = home.join(".claude/agents").join(format!("{}.md", name));
+    let old_path = installed_dir("agents")?.join(format!("{}.md", name));
     fs::remove_file(&old_path)
         .with_context(|| format!("Failed to remove {}", old_path.display()))?;
     Ok(())

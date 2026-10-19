@@ -21,23 +21,18 @@ pub(super) fn loom_hooks_config_for_dir(hooks_dir: &str) -> Value {
 /// Generate global hooks configuration for loom
 /// Only includes hooks that should be in the main repo's settings.json
 /// Session-specific hooks (SessionStart, PostToolUse, PreCompact, etc.) are merged at worktree creation
-/// Hooks reference scripts at ~/.claude/hooks/loom/ (installed by loom init)
+/// Hooks reference scripts in the installed hooks directory
+/// (`assets::install::claude_hooks_dir`, absolute: `~` may not expand in all contexts)
 pub fn loom_hooks_config() -> Value {
-    // Get home directory for full path expansion (~ may not work in all contexts)
-    // All hooks are in the loom/ subdirectory to separate from user hooks
-    let hooks_dir = dirs::home_dir()
-        .map(|h| h.join(".claude/hooks/loom").display().to_string())
-        .unwrap_or_else(|| "~/.claude/hooks/loom".to_string());
-    loom_hooks_config_for_dir(&hooks_dir)
+    loom_hooks_config_for_dir(&crate::assets::install::claude_hooks_dir_text())
 }
 
-/// Install all loom hooks to ~/.claude/hooks/loom/
-///
-/// Convenience wrapper that installs to the default location.
-/// Use `install_loom_hooks_to` for testability with custom directories.
+/// Install all loom hooks to the installed hooks directory
+/// (`assets::install::claude_hooks_dir`). Use `install_loom_hooks_to` for
+/// testability with custom directories.
 pub fn install_loom_hooks() -> Result<usize> {
-    let home_dir = dirs::home_dir().context("Failed to determine home directory")?;
-    let hooks_dir = home_dir.join(".claude/hooks/loom");
+    let hooks_dir = crate::assets::install::try_claude_hooks_dir()
+        .context("Failed to determine the loom hooks directory")?;
     install_loom_hooks_to(&hooks_dir)
 }
 
@@ -96,13 +91,6 @@ fn install_hook_script(dir: &std::path::Path, filename: &str, content: &str) -> 
         .with_context(|| format!("Failed to set permissions on {}", hook_path.display()))?;
 
     Ok(true)
-}
-
-/// Get the path to the installed worktree hooks directory
-///
-/// Returns ~/.claude/hooks/loom/ where worktree hook scripts are installed.
-pub fn get_installed_hooks_dir() -> Option<std::path::PathBuf> {
-    dirs::home_dir().map(|home| home.join(".claude/hooks/loom"))
 }
 
 /// Migrate old hook paths to the new loom subdirectory structure
@@ -247,19 +235,34 @@ fn remove_duplicate_hooks(hooks_arr: &mut Vec<Value>) {
     });
 }
 
-/// Check if a hook command points to a loom hook (in ~/.claude/hooks/loom/).
-/// `pub(super)`: also used by [`super::drift`] to scope obsolete-registration
-/// detection to loom's own hooks.
+/// Check if a hook command points to a loom hook, in the installed hooks
+/// directory (`assets::install::claude_hooks_dir`) or any spelling of the
+/// default `~/.claude/hooks/loom/`. `pub(super)`: also used by
+/// [`super::drift`] to scope obsolete-registration detection to loom's own hooks.
 pub(super) fn is_loom_hook(command: &str) -> bool {
-    // Check for both absolute path and tilde-prefixed path
-    let is_tilde_loom = command.contains("/.claude/hooks/loom/");
-    let is_absolute_loom = dirs::home_dir()
-        .map(|h| {
-            let loom_dir = h.join(".claude/hooks/loom/");
-            command.starts_with(&loom_dir.display().to_string())
-        })
-        .unwrap_or(false);
-    is_tilde_loom || is_absolute_loom
+    is_loom_hook_in(
+        command,
+        crate::assets::install::claude_hooks_dir().as_deref(),
+        dirs::home_dir().as_deref(),
+    )
+}
+
+/// [`is_loom_hook`] against an explicit `hooks_dir` and `home`. Each spelling
+/// must start the command: a project's own `<repo>/.claude/hooks/loom/` hook,
+/// or any other tree that merely holds `hooks/loom/`, is the user's.
+pub(super) fn is_loom_hook_in(
+    command: &str,
+    hooks_dir: Option<&std::path::Path>,
+    home: Option<&std::path::Path>,
+) -> bool {
+    let command = command.trim_start();
+    let home_dir = home.map(|home| format!("{}/.claude/hooks/loom/", home.display()));
+    let installed = hooks_dir.map(|dir| format!("{}/", dir.display()));
+    ["~/.claude/hooks/loom/", "$HOME/.claude/hooks/loom/"]
+        .iter()
+        .any(|prefix| command.starts_with(prefix))
+        || home_dir.is_some_and(|prefix| command.starts_with(&prefix))
+        || installed.is_some_and(|prefix| command.starts_with(&prefix))
 }
 
 /// Remove all loom hooks from a hooks array
@@ -343,103 +346,18 @@ pub(super) fn configure_loom_hooks_with_dir(
 
 /// Configure loom hooks in settings object using host paths.
 ///
-/// Hook scripts are accessed at `~/.claude/hooks/loom/` on the host filesystem.
+/// Hook scripts are accessed in the installed hooks directory
+/// (`assets::install::claude_hooks_dir`) on the host filesystem.
 ///
 /// Returns true if hooks were added/updated.
 pub fn configure_loom_hooks(settings_obj: &mut serde_json::Map<String, Value>) -> Result<bool> {
-    let hooks_dir = dirs::home_dir()
-        .map(|h| h.join(".claude/hooks/loom").display().to_string())
-        .unwrap_or_else(|| "~/.claude/hooks/loom".to_string());
+    let hooks_dir = crate::assets::install::claude_hooks_dir_text();
     configure_loom_hooks_with_dir(settings_obj, &hooks_dir)
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn test_worktree_file_guard_registered_for_every_file_tool() {
-        let config = loom_hooks_config();
-        let pre_tool_use = config
-            .get("PreToolUse")
-            .expect("PreToolUse must exist")
-            .as_array()
-            .expect("PreToolUse must be an array");
-
-        // Collect all (matcher, command) pairs from PreToolUse
-        let entries: Vec<(String, String)> = pre_tool_use
-            .iter()
-            .filter_map(|entry| {
-                let matcher = entry.get("matcher")?.as_str()?.to_string();
-                let command = entry
-                    .get("hooks")?
-                    .as_array()?
-                    .first()?
-                    .get("command")?
-                    .as_str()?
-                    .to_string();
-                Some((matcher, command))
-            })
-            .collect();
-
-        // One canonical guard owns every file-tool path decision. MultiEdit is
-        // a distinct matcher from Edit, so it needs its own registration.
-        for tool in ["Read", "Write", "Edit", "MultiEdit", "Glob", "Grep"] {
-            let found = entries.iter().any(|(matcher, command)| {
-                matcher == tool && command.contains("worktree-file-guard.sh")
-            });
-            assert!(
-                found,
-                "worktree-file-guard.sh not registered as PreToolUse hook for matcher '{tool}'"
-            );
-        }
-    }
-
-    #[test]
-    fn test_plans_path_guard_registered_for_every_write_tool() {
-        let config = loom_hooks_config();
-        let pre_tool_use = config
-            .get("PreToolUse")
-            .expect("PreToolUse must exist")
-            .as_array()
-            .expect("PreToolUse must be an array");
-
-        for tool in ["Write", "Edit", "MultiEdit"] {
-            let found = pre_tool_use.iter().any(|entry| {
-                let matcher = entry.get("matcher").and_then(|m| m.as_str());
-                let command = entry
-                    .get("hooks")
-                    .and_then(|h| h.as_array())
-                    .and_then(|arr| arr.first())
-                    .and_then(|h| h.get("command"))
-                    .and_then(|c| c.as_str());
-                matcher == Some(tool) && command.is_some_and(|c| c.contains("plans-path-guard.sh"))
-            });
-            assert!(
-                found,
-                "plans-path-guard.sh not registered as PreToolUse hook for matcher '{tool}'"
-            );
-        }
-    }
-
-    #[test]
-    fn test_completion_control_hook_registered_before_and_after_bash_only() {
-        let config = loom_hooks_config();
-        for phase in ["PreToolUse", "PostToolUse"] {
-            let entries = config[phase].as_array().unwrap();
-            let matches: Vec<_> = entries
-                .iter()
-                .filter(|entry| {
-                    entry["hooks"][0]["command"]
-                        .as_str()
-                        .is_some_and(|command| command.contains("loom-control-complete.sh"))
-                })
-                .collect();
-            assert_eq!(matches.len(), 1, "unexpected {phase} registration count");
-            assert_eq!(matches[0]["matcher"], "Bash");
-        }
-    }
-}
+#[path = "hooks/registration_tests.rs"]
+mod registration_tests;
 
 #[cfg(all(test, unix))]
 #[path = "hooks/policy_tests.rs"]

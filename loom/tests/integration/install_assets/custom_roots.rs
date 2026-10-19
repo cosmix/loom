@@ -318,3 +318,68 @@ fn an_env_override_wins_over_a_previously_recorded_root() {
     assert_absent(&home.join(".claude"));
     assert_absent(&home.join(".codex"));
 }
+
+/// A relative root would resolve against each process's working directory, a
+/// path a stage session writes: `install-assets` refuses it, naming its source,
+/// and installs nothing.
+#[test]
+fn a_relative_override_or_recorded_root_is_refused() {
+    for (variable, recorded) in [
+        (Some(CLAUDE_OVERRIDE), false),
+        (Some(CODEX_OVERRIDE), false),
+        (None, true),
+    ] {
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let mut command = install_command(&home);
+        command.current_dir(temp.path());
+        if let Some(variable) = variable {
+            command.env(variable, "relative-root");
+        }
+        if recorded {
+            let record = home.join(".config/loom/install-roots.toml");
+            fs::create_dir_all(record.parent().unwrap()).unwrap();
+            fs::write(&record, "claude_dir = \"relative-root\"\n").unwrap();
+        }
+
+        let output = command.output().expect("run loom install-assets");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        let source = variable.unwrap_or("the claude_dir entry of");
+        assert!(
+            !output.status.success()
+                && stderr.contains(source)
+                && stderr.contains("must be an absolute path"),
+            "{variable:?}: {stderr}"
+        );
+        assert_absent(&temp.path().join("relative-root"));
+        assert_absent(&home.join(".claude"));
+    }
+}
+
+/// An explicit `--claude-dir`/`--codex-dir` is held to the same rule: a
+/// relative one is refused, naming the flag, and nothing is installed.
+#[test]
+fn a_relative_directory_flag_is_refused() {
+    for flag in ["--claude-dir", "--codex-dir"] {
+        let temp = TempDir::new().unwrap();
+        let home = temp.path().join("home");
+        fs::create_dir_all(&home).unwrap();
+        let mut command = install_command(&home);
+        command
+            .current_dir(temp.path())
+            .args([flag, "relative-root"]);
+
+        let output = command.output().expect("run loom install-assets");
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        assert!(
+            !output.status.success()
+                && stderr.contains(&format!("{flag} is the relative path relative-root"))
+                && stderr.contains("must be an absolute path"),
+            "{flag}: {stderr}"
+        );
+        assert_absent(&temp.path().join("relative-root"));
+        assert_absent(&home.join(".claude"));
+        assert_absent(&home.join(".codex"));
+    }
+}

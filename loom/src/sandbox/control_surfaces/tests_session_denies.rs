@@ -19,6 +19,7 @@ fn denies_for(
         executable_dirs,
         plugin_entries,
         writable_roots: &[],
+        agent_roots: &AgentRoots::default(),
     })
 }
 
@@ -130,6 +131,7 @@ fn an_executable_dir_that_is_an_ancestor_of_the_repo_root_is_not_denied() {
         executable_dirs: &[ancestor_of_repo.clone(), unrelated.clone()],
         plugin_entries: None,
         writable_roots: &[],
+        agent_roots: &AgentRoots::default(),
     })
     .unwrap();
 
@@ -161,6 +163,7 @@ fn an_executable_dir_equal_to_the_repo_root_or_an_ancestor_of_the_worktree_is_no
         executable_dirs: &[repo_root.clone(), ancestor_of_worktree.clone()],
         plugin_entries: None,
         writable_roots: &[],
+        agent_roots: &AgentRoots::default(),
     })
     .unwrap();
 
@@ -189,6 +192,7 @@ fn an_executable_dir_that_is_an_ancestor_of_the_scratch_root_is_not_denied() {
         executable_dirs: &[scratch_parent.clone(), unrelated.clone()],
         plugin_entries: None,
         writable_roots: &[scratch_root],
+        agent_roots: &AgentRoots::default(),
     })
     .unwrap();
 
@@ -218,6 +222,7 @@ fn an_executable_dir_that_is_an_ancestor_of_an_allow_write_grant_is_not_denied()
         executable_dirs: &[grant_parent.clone(), unrelated.clone()],
         plugin_entries: None,
         writable_roots: &[grant],
+        agent_roots: &AgentRoots::default(),
     })
     .unwrap();
 
@@ -254,6 +259,7 @@ fn the_writable_root_ancestor_check_compares_canonicalized_paths() {
         executable_dirs: std::slice::from_ref(&real_root),
         plugin_entries: None,
         writable_roots: &[scratch_root],
+        agent_roots: &AgentRoots::default(),
     })
     .unwrap();
 
@@ -273,6 +279,7 @@ fn a_path_no_rule_can_name_literally_refuses_the_spawn() {
         executable_dirs: &[],
         plugin_entries: None,
         writable_roots: &[],
+        agent_roots: &AgentRoots::default(),
     })
     .unwrap_err();
     assert!(format!("{error:#}").contains("repo[1]"), "{error:#}");
@@ -304,6 +311,7 @@ fn every_worktrees_config_worktree_is_denied_to_every_session_kind() {
             executable_dirs: &[],
             plugin_entries: None,
             writable_roots: &[],
+            agent_roots: &AgentRoots::default(),
         })
         .unwrap();
         for name in ["s1", "s2"] {
@@ -316,5 +324,42 @@ fn every_worktrees_config_worktree_is_denied_to_every_session_kind() {
             let rule = format!("Edit(/{path})");
             assert!(has(&denies.edit, &rule), "{worktree:?} {denies:?}");
         }
+    }
+}
+
+#[test]
+fn relocated_install_roots_add_absolute_denies_beside_the_home_ones() {
+    let roots = AgentRoots::relocated(
+        Path::new("/opt/agents/claude"),
+        Path::new("/opt/agents/codex"),
+        Some(Path::new("/home/op")),
+    );
+    let denies = session_denies(&DenyInputs {
+        repo_root: Path::new("/repo"),
+        state_root: Path::new(NESTED),
+        worktree: None,
+        executable_dirs: &[],
+        plugin_entries: None,
+        writable_roots: &[],
+        agent_roots: &roots,
+    })
+    .unwrap();
+    for (path, rule) in [
+        (
+            "/opt/agents/claude/skills",
+            "Edit(//opt/agents/claude/skills/**)",
+        ),
+        (
+            "/opt/agents/claude/hooks",
+            "Edit(//opt/agents/claude/hooks/**)",
+        ),
+        (
+            "/opt/agents/codex/config.toml",
+            "Edit(//opt/agents/codex/config.toml)",
+        ),
+        ("~/.claude/skills", "Edit(~/.claude/skills/**)"),
+    ] {
+        assert!(denies.deny_write.contains(&path.to_string()), "{path}");
+        assert!(denies.edit.contains(&rule.to_string()), "{rule}");
     }
 }

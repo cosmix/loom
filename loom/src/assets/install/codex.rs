@@ -1,9 +1,18 @@
 use anyhow::Result;
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use super::placement::{place_skill, remove_empty_catalog, skill_names};
 use crate::assets::Asset;
 use crate::skills::{is_core_skill, SkillLayout, CATALOG_DIR_NAME};
+
+/// Every skill directory [`install_skills`] may place in `<codex>/skills`,
+/// under either layout: each shared skill and each Codex-only one.
+pub(crate) fn codex_skill_dir_names() -> BTreeSet<&'static str> {
+    let mut names = skill_names(crate::assets::SKILLS);
+    names.extend(skill_names(crate::assets::CODEX_SKILLS));
+    names
+}
 
 pub(super) fn install_skills(
     codex_dir: &Path,

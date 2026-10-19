@@ -141,10 +141,10 @@ pub fn execute(
     println!("  {} Permissions configured", "✓".green().bold());
     install_codex_hooks_advisory();
 
-    if let Some(home) = dirs::home_dir() {
-        let claude_md = home.join(".claude/CLAUDE.md");
-        if !claude_md.exists() {
-            println!("  {} ~/.claude/CLAUDE.md not found", "!".yellow().bold());
+    if let Ok(paths) = crate::assets::install::default_paths() {
+        let rules = paths.claude_dir.join("CLAUDE.md");
+        if !rules.exists() {
+            println!("  {} {} not found", "!".yellow().bold(), rules.display());
             println!(
                 "    {}",
                 "Run install.sh or loom update to install loom rules.".dimmed()

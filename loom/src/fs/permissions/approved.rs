@@ -14,7 +14,7 @@ use std::os::unix::fs::PermissionsExt;
 use std::os::unix::io::AsRawFd;
 use std::path::{Path, PathBuf};
 
-use crate::sandbox::control_surfaces::ControlSurfaces;
+use crate::sandbox::control_surfaces::{AgentRoots, ControlSurfaces};
 
 /// Private, like every other state-root subdirectory.
 const DIR_MODE: u32 = 0o700;
@@ -96,22 +96,33 @@ pub(crate) fn record_fold_back(main_repo_path: &Path, rules: &[String]) -> usize
     let Some(work_dir) = super::state_root::resolve_state_root(main_repo_path) else {
         return 0;
     };
-    let scratch_root = crate::relay::scratch_root_from_env().ok();
-    let hooks_dirs: Vec<PathBuf> = crate::hooks::find_hooks_dir().into_iter().collect();
-    let home = dirs::home_dir();
-    let surfaces = ControlSurfaces::new(
-        &work_dir,
-        scratch_root.as_deref(),
-        &hooks_dirs,
-        home.as_deref(),
-    );
-    match record_approved(&work_dir, rules, &surfaces) {
+    let recorded = fold_back_surfaces(&work_dir)
+        .and_then(|surfaces| record_approved(&work_dir, rules, &surfaces));
+    match recorded {
         Ok(added) => added,
         Err(error) => {
-            tracing::warn!(%error, "failed to record approved permissions");
+            tracing::warn!(error = %format!("{error:#}"), "failed to record approved permissions");
             0
         }
     }
+}
+
+/// The control surfaces a fold-back filters against. Unresolvable install
+/// roots are an error: filtering without their relocated surfaces would
+/// record a rule granting one.
+fn fold_back_surfaces(work_dir: &Path) -> Result<ControlSurfaces> {
+    let scratch_root = crate::relay::scratch_root_from_env().ok();
+    let hooks_dirs: Vec<PathBuf> = crate::hooks::find_hooks_dir().into_iter().collect();
+    let home = dirs::home_dir();
+    let agent_roots = AgentRoots::resolve(home.as_deref())
+        .context("cannot resolve the install roots the approved list is filtered against")?;
+    Ok(ControlSurfaces::new(
+        work_dir,
+        scratch_root.as_deref(),
+        &hooks_dirs,
+        home.as_deref(),
+        &agent_roots,
+    ))
 }
 
 fn parse(content: &str) -> Result<Vec<String>> {
@@ -164,11 +175,35 @@ mod tests {
             Some(Path::new("/scratch-root")),
             &[PathBuf::from("/opt/hooks")],
             Some(Path::new("/home/op")),
+            &AgentRoots::default(),
         )
     }
 
     fn rules(items: &[&str]) -> Vec<String> {
         items.iter().map(|item| item.to_string()).collect()
+    }
+
+    /// A relative Codex root beside a valid relocated Claude root leaves the
+    /// fold-back without the relocated surfaces to filter against, so it
+    /// records nothing; once the root resolves, the same rule is recorded.
+    #[test]
+    #[serial_test::serial]
+    fn an_unresolvable_install_root_records_nothing() {
+        use crate::assets::install::test_env::{InstallRootsEnv, CLAUDE_OVERRIDE, CODEX_OVERRIDE};
+        let temp = TempDir::new().unwrap();
+        let repo = temp.path().join("repo");
+        std::fs::create_dir_all(repo.join(".loom/work")).unwrap();
+        let mut env = InstallRootsEnv::isolate(temp.path());
+        env.set(CLAUDE_OVERRIDE, temp.path().join("opt/claude"));
+        env.set(CODEX_OVERRIDE, "rel/codex");
+        let rule = rules(&["Bash(cargo test:*)"]);
+
+        assert_eq!(record_fold_back(&repo, &rule), 0);
+        let work_dir = repo.join(".loom/work");
+        assert!(!approved_path(&work_dir).exists());
+
+        env.set(CODEX_OVERRIDE, temp.path().join("opt/codex"));
+        assert_eq!(record_fold_back(&repo, &rule), 1);
     }
 
     #[test]

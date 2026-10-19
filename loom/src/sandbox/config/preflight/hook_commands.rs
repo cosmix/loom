@@ -105,7 +105,8 @@ fn refusal(hook: &str, target: &Path, repo: &Path, root: &Path) -> String {
         format!(
             "loom {hook}, inside the repository: stages write the repository by design, so \
              the hook would run session-written code unsandboxed. Register the installed copy \
-             under ~/.claude/hooks/loom instead."
+             under {} instead.",
+            crate::assets::install::claude_hooks_dir_text()
         )
     } else {
         format!(

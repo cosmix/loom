@@ -34,8 +34,7 @@ pub use drift::{
     settings_local_hook_drift, HookDrift,
 };
 pub use hooks::{
-    configure_loom_hooks, get_installed_hooks_dir, install_loom_hooks, install_loom_hooks_to,
-    loom_hooks_config,
+    configure_loom_hooks, install_loom_hooks, install_loom_hooks_to, loom_hooks_config,
 };
 pub use settings::{
     ensure_loom_hooks_local, ensure_loom_permissions, ensure_loom_permissions_quiet,

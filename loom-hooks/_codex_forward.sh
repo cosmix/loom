@@ -8,9 +8,43 @@ _LOOM_CODEX_FORWARD_LOADED=1
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
+# loom_forward_wrapper_path - Print the one absolute wrapper path this hook tree
+# authorizes: <own hooks dir>/codex-forward.sh. Matching is always exact.
+loom_forward_wrapper_path() {
+	local dir
+	dir=$(loom_own_hooks_dir) || return 1
+	printf '%s/codex-forward.sh' "$dir"
+}
+
+# loom_is_forward_wrapper <word> - Succeed when <word> is exactly the absolute
+# wrapper path, or - only when this hook tree IS $HOME/.claude/hooks/loom - the
+# ~/.claude spelling or the expanded $HOME path. The absolute spellings do not
+# depend on shell expansion, so any quoting is fine. The tilde spelling needs
+# <plain> = 1 (PARSED_WORD0_PLAIN): bash tilde-expands only a fully unquoted,
+# unescaped word, and '~/x', "~/x" or \~/x would run ./~/x from the worktree.
+# parse_shell_words rejects every unquoted or double-quoted `$`, so a literal
+# $HOME spelling never reaches here; only its expanded absolute path can.
+loom_is_forward_wrapper() {
+	local word="$1" plain="${2:-0}" wrapper home_hooks
+	wrapper=$(loom_forward_wrapper_path) || return 1
+	[[ "$word" == "$wrapper" ]] && return 0
+	[[ -n "${HOME:-}" ]] || return 1
+	home_hooks=$(cd "$HOME/.claude/hooks/loom" 2>/dev/null && pwd -P) || return 1
+	[[ "$home_hooks/codex-forward.sh" == "$wrapper" ]] || return 1
+	# The literal tilde is the spelling the agent types; the shell never expands it here.
+	# shellcheck disable=SC2088
+	[[ "$word" == "$HOME/.claude/hooks/loom/codex-forward.sh" ||
+		("$plain" == 1 && "$word" == "~/.claude/hooks/loom/codex-forward.sh") ]]
+}
+
+# parse_shell_words <command> - Fill PARSED_WORDS; PARSED_WORD0_PLAIN is 1 when
+# word 0 contained no quote or backslash (so bash would tilde-expand it).
 parse_shell_words() {
-	local input="$1" state=plain word="" char="" started=0 i
+	local input="$1" state=plain word="" char="" started=0 i w0_quoted=0
 	PARSED_WORDS=()
+	# Read by the sourcing hooks.
+	# shellcheck disable=SC2034
+	PARSED_WORD0_PLAIN=0
 
 	for ((i = 0; i < ${#input}; i++)); do
 		char=${input:i:1}
@@ -24,9 +58,15 @@ parse_shell_words() {
 					started=0
 				fi
 				;;
-			"'") state=single; started=1 ;;
-			'"') state=double; started=1 ;;
-			'\') state=escape; started=1 ;;
+			"'") state=single; started=1
+				[[ ${#PARSED_WORDS[@]} -eq 0 ]] && w0_quoted=1
+				;;
+			'"') state=double; started=1
+				[[ ${#PARSED_WORDS[@]} -eq 0 ]] && w0_quoted=1
+				;;
+			'\') state=escape; started=1
+				[[ ${#PARSED_WORDS[@]} -eq 0 ]] && w0_quoted=1
+				;;
 			$'\n' | $'\r' | $'\t' | $'\v' | $'\f' | ';' | '|' | '&' | '<' | '>' | '`' | '$' | '(' | ')' | '#' | '*' | '?' | '[' | ']' | '{' | '}') return 1 ;;
 			*) word+="$char"; started=1 ;;
 			esac
@@ -58,6 +98,9 @@ parse_shell_words() {
 
 	[[ "$state" == plain ]] || return 1
 	if [[ $started -eq 1 ]]; then PARSED_WORDS+=("$word"); fi
+	# shellcheck disable=SC2034
+	[[ $w0_quoted -eq 0 ]] && PARSED_WORD0_PLAIN=1
+	return 0
 }
 
 # Stage evidence.

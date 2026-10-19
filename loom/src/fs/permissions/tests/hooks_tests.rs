@@ -272,7 +272,6 @@ fn test_credential_guard_registered_for_every_file_tool() {
 }
 
 const FOREIGN_COMMAND: &str = "/home/user/.claude/hooks/my-custom-hook.sh";
-const STALE_LOOM_COMMAND: &str = "/home/user/.claude/hooks/loom/skill-trigger.sh";
 
 /// Shared fixture for the two tests below: seed `.claude/settings.local.json`
 /// with two duplicate pre-existing loom `UserPromptSubmit` hooks and one
@@ -286,6 +285,14 @@ const STALE_LOOM_COMMAND: &str = "/home/user/.claude/hooks/loom/skill-trigger.sh
 /// only reports which assertion tripped without saying which guarantee broke.
 fn merge_polluted_user_prompt_submit_hooks() -> Vec<String> {
     let temp_dir = TempDir::new().unwrap();
+    // A stale loom hook is recognised under the resolved home only.
+    let home = TempDir::new().unwrap();
+    let _env = crate::assets::install::test_env::InstallRootsEnv::isolate(home.path());
+    let stale = format!(
+        "{}/.claude/hooks/loom/skill-trigger.sh",
+        home.path().display()
+    );
+    let stale = stale.as_str();
     let repo_root = temp_dir.path();
     let hooks_dir = temp_dir.path().join("hooks");
     let claude_dir = repo_root.join(".claude");
@@ -294,8 +301,8 @@ fn merge_polluted_user_prompt_submit_hooks() -> Vec<String> {
     let existing = json!({
         "hooks": {
             "UserPromptSubmit": [
-                {"matcher": "*", "hooks": [{"type": "command", "command": STALE_LOOM_COMMAND}]},
-                {"matcher": "*", "hooks": [{"type": "command", "command": STALE_LOOM_COMMAND}]},
+                {"matcher": "*", "hooks": [{"type": "command", "command": stale}]},
+                {"matcher": "*", "hooks": [{"type": "command", "command": stale}]},
                 {"matcher": "*", "hooks": [{"type": "command", "command": FOREIGN_COMMAND}]},
             ]
         }
@@ -321,6 +328,7 @@ fn merge_polluted_user_prompt_submit_hooks() -> Vec<String> {
 /// Duplicate loom `UserPromptSubmit` entries must collapse to exactly one of
 /// each of loom's current hooks — not accumulate across `loom init` reruns.
 #[test]
+#[serial_test::serial]
 fn user_prompt_submit_merge_collapses_duplicates() {
     let commands = merge_polluted_user_prompt_submit_hooks();
 
@@ -345,6 +353,7 @@ fn user_prompt_submit_merge_collapses_duplicates() {
 /// A FOREIGN (non-loom-path) `UserPromptSubmit` entry must survive the
 /// remove-all-loom-then-reappend merge untouched.
 #[test]
+#[serial_test::serial]
 fn user_prompt_submit_merge_preserves_foreign_entry() {
     let commands = merge_polluted_user_prompt_submit_hooks();
 
