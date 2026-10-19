@@ -78,8 +78,8 @@ can refresh the heartbeat until it returns. A stale heartbeat is acted on: a sta
 is re-queued at 3x its budget (twice at most, then parked in `NeedsHumanReview`), and a stage whose
 first tool call is a long foreground run counts as never worked and is parked at one budget.
 Mitigation is doctrine (bound the task, set `subagent_timeout_secs`), not a monitor change; raising
-the global timeout was considered and rejected. The same topic covers the independent `loom status`
-"Stale" badge mismatch (two 300 s constants, one stage-aware, one not).
+the global timeout was considered and rejected. The `loom status` badge shows such a stage as `Busy`
+(open tool call) and measures silence against the same per-stage budget as the monitor.
 
 Full detail: [codex-heartbeat-starvation.md](concerns/codex-heartbeat-starvation.md).
 

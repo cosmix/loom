@@ -44,23 +44,6 @@ transcript, so that evidence is not a judgment call made from silence.
 monitor to genuinely dead sessions on every other stage in order to quiet one lane, and the
 per-stage override already covers the real case.
 
-## `loom status` "Stale" Badge Is Not Stage-Aware
+## `loom status` Badge Follows the Stage Budget
 
-Two independent 300s constants with different consumers:
-
-- **detection** — `orchestrator::monitor::heartbeat::DEFAULT_HUNG_TIMEOUT_SECS`
-  (`monitor/heartbeat.rs`), per-stage overridable via `subagent_timeout_secs`.
-- **display** — `models::constants::STALENESS_THRESHOLD_SECS` (`models/constants.rs`), used by
-  `commands/status/data/heartbeat_facts.rs` and `commands/status/render/activity.rs`. The display
-  threshold stays a fixed 300 s (`(stale)`).
-
-`subagent_timeout_secs` reroutes only the detection one. A stage with `subagent_timeout_secs: 900`
-stays healthy to the orchestrator until 900s but renders `Stale` / "session may be hung" in
-`loom status` from 301s — which can push an operator into intervening on a healthy stage.
-
-Flagged twice (implementation, then confirmed by integration-verify) and NOT fixed on purpose:
-`determine_activity_status(session, staleness_secs)` takes no `Stage`, so making it stage-aware
-means threading the effective timeout through that call site AND the render path — a status
-subsystem change with its own test surface, unrelated to the codex lane. Fix if picked up later:
-pass `Stage::effective_subagent_timeout_secs()` into `determine_activity_status` and the activity
-renderer instead of the constant.
+The `loom status` activity badge measures silence against the same per-stage budget the monitor uses (`Stage::effective_subagent_timeout_secs()`), and shows `Busy` instead of `Stale` while the main or a subagent transcript has an open tool call, so a long codex-forwarder Bash call reads `running Bash <dur>`. The monitor itself still acts on heartbeat silence alone. Rules: [status-data-model.md](../architecture/status-data-model.md#heartbeat-and-activity).
