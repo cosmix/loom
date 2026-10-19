@@ -220,13 +220,15 @@ mod generator_tests {
     #[test]
     #[serial]
     fn find_hooks_dir_follows_a_relocated_claude_root_past_a_stale_default() {
-        let home = TempDir::new().unwrap();
-        let stale = home.path().join(".claude/hooks/loom");
+        let temp = TempDir::new().unwrap();
+        // Canonical, because the resolver canonicalizes (macOS `/var`).
+        let home = temp.path().canonicalize().unwrap();
+        let stale = home.join(".claude/hooks/loom");
         std::fs::create_dir_all(&stale).unwrap();
-        let custom = home.path().join("agents/claude");
+        let custom = home.join("agents/claude");
         let installed = custom.join("hooks/loom");
 
-        let mut env = InstallRootsEnv::isolate(home.path());
+        let mut env = InstallRootsEnv::isolate(&home);
         env.set(CLAUDE_OVERRIDE, &custom);
         assert_eq!(
             generator::find_hooks_dir(),
@@ -242,11 +244,13 @@ mod generator_tests {
     #[test]
     #[serial]
     fn find_hooks_dir_defaults_to_the_home_claude_root() {
-        let home = TempDir::new().unwrap();
-        let default = home.path().join(".claude/hooks/loom");
+        let temp = TempDir::new().unwrap();
+        // Canonical, because the resolver canonicalizes (macOS `/var`).
+        let home = temp.path().canonicalize().unwrap();
+        let default = home.join(".claude/hooks/loom");
         std::fs::create_dir_all(&default).unwrap();
 
-        let _env = InstallRootsEnv::isolate(home.path());
+        let _env = InstallRootsEnv::isolate(&home);
         assert_eq!(generator::find_hooks_dir(), Some(default));
     }
 }

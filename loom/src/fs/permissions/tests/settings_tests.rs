@@ -225,11 +225,13 @@ fn home_forward_entry() -> String {
 fn codex_forward_allow_entry_names_the_relocated_hooks_dir() {
     use crate::assets::install::test_env::{InstallRootsEnv, CLAUDE_OVERRIDE};
     use crate::fs::permissions::settings::codex_forward_home_allow_entry;
-    let home = TempDir::new().unwrap();
-    let mut env = InstallRootsEnv::isolate(home.path());
+    let temp = TempDir::new().unwrap();
+    // Canonical, because the resolver canonicalizes (macOS `/var`).
+    let home = temp.path().canonicalize().unwrap();
+    let mut env = InstallRootsEnv::isolate(&home);
     let default = format!(
         "Bash({}/.claude/hooks/loom/codex-forward.sh:*)",
-        home.path().display()
+        home.display()
     );
     assert_eq!(codex_forward_home_allow_entry(), Some(default));
 
