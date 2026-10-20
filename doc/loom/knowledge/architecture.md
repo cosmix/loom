@@ -1,6 +1,6 @@
 # Architecture
 
-> Component relationships and data flow
+> Components, data flow, modules
 >
 > **Related files:** [patterns.md](patterns.md) for design patterns, [entry-points.md](entry-points.md) for code navigation, [conventions.md](conventions.md) for coding standards.
 

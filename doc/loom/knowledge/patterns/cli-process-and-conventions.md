@@ -145,7 +145,7 @@ All writes to `.loom/work/config.toml` go through `fs/work_dir.rs` using `toml_e
 **Tier 2 — Advisory (printed, never block):**
 
 - `validate_structural_preflight(&stages, repo_root)` — warnings for double-path prefixes, weak wiring patterns, missing build config files, before/after check imbalance
-- `check_knowledge_recommendations(&stages)` — warns if plan has no knowledge-bootstrap stage
+- `check_knowledge_recommendations(stages, repo_root)` (`plan/schema/validation/knowledge_recommendations.rs`) — warns if the plan has root stages and no knowledge-bootstrap stage, and only when the knowledge tree is missing or scaffold-only
 - `check_sandbox_recommendations(&metadata)` — rejects command-prefix exclusions and flags other unsafe sandbox expansion such as `allow_unsandboxed_escape`
 - All return `Vec<String>`; init prints them and continues
 

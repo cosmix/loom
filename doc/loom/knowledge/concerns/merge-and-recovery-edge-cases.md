@@ -145,3 +145,9 @@ Scope spans the daemon (retry policy, block record), the CLI (block and dispute 
 ## `list_loom_branches` May Return Linked-Worktree Branches With a `+` Prefix
 
 `list_loom_branches` (`loom/src/git/branch/operations.rs`) parses `git branch --list loom/*` and strips only the `*` current-branch marker. Git marks a branch checked out in another linked worktree with `+`, so a stage branch with a live worktree would come back as `+ loom/<id>`. Suspected from git's output format, not tested; the guard's stage-work listing avoids it with `for-each-ref --format=%(refname)` and strips `refs/heads/` itself. Fix direction: list with `for-each-ref` here too.
+
+## An Archive Failure at Plan Completion Is Visible Only in the Daemon Log
+
+`archive_run_state` returns an error when memory journals exist and cannot be archived, and `mark_plan_done_if_all_merged` (`fs/plan_lifecycle.rs`) propagates it, so the plan stays `IN_PROGRESS`. Under the daemon, `finish_orchestration` (`daemon/server/orchestrator.rs`) only prints `Warning: Failed to mark plan as done` and then writes the completion marker, which the status broadcaster turns into `OrchestrationComplete`. The run therefore reports complete while the plan is not done, and nothing retries it; only the daemon log shows the cause. In the foreground, `run()` ends once the graph is complete and the caller retries completion, which was read from the code, not executed. A status hint on the failed completion would close the gap.
+
+A retry after a successful archive whose DONE rename then failed writes another timestamped archive directory under `.loom/memory/archive/`. The clutter is harmless; an archive-once guard would remove it.

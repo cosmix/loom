@@ -195,6 +195,9 @@ side effects: no cache or index writes, no builds. Commands are lexed with `vali
 | knowledge check (`knowledge_check.rs`) | `loom knowledge check --strict` without `--baseline` while the tree has structural issues; uses `catalog::structural_issues(root)` (`build_curated(root, false)`, evidence collector off, read-only) | yes |
 | rust filters (`rust_filters.rs`, G5) | a `cargo test` module filter whose every `::` segment is not present in the base graph (node name or path component) and that no `files:` entry could create; no base layer gives one note | no |
 | contracts (`contracts.rs`) | unknown `runner`; undetectable runner (warning: completion falls back to exit code); v2 integration-verify without an acceptance command an adapter recognises as a full run | mixed |
+| bookends (`bookends.rs`) | the plan does not have exactly one knowledge-distill stage; that stage has dependents or some stage is not its transitive ancestor (so its memory is never distilled); a standard stage is not an ancestor of any integration-verify stage (its merged code is never verified) | yes |
+
+**Stage `model` is an allowlist.** `StageDefinition.model` (`plan/schema/types.rs`) is parsed by `deserialize_stage_model` (`plan/schema/types_v2.rs`), which accepts only the `crate::claude::CLAUDE_MODELS` aliases (`haiku`, `sonnet`, `opus`, `fable`), so a typo fails when the plan is parsed rather than at spawn.
 
 **The unknown-subcommand lint and a plan that adds the subcommand.** The CLI tree is the verifying binary's, so
 a stage that adds `loom stage contracts` and a later stage that runs it fail `plan verify` before the first

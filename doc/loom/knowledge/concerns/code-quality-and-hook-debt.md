@@ -172,3 +172,14 @@ any file at or near its ledger cap must be refactored in the same change that gr
 - **Two masked-exit shapes are still misjudged** (`criterion_hazards/masked_exit.rs:53`): `cargo build && (cargo test ||
   true)` is flagged although a failing build still fails it, and `cmd || true 2>/dev/null` is not flagged. Both are rare;
   they are recorded in [plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md).
+
+## Memory and Hook Follow-Ups After the Doctrine-Truth Plan
+
+Reviewer suggestions the plan left unimplemented:
+
+- `commit-guard.sh` (`remind_memory_usage`) and `learning-validator.sh` (`check_memory_usage`) can disagree for one stage: the first guards the stage id only against empty and `/` and counts a journal of more than 10 lines as entries, the second uses a character whitelist and looks for a `###` entry. Both are advisory and read-only, and the 10-line threshold equals at least one entry only while the journal header (`fs/memory/storage.rs::journal_header`) stays 8 or more lines. Align the guards if either becomes blocking.
+- The post-commit box (`remind_memory_capture` in `post-tool-use.sh`) opens with "Record what this work taught you" and only its last line tells a knowledge-distill stage otherwise. A stage-type check would make the box say one thing per stage, if the hook can obtain the stage type.
+- `fs/memory/parser.rs::parse_journal` keeps a `## Summary` branch that no code writes any more. The no-backward-compatibility rule argues for deleting it.
+- `orchestrator/signals/tests_doctrine_commands.rs` scans the signal templates and skills but not `README.md`, `agents/*.md` or `loom-hooks/_subagent-preamble.txt`, which also teach loom commands.
+- `fs/plan_lifecycle.rs::archive_run_state_before_done` repeats `archive_state_dir`'s two-line plan-id lookup because it already holds a `WorkDir` and an explicit main root; take a plan-id helper from `fs/memory/archive.rs` if a third caller appears. `archive_state_dir` has no direct test for its derived plan id and main root: the clean and init tests only check that an archive appears, so an archive named `default-<ts>` would pass them.
+- `v2_lints/bookends.rs` imports `StageDefinition` and `StageType` on separate lines from `crate::plan::schema`; one `use crate::plan::schema::{StageDefinition, StageType};` matches the test file.

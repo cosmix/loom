@@ -169,7 +169,7 @@ Implementation choices behind it:
 
 Known gaps (no artifact producer, dominance-only verdict, quota reset jitter) are listed in
 `concerns/token-accounting-and-proof-defects.md`; the paired canary protocol is plan 2 of
-`doc/plans/optim-token-metaplan.md`.
+the token-optimization metaplan (an untracked planning document).
 
 ## Criterion Cache Contract
 
@@ -287,7 +287,7 @@ audit. The cause is not established. In this repository's own runs no brief was 
 marker, while 541 transcripts in other projects carry one. Codex forwarders received a brief of
 about 10,000 characters in 94 of 187 transcripts and relayed it in 18; Codex units get their own
 brief from loom's Codex `UserPromptSubmit` hook (`fs/permissions/codex_hooks.rs:114-121`).
-`doc/plans/optim-token-metaplan.md` plan 1 owns all three.
+Plan 1 of the token-optimization metaplan (an untracked planning document) owns all three.
 
 A Rust hook writer must resolve the state root through `WorkDir` the way `context::delivery` does:
 inside a worktree `.loom/work` is a symlink, and loom's safe writers open roots `O_NOFOLLOW`, so a
@@ -324,5 +324,5 @@ The IV stable prefix (`INTEGRATION_VERIFY_OVERRIDE`, `orchestrator/signals/cache
   result, and parallel calls are written A, A, U, U.
 
 The saving at stake is small: identical same-agent rereads are 29 of 7,612 stage Read results,
-about 0.4% of Read characters. `doc/plans/optim-token-metaplan.md` plan 1 removes the receipt
+about 0.4% of Read characters. Plan 1 of the token-optimization metaplan (an untracked planning document) removes the receipt
 path, and plan 2 moves the forward receipt onto the payload.

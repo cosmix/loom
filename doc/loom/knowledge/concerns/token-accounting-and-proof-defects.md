@@ -169,7 +169,7 @@ The by-model legend aligns swatches, model names, shares and rates in shared gri
 ## Delivery-Proof and Quota-Continuity Defects
 
 Verified against the tree and this machine's transcripts; each blocks a token-saving claim that
-depends on it. The remediation sequence is `doc/plans/optim-token-metaplan.md`.
+depends on it. The remediation sequence is the token-optimization metaplan (an untracked planning document).
 
 - **Read receipts cannot form.** `result_body` (`loom/src/context/read_receipts/transcript.rs:142`)
   returns `None` when a tool_result has no `is_error` field, and successful `Read` results have

@@ -1,6 +1,6 @@
 # Concerns & Technical Debt
 
-> Technical debt and open issues
+> Tech debt and open issues
 > Every section here must be an OPEN concern. When one is resolved, DELETE it — do not strike the
 > heading and leave the body, which is how eleven dead entries accumulated before 2026-08-26. Git
 > history keeps the record and [mistakes.md](mistakes.md) keeps the lesson. If a resolved concern

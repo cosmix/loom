@@ -367,3 +367,11 @@ applies only below it. Never weaken the refusal to admit a symlinked root.
 
 **Fix:** `find_work_dir_quietly` canonicalizes the work dir;
 `render_tests.rs::work_dir_resolves_through_a_symlinked_state_root` pins it.
+
+## `loom subagents watch` Exited 3 for a Codex Job That Later Succeeded (2026-10-20)
+
+**What happened:** during the bookends units a watch exited 3 reporting the codex job process gone, and the job later completed `succeeded`.
+
+**Why:** exit 3 records a bound worker's failure from the evidence at that moment, and a codex job process that is gone is not final until the job record says so.
+
+**Prevention:** on exit 3 for a codex worker, read the job's own status once before re-delegating, and do not start a duplicate unit while the original may still land its files.

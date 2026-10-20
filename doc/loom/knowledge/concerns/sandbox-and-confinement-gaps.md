@@ -195,7 +195,7 @@ and the `config.worktree` of every worktree registered at spawn (`worktree_admin
 one file. `package_caches.rs` grants the operator's cargo, bun and npm caches, so a tampered
 `~/.cargo/registry/src` crate would run on the host at the next build. `denyRead` covers only five credential paths, so
 `~/.config/gh/hosts.yml`, `~/.netrc` and `~/.npmrc` are readable. The gap is open; metaplan section 7
-(`doc/plans/optim-token-metaplan.md`) plans the credential-file and sibling-administrative-directory denies. The
+(the untracked token-optimization metaplan) plans the credential-file and sibling-administrative-directory denies. The
 withdrawn PLAN-sandbox-escape-hardening (see above for recovery) holds the
 measurements (Claude Code 2.1.286 adds the git common dir itself; `allowWrite`/`denyWrite` globs are skipped on Linux; a deny
 on an absent path shows the host an empty placeholder file; a deny cannot be reopened by a nested allow) and a design, D1-D7.
@@ -336,3 +336,20 @@ With network denied:
 - XDG-based caches (Go's build cache, for example) are cold on every command.
 
 The Cargo home was the same defect and is now stable ([execution containment](../architecture/execution-containment.md#read-this-first-what-containment-means-in-loom)). These caches need their own design: a stable per-tree cache reset like the linked Cargo home, or the read-only host cache.
+
+## Tests and Criteria That Pass in a Session Fail Under the Confined Runner
+
+`loom stage complete` runs each acceptance criterion through `verify/criteria/confine_host.rs::wrap` (bwrap `--unshare-all`, only the tree and a scratch dir bound). When that runner is itself nested inside a Claude Code session sandbox, these tests and checks pass from the session shell and fail confined. None is reached by the plan that exposed them; each is an open defect in the test or the runner.
+
+| Symptom confined | Cause | Fix direction |
+| --- | --- | --- |
+| every `run_provision` errors `resolve provisioning DNS configuration: No such file or directory`; `plan_environment_contracts::provision_runs_in_its_working_dir` fails | `/etc/resolv.conf` is a symlink into the unbound `/run`, so `bind_resolver_target` cannot canonicalize it | skip the bind on `NotFound`, or bind with `--ro-bind-try` |
+| inner `cargo test` runs fail `execvp ~/.cargo/bin/cargo: No such file or directory` (`freeze_goes_on_when_the_contract_files_are_formatted`, `format_gate::a_formatted_file_gives_no_problem`, `actual_host_launcher_builds_cargo_offline_with_private_cache_state`) | a confined criterion that spawns confined commands inherits the outer `CARGO_HOME=<scratch>`; the inner wrap binds `<scratch>/bin` while `which_in` still resolves cargo to `~/.cargo/bin/cargo` | resolve cargo against the same home the wrap binds, or clear the inherited `CARGO_HOME` before the inner wrap |
+| `daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain` fails | the test process is pid 2 under bwrap as pid 1, and `is_at_or_below` (`peer_identity.rs`) never matches pid 1 by design | skip the test when `parent_pid(me) <= 1`; `process_tree_visible()` does not catch it |
+| `loom-hooks/tests/worktree-file-guard-scratchpad.sh` fails `mktemp -d` (EROFS) | it hardcodes `UID_ROOT=/tmp/claude-<uid>`, a read-only bwrap-created parent of the scratch bind | derive the root from `$TMPDIR` |
+| `loom-hooks/tests/bounded-stdin.py` feeds `codex-forward-guard.sh` `{}` and expects exit 0 | `{}` exits 0 only outside a stage: in a session the ancestor-environment probe finds stage identity, and confined `/proc/1/comm == bwrap` reads as "sandbox confinement" so the guard blocks "tool_name metadata is missing" | feed `{"tool_name":"Read","agent_type":"general-purpose"}`, which exits 0 in both contexts and keeps the held-open-stdin check |
+| `plan_environment_contracts::failed_provision_names_command_and_dir` passes without the command running | `contains("registry refused")` matches the command text embedded in the asserted prefix | assert on `reason[prefix.len()..]` |
+
+Environmental, not defects: `cargo audit` fails in a session because the user's global git `url.ssh://git@github.com/.insteadOf` rewrites the advisory-database fetch to SSH and the sandbox denies `~/.ssh`; a link step once aborted with `relocation R_X86_64_32 out of range` in `.debug_info` of one test binary and linked on an identical second run (treat as a linker flake and report both runs). Twenty-eight cargo tests also fail in-session on `/var/tmp` EROFS, Unix-socket bind and a `TMPDIR` containing `claude`, identically at the base commit.
+
+**What to do when a criterion cannot pass confined.** When several criteria cannot pass confined and none is the stage's doing, record the cause and block the stage once instead of filing one `dispute-criteria` per criterion; the runner or the test is fixed in a later plan.

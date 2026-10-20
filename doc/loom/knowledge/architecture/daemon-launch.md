@@ -1,6 +1,6 @@
 # Daemon Launch
 
-> Re-exec launch, readiness, socket path
+> Re-exec launch, readiness
 
 ## Launching the Daemon: Re-Exec and Readiness Pipe
 

@@ -168,10 +168,6 @@ See [Git and Build Workflow](conventions/git-and-build-workflow.md).
 
 See [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugin-scope.md).
 
-## Additive Schema Fields: Prefer `#[serde(default)]` Over Bespoke Migration (2026-08-07)
-
-See [Plan YAML and Hook Contracts](conventions/plan-yaml-and-hooks.md).
-
 ## Formatting and Test Invocation in a Shared Worktree
 
 See [Git and Build Workflow](conventions/git-and-build-workflow.md).
@@ -230,22 +226,15 @@ Controls, cues and status words in the dashboard use the body face in sentence c
 session) resolve model and effort per key: per-invocation value → project config → user config
 → built-in default. See [Model and Effort Config](conventions/model-and-effort-config.md).
 
-## Configuration Is the Only Authority for Configurable Behavior
-
-If the configuration chain (project `.loom/work/config.toml`, then `~/.loom/config.toml`, then the built-in default) can express a behavior, nothing else may change it: no marker file, cache, or state file under the work dir. When the configured behavior cannot run, fail with the cause instead of switching mode. Background: [Live State Pollution](mistakes/live-state-pollution.md).
-
-## README Covers Current Behavior Only (2026-09-15)
-
-The README documents what loom does now. A fixed bug gets no warning box, mechanism write-up, or workaround recipe there; that history belongs in `mistakes/` and the commit log. A cost or limit that was expected but never materialized is deleted, not hedged: the `claude -p` billing warning went on 2026-09-15 after the owner confirmed `-p` usage is not charged separately.
-
 ## Verification v2 Conventions
 
 Plan authoring for `version: 2`, shell-quoting adapter commands, relay `RequestKind` additions, wave briefs and the pre-commit gate: [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md).
 
-## Work That Needs a Loom Plan Goes Entirely Into the Plan
+## Configuration, Plan and Gate Rules
 
-When a set of related changes needs a loom plan for any part of it, the whole set goes into the plan. No part is done directly beforehand: work split across a direct session and a plan loses the plan's review gate, integrity checks and knowledge distillation for the direct part. Owner direction, 2026-09-30.
+Configuration is the only authority for configurable behavior (no marker or state file may override it), work that needs a loom plan goes entirely into the plan, completion and cleanup gates never hardcode one ecosystem's directories or tools, and the README states current behavior only
+→ [Config, Plan and Gate Rules](conventions/config-plan-and-gate-rules.md).
 
-## Language-Agnostic Gates
+## Additive Schema Fields: Prefer `#[serde(default)]` Over Bespoke Migration
 
-A completion, verification or cleanup rule never hardcodes one ecosystem's directory names or tools (`node_modules`, `__pycache__`, `.venv`, `target/`). Loom runs Java, Elixir, C++, Go and any other project the same way. Derive the rule from a project-owned, reviewable source (committed `.gitignore` files, the plan's declarations, the source graph, a base-commit comparison) or from loom's own state. A failure loom cannot attribute to the stage gets a deterministic self-check, then a dispute; a person is reached only through the dispute cap or a need only a person can meet.
+See [Plan YAML and Hook Contracts](conventions/plan-yaml-and-hooks.md).

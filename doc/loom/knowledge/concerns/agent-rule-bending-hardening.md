@@ -142,7 +142,7 @@ commit is doctrine plus a best-effort hook, not a boundary.
   `GIT_COMMON_DIR` stops it, `GIT_DIR` alone does not. Checkout-rooted sessions (knowledge stages,
   merge resolution, an adjudicator in `R`) can plant it.
 
-**Fix direction for the rest:** metaplan section 7 (`doc/plans/optim-token-metaplan.md`) plans
+**Fix direction for the rest:** metaplan section 7 (the untracked token-optimization metaplan) plans
 whole-directory denies on sibling worktrees' administrative directories. Not planned: narrowing
 the common-directory grant to what `git add` and a merge resolver need once a `refs/` deny is
 measured, pinning host-side git, verifying checkout-rooted sessions' effect on `R/.git`, and

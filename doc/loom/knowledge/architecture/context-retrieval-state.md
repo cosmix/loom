@@ -1,6 +1,6 @@
 # Context Retrieval State
 
-> Base/overlay layers, delivery records
+> Layers, delivery records
 
 ## Base vs Overlay Ownership
 
@@ -183,7 +183,9 @@ already quoted instead of repeating it.
   estimated-token counts, never a saving. `loom knowledge telemetry` reads them
   back per stage (`telemetry::summary::summarize`), and `archive_run_state` copies
   the telemetry directory under `.loom/memory/archive/` before a finished plan's
-  state directory is removed.
+  state directory is removed. A telemetry-only archive failure prints a warning; one
+  while memory journals exist is an error that stops plan completion, `loom clean`
+  and `loom init --clean` (see `architecture/memory-spool.md`).
 
 **Stub chunks are not candidates.** `rank/candidacy.rs::admits` drops a knowledge chunk
 with an empty heading and fewer than `STUB_MIN_LINES` non-blank body lines, unless the

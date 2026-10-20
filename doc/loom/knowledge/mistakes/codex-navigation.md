@@ -1,6 +1,6 @@
 # Codex Navigation
 
-> Slow reader fixed by forbidding reads
+> Reader fixed by banning reads
 
 ## We Answered a Slow Reader by Forbidding Reading (2026-08-29)
 

@@ -6,7 +6,7 @@ verified: 054528e508d51ede343e254590cdb73ae00f7df6
 ---
 # Context Retrieval
 
-> Retrieval: graphs, lanes, gating, packs
+> Graphs, lanes, gating, packs
 
 ## What This Subsystem Is
 

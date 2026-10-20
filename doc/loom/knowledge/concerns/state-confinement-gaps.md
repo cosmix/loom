@@ -1,6 +1,6 @@
 # State Confinement Gaps
 
-> Shared package caches session-writable
+> Shared package caches
 
 ## Open Gap (2026-09-13)
 
