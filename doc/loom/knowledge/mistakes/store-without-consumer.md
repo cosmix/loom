@@ -92,3 +92,13 @@ is the tell: closing a store-without-consumer gap does not retire every shape th
 gap created, so the trail table is the checklist you re-walk when the consumer
 finally lands. Delete what stayed dead; do not assume wiring the headline item
 wired the rest.
+
+## Read Receipts Could Not Form, and Fixtures Wrote the Pair Before Completion (2026-10-20)
+
+**What happened:** the Rust read-receipt path (`loom hook read-receipt`, the `read_receipts` context module and rule 2 of `_read_discipline.sh`) shipped with a green suite and never produced a receipt. No `receipt-*.json` was written in real sessions, so rule 2 never escalated a reread. Prepared intents were stranded in every session (18 in one session). PLAN-02-delivery-truth removed the whole path.
+
+**Why:** two independent causes, each enough alone. `result_body` required an `is_error` field that Claude Code omits from successful `Read` results (1,114 of 1,128 stage Read results lack it; the 14 present are `true`). And Claude Code writes a call's tool_result row only after that call's PostToolUse hooks finish (828 of 831 sampled hook rows precede their result row), while the receipt was finished at PostToolUse. The fixtures wrote the tool_use and tool_result pair before invoking the finishing mode, so both assumptions held in tests and neither held in a session. The finishing mode also ran only inside worktree sessions, so intents prepared elsewhere were never finished.
+
+**Prevention:** build a hook fixture from a recorded payload and recorded transcript rows, in the order the harness writes them, and count the artifact the feature exists to produce in a real session before building on it. The saving was never large either: identical same-agent rereads were 29 of 7,612 stage Read results, about 0.4% of Read characters. Measure the saving first.
+
+**Fix:** the path is removed; rereads are measured from transcripts by the `reads` section of `loom usage`. See [Read Advisories and Reread Measurement](../architecture/token-accounting-and-receipts.md#read-advisories-and-reread-measurement) for the revival design if that measurement shows same-agent rereads above 2% of Read characters. The forward receipt has the same ordering fault: [Open Runtime Uncertainties](../architecture/token-accounting-and-receipts.md#open-runtime-uncertainties).

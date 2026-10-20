@@ -229,7 +229,7 @@ A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoi
 
 ## Token Accounting and Receipts [DETAILED]
 
-`loom usage` provider ledger and `--compare`, the certified criterion cache, forward/read/worker-brief receipt lifecycles, exact waits and their hook phases: [architecture/token-accounting-and-receipts.md](architecture/token-accounting-and-receipts.md). Token usage sources (transcripts, rollouts, receipts, quota history): [architecture/token-flow-sources.md](architecture/token-flow-sources.md).
+`loom usage` provider ledger and `--compare`, the certified criterion cache, the forward-receipt and worker-brief lifecycles, the read advisories, exact waits and their hook phases: [architecture/token-accounting-and-receipts.md](architecture/token-accounting-and-receipts.md). Token usage sources (transcripts, rollouts, receipts, quota history): [architecture/token-flow-sources.md](architecture/token-flow-sources.md).
 
 ## Owned Subagent Waits
 

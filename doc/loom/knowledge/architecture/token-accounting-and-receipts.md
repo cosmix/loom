@@ -23,9 +23,6 @@ sources:
 - loom/src/commands/hook/forward_receipt.rs
 - loom/src/commands/subagents/forward_jobs_wait.rs
 - loom/src/commands/subagents/classify_forward.rs
-- loom/src/context/read_receipts.rs
-- loom/src/context/read_receipts/storage.rs
-- loom/src/context/read_receipts/transcript.rs
 - loom/src/commands/hook/worker_brief.rs
 - loom/src/commands/hook/pre_compact.rs
 - loom/src/plan/schema/structural_checks/worker_table.rs
@@ -36,12 +33,13 @@ sources:
 - loom-hooks/read-guard.sh
 - loom-hooks/_read_discipline.sh
 - loom-hooks/spawn-guard.sh
-- loom-hooks/subagent-start.sh
 - loom-hooks/pre-compact.sh
 - loom-hooks/poll-guard.sh
 - loom-hooks/codex-forward-guard.sh
 - agents/loom-codex-forwarder.md
-verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
+- loom-hooks/_read_ledger.sh
+- loom-hooks/knowledge-orient.sh
+verified: c8c167bb2dbba1c5ec65b7b9c61130873a249da2
 ---
 # Token Accounting And Receipts
 
@@ -51,29 +49,29 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 
 What PLAN-token-optimization-2026-09-13 built to measure consumption and to stop paying for
 repeated work: the provider ledger behind `loom usage`, the offline comparison, the certified
-criterion cache, and three receipt lifecycles (forward, read, worker brief). Every line cited here
+criterion cache, and two delivery lifecycles (forward receipt, worker brief). Every line cited here
 was re-read at the revision in this page's `verified` frontmatter. That is a source check, not a
-runtime proof: two read-receipt assumptions about Claude Code's transcript are still unmeasured
-(last section). The PATH `loom` can predate these commands; the clap definitions in source are
-authoritative.
+runtime proof: the forward-receipt ordering assumption about Claude Code's transcript is still
+unmeasured (last section). The PATH `loom` can predate these commands; the clap definitions in
+source are authoritative.
 
 ## Hook Phases
 
 | Event (hook) | Delegate | Effect |
 | --- | --- | --- |
-| PreToolUse:Read (`read-guard.sh`) | `read-receipt --check`, then `--prepare` | rule 2 asks for proven deliveries; then a pending intent is written |
-| PostToolUse (`post-tool-use.sh`) | `read-receipt --complete` | turns the intent into a receipt once the result is correlated |
+| PreToolUse:Read (`read-guard.sh`) | none (shell only) | rule 1 line-count advice and the sibling-read advisory from `_read_ledger.sh`; no Rust delegate runs |
 | PostToolUse (`post-tool-use.sh`) | `forward-receipt --transcript` | after a Bash call containing `codex-forward.sh task`; bound 5 s |
 | PostToolUse (`post-tool-use.sh`) | `context-ceilings` | ceiling pair, cached per session; bound 3 s |
-| PreToolUse:Task/Agent (`spawn-guard.sh`) | `worker-brief` | issues a nonce-bound brief after the untyped-spawn gate passes |
-| SubagentStart (`subagent-start.sh`) | `worker-brief --bind-agent` | binds the issued brief to the started child |
-| PreCompact (`pre-compact.sh`) | `pre-compact` | rotates the session's read-receipt epoch |
+| PreToolUse:Task/Agent (`spawn-guard.sh`) | `worker-brief` | files the delivery record and returns the brief after the untyped-spawn gate passes; Codex-bound types are skipped; bound 5 s |
+| PreCompact (`pre-compact.sh`) | `pre-compact` | stage sessions: deletes the session's prompt delivery record; bound 3 s |
+| SessionStart, source `compact` (`knowledge-orient.sh`) | `pre-compact` | ordinary sessions, which have no PreCompact hook: same reset; bound 3 s |
 
 Registrations: `loom/src/fs/permissions/hooks/config.rs` (global guards) and the session
 `HookEvent` set. Every delegate runs through `loom_run_bounded` and every failure is a silent
 no-op: `post-tool-use.sh` discards the delegates' stderr, so a delegate that never writes looks
 exactly like one that has nothing to write (see the forward-receipt tokenizer bug in
-[Tests That Cannot Fail](../mistakes/tests-that-cannot-fail.md)).
+[Tests That Cannot Fail](../mistakes/tests-that-cannot-fail.md) and the worker-brief bound in
+[Worker Briefs Vanished Under a Fixed Hook Bound](../mistakes/hooks-shell-portability.md#worker-briefs-vanished-under-a-fixed-hook-bound-2026-10-20)).
 
 ## Provider Ledger (`loom usage`)
 
@@ -233,61 +231,48 @@ a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
   Poll-guard counts repeated `loom subagents list` and names the exact wait when receipts exist
   (`poll-guard.sh`).
 
-## Read Receipt Lifecycle
-
-`loom/src/context/read_receipts.rs` proves that a `Read` result was delivered before a repeat read
-is warned or denied. The shell attempt TSV is no longer a repeat qualifier.
-
-1. **Prepare** (PreToolUse). An intent records the identity (session, agent, normalized path,
-   range), the source generation and a nonce.
-2. **Complete** (PostToolUse). The receipt exists only when the `Read` tool_use and its tool_result
-   sit in adjacent rows of the bounded transcript tail (`read_receipts/transcript.rs:33-37`), the
-   result carries `"is_error": false` (`result_body`, `transcript.rs:142`), and the source
-   generation is unchanged. It records a text or media class, the result hash and size, and up to
-   8 distinct proven tool-use ids (`MAX_PROVEN_TOOL_USES`). Completion runs only inside a stage:
-   `post-tool-use.sh` exits before it when `LOOM_STAGE_ID`, `LOOM_SESSION_ID` or `LOOM_WORK_DIR`
-   is unset, so intents prepared in ordinary sessions are never completed.
-3. **Check.** `--check` returns the number of proven deliveries only for a schema-2, text-class
-   receipt whose identity and generation are current; media, persisted or uncorrelatable results
-   never justify reuse. Rule 2 (`_read_discipline.sh`): a full read proven once warns; proven twice
-   or more it denies only when the repo sets `[hooks] deny_enabled = true` AND a live loom
-   main-agent ancestor exists (`_read_discipline.sh:230`), otherwise it warns. A range read proven
-   twice or more warns.
-4. **Reset.** The generation includes a per-session epoch that `loom hook pre-compact` rotates, so
-   compaction makes every earlier receipt ineligible; a failed rotation is a no-op.
-
-Storage is `$LOOM_WORK_DIR/hooks/reads/<session>/receipts` inside a stage, else a private
-`$TMPDIR/loom-reads/uid-<uid>/session-<sha256>/receipts` (created 0700 and validated). Bounds:
-64 KiB per receipt, 128 KiB per record, 64 directory entries. A payload without `cwd` parses to
-nothing, so every mode silently no-ops: fixtures must carry the common hook fields. Bash-side
-`cat`/`head`/`tail`/`sed` repeats never yield a receipt and no longer escalate under rule 2
-(accepted behavior change; `poll-guard.sh` calls the discipline check without a payload).
-
 ## Worker Brief Lifecycle
 
 `loom/src/commands/hook/worker_brief.rs` gives each typed Task/Agent worker a scoped retrieval
-brief. `spawn-guard.sh` runs `loom hook worker-brief` only after its untyped-spawn gate passes.
-The delegate builds a query from the stage, the worker description and paths the prompt declares
-(plus `StageQuery::dependency_paths`), calls `retrieve_for_stage` once per spawn, drops plan
-documents from the pack (required items removed that way are reported as unmet), and returns
-`{nonce, brief}`. `issue` (`worker_brief.rs:127-148`) returns nothing when the pack is empty with
-no declared skills, when the encoded envelope exceeds `max_payload_bytes` (16,384), or when
-`store_pending` fails. It stores a `<key>.pending` delivery record under a directory lock, keyed by
-`worker_recipient_id(stage, parent session, nonce)`. `spawn-guard.sh` accepts only an object with
-exactly `brief` and a 32-hex `nonce`, and appends the brief to every typed spawn, including
-`loom-codex-forwarder` spawns. On SubagentStart, `subagent-start.sh:132-137` passes the child
-transcript (`*/subagents/agent-<id>.jsonl`, regular file, not a symlink) to
-`worker-brief --bind-agent`, which looks for the nonce marker to rename the record to `<key>.json`.
+brief. `spawn-guard.sh` runs `loom hook worker-brief` only after its untyped-spawn gate passes, and
+skips it for Codex-bound types (`loom-codex-forwarder`, `codex:*`): Codex units read the brief from
+loom's Codex `UserPromptSubmit` hook (`fs/permissions/codex_hooks.rs:114-121`). The delegate builds
+a query from the stage, the worker description and paths the prompt declares (plus
+`StageQuery::dependency_paths`), caps the query text at `WORKER_QUERY_MAX_BYTES` (2,048, cut with
+`floor_char_boundary`), calls `retrieve_for_stage` once per spawn, drops plan documents from the
+pack (required items removed that way are reported as unmet), and returns `{nonce, brief}`.
+`issue` returns nothing when the pack is empty with no declared skills, when the encoded envelope
+exceeds `max_payload_bytes` (16,384), or when `store_record` fails. On success `store_record` files
+`<key>.json` at issue under a directory lock, keyed by
+`worker_recipient_id(stage, parent session, nonce)`; no `.pending` file and no bind step exist, and
+`subagent-start.sh` does not call the delegate. `spawn-guard.sh` bounds the delegate at 5 s, accepts
+only an object with exactly `brief` and a 32-hex `nonce`, and appends the brief to every non-Codex
+typed spawn. A delegate killed after `store_record` leaves a record for a brief it never carried;
+that is accepted because a delivery record is an optimisation.
 
-**The bind never succeeds in practice.** Across this machine's projects there are 201
-`worker-brief/*.pending` files and 0 bound records, and `load_deliveries` reads only `*.json`
-(`context/delivery.rs:273-277`), so worker deliveries never reach `dependency_chunk_ids` or an
-audit. The cause is not established. In this repository's own runs no brief was issued at all:
-0 of 44 subagents in PLAN-token-flow and guard-integration carry a `loom-worker-brief nonce=`
-marker, while 541 transcripts in other projects carry one. Codex forwarders received a brief of
-about 10,000 characters in 94 of 187 transcripts and relayed it in 18; Codex units get their own
-brief from loom's Codex `UserPromptSubmit` hook (`fs/permissions/codex_hooks.rs:114-121`).
-Plan 1 of the token-optimization metaplan (an untracked planning document) owns all three.
+Worker records are loaded by `load_deliveries` (`context/delivery.rs:248-262`), so a dependent
+stage's `dependency_chunk_ids` sees what its dependencies' workers were given. They suppress
+nothing for the worker's own prompt hook: `delivered_to_session` matches only the session's prompt
+recipient and the `LOOM_SESSION_ID` spawn record (`context/delivery/session.rs:104-126`), so a
+suppression consumer for them is future work (see
+[concerns](../concerns/token-accounting-and-proof-defects.md)).
+
+**Why briefs were missing, and the fix.** The delegate took 18.3 s on the recorded token-core spawn
+(pre-plan binary) and `spawn-guard.sh` killed it at its 3 s bound, so the spawn ran with no brief
+and no record. The worker query carried the whole stage description, and retrieval time grows with
+query length:
+
+| Query | Retrieval time |
+| --- | --- |
+| 2,048 bytes | 1.66 s |
+| about 15.6 KB | 13 s |
+| 12.1 KB envelope replay (planning) | 7.8-9.6 s |
+
+After the cap and the 5 s bound the replay takes 2.06 s on the release binary. A debug build runs
+retrieval about 4x slower (11.9 s), so time hook delegates with a release build; see
+[Worker Briefs Vanished Under a Fixed Hook Bound](../mistakes/hooks-shell-portability.md#worker-briefs-vanished-under-a-fixed-hook-bound-2026-10-20). Evidence
+from before the fix: 0 of 44 subagents in this repository's PLAN-token-flow and guard-integration
+runs carried a `loom-worker-brief nonce=` marker, against 541 transcripts in other projects.
 
 A Rust hook writer must resolve the state root through `WorkDir` the way `context::delivery` does:
 inside a worktree `.loom/work` is a symlink, and loom's safe writers open roots `O_NOFOLLOW`, so a
@@ -305,24 +290,34 @@ The IV stable prefix (`INTEGRATION_VERIFY_OVERRIDE`, `orchestrator/signals/cache
 
 ## Open Runtime Uncertainties
 
-- **Receipts cannot form in real sessions, for two independent reasons.** `result_body`
-  (`read_receipts/transcript.rs:142`) requires an `is_error` field, but Claude Code writes
-  successful `Read` results without one (1,114 of 1,128 stage Read results lack it; the 14 present
-  are `true`). And Claude Code writes a call's tool_result row only after that call's PostToolUse
-  hooks finish: in 828 of 831 sampled hook rows across all projects (99 of 99 in this repository's
-  stage transcripts) the PostToolUse hook row precedes its result row, so `--complete` at
-  `post-tool-use.sh:257` never sees the result it correlates. The fixtures write the use/result
-  pair before calling complete (`read_receipts/tests.rs:78,143`), so the suite passes. No
-  `receipt-*.json` is written and rule-2 repeat escalation never fires.
-- **Forward receipts never form, for the same ordering.** `loom hook forward-receipt` reads the
-  forwarder transcript at PostToolUse and skips a call with no result
-  (`commands/hook/forward_receipt.rs:62-70`); a forwarder makes one wrapper call, so no
-  `forward-receipts.jsonl` exists and `forward_join.rs` joins nothing. The PostToolUse payload's
-  own `tool_response` carries the result (`loom-hooks/codex-forward-result.sh:32-40` reads it).
-- Receipts correlate only ADJACENT tool_use and tool_result rows (`transcript.rs:33-37`). Real
-  transcripts interleave PreToolUse `attachment` rows and metadata rows between a use and its
-  result, and parallel calls are written A, A, U, U.
+- **Forward receipts never form, for a transcript ordering.** Claude Code writes a call's
+  tool_result row only after that call's PostToolUse hooks finish: in 828 of 831 sampled hook rows
+  across all projects (99 of 99 in this repository's stage transcripts) the PostToolUse hook row
+  precedes its result row. `loom hook forward-receipt` reads the forwarder transcript at
+  PostToolUse and skips a call with no result (`commands/hook/forward_receipt.rs:62-70`); a
+  forwarder makes one wrapper call, so no `forward-receipts.jsonl` exists and `forward_join.rs`
+  joins nothing. The PostToolUse payload's own `tool_response` carries the result
+  (`loom-hooks/codex-forward-result.sh:32-40` reads it). Plan 2 of the token-optimization metaplan
+  moves the forward receipt onto the payload.
 
-The saving at stake is small: identical same-agent rereads are 29 of 7,612 stage Read results,
-about 0.4% of Read characters. Plan 1 of the token-optimization metaplan (an untracked planning document) removes the receipt
-path, and plan 2 moves the forward receipt onto the payload.
+## Read Advisories and Reread Measurement
+
+No Rust delegate, intent or receipt store backs a read, and no rule judges a same-agent repeat.
+The measured saving at stake is small: identical same-agent rereads are 29 of 7,612 stage Read
+results, about 0.4% of Read characters. Why the earlier receipt path never worked:
+[Read Receipts Could Not Form](../mistakes/store-without-consumer.md#read-receipts-could-not-form-and-fixtures-wrote-the-pair-before-completion-2026-10-20).
+
+`loom_read_discipline_check` (`loom-hooks/_read_discipline.sh`) keeps rules 0 and 0b (exemptions for
+a skill's `SKILL.md` and `INDEX.md`), 1 (a whole read over `READ_GUARD_LINE_LIMIT` lines is
+redirected to `loom map --outline`), 3 (an unscoped tier-1 knowledge read) and 4 (a whole-file read
+a sibling agent of the session already requested of the unchanged file is advised once per agent
+and path). The number 2 is deliberately unused. Rule 4 reads the sibling ledger written by
+`_read_ledger.sh` (`_loom_read_sibling_request`); the advisory says the file was requested whole by
+N agents, an attempt and not proof of delivery. The ledger is
+`$LOOM_WORK_DIR/hooks/reads/<session>/<agent>.tsv` inside a stage and a private
+`$TMPDIR/loom-reads/` directory outside one.
+
+Rereads are measured after the fact: the `reads` section of `loom usage`
+(`loom/src/commands/usage/sections/reads.rs`) counts native and shell reads from transcripts. If
+that measurement shows same-agent rereads above 2% of Read characters, the revival design is
+completion at the agent's next Read, from a transcript offset recorded at prepare time.

@@ -147,13 +147,6 @@ dispute covers loom's own gates, a deliberate block is never retried; proposed: 
 
 → [Merge and Recovery Edge Cases](concerns/merge-and-recovery-edge-cases.md)
 
-## Token Accounting Follow-Ups (2026-09-13)
-
-Open follow-ups from PLAN-token-optimization-2026-09-13: git and bounded-runner hygiene,
-read-receipt runtime uncertainties, the IV fence wording, and two fail-open guard choices.
-
-→ [Token Accounting Follow-Ups](concerns/token-accounting-and-proof-defects.md). Token flow limits, hardening and structure: [Token Flow Gaps](concerns/token-accounting-and-proof-defects.md#token-flow-gaps).
-
 ## State Confinement Gaps (2026-09-13) [DETAILED]
 
 Shared package-manager caches stay session-writable, so a stage can edit an extracted crate's
@@ -246,3 +239,11 @@ tick cost and `MERGE_HEAD` ancestor gap, the park-time login probe on the tick t
 recurred and want a check (the signal dropping `exit_code`, the watch exiting 6 after a hand-back).
 
 → [Platform and Commit Gaps](concerns/platform-and-commit-gaps.md)
+
+## Token Accounting Follow-Ups
+
+Open follow-ups from PLAN-token-optimization-2026-09-13 and PLAN-02-delivery-truth: git and bounded-runner hygiene,
+the forward-receipt runtime uncertainty, the IV fence wording, two fail-open guard choices, and the
+reviewer suggestions nobody implemented in the delivery-truth hooks.
+
+→ [Token Accounting Follow-Ups](concerns/token-accounting-and-proof-defects.md). Token flow limits, hardening and structure: [Token Flow Gaps](concerns/token-accounting-and-proof-defects.md#token-flow-gaps).

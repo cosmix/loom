@@ -141,10 +141,12 @@ differ where it matters. The rules, in `loom-hooks/_lifecycle.sh` unless noted:
   accepting fractional seconds and a `Z` or `+hh:mm` zone) and falls back to GNU `date -u -d`. On macOS
   `date -u -d` is the set-kernel-DST option and can change the DST flag when run as root, while GNU
   date rejects `-j`, so the BSD attempt fails harmlessly there.
-- **`loom_run_bounded <secs> <cmd...>`** (`_read_ledger.sh`) bounds a command with `gtimeout`, else
+- **`loom_run_bounded <secs> <cmd...>`** (`_bounded.sh`, sourced by `_read_ledger.sh`) bounds a command with `gtimeout`, else
   `timeout`, else a pure-bash watchdog for stock macOS: the command runs in the background with `<&0`,
-  a `( _loom_watchdog ... ) &` subshell TERMs it after `<secs>` and KILLs it a second later, and the
-  caller retires the watchdog. The fallback signals only the direct child (not its process group) and
+  `_loom_watchdog` runs as a process substitution reading a pipe on fd 9, TERMs the command after
+  `<secs>` (`read -t`) and KILLs it a second later, and the caller writes one line to that pipe to
+  retire it and never signals it, because a signal reaching a freshly forked bash runs the caller's
+  EXIT trap there (see [Hooks Shell Portability](../mistakes/hooks-shell-portability.md)). The fallback signals only the direct child (not its process group) and
   returns 143/137 where `timeout` returns 124. `_read_discipline.sh` bounds `loom map --outline` with
   it; hooks that only read stdin keep the `gtimeout` → `timeout` → `cat` cascade.
 - **Bash 3.2.** Guard every value expansion of a possibly empty array with `${arr[@]+"${arr[@]}"}`
@@ -211,17 +213,16 @@ Codex registers `user-prompt-context.sh` as well, through
 
 **The delegates** (`commands/hook/`, filesystem-only — no subcommand may make a
 model or network call; `loom hook --help` lists only `user-prompt`, `reconcile-graph` and
-`pre-compact`, the rest are hidden): `user-prompt`, `pre-compact` (rotates the compacting
-session's read-receipt epoch and deletes only its own prompt delivery record),
+`pre-compact`, the rest are hidden): `user-prompt`, `pre-compact` (deletes only the compacting
+session's prompt delivery record; `pre-compact.sh` calls it in worktree sessions and
+`knowledge-orient.sh` on SessionStart `compact` in ordinary ones),
 `reconcile-graph` (the detached, debounced source-graph self-heal), `context-ceilings` (the
 `<main>:<subagent>` pair `post-tool-use.sh` caches), `project-types`, `relay` (behind
 `loom-relay.sh`), `review-harvest` (`subagent-stop.sh`), and the receipt and brief delegates:
-`read-receipt` (`--prepare` and `--check` from `read-guard.sh` through `_read_ledger.sh`,
-`--complete` from `post-tool-use.sh`), `forward-receipt --transcript` (`post-tool-use.sh`, after
-a forwarding Bash call) and `worker-brief` (`spawn-guard.sh`; `--bind-agent` from
-`subagent-start.sh`). The shell runs the hook-called delegates through `loom_run_bounded`
-(`_bounded.sh`): 2 s for `read-receipt`, 3 s for `context-ceilings` and both `worker-brief`
-calls, 5 s for `forward-receipt`, 10 s for `review-harvest`; every failure is a silent no-op.
+`forward-receipt --transcript` (`post-tool-use.sh`, after a forwarding Bash call) and
+`worker-brief` (`spawn-guard.sh`, skipped for Codex-bound spawn types). The shell runs the hook-called delegates through `loom_run_bounded`
+(`_bounded.sh`): 3 s for `context-ceilings` and `pre-compact`, 5 s for `worker-brief` and
+`forward-receipt`, 10 s for `review-harvest`; every failure is a silent no-op.
 Phases and state files: [Token Accounting and Receipts](token-accounting-and-receipts.md).
 
 **`HookTarget`** (`commands/hook/target.rs`) is the one environment-to-scope

@@ -37,9 +37,7 @@ because of a hook interaction that would otherwise make most of the catalog unus
 read of a file over `READ_GUARD_LINE_LIMIT` (400 lines): it redirects the read to
 `loom map --outline`, as a deny when the source graph covers the file and a warning otherwise.
 A deny blocks only when `[hooks] deny_enabled = true` and a live loom main agent is an ancestor
-of the hook (`loom_hook_deny_or_warn`); otherwise it is queued as a warning. Rule 2 advises on a
-repeated read only after a Rust read receipt proves the earlier result, and receipts do not form
-([Delivery-Proof and Quota-Continuity Defects](../concerns/token-accounting-and-proof-defects.md#delivery-proof-and-quota-continuity-defects)).
+of the hook (`loom_hook_deny_or_warn`); otherwise it is queued as a warning.
 27 catalogued skills exceed 400 lines (`loom-react` 1618, `loom-istio` 1203), and the loader
 instructs the model to read a catalogued `SKILL.md` IN FULL, so rule 1 would argue the model into
 a partial and useless load. Rule 0 therefore exempts `SKILL.md` under both skill roots

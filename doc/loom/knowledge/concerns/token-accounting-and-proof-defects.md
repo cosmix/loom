@@ -59,9 +59,6 @@ Found during the plan's stages and integration-verify, verified against the tree
   the forwarder transcript is missing or unreadable (the harness may not have written it yet when
   PreToolUse fires); worker-bound brief records are never reset by compaction. Both stay until
   runtime evidence justifies failing closed.
-- **Read receipts do not form** (missing `is_error` on successful results); the adjacency and
-  PostToolUse-ordering assumptions stay unmeasured until they do. See "Delivery-Proof and
-  Quota-Continuity Defects" below and the last section of the architecture page.
 - **Operator cleanup.** Knowledge-bootstrap left stray fixture state and 11 fake forward records in
   the live `.loom/work` (recorded in [Verification Harness](../mistakes/verification-harness.md));
   agents never edit `.loom/work` directly.
@@ -171,15 +168,6 @@ The by-model legend aligns swatches, model names, shares and rates in shared gri
 Verified against the tree and this machine's transcripts; each blocks a token-saving claim that
 depends on it. The remediation sequence is the token-optimization metaplan (an untracked planning document).
 
-- **Read receipts cannot form.** `result_body` (`loom/src/context/read_receipts/transcript.rs:142`)
-  returns `None` when a tool_result has no `is_error` field, and successful `Read` results have
-  none. Independently, Claude Code writes a call's tool_result row only after its PostToolUse hooks
-  finish (828 of 831 sampled hook rows precede their result row), so completion at
-  `loom-hooks/post-tool-use.sh:257` never sees the result. Fixtures mask both by writing the pair
-  before calling complete. Identical same-agent rereads are about 0.4% of Read characters.
-- **Receipt intents are stranded.** The Read PreToolUse path prepares intents in every session,
-  and `post-tool-use.sh` exits before `read-receipt --complete` when the stage environment is
-  absent; stage sessions strand them too (18 in one session).
 - **Forward receipts never form.** Two causes, each enough alone. `loom hook forward-receipt`
   reads the transcript at PostToolUse, before the call's result row exists, and skips calls with no
   result (`loom/src/commands/hook/forward_receipt.rs`, `process`). Its argv parser
@@ -187,23 +175,62 @@ depends on it. The remediation sequence is the token-optimization metaplan (an u
   wrapper argv, while recorded forwards carry `--unit-id` (10 words) and `codex-forward-guard.sh`
   (`emit_authorized_input`) rewrites the executed command to 12 words with `--invocation-id`. No
   `forward-receipts.jsonl` exists, and Codex rows have no thread linkage.
-- **Worker-brief records never bind.** 201 `worker-brief/*.pending` files and 0 bound `*.json`
-  records exist across this machine's projects; the record loader reads only `*.json`
-  (`loom/src/context/delivery.rs:273-277`). This repository's own stages issued no brief at all
-  (0 of 44 subagents in two plans carry the marker); the cause is not established.
-- **Compaction keeps spawn-brief credit.** `loom hook pre-compact` rotates the Read epoch and
-  deletes only the prompt recipient's delivery record (`loom/src/commands/hook/pre_compact.rs:61-96`).
+- **Worker-brief records credit nobody.** `store_record` files `<key>.json` at issue, and a
+  dependent stage's `dependency_chunk_ids` reads them, but `delivered_to_session`
+  (`loom/src/context/delivery/session.rs:104-126`) matches only the session's prompt recipient and
+  its `LOOM_SESSION_ID` spawn record, so a worker's own prompt hook never skips what its brief
+  carried. A suppression consumer, or removing the nonce and marker whose only remaining consumer
+  is `spawn-guard.sh` validation, is deferred to plan 4 of the token-optimization metaplan.
+- **Compaction keeps spawn-brief credit (accepted limit).** `loom hook pre-compact` deletes only
+  the prompt recipient's delivery record (`loom/src/commands/hook/pre_compact.rs`).
   `already_delivered` (`loom/src/commands/hook/user_prompt.rs:239-248`) still passes the
-  `LOOM_SESSION_ID` spawn recipient, and `delivered_to_session` (`loom/src/context/delivery/session.rs:116-123`)
-  credits its records while the context epoch is unchanged. The case has not occurred: 0 of 282
-  stage transcripts on this machine compacted, and a compacted stage session re-reads its signal
+  `LOOM_SESSION_ID` spawn recipient, and `delivered_to_session` credits its records while the
+  context epoch is unchanged. The case has not occurred: 0 of 282 stage transcripts on this
+  machine compacted, and a compacted stage session re-reads its signal
   (`loom-hooks/session-start.sh:147-155`).
-- **PreCompact is not registered globally.** `loom/src/fs/permissions/hooks/config.rs` `build()`
-  registers no PreCompact hook; only stage sessions get one, so ordinary sessions, which do compact
-  (11 transcripts on this machine), keep their prompt delivery record after compaction.
 - **Quota continuity reads jitter as a reset.** `continuity_from_windows`
   (`loom/src/quota/history.rs:211-212`) marks any `resets_at` change as a reset, and
   `reset_incomparable` (`loom/src/commands/usage/comparison_quota.rs:121-128`) compares `resets_at`
   exactly across arms. The Claude five-hour and seven-day `resets_at` values alternate by one
   second between polls. Quota is also reported in whole percents, so a subscription verdict cannot
   resolve a plausible saving even once the jitter is tolerated.
+
+## Unimplemented Reviewer Suggestions From the Delivery-Truth Plan
+
+Reviewers of PLAN-02-delivery-truth raised these; the plan left them open. Implemented ones (the
+`_loom_read_sibling_request` rename, the `loom_run_bounded 3` bound on `pre-compact.sh`, the README
+sibling-advisory wording, the `_bounded.sh` comment fix) are not listed.
+
+**Worker brief hook** (`loom/src/commands/hook/worker_brief.rs`):
+
+- `emit_normal` (`:84`) is the only mode left after the bind path was deleted; inline it into `worker_brief`.
+- `store_record` (`:300`) returns `Result<Option<()>>` with a `bound.exists()` branch that a fresh v4 nonce never reaches, forcing `.ok()??` in `issue`; return `Result<()>`.
+- `HookPayload.cwd` and `transcript_path` are required by `valid_payload` but never read, so a payload lacking either silently gets no brief; drop them from the struct and the check.
+- `declared_paths` (`:241`) runs on the full prompt (up to 1 MiB) before the 2,048-byte cap, with a quadratic `paths.contains` and no cap on path count. The 5 s bound makes it fail open, so it is not unsafe; cap the path count.
+- The doc comment on `WORKER_QUERY_MAX_BYTES` (`:107`) says "the spawn guard's former three-second bound", a history note in a current-state comment; state the present 5 s bound.
+- `context/delivery/session.rs:59` calls the nonce "the only public join key", but nothing joins on it now; the marker and nonce have only `spawn-guard.sh` validation as a consumer (frozen contracts pin them). Revisit with plan 4.
+
+**Hook scripts**:
+
+- `spawn-guard.sh` writes the Codex-bound predicate twice (`case` at `:278`, `[[ ]]` at `:300`), and it is broader (`codex:*`) than `loom_codex_forwarder_verdict` in `_common.sh` (`loom-codex-forwarder | codex:codex-rescue`). Share one `CODEX_BOUND` flag and decide which names are intended; the file is 398 lines against a 400-line cap.
+- `_read_discipline.sh:275` keeps rule numbers 0, 0b, 1, 3, 4 after rule 2 was removed; the gap is deliberate and `_read_discipline.sh` carries no note saying so.
+- `post-tool-use.sh:23` sources `_read_ledger.sh`, which `_read_discipline.sh:26` already sources; `read-guard.sh:29` re-sources `_bounded.sh` likewise.
+- `_bounded.sh:21`: the final blocking `read` depends on the write end of the pipe being closed in the watchdog. That holds today; add a comment if the structure changes.
+
+**Tests**:
+
+- `loom-hooks/tests/read-guard-sibling-receipts.sh` and its `run-all.sh:142` registration keep "receipts" in the name for a ledger of requested reads; rename to a "requests" name.
+- `loom/tests/integration/hooks_read_guard_repeat.rs` no longer tests a repeat rule (rule-one, ledger-row and tier-one cases); rename the module.
+- `hooks_read_guard.rs:329` `repeated_binary_reads_stay_silent` cannot fail against current code (50 lines is below the 400- and 200-line thresholds); remove it or give it a distinguishing assertion. `run_read_hook` (`:196`) still sends a `cwd` field only the receipt path needed.
+- `loom-hooks/tests/post-tool-use-tool-event.sh:47` keeps an `INELIGIBLE` PNG invocation left from receipt eligibility that exercises nothing distinct; its absence assertion at `:50` uses `rg -q`, which on a host without ripgrep is silently false, so it cannot fail. Use `grep -q`.
+- `loom/tests/read_intent_contracts.rs:74` runs the real binary, which no longer has `read-receipt`, so a shell-only re-added call writes nothing and passes. Use a stub `LOOM_BIN` that logs argv and assert the ledger file exists as a positive control.
+- `loom-hooks/tests/knowledge-orient-silent.sh:61` case (c) proves silence only with a nonexistent `LOOM_BIN`; no bash test pins the `pre-compact` invocation or that a `resume` source does not reset. The Rust contract covers the compact path end to end.
+- No test drives `pre-compact.sh`'s delegate call (`:40`), so removing the bound or the `|| true` passes every suite; a stub `loom` that sleeps past 3 s would pin it, as `loom-run-bounded.sh` does for the helper.
+- `loom-hooks/tests/loom-run-bounded.sh:68`: add a test that a caller-held fd 9 is preserved across `loom_run_bounded`.
+- `loom/src/commands/hook/tests_cli_surface.rs:1` placement is acceptable; `loom/src/cli/tests_web_host.rs` is the precedent if it moves.
+
+## Hook Hardening Proposals From the Delivery-Truth Plan
+
+- **Relay-producing commands piped through a filter (recurrence).** `loom stage commit | rg -o ...` dropped the `LOOM_RELAY_V1` line, so the relay hook never saw the ticket and `loom request status` reported it not relayed. The same shape is in [Memory Relay Drain Gap](../mistakes/memory-relay-drain-gap.md). Proposal: a PreToolUse warning in `poll-guard.sh` when a Bash command pipes `loom stage commit` or `loom memory` into anything but `tail -3`; the instruction alone has not prevented the recurrence.
+- **BSD hook suite sits at the criterion timeout.** `LOOM_HOOK_TEST_BSD=1 run-all.sh` takes about 5.5 minutes standalone against the 300 s criterion limit, with per-test timings unchanged by the watchdog fix (171.9 s against 170.8 s). Proposal: split the suite across criteria or raise that criterion's timeout.
+- **`codex-forward-guard.sh` classifies test runs by ancestor environment.** The `bounded-stdin.py` case exits 2 instead of 0 when an ancestor process carries stage evidence, which fails in a stage's own gate; see [Hook Tests Inherit the Live Session's Environment](../mistakes/hooks-shell-portability.md).

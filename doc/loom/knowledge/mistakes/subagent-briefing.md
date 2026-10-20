@@ -366,3 +366,11 @@ reports. Read SKIP lines before calling a test green. The cap now sits at `maxTu
 **Prevention:** any brief or commit touching `web/src` ends with `cd web && bun run build` and a `git status --short web/dist` check; a changed bundle goes in its own `chore(web): rebuild the dashboard bundle ...` commit.
 
 **Fix:** commit 283c1615.
+
+## A Scripted First-Match Edit Truncated a Test File, and the Brief's Line Count Was Wrong (2026-10-20)
+
+**What happened:** a worker truncated `tests/integration/hooks_spawn_guard_gate.rs` with a Python first-match replacement and recovered the file with a read-only `git show`. The same brief said `spawn-guard.sh` had 403 lines; it had 399 at base `7170a07e` and ended at 398.
+
+**Why:** the scripted edit matched a repeated `assert_eq` line. The brief copied a line count from memory instead of reading the file.
+
+**Prevention:** edit repeated lines with the Edit tool and unique context. A brief that pins a size limit states the measured count and the command that produced it (`wc -l`).
