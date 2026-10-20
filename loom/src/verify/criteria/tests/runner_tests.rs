@@ -103,6 +103,7 @@ fn extended_stage(
             .collect(),
         stderr_empty: stderr_empty.then_some(true),
         exit_code: Some(exit_code),
+        timeout_secs: None,
         description: None,
     }));
     stage

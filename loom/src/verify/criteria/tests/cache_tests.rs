@@ -240,3 +240,20 @@ fn ambient_input_refusals_remain_in_force() {
     assert!(is_cacheable("cargo test --lib", repo.path()));
     assert!(!is_cacheable("echo $HOMEBREW_PREFIX/bin", repo.path()));
 }
+
+// A confined command can read refs the fingerprint does not hold, so a command
+// that runs git is never pass-cached; a script that calls git internally is
+// covered by the HEAD fingerprint (`cache_git_state_tests`).
+#[test]
+fn commands_that_run_git_are_not_cacheable() {
+    let repo = init_repo();
+    for command in [
+        "git diff --quiet main -- docs/",
+        "cargo fmt --check && git status --porcelain",
+        "test \"`git rev-parse HEAD`\" = abc",
+        "/usr/bin/git log",
+    ] {
+        assert!(!is_cacheable(command, repo.path()), "cached {command}");
+    }
+    assert!(is_cacheable("bash scripts/check.sh", repo.path()));
+}

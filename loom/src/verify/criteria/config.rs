@@ -10,6 +10,10 @@ use super::cache::CachePolicy;
 /// Default timeout for command execution (5 minutes)
 pub const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
 
+/// Default timeout for an extended acceptance criterion or a truth check
+/// that sets no `timeout_secs` (30 seconds)
+pub const DEFAULT_CHECK_TIMEOUT: Duration = Duration::from_secs(30);
+
 /// Configuration for acceptance criteria execution
 #[derive(Debug, Clone)]
 pub struct CriteriaConfig {

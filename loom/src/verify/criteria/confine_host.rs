@@ -1,7 +1,9 @@
 //! OS boundary for host verification. Only the working tree, private scratch and
-//! the command's Cargo home (see `confine_scratch.rs`) are writable;
-//! runtime and compiler installation directories are readable. Verification denies
-//! network access; plan-approved provisioning can fetch dependencies.
+//! the command's Cargo home (see `confine_scratch.rs`) are writable, plus a
+//! private /tmp and /var/tmp under bubblewrap; runtime and compiler
+//! installation directories and a linked worktree's Git metadata
+//! (`confine_git.rs`) are readable. Verification denies network access;
+//! plan-approved provisioning can fetch dependencies.
 //! A missing or unusable OS facility fails before executing repository code.
 //! A command may start below its working tree's root (a package of a monorepo);
 //! the whole tree stays visible so sibling packages and shared stores resolve.
@@ -10,6 +12,13 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
 
 pub(super) use super::scratch::CargoScratch;
+
+#[path = "confine_git.rs"]
+pub(super) mod git_roots;
+
+#[cfg(target_os = "macos")]
+#[path = "confine_developer_tools.rs"]
+mod developer_tools;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum NetworkAccess {
@@ -23,29 +32,37 @@ pub(super) fn wrap(
     original: &Command,
     tree: Option<&Path>,
     network: NetworkAccess,
-) -> Result<(Command, CargoScratch)> {
+) -> Result<(Command, CargoScratch, Option<git_roots::GitDirs>)> {
     let cwd = original
         .get_current_dir()
         .context("confined command needs a working directory")?
         .canonicalize()
         .context("resolve confined working directory")?;
     let tree = confined_tree(tree, &cwd)?;
+    let git = git_roots::git_dirs(&tree, network);
     let resolved_program = resolve_program(original, &cwd)?;
     // The outer boundary is reused only when it covers the whole granted tree.
     let inherited = network == NetworkAccess::Denied && crate::daemon::inherited::available(&tree);
     // Only bubblewrap can bind a private directory at the host's Cargo home path.
     let mount = cfg!(target_os = "linux") && !inherited;
     let scratch = CargoScratch::prepare(original, &tree, mount)?;
+    let dirs = git.as_ref();
     let mut command = if inherited {
         let mut command = Command::new(&resolved_program);
         command.args(original.get_args());
         command
     } else {
-        platform_command(original, &tree, &cwd, &resolved_program, &scratch, network)?
+        platform_command(
+            original,
+            &tree,
+            &cwd,
+            &resolved_program,
+            &scratch,
+            network,
+            dirs,
+        )?
     };
-    command.env_clear();
-    command.envs(original.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))));
-    scratch.apply_environment(&mut command);
+    apply_environment(&mut command, original, &scratch, inherited);
     command
         .current_dir(&cwd)
         .stdin(Stdio::null())
@@ -56,7 +73,33 @@ pub(super) fn wrap(
         use std::os::unix::process::CommandExt;
         command.process_group(0);
     }
-    Ok((command, scratch))
+    Ok((command, scratch, git))
+}
+
+/// `original`'s environment with private tool state from `scratch`. Under a
+/// fresh boundary Git reads no global config: the user's is unreadable there,
+/// and Git fails on a config file it cannot open (Seatbelt denies the read).
+fn apply_environment(
+    command: &mut Command,
+    original: &Command,
+    scratch: &CargoScratch,
+    inherited: bool,
+) {
+    command.env_clear();
+    command.envs(original.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))));
+    scratch.apply_environment(command);
+    if inherited {
+        return;
+    }
+    command.env("GIT_CONFIG_GLOBAL", "/dev/null");
+    if cfg!(target_os = "linux") {
+        // Bubblewrap mounts a private /tmp, so temporary files need no scratch
+        // path; inside a session that path lies under the harness's own
+        // /tmp/claude-<uid>, which tests and hooks treat specially.
+        for key in ["TMPDIR", "TMP", "TEMP"] {
+            command.env(key, "/tmp");
+        }
+    }
 }
 
 fn resolve_program(original: &Command, cwd: &Path) -> Result<PathBuf> {
@@ -136,40 +179,8 @@ fn read_roots(command: &Command) -> Vec<PathBuf> {
         roots.push(executable);
     }
     #[cfg(target_os = "macos")]
-    roots.extend(developer_tools().iter().cloned());
+    roots.extend(developer_tools::developer_tools().iter().cloned());
     roots.into_iter().filter(|p| p.exists()).collect()
-}
-
-#[cfg(target_os = "macos")]
-fn developer_tools() -> &'static Option<PathBuf> {
-    static ROOT: std::sync::OnceLock<Option<PathBuf>> = std::sync::OnceLock::new();
-    ROOT.get_or_init(|| {
-        let mut command = Command::new("/usr/bin/xcode-select");
-        command.env_clear().arg("--print-path");
-        let output = crate::process::run_bounded(&mut command, std::time::Duration::from_secs(2))
-            .ok()?
-            .completed()?;
-        if !output.status.success() {
-            return None;
-        }
-        let path = PathBuf::from(String::from_utf8(output.stdout).ok()?.trim());
-        let path = path
-            .is_absolute()
-            .then(|| path.canonicalize().ok())
-            .flatten()?;
-        // Xcode's selected Developer directory links frameworks in sibling Contents paths.
-        Some(
-            if path.file_name().is_some_and(|name| name == "Developer")
-                && path
-                    .parent()
-                    .is_some_and(|parent| parent.file_name().is_some_and(|name| name == "Contents"))
-            {
-                path.parent()?.to_path_buf()
-            } else {
-                path
-            },
-        )
-    })
 }
 
 /// The working tree, the command's scratch, and its Cargo home when that is a
@@ -182,28 +193,20 @@ fn writable_roots<'a>(tree: &'a Path, scratch: &'a CargoScratch) -> Vec<&'a Path
         .collect()
 }
 
+/// Seatbelt read, write and deny rules for the tree, scratch, Cargo home, git
+/// roots and the command's own read-only roots.
 #[cfg(target_os = "macos")]
-fn platform_command(
+fn seatbelt_path_rules(
     original: &Command,
     tree: &Path,
-    // Seatbelt keeps the process's own working directory, set by `wrap`.
-    _cwd: &Path,
-    program: &Path,
     scratch: &CargoScratch,
-    network: NetworkAccess,
-) -> Result<Command> {
-    let launcher = Path::new("/usr/bin/sandbox-exec");
-    if !launcher.is_file() {
-        anyhow::bail!("confined verification requires sandbox-exec");
-    }
+    git: Option<&git_roots::GitDirs>,
+) -> Result<String> {
     let quote = |path: &Path| serde_json::to_string(&path.to_string_lossy()).unwrap();
-    // dyld opens the root directory while discovering the system Cryptex cache.
-    let mut profile = String::from("(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read-metadata)(allow file-read* (literal \"/\"))");
-    if network == NetworkAccess::Provision {
-        profile.push_str("(allow network-outbound)");
-    }
+    let mut profile = String::new();
     let writable = writable_roots(tree, scratch);
     let readable = writable.iter().map(|path| path.to_path_buf());
+    let readable = readable.chain(git.into_iter().flat_map(|git| git.roots.iter().cloned()));
     for root in read_roots(original).into_iter().chain(readable) {
         profile.push_str(&format!(
             "(allow file-read* (subpath {}))",
@@ -224,6 +227,30 @@ fn platform_command(
             quote(&root.canonicalize()?)
         ));
     }
+    Ok(profile)
+}
+
+#[cfg(target_os = "macos")]
+fn platform_command(
+    original: &Command,
+    tree: &Path,
+    // Seatbelt keeps the process's own working directory, set by `wrap`.
+    _cwd: &Path,
+    program: &Path,
+    scratch: &CargoScratch,
+    network: NetworkAccess,
+    git: Option<&git_roots::GitDirs>,
+) -> Result<Command> {
+    let launcher = Path::new("/usr/bin/sandbox-exec");
+    if !launcher.is_file() {
+        anyhow::bail!("confined verification requires sandbox-exec");
+    }
+    // dyld opens the root directory while discovering the system Cryptex cache.
+    let mut profile = String::from("(version 1)(deny default)(allow process*)(allow sysctl-read)(allow mach-lookup)(allow file-read-metadata)(allow file-read* (literal \"/\"))");
+    if network == NetworkAccess::Provision {
+        profile.push_str("(allow network-outbound)");
+    }
+    profile.push_str(&seatbelt_path_rules(original, tree, scratch, git)?);
     let mut command = Command::new(launcher);
     command
         .arg("-p")
@@ -241,6 +268,7 @@ fn platform_command(
     program: &Path,
     scratch: &CargoScratch,
     network: NetworkAccess,
+    git: Option<&git_roots::GitDirs>,
 ) -> Result<Command> {
     let launcher =
         which::which("bwrap").context("confined verification requires bubblewrap (bwrap)")?;
@@ -253,6 +281,12 @@ fn platform_command(
         "/proc",
         "--dev",
         "/dev",
+        // Private temporary directories, mounted before any bind so a tree
+        // or scratch below them is mounted on top instead of hidden.
+        "--tmpfs",
+        "/tmp",
+        "--tmpfs",
+        "/var/tmp",
     ]);
     if network == NetworkAccess::Provision {
         command.arg("--share-net");
@@ -262,12 +296,14 @@ fn platform_command(
     }
     command.arg("--chdir").arg(cwd);
     bind_read_roots(&mut command, original, scratch);
-    if network == NetworkAccess::Provision {
-        bind_resolver_target(&mut command, Path::new("/etc/resolv.conf"))?;
+    for root in git.into_iter().flat_map(|git| &git.roots) {
+        command.arg("--ro-bind").arg(root).arg(root);
     }
+    bind_resolver_target(&mut command, Path::new("/etc/resolv.conf"))?;
     // The new root is a writable tmpfs in which `--bind` created the working
-    // tree's parents; left writable, writes outside the working tree would
-    // succeed privately instead of failing as the Seatbelt profile makes them.
+    // tree's parents; left writable, writes outside the working tree and the
+    // private temporary directories would succeed privately instead of failing
+    // as the Seatbelt profile makes them.
     // The remount is not recursive: the binds above keep their own modes.
     command.args(["--remount-ro", "/"]);
     command.arg("--").arg(program).args(original.get_args());
@@ -300,14 +336,20 @@ fn bind_read_roots(command: &mut Command, original: &Command, scratch: &CargoScr
 }
 
 /// /etc can contain a resolver symlink into /run, which stays hidden. Expose
-/// only its target file for provisioning, without granting access to host sockets.
+/// only its target file, read-only, so the link resolves as it does outside,
+/// without granting access to host sockets. A target that is absent (hidden by
+/// an enclosing sandbox) leaves the link dangling there too, so nothing binds.
 #[cfg(target_os = "linux")]
 fn bind_resolver_target(command: &mut Command, resolver: &Path) -> Result<()> {
-    if resolver.is_symlink() {
-        let target = resolver
-            .canonicalize()
-            .context("resolve provisioning DNS configuration")?;
-        command.arg("--ro-bind").arg(&target).arg(&target);
+    if !resolver.is_symlink() {
+        return Ok(());
+    }
+    match resolver.canonicalize() {
+        Ok(target) => {
+            command.arg("--ro-bind").arg(&target).arg(&target);
+        }
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => return Err(error).context("resolve the DNS configuration"),
     }
     Ok(())
 }
@@ -320,6 +362,7 @@ fn platform_command(
     _: &Path,
     _: &CargoScratch,
     _: NetworkAccess,
+    _: Option<&git_roots::GitDirs>,
 ) -> Result<Command> {
     anyhow::bail!("confined verification is unsupported on this platform")
 }

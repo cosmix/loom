@@ -18,6 +18,8 @@ mod host;
 #[path = "confine_scratch.rs"]
 mod scratch;
 
+pub(super) use host::git_roots::GitDirs;
+
 /// The OS sandbox launcher tests need, when installed.
 #[cfg(test)]
 pub(crate) fn host_launcher() -> Option<std::path::PathBuf> {
@@ -69,6 +71,7 @@ pub(super) struct PreparedCommand {
     spec: CommandSpec,
     wrapped: Option<Command>,
     scratch: Option<host::CargoScratch>,
+    git: Option<GitDirs>,
 }
 
 impl PreparedCommand {
@@ -90,6 +93,12 @@ impl PreparedCommand {
         &self.spec
     }
 
+    /// The Git directories the command can read, whose state the pass cache
+    /// fingerprints.
+    pub(super) fn git_dirs(&self) -> Option<&GitDirs> {
+        self.git.as_ref()
+    }
+
     pub(super) fn containment_executable(&self) -> Option<PathBuf> {
         self.wrapped
             .as_ref()
@@ -101,7 +110,7 @@ impl PreparedCommand {
             .wrapped
             .as_ref()
             .map(|command| command.get_args().collect::<Vec<_>>());
-        let revision = format!("host-os-boundary-v8:{arguments:?}");
+        let revision = format!("host-os-boundary-v9:{arguments:?}");
         match &self.scratch {
             Some(scratch) => revision.replace(
                 scratch.path().to_string_lossy().as_ref(),
@@ -260,12 +269,12 @@ fn prepare(
             cmd.env("TMPDIR", dir).env("TMP", dir).env("TEMP", dir);
         }
     }
-    let (wrapped, scratch) = if confinement == CommandConfinement::Confined {
-        let (wrapped, scratch) = host::wrap(&cmd, tree, network)
+    let (wrapped, scratch, git) = if confinement == CommandConfinement::Confined {
+        let (wrapped, scratch, git) = host::wrap(&cmd, tree, network)
             .with_context(|| format!("Failed to confine command: {spec}"))?;
-        (Some(wrapped), Some(scratch))
+        (Some(wrapped), Some(scratch), git)
     } else {
-        (None, None)
+        (None, None, None)
     };
     Ok(PreparedCommand {
         command: cmd,
@@ -274,6 +283,7 @@ fn prepare(
         spec: spec.clone(),
         wrapped,
         scratch,
+        git,
     })
 }
 

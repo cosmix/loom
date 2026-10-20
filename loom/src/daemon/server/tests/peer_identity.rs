@@ -16,6 +16,13 @@ fn ancestry_accepts_self_and_the_real_parent_chain() {
     assert!(is_at_or_below(me, me), "a process is at its own pid");
 
     let parent = parent_pid(me).expect("this process must have a readable parent");
+    if crate::process::sandbox_probe::skip_unless(
+        parent > 1,
+        "daemon::server::peer_identity::tests::ancestry_accepts_self_and_the_real_parent_chain",
+        "a parent at pid 1 is a pid namespace's init, which the walk treats as the root",
+    ) {
+        return;
+    }
     assert!(
         is_at_or_below(me, parent),
         "walking up from {me} must reach its parent {parent}"

@@ -159,6 +159,7 @@ mod tests {
             stdout_not_contains: Vec::new(),
             stderr_empty: None,
             exit_code: Some(-1),
+            timeout_secs: None,
             description: None,
         });
         let contract = CriterionContract::new(

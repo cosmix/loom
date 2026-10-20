@@ -50,6 +50,7 @@ mod cache;
 mod cache_contract;
 mod cache_executable;
 mod cache_fingerprint;
+mod cache_git_state;
 mod cache_ignore;
 mod config;
 mod confine;
@@ -65,7 +66,7 @@ mod tests;
 
 // Re-export public types and functions
 pub use cache::CachePolicy;
-pub use config::{CriteriaConfig, DEFAULT_COMMAND_TIMEOUT};
+pub use config::{CriteriaConfig, DEFAULT_CHECK_TIMEOUT, DEFAULT_COMMAND_TIMEOUT};
 #[cfg(test)]
 pub(crate) use confine::host_launcher;
 pub use confine::{

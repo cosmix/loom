@@ -247,6 +247,7 @@ fn write_round_trip_amendments(env: &super::amendment::TestEnv) -> TruthCheck {
         stdout_not_contains: Vec::new(),
         stderr_empty: None,
         exit_code: Some(0),
+        timeout_secs: None,
         description: Some("first line\nsecond line\n\nfourth line\n".to_string()),
     };
     let extended_yaml = crate::yaml::to_string(&extended).unwrap();
@@ -300,4 +301,32 @@ fn amended_plan_metadata_round_trips_through_plan_parser() {
     assert_eq!(stage.acceptance, def.acceptance);
     assert_eq!(stage.wiring[0].description, def.wiring[0].description);
     assert_eq!(stage.wiring_tests[0].name, def.wiring_tests[0].name);
+}
+
+// --------------------------------------------------------------------------
+// A verdict's replacement criterion can set its own timeout
+// --------------------------------------------------------------------------
+#[test]
+fn replace_acceptance_carries_timeout_secs_and_rejects_one_out_of_range() {
+    let env = setup_env();
+    let replace = |timeout: u64| AmendmentRequest {
+        stage_id: "stage-a".to_string(),
+        field: AmendmentField::Acceptance,
+        patch: AmendmentPatch::Replace {
+            index: 0,
+            value: format!("command: \"cargo test\"\ntimeout_secs: {timeout}\n"),
+        },
+        reason: None,
+        dispute_id: None,
+    };
+    let error = apply_amendment(&env.plan_path, &env.work_dir, replace(0)).unwrap_err();
+    assert!(format!("{error:#}").contains("timeout_secs 0"), "{error:#}");
+
+    apply_amendment(&env.plan_path, &env.work_dir, replace(900)).unwrap();
+    let stage = load_stage("stage-a", &env.work_dir).unwrap();
+    let AcceptanceCriterion::Extended(check) = &stage.acceptance[0] else {
+        panic!("replacement is extended: {:?}", stage.acceptance[0]);
+    };
+    assert_eq!(check.timeout_secs, Some(900));
+    assert!(read_plan(&env).contains("timeout_secs: 900"));
 }

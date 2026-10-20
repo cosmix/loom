@@ -85,6 +85,7 @@ fn extended(command: &str, required: &str) -> Stage {
         stdout_not_contains: Vec::new(),
         stderr_empty: None,
         exit_code: Some(0),
+        timeout_secs: None,
         description: None,
     }));
     stage

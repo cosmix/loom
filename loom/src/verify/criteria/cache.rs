@@ -8,6 +8,8 @@ use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::plan::schema::validation::shell_lex::{lex, Token};
+
 use super::cache_contract::{AssertionVerdict, CachedCriterionPass, CriterionContract};
 use super::cache_fingerprint::InputFingerprint;
 use super::cache_ignore;
@@ -47,7 +49,25 @@ pub(super) fn is_cacheable(command: &str, acceptance_dir: &Path) -> bool {
     if command.contains('$') {
         return false;
     }
+    // A confined command can read every ref, `packed-refs` and `config`, but the
+    // fingerprint holds only HEAD's state (`cache_git_state`). Residual: a script
+    // reading refs other than HEAD's can replay a stale pass.
+    if runs_git(command) {
+        return false;
+    }
     !cache_ignore::references_ignored_path(command, acceptance_dir)
+}
+
+/// Whether any shell word of `command`, or of a command substitution inside it,
+/// names `git`.
+fn runs_git(command: &str) -> bool {
+    lex(command).iter().any(|token| match token {
+        Token::Word(word) => {
+            word.value.rsplit('/').next() == Some("git")
+                || word.substitutions.iter().any(|body| runs_git(body))
+        }
+        _ => false,
+    })
 }
 
 /// Filename digest binding the semantic contract to its input fingerprint.

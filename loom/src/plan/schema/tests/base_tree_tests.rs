@@ -52,6 +52,7 @@ fn expecting(command: &str, exit_code: i32) -> AcceptanceCriterion {
         stdout_not_contains: vec![],
         stderr_empty: None,
         exit_code: Some(exit_code),
+        timeout_secs: None,
         description: None,
     })
 }

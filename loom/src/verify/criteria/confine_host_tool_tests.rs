@@ -29,21 +29,22 @@ fn private_scratch_stays_outside_temporary_root_working_directories() {
     assert!(super::CargoScratch::prepare(&original, Path::new("/"), false).is_err());
 }
 
+// A write to `$HOME/credentials` may land in bubblewrap's private /tmp, where
+// a temporary home lives; the caller proves the host file untouched.
 const CACHE_CANARY: &str = r#"
 set -eu
 case "$TMPDIR/" in "$PWD/"*) exit 1;; esac
 for variable in XDG_CACHE_HOME UV_CACHE_DIR BUN_INSTALL_CACHE_DIR; do
     directory=${!variable}
-    [[ $directory == "$TMPDIR/"* ]]
     mkdir -p "$directory"
     printf private > "$directory/written"
 done
 for relative in .bun/install/cache .cache/uv .local/share/uv/python; do
     [[ $(cat "$HOME/$relative/sentinel") == installed ]]
-    ! printf changed > "$HOME/$relative/sentinel"
+    printf changed 2>/dev/null > "$HOME/$relative/sentinel" && exit 2
 done
-! cat "$HOME/credentials"
-! printf changed > "$HOME/credentials"
+cat "$HOME/credentials" 2>/dev/null && exit 3
+printf changed 2>/dev/null > "$HOME/credentials" || true
 if : > "/dev/tcp/127.0.0.1/$1"; then
     [[ $2 == provision ]]
 else
@@ -52,6 +53,53 @@ fi
 printf CACHE_CANARY_PASSED
 "#;
 
+/// A home with installed tool caches and a credential beside them.
+fn tool_home(root: &Path) -> PathBuf {
+    let home = root.join("home");
+    for relative in [".bun/install/cache", ".cache/uv", ".local/share/uv/python"] {
+        let cache = home.join(relative);
+        std::fs::create_dir_all(&cache).unwrap();
+        std::fs::write(cache.join("sentinel"), "installed").unwrap();
+    }
+    std::fs::write(home.join("credentials"), "secret").unwrap();
+    home
+}
+
+/// Run [`CACHE_CANARY`] from `cwd` with `home`, expecting `mode`'s network
+/// policy; the private caches it wrote go with its scratch.
+fn run_cache_canary(cwd: &Path, home: &Path, port: u16, network: NetworkAccess, mode: &str) {
+    let mut original = Command::new("/bin/bash");
+    original.current_dir(cwd).args([
+        "--noprofile",
+        "--norc",
+        "-c",
+        CACHE_CANARY,
+        "canary",
+        &port.to_string(),
+        mode,
+    ]);
+    crate::process::apply_stage_environment(&mut original);
+    original.env("HOME", home);
+    let (mut wrapped, scratch, _) = super::wrap(&original, None, network).unwrap();
+    let scratch_path = scratch.path().to_path_buf();
+    scratch.populate().unwrap();
+    let output = wrapped.output().unwrap();
+    assert!(
+        output.status.success(),
+        "{mode}: {}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("CACHE_CANARY_PASSED"));
+    for cache in ["cache", "uv-cache", "bun-cache"] {
+        assert!(
+            scratch_path.join(cache).join("written").is_file(),
+            "{cache}"
+        );
+    }
+    drop(scratch);
+    assert!(!scratch_path.exists());
+}
+
 #[test]
 fn private_caches_preserve_installed_reads_network_policy_and_cleanup() {
     if !launcher_available("private_caches_preserve_installed_reads_network_policy_and_cleanup") {
@@ -59,44 +107,15 @@ fn private_caches_preserve_installed_reads_network_policy_and_cleanup() {
     }
     let root = tempfile::tempdir().unwrap();
     let cwd = root.path().join("worktree");
-    let home = root.path().join("home");
     std::fs::create_dir(&cwd).unwrap();
-    for relative in [".bun/install/cache", ".cache/uv", ".local/share/uv/python"] {
-        let cache = home.join(relative);
-        std::fs::create_dir_all(&cache).unwrap();
-        std::fs::write(cache.join("sentinel"), "installed").unwrap();
-    }
-    std::fs::write(home.join("credentials"), "secret").unwrap();
+    let home = tool_home(root.path());
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
     for (network, mode) in [
         (NetworkAccess::Denied, "denied"),
         (NetworkAccess::Provision, "provision"),
     ] {
-        let mut original = Command::new("/bin/bash");
-        original.current_dir(&cwd).args([
-            "--noprofile",
-            "--norc",
-            "-c",
-            CACHE_CANARY,
-            "canary",
-            &listener.local_addr().unwrap().port().to_string(),
-            mode,
-        ]);
-        crate::process::apply_stage_environment(&mut original);
-        original.env("HOME", &home);
-        let (mut wrapped, scratch) = super::wrap(&original, None, network).unwrap();
-        let scratch_path = scratch.path().to_path_buf();
-        scratch.populate().unwrap();
-        let output = wrapped.output().unwrap();
-        assert!(
-            output.status.success(),
-            "{}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        assert!(String::from_utf8_lossy(&output.stdout).contains("CACHE_CANARY_PASSED"));
-        assert!(scratch_path.join("uv-cache/written").is_file());
-        drop(scratch);
-        assert!(!scratch_path.exists());
+        run_cache_canary(&cwd, &home, port, network, mode);
     }
     assert_eq!(
         std::fs::read_to_string(home.join("credentials")).unwrap(),
@@ -269,7 +288,7 @@ fn actual_biome_git_worktree_keeps_cargo_sources_outside_lint_coverage() {
     original.current_dir(&cwd).args(["ci", "."]);
     crate::process::apply_stage_environment(&mut original);
     original.env("CARGO_HOME", cargo);
-    let (mut command, scratch) = super::wrap(&original, None, NetworkAccess::Denied).unwrap();
+    let (mut command, scratch, _) = super::wrap(&original, None, NetworkAccess::Denied).unwrap();
     scratch.populate().unwrap();
     let output = command.output().unwrap();
     assert!(

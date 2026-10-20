@@ -44,9 +44,12 @@ fn provision_reaches_network_without_exposing_sibling_files() {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     listener.set_nonblocking(true).unwrap();
     let port = listener.local_addr().unwrap().port();
+    // `../secret` is unreadable from the sandbox. Writing it may succeed in
+    // bubblewrap's private /tmp, where a temporary worktree lives; the host
+    // file staying untouched is the proof.
     let command = format!(
         "/bin/bash --noprofile --norc -c 'test ! -r ../secret && \
-         ! printf escaped > ../secret && \
+         {{ printf escaped > ../secret || true; }} && \
          printf fetched > /dev/tcp/127.0.0.1/{port} && printf installed > dependency'"
     );
 

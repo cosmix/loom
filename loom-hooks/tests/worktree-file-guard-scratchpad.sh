@@ -13,7 +13,16 @@ CREATED_ROOT=false
 if [[ ! -d "$UID_ROOT" ]]; then
 	mkdir -m 700 "$UID_ROOT" && CREATED_ROOT=true
 fi
-PROJECT=$(mktemp -d "$UID_ROOT/loom-hooktest-project.XXXXXX")
+if ! PROJECT=$(mktemp -d "$UID_ROOT/loom-hooktest-project.XXXXXX"); then
+	rm -rf "$TMP"
+	# Seatbelt cannot give loom's confined runner a private /tmp, so there the
+	# session's own root exists read-only. Every other failure still fails.
+	if [[ -d "$UID_ROOT" && ! -w "$UID_ROOT" ]]; then
+		echo "SKIP: $UID_ROOT not writable (confined runner)"
+		exit 0
+	fi
+	exit 1
+fi
 cleanup() {
 	rm -rf "$TMP" "$PROJECT"
 	[[ "$CREATED_ROOT" == false ]] || rmdir "$UID_ROOT" 2>/dev/null || true

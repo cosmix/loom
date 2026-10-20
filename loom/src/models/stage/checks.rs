@@ -3,6 +3,7 @@
 //! onto every stage it builds.
 
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 use crate::plan::parser::ParsedPlan;
 
@@ -68,9 +69,20 @@ pub struct TruthCheck {
     /// Expected exit code (default: 0)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exit_code: Option<i32>,
+    /// Seconds the command may run before it is killed and fails (default:
+    /// the runner's timeout for this kind of check)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub timeout_secs: Option<u64>,
     /// Human-readable description of what this truth verifies
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub description: Option<String>,
+}
+
+impl TruthCheck {
+    /// How long the command may run: `timeout_secs` when set, else `default`.
+    pub fn timeout(&self, default: Duration) -> Duration {
+        self.timeout_secs.map_or(default, Duration::from_secs)
+    }
 }
 
 /// Unified acceptance criterion - either a simple shell command or an extended check.
@@ -110,5 +122,43 @@ impl AcceptanceCriterion {
 impl std::fmt::Display for AcceptanceCriterion {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.command())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn timeout_secs_round_trips_through_yaml_and_overrides_the_default() {
+        let criterion: AcceptanceCriterion =
+            crate::yaml::from_str("command: cargo test\ntimeout_secs: 900\n").unwrap();
+        let AcceptanceCriterion::Extended(check) = &criterion else {
+            panic!("an object criterion is extended: {criterion:?}");
+        };
+        assert_eq!(check.timeout_secs, Some(900));
+        assert_eq!(
+            check.timeout(Duration::from_secs(30)),
+            Duration::from_secs(900)
+        );
+        let yaml = crate::yaml::to_string(&criterion).unwrap();
+        assert!(yaml.contains("timeout_secs: 900"), "{yaml}");
+        let reparsed: AcceptanceCriterion = crate::yaml::from_str(&yaml).unwrap();
+        assert_eq!(reparsed, criterion);
+    }
+
+    #[test]
+    fn an_unset_timeout_is_the_default_and_is_not_serialized() {
+        let criterion: AcceptanceCriterion =
+            crate::yaml::from_str("command: cargo test\n").unwrap();
+        let AcceptanceCriterion::Extended(check) = &criterion else {
+            panic!("an object criterion is extended: {criterion:?}");
+        };
+        assert_eq!(
+            check.timeout(Duration::from_secs(30)),
+            Duration::from_secs(30)
+        );
+        let yaml = crate::yaml::to_string(&criterion).unwrap();
+        assert!(!yaml.contains("timeout_secs"), "{yaml}");
     }
 }

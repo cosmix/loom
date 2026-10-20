@@ -2,15 +2,11 @@
 
 use anyhow::Result;
 use std::path::Path;
-use std::time::Duration;
 
 use super::result::{GapType, VerificationGap};
 use crate::plan::schema::{CommandConfinement, TruthCheck};
 use crate::verify::criteria::assertions::{evaluate, AssertionSpec};
-use crate::verify::criteria::{run_spec_in_optional_tree, CommandSpec};
-
-/// Default timeout for truth commands (30 seconds)
-const TRUTH_TIMEOUT: Duration = Duration::from_secs(30);
+use crate::verify::criteria::{run_spec_in_optional_tree, CommandSpec, DEFAULT_CHECK_TIMEOUT};
 
 /// Verify enhanced truth checks with extended success criteria
 ///
@@ -26,8 +22,9 @@ pub fn verify_truth_checks(
     let mut gaps = Vec::new();
     for check in truth_checks {
         let spec = CommandSpec::shell(check.command.as_str());
+        let timeout = check.timeout(DEFAULT_CHECK_TIMEOUT);
         let result =
-            run_spec_in_optional_tree(&spec, tree, Some(working_dir), TRUTH_TIMEOUT, confinement)?;
+            run_spec_in_optional_tree(&spec, tree, Some(working_dir), timeout, confinement)?;
         let assertions = AssertionSpec {
             expected_exit: check.exit_code.unwrap_or(0),
             stdout_contains: &check.stdout_contains,
@@ -62,6 +59,7 @@ mod tests {
             stdout_not_contains: vec![],
             stderr_empty: None,
             exit_code: Some(0),
+            timeout_secs: None,
             description: Some("Test exit code 0".to_string()),
         }];
 
@@ -80,6 +78,7 @@ mod tests {
             stdout_not_contains: vec![],
             stderr_empty: None,
             exit_code: Some(0),
+            timeout_secs: None,
             description: Some("Test exit code failure".to_string()),
         }];
 
@@ -99,6 +98,7 @@ mod tests {
             stdout_not_contains: vec![],
             stderr_empty: None,
             exit_code: None,
+            timeout_secs: None,
             description: Some("Test stdout contains".to_string()),
         }];
 
@@ -120,6 +120,7 @@ mod tests {
             stdout_not_contains: vec![],
             stderr_empty: None,
             exit_code: None,
+            timeout_secs: None,
             description: Some("Test stdout missing pattern".to_string()),
         }];
 
@@ -139,6 +140,7 @@ mod tests {
             stdout_not_contains: vec!["ERROR".to_string()],
             stderr_empty: None,
             exit_code: None,
+            timeout_secs: None,
             description: Some("Test stdout not contains".to_string()),
         }];
 
@@ -160,6 +162,7 @@ mod tests {
             stdout_not_contains: vec!["ERROR".to_string()],
             stderr_empty: None,
             exit_code: None,
+            timeout_secs: None,
             description: Some("Test stdout forbidden pattern".to_string()),
         }];
 
@@ -179,6 +182,7 @@ mod tests {
             stdout_not_contains: vec![],
             stderr_empty: Some(true),
             exit_code: None,
+            timeout_secs: None,
             description: Some("Test stderr empty".to_string()),
         }];
 
@@ -197,6 +201,7 @@ mod tests {
             stdout_not_contains: vec![],
             stderr_empty: Some(true),
             exit_code: None,
+            timeout_secs: None,
             description: Some("Test stderr not empty".to_string()),
         }];
 
@@ -216,6 +221,7 @@ mod tests {
             stdout_not_contains: vec!["ERROR".to_string(), "FAIL".to_string()],
             stderr_empty: Some(true),
             exit_code: Some(0),
+            timeout_secs: None,
             description: Some("Test all criteria".to_string()),
         }];
 
@@ -224,6 +230,27 @@ mod tests {
             verify_truth_checks(&checks, &working_dir, None, CommandConfinement::default())
                 .unwrap();
         assert!(result.is_empty(), "Expected no gaps when all criteria pass");
+    }
+
+    #[test]
+    fn a_truth_check_times_out_after_its_own_timeout_secs() {
+        let checks = vec![TruthCheck {
+            command: "sleep 2".to_string(),
+            stdout_contains: vec![],
+            stdout_not_contains: vec![],
+            stderr_empty: None,
+            exit_code: None,
+            timeout_secs: Some(1),
+            description: None,
+        }];
+
+        let working_dir = env::temp_dir();
+        let gaps =
+            verify_truth_checks(&checks, &working_dir, None, CommandConfinement::Inherit).unwrap();
+        assert!(
+            gaps.iter().any(|gap| gap.description.contains("timed out")),
+            "a 2 s command must miss a 1 s timeout: {gaps:?}"
+        );
     }
 
     // Tests for truncate moved to verify/utils.rs

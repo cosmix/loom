@@ -18,6 +18,7 @@ fn extended(command: &str, contains: &[&str]) -> AcceptanceCriterion {
         stdout_not_contains: Vec::new(),
         stderr_empty: None,
         exit_code: None,
+        timeout_secs: None,
         description: None,
     })
 }

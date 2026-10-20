@@ -1,7 +1,7 @@
 //! Acceptance criterion validation tests
 
 use super::make_stage;
-use crate::plan::schema::types::{AcceptanceCriterion, LoomConfig, LoomMetadata};
+use crate::plan::schema::types::{AcceptanceCriterion, LoomConfig, LoomMetadata, TruthCheck};
 use crate::plan::schema::validation::acceptance_command::validate_acceptance_criterion;
 use crate::plan::schema::validation::validate;
 
@@ -144,6 +144,51 @@ fn test_validate_metadata_multiple_invalid_acceptance() {
         .filter(|e| e.message.contains("acceptance criterion"))
         .collect();
     assert_eq!(acceptance_errors.len(), 2);
+}
+
+#[test]
+fn timeout_secs_outside_one_second_to_an_hour_is_rejected() {
+    let check = |timeout_secs| TruthCheck {
+        command: "cargo test".to_string(),
+        stdout_contains: vec![],
+        stdout_not_contains: vec![],
+        stderr_empty: None,
+        exit_code: None,
+        timeout_secs,
+        description: None,
+    };
+    let validated = |timeout_secs| {
+        let mut stage = make_stage("stage-1", "Stage One");
+        stage.acceptance = vec![AcceptanceCriterion::Extended(check(timeout_secs))];
+        stage.before_stage = vec![check(timeout_secs)];
+        stage.after_stage = vec![check(timeout_secs)];
+        let metadata = LoomMetadata {
+            loom: LoomConfig {
+                version: 1,
+                stages: vec![stage],
+                ..Default::default()
+            },
+        };
+        validate(&metadata).err().unwrap_or_default()
+    };
+    for rejected in [0, 3601] {
+        let messages: Vec<_> = validated(Some(rejected))
+            .into_iter()
+            .map(|error| error.message)
+            .filter(|message| message.contains(&format!("timeout_secs {rejected}")))
+            .collect();
+        assert_eq!(messages.len(), 3, "{rejected}: {messages:?}");
+        assert!(messages[0].starts_with("Invalid acceptance criterion #1"));
+    }
+    for accepted in [None, Some(1), Some(3600)] {
+        let errors = validated(accepted);
+        assert!(
+            !errors
+                .iter()
+                .any(|error| error.message.contains("timeout_secs")),
+            "{accepted:?}: {errors:?}"
+        );
+    }
 }
 
 #[test]

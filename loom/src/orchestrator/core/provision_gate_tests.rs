@@ -124,6 +124,7 @@ fn failing_check() -> TruthCheck {
         stdout_not_contains: Vec::new(),
         stderr_empty: None,
         exit_code: Some(0),
+        timeout_secs: None,
         description: Some("the pre-condition holds".to_string()),
     }
 }

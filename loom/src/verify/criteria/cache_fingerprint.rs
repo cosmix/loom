@@ -3,11 +3,13 @@
 use sha2::{Digest, Sha256};
 use std::fs::{File, Metadata};
 use std::io::Read;
+use std::os::unix::fs::OpenOptionsExt;
 use std::path::{Component, Path, PathBuf};
 use std::process::Command;
 
 use super::cache_executable;
-use super::confine::PreparedCommand;
+use super::cache_git_state::hash_git_state;
+use super::confine::{GitDirs, PreparedCommand};
 use crate::git::runner::{run_git, run_git_checked};
 use crate::models::stage::CommandConfinement;
 
@@ -26,6 +28,8 @@ pub(super) struct ExecutionIdentity {
     executable_paths: Vec<PathBuf>,
     environment_digest: String,
     containment_policy: String,
+    /// The Git directories the command can read; their state is an input.
+    git: Option<GitDirs>,
 }
 
 impl ExecutionIdentity {
@@ -43,6 +47,7 @@ impl ExecutionIdentity {
             executable_paths,
             environment_digest: hash_environment(command)?,
             containment_policy: prepared.containment_policy_revision(),
+            git: prepared.git_dirs().cloned(),
         })
     }
 }
@@ -75,7 +80,7 @@ pub(super) fn capture_with_budget(
     }
 
     let mut hasher = Sha256::new();
-    hash_field(&mut hasher, b"acceptance-cache-input-v3");
+    hash_field(&mut hasher, b"acceptance-cache-input-v4");
     hash_field(&mut hasher, acceptance_dir.as_os_str().as_encoded_bytes());
     hash_field(&mut hasher, repo_root.as_os_str().as_encoded_bytes());
     hash_field(&mut hasher, head.as_bytes());
@@ -90,6 +95,8 @@ pub(super) fn capture_with_budget(
     for relative in status_paths(&status)? {
         hash_repository_path(&repo_root, &relative, &mut remaining, &mut hasher)?;
     }
+    // After `git status`, which may rewrite the index it refreshes.
+    hash_git_state(identity.git.as_ref(), &mut remaining, &mut hasher)?;
     Some(InputFingerprint {
         digest: hex::encode(hasher.finalize()),
         tree_head: head,
@@ -178,7 +185,10 @@ fn hash_executable(invoked_path: &Path, remaining: &mut u64, hasher: &mut Sha256
     hash_regular_file(&canonical, &metadata, remaining, hasher)
 }
 
-fn hash_regular_file(
+/// Hash the regular file at `path` whose `before` metadata the caller read,
+/// refusing it when it changed while being read. `O_NONBLOCK` keeps a FIFO
+/// swapped in since that check from blocking the open.
+pub(super) fn hash_regular_file(
     path: &Path,
     before: &Metadata,
     remaining: &mut u64,
@@ -188,7 +198,11 @@ fn hash_regular_file(
         return None;
     }
     *remaining -= before.len();
-    let mut file = File::open(path).ok()?;
+    let mut file = File::options()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
+        .open(path)
+        .ok()?;
     let mut file_hasher = Sha256::new();
     let mut bytes_read = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
@@ -201,7 +215,7 @@ fn hash_regular_file(
         file_hasher.update(&buffer[..count]);
     }
     let after = file.metadata().ok()?;
-    if bytes_read != before.len() || !same_file_snapshot(before, &after) {
+    if bytes_read != before.len() || !after.is_file() || !same_file_snapshot(before, &after) {
         return None;
     }
     hash_field(hasher, &file_hasher.finalize());
@@ -237,7 +251,7 @@ fn hash_environment(command: &Command) -> Option<String> {
     Some(hex::encode(hasher.finalize()))
 }
 
-fn hash_field(hasher: &mut Sha256, value: &[u8]) {
+pub(super) fn hash_field(hasher: &mut Sha256, value: &[u8]) {
     hasher.update(u64::try_from(value.len()).unwrap_or(u64::MAX).to_le_bytes());
     hasher.update(value);
 }

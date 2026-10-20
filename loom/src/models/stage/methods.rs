@@ -470,9 +470,8 @@ impl Stage {
 
     /// Accumulate time from the current execution attempt.
     ///
-    /// Calculates elapsed time since `attempt_started_at`, adds it to
-    /// `execution_secs`, and clears `attempt_started_at`.
-    /// No-op if `attempt_started_at` is None.
+    /// Adds the time since `attempt_started_at` to `execution_secs` and clears
+    /// it. No-op if `attempt_started_at` is None.
     pub fn accumulate_attempt_time(&mut self, now: DateTime<Utc>) {
         if let Some(start) = self.attempt_started_at.take() {
             let elapsed = now.signed_duration_since(start).num_seconds().max(0);
@@ -505,6 +504,7 @@ mod tests {
             stdout_not_contains: vec![],
             stderr_empty: Some(true),
             exit_code: Some(0),
+            timeout_secs: None,
             description: Some(description.to_string()),
         }
     }

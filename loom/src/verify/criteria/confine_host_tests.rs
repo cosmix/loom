@@ -3,9 +3,11 @@ use crate::verify::criteria::{run_spec_in_optional_tree, run_spec_with_timeout, 
 use std::time::Duration;
 
 // From `<tree>/pkg`: the sibling package reads, the tree root writes, and the
-// file beside the tree stays unreadable and unwritable.
+// file beside the tree stays unreadable. Writing it may succeed in bubblewrap's
+// private /tmp, where a temporary tree lives; the host file staying untouched
+// is the proof.
 const TREE_CANARY: &str = "[ \"$(cat ../sibling/file)\" = shared ] && printf root > ../written \
-    && ! cat ../../outside && ! printf escaped > ../../outside";
+    && ! cat ../../outside && { printf escaped > ../../outside || true; }";
 
 #[test]
 fn a_package_working_directory_uses_its_whole_tree_and_nothing_beside_it() {
@@ -79,7 +81,9 @@ check() {
     printf '%s_CHECKED\n' "$1"
 }
 check read_secret
-check write_secret
+# Denied, the write fails or lands in bubblewrap's private /tmp; the caller
+# proves the host file untouched either way.
+write_secret || [[ $mode == denied ]] || exit 3
 check connect_network
 printf 'HOST_CANARY_%s\n' "$mode"
 "#;
@@ -213,7 +217,7 @@ fn private_cargo_home_uses_read_only_sources_and_hides_credentials() {
         prepare_confined(&spec, Some(&cwd), None, CommandConfinement::Inherit).unwrap();
     crate::process::apply_stage_environment(&mut prepared.command);
     prepared.command.env("CARGO_HOME", &cargo);
-    let (wrapped, scratch) =
+    let (wrapped, scratch, _) =
         host::wrap(&prepared.command, None, host::NetworkAccess::Denied).unwrap();
     prepared.wrapped = Some(wrapped);
     prepared.scratch = Some(scratch);
@@ -262,6 +266,7 @@ fn provisioning_exposes_only_the_resolver_symlink_target_read_only() {
         std::path::Path::new("/bin/bash"),
         &scratch,
         super::NetworkAccess::Provision,
+        None,
     )
     .unwrap();
     // Inject a resolver symlink outside /etc so this reproduces the missing
@@ -284,19 +289,75 @@ fn provisioning_exposes_only_the_resolver_symlink_target_read_only() {
     );
 }
 
+// The host's resolver is commonly a symlink into the unbound /run; both modes
+// see the file it names, as an unconfined command does.
 #[cfg(target_os = "linux")]
 #[test]
-fn provisioning_can_read_the_host_dns_configuration() {
+fn provisioning_and_confined_commands_read_the_host_dns_configuration() {
     let cwd = tempfile::tempdir().unwrap();
-    let result = crate::verify::criteria::run_provision_with_timeout(
-        &CommandSpec::shell("cat /etc/resolv.conf"),
-        cwd.path(),
-        Duration::from_secs(15),
+    let spec = CommandSpec::shell("cat /etc/resolv.conf");
+    let timeout = Duration::from_secs(15);
+    let provision =
+        crate::verify::criteria::run_provision_with_timeout(&spec, cwd.path(), timeout).unwrap();
+    let confined = run_spec_with_timeout(
+        &spec,
+        Some(cwd.path()),
+        timeout,
+        CommandConfinement::Confined,
     )
     .unwrap();
-    assert!(result.success, "{}", result.stderr);
-    assert_eq!(
-        result.stdout,
-        std::fs::read_to_string("/etc/resolv.conf").unwrap()
+    let host = std::fs::read_to_string("/etc/resolv.conf").unwrap();
+    for result in [provision, confined] {
+        assert!(result.success, "{}", result.stderr);
+        assert_eq!(result.stdout, host);
+    }
+}
+
+// Nested in a sandbox that hides /run, the resolver link dangles; a wrap in
+// either mode still succeeds and binds nothing for it.
+#[cfg(target_os = "linux")]
+#[test]
+fn a_dangling_resolver_symlink_binds_nothing() {
+    let root = tempfile::tempdir().unwrap();
+    let resolver = root.path().join("resolv.conf");
+    std::os::unix::fs::symlink(root.path().join("missing/stub-resolv.conf"), &resolver).unwrap();
+    let mut command = std::process::Command::new("bwrap");
+    super::bind_resolver_target(&mut command, &resolver).unwrap();
+    assert_eq!(command.get_args().count(), 0);
+}
+
+#[cfg(target_os = "linux")]
+#[test]
+fn temporary_directories_are_private_and_writable() {
+    if crate::process::sandbox_probe::skip_unless(
+        super::launcher().is_some(),
+        "temporary_directories_are_private_and_writable",
+        "OS sandbox launcher absent",
+    ) {
+        return;
+    }
+    let cwd = tempfile::tempdir().unwrap();
+    // Unique on the host, and unlike the working directory, never mounted.
+    let name = format!(
+        "{}-private",
+        cwd.path().file_name().unwrap().to_str().unwrap()
     );
+    let line = format!(
+        "mkdir /tmp/{name} /var/tmp/{name} && [ \"$TMPDIR\" = /tmp ] && mktemp -d >/dev/null"
+    );
+    let result = run_spec_with_timeout(
+        &CommandSpec::shell(line),
+        Some(cwd.path()),
+        Duration::from_secs(15),
+        CommandConfinement::Confined,
+    )
+    .unwrap();
+    assert!(
+        result.success,
+        "stdout={} stderr={}",
+        result.stdout, result.stderr
+    );
+    for root in ["/tmp", "/var/tmp"] {
+        assert!(!std::path::Path::new(root).join(&name).exists(), "{root}");
+    }
 }

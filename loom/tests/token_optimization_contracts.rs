@@ -35,6 +35,7 @@ fn stage_with_truth(command: &str, contains: &[&str], require_empty_stderr: bool
         stdout_not_contains: vec!["forbidden".to_string()],
         stderr_empty: require_empty_stderr.then_some(true),
         exit_code: Some(0),
+        timeout_secs: None,
         description: None,
     }));
     stage

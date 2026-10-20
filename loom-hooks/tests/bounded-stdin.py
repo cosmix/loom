@@ -11,9 +11,10 @@ import time
 HOOKS = Path(__file__).resolve().parent.parent
 
 
-def run_case(path, name, payload, expected):
+def run_case(path, name, payload, expected, extra_env=None):
     env = {key: value for key, value in os.environ.items() if not key.startswith("LOOM_")}
     env.update(PATH=str(path), HOME=str(path.parent), TMPDIR=str(path.parent))
+    env.update(extra_env or {})
     interpreter = "python3" if name == "skill-trigger.sh" else "bash"
     proc = subprocess.Popen([str(path / interpreter), str(HOOKS / name)], env=env,
                             stdin=subprocess.PIPE, stdout=subprocess.PIPE,
@@ -46,8 +47,13 @@ def main():
             executable = shutil.which(name)
             assert executable, name
             (path / name).symlink_to(executable)
-        for name in ("read-guard.sh", "codex-forward-guard.sh", "stage-terminal-guard.sh"):
+        for name in ("read-guard.sh", "stage-terminal-guard.sh"):
             run_case(path, name, "{}", 0)
+        # Under bubblewrap (pid 1 is bwrap) the guard sees stage evidence, and
+        # `{}` blocks there; a complete payload passes in every context.
+        run_case(path, "codex-forward-guard.sh",
+                 '{"tool_name":"Read","agent_type":"general-purpose"}', 0)
+        run_case(path, "codex-forward-guard.sh", "{}", 2, {"LOOM_STAGE_ID": "t"})
         run_case(path, "plans-path-guard.sh",
                  '{"tool_name":"Write","tool_input":{"file_path":"/x/.claude/plans/a.md"}}', 2)
         run_case(path, "worktree-file-guard.sh", "{", 2)

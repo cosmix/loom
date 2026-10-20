@@ -11,6 +11,7 @@ fn check(command: &str, exit: i32) -> TruthCheck {
     TruthCheck {
         command: command.into(),
         exit_code: Some(exit),
+        timeout_secs: None,
         stdout_contains: vec![],
         stdout_not_contains: vec!["forbidden".into()],
         stderr_empty: Some(true),

@@ -39,6 +39,7 @@ fn sample_acceptance_criteria() -> Vec<AcceptanceCriterion> {
             stdout_not_contains: vec!["error".to_string()],
             stderr_empty: Some(true),
             exit_code: Some(0),
+            timeout_secs: None,
             description: Some("build check".to_string()),
         }),
     ]
@@ -53,6 +54,7 @@ fn sample_truth_check(phase: &str) -> TruthCheck {
         stdout_not_contains: vec![],
         stderr_empty: None,
         exit_code: Some(0),
+        timeout_secs: None,
         description: Some(format!("{phase}-check")),
     }
 }

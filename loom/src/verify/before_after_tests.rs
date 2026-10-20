@@ -10,6 +10,7 @@ fn test_before_after_stage_checks_pass() {
         stdout_not_contains: vec![],
         stderr_empty: None,
         exit_code: Some(1),
+        timeout_secs: None,
         description: Some("Feature test should fail before implementation".to_string()),
     }];
 
@@ -30,6 +31,7 @@ fn test_before_stage_checks_fail_when_precondition_not_met() {
         stdout_not_contains: vec![],
         stderr_empty: None,
         exit_code: Some(1),
+        timeout_secs: None,
         description: Some("Feature should not exist yet".to_string()),
     }];
 
@@ -51,6 +53,7 @@ fn test_after_stage_checks_pass() {
         stdout_not_contains: vec![],
         stderr_empty: None,
         exit_code: Some(0),
+        timeout_secs: None,
         description: Some("Feature should work after implementation".to_string()),
     }];
 
@@ -77,6 +80,7 @@ fn test_after_stage_checks_fail_when_postcondition_not_met() {
         stdout_not_contains: vec![],
         stderr_empty: None,
         exit_code: None,
+        timeout_secs: None,
         description: Some("Feature output check".to_string()),
     }];
 
@@ -119,6 +123,7 @@ fn test_before_stage_stdout_not_contains() {
         stdout_not_contains: vec!["FeatureX".to_string()],
         stderr_empty: None,
         exit_code: None,
+        timeout_secs: None,
         description: Some("FeatureX should not appear before implementation".to_string()),
     }];
 
@@ -139,6 +144,7 @@ fn test_after_stage_multiple_checks() {
             stdout_not_contains: vec![],
             stderr_empty: None,
             exit_code: Some(0),
+            timeout_secs: None,
             description: Some("First post-condition".to_string()),
         },
         TruthCheck {
@@ -147,6 +153,7 @@ fn test_after_stage_multiple_checks() {
             stdout_not_contains: vec![],
             stderr_empty: None,
             exit_code: Some(0),
+            timeout_secs: None,
             description: Some("Second post-condition".to_string()),
         },
     ];

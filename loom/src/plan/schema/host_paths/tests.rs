@@ -222,6 +222,7 @@ fn labels_and_stage_id_appear_in_each_command_field_message() {
         stdout_not_contains: vec![],
         stderr_empty: None,
         exit_code: None,
+        timeout_secs: None,
         description: None,
     }];
     stage.after_stage = vec![TruthCheck {
@@ -230,6 +231,7 @@ fn labels_and_stage_id_appear_in_each_command_field_message() {
         stdout_not_contains: vec![],
         stderr_empty: None,
         exit_code: None,
+        timeout_secs: None,
         description: None,
     }];
 

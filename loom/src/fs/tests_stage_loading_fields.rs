@@ -63,6 +63,7 @@ fn truth_check(command: &str) -> TruthCheck {
         stdout_not_contains: vec![],
         stderr_empty: None,
         exit_code: None,
+        timeout_secs: None,
         description: None,
     }
 }
