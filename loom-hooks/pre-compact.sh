@@ -137,8 +137,9 @@ EOF
 
 CONTEXT COMPACTION INTERCEPTED
 ${INTERCEPT_HANDOFF_LINE}
-Do NOT record task state to 'loom memory' - it is not read back after compaction.
-Record only DURABLE lessons there (mistakes, decisions, gotchas), if any are worth keeping.
+Task state belongs in the handoff, not in 'loom memory'.
+Record only DURABLE lessons there (mistakes, decisions, gotchas), if any are worth keeping;
+read them back with 'loom memory list --stage <id>'.
 Continue work. Compaction will proceed on next cycle.
 
 INTERCEPT

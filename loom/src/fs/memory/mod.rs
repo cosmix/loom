@@ -15,7 +15,7 @@ mod types;
 
 pub use types::{MemoryEntry, MemoryEntryType, MemoryJournal, Receipt, ReceiptOutcome};
 
-pub use archive::archive_run_state;
+pub use archive::{archive_run_state, archive_state_dir};
 
 pub use storage::{
     append_entry, create_journal, init_memory_dir, memory_dir, memory_file_path, read_journal,

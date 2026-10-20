@@ -72,6 +72,7 @@ check_memory_usage() {
 │    loom memory question "open question to investigate"             │
 │                                                                    │
 │  Memories help future agents avoid repeating mistakes.             │
+│  A knowledge-distill stage records nothing once distilling begins. │
 └────────────────────────────────────────────────────────────────────┘
 WARN
 	fi
