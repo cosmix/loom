@@ -244,7 +244,6 @@ fn provisioning_exposes_only_the_resolver_symlink_target_read_only() {
     let target = root.path().join("resolver-config");
     let secret = root.path().join("secret");
     std::fs::create_dir(&cwd).unwrap();
-    std::fs::create_dir(root.path().join("scratch")).unwrap();
     std::fs::write(&target, "nameserver 127.0.0.53\n").unwrap();
     std::fs::write(&secret, "private").unwrap();
     std::os::unix::fs::symlink(&target, &resolver).unwrap();
@@ -254,12 +253,14 @@ fn provisioning_exposes_only_the_resolver_symlink_target_read_only() {
         "[[ $(cat resolv.conf) == 'nameserver 127.0.0.53' ]] && ! echo changed > resolv.conf && ! cat ../secret",
     ]);
     crate::process::apply_stage_environment(&mut original);
+    let scratch = super::CargoScratch::prepare(&original, &cwd, true).unwrap();
+    scratch.populate().unwrap();
     let wrapped = super::platform_command(
         &original,
         &cwd,
         &cwd,
         std::path::Path::new("/bin/bash"),
-        &root.path().join("scratch"),
+        &scratch,
         super::NetworkAccess::Provision,
     )
     .unwrap();

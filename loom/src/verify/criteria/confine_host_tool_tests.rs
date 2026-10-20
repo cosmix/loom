@@ -19,14 +19,14 @@ fn private_scratch_stays_outside_temporary_root_working_directories() {
     let original = Command::new("/bin/bash");
     for root in [std::env::temp_dir(), PathBuf::from("/tmp")] {
         let cwd = root.canonicalize().unwrap();
-        let scratch = super::CargoScratch::prepare(&original, &cwd).unwrap();
+        let scratch = super::CargoScratch::prepare(&original, &cwd, false).unwrap();
         let path = scratch.path().to_path_buf();
         assert!(!path.starts_with(&cwd), "{}", path.display());
         std::fs::write(path.join("writable"), "private").unwrap();
         drop(scratch);
         assert!(!path.exists());
     }
-    assert!(super::CargoScratch::prepare(&original, Path::new("/")).is_err());
+    assert!(super::CargoScratch::prepare(&original, Path::new("/"), false).is_err());
 }
 
 const CACHE_CANARY: &str = r#"

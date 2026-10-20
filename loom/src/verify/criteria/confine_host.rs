@@ -1,4 +1,5 @@
-//! OS boundary for host verification. Only the working tree and private scratch are writable;
+//! OS boundary for host verification. Only the working tree, private scratch and
+//! the command's Cargo home (see `confine_scratch.rs`) are writable;
 //! runtime and compiler installation directories are readable. Verification denies
 //! network access; plan-approved provisioning can fetch dependencies.
 //! A missing or unusable OS facility fails before executing repository code.
@@ -7,6 +8,8 @@
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::process::{Command, Stdio};
+
+pub(super) use super::scratch::CargoScratch;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(super) enum NetworkAccess {
@@ -28,23 +31,18 @@ pub(super) fn wrap(
         .context("resolve confined working directory")?;
     let tree = confined_tree(tree, &cwd)?;
     let resolved_program = resolve_program(original, &cwd)?;
-    let scratch = CargoScratch::prepare(original, &tree)?;
     // The outer boundary is reused only when it covers the whole granted tree.
-    let mut command =
-        if network == NetworkAccess::Denied && crate::daemon::inherited::available(&tree) {
-            let mut command = Command::new(&resolved_program);
-            command.args(original.get_args());
-            command
-        } else {
-            platform_command(
-                original,
-                &tree,
-                &cwd,
-                &resolved_program,
-                scratch.path(),
-                network,
-            )?
-        };
+    let inherited = network == NetworkAccess::Denied && crate::daemon::inherited::available(&tree);
+    // Only bubblewrap can bind a private directory at the host's Cargo home path.
+    let mount = cfg!(target_os = "linux") && !inherited;
+    let scratch = CargoScratch::prepare(original, &tree, mount)?;
+    let mut command = if inherited {
+        let mut command = Command::new(&resolved_program);
+        command.args(original.get_args());
+        command
+    } else {
+        platform_command(original, &tree, &cwd, &resolved_program, &scratch, network)?
+    };
     command.env_clear();
     command.envs(original.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))));
     scratch.apply_environment(&mut command);
@@ -94,7 +92,7 @@ fn environment_path(command: &Command, key: &str) -> Option<PathBuf> {
         .find_map(|(name, value)| (name == key).then_some(value).flatten().map(PathBuf::from))
 }
 
-fn cargo_home(command: &Command) -> Option<PathBuf> {
+pub(super) fn cargo_home(command: &Command) -> Option<PathBuf> {
     environment_path(command, "CARGO_HOME")
         .or_else(|| environment_path(command, "HOME").map(|home| home.join(".cargo")))
 }
@@ -174,78 +172,14 @@ fn developer_tools() -> &'static Option<PathBuf> {
     })
 }
 
-/// Keep tool state outside the input tree: recursive linters follow the Cargo
-/// source symlinks, and Biome's Git ignore matcher panics on their external paths.
-/// Populate only at spawn; no repository inputs or host credentials are copied.
-pub(super) struct CargoScratch {
-    directory: tempfile::TempDir,
-    sources: Vec<(String, PathBuf)>,
-}
-
-impl CargoScratch {
-    fn prepare(command: &Command, tree: &Path) -> Result<Self> {
-        let directory = private_temporary_directory(tree)?;
-        let mut sources = Vec::new();
-        if let Some(cargo) = cargo_home(command) {
-            for name in ["registry", "git"] {
-                let source = cargo.join(name);
-                if source.is_dir() {
-                    sources.push((name.to_string(), source.canonicalize()?));
-                }
-            }
-        }
-        Ok(Self { directory, sources })
-    }
-
-    pub(super) fn path(&self) -> &Path {
-        self.directory.path()
-    }
-
-    fn apply_environment(&self, command: &mut Command) {
-        for key in ["CARGO_HOME", "TMPDIR", "TMP", "TEMP"] {
-            command.env(key, self.path());
-        }
-        for (key, child) in [
-            ("XDG_CACHE_HOME", "cache"),
-            ("UV_CACHE_DIR", "uv-cache"),
-            ("BUN_INSTALL_CACHE_DIR", "bun-cache"),
-        ] {
-            command.env(key, self.path().join(child));
-        }
-    }
-
-    pub(super) fn populate(&self) -> Result<()> {
-        #[cfg(unix)]
-        for (name, source) in &self.sources {
-            std::os::unix::fs::symlink(source, self.directory.path().join(name))?;
-        }
-        Ok(())
-    }
-}
-
-fn private_temporary_directory(tree: &Path) -> Result<tempfile::TempDir> {
-    let mut failure = None;
-    // Keep the default first for inherited macOS temporary-directory grants.
-    // /var/tmp also supports callers whose working tree is /tmp itself.
-    for root in [std::env::temp_dir(), "/tmp".into(), "/var/tmp".into()] {
-        let root = match root.canonicalize() {
-            Ok(root) if !root.starts_with(tree) => root,
-            _ => continue,
-        };
-        match tempfile::Builder::new()
-            .prefix(".loom-command-")
-            .tempdir_in(&root)
-        {
-            Ok(directory) => return Ok(directory),
-            Err(error) => failure = Some(error),
-        }
-    }
-    match failure {
-        Some(error) => {
-            Err(error).context("create private command scratch outside its working tree")
-        }
-        None => anyhow::bail!("command scratch must be outside its working tree"),
-    }
+/// The working tree, the command's scratch, and its Cargo home when that is a
+/// persistent per-tree directory.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn writable_roots<'a>(tree: &'a Path, scratch: &'a CargoScratch) -> Vec<&'a Path> {
+    [tree, scratch.path()]
+        .into_iter()
+        .chain(scratch.linked_cargo_home())
+        .collect()
 }
 
 #[cfg(target_os = "macos")]
@@ -255,7 +189,7 @@ fn platform_command(
     // Seatbelt keeps the process's own working directory, set by `wrap`.
     _cwd: &Path,
     program: &Path,
-    scratch: &Path,
+    scratch: &CargoScratch,
     network: NetworkAccess,
 ) -> Result<Command> {
     let launcher = Path::new("/usr/bin/sandbox-exec");
@@ -268,18 +202,18 @@ fn platform_command(
     if network == NetworkAccess::Provision {
         profile.push_str("(allow network-outbound)");
     }
-    for root in read_roots(original)
-        .into_iter()
-        .chain([tree.to_path_buf(), scratch.to_path_buf()])
-    {
+    let writable = writable_roots(tree, scratch);
+    let readable = writable.iter().map(|path| path.to_path_buf());
+    for root in read_roots(original).into_iter().chain(readable) {
         profile.push_str(&format!(
             "(allow file-read* (subpath {}))",
             quote(&root.canonicalize().unwrap_or(root))
         ));
     }
+    let writable: Vec<_> = writable.into_iter().map(quote).collect();
     profile.push_str(&format!(
-        "(allow file-write* (subpath {})(subpath {}))(allow file-write-data (literal \"/dev/null\"))",
-        quote(tree), quote(scratch)
+        "(allow file-write* (subpath {}))(allow file-write-data (literal \"/dev/null\"))",
+        writable.join(")(subpath ")
     ));
     for root in read_roots(original)
         .into_iter()
@@ -305,7 +239,7 @@ fn platform_command(
     tree: &Path,
     cwd: &Path,
     program: &Path,
-    scratch: &Path,
+    scratch: &CargoScratch,
     network: NetworkAccess,
 ) -> Result<Command> {
     let launcher =
@@ -323,21 +257,11 @@ fn platform_command(
     if network == NetworkAccess::Provision {
         command.arg("--share-net");
     }
-    command
-        .arg("--bind")
-        .arg(tree)
-        .arg(tree)
-        .arg("--bind")
-        .arg(scratch)
-        .arg(scratch)
-        .arg("--chdir")
-        .arg(cwd);
-    for root in read_roots(original)
-        .into_iter()
-        .filter(|p| p != Path::new("/dev"))
-    {
-        command.arg("--ro-bind").arg(&root).arg(&root);
+    for writable in writable_roots(tree, scratch) {
+        command.arg("--bind").arg(writable).arg(writable);
     }
+    command.arg("--chdir").arg(cwd);
+    bind_read_roots(&mut command, original, scratch);
     if network == NetworkAccess::Provision {
         bind_resolver_target(&mut command, Path::new("/etc/resolv.conf"))?;
     }
@@ -348,6 +272,31 @@ fn platform_command(
     command.args(["--remount-ro", "/"]);
     command.arg("--").arg(program).args(original.get_args());
     Ok(command)
+}
+
+/// Read-only installation roots, and the private Cargo home when it is mounted.
+/// Cargo's sources go read-only over that home, so they bind after it, and the
+/// home binds after every other root in case one contains it.
+#[cfg(target_os = "linux")]
+fn bind_read_roots(command: &mut Command, original: &Command, scratch: &CargoScratch) {
+    let mount = scratch.cargo_mount();
+    let (cargo_roots, roots): (Vec<_>, Vec<_>) = read_roots(original)
+        .into_iter()
+        .filter(|p| p != Path::new("/dev"))
+        .partition(|root| {
+            mount
+                .as_ref()
+                .is_some_and(|(_, home)| root.starts_with(home))
+        });
+    for root in roots {
+        command.arg("--ro-bind").arg(&root).arg(&root);
+    }
+    if let Some((private, home)) = &mount {
+        command.arg("--bind").arg(private).arg(home);
+    }
+    for root in cargo_roots {
+        command.arg("--ro-bind").arg(&root).arg(&root);
+    }
 }
 
 /// /etc can contain a resolver symlink into /run, which stays hidden. Expose
@@ -369,7 +318,7 @@ fn platform_command(
     _: &Path,
     _: &Path,
     _: &Path,
-    _: &Path,
+    _: &CargoScratch,
     _: NetworkAccess,
 ) -> Result<Command> {
     anyhow::bail!("confined verification is unsupported on this platform")
@@ -394,3 +343,7 @@ mod tests;
 #[cfg(test)]
 #[path = "confine_host_tool_tests.rs"]
 mod tool_tests;
+
+#[cfg(test)]
+#[path = "confine_cargo_home_tests.rs"]
+mod cargo_home_tests;

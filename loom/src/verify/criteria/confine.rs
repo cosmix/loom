@@ -15,6 +15,8 @@
 
 #[path = "confine_host.rs"]
 mod host;
+#[path = "confine_scratch.rs"]
+mod scratch;
 
 /// The OS sandbox launcher tests need, when installed.
 #[cfg(test)]
@@ -70,8 +72,8 @@ pub(super) struct PreparedCommand {
 }
 
 impl PreparedCommand {
-    // This is the stable input environment. The wrapper maps its Cargo home to
-    // a private generated directory under the versioned containment policy.
+    // This is the stable input environment. The wrapper maps its Cargo home and
+    // temporary directories to private state under the versioned containment policy.
     pub(super) fn command(&self) -> &Command {
         &self.command
     }
@@ -99,7 +101,7 @@ impl PreparedCommand {
             .wrapped
             .as_ref()
             .map(|command| command.get_args().collect::<Vec<_>>());
-        let revision = format!("host-os-boundary-v7:{arguments:?}");
+        let revision = format!("host-os-boundary-v8:{arguments:?}");
         match &self.scratch {
             Some(scratch) => revision.replace(
                 scratch.path().to_string_lossy().as_ref(),
