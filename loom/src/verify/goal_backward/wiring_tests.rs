@@ -10,7 +10,7 @@ use crate::verify::criteria::assertions::{evaluate, AssertionSpec};
 use crate::verify::criteria::{run_spec_in_optional_tree, CommandSpec};
 
 /// Default timeout for wiring test commands (30 seconds)
-const WIRING_TEST_TIMEOUT: Duration = Duration::from_secs(30);
+pub(crate) const WIRING_TEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Verify all wiring tests pass their success criteria
 ///

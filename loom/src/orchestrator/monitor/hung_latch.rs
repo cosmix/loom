@@ -65,6 +65,7 @@ impl Detection {
             return self.adjudicator_stall_event(
                 session,
                 stage_id,
+                stages,
                 heartbeat_watcher,
                 timeout_secs,
                 handlers,

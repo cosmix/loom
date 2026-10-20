@@ -36,7 +36,8 @@ pub struct Detection {
     /// report closes the judge, so there is no second line to escalate to.
     pub(super) reported_stalled_judges: HashSet<String>,
     /// When each judge was last found running a command of its own, which
-    /// counts as activity. See [`super::judge_watchdog`].
+    /// counts as activity until its hold ceiling. See
+    /// [`super::judge_watchdog`].
     pub(super) judge_commands_seen: HashMap<String, chrono::DateTime<chrono::Utc>>,
     /// Red handoffs successfully written or found during this daemon run.
     /// A failed write remains absent so an unchanged-Red poll retries it.

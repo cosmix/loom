@@ -10,7 +10,7 @@ use crate::plan::schema::{CommandConfinement, DeadCodeCheck};
 use crate::verify::criteria::{run_spec_in_optional_tree, CommandSpec};
 
 /// Default timeout for build commands that detect dead code (120 seconds)
-const DEAD_CODE_TIMEOUT: Duration = Duration::from_secs(120);
+pub(crate) const DEAD_CODE_TIMEOUT: Duration = Duration::from_secs(120);
 
 /// Run dead code detection and parse output for violations
 ///

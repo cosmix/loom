@@ -150,32 +150,53 @@ pub fn home_dir_resolvable() -> bool {
 /// sandbox that already nests bubblewrap, or forbids user namespaces, makes
 /// every confined verification command fail regardless of the code under test.
 /// Always true off Linux, where confinement is not bubblewrap. Memoized.
+///
+/// When it is false, every call prints why on stderr — `bwrap` missing, or
+/// `bwrap` failing with its exit status and first stderr line — so the
+/// caller's `SKIP` line beside it says which, and on every test that asks.
 pub fn confined_commands_runnable() -> bool {
-    static RESULT: OnceLock<bool> = OnceLock::new();
-    *RESULT.get_or_init(|| {
-        if !cfg!(target_os = "linux") {
-            return true;
+    static RESULT: OnceLock<Result<(), String>> = OnceLock::new();
+    match RESULT.get_or_init(confined_command_blocker) {
+        Ok(()) => true,
+        Err(why) => {
+            eprintln!("SKIP reason: confined commands cannot start: {why}");
+            false
         }
-        std::process::Command::new("bwrap")
-            .args([
-                "--die-with-parent",
-                "--unshare-all",
-                "--new-session",
-                "--ro-bind",
-                "/",
-                "/",
-                "--proc",
-                "/proc",
-                "--dev",
-                "/dev",
-                "--",
-                "true",
-            ])
-            .stdin(std::process::Stdio::null())
-            .output()
-            .map(|out| out.status.success())
-            .unwrap_or(false)
-    })
+    }
+}
+
+/// Run one bubblewrap-confined `true`; `Err` names why it could not.
+fn confined_command_blocker() -> Result<(), String> {
+    if !cfg!(target_os = "linux") {
+        return Ok(());
+    }
+    let output = std::process::Command::new("bwrap")
+        .args([
+            "--die-with-parent",
+            "--unshare-all",
+            "--new-session",
+            "--ro-bind",
+            "/",
+            "/",
+            "--proc",
+            "/proc",
+            "--dev",
+            "/dev",
+            "--",
+            "true",
+        ])
+        .stdin(std::process::Stdio::null())
+        .output()
+        .map_err(|error| match error.kind() {
+            std::io::ErrorKind::NotFound => "bwrap not found".to_string(),
+            _ => format!("bwrap could not be started ({error})"),
+        })?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    let first_line = stderr.lines().next().unwrap_or("no stderr");
+    Err(format!("bwrap failed ({}: {first_line})", output.status))
 }
 
 /// Returns true if the caller should skip: `probe_ok` is false, so the

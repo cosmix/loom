@@ -5,14 +5,14 @@
 //! on a path of its own. Both halves are checked here: that the judge's
 //! heartbeat never reaches the stage agent's, and that a judge which stops
 //! making tool calls is reported exactly once — unless it is waiting on a
-//! command it started.
+//! command it started, and then only up to its hold ceiling.
 
 use std::os::unix::process::CommandExt;
 use std::path::Path;
 use std::time::{Duration, Instant};
 
 use crate::models::session::{Session, SessionStatus};
-use crate::models::stage::Stage;
+use crate::models::stage::{AcceptanceCriterion, Stage};
 use crate::orchestrator::liveness::LivenessService;
 use crate::orchestrator::monitor::detection::Detection;
 use crate::orchestrator::monitor::handlers::Handlers;
@@ -23,10 +23,15 @@ use crate::orchestrator::monitor::running_command::running_command;
 use crate::orchestrator::monitor::{MonitorConfig, MonitorEvent};
 use crate::orchestrator::terminal::native::write_test_pid_identity;
 use crate::process::OwnedProcess;
+use crate::verify::criteria::DEFAULT_COMMAND_TIMEOUT;
 
 /// The disputed stage's response budget in these tests. Long enough that the
 /// built-in default could never stand in for it by accident.
 const BUDGET_SECS: u64 = 900;
+
+/// How long past its last heartbeat [`disputed_stage`]'s judge may be held by
+/// a command: one budget plus its single string criterion's timeout.
+const HOLD_CEILING_SECS: u64 = BUDGET_SECS + DEFAULT_COMMAND_TIMEOUT.as_secs();
 
 /// Write a judge heartbeat for `stage_id`, `age_secs` old.
 fn write_judge_heartbeat(work_dir: &Path, stage_id: &str, session_id: &str, age_secs: i64) {
@@ -50,6 +55,7 @@ fn disputed_stage(stage_id: &str) -> Stage {
     Stage {
         id: stage_id.to_string(),
         subagent_timeout_secs: Some(BUDGET_SECS),
+        acceptance: vec![AcceptanceCriterion::Simple("cargo test".to_string())],
         ..Stage::default()
     }
 }
@@ -74,9 +80,12 @@ fn stall_events(events: &[MonitorEvent]) -> Vec<&MonitorEvent> {
 }
 
 /// A judge's Claude process waiting on a backgrounded Bash call: a shell
-/// child that touches the marker, then runs. The trailing `:` keeps the outer
-/// shell from `exec`ing the inner one, so the inner one stays its child.
-const JUDGE_WAITING_ON_A_COMMAND: &str = r#"sh -c 'touch "$LOOM_TEST_MARKER"; sleep 30; :'; :"#;
+/// child that starts its command, then touches the marker, so the command
+/// exists before anyone looks. The leading pause starts that shell a clock
+/// tick after its parent, as a real tool call is; the trailing `:` keeps the
+/// outer shell from `exec`ing the inner one, so the inner one stays its child.
+const JUDGE_WAITING_ON_A_COMMAND: &str =
+    r#"sleep 0.1; sh -c 'sleep 30 & touch "$LOOM_TEST_MARKER"; wait'; :"#;
 
 /// A judge's Claude process with nothing running: `exec` leaves no child.
 const JUDGE_WITH_NOTHING_RUNNING: &str = "exec sleep 30";
@@ -349,4 +358,39 @@ fn a_judge_whose_command_just_ended_gets_a_full_budget() {
         stall_events(&after).is_empty(),
         "a judge whose command ended a moment ago is not idle yet, got: {after:?}"
     );
+}
+
+/// A command that outlives every wait a judge has a use for — a dev server, a
+/// `tail -f`, a hung check — must not hold its dispute for good. Once the last
+/// heartbeat is older than one `loom check` of the stage plus one budget, the
+/// judge is stalled even though its command is still running.
+#[test]
+fn a_judge_silent_past_its_hold_ceiling_is_stalled_despite_its_command() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let (config, handlers) = handlers_for(temp.path());
+    let silent_secs = HOLD_CEILING_SECS as i64 + 60;
+    write_judge_heartbeat(temp.path(), "disputed-stage", "judge-1", silent_secs);
+    let sessions = [judge("disputed-stage", "judge-1", silent_secs + 60)];
+    let _judge = stand_in_judge(temp.path(), &sessions[0], JUDGE_WAITING_ON_A_COMMAND);
+    wait_for_command(temp.path());
+    assert!(
+        running_command(temp.path(), &sessions[0]).is_some(),
+        "the stand-in's command must be visible, or this proves nothing"
+    );
+
+    let mut watcher = HeartbeatWatcher::new();
+    let mut detection = Detection::new();
+    let stages = [disputed_stage("disputed-stage")];
+    let events =
+        detection.detect_heartbeat_events(&sessions, &stages, &mut watcher, &config, &handlers);
+    let stalled = stall_events(&events);
+    assert_eq!(stalled.len(), 1, "got: {events:?}");
+    let MonitorEvent::AdjudicatorStalled {
+        stale_duration_secs,
+        ..
+    } = stalled[0]
+    else {
+        unreachable!("filtered above")
+    };
+    assert!(*stale_duration_secs > HOLD_CEILING_SECS);
 }
