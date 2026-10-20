@@ -144,7 +144,7 @@ _loom_sanitize_agent_id() {
 #     ${TMPDIR:-/tmp}/loom-<kind>/<fallback_session_id>/<agent_id>.tsv
 # Every id is run through _loom_sanitize_agent_id - see that function's
 # comment. The reads session directory also holds _shared.tsv
-# (_read_ledger.sh's sibling-read receipts).
+# (_read_ledger.sh's sibling-read advisory).
 _loom_ledger_file() {
 	local kind="$1" agent_id fallback_sid="$3" root sid
 	agent_id=$(_loom_sanitize_agent_id "$2")
@@ -272,37 +272,8 @@ Read the ranges you need with offset/limit."
 	return 0
 }
 
-# _loom_read_discipline_verdict2 <path> <kind> <lines> <ledger> <payload> -
-# Compute rule 2's verdict WITHOUT emitting it. The TSV is only a cheap
-# overlap prefilter; a matching current-generation text receipt from Rust is
-# required before any repeat advice. That prevents an attempted, failed, or
-# stale Read from qualifying a later Read for escalation.
-_loom_read_discipline_verdict2() {
-	local path="$1" kind="$2" lines="$3" ledger="$4" payload="${5:-}" count prior
-	LOOM_RD_V2_KIND="none"
-	LOOM_RD_V2_MSG=""
-	[[ -n "$payload" ]] || return 0
-	_loom_read_receipt_eligible "$path" || return 0
-	_loom_read_attempt_overlaps "$ledger" "$path" "$kind" "$lines" || return 0
-	count=$(_loom_read_receipt_proven "$payload") || return 0
-	if [[ "$kind" == "full" ]]; then
-		if [[ "$count" == "1" ]]; then
-			prior=$(_loom_read_last_full_attempt_at "$ledger" "$path") || return 0
-			LOOM_RD_V2_KIND="warn"
-			LOOM_RD_V2_MSG="${path} read in full at ${prior}; cite it or read a range"
-		else
-			LOOM_RD_V2_KIND="deny"
-			LOOM_RD_V2_MSG="${path} has been read in full ${count} times already - cite the earlier read or read a specific range with offset/limit."
-		fi
-	elif [[ "$count" != "1" ]]; then
-		LOOM_RD_V2_KIND="warn"
-		LOOM_RD_V2_MSG="range ${lines} of ${path} has been read ${count} times - cite the earlier read instead of re-reading it"
-	fi
-	return 0
-}
-
 # loom_read_discipline_check <path> <kind:full|range> <lines> <agent_id>
-# <fallback_session_id> [original_payload] - the shared core for read-guard.sh's Task C Read
+# <fallback_session_id> - the shared core for read-guard.sh's Task C Read
 # checks and poll-guard.sh's Task D Bash-side cat/sed/head/tail checks. Same
 # rules regardless of which tool performed the read:
 #   0. A skill's SKILL.md (either skill root) is exempt outright, with no
@@ -316,25 +287,21 @@ _loom_read_discipline_verdict2() {
 #   1. An unbounded ("full") read of a file over READ_GUARD_LINE_LIMIT lines
 #      is redirected to `loom map --outline` (denied when covered, warned
 #      when not).
-#   2. A repeat whose prior attempt overlaps is advised only after the Rust
-#      receipt adapter proves a matching text result for the current source
-#      generation. The TSV never qualifies the repeat by itself.
 #   3. A tier-1 knowledge file (other than INDEX.md) is warned with an
-#      unscoped knowledge query, and OVERRIDES rules 1 and 2 outright.
+#      unscoped knowledge query, and OVERRIDES rule 1 outright.
 #   4. A whole-file read that a sibling agent of this session already made
 #      of the unchanged file is recorded in the session's _shared.tsv and,
-#      when rules 1 and 2 are silent, advised once per agent and path
+#      when rule 1 is silent, advised once per agent and path
 #      (_loom_read_sibling_receipt in _read_ledger.sh).
 #
-# Rules 1 and 2 are both computed (verdict1/verdict2), then exactly ONE
-# decision is emitted - a deny beats a warn, and rule 1 wins a tie because
-# its outline is the more useful message.
+# Rule 1 is computed with _loom_read_discipline_verdict1, then at most one
+# decision is queued.
 #
 # Decisions are queued via loom_hook_note_warn/loom_hook_deny_or_warn, not
 # emitted directly, so a caller evaluating several independent rules
 # (poll-guard.sh) can still join every warning into one JSON object.
 loom_read_discipline_check() {
-	local path="$1" kind="$2" lines="$3" agent_id="$4" fallback_sid="$5" payload="${6:-}"
+	local path="$1" kind="$2" lines="$3" agent_id="$4" fallback_sid="$5"
 	local ledger
 	ledger=$(_loom_ledger_file "reads" "$agent_id" "$fallback_sid")
 
@@ -359,21 +326,16 @@ loom_read_discipline_check() {
 	if [[ "$kind" == "full" ]] && _loom_read_discipline_large_unbounded "$path" "$lines"; then
 		_loom_read_discipline_verdict1 "$path" "$lines"
 	fi
-	_loom_read_discipline_verdict2 "$path" "$kind" "$lines" "$ledger" "$payload"
 
 	if [[ "$LOOM_RD_V1_KIND" == "deny" ]]; then
 		loom_hook_deny_or_warn "$LOOM_RD_V1_MSG"
-	elif [[ "$LOOM_RD_V2_KIND" == "deny" ]]; then
-		loom_hook_deny_or_warn "$LOOM_RD_V2_MSG"
 	elif [[ "$LOOM_RD_V1_KIND" == "warn" ]]; then
 		loom_hook_note_warn "$LOOM_RD_V1_MSG"
-	elif [[ "$LOOM_RD_V2_KIND" == "warn" ]]; then
-		loom_hook_note_warn "$LOOM_RD_V2_MSG"
 	fi
 
 	local sibling
 	if sibling=$(_loom_read_sibling_receipt "$path" "$kind" "$lines" "$ledger" "${ledger%/*}/_shared.tsv") &&
-		[[ "$LOOM_RD_V1_KIND$LOOM_RD_V2_KIND" == "nonenone" ]]; then
+		[[ "$LOOM_RD_V1_KIND" == "none" ]]; then
 		loom_hook_note_warn "$sibling"
 	fi
 	_loom_ledger_append "$ledger" "$path" "$kind" "$lines"

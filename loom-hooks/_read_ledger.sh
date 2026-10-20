@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # _read_ledger.sh - TSV ledger read/write/cap helpers for
-# loom-hooks/_read_discipline.sh (read-attempt diagnostics, poll counters, and
-# the sibling-read receipt scan across one session directory's ledgers).
-# It also provides the shared bounded runner used by post-tool-use.sh,
-# read-guard.sh, spawn-guard.sh, and subagent-start.sh.
+# loom-hooks/_read_discipline.sh (poll counters and the sibling-read scan
+# across one session directory's ledgers). It sources _bounded.sh, so
+# post-tool-use.sh and subagent-stop.sh, which source this file, get
+# loom_run_bounded through it.
 #
 # Split out of _read_discipline.sh purely for size - CLAUDE.md rule 17's
 # 400-line file cap left no room for this module once the ledger-capping and
@@ -27,15 +27,13 @@ _LOOM_READ_LEDGER_LOADED=1
 
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
 # _LOOM_LEDGER_MAX_ROWS - cap on a ledger's row count, enforced on every
-# append. Read receipts use this only as a bounded overlap prefilter; poll
-# counters also scan it. A few hundred rows is ample diagnostic headroom and
-# keeps both the ledger file and every O(n) scan bounded over a long session.
+# append. Poll counters and the sibling-read scan read it. A few hundred rows
+# is ample diagnostic headroom and keeps both the ledger file and every O(n)
+# scan bounded over a long session.
 _LOOM_LEDGER_MAX_ROWS=300
 
 # _loom_read_skip_extension <path> - Return 0 when <path>'s extension is a
-# binary/image format that text-oriented read advice and receipts skip.
-# Kept beside _loom_read_receipt_eligible so the PostToolUse hook can use the
-# same gate without sourcing the read-discipline policy module.
+# binary/image format that text-oriented read advice skips.
 _loom_read_skip_extension() {
 	local path="$1" ext lower
 	[[ "$path" == *.* ]] || return 1
@@ -81,7 +79,7 @@ _loom_ledger_cap() {
 # pre-planted directory symlink (e.g. a shared /tmp with TMPDIR unset), which
 # would otherwise redirect every ledger write wherever that symlink points.
 # The parent is created 0700 too: outside a stage it is $TMPDIR/loom-reads,
-# which loom's Rust receipt store also walks and rejects when it is exposed.
+# shared by every session of the user.
 _loom_ledger_append() {
 	local file="$1"
 	shift
@@ -115,84 +113,6 @@ _loom_ledger_append() {
 	return 0
 }
 
-# _loom_read_attempt_overlaps <ledger> <path> <kind> <lines> - cheap attempt
-# ledger prefilter for receipt lookup. It proves neither a returned result nor
-# source identity: full reads overlap any attempt for their path; numeric
-# ranges overlap when their half-open intervals intersect. The Rust receipt
-# check remains authoritative.
-_loom_read_ranges_overlap() {
-	local left="$1" right="$2" left_start left_end right_start right_end
-	[[ "$left" =~ ^([0-9]+)-([0-9]+)?$ ]] || return 1
-	left_start="${BASH_REMATCH[1]}"
-	left_end="${BASH_REMATCH[2]}"
-	[[ "$right" =~ ^([0-9]+)-([0-9]+)?$ ]] || return 1
-	right_start="${BASH_REMATCH[1]}"
-	right_end="${BASH_REMATCH[2]}"
-	if [[ -z "$left_end" ]]; then
-		[[ -z "$right_end" ]] || ((right_end > left_start))
-	elif [[ -z "$right_end" ]]; then
-		((left_end > right_start))
-	else
-		((left_start < right_end && right_start < left_end))
-	fi
-}
-
-_loom_read_attempt_overlaps() {
-	local file="$1" path="$2" kind="$3" lines="$4" p k l t
-	[[ -r "$file" ]] || return 1
-	while IFS=$'\t' read -r p k l t; do
-		[[ "$p" == "$path" ]] || continue
-		[[ "$kind" == "full" || "$k" == "full" ]] && return 0
-		_loom_read_ranges_overlap "$lines" "$l" && return 0
-	done <"$file"
-	return 1
-}
-
-# _loom_read_receipt_eligible <path> - shell's inexpensive eligibility gate.
-# The Rust adapter repeats its own no-follow, content, size, and generation
-# validation; this avoids starting it for known media and non-files.
-_loom_read_receipt_eligible() {
-	local path="$1"
-	[[ -f "$path" && ! -L "$path" ]] || return 1
-	! _loom_read_skip_extension "$path"
-}
-
-# _loom_read_receipt_run <mode> <payload> - pass the original hook payload to
-# the bounded Rust adapter. Failures are deliberately indistinguishable from a
-# missing receipt so receipt instrumentation cannot block an ordinary Read.
-_loom_read_receipt_run() {
-	local mode="$1" payload="$2"
-	command -v "${LOOM_BIN:-loom}" &>/dev/null || return 1
-	printf '%s' "$payload" | LOOM_HOOK_CONTEXT=1 loom_run_bounded 2 "${LOOM_BIN:-loom}" hook read-receipt "$mode" 2>/dev/null
-}
-
-# _loom_read_receipt_proven <payload> - print the CLI's exact proven receipt
-# count, or fail. A ledger overlap alone is never a repeat qualification.
-_loom_read_receipt_proven() {
-	local output count
-	output=$(_loom_read_receipt_run --check "$1" || true)
-	[[ "$output" =~ ^proven\ ([1-9][0-9]*)$ ]] || return 1
-	count="${BASH_REMATCH[1]}"
-	printf '%s\n' "$count"
-}
-
-# _loom_read_last_full_attempt_at <ledger> <path> - print the timestamp of
-# the most recent prior full-read attempt for the repeat advisory.
-_loom_read_last_full_attempt_at() {
-	local file="$1" path="$2" p kind lines timestamp last=""
-	[[ -r "$file" ]] || return 1
-	while IFS=$'\t' read -r p kind lines timestamp; do
-		[[ "$p" == "$path" && "$kind" == "full" ]] && last="$timestamp"
-	done <"$file"
-	[[ -n "$last" ]] || return 1
-	printf '%s\n' "$last"
-}
-
-# _loom_read_receipt_prepare <payload> - best-effort pending-intent creation.
-_loom_read_receipt_prepare() {
-	_loom_read_receipt_run --prepare "$1" >/dev/null || true
-}
-
 # _loom_polls_count <ledger> <key> - echo the count of prior rows whose
 # first column exactly equals <key>.
 _loom_polls_count() {
@@ -208,9 +128,9 @@ _loom_polls_count() {
 	return 0
 }
 
-# Sibling-read receipts. Every agent of one session writes its reads ledger
+# Sibling-read advisory. Every agent of one session writes its reads ledger
 # into the same session directory (_loom_ledger_file), so a whole-file read
-# can be checked against what the other agents already read whole. Each hit
+# can be checked against what the other agents already requested whole. Each hit
 # appends "<absolute path>\t<lines>\t<agent count>\t<UTC timestamp>" to the
 # shared file loom_read_discipline_check names (the session directory's
 # _shared.tsv; the latest row per path carries the current count) for an
@@ -259,8 +179,7 @@ _loom_sibling_ledgers() {
 # or absolute, stamped no earlier than the file's mtime. Prints
 # "<ledger>\t<lines>\t<sibling count>" for the most recent sibling row. Fails
 # when no sibling has one, or when <own_ledger> already has one: this agent
-# has read the current file whole itself, so it was told once already or the
-# repeat is rule 2's. A torn last row lacks its timestamp and never matches.
+# has read the current file whole itself, so it was told once already. A torn last row lacks its timestamp and never matches.
 _loom_sibling_full_read() {
 	local path="$1" abs="$2" own="$3" mtime f
 	local -a files=()
@@ -284,7 +203,7 @@ _loom_sibling_full_read() {
 
 # _loom_read_sibling_receipt <path> <kind> <lines> <own_ledger> <shared_file>
 # - for a whole-file read of a regular file above _LOOM_SIBLING_READ_MIN_LINES
-# lines that a sibling agent already read whole, unchanged since: append the
+# lines that a sibling agent already requested whole, unchanged since: append the
 # <shared_file> row and print the advisory. Prints nothing and fails
 # otherwise. Run it BEFORE this read's own ledger append, or the fresh own
 # row mutes it.
@@ -302,6 +221,6 @@ _loom_read_sibling_receipt() {
 	who="agent ${sib}"
 	[[ "$sib" == "main" ]] && who="the main agent"
 	((count > 1)) && more=" and $((count - 1)) other agent(s)"
-	printf '%s (%s lines) was read whole by %s%s and is unchanged since - run `loom map --outline %s`, then Read only the range you need with offset/limit.' \
+	printf '%s (%s lines) was requested whole by %s%s (an attempt, not proof of delivery) and is unchanged since - run `loom map --outline %s`, then Read only the range you need with offset/limit.' \
 		"$path" "$sib_lines" "$who" "$more" "$path"
 }

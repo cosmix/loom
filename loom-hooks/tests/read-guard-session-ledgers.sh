@@ -3,7 +3,7 @@
 # directory per payload session_id with one file per agent_id ("main" for the
 # main agent), so an interactive session's subagents see each other's
 # whole-file reads the way stage agents do. The per-kind root is created 0700
-# (loom's receipt store rejects an exposed $TMPDIR/loom-reads), a "."/".."
+# (the directory is shared by every session of the user), a "."/".."
 # session id cannot name a parent directory, and an unwritable ledger
 # directory never turns into a non-zero exit or stderr.
 set -euo pipefail
@@ -55,7 +55,7 @@ mode_of() {
 [[ -f "$ROOT/sess-out/main.tsv" ]] || fail "(5) main agent ledger not at $ROOT/sess-out/main.tsv"
 OUT=$(read_as sess-out agent-b)
 CTX=$(jq -r '.hookSpecificOutput.additionalContext // empty' <<<"$OUT")
-[[ "$CTX" == *"was read whole by the main agent"* ]] || fail "(5) no sibling advisory outside a stage: $OUT"
+[[ "$CTX" == *"was requested whole by the main agent"* ]] || fail "(5) no sibling advisory outside a stage: $OUT"
 [[ -f "$ROOT/sess-out/agent-b.tsv" ]] || fail "(5) subagent ledger not at $ROOT/sess-out/agent-b.tsv"
 [[ -f "$ROOT/sess-out/_shared.tsv" ]] || fail "(5) _shared.tsv not in the session directory"
 [[ "$(mode_of "$ROOT")" == "700" ]] || fail "(5) $ROOT is mode $(mode_of "$ROOT"), not 700"
@@ -89,7 +89,7 @@ if [[ "$(id -u)" != "0" ]]; then
 	: >"$SDIR/agent-b.tsv"
 	chmod 400 "$SDIR/_shared.tsv" "$SDIR/agent-b.tsv"
 	OUT=$(read_as sess-x agent-b "$STALE")
-	jq -e '.hookSpecificOutput.additionalContext | contains("read whole by agent agent-a")' >/dev/null <<<"$OUT" ||
+	jq -e '.hookSpecificOutput.additionalContext | contains("requested whole by agent agent-a")' >/dev/null <<<"$OUT" ||
 		fail "(6) no sibling advisory beside unwritable ledger files: $OUT"
 	[[ ! -s "$SDIR/_shared.tsv" && ! -s "$SDIR/agent-b.tsv" ]] || fail "(6) a read-only ledger file was written"
 fi

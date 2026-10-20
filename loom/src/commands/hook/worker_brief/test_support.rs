@@ -21,7 +21,6 @@ pub(super) const PARENT: &str = "loom-parent";
 
 pub(super) struct Fixture {
     pub(super) _temp: TempDir,
-    pub(super) root: PathBuf,
     pub(super) config: Config,
 }
 
@@ -54,15 +53,8 @@ impl Fixture {
         };
         Self {
             _temp: temp,
-            root,
             config,
         }
-    }
-
-    pub(super) fn transcript(&self, name: &str, body: &str) -> PathBuf {
-        let path = self.root.join(name);
-        fs::write(&path, body).unwrap();
-        path
     }
 
     pub(super) fn worker_dir(&self) -> PathBuf {
@@ -197,17 +189,13 @@ pub(super) fn item(id: &str, hash: &str, path: &str, excerpt: &str) -> ContextIt
     }
 }
 
-pub(super) fn marker(nonce: &str) -> String {
-    format!("<!-- loom-worker-brief nonce={nonce} -->")
-}
-
-pub(super) fn pending_count(fixture: &Fixture) -> usize {
+pub(super) fn record_count(fixture: &Fixture) -> usize {
     fs::read_dir(fixture.worker_dir())
         .map(|entries| {
             entries
                 .flatten()
                 .filter(|entry| {
-                    entry.path().extension().and_then(|ext| ext.to_str()) == Some("pending")
+                    entry.path().extension().and_then(|ext| ext.to_str()) == Some("json")
                 })
                 .count()
         })

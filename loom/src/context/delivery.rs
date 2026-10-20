@@ -128,8 +128,8 @@ pub fn delivery_dir(work_dir: &Path, plan: &str, stage: &str) -> PathBuf {
     stage_overlay_dir(work_dir, plan, stage).join(DELIVERY_RELATIVE_DIR)
 }
 
-/// Pending and nonce-addressed bound worker receipts, isolated from the
-/// ordinary `<recipient>.json` namespace.
+/// Worker-brief delivery records, filed at issue under their nonce-derived
+/// key and kept apart from the prompt and spawn records.
 pub(crate) fn worker_delivery_dir(work_dir: &Path, plan: &str, stage: &str) -> PathBuf {
     delivery_dir(work_dir, plan, stage).join(WORKER_DELIVERY_RELATIVE_DIR)
 }

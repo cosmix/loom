@@ -33,7 +33,7 @@ _loom_watchdog() {
 # caller's EXIT trap in a bare `func &` or `cmd &` job that a signal reaches
 # early, and a command that finishes at once makes the retiring TERM arrive
 # early every time.
-# Shared here so PreToolUse and PostToolUse receipt calls get the same bound.
+# Shared here so every hook delegate gets the same bound.
 loom_run_bounded() {
 	local seconds="$1" pid="" watchdog="" status=0
 	shift

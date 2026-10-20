@@ -216,10 +216,6 @@ INPUT_JSON=$(loom_read_input 1 2>/dev/null || true)
 TOOL_NAME=$(echo "$INPUT_JSON" | jq -r '.tool_name // empty' 2>/dev/null || true)
 TOOL_NAME="${TOOL_NAME:-unknown}"
 TOOL_INPUT=$(echo "$INPUT_JSON" | jq -r '.tool_input // empty' 2>/dev/null || true)
-READ_FILE_PATH=""
-if [[ "$TOOL_NAME" == "Read" ]]; then
-	READ_FILE_PATH=$(echo "$TOOL_INPUT" | jq -r '.file_path // empty' 2>/dev/null || true)
-fi
 
 COMMAND=""
 if [[ "$TOOL_NAME" == "Bash" ]]; then
@@ -249,14 +245,6 @@ loom_post_tool_write_heartbeat
 if [[ "$TOOL_NAME" == "Bash" && "$COMMAND" == *"codex-forward.sh task"* && -n "$TRANSCRIPT_PATH" ]] \
 	&& command -v "${LOOM_BIN:-loom}" &>/dev/null; then
 	LOOM_HOOK_CONTEXT=1 loom_run_bounded 5 "${LOOM_BIN:-loom}" hook forward-receipt --transcript "$TRANSCRIPT_PATH" >/dev/null 2>&1 || true
-fi
-
-# Result content is intentionally not parsed or stored in shell. The Rust
-# adapter receives the original payload and correlates its Read tool-use id
-# with the bounded transcript tail before it records any receipt.
-if [[ "$TOOL_NAME" == "Read" && -n "$INPUT_JSON" && -n "$READ_FILE_PATH" ]] \
-	&& _loom_read_receipt_eligible "$READ_FILE_PATH" && command -v "${LOOM_BIN:-loom}" &>/dev/null; then
-	printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 loom_run_bounded 2 "${LOOM_BIN:-loom}" hook read-receipt --complete >/dev/null 2>&1 || true
 fi
 
 # Tool results are not persisted: a shell hook cannot append race-free without

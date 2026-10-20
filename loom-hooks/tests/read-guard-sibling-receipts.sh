@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # read-guard-sibling-receipts.sh - in a stage session, a whole-file Read of a
-# file above 200 lines that a sibling agent already read whole, unchanged
+# file above 200 lines that a sibling agent already requested whole, unchanged
 # since, is advised once per agent and path and recorded in the session
 # directory's _shared.tsv. A modified file, a sibling's ranged read, and a
 # 150-line file stay silent. Writer and reader are both the real hook, so the
@@ -33,7 +33,7 @@ make_file() {
 
 # read_as <agent_id> <file> [offset limit] - run read-guard.sh as one agent of
 # stage session sess-1 with no live loom main agent (every decision is a
-# warning) and no loom binary (no outline, no receipt proof). Prints stdout;
+# warning) and no loom binary (no outline). Prints stdout;
 # fails the test on a non-zero exit or any stderr.
 read_as() {
 	local agent="$1" file="$2" input out err code
@@ -65,7 +65,7 @@ BIG=$(make_file big.rs 250)
 [[ -z "$(read_as agent-a "$BIG")" ]] || fail "(1) first whole read must be silent"
 OUT=$(read_as agent-b "$BIG")
 CTX=$(context_of "$OUT")
-[[ "$CTX" == *"$BIG (250 lines) was read whole by agent agent-a"* ]] || fail "(1) no sibling advisory: $OUT"
+[[ "$CTX" == *"$BIG (250 lines) was requested whole by agent agent-a (an attempt, not proof of delivery)"* ]] || fail "(1) no sibling advisory: $OUT"
 [[ "$CTX" == *"unchanged since"* ]] || fail "(1) advisory does not say unchanged: $CTX"
 [[ "$CTX" == *"loom map --outline $BIG"* ]] || fail "(1) advisory lacks the outline move: $CTX"
 [[ "$CTX" == *"offset/limit"* ]] || fail "(1) advisory lacks the ranged Read: $CTX"

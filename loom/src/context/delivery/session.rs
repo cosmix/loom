@@ -11,9 +11,9 @@
 //! (`doc/PROPOSAL-retrieval-precision.md` root cause 8, recommendation 16).
 //!
 //! [`hook_recipient_id`] keys a recipient to the session asking, not just the
-//! scope; [`delivered_to_session`] is the read side that respects that key
-//! while still honouring the one deliberate exception — a resumed stage
-//! session must still see its own spawn brief as delivered. [`session8`] and
+//! scope; [`delivered_to_session`] respects that key and also credits the
+//! asking stage session's own spawn record for the session's whole life,
+//! compaction included (see `commands/hook/pre_compact.rs`). [`session8`] and
 //! [`discard_session_delivery`] exist only to serve those two.
 //!
 //! Every contract `delivery.rs`'s module doc states still holds here without
@@ -56,7 +56,8 @@ pub fn hook_recipient_id(scope: &str, session_id: Option<&str>) -> String {
     format!("prompt-{scope}-{suffix}")
 }
 
-/// Filesystem-safe identity for one not-yet-bound worker brief.
+/// Filesystem-safe identity for one issued worker brief: the record's file name and
+/// its recipient id.
 ///
 /// All three inputs are hashed because the nonce is the only public join key
 /// and neither a hook session nor a stage-controlled value may become a path

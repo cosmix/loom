@@ -1,20 +1,22 @@
-//! `loom hook pre-compact` — reopen delivery suppression for a compacting session.
+//! `loom hook pre-compact` — reopen delivery suppression for a compacted session.
 //!
-//! `loom-hooks/pre-compact.sh` already runs a block-then-allow handoff protocol on
-//! every PreCompact event (see that script's own header); this delegate rides
-//! alongside it, deleting exactly one delivery record and rotating the
-//! read-receipt epoch for that session.
+//! Two hooks run this delegate. `loom-hooks/pre-compact.sh` runs it on every
+//! PreCompact event of a stage session, before its block-then-allow handoff.
+//! `loom-hooks/knowledge-orient.sh` runs it for an ordinary session on the
+//! SessionStart event whose `source` is `compact`, which fires once after a
+//! compaction. No PreCompact hook is registered outside stage worktrees
+//! (`fs::permissions::hooks::config::build`).
 //!
 //! Suppression in [`crate::context::delivery`] is scoped to a recipient and an
 //! epoch: while a session's context window is intact, skipping units it
-//! already read is correct. A compaction breaks that assumption — the
-//! summarized context that survives compaction may drop the brief entirely —
-//! so the moment compaction happens is the moment this session's own record
-//! must stop suppressing anything. A receipt from before compaction likewise
-//! cannot prove the compacted session still has a textual delivery. It is NOT
-//! a moment to touch any *other*
-//! record: a live sibling session's suppression, and the stage's own spawn
-//! record, both describe context windows this compaction never touched.
+//! already read is correct. A compaction may drop what the session was given,
+//! so the delegate deletes exactly one record, the compacting session's own
+//! prompt-hook record. A live sibling session's record stays.
+//!
+//! A stage session's spawn record also stays, so a compacted stage session
+//! still counts its spawn brief as delivered. Stage sessions have not
+//! compacted in practice, and `loom-hooks/session-start.sh` tells a compacted
+//! one to re-read its signal.
 //!
 //! Same fail-open contract as every hook delegate in this module (see
 //! `super::user_prompt`): malformed or absent stdin, an environment naming
@@ -23,7 +25,7 @@
 //! disrupts compaction, and a delivery record is an optimisation nothing here
 //! may treat as load-bearing (`crate::context::delivery`'s own module doc).
 
-use crate::context::{delivery, read_receipts};
+use crate::context::delivery;
 use anyhow::Result;
 use std::io::Read;
 
@@ -62,7 +64,6 @@ fn reset_for_payload(raw: &str) {
     let Some(session_id) = parse_session_id(raw) else {
         return;
     };
-    read_receipts::rotate_epoch_for_session(&session_id);
     let Some(target) = HookTarget::from_environment() else {
         return;
     };

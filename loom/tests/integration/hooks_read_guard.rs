@@ -1,6 +1,6 @@
-//! Integration tests for the read-guard PreToolUse hook and receipt handoff.
+//! Integration tests for the read-guard PreToolUse hook.
 
-use super::helpers::{clear_relay_env, loom_bin_path};
+use super::helpers::clear_relay_env;
 use loom::fs::permissions::constants::{
     HOOK_COMMON, HOOK_READ_DISCIPLINE, HOOK_READ_GUARD, HOOK_READ_LEDGER,
 };
@@ -51,8 +51,7 @@ fn write_file_with_lines(dir: &Path, name: &str, lines: usize) -> PathBuf {
 
 fn write_loom_stub(dir: &Path, body: &str) {
     let script = format!(
-        "#!/usr/bin/env bash\nif [[ \"$1\" == \"hook\" && \"$2\" == \"read-receipt\" ]]; then\n  if [[ -n \"${{LOOM_RECEIPT_CALLS:-}}\" ]]; then\n    printf '%s\\n' \"$*\" >>\"$LOOM_RECEIPT_CALLS\"\n    exit 0\n  fi\n  exec \"{}\" \"$@\"\nfi\ncat <<'EOF'\n{body}\nEOF\necho 'warning: {STUB_STDERR_WARNING} (stub)' >&2\n",
-        loom_bin_path()
+        "#!/usr/bin/env bash\ncat <<'EOF'\n{body}\nEOF\necho 'warning: {STUB_STDERR_WARNING} (stub)' >&2\n"
     );
     write_exec(&dir.join("loom"), &script);
 }
@@ -77,8 +76,8 @@ fn uncovered_stub_dir(root: &Path) -> PathBuf {
     dir
 }
 
-fn receipt_stub_dir(root: &Path) -> PathBuf {
-    let dir = root.join("stub-receipts");
+fn lexical_stub_dir(root: &Path) -> PathBuf {
+    let dir = root.join("stub-lexical");
     fs::create_dir_all(&dir).expect("create stub dir");
     write_loom_stub(&dir, "coverage: lexical-only");
     dir
@@ -90,7 +89,6 @@ struct Session {
     stage_id: Option<&'static str>,
     agent_id: &'static str,
     main_agent_pid: Option<String>,
-    receipt_call_log: Option<PathBuf>,
 }
 
 impl Session {
@@ -101,7 +99,6 @@ impl Session {
             stage_id: Some("stage-1"),
             agent_id: "agent-1",
             main_agent_pid: None,
-            receipt_call_log: None,
         }
     }
 
@@ -119,11 +116,6 @@ impl Session {
 
     fn with_live_main_agent(mut self) -> Self {
         self.main_agent_pid = Some(std::process::id().to_string());
-        self
-    }
-
-    fn with_receipt_call_log(mut self, path: PathBuf) -> Self {
-        self.receipt_call_log = Some(path);
         self
     }
 
@@ -176,9 +168,6 @@ fn run_payload(
         .stderr(Stdio::piped());
     if let Some(pid) = &session.main_agent_pid {
         cmd.env("LOOM_MAIN_AGENT_PID", pid);
-    }
-    if let Some(call_log) = &session.receipt_call_log {
-        cmd.env("LOOM_RECEIPT_CALLS", call_log);
     }
 
     let mut child = cmd.spawn().expect("spawn hook");
@@ -337,15 +326,12 @@ fn uncovered_file_warns_and_allows_even_with_deny_on() {
 }
 
 #[test]
-fn binary_extension_skips_repeat_rule_too() {
+fn repeated_binary_reads_stay_silent() {
     let (_hook_dir, hook) = setup_hook();
     let files = TempDir::new().expect("files dir");
     let stubs = TempDir::new().expect("stubs dir");
-    let calls = stubs.path().join("receipt-calls");
     let file = write_file_with_lines(files.path(), "icon.png", 50);
-    let session = Session::new()
-        .with_live_main_agent()
-        .with_receipt_call_log(calls.clone());
+    let session = Session::new().with_live_main_agent();
     session.enable_deny();
 
     for n in 1..=3 {
@@ -353,7 +339,7 @@ fn binary_extension_skips_repeat_rule_too() {
             &hook,
             json!({"file_path": file.to_string_lossy()}),
             &session,
-            Some(&receipt_stub_dir(stubs.path())),
+            Some(&lexical_stub_dir(stubs.path())),
         );
         assert_eq!(out.code, 0, "read {n}: stderr={}", out.stderr);
         assert!(
@@ -362,7 +348,6 @@ fn binary_extension_skips_repeat_rule_too() {
             out.stdout
         );
     }
-    assert!(!calls.exists(), "media must not call the receipt adapter");
 }
 
 #[test]
@@ -391,6 +376,3 @@ fn pdf_pages_bounded_reads_are_never_denied() {
 
 #[path = "hooks_read_guard_repeat.rs"]
 mod repeat;
-
-#[path = "hooks_read_guard_receipts.rs"]
-mod receipts;
