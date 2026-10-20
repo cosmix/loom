@@ -4,15 +4,11 @@ use anyhow::{Context, Result};
 use std::collections::HashSet;
 use std::path::Path;
 
+use super::worktree_failure::{recover_half_removed, removal_failure};
 use crate::fs::memory::SPOOL_RELPATH as MEMORY_SPOOL_RELPATH;
 use crate::git::runner::run_git_checked;
 use crate::telemetry::TELEMETRY_SPOOL_RELPATH;
 use crate::verify::tool_artifacts::NAMES;
-
-/// Cap on how many blocking paths `refusal_error` lists verbatim. The
-/// message is persisted into stage frontmatter and shipped in every status
-/// frame (2 MiB IPC cap), so it must be bounded.
-const MAX_BLOCKING_PATHS: usize = 20;
 
 /// Clean up a single worktree for a stage
 ///
@@ -53,66 +49,13 @@ pub fn cleanup_worktree(stage_id: &str, repo_root: &Path, force: bool) -> Result
                     )
                 })?;
                 Ok(true)
+            } else if recover_half_removed(&worktree_path, repo_root, &e)? {
+                Ok(true)
             } else {
-                Err(refusal_error(&worktree_path, e))
+                Err(removal_failure(&worktree_path, e))
             }
         }
     }
-}
-
-/// Paths `git worktree remove` would refuse over, one per line, for the
-/// non-forced failure message. Capped at `MAX_BLOCKING_PATHS` lines with a
-/// trailing `… and N more` summary — this text is persisted into stage
-/// frontmatter and shipped in every status frame (2 MiB IPC cap), so it must
-/// stay bounded. Empty when status cannot be read.
-fn blocking_paths(worktree_path: &Path) -> String {
-    let raw = run_git_checked(
-        &["status", "--porcelain=v1", "--untracked-files=all"],
-        worktree_path,
-    )
-    .map(|out| out.trim_end().to_string())
-    .unwrap_or_default();
-    cap_blocking_paths(&raw)
-}
-
-/// Truncate `raw` (one status line per line) to `MAX_BLOCKING_PATHS` lines,
-/// appending `… and N more` when lines were dropped.
-fn cap_blocking_paths(raw: &str) -> String {
-    if raw.is_empty() {
-        return String::new();
-    }
-    let lines: Vec<&str> = raw.lines().collect();
-    if lines.len() <= MAX_BLOCKING_PATHS {
-        return raw.to_string();
-    }
-    let mut result = lines[..MAX_BLOCKING_PATHS].join("\n");
-    result.push_str(&format!(
-        "\n… and {} more",
-        lines.len() - MAX_BLOCKING_PATHS
-    ));
-    result
-}
-
-/// Build the non-forced-removal refusal error, naming which paths block
-/// removal so the caller doesn't have to go spelunking with `git status`
-/// themselves.
-///
-/// The headline stays deliberately generic: `git worktree remove` also
-/// refuses on locked worktrees, submodules, and other conditions unrelated
-/// to uncommitted files, so `e`'s own context carries the actual reason.
-fn refusal_error(worktree_path: &Path, e: anyhow::Error) -> anyhow::Error {
-    let mut message = format!(
-        "git worktree remove refused for {} and force was not set; \
-         leaving the worktree in place (git's reason is the underlying error).",
-        worktree_path.display()
-    );
-    let blocking = blocking_paths(worktree_path);
-    if !blocking.is_empty() {
-        message.push_str(&format!(
-            "\nBlocking paths (git status --porcelain):\n{blocking}"
-        ));
-    }
-    e.context(message)
 }
 
 /// Strictly inspect a worktree path without following a symlink outside the repository.

@@ -28,6 +28,7 @@ mod config;
 mod orphans;
 mod removal;
 pub(crate) mod worktree;
+mod worktree_failure;
 
 #[cfg(test)]
 mod tests;
