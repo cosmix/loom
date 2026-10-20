@@ -9,13 +9,13 @@ Tier: sonnet (`loom-software-engineer`). Read `common.md` in this directory firs
 - `src/commands/usage/sections/agents.rs`, `src/commands/usage/sections/agents_tests.rs`
 - `src/commands/usage/sections/mod.rs`
 - `src/commands/usage/transcript_types.rs`, `src/commands/usage/transcript.rs`
-- The `Transcript { .. }` literals in `src/commands/usage/forward_join_tests.rs`, `sections/rewrites_tests.rs`, `sections/totals_tests.rs`, `sections/by_model_tests.rs`, `sections/windows_tests.rs`, `sections/peaks_tests.rs` (one added field each; no other change)
+- The `Transcript { .. }` literals in `src/commands/usage/forward_join_tests.rs`, `sections/rewrites_tests.rs`, `sections/totals_tests.rs` (two literals; both gain the field), `sections/by_model_tests.rs`, `sections/windows_tests.rs`, `sections/peaks_tests.rs` (one added field each; no other change)
 
 Read-only: `src/commands/usage/sections/fmt.rs` (`percentile` at `:29`, generic over `Copy + Ord + Default`), `src/commands/usage/transcript_types.rs` (`Request`, `ToolUse`, `TokenUsage::resident`), `src/commands/usage/transcript_content.rs`.
 
 ## Step 1: the `requested_model` field
 
-Add `pub requested_model: Option<String>` to `Transcript` (`transcript_types.rs:127-156`) after `agent_type`, with the doc text pinned in `common.md`. Initialize it to `None` in `transcript.rs` (the `Transcript {` literal at `:121`) and in every test literal listed above, plus `agents_tests.rs:30` and `lifecycle_tests.rs:31`. W1 sets it in `usage/mod.rs::parse_all`; W4 writes the join.
+Add `pub requested_model: Option<String>` to `Transcript` (`transcript_types.rs:127-156`) after `agent_type`, with the doc text pinned in `common.md`. Initialize it to `None` in `transcript.rs` (the `Transcript {` literal at `:121`) and in every test literal listed above, plus the literal in `fn transcript` in `agents_tests.rs` and the one in `fn subagent` in `lifecycle_tests.rs`. W1 sets it in `usage/mod.rs::parse_all`; W4 writes the join.
 
 ## Step 2: tokens on observation-only requests (`polling.rs`)
 

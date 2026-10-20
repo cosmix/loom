@@ -7,7 +7,7 @@ Tier: sonnet (`loom-software-engineer`). Read `common.md` in this directory firs
 - `src/commands/usage/args.rs` (new)
 - `src/commands/usage/mod.rs`
 - `src/commands/usage/time_range.rs`, `src/commands/usage/time_range_tests.rs`
-- `src/commands/usage/discovery.rs`, `src/commands/usage/discovery_tests.rs`
+- `src/commands/usage/discovery.rs`, `src/commands/usage/discovery_tests.rs`, `src/commands/usage/discovery_slugs.rs` (new, only when `discovery.rs` would pass 380 lines)
 - `src/commands/usage/completeness.rs` (new), `src/commands/usage/completeness_tests.rs` (new)
 - `src/commands/usage/codex_scope.rs` (new), `src/commands/usage/codex_scope_tests.rs` (new)
 - `src/commands/usage/provider.rs`, `src/commands/usage/provider_types.rs`
@@ -34,6 +34,8 @@ Stage sessions write under `<slug>--worktrees-<stage-id>` (`provider_data/resolv
 - The default branch: the repository slug, the live `.worktrees/*` slugs it already collects, and `worktree_slugs(root, &repo_slug)`, deduplicated in that order.
 - `--all` is unchanged. `filter_stage` (`:231-237`, suffix `-worktrees-{stage}`) and `filter_plan` keep working because `--worktrees-<id>` ends with `-worktrees-<id>`.
 
+`discovery.rs` is 326 lines and stays at or under 380; if `worktree_slugs` would pass that, put it in `src/commands/usage/discovery_slugs.rs` (declared `mod discovery_slugs;` in `usage/mod.rs`) and call it from `selected_slugs`.
+
 The separator `--worktrees-` matters: a sibling project `<slug>-other` must not be selected. Tests in `discovery_tests.rs`: a project slug, a removed worktree slug and a `<slug>-other` sibling under a fixture root; only the first two are selected, for both the `--project` and the default branch.
 
 ## Step 4: completeness (`completeness.rs`)
@@ -45,18 +47,19 @@ pub(crate) fn missed_claude_transcripts(
     work_dir: Option<&Path>,
     read: &[PathBuf],
     range: &TimeRange,
+    stages: Option<&HashSet<String>>,
 ) -> usize
 pub(crate) fn assess(coverage: &CoverageCounts, diagnostics: &ProviderDiagnostics) -> Completeness
 ```
 
-- `missed_claude_transcripts`: `None` work dir returns 0. Enumerate `crate::fs::session_files::enumerate_sessions(work_dir)` (an error returns 0 with an stderr warning). For each record, read `record.path` with `std::fs::read_to_string` and parse it with `crate::parser::frontmatter::parse_from_markdown::<crate::models::session::Session>(&content, "Session")`; never call `load_session_exact`, which takes the session-file lock and would write a lock file from a read-only report. A record that fails to parse is skipped. Count a session when its `transcript_path` is `Some`, its activity overlaps the window (`last_active >= range.since` and, when `range.until` is set, `created_at <= until`), and the path is not among `read`. Compare paths literally, then by `canonicalize` when both exist.
-- `assess` pushes, in this order: `missing-roots` (`diagnostics.missing_roots > 0`), `unreadable-files`, `missed-session-transcripts`, `unknown-usage-rows` (`coverage.unknown_usage_rows`), `ambiguous-rows`, `fallback-coverage-rows`, `codex-scope-unavailable`, `forward-thread-missing` (`missing_forward_threads`), `forward-receipt-unthreaded`. `state` is `Partial` iff any reason was pushed.
+- `missed_claude_transcripts`: `None` work dir returns 0. Enumerate `crate::fs::session_files::enumerate_sessions(work_dir)` (an error returns 0 with an stderr warning). For each record, read `record.path` with `std::fs::read_to_string` and parse it with `crate::parser::frontmatter::parse_from_markdown::<crate::models::session::Session>(&content, "Session")`; never call `load_session_exact`, which takes the session-file lock and would write a lock file from a read-only report. A record that fails to parse is skipped. Count a session when its `transcript_path` is `Some`, its activity overlaps the window (`last_active >= range.since` and, when `range.until` is set, `created_at <= until`), and the path is not among `read`. Compare paths literally, then by `canonicalize` when both exist. A session record counts only when `stages` is `None` or contains its `stage_id`.
+- `assess` pushes, in this order: `missing-roots` (`diagnostics.missing_roots > 0`), `unreadable-files`, `missed-session-transcripts`, `unknown-usage-rows` (`coverage.unknown_usage_rows`), `ambiguous-rows`, `codex-scope-unavailable`, `forward-thread-missing` (`missing_forward_threads`), `forward-receipt-unthreaded`. `state` is `Partial` iff any reason was pushed. There is no reason for fallback coverage rows; `fallback_coverage_rows` stays a coverage count.
 
-`provider_types.rs`: `ProviderDiagnostics` (`:188-218`) gains `missed_session_transcripts`, `foreign_codex_rows`, `missing_forward_threads`, `unthreaded_forward_receipts`, `codex_scope_unavailable` (`usize`), each added in `merge` (`:221-253`). `ProviderReport` (`:284-297`) gains `completeness`. `provider_report.rs::build` (`:23-65`) sets `completeness: completeness::assess(&coverage, &diagnostics)` before moving `diagnostics` into the report; `render` (`:225-256`) prints one row per provider, `"{provider} completeness"` with `measured` or `partial: <reasons joined by ", ">`.
+`provider_types.rs`: `ProviderDiagnostics` (`:188-218`) gains `missed_session_transcripts`, `foreign_codex_rows`, `missing_forward_threads`, `unthreaded_forward_receipts`, `codex_scope_unavailable` (`usize`), each added in `merge` (`:221-253`). `ProviderReport` (`:284-297`) gains `completeness`. `provider_report.rs::build` (`:23-65`) sets `completeness: completeness::assess(&coverage, &diagnostics)` before moving `diagnostics` into the report, so unit tests see a value; `render` (`:225-256`) prints one row per provider, `"{provider} completeness"` with `measured` or `partial: <reasons joined by ", ">`.
 
 ## Step 5: Codex scope (`codex_scope.rs`, `forward_join.rs`, `provider.rs`)
 
-Today Codex discovery receives only `codex_root` (`mod.rs:287-290`), every Codex row in the window enters normalization (`provider.rs:44-49`), and `forward_join.rs::join_ledger` (`:99-117`) only attaches labels, after the reports are built. Membership becomes a filter applied before the reports are built.
+Today Codex discovery receives only `codex_root` (`mod.rs:287-290`), every Codex row in the window enters normalization (`provider.rs:44-49`), and `forward_join.rs::join_ledger` (`:99-117`) only attaches labels, after the reports are built. Membership becomes a filter applied before the reports are built. `join_ledger` also merges the receipt-load diagnostics (`unreadable_files`, `missing_forward_receipt_roots`, `truncated_forward_receipt_files`; see `join_ledger` in `forward_join.rs`) into each report after `provider_report::build`, so the completeness `build` computed is stale by then; step 6 recomputes it.
 
 `forward_join.rs` (351 lines; keep it under 380): add
 
@@ -76,7 +79,7 @@ a `receipt_threads: Vec<ReceiptThread>` field filled in `ForwardJoin::load` from
 pub(crate) enum CodexScope {
     Unscoped,
     Unavailable,
-    Threads { threads: BTreeSet<String>, unthreaded: usize },
+    Threads { threads: BTreeSet<String>, in_window: BTreeSet<String>, unthreaded: usize },
 }
 impl CodexScope {
     pub(crate) fn for_selection(all: bool, join: &ForwardJoin, range: &TimeRange) -> Self
@@ -91,22 +94,23 @@ pub(crate) struct ScopeOutcome {
 pub(crate) fn apply(scope: &CodexScope, rows: &mut Vec<NormalizedEvent>) -> ScopeOutcome
 ```
 
-- `for_selection`: `all` gives `Unscoped`; `!join.scope_available()` gives `Unavailable`; otherwise the thread ids of receipts whose `observed_at` lies in the window (`range.includes`), plus the count of in-window receipts with no thread id.
-- `apply` touches only rows with `provider == Provider::Codex` and `source_kind` `CodexDirect` or `CodexFallback`; execution-receipt rows (`SourceKind::ExecutionReceipt`) stay. `Unscoped`: nothing. `Unavailable`: remove every such row, count each as foreign, set `unavailable`. `Threads`: keep a row when it has no `codex_thread_conflict` and its `codex_thread_id` is in the set; remove the rest as foreign; `missing_threads` counts set members no kept row carries. Retries need no rule: each forward call writes its own receipt and names its own thread.
+- `for_selection`: `all` gives `Unscoped`; `!join.scope_available()` gives `Unavailable`; otherwise `threads` is the thread ids of every loaded receipt, whatever its `observed_at`; rollout rows are already windowed by `codex_provider::normalize`. Windowing receipts by `observed_at` would drop a forward that finishes after `--until` (its receipt time is the PostToolUse time, after the forward ended) and turn its in-window rows foreign. `in_window` is the subset of `threads` whose receipt `observed_at` lies in the window, and `unthreaded` counts in-window receipts with no thread id; `ReceiptThread` keeps `observed_at` for those two sets.
+- `apply` touches only rows with `provider == Provider::Codex` and `source_kind` `CodexDirect` or `CodexFallback`; execution-receipt rows (`SourceKind::ExecutionReceipt`) stay. `Unscoped`: nothing. `Unavailable`: remove every such row, count each as foreign, set `unavailable`. `Threads`: keep a row when it has no `codex_thread_conflict` and its `codex_thread_id` is in the set; remove the rest as foreign; `missing_threads` counts `in_window` members no kept row carries. Retries need no rule: each forward call writes its own receipt and names its own thread.
 
 `provider.rs`: `ProviderEventInput` (`:11-21`) gains `codex_scope: &'a CodexScope` and `claude_missed_transcripts: usize`. In `normalize_provider_events` (`:28-75`, 48 lines today) extract the Codex block into `fn normalize_codex(input: &ProviderEventInput<'_>) -> (Vec<NormalizedEvent>, ProviderDiagnostics)` that normalizes, calls `codex_scope::apply`, and records the outcome in `foreign_codex_rows`, `missing_forward_threads`, `unthreaded_forward_receipts`, `codex_scope_unavailable` (1 when unavailable). Set `claude_diagnostics.missed_session_transcripts = input.claude_missed_transcripts`. Keep both functions under 50 lines.
 
 ## Step 6: wire it in `usage/mod.rs`
 
-- `normalize_usage` (`:257-305`, 49 lines): extract the Claude discovery block into a helper so the function stays under 50 lines. Build `let scope = codex_scope::CodexScope::for_selection(args.all, &forward_join, &range);` and pass `codex_scope: &scope`. When the selection includes Claude and `!args.all`, compute `completeness::missed_claude_transcripts(work_dir, &paths, &range)` from the discovered files' paths and pass it; otherwise 0.
+- `normalize_usage` (`:257-305`, 49 lines): extract the Claude discovery block into a helper so the function stays under 50 lines. Build `let scope = codex_scope::CodexScope::for_selection(args.all, &forward_join, &range);` and pass `codex_scope: &scope`. When the selection includes Claude and `!args.all`, compute `completeness::missed_claude_transcripts(work_dir, &paths, &range, stages)` from the discovered files' paths and pass it; otherwise 0. `stages` is `Some({stage})` for `--stage`, `Some` of the plan's stage set for `--plan` (an empty set when `plan_stage_ids` returns `None`), and `None` otherwise.
+- After `forward_join.join_ledger(&mut normalized.ledger)`, recompute `report.completeness = completeness::assess(&report.coverage, &report.diagnostics)` for every report, because `join_ledger` merges receipt-load diagnostics after `provider_report::build`. Keep the `assess` call in `build` too.
 - Declare `mod args; mod codex_scope; mod completeness; mod spawn_join;`.
 - `parse_all` (`:167-195`): `let requested = spawn_join::RequestedModels::load(work_dir);` beside `started_agent_types`; inside the `if let Some(metadata)` branch set `transcript.requested_model = requested.requested_model(agent_id, &file.session_id).map(str::to_owned);` where `agent_id` is `file.agent_id`. `spawn_join.rs` is W4's file and the field is W3's; both are pinned in `common.md`.
 - Update the two `ProviderEventInput` literals in `usage_tests.rs` (`provider_input`, `:272-283`) and `quota_history_tests.rs` (`:26`) with `codex_scope: &CodexScope::Unscoped` and `claude_missed_transcripts: 0`. Change no assertion line.
 
 ## Tests you add
 
-- `completeness_tests.rs`: a session record naming an unread transcript inside the window counts 1; outside the window 0; a read path 0; an unparseable record 0; `assess` orders the reasons as pinned and reads `measured` with none.
-- `codex_scope_tests.rs`: three Codex rows with thread ids `t-a`, `t-b`, `t-x` and a `Threads` scope of `{t-a, t-missing}` keep only `t-a`, report 2 foreign and 1 missing; `Unavailable` removes all three; `Unscoped` keeps all; an execution-receipt row survives every scope.
+- `completeness_tests.rs`: a session record naming an unread transcript inside the window counts 1; outside the window 0; a read path 0; an unparseable record 0; a stage-b record is not counted when the selection is stage-a; `assess` orders the reasons as pinned and reads `measured` with none.
+- `codex_scope_tests.rs`: three Codex rows with thread ids `t-a`, `t-b`, `t-x` and a `Threads` scope of `{t-a, t-missing}` (both in the window) keep only `t-a`, report 2 foreign and 1 missing; `Unavailable` removes all three; `Unscoped` keeps all; an execution-receipt row survives every scope.
 - `provider_report_tests.rs`: a report with an `unknown_usage_rows` coverage count reads `partial` with `unknown-usage-rows`.
 
 Run once at the end: `cargo test --lib commands::usage::` and report the result with every file you changed and its line count after `cargo fmt`.
@@ -115,4 +119,5 @@ Run once at the end: `cargo test --lib commands::usage::` and report the result 
 
 - The contract tests drive the binary with `--claude-root` and `--codex-root` fixtures; they compute the project slug from the canonical project path (`absolute` in `discovery.rs:131-142` canonicalizes an existing path), so keep that canonicalization.
 - `usage_work_dir` (`mod.rs:202-210`) returns `None` for `--project` without `.loom/work`; Codex scope then reads `Unavailable` and Codex reads `partial`. That is intended: a project without loom state cannot claim Codex rows. `--all` stays unscoped.
+- Codex scope and missed-session completeness read only the current `.loom/work`. `loom init` archives and removes it (`commands/init/cleanup.rs:177-187`), so a window before the last `loom init` reads 0 Codex tokens. Record this with `loom memory note` for knowledge-distill; the live protocol is unaffected (one clone per run).
 - `ProviderLedger.rows` keep only in-scope Codex rows after this change; the rows list in `--json` output shrinks accordingly.

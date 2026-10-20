@@ -10,7 +10,7 @@ Tier: sonnet (`loom-software-engineer`). Read `common.md` in this directory firs
 
 - `src/commands/usage/run_evidence.rs` (new), `src/commands/usage/run_evidence_stages.rs` (new), `src/commands/usage/run_evidence_tests.rs` (new, declared from `run_evidence.rs`)
 - `src/commands/usage/args.rs`, `src/commands/usage/mod.rs`
-- `../README.md` (the `loom usage` lines under `### Other Commands` and one paragraph after that code block)
+- `../README.md` (the `loom usage` lines under `### Other Commands`, one paragraph after that code block, and the regression sentence in the comparison description)
 
 Read-only: `src/commands/usage/comparison_schema.rs` (W1 adds `Serialize`), `src/commands/usage/provider_types.rs`, `src/commands/usage/completeness.rs`, `src/verify/transitions/persistence.rs` (`list_all_stages`), `src/verify/review/store.rs` (`open_findings`, `OpenFinding`), `src/verify/review/report.rs` (severities `critical|major|minor|unspecified`, `:166`), `src/models/stage/types.rs` (`retry_count` `:372`, `fix_attempts` `:465`, `started_at` `:348`, `completed_at` `:344`, `dependencies`, `status`).
 
@@ -53,7 +53,7 @@ pub(super) fn produce(args: &UsageArgs, declaration: &Path) -> Result<()>
 ```
 
 - Read the declaration bounded at 1 MiB; a parse failure names the file and the serde position, never its content.
-- Time range from `args.since` and `args.until` (both RFC3339 by `requires_all`; `TimeRange::parse`). Work dir from `usage_work_dir(args.project, false)`; no work dir is an error ("the project has no .loom/work").
+- Time range from `args.since` and `args.until`: reject a value that does not parse with `chrono::DateTime::parse_from_rfc3339`, naming the flag, before building the range with `TimeRange::parse`. clap's `requires_all` makes the flags present, not RFC3339, and a relative window cannot be reproduced. Work dir from `usage_work_dir(args.project, false)`; no work dir is an error ("the project has no .loom/work").
 - Normalize with `ProviderSelection::All` through `normalize_usage`. For each provider named in `assignments`: sum each of the ten `ProviderTokenVector` fields over the ledger rows of that provider whose `provenance.is_measured()`; a field is `Some(sum)` only when every summed row has it, `None` otherwise (unknown is not zero); a provider with no measured row gets no vector.
 - `accounting_provenance`: `Unknown` when an assigned provider has no measured row; else `Partial` when an assigned provider report has `completeness.state == Partial`; else `Measured`. `accounting_complete` is `provenance == Measured`. `provider_tokens` holds the vectors of assigned providers that have one.
 - `notification_latency_ms: None`: no producer of notification latency exists, and `--compare` reports it unmeasured.
@@ -68,7 +68,7 @@ pub(super) fn stage_evidence(work_dir: &Path) -> Result<StageEvidence>
 
 - Stages: `crate::verify::transitions::list_all_stages(work_dir)`.
 - `retry_count` = sum of `Stage.retry_count`; `fix_count` = sum of `Stage.fix_attempts` (saturating, capped at `u32::MAX`).
-- `critical_path_ms`: the longest dependency chain of stage durations, duration = `completed_at - started_at` in milliseconds; cp(s) = duration(s) + max cp over `s.dependencies`. `None` when any stage is not `StageStatus::Completed`, lacks either timestamp, has a negative duration, or names a dependency that is not among the stages. Waiting between stages is not counted.
+- `critical_path_ms`: the longest dependency chain of stage durations, duration = `completed_at - started_at` in milliseconds; cp(s) = duration(s) + max cp over `s.dependencies`. `None` when there are no stage records, any stage is not `StageStatus::Completed`, lacks either timestamp, has a negative duration, or names a dependency that is not among the stages. Waiting between stages is not counted.
 - `unresolved_findings`: for each stage, `crate::verify::review::store::open_findings(work_dir, &stage.id)`; a stage without a `reviews/<stage>/` directory yields none (the store already returns empty); any other error aborts with the stage id. `finding_id` = `format!("{}:{}", stage.id, finding.id).replace('/', ":")` (a carried finding id `<origin>/F-r-k` has a `/`, which `valid_id` refuses). Severity mapping, stated in the README: `critical` to `critical`, `major` to `high`, `minor` to `medium`, anything else to `low`. These ids are local to one run: the independent reviewer of a paired trial replaces them with cross-arm ids before `--compare`.
 
 ## Step 5: README
@@ -80,7 +80,7 @@ loom usage --run-evidence <declaration.json> --project <dir> --since <rfc3339> -
                                                                              # Print one run's RunEvidence for --compare
 ```
 
-After the code block, add one paragraph: `--project` also reads the transcripts of the project's removed stage worktrees; each provider reads `measured` or `partial` with reasons (a session record naming an unread transcript, unknown or fallback rows, a forward receipt whose thread has no rollout); Codex rows count for a project only through the threads its forward receipts name, so `--all` is the way to see every Codex rollout; `--run-evidence` takes the run identities from the declaration (fields as in the artifact contract, minus the measured ones), measures tokens, retries, fixes, the critical path and open review findings, and maps review severities critical, major, minor and unspecified to critical, high, medium and low; an artifact may declare `"token_rule": "net-total"` and `"latency_tolerance_ms"`. Anchor by the heading and the `loom usage --compare` line; plan 3 edits other README sections before this plan runs.
+After the code block, add one paragraph: `--project` also reads the transcripts of the project's removed stage worktrees; each provider reads `measured` or `partial` with reasons (a session record naming an unread transcript, unknown or ambiguous rows, a forward receipt whose thread has no rollout); Codex rows count for a project only through the threads its forward receipts name, so `--all` is the way to see every Codex rollout; `--run-evidence` takes the run identities from the declaration (fields as in the artifact contract, minus the measured ones), measures tokens, retries, fixes, the critical path and open review findings, and maps review severities critical, major, minor and unspecified to critical, high, medium and low; an artifact may declare `"token_rule": "net-total"` and `"latency_tolerance_ms"`. In the same README, the sentence "any quality or latency regression rejects the candidate" becomes "any quality regression, or a latency regression beyond a declared tolerance, rejects the candidate". Anchor by the heading and the `loom usage --compare` line; plan 3 edits other README sections before this plan runs.
 
 ## Tests (`run_evidence_tests.rs`)
 
