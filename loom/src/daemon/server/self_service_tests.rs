@@ -20,7 +20,7 @@ fn dispute(session_id: &str) -> Request {
         stage_id: "build-api".to_string(),
         session_id: session_id.to_string(),
         field: crate::models::dispute::CriterionField::Acceptance,
-        criterion_index: 0,
+        criterion_indices: vec![0],
         reason: "r".to_string(),
         evidence_commit: None,
         failure_output: None,

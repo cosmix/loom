@@ -106,7 +106,8 @@ pub enum AmendmentPatch {
 }
 
 impl AmendmentPatch {
-    fn index(&self) -> usize {
+    /// The list position the patch targets.
+    pub fn index(&self) -> usize {
         match self {
             AmendmentPatch::Replace { index, .. }
             | AmendmentPatch::Insert { index, .. }

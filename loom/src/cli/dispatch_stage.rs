@@ -52,14 +52,14 @@ fn dispatch_stage_criteria(command: StageCommands) -> Result<()> {
             CriteriaDispute::Entry {
                 stage_id,
                 field,
-                criterion_index,
+                criterion_indices,
                 reason,
                 evidence_commit,
                 failure_output,
             } => stage::dispute_criteria(
                 stage_id,
                 field,
-                criterion_index,
+                criterion_indices,
                 reason,
                 evidence_commit,
                 failure_output,

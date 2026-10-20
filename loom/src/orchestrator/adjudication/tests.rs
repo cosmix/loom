@@ -3,7 +3,7 @@
 //! tests live in `prompt.rs`, `session.rs`, `verdict.rs`, and
 //! `feedback.rs`.
 
-use super::plan_patch::build_amendment_request;
+use super::plan_patch::build_amendment_requests;
 use super::scan::{parse_yaml_frontmatter, scan_pending_requests};
 use super::session::{attempt_count, MAX_ADJUDICATION_ATTEMPTS};
 use super::{feedback, AdjudicatorRegistry, MAX_EVIDENCE_ROUNDS};
@@ -39,7 +39,7 @@ pub(super) fn write_dispute_request(
         work_dir,
         stage_id,
         id,
-        DisputeKind::criterion(CriterionField::Acceptance, criterion_index),
+        DisputeKind::criterion(CriterionField::Acceptance, vec![criterion_index]),
     );
 }
 
@@ -269,12 +269,14 @@ fn build_amendment_request_decodes_plan_patch() {
             "reason": "criterion was wrong"
         }),
     };
-    let req = build_amendment_request("s1".to_string(), &plan_patch, 1).unwrap();
+    let req = build_amendment_requests("s1", &plan_patch, 1)
+        .unwrap()
+        .remove(0);
     assert_eq!(req.stage_id, "s1");
     assert!(matches!(req.field, AmendmentField::Acceptance));
     assert!(matches!(req.patch, AmendmentPatch::Delete { index: 0 }));
     assert_eq!(req.reason.as_deref(), Some("criterion was wrong"));
-    assert_eq!(req.dispute_id.as_deref(), Some("1"));
+    assert_eq!(req.dispute_id.as_deref(), Some("1.0"));
 }
 
 #[test]
@@ -282,7 +284,7 @@ fn build_amendment_request_rejects_unknown_field() {
     let plan_patch = PlanPatch {
         inner: serde_json::json!({"field": "bogus", "patch": {}}),
     };
-    assert!(build_amendment_request("s1".to_string(), &plan_patch, 1).is_err());
+    assert!(build_amendment_requests("s1", &plan_patch, 1).is_err());
 }
 
 #[test]
@@ -306,7 +308,7 @@ fn parse_yaml_frontmatter_round_trips() {
     let req = DisputeRequest {
         id: 7,
         stage_id: "x".to_string(),
-        kind: DisputeKind::criterion(CriterionField::Acceptance, 0),
+        kind: DisputeKind::criterion(CriterionField::Acceptance, vec![0]),
         reason: "r".to_string(),
         evidence_commit: None,
         failure_output: None,

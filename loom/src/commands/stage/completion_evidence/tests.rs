@@ -146,6 +146,7 @@ fn diagnostic_control_characters_are_stripped_and_text_is_bounded() {
         COMMAND.to_string(),
         CompletionPhase::ToolFailed,
         Some(&diagnostic),
+        Vec::new(),
     );
     let line = evidence.diagnostic_first_line.unwrap();
 

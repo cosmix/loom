@@ -239,7 +239,7 @@ fn wiring_dispute_indexes_the_wiring_list() {
         &work,
         "s1",
         CriterionField::Wiring,
-        1,
+        vec![1],
         "the wiring pattern is wrong".to_string(),
         None,
         None,
@@ -252,14 +252,14 @@ fn wiring_dispute_indexes_the_wiring_list() {
     let request = read_request(&request_file(&disputes, "s1", id));
     assert_eq!(
         request.kind,
-        DisputeKind::criterion(CriterionField::Wiring, 1)
+        DisputeKind::criterion(CriterionField::Wiring, vec![1])
     );
 
     let refused = handle_dispute_criteria(
         &work,
         "s2",
         CriterionField::WiringTests,
-        0,
+        vec![0],
         "the wiring test is wrong".to_string(),
         None,
         None,
@@ -304,7 +304,7 @@ fn accept_amending(field: &str) -> String {
 
 #[test]
 fn wiring_tests_verdict_must_amend_wiring_tests() {
-    let kind = DisputeKind::criterion(CriterionField::WiringTests, 0);
+    let kind = DisputeKind::criterion(CriterionField::WiringTests, vec![0]);
 
     match parse_and_validate_for(&accept_amending("wiring-tests"), &kind) {
         ValidationOutcome::Verdict(DisputeVerdict::Accept { plan_patch, .. }) => assert_eq!(
@@ -332,7 +332,7 @@ fn refused_dispute_writes_no_request() {
         &work,
         "s3",
         CriterionField::Acceptance,
-        0,
+        vec![0],
         "the criterion is wrong".to_string(),
         None,
         None,

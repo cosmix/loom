@@ -52,9 +52,11 @@ pub struct DisputeCriteriaArgs {
     #[arg(long, value_enum, default_value = "acceptance")]
     pub field: DisputeField,
 
-    /// Index (0-based) of the disputed entry in --field's list.
-    #[arg(long = "criterion-index")]
-    pub criterion_index: Option<usize>,
+    /// Index (0-based) of a disputed entry in --field's list. Repeat it, or
+    /// list several after one flag, to dispute every failing entry in one
+    /// filing.
+    #[arg(long = "criterion-index", num_args = 1..)]
+    pub criterion_indices: Vec<usize>,
 
     /// With --field impact-tests: the id of a failing impact-selected test
     /// selection (`IT-<runner>:<package>`), as `loom stage complete` lists it.
@@ -78,11 +80,12 @@ pub struct DisputeCriteriaArgs {
 
 /// What one `loom stage dispute-criteria` invocation files.
 pub enum CriteriaDispute {
-    /// One entry of a stage's acceptance, wiring or wiring-tests list.
+    /// Entries of a stage's acceptance, wiring or wiring-tests list: sorted,
+    /// without duplicates, never empty.
     Entry {
         stage_id: String,
         field: CriterionField,
-        criterion_index: usize,
+        criterion_indices: Vec<usize>,
         reason: String,
         evidence_commit: Option<String>,
         failure_output: Option<PathBuf>,
@@ -96,7 +99,7 @@ impl TryFrom<DisputeCriteriaArgs> for CriteriaDispute {
 
     fn try_from(args: DisputeCriteriaArgs) -> Result<Self> {
         let Some(field) = args.field.to_field() else {
-            if args.criterion_index.is_some() || args.failure_output.is_some() {
+            if !args.criterion_indices.is_empty() || args.failure_output.is_some() {
                 bail!(
                     "--field impact-tests names the failing tests with --test; it takes no \
                      --criterion-index or --failure-output"
@@ -118,13 +121,16 @@ impl TryFrom<DisputeCriteriaArgs> for CriteriaDispute {
         if !args.tests.is_empty() {
             bail!("--test names failing impact-selected tests; use it with --field impact-tests");
         }
-        let Some(criterion_index) = args.criterion_index else {
+        if args.criterion_indices.is_empty() {
             bail!("--field {} needs --criterion-index", field.as_str());
-        };
+        }
+        let mut criterion_indices = args.criterion_indices;
+        criterion_indices.sort_unstable();
+        criterion_indices.dedup();
         Ok(CriteriaDispute::Entry {
             stage_id: args.stage_id,
             field,
-            criterion_index,
+            criterion_indices,
             reason: args.reason,
             evidence_commit: args.evidence_commit,
             failure_output: args.failure_output,
@@ -264,12 +270,28 @@ mod tests {
             entry,
             CriteriaDispute::Entry {
                 field: CriterionField::Wiring,
-                criterion_index: 2,
+                ref criterion_indices,
                 ..
-            }
+            } if criterion_indices == &[2]
         ));
         let missing = parsed(&["--field", "wiring"]).err().unwrap();
         assert!(missing.to_string().contains("needs --criterion-index"));
+    }
+
+    #[test]
+    fn several_indexes_file_one_sorted_deduplicated_dispute() {
+        for args in [
+            &["--criterion-index", "14", "--criterion-index", "13"][..],
+            &["--criterion-index", "13", "14", "13"],
+        ] {
+            let CriteriaDispute::Entry {
+                criterion_indices, ..
+            } = parsed(args).unwrap()
+            else {
+                panic!("expected a criterion filing for {args:?}");
+            };
+            assert_eq!(criterion_indices, vec![13, 14], "{args:?}");
+        }
     }
 
     #[test]

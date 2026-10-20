@@ -83,7 +83,7 @@ mod tests {
         DisputeRequest {
             id: 2,
             stage_id: "s1".to_string(),
-            kind: DisputeKind::criterion(Default::default(), 0),
+            kind: DisputeKind::criterion(Default::default(), vec![0]),
             reason: "criterion cannot pass".to_string(),
             evidence_commit: None,
             failure_output: Some("boom".to_string()),

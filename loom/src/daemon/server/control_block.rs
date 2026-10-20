@@ -9,3 +9,10 @@ pub(crate) fn handle_block_stage(
 ) -> Result<Response> {
     crate::stage_service::handle_block_stage(work_dir, stage_id, reason).map(Into::into)
 }
+pub(crate) fn handle_agent_block_stage(
+    work_dir: &Path,
+    stage_id: &str,
+    reason: &str,
+) -> Result<Response> {
+    crate::stage_service::handle_agent_block_stage(work_dir, stage_id, reason).map(Into::into)
+}

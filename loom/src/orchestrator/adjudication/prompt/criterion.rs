@@ -1,5 +1,5 @@
-//! The briefing for a disputed acceptance criterion: run the criterion, then
-//! decide whether a correct implementation would pass it as written.
+//! The briefing for disputed acceptance criteria: run them, then decide for
+//! each whether a correct implementation would pass it as written.
 //!
 //! `tests_golden.rs` pins the complete briefing. The `pub(super)` parts
 //! (the verdict rules, the reading of the run, the schema and the evidence
@@ -13,29 +13,47 @@ use super::{ExecutionSite, KindPromptInput, Prompt};
 use crate::models::dispute::DisputeRequest;
 use crate::plan::schema::AcceptanceCriterion;
 
-/// The briefing for the criterion at `criterion_index` (0-based) in the
-/// stage's `acceptance`. `plan_path` is the live plan markdown, quoted so the
-/// session sees the criteria as the plan states them.
-pub(super) fn build(
-    input: &KindPromptInput<'_>,
-    plan_path: &Path,
-    criterion_index: usize,
-) -> Prompt {
+/// The briefing for the criteria at `indices` (0-based) in the stage's
+/// `acceptance`. `plan_path` is the live plan markdown, quoted so the session
+/// sees the criteria as the plan states them.
+pub(super) fn build(input: &KindPromptInput<'_>, plan_path: &Path, indices: &[usize]) -> Prompt {
     Prompt {
-        instructions: build_instructions(input, criterion_index),
-        evidence: build_evidence(input, plan_path, criterion_index),
+        instructions: build_instructions(input, indices),
+        evidence: build_evidence(input, plan_path, indices),
     }
 }
 
+/// `13, 14`: the disputed indices as the briefing names them.
+pub(super) fn index_list(indices: &[usize]) -> String {
+    indices
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// Step 1's scope: the run decides every failing entry of the list, so one
+/// verdict settles them all and no failing entry is left for a later block.
+pub(super) fn judge_every_failing(noun: &str) -> String {
+    format!(
+        "Judge every disputed {noun} AND every other {noun} `loom check` reports\n\
+         failing; a verdict may patch any of them. The aggregate command exit status\n\
+         decides nothing.\n\n"
+    )
+}
+
 /// What the session is for, and what each verdict means.
-fn build_instructions(input: &KindPromptInput<'_>, criterion_index: usize) -> String {
+fn build_instructions(input: &KindPromptInput<'_>, indices: &[usize]) -> String {
     let mut s = String::new();
     s.push_str("## Your Job\n\n");
-    s.push_str("You are the adjudication session for ONE disputed acceptance criterion.\n");
-    s.push_str("The stage agent could not satisfy the criterion and filed a dispute\n");
-    s.push_str("saying the criterion itself is wrong. You decide whether it is.\n\n");
+    s.push_str(&format!(
+        "You are the adjudication session for the disputed acceptance criteria\n\
+         {}. The stage agent could not satisfy them and filed a dispute saying\n\
+         each is itself wrong. You decide, criterion by criterion, whether it is.\n\n",
+        index_list(indices)
+    ));
     s.push_str(&judge_not_fix());
-    s.push_str(&run_the_criterion(input, criterion_index));
+    s.push_str(&run_the_criteria(input, indices));
     s.push_str(&verdict_rules());
     s.push_str(&input.verdict_protocol(&verdict_schema()));
     s
@@ -74,41 +92,40 @@ pub(super) fn verdict_rules() -> String {
     s
 }
 
-/// The step that comes before any judgement: execute the disputed criterion
-/// and observe what it actually does.
-fn run_the_criterion(input: &KindPromptInput<'_>, criterion_index: usize) -> String {
+/// The step that comes before any judgement: execute the disputed criteria
+/// and observe what they actually do.
+fn run_the_criteria(input: &KindPromptInput<'_>, indices: &[usize]) -> String {
     let site = input.site;
     let mut s = String::new();
-    s.push_str("## Step 1 — RUN THE CRITERION\n\n");
+    s.push_str("## Step 1 — RUN THE CRITERIA\n\n");
     s.push_str(&run_before_judging());
-
-    match input.stage.acceptance.get(criterion_index) {
-        Some(criterion) => {
-            s.push_str("```bash\n");
-            s.push_str(&format!("cd {}\n", site.path.display()));
-            s.push_str(&format!("loom check {} --no-cache\n", input.stage.id));
-            s.push_str("```\n\n");
-            s.push_str(&format!(
-                "Use the reported result for acceptance criterion {criterion_index}; other checks and\n\
-                 the aggregate command exit status do not decide this dispute. This runs\n\
-                 the criterion through Loom's setup, environment and confinement policy.\n\
-                 Compare with this direct run only to diagnose a difference:\n\n```bash\n"
-            ));
-            s.push_str(criterion.command());
-            s.push_str("\necho \"exit: $?\"\n");
-            s.push_str("```\n\n");
-            s.push_str(&format!(
-                "That directory is the stage's worktree root joined with its `working_dir`\n(`{}`), which is where the stage itself runs its acceptance criteria. Running\nfrom anywhere else can make a working criterion look broken.\n\n",
-                site.working_dir
-            ));
-        }
-        None => {
-            s.push_str(&format!(
-                "The stage no longer has an acceptance criterion at index {criterion_index} — it may have\nbeen amended away since the dispute was filed. Say so and return\nneeds-more-evidence unless the record below settles it.\n\n"
-            ));
+    s.push_str("```bash\n");
+    s.push_str(&format!("cd {}\n", site.path.display()));
+    s.push_str(&format!("loom check {} --no-cache\n", input.stage.id));
+    s.push_str("```\n\n");
+    s.push_str(&judge_every_failing("criterion"));
+    s.push_str(
+        "This runs the criteria through Loom's setup, environment and confinement\n\
+         policy. Compare with these direct runs only to diagnose a difference:\n\n",
+    );
+    for &index in indices {
+        match input.stage.acceptance.get(index) {
+            Some(criterion) => {
+                s.push_str(&format!("```bash\n# acceptance criterion {index}\n"));
+                s.push_str(criterion.command());
+                s.push_str("\necho \"exit: $?\"\n```\n\n");
+            }
+            None => s.push_str(&format!(
+                "The stage no longer has an acceptance criterion at index {index} — it may\n\
+                 have been amended away since the dispute was filed. Say so, and patch\n\
+                 nothing at that index.\n\n"
+            )),
         }
     }
-
+    s.push_str(&format!(
+        "That directory is the stage's worktree root joined with its `working_dir`\n(`{}`), which is where the stage itself runs its acceptance criteria. Running\nfrom anywhere else can make a working criterion look broken.\n\n",
+        site.working_dir
+    ));
     s.push_str(&worktree_gone_warning(site));
     s.push_str(&what_the_run_decides());
     s
@@ -145,10 +162,9 @@ pub(super) fn what_the_run_decides() -> String {
     s.push_str("does not say which of the two is wrong, and saying that is the whole job.\n");
     s.push_str("The question to answer is: WOULD A CORRECT IMPLEMENTATION PASS THIS\n");
     s.push_str("CRITERION AS WRITTEN?\n\n");
-    s.push_str("- It cannot run at all — a malformed expression, a tool that is not\n");
-    s.push_str("  installed, a path that cannot exist, a shape no artifact could satisfy:\n");
-    s.push_str("  no implementation could ever pass it. Accept, and propose the plan_patch\n");
-    s.push_str("  that fixes or removes it.\n");
+    s.push_str("- It cannot run at all — a malformed expression, a path that cannot\n");
+    s.push_str("  exist, a shape no artifact could satisfy: no implementation could ever\n");
+    s.push_str("  pass it. Accept, and propose the plan_patch that fixes or removes it.\n");
     s.push_str("- It runs, fails, and the value or condition it asserts is itself wrong —\n");
     s.push_str("  it contradicts the source of truth the plan pins, asserts a constant\n");
     s.push_str("  nobody measured, or over-specifies past the stage's goal: accept, with\n");
@@ -167,11 +183,27 @@ pub(super) fn what_the_run_decides() -> String {
     s.push_str("  justify rejection or a claim that the implementation must change.\n");
     s.push_str("  If a portable amendment preserves the assertion and runs under Loom,\n");
     s.push_str("  accept with that plan_patch; the system applies it automatically. Do\n");
-    s.push_str("  not ask the operator to edit criteria or weaken the assertion. If no\n");
-    s.push_str("  such amendment is established, request the missing runner evidence.\n");
-    s.push_str("- You are blocked from running it — a tool or fixture you lack, a\n");
-    s.push_str("  worktree that is gone. This is not a criterion that cannot run:\n");
-    s.push_str("  needs-more-evidence, naming the blocker.\n\n");
+    s.push_str("  not ask the operator to edit criteria or weaken the assertion.\n");
+    s.push_str(&where_completion_runs());
+    s
+}
+
+/// The rules for a criterion that cannot run where completion runs, and for
+/// evidence nobody can produce: both end in a verdict, never in a request the
+/// stage cannot answer.
+fn where_completion_runs() -> String {
+    let mut s = String::new();
+    s.push_str("- It fails under Loom's runner only because of where completion runs —\n");
+    s.push_str("  network denied, git metadata absent, the command timeout, a sandbox\n");
+    s.push_str("  denial: accept with a portable `replace` (an extended criterion may set\n");
+    s.push_str("  `timeout_secs`, 1-3600), or with a `delete` when no form runs there,\n");
+    s.push_str("  naming in the reasoning what verification the deletion leaves to\n");
+    s.push_str("  integration-verify.\n");
+    s.push_str("- A worktree that is gone keeps you from running it: needs-more-evidence,\n");
+    s.push_str("  naming the blocker. Never request evidence no agent can produce (an\n");
+    s.push_str("  unsandboxed run, an operator-only tool): run the criterion yourself and\n");
+    s.push_str("  decide. A need only a person can meet (a credential, a tool installed\n");
+    s.push_str("  on the host) is a reject that names it.\n\n");
     s
 }
 
@@ -182,8 +214,15 @@ fn verdict_schema() -> String {
         "`index` is a 0-based index into the stage's `acceptance` array, and `value` is\n\
          YAML text deserialized into an `AcceptanceCriterion`.\n\n",
     );
+    s.push_str(PATCHES_RULE);
     s
 }
+
+/// How several patches in one verdict read their indices.
+pub(super) const PATCHES_RULE: &str = "\
+One patch per index, listed in `patches`. Every index names the list as it
+stands now, before any patch applies; Loom applies them from the highest
+index down so no patch shifts another's entry.\n\n";
 
 /// The fenced JSON a criterion verdict is written as. `field_choice` is the
 /// `plan_patch.field` value, or `|`-separated values, the dispute admits.
@@ -196,12 +235,13 @@ pub(super) fn schema_json(field_choice: &str) -> String {
     s.push_str("  \"citations\": [ {file, line?, excerpt, claim}, ... ] (accept/reject; >=1),\n");
     s.push_str("  \"plan_patch\": {                                    (accept only)\n");
     s.push_str(&format!("    \"field\": {field_choice},\n"));
-    s.push_str("    \"patch\": { \"op\": \"replace\" | \"insert\" | \"delete\",\n");
-    s.push_str("               \"index\": <0-based index into that array>,\n");
+    s.push_str("    \"patches\": [ { \"op\": \"replace\" | \"insert\" | \"delete\",\n");
+    s.push_str("                   \"index\": <0-based index into that array>,\n");
     s.push_str(
-        "               \"value\": \"<YAML body for the new element; omit for delete>\" },\n",
+        "                   \"value\": \"<YAML body for the new element; omit for delete>\" },\n",
     );
-    s.push_str("    \"reason\": \"<why the criterion is wrong>\"\n");
+    s.push_str("                 ... ],\n");
+    s.push_str("    \"reason\": \"<why the criteria are wrong>\"\n");
     s.push_str("  },\n");
     s.push_str("  \"questions\": [\"...\", ...] (needs-more-evidence; >=1)\n");
     s.push_str("}\n");
@@ -209,9 +249,9 @@ pub(super) fn schema_json(field_choice: &str) -> String {
     s
 }
 
-fn build_evidence(input: &KindPromptInput<'_>, plan_path: &Path, criterion_index: usize) -> String {
+fn build_evidence(input: &KindPromptInput<'_>, plan_path: &Path, indices: &[usize]) -> String {
     let mut u = String::new();
-    push_dispute_summary(&mut u, input, criterion_index);
+    push_dispute_summary(&mut u, input, indices);
     push_failure_context(&mut u, input.request, input.work_dir);
     push_plan_and_listing(&mut u, input, plan_path, "Plan acceptance criteria source");
     u
@@ -241,13 +281,15 @@ pub(super) fn push_plan_and_listing(
 
 /// The dispute itself: what was disputed, why, and where it sits among the
 /// stage's other criteria.
-fn push_dispute_summary(u: &mut String, input: &KindPromptInput<'_>, criterion_index: usize) {
-    let mut entry = format!("Criterion index: {criterion_index}\n");
-    if let Some(criterion) = input.stage.acceptance.get(criterion_index) {
-        entry.push_str(&format!(
-            "Criterion command: `{}`\n",
-            criterion.command().replace('`', "'")
-        ));
+fn push_dispute_summary(u: &mut String, input: &KindPromptInput<'_>, indices: &[usize]) {
+    let mut entry = format!("Criterion indices: {}\n", index_list(indices));
+    for &index in indices {
+        if let Some(criterion) = input.stage.acceptance.get(index) {
+            entry.push_str(&format!(
+                "Criterion {index} command: `{}`\n",
+                criterion.command().replace('`', "'")
+            ));
+        }
     }
     push_dispute_header(u, input, &entry);
     let lines: Vec<String> = input
@@ -256,12 +298,7 @@ fn push_dispute_summary(u: &mut String, input: &KindPromptInput<'_>, criterion_i
         .iter()
         .map(criterion_display)
         .collect();
-    push_entry_list(
-        u,
-        "Stage acceptance criteria (all)",
-        criterion_index,
-        &lines,
-    );
+    push_entry_list(u, "Stage acceptance criteria (all)", indices, &lines);
 }
 
 /// `## Dispute`, with the disputed `entry` lines after the stage's name, then
@@ -287,11 +324,11 @@ pub(super) fn push_dispute_header(u: &mut String, input: &KindPromptInput<'_>, e
 }
 
 /// `## <heading>`: one `[i] <line>` per entry of the disputed list, `→`
-/// marking entry `disputed`.
-pub(super) fn push_entry_list(u: &mut String, heading: &str, disputed: usize, lines: &[String]) {
+/// marking each entry in `disputed`.
+pub(super) fn push_entry_list(u: &mut String, heading: &str, disputed: &[usize], lines: &[String]) {
     u.push_str(&format!("## {heading}\n\n"));
     for (i, line) in lines.iter().enumerate() {
-        let marker = if i == disputed { "→" } else { " " };
+        let marker = if disputed.contains(&i) { "→" } else { " " };
         u.push_str(&format!("{marker} [{i}] {line}\n"));
     }
     u.push('\n');

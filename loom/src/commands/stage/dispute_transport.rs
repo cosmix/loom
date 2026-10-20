@@ -37,14 +37,14 @@ impl Dispute {
     pub(super) fn criterion(
         stage_id: String,
         field: CriterionField,
-        criterion_index: usize,
+        criterion_indices: Vec<usize>,
         reason: String,
         evidence_commit: Option<String>,
         failure_output: Option<String>,
     ) -> Self {
         Self {
             stage_id,
-            kind: DisputeKind::criterion(field, criterion_index),
+            kind: DisputeKind::criterion(field, criterion_indices),
             reason,
             evidence_commit,
             failure_output,
@@ -74,11 +74,11 @@ impl Dispute {
         let evidence_commit = self.evidence_commit.clone();
         match &self.kind {
             DisputeKind::Criterion {
-                criterion_index,
+                criterion_indices,
                 field,
             } => StageRequest::Dispute {
                 field: *field,
-                criterion_index: *criterion_index,
+                criterion_indices: criterion_indices.clone(),
                 reason,
                 evidence_commit,
                 failure_output: self.failure_output.clone(),
@@ -105,14 +105,14 @@ impl Dispute {
         let evidence_commit = self.evidence_commit.clone();
         match &self.kind {
             DisputeKind::Criterion {
-                criterion_index,
+                criterion_indices,
                 field,
             } => Request::DisputeCriteria {
                 auth_token,
                 stage_id,
                 session_id,
                 field: *field,
-                criterion_index: *criterion_index,
+                criterion_indices: criterion_indices.clone(),
                 reason,
                 evidence_commit,
                 failure_output: self.failure_output.clone(),
@@ -156,13 +156,10 @@ impl Dispute {
     fn subject(&self) -> (String, &'static str, &'static str) {
         match &self.kind {
             DisputeKind::Criterion {
-                criterion_index,
+                criterion_indices,
                 field,
             } => (
-                match field {
-                    CriterionField::Acceptance => format!("criterion {criterion_index}"),
-                    other => format!("{} {criterion_index}", other.as_str()),
-                },
+                criterion_subject(*field, criterion_indices),
                 "The criterion stands",
                 "stage dispute-criteria",
             ),
@@ -190,9 +187,23 @@ impl Dispute {
     }
 }
 
+/// `criterion 13`, `criteria 13, 14`, `wiring 1, 2`.
+fn criterion_subject(field: CriterionField, indices: &[usize]) -> String {
+    let list = indices
+        .iter()
+        .map(usize::to_string)
+        .collect::<Vec<_>>()
+        .join(", ");
+    match field {
+        CriterionField::Acceptance if indices.len() == 1 => format!("criterion {list}"),
+        CriterionField::Acceptance => format!("criteria {list}"),
+        other => format!("{} {list}", other.as_str()),
+    }
+}
+
 /// How the commands name a dispute, and the relay kind it travels as.
 struct Wording {
-    /// What the confirmation says was disputed: `criterion 2`.
+    /// What the confirmation says was disputed: `criteria 2, 3`.
     subject: String,
     /// The refusal when no daemon listens ends `<stands> until a daemon is running.`
     stands: &'static str,

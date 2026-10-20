@@ -17,6 +17,7 @@ use crate::models::stage::Stage;
 
 pub mod broker;
 pub mod impact_record;
+pub mod output_criteria;
 
 pub const EVIDENCE_RECORD_PREFIX: &str = "LOOM_CONTROL_EVIDENCE_V1 ";
 pub const EVIDENCE_EOF_MARKER: &str = "LOOM_CONTROL_EVIDENCE_EOF";
@@ -70,8 +71,9 @@ pub fn diagnostic_evidence(
     exact_command: String,
     phase: CompletionPhase,
     diagnostic: Option<&str>,
+    criteria: Vec<CriterionResult>,
 ) -> CompletionAttemptEvidence {
-    let mut evidence = evidence(stage, session_id, commit, exact_command, Vec::new());
+    let mut evidence = evidence(stage, session_id, commit, exact_command, criteria);
     evidence.phase = phase;
     evidence.diagnostic_first_line = bounded_diagnostic(diagnostic);
     evidence

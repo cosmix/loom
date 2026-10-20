@@ -36,7 +36,8 @@ use crate::verify::review::store::{CarriedFinding, Ruling, RulingKind};
 use crate::verify::review::verdict_records;
 use crate::verify::transitions::list_all_stages;
 
-use super::apply::{apply_accept, apply_needs_more_evidence, apply_reject};
+use super::apply::{apply_needs_more_evidence, apply_reject};
+use super::apply_accept::apply_accept;
 use super::requeue::requeue_or_hold_for_remaining_disputes;
 use super::{apply_contract, apply_impact, feedback, read_request};
 
@@ -52,7 +53,11 @@ pub(super) fn apply_by_kind(
             apply_needs_more_evidence(work_dir, stage, questions)
         }
         DisputeVerdict::Rulings { rulings } => apply_rulings(work_dir, stage, dispute, rulings),
-        DisputeVerdict::Accept { plan_patch, .. } => match dispute_kind(work_dir, stage, dispute) {
+        DisputeVerdict::Accept {
+            plan_patch,
+            reasoning,
+            ..
+        } => match dispute_kind(work_dir, stage, dispute) {
             Some(DisputeKind::Contract { contract_id }) => {
                 let accepted =
                     apply_contract::accept(work_dir, stage, dispute, &contract_id, plan_patch)?;
@@ -66,26 +71,37 @@ pub(super) fn apply_by_kind(
                 let body = apply_impact::accept(work_dir, stage, dispute, &test_ids, &evidence)?;
                 notify_and_requeue(work_dir, stage, &body)
             }
-            _ => apply_accept(work_dir, stage, plan_patch, dispute),
+            _ => apply_accept(work_dir, stage, plan_patch, dispute, reasoning),
         },
         DisputeVerdict::Reject {
             reasoning,
             citations,
-        } => match dispute_kind(work_dir, stage, dispute) {
-            Some(DisputeKind::Contract { contract_id }) => {
-                let body = apply_contract::reject_notice(&stage.id, &contract_id, reasoning);
-                notify_and_requeue(work_dir, stage, &body)
-            }
-            Some(DisputeKind::Integrity { event_ids, .. }) => {
-                let body = integrity_reject_notice(&stage.id, &event_ids, reasoning);
-                notify_and_requeue(work_dir, stage, &body)
-            }
-            Some(DisputeKind::ImpactTests { test_ids, .. }) => {
-                let body = apply_impact::reject_notice(&test_ids, reasoning);
-                notify_and_requeue(work_dir, stage, &body)
-            }
-            _ => apply_reject(work_dir, stage, dispute, reasoning, citations),
-        },
+        } => apply_rejection(work_dir, stage, dispute, reasoning, citations),
+    }
+}
+
+/// Apply a rejecting verdict by the kind of the dispute it answers.
+fn apply_rejection(
+    work_dir: &Path,
+    stage: &mut Stage,
+    dispute: u32,
+    reasoning: &str,
+    citations: &[crate::models::dispute::Citation],
+) -> Result<()> {
+    match dispute_kind(work_dir, stage, dispute) {
+        Some(DisputeKind::Contract { contract_id }) => {
+            let body = apply_contract::reject_notice(&stage.id, &contract_id, reasoning);
+            notify_and_requeue(work_dir, stage, &body)
+        }
+        Some(DisputeKind::Integrity { event_ids, .. }) => {
+            let body = integrity_reject_notice(&stage.id, &event_ids, reasoning);
+            notify_and_requeue(work_dir, stage, &body)
+        }
+        Some(DisputeKind::ImpactTests { test_ids, .. }) => {
+            let body = apply_impact::reject_notice(&test_ids, reasoning);
+            notify_and_requeue(work_dir, stage, &body)
+        }
+        _ => apply_reject(work_dir, stage, dispute, reasoning, citations),
     }
 }
 
@@ -107,7 +123,7 @@ fn dispute_kind(work_dir: &Path, stage: &Stage, dispute: u32) -> Option<DisputeK
     }
 }
 
-fn notify_and_requeue(work_dir: &Path, stage: &mut Stage, body: &str) -> Result<()> {
+pub(super) fn notify_and_requeue(work_dir: &Path, stage: &mut Stage, body: &str) -> Result<()> {
     feedback::write_notice(work_dir, &stage.id, body)?;
     requeue_or_hold_for_remaining_disputes(work_dir, stage)
 }

@@ -18,7 +18,7 @@ pub fn apply_amendment(
     }) {
         return amendment_result(work_dir, row);
     }
-    let content = prepare_content(&plan_path, work_dir, &request)?;
+    let content = prepare_content(&plan_path, work_dir, &rows, &request)?;
     let row = prepare_record(work_dir, &request, &content)?;
     inject_failure(work_dir, "after-audit")?;
     finish_recorded(&plan_path, work_dir, &row)?;
@@ -49,6 +49,7 @@ fn checked_plan_path(plan_path: &Path, work_dir: &Path) -> Result<PathBuf> {
 fn prepare_content(
     plan_path: &Path,
     work_dir: &Path,
+    rows: &[AuditRow],
     request: &AmendmentRequest,
 ) -> Result<String> {
     let content = fs::read_to_string(plan_path)?;
@@ -60,8 +61,8 @@ fn prepare_content(
         .clone()
         .unwrap_or_default()
         .max_amendments_per_stage;
-    let count = count_amendments_for_stage(work_dir, &request.stage_id)?;
-    if count >= cap {
+    let count = count_verdicts(rows, request);
+    if count >= cap && !continues_counted_verdict(rows, request) {
         bail!(
             "{}: stage '{}' has reached the amendment cap ({} of {})",
             AMENDMENT_CAP_ERROR_PREFIX,
@@ -92,6 +93,43 @@ fn prepare_content(
     }
     let yaml = serialize_loom_metadata(&metadata)?;
     Ok(splice_metadata_yaml(&content, &extracted, &yaml))
+}
+
+/// The part of a dispute id before the patch suffix: `"7.2"` belongs to verdict `"7"`.
+fn base_dispute_id(id: &str) -> &str {
+    id.split('.').next().unwrap_or(id)
+}
+
+fn stage_rows<'a>(
+    rows: &'a [AuditRow],
+    stage_id: &'a str,
+) -> impl Iterator<Item = &'a AuditRow> + 'a {
+    rows.iter().filter(move |row| row.stage_id == stage_id)
+}
+
+/// Amendments spent against the cap: one per verdict, so a multi-patch verdict
+/// (`<id>.<k>`) counts once. A row without a dispute id counts on its own.
+fn count_verdicts(rows: &[AuditRow], request: &AmendmentRequest) -> u32 {
+    let mut seen = std::collections::HashSet::new();
+    let mut count = 0u32;
+    for row in stage_rows(rows, &request.stage_id) {
+        match row.dispute_id.as_deref() {
+            Some(id) => count += u32::from(seen.insert(base_dispute_id(id))),
+            None => count += 1,
+        }
+    }
+    count
+}
+
+/// True when an earlier patch of the request's own verdict is already recorded,
+/// so the cap was checked before that verdict's first patch and the remaining
+/// patches must finish it.
+fn continues_counted_verdict(rows: &[AuditRow], request: &AmendmentRequest) -> bool {
+    let Some(base) = request.dispute_id.as_deref().map(base_dispute_id) else {
+        return false;
+    };
+    stage_rows(rows, &request.stage_id)
+        .any(|row| row.dispute_id.as_deref().map(base_dispute_id) == Some(base))
 }
 
 fn validate_index(

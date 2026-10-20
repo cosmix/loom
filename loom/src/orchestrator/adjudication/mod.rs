@@ -31,6 +31,7 @@
 //! resets its budget.
 
 mod apply;
+mod apply_accept;
 mod apply_contract;
 mod apply_impact;
 mod apply_kinds;

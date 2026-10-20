@@ -130,9 +130,10 @@ pub enum Request {
         auth_token: String,
         stage_id: String,
         session_id: String,
-        /// Which of the stage's lists `criterion_index` indexes.
+        /// Which of the stage's lists `criterion_indices` indexes.
         field: CriterionField,
-        criterion_index: usize,
+        /// The disputed entries; the daemon sorts them and drops repeats.
+        criterion_indices: Vec<usize>,
         reason: String,
         evidence_commit: Option<String>,
         failure_output: Option<String>, // pre-truncated to 4KB by the CLI

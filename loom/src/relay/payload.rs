@@ -130,7 +130,7 @@ mod tests {
             "dispute" => serde_json::json!({
                 "request": "dispute",
                 "field": "acceptance",
-                "criterion_index": 0,
+                "criterion_indices": [0],
                 "reason": "flaky",
             }),
             other => panic!("unexpected request: {other}"),

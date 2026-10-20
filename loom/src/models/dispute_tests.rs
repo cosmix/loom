@@ -35,7 +35,7 @@ fn ids(names: &[&str]) -> Vec<String> {
 
 #[test]
 fn dispute_request_round_trip_yaml() {
-    let req = request(DisputeKind::criterion(CriterionField::Acceptance, 2));
+    let req = request(DisputeKind::criterion(CriterionField::Acceptance, vec![2]));
     let y = crate::yaml::to_string(&req).unwrap();
     let back: DisputeRequest = crate::yaml::from_str(&y).unwrap();
     assert_eq!(req, back);
@@ -43,22 +43,25 @@ fn dispute_request_round_trip_yaml() {
 
 #[test]
 fn a_criterion_request_round_trips_its_field() {
-    let req = request(DisputeKind::criterion(CriterionField::WiringTests, 1));
+    let req = request(DisputeKind::criterion(CriterionField::WiringTests, vec![1]));
     let y = crate::yaml::to_string(&req).unwrap();
     assert!(y.contains("field: wiring-tests"), "{y}");
     let back: DisputeRequest = crate::yaml::from_str(&y).unwrap();
     assert_eq!(
         back.kind,
-        DisputeKind::criterion(CriterionField::WiringTests, 1)
+        DisputeKind::criterion(CriterionField::WiringTests, vec![1])
     );
 }
 
 #[test]
 fn the_kind_sits_beside_the_request_fields_in_the_frontmatter() {
-    let req = request(DisputeKind::criterion(CriterionField::Acceptance, 2));
+    let req = request(DisputeKind::criterion(
+        CriterionField::Acceptance,
+        vec![13, 14],
+    ));
     let yaml: serde_json::Value = serde_json::to_value(&req).unwrap();
     assert_eq!(yaml["kind"], serde_json::Value::from("criterion"));
-    assert_eq!(yaml["criterion_index"], serde_json::Value::from(2));
+    assert_eq!(yaml["criterion_indices"], serde_json::json!([13, 14]));
 }
 
 #[test]

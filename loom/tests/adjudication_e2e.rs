@@ -70,7 +70,7 @@ fn write_dispute(work_dir: &Path, stage_id: &str, id: u32) {
     let req = DisputeRequest {
         id,
         stage_id: stage_id.to_string(),
-        kind: loom::models::dispute::DisputeKind::criterion(Default::default(), 0),
+        kind: loom::models::dispute::DisputeKind::criterion(Default::default(), vec![0]),
         reason: "criterion impossible".to_string(),
         evidence_commit: None,
         failure_output: Some("err: something".to_string()),

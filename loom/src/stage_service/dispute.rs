@@ -9,8 +9,9 @@
 //!
 //! 1. validates the stage id
 //! 2. acquires a flock on `.loom/work/disputes/<stage>/.lock`
-//! 3. validates `criterion_index` against the list `--field` names
-//!    (`acceptance`, `wiring` or `wiring_tests`)
+//! 3. validates every entry of `criterion_indices` against the list `--field`
+//!    names (`acceptance`, `wiring` or `wiring_tests`); one filing names
+//!    several entries and spends one dispute of the budget
 //! 4. refuses if `stage.dispute_budget_exhausted()`
 //! 5. refuses if the stage's status cannot move to `NeedsAdjudication`,
 //!    checked on a copy before anything is written
@@ -42,7 +43,7 @@ pub fn handle_dispute_criteria(
     work_dir: &Path,
     stage_id: &str,
     field: CriterionField,
-    criterion_index: usize,
+    criterion_indices: Vec<usize>,
     reason: String,
     evidence_commit: Option<String>,
     failure_output: Option<String>,
@@ -50,7 +51,7 @@ pub fn handle_dispute_criteria(
     handle_dispute_criteria_identified(
         work_dir,
         stage_id,
-        (field, criterion_index),
+        (field, criterion_indices),
         reason,
         evidence_commit,
         failure_output,
@@ -61,13 +62,16 @@ pub fn handle_dispute_criteria(
 pub(crate) fn handle_dispute_criteria_identified(
     work_dir: &Path,
     stage_id: &str,
-    criterion: (CriterionField, usize),
+    criterion: (CriterionField, Vec<usize>),
     reason: String,
     evidence_commit: Option<String>,
     failure_output: Option<String>,
     request_id: Option<&str>,
 ) -> Result<Response> {
-    let (field, criterion_index) = criterion;
+    let (field, mut criterion_indices) = criterion;
+    // The wire carries any list: the record keeps it sorted and distinct.
+    criterion_indices.sort_unstable();
+    criterion_indices.dedup();
     if let Some(invalid) = invalid_stage_id(stage_id) {
         return Ok(invalid);
     }
@@ -80,13 +84,13 @@ pub(crate) fn handle_dispute_criteria_identified(
     if let Some(response) = super::receipts::existing(&stage, request_id)? {
         return Ok(response);
     }
-    if let Some(refusal) = refusal(&stage, work_canonical, field, criterion_index, &reason) {
+    if let Some(refusal) = refusal(&stage, work_canonical, field, &criterion_indices, &reason) {
         return Ok(refusal);
     }
 
     // `write_request` allocates the next sequential id and creates request.md.
     let dispute_reason = reason.clone();
-    let kind = DisputeKind::criterion(field, criterion_index);
+    let kind = DisputeKind::criterion(field, criterion_indices);
     let record = build_record(&stage, kind, reason, evidence_commit, failure_output);
     let id = super::receipts::write_request(&locked.stage_dir, record, request_id)?;
 
@@ -117,14 +121,15 @@ fn invalid_stage_id(stage_id: &str) -> Option<Response> {
     })
 }
 
-/// The refusal that stops `stage` from filing this dispute, if any: an index
-/// outside the field's list, an exhausted budget, or a status that cannot move
-/// to `NeedsAdjudication`. Nothing has been written when it returns one.
+/// The refusal that stops `stage` from filing this dispute, if any: no index,
+/// an index outside the field's list, an exhausted budget, or a status that
+/// cannot move to `NeedsAdjudication`. Nothing has been written when it
+/// returns one.
 fn refusal(
     stage: &Stage,
     work_dir: &Path,
     field: CriterionField,
-    criterion_index: usize,
+    criterion_indices: &[usize],
     reason: &str,
 ) -> Option<Response> {
     let len = match field {
@@ -132,10 +137,15 @@ fn refusal(
         CriterionField::Wiring => stage.wiring.len(),
         CriterionField::WiringTests => stage.wiring_tests.len(),
     };
-    if criterion_index >= len {
+    if criterion_indices.is_empty() {
+        return Some(Response::Error {
+            message: format!("--field {} needs --criterion-index", field.as_str()),
+        });
+    }
+    if let Some(index) = criterion_indices.iter().find(|&&index| index >= len) {
         return Some(Response::Error {
             message: format!(
-                "criterion_index {criterion_index} out of range for --field {} \
+                "criterion index {index} out of range for --field {} \
                  (stage has {len} entries)",
                 field.as_str()
             ),

@@ -137,15 +137,15 @@ pub fn build(plan_path: &Path, stage: &Stage, dispute: &DisputeRequest, work_dir
     };
     let mut prompt = match &dispute.kind {
         DisputeKind::Criterion {
-            criterion_index,
+            criterion_indices,
             field,
         } => match field {
-            CriterionField::Acceptance => criterion::build(&input, plan_path, *criterion_index),
+            CriterionField::Acceptance => criterion::build(&input, plan_path, criterion_indices),
             CriterionField::Wiring => {
-                criterion_entry::build_wiring(&input, plan_path, *criterion_index)
+                criterion_entry::build_wiring(&input, plan_path, criterion_indices)
             }
             CriterionField::WiringTests => {
-                criterion_entry::build_wiring_test(&input, plan_path, *criterion_index)
+                criterion_entry::build_wiring_test(&input, plan_path, criterion_indices)
             }
         },
         DisputeKind::Findings { .. } => findings::build(&input),

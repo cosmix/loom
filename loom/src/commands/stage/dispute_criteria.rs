@@ -17,7 +17,7 @@ use super::dispute_transport::{send, Dispute};
 use crate::models::dispute::{truncate_to_byte_limit, CriterionField, FAILURE_OUTPUT_MAX_BYTES};
 use crate::relay::emit::{mode, EnvSnapshot, RelayMode, RelaySink, StdSink};
 
-/// Dispute one entry of a stage's acceptance, wiring or wiring-tests list.
+/// Dispute entries of a stage's acceptance, wiring or wiring-tests list.
 ///
 /// Reads the process environment exactly once, then delegates to
 /// `dispute_criteria_with_mode` — the seam tests drive directly with an
@@ -26,7 +26,7 @@ use crate::relay::emit::{mode, EnvSnapshot, RelayMode, RelaySink, StdSink};
 pub fn dispute_criteria(
     stage_id: String,
     field: CriterionField,
-    criterion_index: usize,
+    criterion_indices: Vec<usize>,
     reason: String,
     evidence_commit: Option<String>,
     failure_output_path: Option<PathBuf>,
@@ -40,7 +40,7 @@ pub fn dispute_criteria(
     dispute_criteria_with_mode(
         stage_id,
         field,
-        criterion_index,
+        criterion_indices,
         reason,
         evidence_commit,
         failure_output,
@@ -56,7 +56,7 @@ pub fn dispute_criteria(
 fn dispute_criteria_with_mode(
     stage_id: String,
     field: CriterionField,
-    criterion_index: usize,
+    criterion_indices: Vec<usize>,
     reason: String,
     evidence_commit: Option<String>,
     failure_output: Option<String>,
@@ -67,7 +67,7 @@ fn dispute_criteria_with_mode(
     let dispute = Dispute::criterion(
         stage_id,
         field,
-        criterion_index,
+        criterion_indices,
         reason,
         evidence_commit,
         failure_output,

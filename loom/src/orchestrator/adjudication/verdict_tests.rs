@@ -72,7 +72,7 @@ fn flat_plan_patch_yields_accept_with_canonical_stored_shape() {
                 plan_patch.inner,
                 serde_json::json!({
                     "field": "acceptance",
-                    "patch": {"op": "replace", "index": 2, "value": "loom knowledge check"},
+                    "patches": [{"op": "replace", "index": 2, "value": "loom knowledge check"}],
                     "reason": "criterion was wrong",
                 }),
                 "stored plan_patch must be the canonical nested shape: {:?}",
@@ -227,7 +227,7 @@ fn the_question(outcome: ValidationOutcome) -> String {
 
 #[test]
 fn a_wiring_tests_accept_must_amend_wiring_tests() {
-    let kind = DisputeKind::criterion(CriterionField::WiringTests, 0);
+    let kind = DisputeKind::criterion(CriterionField::WiringTests, vec![0]);
     for spelling in ["wiring-tests", "wiring_tests"] {
         let outcome = parse_and_validate_for(&accept_amending(spelling), &kind);
         assert_eq!(amended_field(outcome).as_deref(), Some("wiring-tests"));
@@ -244,7 +244,7 @@ fn a_wiring_tests_accept_must_amend_wiring_tests() {
 
 #[test]
 fn a_wiring_accept_may_not_amend_acceptance() {
-    let kind = DisputeKind::criterion(CriterionField::Wiring, 1);
+    let kind = DisputeKind::criterion(CriterionField::Wiring, vec![1]);
     let question = the_question(parse_and_validate_for(
         &accept_amending("acceptance"),
         &kind,
@@ -257,7 +257,7 @@ fn a_wiring_accept_may_not_amend_acceptance() {
 
 #[test]
 fn an_acceptance_accept_may_still_amend_wiring() {
-    let kind = DisputeKind::criterion(CriterionField::Acceptance, 0);
+    let kind = DisputeKind::criterion(CriterionField::Acceptance, vec![0]);
     for field in ["acceptance", "wiring"] {
         let outcome = parse_and_validate_for(&accept_amending(field), &kind);
         assert_eq!(amended_field(outcome).as_deref(), Some(field));
@@ -279,10 +279,52 @@ fn a_malformed_patch_hint_names_the_disputed_field() {
         "plan_patch": {"field": "wiring-tests"}
     })
     .to_string();
-    let kind = DisputeKind::criterion(CriterionField::WiringTests, 0);
+    let kind = DisputeKind::criterion(CriterionField::WiringTests, vec![0]);
     let question = the_question(parse_and_validate_for(&raw, &kind));
     assert!(
-        question.contains("{\"field\": \"wiring-tests\", \"patch\""),
+        question.contains("{\"field\": \"wiring-tests\", \"patches\""),
         "{question}"
     );
+}
+
+/// An accept over criteria 13 and 14 carrying `patches`.
+fn accept_patching(patches: Value) -> String {
+    serde_json::json!({
+        "verdict": "accept",
+        "reasoning": "13 needs a portable form; 14 runs nowhere completion runs",
+        "citations": [{"file": "PLAN.md", "line": 9, "excerpt": "curl", "claim": "network denied"}],
+        "plan_patch": {"field": "acceptance", "patches": patches, "reason": "portable forms"}
+    })
+    .to_string()
+}
+
+#[test]
+fn an_accept_may_patch_several_criteria_and_records_patches() {
+    let kind = DisputeKind::criterion(CriterionField::Acceptance, vec![13, 14]);
+    let raw = accept_patching(serde_json::json!([
+        {"op": "replace", "index": 13, "value": "cargo test --lib"},
+        {"op": "delete", "index": 14}
+    ]));
+
+    let ValidationOutcome::Verdict(DisputeVerdict::Accept { plan_patch, .. }) =
+        parse_and_validate_for(&raw, &kind)
+    else {
+        panic!("expected Accept");
+    };
+    assert_eq!(plan_patch.inner["patches"][0]["index"], 13);
+    assert_eq!(plan_patch.inner["patches"][1]["op"], "delete");
+    assert!(plan_patch.inner.get("patch").is_none());
+}
+
+#[test]
+fn an_accept_patching_one_index_twice_needs_more_evidence() {
+    let kind = DisputeKind::criterion(CriterionField::Acceptance, vec![13, 14]);
+    let raw = accept_patching(serde_json::json!([
+        {"op": "replace", "index": 14, "value": "cargo test --lib"},
+        {"op": "delete", "index": 14}
+    ]));
+
+    let question = the_question(parse_and_validate_for(&raw, &kind));
+
+    assert!(question.contains("index 14 twice"), "{question}");
 }

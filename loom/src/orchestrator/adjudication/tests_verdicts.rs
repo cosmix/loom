@@ -283,7 +283,7 @@ pub(super) fn arrange_unnormalisable_accept_verdict() -> (TempDir, AdjudicatorRe
     let work = tmp.path();
     std::fs::create_dir_all(work.join("stages")).unwrap();
     // A config with a source_path is enough for resolve_plan_path to
-    // succeed — build_amendment_request fails before any file is read.
+    // succeed — build_amendment_requests fails before any file is read.
     std::fs::write(
         work.join("config.toml"),
         "[plan]\nsource_path = \"/tmp/loom-test-plan-does-not-exist.md\"\nplan_id = \"x\"\nplan_name = \"x\"\nbase_branch = \"main\"\n",

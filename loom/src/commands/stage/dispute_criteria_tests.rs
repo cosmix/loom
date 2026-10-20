@@ -65,7 +65,7 @@ fn relay_mode_writes_exactly_one_ticket_with_truncated_failure_output() {
     dispute_criteria_with_mode(
         "stage-a".to_string(),
         CriterionField::Acceptance,
-        0,
+        vec![0],
         "flaky".to_string(),
         None,
         None,
@@ -88,7 +88,7 @@ fn relay_mode_writes_exactly_one_ticket_with_truncated_failure_output() {
         decoded,
         StageRequest::Dispute {
             field: CriterionField::Acceptance,
-            criterion_index: 0,
+            criterion_indices: vec![0],
             reason: "flaky".to_string(),
             evidence_commit: None,
             failure_output: None,
@@ -118,7 +118,7 @@ fn an_adjudication_session_is_refused_before_any_ticket_is_written() {
     let error = dispute_criteria_with_mode(
         "stage-a".to_string(),
         CriterionField::Acceptance,
-        0,
+        vec![0],
         "flaky".to_string(),
         None,
         None,
@@ -147,7 +147,7 @@ fn relay_mode_dispute_carries_its_field() {
     dispute_criteria_with_mode(
         "stage-a".to_string(),
         CriterionField::Wiring,
-        1,
+        vec![1],
         "wrong check".to_string(),
         None,
         None,
@@ -164,7 +164,7 @@ fn relay_mode_dispute_carries_its_field() {
         .unwrap();
     let ticket = crate::relay::Ticket::decode(&fs::read(ticket_path).unwrap()).unwrap();
     assert_eq!(ticket.payload["field"], "wiring");
-    assert_eq!(ticket.payload["criterion_index"], 1);
+    assert_eq!(ticket.payload["criterion_indices"], serde_json::json!([1]));
 }
 
 #[test]
@@ -178,7 +178,7 @@ fn relay_mode_dispute_ends_the_turn() {
     dispute_criteria_with_mode(
         "stage-a".to_string(),
         CriterionField::Acceptance,
-        0,
+        vec![0],
         "wrong check".to_string(),
         None,
         None,

@@ -1,7 +1,7 @@
 //! Applying drained requests through the shared stage service.
 //!
 //! Nothing here reimplements a state transition. A spooled block goes through
-//! the same `handle_block_stage` the `BlockStage` RPC calls, a spooled
+//! the same `handle_agent_block_stage` an agent's `BlockStage` RPC calls, a spooled
 //! dispute through the same `handle_dispute_criteria` or `handle_file_dispute`
 //! its RPC calls, and a spooled contract freeze through the same
 //! `handle_freeze_contracts` the `FreezeContracts` RPC calls, so the two ways a
@@ -15,7 +15,7 @@ use std::path::Path;
 use super::spool::{drain_identified, DrainOutcome};
 use super::types::StageRequest;
 use crate::stage_service::{
-    handle_block_stage, handle_dispute_criteria_identified, handle_file_dispute_identified,
+    handle_agent_block_stage, handle_dispute_criteria_identified, handle_file_dispute_identified,
     handle_freeze_contracts, ContractRunReport, Response,
 };
 use crate::verify::transitions::load_stage;
@@ -64,17 +64,17 @@ fn apply_request(
     refused: &mut usize,
 ) -> Result<()> {
     let response = match request {
-        StageRequest::Block { reason } => handle_block_stage(work_dir, stage_id, reason)?,
+        StageRequest::Block { reason } => handle_agent_block_stage(work_dir, stage_id, reason)?,
         StageRequest::Dispute {
             field,
-            criterion_index,
+            criterion_indices,
             reason,
             evidence_commit,
             failure_output,
         } => handle_dispute_criteria_identified(
             work_dir,
             stage_id,
-            (*field, *criterion_index),
+            (*field, criterion_indices.clone()),
             reason.clone(),
             evidence_commit.clone(),
             failure_output.clone(),

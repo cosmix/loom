@@ -23,7 +23,7 @@ fn dispute(criterion_index: usize) -> DisputeRequest {
     DisputeRequest {
         id: 1,
         stage_id: "demo".to_string(),
-        kind: DisputeKind::criterion(CriterionField::Acceptance, criterion_index),
+        kind: DisputeKind::criterion(CriterionField::Acceptance, vec![criterion_index]),
         reason: "criterion impossible".to_string(),
         evidence_commit: None,
         failure_output: Some("err: something broke".to_string()),
@@ -48,7 +48,7 @@ fn build_includes_stage_and_criterion() {
     let stage = stage_with_criteria(vec!["cargo test", "cargo clippy"]);
     let p = build(&plan, &stage, &dispute(0), &work);
     assert!(p.instructions.contains("adjudication session"));
-    assert!(p.evidence.contains("Criterion command: `cargo test`"));
+    assert!(p.evidence.contains("Criterion 0 command: `cargo test`"));
     assert!(p.evidence.contains("→ [0]"));
     assert!(p.evidence.contains("err: something broke"));
 }
@@ -83,11 +83,9 @@ fn build_tells_the_session_to_run_the_criterion() {
 
     let p = build(&plan, &stage, &dispute(0), &work);
 
-    assert!(p.instructions.contains("RUN THE CRITERION"));
+    assert!(p.instructions.contains("RUN THE CRITERIA"));
     assert!(p.instructions.contains("loom check demo --no-cache"));
-    assert!(p
-        .instructions
-        .contains("reported result for acceptance criterion 0"));
+    assert!(p.instructions.contains("# acceptance criterion 0\n"));
     assert!(
         p.instructions
             .contains(&format!("cd {}", exec_dir.display())),
@@ -186,6 +184,59 @@ fn a_vanished_criterion_index_is_stated() {
     assert!(p
         .instructions
         .contains("no longer has an acceptance criterion"));
+}
+
+/// One dispute over criteria 13 and 14 marks both, runs both, and sends the
+/// session to every other failing criterion too: a criterion it never judged
+/// was once taken by the next session as reviewed and rejected.
+#[test]
+fn a_dispute_over_two_criteria_judges_both_and_every_other_failure() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plan, work) = fixture(&tmp);
+    let commands: Vec<String> = (0..15).map(|i| format!("cargo test case_{i}")).collect();
+    let stage = stage_with_criteria(commands.iter().map(String::as_str).collect());
+    let mut request = dispute(13);
+    request.kind = DisputeKind::criterion(CriterionField::Acceptance, vec![13, 14]);
+
+    let p = build(&plan, &stage, &request, &work);
+
+    assert!(p
+        .instructions
+        .contains("Judge every disputed criterion AND every other criterion `loom check` reports\nfailing; a verdict may patch any of them."));
+    assert!(p
+        .instructions
+        .contains("disputed acceptance criteria\n13, 14."));
+    assert!(p.instructions.contains("cargo test case_13\necho"));
+    assert!(p.instructions.contains("cargo test case_14\necho"));
+    assert!(p.instructions.contains("\"patches\": ["));
+    assert!(p.evidence.contains("Criterion indices: 13, 14\n"));
+    assert!(p.evidence.contains("→ [13] cargo test case_13"));
+    assert!(p.evidence.contains("→ [14] cargo test case_14"));
+    assert!(p.evidence.contains("  [12] cargo test case_12"));
+}
+
+/// A criterion that fails only where completion runs ends in a verdict, and
+/// evidence nobody can produce is never asked for.
+#[test]
+fn a_runner_only_failure_is_amended_or_deleted_never_left_for_evidence() {
+    let tmp = tempfile::tempdir().unwrap();
+    let (plan, work) = fixture(&tmp);
+    let stage = stage_with_criteria(vec!["curl -sf https://example.com"]);
+
+    let p = build(&plan, &stage, &dispute(0), &work);
+
+    for rule in [
+        "only because of where completion runs",
+        "`timeout_secs`, 1-3600",
+        "what verification the deletion leaves to\n  integration-verify",
+        "Never request evidence no agent can produce",
+        "A need only a person can meet",
+    ] {
+        assert!(p.instructions.contains(rule), "missing {rule:?}");
+    }
+    assert!(!p
+        .instructions
+        .contains("request the missing runner evidence"));
 }
 
 #[test]

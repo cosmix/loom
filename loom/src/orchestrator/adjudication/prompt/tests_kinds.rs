@@ -108,7 +108,7 @@ fn staged_briefing_in(
 /// and tells the session how to record its verdict.
 fn assert_kind_briefing(prompt: &Prompt, id: &str) {
     assert!(
-        !prompt.instructions.contains("RUN THE CRITERION"),
+        !prompt.instructions.contains("RUN THE CRITERIA"),
         "routed to the criterion builder:\n{}",
         prompt.instructions
     );
@@ -127,10 +127,10 @@ fn assert_kind_briefing(prompt: &Prompt, id: &str) {
 #[test]
 fn criterion_dispute_reaches_the_criterion_builder() {
     let prompt = briefing(
-        DisputeKind::criterion(CriterionField::Acceptance, 0),
+        DisputeKind::criterion(CriterionField::Acceptance, vec![0]),
         "criterion impossible",
     );
-    assert!(prompt.instructions.contains("RUN THE CRITERION"));
+    assert!(prompt.instructions.contains("RUN THE CRITERIA"));
     assert!(prompt.instructions.contains(RECORD_COMMAND));
     assert!(prompt.evidence.contains("→ [0] cargo test"));
 }
@@ -197,7 +197,7 @@ fn a_wiring_dispute_shows_the_wiring_entry() {
         ],
         ..stage()
     };
-    let kind = DisputeKind::criterion(CriterionField::Wiring, 1);
+    let kind = DisputeKind::criterion(CriterionField::Wiring, vec![1]);
     let prompt = staged_briefing_in(tmp.path(), &stage, kind, "the pattern is wrong");
 
     let instructions = &prompt.instructions;
@@ -253,7 +253,7 @@ fn a_wiring_tests_dispute_runs_the_wiring_test_command() {
         }],
         ..stage()
     };
-    let kind = DisputeKind::criterion(CriterionField::WiringTests, 0);
+    let kind = DisputeKind::criterion(CriterionField::WiringTests, vec![0]);
     let prompt = staged_briefing_in(tmp.path(), &stage, kind, "the wiring test is wrong");
 
     let instructions = &prompt.instructions;
@@ -286,7 +286,7 @@ fn a_wiring_tests_dispute_runs_the_wiring_test_command() {
 #[test]
 fn a_wiring_dispute_past_the_list_says_so() {
     let tmp = tempfile::tempdir().unwrap();
-    let kind = DisputeKind::criterion(CriterionField::Wiring, 3);
+    let kind = DisputeKind::criterion(CriterionField::Wiring, vec![3]);
     let prompt = staged_briefing_in(tmp.path(), &stage(), kind, "the pattern is wrong");
     assert!(
         prompt

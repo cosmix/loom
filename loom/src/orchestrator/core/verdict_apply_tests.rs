@@ -81,7 +81,7 @@ fn write_dispute_request(work: &std::path::Path, stage_id: &str, id: u32) {
     let req = DisputeRequest {
         id,
         stage_id: stage_id.to_string(),
-        kind: DisputeKind::criterion(Default::default(), 0),
+        kind: DisputeKind::criterion(Default::default(), vec![0]),
         reason: "criterion impossible".to_string(),
         evidence_commit: None,
         failure_output: None,

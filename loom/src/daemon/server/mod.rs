@@ -30,7 +30,7 @@ mod tokens;
 mod tests;
 
 pub(crate) use contracts::handle_freeze_contracts;
-pub(crate) use control_block::handle_block_stage;
+pub(crate) use control_block::{handle_agent_block_stage, handle_block_stage};
 pub use core::{DaemonServer, DaemonStatus};
 pub use dispute::handle_dispute_criteria;
 pub(crate) use dispute_kinds::handle_file_dispute;

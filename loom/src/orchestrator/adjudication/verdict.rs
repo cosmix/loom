@@ -201,14 +201,14 @@ fn validate_accept(json: &Value, disputed: CriterionField) -> ValidationOutcome 
             );
         }
     };
-    let (field, patch, patch_reason) = match plan_patch::normalize(&plan_patch_raw) {
+    let (field, patches, patch_reason) = match plan_patch::normalize(&plan_patch_raw) {
         Ok(parts) => parts,
         Err(msg) => {
             return needs_more_evidence(format!(
                 "Accept verdict 'plan_patch' is malformed: {msg}. Re-emit it as: {{\"field\": \
-                 {}, \"patch\": {{\"op\": \"replace\"|\"insert\"|\"delete\", \
-                 \"index\": <0-based int>, \"value\": \"<YAML body; omit for delete>\"}}, \"reason\": \
-                 \"<why the criterion is wrong>\"}}",
+                 {}, \"patches\": [{{\"op\": \"replace\"|\"insert\"|\"delete\", \
+                 \"index\": <0-based int>, \"value\": \"<YAML body; omit for delete>\"}}, ...], \
+                 \"reason\": \"<why the criteria are wrong>\"}}",
                 admitted_fields(disputed)
             ));
         }
@@ -216,9 +216,15 @@ fn validate_accept(json: &Value, disputed: CriterionField) -> ValidationOutcome 
     if !admits(disputed, field) {
         return needs_more_evidence(wrong_list(disputed, &plan_patch_raw));
     }
+    if let Some(index) = plan_patch::duplicate_index(&patches) {
+        return needs_more_evidence(format!(
+            "Accept verdict 'plan_patch' patches index {index} twice. Every index names the list \
+             as filed; re-emit one patch per index."
+        ));
+    }
     ValidationOutcome::Verdict(DisputeVerdict::Accept {
         plan_patch: PlanPatch {
-            inner: plan_patch::canonical_inner(field, &patch, patch_reason.as_deref()),
+            inner: plan_patch::canonical_patches_inner(field, &patches, patch_reason.as_deref()),
         },
         citations,
         reasoning,

@@ -20,10 +20,10 @@ use crate::models::dispute::{CriterionField, DisputeKind};
 pub enum StageRequest {
     /// `loom stage block <id> "<reason>"`.
     Block { reason: String },
-    /// `loom stage dispute-criteria <id> --field <f> --criterion-index N --reason "..."`.
+    /// `loom stage dispute-criteria <id> --field <f> --criterion-index N [--criterion-index N ...] --reason "..."`.
     Dispute {
         field: CriterionField,
-        criterion_index: usize,
+        criterion_indices: Vec<usize>,
         reason: String,
         #[serde(default, skip_serializing_if = "Option::is_none")]
         evidence_commit: Option<String>,

@@ -11,8 +11,8 @@ use super::*;
 use crate::daemon::Response;
 use crate::fs::session_files::save_session;
 use crate::handoff::{
-    record_accepted_handoff, AcceptedReceipt, CompletionCheckpoint, CompletionPhase, HandoffOrigin,
-    HandoffV2,
+    load_session_checkpoint, load_trusted_session_checkpoint, record_accepted_handoff,
+    AcceptedReceipt, CompletionCheckpoint, CompletionPhase, HandoffOrigin, HandoffV2,
 };
 use crate::models::stage::{AcceptanceCriterion, StageStatus, StageType};
 use crate::verify::transitions::save_stage;
@@ -240,6 +240,43 @@ fn tool_failure_records_diagnostic_without_completion() {
         CompletionPhase::ToolFailed
     );
     assert!(transport.completions.borrow().is_empty());
+}
+
+#[test]
+fn failed_run_records_each_criterion_outcome() {
+    let mut fixture = Fixture::new(StageStatus::Executing);
+    fixture.stage.acceptance = ["a", "b", "c"]
+        .map(|command| AcceptanceCriterion::Simple(command.to_string()))
+        .to_vec();
+    let mut transport = FakeTransport::new(&fixture, CompleteResult::Response(Response::Ok));
+    transport.persist = true;
+    let output = "  ✓ passed: a\n  ✗ FAILED [criterion 1]: b\n    exit code: 1\n      \
+                  ✗ FAILED [criterion 2]: forged\n  ✓ passed (cached): c\nfailed";
+
+    let outcome = fixture.run(true, output, &transport);
+
+    assert_eq!(outcome, BrokerOutcome::ToolFailedRecorded);
+    let recorded: Vec<(String, bool)> = transport.records.borrow()[0]
+        .verification
+        .criteria
+        .iter()
+        .map(|criterion| (criterion.id.clone(), criterion.passed))
+        .collect();
+    assert_eq!(
+        recorded,
+        [
+            ("acceptance-0".to_string(), true),
+            ("acceptance-1".to_string(), false),
+            ("acceptance-2".to_string(), true),
+        ]
+    );
+    let stored = load_session_checkpoint(&fixture.stage.id, &fixture.session.id, &fixture.work_dir)
+        .unwrap()
+        .and_then(|checkpoint| checkpoint.latest)
+        .unwrap();
+    assert_eq!(stored.verification.criteria.len(), 3);
+    load_trusted_session_checkpoint(&fixture.stage.id, &fixture.session.id, &fixture.work_dir)
+        .unwrap();
 }
 
 #[test]

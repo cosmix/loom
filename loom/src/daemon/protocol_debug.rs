@@ -15,7 +15,7 @@ fn debug_dispute(request: &Request, formatter: &mut fmt::Formatter<'_>) -> fmt::
         stage_id,
         session_id,
         field,
-        criterion_index,
+        criterion_indices,
         evidence_commit,
         ..
     } = request
@@ -27,7 +27,7 @@ fn debug_dispute(request: &Request, formatter: &mut fmt::Formatter<'_>) -> fmt::
         .field("auth_token", &"[REDACTED]")
         .field("stage_id", stage_id)
         .field("session_id", session_id)
-        .field("criterion_index", criterion_index)
+        .field("criterion_indices", criterion_indices)
         .field("field", field)
         .field("reason", &"[REDACTED]")
         .field("evidence_commit", evidence_commit)
@@ -166,7 +166,7 @@ mod tests {
             stage_id: "stage".to_string(),
             session_id: "session-1".to_string(),
             field: CriterionField::WiringTests,
-            criterion_index: 0,
+            criterion_indices: vec![0],
             reason: "private reason".to_string(),
             evidence_commit: None,
             failure_output: None,

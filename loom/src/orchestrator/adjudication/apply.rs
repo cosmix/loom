@@ -4,9 +4,9 @@
 //! and acts on each one exactly once. Which way a verdict moves the stage is
 //! the whole autonomy contract:
 //!
-//! * `Accept` — the criterion was wrong. Amend the plan, clear the feedback,
-//!   then re-queue the stage, or hold it in `NeedsAdjudication` while other
-//!   disputes on it are unanswered.
+//! * `Accept` — the criteria were wrong. Amend the plan, tell the next session
+//!   what changed and why (`apply_accept.rs`), then re-queue the stage, or hold
+//!   it in `NeedsAdjudication` while other disputes on it are unanswered.
 //! * `NeedsMoreEvidence` — ask the agent the adjudicator's questions, then
 //!   re-queue (or hold, per the same rule) up to
 //!   [`MAX_EVIDENCE_ROUNDS`](super::MAX_EVIDENCE_ROUNDS).
@@ -27,7 +27,6 @@ use crate::plan::amendment::{apply_amendment, AmendmentRequest};
 use crate::verify::transitions::{load_stage, update_stage};
 
 use super::apply_kinds::apply_by_kind;
-use super::plan_patch::build_amendment_request;
 use super::requeue::requeue_or_hold_for_remaining_disputes;
 use super::scan::read_verdict_record;
 use super::{
@@ -175,24 +174,6 @@ fn persist_verdict_result(
         close_open_disputes(work_dir, stage_id);
     }
     Ok(())
-}
-
-/// The criterion was wrong: amend the plan and re-queue the stage.
-pub(super) fn apply_accept(
-    work_dir: &Path,
-    stage: &mut Stage,
-    plan_patch: &crate::models::dispute::PlanPatch,
-    dispute_id: u32,
-) -> Result<()> {
-    let request = build_amendment_request(stage.id.clone(), plan_patch, dispute_id)?;
-    if !amend_plan(work_dir, stage, request)? {
-        return Ok(());
-    }
-    // Accept verdict closes the evidence loop: clear feedback and re-queue
-    // the stage so the agent can retry (unless another dispute is still
-    // unanswered).
-    let _ = feedback::clear_feedback(work_dir, &stage.id);
-    requeue_or_hold_for_remaining_disputes(work_dir, stage)
 }
 
 /// Apply an accepted verdict's amendment and resync the stage from it.

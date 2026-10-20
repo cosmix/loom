@@ -158,7 +158,7 @@ fn criterion_dispute_behaviour_is_unchanged() {
         &work_dir,
         STAGE,
         CriterionField::Acceptance,
-        1,
+        vec![1],
         "criterion 1 is unrunnable".to_string(),
         Some("abc1234".to_string()),
         Some("exit 127".to_string()),
@@ -176,7 +176,7 @@ fn criterion_dispute_behaviour_is_unchanged() {
     keys.sort_unstable();
     let expected = [
         "created_at",
-        "criterion_index",
+        "criterion_indices",
         "evidence_commit",
         "failure_output",
         "field",
@@ -188,7 +188,7 @@ fn criterion_dispute_behaviour_is_unchanged() {
     ];
     assert_eq!(keys, expected);
     assert_eq!(yaml["kind"], serde_json::Value::from("criterion"));
-    assert_eq!(yaml["criterion_index"], serde_json::Value::from(1));
+    assert_eq!(yaml["criterion_indices"], serde_json::json!([1]));
     let content = std::fs::read_to_string(request_path(&work_dir, id)).unwrap();
     assert!(content.ends_with(&format!("# Dispute request {id} for stage {STAGE}\n")));
     let stage = load_stage(STAGE, &work_dir).unwrap();

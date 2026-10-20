@@ -83,9 +83,11 @@ impl CriterionField {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case")]
 pub enum DisputeKind {
-    /// One entry of `field`'s list: `loom stage dispute-criteria`.
+    /// Entries of `field`'s list, sorted and distinct: `loom stage
+    /// dispute-criteria`. One filing names every failing entry so one
+    /// adjudication judges them together.
     Criterion {
-        criterion_index: usize,
+        criterion_indices: Vec<usize>,
         field: CriterionField,
     },
     /// Open review findings, own or carried: `loom stage dispute-findings`.
@@ -111,10 +113,10 @@ pub enum DisputeKind {
 }
 
 impl DisputeKind {
-    /// A criterion dispute over entry `criterion_index` of `field`'s list.
-    pub fn criterion(field: CriterionField, criterion_index: usize) -> Self {
+    /// A criterion dispute over entries `criterion_indices` of `field`'s list.
+    pub fn criterion(field: CriterionField, criterion_indices: Vec<usize>) -> Self {
         DisputeKind::Criterion {
-            criterion_index,
+            criterion_indices,
             field,
         }
     }

@@ -2,12 +2,15 @@ use std::path::Path;
 
 use anyhow::Result;
 
+use super::output_criteria::criteria_from_output;
 use super::{
     diagnostic_evidence, fresh_nonce, parse_evidence_record, pinned_command, record_evidence,
     validate_against, with_boundary_failure, RecordRoute, OUTCOME_PREFIX,
 };
 use crate::daemon::Response;
-use crate::handoff::{load_trusted_session_checkpoint, CompletionAttemptEvidence, CompletionPhase};
+use crate::handoff::{
+    load_trusted_session_checkpoint, CompletionAttemptEvidence, CompletionPhase, CriterionResult,
+};
 use crate::models::dispute::strip_control;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
@@ -167,6 +170,7 @@ pub fn run_broker(ctx: BrokerContext, tool_status_failed: bool, output: &str) ->
             exact_command,
             CompletionPhase::ToolFailed,
             diagnostic,
+            criteria_from_output(output, ctx.stage),
             BrokerOutcome::ToolFailedRecorded,
         );
     }
@@ -187,6 +191,7 @@ pub fn run_broker(ctx: BrokerContext, tool_status_failed: bool, output: &str) ->
                 exact_command,
                 CompletionPhase::EvidenceMissing,
                 Some(&error.to_string()),
+                Vec::new(),
                 BrokerOutcome::EvidenceMissingRecorded,
             );
         }
@@ -239,6 +244,7 @@ fn record_diagnostic(
     exact_command: String,
     phase: CompletionPhase,
     diagnostic: Option<&str>,
+    criteria: Vec<CriterionResult>,
     success: BrokerOutcome,
 ) -> BrokerOutcome {
     let evidence = diagnostic_evidence(
@@ -248,6 +254,7 @@ fn record_diagnostic(
         exact_command,
         phase,
         diagnostic,
+        criteria,
     );
     match ctx.transport.record(ctx.session, ctx.stage, &evidence) {
         Ok(_) => success,

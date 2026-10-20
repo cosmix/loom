@@ -101,7 +101,7 @@ mod tests {
         }
         assert!(exhausted(&stage, &contract()));
         assert_eq!(stage.tally.contract_disputes, MAX_DISPUTES_PER_KIND);
-        let criterion = DisputeKind::criterion(CriterionField::Acceptance, 0);
+        let criterion = DisputeKind::criterion(CriterionField::Acceptance, vec![0]);
         assert!(!exhausted(&stage, &criterion));
         assert!(!stage.dispute_budget_exhausted());
         assert_eq!(
@@ -115,7 +115,7 @@ mod tests {
         let mut stage = Stage::default();
         spend(
             &mut stage,
-            &DisputeKind::criterion(CriterionField::Acceptance, 1),
+            &DisputeKind::criterion(CriterionField::Acceptance, vec![1]),
         );
         assert_eq!(stage.dispute_count, 1);
     }
@@ -128,7 +128,7 @@ mod tests {
             CriterionField::Wiring,
             CriterionField::WiringTests,
         ] {
-            spend(&mut stage, &DisputeKind::criterion(field, 0));
+            spend(&mut stage, &DisputeKind::criterion(field, vec![0]));
         }
         assert_eq!(stage.dispute_count, 3);
         assert_eq!(stage.tally, DisputeTally::default());

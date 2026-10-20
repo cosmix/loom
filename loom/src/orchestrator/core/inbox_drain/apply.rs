@@ -10,8 +10,8 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 
 use crate::daemon::{
-    handle_block_stage, handle_dispute_criteria, handle_file_dispute, handle_freeze_contracts,
-    Response,
+    handle_agent_block_stage, handle_dispute_criteria, handle_file_dispute,
+    handle_freeze_contracts, Response,
 };
 use crate::fs::memory::{append_entry, validate_spooled_entry, MemoryEntry};
 use crate::fs::stage_request::StageRequest;
@@ -139,10 +139,10 @@ fn stage_request(
         return Settle::Refused(reason);
     }
     let response = match request {
-        StageRequest::Block { reason } => handle_block_stage(work_dir, stage_id, &reason),
+        StageRequest::Block { reason } => handle_agent_block_stage(work_dir, stage_id, &reason),
         StageRequest::Dispute {
             field,
-            criterion_index,
+            criterion_indices,
             reason,
             evidence_commit,
             failure_output,
@@ -150,7 +150,7 @@ fn stage_request(
             work_dir,
             stage_id,
             field,
-            criterion_index,
+            criterion_indices,
             reason,
             evidence_commit,
             failure_output,

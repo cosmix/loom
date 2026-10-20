@@ -14,7 +14,97 @@ use anyhow::{Context, Result};
 use chrono::Utc;
 
 use super::Response;
-use crate::verify::transitions::update_stage;
+use crate::handoff::load_trusted_session_checkpoint;
+use crate::handoff::schema::CompletionPhase;
+use crate::verify::transitions::{load_stage, update_stage};
+
+/// A stage agent's `loom stage block`: refused while the stage session's
+/// latest signed `loom stage complete` attempt failed with at least one
+/// failing `acceptance-<i>` criterion, otherwise [`handle_block_stage`].
+///
+/// A failing criterion has a route that keeps the stage moving: a dispute,
+/// judged by an adjudicator and escalated to the operator once the budget is
+/// spent. A block there parks the stage as an intentional block that is never
+/// retried, so the work waits on an operator for a question the adjudicator
+/// could have answered. A failed completion naming no criterion (missing
+/// sandbox, setup error) has no dispute route, so the block stays open.
+/// Operator blocks and the daemon's own signing block call
+/// [`handle_block_stage`] directly.
+pub(crate) fn handle_agent_block_stage(
+    work_dir: &Path,
+    stage_id: &str,
+    reason: &str,
+) -> Result<Response> {
+    crate::validation::validate_id(stage_id).context("invalid block stage id")?;
+    let failing = failing_criterion_indices(work_dir, stage_id);
+    if !failing.is_empty() {
+        return Ok(Response::Error {
+            message: failed_completion_refusal(stage_id, &failing),
+        });
+    }
+    handle_block_stage(work_dir, stage_id, reason)
+}
+
+/// Indices of the `acceptance-<i>` criteria that failed in the current session's
+/// latest signed `ToolFailed` completion attempt. A record that cannot be read
+/// yields none: the agent's way to stop must not hinge on it.
+fn failing_criterion_indices(work_dir: &Path, stage_id: &str) -> Vec<usize> {
+    let session = match load_stage(stage_id, work_dir) {
+        Ok(stage) => stage.session,
+        Err(error) => {
+            tracing::warn!(stage_id, error = %format!("{error:#}"), "block: stage unreadable");
+            return Vec::new();
+        }
+    };
+    let Some(session) = session else {
+        return Vec::new();
+    };
+    match load_trusted_session_checkpoint(stage_id, &session, work_dir) {
+        Ok(checkpoint) => checkpoint
+            .and_then(|checkpoint| checkpoint.latest)
+            .filter(|latest| latest.phase == CompletionPhase::ToolFailed)
+            .map(|latest| {
+                let mut indices: Vec<usize> = latest
+                    .verification
+                    .criteria
+                    .iter()
+                    .filter(|result| !result.passed)
+                    .filter_map(|result| result.id.strip_prefix("acceptance-")?.parse().ok())
+                    .collect();
+                indices.sort_unstable();
+                indices.dedup();
+                indices
+            })
+            .unwrap_or_default(),
+        Err(error) => {
+            tracing::warn!(
+                stage_id,
+                session_id = %session,
+                error = %format!("{error:#}"),
+                "block: completion record unreadable"
+            );
+            Vec::new()
+        }
+    }
+}
+
+fn failed_completion_refusal(stage_id: &str, failing: &[usize]) -> String {
+    let flags: Vec<String> = failing
+        .iter()
+        .map(|index| format!("--criterion-index {index}"))
+        .collect();
+    format!(
+        "cannot block stage '{stage_id}': the latest `loom stage complete` shows failing \
+         criteria. A failing check is disputed, never blocked: `loom stage dispute-criteria \
+         {stage_id} {} --reason \"...\"` names every failing criterion in one filing \
+         (`--field wiring` or `--field wiring-tests` for wiring entries, `--field impact-tests \
+         --test <id>` for failing impact-selected tests); open review findings go to `loom \
+         stage dispute-findings`, test-integrity events to `loom stage dispute-integrity`, a \
+         frozen contract to `loom stage dispute-contract`. A filing past the dispute budget \
+         goes to the operator automatically.",
+        flags.join(" ")
+    )
+}
 
 /// Apply `Blocked` to `stage_id`, recording `reason` as its close reason.
 ///
@@ -53,6 +143,10 @@ pub(crate) fn handle_block_stage(
         None => Response::Ok,
     })
 }
+
+#[cfg(test)]
+#[path = "control_block_agent_tests.rs"]
+mod agent_tests;
 
 #[cfg(test)]
 mod tests {

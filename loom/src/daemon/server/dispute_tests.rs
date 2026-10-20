@@ -5,6 +5,9 @@ use crate::plan::schema::AcceptanceCriterion;
 use crate::verify::transitions::save_stage;
 use tempfile::TempDir;
 
+#[path = "dispute_multi_tests.rs"]
+mod multi;
+
 fn setup(stage_status: StageStatus, acceptance_len: usize) -> (TempDir, std::path::PathBuf) {
     let tmp = TempDir::new().unwrap();
     let wd = WorkDir::new(tmp.path()).unwrap();
@@ -31,7 +34,7 @@ fn file_acceptance(work_dir: &Path, stage_id: &str, index: usize, reason: &str) 
         work_dir,
         stage_id,
         CriterionField::Acceptance,
-        index,
+        vec![index],
         reason.to_string(),
         None,
         None,
@@ -122,7 +125,7 @@ fn dispute_field(work_dir: &Path, field: CriterionField, index: usize) -> Respon
         work_dir,
         "stage-disp",
         field,
-        index,
+        vec![index],
         "r".to_string(),
         None,
         None,
@@ -177,7 +180,7 @@ fn dispute_persists_request_md_in_per_id_directory() {
         &work_dir,
         "stage-disp",
         CriterionField::Acceptance,
-        1,
+        vec![1],
         "bad criterion".to_string(),
         None,
         None,
@@ -265,7 +268,7 @@ fn dispute_with_failure_output_truncates_at_4kb() {
         &work_dir,
         "stage-disp",
         CriterionField::Acceptance,
-        0,
+        vec![0],
         "x".to_string(),
         None,
         Some(big),

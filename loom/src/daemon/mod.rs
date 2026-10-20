@@ -18,8 +18,8 @@ pub use server::{
     ReadyTiming,
 };
 pub(crate) use server::{
-    caller_is_inside_session, daemon_environment_pairs, handle_block_stage, handle_file_dispute,
-    handle_freeze_contracts, DaemonUnavailable,
+    caller_is_inside_session, daemon_environment_pairs, handle_agent_block_stage,
+    handle_block_stage, handle_file_dispute, handle_freeze_contracts, DaemonUnavailable,
 };
 pub use socket::{socket_path, socket_path_fits, socket_path_problem, SOCKET_FILE, SUN_PATH_MAX};
 pub use wire::{MAX_CREDENTIAL_BYTES, MAX_REQUEST_BYTES};

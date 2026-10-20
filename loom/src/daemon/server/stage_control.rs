@@ -12,13 +12,13 @@ use crate::models::dispute::{CriterionField, DisputeKind};
 ///
 /// The handler owns `request.md` persistence and the transition to
 /// `NeedsAdjudication`. Authorization and stage ownership are settled before
-/// it runs; the handler additionally validates `criterion_index` and the
+/// it runs; the handler additionally validates `criterion_indices` and the
 /// stage's dispute budget.
 fn serve_dispute_criteria(
     work_dir: &Path,
     stage_id: &str,
     field: CriterionField,
-    criterion_index: usize,
+    criterion_indices: Vec<usize>,
     reason: String,
     evidence_commit: Option<String>,
     failure_output: Option<String>,
@@ -27,7 +27,7 @@ fn serve_dispute_criteria(
         work_dir,
         stage_id,
         field,
-        criterion_index,
+        criterion_indices,
         reason,
         evidence_commit,
         failure_output,
@@ -53,12 +53,18 @@ fn serve_file_dispute(
 }
 
 /// Serve one `BlockStage`. A transition the state machine refuses comes back
-/// from the handler as `Response::Error`, not as an `Err`.
-fn serve_block_stage(work_dir: &Path, stage_id: &str, reason: &str) -> Response {
-    super::control_block::handle_block_stage(work_dir, stage_id, reason).unwrap_or_else(|error| {
-        Response::Error {
-            message: format!("Block transition failed: {error:#}"),
-        }
+/// from the handler as `Response::Error`, not as an `Err`. A request naming a
+/// session comes from a stage agent and is refused while the latest completion
+/// shows a failing criterion; the operator's, with an empty session id, blocks
+/// unconditionally.
+fn serve_block_stage(work_dir: &Path, stage_id: &str, session_id: &str, reason: &str) -> Response {
+    let blocked = if session_id.is_empty() {
+        super::control_block::handle_block_stage(work_dir, stage_id, reason)
+    } else {
+        super::control_block::handle_agent_block_stage(work_dir, stage_id, reason)
+    };
+    blocked.unwrap_or_else(|error| Response::Error {
+        message: format!("Block transition failed: {error:#}"),
     })
 }
 
@@ -83,7 +89,7 @@ pub(super) fn serve_stage_control(work_dir: &Path, request: Request) -> Response
         Request::DisputeCriteria {
             stage_id,
             field,
-            criterion_index,
+            criterion_indices,
             reason,
             evidence_commit,
             failure_output,
@@ -92,7 +98,7 @@ pub(super) fn serve_stage_control(work_dir: &Path, request: Request) -> Response
             work_dir,
             &stage_id,
             field,
-            criterion_index,
+            criterion_indices,
             reason,
             evidence_commit,
             failure_output,
@@ -105,8 +111,11 @@ pub(super) fn serve_stage_control(work_dir: &Path, request: Request) -> Response
             ..
         } => serve_file_dispute(work_dir, &stage_id, kind, reason, evidence_commit),
         Request::BlockStage {
-            stage_id, reason, ..
-        } => serve_block_stage(work_dir, &stage_id, &reason),
+            stage_id,
+            session_id,
+            reason,
+            ..
+        } => serve_block_stage(work_dir, &stage_id, &session_id, &reason),
         Request::FreezeContracts {
             stage_id,
             session_id,

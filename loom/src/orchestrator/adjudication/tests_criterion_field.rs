@@ -86,7 +86,7 @@ fn an_accepted_wiring_tests_verdict_amends_the_plan_and_the_stage() {
         description: None,
     }];
     write_stage(&work, &stage);
-    let kind = DisputeKind::criterion(CriterionField::WiringTests, 0);
+    let kind = DisputeKind::criterion(CriterionField::WiringTests, vec![0]);
     write_request(&work, "s1", 1, kind);
     write_verdict(&work, "s1", 1, accept_replacing_the_wiring_test(), 1);
 
