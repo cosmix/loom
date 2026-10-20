@@ -73,6 +73,15 @@ fn test_after_stage_checks_pass() {
 
 #[test]
 fn test_after_stage_checks_fail_when_postcondition_not_met() {
+    // The default confinement runs the check under bubblewrap; a failing
+    // launcher would also yield one gap, so the assertion needs a working one.
+    if crate::process::sandbox_probe::skip_unless(
+        crate::process::sandbox_probe::confined_commands_runnable(),
+        "verify::before_after::tests::test_after_stage_checks_fail_when_postcondition_not_met",
+        "confined commands cannot start inside this sandbox",
+    ) {
+        return;
+    }
     // After check expects stdout to contain "feature works", but it doesn't
     let after_checks = vec![TruthCheck {
         command: "echo 'something else'".to_string(),

@@ -68,8 +68,9 @@ pub enum MonitorEvent {
         /// Advisory like the rest of this event — it only sharpens the warning.
         finished_without_completing: bool,
     },
-    /// An adjudication session is alive but has stopped working: no tool call
-    /// for longer than the disputed stage's response budget.
+    /// An adjudication session is alive but has stopped working: no tool call,
+    /// and no command of its own running, for longer than the disputed stage's
+    /// response budget.
     ///
     /// Separate from [`MonitorEvent::SessionHung`] because the remedy is
     /// different. A stalled stage agent's stage is handed off and re-queued; a
@@ -80,8 +81,9 @@ pub enum MonitorEvent {
         session_id: String,
         /// The disputed stage the judge was spawned for.
         stage_id: String,
-        /// Time since the judge's last tool call, or since it was spawned if
-        /// it has never made one.
+        /// Time since the judge's last tool call (or its spawn, if it has
+        /// never made one), or since a poll last found it running a command
+        /// of its own, whichever is later.
         stale_duration_secs: u64,
         /// The stage response budget that was exceeded, in seconds.
         timeout_secs: u64,

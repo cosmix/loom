@@ -10,6 +10,7 @@ use loom::daemon::{await_ready, ReadyTiming};
 use loom::handoff::worktree_head_commit;
 use loom::models::session::{Session, SessionStatus};
 use loom::models::stage::{StageStatus, StageType};
+use loom::process::sandbox_probe::{skip_unless, unix_socket_bindable};
 use loom::verify::transitions::update_stage;
 
 use super::support::{run_git, ReplayFixture};
@@ -27,6 +28,9 @@ const GENERATED: &[&str] = &[
 
 #[test]
 fn standard_completion_verifies_accepts_and_merges_with_generated_dependencies() {
+    if daemon_socket_unavailable() {
+        return;
+    }
     let fixture = ReplayFixture::new(&["sh scripts/acceptance.sh"]).unwrap();
     prepare_monorepo(&fixture);
     let verified_commit = worktree_head_commit(&fixture.worktree).unwrap();
@@ -191,6 +195,15 @@ fn live_session(fixture: &ReplayFixture) -> ChildGuard {
         &format!("{}\n{start_time}\n", child.0.id()),
     );
     child
+}
+
+/// The daemon child binds its control socket under the fixture directory.
+fn daemon_socket_unavailable() -> bool {
+    skip_unless(
+        unix_socket_bindable(&std::env::temp_dir()),
+        "completion_replay::generated::standard_completion_verifies_accepts_and_merges_with_generated_dependencies",
+        "the daemon cannot bind an AF_UNIX socket in this sandbox",
+    )
 }
 
 fn start_daemon(fixture: &ReplayFixture) -> ChildGuard {

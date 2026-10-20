@@ -25,9 +25,11 @@ pub mod heartbeat;
 mod heartbeat_store;
 pub(crate) mod hung_latch;
 mod input_wait;
+mod judge_watchdog;
 pub(crate) mod never_worked;
 pub(crate) mod parked;
 pub(crate) mod progress;
+mod running_command;
 mod session_events;
 pub(crate) mod stall_line;
 

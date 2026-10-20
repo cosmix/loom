@@ -4,9 +4,12 @@
 //! works for, so it writes its heartbeat to a key of its own and is measured
 //! on a path of its own. Both halves are checked here: that the judge's
 //! heartbeat never reaches the stage agent's, and that a judge which stops
-//! making tool calls is reported exactly once.
+//! making tool calls is reported exactly once — unless it is waiting on a
+//! command it started.
 
+use std::os::unix::process::CommandExt;
 use std::path::Path;
+use std::time::{Duration, Instant};
 
 use crate::models::session::{Session, SessionStatus};
 use crate::models::stage::Stage;
@@ -16,7 +19,10 @@ use crate::orchestrator::monitor::handlers::Handlers;
 use crate::orchestrator::monitor::heartbeat::{
     cleanup_judge_heartbeat, judge_heartbeat_path, Heartbeat, HeartbeatWatcher,
 };
+use crate::orchestrator::monitor::running_command::running_command;
 use crate::orchestrator::monitor::{MonitorConfig, MonitorEvent};
+use crate::orchestrator::terminal::native::write_test_pid_identity;
+use crate::process::OwnedProcess;
 
 /// The disputed stage's response budget in these tests. Long enough that the
 /// built-in default could never stand in for it by accident.
@@ -65,6 +71,42 @@ fn stall_events(events: &[MonitorEvent]) -> Vec<&MonitorEvent> {
         .iter()
         .filter(|event| matches!(event, MonitorEvent::AdjudicatorStalled { .. }))
         .collect()
+}
+
+/// A judge's Claude process waiting on a backgrounded Bash call: a shell
+/// child that touches the marker, then runs. The trailing `:` keeps the outer
+/// shell from `exec`ing the inner one, so the inner one stays its child.
+const JUDGE_WAITING_ON_A_COMMAND: &str = r#"sh -c 'touch "$LOOM_TEST_MARKER"; sleep 30; :'; :"#;
+
+/// A judge's Claude process with nothing running: `exec` leaves no child.
+const JUDGE_WITH_NOTHING_RUNNING: &str = "exec sleep 30";
+
+/// Start a stand-in for `judge`'s Claude process and record it the way the
+/// session wrapper records claude. Its own process group, so dropping the
+/// guard ends it and everything it started.
+fn stand_in_judge(work_dir: &Path, judge: &Session, script: &str) -> OwnedProcess {
+    let child = std::process::Command::new("sh")
+        .args(["-c", script])
+        .env("LOOM_TEST_MARKER", work_dir.join("command-started"))
+        .process_group(0)
+        .spawn()
+        .expect("failed to spawn a stand-in judge process");
+    write_test_pid_identity(work_dir, judge, child.id()).unwrap();
+    OwnedProcess::new(child)
+}
+
+/// Block until the stand-in's command has started, so the probe cannot run
+/// before the child exists.
+fn wait_for_command(work_dir: &Path) {
+    let marker = work_dir.join("command-started");
+    let deadline = Instant::now() + Duration::from_secs(10);
+    while !marker.exists() {
+        assert!(
+            Instant::now() < deadline,
+            "the stand-in's command never started"
+        );
+        std::thread::sleep(Duration::from_millis(20));
+    }
 }
 
 /// A judge heartbeat is keyed by stage but is NOT the stage's heartbeat. If it
@@ -232,5 +274,79 @@ fn a_zero_budget_never_closes_a_judge() {
     assert!(
         stall_events(&events).is_empty(),
         "a stage declaring no real budget gets no judge watchdog, got: {events:?}"
+    );
+}
+
+/// The incident: a judge sent `loom check` to the background and ended its
+/// turn, so it made no tool call for longer than the budget while its own
+/// command ran. That is waiting, and it must not be closed for it.
+#[test]
+fn a_judge_waiting_on_its_own_command_is_not_stalled() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let (config, handlers) = handlers_for(temp.path());
+    let sessions = [judge("disputed-stage", "judge-1", BUDGET_SECS as i64 + 60)];
+    let _judge = stand_in_judge(temp.path(), &sessions[0], JUDGE_WAITING_ON_A_COMMAND);
+    wait_for_command(temp.path());
+
+    let mut watcher = HeartbeatWatcher::new();
+    let mut detection = Detection::new();
+    let stages = [disputed_stage("disputed-stage")];
+    let events =
+        detection.detect_heartbeat_events(&sessions, &stages, &mut watcher, &config, &handlers);
+    assert!(
+        stall_events(&events).is_empty(),
+        "a judge whose own command is running is working, got: {events:?}"
+    );
+}
+
+/// The same silence with nothing running is the stall the watchdog exists
+/// for. Finding the judge's process must not excuse it by itself.
+#[test]
+fn a_judge_running_no_command_is_still_stalled() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let (config, handlers) = handlers_for(temp.path());
+    let sessions = [judge("disputed-stage", "judge-1", BUDGET_SECS as i64 + 60)];
+    let _judge = stand_in_judge(temp.path(), &sessions[0], JUDGE_WITH_NOTHING_RUNNING);
+
+    let mut watcher = HeartbeatWatcher::new();
+    let mut detection = Detection::new();
+    let stages = [disputed_stage("disputed-stage")];
+    let events =
+        detection.detect_heartbeat_events(&sessions, &stages, &mut watcher, &config, &handlers);
+    assert_eq!(
+        stall_events(&events).len(),
+        1,
+        "a judge with no tool call and no command past its budget is stalled, got: {events:?}"
+    );
+}
+
+/// When the command ends, the judge still has to read its result. Measured
+/// from its last tool call, long before the command started, it would be
+/// closed on the very next poll; the sighting restarts its clock instead.
+#[test]
+fn a_judge_whose_command_just_ended_gets_a_full_budget() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let (config, handlers) = handlers_for(temp.path());
+    let sessions = [judge("disputed-stage", "judge-1", BUDGET_SECS as i64 + 60)];
+    let stages = [disputed_stage("disputed-stage")];
+    let mut watcher = HeartbeatWatcher::new();
+    let mut detection = Detection::new();
+
+    let stand_in = stand_in_judge(temp.path(), &sessions[0], JUDGE_WAITING_ON_A_COMMAND);
+    wait_for_command(temp.path());
+    let waiting =
+        detection.detect_heartbeat_events(&sessions, &stages, &mut watcher, &config, &handlers);
+    assert!(stall_events(&waiting).is_empty(), "got: {waiting:?}");
+
+    drop(stand_in);
+    assert!(
+        running_command(temp.path(), &sessions[0]).is_none(),
+        "the stand-in and its command must be gone before the second poll"
+    );
+    let after =
+        detection.detect_heartbeat_events(&sessions, &stages, &mut watcher, &config, &handlers);
+    assert!(
+        stall_events(&after).is_empty(),
+        "a judge whose command ended a moment ago is not idle yet, got: {after:?}"
     );
 }

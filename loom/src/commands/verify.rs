@@ -4,7 +4,7 @@
 //! - ARTIFACTS: Files exist with real implementation
 //! - WIRING: Critical connections between components
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 use colored::Colorize;
 use std::path::Path;
 
@@ -65,7 +65,7 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
     )?;
 
     // 2. Run goal-backward verification
-    if stage_def.has_any_goal_checks() {
+    let goal_passed = if stage_def.has_any_goal_checks() {
         run_goal_section(
             stage_id,
             &execution_paths,
@@ -73,17 +73,39 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
             stage.plan_version,
             suggest,
             acceptance_passed,
-        )?;
+        )?
     } else {
-        println!("\n{}", "Goal-Backward Verification:".dimmed());
-        println!("  {} No artifacts or wiring defined", "−".dimmed());
+        print_no_goal_checks(acceptance_passed);
+        true
+    };
 
-        if acceptance_passed {
-            println!("\n{} Acceptance criteria passed!", "✓".green().bold());
-        }
+    ensure_passed(acceptance_passed, goal_passed)
+}
+
+/// Turn the gate outcomes into the command's exit status: callers (stage agents,
+/// scripts) read the exit code, so a failed gate must not exit 0.
+fn ensure_passed(acceptance_passed: bool, goal_passed: bool) -> Result<()> {
+    if acceptance_passed && goal_passed {
+        return Ok(());
     }
+    let failed: Vec<&str> = [
+        (!acceptance_passed).then_some("acceptance"),
+        (!goal_passed).then_some("goal-backward verification"),
+    ]
+    .into_iter()
+    .flatten()
+    .collect();
+    bail!("Verification failed: {}", failed.join(" and "))
+}
 
-    Ok(())
+/// Report a stage that defines no artifacts or wiring.
+fn print_no_goal_checks(acceptance_passed: bool) {
+    println!("\n{}", "Goal-Backward Verification:".dimmed());
+    println!("  {} No artifacts or wiring defined", "−".dimmed());
+
+    if acceptance_passed {
+        println!("\n{} Acceptance criteria passed!", "✓".green().bold());
+    }
 }
 
 /// Print goal-backward verification results
@@ -119,7 +141,7 @@ fn run_goal_section(
     plan_version: u32,
     suggest: bool,
     acceptance_passed: bool,
-) -> Result<()> {
+) -> Result<bool> {
     println!("\n{}", "Goal-Backward Verification:".bold());
 
     let verify_dir = execution_paths
@@ -136,7 +158,7 @@ fn run_goal_section(
     )?;
     print_goal_result(&goal_result, suggest);
     print_summary(acceptance_passed, goal_result.is_passed());
-    Ok(())
+    Ok(goal_result.is_passed())
 }
 
 /// Print the final acceptance and goal-backward summary
@@ -195,4 +217,26 @@ pub fn run_and_verify_stage_goal(
 
     // Run goal-backward verification
     run_goal_backward_verification(stage_def, verification_dir, tree, confinement, plan_version)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::ensure_passed;
+
+    #[test]
+    fn passing_gates_exit_ok() {
+        assert!(ensure_passed(true, true).is_ok());
+    }
+
+    #[test]
+    fn failing_acceptance_is_an_error() {
+        let err = ensure_passed(false, true).unwrap_err().to_string();
+        assert!(err.contains("acceptance"), "{err}");
+    }
+
+    #[test]
+    fn failing_goal_backward_is_an_error() {
+        let err = ensure_passed(true, false).unwrap_err().to_string();
+        assert!(err.contains("goal-backward"), "{err}");
+    }
 }

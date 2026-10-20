@@ -64,10 +64,10 @@ impl Orchestrator {
 
         clear_status_line();
         eprintln!(
-            "{} adjudication session '{session_id}' for stage '{stage_id}' has made no tool call \
-             for {stale_duration_secs}s (budget {timeout_secs}s); closing it so the dispute is \
-             re-judged, until the dispute's attempt budget \
-             ({MAX_ADJUDICATION_ATTEMPTS}) is spent.",
+            "{} adjudication session '{session_id}' for stage '{stage_id}' has been idle for \
+             {stale_duration_secs}s (budget {timeout_secs}s): no tool call and no command of its \
+             own running. Closing it so the dispute is re-judged, until the dispute's attempt \
+             budget ({MAX_ADJUDICATION_ATTEMPTS}) is spent.",
             "JUDGE STALLED:".red().bold()
         );
         self.close_adjudication_session(

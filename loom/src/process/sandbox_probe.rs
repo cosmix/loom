@@ -145,6 +145,39 @@ pub fn home_dir_resolvable() -> bool {
     *RESULT.get_or_init(|| dirs::home_dir().is_some())
 }
 
+/// Whether a bubblewrap-confined command can start here (Linux), using the
+/// namespace and mount options the verification runner relies on. A session
+/// sandbox that already nests bubblewrap, or forbids user namespaces, makes
+/// every confined verification command fail regardless of the code under test.
+/// Always true off Linux, where confinement is not bubblewrap. Memoized.
+pub fn confined_commands_runnable() -> bool {
+    static RESULT: OnceLock<bool> = OnceLock::new();
+    *RESULT.get_or_init(|| {
+        if !cfg!(target_os = "linux") {
+            return true;
+        }
+        std::process::Command::new("bwrap")
+            .args([
+                "--die-with-parent",
+                "--unshare-all",
+                "--new-session",
+                "--ro-bind",
+                "/",
+                "/",
+                "--proc",
+                "/proc",
+                "--dev",
+                "/dev",
+                "--",
+                "true",
+            ])
+            .stdin(std::process::Stdio::null())
+            .output()
+            .map(|out| out.status.success())
+            .unwrap_or(false)
+    })
+}
+
 /// Returns true if the caller should skip: `probe_ok` is false, so the
 /// environment cannot support what `test_name` needs, for reasons that have
 /// nothing to do with the code under test. Prints a loud `SKIP` line naming

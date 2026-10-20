@@ -35,6 +35,9 @@ pub struct Detection {
     /// Adjudication sessions already reported stalled. One report each: the
     /// report closes the judge, so there is no second line to escalate to.
     pub(super) reported_stalled_judges: HashSet<String>,
+    /// When each judge was last found running a command of its own, which
+    /// counts as activity. See [`super::judge_watchdog`].
+    pub(super) judge_commands_seen: HashMap<String, chrono::DateTime<chrono::Utc>>,
     /// Red handoffs successfully written or found during this daemon run.
     /// A failed write remains absent so an unchanged-Red poll retries it.
     pub red_handoff_ready: HashSet<String>,
@@ -56,6 +59,7 @@ impl Detection {
             reported_hung_sessions: HashSet::new(),
             escalated_hung_sessions: HashSet::new(),
             reported_stalled_judges: HashSet::new(),
+            judge_commands_seen: HashMap::new(),
             red_handoff_ready: HashSet::new(),
             last_budget_exceeded: HashMap::new(),
             handoff_watch: HandoffWatch::default(),
@@ -292,8 +296,8 @@ impl Detection {
         }
 
         // Check each running session for silence. Which budget it is measured
-        // against, and what its silence means, both live in `hung_latch` —
-        // stage agents and judges answer that question differently.
+        // against, and what its silence means, live in `hung_latch` and
+        // `judge_watchdog` — stage agents and judges answer that differently.
         for session in sessions {
             if let Some(event) =
                 self.session_silence_event(session, stages, heartbeat_watcher, config, handlers)

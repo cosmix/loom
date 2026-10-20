@@ -131,6 +131,13 @@ fn sandbox_mount_remnants_are_accepted_without_changing_commit_identity() {
 
 #[test]
 fn sandbox_lookalikes_and_populated_configs_are_refused() {
+    if crate::process::sandbox_probe::skip_unless(
+        crate::process::sandbox_probe::unix_socket_bindable(&std::env::temp_dir()),
+        "handoff::completion::content::tests::sandbox_lookalikes_and_populated_configs_are_refused",
+        "the socket case needs to bind an AF_UNIX listener",
+    ) {
+        return;
+    }
     for path in [
         ".mcp.json",
         ".gitmodules",
