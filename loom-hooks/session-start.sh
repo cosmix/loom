@@ -150,7 +150,7 @@ if command -v jq &>/dev/null; then
 	if [[ "$SOURCE" == "compact" ]] || [[ "$SOURCE" == "resume" ]]; then
 		SIGNAL_PATH="${LOOM_WORK_DIR}/signals/${LOOM_SESSION_ID}.md"
 		jq -nc \
-			--arg ctx "Context was compacted. Re-anchor: re-read ${SIGNAL_PATH}, run 'loom memory list', read the latest ${LOOM_WORK_DIR}/handoffs/ file. Understand before acting; do not guess." \
+			--arg ctx "Context was compacted. Re-anchor: re-read ${SIGNAL_PATH}, run 'loom memory list --stage ${LOOM_STAGE_ID}', read the latest ${LOOM_WORK_DIR}/handoffs/ file. Understand before acting; do not guess." \
 			'{hookSpecificOutput: {hookEventName: "SessionStart", additionalContext: $ctx}}'
 	fi
 fi

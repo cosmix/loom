@@ -17,7 +17,8 @@
 #   4. WARNS (never denies) when an explicit `model` escalates above the
 #      agent's defined tier.
 #   5. PREPENDS _subagent-preamble.txt to a typed spawn's prompt that lacks
-#      it, in every session, and APPENDS an optional scoped worker brief.
+#      it, in every session (except loom-codex-forwarder and codex:* spawns);
+#      inside a stage (the GATE_PASSED gate) also APPENDS an optional worker brief.
 #   6. RECORDS every typed spawn to $LOOM_WORK_DIR/subagents/<stage-id>/spawns.jsonl
 #      (the state directory - .loom/work, or the legacy .work) so
 #      `loom subagents` can report on model usage across a stage.

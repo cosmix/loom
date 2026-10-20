@@ -262,36 +262,21 @@ fi
 # Tool results are not persisted: a shell hook cannot append race-free without
 # following paths, and even redacted previews risk retaining private source.
 
-# === POST-COMMIT KNOWLEDGE/MEMORY REMINDER ===
-# After a `git commit` or `loom stage commit`, print a non-blocking
-# knowledge/memory reminder.
+# === POST-COMMIT MEMORY REMINDER ===
+# After a `git commit` or `loom stage commit`, print a non-blocking memory reminder.
 
-remind_knowledge_update() {
+remind_memory_capture() {
 	cat >&2 <<'REMINDER'
 
 ┌────────────────────────────────────────────────────────────────────┐
-│  📝 POST-COMMIT REMINDER: Update Knowledge & Memory                │
+│  📝 POST-COMMIT REMINDER: Record Memory                            │
 ├────────────────────────────────────────────────────────────────────┤
 │                                                                    │
-│  You just committed changes. Before completing this stage:         │
-│                                                                    │
-│  1. RECORD any mistakes made (MANDATORY if errors occurred):       │
-│     loom knowledge update mistakes "## [description]               │
-│                                                                    │
-│     **What happened:** [describe the mistake]                      │
-│     **Why:** [root cause]                                          │
-│     **How to avoid:** [prevention strategy]"                       │
-│                                                                    │
-│  2. CAPTURE session insights:                                      │
-│     loom memory note "discovered X about Y"                        │
+│  You just committed. Record what this work taught you:             │
+│     loom memory note "mistake: ... Prevention: ..."                │
+│     loom memory note "found: ..."  or  "gotcha: ..."               │
 │     loom memory decision "chose X because Y" --context "details"   │
 │                                                                    │
-│  3. Memory becomes knowledge via the knowledge-distill stage:      │
-│     loom memory show --all              # Review entries           │
-│     (the knowledge-distill stage reads this output and curates     │
-│     what belongs into doc/loom/knowledge/ - see commands/distill.md)│
-│                                                                    │
-│  Knowledge persists across sessions - future agents will thank you!│
 └────────────────────────────────────────────────────────────────────┘
 
 REMINDER
@@ -304,7 +289,7 @@ if [[ "$TOOL_NAME" == "Bash" ]] && [[ -n "$COMMAND" ]]; then
 	STRIPPED_COMMAND=$(strip_embedded_content "$COMMAND")
 	if loom_tokenize_command "$STRIPPED_COMMAND" &&
 		{ loom_tokens_cmd_has_arg 'git' 'commit' || loom_tokens_cmd_has_arg_pair 'loom' 'stage' 'commit'; }; then
-		remind_knowledge_update
+		remind_memory_capture
 	fi
 fi
 

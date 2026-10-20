@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# commit-guard.sh prints the Memory Recording Reminder when the stage's memory
-# directory holds no file with more than 10 lines, and stays quiet when one
-# does or when there is no memory directory. The line count is stripped of the
+# commit-guard.sh prints the Memory Recording Reminder unless the stage's own
+# journal (memory/<stage-id>.md) holds more than 10 lines, and stays quiet when
+# it does or when there is no memory directory. Another stage's journal does
+# not count. The line count is stripped of the
 # padding BSD/macOS `wc -l` adds (run-all.sh in BSD mode puts the padding shim
 # first on PATH), so the reminder logic reads the same number on both.
 set -euo pipefail
@@ -72,16 +73,20 @@ expect_quiet "no memory directory"
 mkdir -p "$MEMORY_DIR"
 expect_reminder "an empty memory directory"
 
-write_lines "$MEMORY_DIR/session.md" 3
+write_lines "$MEMORY_DIR/$STAGE_ID.md" 3
 expect_reminder "a memory file of 3 lines"
 
-write_lines "$MEMORY_DIR/session.md" 10
+write_lines "$MEMORY_DIR/$STAGE_ID.md" 10
 expect_reminder "a memory file of exactly 10 lines"
 
-write_lines "$MEMORY_DIR/session.md" 11
+write_lines "$MEMORY_DIR/$STAGE_ID.md" 11
 expect_quiet "a memory file of 11 lines"
 
-write_lines "$MEMORY_DIR/session.md" 120
+write_lines "$MEMORY_DIR/$STAGE_ID.md" 120
 expect_quiet "a memory file of 120 lines"
+
+rm -f "$MEMORY_DIR/$STAGE_ID.md"
+write_lines "$MEMORY_DIR/other-stage.md" 120
+expect_reminder "another stage's journal does not count"
 
 echo "PASS"

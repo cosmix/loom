@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # post-tool-use-commit-reminder-tokenized.sh - regression test for the
-# post-commit knowledge/memory reminder in post-tool-use.sh. It used to
+# post-commit memory reminder in post-tool-use.sh. It used to
 # regex-match the raw command with GNU-only `\s`/`\S`, which both failed to
 # fire at all on a non-GNU grep and fired on any prose mentioning "git
 # commit". It now strips heredoc bodies (strip_embedded_content) and
@@ -50,6 +50,11 @@ fi
 STDERR_B=$(run_hook 'git commit -m wip')
 if ! echo "$STDERR_B" | grep -q "POST-COMMIT REMINDER"; then
 	echo "FAIL: (b) a real 'git commit' did not fire the reminder"
+	echo "stderr: $STDERR_B"
+	exit 1
+fi
+if echo "$STDERR_B" | grep -q "loom knowledge"; then
+	echo "FAIL: (b) the reminder names 'loom knowledge'"
 	echo "stderr: $STDERR_B"
 	exit 1
 fi

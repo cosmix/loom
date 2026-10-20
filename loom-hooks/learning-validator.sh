@@ -5,7 +5,8 @@
 # Validates session outcomes and provides guidance.
 #
 # Checks:
-# 1. Memory usage warning (soft) - did agent record any decisions/notes?
+# 1. Memory usage warning (soft) - does this stage's own journal
+#    (memory/<stage-id>.md) hold a `###` entry?
 # 2. Goal-backward verification stub (for future enforcement)
 #
 # Environment variables:
@@ -32,6 +33,10 @@ if [[ -z "${LOOM_STAGE_ID:-}" ]] || [[ -z "${LOOM_SESSION_ID:-}" ]] || [[ -z "${
 	exit 0
 fi
 
+case "$LOOM_STAGE_ID" in
+*[!A-Za-z0-9._-]* | "") exit 0 ;;
+esac
+
 # Validate work directory exists and is accessible
 if [[ ! -d "${LOOM_WORK_DIR}" ]]; then
 	# Work directory doesn't exist, exit silently
@@ -54,27 +59,12 @@ EOF
 # Check 1: Memory usage warning (soft - does not block)
 # ============================================================================
 check_memory_usage() {
-	local memory_dir="${LOOM_WORK_DIR}/memory"
+	local journal="${LOOM_WORK_DIR}/memory/${LOOM_STAGE_ID}.md"
 
-	# Skip if memory directory doesn't exist
-	if [[ ! -d "$memory_dir" ]]; then
-		return 0
-	fi
-
-	# Count memory entries (files with actual content)
-	local memory_count=0
-	shopt -s nullglob
-	for f in "$memory_dir"/*.md; do
-		if [[ -f "$f" ]] && grep -q '^## ' "$f" 2>/dev/null; then
-			memory_count=$((memory_count + 1))
-		fi
-	done
-	shopt -u nullglob
-
-	if [[ "$memory_count" -eq 0 ]]; then
+	if [[ ! -f "$journal" ]] || ! grep -q '^### ' "$journal" 2>/dev/null; then
 		cat >&2 <<'WARN'
 ┌────────────────────────────────────────────────────────────────────┐
-│  ⚠️  No memories recorded this session                              │
+│  ⚠️  No memories recorded for this stage                            │
 │                                                                    │
 │  Consider capturing insights for future sessions:                  │
 │    loom memory note "observation"                                  │

@@ -328,54 +328,31 @@ remind_contract_freeze() {
 	exit 0
 }
 
-# Non-blocking reminder about knowledge capture
-# Called after blocking checks pass, outputs to stderr
-remind_knowledge_capture() {
-	local project_root="$1"
-
-	# Only show if knowledge directory exists
-	local knowledge_dir="$project_root/$WORK_DIR/knowledge"
-	if [[ ! -d "$knowledge_dir" ]]; then
-		return
-	fi
-
-	# Always show reminder (soft prompt, not blocking)
-	printf '\n' >&2
-	printf '%s\n' "------------------------------------------------------------" >&2
-	printf '%s\n' "Knowledge Capture Reminder" >&2
-	printf '%s\n' "------------------------------------------------------------" >&2
-	printf '%s\n' "Did you discover anything worth sharing with future sessions?" >&2
-	printf '%s\n' "" >&2
-	printf '%s\n' "  loom knowledge update entry-points \"## Section\\n- file - desc\"" >&2
-	printf '%s\n' "  loom knowledge update patterns \"## Pattern\\n- description\"" >&2
-	printf '%s\n' "  loom knowledge update conventions \"## Convention\\n- details\"" >&2
-	printf '%s\n' "------------------------------------------------------------" >&2
-}
-
 # Non-blocking reminder about memory recording
 # Called after blocking checks pass, outputs to stderr
 remind_memory_usage() {
 	local project_root="$1"
 	local stage_id="$2"
 
-	# Check if memory directory exists
+	# Only this stage's own journal counts; another stage's entries do not.
+	case "$stage_id" in
+	"" | */*) return ;;
+	esac
 	local memory_dir="$project_root/$WORK_DIR/memory"
 	if [[ ! -d "$memory_dir" ]]; then
 		return
 	fi
+	local journal="$memory_dir/$stage_id.md"
 
-	# Check for any memory files with substantial content (>10 lines = real entries)
+	# More than 10 lines = real entries
 	local has_entries=false
-	for file in "$memory_dir"/*.md; do
-		if [[ -f "$file" ]]; then
-			local lines
-			lines=$(wc -l <"$file" | tr -d '[:space:]')
-			if [[ "$lines" -gt 10 ]]; then
-				has_entries=true
-				break
-			fi
+	if [[ -f "$journal" ]]; then
+		local lines
+		lines=$(wc -l <"$journal" | tr -d '[:space:]')
+		if [[ "$lines" -gt 10 ]]; then
+			has_entries=true
 		fi
-	done
+	fi
 
 	# Show reminder if no substantial entries found
 	if [[ "$has_entries" == "false" ]]; then
@@ -383,7 +360,7 @@ remind_memory_usage() {
 		printf '%s\n' "------------------------------------------------------------" >&2
 		printf '%s\n' "⚠️  Memory Recording Reminder" >&2
 		printf '%s\n' "------------------------------------------------------------" >&2
-		printf '%s\n' "No memory entries recorded for this session." >&2
+		printf '%s\n' "No memory entries recorded for this stage." >&2
 		printf '%s\n' "Did you make decisions or discoveries worth recording?" >&2
 		printf '%s\n' "" >&2
 		printf '%s\n' "  loom memory decision \"choice\" --context \"why\"" >&2
@@ -446,9 +423,6 @@ main() {
 		debug_log "  $WORK_DIR: does not exist"
 	fi
 	debug_log "===================="
-
-	# Show knowledge reminder (non-blocking, informational)
-	remind_knowledge_capture "$project_root"
 
 	# Show memory reminder (non-blocking, informational)
 	remind_memory_usage "$project_root" "$STAGE_ID"
