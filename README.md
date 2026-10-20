@@ -1015,7 +1015,7 @@ Knowledge writes are protected by the sandbox defaults: agents update knowledge 
 - `--dry-run` prints the work plan and the exact `claude` command it would run, without spawning anything.
 - `--model`/`--effort` pick the model and effort for the semantic session, same values as elsewhere in loom.
 
-The command refuses to run inside a stage session — stages write knowledge through `loom knowledge update` instead. The committed receipt `doc/loom/knowledge/.bootstrap-receipt.json` records one digest per cluster; commit it alongside the generated knowledge files so `--refresh` reports current across clones, not just locally.
+The command refuses to run inside a stage session — knowledge stages (`knowledge-bootstrap` and `knowledge-distill`) write knowledge through `loom knowledge update` instead. The committed receipt `doc/loom/knowledge/.bootstrap-receipt.json` records one digest per cluster; commit it alongside the generated knowledge files so `--refresh` reports current across clones, not just locally.
 
 ## Model Allocation
 
