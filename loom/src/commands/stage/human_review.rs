@@ -8,9 +8,9 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use super::progressive_complete::{
-    branch_work, complete_with_merge, report_recorded_commit, BranchWork,
+    branch_work, complete_with_merge, report_recorded_commit, BranchWork, Landing,
 };
-use crate::git::{worktree::find_repo_root_from_cwd, MergeGate};
+use crate::git::worktree::find_repo_root_from_cwd;
 use crate::handoff::completion::content::VerificationSnapshot;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::adjudication::close_open_disputes;
@@ -143,8 +143,14 @@ fn refuse_live_worker(stage_id: &str, work_dir: &Path) -> Result<()> {
 /// the merge. A missing or zero-commit branch is refused, and so is one whose
 /// commits beyond the target cannot be counted, since the merge bypass skips
 /// the zero-commit guard and would report a merge of nothing.
-/// Merge runs BEFORE the Completed transition, so a conflict takes the legal
-/// Executing→MergeConflict/MergeBlocked edges. No operator proof guards this command: `human-review` is not relayed and
+///
+/// The stage stays NeedsHumanReview on disk while it lands, so the daemon's
+/// coherence watchdog never sees it Executing with no session and blocks it
+/// mid-merge. Each outcome write steps it through Executing to the outcome in
+/// one locked update (`Landing::Reviewed`), so a conflict or a blocked merge
+/// still takes the legal Executing→MergeConflict/MergeBlocked edges.
+///
+/// No operator proof guards this command: `human-review` is not relayed and
 /// writes the stage file itself. Its authority rests on every session capsule
 /// denying writes to the state directory, so a sandboxed agent cannot change
 /// the stage file first (`every_session_kind_denies_writes_to_the_state_directory`).
@@ -153,24 +159,26 @@ fn handle_force_complete(stage_id: &str, work_dir: &Path) -> Result<()> {
         "WARNING: Force-completing stage '{stage_id}' without acceptance criteria verification."
     );
 
-    // Knowledge bootstrap writes in the main checkout and has no stage branch.
+    // Knowledge bootstrap writes in the main checkout and has no stage branch:
+    // its one locked write moves NeedsHumanReview straight to Completed.
     let reviewed = load_stage(stage_id, work_dir)?;
     if reviewed.stage_type == StageType::Knowledge {
-        let stage = enter_executing(stage_id, work_dir, None)?;
-        return super::knowledge_complete::finish_knowledge_stage(&stage, None, None, work_dir);
+        #[cfg(test)]
+        super::progressive_complete::landing::run_window_probe();
+        return super::knowledge_complete::finish_knowledge_stage(&reviewed, None, None, work_dir);
     }
 
     let cwd = std::env::current_dir().context("Failed to get current directory")?;
     let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
     let tip = authorized_tip(&reviewed, &repo_root, work_dir)?;
-    let mut stage = enter_executing(stage_id, work_dir, Some(&tip))?;
+    let mut stage = record_reviewed_tip(stage_id, work_dir, &tip)?;
     report_recorded_commit(stage_id, reviewed.completed_commit.as_deref(), &tip.commit);
 
-    // Progressive merge + completion: Success moves Executing → Completed and
+    // Progressive merge + completion: Success moves the stage to Completed and
     // triggers dependents; Conflict/Blocked move to the merge state and save,
     // and stay command failures so automation cannot mistake them for a
     // force-completion. The reviewed branch skips the control-path gate.
-    complete_with_merge(&mut stage, &repo_root, work_dir, MergeGate::Bypass)?;
+    complete_with_merge(&mut stage, &repo_root, work_dir, Landing::Reviewed)?;
     println!("Stage '{stage_id}' force-completed and merged successfully.");
 
     Ok(())
@@ -204,22 +212,22 @@ fn authorized_tip(
     }
 }
 
-/// Move the reviewed stage to Executing (try_approve_review targets Queued)
-/// so every merge outcome is a legal transition: Executing → MergeConflict |
-/// MergeBlocked | Completed (complete_with_merge runs try_complete(None)).
-/// A recorded tip must still match the branch under the stage lock.
-fn enter_executing(
+/// Record the authorized tip as the completion commit, leaving the stage in
+/// NeedsHumanReview: the landing leaves review only in the locked write of
+/// its outcome. The tip must still match the branch under the stage lock.
+fn record_reviewed_tip(
     stage_id: &str,
     work_dir: &Path,
-    tip: Option<&VerificationSnapshot>,
+    tip: &VerificationSnapshot,
 ) -> Result<Stage> {
     update_stage(stage_id, work_dir, |stage| {
-        if let Some(tip) = tip {
-            tip.validate_locked(stage, work_dir)?;
-            stage.completed_commit = Some(tip.commit.clone());
-        }
-        stage.try_transition(StageStatus::Executing)?;
-        stage.review_reason = None;
+        anyhow::ensure!(
+            stage.status == StageStatus::NeedsHumanReview,
+            "stage '{stage_id}' is {} instead of awaiting review",
+            stage.status
+        );
+        tip.validate_locked(stage, work_dir)?;
+        stage.completed_commit = Some(tip.commit.clone());
         Ok(())
     })
 }

@@ -290,6 +290,8 @@ fn verified_evidence_record_has_broker_boundaries() {
 
 #[path = "complete_authorization_tests.rs"]
 mod authorization;
+#[path = "force_complete_race_tests.rs"]
+mod force_complete_race;
 #[path = "complete_knowledge_tests.rs"]
 mod knowledge;
 #[path = "operator_landing_tests.rs"]

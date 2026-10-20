@@ -22,9 +22,8 @@ use std::process::Command;
 use tempfile::TempDir;
 
 use super::super::progressive_complete::{
-    attempt_progressive_merge, complete_with_merge, should_defer_cleanup, MergeOutcome,
+    attempt_progressive_merge, complete_with_merge, should_defer_cleanup, Landing, MergeOutcome,
 };
-use crate::git::MergeGate;
 use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::{load_stage, save_stage};
 
@@ -104,7 +103,7 @@ fn no_branch_does_not_mark_merged() {
     // No loom/stage-no-branch branch exists. The progressive merge should
     // refuse to mark the stage merged regardless of how the missing branch
     // surfaces (Blocked outcome, or an Err from the deeper git call).
-    let outcome = attempt_progressive_merge(&mut stage, repo_root, &work_dir, MergeGate::Enforce);
+    let outcome = attempt_progressive_merge(&mut stage, repo_root, &work_dir, Landing::Session);
 
     match outcome {
         Ok(MergeOutcome::Blocked) => {
@@ -220,7 +219,7 @@ fn complete_with_merge_holds_a_control_path_branch_for_review() {
     let work_dir = repo_root.join(".loom").join("work");
     let mut stage = control_path_stage(repo_root, "ctl-hold");
 
-    let error = complete_with_merge(&mut stage, repo_root, &work_dir, MergeGate::Enforce)
+    let error = complete_with_merge(&mut stage, repo_root, &work_dir, Landing::Session)
         .expect_err("a control-path branch must not complete");
 
     assert!(error.to_string().contains("control path"), "{error}");
@@ -240,8 +239,14 @@ fn complete_with_merge_bypass_lands_a_control_path_branch() {
     let repo_root = repo.path();
     let work_dir = repo_root.join(".loom").join("work");
     let mut stage = control_path_stage(repo_root, "ctl-bypass");
+    stage.status = StageStatus::NeedsHumanReview;
+    crate::verify::transitions::update_stage("ctl-bypass", &work_dir, |s| {
+        s.status = StageStatus::NeedsHumanReview;
+        Ok(())
+    })
+    .expect("park the stage for review");
 
-    let completed = complete_with_merge(&mut stage, repo_root, &work_dir, MergeGate::Bypass)
+    let completed = complete_with_merge(&mut stage, repo_root, &work_dir, Landing::Reviewed)
         .expect("the operator's override merges");
 
     assert!(completed);
@@ -272,7 +277,7 @@ fn complete_with_merge_routes_a_zero_commit_branch_to_review() {
     let work_dir = repo_root.join(".loom").join("work");
     let mut stage = zero_commit_stage(repo_root, "zero");
 
-    let error = complete_with_merge(&mut stage, repo_root, &work_dir, MergeGate::Enforce)
+    let error = complete_with_merge(&mut stage, repo_root, &work_dir, Landing::Session)
         .expect_err("a branch without commits must not complete");
 
     assert!(error.to_string().contains("no commits"), "{error}");

@@ -4,6 +4,7 @@
 use anyhow::{Context, Result};
 use std::path::Path;
 
+use super::Landing;
 use crate::git::branch::branch_name_for_stage;
 use crate::git::cleanup::CleanupConfig;
 use crate::models::stage::Stage;
@@ -15,16 +16,34 @@ pub(super) fn finish_completion(
     stage: &mut Stage,
     repo_root: &Path,
     work_dir: &Path,
+    landing: Landing,
 ) -> Result<bool> {
-    // Mark stage as completed - only after merge succeeds.
+    let stage_id = stage.id.clone();
+    record_completion(stage, work_dir, landing).with_context(|| {
+        format!(
+            "Stage '{stage_id}' is merged into the target, but its completion could not be \
+             recorded. Record it with: loom stage complete {stage_id} --force-unsafe \
+             --assume-merged"
+        )
+    })?;
+
+    println!("Stage '{stage_id}' completed!");
+    trigger_and_clean_up(&stage_id, repo_root, work_dir)?;
+    Ok(true)
+}
+
+/// Record the Completed transition of a stage whose branch landed.
+///
+/// Re-applies only the merged flag and Completed transition after checking
+/// the recorded completion proof on the FRESH on-disk stage, so a concurrent
+/// daemon/dispute write during the multi-minute acceptance run is not
+/// reverted (A-5). `try_complete` recomputes duration from the on-disk
+/// `started_at` (owned by the executor) and validates the transition against
+/// the current on-disk status — if a dispute moved the stage to
+/// NeedsAdjudication meanwhile, it refuses. An operator landing steps the
+/// stage out of review in the same write.
+fn record_completion(stage: &mut Stage, work_dir: &Path, landing: Landing) -> Result<()> {
     stage.try_complete(None)?;
-    // Re-apply only the merged flag and Completed transition after checking
-    // the recorded completion proof on the FRESH on-disk stage, so a
-    // concurrent daemon/dispute write during the multi-minute acceptance
-    // run is not reverted (A-5). `try_complete` recomputes duration from
-    // the on-disk `started_at` (owned by the executor) and validates the
-    // transition against the current on-disk status — if a dispute moved
-    // the stage to NeedsAdjudication meanwhile, it correctly refuses.
     let completed_commit = stage
         .completed_commit
         .as_deref()
@@ -34,13 +53,11 @@ pub(super) fn finish_completion(
             s.completed_commit.as_deref() == Some(completed_commit),
             "completion proof changed during merge finalization"
         );
+        landing.enter(s)?;
         s.merged = true;
         s.try_complete(None)
     })?;
-
-    println!("Stage '{}' completed!", stage.id);
-    trigger_and_clean_up(&stage.id, repo_root, work_dir)?;
-    Ok(true)
+    Ok(())
 }
 
 /// Reconcile the base, trigger dependent stages, then clean up the worktree,

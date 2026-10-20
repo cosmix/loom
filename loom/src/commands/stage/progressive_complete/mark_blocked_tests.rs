@@ -1,4 +1,5 @@
 use super::*;
+use crate::commands::stage::progressive_complete::Landing;
 use crate::models::failure::FailureType;
 use crate::models::stage::StageStatus;
 use crate::verify::transitions::{load_stage, save_stage};
@@ -18,7 +19,13 @@ fn an_untyped_merge_failure_drops_a_stale_typed_block() {
     stage.merge.block = Some(MergeBlock::TargetMoved);
     save_stage(&stage, dir.path()).unwrap();
 
-    mark_blocked(&mut stage, dir.path(), None, "boom").unwrap();
+    mark_blocked(
+        &mut stage,
+        dir.path(),
+        &Claim::new(&executing_stage(), Landing::Session),
+        "boom",
+    )
+    .unwrap();
 
     let saved = load_stage("s", dir.path()).unwrap();
     assert_eq!(saved.status, StageStatus::MergeBlocked);
@@ -32,7 +39,13 @@ fn an_untyped_merge_failure_records_its_reason() {
     let mut stage = executing_stage();
     save_stage(&stage, dir.path()).unwrap();
 
-    mark_blocked(&mut stage, dir.path(), None, "first line\nsecond line").unwrap();
+    mark_blocked(
+        &mut stage,
+        dir.path(),
+        &Claim::new(&executing_stage(), Landing::Session),
+        "first line\nsecond line",
+    )
+    .unwrap();
 
     let saved = load_stage("s", dir.path()).unwrap();
     let info = saved.failure_info.expect("the reason is recorded");

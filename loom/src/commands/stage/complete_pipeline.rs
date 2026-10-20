@@ -1,4 +1,4 @@
-use super::super::progressive_complete::{branch_work, warn_unconfirmed, BranchWork};
+use super::super::progressive_complete::{branch_work, warn_unconfirmed, BranchWork, Landing};
 use super::*;
 use crate::handoff::completion::content::VerificationSnapshot;
 
@@ -60,7 +60,7 @@ fn merge_verified_stage(
         Ok(())
     })?;
     stage.completed_commit = Some(snapshot.commit.clone());
-    complete_with_merge(stage, &repo_root, work_dir, crate::git::MergeGate::Enforce)?;
+    complete_with_merge(stage, &repo_root, work_dir, Landing::Session)?;
     Ok(())
 }
 

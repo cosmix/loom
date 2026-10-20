@@ -112,6 +112,8 @@ pub(super) fn finish_knowledge_stage(
         // Knowledge stages auto-set merged=true since there's no branch to merge.
         current.merged = true;
         current.completed_commit = snapshot.map(|snapshot| snapshot.commit.clone());
+        // An operator's force-complete lands a stage still awaiting review.
+        current.review_reason = None;
         current.try_complete(None)
     })?;
 
