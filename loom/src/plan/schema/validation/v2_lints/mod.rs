@@ -15,10 +15,11 @@ use crate::plan::schema::{LoomMetadata, StageDefinition};
 use super::criterion_hazards::{command_start, nested_scripts, MAX_NESTING};
 use super::shell_lex::{lex, simple_commands, Word};
 
+mod bookends;
 mod contracts;
 mod js_provision;
 mod knowledge_check;
-mod loom_subcommands;
+pub(crate) mod loom_subcommands;
 mod regex_patterns;
 mod registry_domains;
 mod repo_hooks;
@@ -67,6 +68,7 @@ pub(crate) fn run(ctx: &LintContext<'_>, notes: &mut Vec<String>) -> Vec<LintFin
     notes.extend(sandbox_capability::check(ctx, &mut out));
     knowledge_check::check(ctx, &mut out);
     contracts::check(ctx, &mut out);
+    bookends::check(ctx, &mut out);
     notes.extend(rust_filters::check(ctx, &mut out));
     registry_domains::check(ctx, &mut out);
     repo_hooks::check(ctx, &mut out);

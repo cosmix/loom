@@ -403,7 +403,7 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
             // Soft checks (only when schema validation passes)
             soft_warnings = JsonWarnings {
                 structural: validate_structural_preflight(stages, repo_root.as_deref()),
-                knowledge: check_knowledge_recommendations(stages),
+                knowledge: check_knowledge_recommendations(stages, repo_root.as_deref()),
                 sandbox: check_sandbox_recommendations(&loom_metadata),
                 baseline: Vec::new(),
             };

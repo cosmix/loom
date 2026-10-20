@@ -10,6 +10,7 @@ mod regression_test_tests;
 mod security_policy_tests;
 mod stage_goal_checks_tests;
 mod stage_id_tests;
+mod stage_model_tests;
 mod stage_type_tests;
 mod subagent_timeout_tests;
 mod ultracode_tests;

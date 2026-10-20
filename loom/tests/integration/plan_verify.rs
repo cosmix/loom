@@ -802,8 +802,8 @@ fn test_json_strict_with_warnings_exits_one_but_valid_true() {
 
 #[test]
 fn test_knowledge_warning_category_populated() {
-    // A plan with no knowledge-bootstrap stage triggers the knowledge category.
     let temp = TempDir::new().unwrap();
+    fs::create_dir(temp.path().join(".git")).unwrap(); // a repository root with no knowledge tree
     let plan = write_plan(temp.path(), "PLAN-knowledge.md", knowledge_warning_plan());
     let out = run_verify(&plan, &["--json"]);
     assert!(out.status.success());

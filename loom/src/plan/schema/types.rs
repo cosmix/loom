@@ -2,7 +2,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::types_v2::{deserialize_reasoning_effort, ProvisionEntry};
+use super::types_v2::{deserialize_reasoning_effort, deserialize_stage_model, ProvisionEntry};
 
 /// Claude Code permission mode; defined in [`crate::models::stage::PermissionMode`].
 pub use crate::models::stage::PermissionMode;
@@ -285,9 +285,13 @@ pub struct StageDefinition {
     /// Regression test requirement (required when bug_fix is true)
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub regression_test: Option<RegressionTest>,
-    /// Model override for this stage (e.g., "opus", "sonnet")
-    /// When set, Claude Code sessions for this stage use this model
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// Model for the main agent of this stage, one of `haiku`, `sonnet`, `opus`,
+    /// or `fable`. Any other value fails when the plan is parsed.
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        deserialize_with = "deserialize_stage_model"
+    )]
     pub model: Option<String>,
     /// Reasoning effort override for this stage. Must be one of
     /// `"low" | "medium" | "high" | "xhigh" | "max"`. Custom deserializer

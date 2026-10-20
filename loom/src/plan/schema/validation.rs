@@ -16,11 +16,13 @@ use super::validation_suite::warn_full_suite_outside_integration_verify;
 pub(super) mod acceptance_command;
 pub(crate) mod base_tree;
 pub(super) mod criterion_hazards;
+mod knowledge_recommendations;
 mod search_args;
 pub(crate) mod shell_lex;
 pub(super) mod v2_fields;
 pub(crate) mod v2_lints;
 use criterion_hazards::criterion_needs_ungrantable_resource;
+pub use knowledge_recommendations::check_knowledge_recommendations;
 
 /// Reject commands listed in `excluded_commands`: command-prefix exclusions run
 /// outside the host sandbox and cannot safely authorize extensible executors,
@@ -1097,40 +1099,6 @@ pub fn check_cross_stage_wiring_coverage(stages: &[super::types::StageDefinition
                 stage.id
             ));
         }
-    }
-
-    warnings
-}
-
-/// Check for knowledge-related recommendations (non-fatal warnings)
-///
-/// Returns a list of warning messages when:
-/// - Plan has root stages (no dependencies) but lacks a knowledge-bootstrap stage
-pub fn check_knowledge_recommendations(stages: &[super::types::StageDefinition]) -> Vec<String> {
-    let mut warnings = Vec::new();
-
-    // Check if any stage has "knowledge" in its ID or name (case-insensitive),
-    // but exclude knowledge-distill stages which are not knowledge-bootstrap stages.
-    let has_knowledge_stage = stages.iter().any(|stage| {
-        let id_lower = stage.id.to_lowercase();
-        let name_lower = stage.name.to_lowercase();
-        (id_lower.contains("knowledge") && !id_lower.contains("knowledge-distill"))
-            || (name_lower.contains("knowledge")
-                && !name_lower.contains("knowledge-distill")
-                && !name_lower.contains("knowledge distill"))
-    });
-
-    // Find root stages (stages with no dependencies)
-    let has_root_stages = stages.iter().any(|stage| stage.dependencies.is_empty());
-
-    // Warn if there are root stages but no knowledge stage
-    if has_root_stages && !has_knowledge_stage {
-        warnings.push(
-            "Consider adding a 'knowledge-bootstrap' stage to capture codebase knowledge. \
-             This stage can run first (no dependencies) to document entry points, patterns, \
-             and conventions for subsequent stages."
-                .to_string(),
-        );
     }
 
     warnings

@@ -231,14 +231,24 @@ fn provision_entry_for_a_missing_directory_is_an_error() {
     assert!(findings.iter().all(|finding| finding.error_in_v2));
 }
 
+/// Findings of the provision lints.
+fn provision_findings(findings: &[LintFinding]) -> Vec<&LintFinding> {
+    findings
+        .iter()
+        .filter(|finding| {
+            finding.message.contains("provision") || finding.message.starts_with("package `")
+        })
+        .collect()
+}
+
 #[test]
 fn version_one_plans_and_missing_repositories_have_no_provision_findings() {
     let repo = js_repo(&[]);
     let (findings, notes) = lint(&with_provision(1, &[]), Some(repo.path()));
-    assert!(findings.is_empty(), "{findings:?}");
+    assert!(provision_findings(&findings).is_empty(), "{findings:?}");
     assert!(notes.is_empty(), "{notes:?}");
     let (findings, notes) = lint(&with_provision(2, &[]), None);
-    assert!(findings.is_empty(), "{findings:?}");
+    assert!(provision_findings(&findings).is_empty(), "{findings:?}");
     assert!(notes.is_empty(), "{notes:?}");
 }
 

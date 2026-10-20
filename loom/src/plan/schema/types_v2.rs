@@ -5,6 +5,8 @@
 
 use serde::{Deserialize, Deserializer, Serialize};
 
+use crate::claude::CLAUDE_MODELS;
+
 use super::types::ALLOWED_REASONING_EFFORTS;
 
 /// A command the daemon runs on the host, in `<worktree>/<working_dir>`, each time a
@@ -80,6 +82,31 @@ where
                 Err(D::Error::custom(format!(
                     "invalid reasoning_effort '{s}'. Allowed values: {}",
                     ALLOWED_REASONING_EFFORTS.join(", ")
+                )))
+            }
+        }
+    }
+}
+
+/// Serde deserializer for `StageDefinition::model`.
+///
+/// The stage model must be one of the aliases the `[models]` config accepts,
+/// so a typo fails when the plan is parsed.
+pub(super) fn deserialize_stage_model<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    use serde::de::Error as _;
+    let opt = <Option<String>>::deserialize(deserializer)?;
+    match opt {
+        None => Ok(None),
+        Some(s) => {
+            if CLAUDE_MODELS.contains(&s.as_str()) {
+                Ok(Some(s))
+            } else {
+                Err(D::Error::custom(format!(
+                    "invalid model '{s}'. Allowed values: {}",
+                    CLAUDE_MODELS.join(", ")
                 )))
             }
         }

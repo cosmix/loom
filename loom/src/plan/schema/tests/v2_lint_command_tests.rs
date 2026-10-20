@@ -210,7 +210,11 @@ fn ordinary_wiring_pattern_is_clean() {
     let mut clean = stage("feature", StageType::Standard, &[]);
     clean.wiring = vec![wiring(r"fn\s+run\b", false)];
     let (findings, _) = lint_with_notes(&plan(vec![clean]), None);
-    assert!(findings.is_empty(), "{findings:?}");
+    let wiring_findings: Vec<_> = findings
+        .iter()
+        .filter(|finding| finding.message.starts_with("Wiring #"))
+        .collect();
+    assert!(wiring_findings.is_empty(), "{findings:?}");
 }
 
 #[test]

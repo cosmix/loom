@@ -20,6 +20,8 @@ use crate::plan::schema::{
     AcceptanceCriterion, LoomConfig, LoomMetadata, StageDefinition, StageType,
 };
 
+#[path = "v2_lint_bookend_tests.rs"]
+mod bookend_lints;
 #[path = "v2_lint_command_tests.rs"]
 mod command_lints;
 #[path = "v2_lint_repo_tests.rs"]

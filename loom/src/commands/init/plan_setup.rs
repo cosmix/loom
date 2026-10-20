@@ -130,7 +130,7 @@ pub fn initialize_with_plan(
     );
 
     // Check for knowledge-related recommendations (non-fatal warnings)
-    let warnings = check_knowledge_recommendations(&parsed_plan.stages);
+    let warnings = check_knowledge_recommendations(&parsed_plan.stages, Some(repo_root));
     for warning in &warnings {
         println!("  {} {}", "⚠".yellow().bold(), warning.yellow());
     }
