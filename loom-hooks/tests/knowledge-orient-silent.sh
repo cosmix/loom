@@ -58,7 +58,7 @@ REPO_C="$TMP/repo-c"
 mkdir -p "$REPO_C/sub"
 (cd "$REPO_C" && git init -q)
 write_index "$REPO_C/doc/loom/knowledge/INDEX.md"
-assert_silent "(c) source=compact" "$REPO_C/sub" '{"source":"compact"}'
+assert_silent "(c) source=compact" "$REPO_C/sub" '{"source":"compact"}' LOOM_BIN="$TMP/no-loom"
 
 # --- (d) INDEX.md only exists ABOVE the .git repository boundary ------------
 REPO_D_PARENT="$TMP/repo-d-parent"

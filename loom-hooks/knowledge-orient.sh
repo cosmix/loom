@@ -25,7 +25,8 @@
 #     the output without it.
 #   - `.source` is "compact" or "resume" - an interrupted session already has
 #     context loaded; re-anchoring on resume is session-start.sh's job, not
-#     this hook's.
+#     this hook's. On "compact" the hook first resets this session's prompt
+#     delivery record through `loom hook pre-compact`.
 #   - no doc/loom/knowledge/INDEX.md is found walking up from $PWD before a
 #     `.git` repository boundary.
 
@@ -48,6 +49,11 @@ fi
 
 SOURCE=$(printf '%s' "$INPUT_JSON" | jq -r '.source // empty' 2>/dev/null || true)
 if [[ "$SOURCE" == "compact" ]] || [[ "$SOURCE" == "resume" ]]; then
+	# A compaction may drop what this session's prompt delivery record still credits, and
+	# no PreCompact hook runs outside a stage, so the record is reset here (loom hook pre-compact).
+	if [[ "$SOURCE" == "compact" ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null; then
+		printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 loom_run_bounded 3 "${LOOM_BIN:-loom}" hook pre-compact >/dev/null 2>&1 || true
+	fi
 	exit 0
 fi
 

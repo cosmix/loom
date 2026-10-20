@@ -26,17 +26,13 @@ PATH="${LOOM_HOOK_PATH:-$PATH}"
 
 set -euo pipefail
 
-# Capture stdin (bounded by the same cross-platform timeout that used to just
-# drain it) and hand the payload to `loom hook pre-compact` before anything
-# else runs. That delegate resets THIS session's own delivery-suppression
-# record so a post-compaction prompt is eligible for redelivery of context
-# the compacted window may have lost (A.16/A.21,
-# loom/src/commands/hook/pre_compact.rs). It must run BEFORE the env-var
-# guard below and unconditionally in every session, loom-spawned or not — an
-# ordinary non-loom session is exactly the case A.16 exists to serve, and
-# this hook is registered globally regardless of LOOM_STAGE_ID. `loom hook
-# pre-compact` is fail-open by contract, and `|| true` guards this call too:
-# nothing here may ever block compaction over delivery-record bookkeeping.
+# The payload goes to `loom hook pre-compact` before anything else. That
+# delegate deletes this session's own prompt delivery record so a
+# post-compaction prompt can redeliver context the compacted window may have
+# lost (loom/src/commands/hook/pre_compact.rs). It runs before the env-var
+# guard below. An ordinary session gets the same reset from knowledge-orient.sh
+# on its SessionStart `compact` event. The delegate is fail-open and `|| true`
+# guards the call: nothing here may block compaction over delivery bookkeeping.
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
 STDIN_PAYLOAD=$(loom_read_input 1 2>/dev/null || true)
 if command -v "${LOOM_BIN:-loom}" &>/dev/null; then
