@@ -201,13 +201,13 @@ _loom_sibling_full_read() {
 	' "${files[@]}" 2>/dev/null
 }
 
-# _loom_read_sibling_receipt <path> <kind> <lines> <own_ledger> <shared_file>
+# _loom_read_sibling_request <path> <kind> <lines> <own_ledger> <shared_file>
 # - for a whole-file read of a regular file above _LOOM_SIBLING_READ_MIN_LINES
 # lines that a sibling agent already requested whole, unchanged since: append the
 # <shared_file> row and print the advisory. Prints nothing and fails
 # otherwise. Run it BEFORE this read's own ledger append, or the fresh own
 # row mutes it.
-_loom_read_sibling_receipt() {
+_loom_read_sibling_request() {
 	local path="$1" kind="$2" lines="$3" own="$4" shared="$5" abs hit sib sib_lines count who more=""
 	[[ "$kind" == "full" && "$lines" =~ ^[0-9]+$ && -f "$path" ]] || return 1
 	((lines > _LOOM_SIBLING_READ_MIN_LINES)) || return 1

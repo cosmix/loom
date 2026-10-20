@@ -31,12 +31,13 @@ set -euo pipefail
 # post-compaction prompt can redeliver context the compacted window may have
 # lost (loom/src/commands/hook/pre_compact.rs). It runs before the env-var
 # guard below. An ordinary session gets the same reset from knowledge-orient.sh
-# on its SessionStart `compact` event. The delegate is fail-open and `|| true`
-# guards the call: nothing here may block compaction over delivery bookkeeping.
+# on its SessionStart `compact` event. The delegate is fail-open, bounded at 3 s
+# as in knowledge-orient.sh, and guarded by `|| true`: nothing here may block
+# compaction over delivery bookkeeping.
 source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
 STDIN_PAYLOAD=$(loom_read_input 1 2>/dev/null || true)
 if command -v "${LOOM_BIN:-loom}" &>/dev/null; then
-	printf '%s' "$STDIN_PAYLOAD" | LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" hook pre-compact >/dev/null 2>&1 || true
+	printf '%s' "$STDIN_PAYLOAD" | LOOM_HOOK_CONTEXT=1 loom_run_bounded 3 "${LOOM_BIN:-loom}" hook pre-compact >/dev/null 2>&1 || true
 fi
 
 # Validate required environment variables

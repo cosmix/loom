@@ -123,11 +123,7 @@ pub fn worker_query_text(stage: &Stage, description: &str, prompt: &str) -> Stri
     if text.len() <= WORKER_QUERY_MAX_BYTES {
         return text;
     }
-    let end = (0..=WORKER_QUERY_MAX_BYTES)
-        .rev()
-        .find(|&index| text.is_char_boundary(index))
-        .expect("zero is a character boundary");
-    text[..end].to_string()
+    text[..text.floor_char_boundary(WORKER_QUERY_MAX_BYTES)].to_string()
 }
 
 fn issue(raw: &str, config: &Config) -> Option<Envelope> {

@@ -59,10 +59,10 @@ pub fn hook_recipient_id(scope: &str, session_id: Option<&str>) -> String {
 /// Filesystem-safe identity for one issued worker brief: the record's file name and
 /// its recipient id.
 ///
-/// All three inputs are hashed because the nonce is the only public join key
-/// and neither a hook session nor a stage-controlled value may become a path
-/// component. The `worker-` namespace also keeps these keys disjoint from
-/// prompt-hook recipients.
+/// All three inputs are hashed: the nonce is public (the brief's marker line
+/// carries it), and neither a hook session nor a stage-controlled value may
+/// become a path component. The `worker-` namespace also keeps these keys
+/// disjoint from prompt-hook recipients.
 pub fn worker_recipient_id(stage: &str, parent_session: &str, nonce: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(b"worker-brief\0");
