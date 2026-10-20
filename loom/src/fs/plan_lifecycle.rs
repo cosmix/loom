@@ -192,7 +192,7 @@ pub fn mark_plan_in_progress(work_dir: &WorkDir) -> Result<Option<PathBuf>> {
 /// This is called after the orchestrator completes successfully.
 /// Generates the final review before renaming, once all stages are merged.
 /// Repeated calls regenerate the review for an already-DONE plan. Review errors
-/// propagate and leave an in-progress plan available for retry.
+/// and archive errors propagate and leave an in-progress plan available for retry.
 ///
 /// Returns the new path if renamed, None if no rename was needed.
 pub fn mark_plan_done_if_all_merged(work_dir: &WorkDir) -> Result<Option<PathBuf>> {
@@ -220,7 +220,7 @@ pub fn mark_plan_done_if_all_merged(work_dir: &WorkDir) -> Result<Option<PathBuf
 
     let without_prefix = remove_prefix_from_filename(&current_path, IN_PROGRESS_PREFIX);
     let new_path = add_prefix_to_filename(&without_prefix, DONE_PREFIX);
-    archive_run_state_before_done(work_dir);
+    archive_run_state_before_done(work_dir, &root)?;
     rename_completed_plan(work_dir, &current_path, &new_path)?;
     Ok(Some(new_path))
 }
@@ -248,22 +248,16 @@ fn rename_completed_plan(work_dir: &WorkDir, current_path: &Path, new_path: &Pat
     Ok(())
 }
 
-/// Archive the run's state before the DONE rename. Best-effort: a missing
-/// project root only logs a warning, it does not block completion.
-fn archive_run_state_before_done(work_dir: &WorkDir) {
+/// Archive the run's state before the DONE rename. A journal that cannot be
+/// archived is an error, which leaves the plan `IN_PROGRESS` for a retry.
+fn archive_run_state_before_done(work_dir: &WorkDir, main_root: &Path) -> Result<()> {
     let plan_id = work_dir
         .load_config()
         .ok()
         .flatten()
         .and_then(|config| config.plan_id().map(str::to_owned));
-    if let Some(main_root) = work_dir
-        .main_project_root()
-        .or_else(|| work_dir.project_root().map(Path::to_path_buf))
-    {
-        archive_run_state(work_dir.root(), &main_root, plan_id.as_deref());
-    } else {
-        eprintln!("Warning: Failed to archive run state: could not determine project root");
-    }
+    archive_run_state(work_dir.root(), main_root, plan_id.as_deref())?;
+    Ok(())
 }
 
 #[cfg(test)]

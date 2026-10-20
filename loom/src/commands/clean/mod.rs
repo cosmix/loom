@@ -227,7 +227,7 @@ fn clean_state_directory(repo_root: &Path) -> Result<bool> {
     let main_root = workspace
         .and_then(|work_dir| work_dir.main_project_root())
         .unwrap_or_else(|| repo_root.to_path_buf());
-    archive_run_state(&work_dir, &main_root, plan_id.as_deref());
+    archive_run_state(&work_dir, &main_root, plan_id.as_deref())?;
 
     fs::remove_dir_all(&work_dir)
         .with_context(|| format!("Failed to remove state directory at {}", work_dir.display()))?;
@@ -337,6 +337,20 @@ mod tests {
             fs::read_to_string(archive.path().join("memory/stage.md")).unwrap(),
             "journal"
         );
+    }
+
+    #[test]
+    fn clean_state_directory_keeps_state_when_archiving_fails() {
+        let temp_dir = TempDir::new().unwrap();
+        let work_dir = temp_dir.path().join(".loom").join("work");
+        fs::create_dir_all(work_dir.join("memory")).unwrap();
+        fs::write(work_dir.join("memory/stage.md"), "journal").unwrap();
+        fs::create_dir_all(temp_dir.path().join(".loom/memory")).unwrap();
+        fs::write(temp_dir.path().join(".loom/memory/archive"), "blocker").unwrap();
+
+        assert!(clean_state_directory(temp_dir.path()).is_err());
+
+        assert!(work_dir.join("memory/stage.md").exists());
     }
 
     #[test]

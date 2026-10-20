@@ -10,20 +10,36 @@ use crate::context::delivery::plan_key_from;
 /// Copy `<work_dir>/memory/` and `<work_dir>/telemetry/` (when present) to
 /// `<main_root>/.loom/memory/archive/<plan-id-or-default>-<YYYYmmddTHHMMSSZ>/`.
 ///
-/// Returns the archive path, or `None` when there was nothing to archive or
-/// archiving failed. Failures are deliberately contained here so cleanup and
-/// plan completion can continue.
+/// Returns `Ok(Some(path))` on success and `Ok(None)` when there was nothing
+/// to archive. When archiving fails and `<work_dir>/memory` holds a `*.md`
+/// journal, the error is returned (it names the archive path) so callers keep
+/// the state. A failure with telemetry only prints a warning and returns
+/// `Ok(None)`.
 pub fn archive_run_state(
     work_dir: &Path,
     main_root: &Path,
     plan_id: Option<&str>,
-) -> Option<PathBuf> {
+) -> Result<Option<PathBuf>> {
     match try_archive_run_state(work_dir, main_root, plan_id) {
-        Ok(path) => path,
+        Ok(path) => Ok(path),
+        Err(error) if has_journal(work_dir) => Err(error),
         Err(error) => {
-            eprintln!("Warning: Failed to archive run state: {error}");
-            None
+            eprintln!("Warning: Failed to archive run state: {error:#}");
+            Ok(None)
         }
+    }
+}
+
+/// True when `<work_dir>/memory` holds a `*.md` journal. An entry that exists
+/// but cannot be listed (permissions, not a directory) counts as holding one,
+/// so the archive error is returned instead of being demoted to a warning.
+fn has_journal(work_dir: &Path) -> bool {
+    let memory = work_dir.join("memory");
+    match fs::read_dir(&memory) {
+        Ok(entries) => entries
+            .flatten()
+            .any(|entry| entry.path().extension().is_some_and(|ext| ext == "md")),
+        Err(_) => memory.symlink_metadata().is_ok(),
     }
 }
 
@@ -50,7 +66,8 @@ fn try_archive_run_state(
         .with_context(|| format!("creating archive directory {}", archive_path.display()))?;
 
     for name in source_names {
-        copy_path(&work_dir.join(name), &archive_path.join(name))?;
+        copy_path(&work_dir.join(name), &archive_path.join(name))
+            .with_context(|| format!("archiving run state to {}", archive_path.display()))?;
     }
 
     Ok(Some(archive_path))

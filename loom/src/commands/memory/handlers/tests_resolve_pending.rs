@@ -1,6 +1,8 @@
 use super::pending::{pending_report, strict_should_fail};
 use super::{change, note, resolve};
-use crate::fs::memory::{append_to_spool, read_journal, MemoryEntry, MemoryEntryType};
+use crate::fs::memory::{
+    append_entry, append_to_spool, archive_run_state, read_journal, MemoryEntry, MemoryEntryType,
+};
 use serial_test::serial;
 use std::env;
 use std::process::Command;
@@ -179,4 +181,31 @@ fn pending_merges_the_current_worktrees_spool() {
     assert_eq!(report.pending.len(), 1);
     assert_eq!(report.pending[0].entry.content, "spooled note");
     assert_eq!(report.pending[0].stage, stage);
+}
+
+#[test]
+fn archived_journals_copied_into_a_new_state_dir_are_pending() {
+    let temp = TempDir::new().unwrap();
+    let old_work = temp.path().join("old/.loom/work");
+    let entry = MemoryEntry::new(MemoryEntryType::Note, "archived note".to_string());
+    append_entry(&old_work, "old-stage", &entry).unwrap();
+    let archive = archive_run_state(&old_work, temp.path(), Some("plan-a"))
+        .unwrap()
+        .unwrap();
+
+    let new_work = temp.path().join("new/.loom/work");
+    let new_memory = new_work.join("memory");
+    std::fs::create_dir_all(&new_memory).unwrap();
+    for file in std::fs::read_dir(archive.join("memory")).unwrap() {
+        let file = file.unwrap();
+        std::fs::copy(file.path(), new_memory.join(file.file_name())).unwrap();
+    }
+
+    let report = pending_report(&new_work, None).unwrap();
+
+    assert!(report
+        .pending
+        .iter()
+        .any(|staged| staged.entry.id == entry.id));
+    assert!(strict_should_fail(true, report.pending.len()));
 }

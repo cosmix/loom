@@ -356,3 +356,28 @@ fn review_failure_prevents_done_and_retry_finishes() {
         .exists());
     assert!(review.is_file());
 }
+
+#[test]
+fn archive_failure_prevents_done_and_retry_finishes() {
+    let temp = TempDir::new().unwrap();
+    let work = create_test_work_dir(&temp);
+    let plan = create_plan_file(&temp, "IN_PROGRESS-PLAN-feature.md");
+    write_config(&work, &plan);
+    create_stage_file(&work, "test", true);
+    fs::create_dir_all(work.root().join("memory")).unwrap();
+    fs::write(work.root().join("memory/test.md"), "journal").unwrap();
+    fs::create_dir_all(temp.path().join(".loom/memory")).unwrap();
+    let blocker = temp.path().join(".loom/memory/archive");
+    fs::write(&blocker, "blocker").unwrap();
+    assert!(mark_plan_done_if_all_merged(&work).is_err());
+    assert!(plan.exists());
+    assert_eq!(get_plan_source_path(&work).unwrap().unwrap(), plan);
+    fs::remove_file(&blocker).unwrap();
+    let done = mark_plan_done_if_all_merged(&work).unwrap().unwrap();
+    assert!(done
+        .file_name()
+        .unwrap()
+        .to_string_lossy()
+        .starts_with("DONE-"));
+    assert!(done.exists());
+}
