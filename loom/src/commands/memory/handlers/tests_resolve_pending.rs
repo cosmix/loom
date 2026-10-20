@@ -184,6 +184,7 @@ fn pending_merges_the_current_worktrees_spool() {
 }
 
 #[test]
+#[serial]
 fn archived_journals_copied_into_a_new_state_dir_are_pending() {
     let temp = TempDir::new().unwrap();
     let old_work = temp.path().join("old/.loom/work");

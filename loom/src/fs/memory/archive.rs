@@ -6,6 +6,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use crate::context::delivery::plan_key_from;
+use crate::fs::work_dir::WorkDir;
 
 /// Copy `<work_dir>/memory/` and `<work_dir>/telemetry/` (when present) to
 /// `<main_root>/.loom/memory/archive/<plan-id-or-default>-<YYYYmmddTHHMMSSZ>/`.
@@ -28,6 +29,24 @@ pub fn archive_run_state(
             Ok(None)
         }
     }
+}
+
+/// Archive the state directory `work_dir` ahead of its removal, reading the plan
+/// id from its config and archiving under the main project root it resolves to
+/// (`repo_root` when it is not a workspace).
+///
+/// Callers must propagate the error with `?` before deleting `work_dir`: an
+/// `Err` means a journal could not be archived and the state must stay.
+pub fn archive_state_dir(work_dir: &Path, repo_root: &Path) -> Result<Option<PathBuf>> {
+    let workspace = WorkDir::new(work_dir).ok();
+    let plan_id = workspace
+        .as_ref()
+        .and_then(|workspace| workspace.load_config().ok().flatten())
+        .and_then(|config| config.plan_id().map(str::to_owned));
+    let main_root = workspace
+        .and_then(|workspace| workspace.main_project_root())
+        .unwrap_or_else(|| repo_root.to_path_buf());
+    archive_run_state(work_dir, &main_root, plan_id.as_deref())
 }
 
 /// True when `<work_dir>/memory` holds a `*.md` journal. An entry that exists

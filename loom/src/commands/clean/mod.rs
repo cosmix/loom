@@ -17,8 +17,7 @@ use worktrees::{clean_worktrees, confirm_branch_deletion, run_bare_clean};
 
 use crate::commands::common::resolve_state_dir;
 use crate::daemon::{DaemonServer, DaemonStatus};
-use crate::fs::memory::archive_run_state;
-use crate::fs::work_dir::WorkDir;
+use crate::fs::memory::archive_state_dir;
 
 /// Statistics for cleanup operations
 #[derive(Default)]
@@ -219,15 +218,7 @@ fn clean_state_directory(repo_root: &Path) -> Result<bool> {
         return Ok(false);
     }
 
-    let workspace = WorkDir::new(&work_dir).ok();
-    let plan_id = workspace
-        .as_ref()
-        .and_then(|work_dir| work_dir.load_config().ok().flatten())
-        .and_then(|config| config.plan_id().map(str::to_owned));
-    let main_root = workspace
-        .and_then(|work_dir| work_dir.main_project_root())
-        .unwrap_or_else(|| repo_root.to_path_buf());
-    archive_run_state(&work_dir, &main_root, plan_id.as_deref())?;
+    archive_state_dir(&work_dir, repo_root)?;
 
     fs::remove_dir_all(&work_dir)
         .with_context(|| format!("Failed to remove state directory at {}", work_dir.display()))?;
