@@ -18,7 +18,8 @@
 #      agent's defined tier.
 #   5. PREPENDS _subagent-preamble.txt to a typed spawn's prompt that lacks
 #      it, in every session (except loom-codex-forwarder and codex:* spawns);
-#      inside a stage (the GATE_PASSED gate) also APPENDS an optional worker brief.
+#      inside a stage (the GATE_PASSED gate) also APPENDS an optional worker
+#      brief, except to loom-codex-forwarder and codex:* spawns.
 #   6. RECORDS every typed spawn to $LOOM_WORK_DIR/subagents/<stage-id>/spawns.jsonl
 #      (the state directory - .loom/work, or the legacy .work) so
 #      `loom subagents` can report on model usage across a stage.
@@ -292,16 +293,14 @@ esac
 WARN_TEXT="$WARN_ESCALATION"
 if [[ -n "$WARN_PREAMBLE" ]]; then WARN_TEXT="${WARN_TEXT:+${WARN_TEXT} | }${WARN_PREAMBLE}"; fi
 
-# A scoped brief is optional and must never change the existing decision on a
-# missing command, timeout, malformed envelope, or empty selection. Read the
-# prompt from TOOL_INPUT during the merge so trailing newlines remain intact.
+# A scoped brief is optional: a missing command, timeout, bad envelope or empty selection changes nothing.
+# Codex-bound types get none: Codex units read loom's Codex UserPromptSubmit brief (fs/permissions/codex_hooks.rs).
+# The prompt is read from TOOL_INPUT so its trailing newlines survive the merge.
 WORKER_BRIEF_JSON=""
-if [[ $GATE_PASSED -eq 1 ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null &&
+if [[ $GATE_PASSED -eq 1 && "$AGENT_TYPE_REQ" != loom-codex-forwarder && "$AGENT_TYPE_REQ" != codex:* ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null &&
 	printf '%s' "$TOOL_INPUT" | jq -e 'type == "object" and (.prompt | type == "string")' >/dev/null 2>&1; then
-	if ! WORKER_BRIEF_ENVELOPE=$(printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 loom_run_bounded 3 "${LOOM_BIN:-loom}" hook worker-brief 2>/dev/null); then
-		loom_debug "spawn-guard: worker-brief timeout or nonzero exit"
-	elif [[ -z "$WORKER_BRIEF_ENVELOPE" ]]; then
-		loom_debug "spawn-guard: worker-brief empty output"
+	if ! WORKER_BRIEF_ENVELOPE=$(printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 loom_run_bounded 5 "${LOOM_BIN:-loom}" hook worker-brief 2>/dev/null) || [[ -z "$WORKER_BRIEF_ENVELOPE" ]]; then
+		loom_debug "spawn-guard: worker-brief timeout, nonzero exit or empty output"
 	else
 		if [[ "$WORKER_BRIEF_ENVELOPE" != *$'\n'* ]]; then
 			WORKER_BRIEF_JSON=$(printf '%s' "$WORKER_BRIEF_ENVELOPE" | jq -ec '

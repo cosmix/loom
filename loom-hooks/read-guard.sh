@@ -97,18 +97,7 @@ fi
 
 loom_debug "FILE_PATH=$FILE_PATH KIND=$KIND LINES=$LINES AGENT_ID=$AGENT_ID"
 
-# The discipline core can use this original payload only for a bounded receipt
-# check after its cheap TSV-overlap prefilter. It never parses a tool result.
-loom_read_discipline_check "$FILE_PATH" "$KIND" "$LINES" "$AGENT_ID" "${PAYLOAD_SID:-unknown}" "$INPUT_JSON"
-
-# A hard deny exits from the discipline core before reaching this point. Rust
-# repeats the source, type, cap, and no-follow checks; the shell gate avoids
-# spawning it for obvious media/non-files and never turns a failure into one.
-if _loom_read_receipt_eligible "$FILE_PATH"; then
-	# Prepares a pending receipt intent through loom hook read-receipt --prepare;
-	# the repeat check in _read_discipline.sh consults loom hook read-receipt --check.
-	_loom_read_receipt_prepare "$INPUT_JSON"
-fi
+loom_read_discipline_check "$FILE_PATH" "$KIND" "$LINES" "$AGENT_ID" "${PAYLOAD_SID:-unknown}"
 
 loom_hook_emit_warns
 exit 0

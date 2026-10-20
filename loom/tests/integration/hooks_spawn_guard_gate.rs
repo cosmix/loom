@@ -363,7 +363,7 @@ fn untyped_denied_spawn_never_invokes_worker_brief() {
 }
 
 #[test]
-fn codex_forwarder_keeps_marker_first_without_navigation_kit() {
+fn codex_forwarder_spawn_gets_no_prompt_rewrite() {
     let (fixture, hook) = setup_hook();
     let (home, cwd, work) = (temp(), temp(), temp());
     let stub_bin = install_worker_brief_stub(fixture.path());
@@ -386,15 +386,8 @@ fn codex_forwarder_keeps_marker_first_without_navigation_kit() {
 
     assert_eq!(out.code, 0, "stderr={}", out.stderr);
     let value: Value = serde_json::from_str(out.stdout.trim()).expect("parse hook output");
-    let updated =
-        get_str(&value, &["hookSpecificOutput", "updatedInput", "prompt"]).expect("updated prompt");
-    assert_eq!(updated.lines().next(), Some("LOOM-CODEX-FORWARD-ONLY"));
-    assert!(!updated.contains("=== LOOM CONTEXT"));
-    assert!(!updated.contains("NAVIGATE WITH THE SOURCE GRAPH"));
-    assert!(!updated.contains(PREAMBLE_LINE));
-    assert!(
-        !out.stdout.contains("LOOM_HOOK_WARN"),
-        "stdout={}",
-        out.stdout
-    );
+    assert!(get_str(&value, &["hookSpecificOutput", "updatedInput", "prompt"]).is_none());
+    for forbidden in [PREAMBLE_LINE, "loom-worker-brief", "LOOM_HOOK_WARN"] {
+        assert!(!out.stdout.contains(forbidden), "stdout={}", out.stdout);
+    }
 }

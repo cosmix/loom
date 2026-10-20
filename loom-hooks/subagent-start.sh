@@ -20,7 +20,6 @@
 #
 # Actions:
 #   Appends one record to $LOOM_WORK_DIR/subagents/<stage-id>/starts.jsonl
-#   Binds a pending worker brief when a safe child transcript path is present
 #
 # Must never block: every path below ends in `exit 0`, and every write is
 # best-effort so a failure here can never fail the subagent's start.
@@ -33,7 +32,6 @@ set -euo pipefail
 umask 077
 
 source "$(dirname "$0")/_common.sh"
-source "$(dirname "$0")/_read_ledger.sh"
 
 if [[ -z "${LOOM_WORK_DIR:-}" ]] || [[ -z "${LOOM_STAGE_ID:-}" ]] || \
 	[[ -z "${LOOM_SESSION_ID:-}" ]] || [[ ! -d "${LOOM_WORK_DIR}" ]]; then
@@ -128,14 +126,5 @@ if [[ -n "$START_JSON" ]]; then
 else
 	loom_debug "subagent-start: skipping - jq -n failed for agent $AGENT_ID"
 fi
-
-case "$TRANSCRIPT_PATH" in
-*/subagents/agent-"$AGENT_ID".jsonl)
-	if [[ -f "$TRANSCRIPT_PATH" && -r "$TRANSCRIPT_PATH" && ! -L "$TRANSCRIPT_PATH" ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null; then
-		LOOM_HOOK_CONTEXT=1 loom_run_bounded 3 "${LOOM_BIN:-loom}" hook worker-brief --bind-agent "$AGENT_ID" \
-			--agent-type "$AGENT_TYPE" --transcript "$TRANSCRIPT_PATH" >/dev/null 2>&1 || true
-	fi
-	;;
-esac
 
 exit 0

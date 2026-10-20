@@ -8,7 +8,6 @@ export LOOM_STAGE_ID="test-stage"
 export LOOM_SESSION_ID="test-session"
 export LOOM_WORK_DIR="$TMPDIR_TEST"
 export LOOM_CALLS="$TMPDIR_TEST/loom-calls"
-export LOOM_RECEIPT_PAYLOAD="$TMPDIR_TEST/read-receipt-payload"
 
 FAKE_BIN="$TMPDIR_TEST/bin"
 mkdir -p "$FAKE_BIN"
@@ -18,11 +17,8 @@ export FAKE_LOOM="$FAKE_BIN/loom"
 cat >"$FAKE_LOOM" <<'EOF'
 #!/usr/bin/env bash
 set -euo pipefail
-payload=$(cat)
+cat >/dev/null
 printf '%s\n' "$*" >>"$LOOM_CALLS"
-if [[ "$1 ${2:-} ${3:-}" == "hook read-receipt --complete" ]]; then
-    printf '%s' "$payload" >"$LOOM_RECEIPT_PAYLOAD"
-fi
 EOF
 chmod +x "$FAKE_LOOM"
 
@@ -48,21 +44,11 @@ if [[ -e "$EVENTS" || -L "$EVENTS" ]]; then
     exit 1
 fi
 
-if ! rg -qx 'hook read-receipt --complete' "$LOOM_CALLS"; then
-    echo "FAIL: Read did not invoke read-receipt completion"
-    exit 1
-fi
-
-if [[ ! -f "$LOOM_RECEIPT_PAYLOAD" ]] || [[ "$(<"$LOOM_RECEIPT_PAYLOAD")" != "$INPUT" ]]; then
-    echo "FAIL: read-receipt did not receive the original payload"
-    exit 1
-fi
-
 INELIGIBLE=$(printf '{"tool_name":"Read","tool_input":{"file_path":"%s"}}' "$PNG_FILE")
 bash "$HOOK" <<< "$INELIGIBLE"
 
-if [[ "$(rg -xc 'hook read-receipt --complete' "$LOOM_CALLS" || true)" != "1" ]]; then
-    echo "FAIL: ineligible Read invoked read-receipt completion"
+if [[ -e "$LOOM_CALLS" ]] && rg -q 'read[-]receipt' "$LOOM_CALLS"; then
+    echo "FAIL: a Read invoked the receipt hook"
     exit 1
 fi
 

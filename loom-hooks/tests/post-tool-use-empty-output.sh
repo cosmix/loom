@@ -39,9 +39,4 @@ if [[ ! -f "$HEARTBEAT" ]]; then
     exit 1
 fi
 
-if [[ -e "$LOOM_CALLS" ]] && rg -qx 'hook read-receipt --complete' "$LOOM_CALLS"; then
-    echo "FAIL: non-Read tool invoked read-receipt completion"
-    exit 1
-fi
-
 echo "PASS"

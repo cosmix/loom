@@ -1,4 +1,4 @@
-//! Scoped retrieval briefs for typed Task/Agent workers.
+//! Scoped retrieval briefs for typed Task/Agent workers, each filed as a delivery record when it is issued.
 
 use crate::context::config::RetrievalConfig;
 use crate::context::delivery::{self, DeliveryRecord};
@@ -9,12 +9,9 @@ use crate::fs::locking::{atomic_write_locked, locked_dir_update};
 use crate::fs::work_dir::WorkDir;
 use crate::models::stage::Stage;
 use crate::orchestrator::signals::format_knowledge_brief;
-use crate::validation::{validate_id, MAX_ID_LENGTH};
-use anyhow::{Context, Result};
+use crate::validation::validate_id;
+use anyhow::Result;
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
-use std::collections::BTreeSet;
-use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use uuid::Uuid;
@@ -22,7 +19,6 @@ use uuid::Uuid;
 use super::target::non_empty_env;
 
 const MAX_STDIN_BYTES: u64 = 1024 * 1024;
-const MAX_TRANSCRIPT_BYTES: u64 = 1024 * 1024;
 const QUERY_INPUTS: &str = "the stage inputs, worker task and explicitly declared paths";
 const CODEX_FORWARD_PATH: &str = "loom-hooks/codex-forward.sh";
 
@@ -79,25 +75,9 @@ impl Config {
     }
 }
 
-/// Run normal emission or bind one issued nonce to a started child.
-pub fn worker_brief(
-    bind_agent: Option<String>,
-    agent_type: Option<String>,
-    transcript: Option<PathBuf>,
-) -> Result<()> {
-    match (
-        bind_agent.as_deref(),
-        agent_type.as_deref(),
-        transcript.as_deref(),
-    ) {
-        (None, None, None) => emit_normal(),
-        (Some(agent), Some(kind), Some(path)) => {
-            if let Some(config) = Config::from_env() {
-                let _ = bind_pending(&config, agent, kind, path);
-            }
-        }
-        _ => {}
-    }
+/// Print one worker-brief envelope for the spawn payload on stdin, or `{}`.
+pub fn worker_brief() -> Result<()> {
+    emit_normal();
     Ok(())
 }
 
@@ -124,6 +104,32 @@ fn read_stdin() -> Option<String> {
     (raw.len() <= MAX_STDIN_BYTES as usize).then_some(raw)
 }
 
+/// Maximum worker retrieval-query size. Retrieval takes about 1.7 seconds at
+/// 2,048 bytes but 9.6 seconds for a recorded loom spawn whose query carried
+/// an 11 KB stage description, against the spawn guard's former three-second
+/// bound. `spawn-guard.sh` gives this delegate five seconds; revisit this cap
+/// once retrieval cost stops growing with query length.
+pub const WORKER_QUERY_MAX_BYTES: usize = 2_048;
+
+/// Build a worker-first retrieval query. The worker's own task leads because
+/// stage text already reaches the stage session through its signal's brief.
+/// When description plus prompt reach 2,048 bytes, the stage text is cut
+/// entirely. A recorded loom spawn prompt is 3,580 bytes, so loom's own stages
+/// query the worker description and prompt. `StageQuery::build_stage_query_text`
+/// supplies the stage text.
+pub fn worker_query_text(stage: &Stage, description: &str, prompt: &str) -> String {
+    let stage_text = StageQuery::build_stage_query_text(stage);
+    let text = [description, prompt, &stage_text].join("\n");
+    if text.len() <= WORKER_QUERY_MAX_BYTES {
+        return text;
+    }
+    let end = (0..=WORKER_QUERY_MAX_BYTES)
+        .rev()
+        .find(|&index| text.is_char_boundary(index))
+        .expect("zero is a character boundary");
+    text[..end].to_string()
+}
+
 fn issue(raw: &str, config: &Config) -> Option<Envelope> {
     let payload: HookPayload = serde_json::from_str(raw).ok()?;
     if !valid_payload(&payload) {
@@ -143,7 +149,7 @@ fn issue(raw: &str, config: &Config) -> Option<Envelope> {
     if encoded.len() > config.retrieval.max_payload_bytes {
         return None;
     }
-    store_pending(config, &envelope.nonce, &pack).ok()??;
+    store_record(config, &envelope.nonce, &pack).ok()??;
     Some(envelope)
 }
 
@@ -158,11 +164,8 @@ fn valid_payload(payload: &HookPayload) -> bool {
 }
 
 fn retrieve_pack(config: &Config, payload: &HookPayload, paths: &[String]) -> Option<ContextPack> {
-    let mut text = StageQuery::build_stage_query_text(&config.stage);
-    text.push('\n');
-    text.push_str(&payload.tool_input.description);
-    text.push('\n');
-    text.push_str(&payload.tool_input.prompt);
+    let tool = &payload.tool_input;
+    let text = worker_query_text(&config.stage, &tool.description, &tool.prompt);
     let mut query = StageQuery::new(&config.work_dir, text).with_surface(Surface::Hook);
     query.overlay = StageQuery::stage_overlay_scope(&config.stage);
     query.stage_dependency_ids = delivery::dependency_chunk_ids(
@@ -294,93 +297,27 @@ fn bullet_path(line: &str) -> Option<String> {
     Some(path)
 }
 
-fn store_pending(config: &Config, nonce: &str, pack: &ContextPack) -> Result<Option<()>> {
+/// File a delivery record when this brief is issued. The brief rides the
+/// spawn's own `updatedInput`, so a delegate killed before stdout leaves a
+/// record for a brief it never carried. That is accepted because a delivery
+/// record is an optimisation (`context::delivery` module doc).
+fn store_record(config: &Config, nonce: &str, pack: &ContextPack) -> Result<Option<()>> {
     let dir = delivery::worker_delivery_dir(
         &config.work_dir,
         delivery::plan_key(&config.stage),
         &config.stage.id,
     );
     let key = delivery::worker_recipient_id(&config.stage.id, &config.parent_session, nonce);
-    let pending = dir.join(format!("{key}.pending"));
     let bound = dir.join(format!("{key}.json"));
     let record = DeliveryRecord::from_pack(key, pack);
     let json = serde_json::to_string_pretty(&record)?;
     locked_dir_update(&dir, || {
-        if pending.exists() || bound.exists() {
+        if bound.exists() {
             return Ok(None);
         }
-        atomic_write_locked(&pending, &json)?;
+        atomic_write_locked(&bound, &json)?;
         Ok(Some(()))
     })
-}
-
-fn bind_pending(config: &Config, agent: &str, _agent_type: &str, transcript: &Path) -> bool {
-    if agent.trim().is_empty() || agent.len() > MAX_ID_LENGTH {
-        return false;
-    }
-    let Some(nonce) = read_transcript(transcript).and_then(|raw| transcript_nonce(&raw)) else {
-        return false;
-    };
-    bind_nonce(config, agent, &nonce).unwrap_or(false)
-}
-
-fn bind_nonce(config: &Config, agent: &str, nonce: &str) -> Result<bool> {
-    let dir = delivery::worker_delivery_dir(
-        &config.work_dir,
-        delivery::plan_key(&config.stage),
-        &config.stage.id,
-    );
-    let key = delivery::worker_recipient_id(&config.stage.id, &config.parent_session, nonce);
-    let pending = dir.join(format!("{key}.pending"));
-    let bound = dir.join(format!("{key}.json"));
-    locked_dir_update(&dir, || {
-        if bound.exists() || !pending.is_file() {
-            return Ok(false);
-        }
-        let raw = fs::read_to_string(&pending).context("reading pending worker brief")?;
-        let mut record: DeliveryRecord = serde_json::from_str(&raw)?;
-        record.recipient_id = agent.to_string();
-        let json = serde_json::to_string_pretty(&record)?;
-        atomic_write_locked(&bound, &json)?;
-        fs::remove_file(&pending).context("retiring pending worker brief")?;
-        Ok(true)
-    })
-}
-
-fn read_transcript(path: &Path) -> Option<String> {
-    crate::models::forward_receipt::locator::read_bounded_prefix(
-        path,
-        MAX_TRANSCRIPT_BYTES as usize,
-    )
-    .ok()
-}
-
-fn transcript_nonce(raw: &str) -> Option<String> {
-    let mut found = BTreeSet::new();
-    for line in raw.lines() {
-        if let Some(nonce) = marker_nonce(line) {
-            found.insert(nonce);
-        }
-        if let Ok(value) = serde_json::from_str::<Value>(line) {
-            collect_value_markers(&value, &mut found);
-        }
-    }
-    (found.len() == 1)
-        .then(|| found.into_iter().next())
-        .flatten()
-}
-
-fn collect_value_markers(value: &Value, found: &mut BTreeSet<String>) {
-    match value {
-        Value::String(text) => found.extend(text.lines().filter_map(marker_nonce)),
-        Value::Array(values) => values
-            .iter()
-            .for_each(|value| collect_value_markers(value, found)),
-        Value::Object(values) => values
-            .values()
-            .for_each(|value| collect_value_markers(value, found)),
-        _ => {}
-    }
 }
 
 fn marker_nonce(line: &str) -> Option<String> {

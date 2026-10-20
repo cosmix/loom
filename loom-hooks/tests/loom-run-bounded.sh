@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # loom_run_bounded (_read_ledger.sh) must bound a command even on a machine with
 # neither gtimeout nor timeout, as stock macOS is: the bash watchdog stops a
-# hung command, kills one that ignores TERM, leaves no sleep holding a
-# surrounding $(...) open, never runs the caller's EXIT trap a second time, and
+# hung command, kills one that ignores TERM, never holds a surrounding $(...)
+# open, never runs the caller's EXIT trap a second time, and
 # still passes stdin, stdout and the exit status through. The guard below fails
 # the test when a timeout binary is still visible; otherwise it would exercise
 # whichever binary the host happens to have.
@@ -54,12 +54,13 @@ loom_run_bounded 1 bash -c 'trap "" TERM; exec sleep 30' || status=$?
 assert_elapsed_within "$start" 5 "a command that ignores TERM"
 [[ "$status" == "137" ]] || fail "a TERM-ignoring command should end KILLed (137), got $status"
 
-# The caller's EXIT trap runs once, in the caller: bash 3.2 would also run it in
-# a watchdog job that the caller's TERM reaches early, which a command that
-# finishes at once (the repeated `true`) makes certain.
+# The caller's EXIT trap runs once, in the caller. A forked bash keeps that trap
+# until it resets its signal handlers, so a watchdog signalled in that window
+# runs it too. A command that ends at once (`true`) puts any retiring signal
+# into the window; 100 calls make a run that hits it likely even without load.
 marker="$NO_TIMEOUT_DIR/exit-trap-marker"
 bash -c 'source "$1"; trap "echo ran >>\"$2\"" EXIT
-	for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20; do loom_run_bounded 5 true; done
+	for ((n = 0; n < 100; n++)); do loom_run_bounded 5 true; done
 	loom_run_bounded 1 sleep 30 || true' _ "$HOOKS_DIR/_read_ledger.sh" "$marker"
 runs=$(wc -l <"$marker" | tr -d '[:space:]')
 [[ "$runs" == "1" ]] || fail "the caller's EXIT trap ran $runs times, expected once"

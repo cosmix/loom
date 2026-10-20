@@ -60,8 +60,7 @@ fn bash_side_cat_gets_read_rules_sed_range_is_allowed() {
 }
 
 // 4b. The read ledger `cat` writes is the SAME ledger read-guard.sh reads.
-//     Escalation needs a Rust-proven receipt, which a Bash-side `cat` cannot
-//     produce, even though both attempts share the ledger.
+//     A Read after the `cat` stays silent: no rule advises a repeat read.
 #[test]
 fn bash_side_cat_and_read_tool_share_the_same_read_ledger() {
     let (_temp, poll_hook, read_hook) = setup_both_hooks();
@@ -88,7 +87,7 @@ fn bash_side_cat_and_read_tool_share_the_same_read_ledger() {
     assert_eq!(read_out.code, 0, "stderr={}", read_out.stderr);
     assert!(
         read_out.stdout.trim().is_empty(),
-        "Read after cat needs a proven receipt to warn: {}",
+        "Read after cat must stay silent: {}",
         read_out.stdout
     );
 

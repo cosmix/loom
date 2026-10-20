@@ -101,11 +101,11 @@ fn worker_nonces_and_parent_sessions_remain_isolated() {
 
 #[test]
 fn worker_and_child_prompt_recipients_cannot_share_a_namespace() {
-    let pending = worker_recipient_id("scope", "parent", "child-session");
+    let worker = worker_recipient_id("scope", "parent", "child-session");
     let child = hook_recipient_id("scope", Some("child-session"));
 
-    assert_ne!(pending, child);
-    assert!(pending.starts_with("worker-"));
+    assert_ne!(worker, child);
+    assert!(worker.starts_with("worker-"));
     assert!(child.starts_with("prompt-"));
 }
 
@@ -119,17 +119,17 @@ fn nonce_address_and_same_named_child_record_use_isolated_directories() {
 
     let worker_dir = worker_delivery_dir(&work_dir, PLAN, STAGE);
     std::fs::create_dir_all(&worker_dir).unwrap();
-    let bound = record("actual-child", "epoch-a", &[("bound", "h2")]);
+    let issued = record("actual-child", "epoch-a", &[("issued", "h2")]);
     std::fs::write(
         worker_dir.join(format!("{nonce_address}.json")),
-        serde_json::to_string(&bound).unwrap(),
+        serde_json::to_string(&issued).unwrap(),
     )
     .unwrap();
 
     let loaded = load_deliveries(&work_dir, PLAN, STAGE).unwrap();
     assert_eq!(loaded.len(), 2);
     assert!(loaded.contains(&direct));
-    assert!(loaded.contains(&bound));
+    assert!(loaded.contains(&issued));
 }
 
 #[test]

@@ -116,10 +116,10 @@ stages. Every prompt carries a file-ownership table:
 brief whose work it covers, with the invocation the stage signal names for it, so the subagent
 loads it before writing code instead of rediscovering it.
 
-**Read receipts.** Every agent of one session writes its reads ledger into one session directory:
+**Sibling-read ledger.** Every agent of one session writes its reads ledger into one session directory:
 `$LOOM_WORK_DIR/hooks/reads/<LOOM_SESSION_ID>/<agent-id>.tsv` inside a stage, a per-session
 directory under `${TMPDIR:-/tmp}/loom-reads/` outside one. When a subagent reads a file of more
-than 200 lines whole that a sibling already read whole and unchanged, the read guard appends
+than 200 lines whole that a sibling already requested whole and unchanged, the read guard appends
 `<absolute path>\t<lines>\t<agent count>\t<UTC timestamp>` to that directory's `_shared.tsv`; the
 latest row per path carries the current count. Before the next round of briefs, read it: a file
 several subagents each read whole belongs in the brief as quoted `file:line` ranges.

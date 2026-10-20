@@ -101,8 +101,9 @@ pub enum HookCommands {
     },
 
     /// Internal maintenance entry point invoked by the PreCompact shell hook
-    /// to reopen this session's own delivery suppression before its context
-    /// window is compacted away. Not a user-facing command.
+    /// and by knowledge-orient.sh on a SessionStart `compact`, to reopen this
+    /// session's own delivery suppression once its context window is
+    /// compacted away. Not a user-facing command.
     PreCompact,
 
     /// Print Rust-resolved main/subagent context ceilings for session hooks.
@@ -118,32 +119,9 @@ pub enum HookCommands {
         transcript: std::path::PathBuf,
     },
 
-    /// Retrieve a scoped brief for a typed worker, or bind its nonce.
+    /// Retrieve a scoped brief for a typed worker.
     #[command(hide = true)]
-    WorkerBrief {
-        #[arg(long)]
-        bind_agent: Option<String>,
-        #[arg(long)]
-        agent_type: Option<String>,
-        #[arg(long)]
-        transcript: Option<std::path::PathBuf>,
-    },
-
-    /// Maintain the tool-read receipt state machine.
-    #[command(
-        hide = true,
-        group(clap::ArgGroup::new("mode").required(true).multiple(false).args([
-            "prepare", "check", "complete"
-        ]))
-    )]
-    ReadReceipt {
-        #[arg(long)]
-        prepare: bool,
-        #[arg(long)]
-        check: bool,
-        #[arg(long)]
-        complete: bool,
-    },
+    WorkerBrief,
 
     /// Discover package-scoped project types for skill recommendations.
     #[command(hide = true)]

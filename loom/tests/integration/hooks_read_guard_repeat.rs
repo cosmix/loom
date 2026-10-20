@@ -1,5 +1,4 @@
-//! Repeat-read and tier-one knowledge-hint cases for
-//! `hooks_read_guard.rs`. The parent owns the shared hook harness.
+//! Rule-one, ledger-row and tier-one knowledge-hint cases for `hooks_read_guard.rs`. The parent owns the shared hook harness.
 
 use super::*;
 
@@ -45,7 +44,7 @@ fn reads_ledger_row_is_tab_separated_path_kind_lines_timestamp() {
     let stubs = TempDir::new().expect("stubs dir");
     let file = write_file_with_lines(files.path(), "small.rs", 50);
     let session = Session::new();
-    let stub_dir = receipt_stub_dir(stubs.path());
+    let stub_dir = lexical_stub_dir(stubs.path());
     let output = run_read_hook(
         &hook,
         json!({"file_path": file.to_string_lossy(), "offset": 5, "limit": 10}),
@@ -78,7 +77,7 @@ fn tier1_hint_is_unscoped_for_unset_invalid_and_real_stage_ids() {
         fs::create_dir_all(parent).expect("create knowledge dir");
         fs::write(&path, "line\n").expect("write knowledge file");
         let session = Session::new().with_stage_id(stage_id);
-        let stub_dir = receipt_stub_dir(stubs.path());
+        let stub_dir = lexical_stub_dir(stubs.path());
         let output = run_read_hook(
             &hook,
             json!({"file_path": path.to_string_lossy()}),
