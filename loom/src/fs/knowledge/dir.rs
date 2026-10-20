@@ -60,10 +60,7 @@ impl KnowledgeDir {
                 if let Ok(content) = fs::read_to_string(&path) {
                     // The scaffold carries no `##` heading, so any `##`
                     // heading is content.
-                    if content
-                        .lines()
-                        .any(|line| line.starts_with("## ") && !line.contains("(Add "))
-                    {
+                    if content.lines().any(|line| line.starts_with("## ")) {
                         return true;
                     }
                 }
