@@ -54,7 +54,7 @@ Also covers the Diagnosis (`loom/src/diagnosis/`) and Map (`loom/src/map/`) modu
 
 ## KnowledgeDir API (fs/knowledge/dir.rs)
 
-KnowledgeFile enum: Architecture, EntryPoints, Patterns, Conventions, Mistakes, Stack, Concerns. Core methods: new(root), exists(), initialize(), read(file), read_all(), append(file, content), generate_summary(), list_files().
+KnowledgeFile enum: Architecture, EntryPoints, Patterns, Conventions, Mistakes, Stack, Concerns. Tier-1 methods: new(root), from_root(path), root(), exists(), has_content(), initialize(), file_path(file), read(file), append(file, content), replace_section(file, heading, body). Tier-2 and index methods: layout(), index_path(), read_index(), write_index(), target_path(target), read_target(target), append_target(target, content), replace_section_target, delete_section_target, set_section_state_target(target, heading, state), list_topics(). There is no read_all, list_files or summary method.
 
 ## Adding New Plan Fields Checklist
 
