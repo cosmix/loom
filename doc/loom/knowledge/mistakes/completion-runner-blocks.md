@@ -1,6 +1,6 @@
 # Completion Runner Blocks
 
-> Runner-env criteria blocks
+> Runner-env blocks, gate fails
 
 ## Criteria the Confined Runner Cannot Run Ended in a Manual Block (2026-10-20)
 
@@ -47,3 +47,32 @@
 **Prevention:** when a boundary's mounts change, re-read every canary's in-sandbox expectations. The host-side assertion is the proof; under `set -e`, a negated command (`! cmd`) asserts nothing.
 
 **Fix:** the in-sandbox writes became `|| true`, the host-side checks stayed, and `CACHE_CANARY`'s negated lines became real checks.
+
+## Acceptance Commands Misread What the Runner Reports (2026-10-20)
+
+**What happened:** four separate misreads cost rounds during PLAN-02-delivery-truth.
+
+- `rg -q -g '!tests/**' read-receipt ../loom-hooks` still matched `loom-hooks/tests/post-tool-use-tool-event.sh`. The glob is applied relative to the search root, so `!tests/**` never excludes `../loom-hooks/tests/`; `'!**/tests/**'` does.
+- A wiring pattern spanning a call's first argument (`let text = worker_query_text(&config.stage`) broke when rustfmt split the call across lines (`worker_brief.rs`).
+- `loom check` exits 0 when an acceptance criterion fails: `execute` returns `Ok(())` after `print_summary` whatever `acceptance_passed` is (`loom/src/commands/verify.rs:138`). Its summary shows `Acceptance: ✗` instead.
+- `loom check` shows only the last 20 lines of a failing criterion's output (`TAIL_LINES`, `loom/src/commands/stage/criterion_output.rs:7`) and persists no full output, so an unfiltered `cargo test` failure cannot be named from it.
+
+**Why:** the runner's report is a rendering of the result, and each one drops something a shell run shows: the exit code, the full output, rustfmt's final layout.
+
+**Prevention:** read the Summary line of `loom check`, never its exit code. Run a long criterion in the shell to name its failing tests. Write `rg` globs as `'!**/dir/**'` and run single-line wiring patterns against rustfmt-formatted output, or anchor them on a token that cannot wrap.
+
+## The Agent Sandbox Fails Part of the Full Gate for Environment Reasons (2026-10-20)
+
+**What happened:** in the agent sandbox the unfiltered `cargo test` gate failed 28 tests. Unix socket binds are denied (`handoff/completion/content_tests.rs:151`, the `completion_replay` daemon socket); `/var/tmp` is read-only for `verify::*` scratch; `TMPDIR=/tmp/claude-1000` trips the `claude`-name precheck in `hooks_subagent_verify_guard` (it passes under `/run/user/1000/loom/scratch/<session>`); and `bounded-stdin.py`'s `codex-forward-guard.sh` case sees stage evidence from an ancestor's `LOOM_*` environment and exits 2. In the completion sandbox `markdownlint` fails on unreadable git metadata and a refused `bunx` download, and the BSD-mode `run-all.sh` suite sits at the 300 s criterion timeout (about 5.5 minutes standalone, unchanged by the stage). `integration-verify` completed with every criterion green except the unfiltered `cargo test`, which needs a Unix socket.
+
+**Why:** the confined runner and the session shell differ in network, sockets, temp directories and ancestor environment, so a criterion can pass in one and fail in the other without a code defect.
+
+**Prevention:** a criterion that fails only because of where completion runs is disputed in one `loom stage dispute-criteria` filing naming each index, never blocked and never weakened. Confirm it by running the same command in the other environment first; a `loom-verifier` run that is green there is the evidence. Plan authors should avoid unfiltered suites that need sockets.
+
+## The Read Tool Cannot Read `$LOOM_SCRATCH_DIR` in a Worktree Session (2026-10-20)
+
+**What happened:** `worktree-file-guard.sh` blocks the Read tool on `/run/user/1000/loom/scratch/session-*` ("resolved path is outside the current worktree"), although Bash may write there.
+
+**Why:** the guard confines file tools to the worktree and the handoff write root; the scratch directory is neither.
+
+**Prevention:** read scratch output with `rg` from Bash, or keep intermediate output inside the worktree where the rules allow it.

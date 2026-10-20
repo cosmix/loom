@@ -222,15 +222,6 @@ do not guarantee, which is narrower than the word "containment" suggests.
 
 → [Context Retrieval and Source Graph](entry-points/context-and-source-graph.md)
 
-## Token Accounting and Receipt Surfaces (2026-09-13)
-
-- `loom/src/commands/usage/mod.rs` — `loom usage` args; providers in `provider_types.rs`, comparison in `comparison.rs`
-- `loom/src/verify/criteria/cache_contract.rs` — certified criterion-cache contract
-- `loom/src/models/forward_receipt.rs`, `loom/src/commands/hook/forward_receipt.rs`, `loom/src/commands/subagents/forward_jobs_wait.rs` — forward receipts and `loom subagents wait`
-- `loom/src/context/read_receipts.rs`, `loom/src/commands/hook/worker_brief.rs`, `loom/src/quota/history.rs` — read receipts, worker briefs, quota history
-
-→ [Token Accounting and Receipts](architecture/token-accounting-and-receipts.md)
-
 ## Owned Waits and Completion Recovery Surfaces (2026-09-14)
 
 - `commands/subagents/wait/` — `lease.rs`, `lease_fs.rs`, `engine.rs`, `identity.rs`, `codex_binding.rs`, `model.rs`, `output.rs`, `mod.rs`: the owned `loom subagents watch/wait --worker ...` implementation. See [Owned Waits](architecture/owned-waits.md).
@@ -243,3 +234,13 @@ do not guarantee, which is narrower than the word "containment" suggests.
 ## Verification v2 Entry Points
 
 Contract, integrity, review and impact gates, the 23 test-runner adapters, `loom project detect`, review harvest and the dispute-kind handlers. Table of paths: [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md). Gate order and owners: [Verification v2 gates](architecture/verification-v2-gates.md).
+
+## Token Accounting and Receipt Surfaces
+
+- `loom/src/commands/usage/mod.rs` — `loom usage` args; providers in `provider_types.rs`, comparison in `comparison.rs`; the `reads` section (`sections/reads.rs`) measures rereads from transcripts
+- `loom/src/verify/criteria/cache_contract.rs` — certified criterion-cache contract
+- `loom/src/models/forward_receipt.rs`, `loom/src/commands/hook/forward_receipt.rs`, `loom/src/commands/subagents/forward_jobs_wait.rs` — forward receipts and `loom subagents wait`
+- `loom/src/commands/hook/worker_brief.rs` (worker briefs filed at issue), `loom/src/commands/hook/pre_compact.rs` (prompt-record reset on compaction), `loom/src/quota/history.rs` — worker briefs, compaction reset, quota history
+- `loom-hooks/_read_ledger.sh`, `loom-hooks/_read_discipline.sh` — sibling-read ledger and read-guard rules (no Rust read-receipt path exists)
+
+→ [Token Accounting and Receipts](architecture/token-accounting-and-receipts.md)

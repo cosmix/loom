@@ -17,9 +17,7 @@ edits — worse than seeing none, because there is no way to tell which half.
 A read is `overlay ∪ (base − overlay's files)`. An overlay entry shadows the base
 entry for the same path **wholesale, never merges with it** — partial merges
 produce a graph that describes no revision that ever existed — and an overlay
-tombstone (`FileCoverage::Deleted`) removes the path from the view entirely. The
-known gap an earlier version of this section recorded, that an overlay could not
-express a deletion so a deleted file kept its base outline, is closed; see
+tombstone (`FileCoverage::Deleted`) removes the path from the view entirely. See
 [Source Graph](source-graph.md) for how tombstones are built and filtered.
 
 `graph_store` owns only the layout, the layering rule and canonical
@@ -108,11 +106,11 @@ already quoted instead of repeating it.
   record, found through `LOOM_SESSION_ID`. The per-session split keeps a fresh
   Claude Code session, whose context window is empty, from inheriting every prior
   session's deliveries and staying silent on topics it never saw.
-  `loom hook pre-compact` (`commands/hook/pre_compact.rs`) rotates that session's
-  read-receipt epoch and deletes just its own prompt record when the context that
-  held the brief is compacted away (A.21). Only `loom-hooks/pre-compact.sh` calls
-  it, and only a stage session's capsule registers that PreCompact hook, so an
-  ordinary session keeps its prompt record across compaction
+  `loom hook pre-compact` (`commands/hook/pre_compact.rs`) deletes just that session's prompt record when the context that
+  held the brief is compacted away (A.21). `loom-hooks/pre-compact.sh` calls it in
+  stage sessions, whose capsule alone registers a PreCompact hook, and
+  `loom-hooks/knowledge-orient.sh` calls it for an ordinary session on SessionStart with
+  source `compact`. The session's spawn record is not reset
   ([Delivery-Proof and Quota-Continuity Defects](../concerns/token-accounting-and-proof-defects.md#delivery-proof-and-quota-continuity-defects)).
 
 ## Brief Delivery, Sanitization and Telemetry

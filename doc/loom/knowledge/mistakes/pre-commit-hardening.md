@@ -71,3 +71,13 @@ newline-enumeration mutant actually fail.
 **Prevention:** Apply an explicit request covering all modified files to existing tracked changes too, reviewing and grouping them before committing.
 
 **Fix:** Review and commit the remaining modified tracked files in logical Conventional Commits while keeping unrelated untracked artifacts separate.
+
+## The Pre-Commit Markdown Autofix Ran Over Every Tracked File and Corrupted Content (2026-10-20)
+
+**What happened:** each `loom stage commit` left six archived plans modified and the tree dirty. The autofix also changed content: `_: &Runtime` became `*: &Runtime` in a code line of `REVIEW-PLAN-container-backend.md`, and `loom-*containers` became `loom-_containers`. The changes were reverted with `git restore`.
+
+**Why:** `loom/.githooks/pre-commit` ran `bunx markdownlint-cli2 --fix` over every tracked `.md`, including `doc/plans/archive`, which the gate's markdownlint excludes, and re-staged only the staged files.
+
+**Prevention:** run an autofixer only on the staged paths and mirror the gate's exclusions, because `markdownlint-cli2` does not apply `.markdownlintignore` to paths named on its command line.
+
+**Fix:** the hook lints only the staged markdown (`loom/.githooks/pre-commit:59-72`).

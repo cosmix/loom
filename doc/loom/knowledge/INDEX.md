@@ -9,12 +9,12 @@
 | File | Description | Lines |
 | --- | --- | --- |
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 249 |
-| [entry-points.md](entry-points.md) | Key files agents should read first | 245 |
+| [entry-points.md](entry-points.md) | Key files agents should read first | 246 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 190 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 240 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 248 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 249 |
 
 ## Tier 2 — Topics
 
@@ -31,14 +31,14 @@
 | [context-retrieval](architecture/context-retrieval.md) | Graphs, lanes, gating, packs | 397 |
 | [context-retrieval-corpus](architecture/context-retrieval-corpus.md) | Stopwording, rescue floor, BM25 | 177 |
 | [context-retrieval-routing](architecture/context-retrieval-routing.md) | Intent routing, neighbours, caveats | 75 |
-| [context-retrieval-state](architecture/context-retrieval-state.md) | Layers, delivery records | 195 |
+| [context-retrieval-state](architecture/context-retrieval-state.md) | Layers, delivery records | 193 |
 | [contract-phase](architecture/contract-phase.md) | Contract session, freeze, handover | 157 |
 | [core-abstractions](architecture/core-abstractions.md) | ExecutionGraph, Stage, Session | 136 |
 | [daemon-launch](architecture/daemon-launch.md) | Re-exec launch, readiness | 65 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) | Relayed signed commits | 157 |
 | [directory-structure](architecture/directory-structure.md) | Module tree, state layout | 50 |
 | [execution-containment](architecture/execution-containment.md) | Command containment, limits | 364 |
-| [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 300 |
+| [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 301 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Digest phase, receipts | 86 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | fs/knowledge, INDEX.md, checks | 263 |
 | [memory-spool](architecture/memory-spool.md) | Read before touching loom memory | 183 |
@@ -51,9 +51,9 @@
 | [remote-control](architecture/remote-control.md) | Capability, preflight, naming | 81 |
 | [security-and-isolation](architecture/security-and-isolation.md) | 4-layer worktree defense | 212 |
 | [signal-generation](architecture/signal-generation.md) | Signal assembly, cache, prefixes | 173 |
-| [skill-catalog](architecture/skill-catalog.md) | Skill roots, catalog | 156 |
+| [skill-catalog](architecture/skill-catalog.md) | Skill roots, catalog | 154 |
 | [source-graph](architecture/source-graph.md) | Source graph contract, limits | 368 |
-| [source-graph-build](architecture/source-graph-build.md) | Layer builder, freshness, lease | 128 |
+| [source-graph-build](architecture/source-graph-build.md) | Builder, freshness, lease | 128 |
 | [source-graph-evaluation](architecture/source-graph-evaluation.md) | Census, windows, evaluator | 68 |
 | [source-graph-resolution](architecture/source-graph-resolution.md) | Binding rules 1-7, path conventions | 123 |
 | [source-graph-view](architecture/source-graph-view.md) | Resolved view, relink equals cold | 76 |
@@ -61,7 +61,7 @@
 | [target-guard](architecture/target-guard.md) | Accepted-tip record, hook, holds | 127 |
 | [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends | 293 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) | Adapters, profiles, quoting | 57 |
-| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, compare, cache | 328 |
+| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, compare, cache | 323 |
 | [token-flow-sources](architecture/token-flow-sources.md) | Token flow sources | 75 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 180 |
 | [web-dashboard](architecture/web-dashboard.md) | status --web server, SPA, streams | 99 |
@@ -114,12 +114,12 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock | 200 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | A .git dir is no proof | 156 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Bug reports; brief flags | 156 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, cargo audit, install.sh | 294 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, audit, install.sh | 294 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented, not forwarded | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader fixed by banning reads | 102 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 110 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) | Broker fallback, dup naming | 225 |
-| [completion-runner-blocks](mistakes/completion-runner-blocks.md) | Runner-env criteria blocks | 49 |
+| [completion-runner-blocks](mistakes/completion-runner-blocks.md) | Runner-env blocks, gate fails | 78 |
 | [completion-runtime](mistakes/completion-runtime.md) | Cargo churn, stall kills | 49 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread | 269 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes, save races | 46 |
@@ -127,7 +127,7 @@
 | [daemon-singleton](mistakes/daemon-singleton.md) | Two daemons shared .loom/work | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | No process may outlive its test | 55 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine drift, acceptance | 381 |
-| [hooks-shell-portability](mistakes/hooks-shell-portability.md) | gawk/bash portability, hook tests | 314 |
+| [hooks-shell-portability](mistakes/hooks-shell-portability.md) | Hook portability, delegate bounds | 344 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How knowledge goes stale | 229 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants live in constructor | 206 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why distill cannot write | 100 |
@@ -140,8 +140,8 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races | 258 |
 | [phantom-merges](mistakes/phantom-merges.md) | merged=true without proof | 308 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 313 |
-| [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard edges | 73 |
-| [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 294 |
+| [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard edges | 83 |
+| [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 304 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync | 367 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | hooks/ dir is sandbox-protected | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers vs work state | 298 |
@@ -154,11 +154,11 @@
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Resolver, cache, wiring, eval | 172 |
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Stages flipped to waiting-for-input | 35 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Frame overflow, read desync | 74 |
-| [store-without-consumer](mistakes/store-without-consumer.md) | Store written, never read | 94 |
-| [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, wave sizing, ownership | 368 |
+| [store-without-consumer](mistakes/store-without-consumer.md) | Store written, never read | 104 |
+| [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, wave sizing, ownership | 376 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Subagent liveness; watch traps | 377 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 284 |
-| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY, stdin | 314 |
+| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY | 314 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) | Sweep: startup, cache, fixtures | 127 |
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass with the bug | 392 |
@@ -188,7 +188,7 @@
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Language limits, open decisions | 79 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Unimplemented reviewer suggestions | 242 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package caches | 17 |
-| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token follow-ups | 209 |
+| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token follow-ups | 236 |
 | [typed-config-values](concerns/typed-config-values.md) | Config read-path gaps | 27 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) | v2 adapters, parsers, known gaps | 140 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Latent issues in status/web | 103 |

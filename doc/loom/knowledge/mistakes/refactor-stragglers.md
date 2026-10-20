@@ -292,3 +292,13 @@ before the parent's import can go.
 **Prevention:** anchor prose rewrites on verified headings and check which earlier files changed after a multi-file patch failure.
 
 **Fix:** inspect the diff, then replace only the remaining exact sections.
+
+## A Plan-Completion Commit Left New Module Files Untracked, So the Base Did Not Compile (2026-10-20)
+
+**What happened:** the delivery-fixes stage found that no `cargo build` worked at its base. Commit `f4a7d4e6` ("chore mark plan complete") rewrote `src/commands/stage/progressive_complete.rs` to declare `pub(super) mod landing;` and `mod outcome;` but never committed `progressive_complete/landing.rs` or `outcome.rs` (E0583). The contract session had validated its contracts against an export of the previous commit, and `loom stage contracts freeze` refused with a misleading "cargo fmt --check fails on the contract files" because rustfmt could not resolve the missing modules.
+
+**Why:** the commit staged specific files, and the new files sat untracked.
+
+**Prevention:** after a commit of specific files, run `git status --short` for untracked sources and `cargo check` at the new tip. When `cargo fmt --check` fails on files that are clean in isolation, look for a missing module before suspecting the files.
+
+**Fix:** commit `7170a07e` added the two files; they are tracked now.

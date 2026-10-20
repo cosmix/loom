@@ -1,6 +1,6 @@
 # Test Concurrency And Fixtures
 
-> Racy tests: fds, ETXTBSY, stdin
+> Racy tests: fds, ETXTBSY
 
 ## An Inherited Descriptor Keeps an flock Alive After the Owner Releases It (2026-08-10)
 

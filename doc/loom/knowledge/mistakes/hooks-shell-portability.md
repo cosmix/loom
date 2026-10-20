@@ -2,7 +2,7 @@
 ---
 # Hooks Shell Portability
 
-> gawk/bash portability, hook tests
+> Hook portability, delegate bounds
 
 ## gawk vs POSIX awk (2026-03-31)
 
@@ -153,7 +153,7 @@ A hook test run from a stage session inherits `LOOM_WORK_DIR`, `LOOM_SESSION_ID`
 ## Reads-Ledger Directories: Mode 0700 on Every Level, and the Owner Can Always `chmod` (2026-09-19)
 
 The out-of-stage reads ledger root `$TMPDIR/loom-reads` is shared with the Rust receipt store, which rejects it
-unless `mode & 077 == 0` (`loom/src/context/read_receipts.rs:369`). When the shell ledger layout made it an
+unless `mode & 077 == 0` (line 369 of the `read_receipts` module file, removed by PLAN-02-delivery-truth). When the shell ledger layout made it an
 intermediate directory, `mkdir -p -m 700 <leaf>` would have created it with umask permissions and silently
 broken out-of-stage receipts, so `_loom_ledger_append` creates the parent 0700 too
 (`loom-hooks/_read_ledger.sh:106`). A test that `chmod 0500`s a ledger directory to make it unwritable fails
@@ -312,3 +312,33 @@ reaches 3.
 **Prevention:** Ancestor-environment regression fixtures must independently prove marker visibility and use a real inspectable parent; keep immutable sandbox enforcement separately covered. Report platform evidence limits explicitly.
 
 **Fix:** The hook verifier uses an observable Python parent, permits an explicit capability skip only when visibility is unavailable, and corrects the misleading helper comment. This does not make protected parent environments observable or replace kernel containment.
+
+## The Pure-Bash `loom_run_bounded` Watchdog Ran the Caller's EXIT Trap (2026-10-20)
+
+**What happened:** the BSD-mode hook suite failed `loom-run-bounded.sh` ("EXIT trap ran 2-3 times") in 17 of 24 parallel runs and 0 of 9 serial runs. Completion criterion 13 failed on it.
+
+**Why:** the fallback ran `( _loom_watchdog ... ) &` and retired it with TERM. A forked bash keeps the caller's EXIT trap and fatal-signal handlers until it resets them, so a TERM landing in that window ran the caller's EXIT trap inside the watchdog. Instrumenting showed every extra run came from the watchdog pid.
+
+**Prevention:** never signal a freshly forked bash to retire it. A handshake over a pipe cannot race a trap; KILL would orphan the `sleep`.
+
+**Fix:** the watchdog is a process substitution on fd 9 that keeps time with `read -t`; the caller writes one line to retire it, and no `sleep` process exists. The line, not EOF, is the signal because bash 3.2 `read -t` returns 1 for both timeout and EOF (`loom-hooks/_bounded.sh:37-61`). Current behaviour: [Portable Shell Helpers](../architecture/hook-system.md#portable-shell-helpers-and-the-subagentstop-ledgers).
+
+## Worker Briefs Vanished Under a Fixed Hook Bound (2026-10-20)
+
+**What happened:** worker briefs never reached subagents in this repository's own stages: 0 of 44 subagents in PLAN-token-flow and guard-integration carried a `loom-worker-brief nonce=` marker, while 541 transcripts in other projects carried one. No hook, test or log reported a failure.
+
+**Why:** `loom hook worker-brief` took 18.3 s on the recorded token-core spawn, and `spawn-guard.sh` killed it at `loom_run_bounded 3`. A killed best-effort delegate is a silent no-op by design, so the spawn proceeded without a brief. The worker query carried the whole stage description, and retrieval time grows with query length: 1.66 s at 2,048 bytes against 13 s at about 15.6 KB (the planning replay with a 12.1 KB envelope took 7.8-9.6 s). Stages with long descriptions therefore always timed out, and short-description projects never did.
+
+**Prevention:** a best-effort hook delegate under a fixed bound fails silently when its cost grows with the repository or its input. Measure the delegate on the largest repository and the longest input before choosing the bound, cap the input the cost scales with, and keep a replay of one recorded payload as the acceptance check.
+
+**Fix:** `WORKER_QUERY_MAX_BYTES` caps the query at 2,048 bytes (`loom/src/commands/hook/worker_brief.rs`), `spawn-guard.sh` gives the delegate 5 s, and the replay now takes 2.06 s on the release binary. Current behaviour: [Worker Brief Lifecycle](../architecture/token-accounting-and-receipts.md#worker-brief-lifecycle).
+
+## A Debug Build Overstated Hook Latency (2026-10-20)
+
+**What happened:** the integration-verify brief told the agent to time the replay with `loom/target/debug/loom` because "the installed binary predates this plan". The installed binary was already built from the plan's merge. The debug replay took 11.9 s against 2.06 s on the release binary.
+
+**Why:** an unoptimized build runs retrieval about 4x slower than the release build hooks execute, and the brief was written before the operator reinstalled.
+
+**Prevention:** time hook delegates with a release build, or with the installed binary after `git diff <installed commit> HEAD -- loom` comes back empty.
+
+**Fix:** the replay was re-timed with the installed release binary; the numbers above are from that run.
