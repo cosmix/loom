@@ -204,7 +204,7 @@ pub(super) fn checkout() -> Checkout {
 fn surfaces_for(checkout: &Checkout) -> ControlSurfaces {
     let scratch = Some(checkout.scratch_root.as_path());
     let home = Some(checkout.home.as_path());
-    ControlSurfaces::new(&checkout.work_dir, scratch, &[], home, &Default::default())
+    ControlSurfaces::new(&checkout.work_dir, scratch, &[], home)
 }
 
 /// Write `kind`'s capsule for a session running in `cwd`.

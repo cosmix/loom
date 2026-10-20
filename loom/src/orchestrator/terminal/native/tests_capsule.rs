@@ -276,8 +276,7 @@ const SHARED_DENY_WRITE: &str = "{R}/.loom {R}/.git/hooks {R}/.git/config {H} \
     ~/.claude/hooks ~/.claude/settings.json ~/.claude/CLAUDE.md ~/.claude.json ~/.loom \
     ~/.claude/projects ~/.claude/agents ~/.claude/skills ~/.claude/commands \
     ~/.claude/loom-skill-catalog ~/.claude/plugins ~/.codex/hooks ~/.codex/hooks.json \
-    ~/.codex/config.toml ~/.codex/AGENTS.md ~/.codex/loom-skill-catalog ~/.codex/prompts \
-    ~/.config/loom/install-roots.toml";
+    ~/.codex/config.toml ~/.codex/AGENTS.md ~/.codex/loom-skill-catalog ~/.codex/prompts";
 const SHARED_EDIT_DENIES: &str = "Edit(/{R}/.loom/**) Edit(.loom/**) \
     Edit(/{R}/.git/hooks/**) Edit(/{R}/.git/config) Edit(/{H}/**) Edit(~/.claude/hooks/**) \
     Edit(~/.claude/settings.json) Edit(~/.claude/CLAUDE.md) Edit(~/.claude.json) \
@@ -285,8 +284,7 @@ const SHARED_EDIT_DENIES: &str = "Edit(/{R}/.loom/**) Edit(.loom/**) \
     Edit(~/.claude/skills/**) Edit(~/.claude/commands/**) \
     Edit(~/.claude/loom-skill-catalog/**) Edit(~/.claude/plugins/**) \
     Edit(~/.codex/hooks/**) Edit(~/.codex/hooks.json) Edit(~/.codex/config.toml) \
-    Edit(~/.codex/AGENTS.md) Edit(~/.codex/loom-skill-catalog/**) Edit(~/.codex/prompts/**) \
-    Edit(~/.config/loom/install-roots.toml)";
+    Edit(~/.codex/AGENTS.md) Edit(~/.codex/loom-skill-catalog/**) Edit(~/.codex/prompts/**)";
 
 /// `[denyWrite, Edit]` for each skill directory loom installs into `~/.codex/skills`.
 fn codex_skill_denies() -> [BTreeSet<String>; 2] {

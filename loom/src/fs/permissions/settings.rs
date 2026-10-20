@@ -67,9 +67,8 @@ fn require_object<'a>(value: &'a mut Value, label: &str) -> Result<&'a mut Map<S
 /// wrapper in the installed hooks directory (`assets::install::claude_hooks_dir`).
 ///
 /// `loom-hooks/codex-forward-guard.sh` accepts this absolute wrapper path, but
-/// Claude Code Bash allow rules do not expand `~`, and a relocated Claude root
-/// is not under `~/.claude` at all. The spelling embeds the home directory or
-/// install root, so it goes in the session capsule settings
+/// Claude Code Bash allow rules do not expand `~`. The spelling embeds the
+/// home directory, so it goes in the session capsule settings
 /// (`capsule_settings`), generated at launch and never committed; it must
 /// never reach the committed `settings.json` (`merge_permissions` removes it).
 ///

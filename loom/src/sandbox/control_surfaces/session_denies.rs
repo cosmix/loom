@@ -12,7 +12,7 @@ use anyhow::{bail, Context, Result};
 use std::fs::DirEntry;
 use std::path::{Path, PathBuf};
 
-use super::{home_surfaces, push_unique, surface_path, AgentRoots, GLOB_CHARS};
+use super::{home_surfaces, push_unique, surface_path, GLOB_CHARS};
 use crate::codex::CODEX_PLUGIN_DATA_GRANT;
 use crate::git::worktree::worktree_admin_dirs;
 
@@ -34,9 +34,6 @@ pub(crate) struct DenyInputs<'a> {
     /// The codex lane's `~/.claude/plugins` entries (`codex_plugin_entries`);
     /// `None` denies the whole directory.
     pub plugin_entries: Option<&'a [String]>,
-    /// The relocated install roots, whose control surfaces are denied by
-    /// absolute path beside the `~/` spellings of `HOME_SURFACES`.
-    pub agent_roots: &'a AgentRoots,
     /// Every root a session could write
     /// (`sandbox::control_surfaces::session_writable_roots`, threaded through
     /// as `HostFacts::writable_roots`): the scratch root, each stage's
@@ -83,9 +80,6 @@ pub(crate) fn session_denies(inputs: &DenyInputs<'_>) -> Result<SessionDenies> {
     let whole_plugins_dir = [format!("{PLUGINS_DIR}/**")];
     for surface in inputs.plugin_entries.unwrap_or(&whole_plugins_dir[..]) {
         denies.home(surface);
-    }
-    for (surface, dir) in inputs.agent_roots.surfaces() {
-        denies.absolute(&surface, dir)?;
     }
     denies.absolute(&repo.join(".git").join("hooks"), true)?;
     denies.absolute(&repo.join(".git").join("config"), false)?;

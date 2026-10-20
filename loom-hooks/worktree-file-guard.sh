@@ -294,15 +294,9 @@ fi
 # worktree containment, so the wider match there is not a boundary widening.
 # The two diverge on purpose; keep both in mind when touching either.
 is_skill_md_path() {
-	local path="$1" home="${HOME:-}" own_root="" raw_root canon_root rest name
-	own_root=$(loom_own_root 2>/dev/null || true)
-	[[ -n "$home" || -n "$own_root" ]] || return 1
-	# This hook tree's own root is a source too, so a custom install root
-	# (LOOM_CLAUDECODE_INSTALL_DIR) keeps its skills readable.
-	local roots=()
-	[[ -z "$home" ]] || roots+=("$home/.claude/loom-skill-catalog" "$home/.claude/skills")
-	[[ -z "$own_root" ]] || roots+=("$own_root/loom-skill-catalog" "$own_root/skills")
-	for raw_root in "${roots[@]}"; do
+	local path="$1" home="${HOME:-}" raw_root canon_root rest name
+	[[ -n "$home" ]] || return 1
+	for raw_root in "$home/.claude/loom-skill-catalog" "$home/.claude/skills"; do
 		canon_root=$(canonical_existing "$raw_root" 2>/dev/null || true)
 		[[ -n "$canon_root" ]] || continue
 		[[ "$path" == "$canon_root"/*/SKILL.md ]] || continue

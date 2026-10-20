@@ -15,45 +15,8 @@ SCRIPT_DIR=""
 if [[ -n "${BASH_SOURCE[0]:-}" ]]; then
 	SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 fi
-# Asset root resolution mirrors `loom install-assets`: the env override, else
-# the root the last install recorded in install-roots.toml, else the default.
-resolve_root() {
-	local override="$1" key="$2" fallback="$3" file="$HOME/.config/loom/install-roots.toml"
-	local line="" value=""
-	if [[ -n "$override" ]]; then
-		case "$override" in
-		/*) printf '%s' "$override"; return 0 ;;
-		*) echo "error: install root override '$override' must be an absolute path" >&2; return 1 ;;
-		esac
-	fi
-	line=$(sed -n "s/^${key}[[:space:]]*=[[:space:]]*\(.*[^[:space:]]\)[[:space:]]*\$/\1/p" \
-		"$file" 2>/dev/null | head -n 1 || true)
-	if [[ -z "$line" ]]; then
-		printf '%s' "$fallback"
-		return 0
-	fi
-	# TOML: a literal '...' string is verbatim; a "..." basic string may carry
-	# escapes, which are refused rather than guessed at.
-	if [[ "$line" =~ ^\"([^\"]*)\"$ ]]; then
-		value="${BASH_REMATCH[1]}"
-		if [[ "$value" == *\\* ]]; then
-			echo "error: $file: $key uses a backslash escape; write the path as a literal '...' string" >&2
-			return 1
-		fi
-	elif [[ "$line" =~ ^\'([^\']*)\'$ ]]; then
-		value="${BASH_REMATCH[1]}"
-	else
-		echo "error: $file: $key must be a quoted string" >&2
-		return 1
-	fi
-	if [[ "$value" != /* ]]; then
-		echo "error: $file: $key '$value' must be an absolute path" >&2
-		return 1
-	fi
-	printf '%s' "$value"
-}
-CLAUDE_DIR="$(resolve_root "${LOOM_CLAUDECODE_INSTALL_DIR:-}" claude_dir "$HOME/.claude")"
-CODEX_DIR="$(resolve_root "${LOOM_CODEX_INSTALL_DIR:-}" codex_dir "$HOME/.codex")"
+CLAUDE_DIR="$HOME/.claude"
+CODEX_DIR="$HOME/.codex"
 
 # Release identity contract: the updater embeds this script and release CI reads it.
 GITHUB_REPO="cosmix/loom"
@@ -90,17 +53,13 @@ print_components() {
 }
 
 print_usage() {
-	cat <<EOF
+	cat <<'EOF'
 Usage: install.sh [--skills core|all]
 
 Options:
-  --skills core  Install core skills to $CLAUDE_DIR/skills and catalog the rest (default)
-  --skills all   Install every loom skill to $CLAUDE_DIR/skills
+  --skills core  Install core skills to ~/.claude/skills and catalog the rest (default)
+  --skills all   Install every loom skill to ~/.claude/skills
   -h, --help     Show this help message
-
-Environment:
-  LOOM_CLAUDECODE_INSTALL_DIR  Claude asset root (default: recorded root, else $HOME/.claude)
-  LOOM_CODEX_INSTALL_DIR       Codex asset root (default: recorded root, else $HOME/.codex)
 EOF
 }
 

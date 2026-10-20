@@ -198,7 +198,7 @@ mod events_tests {
 
 mod generator_tests {
     use super::*;
-    use crate::assets::install::test_env::{InstallRootsEnv, CLAUDE_OVERRIDE};
+    use crate::assets::install::test_env::InstallRootsEnv;
     use serial_test::serial;
 
     #[test]
@@ -213,32 +213,6 @@ mod generator_tests {
         let found = generator::find_hooks_dir();
 
         assert_eq!(found, Some(hooks_dir));
-    }
-
-    /// A relocated Claude root resolves to its own `hooks/loom`, and a stale
-    /// `~/.claude/hooks/loom` left by an earlier default install is ignored.
-    #[test]
-    #[serial]
-    fn find_hooks_dir_follows_a_relocated_claude_root_past_a_stale_default() {
-        let temp = TempDir::new().unwrap();
-        // Canonical, because the resolver canonicalizes (macOS `/var`).
-        let home = temp.path().canonicalize().unwrap();
-        let stale = home.join(".claude/hooks/loom");
-        std::fs::create_dir_all(&stale).unwrap();
-        let custom = home.join("agents/claude");
-        let installed = custom.join("hooks/loom");
-
-        let mut env = InstallRootsEnv::isolate(&home);
-        env.set(CLAUDE_OVERRIDE, &custom);
-        assert_eq!(
-            generator::find_hooks_dir(),
-            None,
-            "a relocated root without hooks must not fall back to {}",
-            stale.display()
-        );
-
-        std::fs::create_dir_all(&installed).unwrap();
-        assert_eq!(generator::find_hooks_dir(), Some(installed));
     }
 
     #[test]

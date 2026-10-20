@@ -33,7 +33,6 @@ fn capsule_in(cwd: &Path, worktree_rooted: bool, allow_write: &[String]) -> Valu
         python3: None,
         python_hooks: &[],
         hidden_sockets: &[],
-        agent_roots: &Default::default(),
     })
     .unwrap()
 }

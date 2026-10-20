@@ -204,18 +204,9 @@ pub enum Commands {
     /// Update loom and everything it installs
     Update,
 
-    /// Install loom's agents, skills, commands, hooks and doctrine files
+    /// Install loom's agents, skills, commands, hooks and doctrine files into
+    /// ~/.claude and ~/.codex
     InstallAssets {
-        /// Claude configuration directory (default: ~/.claude, or the directory
-        /// the last bare install recorded)
-        #[arg(long)]
-        claude_dir: Option<PathBuf>,
-
-        /// Codex configuration directory (default: ~/.codex, or the directory
-        /// the last bare install recorded)
-        #[arg(long)]
-        codex_dir: Option<PathBuf>,
-
         /// Skill layout to apply (default: the layout recorded in loom-install.toml)
         #[arg(long, value_enum)]
         skills: Option<crate::skills::SkillLayout>,

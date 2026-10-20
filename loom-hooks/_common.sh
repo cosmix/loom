@@ -21,25 +21,6 @@ if [[ "${_LOOM_COMMON_LOADED:-}" == "1" ]]; then
 fi
 _LOOM_COMMON_LOADED=1
 
-# loom_own_hooks_dir - Print this hook tree's canonical directory (symlinks
-# resolved). Hooks are root-aware by deriving the Claude root from their own
-# location (<root>/hooks/loom) rather than assuming ~/.claude.
-loom_own_hooks_dir() {
-    (cd "$(dirname "${BASH_SOURCE[0]}")" 2>/dev/null && pwd -P)
-}
-
-# loom_own_root - Print the asset root this hook tree is installed under
-# (the parent of hooks/loom), or fail when the tree is not installed that way
-# (e.g. run straight from a source checkout).
-loom_own_root() {
-    local dir
-    dir=$(loom_own_hooks_dir) || return 1
-    case "$dir" in
-    /*/hooks/loom) printf '%s' "${dir%/hooks/loom}" ;;
-    *) return 1 ;;
-    esac
-}
-
 # strip_embedded_content - Remove heredoc bodies and -m/--message content
 #
 # Phase 1: awk strips heredoc bodies (state machine tracking <<MARKER to ^MARKER$)

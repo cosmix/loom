@@ -163,7 +163,9 @@ fn hook_script_refusals(hooks_dir: Option<&Path>) -> Vec<String> {
                  hooks from this loom build (`loom repair --fix`).",
                 dir.display()
             ),
-            Err(error) => format!("{error:#}. Fix the install root, then `loom install-assets`."),
+            Err(error) => {
+                format!("{error:#}. Set HOME to an absolute path, then `loom install-assets`.")
+            }
         };
         return vec![format!("no verified loom hooks directory: {reason}")];
     };

@@ -3,7 +3,6 @@
 mod claude;
 mod codex;
 mod resolve;
-mod roots;
 #[cfg(test)]
 pub(crate) mod test_env;
 // `pub(in crate::assets)`: the symlink-escape regression test in
@@ -20,11 +19,7 @@ use crate::fs::permissions::install_loom_hooks_to;
 use crate::skills::SkillLayout;
 
 pub(crate) use codex::codex_skill_dir_names;
-pub(crate) use resolve::{absolute_root, canonical_or_lexical, is_default_claude_hooks_dir};
-pub use resolve::{
-    claude_hooks_dir, claude_hooks_dir_text, default_paths, record_roots, try_claude_hooks_dir,
-};
-pub(crate) use roots::RECORD_PATH as INSTALL_ROOTS_RECORD;
+pub use resolve::{claude_hooks_dir, claude_hooks_dir_text, default_paths, try_claude_hooks_dir};
 
 #[derive(Debug)]
 pub struct InstallPaths {

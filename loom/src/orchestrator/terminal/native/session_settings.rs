@@ -117,7 +117,6 @@ pub(super) fn write_session_capsule(request: &CapsuleRequest<'_>) -> Result<Stri
         python3: request.python3,
         python_hooks: request.python_hooks,
         hidden_sockets: &hidden_sockets,
-        agent_roots: request.surfaces.agent_roots(),
     })?;
     let path = write_capsule_file(request.work_dir, request.session_id, &settings)?;
     path.to_str().map(str::to_owned).with_context(|| {
@@ -139,8 +138,8 @@ fn missing_hooks_dir(request: &CapsuleRequest<'_>) -> anyhow::Error {
 }
 
 /// Why no verified hooks directory exists: the one `find_hooks_dir` found
-/// failed verification, none is installed, or the install root does not
-/// resolve (a relative root names its source).
+/// failed verification, none is installed, or the home directory does not
+/// resolve to an absolute path.
 fn missing_hooks_reason() -> String {
     match crate::hooks::find_hooks_dir() {
         Some(dir) => format!(
@@ -184,7 +183,6 @@ fn capsule_denies(
         executable_dirs: &executable_dirs,
         plugin_entries: plugin_entries.as_deref(),
         writable_roots: request.writable_roots,
-        agent_roots: request.surfaces.agent_roots(),
     })
 }
 
@@ -286,9 +284,6 @@ pub(crate) fn cleanup_session_settings(work_dir: &Path, session_id: &str) {
     }
 }
 
-#[cfg(test)]
-#[path = "tests_capsule_agent_roots.rs"]
-mod tests_capsule_agent_roots;
 #[cfg(test)]
 #[path = "tests_capsule_checkout.rs"]
 mod tests_capsule_checkout;

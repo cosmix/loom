@@ -186,11 +186,6 @@ pub fn loom_cmd() -> Command {
     let mut command = Command::new(LOOM);
     clear_relay_env(&mut command);
     command.env("LOOM_HOME", home.path());
-    // A developer shell may relocate the install roots; tests that point
-    // `HOME` at a scratch tree expect `<HOME>/.claude` and `<HOME>/.codex`.
-    command
-        .env_remove("LOOM_CLAUDECODE_INSTALL_DIR")
-        .env_remove("LOOM_CODEX_INSTALL_DIR");
     command
 }
 

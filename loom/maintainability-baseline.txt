@@ -10,7 +10,7 @@
 file src/commands/graph/tests.rs 425
 file src/commands/init/tests.rs 448
 file src/commands/plan/verify.rs 555
-file src/fs/permissions/settings.rs 412
+file src/fs/permissions/settings.rs 411
 file src/fs/safe_fs.rs 1019
 file src/fs/work_dir.rs 429
 file src/fs/work_dir/tests.rs 873
@@ -40,7 +40,7 @@ file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 414
 file tests/integration/plan_verify.rs 1028
 
-function src/cli/dispatch.rs dispatch 73
+function src/cli/dispatch.rs dispatch 69
 function src/commands/clean/mod.rs print_summary 52
 function src/commands/clean/sessions.rs test_clean_sessions_reaps_live_only_when_destroying_state 57
 function src/commands/clean/worktrees.rs clean_worktrees 110

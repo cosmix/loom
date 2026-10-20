@@ -1,14 +1,12 @@
 //! Test-only isolation of the install-root resolver ([`super::default_paths`]).
 //!
-//! The resolver reads `HOME`, `LOOM_CLAUDECODE_INSTALL_DIR` and
-//! `LOOM_CODEX_INSTALL_DIR`, and the developer's shell may export either
-//! override, so a test that depends on the resolved roots pins all three.
-//! Mutating the process environment is only sound under `#[serial]`.
+//! The resolver reads `HOME`, and `find_hooks_dir` reads `LOOM_HOOKS_DIR`,
+//! which the developer's shell may export, so a test that depends on the
+//! resolved roots pins both. Mutating the process environment is only sound
+//! under `#[serial]`.
 
 use std::ffi::OsString;
 use std::path::Path;
-
-pub(crate) use super::resolve::{CLAUDE_OVERRIDE, CODEX_OVERRIDE};
 
 /// Restores every variable it touched to its earlier value (or absence) on
 /// drop, a panic included.
@@ -17,16 +15,13 @@ pub(crate) struct InstallRootsEnv {
 }
 
 impl InstallRootsEnv {
-    /// `HOME` set to `home`; both install-root overrides and `LOOM_HOOKS_DIR`
-    /// unset, so every root resolves to its `<home>/.claude` / `<home>/.codex`
-    /// default until [`Self::set`] relocates one.
+    /// `HOME` set to `home` and `LOOM_HOOKS_DIR` unset, so every root
+    /// resolves to its `<home>/.claude` / `<home>/.codex` default.
     pub(crate) fn isolate(home: &Path) -> Self {
         let mut env = Self { saved: Vec::new() };
         env.set("HOME", home);
-        for key in [CLAUDE_OVERRIDE, CODEX_OVERRIDE, "LOOM_HOOKS_DIR"] {
-            env.save(key);
-            std::env::remove_var(key);
-        }
+        env.save("LOOM_HOOKS_DIR");
+        std::env::remove_var("LOOM_HOOKS_DIR");
         env
     }
 

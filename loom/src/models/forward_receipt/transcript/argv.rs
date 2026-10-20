@@ -3,17 +3,13 @@
 
 use std::path::Path;
 
-use crate::assets::install::is_default_claude_hooks_dir;
-
 /// The wrapper's default spelling, the one the shipped agent definitions use.
 const DEFAULT_FORWARD_WRAPPER: &str = "~/.claude/hooks/loom/codex-forward.sh";
 
-/// `exact_forward_argv_in` against the installed hooks directory and the
-/// operator's home.
+/// `exact_forward_argv_in` against the installed hooks directory.
 pub fn exact_forward_argv(command: &str) -> Option<(String, String)> {
     let hooks_dir = crate::assets::install::claude_hooks_dir();
-    let home = dirs::home_dir();
-    exact_forward_argv_in(command, hooks_dir.as_deref(), home.as_deref())
+    exact_forward_argv_in(command, hooks_dir.as_deref())
 }
 
 /// The `(model, effort)` of `command` when it is exactly
@@ -23,14 +19,13 @@ pub fn exact_forward_argv(command: &str) -> Option<(String, String)> {
 pub(super) fn exact_forward_argv_in(
     command: &str,
     hooks_dir: Option<&Path>,
-    home: Option<&Path>,
 ) -> Option<(String, String)> {
     if !safe_shell_syntax(command) {
         return None;
     }
     let words = shell_words::split(command).ok()?;
     if words.len() != 8
-        || !is_forward_wrapper(command, &words[0], hooks_dir?, home)
+        || !is_forward_wrapper(command, &words[0], hooks_dir?)
         || words[1] != "task"
         || words[2].is_empty()
         || words[3] != "--model"
@@ -45,15 +40,15 @@ pub(super) fn exact_forward_argv_in(
 }
 
 /// Whether `program`, word 0 of `command`, names loom's forwarding wrapper
-/// exactly: the absolute `<hooks_dir>/codex-forward.sh`, or the default
-/// `~/.claude/hooks/loom/codex-forward.sh` spelling when `hooks_dir` is the
-/// default Claude root's and `command` wrote that word bare. bash
-/// tilde-expands only an unquoted, unescaped leading `~`: a quoted or escaped
-/// one runs `./~/.claude/...` from the session's writable working directory.
+/// exactly: the absolute `<hooks_dir>/codex-forward.sh`, or the
+/// `~/.claude/hooks/loom/codex-forward.sh` spelling when `command` wrote that
+/// word bare. bash tilde-expands only an unquoted, unescaped leading `~`: a
+/// quoted or escaped one runs `./~/.claude/...` from the session's writable
+/// working directory.
 /// A `$` anywhere in the word is refused, quoted or not, as the shell guard
 /// refuses it: a literal `$HOME/...` never names the wrapper. No other path
 /// ending in `codex-forward.sh` counts.
-fn is_forward_wrapper(command: &str, program: &str, hooks_dir: &Path, home: Option<&Path>) -> bool {
+fn is_forward_wrapper(command: &str, program: &str, hooks_dir: &Path) -> bool {
     if program.contains('$') {
         return false;
     }
@@ -63,9 +58,7 @@ fn is_forward_wrapper(command: &str, program: &str, hooks_dir: &Path, home: Opti
     // `safe_shell_syntax` refuses every unquoted blank but a space, so the
     // first space-separated run is word 0 as written.
     let written = command.trim_start_matches(' ').split(' ').next();
-    program == DEFAULT_FORWARD_WRAPPER
-        && written == Some(DEFAULT_FORWARD_WRAPPER)
-        && home.is_some_and(|home| is_default_claude_hooks_dir(hooks_dir, home))
+    program == DEFAULT_FORWARD_WRAPPER && written == Some(DEFAULT_FORWARD_WRAPPER)
 }
 
 fn safe_shell_syntax(input: &str) -> bool {

@@ -102,4 +102,18 @@ if [[ ! -L /tmp ]]; then
 	expect_allowed Read "$PROJECT/$SESSION/tasks/job.output"
 fi
 
+# 5. SKILL.md reads are open under ~/.claude/skills/<name>/ and
+# ~/.claude/loom-skill-catalog/<name>/ only (HOME is $TMP).
+SKILLS="$TMP/.claude"
+mkdir -p "$SKILLS/skills/foo" "$SKILLS/loom-skill-catalog/bar" "$SKILLS/skills/a/b" \
+	"$SKILLS/sibling/foo" "$TMP/other/.claude/skills/foo"
+for f in "$SKILLS/skills/foo/SKILL.md" "$SKILLS/loom-skill-catalog/bar/SKILL.md" \
+	"$SKILLS/skills/a/b/SKILL.md" "$SKILLS/sibling/foo/SKILL.md" \
+	"$TMP/other/.claude/skills/foo/SKILL.md"; do printf 'x\n' >"$f"; done
+expect_allowed Read "$SKILLS/skills/foo/SKILL.md"
+expect_allowed Read "$SKILLS/loom-skill-catalog/bar/SKILL.md"
+expect_blocked Read "$SKILLS/skills/a/b/SKILL.md"
+expect_blocked Read "$SKILLS/sibling/foo/SKILL.md"
+expect_blocked Read "$TMP/other/.claude/skills/foo/SKILL.md"
+
 echo "PASS"

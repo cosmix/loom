@@ -10,12 +10,8 @@ use std::path::PathBuf;
 ///
 /// Looks for hooks in:
 /// 1. `$LOOM_HOOKS_DIR` environment variable (for testing/override)
-/// 2. `<claude_dir>/hooks/loom/`, the Claude root `assets::install::default_paths`
-///    resolves (`~/.claude` unless an install override or recorded root moves it)
-///
-/// A relocated root never falls back to `~/.claude/hooks/loom`: a copy left
-/// there by an earlier install is stale, and running it would silently skip
-/// this build's hooks.
+/// 2. `~/.claude/hooks/loom/` (`assets::install::claude_hooks_dir`), the
+///    standard installation location
 ///
 /// Returns None if hooks are not installed. Run `loom init` to install hooks.
 pub fn find_hooks_dir() -> Option<PathBuf> {

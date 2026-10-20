@@ -2,56 +2,20 @@
 
 use anyhow::Result;
 use colored::Colorize;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use crate::assets::install::{
-    absolute_root, default_paths, install_all, record_roots, InstallPaths, InstallReport,
-};
+use crate::assets::install::{default_paths, install_all, InstallReport};
 use crate::skills::SkillLayout;
 
-/// Resolve paths, choose the skill layout, install assets, and print a summary.
-pub fn execute(
-    claude_dir: Option<PathBuf>,
-    codex_dir: Option<PathBuf>,
-    skills: Option<SkillLayout>,
-) -> Result<()> {
-    let refresh_completions = claude_dir.is_none() && codex_dir.is_none();
-    let paths = resolve_paths(claude_dir, codex_dir)?;
+/// Install into `~/.claude` and `~/.codex`, the only roots Claude Code and
+/// Codex read assets from: choose the skill layout, install, and print a
+/// summary.
+pub fn execute(skills: Option<SkillLayout>) -> Result<()> {
+    let paths = default_paths()?;
     let layout = resolve_layout(&paths.claude_dir, skills);
-    let report = install_all(&paths, layout, refresh_completions)?;
-    if refresh_completions {
-        // Only a bare install (no explicit directory flag) redirects a later
-        // `loom update`: an explicit `--claude-dir`/`--codex-dir` install is a
-        // one-off and must not repoint it.
-        record_roots(&paths)?;
-    }
+    let report = install_all(&paths, layout, true)?;
     print_summary(&report);
     Ok(())
-}
-
-/// Fill in whichever directory was not passed explicitly, resolving the
-/// shared default paths at most once rather than once per missing directory.
-/// An explicit directory must be absolute, as every resolved root is.
-fn resolve_paths(claude_dir: Option<PathBuf>, codex_dir: Option<PathBuf>) -> Result<InstallPaths> {
-    let claude_dir = claude_dir
-        .map(|dir| absolute_root(dir, "--claude-dir"))
-        .transpose()?;
-    let codex_dir = codex_dir
-        .map(|dir| absolute_root(dir, "--codex-dir"))
-        .transpose()?;
-    match (claude_dir, codex_dir) {
-        (Some(claude_dir), Some(codex_dir)) => Ok(InstallPaths {
-            claude_dir,
-            codex_dir,
-        }),
-        (claude_dir, codex_dir) => {
-            let defaults = default_paths()?;
-            Ok(InstallPaths {
-                claude_dir: claude_dir.unwrap_or(defaults.claude_dir),
-                codex_dir: codex_dir.unwrap_or(defaults.codex_dir),
-            })
-        }
-    }
 }
 
 /// Select an explicit layout or preserve the layout of an existing tree.

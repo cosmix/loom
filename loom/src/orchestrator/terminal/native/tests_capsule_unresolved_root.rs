@@ -1,20 +1,20 @@
-//! A spawn refused for an install root that does not resolve names the cause.
+//! A spawn refused for a hooks directory that does not resolve names the cause.
 
 use serial_test::serial;
 
 use super::missing_hooks_reason;
-use crate::assets::install::test_env::{InstallRootsEnv, CLAUDE_OVERRIDE};
+use crate::assets::install::test_env::InstallRootsEnv;
 
 #[test]
 #[serial]
-fn a_relative_claude_root_refusal_names_the_variable() {
+fn a_relative_home_refusal_names_home() {
     let home = tempfile::tempdir().unwrap();
     let mut env = InstallRootsEnv::isolate(home.path());
-    env.set(CLAUDE_OVERRIDE, "relative/claude");
+    env.set("HOME", "relative/home");
 
     let reason = missing_hooks_reason();
     assert!(
-        reason.contains(CLAUDE_OVERRIDE) && reason.contains("must be an absolute path"),
+        reason.contains("$HOME") && reason.contains("must be absolute"),
         "{reason}"
     );
 }

@@ -218,28 +218,22 @@ fn home_forward_entry() -> String {
     format!("Bash({}:*)", hooks_dir.join("codex-forward.sh").display())
 }
 
-/// A relocated Claude root moves the capsule's forwarding-wrapper allow entry
-/// with it; the old `<home>/.claude/...` spelling would name a missing script.
+/// The capsule's forwarding-wrapper allow entry names the wrapper under the
+/// home directory's `.claude/hooks/loom`.
 #[test]
 #[serial]
-fn codex_forward_allow_entry_names_the_relocated_hooks_dir() {
-    use crate::assets::install::test_env::{InstallRootsEnv, CLAUDE_OVERRIDE};
+fn codex_forward_allow_entry_names_the_home_hooks_dir() {
+    use crate::assets::install::test_env::InstallRootsEnv;
     use crate::fs::permissions::settings::codex_forward_home_allow_entry;
     let temp = TempDir::new().unwrap();
     // Canonical, because the resolver canonicalizes (macOS `/var`).
     let home = temp.path().canonicalize().unwrap();
-    let mut env = InstallRootsEnv::isolate(&home);
+    let _env = InstallRootsEnv::isolate(&home);
     let default = format!(
         "Bash({}/.claude/hooks/loom/codex-forward.sh:*)",
         home.display()
     );
     assert_eq!(codex_forward_home_allow_entry(), Some(default));
-
-    env.set(CLAUDE_OVERRIDE, "/opt/agents/claude");
-    assert_eq!(
-        codex_forward_home_allow_entry().as_deref(),
-        Some("Bash(/opt/agents/claude/hooks/loom/codex-forward.sh:*)")
-    );
 }
 
 #[test]

@@ -102,7 +102,6 @@ pub(super) fn fixture() -> Fixture {
         // SAFETY: `getuid` has no preconditions and cannot fail.
         uid: unsafe { libc::getuid() },
         home: Some(home.clone()),
-        agent_roots: Default::default(),
     };
     Fixture {
         _temp: temp,
@@ -188,7 +187,6 @@ fn writable_roots(repo: &Path, scratch_root: &Path, home: &Path) -> Vec<PathBuf>
         repo_root: repo,
         allow_write: &[],
         codex_licensed: true,
-        codex_root: None,
         scratch_root,
         home: Some(home),
         tmpdir: std::env::var_os("TMPDIR").map(PathBuf::from).as_deref(),

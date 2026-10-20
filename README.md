@@ -368,32 +368,9 @@ Loom is under active development. Signed binaries are published for Linux x86_64
 curl -fsSL https://raw.githubusercontent.com/cosmix/loom/main/install.sh | bash
 ```
 
-This downloads the signed release binary for your platform to `~/.local/bin/loom`, then installs Loom's agents, skills, commands, hooks, and orchestration rules into the default asset roots, `~/.claude/` and `~/.codex/`, from the assets embedded in that binary. Codex asks you to review new or changed non-managed hooks with `/hooks` before they run.
+This downloads the signed release binary for your platform to `~/.local/bin/loom`, then installs Loom's agents, skills, commands, hooks, and orchestration rules into `~/.claude/` and `~/.codex/` from the assets embedded in that binary. Codex asks you to review new or changed non-managed hooks with `/hooks` before they run.
 
 The installer requires an independently installed `minisign` and verifies the release against its pinned public key before executing it. It validates the staged executable before atomically replacing `loom`, retaining the previous executable at `~/.local/bin/loom.previous` for recovery.
-
-### Custom asset roots
-
-Set either variable to install Loom assets outside the default root:
-
-| Variable | Default asset root |
-| --- | --- |
-| `LOOM_CLAUDECODE_INSTALL_DIR` | `~/.claude` |
-| `LOOM_CODEX_INSTALL_DIR` | `~/.codex` |
-
-A nonempty variable replaces its matching default; an empty variable behaves as unset. Every install that passes neither `--claude-dir` nor `--codex-dir` records the roots it used in `~/.config/loom/install-roots.toml`, and later installs and `loom update` reuse them, so the variables are needed only when choosing or changing a root. For each root, `--claude-dir` or `--codex-dir` takes precedence over its variable, then the recorded root, then the default. An install given either flag does not change the record.
-
-Use absolute paths such as `$HOME/.local/share/loom/claude`:
-
-```bash
-export LOOM_CLAUDECODE_INSTALL_DIR="$HOME/.local/share/loom/claude"
-export LOOM_CODEX_INSTALL_DIR="$HOME/.local/share/loom/codex"
-curl -fsSL https://raw.githubusercontent.com/cosmix/loom/main/install.sh | bash
-```
-
-A later `loom update` in a shell without these variables refreshes the same roots.
-
-This selects Loom's installation destinations only. It does not configure Claude Code or Codex, or relocate Loom's other runtime discovery paths.
 
 ### Build from source
 
@@ -407,7 +384,7 @@ bash ./dev-install.sh
 
 `dev-install.sh` builds an optimized development binary (`cargo build --release`) with LTO disabled, 16 codegen units, incremental compilation, and one Cargo job per available CPU. Set `CARGO_BUILD_JOBS=4 bash ./dev-install.sh` to limit concurrency. These settings apply only to this script; ordinary release builds retain fat LTO and one codegen unit. The first dev install rebuilds affected artifacts; subsequent builds reuse the incremental cache.
 
-It then runs `install.sh`, which installs `loom-*` prefixed agents and skills (non-destructively, preserving user customizations), hooks, and configuration into the default `~/.claude/` root and the CLI binary to `~/.local/bin/loom`. Orchestration rules are written directly to the default `~/.claude/CLAUDE.md` (existing file is backed up). It inherits the custom asset-root variables above when they are exported.
+It then runs `install.sh`, which installs `loom-*` prefixed agents and skills (non-destructively, preserving user customizations), hooks, and configuration into `~/.claude/` and the CLI binary to `~/.local/bin/loom`. Orchestration rules are written directly to `~/.claude/CLAUDE.md` (existing file is backed up).
 
 `install.sh` takes an optional `--skills core|all` flag (default `core`): `core` installs a small set of always-loaded core skills to `~/.claude/skills/` and catalogs the rest under `~/.claude/loom-skill-catalog/`, loaded on demand; `all` installs every loom skill directly to `~/.claude/skills/`.
 
@@ -426,7 +403,7 @@ It then runs `install.sh`, which installs `loom-*` prefixed agents and skills (n
 
 ### What Gets Installed
 
-| Default location                       | Contents                                                                          |
+| Location                               | Contents                                                                          |
 | -------------------------------------- | --------------------------------------------------------------------------------- |
 | `~/.claude/agents/loom-*.md`           | 5 specialized subagents (per-item, non-destructive)                               |
 | `~/.claude/skills/loom-*/`             | 10 core domain knowledge modules, always loaded (per-item, non-destructive)       |
@@ -596,7 +573,7 @@ loom target status                                                           # A
 loom target accept --to <commit>                                             # Accept the target's current tip after review; refuses inside a loom session
 loom update
 loom config [-k <key> [<value>] | --list | --print]                          # Read or write ~/.loom/config.toml; bare in a terminal it opens the settings screen (see Configuration)
-loom install-assets [--claude-dir <path>] [--codex-dir <path>] [--skills core|all]  # Install loom's agents, skills, commands, hooks and doctrine files; see Install script below for what --skills core|all installs where
+loom install-assets [--skills core|all]  # Install loom's agents, skills, commands, hooks and doctrine files into ~/.claude and ~/.codex; see Install script below for what --skills core|all installs where
 loom completions [<shell>] [--install] [--migrate]
 ```
 

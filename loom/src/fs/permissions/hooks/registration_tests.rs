@@ -89,16 +89,18 @@ fn home() -> Option<&'static std::path::Path> {
     Some(std::path::Path::new("/home/op"))
 }
 
+/// A `~/.claude` symlinked into a dotfiles tree resolves the hooks directory
+/// to its target; a command spelled through that target is still loom's.
 #[test]
-fn a_command_under_a_relocated_hooks_dir_is_a_loom_hook() {
-    let dir = std::path::Path::new("/opt/agents/claude/hooks/loom");
+fn a_command_under_the_resolved_hooks_dir_is_a_loom_hook() {
+    let dir = std::path::Path::new("/srv/dotfiles/claude/hooks/loom");
     assert!(is_loom_hook_in(
-        "/opt/agents/claude/hooks/loom/commit-guard.sh",
+        "/srv/dotfiles/claude/hooks/loom/commit-guard.sh",
         Some(dir),
         home()
     ));
     assert!(!is_loom_hook_in(
-        "/opt/agents/claude/hooks/loom-extra/commit-guard.sh",
+        "/srv/dotfiles/claude/hooks/loom-extra/commit-guard.sh",
         Some(dir),
         home()
     ));
@@ -106,7 +108,7 @@ fn a_command_under_a_relocated_hooks_dir_is_a_loom_hook() {
 
 #[test]
 fn default_spellings_match_and_a_foreign_hooks_loom_suffix_does_not() {
-    let dir = Some(std::path::Path::new("/opt/agents/claude/hooks/loom"));
+    let dir = Some(std::path::Path::new("/srv/dotfiles/claude/hooks/loom"));
     for default in [
         "~/.claude/hooks/loom/commit-guard.sh",
         "$HOME/.claude/hooks/loom/commit-guard.sh",

@@ -235,9 +235,9 @@ fn remove_duplicate_hooks(hooks_arr: &mut Vec<Value>) {
     });
 }
 
-/// Check if a hook command points to a loom hook, in the installed hooks
-/// directory (`assets::install::claude_hooks_dir`) or any spelling of the
-/// default `~/.claude/hooks/loom/`. `pub(super)`: also used by
+/// Check if a hook command points to a loom hook: any spelling of
+/// `~/.claude/hooks/loom/`, its symlink-resolved form
+/// (`assets::install::claude_hooks_dir`) included. `pub(super)`: also used by
 /// [`super::drift`] to scope obsolete-registration detection to loom's own hooks.
 pub(super) fn is_loom_hook(command: &str) -> bool {
     is_loom_hook_in(

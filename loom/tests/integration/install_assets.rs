@@ -1,36 +1,31 @@
 //! `loom install-assets` is the function every entry point that places
 //! loom's assets routes through - `install.sh` and `loom update` both call
 //! the CLI - but until now it was only ever exercised through a shell stub.
-//! This drives the real CLI end to end into scratch directories.
+//! This drives the real CLI end to end into a scratch home directory.
 
 use std::fs;
 use std::io::Write;
+use std::path::Path;
 use std::process::{Command, Stdio};
 use tempfile::TempDir;
 
 use super::helpers::loom_cmd;
 
-#[path = "install_assets/custom_roots.rs"]
-mod custom_roots;
-
 #[test]
-fn install_assets_places_a_real_tree_under_explicit_directories() {
+fn install_assets_places_a_real_tree_under_the_home_roots() {
     let temp = TempDir::new().unwrap();
-    let claude_dir = temp.path().join("claude");
-    let codex_dir = temp.path().join("codex");
+    let home = temp.path().join("home");
+    fs::create_dir_all(&home).unwrap();
 
-    // Scrub ambient install-root overrides even though both flags are explicit,
-    // and keep HOME private so later changes cannot redirect either omitted or
-    // auxiliary writes into the operator's real configuration trees.
+    // Claude Code's and Codex's own root overrides do not move loom's install:
+    // it always targets `~/.claude` and `~/.codex`.
     let output = loom_cmd()
-        .env("HOME", temp.path())
-        .env_remove("LOOM_CLAUDECODE_INSTALL_DIR")
-        .env_remove("LOOM_CODEX_INSTALL_DIR")
+        .env("HOME", &home)
+        .env("CLAUDE_CONFIG_DIR", temp.path().join("native-claude"))
+        .env("CODEX_HOME", temp.path().join("native-codex"))
+        .env_remove("XDG_CONFIG_HOME")
+        .env_remove("XDG_DATA_HOME")
         .arg("install-assets")
-        .arg("--claude-dir")
-        .arg(&claude_dir)
-        .arg("--codex-dir")
-        .arg(&codex_dir)
         .arg("--skills")
         .arg("core")
         .output()
@@ -43,6 +38,12 @@ fn install_assets_places_a_real_tree_under_explicit_directories() {
         String::from_utf8_lossy(&output.stderr)
     );
 
+    assert_claude_tree(&home.join(".claude"));
+    assert_codex_tree(&home.join(".codex"));
+    assert_overrides_and_completions_untouched(temp.path(), &home);
+}
+
+fn assert_claude_tree(claude_dir: &Path) {
     // `loom-usage` is a core skill, so it must be resident under `skills/`.
     assert!(
         claude_dir.join("skills/loom-usage/SKILL.md").is_file(),
@@ -55,11 +56,47 @@ fn install_assets_places_a_real_tree_under_explicit_directories() {
             .is_file(),
         "expected a catalogued non-core skill under loom-skill-catalog/"
     );
-    assert!(claude_dir.join("CLAUDE.md").is_file());
-    assert!(codex_dir.join("AGENTS.md").is_file());
+    for path in [
+        claude_dir.join("CLAUDE.md"),
+        claude_dir.join("agents/loom-code-reviewer.md"),
+        claude_dir.join("hooks/loom/post-tool-use.sh"),
+    ] {
+        assert!(
+            path.is_file(),
+            "expected installed asset {}",
+            path.display()
+        );
+    }
 
     let install_toml = fs::read_to_string(claude_dir.join("loom-install.toml")).unwrap();
     assert!(install_toml.contains("skills = \"core\""), "{install_toml}");
+}
+
+fn assert_codex_tree(codex_dir: &Path) {
+    for path in [codex_dir.join("AGENTS.md"), codex_dir.join("hooks.json")] {
+        assert!(
+            path.is_file(),
+            "expected installed asset {}",
+            path.display()
+        );
+    }
+}
+
+fn assert_overrides_and_completions_untouched(temp: &Path, home: &Path) {
+    // A bare install only refreshes completions that already exist.
+    for untouched in [
+        temp.join("native-claude"),
+        temp.join("native-codex"),
+        home.join(".local/share/bash-completion/completions/loom"),
+        home.join(".zfunc/_loom"),
+        home.join(".config/fish/completions/loom.fish"),
+    ] {
+        assert!(
+            !untouched.exists(),
+            "{} must stay absent",
+            untouched.display()
+        );
+    }
 }
 
 // `curl -fsSL .../install.sh | bash` feeds the script on stdin, so bash never
@@ -81,8 +118,6 @@ fn install_sh_runs_when_piped_on_stdin() {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
-        .env_remove("LOOM_CLAUDECODE_INSTALL_DIR")
-        .env_remove("LOOM_CODEX_INSTALL_DIR")
         .spawn()
         .expect("failed to spawn bash");
 

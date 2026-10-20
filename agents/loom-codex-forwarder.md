@@ -27,7 +27,7 @@ The prompt you receive carries, in order:
 
 ## The single Bash call
 
-Invoke Loom's installed forwarding wrapper directly, using the wrapper path named in the brief or in a guard block message (`~/.claude/hooks/loom/codex-forward.sh` for a default install). Strip the sentinel and the
+Invoke Loom's installed forwarding wrapper directly. Strip the sentinel and the
 `--model`/`--effort` and `--unit-id` lines from the forwarded task text — they are instructions to
 you, not part of the task. Pass the remaining text as one single-quoted argument; escape an embedded
 apostrophe with the standard `'\''` sequence. Quoted newlines and shell metacharacters remain literal.

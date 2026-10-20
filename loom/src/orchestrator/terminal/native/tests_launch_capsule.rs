@@ -84,7 +84,6 @@ fn fixture() -> Fixture {
         scratch_root,
         uid: current_uid(),
         home: None,
-        agent_roots: Default::default(),
     };
     Fixture {
         temp,

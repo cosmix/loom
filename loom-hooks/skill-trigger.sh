@@ -117,7 +117,7 @@ def _ledger_record(path, names):
 
 
 def _agent_root():
-    # Respect explicit installation roots, including --codex-dir installs.
+    # The tree this copy is installed in: ~/.claude and ~/.codex each hold one.
     hook_dir = os.path.dirname(os.path.abspath(__file__))
     if os.path.basename(hook_dir) == "loom" and os.path.basename(os.path.dirname(hook_dir)) == "hooks":
         return os.path.dirname(os.path.dirname(hook_dir))

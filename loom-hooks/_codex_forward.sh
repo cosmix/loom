@@ -8,33 +8,27 @@ _LOOM_CODEX_FORWARD_LOADED=1
 
 source "$(dirname "${BASH_SOURCE[0]}")/_common.sh"
 
-# loom_forward_wrapper_path - Print the one absolute wrapper path this hook tree
-# authorizes: <own hooks dir>/codex-forward.sh. Matching is always exact.
-loom_forward_wrapper_path() {
-	local dir
-	dir=$(loom_own_hooks_dir) || return 1
-	printf '%s/codex-forward.sh' "$dir"
-}
-
-# loom_is_forward_wrapper <word> - Succeed when <word> is exactly the absolute
-# wrapper path, or - only when this hook tree IS $HOME/.claude/hooks/loom - the
-# ~/.claude spelling or the expanded $HOME path. The absolute spellings do not
-# depend on shell expansion, so any quoting is fine. The tilde spelling needs
+# loom_is_forward_wrapper <word> <plain> - Succeed when <word> names the
+# installed wrapper, $HOME/.claude/hooks/loom/codex-forward.sh: the ~/.claude
+# spelling, the expanded $HOME path, or that path with symlinks resolved (the
+# spelling the capsule's allow rule uses). The absolute spellings do not depend
+# on shell expansion, so any quoting is fine. The tilde spelling needs
 # <plain> = 1 (PARSED_WORD0_PLAIN): bash tilde-expands only a fully unquoted,
 # unescaped word, and '~/x', "~/x" or \~/x would run ./~/x from the worktree.
 # parse_shell_words rejects every unquoted or double-quoted `$`, so a literal
 # $HOME spelling never reaches here; only its expanded absolute path can.
 loom_is_forward_wrapper() {
-	local word="$1" plain="${2:-0}" wrapper home_hooks
-	wrapper=$(loom_forward_wrapper_path) || return 1
-	[[ "$word" == "$wrapper" ]] && return 0
-	[[ -n "${HOME:-}" ]] || return 1
-	home_hooks=$(cd "$HOME/.claude/hooks/loom" 2>/dev/null && pwd -P) || return 1
-	[[ "$home_hooks/codex-forward.sh" == "$wrapper" ]] || return 1
+	local word="$1" plain="${2:-0}" home_hooks
+	# An empty or relative HOME (HOME=. makes ./.claude/... "the wrapper") fails closed.
+	[[ "${HOME:-}" == /* ]] || return 1
 	# The literal tilde is the spelling the agent types; the shell never expands it here.
 	# shellcheck disable=SC2088
-	[[ "$word" == "$HOME/.claude/hooks/loom/codex-forward.sh" ||
-		("$plain" == 1 && "$word" == "~/.claude/hooks/loom/codex-forward.sh") ]]
+	if [[ "$word" == "$HOME/.claude/hooks/loom/codex-forward.sh" ||
+		("$plain" == 1 && "$word" == "~/.claude/hooks/loom/codex-forward.sh") ]]; then
+		return 0
+	fi
+	home_hooks=$(cd "$HOME/.claude/hooks/loom" 2>/dev/null && pwd -P) || return 1
+	[[ "$word" == "$home_hooks/codex-forward.sh" ]]
 }
 
 # parse_shell_words <command> - Fill PARSED_WORDS; PARSED_WORD0_PLAIN is 1 when

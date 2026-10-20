@@ -109,10 +109,9 @@ fn push_codex_spawn_rules(content: &mut String) {
         "  boilerplate/scaffolding/simple unit tests. Give every logical Codex unit a stable unique id\n",
         "  matching `[A-Za-z0-9][A-Za-z0-9._-]{{0,63}}` and state `--unit-id <unit>` in the prompt. The forwarder\n",
         "  makes ONE foreground Bash call with timeout 600000 ms and exact shape\n",
-        "  `{FORWARD_WRAPPER} task '<task>' --model <m> --effort <e> --write --unit-id <unit>`.\n",
+        "  `~/.claude/hooks/loom/codex-forward.sh task '<task>' --model <m> --effort <e> --write --unit-id <unit>`.\n",
         "  It passes the unit verbatim and never supplies `--invocation-id`; the guard injects it.\n",
     ),
-        FORWARD_WRAPPER = forward_wrapper_spelling(),
         CODEX_IMPLEMENTER_MODEL_TERRA = CODEX_IMPLEMENTER_MODEL_TERRA,
         CODEX_IMPLEMENTER_EFFORT = CODEX_IMPLEMENTER_EFFORT,
         CODEX_IMPLEMENTER_MODEL_LUNA = CODEX_IMPLEMENTER_MODEL_LUNA,
@@ -129,23 +128,6 @@ fn push_codex_spawn_rules(content: &mut String) {
 }
 
 /// Push the navigation-kit, prompt-writing, and fan-out rules.
-/// The forward wrapper as the forward guard accepts it: the `~` spelling for
-/// the default Claude root, the canonical absolute path under a relocated one
-/// (`assets::install::claude_hooks_dir`).
-fn forward_wrapper_spelling() -> String {
-    let home = dirs::home_dir();
-    match crate::assets::install::claude_hooks_dir() {
-        Some(dir)
-            if !home.as_deref().is_some_and(|home| {
-                crate::assets::install::is_default_claude_hooks_dir(&dir, home)
-            }) =>
-        {
-            format!("{}/codex-forward.sh", dir.display())
-        }
-        _ => "~/.claude/hooks/loom/codex-forward.sh".to_string(),
-    }
-}
-
 fn push_codex_prompt_rules(content: &mut String) {
     content.push_str(
         "- CODEX ALREADY CARRIES A NAVIGATION KIT: the wrapper prepends `loom map --find-all`,\n\

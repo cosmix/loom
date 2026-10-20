@@ -72,16 +72,18 @@ This session was classified as a loom stage by: $LOOM_STAGE_EVIDENCE" ;;
 	# The message must never stop the exit 2: under set -e a failure exits 1,
 	# which Claude Code treats as a non-blocking error that lets the call run.
 	# Hence printf over a here-document (bash 3.2 writes one to a temp file a
-	# confined hook may be unable to create), and `|| true`.
-	local wrapper_path
-	wrapper_path=$(loom_forward_wrapper_path 2>/dev/null) || wrapper_path="<hooks dir>/codex-forward.sh"
+	# confined hook may be unable to create), an optional HOME, and `|| true`.
 	{
 		printf '%s\n' '⛔ BLOCKED: codex forwarding policy could not authorize this tool call.' '' \
 			"Reason: $reason$evidence_note" '' \
-			'The forwarding shim may make one direct Bash call of this form, with the wrapper' \
-			'path written out in full and expanded exactly as shown (a literal $HOME is rejected,' \
-			'because an unquoted $ is a forbidden shell metacharacter):' \
-			"  $wrapper_path task '<prompt>' --model gpt-5.6-terra --effort xhigh --write [--unit-id <unit>]"
+			'The forwarding shim may make one direct Bash call of this form, the ~ unquoted:' \
+			"  ~/.claude/hooks/loom/codex-forward.sh task '<prompt>' --model gpt-5.6-terra --effort xhigh --write [--unit-id <unit>]"
+		if [[ -n "${HOME:-}" ]]; then
+			printf '%s\n' 'The wrapper path may instead be written out in full as' \
+				"  $HOME/.claude/hooks/loom/codex-forward.sh" \
+				'Write that path expanded, exactly as shown - a literal $HOME is rejected,' \
+				'because an unquoted $ is a forbidden shell metacharacter.'
+		fi
 		printf '%s\n' '' \
 			'Shell operators, pipelines, redirections, command substitution, and any other' \
 			'tool are forbidden. If forwarding fails, report the error and stop.'

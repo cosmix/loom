@@ -152,8 +152,7 @@ read_frontmatter_model() {
 }
 
 # resolve_defined_tier <agent-type> - Resolve the model tier from the agent's
-# definition file (<cwd>/.claude/agents/<type>.md, then this hook tree's own
-# <root>/agents/, then ~/.claude/agents/),
+# definition file (<cwd>/.claude/agents/<type>.md, then ~/.claude/agents/),
 # else a built-in table. On success sets RESOLVED_TIER (the model) and
 # RESOLVE_SOURCE ("definition" or "table") and returns 0; on failure both are
 # "" and it returns 1, and callers must not warn: the tier cannot be known.
@@ -179,15 +178,11 @@ resolve_defined_tier() {
 		RESOLVE_SOURCE="definition"
 		return 0
 	fi
-	local own_root agents_dir
-	own_root=$(loom_own_root 2>/dev/null || true)
-	for agents_dir in ${own_root:+"$own_root/agents"} "${HOME:-}/.claude/agents"; do
-		if val=$(read_frontmatter_model "$agents_dir/${agent_type}.md" 2>/dev/null) && [[ -n "$val" ]]; then
-			RESOLVED_TIER="$val"
-			RESOLVE_SOURCE="definition"
-			return 0
-		fi
-	done
+	if val=$(read_frontmatter_model "${HOME:-}/.claude/agents/${agent_type}.md" 2>/dev/null) && [[ -n "$val" ]]; then
+		RESOLVED_TIER="$val"
+		RESOLVE_SOURCE="definition"
+		return 0
+	fi
 
 	case "$agent_type" in
 	Explore | claude-code-guide)

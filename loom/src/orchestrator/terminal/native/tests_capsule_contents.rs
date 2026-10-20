@@ -5,7 +5,7 @@ use super::contents::{capsule_settings, CapsuleInputs};
 use crate::models::session::SessionType;
 use crate::models::stage::{Implementer, Implementers, Stage, StageType};
 use crate::plan::schema::PermissionMode;
-use crate::sandbox::control_surfaces::{session_denies, AgentRoots, DenyInputs, SessionDenies};
+use crate::sandbox::control_surfaces::{session_denies, DenyInputs, SessionDenies};
 use crate::sandbox::MergedSandboxConfig;
 use serde_json::{json, Value};
 use serial_test::serial;
@@ -52,7 +52,6 @@ pub(super) fn denies(worktree_rooted: bool, codex: bool) -> SessionDenies {
         executable_dirs: &[PathBuf::from(HOOKS_DIR)],
         plugin_entries: codex.then_some(entries.as_slice()),
         writable_roots: &[],
-        agent_roots: &AgentRoots::default(),
     })
     .unwrap()
 }
@@ -84,7 +83,6 @@ fn try_build(
         python3: None,
         python_hooks: &[],
         hidden_sockets: &[],
-        agent_roots: &Default::default(),
     })
 }
 

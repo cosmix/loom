@@ -354,11 +354,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
         Commands::Request { command } => dispatch_request(command),
         Commands::Review { ai_summary } => review::execute(ai_summary),
         Commands::Update => self_update::execute(),
-        Commands::InstallAssets {
-            claude_dir,
-            codex_dir,
-            skills,
-        } => install_assets::execute(claude_dir, codex_dir, skills),
+        Commands::InstallAssets { skills } => install_assets::execute(skills),
         Commands::Config(args) => config::execute(args),
         Commands::Clean {
             all,

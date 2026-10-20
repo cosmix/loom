@@ -5,10 +5,9 @@ unset LOOM_STAGE_ID LOOM_SESSION_ID LOOM_WORK_DIR LOOM_SESSION_TYPE LOOM_MAIN_AG
 d=$(mktemp -d "${TMPDIR:-/tmp}/cfw-quoting.XXXXXX") && [[ -n "$d" ]]
 trap 'rm -rf "$d"' EXIT
 
-HOME_DIR="$d/home"
-source "$(dirname "$0")/_stage_hooks.sh"
-HOOK="$(stage_hooks "$HOME_DIR/.claude")/codex-forward-guard.sh"
+HOOK="$(cd "$(dirname "$0")/.." && pwd)/codex-forward-guard.sh"
 FORWARD_LIB="$(dirname "$HOOK")/_codex_forward.sh"
+HOME_DIR="$d/home"
 WORK_DIR="$d/work"
 WORKSPACE="$d/workspace"
 STAGE_ID=quote-stage
@@ -33,21 +32,18 @@ payload_for() {
 }
 
 run_guard() {
-	local input="$1" home="$2" active="$3" hook
+	local input="$1" home="$2" active="$3"
 	CODE=0
-	# Each HOME gets its own staged hook tree: the wrapper spelling is only
-	# authorized when the hooks live under that HOME.
-	hook="$(stage_hooks "$home/.claude")/codex-forward-guard.sh"
 	if [[ "$active" == 1 ]]; then
 		printf '%s' "$input" | HOME="$home" LOOM_WORK_DIR="$WORK_DIR" \
 			LOOM_STAGE_ID="$STAGE_ID" LOOM_SESSION_ID="$LOOM_SESSION" \
-			bash "$hook" >"$d/stdout" 2>"$d/stderr" || CODE=$?
+			bash "$HOOK" >"$d/stdout" 2>"$d/stderr" || CODE=$?
 	else
 		# Stage evidence without a resolvable stage: the guard enforces and
 		# blocks on the incomplete identity. With no evidence at all it would
 		# have no policy to apply and would allow the call.
 		printf '%s' "$input" | HOME="$home" LOOM_SESSION_ID="$LOOM_SESSION" \
-			bash "$hook" >"$d/stdout" 2>"$d/stderr" || CODE=$?
+			bash "$HOOK" >"$d/stdout" 2>"$d/stderr" || CODE=$?
 	fi
 }
 
@@ -123,5 +119,54 @@ mkdir -p "$NO_COMPANION_HOME"
 run_guard "$OUTSIDE_INPUT" "$NO_COMPANION_HOME" 1
 [[ $CODE -eq 2 && ! -s "$d/stdout" ]]
 rg -qF 'supported codex companion 1.0.6 is missing or unsafe' "$d/stderr"
+
+# loom_is_forward_wrapper authorizes exactly $HOME/.claude/hooks/loom/codex-forward.sh.
+# The literal tilde is the spelling under test.
+# shellcheck disable=SC2088
+check_wrapper() {
+	local home="$1" word="$2" want="$3" plain="${4:-1}" got=0
+	(HOME="$home" bash -c 'source "$1"; loom_is_forward_wrapper "$2" "$3"' _ "$FORWARD_LIB" "$word" "$plain") || got=$?
+	[[ "$got" == "$want" ]] || {
+		printf '%s\n' "FAIL: wrapper '$word' (HOME=$home plain=$plain): exit $got, want $want"
+		exit 1
+	}
+}
+# parse_word0 <want> <command> - parse the command, then judge word 0.
+parse_word0() {
+	local want="$1" cmd="$2" got=0
+	(HOME="$HOME_DIR" bash -c 'source "$1"; parse_shell_words "$2" || exit 1
+		loom_is_forward_wrapper "${PARSED_WORDS[0]}" "$PARSED_WORD0_PLAIN"' _ "$FORWARD_LIB" "$cmd") >/dev/null 2>&1 || got=$?
+	[[ "$got" == "$want" ]] || {
+		printf '%s\n' "FAIL: word0 command '$cmd': exit $got, want $want"
+		exit 1
+	}
+}
+WRAPPER_REL=.claude/hooks/loom/codex-forward.sh
+check_wrapper "$HOME_DIR" "~/$WRAPPER_REL" 0
+check_wrapper "$HOME_DIR" "$HOME_DIR/$WRAPPER_REL" 0
+check_wrapper "$HOME_DIR" "~/$WRAPPER_REL" 1 0
+check_wrapper "$HOME_DIR" "$HOME_DIR/$WRAPPER_REL/" 1
+check_wrapper "$HOME_DIR" "$HOME_DIR/.claude/hooks/loom/../loom/codex-forward.sh" 1
+check_wrapper "$HOME_DIR" "$d/other/$WRAPPER_REL" 1
+check_wrapper "$HOME_DIR" "\$HOME/$WRAPPER_REL" 1
+# An empty or relative HOME never authorizes ./.claude/... from the worktree.
+check_wrapper "" "~/$WRAPPER_REL" 1
+check_wrapper . "./$WRAPPER_REL" 1
+check_wrapper . "~/$WRAPPER_REL" 1
+check_wrapper relative/home "relative/home/$WRAPPER_REL" 1
+
+ARGS=' task x --model gpt-5.6-terra --effort high --write'
+parse_word0 0 "~/$WRAPPER_REL$ARGS"
+parse_word0 1 "'~/$WRAPPER_REL'$ARGS"
+parse_word0 1 "\"~/$WRAPPER_REL\"$ARGS"
+parse_word0 1 "\\~/$WRAPPER_REL$ARGS"
+parse_word0 1 "~/$WRAPPER_REL'' $ARGS"
+# shellcheck disable=SC2016
+parse_word0 1 "\$HOME/$WRAPPER_REL$ARGS"
+parse_word0 1 "'\$HOME/$WRAPPER_REL'$ARGS"
+parse_word0 1 "\\\$HOME/$WRAPPER_REL$ARGS"
+parse_word0 0 "$HOME_DIR/$WRAPPER_REL$ARGS"
+parse_word0 0 "'$HOME_DIR/$WRAPPER_REL'$ARGS"
+parse_word0 0 "\"$HOME_DIR/$WRAPPER_REL\"$ARGS"
 
 printf '%s\n' PASS
