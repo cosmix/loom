@@ -130,18 +130,24 @@ impl Orchestrator {
         let Ok(stage) = self.load_stage(stage_id) else {
             return false;
         };
-        let survived = stage.completed_commit.as_deref().is_some_and(|commit| {
-            crate::git::branch::is_ancestor_of(commit, branch, &self.config.repo_root)
-                .unwrap_or(false)
-        });
-        if !survived {
-            let reason = format!(
+        let reason = match stage.completed_commit.as_deref() {
+            None => format!(
+                "no completion commit is recorded; no merge was attempted: to land {branch} \
+                 as it stands, run loom stage human-review {stage_id} --force-complete"
+            ),
+            Some(commit)
+                if crate::git::branch::is_ancestor_of(commit, branch, &self.config.repo_root)
+                    .unwrap_or(false) =>
+            {
+                return false;
+            }
+            Some(_) => format!(
                 "the stage's recorded commit is not in {branch}, or ancestry cannot be verified; \
                  no merge was attempted: inspect {branch}"
-            );
-            self.route_merge_stage_to_review(stage_id, reason, None);
-        }
-        !survived
+            ),
+        };
+        self.route_merge_stage_to_review(stage_id, reason, None);
+        true
     }
 
     /// Returns true — after stopping any resolver running for `stage_id` and

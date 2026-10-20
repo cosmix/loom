@@ -1,13 +1,17 @@
 //! Human review response for a stage
 //!
 //! Allows a human to respond to a stage flagged for review via dispute-criteria.
-//! Actions: approve (queue a fresh session), force-complete (skip acceptance), reject (block).
+//! Actions: approve (queue a fresh session), force-complete (skip acceptance and
+//! land the branch tip), reject (block).
 
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
-use super::progressive_complete::complete_with_merge;
+use super::progressive_complete::{
+    branch_work, complete_with_merge, report_recorded_commit, BranchWork,
+};
 use crate::git::{worktree::find_repo_root_from_cwd, MergeGate};
+use crate::handoff::completion::content::VerificationSnapshot;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::adjudication::close_open_disputes;
 use crate::orchestrator::coherence::live_worker_sessions;
@@ -73,7 +77,7 @@ fn show_review_status(stage_id: &str, stage: &Stage) -> Result<()> {
     println!();
     println!("Available actions:");
     println!("  loom stage human-review {stage_id} --approve         Queue a fresh session with fresh fix attempts");
-    println!("  loom stage human-review {stage_id} --force-complete  Skip acceptance and mark as completed");
+    println!("  loom stage human-review {stage_id} --force-complete  Skip acceptance, record the branch tip and merge it");
     println!(
         "  loom stage human-review {stage_id} --reject <reason> Block the stage with a reason"
     );
@@ -134,6 +138,11 @@ fn refuse_live_worker(stage_id: &str, work_dir: &Path) -> Result<()> {
 
 /// Force-complete the review: skip acceptance and finish the stage's normal landing path.
 ///
+/// The operator authorizes the stage branch as it stands: its committed tip
+/// is recorded as the completion commit, replacing any earlier one, before
+/// the merge. A missing or zero-commit branch is refused, and so is one whose
+/// commits beyond the target cannot be counted, since the merge bypass skips
+/// the zero-commit guard and would report a merge of nothing.
 /// Merge runs BEFORE the Completed transition, so a conflict takes the legal
 /// Executing→MergeConflict/MergeBlocked edges. No operator proof guards this command: `human-review` is not relayed and
 /// writes the stage file itself. Its authority rests on every session capsule
@@ -144,22 +153,18 @@ fn handle_force_complete(stage_id: &str, work_dir: &Path) -> Result<()> {
         "WARNING: Force-completing stage '{stage_id}' without acceptance criteria verification."
     );
 
-    // Go to Executing directly (try_approve_review targets Queued) so every
-    // merge outcome is a legal transition: Executing → MergeConflict |
-    // MergeBlocked | Completed (complete_with_merge runs try_complete(None)).
-    let mut stage = update_stage(stage_id, work_dir, |stage| {
-        stage.try_transition(StageStatus::Executing)?;
-        stage.review_reason = None;
-        Ok(())
-    })?;
-
     // Knowledge bootstrap writes in the main checkout and has no stage branch.
-    if stage.stage_type == StageType::Knowledge {
+    let reviewed = load_stage(stage_id, work_dir)?;
+    if reviewed.stage_type == StageType::Knowledge {
+        let stage = enter_executing(stage_id, work_dir, None)?;
         return super::knowledge_complete::finish_knowledge_stage(&stage, None, None, work_dir);
     }
 
     let cwd = std::env::current_dir().context("Failed to get current directory")?;
     let repo_root = find_repo_root_from_cwd(&cwd).unwrap_or_else(|| cwd.clone());
+    let tip = authorized_tip(&reviewed, &repo_root, work_dir)?;
+    let mut stage = enter_executing(stage_id, work_dir, Some(&tip))?;
+    report_recorded_commit(stage_id, reviewed.completed_commit.as_deref(), &tip.commit);
 
     // Progressive merge + completion: Success moves Executing → Completed and
     // triggers dependents; Conflict/Blocked move to the merge state and save,
@@ -169,6 +174,54 @@ fn handle_force_complete(stage_id: &str, work_dir: &Path) -> Result<()> {
     println!("Stage '{stage_id}' force-completed and merged successfully.");
 
     Ok(())
+}
+
+/// The committed branch tip the operator authorizes for landing. The merge
+/// that follows bypasses the zero-commit guard, so a branch whose commits
+/// beyond the target cannot be counted is refused.
+fn authorized_tip(
+    stage: &Stage,
+    repo_root: &Path,
+    work_dir: &Path,
+) -> Result<VerificationSnapshot> {
+    let stage_id = &stage.id;
+    match branch_work(stage, repo_root, work_dir)? {
+        BranchWork::Committed(snapshot) => Ok(snapshot),
+        BranchWork::Missing { branch } => bail!(
+            "Refusing to force-complete stage '{stage_id}': branch '{branch}' does not \
+             exist, so there is nothing to land."
+        ),
+        BranchWork::Empty { branch, target } => bail!(
+            "Refusing to force-complete stage '{stage_id}': branch '{branch}' has zero \
+             commits beyond '{target}', so merging it would land nothing. If its work \
+             is already in '{target}', run `loom stage complete {stage_id} --force-unsafe \
+             --assume-merged`; otherwise reject or approve the review."
+        ),
+        BranchWork::Unconfirmed { error, .. } => Err(error.context(format!(
+            "Refusing to force-complete stage '{stage_id}': cannot confirm the branch \
+             has commits to land"
+        ))),
+    }
+}
+
+/// Move the reviewed stage to Executing (try_approve_review targets Queued)
+/// so every merge outcome is a legal transition: Executing → MergeConflict |
+/// MergeBlocked | Completed (complete_with_merge runs try_complete(None)).
+/// A recorded tip must still match the branch under the stage lock.
+fn enter_executing(
+    stage_id: &str,
+    work_dir: &Path,
+    tip: Option<&VerificationSnapshot>,
+) -> Result<Stage> {
+    update_stage(stage_id, work_dir, |stage| {
+        if let Some(tip) = tip {
+            tip.validate_locked(stage, work_dir)?;
+            stage.completed_commit = Some(tip.commit.clone());
+        }
+        stage.try_transition(StageStatus::Executing)?;
+        stage.review_reason = None;
+        Ok(())
+    })
 }
 
 /// Reject the review: block the stage with a reason.

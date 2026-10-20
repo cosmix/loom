@@ -17,8 +17,12 @@ use crate::verify::transitions::update_stage;
 
 mod finish;
 mod guard;
+mod operator_commit;
 mod report;
 pub(super) use guard::{route_zero_commit_to_review, zero_commit_review_reason};
+pub(super) use operator_commit::{
+    branch_work, report_recorded_commit, warn_unconfirmed, BranchWork,
+};
 use report::report_merge_hold;
 pub(super) use report::{note_merge_stash, report_merge_block, route_held_to_review};
 

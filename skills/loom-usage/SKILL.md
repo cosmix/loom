@@ -378,7 +378,11 @@ loom stage dispute-criteria <stage-id> --field wiring --criterion-index <n> --re
 # A need only a person can meet (credential, host install, network domain or path)
 loom stage block <stage-id> "<what is needed and why>"
 
-# Force complete (use sparingly)
+# Force complete a stage awaiting review (use sparingly): records the
+# committed branch tip and merges it; refuses a zero-commit branch
+loom stage human-review <stage-id> --force-complete
+
+# Mark complete after merging the branch by hand (its commit must be in the target)
 loom stage complete <stage-id> --force-unsafe --assume-merged
 ```
 

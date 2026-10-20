@@ -1,3 +1,4 @@
+use super::super::progressive_complete::{branch_work, warn_unconfirmed, BranchWork};
 use super::*;
 use crate::handoff::completion::content::VerificationSnapshot;
 
@@ -81,43 +82,39 @@ fn complete_without_verification(stage: &mut Stage, stage_id: &str, work_dir: &P
 
 // An explicit operator skip still names the exact committed content authorized
 // for landing. Automatic recovery must never manufacture this authorization.
+// The stage then lands through the daemon's merge gate, which counts commits
+// again, so an unconfirmed ahead-count is reported and the tip still recorded.
 fn no_verify_snapshot(
     stage: &Stage,
     repo_root: &Path,
     work_dir: &Path,
 ) -> Result<Option<VerificationSnapshot>> {
     let stage_id = &stage.id;
-    let target_branch = crate::fs::resolve_target_branch_from_config(work_dir, repo_root)?;
-    let stage_branch = crate::git::branch::branch_name_for_stage(stage_id);
-    let branch_exists =
-        crate::git::branch::branch_exists(&stage_branch, repo_root).unwrap_or(false);
-    if branch_exists {
-        match crate::git::branch::commits_ahead_of(&stage_branch, &target_branch, repo_root) {
-            Ok(0) => {
-                anyhow::bail!(
-                    "Refusing to --no-verify-complete stage '{stage_id}': branch \
-                     '{stage_branch}' has zero commits beyond '{target_branch}'. \
-                     The agent never committed any work for this stage, so \
-                     completing now would create a phantom merge (merged=true \
-                     against the unchanged base). Either redo the stage so the \
-                     agent commits real work, run `loom stage reset --kill-session \
-                     {stage_id}` to kill the session and re-queue, or use \
-                     `loom stage complete --force-unsafe` if you genuinely intend \
-                     to mark an empty stage complete."
-                );
-            }
-            Ok(_) => {}
-            Err(e) => {
-                eprintln!(
-                    "Warning: failed to count commits ahead of '{target_branch}' on \
-                     '{stage_branch}': {e}. Proceeding with --no-verify completion."
-                );
-            }
+    match branch_work(stage, repo_root, work_dir)? {
+        BranchWork::Missing { branch } => {
+            eprintln!(
+                "Warning: branch '{branch}' does not exist; completing stage '{stage_id}' \
+                 with no commit recorded for landing."
+            );
+            Ok(None)
         }
+        BranchWork::Committed(snapshot) => Ok(Some(snapshot)),
+        BranchWork::Unconfirmed { snapshot, error } => {
+            warn_unconfirmed(&error);
+            Ok(Some(snapshot))
+        }
+        BranchWork::Empty { branch, target } => anyhow::bail!(
+            "Refusing to --no-verify-complete stage '{stage_id}': branch \
+             '{branch}' has zero commits beyond '{target}'. \
+             The agent never committed any work for this stage, so \
+             completing now would create a phantom merge (merged=true \
+             against the unchanged base). Either redo the stage so the \
+             agent commits real work, run `loom stage reset --kill-session \
+             {stage_id}` to kill the session and re-queue, or, if the stage \
+             is intentionally empty, run `loom stage complete {stage_id} \
+             --force-unsafe --assume-merged`."
+        ),
     }
-    branch_exists
-        .then(|| VerificationSnapshot::capture(stage, work_dir))
-        .transpose()
 }
 
 fn emit_control_completion_evidence(
@@ -139,6 +136,9 @@ pub(super) fn complete_stage(
     control_session: Option<String>,
     work_dir: &Path,
 ) -> Result<()> {
+    if force_unsafe && no_verify {
+        eprintln!("Note: --force-unsafe runs no checks, so --no-verify adds nothing.");
+    }
     if super::complete_dispatch::dispatch_route(
         &mut stage,
         force_unsafe,

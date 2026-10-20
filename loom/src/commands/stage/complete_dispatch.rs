@@ -1,3 +1,4 @@
+use super::complete_force::{unmerged_tip, ForcedLanding};
 use super::*;
 
 pub(super) fn dispatch_route(
@@ -31,17 +32,15 @@ fn apply_route(
     repo_root: &Path,
     work_dir: &Path,
 ) -> Result<()> {
-    let stage_id = stage.id.clone();
     match route {
         CompleteConflictRoute::Proceed => {}
         CompleteConflictRoute::ForceUnsafeAssumeMergedVerified { derived_commit } => {
-            if let Some(commit) = derived_commit {
-                stage.completed_commit = Some(commit);
-            }
-            handle_force_unsafe_completion(stage.clone(), &stage_id, true, work_dir)?;
+            stage.completed_commit = derived_commit.or(stage.completed_commit.take());
+            handle_force_unsafe_completion(stage, ForcedLanding::AssumeMerged, work_dir)?;
         }
         CompleteConflictRoute::ForceUnsafeAllowedStaleFlag => {
-            handle_force_unsafe_completion(stage.clone(), &stage_id, false, work_dir)?;
+            let landing = ForcedLanding::Unmerged(unmerged_tip(stage, repo_root, work_dir));
+            handle_force_unsafe_completion(stage, landing, work_dir)?;
         }
         CompleteConflictRoute::DaemonManaged { stage_id } => {
             print_daemon_managed_notice(&stage_id);

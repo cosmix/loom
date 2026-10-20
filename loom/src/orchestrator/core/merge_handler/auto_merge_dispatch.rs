@@ -68,7 +68,10 @@ impl Orchestrator {
         if stage.completed_commit.is_none() {
             self.route_to_human_review(
                 stage_id,
-                "completion proof is missing; rerun loom stage complete before landing".into(),
+                format!(
+                    "completion proof is missing; rerun loom stage complete, or land the branch \
+                     as it stands with loom stage human-review {stage_id} --force-complete"
+                ),
                 None,
             );
             return true;

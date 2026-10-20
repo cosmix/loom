@@ -200,6 +200,26 @@ fn a_clean_merge_with_no_proof_of_the_recorded_commit_goes_to_review() {
     assert!(reason.contains("inspect loom/unproven"), "{reason}");
 }
 
+/// A stage that never recorded a completion commit is told so, with the
+/// operator command that records the branch tip and lands it.
+#[test]
+fn a_clean_merge_without_a_recorded_commit_names_the_operator_remedy() {
+    let (repo, _head) = repo_with_clean_stage_branch("unrecorded");
+    let mut orchestrator = orchestrator_with_conflict(repo.path(), "unrecorded");
+
+    let reason = review_reason_after_one_pass(&mut orchestrator, "unrecorded");
+
+    assert!(
+        reason.contains("no completion commit is recorded"),
+        "{reason}"
+    );
+    assert!(
+        reason.contains("loom stage human-review unrecorded --force-complete"),
+        "{reason}"
+    );
+    assert!(!reason.contains("recorded commit is not in"), "{reason}");
+}
+
 /// A stale tracked session of `session_type`, created `age_secs` ago.
 fn stale_session(session_type: SessionType, age_secs: i64) -> Session {
     let mut session = Session::new();

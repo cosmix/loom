@@ -64,6 +64,10 @@ fn assert_zero_commit_refusal(result: Result<()>, work_dir: &Path) {
         err.contains("zero commits"),
         "expected error to explain zero-commits cause, got: {err}"
     );
+    assert!(
+        err.contains("loom stage complete test-stage --force-unsafe --assume-merged"),
+        "an intentionally empty stage needs the escape hatch that completes it, got: {err}"
+    );
     let stage = load_stage("test-stage", work_dir).unwrap();
     assert_eq!(
         stage.status,
@@ -288,6 +292,8 @@ fn verified_evidence_record_has_broker_boundaries() {
 mod authorization;
 #[path = "complete_knowledge_tests.rs"]
 mod knowledge;
+#[path = "operator_landing_tests.rs"]
+pub(in crate::commands::stage) mod operator_landing;
 
 fn register_stage_worktree(repo: &Path, stage: &mut crate::models::stage::Stage, advance: bool) {
     let path = repo.join(".worktrees").join(&stage.id);

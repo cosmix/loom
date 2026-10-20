@@ -7,7 +7,7 @@ mod session;
 mod state;
 
 #[cfg(test)]
-mod complete;
+pub(super) mod complete;
 
 #[cfg(test)]
 mod complete_router;

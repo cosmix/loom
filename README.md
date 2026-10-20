@@ -489,6 +489,8 @@ loom stage admin-proof [stage-id] [--daemon-stop] [--no-verify] [--force-unsafe]
 loom stage amend <stage-id> --field acceptance|wiring|wiring-tests|contracts --op replace|insert|delete --index N [--value <yaml>] [--reason <text>]
 ```
 
+`loom stage human-review <stage-id> --force-complete` lands a stage parked in `NeedsHumanReview` without acceptance checks: it records the committed tip of `loom/<stage-id>` as the completion commit, replacing any earlier one, and merges it; it refuses a missing or zero-commit branch. `loom stage complete --force-unsafe` without `--assume-merged` records the same tip and leaves the stage unmerged for the daemon's auto-merge; `--no-verify` adds nothing to it.
+
 `loom stage dispute-criteria` is the sanctioned way for an agent to challenge a criterion it believes is wrong or impossible, instead of quietly weakening it. The daemon writes `request.md` and moves the stage to `NeedsAdjudication`; the verdict is daemon-written and never authored by the agent. `loom stage adjudicate` records that verdict from the adjudication session; `loom stage admin-proof` mints an operator's proof for a trusted broker; `loom stage amend` is the audited, operator-facing way to edit a stage's `acceptance`, `wiring`, or `wiring_tests` array directly. See [Disputes, Adjudication, and Amendments](#disputes-adjudication-and-amendments).
 
 ### Stage Outputs

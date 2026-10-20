@@ -34,17 +34,22 @@ pub enum StageCommands {
         #[arg(long, value_parser = clap_id_validator)]
         session: Option<String>,
 
-        /// Skip acceptance criteria verification
+        /// Skip acceptance criteria verification; the committed branch tip is
+        /// recorded for landing. Refuses a branch with zero commits.
+        /// Redundant with --force-unsafe, which runs no checks either.
         #[arg(long)]
         no_verify: bool,
 
         /// UNSAFE: Force completion from any state, bypassing state machine validation.
+        /// Records the committed branch tip, if any, so the daemon's auto-merge
+        /// can land it; a zero-commit branch records nothing.
         /// WARNING: This can corrupt dependency tracking. Use only for recovery.
         #[arg(long = "force-unsafe")]
         force_unsafe: bool,
 
-        /// When using --force-unsafe, also mark stage as merged (assumes manual merge was done).
-        /// Without this, dependent stages will NOT be triggered.
+        /// When using --force-unsafe, also mark stage as merged (assumes manual merge was done;
+        /// the stage's commit must be in the target). Without this, dependents are triggered
+        /// only once the recorded commit lands.
         #[arg(long = "assume-merged", requires = "force_unsafe")]
         assume_merged: bool,
 
@@ -217,7 +222,8 @@ pub enum StageCommands {
         #[arg(long, group = "action")]
         approve: bool,
 
-        /// Force-complete: skip acceptance criteria and mark as completed
+        /// Force-complete: skip acceptance criteria, record the committed branch tip
+        /// and merge it. Refuses a missing or zero-commit branch.
         #[arg(long, group = "action")]
         force_complete: bool,
 
