@@ -86,8 +86,10 @@ fn header_line(entry: &AttentionEntry, width: u16) -> Line<'static> {
 /// a `StageSummary`, so it is used directly rather than split on newlines.
 fn attention_detail(entry: &AttentionEntry) -> String {
     entry
-        .review_reason
-        .clone()
+        .reason
+        .as_deref()
+        .and_then(|reason| reason.lines().next())
+        .map(str::to_owned)
         .or_else(|| {
             entry
                 .failure_type
@@ -111,11 +113,11 @@ fn detail_line(text: &str, width: u16) -> Line<'static> {
 /// [`MAX_NOTE_LINES`] lines, the last ending in `…` when the note goes on. A
 /// note alone is prose, so it gets no command arrow.
 fn note_lines(entry: &AttentionEntry, width: u16) -> Vec<Line<'static>> {
-    let Some(note) = entry.note.as_deref() else {
+    let Some(note) = entry.text_note() else {
         return Vec::new();
     };
     let room = usize::from(width).saturating_sub(DETAIL_INDENT.len());
-    let mut wrapped: Vec<String> = wrap_text(note, room)
+    let mut wrapped: Vec<String> = wrap_text(&note, room)
         .into_iter()
         .filter(|line| !line.is_empty())
         .collect();

@@ -58,6 +58,7 @@ macro_rules! stage {
             close_reason: None,
             acceptance: vec![],
             terminal_history_session: None,
+            block_detail: Default::default(),
         }
     };
 }

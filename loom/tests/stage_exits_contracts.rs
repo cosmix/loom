@@ -57,6 +57,7 @@ fn blocked_summary(id: &str, info: Option<FailureInfo>, reason: Option<String>) 
         close_reason: reason,
         acceptance: vec![],
         terminal_history_session: None,
+        block_detail: Default::default(),
     }
 }
 

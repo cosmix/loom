@@ -4,6 +4,7 @@ import { Link } from "react-router";
 
 import type { Attention, StageStatus } from "@/api/schema";
 import { HazardPanel } from "@/aurora-ui/feedback/HazardPanel";
+import { BlockedFacts } from "@/components/attention-blocked";
 import { CopyCommand } from "@/components/copy-command";
 import { stageHref } from "@/components/stage-href";
 import { toneClass } from "@/components/state-badge";
@@ -130,15 +131,20 @@ export function OperatorGuidance({ entry }: { entry: Attention }) {
   );
 }
 
-/// The evidence, the note, the command, the other options, the review
+/// The evidence, the reason and note, what a block adds (failing criteria,
+/// disputes, terminal history), the command, the other options, the review
 /// choices, and the cleanup warning: what the card and the stage dialog both
-/// show under their strips. The note is prose, so it never gets a copy button,
-/// and it is shown whole: it may be a long reason with its own line breaks.
+/// show under their strips. The reason and note are prose, so they never get a
+/// copy button, and they are shown whole: a reason may have its own line breaks.
 export function AttentionBody({ entry }: { entry: Attention }) {
   return (
     <>
       {entry.evidence.length > 0 && <Evidence lines={entry.evidence} />}
+      {entry.reason && !entry.note?.includes(entry.reason) && (
+        <p className="break-words whitespace-pre-wrap">{entry.reason}</p>
+      )}
       {entry.note && <p className="break-words whitespace-pre-wrap">{entry.note}</p>}
+      <BlockedFacts entry={entry} />
       {(entry.command || entry.has_human_review_choices) && (
         <div className="flex flex-col gap-1.5 text-foreground">
           {entry.command && (
@@ -186,11 +192,12 @@ export function attentionCounts(entry: Attention): string | null {
   return parts.length > 0 ? parts.join(" · ") : null;
 }
 
-/// `review_reason`, else the failure label, else the cleanup warning — the
-/// TUI's `attention_detail`, with the adjudication numbers appended.
+/// The reason's first line, else the failure label, else the cleanup warning —
+/// the TUI's `attention_detail`, with the adjudication numbers appended.
 export function attentionDetail(entry: Attention): string | null {
   const parts: string[] = [];
-  if (entry.review_reason) parts.push(entry.review_reason);
+  const headline = entry.reason?.split("\n", 1)[0];
+  if (headline) parts.push(headline);
   else if (entry.failure_type) parts.push(entry.failure_label ?? failureLabel(entry.failure_type));
   else if (entry.cleanup_warning) parts.push(entry.cleanup_warning);
   const counts = attentionCounts(entry);

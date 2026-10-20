@@ -12,15 +12,17 @@ use crate::plan::parser::extract_plan_name;
 use crate::verify::transitions::list_all_stages;
 
 use super::completion_view::collect_completion_view;
-use super::heartbeat_facts::heartbeat_facts;
+use super::criteria_results::failing_criteria;
+use super::disputes::blocked_disputes;
+use super::heartbeat_facts::{heartbeat_facts, HeartbeatFacts};
 use super::merge_note::{merge_block_text, stash_warning};
 use super::resolver::{merge_resolver_facts, speaking_for};
 use super::sanitize::{flow_is_fresh, sanitize_stage_summary, sanitize_token_flow};
 use super::stopped::{blocked_acceptance, blocked_close_reason, terminal_history_session};
 use super::timing::{elapsed_secs_live, execution_secs_live};
 use super::{
-    execution_models_for_stage, CompletionBlockerSummary, MergeSummary, ProgressSummary,
-    SessionExitReason, StageSummary, StatusData,
+    execution_models_for_stage, BlockDetail, CompletionBlockerSummary, MergeSummary,
+    ProgressSummary, SessionExitReason, StageSummary, StatusData,
 };
 
 #[cfg(test)]
@@ -99,6 +101,7 @@ struct SessionFacts<'a> {
     merge_resolver_attempts: Option<u32>,
     /// The assigned session's exit reason and the stage's completion blocker.
     completion_view: (Option<SessionExitReason>, Option<CompletionBlockerSummary>),
+    heartbeat: HeartbeatFacts,
 }
 
 fn session_facts<'a>(
@@ -136,6 +139,7 @@ fn session_facts<'a>(
         merge_resolver_session,
         merge_resolver_attempts,
         completion_view: collect_completion_view(stage, assigned, work_dir),
+        heartbeat: heartbeat_facts(stage, session, work_dir),
     }
 }
 
@@ -158,7 +162,6 @@ fn resolved_model(stage: &Stage, work_dir: &WorkDir) -> String {
 /// Build a StageSummary from a Stage and optional associated Session.
 fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) -> StageSummary {
     let (facts, now) = (session_facts(stage, sessions, work_dir), Utc::now());
-    let heartbeat = heartbeat_facts(stage, facts.session, work_dir);
     StageSummary {
         id: stage.id.clone(),
         name: stage.name.clone(),
@@ -173,10 +176,10 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         base_branch: stage.base_branch.clone(),
         base_merged_from: stage.base_merged_from.clone(),
         failure_info: stage.failure_info.clone(),
-        activity_status: heartbeat.activity_status,
-        last_tool: heartbeat.last_tool,
-        last_activity: heartbeat.last_activity,
-        staleness_secs: heartbeat.staleness_secs,
+        activity_status: facts.heartbeat.activity_status,
+        last_tool: facts.heartbeat.last_tool,
+        last_activity: facts.heartbeat.last_activity,
+        staleness_secs: facts.heartbeat.staleness_secs,
         context_ceiling_tokens: facts.context_ceiling_tokens,
         review_reason: stage.review_reason.clone(),
         review_notes: stage.review_reason.clone(),
@@ -195,7 +198,7 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         incoherence: facts.incoherence,
         execution_models: execution_models_for_stage(work_dir, &stage.id),
         dispute_count: stage.dispute_count,
-        judge_heartbeat_secs: heartbeat.judge_heartbeat_secs,
+        judge_heartbeat_secs: facts.heartbeat.judge_heartbeat_secs,
         session_backend: facts.session.map(|s| s.backend),
         outgoing_session_exit_reason: facts.completion_view.0,
         completion_blocker: facts.completion_view.1,
@@ -204,6 +207,15 @@ fn build_stage_summary(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) 
         close_reason: blocked_close_reason(stage),
         acceptance: blocked_acceptance(stage),
         terminal_history_session: terminal_history_session(stage, sessions, work_dir),
+        block_detail: block_detail(stage, sessions, work_dir),
+    }
+}
+
+/// What a blocked stage's panel needs beyond its summary line.
+fn block_detail(stage: &Stage, sessions: &[Session], work_dir: &WorkDir) -> BlockDetail {
+    BlockDetail {
+        failing_criteria: failing_criteria(stage, sessions, work_dir),
+        disputes: blocked_disputes(stage, work_dir),
     }
 }
 

@@ -83,6 +83,7 @@ pub(super) fn make_stage(id: &str, status: StageStatus) -> StageSummary {
         close_reason: None,
         acceptance: vec![],
         terminal_history_session: None,
+        block_detail: Default::default(),
     }
 }
 

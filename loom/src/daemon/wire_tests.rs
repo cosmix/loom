@@ -121,6 +121,7 @@ fn stage_summary(id: &str, status: StageStatus) -> StageSummary {
         close_reason: None,
         acceptance: vec![],
         terminal_history_session: None,
+        block_detail: Default::default(),
     }
 }
 
@@ -276,7 +277,7 @@ fn oversized_credential_and_frames_are_rejected_on_write() {
         stage_id: "stage".to_string(),
         session_id: "session-1".to_string(),
         field: crate::models::dispute::CriterionField::Acceptance,
-        criterion_index: 0,
+        criterion_indices: vec![0],
         reason: "x".repeat(MAX_REQUEST_BYTES),
         evidence_commit: None,
         failure_output: None,
@@ -296,7 +297,7 @@ fn request_debug_output_redacts_credentials_and_evidence() {
         stage_id: "stage".to_string(),
         session_id: "session-1".to_string(),
         field: crate::models::dispute::CriterionField::Acceptance,
-        criterion_index: 0,
+        criterion_indices: vec![0],
         reason: "private reason".to_string(),
         evidence_commit: None,
         failure_output: Some("private output".to_string()),
@@ -386,7 +387,6 @@ fn orchestration_complete_round_trip() {
     };
     let mut buffer = Vec::new();
     write_message(&mut buffer, &response).unwrap();
-
     let decoded: Response = read_message(&mut Cursor::new(buffer)).unwrap();
 
     match decoded {

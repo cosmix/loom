@@ -3,7 +3,7 @@ use std::path::Path;
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
-use crate::commands::status::data::StatusData;
+use crate::commands::status::data::{DisputeLine, FailingCriterion, StatusData};
 use crate::commands::status::render::attention_model::{Alternative, AttentionEntry};
 use crate::commands::status::render::failure_label;
 use crate::daemon::{DaemonServer, DaemonStatus};
@@ -92,6 +92,18 @@ pub struct WebAttention {
     pub evidence: Vec<String>,
     /// Human review explanation, when present.
     pub review_reason: Option<String>,
+    /// Why the stage needs the operator now: a block's close reason or a
+    /// review's reason. Shown in the card header; `None` when neither applies.
+    pub reason: Option<String>,
+    /// The acceptance commands a blocked stage offers to drop or replace, in
+    /// `loom stage amend --index` order (from 0).
+    pub acceptance: Vec<String>,
+    /// Acceptance criteria that failed in the stage's last completion attempt.
+    pub failing_criteria: Vec<FailingCriterion>,
+    /// Disputes already ruled on for a blocked stage, oldest first.
+    pub disputes: Vec<DisputeLine>,
+    /// Whether the stage left a terminal history the dashboard can open.
+    pub terminal_history: bool,
     /// Post-merge cleanup warning, when present.
     pub cleanup_warning: Option<String>,
     /// Whether the attention item has human review choices.
@@ -142,6 +154,11 @@ impl From<&AttentionEntry> for WebAttention {
                 .map(str::to_owned),
             evidence: entry.evidence.clone(),
             review_reason: entry.review_reason.clone(),
+            reason: entry.reason.clone(),
+            acceptance: entry.acceptance.clone(),
+            failing_criteria: entry.failing_criteria.clone(),
+            disputes: entry.disputes.clone(),
+            terminal_history: entry.terminal_history.is_some(),
             cleanup_warning: entry.cleanup_warning.clone(),
             has_human_review_choices: entry.has_human_review_choices,
             dispute_count: entry.dispute_count,

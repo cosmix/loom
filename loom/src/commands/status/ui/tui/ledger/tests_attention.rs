@@ -23,6 +23,10 @@ fn entry(label: &'static str, command: Option<&str>, note: Option<&str>) -> Atte
         failure_type: None,
         evidence: Vec::new(),
         review_reason: None,
+        reason: None,
+        failing_criteria: Vec::new(),
+        disputes: Vec::new(),
+        terminal_history: None,
         cleanup_warning: None,
         has_human_review_choices: false,
         dispute_count: None,
@@ -68,7 +72,7 @@ fn a_header_detail_cut_at_the_width_ends_in_an_ellipsis() {
     let reason = "a review reason far longer than the room the header line leaves";
     let lines = rendered_at(
         AttentionEntry {
-            review_reason: Some(reason.into()),
+            reason: Some(reason.into()),
             ..entry("NEEDS REVIEW", None, None)
         },
         64,
@@ -159,6 +163,32 @@ fn when_to_run_the_command_comes_before_it_and_alternatives_follow() {
     assert!(lines[4].ends_with("→ loom stage retry stage-a"));
     assert_eq!(lines[5].trim(), "If you give up:");
     assert!(lines[6].ends_with("→ loom stage skip stage-a"));
+}
+
+#[test]
+fn the_header_shows_the_first_line_of_the_reason_not_a_review_reason() {
+    let lines = rendered(AttentionEntry {
+        reason: Some("criterion 14 cannot pass\nsecond line".into()),
+        ..entry("BLOCKED", None, None)
+    });
+
+    assert!(lines[1].contains("criterion 14 cannot pass"), "{lines:#?}");
+    assert!(!lines[1].contains("second line"), "{lines:#?}");
+}
+
+#[test]
+fn the_terminal_history_command_follows_the_note() {
+    let lines = rendered(AttentionEntry {
+        terminal_history: Some("session-ab12cd34-1700000000".into()),
+        ..entry("BLOCKED", None, Some("blocked by the agent: run it"))
+    });
+
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("terminal history of its last session")),
+        "{lines:#?}"
+    );
 }
 
 #[test]

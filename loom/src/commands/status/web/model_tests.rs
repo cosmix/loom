@@ -282,6 +282,10 @@ fn attention_conversion_keeps_failure_label() {
         failure_type: Some(FailureType::TestFailure),
         evidence: vec!["test failed".to_owned()],
         review_reason: None,
+        reason: None,
+        failing_criteria: Vec::new(),
+        disputes: Vec::new(),
+        terminal_history: None,
         cleanup_warning: None,
         has_human_review_choices: false,
         dispute_count: None,
@@ -297,6 +301,32 @@ fn attention_conversion_keeps_failure_label() {
     assert!(wire["note"].is_null());
     assert_eq!(wire["automatic"], false);
     assert!(wire.get("hint").is_none());
+}
+
+#[test]
+fn attention_conversion_carries_the_block_facts_and_flags_the_history() {
+    let stages = stages::fixture_stages();
+    let blocked = stages
+        .iter()
+        .find(|stage| stage.id == "local-runtime")
+        .unwrap();
+    let entries = crate::commands::status::render::attention_entries(std::slice::from_ref(blocked));
+
+    let wire = serde_json::to_value(WebAttention::from(&entries[0])).unwrap();
+
+    assert_eq!(wire["terminal_history"], true);
+    assert_eq!(wire["failing_criteria"][0]["index"], 4);
+    assert_eq!(wire["disputes"].as_array().unwrap().len(), 2);
+    assert_eq!(wire["acceptance"].as_array().unwrap().len(), 5);
+    assert_eq!(
+        wire["reason"],
+        wire["note"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("blocked by the stage agent: ")
+            .unwrap()
+    );
+    assert!(!wire["note"].as_str().unwrap().contains("less -R"));
 }
 
 /// Every [`StageStatus`], ordered as `web/src/api/fixtures/statuses.json` lists

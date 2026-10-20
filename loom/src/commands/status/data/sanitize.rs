@@ -16,7 +16,7 @@
 //! column bounds nothing. Flattening here, at the collector boundary, covers
 //! the ledger TUI, the static renderer and the wire in one place.
 
-use super::StageSummary;
+use super::{BlockDetail, StageSummary};
 use crate::context::untrusted::{inline_safe, multiline_safe};
 
 #[path = "sanitize_token_flow.rs"]
@@ -82,6 +82,7 @@ pub(super) fn sanitize_stage_summary(summary: &mut StageSummary) {
         .terminal_history_session
         .iter_mut()
         .for_each(flatten);
+    sanitize_block_detail(&mut summary.block_detail);
     if let Some(blocker) = summary.completion_blocker.as_mut() {
         flatten(&mut blocker.failure_code);
         blocker.summary.iter_mut().for_each(flatten);
@@ -90,6 +91,21 @@ pub(super) fn sanitize_stage_summary(summary: &mut StageSummary) {
     if let Some(failure) = summary.failure_info.as_mut() {
         cap_evidence(&mut failure.evidence);
         failure.evidence.iter_mut().for_each(flatten);
+    }
+}
+
+/// The criteria commands and dispute fields come from files a stage agent can
+/// influence, and the card prints them.
+fn sanitize_block_detail(detail: &mut BlockDetail) {
+    for criterion in &mut detail.failing_criteria {
+        flatten(&mut criterion.command);
+        criterion.diagnostic.iter_mut().for_each(flatten);
+    }
+    for dispute in &mut detail.disputes {
+        flatten(&mut dispute.kind);
+        dispute.verdict.iter_mut().for_each(flatten);
+        dispute.field.iter_mut().for_each(flatten);
+        dispute.ops.iter_mut().for_each(|op| flatten(&mut op.op));
     }
 }
 
@@ -204,6 +220,7 @@ mod tests {
             close_reason: None,
             acceptance: vec![],
             terminal_history_session: None,
+            block_detail: Default::default(),
         }
     }
 

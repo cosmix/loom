@@ -9,7 +9,6 @@ use crate::commands::status::data::StageSummary;
 use crate::context::untrusted::inline_safe;
 use crate::models::failure::FailureType;
 use crate::orchestrator::retry::should_auto_retry;
-use crate::orchestrator::terminal::tmux::history_relpath;
 
 use super::attention_model::{failure_label, Alternative, Guidance};
 
@@ -21,17 +20,16 @@ const RETRY_WITH_ANSWER: &str =
 const ANSWER_PLACEHOLDER: &str = "<what you did and what it showed>";
 
 /// A crash or timeout under the retry limit is requeued by the daemon once its
-/// backoff elapses; any other failure waits for `loom stage retry`. A terminal
-/// history the stage left is named in what the operator is told.
+/// backoff elapses; any other failure waits for `loom stage retry`.
 pub(super) fn blocked_guidance(stage: &StageSummary) -> Guidance {
     let max = retry_limit(stage);
-    let guidance = match (stage.failure_info.as_ref(), stage.close_reason.as_deref()) {
+    match (stage.failure_info.as_ref(), stage.close_reason.as_deref()) {
         (Some(failure), _) if should_auto_retry(&failure.failure_type, stage.retry_count, max) => {
-            return Guidance::automatic(format!(
+            Guidance::automatic(format!(
                 "auto-retry {} of {max} pending after a {}",
                 stage.retry_count + 1,
                 failure_label(&failure.failure_type)
-            ));
+            ))
         }
         // Every block writer clears `failure_info`, so a reason without one is a
         // deliberate block: the stage agent's, or the operator's own.
@@ -40,8 +38,7 @@ pub(super) fn blocked_guidance(stage: &StageSummary) -> Guidance {
             cause_first_guidance(stage)
         }
         _ => retry_guidance(stage),
-    };
-    with_terminal_history(guidance, stage)
+    }
 }
 
 /// `loom stage retry` refuses a stage at its retry limit unless forced.
@@ -84,7 +81,7 @@ fn deliberate_block(stage: &StageSummary, reason: &str) -> Guidance {
     };
     let mut alternatives = Vec::new();
     if !rejected {
-        alternatives.extend(criterion_alternatives(id));
+        alternatives.extend(criterion_alternatives(stage));
     }
     alternatives.push(Alternative::new(
         "you give up on the stage (its dependents stay blocked)",
@@ -107,22 +104,50 @@ fn deliberate_block(stage: &StageSummary, reason: &str) -> Guidance {
 
 /// Drop or replace an acceptance criterion; `loom stage amend` counts the
 /// criteria from 0, and `loom status` and the stage modal list them with that
-/// number.
-fn criterion_alternatives(id: &str) -> [Alternative; 2] {
-    [
-        Alternative::new(
-            "the reason is an acceptance criterion that cannot pass where the stage runs, \
-             drop it before retrying (find the criterion's index in the acceptance list)",
-            format!("loom stage amend {id} --field acceptance --op delete --index <n>"),
-        ),
-        Alternative::new(
-            "that criterion should run another way, replace it before retrying (same index)",
-            format!(
-                "loom stage amend {id} --field acceptance --op replace --index <n> \
-                 --value \"<new command>\""
+/// number. A criterion known to have failed gets both commands with its index
+/// filled in; with none known the operator finds the index in the acceptance
+/// list.
+fn criterion_alternatives(stage: &StageSummary) -> Vec<Alternative> {
+    let id = &stage.id;
+    let failing = &stage.block_detail.failing_criteria;
+    if failing.is_empty() {
+        return vec![
+            Alternative::new(
+                "the reason is an acceptance criterion that cannot pass where the stage runs, \
+                 drop it before retrying (find the criterion's index in the acceptance list)",
+                format!("loom stage amend {id} --field acceptance --op delete --index <n>"),
             ),
-        ),
-    ]
+            Alternative::new(
+                "that criterion should run another way, replace it before retrying (same index)",
+                format!(
+                    "loom stage amend {id} --field acceptance --op replace --index <n> \
+                     --value \"<new command>\""
+                ),
+            ),
+        ];
+    }
+    failing
+        .iter()
+        .flat_map(|criterion| {
+            let index = criterion.index;
+            [
+                Alternative::new(
+                    format!(
+                        "criterion {index} cannot pass where the stage runs, drop it before \
+                         retrying"
+                    ),
+                    format!("loom stage amend {id} --field acceptance --op delete --index {index}"),
+                ),
+                Alternative::new(
+                    format!("criterion {index} should run another way, replace it before retrying"),
+                    format!(
+                        "loom stage amend {id} --field acceptance --op replace --index {index} \
+                         --value \"<new command>\""
+                    ),
+                ),
+            ]
+        })
+        .collect()
 }
 
 /// Whether the operator's review rejection wrote this reason.
@@ -158,23 +183,4 @@ fn cause_first_guidance(stage: &StageSummary) -> Guidance {
         note: Some(note),
         ..retry
     }
-}
-
-/// Add the path of the stage's terminal history to the note, so an operator can
-/// read what the agent last showed with `less -R`. The path is relative to the
-/// directory `loom status` runs in; loom's state directory is `.loom/work`
-/// there.
-fn with_terminal_history(mut guidance: Guidance, stage: &StageSummary) -> Guidance {
-    let Some(session) = stage.terminal_history_session.as_deref() else {
-        return guidance;
-    };
-    let line = format!(
-        "terminal history of its last session: less -R .loom/work/{}",
-        history_relpath(session).display()
-    );
-    guidance.note = Some(match guidance.note.take() {
-        Some(note) => format!("{note}\n{line}"),
-        None => line,
-    });
-    guidance
 }

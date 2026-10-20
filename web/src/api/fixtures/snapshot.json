@@ -343,7 +343,37 @@
           "bun test packages/storage",
           "TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/db/src/ephemeral-services"
         ],
-        "terminal_history_session": "session-9c1d4e7a-1788700000"
+        "terminal_history_session": "session-9c1d4e7a-1788700000",
+        "block_detail": {
+          "failing_criteria": [
+            {
+              "index": 4,
+              "command": "TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/db/src/ephemeral-services",
+              "diagnostic": "FAILED [criterion 4]: stack:ephemeral cannot create AF_UNIX sockets"
+            }
+          ],
+          "disputes": [
+            {
+              "id": 1,
+              "kind": "integrity",
+              "verdict": "accept",
+              "field": null,
+              "ops": []
+            },
+            {
+              "id": 2,
+              "kind": "criterion",
+              "verdict": "accept",
+              "field": "acceptance",
+              "ops": [
+                {
+                  "op": "replace",
+                  "index": 3
+                }
+              ]
+            }
+          ]
+        }
       }
     ],
     "merge": {
@@ -558,17 +588,32 @@
         {
           "model": "claude-opus-5-5",
           "effort": "xhigh",
-          "total": { "input": 30000, "cache_write": 450000, "cache_read": 7000000, "output": 80000 }
+          "total": {
+            "input": 30000,
+            "cache_write": 450000,
+            "cache_read": 7000000,
+            "output": 80000
+          }
         },
         {
           "model": "gpt-6.1-sol",
           "effort": "xhigh",
-          "total": { "input": 30000, "cache_write": 300000, "cache_read": 4000000, "output": 50000 }
+          "total": {
+            "input": 30000,
+            "cache_write": 300000,
+            "cache_read": 4000000,
+            "output": 50000
+          }
         },
         {
           "model": "claude-opus-5-5",
           "effort": "high",
-          "total": { "input": 10000, "cache_write": 150000, "cache_read": 2000000, "output": 20000 }
+          "total": {
+            "input": 10000,
+            "cache_write": 150000,
+            "cache_read": 2000000,
+            "output": 20000
+          }
         }
       ],
       "quota_left": [
@@ -602,7 +647,12 @@
       "cleanup_warning": null,
       "has_human_review_choices": false,
       "dispute_count": null,
-      "judge_heartbeat_secs": null
+      "judge_heartbeat_secs": null,
+      "reason": null,
+      "acceptance": [],
+      "failing_criteria": [],
+      "disputes": [],
+      "terminal_history": false
     },
     {
       "id": "docs",
@@ -620,7 +670,12 @@
       "cleanup_warning": null,
       "has_human_review_choices": false,
       "dispute_count": null,
-      "judge_heartbeat_secs": null
+      "judge_heartbeat_secs": null,
+      "reason": null,
+      "acceptance": [],
+      "failing_criteria": [],
+      "disputes": [],
+      "terminal_history": false
     },
     {
       "id": "integration-verify",
@@ -638,7 +693,12 @@
       "cleanup_warning": null,
       "has_human_review_choices": true,
       "dispute_count": null,
-      "judge_heartbeat_secs": null
+      "judge_heartbeat_secs": null,
+      "reason": "acceptance criterion 3 disputed twice",
+      "acceptance": [],
+      "failing_criteria": [],
+      "disputes": [],
+      "terminal_history": false
     },
     {
       "id": "merge-gate",
@@ -656,7 +716,12 @@
       "cleanup_warning": null,
       "has_human_review_choices": false,
       "dispute_count": null,
-      "judge_heartbeat_secs": null
+      "judge_heartbeat_secs": null,
+      "reason": null,
+      "acceptance": [],
+      "failing_criteria": [],
+      "disputes": [],
+      "terminal_history": false
     },
     {
       "id": "local-runtime",
@@ -666,19 +731,19 @@
       "command_when": "you have done what the reason asks, retry with your answer (the next session receives it)",
       "alternatives": [
         {
-          "when": "the reason is an acceptance criterion that cannot pass where the stage runs, drop it before retrying (find the criterion's index in the acceptance list)",
-          "command": "loom stage amend local-runtime --field acceptance --op delete --index <n>"
+          "when": "criterion 4 cannot pass where the stage runs, drop it before retrying",
+          "command": "loom stage amend local-runtime --field acceptance --op delete --index 4"
         },
         {
-          "when": "that criterion should run another way, replace it before retrying (same index)",
-          "command": "loom stage amend local-runtime --field acceptance --op replace --index <n> --value \"<new command>\""
+          "when": "criterion 4 should run another way, replace it before retrying",
+          "command": "loom stage amend local-runtime --field acceptance --op replace --index 4 --value \"<new command>\""
         },
         {
           "when": "you give up on the stage (its dependents stay blocked)",
           "command": "loom stage skip local-runtime"
         }
       ],
-      "note": "blocked by the stage agent: Adjudicator needs an unsandboxed run only the operator can do. From the worktree root run: TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/storage packages/db/src/ephemeral-services; report exit code, test summary, and .stack/objectstore.log on failure. Criterion 5 (stack:ephemeral --with objectstore) cannot pass in this sandbox: it denies AF_UNIX socket creation everywhere.\nOr allow AF_UNIX for this stage. All work committed; 0 open findings.\nterminal history of its last session: less -R .loom/work/terminal-history/session-9c1d4e7a-1788700000.terminal",
+      "note": "blocked by the stage agent: Adjudicator needs an unsandboxed run only the operator can do. From the worktree root run: TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/storage packages/db/src/ephemeral-services; report exit code, test summary, and .stack/objectstore.log on failure. Criterion 5 (stack:ephemeral --with objectstore) cannot pass in this sandbox: it denies AF_UNIX socket creation everywhere.\nOr allow AF_UNIX for this stage. All work committed; 0 open findings.",
       "automatic": false,
       "failure_type": null,
       "failure_label": null,
@@ -687,7 +752,44 @@
       "cleanup_warning": null,
       "has_human_review_choices": false,
       "dispute_count": null,
-      "judge_heartbeat_secs": null
+      "judge_heartbeat_secs": null,
+      "reason": "Adjudicator needs an unsandboxed run only the operator can do. From the worktree root run: TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/storage packages/db/src/ephemeral-services; report exit code, test summary, and .stack/objectstore.log on failure. Criterion 5 (stack:ephemeral --with objectstore) cannot pass in this sandbox: it denies AF_UNIX socket creation everywhere.\nOr allow AF_UNIX for this stage. All work committed; 0 open findings.",
+      "acceptance": [
+        "cargo build",
+        "cargo test",
+        "bun run typecheck",
+        "bun test packages/storage",
+        "TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/db/src/ephemeral-services"
+      ],
+      "failing_criteria": [
+        {
+          "index": 4,
+          "command": "TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/db/src/ephemeral-services",
+          "diagnostic": "FAILED [criterion 4]: stack:ephemeral cannot create AF_UNIX sockets"
+        }
+      ],
+      "disputes": [
+        {
+          "id": 1,
+          "kind": "integrity",
+          "verdict": "accept",
+          "field": null,
+          "ops": []
+        },
+        {
+          "id": 2,
+          "kind": "criterion",
+          "verdict": "accept",
+          "field": "acceptance",
+          "ops": [
+            {
+              "op": "replace",
+              "index": 3
+            }
+          ]
+        }
+      ],
+      "terminal_history": true
     }
   ],
   "alerts": [

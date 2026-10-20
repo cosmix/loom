@@ -318,4 +318,36 @@ describe("snapshot schema", () => {
 
     expect(snapshotSchema.safeParse(withoutAlternatives).success).toBe(false);
   });
+
+  it("requires every attention entry to carry the block facts", () => {
+    for (const field of [
+      "reason",
+      "acceptance",
+      "failing_criteria",
+      "disputes",
+      "terminal_history",
+    ]) {
+      const without = structuredClone(fixtureJson) as {
+        attention: Array<Record<string, unknown>>;
+      };
+      delete without.attention[0][field];
+
+      expect(snapshotSchema.safeParse(without).success, field).toBe(false);
+    }
+  });
+
+  it("accepts a stage summary without block detail and rejects a malformed failing criterion", () => {
+    const stages = (json: unknown) =>
+      (json as { status: { stages: Array<Record<string, unknown>> } }).status.stages;
+    const plain = structuredClone(fixtureJson);
+    delete stages(plain)[0].block_detail;
+    expect(snapshotSchema.safeParse(plain).success).toBe(true);
+
+    const malformed = structuredClone(fixtureJson);
+    stages(malformed)[0].block_detail = {
+      failing_criteria: [{ index: -1, command: "x", diagnostic: null }],
+      disputes: [],
+    };
+    expect(snapshotSchema.safeParse(malformed).success).toBe(false);
+  });
 });

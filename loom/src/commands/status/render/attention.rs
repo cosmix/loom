@@ -65,8 +65,8 @@ fn write_guidance<W: Write>(
     entry: &AttentionEntry,
     width: usize,
 ) -> std::io::Result<()> {
-    if let Some(note) = entry.note.as_deref() {
-        write_wrapped(w, "Note", note, width)?;
+    if let Some(note) = entry.text_note() {
+        write_wrapped(w, "Note", &note, width)?;
     }
     match (entry.command.as_deref(), entry.command_when.as_deref()) {
         (Some(command), Some(when)) => write_step(w, &format!("Once {when}"), command, width)?,

@@ -82,6 +82,26 @@ export const failureInfoSchema = z.object({
   detected_at: z.string(),
   evidence: z.array(z.string()),
 });
+export const failingCriterionSchema = z.object({
+  index: z.number().int().nonnegative(),
+  command: z.string(),
+  diagnostic: z.string().nullable(),
+});
+export const disputeOpSchema = z.object({
+  op: z.string(),
+  index: z.number().int().nonnegative().nullable(),
+});
+export const disputeLineSchema = z.object({
+  id: z.number().int(),
+  kind: z.string(),
+  verdict: z.string().nullable(),
+  field: z.string().nullable(),
+  ops: z.array(disputeOpSchema),
+});
+export const blockDetailSchema = z.object({
+  failing_criteria: z.array(failingCriterionSchema),
+  disputes: z.array(disputeLineSchema),
+});
 export const stageSummarySchema = z
   .object({
     id: z.string(),
@@ -128,6 +148,7 @@ export const stageSummarySchema = z
     close_reason: z.string().optional(),
     acceptance: z.array(z.string()).optional(),
     terminal_history_session: z.string().optional(),
+    block_detail: blockDetailSchema.optional(),
   })
   .strict();
 export const mergeSummarySchema = z.object({
@@ -245,6 +266,11 @@ export const attentionSchema = z.object({
   failure_label: z.string().nullable(),
   evidence: z.array(z.string()),
   review_reason: z.string().nullable(),
+  reason: z.string().nullable(),
+  acceptance: z.array(z.string()),
+  failing_criteria: z.array(failingCriterionSchema),
+  disputes: z.array(disputeLineSchema),
+  terminal_history: z.boolean(),
   cleanup_warning: z.string().nullable(),
   has_human_review_choices: z.boolean(),
   dispute_count: z.number().int().nullable(),
@@ -299,6 +325,8 @@ export function parseSnapshot(raw: unknown): ReturnType<typeof snapshotSchema.sa
 export type StageStatus = z.infer<typeof stageStatusSchema>;
 export type StageSummary = z.infer<typeof stageSummarySchema>;
 export type StatusData = z.infer<typeof statusDataSchema>;
+export type FailingCriterion = z.infer<typeof failingCriterionSchema>;
+export type DisputeLine = z.infer<typeof disputeLineSchema>;
 export type Attention = z.infer<typeof attentionSchema>;
 export type Alternative = z.infer<typeof alternativeSchema>;
 export type Alert = z.infer<typeof alertSchema>;

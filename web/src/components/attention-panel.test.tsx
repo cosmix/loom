@@ -9,6 +9,7 @@ import { snapshotSchema, type Attention } from "@/api/schema";
 import {
   AttentionBody,
   AttentionPanel,
+  attentionDetail,
   attentionHazard,
   attentionStatus,
 } from "@/components/attention-panel";
@@ -33,11 +34,16 @@ function renderPanel(attention: Attention[]) {
   );
 }
 
+function renderBody(entry: Attention) {
+  const router = createMemoryRouter([{ path: "/", element: <AttentionBody entry={entry} /> }]);
+  render(<RouterProvider router={router} />);
+}
+
 afterEach(cleanup);
 
 describe("AttentionBody", () => {
   it("renders exactly the three review decisions for NEEDS REVIEW, each in full", () => {
-    render(<AttentionBody entry={fixtureEntry("integration-verify")} />);
+    renderBody(fixtureEntry("integration-verify"));
 
     const commands = screen
       .getAllByText(/^loom stage human-review /)
@@ -68,7 +74,7 @@ describe("AttentionBody", () => {
       command: "loom stage retry client --force",
       note: "retry limit reached (3/3)",
     };
-    render(<AttentionBody entry={entry} />);
+    renderBody(entry);
 
     expect(screen.getByText("retry limit reached (3/3)").tagName).toBe("P");
     expect(screen.getByText("loom stage retry client --force").tagName).toBe("CODE");
@@ -158,7 +164,7 @@ describe("a deliberate block", () => {
   };
 
   it("shows the whole reason, command included, wrapped and never clamped", () => {
-    render(<AttentionBody entry={entry()} />);
+    renderBody(entry());
 
     const note = screen.getByText(
       (_, element) => element?.tagName === "P" && element.textContent === reason(),
@@ -173,34 +179,78 @@ describe("a deliberate block", () => {
   });
 
   it("introduces the retry as the step after the reason and lists the other ways out", () => {
-    render(<AttentionBody entry={entry()} />);
+    renderBody(entry());
 
     expect(screen.getByText(/^Once you have done what the reason asks/)).toBeTruthy();
     const options = within(screen.getByRole("list", { name: "other options" }));
     expect(options.getAllByRole("listitem")).toHaveLength(3);
-    expect(options.getByText(/^If the reason is an acceptance criterion/).textContent).toContain(
-      "find the criterion's index in the acceptance list",
-    );
+    expect(options.getByText(/^If criterion 4 cannot pass/)).toBeTruthy();
     expect(options.getByText(/^If you give up on the stage/)).toBeTruthy();
   });
 
   it("gives the retry and each alternative its own copy button", () => {
-    render(<AttentionBody entry={entry()} />);
+    renderBody(entry());
 
     expect(
       screen.getAllByRole("button").map((button) => button.getAttribute("aria-label")),
     ).toEqual([
       'copy loom stage retry local-runtime --context "<what you did and what it showed>"',
-      "copy loom stage amend local-runtime --field acceptance --op delete --index <n>",
-      'copy loom stage amend local-runtime --field acceptance --op replace --index <n> --value "<new command>"',
+      "copy loom stage amend local-runtime --field acceptance --op delete --index 4",
+      'copy loom stage amend local-runtime --field acceptance --op replace --index 4 --value "<new command>"',
       "copy loom stage skip local-runtime",
     ]);
   });
 
+  it("lists the failing criterion by its index, command and diagnostic", () => {
+    renderBody(entry());
+
+    const failing = within(screen.getByRole("list", { name: "failing criteria" }));
+    expect(failing.getByText("#4")).toBeTruthy();
+    expect(failing.getByText(/stack:ephemeral --with objectstore/).tagName).toBe("CODE");
+    expect(failing.getByText(/cannot create AF_UNIX sockets/)).toBeTruthy();
+  });
+
+  it("summarizes the disputes already ruled on in one line", () => {
+    renderBody(entry());
+
+    expect(
+      screen.getByText("Disputes: #1 integrity accepted · #2 criterion 3 replaced"),
+    ).toBeTruthy();
+  });
+
+  it("links the terminal history instead of printing a shell command", () => {
+    renderBody(entry());
+
+    const link = screen.getByRole("link", { name: "View terminal history" });
+    expect(link.getAttribute("href")).toBe("/terminal/local-runtime");
+    expect(document.body.textContent).not.toContain("less -R");
+  });
+
+  it("omits the block facts for an entry that has none", () => {
+    renderBody(fixtureEntry("client"));
+
+    expect(screen.queryByRole("list", { name: "failing criteria" })).toBeNull();
+    expect(screen.queryByText(/^Disputes:/)).toBeNull();
+    expect(screen.queryByRole("link", { name: "View terminal history" })).toBeNull();
+  });
+
   it("leaves out the option list and the introduction when an entry has none", () => {
-    render(<AttentionBody entry={fixtureEntry("client")} />);
+    renderBody(fixtureEntry("client"));
 
     expect(screen.queryByRole("list", { name: "other options" })).toBeNull();
     expect(screen.queryByText(/^Once /)).toBeNull();
+  });
+});
+
+describe("attentionDetail", () => {
+  it("heads a block with the first line of its reason", () => {
+    expect(attentionDetail(fixtureEntry("local-runtime"))).toBe(
+      "Adjudicator needs an unsandboxed run only the operator can do. From the worktree root run: TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/storage packages/db/src/ephemeral-services; report exit code, test summary, and .stack/objectstore.log on failure. Criterion 5 (stack:ephemeral --with objectstore) cannot pass in this sandbox: it denies AF_UNIX socket creation everywhere.",
+    );
+  });
+
+  it("falls back to the failure label, never a review reason the entry does not carry", () => {
+    const entry = { ...fixtureEntry("client"), reason: null };
+    expect(attentionDetail(entry)).toBe("test");
   });
 });

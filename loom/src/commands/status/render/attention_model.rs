@@ -6,14 +6,17 @@
 use serde::{Deserialize, Serialize};
 
 use crate::commands::status::data::{
-    ActivityStatus, CompletionBlockerState, CompletionBlockerSummary, StageSummary,
+    CompletionBlockerState, CompletionBlockerSummary, DisputeLine, FailingCriterion, StageSummary,
 };
 use crate::models::failure::FailureType;
-use crate::models::session::{SessionBackendKind, SessionExitReason, SessionType};
+use crate::models::session::{SessionExitReason, SessionType};
 use crate::models::stage::{StageStatus, StageType};
-use crate::orchestrator::core::MAX_MERGE_RESOLVER_ATTEMPTS;
+use crate::orchestrator::terminal::tmux::history_relpath;
+
+mod merge;
 
 use super::blocked_guidance::{blocked_guidance, retry_guidance};
+use merge::{merge_block_guidance, merge_guidance};
 
 /// Display-ready information for one stage that needs human attention.
 #[derive(Debug, Clone)]
@@ -39,7 +42,17 @@ pub struct AttentionEntry {
     pub automatic: bool,
     pub failure_type: Option<FailureType>,
     pub evidence: Vec<String>,
+    /// Why a stage awaiting human review was flagged; `None` for every other state.
     pub review_reason: Option<String>,
+    /// Why the stage needs the operator now: a block's close reason, or a
+    /// review's reason. Never an earlier state's leftover review reason.
+    pub reason: Option<String>,
+    /// Acceptance criteria that failed in the stage's last completion attempt.
+    pub failing_criteria: Vec<FailingCriterion>,
+    /// Disputes already ruled on for a blocked stage, oldest first.
+    pub disputes: Vec<DisputeLine>,
+    /// The session whose terminal history the stage left, when it left one.
+    pub terminal_history: Option<String>,
     pub cleanup_warning: Option<String>,
     pub has_human_review_choices: bool,
     pub dispute_count: Option<u32>,
@@ -123,12 +136,34 @@ impl AttentionEntry {
             failure_type: None,
             evidence: Vec::new(),
             review_reason: None,
+            reason: None,
+            failing_criteria: Vec::new(),
+            disputes: Vec::new(),
+            terminal_history: None,
             cleanup_warning: None,
             has_human_review_choices: false,
             dispute_count: None,
             judge_heartbeat_secs: None,
             completion_blocker: None,
             outgoing_session_exit_reason: stage.outgoing_session_exit_reason,
+        }
+    }
+}
+
+impl AttentionEntry {
+    /// The note as a terminal shows it: the note, then where the stage's last
+    /// terminal history can be read with `less`. A browser links the history
+    /// instead, so the web wire carries `note` alone.
+    pub fn text_note(&self) -> Option<String> {
+        let history = self.terminal_history.as_deref().map(|session| {
+            format!(
+                "terminal history of its last session: less -R .loom/work/{}",
+                history_relpath(session).display()
+            )
+        });
+        match (self.note.clone(), history) {
+            (Some(note), Some(history)) => Some(format!("{note}\n{history}")),
+            (note, history) => note.or(history),
         }
     }
 }
@@ -224,6 +259,7 @@ fn completion_blocker_label(state: CompletionBlockerState) -> &'static str {
 
 fn status_entry(stage: &StageSummary) -> Option<AttentionEntry> {
     let (label, guidance) = status_guidance(stage)?;
+    let guidance_automatic = guidance.automatic;
     let is_adjudicating = stage.status == StageStatus::NeedsAdjudication;
     let (dispute_count, judge_heartbeat_secs) = if is_adjudicating {
         (Some(stage.dispute_count), stage.judge_heartbeat_secs)
@@ -237,11 +273,26 @@ fn status_entry(stage: &StageSummary) -> Option<AttentionEntry> {
             (Some(failure.failure_type.clone()), failure.evidence.clone())
         });
 
+    let in_review = stage.status == StageStatus::NeedsHumanReview;
+    let terminal_history = stage
+        .terminal_history_session
+        .clone()
+        .filter(|_| stage.status == StageStatus::Blocked && !guidance_automatic);
+    let review_reason = stage.review_reason.clone().filter(|_| in_review);
+    let reason = match stage.status {
+        StageStatus::Blocked => stage.close_reason.clone(),
+        _ => review_reason.clone(),
+    };
+
     Some(AttentionEntry {
         failure_type,
         evidence,
-        review_reason: stage.review_reason.clone(),
-        has_human_review_choices: stage.status == StageStatus::NeedsHumanReview,
+        review_reason,
+        reason,
+        failing_criteria: stage.block_detail.failing_criteria.clone(),
+        disputes: stage.block_detail.disputes.clone(),
+        terminal_history,
+        has_human_review_choices: in_review,
         dispute_count,
         judge_heartbeat_secs,
         ..AttentionEntry::new(stage, label, guidance)
@@ -262,72 +313,6 @@ fn status_guidance(stage: &StageSummary) -> Option<(&'static str, Guidance)> {
         StageStatus::NeedsAdjudication => ("ADJUDICATING", Guidance::automatic(ADJUDICATION_NOTE)),
         _ => return None,
     })
-}
-
-/// The daemon spawns a merge resolver for a conflict and for a merge error
-/// without a typed block, up to [`MAX_MERGE_RESOLVER_ATTEMPTS`], then routes
-/// the stage to human review.
-///
-/// A live resolver is told apart from one whose turn ended by its tool calls:
-/// `Stale` is no tool call for the stage's `subagent_timeout_secs` budget with
-/// no call open, measured from its own heartbeat or from its spawn. A resolver
-/// that ended its turn without running `loom stage merge --resolved` stays
-/// alive and waits at its prompt forever, so that state is the operator's to
-/// act on, not the daemon's. One command running past the budget (an
-/// acceptance rerun) reads `Busy` while its transcript shows the call open, and
-/// `Quiet` inside the budget; neither is an entry. Stale can still be a long
-/// call the transcript did not show, so the note sends the operator to look
-/// before it offers the kill, which spends a resolver attempt.
-fn merge_guidance(stage: &StageSummary) -> Guidance {
-    let used = stage.merge_resolver_attempts.unwrap_or(0);
-    let max = MAX_MERGE_RESOLVER_ATTEMPTS;
-    let Some(session) = stage.merge_resolver_session.as_deref() else {
-        return Guidance::automatic(format!(
-            "waiting for the daemon to start a merge resolver ({used} of {max} attempts used)"
-        ));
-    };
-    let view = resolver_view(stage);
-    if stage.activity_status != ActivityStatus::Stale {
-        let view = view.map_or_else(String::new, |view| format!("; {view}"));
-        return Guidance::automatic(format!(
-            "merge resolver {session} is working (attempt {used} of {max}){view}"
-        ));
-    }
-    let minutes = stage.staleness_secs.unwrap_or(0) / 60;
-    let look = view.map_or_else(String::new, |view| format!(" Look first: {view}."));
-    Guidance::manual(format!(
-        "merge resolver {session} made no tool call for {minutes} min and has not run loom stage \
-         merge {} --resolved: it may be inside one long command or may have stopped (attempt \
-         {used} of {max}).{look} Only if it is stuck, loom sessions kill {session} ends it and \
-         the daemon starts the next attempt",
-        stage.id
-    ))
-}
-
-/// How to look at the resolver: `loom attach` reaches a tmux session, and the
-/// web terminal follows the same session; a native session runs in a terminal
-/// window titled with its tracking key.
-fn resolver_view(stage: &StageSummary) -> Option<String> {
-    Some(match stage.session_backend? {
-        SessionBackendKind::Tmux => format!(
-            "run loom attach {} to watch it, or open the stage's terminal in the web UI",
-            stage.id
-        ),
-        SessionBackendKind::Native => {
-            format!(
-                "it runs in the terminal window titled loom-merge-{}",
-                stage.id
-            )
-        }
-    })
-}
-
-/// A typed block never gets a merge resolver: the daemon retries the merge
-/// every tick and lands it once the block's cause is gone.
-fn merge_block_guidance(sentence: &str) -> Guidance {
-    Guidance::automatic(format!(
-        "{sentence}; loom retries the merge automatically once that changes"
-    ))
 }
 
 /// A `Standard` stage in the contract-writer phase: an `Executing` stage

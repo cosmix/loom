@@ -3,6 +3,7 @@ use crate::commands::status::data::{
     ActivityStatus, CompletionBlockerState, CompletionBlockerSummary, StageType,
 };
 use crate::models::failure::{FailureInfo, FailureType};
+use crate::models::session::SessionBackendKind;
 use crate::models::stage::StageStatus;
 
 #[path = "blocked_guidance_tests.rs"]
@@ -56,6 +57,7 @@ fn make_stage_summary(id: &str, status: StageStatus) -> StageSummary {
         close_reason: None,
         acceptance: vec![],
         terminal_history_session: None,
+        block_detail: Default::default(),
     }
 }
 

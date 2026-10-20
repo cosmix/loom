@@ -128,7 +128,7 @@ fn an_agent_block_at_the_retry_limit_keeps_the_forced_retry() {
 }
 
 #[test]
-fn a_blocked_stage_names_its_terminal_history() {
+fn a_blocked_stage_names_its_terminal_history_for_text_renderers_only() {
     let mut stage = make_stage_summary("server", StageStatus::Blocked);
     stage.close_reason = Some("needs a decision".to_string());
     stage.terminal_history_session = Some("session-ab12cd34-1700000000".to_string());
@@ -136,19 +136,88 @@ fn a_blocked_stage_names_its_terminal_history() {
     crashed.failure_info = failure(FailureType::TestFailure);
     crashed.terminal_history_session = Some("session-ef56ab78-1700000001".to_string());
 
-    let notes: Vec<String> = [stage, crashed]
-        .map(|stage| entry_for(stage).note.unwrap())
-        .to_vec();
+    let entries = [stage, crashed].map(entry_for);
 
-    assert!(notes[0].ends_with(
+    // The web wire carries the note alone: a browser links the history.
+    assert_eq!(
+        entries[0].note.as_deref(),
+        Some("blocked by the stage agent: needs a decision")
+    );
+    assert_eq!(entries[1].note, None);
+    assert!(entries[0].text_note().unwrap().ends_with(
         "\nterminal history of its last session: less -R \
          .loom/work/terminal-history/session-ab12cd34-1700000000.terminal"
     ));
     assert_eq!(
-        notes[1],
-        "terminal history of its last session: less -R \
-         .loom/work/terminal-history/session-ef56ab78-1700000001.terminal"
+        entries[1].text_note().as_deref(),
+        Some(
+            "terminal history of its last session: less -R \
+             .loom/work/terminal-history/session-ef56ab78-1700000001.terminal"
+        )
     );
+}
+
+#[test]
+fn a_stage_that_is_not_blocked_names_no_terminal_history() {
+    let mut stage = make_stage_summary("server", StageStatus::NeedsHumanReview);
+    stage.terminal_history_session = Some("session-ab12cd34-1700000000".to_string());
+
+    assert_eq!(entry_for(stage).terminal_history, None);
+}
+
+#[test]
+fn a_known_failing_criterion_gets_the_amend_commands_filled_in() {
+    let mut stage = make_stage_summary("server", StageStatus::Blocked);
+    stage.close_reason = Some("criterion 14 cannot pass here".to_string());
+    stage.block_detail.failing_criteria = vec![FailingCriterion {
+        index: 14,
+        command: "bash run-all.sh".to_string(),
+        diagnostic: None,
+    }];
+
+    let entry = entry_for(stage);
+
+    let offered: Vec<&str> = entry
+        .alternatives
+        .iter()
+        .map(|alternative| alternative.command.as_str())
+        .collect();
+    assert_eq!(
+        offered,
+        [
+            "loom stage amend server --field acceptance --op delete --index 14",
+            "loom stage amend server --field acceptance --op replace --index 14 --value \"<new command>\"",
+            "loom stage skip server",
+        ]
+    );
+    assert!(entry.alternatives[0].when.starts_with("criterion 14 "));
+    assert_eq!(entry.failing_criteria[0].index, 14);
+}
+
+#[test]
+fn a_blocked_stage_reports_its_close_reason_never_a_stale_review_reason() {
+    let mut stage = make_stage_summary("server", StageStatus::Blocked);
+    stage.close_reason = Some("criterion 14 cannot pass here".to_string());
+    stage.review_reason = Some("The full BSD hook suite takes too long".to_string());
+
+    let entry = entry_for(stage);
+
+    assert_eq!(
+        entry.reason.as_deref(),
+        Some("criterion 14 cannot pass here")
+    );
+    assert_eq!(entry.review_reason, None);
+}
+
+#[test]
+fn a_stage_in_review_reports_its_review_reason() {
+    let mut stage = make_stage_summary("server", StageStatus::NeedsHumanReview);
+    stage.review_reason = Some("disputed twice".to_string());
+
+    let entry = entry_for(stage);
+
+    assert_eq!(entry.reason.as_deref(), Some("disputed twice"));
+    assert_eq!(entry.review_reason.as_deref(), Some("disputed twice"));
 }
 
 #[test]

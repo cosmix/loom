@@ -1,6 +1,7 @@
 //! The blocked stage of the dashboard fixture: a long reason with a command in
 //! it, and the history of a tmux session that ended.
 use super::*;
+use crate::commands::status::data::{BlockDetail, DisputeLine, DisputeOp, FailingCriterion};
 
 /// What the stage agent wrote with `loom stage block`.
 const REASON: &str = "Adjudicator needs an unsandboxed run only the operator can do. From the \
@@ -54,5 +55,38 @@ pub(super) fn stage_local_runtime() -> StageSummary {
     .map(str::to_owned)
     .to_vec();
     stage.terminal_history_session = Some("session-9c1d4e7a-1788700000".to_owned());
+    stage.block_detail = local_runtime_detail(&stage.acceptance[4]);
     stage
+}
+
+/// The failing criterion and the two accepted disputes behind the blocked stage.
+fn local_runtime_detail(criterion: &str) -> BlockDetail {
+    BlockDetail {
+        failing_criteria: vec![FailingCriterion {
+            index: 4,
+            command: criterion.to_owned(),
+            diagnostic: Some(
+                "FAILED [criterion 4]: stack:ephemeral cannot create AF_UNIX sockets".to_owned(),
+            ),
+        }],
+        disputes: vec![
+            DisputeLine {
+                id: 1,
+                kind: "integrity".to_owned(),
+                verdict: Some("accept".to_owned()),
+                field: None,
+                ops: Vec::new(),
+            },
+            DisputeLine {
+                id: 2,
+                kind: "criterion".to_owned(),
+                verdict: Some("accept".to_owned()),
+                field: Some("acceptance".to_owned()),
+                ops: vec![DisputeOp {
+                    op: "replace".to_owned(),
+                    index: Some(3),
+                }],
+            },
+        ],
+    }
 }

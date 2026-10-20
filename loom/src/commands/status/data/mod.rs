@@ -1,6 +1,8 @@
 mod busy;
 mod collector;
 pub(crate) mod completion_view;
+mod criteria_results;
+mod disputes;
 mod execution_models;
 mod heartbeat_facts;
 mod merge_note;
@@ -14,6 +16,8 @@ pub use completion_view::{
     completion_blocker_summary, outgoing_exit_reason, CompletionBlockerState,
     CompletionBlockerSummary,
 };
+pub use criteria_results::FailingCriterion;
+pub use disputes::{DisputeLine, DisputeOp};
 pub use execution_models::execution_models_for_stage;
 
 use serde::{Deserialize, Serialize};
@@ -228,6 +232,28 @@ pub struct StageSummary {
     /// once the stage has no live terminal.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub terminal_history_session: Option<String>,
+    /// What the attention card for a blocked stage shows beyond the reason.
+    #[serde(default, skip_serializing_if = "BlockDetail::is_empty")]
+    pub block_detail: BlockDetail,
+}
+
+/// The facts about a blocked stage that the attention card lists: which
+/// criteria failed and which disputes were already ruled on. Empty for every
+/// other stage.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct BlockDetail {
+    /// Acceptance criteria that failed in the stage's last completion attempt.
+    #[serde(default)]
+    pub failing_criteria: Vec<FailingCriterion>,
+    /// The stage's newest disputes, oldest first.
+    #[serde(default)]
+    pub disputes: Vec<DisputeLine>,
+}
+
+impl BlockDetail {
+    pub fn is_empty(&self) -> bool {
+        self.failing_criteria.is_empty() && self.disputes.is_empty()
+    }
 }
 
 impl StageSummary {

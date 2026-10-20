@@ -54,6 +54,7 @@ fn make_stage_summary(id: &str, status: StageStatus) -> StageSummary {
         close_reason: None,
         acceptance: vec![],
         terminal_history_session: None,
+        block_detail: Default::default(),
     }
 }
 
@@ -372,6 +373,25 @@ fn a_plain_command_keeps_its_run_line() {
         guidance_output(stage, 80),
         "    Run: loom stage retry server\n"
     );
+}
+
+#[test]
+fn a_block_keeps_its_less_line_and_prints_no_stale_review_reason() {
+    let mut stage = make_stage_summary("server", StageStatus::Blocked);
+    stage.close_reason = Some("needs a decision".to_string());
+    stage.review_reason = Some("an old resolved dispute".to_string());
+    stage.terminal_history_session = Some("session-ab12cd34-1700000000".to_string());
+
+    let output = rendered(&[stage]);
+
+    // The note wraps at the terminal width, so compare the words.
+    let words = output.split_whitespace().collect::<Vec<_>>().join(" ");
+    assert!(
+        words.contains("less -R .loom/work/terminal-history/session-ab12cd34-1700000000.terminal"),
+        "{output}"
+    );
+    assert!(!output.contains("Reason:"), "{output}");
+    assert!(!output.contains("an old resolved dispute"), "{output}");
 }
 
 #[path = "attention_acceptance_tests.rs"]
