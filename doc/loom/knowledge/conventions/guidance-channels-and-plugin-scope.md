@@ -126,14 +126,6 @@ rg -n "enabledPlugins" .loom/work/capsules/              # main checkout: the pl
 rg -n "enabledPlugins" .claude/settings.local.json       # main checkout: the source file those keys are copied from
 ```
 
-## Planning custom asset install roots (2026-09-21)
-
-For LOOM_CODEX_INSTALL_DIR and LOOM_CLAUDECODE_INSTALL_DIR, the user explicitly requested an in-session implementation plan followed by approval and implementation in the same conversation. Do not create a Loom execution plan, stage DAG, or orchestrated run. Investigate with GPT-5.6 Terra; after approval, allocate edits among Luna, Terra, and Sol. Completion includes user documentation, curated knowledge, and the appropriate knowledge/source-graph re-indexing commands.
-
-## Custom install-root implementation approved (2026-09-21)
-
-The user approved the in-session plan for LOOM_CODEX_INSTALL_DIR and LOOM_CLAUDECODE_INSTALL_DIR. Use Terra for shell integration and documentation unless a Luna brief supplies complete context, including documentation requirements; default to Terra when that context is uncertain. Keep explicit install-assets flags above non-empty env overrides above standard roots. Preserve flagless installer delegation and completion refresh behavior. Scope is asset installation/update destinations, with runtime discovery relocation excluded. Finish with regression coverage, user documentation, curated knowledge updates, loom knowledge sync, and loom knowledge check.
-
 ## Keep one contribution guide at the project root
 
 The root CONTRIBUTING.md is the canonical contribution guide. The former nested guide was folded into it and removed at the user’s direction. Preserve its useful release, signing, verification, security, and contributor instructions while resolving duplicates against current tooling. During consolidation, correct the stale test-filter advice: cargo test accepts one positional filter and rejects additional filters; a wrong single filter can still match zero tests.
@@ -151,3 +143,18 @@ The engineering sections in `CLAUDE.md.template` and `AGENTS.md.template` priori
 `skills/loom-code-review/SKILL.md`, `agents/loom-code-reviewer.md` and `signals/cache/blocks.rs` require evidence from affected flows and expected load. Review recommendations name a concrete defect or rule and the smallest adequate repair. Loom stage findings still block regardless of severity; suggestions do not. Known limitations carry a revisit condition in existing comments or memory, without a new debt subsystem.
 
 Design reference: [Ponytail core and review skills](https://github.com/DietrichGebert/ponytail/tree/6f1c2bfff0c837d268929a7c4e490918eb4fab29/skills), MIT, Copyright (c) 2026 DietrichGebert. Loom adapts the decision rules in its existing delivery channels; it does not install Ponytail hooks, modes or telemetry. Upstream benchmark percentages are not evidence of Loom or Codex savings. Compare prompt bytes separately from measured cost per accepted change.
+
+## Loom Assets Outside ~/.claude Need a Plugin
+
+Loom installs its Claude assets (agents, skills, commands, hooks, the global `CLAUDE.md`) into `~/.claude` and its Codex assets into `~/.codex`, nowhere else. Claude Code discovers agents, skills and the global `CLAUDE.md` only under its config dir (`CLAUDE_CONFIG_DIR`, else `~/.claude`), the project's `.claude/`, plugins and per-launch flags; Codex reads only `CODEX_HOME`, else `~/.codex`. A loom-chosen directory elsewhere reaches no session (see "A relocated Claude root never reached stage sessions" in [computed-values-and-hidden-couplings](../mistakes/computed-values-and-hidden-couplings.md)). Per-launch bridges were rejected: a symlinked `--add-dir` directory, inline `--agents` JSON per session, and pointing sessions at `CLAUDE_CONFIG_DIR`, which only helps an operator whose Claude Code already runs from that directory.
+
+A Claude Code plugin is the native way to load assets from an arbitrary directory, for operator and stage sessions alike. Facts from the Claude Code 2.1.302 docs (<https://code.claude.com/docs/en/plugins-reference>, /sub-agents, /skills, /memory, /cli-reference):
+
+- `--plugin-dir <dir>` loads a plugin for one session; a folder of plugins loads each child. A user-scope install needs a marketplace entry plus `enabledPlugins` in `~/.claude/settings.json`, so registration still writes into `~/.claude`.
+- The manifest `.claude-plugin/plugin.json` is optional; the name defaults to the directory name. Skills come from `skills/` (or the manifest `skills` key, which can name extra skill directories), agents from `agents/`.
+- Plugin skills and agents are namespaced: `/plugin:skill`, `plugin:agent`. For plugin agents the `agent_type` in `SubagentStart`/`SubagentStop` payloads is the scoped id (`loom:loom-code-reviewer`); user and project agents report the bare frontmatter `name`.
+- A `CLAUDE.md` at the plugin root is NOT loaded, so the global rules need another channel (a `SessionStart` hook's `additionalContext`, or `--append-system-prompt-file` for loom-spawned sessions).
+- Agent precedence on a name clash: managed settings > `--agents` > `.claude/agents/` > `~/.claude/agents/` > plugin agents.
+- Claude Code also auto-loads a plugin folder at `~/.claude/skills/<name>/` as `<name>@skills-dir` (used by `loom-ui`); that location is still inside `~/.claude`.
+
+What a plugin would cost: every exact match on a bare agent or skill name changes, including `REVIEWER_AGENT_TYPE` in `loom/src/verify/review/gate.rs` and `loom-hooks/subagent-stop.sh`, the `loom-codex-forwarder` checks in `loom-hooks/codex-forward-guard.sh`, signal doctrine (`Skill(skill="loom-orchestration")`, spawn-by-type lines in `orchestrator/signals/`), `CLAUDE.md.template`, the skills, and usage accounting's agent-type sections. The global rules need the separate channel above. A launch-level test must prove a loom-spawned session lists the namespaced agents and records a review round from one.
