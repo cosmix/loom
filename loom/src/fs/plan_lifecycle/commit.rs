@@ -12,11 +12,11 @@ use crate::git::runner::{run_git_checked, run_git_with_env_within};
 use crate::git::signing::{self, SigningEnv};
 use crate::git::target_guard;
 
-/// Commit tracked changes to keep the default branch clean after plan completion.
+/// Commit the plan's own IN_PROGRESS → DONE rename after plan completion.
 ///
-/// After all stages are merged and the plan is renamed to DONE, this commits:
-/// - The plan file rename (IN_PROGRESS → DONE)
-/// - Any other tracked modifications (e.g., knowledge files updated by integration-verify)
+/// Only the two plan paths are staged. Stage changes reach the target branch
+/// as merge commits, so any other tracked modification in the checkout is the
+/// operator's work in progress and must stay uncommitted.
 pub(super) fn commit_post_completion_changes(
     work_dir: &WorkDir,
     old_plan_path: &Path,
@@ -29,11 +29,6 @@ pub(super) fn commit_post_completion_changes(
     // Stage the plan file rename: add the new DONE file and stage deletion of old
     run_git_checked(&["add", &new_plan_path.display().to_string()], repo_root)?;
     run_git_checked(&["add", &old_plan_path.display().to_string()], repo_root)?;
-
-    // Stage any other tracked modifications (modified + deleted tracked files).
-    // Does NOT add untracked files — safe for automated use.
-    // Typically catches knowledge files updated by integration-verify.
-    run_git_checked(&["add", "-u"], repo_root)?;
 
     // Check if there's anything staged to commit
     let staged = run_git_checked(&["diff", "--cached", "--name-only"], repo_root)?;
@@ -177,14 +172,40 @@ mod tests {
         repo
     }
 
-    /// Rename the plan, edit a knowledge file and run the post-completion
-    /// commit, as `rename_completed_plan` does.
+    /// Rename the plan and run the post-completion commit, as
+    /// `rename_completed_plan` does.
     fn complete(repo: &Repo) {
         std::fs::rename(repo.root.join(OLD), repo.root.join(NEW)).unwrap();
-        std::fs::write(repo.root.join("doc/loom/knowledge/a.md"), "v2\n").unwrap();
         let work_dir = WorkDir::new(&repo.root).unwrap();
         let (old, new) = (repo.root.join(OLD), repo.root.join(NEW));
         commit_post_completion_changes(&work_dir, &old, &new).unwrap();
+    }
+
+    /// Edit a committed file and stage it, so the next commit carries it.
+    fn stage_edit(repo: &Repo, path: &str) {
+        std::fs::write(repo.root.join(path), "v2\n").unwrap();
+        git(&repo.root, &["add", path]);
+    }
+
+    #[test]
+    fn unrelated_tracked_edits_stay_out_of_the_plan_done_commit() {
+        let repo = plan_repo();
+        std::fs::write(repo.root.join("src/x.rs"), "operator wip\n").unwrap();
+        std::fs::write(repo.root.join("doc/loom/knowledge/a.md"), "wip\n").unwrap();
+
+        complete(&repo);
+
+        let files = git(&repo.root, &["show", "--name-status", "--format=", "HEAD"]);
+        assert_eq!(files.lines().count(), 1, "only the rename: {files}");
+        assert!(files.contains(OLD) && files.contains(NEW), "{files}");
+        let status = git(
+            &repo.root,
+            &["status", "--porcelain", "--untracked-files=no"],
+        );
+        assert_eq!(git(&repo.root, &["diff", "--cached", "--name-only"]), "");
+        assert!(status.contains("M src/x.rs"), "{status}");
+        assert!(status.contains("M doc/loom/knowledge/a.md"), "{status}");
+        assert!(matches!(guard(&repo), GuardState::Clear { .. }));
     }
 
     /// Name `x` as the active plan in the state directory's `config.toml`.
@@ -255,6 +276,7 @@ mod tests {
     #[test]
     fn a_commit_of_only_the_plan_files_and_knowledge_is_attested() {
         let repo = plan_repo();
+        stage_edit(&repo, "doc/loom/knowledge/a.md");
 
         complete(&repo);
 
@@ -267,7 +289,7 @@ mod tests {
     #[test]
     fn a_commit_that_also_carries_source_is_not_attested() {
         let repo = plan_repo();
-        std::fs::write(repo.root.join("src/x.rs"), "v2\n").unwrap();
+        stage_edit(&repo, "src/x.rs");
 
         complete(&repo);
 
@@ -278,7 +300,7 @@ mod tests {
     #[test]
     fn a_commit_that_also_carries_another_plan_is_not_attested() {
         let repo = plan_repo();
-        std::fs::write(repo.root.join(OTHER_PLAN), "sandbox: changed\n").unwrap();
+        stage_edit(&repo, OTHER_PLAN);
 
         complete(&repo);
 
@@ -300,7 +322,7 @@ mod tests {
     fn a_commit_of_the_plans_own_review_document_is_attested() {
         let repo = plan_repo();
         configure_plan_x(&repo);
-        std::fs::write(repo.root.join(REVIEW), "v2\n").unwrap();
+        stage_edit(&repo, REVIEW);
 
         complete(&repo);
 
@@ -314,7 +336,7 @@ mod tests {
     fn a_commit_of_another_plans_review_document_is_not_attested() {
         let repo = plan_repo();
         configure_plan_x(&repo);
-        std::fs::write(repo.root.join(OTHER_REVIEW), "sandbox: changed\n").unwrap();
+        stage_edit(&repo, OTHER_REVIEW);
 
         complete(&repo);
 

@@ -86,3 +86,13 @@
 **Prevention:** a watchdog that closes a session must tell waiting on its own running command apart from silence. A budget derived from one setting cannot cover work whose length another setting controls.
 
 **Fix:** operator ruled on the dispute (criterion 1 skips the three sandbox-only tests, all of which pass outside it) and approved the review. `monitor/judge_watchdog.rs` now holds a judge whose own process has a running command child (a shell, `bwrap` or `sandbox-exec` that itself runs something, found by `monitor/running_command.rs` from `/proc` or `ps`) and prints `JUDGE WAITING:` once per wait, up to the disputed stage's summed criterion timeouts plus one budget; a judge with no heartbeat and no command of its own past the budget is still closed. The three tests skip themselves through `process/sandbox_probe.rs` when Unix sockets or nested confinement are unavailable, and `loom check` exits non-zero when a criterion fails.
+
+## Plan Completion Committed the Operator's Work in Progress (2026-10-21)
+
+**What happened:** when PLAN-02 completed, `chore(loom): mark plan complete` (`f353d650`) carried the operator's uncommitted edits to twelve tracked source files: half of a watchdog change, the `loom check` exit-code fix and three test skips. Their new untracked files stayed out, so the commit declared modules it did not contain and did not compile.
+
+**Why:** `fs/plan_lifecycle/commit.rs::commit_post_completion_changes` ran `git add -u` in the operator's checkout. It was there to catch knowledge files, but stage work reaches the target branch as merge commits, so `-u` only ever caught operator work.
+
+**Prevention:** an automated commit in the operator's checkout stages the exact paths it changed, never `-u` or `-A`. Paths the operator already staged still ride along; `git commit --only -- <paths>` would exclude those too.
+
+**Fix:** the completion commit stages only the plan rename, and `unrelated_tracked_edits_stay_out_of_the_plan_done_commit` pins it. The follow-up commits `d4d8fe20` and `ac6c55f2` completed the swept work.
