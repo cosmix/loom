@@ -255,4 +255,17 @@ fn capped_query_still_issues_a_scoped_brief() {
     let records = load_deliveries(&fixture.config.work_dir, PLAN, STAGE).unwrap();
     assert_eq!(records.len(), 1);
     assert!(!records[0].delivered.is_empty());
+    assert_pack_query_capped(&fixture, &payload(&prompt));
+}
+
+/// `retrieve_pack` must route the query through `worker_query_text`: the pack
+/// records the query text it was built from, so an uncapped query shows here.
+fn assert_pack_query_capped(fixture: &Fixture, raw: &str) {
+    let parsed: HookPayload = serde_json::from_str(raw).expect("payload parses");
+    let pack = retrieve_pack(&fixture.config, &parsed, &[]).expect("pack retrieves");
+    assert!(
+        pack.query.len() <= WORKER_QUERY_MAX_BYTES,
+        "query is {} bytes",
+        pack.query.len()
+    );
 }
