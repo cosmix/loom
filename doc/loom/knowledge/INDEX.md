@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 251 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 247 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 248 |
 
 ## Tier 2 — Topics
 
@@ -172,12 +172,12 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Bendable checks backlog | 273 |
+| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Bendable checks backlog | 324 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Knowledge followups | 51 |
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Oversized units, hooks | 174 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat starvation | 49 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 window never named | 49 |
-| [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps | 116 |
+| [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps | 115 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry edge cases | 147 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Open gaps: commits, launch, stalls | 213 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | tmux, orphan adoption edge cases | 150 |

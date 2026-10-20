@@ -271,3 +271,54 @@ The doctrine is BLOCK-F (`orchestrator/signals/helpers.rs::STAGE_EXIT_RULES`, by
 - **BLOCK-F and commit timing disagree.** BLOCK-F says to commit before filing; `append_commit_timing_rules` in the same signal prefix says commit only as the final step. The commit-timing text needs an exception for a dispute or block.
 - **A surviving agent on a Blocked stage is never retried.** When retirement leaves survivors, `blocked.rs` warns once; `StageBlocked` is not re-emitted. Only `loom stage reset --kill-session` clears it.
 - **Duplicated block mutation.** The `NotListening` arm of `commands/stage/state_relay.rs` repeats the `try_mark_blocked` / `close_reason` / `failure_info` / `updated_at` writes of `handle_block_stage`; `event_handler/stage_takedown.rs::retirable_agents` repeats the session assembly of `stage_agents`. Each pair can drift.
+
+## Gaps Found (continued): G8
+
+### G8 — The knowledge-file guard gates tool names over a path the sandbox grants
+
+**The check.** `loom-hooks/worktree-file-guard.sh:326-334` refuses Write, Edit, MultiEdit and
+NotebookEdit under `<worktree>/doc/loom/knowledge/`. It is class 2 and the only check on the
+directory: `sandbox/config.rs::apply_knowledge_write_grant` adds `doc/loom/knowledge/**` to every
+merged config's `allow_write` and strips it from `deny_write`, because `loom knowledge update` is an
+ordinary child of the sandboxed shell ([Knowledge Write Channel](../mistakes/knowledge-write-channel.md)).
+Any process the agent starts (`python -c`, `sed -i`, a heredoc) writes the same bytes as the CLI.
+Agents observed in knowledge-distill worktrees take that route right after the block.
+
+**Why agents take it:**
+
+- **The message reads as "use another tool".** The reason line says "not file tools", and the shared
+  `block_path` footer (`worktree-file-guard.sh:124`) says "Use a path inside the current worktree"
+  about a path already inside it.
+- **The named verb cannot do an Edit's job.** The message names `update`, which appends. The
+  in-place verbs, `replace-section` and `delete-section`, go unmentioned.
+- **The sanctioned recipe is a shell transform.** [Knowledge CLI Gaps](knowledge-cli-gaps.md) has a
+  surgical fix extract the section with a fence-aware scanner, substitute, and pipe the body to
+  `replace-section`; writing the file directly skips one hop.
+- **It blocks the stage that owns the files.** The guard applies in knowledge-distill worktrees,
+  while CLAUDE.md Rule 12 step 4 permits an Edit plus `loom knowledge sync` outside a stage.
+
+**What a bypass costs.** The CLI's write path regenerates `INDEX.md`, handles headings and fences,
+and keeps the index under its `OversizedIndex` budget. A search of `verify/` and `commands/stage/`
+found no completion-time knowledge check, so a stale index or a doubled heading merges unnoticed.
+Those invariants are the value at stake; the channel adds nothing apart from them.
+
+**A contradicted justification.** `plan/schema/validation.rs::warn_ignored_knowledge_denies` says
+"every stage records knowledge through `loom knowledge update`". Rule 12 has standard stages record
+`stale-knowledge:` memories and never run `loom knowledge update`. Unverified: whether any
+standard-stage path (the memory spool drain, an index refresh) writes the directory.
+
+**Fix direction (not planned):**
+
+1. Gate the result: for a stage whose diff touches `doc/loom/knowledge/`, run `loom knowledge check`
+   and an index-freshness comparison (regenerate in memory, compare to disk) at completion, outside
+   agent control. Then the write route stops mattering, and distill stages can be allowed Edit with
+   a sync after it.
+2. Scope `apply_knowledge_write_grant` to Knowledge and KnowledgeDistill stages and deny the
+   directory to the rest, once the unverified item above is checked. Spell the deny as a directory
+   path (write globs are skipped on Linux, G2) and add a probe with matched controls (G3).
+3. Rewrite the block message: drop the worktree footer for this reason, name `replace-section`,
+   `delete-section` and `update`, and say a shell or interpreter write breaks the same rule. Claim
+   detection at completion only once item 1 exists.
+4. Add an exact-once `loom knowledge edit <topic> --old <text> --new <text>` verb, which removes the
+   shell-transform recipe for most surgical fixes.
+5. No Bash-side text matcher: `commit-filter.sh:12-28` records why that class loses to `python -c`.

@@ -88,17 +88,16 @@ What remains is discipline, not backlog:
 
 The worktree file guard refuses Edit and Write under `doc/loom/knowledge/` ("knowledge files are
 recorded through `loom knowledge update`, not file tools"), in a knowledge-distill stage too. The
-in-place channels are `replace-section` (rewrites a section body, keeps its heading) and, since 2026-09-19,
+in-place channels are `replace-section` (rewrites a section body, keeps its heading) and
 `delete-section` (removes a heading and its subsections); a heading rename is delete plus `update`. A surgical
 fix inside a long section means regenerating the whole body: extract it with a FENCE-AWARE scanner, apply
 exact-once substitutions, and pipe the result to `replace-section` from a file. `loom-control-complete.sh` strips
-inert heredoc bodies now (quoted delimiter, inert reader), but a long body still belongs in a file fed on
+inert heredoc bodies (quoted delimiter, inert reader), but a long body still belongs in a file fed on
 stdin; name that file `.distill-body-*` so the main-agent edit advisory ignores it.
 
-`INDEX.md` has 108 bytes of headroom under its 16 384-byte `OversizedIndex` budget after the 2026-09-19 splits
-added seven topic rows and roughly sixty blurbs were shortened to pay for them. Every new tier-2 topic adds a row,
-so each one has to be paid for with shorter blurbs (`loom knowledge annotate <target> --blurb`). The next
-distillation should expect to shorten more blurbs before adding a topic, or drop rows by merging small topics.
+`INDEX.md` sits within a few bytes of its 16 384-byte `OversizedIndex` budget; the SessionStart knowledge-orient
+line reports its current size. Every new tier-2 topic adds a row, so each one has to be paid for with shorter
+blurbs (`loom knowledge annotate <target> --blurb`) or by merging small topics.
 
 ## `loom knowledge update` Run From Inside the Knowledge Directory Scaffolds a Nested Tree
 

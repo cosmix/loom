@@ -163,10 +163,11 @@ Shared package-manager caches stay session-writable, so a stage can edit an extr
 
 ## Agent Rule-Bending Hardening (2026-09-16)
 
-Only the OS sandbox, the capsule denies and the daemon's ancestry checks carry authority. Seven
+Only the OS sandbox, the capsule denies and the daemon's ancestry checks carry authority. Eight
 gaps, led by text-matched commits, the whole git common directory writable from a stage (Claude
-Code's own grant; host git follows the agent's `.git` pointer; the merge gate fails open), and no
-live proof that any denial holds. No plan addresses G1-G3 or G7's caches.
+Code's own grant; host git follows the agent's `.git` pointer; the merge gate fails open), no
+live proof that any denial holds, and a knowledge-file guard that gates tool names over a directory
+the sandbox grants to every stage (G8). No plan addresses G1-G3, G7's caches or G8.
 
 → [Agent Rule-Bending Hardening](concerns/agent-rule-bending-hardening.md)
 
