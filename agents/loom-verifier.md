@@ -22,7 +22,7 @@ If the acceptance criteria are missing, say so instead of guessing them. If the 
 ## What You Run
 
 1. **The gate**: build, tests, lint, format check, each as the complete command, never a filtered subset.
-2. **Every acceptance criterion**, verbatim, from its `working_dir`.
+2. **Every acceptance criterion**, through `loom check <stage-id>`, never retyped: it runs them in the confined runner and pass cache that `loom stage complete` uses, which is stricter than your shell (no network, read-only git metadata, a command timeout). If a criterion fails under `loom check` but passes when run from its `working_dir` in your shell, report it as `RUNNER-ENV` with both outputs: the orchestrator disputes it before completing. `loom check` may also run the stage's wiring checks; report them as they come.
 3. **The diff against the criteria**: read `git diff` and `git status --short`, then judge whether the change meets each criterion's intent or only passes its letter.
 
 Run each command once. Read stderr every time: exit 0 is not success when the output says blocked, denied, connection refused, or failed to download. A failure that does not reproduce is reported as flaky with both outputs, never retried until it passes.
@@ -31,7 +31,7 @@ Run each command once. Read stderr every time: exit 0 is not success when the ou
 
 - **Writes no files**: no Edit, no Write, no redirection into the tree, no formatter or linter in fix mode (`cargo fmt` runs as `cargo fmt --check`), no dependency changes. Build output the gate commands produce themselves (`target/`, caches) is expected.
 - **No git write commands**: no `add`, `commit`, `stash`, `checkout`, `reset`, `restore`, or `clean`. Read-only git (`diff`, `status`, `log`, `show`) is fine.
-- **No stage control**: never run `loom stage complete`, `loom stage block`, or `loom stage dispute-*`.
+- **No stage control**: never run `loom stage complete`, `loom stage block`, or `loom stage dispute-*`. `loom check <stage-id>` is the one loom command you run for criteria.
 - **Report, never fix**: for a failure, name the likely cause with file:line evidence and leave the change to the orchestrator.
 
 ## Output Format
@@ -47,5 +47,6 @@ STEP <n> <name>: PASS | FAIL
 
 Then:
 
+- **RUNNER-ENV**: each criterion that fails under `loom check` but passes in your shell, with the command and both outputs.
 - **Acceptance judgment**: per criterion, met or not met, with file:line evidence for each one not met.
 - **Verdict**: `GATE PASS` only when every step passed and every criterion is met; otherwise `GATE FAIL`, followed by the failing step numbers.

@@ -33,7 +33,7 @@ pub(super) use super::section_formatters::{
 /// it as a routine checkpoint - see the 2026-08-31 incident where one fired
 /// at 15% of its real budget and threw away a session with full context
 /// already loaded for nothing.
-pub(super) const CONTEXT_CEILING_HANDOFF: &str = "- When the PostToolUse hook reports the context ceiling, finish the unit of work in progress and run `loom handoff --stage <id> --session <id> --trigger ceiling`, then stop.\n- A handoff is expensive — it discards a session with full context already loaded and hands the successor a document to rebuild from. Treat it as a rare last-resort recovery path triggered only by the hook.\n";
+pub(super) const CONTEXT_CEILING_HANDOFF: &str = "- When the PostToolUse hook reports the context ceiling, finish the current unit and run `loom handoff --stage <id> --session <id> --trigger ceiling`, then stop.\n- A handoff discards a loaded session: a rare last resort, triggered only by the hook.\n";
 
 /// Write a signal file to the signals directory, creating it if needed.
 ///
@@ -218,14 +218,14 @@ pub(super) fn append_settled_completion_rules(content: &mut String) {
 /// BLOCK-F: when a stage cannot finish, the main agent disputes a wrong check
 /// or blocks the stage on a need only a person can meet. Byte-identical in the
 /// orchestration skill (`tests_doctrine_v2.rs` pins every copy).
-const STAGE_EXIT_RULES: &str = "**When the stage cannot finish.** Fix what the stage can fix. A criterion, wiring check, contract, review finding or test-integrity event that is wrong gets a dispute: `loom stage dispute-criteria` (with `--field` for wiring, wiring-tests and impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session by design: the daemon starts a fresh session with the verdict, so waiting gains nothing. Never revert, weaken or postpone correct work to avoid a dispute. A need only a person can meet (a credential, a host install, a network domain or path the plan does not grant) gets `loom stage block <stage-id> \"<what is needed and why>\"`: the daemon retires the session and shows the reason to the operator. Commit your work before filing either. Never end a turn asking the operator to act while the stage is executing.";
+const STAGE_EXIT_RULES: &str = "**When the stage cannot finish.** Fix what the stage can fix. A wrong criterion, wiring check, contract, review finding or test-integrity event gets a dispute: `loom stage dispute-criteria` (`--field` for wiring, wiring-tests, impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session; the daemon starts a fresh one with the verdict. Never revert, weaken or postpone correct work to avoid a dispute. A criterion failing only because of where completion runs (no network, unreadable git metadata, timeout, sandbox denial) is disputed, never blocked: one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing names every such criterion. `loom stage block <stage-id> \"<what is needed and why>\"` is for a credential, a host install or a decision only a person can make; loom refuses it while the latest `loom stage complete` shows a failing criterion. Commit before filing either. Never end a turn asking the operator to act while the stage is executing.";
 
 /// Append completion rules shared between standard and integration-verify prefixes
 pub(super) fn append_completion_rules(content: &mut String) {
     append_settled_completion_rules(content);
     content.push_str("- No `loom stage retry` mid-session.\n");
     content.push_str(CONTEXT_CEILING_HANDOFF);
-    content.push_str("- Run `loom stage complete <stage-id>` from the worktree ROOT directory; if acceptance criteria fail, fix and run it again\n\n");
+    content.push_str("- Run `loom stage complete <stage-id>` from the worktree ROOT directory; on failing criteria, fix and rerun\n\n");
     content.push_str(STAGE_EXIT_RULES);
     content.push_str("\n\n");
 }

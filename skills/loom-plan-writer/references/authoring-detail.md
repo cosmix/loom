@@ -123,10 +123,13 @@ event gets a dispute: `loom stage dispute-criteria <stage-id> [--field acceptanc
 which routes to adjudication and can amend the criterion through the audited amendment path;
 operator-side the same machinery is `loom stage amend`. Filing ends the session by design: the daemon
 starts a fresh session with the verdict, so waiting gains nothing. Disputes are for IMPOSSIBLE
-criteria, never merely red ones. A need only a person can meet (a credential, a host install, a
-network domain or path the plan does not grant) gets `loom stage block <stage-id> "<what is needed
-and why>"` from the stage's main agent: the daemon retires the session and shows the reason to the
-operator, who resumes with `loom stage retry`. The plan is still where this outcome is prevented (the
+criteria, never merely red ones. A criterion that fails only because of where completion runs (no
+network, unreadable git metadata, the command timeout, a sandbox denial) is disputed, never blocked:
+name every such criterion in one `loom stage dispute-criteria <stage-id> --criterion-index <n>
+[--criterion-index <n> ...]` filing. A credential, a host install or a decision only a person can
+make gets `loom stage block <stage-id> "<what is needed and why>"` from the stage's main agent
+(loom refuses it while the latest `loom stage complete` shows a failing criterion): the daemon retires the session and shows
+the reason to the operator, who resumes with `loom stage retry`. The plan is still where this outcome is prevented (the
 baseline rule in `verification-rules.md`, `sandbox.md`'s ungrantable-resource rule and environment
 inventory in `SKILL.md` Section 8); a dispute or a block is the recovery, not the design.
 

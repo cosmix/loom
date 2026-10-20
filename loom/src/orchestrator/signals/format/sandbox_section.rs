@@ -99,7 +99,7 @@ fn format_unix_socket_note(allowed: bool) -> String {
     "**Unix sockets:** none can be created (`Operation not permitted`, any path): postgres, \
      SeaweedFS filer/s3, Chrome, tmux, docker, sccache. Use TCP instead (postgres \
      `-c unix_socket_directories=''`). A criterion needing one goes last: do the rest, then \
-     `loom stage block <stage-id> \"<criterion> needs a Unix socket\"`.\n\n"
+     dispute it with `loom stage dispute-criteria <stage-id> --criterion-index <n>`.\n\n"
         .to_string()
 }
 
@@ -197,7 +197,10 @@ mod tests {
 
         let denied = format_sandbox_section(&summary);
         assert!(denied.contains("**Unix sockets:** none can be created"));
-        assert!(denied.contains("`loom stage block <stage-id>"), "{denied}");
+        assert!(
+            denied.contains("`loom stage dispute-criteria <stage-id>"),
+            "{denied}"
+        );
         assert!(denied.contains("unix_socket_directories=''"), "{denied}");
 
         summary.unix_sockets_allowed = true;

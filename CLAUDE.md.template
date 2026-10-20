@@ -182,7 +182,7 @@ In a knowledge-distill stage every memory ends with `loom memory resolve`; `loom
 
 ### 13. SILENT FAILURE DETECTION
 
-Exit code 0 ≠ success: sandbox blocks, dependency-fetch failures, and write denials all exit 0. Read stderr; on "blocked", "denied", "connection refused", "failed to download": stop and investigate. Confirm external dependencies exist. In a stage, the main agent blocks a need only a person can meet with `loom stage block <stage-id> "<what is needed and why>"` and disputes a wrong check; a subagent reports either to its orchestrator.
+Exit code 0 ≠ success: sandbox blocks, dependency-fetch failures, and write denials all exit 0. Read stderr; on "blocked", "denied", "connection refused", "failed to download": stop and investigate. Confirm external dependencies exist. In a stage, the main agent disputes a wrong check, or one that fails only because of where completion runs (no network, unreadable git metadata, the command timeout, a sandbox denial), naming every such criterion in one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing, and blocks only a credential, a host install or a decision only a person can make with `loom stage block <stage-id> "<what is needed and why>"` (refused while the latest `loom stage complete` shows a failing criterion); a subagent reports either to its orchestrator.
 
 ### 14. TOKEN EFFICIENCY (HARD REQUIREMENT)
 

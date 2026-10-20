@@ -328,13 +328,28 @@ fn registry_tool_without_registry_domain_is_an_error() {
         "expected a registry lint naming registry.npmjs.org: {errors:?}"
     );
 
+    // The default confined runner has no network, so allowing the domain does
+    // not clear the lint: the remedy is a `provision` entry.
     let wildcard = sandbox_domains("\"crates.io\", \"*.npmjs.org\"");
     write_file(repo.path(), "PLAN.md", &plan(&wildcard, bunx));
 
     let errors = verify_errors(repo.path());
     assert!(
+        errors
+            .iter()
+            .any(|m| m.contains("registry.npmjs.org") && m.contains("`provision` entry")),
+        "a confined criterion needs a provision entry whatever the domains: {errors:?}"
+    );
+
+    // Without confinement the criterion runs in the session's sandbox, where
+    // `*.npmjs.org` covers registry.npmjs.org.
+    let inherit = "  sandbox:\n    command_confinement: inherit\n    network:\n      allowed_domains: [\"crates.io\", \"*.npmjs.org\"]\n";
+    write_file(repo.path(), "PLAN.md", &plan(inherit, bunx));
+
+    let errors = verify_errors(repo.path());
+    assert!(
         !errors.iter().any(|m| m.contains("registry.npmjs.org")),
-        "*.npmjs.org covers registry.npmjs.org: {errors:?}"
+        "*.npmjs.org covers registry.npmjs.org when the criterion is not confined: {errors:?}"
     );
 }
 

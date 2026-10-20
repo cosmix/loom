@@ -96,7 +96,7 @@ pub fn generate_stable_prefix() -> String {
     append_path_boundaries(&mut content);
 
     content.push_str(
-        "**working_dir Reminder:** Acceptance criteria execute from `WORKTREE + working_dir` — see the Target section below for the exact path.\n\n",
+        "**working_dir Reminder:** Criteria run from `WORKTREE + working_dir` (see Target below for the exact path).\n\n",
     );
 
     append_execution_rules_header(&mut content);

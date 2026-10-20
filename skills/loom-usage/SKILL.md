@@ -375,7 +375,12 @@ When a stage is functionally done but acceptance criteria are wrong:
 loom stage dispute-criteria <stage-id> --criterion-index <n> --reason "<why it is wrong>"
 loom stage dispute-criteria <stage-id> --field wiring --criterion-index <n> --reason "<why>"
 
-# A need only a person can meet (credential, host install, network domain or path)
+# A criterion that fails only because of where completion runs (no network, unreadable
+# git metadata, the command timeout, a sandbox denial): dispute every such one in one filing
+loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...] --reason "<why>"
+
+# A credential, a host install or a decision only a person can make (refused while the latest
+# `loom stage complete` shows a failing criterion)
 loom stage block <stage-id> "<what is needed and why>"
 
 # Force complete a stage awaiting review (use sparingly): records the

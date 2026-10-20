@@ -210,8 +210,8 @@ fn print_criterion_result(index: usize, criterion_result: &CriterionResult, setu
 }
 
 /// The guidance for a failed acceptance, wiring or wiring-test check: fix it,
-/// dispute a check no correct work could pass, or block on a need only a
-/// person can meet.
+/// or dispute a check no correct work could pass or that fails only because of
+/// where completion runs. Block is refused while the latest completion shows a failing criterion.
 fn failure_guidance(stage_id: &str) -> String {
     let dispute = format!("    loom stage dispute-criteria {stage_id}");
     [
@@ -230,11 +230,13 @@ fn failure_guidance(stage_id: &str) -> String {
          not reach for --no-verify — it needs an operator proof the sandbox denies by \
          design — and do not corrupt the artifact to satisfy a check you believe is wrong."
             .to_string(),
-        format!(
-            "  A failure only a person can fix (a credential, a host install, a network domain \
-             or path the plan does not grant): loom stage block {stage_id} \
-             \"<what is needed and why>\""
-        ),
+        "  A criterion that fails only because of where completion runs (no network, \
+         unreadable git metadata, the command timeout, a sandbox denial) is disputed, never \
+         blocked: name every such criterion in one filing with a repeatable \
+         --criterion-index <n> flag. loom stage block is for a credential, a host install or \
+         a decision only a person can make, and loom refuses it while the latest \
+         `loom stage complete` shows a failing criterion."
+            .to_string(),
     ]
     .join("\n")
 }

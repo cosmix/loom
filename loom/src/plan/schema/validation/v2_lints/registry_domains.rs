@@ -1,11 +1,12 @@
 //! Package-registry commands in a sandboxed stage: `bunx`, `npm install`,
 //! `cargo install`, `uv sync` and the like fetch from a registry host, and the
-//! stage's sandbox must allow it.
+//! stage's sandbox must allow it. A command the confined completion runner
+//! executes has no network at all, so it is reported whatever the sandbox allows.
 
-use crate::plan::schema::StageDefinition;
+use crate::plan::schema::{CommandConfinement, StageDefinition};
 
 use super::super::shell_lex::Word;
-use super::{sandboxed_commands, visit_argvs, LintContext, LintFinding};
+use super::{sandboxed_commands, visit_argvs, LintContext, LintFinding, StageCommand};
 
 pub(super) type Domains = &'static [&'static str];
 
@@ -117,28 +118,78 @@ pub(super) fn allowed_patterns<'a>(
     )
 }
 
+/// Label prefixes of the commands `loom stage complete` runs in the confined
+/// runner, which has no network whatever the plan's `allowed_domains` says
+/// (`verify/criteria/confine.rs`). `after_stage` checks are not among them.
+const RUNNER_LABELS: [&str; 4] = [
+    "Acceptance criterion",
+    "Setup command",
+    "Wiring test",
+    "dead_code_check",
+];
+
+/// Whether `command` runs in the confined runner of a stage whose effective
+/// `command_confinement` is `confined`.
+fn runs_confined(
+    ctx: &LintContext<'_>,
+    stage: &StageDefinition,
+    command: &StageCommand<'_>,
+) -> bool {
+    let confinement = stage
+        .sandbox
+        .command_confinement
+        .unwrap_or(ctx.metadata.loom.sandbox.command_confinement);
+    confinement == CommandConfinement::Confined
+        && RUNNER_LABELS
+            .iter()
+            .any(|prefix| command.label.starts_with(prefix))
+}
+
+/// The finding text for a registry command, or `None` when nothing is wrong.
+/// In the confined runner the fetch fails whatever the session may reach;
+/// elsewhere it fails only for domains the stage's sandbox does not allow.
+fn problem(
+    tool: &str,
+    needed: Domains,
+    allowed: Option<&[&str]>,
+    in_runner: bool,
+) -> Option<String> {
+    if in_runner {
+        return Some(format!(
+            "runs `{tool}`, which needs {}; completion runs this command in the confined \
+             runner, which has no network whatever `allowed_domains` says: install it from a \
+             `provision` entry and call the installed binary",
+            needed.join(", ")
+        ));
+    }
+    let missing = missing_domains(allowed?, needed);
+    (!missing.is_empty()).then(|| {
+        format!(
+            "runs `{tool}`, which needs {}; the stage's sandbox does not allow {}: add it to \
+             `sandbox.network.allowed_domains` or `additional_domains`, or install from a plan \
+             `provision` entry",
+            needed.join(", "),
+            missing.join(", ")
+        )
+    })
+}
+
 pub(super) fn check(ctx: &LintContext<'_>, out: &mut Vec<LintFinding>) {
     for stage in &ctx.metadata.loom.stages {
-        let Some(allowed) = allowed_patterns(ctx, stage) else {
-            continue;
-        };
+        let allowed = allowed_patterns(ctx, stage);
         for command in sandboxed_commands(stage) {
+            let in_runner = runs_confined(ctx, stage, &command);
             let mut reported: Vec<String> = Vec::new();
             visit_argvs(command.text, 0, &mut |argv| {
                 let Some((tool, needed)) = registry_need(argv) else {
                     return;
                 };
-                let missing = missing_domains(&allowed, needed);
-                if missing.is_empty() || reported.contains(&tool) {
+                let Some(problem) = problem(&tool, needed, allowed.as_deref(), in_runner) else {
+                    return;
+                };
+                if reported.contains(&tool) {
                     return;
                 }
-                let problem = format!(
-                    "runs `{tool}`, which needs {}; the stage's sandbox does not allow {}: add \
-                     it to `sandbox.network.allowed_domains` or `additional_domains`, or install \
-                     from a plan `provision` entry",
-                    needed.join(", "),
-                    missing.join(", ")
-                );
                 out.push(LintFinding::in_stage(
                     stage,
                     command.describe(&problem),

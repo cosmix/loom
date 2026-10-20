@@ -122,11 +122,41 @@ sandboxed stage then needs `registry.npmjs.org` in `allowed_domains`, including 
 acceptance needs no network. `loom plan verify` errors when a stage's sandbox omits a registry the
 hook fetches from.
 
+## Where criteria run
+
+Acceptance, setup, wiring, truth and dead-code commands run in loom's confined runner at
+`loom stage complete`, not in the session sandbox:
+
+- No network, ever. The plan's `network.allowed_domains` reaches only the agent's session.
+- Git metadata is read-only; `/tmp` and `/var/tmp` are private to the run.
+- A string criterion gets 300 s. The extended form `{command: ..., timeout_secs: N}` defaults to
+  30 s and takes `timeout_secs` from 1 to 3600: set it for a slow suite.
+- A tool a criterion needs comes from a `provision` entry (provision has network); the criterion
+  calls the installed binary by its path in the tree, such as `node_modules/.bin/<tool>` after a
+  Bun or npm install or `.venv/bin/<tool>` after `uv sync`. Never `bunx`, `npx`, `uvx`,
+  `pip install`, `cargo install` or `curl` at criterion time: `loom plan verify` errors on the
+  registry commands for a `confined` stage whatever `allowed_domains` says.
+- A lint or format check is a criterion only when the target project already runs it (its CI,
+  hooks or scripts) with its own config in the repository. Never carry a check over from another
+  project or from loom's own repository.
+
+`loom check <stage-id>` runs the criteria through the same runner, so a mismatch shows before
+completion.
+
+**Granting the session's network.** Think hard about `network.allowed_domains`: list every fetch the
+stage's own work does by reading the repo's manifests, lockfiles, scripts and hooks, and grant exactly
+those. Typical hosts: cargo `crates.io`, `index.crates.io`, `static.crates.io`; bun/npm
+`registry.npmjs.org`; uv/pip `pypi.org`, `files.pythonhosted.org`; Playwright browsers (its download
+hosts); GitHub release downloads `github.com`, `objects.githubusercontent.com`; go `proxy.golang.org`.
+Anything only a criterion needs goes to `provision`, not to the domain list.
+
 ## Registry domains `loom plan verify` checks
 
-A command in a stage's acceptance, setup, wiring tests, after-stage checks or dead-code check that
-fetches from a registry its sandbox does not allow is a `loom plan verify` error. `loom init` prints
-the same suggestions.
+A command in a stage's after-stage checks, or in any scanned command of a stage whose
+`command_confinement` is `inherit`, that fetches from a registry its sandbox does not allow is a
+`loom plan verify` error. In a `confined` stage (the default) a registry fetch in an acceptance,
+setup, wiring or dead-code command is an error whatever the domains say; the remedy is a
+`provision` entry. `loom init` prints the same suggestions.
 
 | Command | Domains the stage's `allowed_domains` needs |
 | --- | --- |

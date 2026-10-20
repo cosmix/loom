@@ -10,7 +10,8 @@ fn failure_guidance_names_every_route() {
         "loom stage dispute-criteria s1 --criterion-index",
         "--field wiring --criterion-index",
         "--field wiring-tests --criterion-index",
-        "loom stage block s1",
+        "--criterion-index <n> flag",
+        "never blocked",
     ] {
         assert!(text.contains(route), "missing `{route}` in:\n{text}");
     }

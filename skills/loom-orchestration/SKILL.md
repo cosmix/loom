@@ -66,7 +66,9 @@ job. Afterwards STOP: post-completion work is LOST WORK.
 **The gate in a standard stage.** Once every implementer has returned, spawn ONE `loom-verifier`
 BY AGENT TYPE, without `name`, briefed with the stage's acceptance criteria and the project's build,
 test, lint, and format commands. It runs them on the complete tree, writes nothing, and reports PASS or FAIL per
-step with the command, exit code, and failing excerpt. Each FAIL becomes a fix brief (Rule 7);
+step with the command, exit code, and failing excerpt. It runs the acceptance criteria through
+`loom check <stage-id>`, the confined runner `loom stage complete` uses; a criterion that fails there
+but passes in its own shell comes back as RUNNER-ENV with both outputs, and you dispute it before completing. Each FAIL becomes a fix brief (Rule 7);
 after the fixes, spawn a FRESH verifier, never a message to the old one. Do not repeat its run
 yourself. An integration-verify stage keeps its own gate, as its signal directs.
 
@@ -289,7 +291,7 @@ the worktree. A contract that is itself wrong is disputed, never edited:
 
 **Review order (plan v2):** fix every finding, run the full gate, then run the final review round, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.
 
-**When the stage cannot finish.** Fix what the stage can fix. A criterion, wiring check, contract, review finding or test-integrity event that is wrong gets a dispute: `loom stage dispute-criteria` (with `--field` for wiring, wiring-tests and impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session by design: the daemon starts a fresh session with the verdict, so waiting gains nothing. Never revert, weaken or postpone correct work to avoid a dispute. A need only a person can meet (a credential, a host install, a network domain or path the plan does not grant) gets `loom stage block <stage-id> "<what is needed and why>"`: the daemon retires the session and shows the reason to the operator. Commit your work before filing either. Never end a turn asking the operator to act while the stage is executing.
+**When the stage cannot finish.** Fix what the stage can fix. A wrong criterion, wiring check, contract, review finding or test-integrity event gets a dispute: `loom stage dispute-criteria` (`--field` for wiring, wiring-tests, impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session; the daemon starts a fresh one with the verdict. Never revert, weaken or postpone correct work to avoid a dispute. A criterion failing only because of where completion runs (no network, unreadable git metadata, timeout, sandbox denial) is disputed, never blocked: one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing names every such criterion. `loom stage block <stage-id> "<what is needed and why>"` is for a credential, a host install or a decision only a person can make; loom refuses it while the latest `loom stage complete` shows a failing criterion. Commit before filing either. Never end a turn asking the operator to act while the stage is executing.
 
 **Test integrity** (standard and integration-verify stages). Completion compares the stage's test
 files with the base. Fewer test declarations or assertions in a language, assertion lines removed

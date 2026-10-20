@@ -10,8 +10,8 @@ use tempfile::TempDir;
 use crate::git::runner::run_git_with_env;
 use crate::plan::schema::validation::v2_lints::{run, LintContext, LintFinding};
 use crate::plan::schema::{
-    AcceptanceCriterion, LoomConfig, LoomMetadata, NetworkConfig, StageDefinition,
-    StageSandboxConfig, StageType,
+    AcceptanceCriterion, CommandConfinement, LoomConfig, LoomMetadata, NetworkConfig,
+    StageDefinition, StageSandboxConfig, StageType,
 };
 
 #[path = "v2_lint_environment_repo_tests.rs"]
@@ -70,10 +70,20 @@ fn network(domains: &[&str]) -> NetworkConfig {
     }
 }
 
-/// A one-stage plan whose plan-level network allows `domains`.
+/// A one-stage plan whose plan-level network allows `domains`. Commands run
+/// with `inherit` confinement, so the session's domains decide the finding;
+/// `confined_plan_allowing` covers the completion runner.
 fn plan_allowing(domains: &[&str], commands: &[&str]) -> LoomMetadata {
     let mut metadata = plan(2, vec![stage("feature", commands)]);
     metadata.loom.sandbox.network = network(domains);
+    metadata.loom.sandbox.command_confinement = CommandConfinement::Inherit;
+    metadata
+}
+
+/// Like `plan_allowing` with the default `confined` command confinement.
+fn confined_plan_allowing(domains: &[&str], commands: &[&str]) -> LoomMetadata {
+    let mut metadata = plan_allowing(domains, commands);
+    metadata.loom.sandbox.command_confinement = CommandConfinement::Confined;
     metadata
 }
 
@@ -287,4 +297,37 @@ fn registry_installs_are_not_reported_twice_without_a_domain() {
         .filter(|f| f.message.contains("allows no network domain"));
     assert_eq!(network.count(), 1, "{findings:?}");
     assert!(findings.iter().all(|finding| finding.error_in_v2));
+}
+
+#[test]
+fn a_confined_stage_is_flagged_whatever_the_domains_say() {
+    let command = "bunx markdownlint-cli2 README.md";
+    let metadata = confined_plan_allowing(&["registry.npmjs.org"], &[command]);
+    let found = messages(&metadata, None, NEEDS);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("no network whatever `allowed_domains` says"));
+    assert!(found[0].contains("install it from a `provision` entry and call the installed binary"));
+    let inherit = plan_allowing(&["registry.npmjs.org"], &[command]);
+    assert!(messages(&inherit, None, NEEDS).is_empty());
+}
+
+#[test]
+fn a_stage_confinement_overrides_the_plan_default() {
+    let mut metadata = confined_plan_allowing(&["registry.npmjs.org"], &["bunx tsc"]);
+    metadata.loom.stages[0].sandbox.command_confinement = Some(CommandConfinement::Inherit);
+    assert!(messages(&metadata, None, NEEDS).is_empty());
+    let mut inherit = plan_allowing(&["registry.npmjs.org"], &["bunx tsc"]);
+    inherit.loom.stages[0].sandbox.command_confinement = Some(CommandConfinement::Confined);
+    assert_eq!(messages(&inherit, None, NEEDS).len(), 1);
+}
+
+#[test]
+fn a_confined_setup_command_is_flagged_but_an_after_stage_check_keeps_the_domain_rule() {
+    let mut metadata = confined_plan_allowing(&["registry.npmjs.org"], &[]);
+    metadata.loom.stages[0].setup = vec!["npm ci".to_string()];
+    metadata.loom.stages[0].after_stage =
+        crate::yaml::from_str("- command: bunx tsc").expect("check");
+    let found = messages(&metadata, None, NEEDS);
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert!(found[0].contains("Setup command #1"), "{found:?}");
 }

@@ -55,9 +55,8 @@ pub(super) fn append_path_boundaries(content: &mut String) {
 /// and a paraphrase would drift from the hook that enforces it.
 pub(super) fn append_no_verify_block(content: &mut String) {
     content.push_str(
-        "The spawn guard prepends the full subagent preamble (`loom-hooks/_subagent-preamble.txt`) \
-         to a typed spawn. This is BLOCK-A, which the hook matches byte for byte - paste it \
-         verbatim into an untyped spawn's prompt:\n\n",
+        "The spawn guard prepends `loom-hooks/_subagent-preamble.txt` to a typed spawn. BLOCK-A, \
+         which the hook matches byte for byte, goes verbatim into an untyped spawn's prompt:\n\n",
     );
     content.push_str("VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:\n");
     content
@@ -79,10 +78,7 @@ pub(super) fn append_no_verify_block(content: &mut String) {
 /// real budget - both root-caused to agents inferring a ceiling instead of
 /// waiting for the hook's literal report.
 pub(super) fn append_subagent_ceiling_block(content: &mut String) {
-    content.push_str(
-        "Paste this alongside BLOCK-A - the ceiling rule a spawned subagent must have, so it \
-         never confabulates a ceiling it was never told about:\n\n",
-    );
+    content.push_str("Paste this alongside BLOCK-A, the ceiling rule:\n\n");
     content.push_str("CONTEXT CEILING - HOOK-REPORTED ONLY:\n");
     content.push_str("- Your ceiling is roughly 800,000 tokens, the same number your orchestrator gets - reading a handful of files never gets you close.\n");
     content.push_str("- The hook line beginning `SUBAGENT CEILING REACHED:` in your own tool output is the sole evidence you reached it. Never estimate, infer, or assume one.\n");
@@ -91,7 +87,7 @@ pub(super) fn append_subagent_ceiling_block(content: &mut String) {
 
 /// Where a standard stage's gate runs, stated as the opening line of its
 /// completion rules.
-const VERIFIER_GATE: &str = "**The gate runs in a `loom-verifier`** (opus, effort xhigh): once every implementer has returned, spawn ONE by agent type, without `name`, briefed with this stage's acceptance criteria. It writes nothing and reports PASS/FAIL per step with command, exit code and failing excerpt. Delegate each fix, then spawn a FRESH verifier for the next round.\n\n";
+const VERIFIER_GATE: &str = "**The gate runs in a `loom-verifier`** (opus, effort xhigh): once every implementer has returned, spawn ONE by agent type, without `name`, briefed with the stage's criteria. It writes nothing and reports PASS/FAIL per step with command, exit code and failing excerpt, running criteria via `loom check <stage-id>` (complete's runner); one failing there but passing in its shell is RUNNER-ENV, for you to dispute. Delegate each fix, then spawn a FRESH verifier.\n\n";
 
 /// Open a STANDARD stage's `**Completion:**` list with `VERIFIER_GATE`. The
 /// integration-verify prefix opens its list without it: that stage keeps its
