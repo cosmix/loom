@@ -22,7 +22,7 @@ use chrono::{DateTime, Utc};
 use crate::models::session::{Session, SessionType};
 
 use super::heartbeat::Heartbeat;
-use super::hung_latch::is_stall_escalation;
+use super::stall_line::is_stall_escalation;
 
 /// Whether `session` can be judged at all: a stage agent with a real budget
 /// that has not yet reported any context.
@@ -65,16 +65,18 @@ pub(crate) fn never_worked(
 
 /// Whether a silence is evidence enough to act on. A session that never
 /// started work is acted on at its budget, since waiting cannot help it; any
-/// other session at [`is_stall_escalation`]'s line.
+/// other session at [`is_stall_escalation`]'s line, which `completion_line`
+/// extends while its pinned completion runs.
 pub(crate) fn is_escalation(
     stale_duration_secs: u64,
     timeout_secs: u64,
     never_worked: bool,
+    completion_line: Option<u64>,
 ) -> bool {
     if never_worked {
         return timeout_secs > 0 && stale_duration_secs >= timeout_secs;
     }
-    is_stall_escalation(stale_duration_secs, timeout_secs)
+    is_stall_escalation(stale_duration_secs, timeout_secs, completion_line)
 }
 
 #[cfg(test)]
@@ -185,10 +187,10 @@ mod tests {
 
     #[test]
     fn never_worked_escalates_at_one_budget_and_work_at_three() {
-        assert!(is_escalation(300, 300, true));
-        assert!(!is_escalation(299, 300, true));
-        assert!(!is_escalation(86_400, 0, true));
-        assert!(!is_escalation(310, 300, false));
-        assert!(is_escalation(900, 300, false));
+        assert!(is_escalation(300, 300, true, None));
+        assert!(!is_escalation(299, 300, true, None));
+        assert!(!is_escalation(86_400, 0, true, None));
+        assert!(!is_escalation(310, 300, false, None));
+        assert!(is_escalation(900, 300, false, None));
     }
 }

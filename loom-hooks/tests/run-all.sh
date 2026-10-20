@@ -63,6 +63,7 @@ run_test "loom-control-complete: exact verified route only" "$SCRIPT_DIR/loom-co
 run_test "loom-control-complete: tokenized pre-filter catches forged quoting, ignores prose" "$SCRIPT_DIR/loom-control-tokenized-prefilter.sh"
 run_test "loom-control-complete: Knowledge sessions are pinned, heredoc prose is data" "$SCRIPT_DIR/loom-control-complete-knowledge.sh"
 run_test "loom-control-complete: inert heredoc bodies ignored, shell-fed or ambiguous ones held" "$SCRIPT_DIR/loom-control-complete-heredoc.sh"
+run_test "loom-control-complete: admitted completion marks the heartbeat until a main-agent progress write" "$SCRIPT_DIR/loom-control-complete-heartbeat.sh"
 run_test "session-start: compact source emits re-anchor" "$SCRIPT_DIR/session-start-compact.sh"
 run_test "session-end: records the SessionEnd reason from stdin" "$SCRIPT_DIR/session-end-reason.sh"
 run_test "ask-user hooks: act only on AskUserQuestion, record the trigger" "$SCRIPT_DIR/ask-user-hooks.sh"

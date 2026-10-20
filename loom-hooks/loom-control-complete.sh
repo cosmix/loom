@@ -8,6 +8,7 @@ PATH="${LOOM_HOOK_PATH:-$PATH}"
 set -euo pipefail
 # loom_tokenize_command: the shared argv tokenizer git-add-guard.sh scans with.
 source "$(dirname "$0")/_common.sh"
+source "$(dirname "$0")/_post-tool-heartbeat.sh"
 
 read_input() {
 	source "$(dirname "${BASH_SOURCE[0]}")/_bounded.sh"
@@ -363,9 +364,9 @@ if [[ "$HAS_RESULT" != true ]]; then
 		REASON=$(completion_rejection_reason "$LOOM_BIN")
 		fail_closed "completion must be one exact pinned command: $PINNED_COMMAND ($REASON)"
 	fi
+	loom_write_completion_heartbeat || true
 	exit 0
 fi
-
 [[ "$COMMAND" == "$PINNED_COMMAND" ]] || fail_closed "completion result was not produced by the exact pinned command"
 
 IS_ERROR=$(printf '%s' "$INPUT_JSON" | jq -r '(.tool_result.is_error // .tool_response.is_error // false)')

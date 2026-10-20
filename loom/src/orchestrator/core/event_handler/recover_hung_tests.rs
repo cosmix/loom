@@ -17,7 +17,9 @@ use crate::handoff::{
     HandoffOrigin, HandoffV2, VerificationCheckpoint, COMPLETION_EVIDENCE_VERSION,
 };
 use crate::models::session::{Session, SessionExitReason, SessionStatus};
-use crate::models::stage::StageType;
+use crate::models::stage::{AcceptanceCriterion, StageType};
+use crate::orchestrator::monitor::heartbeat::{write_heartbeat, Heartbeat};
+use crate::orchestrator::monitor::stall_line::COMPLETION_ACTIVITY;
 use crate::orchestrator::terminal::native::write_test_pid_identity;
 use crate::verify::transitions::{load_stage, update_stage};
 use std::path::Path;
@@ -287,5 +289,76 @@ fn a_report_without_a_stage_is_only_a_warning() {
     assert_eq!(
         load_stage("test-stage", &work).unwrap().status,
         StageStatus::Executing
+    );
+}
+
+/// The line a stage with two acceptance criteria gets while its pinned
+/// completion runs: one command timeout each, plus the margin for the later checks.
+const COMPLETION_LINE_SECS: u64 = 2 * 300 + 1_800;
+
+/// A stalled stage whose own latest heartbeat says its pinned completion is running.
+fn completing_stage(work: &Path) -> (Session, u32) {
+    let (session, agent_pid) = stalled_stage(work);
+    update_stage("test-stage", work, |stage| {
+        stage.acceptance = vec![
+            AcceptanceCriterion::Simple("cargo test".to_string()),
+            AcceptanceCriterion::Simple("cargo clippy".to_string()),
+        ];
+        Ok(())
+    })
+    .unwrap();
+    let heartbeat = Heartbeat::new("test-stage".to_string(), session.id.clone())
+        .with_last_tool("Bash".to_string())
+        .with_activity(COMPLETION_ACTIVITY.to_string());
+    write_heartbeat(work, &heartbeat).unwrap();
+    (session, agent_pid)
+}
+
+fn report_completion_silence(work: &Path, root: &Path, session: &Session, silence: u64) {
+    let mut orchestrator = orchestrator_for(work, root);
+    orchestrator.graph.mark_executing("test-stage").unwrap();
+    orchestrator
+        .active_sessions
+        .insert("test-stage".to_string(), session.clone());
+    orchestrator
+        .on_session_hung(report(&session.id, silence))
+        .unwrap();
+}
+
+/// Acceptance prints nothing until every criterion has run, so a completion
+/// is one long silence. Past three budgets but inside its own line, it is left
+/// running and charged nothing.
+#[test]
+fn a_running_completion_inside_its_line_is_not_requeued() {
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".loom").join("work");
+    let (session, agent_pid) = completing_stage(&work);
+    const { assert!(COMPLETION_LINE_SECS - 1 > ESCALATING_SILENCE_SECS) };
+
+    report_completion_silence(&work, temp.path(), &session, COMPLETION_LINE_SECS - 1);
+
+    assert!(crate::process::is_process_alive(agent_pid));
+    let stage = load_stage("test-stage", &work).unwrap();
+    assert_eq!(
+        (stage.status, stage.stall_recoveries),
+        (StageStatus::Executing, 0)
+    );
+    let _ = crate::process::terminate(agent_pid);
+}
+
+/// The allowance is finite: a completion silent past its line is a stall.
+#[test]
+fn a_running_completion_past_its_line_is_requeued() {
+    let temp = handoff_work_dir();
+    let work = temp.path().join(".loom").join("work");
+    let (session, agent_pid) = completing_stage(&work);
+
+    report_completion_silence(&work, temp.path(), &session, COMPLETION_LINE_SECS);
+
+    assert!(!crate::process::is_process_alive(agent_pid));
+    let stage = load_stage("test-stage", &work).unwrap();
+    assert_eq!(
+        (stage.status, stage.stall_recoveries),
+        (StageStatus::Queued, 1)
     );
 }

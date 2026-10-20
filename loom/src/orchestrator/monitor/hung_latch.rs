@@ -7,8 +7,9 @@
 //! ever produced arrived the moment the budget was first crossed, when a slow
 //! agent and a dead one still look identical, and nothing could act on it.
 //!
-//! So exactly one further report is allowed, once the silence has run to
-//! [`STALL_ESCALATION_MULTIPLIER`] times the stage's response budget. A
+//! So exactly one further report is allowed, once the silence reaches the
+//! line [`is_stall_escalation`] draws: three response budgets, or longer while
+//! the session's pinned completion runs. A
 //! session that wakes up clears both latches on its next heartbeat, which is
 //! what keeps a blip from ever reaching the second report: the elapsed time
 //! restarts from zero with it.
@@ -36,26 +37,7 @@ use super::handlers::Handlers;
 use super::heartbeat::{Heartbeat, HeartbeatStatus, HeartbeatWatcher};
 use super::never_worked::silence_without_heartbeat;
 use super::parked::stage_looks_finished;
-
-/// The multiple of a stage's response budget at which a still-silent session
-/// stops being a warning and starts being evidence its agent is gone.
-///
-/// Three budgets, not two: the first report already costs the agent one full
-/// budget, so a session that answers once more and then goes quiet again
-/// restarts well below this line and cannot trip it.
-const STALL_ESCALATION_MULTIPLIER: u64 = 3;
-
-/// Whether a silence has run long enough to be treated as a dead session
-/// rather than a slow one.
-///
-/// A stage may declare `subagent_timeout_secs: 0`, and nothing rejects it. A
-/// zero budget calls every session hung on its first poll, which was harmless
-/// while the report was advisory and would be a session killed on sight now.
-/// So a stage that declares no real budget gets warnings and nothing else.
-pub(crate) fn is_stall_escalation(stale_duration_secs: u64, timeout_secs: u64) -> bool {
-    timeout_secs > 0
-        && stale_duration_secs >= timeout_secs.saturating_mul(STALL_ESCALATION_MULTIPLIER)
-}
+use super::stall_line::{is_stall_escalation, running_completion_line};
 
 impl Detection {
     /// What one running session's silence is worth on this tick, if anything.
@@ -120,10 +102,19 @@ impl Detection {
     ) -> Option<MonitorEvent> {
         let stale_duration_secs =
             self.stage_silence_secs(session, stage_id, heartbeat_watcher, timeout_secs)?;
+        let completion_line = running_completion_line(
+            heartbeat_watcher.get_heartbeat(stage_id),
+            &session.id,
+            stages.iter().find(|stage| stage.id == stage_id),
+        );
         // A dead PID is a crash, and crash detection in
         // `detect_session_changes` owns it, so only a live one is reported hung.
-        if !self.hung_report_due(&session.id, stale_duration_secs, timeout_secs)
-            || !matches!(handlers.check_session_alive(session), Ok(Some(true)))
+        if !self.hung_report_due(
+            &session.id,
+            stale_duration_secs,
+            timeout_secs,
+            completion_line,
+        ) || !matches!(handlers.check_session_alive(session), Ok(Some(true)))
         {
             return None;
         }
@@ -135,7 +126,12 @@ impl Detection {
             stale_duration_secs,
             timeout_secs,
         );
-        self.record_hung_report(&session.id, stale_duration_secs, timeout_secs);
+        self.record_hung_report(
+            &session.id,
+            stale_duration_secs,
+            timeout_secs,
+            completion_line,
+        );
         Some(event)
     }
 
@@ -234,11 +230,12 @@ impl Detection {
         session_id: &str,
         stale_duration_secs: u64,
         timeout_secs: u64,
+        completion_line: Option<u64>,
     ) -> bool {
         if !self.reported_hung_sessions.contains(session_id) {
             return true;
         }
-        is_stall_escalation(stale_duration_secs, timeout_secs)
+        is_stall_escalation(stale_duration_secs, timeout_secs, completion_line)
             && !self.escalated_hung_sessions.contains(session_id)
     }
 
@@ -248,9 +245,10 @@ impl Detection {
         session_id: &str,
         stale_duration_secs: u64,
         timeout_secs: u64,
+        completion_line: Option<u64>,
     ) {
         self.reported_hung_sessions.insert(session_id.to_string());
-        if is_stall_escalation(stale_duration_secs, timeout_secs) {
+        if is_stall_escalation(stale_duration_secs, timeout_secs, completion_line) {
             self.escalated_hung_sessions.insert(session_id.to_string());
         }
     }
@@ -335,10 +333,10 @@ mod tests {
     #[test]
     fn the_first_report_is_due_and_does_not_escalate() {
         let mut detection = Detection::new();
-        assert!(detection.hung_report_due("session-1", 310, 300));
-        detection.record_hung_report("session-1", 310, 300);
+        assert!(detection.hung_report_due("session-1", 310, 300, None));
+        detection.record_hung_report("session-1", 310, 300, None);
 
-        assert!(!is_stall_escalation(310, 300));
+        assert!(!is_stall_escalation(310, 300, None));
         let (reported, escalated) = detection.hung_latches();
         assert!(reported.contains("session-1"));
         assert!(!escalated.contains("session-1"));
@@ -349,10 +347,10 @@ mod tests {
     #[test]
     fn reports_between_the_two_lines_are_suppressed() {
         let mut detection = Detection::new();
-        detection.record_hung_report("session-1", 310, 300);
+        detection.record_hung_report("session-1", 310, 300, None);
 
-        assert!(!detection.hung_report_due("session-1", 600, 300));
-        assert!(!detection.hung_report_due("session-1", 899, 300));
+        assert!(!detection.hung_report_due("session-1", 600, 300, None));
+        assert!(!detection.hung_report_due("session-1", 899, 300, None));
     }
 
     /// One further report, once, at the escalation line — the event the
@@ -360,11 +358,11 @@ mod tests {
     #[test]
     fn the_escalating_report_is_due_exactly_once() {
         let mut detection = Detection::new();
-        detection.record_hung_report("session-1", 310, 300);
+        detection.record_hung_report("session-1", 310, 300, None);
 
-        assert!(detection.hung_report_due("session-1", 900, 300));
-        detection.record_hung_report("session-1", 900, 300);
-        assert!(!detection.hung_report_due("session-1", 5_000, 300));
+        assert!(detection.hung_report_due("session-1", 900, 300, None));
+        detection.record_hung_report("session-1", 900, 300, None);
+        assert!(!detection.hung_report_due("session-1", 5_000, 300, None));
     }
 
     /// A session that answers again cancels the escalation by itself: the
@@ -372,28 +370,23 @@ mod tests {
     #[test]
     fn a_fresh_heartbeat_returns_the_session_to_the_first_warning() {
         let mut detection = Detection::new();
-        detection.record_hung_report("session-1", 900, 300);
+        detection.record_hung_report("session-1", 900, 300, None);
         detection.clear_hung_report("session-1");
 
-        assert!(detection.hung_report_due("session-1", 310, 300));
+        assert!(detection.hung_report_due("session-1", 310, 300, None));
         let (reported, escalated) = detection.hung_latches();
         assert!(!reported.contains("session-1"));
         assert!(!escalated.contains("session-1"));
     }
 
-    /// The line is the stage's OWN budget times three, so a stage that
-    /// declares a long one is judged against it and not against the default.
+    /// While the pinned completion runs, the escalating report waits for the
+    /// completion's own line rather than three budgets.
     #[test]
-    fn escalation_scales_with_the_stages_own_budget() {
-        assert!(is_stall_escalation(10_800, 3_600));
-        assert!(!is_stall_escalation(10_799, 3_600));
-    }
+    fn a_running_completion_escalates_only_at_its_own_line() {
+        let mut detection = Detection::new();
+        detection.record_hung_report("session-1", 310, 300, Some(2_400));
 
-    /// A stage declaring a zero budget calls its session hung on the first
-    /// poll. Warn about it, never kill on it.
-    #[test]
-    fn a_zero_budget_never_escalates() {
-        assert!(!is_stall_escalation(0, 0));
-        assert!(!is_stall_escalation(86_400, 0));
+        assert!(!detection.hung_report_due("session-1", 900, 300, Some(2_400)));
+        assert!(detection.hung_report_due("session-1", 2_400, 300, Some(2_400)));
     }
 }

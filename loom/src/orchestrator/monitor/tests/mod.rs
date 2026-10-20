@@ -2,6 +2,7 @@
 
 mod ceiling_retries;
 mod ceilings;
+mod completion_stall;
 mod context;
 mod detection;
 mod heartbeats;

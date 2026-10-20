@@ -11,8 +11,9 @@
 //!
 //! 1. the first report about a session that has worked is still only a
 //!    warning; escalation needs the silence to reach [`is_escalation`]'s line,
-//!    three response budgets deep, and any heartbeat in between resets the
-//!    clock;
+//!    three response budgets deep or, while the session's pinned
+//!    `loom stage complete` runs, the completion's own line
+//!    ([`running_completion_line`]); any heartbeat in between resets the clock;
 //! 2. the stage must still be `Executing` and still name this exact session,
 //!    which `begin_handoff` re-checks under the stage lock; and
 //! 3. a stage may be recovered this way [`MAX_STALL_RECOVERIES`] times. The
@@ -47,6 +48,7 @@ use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::monitor::heartbeat::{heartbeat_path, read_heartbeat};
 use crate::orchestrator::monitor::never_worked::{is_escalation, never_worked};
 use crate::orchestrator::monitor::parked::hung_warning;
+use crate::orchestrator::monitor::stall_line::running_completion_line;
 use crate::orchestrator::terminal::session_tail;
 
 use super::super::persistence::Persistence;
@@ -121,6 +123,16 @@ impl Orchestrator {
         probes: &StallProbes<'_>,
     ) -> Result<()> {
         clear_status_line();
+        let heartbeat = report.stage_id.and_then(|stage_id| {
+            read_heartbeat(&heartbeat_path(&self.config.work_dir, stage_id)).ok()
+        });
+        // A stage that cannot be read gets the ordinary line; the recovery
+        // below reports the read failure itself.
+        let stage = report
+            .stage_id
+            .and_then(|stage_id| self.load_stage(stage_id).ok());
+        let completion_line =
+            running_completion_line(heartbeat.as_ref(), report.session_id, stage.as_ref());
         eprintln!(
             "{}",
             hung_warning(
@@ -130,6 +142,7 @@ impl Orchestrator {
                 report.timeout_secs,
                 report.last_activity,
                 report.finished_without_completing,
+                completion_line,
             )
         );
 
@@ -138,7 +151,6 @@ impl Orchestrator {
             return Ok(());
         };
         let session = self.hung_session(report.session_id);
-        let heartbeat = read_heartbeat(&heartbeat_path(&self.config.work_dir, stage_id)).ok();
         let never_started = session.as_ref().is_some_and(|session| {
             never_worked(session, heartbeat.as_ref(), Utc::now(), report.timeout_secs)
         });
@@ -146,6 +158,7 @@ impl Orchestrator {
             report.stale_duration_secs,
             report.timeout_secs,
             never_started,
+            completion_line,
         ) {
             return Ok(());
         }

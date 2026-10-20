@@ -81,7 +81,9 @@ fn finished_in_worktree(worktree: &Path, branch: &str, base: &str) -> bool {
 ///
 /// Lives here rather than inline at the handler so the parked/hung distinction
 /// is rendered where it is decided — and so it can be tested, which an inline
-/// `eprintln!` never could be.
+/// `eprintln!` never could be. A session whose pinned completion is running
+/// (`completion_line`, see [`super::stall_line`]) is neither: it is waiting on
+/// its own acceptance run.
 pub(crate) fn hung_warning(
     session_id: &str,
     stage_id: Option<&str>,
@@ -89,10 +91,17 @@ pub(crate) fn hung_warning(
     timeout_secs: u64,
     last_activity: Option<&str>,
     finished_without_completing: bool,
+    completion_line: Option<u64>,
 ) -> String {
     let stage_info = stage_id
         .map(|s| format!(" (stage '{s}')"))
         .unwrap_or_default();
+    if let Some(line) = completion_line {
+        return format!(
+            "Warning: Session '{session_id}'{stage_info} is running its stage completion \
+(no heartbeat for {stale_duration_secs}s; recovered only past {line}s of silence)"
+        );
+    }
     let activity_info = last_activity
         .map(|a| format!(", last: {a}"))
         .unwrap_or_default();
@@ -165,22 +174,33 @@ mod tests {
 
     #[test]
     fn the_warning_names_the_completion_command_only_when_parked() {
-        let parked = hung_warning("s1", Some("build"), 900, 300, Some("Bash"), true);
+        let parked = hung_warning("s1", Some("build"), 900, 300, Some("Bash"), true, None);
         assert!(parked.contains("loom stage complete build"));
         assert!(parked.contains("no heartbeat for 900s"));
         assert!(parked.contains("budget 300s"));
         assert!(parked.contains("last: Bash"));
 
-        let stuck = hung_warning("s1", Some("build"), 900, 300, Some("Bash"), false);
+        let stuck = hung_warning("s1", Some("build"), 900, 300, Some("Bash"), false, None);
         assert!(!stuck.contains("loom stage complete"));
         assert!(stuck.contains("appears hung"));
+    }
+
+    /// A running completion is reported as running, with the line it is
+    /// allowed, and never told to run the completion it is already running.
+    #[test]
+    fn the_warning_says_a_completion_is_running() {
+        let message = hung_warning("s1", Some("build"), 1_000, 300, None, true, Some(2_400));
+        assert!(message.contains("is running its stage completion"));
+        assert!(message.contains("recovered only past 2400s"));
+        assert!(!message.contains("appears hung"));
+        assert!(!message.contains("Run: loom stage complete"));
     }
 
     /// A hung session with no stage still renders; it must not print the word
     /// "None" or an empty command an operator could paste.
     #[test]
     fn a_missing_stage_id_degrades_without_printing_none() {
-        let message = hung_warning("s1", None, 400, 300, None, true);
+        let message = hung_warning("s1", None, 400, 300, None, true, None);
         assert!(!message.contains("None"));
         assert!(message.contains("<stage-id>"));
     }

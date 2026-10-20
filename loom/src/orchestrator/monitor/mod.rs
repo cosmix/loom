@@ -29,6 +29,7 @@ pub(crate) mod never_worked;
 pub(crate) mod parked;
 pub(crate) mod progress;
 mod session_events;
+pub(crate) mod stall_line;
 
 #[cfg(test)]
 mod tests;
