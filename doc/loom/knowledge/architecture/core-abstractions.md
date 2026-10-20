@@ -24,14 +24,14 @@ validated in transitions.rs. See [patterns.md -- State Machine Pattern](../patte
 
 **Documented state-machine bypasses:** Two paths intentionally bypass `try_transition`:
 
-1. **`--force-unsafe`** (`handle_force_unsafe_completion`) — sets `Status::Completed` from any state. Manual recovery only.
+1. **`--force-unsafe`** (`commands/stage/complete_force.rs::handle_force_unsafe_completion`) — sets `Status::Completed` from any state. Manual recovery only. Without `--assume-merged` it records the committed branch tip as `completed_commit` (`progressive_complete/operator_commit.rs::branch_work`, validated under the stage lock) and leaves the stage unmerged for the daemon's auto-merge, which re-checks zero commits under `MergeGate::Enforce`; a missing or zero-commit branch records nothing. With `--assume-merged` the router first proves the commit is in the target.
 2. **Phantom-merge revert** (`reconcile_main_repo_active_merge` and `complete()`'s `RevertAndSpawnResolver` arm) — flips a `Completed + merged=true` stage back to `MergeConflict + merged=false + merge_conflict=true` when an active main-repo merge is attributed to that stage. The bypass is necessary because `Completed` is terminal; `try_transition` would refuse, but this is exactly the case the bypass is designed for. All such mutations are logged at `error` level.
 
 **Transitions FROM `NeedsAdjudication`** (`transitions.rs`) — note it can loop to itself:
 
 - `Queued` — verdict applied, stage re-queued
 - `NeedsAdjudication` — evidence loop (another round on the same dispute)
-- `NeedsHumanReview` — by design, a **`Reject` verdict**: the adjudicator upheld the criterion and ruled the implementation wrong, while the agent disputed it as impossible. Neither side can move, so this is the one outcome a human is needed for. Also reached when a bound is exhausted: the evidence loop (`MAX_EVIDENCE_ROUNDS`, 5), the per-stage amendment cap (`max_amendments_per_stage`, default 10), or the adjudication respawn budget (`MAX_ADJUDICATION_ATTEMPTS`, 3). An earlier version named `ANTHROPIC_API_KEY not set` here; that gate no longer exists — see conventions.md § Adjudicator Transport Convention
+- `NeedsHumanReview` — by design, a **`Reject` verdict**: the adjudicator upheld the criterion and ruled the implementation wrong, while the agent disputed it as impossible. Neither side can move, so this is the one outcome a human is needed for. Also reached when a bound is exhausted: the evidence loop (`MAX_EVIDENCE_ROUNDS`, 5), the per-stage amendment cap (`max_amendments_per_stage`, default 10), or the adjudication respawn budget (`MAX_ADJUDICATION_ATTEMPTS`, 3). See conventions.md § Adjudicator Transport Convention.
 
 `CompletedWithFailures` also transitions into `NeedsAdjudication` (dispute filed after a failed completion) and into `NeedsHumanReview` (budget escalation).
 

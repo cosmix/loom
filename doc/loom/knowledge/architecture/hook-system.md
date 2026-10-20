@@ -114,13 +114,11 @@ and `LOOM_MAIN_AGENT_PID` — payload identity is what classifies both shapes co
 
 ### Heartbeat writer protocol
 
-`loom-hooks/session-start.sh`, `loom-hooks/post-tool-use.sh`, and `loom-hooks/subagent-stop.sh` all write the same stage-keyed
-heartbeat. Every writer acquires a portable `mkdir` lock, validates the stage's current
-`session:` owner while holding it, and replaces the JSON via a same-directory temp-file rename.
-Late hooks from an old session therefore cannot overwrite a successor, concurrent subagent
-refreshes cannot roll the parent's token count backward, and the Rust watcher never observes a
-partially truncated JSON document. Lock metadata permits conservative recovery after a dead
-writer leaves an abandoned lock; live or uncertain owners are never stolen.
+`loom-hooks/session-start.sh`, `loom-hooks/post-tool-use.sh` and `loom-hooks/subagent-stop.sh` write the stage-keyed heartbeat. The PreToolUse branch of `loom-hooks/loom-control-complete.sh` also writes it: once it admits the exact pinned `loom stage complete <stage>`, `loom_write_completion_heartbeat` (`_post-tool-heartbeat.sh`) records activity "Stage completion running". The daemon then gives that session a longer stall line ([orchestrator loop](orchestrator-loop.md#stall-escalation-during-a-running-completion)).
+
+While that mark is the session's latest heartbeat, a write for the same session keeps it in two cases: the tool use is classified as observation (`_progress-classification.sh`), or it comes from a subagent. A main-agent progress write ends it, and so does the completion command's own PostToolUse.
+
+Every writer acquires a portable `mkdir` lock, validates the stage's current `session:` owner while holding it, and replaces the JSON via a same-directory temp-file rename. Late hooks from an old session therefore cannot overwrite a successor, concurrent subagent refreshes cannot roll the parent's token count backward, and the Rust watcher never observes a partially truncated JSON document. Lock metadata permits conservative recovery after a dead writer leaves an abandoned lock; live or uncertain owners are never stolen.
 
 ## Portable Shell Helpers and the SubagentStop Ledgers
 

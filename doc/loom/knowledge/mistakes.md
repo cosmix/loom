@@ -42,7 +42,7 @@ A grep for one phrase proves presence, never agreement. Covers doctrine drift ac
 
 ## Verification Harnesses and Stale Binaries (2026-07-28)
 
-When every check in a suite fails at once, suspect the harness. Also: the PATH binary lagging your build or `main`, silent review subagents, acceptance false negatives, a command whose output must report every layer it drives, untracked plan/worker briefs leaving a worktree blind.
+When every check in a suite fails at once, suspect the harness. Also: the PATH binary lagging your build or `main`, silent review subagents, acceptance false negatives, a command whose output must report every layer it drives, untracked plan/worker briefs leaving a worktree blind. A fresh `CARGO_HOME` per confined criterion rebuilt every dependency until stall recovery killed the silent completion, and its stable per-tree replacement must be reset at every use because the stage agent can write it: [Completion Runtime](mistakes/completion-runtime.md). Operator overrides could not land a stage with no recorded completion commit until they recorded the branch tip: [Phantom Merges](mistakes/phantom-merges.md#operator-escape-hatches-could-not-land-a-stage-with-no-completion-commit-2026-10-20).
 
 → [Verification Harnesses](mistakes/verification-harness.md)
 

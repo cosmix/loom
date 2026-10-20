@@ -37,14 +37,14 @@
 | [daemon-launch](architecture/daemon-launch.md) | Re-exec launch, readiness, socket path | 65 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) | Relayed signed commits | 157 |
 | [directory-structure](architecture/directory-structure.md) | Module tree, state layout, root assets | 50 |
-| [execution-containment](architecture/execution-containment.md) | Sandboxed command containment, limits | 355 |
-| [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 295 |
+| [execution-containment](architecture/execution-containment.md) | Command containment, limits | 360 |
+| [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 293 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Deterministic phase, digest, receipts | 86 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | fs/knowledge, INDEX.md, checks | 263 |
 | [memory-spool](architecture/memory-spool.md) | Read before touching loom memory | 176 |
 | [merge-checkout-state](architecture/merge-checkout-state.md) | Guarded fast-forward; blocked retry | 28 |
 | [merge-flow](architecture/merge-flow.md) | Finished stage to target branch | 134 |
-| [orchestrator-loop](architecture/orchestrator-loop.md) | Tick order, Monitor, liveness | 58 |
+| [orchestrator-loop](architecture/orchestrator-loop.md) | Tick order, liveness | 75 |
 | [owned-waits](architecture/owned-waits.md) | Worker-set waits, lease, boot ID | 57 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) | Plan fields v1/v2, checks, lints | 254 |
 | [quota-poller](architecture/quota-poller.md) | Usage-quota polling and rendering | 35 |
@@ -118,6 +118,7 @@
 | [codex-navigation](mistakes/codex-navigation.md) | Slow reader fixed by forbidding reads | 102 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 102 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) | Broker fallback, dup naming | 225 |
+| [completion-runtime](mistakes/completion-runtime.md) | Cargo churn, stall kills | 49 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread | 269 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes, save races | 46 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork after threads, early ready byte | 38 |
@@ -135,7 +136,7 @@
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Git in operator checkout; plan errors | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) | Resolver kept stage write denies | 15 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races | 251 |
-| [phantom-merges](mistakes/phantom-merges.md) | Merge lessons: merged=true unverified | 287 |
+| [phantom-merges](mistakes/phantom-merges.md) | merged=true without proof | 308 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 313 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard decisions, edges | 73 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 294 |
@@ -180,11 +181,11 @@
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry edge cases | 147 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Open gaps: commits, launch, stalls | 213 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | tmux, orphan adoption edge cases | 150 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Sandbox gaps: canary, creds, env | 326 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Canary, creds, env, caches | 338 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Language limits, open decisions | 79 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Unimplemented reviewer suggestions | 242 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package caches session-writable | 17 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token follow-ups | 209 |
 | [typed-config-values](concerns/typed-config-values.md) | Accepted gaps in the config read-path | 27 |
-| [verification-v2-followups](concerns/verification-v2-followups.md) | v2 adapters, parser gaps, known gaps | 125 |
+| [verification-v2-followups](concerns/verification-v2-followups.md) | v2 adapters, parsers, known gaps | 140 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Latent issues in status/web | 103 |

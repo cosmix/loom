@@ -1,6 +1,6 @@
 # Sandbox And Confinement Gaps
 
-> Sandbox gaps: canary, creds, env
+> Canary, creds, env, caches
 
 ## Sandbox Denial Has No End-to-End CI Canary
 
@@ -324,3 +324,15 @@ Saved tmux scrollback (`.loom/work/terminal-history/<session-id>.terminal`) is i
 In a legacy `.work` checkout the parent rule refuses a plain repo-root Grep, because the state root's parent is the repo root. Rule (a) matches the token files only by the `.loom/work`/`.work` spellings, so with a state root symlinked to a directory of another name `completion-attestation.key` (and, from the main checkout, `admin.token`) is readable; this predates rule (b). `credential-guard.sh` is 575 lines, over the 400-line limit.
 
 Fix direction: keep transcripts outside the repository (a per-user state directory), so no repo-rooted search can reach them and the hook needs only a path-prefix rule and a refusal of searches rooted at that directory's ancestors; check rule (a) against the canonical `$LOOM_WORK_DIR`; move rule (b) into a sourced file. Nothing prunes the directory; each file is capped at 4 MiB.
+
+## Per-Command Package-Manager Caches Start Empty
+
+`verify/criteria/confine_scratch.rs::apply_environment` points `UV_CACHE_DIR`, `BUN_INSTALL_CACHE_DIR` and `XDG_CACHE_HOME` at subdirectories of the per-command scratch. The read-only host caches that `read_roots` exposes are therefore never consulted.
+
+With network denied:
+
+- `uv sync`, `uv run` and resolution fail outright. This was collaterai `shared-contracts`' "no network and an empty UV_CACHE_DIR".
+- An offline `bun install` fails; an already-populated `node_modules` still works.
+- XDG-based caches (Go's build cache, for example) are cold on every command.
+
+The Cargo home was the same defect and is now stable ([execution containment](../architecture/execution-containment.md#read-this-first-what-containment-means-in-loom)). These caches need their own design: a stable per-tree cache reset like the linked Cargo home, or the read-only host cache.

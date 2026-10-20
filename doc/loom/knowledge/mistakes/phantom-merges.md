@@ -1,6 +1,6 @@
 # Phantom Merges
 
-> Merge lessons: merged=true unverified
+> merged=true without proof
 
 ## Phantom Merges: merged=true Without Verification
 
@@ -285,3 +285,24 @@ failure parks the stage for the operator
 **Prevention:** Preserve exact-input verification and integrate resolution proof at the resolver completion boundary. An ancestry-only exception silently reopens the verified-input gap.
 
 **Fix:** Preserve strict equality for ordinary completed-stage landing. The explicit MergeConflict resolver route retains its existing ancestry, ownership and guarded control-path checks as a separate trusted-resolution boundary; this compatibility exception must never apply to ordinary completion. Resolver edits are not claimed to have been reverified. The original report keeps the stronger exact-input guarantee for resolver-produced commits explicitly unresolved instead of weakening the claim silently.
+
+## Operator Escape Hatches Could Not Land a Stage With No Completion Commit (2026-10-20)
+
+**What happened:** `doctrine-and-guards` was parked in NeedsHumanReview with `completed_commit` None, because no `loom stage complete` ever finished. Every operator override bounced:
+
+- **`loom stage complete <id> --no-verify --force-unsafe`:** completed the stage without a commit. The daemon's `missing_completion_proof` (`orchestrator/core/merge_handler/auto_merge_dispatch.rs`) sent it straight back: "completion proof is missing".
+- **`loom stage human-review <id> --force-complete`:** reached `git/merge/mod.rs::verify_completed_tip`, which refused with "stage has no verified commit", and the stage went MergeBlocked. The daemon's `clean_merge_lacks_original_work` then parked it with a misleading "the stage's recorded commit is not in loom/<id>".
+- **What landed it:** a manual `git merge loom/<id>`, then `--force-unsafe --assume-merged`, then `loom target accept`.
+- **Repeats:** the same sequence was needed for collaterai `shared-contracts` (2026-10-18) and for `integration-verify` of the same plan.
+
+**Why:** the landing guard was hardened ([every landing entry point must reject missing proof](verification-v2-delivery.md#every-landing-entry-point-must-reject-missing-proof)), but the operator overrides meant to skip verification never produced the proof it now demands. `--force-unsafe`'s route returns before `--no-verify`'s snapshot capture, and `--force-complete` recorded nothing.
+
+**Prevention:** when a guard starts requiring a proof, every explicit operator override that must still land has to produce that proof at its own command boundary. Test each override end to end against the guard, starting from a stage that never completed.
+
+**Fix:** `commands/stage/progressive_complete/operator_commit.rs::branch_work` captures the committed branch tip at the three operator boundaries:
+
+- `complete --no-verify`;
+- `complete --force-unsafe` without `--assume-merged`;
+- `human-review --force-complete`.
+
+Each records it under the stage lock with `validate_locked`. `--force-complete` refuses a missing, zero-commit or unconfirmed branch: an unconfirmed branch is one whose ahead-count probe failed, and the refusal matters because its `MergeGate::Bypass` skips the zero-commit guard. No daemon path derives a commit. A stage with no recorded commit is parked with "no completion commit is recorded", which names `human-review --force-complete` as the remedy.

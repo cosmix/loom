@@ -1,6 +1,6 @@
 # Execution Containment
 
-> Sandboxed command containment, limits
+> Command containment, limits
 
 ## Read This First: What "Containment" Means In Loom
 
@@ -10,9 +10,14 @@ The writable tree and the working directory are separate inputs: a command start
 
 Approved plan provision entries use `run_provision_with_timeout`: the same filesystem and environment boundary, with host networking on Linux and outbound networking on macOS. Linux provisioning binds the canonical target of a symlinked `/etc/resolv.conf` read-only before remounting the sandbox root, preserving DNS without exposing host sockets.
 
-Private per-command scratch stays outside the working tree so recursive linting does not traverse Cargo cache symlinks. Both acceptance and provisioning direct temporary files, Bun, uv, and XDG caches into this scratch, granted writable as one exact path. Selected installed Bun/uv caches and uv Python runtimes remain read-only; the real home stays protected. Cargo registry/git sources are linked read-only into the private Cargo home. Owned process retirement releases scratch. See [the Biome traversal regression](../mistakes/sandbox-and-settings.md#verifier-scratch-participates-in-project-lint-traversal).
+Private per-command scratch (`verify/criteria/confine_scratch.rs`) stays outside the working tree so recursive linting does not traverse Cargo cache symlinks. Both acceptance and provisioning direct temporary files, Bun, uv, and XDG caches into this scratch, granted writable as one exact path. Selected installed Bun/uv caches and uv Python runtimes remain read-only; the real home stays protected. Owned process retirement releases scratch. See [the Biome traversal regression](../mistakes/sandbox-and-settings.md#verifier-scratch-participates-in-project-lint-traversal). Those package-manager caches start empty for every command ([open gap](../concerns/sandbox-and-confinement-gaps.md#per-command-package-manager-caches-start-empty)).
 
-The confined command preparer derives `LOOM_BIN` from the running executable, prepends its directory to `PATH`, and exposes only that binary as a read-only runtime path. Ambient `LOOM_BIN` cannot select another binary. The containment cache policy revision is `host-os-boundary-v7`; randomized scratch path arguments are normalized for stable cache identity.
+The Cargo home is stable across commands, never per command: Cargo fingerprints registry packages by their absolute `$CARGO_HOME/registry/src` path, so a home that changes between commands rebuilds every dependency ([incident](../mistakes/completion-runtime.md)).
+
+- **Linux (`CargoHome::Mounted`):** `CARGO_HOME` stays the host path. Bubblewrap binds `<scratch>/cargo` writable at it, after every other read root, then the host `bin`, `registry` and `git` read-only over it (`confine_host.rs::bind_read_roots`). Sources keep the paths the session's own `cargo` builds against, so a target directory warmed outside the boundary stays warm inside it, and the host Cargo config and credentials files stay hidden.
+- **Elsewhere (`CargoHome::Linked`):** Seatbelt, an inherited boundary, or a Linux Cargo home that overlaps the tree. A persistent per-tree `<temp root>/.loom-cargo-<sha256(tree)[..12]>` links the host `registry` and `git`, and Seatbelt grants it read and write. A same-user stage agent can create or edit it, so `confine_linked_home.rs::populate` reduces it before every command, through one directory descriptor opened without following links, to those links and Cargo's regular state files (`.package-cache`, `.package-cache-mutate`, `.global-cache`, `.global-cache-journal`). A symlinked or foreign-owned home is refused. Entries written after populate survive until the next command's populate.
+
+The confined command preparer derives `LOOM_BIN` from the running executable, prepends its directory to `PATH`, and exposes only that binary as a read-only runtime path. Ambient `LOOM_BIN` cannot select another binary. The containment cache policy revision is `host-os-boundary-v8`; randomized scratch path arguments are normalized for stable cache identity.
 
 On macOS, an already sandboxed stage can reuse its inherited capsule only through `daemon/inherited`: kernel sandbox evidence, protected daemon and stage/session/capsule records, authenticated socket peer identity, live process ancestry and reciprocal stage ownership must agree. Environment strings and tokens alone cannot authorize inheritance. Session settings grant the exact daemon socket; existing sessions without that grant require relaunch.
 

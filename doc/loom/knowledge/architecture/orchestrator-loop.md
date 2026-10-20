@@ -2,7 +2,7 @@
 ---
 # Orchestrator Loop
 
-> Tick order, Monitor, liveness
+> Tick order, liveness
 
 ## Orchestrator Main-Loop Tick Sequence (Exact Call Order)
 
@@ -56,3 +56,20 @@ Full file list:
 orchestrator after the shared `SessionBackend` is constructed. Backend liveness uses the lane recorded
 on `Session.backend` and verified process identity; missing identity is unverifiable, not permission to
 fall back to a raw PID signal.
+
+## Stall Escalation During a Running Completion
+
+A hung report escalates to recovery (re-queue, or park after `MAX_STALL_RECOVERIES`) once a session's silence reaches three times its response budget (`orchestrator/monitor/stall_line.rs::is_stall_escalation`). A zero budget only ever warns.
+
+The pinned `loom stage complete` is one foreground Bash call, so no heartbeat fires until its last check. While the session's latest heartbeat carries `COMPLETION_ACTIVITY` ("Stage completion running", written by the PreToolUse branch of `loom-control-complete.sh`), the line becomes `completion_line_secs`:
+
+- (acceptance + wiring_tests + dead-code check + regression test) × `DEFAULT_COMMAND_TIMEOUT` (300 s) + 1800 s, for goal-backward/contract checks, impact tests and the review gate;
+- never below the normal line;
+- finite, so a hung completion is still recovered.
+
+The monitor's hung latch (`hung_latch.rs`) and the handler (`core/event_handler/recover_hung.rs`) use the same function, so the two cannot disagree. The warning says the session "is running its stage completion".
+
+Residuals:
+
+- A completion whose PostToolUse never fires keeps the mark until the next main-agent progress write, bounded by the line.
+- `loom status` still badges such a session "Stale".

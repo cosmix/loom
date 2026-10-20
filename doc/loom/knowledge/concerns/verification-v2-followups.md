@@ -1,6 +1,6 @@
 # Verification V2 Followups
 
-> v2 adapters, parser gaps, known gaps
+> v2 adapters, parsers, known gaps
 
 ## Nine Adapters Have Fixtures From Documented Formats, Not Captured Runs
 
@@ -123,3 +123,18 @@ Plan authors are trusted, so these are author-mistake gaps, not stage-agent bypa
 The freeze CLI resolves each contract's run dir for its red run, and the daemon resolves it again from the worktree when it writes `freeze.json` (`daemon/server/contracts.rs`); `ContractRunReport` carries no cwd. A run-root marker matching a `harness` glob that the writer adds or removes between the two would record a dir the red run never used. Fix when it matters: send the CLI's cwd in the report and refuse a freeze whose daemon-side resolution differs.
 
 `loom stage amend --field contracts` re-freezes nothing. An amended explicit `cwd` still takes effect, because the plan's `cwd` beats the recorded one, and a changed `file` drops the recorded dir. But the new file's content is not hashed until a dispute re-freezes it.
+
+## In-Session Completion Gaps
+
+Seen together on 2026-10-20 ([incident](../mistakes/completion-runtime.md)); none is fixed.
+
+- **No pass cache in a session.** `loom stage complete` writes its acceptance cache to the state directory, which the session sandbox mounts read-only. Every in-session retry re-runs every criterion.
+- **Results arrive only at the end.** `commands/stage/acceptance_runner.rs::run_acceptance_with_display` prints per-criterion results after the last criterion, and no per-criterion record is kept. A run killed mid-way names nothing, and the session's `BASH_MAX_OUTPUT_LENGTH=12000` (`orchestrator/terminal/native/wrapper.rs::resource_limit_env`) can cut the results of a finished run.
+- **The gate diverges from the runner.** A stage's `loom-verifier` runs criteria from the session shell, not through the confined runner, so its gate can pass while the real completion fails or runs far longer.
+- **Suites that cannot pass in a session.** Under the confined runner nested in the session sandbox, these fail at base too and are disputed, not blocked:
+  - AF_UNIX bind is denied (EPERM, by the session seccomp the nested bwrap inherits);
+  - `/var/tmp` is read-only (EROFS);
+  - TMPDIR contains "claude" (`hooks_subagent_verify_guard`);
+  - the bounded-stdin hook test reads `LOOM_*` from an ancestor process;
+  - a worktree-file-guard scratchpad test;
+  - `plan_environment_contracts`.
