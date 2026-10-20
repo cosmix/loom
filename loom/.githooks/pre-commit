@@ -56,11 +56,20 @@ echo "Formatting Rust code..."
 cd "$REPO_ROOT/loom" || exit 1
 cargo fmt
 
-# Auto-fix tracked markdown files only
+# Auto-fix staged markdown only, skipping what pre-push skips: markdownlint-cli2
+# does not apply .markdownlintignore to paths named on its command line, and a
+# fix to an unstaged file would be left rewritten and uncommitted.
 echo "Linting markdown files..."
 cd "$REPO_ROOT" || exit 1
-if [ -n "$(git ls-files -- '*.md')" ]; then
-    MD_OUT=$(git ls-files -z -- '*.md' | xargs -0 bunx markdownlint-cli2 --fix 2>&1) || true
+STAGED_MD=()
+while IFS= read -r -d '' file; do
+    case "$file" in
+        doc/plans/* | loom/tests/fixtures/*) ;;
+        *.md) STAGED_MD+=("$file") ;;
+    esac
+done < "$STAGED_FILE_LIST"
+if [ "${#STAGED_MD[@]}" -gt 0 ]; then
+    MD_OUT=$(bunx markdownlint-cli2 --fix "${STAGED_MD[@]}" 2>&1) || true
     # The version banner is the only proof the linter ran: bunx dies silently
     # when the sandbox blocks its cache or the registry. Warn only; pre-push gates.
     case "$MD_OUT" in
