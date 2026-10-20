@@ -6,6 +6,7 @@ use std::collections::HashMap;
 
 use crate::plan::schema::detect_stage_type;
 use crate::plan::schema::structural_checks::transitive_dependencies;
+use crate::plan::schema::StageDefinition;
 use crate::plan::schema::StageType;
 
 use super::{LintContext, LintFinding};
@@ -28,7 +29,7 @@ pub(super) fn check(ctx: &LintContext<'_>, out: &mut Vec<LintFinding>) {
 }
 
 fn check_distill(
-    stages: &[crate::plan::schema::StageDefinition],
+    stages: &[StageDefinition],
     stage_types: &[StageType],
     index_by_id: &HashMap<&str, usize>,
     out: &mut Vec<LintFinding>,
@@ -78,7 +79,7 @@ fn check_distill(
 }
 
 fn check_verify(
-    stages: &[crate::plan::schema::StageDefinition],
+    stages: &[StageDefinition],
     stage_types: &[StageType],
     index_by_id: &HashMap<&str, usize>,
     out: &mut Vec<LintFinding>,

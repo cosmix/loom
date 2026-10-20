@@ -92,6 +92,22 @@ fn distill_lint_counts_and_dependents() {
 }
 
 #[test]
+fn distill_lint_flags_a_plan_with_no_distill_stage() {
+    let mut stages = conforming();
+    stages.retain(|stage| stage.stage_type != Some(StageType::KnowledgeDistill));
+    let found = matching(&plan(stages), None, "knowledge-distill stages");
+
+    assert_eq!(found.len(), 1, "{found:?}");
+    assert_eq!(found[0].stage_id, None);
+    assert_eq!(
+        found[0].message,
+        "the plan has 0 knowledge-distill stages; a plan needs exactly one, after every other stage, so the memory of every stage is curated once"
+    );
+    assert!(found[0].error_in_v2);
+    assert_severity(found);
+}
+
+#[test]
 fn iv_lint_flags_a_standard_stage_no_verify_stage_follows() {
     let stages = vec![
         node("knowledge-bootstrap", StageType::Knowledge, &[]),
