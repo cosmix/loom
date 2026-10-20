@@ -32,7 +32,7 @@ pub fn default_content(file_type: KnowledgeFile) -> String {
         KnowledgeFile::Architecture => r#"# Architecture
 
 > High-level component relationships, data flow, and module dependencies.
-> This file is append-only - agents add discoveries, never delete.
+> Agents edit this file through `loom knowledge update`, `replace-section` and `delete-section`.
 
 (Add architecture diagrams and component relationships as you discover them)
 "#
@@ -40,7 +40,7 @@ pub fn default_content(file_type: KnowledgeFile) -> String {
         KnowledgeFile::EntryPoints => r#"# Entry Points
 
 > Key files agents should read first to understand the codebase.
-> This file is append-only - agents add discoveries, never delete.
+> Agents edit this file through `loom knowledge update`, `replace-section` and `delete-section`.
 
 (Add entry points as you discover them)
 "#
@@ -48,7 +48,7 @@ pub fn default_content(file_type: KnowledgeFile) -> String {
         KnowledgeFile::Patterns => r#"# Architectural Patterns
 
 > Discovered patterns in the codebase that help agents understand how things work.
-> This file is append-only - agents add discoveries, never delete.
+> Agents edit this file through `loom knowledge update`, `replace-section` and `delete-section`.
 
 (Add patterns as you discover them)
 "#
@@ -56,7 +56,7 @@ pub fn default_content(file_type: KnowledgeFile) -> String {
         KnowledgeFile::Conventions => r#"# Coding Conventions
 
 > Discovered coding conventions in the codebase.
-> This file is append-only - agents add discoveries, never delete.
+> Agents edit this file through `loom knowledge update`, `replace-section` and `delete-section`.
 
 (Add conventions as you discover them)
 "#
@@ -64,7 +64,7 @@ pub fn default_content(file_type: KnowledgeFile) -> String {
         KnowledgeFile::Mistakes => r#"# Mistakes & Lessons Learned
 
 > Record mistakes made during development and how to avoid them.
-> This file is append-only - agents add discoveries, never delete.
+> Agents edit this file through `loom knowledge update`, `replace-section` and `delete-section`.
 >
 > Format: Describe what went wrong, why, and how to avoid it next time.
 
@@ -74,7 +74,7 @@ pub fn default_content(file_type: KnowledgeFile) -> String {
         KnowledgeFile::Stack => r#"# Stack & Dependencies
 
 > Project technology stack, frameworks, and key dependencies.
-> This file is append-only - agents add discoveries, never delete.
+> Agents edit this file through `loom knowledge update`, `replace-section` and `delete-section`.
 
 (Add stack information as you discover it)
 "#
@@ -82,7 +82,7 @@ pub fn default_content(file_type: KnowledgeFile) -> String {
         KnowledgeFile::Concerns => r#"# Concerns & Technical Debt
 
 > Technical debt, warnings, issues, and improvements needed.
-> This file is append-only - agents add discoveries, never delete.
+> Agents edit this file through `loom knowledge update`, `replace-section` and `delete-section`.
 
 (Add concerns as you discover them)
 "#

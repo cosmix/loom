@@ -58,13 +58,12 @@ impl KnowledgeDir {
             let path = self.file_path(*file_type);
             if path.exists() {
                 if let Ok(content) = fs::read_to_string(&path) {
-                    // Check if content has more than just the default template
-                    // by looking for ## headers added by agents
-                    if content.lines().any(|line| {
-                        line.starts_with("## ")
-                            && !line.contains("(Add ")
-                            && !line.contains("append-only")
-                    }) {
+                    // The scaffold carries no `##` heading, so any `##`
+                    // heading is content.
+                    if content
+                        .lines()
+                        .any(|line| line.starts_with("## ") && !line.contains("(Add "))
+                    {
                         return true;
                     }
                 }
@@ -127,7 +126,7 @@ impl KnowledgeDir {
             .with_context(|| format!("Failed to read {}", file_type.filename()))
     }
 
-    /// Append content to a knowledge file (knowledge files are append-only)
+    /// Append content to a knowledge file (`update` appends; `replace-section` and `delete-section` edit in place)
     pub fn append(&self, file_type: KnowledgeFile, content: &str) -> Result<()> {
         self.append_target(&KnowledgeTarget::Tier1(file_type), content)
     }
@@ -185,7 +184,7 @@ impl KnowledgeDir {
             .with_context(|| format!("Failed to read {}", target.display_name()))
     }
 
-    /// Append content to a tier-1 file or tier-2 topic (both are append-only).
+    /// Append content to a tier-1 file or tier-2 topic (`update` appends; `replace-section` and `delete-section` edit in place).
     ///
     /// A topic file that does not exist yet is scaffolded with a `# Title` /
     /// `> blurb` header derived from its slug before the content is appended

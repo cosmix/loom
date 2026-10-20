@@ -1,4 +1,4 @@
-//! The `### Suggestions` section of memory summaries, signals and handoffs.
+//! The `### Suggestions` section of memory signals and handoffs.
 
 use crate::fs::memory::query::entries_of_type;
 use crate::fs::memory::{MemoryEntry, MemoryEntryType};
@@ -31,26 +31,20 @@ pub(in crate::fs::memory) fn push_suggestions_section<'a>(
 #[cfg(test)]
 mod tests {
     use crate::fs::memory::{
-        append_entry, format_memory_for_handoff, format_memory_for_signal, generate_summary,
-        MemoryEntry, MemoryEntryType, MemoryJournal,
+        append_entry, format_memory_for_handoff, format_memory_for_signal, MemoryEntry,
+        MemoryEntryType,
     };
 
     #[test]
-    fn summary_signal_and_handoff_list_suggestions_with_their_ids() {
+    fn signal_and_handoff_list_suggestions_with_their_ids() {
         let temp = tempfile::tempdir().unwrap();
         let suggestion = MemoryEntry::new(MemoryEntryType::Suggestion, "tidy it".to_string());
         let note = MemoryEntry::new(MemoryEntryType::Note, "plain note".to_string());
         append_entry(temp.path(), "stage-a", &note).unwrap();
         append_entry(temp.path(), "stage-a", &suggestion).unwrap();
-        let journal = MemoryJournal {
-            stage_id: "stage-a".to_string(),
-            entries: vec![note, suggestion.clone()],
-            summary: None,
-        };
         let line = format!("`{}` tidy it", suggestion.id);
 
         for rendered in [
-            generate_summary(&journal, 5),
             format_memory_for_signal(temp.path(), "stage-a", 10).unwrap(),
             format_memory_for_handoff(temp.path(), "stage-a").unwrap(),
         ] {

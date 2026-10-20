@@ -233,3 +233,57 @@ fn a_historical_section_is_retrieved_only_under_the_historical_policy() {
     assert!(!current.items.iter().any(|item| is_old(item.state)));
     assert!(historical.items.iter().any(|item| is_old(item.state)));
 }
+
+/// Fixture with an unrelated section and an `Old episode` section; `state`
+/// is applied to the latter through the writer when given.
+fn retrieved_old_episode_ids(state: Option<LifecycleState>) -> (Vec<String>, Vec<LifecycleState>) {
+    use crate::context::retrieve::{retrieve_for_stage, StageQuery};
+    use crate::fs::knowledge::{KnowledgeDir, KnowledgeTarget};
+    let temp = tempfile::tempdir().unwrap();
+    fs::create_dir_all(temp.path().join(".loom/work")).unwrap();
+    let topic = temp.path().join("doc/loom/knowledge/architecture/topic.md");
+    fs::create_dir_all(topic.parent().unwrap()).unwrap();
+    fs::write(
+        &topic,
+        "# Topic\n\n## Current notes\n\nunrelated present wording\n\n\
+         ## Old episode\n\nquokka-zebra archival wording\n",
+    )
+    .unwrap();
+    if let Some(state) = state {
+        let target = KnowledgeTarget::parse("architecture/topic").unwrap();
+        KnowledgeDir::new(temp.path())
+            .set_section_state_target(&target, "Old episode", state)
+            .unwrap();
+    }
+    let pack = retrieve_for_stage(
+        &StageQuery::new(temp.path(), "quokka zebra archival"),
+        2_000,
+    )
+    .unwrap();
+    let ids = pack
+        .items
+        .iter()
+        .map(|i| i.id.as_str().to_string())
+        .collect();
+    (ids, pack.items.iter().map(|i| i.state).collect())
+}
+
+#[test]
+fn a_section_annotated_non_current_leaves_default_retrieval() {
+    let names_section = |id: &String| id.to_lowercase().contains("old-episode");
+    let (control, _) = retrieved_old_episode_ids(None);
+    assert!(
+        control.iter().any(names_section),
+        "control ids: {control:?}"
+    );
+
+    for state in [
+        LifecycleState::Deprecated,
+        LifecycleState::Superseded,
+        LifecycleState::Historical,
+    ] {
+        let (ids, states) = retrieved_old_episode_ids(Some(state));
+        assert!(!states.contains(&state), "{state:?} item retrieved");
+        assert!(!ids.iter().any(names_section), "{state:?}: {ids:?}");
+    }
+}

@@ -182,3 +182,18 @@ fn assert_healed_and_ordered(content: &str) {
         "the pre-existing section must appear BEFORE the newly appended one: {content}"
     );
 }
+
+#[test]
+fn a_fresh_scaffold_reads_as_empty_and_a_section_reads_as_content() {
+    let temp = TempDir::new().unwrap();
+    let knowledge = KnowledgeDir::new(temp.path());
+    knowledge.initialize().unwrap();
+    assert!(!knowledge.has_content());
+
+    std::fs::write(
+        knowledge.file_path(KnowledgeFile::Architecture),
+        "# Architecture\n\n## Module map\n\n- src/main.rs\n",
+    )
+    .unwrap();
+    assert!(knowledge.has_content());
+}

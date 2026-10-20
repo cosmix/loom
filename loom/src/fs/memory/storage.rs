@@ -119,22 +119,3 @@ pub fn read_journal(work_dir: &Path, stage_id: &str) -> Result<MemoryJournal> {
 
     parse_journal(&content, stage_id)
 }
-
-/// Write summary to the journal file
-pub fn write_summary(work_dir: &Path, stage_id: &str, summary: &str) -> Result<()> {
-    let file_path = memory_file_path(work_dir, stage_id);
-
-    let mut file = fs::OpenOptions::new()
-        .append(true)
-        .open(&file_path)
-        .with_context(|| format!("Failed to open memory journal: {}", file_path.display()))?;
-
-    file.write_all(summary.as_bytes()).with_context(|| {
-        format!(
-            "Failed to write summary to memory journal: {}",
-            file_path.display()
-        )
-    })?;
-
-    Ok(())
-}

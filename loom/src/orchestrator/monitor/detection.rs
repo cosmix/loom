@@ -191,12 +191,6 @@ impl Detection {
         let mut events = Vec::new();
         match current {
             ContextHealth::Yellow => {
-                if let Err(e) = handlers.handle_context_warning(session) {
-                    eprintln!(
-                        "Failed to auto-summarize memory for session '{}': {}",
-                        session.id, e
-                    );
-                }
                 events.push(MonitorEvent::SessionContextWarning {
                     session_id: session.id.clone(),
                     context_tokens: session.context_tokens,

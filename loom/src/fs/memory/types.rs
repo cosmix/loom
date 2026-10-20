@@ -211,8 +211,6 @@ pub struct MemoryJournal {
     pub stage_id: String,
     /// All entries in the journal
     pub entries: Vec<MemoryEntry>,
-    /// Summary of the journal (generated at context threshold)
-    pub summary: Option<String>,
 }
 
 /// Builder for parsing memory entries

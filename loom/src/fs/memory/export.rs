@@ -8,7 +8,7 @@ use std::path::Path;
 
 #[path = "export_suggestions.rs"]
 mod suggestions;
-pub(super) use suggestions::push_suggestions_section;
+use suggestions::push_suggestions_section;
 
 /// Format memory entries for embedding in a signal
 pub fn format_memory_for_signal(

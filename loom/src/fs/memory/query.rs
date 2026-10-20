@@ -1,8 +1,6 @@
-//! Query and summarization functions for memory journals.
+//! Query functions for memory journals.
 
-use super::export::push_suggestions_section;
 use super::types::{MemoryEntry, MemoryEntryType, MemoryJournal};
-use crate::utils::truncate_for_display;
 
 /// Get recent entries from a journal (for recitation in signals)
 pub fn get_recent_entries(journal: &MemoryJournal, max_entries: usize) -> Vec<&MemoryEntry> {
@@ -32,50 +30,6 @@ pub fn query_entries<'a>(journal: &'a MemoryJournal, search: &str) -> Vec<&'a Me
                     .is_some_and(|c| c.to_lowercase().contains(&search_lower))
         })
         .collect()
-}
-
-/// Generate a summary of the memory journal (for context threshold)
-pub fn generate_summary(journal: &MemoryJournal, max_entries: usize) -> String {
-    let mut summary = String::new();
-    summary.push_str("## Summary\n\n");
-    summary.push_str("Auto-generated summary at context threshold.\n\n");
-
-    let notes = entries_of_type(&journal.entries, MemoryEntryType::Note);
-    let decisions = entries_of_type(&journal.entries, MemoryEntryType::Decision);
-    let questions = entries_of_type(&journal.entries, MemoryEntryType::Question);
-
-    summary.push_str(&format!("- **Total entries**: {}\n", journal.entries.len()));
-    summary.push_str(&format!("- **Notes**: {}\n", notes.len()));
-    summary.push_str(&format!("- **Decisions**: {}\n", decisions.len()));
-    summary.push_str(&format!("- **Questions**: {}\n\n", questions.len()));
-
-    // Key decisions (most recent)
-    if !decisions.is_empty() {
-        summary.push_str("### Key Decisions\n\n");
-        for entry in decisions.iter().rev().take(max_entries) {
-            summary.push_str(&format!(
-                "- {}\n",
-                truncate_for_display(&entry.content, 200)
-            ));
-        }
-        summary.push('\n');
-    }
-
-    // Open questions (all)
-    if !questions.is_empty() {
-        summary.push_str("### Open Questions\n\n");
-        for entry in &questions {
-            summary.push_str(&format!(
-                "- {}\n",
-                truncate_for_display(&entry.content, 200)
-            ));
-        }
-        summary.push('\n');
-    }
-
-    push_suggestions_section(&mut summary, &journal.entries, 200);
-
-    summary
 }
 
 /// The entries of one type, in journal order.

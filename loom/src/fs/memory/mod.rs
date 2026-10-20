@@ -19,10 +19,9 @@ pub use archive::archive_run_state;
 
 pub use storage::{
     append_entry, create_journal, init_memory_dir, memory_dir, memory_file_path, read_journal,
-    write_summary,
 };
 
-pub use query::{generate_summary, get_recent_entries, query_entries};
+pub use query::{get_recent_entries, query_entries};
 
 pub use staged::{read_staged_entries, settled_ids};
 
@@ -192,29 +191,6 @@ mod tests {
     }
 
     #[test]
-    fn test_generate_summary() {
-        let journal = MemoryJournal {
-            stage_id: "test-stage".to_string(),
-            entries: vec![
-                MemoryEntry::new(MemoryEntryType::Note, "Note 1".to_string()),
-                MemoryEntry::new(MemoryEntryType::Note, "Note 2".to_string()),
-                MemoryEntry::new(MemoryEntryType::Decision, "Decision 1".to_string()),
-                MemoryEntry::new(MemoryEntryType::Question, "Question 1".to_string()),
-            ],
-            summary: None,
-        };
-
-        let summary = generate_summary(&journal, 5);
-        assert!(summary.contains("## Summary"));
-        assert!(summary.contains("**Total entries**: 4"));
-        assert!(summary.contains("**Notes**: 2"));
-        assert!(summary.contains("**Decisions**: 1"));
-        assert!(summary.contains("**Questions**: 1"));
-        assert!(summary.contains("### Key Decisions"));
-        assert!(summary.contains("### Open Questions"));
-    }
-
-    #[test]
     fn test_format_memory_for_handoff() {
         let temp_dir = TempDir::new().unwrap();
         let work_dir = temp_dir.path();
@@ -283,7 +259,6 @@ mod tests {
                 ),
                 MemoryEntry::new(MemoryEntryType::Decision, "Another decision".to_string()),
             ],
-            summary: None,
         };
 
         let key_notes = extract_key_notes(&journal);

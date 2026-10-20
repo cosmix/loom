@@ -4,9 +4,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
-use crate::fs::memory::{
-    format_memory_for_handoff, generate_summary, preserve_for_crash, read_journal, write_summary,
-};
+use crate::fs::memory::{format_memory_for_handoff, preserve_for_crash};
 use crate::fs::work_dir::ContextConfig;
 use crate::handoff::{
     ensure_handoff, merge_session_handoff, CommitInfo, GitHistory, HandoffContent, HandoffOrigin,
@@ -83,32 +81,6 @@ impl Handlers {
             read_merge_signal(session_id, &self.config.work_dir),
             Ok(Some(_))
         )
-    }
-
-    /// Auto-summarize memory when a session enters the Yellow band.
-    ///
-    /// Generates a summary of the memory journal to reduce context burden.
-    pub fn handle_context_warning(&self, session: &Session) -> Result<()> {
-        let stage_id = session.stage_id.as_deref().unwrap_or(&session.id);
-        let journal = read_journal(&self.config.work_dir, stage_id)?;
-
-        if journal.entries.is_empty() {
-            return Ok(());
-        }
-
-        // Generate summary (keep last 5 entries for key decisions)
-        let summary = generate_summary(&journal, 5);
-
-        // Write summary to the journal
-        write_summary(&self.config.work_dir, stage_id, &summary)?;
-
-        eprintln!(
-            "Auto-summarized memory for stage '{}' ({} entries)",
-            stage_id,
-            journal.entries.len()
-        );
-
-        Ok(())
     }
 
     /// Ensure one durable handoff exists for an exact initiating condition.
