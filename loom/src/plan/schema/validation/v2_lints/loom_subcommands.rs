@@ -61,39 +61,117 @@ fn unknown_subcommand(root: &Command, argv: &[&Word]) -> Option<String> {
     if !runs_loom(argv) {
         return None;
     }
+    match walk(root, &argv[1..], false) {
+        Walk::Clean => None,
+        Walk::Unknown { path, word } => Some(format!(
+            "runs `{path} {word}`, but `{word}` is not a subcommand of `{path}`, so it \
+             fails with a usage error"
+        )),
+        Walk::MissingSubcommand { path } => Some(format!(
+            "runs `{path}` without the subcommand it requires, so it fails with a usage error"
+        )),
+    }
+}
+
+/// Outcome of walking the words after `loom` down the CLI tree.
+enum Walk {
+    Clean,
+    /// `word` is no subcommand of `path`.
+    Unknown {
+        path: String,
+        word: String,
+    },
+    /// `path` is a parent that requires a subcommand and got none.
+    MissingSubcommand {
+        path: String,
+    },
+}
+
+/// `placeholders` also stops, clean, at a doc placeholder word (`*`, `[`, `{`,
+/// `<`, `…` or `...`).
+fn walk(root: &Command, words: &[&Word], placeholders: bool) -> Walk {
     let mut current = root;
     let mut path = vec!["loom"];
-    for word in &argv[1..] {
+    for word in words {
         let value = word.value.as_str();
-        if value.starts_with('-') || word.expands || !current.has_subcommands() {
-            return None;
+        let stop = value.starts_with('-')
+            || word.expands
+            || !current.has_subcommands()
+            || (placeholders && is_placeholder(value));
+        if stop {
+            return Walk::Clean;
         }
         match current.find_subcommand(value) {
             Some(subcommand) => {
                 current = subcommand;
                 path.push(value);
             }
-            None if takes_free_words(current) => return None,
+            None if takes_free_words(current) => return Walk::Clean,
             None => {
-                return Some(format!(
-                    "runs `{} {value}`, but `{value}` is not a subcommand of `{}`, so it \
-                     fails with a usage error",
-                    path.join(" "),
-                    path.join(" ")
-                ));
+                return Walk::Unknown {
+                    path: path.join(" "),
+                    word: value.to_string(),
+                };
             }
         }
     }
-    let requires_subcommand = current.has_subcommands() && current.is_subcommand_required_set();
-    requires_subcommand.then(|| {
-        format!(
-            "runs `{}` without the subcommand it requires, so it fails with a usage error",
-            path.join(" ")
-        )
-    })
+    if current.has_subcommands() && current.is_subcommand_required_set() {
+        return Walk::MissingSubcommand {
+            path: path.join(" "),
+        };
+    }
+    Walk::Clean
 }
 
 /// Whether a word that names no subcommand can still be a valid argument.
 fn takes_free_words(command: &Command) -> bool {
     command.get_positionals().next().is_some() || command.is_allow_external_subcommands_set()
+}
+
+fn is_placeholder(value: &str) -> bool {
+    value == "..." || value.contains(['*', '[', '{', '<', '\u{2026}'])
+}
+
+/// What `loom_command_paths` found in a script.
+#[cfg(test)]
+pub(crate) struct LoomCommandPaths {
+    /// How many `loom` invocations the script holds.
+    pub(crate) checked: usize,
+    /// Each invocation's path up to and including a word no subcommand
+    /// answers to, as `loom <word> ...`.
+    pub(crate) unresolved: Vec<String>,
+}
+
+/// Resolve every `loom` invocation in `script` against the CLI tree. A family
+/// named alone is accepted; doc placeholders end a path.
+#[cfg(test)]
+pub(crate) fn loom_command_paths(script: &str) -> LoomCommandPaths {
+    let mut root = crate::cli::Cli::command();
+    root.build();
+    let mut found = LoomCommandPaths {
+        checked: 0,
+        unresolved: Vec::new(),
+    };
+    super::visit_argvs(script, 0, &mut |argv| {
+        // `loom_run_bounded <n> loom ...` runs loom under a timeout.
+        let argv = match argv.first() {
+            Some(word) if word.value == "loom_run_bounded" => argv.get(2..).unwrap_or(&[]),
+            _ => argv,
+        };
+        let Some((first, rest)) = argv.split_first() else {
+            return;
+        };
+        let bin = matches!(
+            first.value.as_str(),
+            "${LOOM_BIN:-loom}" | "$LOOM_BIN" | "${LOOM_BIN}"
+        );
+        if !bin && first.command_name() != "loom" {
+            return;
+        }
+        found.checked += 1;
+        if let Walk::Unknown { path, word } = walk(&root, rest, true) {
+            found.unresolved.push(format!("{path} {word}"));
+        }
+    });
+    found
 }

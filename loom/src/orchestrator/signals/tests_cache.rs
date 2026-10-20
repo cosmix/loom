@@ -194,14 +194,13 @@ fn test_signal_contains_session_memory_section_for_standard_stages() {
     assert!(content.contains("SESSION MEMORY REQUIRED"));
     assert!(content.contains("RECORD AS YOU GO"));
 
-    assert!(content.contains("NEVER use 'loom knowledge' in implementation stages"));
+    assert!(content.contains("NEVER use 'loom knowledge' in this stage"));
 
     assert!(content.contains("loom memory note"));
     assert!(content.contains("loom memory decision"));
     assert!(content.contains("loom memory question"));
 
-    assert!(!content.contains("loom knowledge update entry-points"));
-    assert!(!content.contains("loom knowledge update patterns"));
+    assert!(!content.contains("loom knowledge update"));
 }
 
 #[test]

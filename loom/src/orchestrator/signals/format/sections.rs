@@ -34,20 +34,20 @@ pub(super) fn format_semi_stable_section(
         content.push_str(&format_stage_brief(pack, stage_id, STAGE_QUERY_INPUTS));
     }
 
-    // Stage-type-aware reminder box. Knowledge/integration-verify/distill stages
-    // get the knowledge-updates box here; standard stages get their compact
-    // memory reminder folded into "## Stage Memory" below instead (kept in one
-    // place rather than two - CLAUDE.md already has this content in context).
+    // Stage-type-aware reminder box. Knowledge and knowledge-distill stages
+    // get the knowledge-updates box here; standard and integration-verify
+    // stages get their compact memory reminder folded into "## Stage Memory"
+    // below instead (CLAUDE.md already has this content in context).
     if matches!(
         stage_type,
-        StageType::Knowledge | StageType::IntegrationVerify | StageType::KnowledgeDistill
+        StageType::Knowledge | StageType::KnowledgeDistill
     ) {
         append_knowledge_updates_required_box(&mut content);
     }
 
     // Knowledge Management section with stage-type-aware content
     match stage_type {
-        StageType::Knowledge | StageType::IntegrationVerify | StageType::KnowledgeDistill => {
+        StageType::Knowledge | StageType::KnowledgeDistill => {
             content.push_str("## Knowledge Management\n\n");
 
             if embedded_context.knowledge_tree_empty {
@@ -133,7 +133,7 @@ pub(super) fn format_semi_stable_section(
                 content.push_str("- Document edge cases and gotchas for future sessions\n\n");
             }
 
-            // Show knowledge commands table for Knowledge and IntegrationVerify stages
+            // Show knowledge commands table for Knowledge and KnowledgeDistill stages
             content.push_str("**Commands:**\n\n");
             content.push_str("| Discovery Type | Command |\n");
             content.push_str("|----------------|--------|\n");
@@ -196,8 +196,8 @@ pub(super) fn format_semi_stable_section(
                 content.push_str("```\n\n");
             }
         }
-        StageType::Standard => {
-            // Standard implementation stages: compact memory reminder. Kept
+        StageType::Standard | StageType::IntegrationVerify => {
+            // Implementation and integration-verify stages: compact reminder. Kept
             // short deliberately - CLAUDE.md's own memory rules are already in
             // context every session, so this only needs to point at the
             // commands and the two hard prohibitions, not re-teach the rule.
@@ -224,8 +224,8 @@ pub(super) fn format_semi_stable_section(
                 "Evidence makes the entry checkable at distillation; an entry without evidence is a claim.\n\n",
             );
             content.push_str(
-                "⚠️ NEVER use 'loom knowledge' in implementation stages — curated into \
-                 knowledge by knowledge-distill.\n",
+                "⚠️ NEVER use 'loom knowledge' in this stage — knowledge-distill curates \
+                 memory into knowledge.\n",
             );
             content.push_str(
                 "⛔ NEVER use Claude Code's auto-memory system — ONLY 'loom memory' \
@@ -559,7 +559,7 @@ pub(super) fn format_recitation_section(
     );
     content.push_str("- `loom memory question \"open question\"` - Record an open question\n");
     content.push_str("- `loom memory change \"file.rs - description\"` - Record a file change\n");
-    content.push_str("- `loom memory list` - Review your stage entries\n");
+    content.push_str(&format!("- `loom memory list --stage {}`\n", stage.id));
     content.push_str("- `loom memory show --all` - Show all stage memories\n");
     content.push_str(
         "- Evidence makes the entry checkable at distillation; an entry without evidence is a claim.\n\n",

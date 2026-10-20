@@ -33,7 +33,7 @@ use super::generate::{
 /// rules (Rule 5's preamble fence, Rule 6, Rule 7's playbook, the
 /// orchestration reference) moved to `skills/loom-orchestration/SKILL.md` and
 /// `loom-hooks/_subagent-preamble.txt`: they cost every session, most of them
-/// subagents that never spawn anything. Actual size is now about 17,000 bytes.
+/// subagents that never spawn anything. Actual size is about 19,900 bytes.
 /// Trim future doctrine additions rather than spending down that buffer.
 const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 20_480;
 

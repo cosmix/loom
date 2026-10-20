@@ -35,6 +35,9 @@ mod tests_size;
 #[path = "tests_doctrine.rs"]
 mod tests_doctrine;
 #[cfg(test)]
+#[path = "tests_doctrine_commands.rs"]
+mod tests_doctrine_commands;
+#[cfg(test)]
 #[path = "tests_doctrine_prefixes.rs"]
 mod tests_doctrine_prefixes;
 #[cfg(test)]

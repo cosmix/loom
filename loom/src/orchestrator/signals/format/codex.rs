@@ -87,9 +87,9 @@ fn push_codex_intro(content: &mut String, implementers: &Implementers) {
         );
     }
     content.push_str(
-        "Regardless of the list: YOU (opus) keep the work needing architectural judgment,\n\
-         loom-advisor (fable) is available on a second failure, and verification never moves to\n\
-         codex - see below.\n\n",
+        "Regardless of the list: YOU, the stage's main agent, keep the work needing\n\
+         architectural judgment, loom-advisor (fable) is available on a second failure,\n\
+         and verification never moves to codex - see below.\n\n",
     );
 }
 

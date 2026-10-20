@@ -1,6 +1,6 @@
 //! The semantic prefixes a note's text may open with.
 //!
-//! `mistake:`, `stale-knowledge:`, and `found/gotcha:` are prompt
+//! `mistake:`, `stale-knowledge:`, and `found:`/`gotcha:`/`found/gotcha:` are prompt
 //! conventions the distill procedure and `/distill` command state in
 //! prose — nothing in the note's schema enforced the shape they promise
 //! until now. [`NotePrefix::parse`] names which convention a note opens
@@ -18,7 +18,7 @@ pub(super) enum NotePrefix {
     Mistake,
     /// `stale-knowledge: <file>#<heading> claims X; ... Correction: ...`
     StaleKnowledge { file: String, heading: String },
-    /// `found/gotcha: ... in file:line`
+    /// `found: ...`, `gotcha: ...` or `found/gotcha: ... in file:line`
     Found,
     /// No recognized prefix; the note is free-form.
     None,
@@ -41,7 +41,10 @@ impl NotePrefix {
         if let Some(rest) = text.strip_prefix("stale-knowledge:") {
             return Self::parse_stale_knowledge(rest);
         }
-        if text.starts_with("found/gotcha:") {
+        if ["found:", "gotcha:", "found/gotcha:"]
+            .iter()
+            .any(|prefix| text.starts_with(prefix))
+        {
             return NotePrefix::Found;
         }
         NotePrefix::None
@@ -145,11 +148,15 @@ mod tests {
     }
 
     #[test]
-    fn found_gotcha_prefix_is_recognized() {
-        assert_eq!(
-            NotePrefix::parse("found/gotcha: surprising thing in src/foo.rs:10"),
-            NotePrefix::Found
-        );
+    fn found_and_gotcha_prefixes_are_one_class() {
+        for text in [
+            "found: surprising thing in src/foo.rs:10",
+            "gotcha: surprising thing in src/foo.rs:10",
+            "found/gotcha: surprising thing in src/foo.rs:10",
+        ] {
+            assert_eq!(NotePrefix::parse(text), NotePrefix::Found, "{text}");
+        }
+        assert_eq!(NotePrefix::parse("foundation: x"), NotePrefix::None);
     }
 
     #[test]
