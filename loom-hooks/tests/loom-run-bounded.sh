@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# loom_run_bounded (_read_ledger.sh) must bound a command even on a machine with
+# loom_run_bounded (_bounded.sh) must bound a command even on a machine with
 # neither gtimeout nor timeout, as stock macOS is: the bash watchdog stops a
 # hung command, kills one that ignores TERM, never holds a surrounding $(...)
 # open, never runs the caller's EXIT trap a second time, and

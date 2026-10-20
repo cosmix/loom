@@ -160,7 +160,7 @@ _loom_ledger_file() {
 # symbol rows (matching `^[[:space:]]+L[0-9]+-L[0-9]+[[:space:]]`), or return
 # 1 (nothing echoed) when the graph does not cover <path> or the command
 # produced no output. The call is bounded to 2 seconds by loom_run_bounded
-# (_read_ledger.sh: gtimeout, timeout, or a bash watchdog on a machine with
+# (_bounded.sh: gtimeout, timeout, or a bash watchdog on a machine with
 # neither), because a cold source graph must never block the Read tool call
 # indefinitely. STDERR is always discarded: inside a worktree `loom map`
 # prints a "could not refresh the working-tree source graph" warning that must
@@ -292,7 +292,7 @@ Read the ranges you need with offset/limit."
 #   4. A whole-file read that a sibling agent of this session already made
 #      of the unchanged file is recorded in the session's _shared.tsv and,
 #      when rule 1 is silent, advised once per agent and path
-#      (_loom_read_sibling_receipt in _read_ledger.sh).
+#      (_loom_read_sibling_request in _read_ledger.sh).
 #
 # Rule 1 is computed with _loom_read_discipline_verdict1, then at most one
 # decision is queued.
@@ -334,7 +334,7 @@ loom_read_discipline_check() {
 	fi
 
 	local sibling
-	if sibling=$(_loom_read_sibling_receipt "$path" "$kind" "$lines" "$ledger" "${ledger%/*}/_shared.tsv") &&
+	if sibling=$(_loom_read_sibling_request "$path" "$kind" "$lines" "$ledger" "${ledger%/*}/_shared.tsv") &&
 		[[ "$LOOM_RD_V1_KIND" == "none" ]]; then
 		loom_hook_note_warn "$sibling"
 	fi

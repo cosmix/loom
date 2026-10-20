@@ -3,16 +3,16 @@
 # discipline: CLAUDE.md rule 14 ("query before you read... read ranges, not
 # files") and rule 17's 400-line file-size ceiling.
 #
-# All four rules (unbounded read of a large file -> outline instead, repeat
-# reads of the same path, a tier-1 knowledge read in a stage session, and a
-# whole-file read a sibling agent of the same session already made) live in
-# the shared core loom-hooks/_read_discipline.sh, so this hook and
-# poll-guard.sh's Bash-side file reads can never drift apart - see that
-# file's header for the full rule description.
+# All three rules (unbounded read of a large file -> outline instead, a
+# tier-1 knowledge read in a stage session, and a whole-file read a sibling
+# agent of the same session already requested) live in the shared core
+# loom-hooks/_read_discipline.sh, so this hook and poll-guard.sh's Bash-side
+# file reads can never drift apart - see that file's header for the full rule
+# description.
 #
 # Input: JSON from stdin - {"tool_name": "Read", "tool_input": {"file_path":
 # ..., "offset": ..., "limit": ..., "pages": ...}, "agent_id": ...,
-# "session_id": ..., "cwd": ..., "tool_use_id": ... (optional)}
+# "session_id": ..., "cwd": ...}
 # Exit codes: 0 = allow (optionally with a LOOM_HOOK_WARN additionalContext),
 # 1 = jq not installed (non-blocking error),
 # 2 = deny with guidance on stderr (only when the deny switch is enabled AND
