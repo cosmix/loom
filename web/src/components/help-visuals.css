@@ -1,0 +1,240 @@
+@import "./help-graph-demo.css";
+@import "./help-session-demo.css";
+
+.help-figure {
+  margin: 0 0 30px;
+  border-bottom: 1px solid var(--border);
+  animation: help-figure-in 200ms ease-out both;
+}
+.help-figure-label {
+  display: flex;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  color: var(--muted-foreground);
+  font-size: 11px;
+  font-weight: 500;
+}
+.help-figure-label > span:last-child:not(:first-child) {
+  font-weight: 400;
+}
+.help-figure figcaption {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 16px 0;
+  font-size: 12px;
+  line-height: 1.65;
+  color: var(--muted-foreground);
+}
+.help-figure figcaption > svg {
+  width: 15px;
+  height: 15px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+.help-figure strong {
+  color: var(--foreground);
+  font-weight: 550;
+}
+.help-figure svg {
+  flex-shrink: 0;
+}
+.help-run-path {
+  display: flex;
+  padding: 16px 0 18px;
+}
+.help-run-path li {
+  position: relative;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  font-size: 12px;
+}
+.help-run-path li::before {
+  content: "";
+  position: absolute;
+  top: 17px;
+  left: 35px;
+  right: 0;
+  height: 1px;
+  background: var(--border);
+}
+.help-run-path li:last-child::before {
+  display: none;
+}
+.help-run-path li > span {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 35px;
+  height: 35px;
+  margin-bottom: 8px;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  font-size: 11px;
+}
+.help-run-path li:nth-child(3) > span {
+  background: var(--highlight);
+  color: var(--highlight-foreground);
+  border-color: transparent;
+}
+.help-run-path li:nth-child(n + 4) > span {
+  color: var(--tone-completed);
+}
+.help-run-path svg {
+  width: 15px;
+  height: 15px;
+}
+.help-run-path small {
+  color: var(--muted-foreground);
+  font-size: 10px;
+}
+.help-header-key {
+  margin: 0 0 28px;
+}
+.help-header-key.is-compact {
+  margin: 0;
+  padding: 20px 0;
+  border-top: 1px solid var(--border);
+}
+.help-header-key dl {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 24px;
+  justify-content: space-between;
+}
+.help-header-key dt {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  height: 33px;
+  font-size: 12px;
+}
+.help-header-key svg {
+  width: 16px;
+  height: 16px;
+}
+.help-header-key dd {
+  margin-top: 7px;
+  font-size: 11px;
+  color: var(--muted-foreground);
+}
+.help-scope-path {
+  display: flex;
+  padding: 12px 0 20px;
+}
+.help-scope-path li {
+  flex: 1;
+  border-top: 2px solid var(--border);
+  padding: 16px 18px 0 0;
+}
+.help-scope-path li:first-child {
+  border-color: var(--ring);
+}
+.help-scope-path strong {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 14px;
+}
+.help-scope-path span {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--muted-foreground);
+}
+.help-local-settings,
+.help-automatic-example {
+  display: flex;
+  gap: 12px;
+  padding: 18px 0;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted-foreground);
+}
+.help-local-settings > svg,
+.help-automatic-example > svg {
+  width: 18px;
+  height: 18px;
+  margin-top: 3px;
+}
+.help-local-settings strong,
+.help-automatic-example strong {
+  display: block;
+}
+.help-connection-key > div {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  gap: 20px;
+  padding: 18px 0;
+  border-top: 1px solid var(--border);
+}
+.help-connection-key dt {
+  display: flex;
+  gap: 9px;
+  align-items: center;
+  font-size: 12px;
+}
+.help-connection-key svg {
+  width: 16px;
+  height: 16px;
+}
+.help-connection-key dd {
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted-foreground);
+}
+.help-connection-key strong {
+  display: block;
+}
+@keyframes help-figure-in {
+  from {
+    opacity: 0;
+    transform: translateY(5px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+@media (max-width: 767px) {
+  .help-figure-label {
+    flex-wrap: wrap;
+    gap: 5px;
+  }
+  .help-run-path {
+    flex-wrap: wrap;
+    gap: 20px 0;
+  }
+  .help-run-path li {
+    flex-basis: 33.33%;
+    flex-grow: 0;
+  }
+  .help-run-path li:nth-child(3)::before {
+    display: none;
+  }
+  .help-header-key dl {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+  .help-anatomy-key {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  .help-scope-path {
+    flex-direction: column;
+  }
+  .help-scope-path li {
+    padding: 14px 0;
+  }
+  .help-connection-key > div {
+    grid-template-columns: 1fr;
+    gap: 8px;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .help-figure {
+    animation: none;
+  }
+}

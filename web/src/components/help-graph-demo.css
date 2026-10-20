@@ -1,0 +1,51 @@
+.help-real-graph {
+  height: 420px;
+  border: 1px solid var(--hairline);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.help-real-graph.help-single-stage {
+  height: 235px;
+}
+.help-graph-figure,
+.help-real-graph *,
+.help-real-graph *::before,
+.help-real-graph *::after {
+  animation: none !important;
+  transition: none !important;
+}
+.help-real-graph .stage-card::after {
+  background: transparent;
+}
+.help-real-graph .stage-open {
+  opacity: 1;
+}
+.help-real-graph {
+  pointer-events: none;
+}
+.help-control-key {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 18px;
+  border-top: 1px solid var(--border);
+  padding: 18px 0;
+}
+.help-control-key dt {
+  font-size: 12px;
+  font-weight: 550;
+}
+.help-control-key dd {
+  margin-top: 7px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted-foreground);
+}
+@media (max-width: 767px) {
+  .help-real-graph {
+    height: 350px;
+  }
+  .help-control-key {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+}

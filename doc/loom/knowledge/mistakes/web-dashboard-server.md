@@ -374,3 +374,20 @@ the spawn fails; the other candidates stay as listed.
 **Why**: Shared knowledge changes were excluded instead of separating the task-owned edits.
 **Prevention**: Include task-owned memory and index hunks in the requested commit scope while preserving unrelated changes.
 **Fix**: Commit the dashboard notes with only their matching index row.
+
+## Testing Library role options differ from Playwright
+
+**What happened:** A help-dialog test passed an unsupported `exact` option to Testing Library `getByRole`; the TypeScript build rejected it even though Vitest passed.
+
+**Why:** Playwright locator options were carried into a Testing Library test.
+
+**Prevention:** Use a string `name` for exact accessible-name matching in Testing Library; reserve `exact` for APIs that support it.
+
+**Fix:** Remove the unsupported option and run the frontend type check and build.
+
+## Help illustrations must match production UI
+
+**What happened:** The first help illustrations recreated stage cards, terminal controls, and resource meters with approximate graphics; the operator rejected their appearance and a decorative sidebar tagline.
+**Why:** Explanatory visuals were implemented independently of the components they described.
+**Prevention:** Use production components with isolated sample state, local interaction handlers, and utility copy. Inspect the real UI before composing examples.
+**Fix:** Render StageNode, React Flow controls, ModeKey, ContextMeter, NodeTokens, TokenFlowPanel, and QuotaMeters in the help guide.

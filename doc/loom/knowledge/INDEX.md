@@ -104,7 +104,7 @@
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, plugin scope | 160 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] precedence, value types | 103 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML, hook I/O, skills | 173 |
-| [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard type and CSS gotchas | 23 |
+| [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard type and CSS gotchas | 47 |
 
 ### mistakes
 
@@ -165,7 +165,7 @@
 | [verification-harness](mistakes/verification-harness.md) | Many checks failing: suspect harness | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 368 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) capped by path | 141 |
-| [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server concurrency | 376 |
+| [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server concurrency | 393 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Layer written under an ignored key | 94 |
 
 ### concerns

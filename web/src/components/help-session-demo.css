@@ -1,0 +1,101 @@
+.help-anatomy-key {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  padding: 0 0 28px;
+}
+.help-anatomy-key dt {
+  font-size: 12px;
+  font-weight: 550;
+}
+.help-anatomy-key dd {
+  margin-top: 7px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--muted-foreground);
+}
+.help-terminal-demo {
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+.help-terminal-demo .terminal-head {
+  flex-wrap: wrap;
+  gap: 16px;
+}
+.help-terminal-screen {
+  padding: 24px;
+  font-family: "Commit Mono Cosmix", monospace;
+  font-size: 12px;
+  line-height: 1.8;
+}
+.help-terminal-screen > span {
+  color: #8b9bb2;
+}
+.help-terminal-screen p {
+  margin: 9px 0 24px;
+}
+.help-terminal-prompt {
+  color: #fcbb20;
+}
+.help-terminal-cursor {
+  display: inline-block;
+  width: 8px;
+  height: 14px;
+  border: 1px solid #fcbb20;
+  vertical-align: middle;
+  transition: background 150ms;
+}
+.help-terminal-demo[data-mode="control"] .help-terminal-cursor {
+  background: #fcbb20;
+}
+.help-meter-example {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 16px;
+  margin: 24px 0;
+}
+.help-meter-example h3,
+.help-quota-example h3 {
+  font-size: 13px;
+  font-weight: 550;
+  margin-bottom: 9px;
+}
+.help-meter-example p,
+.help-quota-example p {
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.7;
+}
+.help-stage-instruments {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  width: 221px;
+}
+.help-token-panel {
+  max-width: 440px;
+  margin: 24px auto;
+}
+.help-quota-example {
+  padding: 20px 0;
+  border-top: 1px solid var(--border);
+}
+.help-quota-example > div {
+  font-size: 12px;
+}
+.help-quota-example p {
+  margin-top: 16px;
+}
+@media (max-width: 767px) {
+  .help-anatomy-key {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .help-terminal-cursor {
+    transition: none;
+  }
+}

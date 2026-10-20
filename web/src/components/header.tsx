@@ -20,7 +20,7 @@ import { attentionAtom, snapshotAtom } from "@/state/atoms";
 
 /// The TUI's header block: the logo, the plan name, the progress row and the
 /// stage and merge rails, with the daemon/feed state and controls on the right.
-export function Header({ onOpenLegend }: { onOpenLegend: () => void }) {
+export function Header({ onOpenHelp }: { onOpenHelp: () => void }) {
   const snapshot = useAtomValue(snapshotAtom);
   // The alarm cell counts only what waits on the operator.
   const attention = useAtomValue(attentionAtom).filter((entry) => !entry.automatic);
@@ -52,9 +52,9 @@ export function Header({ onOpenLegend }: { onOpenLegend: () => void }) {
             <SlidersHorizontalIcon />
             <span className="hidden sm:inline">settings</span>
           </Button>
-          <Button variant="ghost" size="sm" onClick={onOpenLegend} aria-label="open legend">
+          <Button variant="ghost" size="sm" onClick={onOpenHelp} aria-label="open help">
             <CircleHelpIcon />
-            <span className="hidden sm:inline">legend</span>
+            <span className="hidden sm:inline">help</span>
           </Button>
         </div>
         <div className="col-span-2 row-start-2 flex min-w-0 justify-center lg:col-span-1 lg:col-start-3 lg:row-start-1">

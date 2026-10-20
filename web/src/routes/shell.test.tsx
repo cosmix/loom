@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
@@ -31,6 +31,20 @@ function renderShell(connection: ConnectionState, path = "/ledger") {
 afterEach(cleanup);
 
 describe("shell chrome", () => {
+  it("opens help from the header and toggles it with ? outside text fields", () => {
+    renderShell({ phase: "live", since: Date.now() });
+    fireEvent.click(screen.getByRole("button", { name: "open help" }));
+    expect(screen.getByRole("dialog", { name: "Loom help" })).toBeTruthy();
+    fireEvent.keyDown(window, { key: "?" });
+    expect(screen.queryByRole("dialog", { name: "Loom help" })).toBeNull();
+    const input = document.createElement("input");
+    document.body.append(input);
+    fireEvent.keyDown(input, { key: "?" });
+    expect(screen.queryByRole("dialog", { name: "Loom help" })).toBeNull();
+    input.remove();
+    fireEvent.keyDown(window, { key: "?" });
+    expect(screen.getByRole("dialog", { name: "Loom help" })).toBeTruthy();
+  });
   it("shows connecting while waiting for the first snapshot", () => {
     const store = createStore();
     store.set(connectionAtom, { phase: "connecting", since: Date.now() });
@@ -105,14 +119,14 @@ describe("shell chrome", () => {
     expect(screen.queryByText("daemon running")).toBeNull();
   });
 
-  it("keeps feed status and legend access in the header, not the footer", () => {
+  it("keeps feed status and help access in the header, not the footer", () => {
     renderShell({ phase: "live", since: Date.now() });
 
     const footer = screen.getByRole("contentinfo");
     expect(footer.textContent).not.toContain("legend");
     expect(footer.textContent).not.toContain("updated");
     expect(footer.textContent).not.toContain("via daemon");
-    expect(screen.getByRole("button", { name: "open legend" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "open help" })).toBeTruthy();
     expect(screen.getByText("daemon running")).toBeTruthy();
   });
 

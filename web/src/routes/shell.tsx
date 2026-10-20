@@ -6,7 +6,7 @@ import { ErrorBoundary } from "@/aurora-ui/feedback/ErrorBoundary";
 
 import { Header } from "@/components/header";
 import { useNow } from "@/components/hooks/use-now";
-import { LegendDialog } from "@/components/legend-dialog";
+import { HelpDialog } from "@/components/help-dialog";
 import { QuotaMeters } from "@/components/quota-meters";
 import { SettingsDialog } from "@/components/settings-dialog";
 import { StageModal } from "@/components/stage-modal";
@@ -15,11 +15,11 @@ import { providerRows } from "@/lib/quota";
 import { snapshotAtom } from "@/state/atoms";
 
 /// Header, routed body, footer, the stage dialog (`?stage=<id>` on any
-/// route), the settings dialog (`?settings=1`), and the legend dialog
+/// route), the settings dialog (`?settings=1`), and the help dialog
 /// with its `?` shortcut. Each route sets its
 /// own width: the overview runs wide, the ledger and stage pages are bounded.
 export function Shell() {
-  const [legendOpen, setLegendOpen] = useState(false);
+  const [helpOpen, setHelpOpen] = useState(false);
   const { pathname } = useLocation();
 
   useEffect(() => {
@@ -27,7 +27,7 @@ export function Shell() {
       if (event.key !== "?" || event.altKey || event.ctrlKey || event.metaKey) return;
       if (isTyping(event.target)) return;
       event.preventDefault();
-      setLegendOpen((open) => !open);
+      setHelpOpen((open) => !open);
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
@@ -36,7 +36,7 @@ export function Shell() {
   return (
     <TooltipProvider delayDuration={250}>
       <div className="flex h-dvh flex-col">
-        <Header onOpenLegend={() => setLegendOpen(true)} />
+        <Header onOpenHelp={() => setHelpOpen(true)} />
         <main className="flex min-h-0 w-full flex-1 flex-col overflow-y-auto">
           <ErrorBoundary resetKey={pathname}>
             <Outlet />
@@ -45,7 +45,7 @@ export function Shell() {
         <Footer />
         <StageModal />
         <SettingsDialog />
-        <LegendDialog open={legendOpen} onOpenChange={setLegendOpen} />
+        <HelpDialog open={helpOpen} onOpenChange={setHelpOpen} />
       </div>
     </TooltipProvider>
   );
@@ -57,7 +57,7 @@ function isTyping(target: EventTarget | null): boolean {
 }
 
 /// Provider quota gauges on the left when either provider has data, and the
-/// loom version at the right end. The header still owns legend access and
+/// loom version at the right end. The header still owns help access and
 /// feed status.
 function Footer() {
   const snapshot = useAtomValue(snapshotAtom);
