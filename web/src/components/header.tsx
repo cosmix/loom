@@ -14,7 +14,6 @@ import {
 import { Logo } from "@/components/logo";
 import { useOpenSettings } from "@/components/settings-dialog";
 import { Button } from "@/components/ui/button";
-import { Kbd } from "@/components/ui/kbd";
 import { Skeleton } from "@/components/ui/skeleton";
 import { ViewSwitch } from "@/components/view-switch";
 import { attentionAtom, snapshotAtom } from "@/state/atoms";
@@ -56,7 +55,6 @@ export function Header({ onOpenLegend }: { onOpenLegend: () => void }) {
           <Button variant="ghost" size="sm" onClick={onOpenLegend} aria-label="open legend">
             <CircleHelpIcon />
             <span className="hidden sm:inline">legend</span>
-            <Kbd className="hidden sm:inline-flex">?</Kbd>
           </Button>
         </div>
         <div className="col-span-2 row-start-2 flex min-w-0 justify-center lg:col-span-1 lg:col-start-3 lg:row-start-1">
