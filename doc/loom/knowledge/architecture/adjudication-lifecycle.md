@@ -71,7 +71,7 @@ the successor needs into one of the signal inputs above.
 
 | Verdict | Durable effect | What a later stage session sees |
 | --- | --- | --- |
-| `Accept` | Applies the verdict's patch to `acceptance` or `wiring`; updates the active plan and stage file; writes `plan_versions/<n>.md` and a `plan_versions/audit.md` row; clears stale feedback | Amended acceptance/wiring rendered by the normal signal, plus the predecessor handoff and stage memory. The full adjudicator reasoning remains in `disputes/<stage>/<n>/verdict.md`; it is not injected into the successor signal. |
+| `Accept` | Applies each of the verdict's `patches` to `acceptance` or `wiring` as its own amendment (`apply_accept.rs`), in descending index order with audit dispute ids `<id>.<k>`; updates the active plan and stage file; writes `plan_versions/<n>.md` and one `plan_versions/audit.md` row per patch; requeues through `notify_and_requeue` | Amended acceptance/wiring rendered by the normal signal, plus `disputes/<stage>/feedback.md`: which indices were replaced or deleted, the adjudicator's reasoning (control characters stripped, capped at 2 KB), and the instruction to run `loom stage complete` before anything else and to dispute, never block, anything still failing. The full record stays in `disputes/<stage>/<n>/verdict.md`. |
 | `NeedsMoreEvidence` | Writes the judge's questions to `disputes/<stage>/feedback.md`, increments `evidence_rounds`, and re-queues unless another dispute is unanswered or the evidence cap is exhausted | The questions appended at the end of the signal under `## Adjudicator Feedback (from your prior dispute)` |
 | `Reject` | Writes reasoning and citations to `disputes/<stage>/feedback.md` and moves the stage to `NeedsHumanReview` | No automatic rerun. If a human later approves a fresh attempt, the persisted rejection feedback is available to its signal. |
 
@@ -79,7 +79,7 @@ An accepted amendment's audit row stores the dispute id and the optional reason 
 `plan_patch`; that reason is not necessarily the verdict's full `reasoning` field. For the complete
 adjudication record, use `disputes/<stage>/<n>/verdict.md`.
 
-Criterion adjudicators first run `loom check <stage> --no-cache` and inspect the disputed entry's reported result, including its setup and command boundary. A direct-shell pass alone cannot justify rejection of a failure inside Loom. A portable amendment that preserves the assertion is an `Accept` with `plan_patch`, applied automatically by the existing amendment path. Missing runner evidence produces specific evidence questions instead of a demand for operator criterion edits.
+Criterion adjudicators first run `loom check <stage> --no-cache` and inspect the disputed entry's reported result, including its setup and command boundary. A direct-shell pass alone cannot justify rejection of a failure inside Loom. A portable amendment that preserves the assertion is an `Accept` with `plan_patch`, applied automatically by the existing amendment path. The briefing tells the judge to rule on every disputed criterion and every other criterion `loom check` reports failing. A failure caused only by where completion runs (no network, git metadata, the command timeout, a sandbox denial) is accepted with a portable `replace` (an extended criterion may set `timeout_secs`, 1-3600) or a `delete` that names what it leaves to integration-verify; the judge runs the criterion itself and never asks for evidence no agent can produce, such as an unsandboxed run. A need only a person can meet (credential, host install) is a `reject` naming it.
 
 ## Source Path
 
@@ -92,15 +92,17 @@ Criterion adjudicators first run `loom check <stage> --no-cache` and inspect the
 
 ## Dispute Kinds: Criterion, Findings, Contract, Integrity, Impact Tests
 
-`DisputeRequest` carries a `DisputeKind` (`models/dispute.rs`, serde tag `kind`, kebab-case). `Criterion { criterion_index, field }`
-disputes one entry of the list `field` names (`CriterionField`: `acceptance`, `wiring`, `wiring-tests`; the request file carries
-`field` beside `criterion_index`, and `Request::DisputeCriteria` carries it too). When the dispute request file is
+`DisputeRequest` carries a `DisputeKind` (`models/dispute.rs`, serde tag `kind`, kebab-case). `Criterion { criterion_indices, field }`
+disputes one or more entries of the list `field` names (`CriterionField`: `acceptance`, `wiring`, `wiring-tests`; the request
+file carries `field` beside `criterion_indices`, sorted and deduplicated, and `Request::DisputeCriteria` carries both). One
+filing spends one unit of the budget however many indices it names, and the verdict's `plan_patch.patches` may patch each
+of them (`plan_patch.rs::normalize` also reads a single `patch`; a repeated index is `needs-more-evidence`). When the dispute request file is
 unreadable at apply time, the kind falls back to the acceptance criterion path. The verdict must amend the disputed field
 (`orchestrator/adjudication/verdict.rs::admits`): a wiring or wiring-tests dispute may amend only its own list, an
 acceptance dispute may amend `acceptance` or `wiring`. The wiring and wiring-tests briefings reuse the criterion
 briefing's verdict rules, run reading, schema and evidence sections, with "the criterion" meaning the disputed entry, so
 the acceptance briefing stays byte-identical (`prompt/tests_golden.rs`). `CriterionField` keeps `Default` because
-test code builds `DisputeKind::criterion(Default::default(), 0)`. The four v2 kinds:
+test code builds `DisputeKind::criterion(Default::default(), vec![0])`. The four v2 kinds:
 
 | Kind | Filed with | Budget field | Judge verdicts | Durable effect |
 | --- | --- | --- | --- | --- |

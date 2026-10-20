@@ -85,7 +85,8 @@ attributes to another stage. Closing that is part of the pending `.loom` confine
 Two rules the drain depends on:
 
 - **Apply through the daemon's own handlers**, not a second implementation. A spooled block calls
-  the same `handle_block_stage` the RPC calls, so the id allocation, the `validate_id` guard, the
+  the same `handle_agent_block_stage` the RPC calls for a request naming a session (refused while
+  the session's latest trusted completion checkpoint shows a failing criterion), so the id allocation, the `validate_id` guard, the
   dispute budget and every refusal message cannot drift between the two ways a request arrives.
 - **A refusal is counted, never returned as `Err`.** An `Err` from the sink stops the spool being
   truncated, so one request the stage can never take — a block of an already-completed stage —

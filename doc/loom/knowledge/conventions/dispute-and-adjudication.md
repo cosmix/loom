@@ -46,9 +46,9 @@ Never amends: `before_stage`, `after_stage`, `artifacts`, `dependencies`, `id`, 
 
 Per-stage caps to bound the autonomy loop:
 
-- `dispute_count`: max 3 criterion disputes per stage (`MAX_DISPUTES_PER_KIND` via `Stage::max_disputes_per_stage`, `models/stage/dispute_budgets.rs`); further dispute requests are refused
+- `dispute_count`: max 3 criterion disputes per stage (`MAX_DISPUTES_PER_KIND` via `Stage::max_disputes_per_stage`, `models/stage/dispute_budgets.rs`); one filing may name several `--criterion-index` values and spends one; further dispute requests are refused
 - `evidence_rounds` (NeedsMoreEvidence iterations): max 5 (`MAX_EVIDENCE_ROUNDS`, `orchestrator/adjudication/mod.rs`) before escalation to NeedsHumanReview
-- `amendments_applied`: bounded by the plan-level `adjudication.max_amendments_per_stage`, default 10 (`default_max_amendments_per_stage`, `plan/schema/types.rs`); past it the stage escalates to NeedsHumanReview
+- `amendments_applied`: bounded by the plan-level `adjudication.max_amendments_per_stage`, default 10 (`default_max_amendments_per_stage`, `plan/schema/types.rs`); the cap counts verdicts (distinct base dispute ids in the audit rows, `plan/amendment/apply.rs::count_verdicts`) and is checked at a verdict's first patch, so a multi-patch verdict applies wholly or not at all; past it the stage escalates to NeedsHumanReview
 - `adjudicator_attempt_count` (worker crash retries): max 3
 - `finding_disputes`, `contract_disputes`, `integrity_disputes`: max 3 each (`MAX_DISPUTES_PER_KIND`), kept beside `evidence_rounds` and `amendments_applied` in `stage.tally`; see `architecture/adjudication-lifecycle.md`
 - contract writer respawns: max 3 (`MAX_CONTRACT_RESPAWNS`, `.loom/work/contracts/<stage>/attempts`), spent when a replacement writer is handed out; see `architecture/contract-phase.md`

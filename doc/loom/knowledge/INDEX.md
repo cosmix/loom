@@ -22,7 +22,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | Dispute to verdict, per-kind rulings | 165 |
+| [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | Dispute to verdict, per-kind rulings | 167 |
 | [codex-concurrency](architecture/codex-concurrency.md) | Codex fan-out limits | 128 |
 | [codex-plugin](architecture/codex-plugin.md) | Codex plugin install, forwarding | 364 |
 | [completion-recovery](architecture/completion-recovery.md) | HMAC attestation, exit_reason | 34 |
@@ -37,7 +37,7 @@
 | [daemon-launch](architecture/daemon-launch.md) | Re-exec launch, readiness | 65 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) | Relayed signed commits | 157 |
 | [directory-structure](architecture/directory-structure.md) | Module tree, state layout | 50 |
-| [execution-containment](architecture/execution-containment.md) | Command containment, limits | 360 |
+| [execution-containment](architecture/execution-containment.md) | Command containment, limits | 364 |
 | [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 300 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Digest phase, receipts | 86 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | fs/knowledge, INDEX.md, checks | 263 |
@@ -57,7 +57,7 @@
 | [source-graph-evaluation](architecture/source-graph-evaluation.md) | Census, windows, evaluator | 68 |
 | [source-graph-resolution](architecture/source-graph-resolution.md) | Binding rules 1-7, path conventions | 123 |
 | [source-graph-view](architecture/source-graph-view.md) | Resolved view, relink equals cold | 76 |
-| [status-data-model](architecture/status-data-model.md) | Source of each status field | 235 |
+| [status-data-model](architecture/status-data-model.md) | Source of each status field | 237 |
 | [target-guard](architecture/target-guard.md) | Accepted-tip record, hook, holds | 127 |
 | [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends | 293 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) | Adapters, profiles, quoting | 57 |
@@ -89,8 +89,8 @@
 | [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Signal gen, IPC, poll loop, spool | 110 |
 | [remote-control](patterns/remote-control.md) | Remote Control detect and resolve | 51 |
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Hooks, validation, sandbox config | 139 |
-| [stage-daemon-channels](patterns/stage-daemon-channels.md) | Stage agent to daemon | 117 |
-| [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage states, locked writes | 200 |
+| [stage-daemon-channels](patterns/stage-daemon-channels.md) | Stage agent to daemon | 118 |
+| [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage states, locked writes | 201 |
 | [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out, coordinators, teams | 98 |
 
 ### conventions
@@ -113,12 +113,13 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock | 200 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | A .git dir is no proof | 156 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Bug reports; brief flags | 146 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Bug reports; brief flags | 156 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, cargo audit, install.sh | 294 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented, not forwarded | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader fixed by banning reads | 102 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 110 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) | Broker fallback, dup naming | 225 |
+| [completion-runner-blocks](mistakes/completion-runner-blocks.md) | Runner-env criteria blocks | 49 |
 | [completion-runtime](mistakes/completion-runtime.md) | Cargo churn, stall kills | 49 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread | 269 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes, save races | 46 |
@@ -180,12 +181,10 @@
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat starvation | 49 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 window never named | 49 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps | 115 |
-| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry edge cases | 147 |
-| [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps | 116 |
-| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry edge cases | 153 |
+| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry edge cases | 149 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Open gaps: commits, launch, stalls | 213 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | tmux, orphan adoption edge cases | 150 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Canary, creds, env, caches | 355 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Canary, creds, env, caches | 353 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Language limits, open decisions | 79 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Unimplemented reviewer suggestions | 242 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package caches | 17 |

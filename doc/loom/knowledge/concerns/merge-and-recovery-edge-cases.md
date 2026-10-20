@@ -127,7 +127,7 @@ When one of loom's own completion gates cannot evaluate (its run errors), nothin
 
 - **The stage agent cannot fix the gate.** `loom stage complete` runs the installed `loom` binary, so the worktree's copy of `src/verify` has no effect; in a loom-on-loom plan that directory is usually outside the stage's `files` as well.
 - **Most of loom's own gates have no dispute.** `dispute-criteria`, `dispute-findings`, `dispute-contract` and `dispute-integrity` cover plan-authored checks, review findings, frozen contracts and integrity events, and `dispute-criteria --field impact-tests --test <id>` covers a failing impact-selected test the stage did not cause. Reachable re-verification and the checks every stage gets have no dispute, and an impact dispute covers a selection that ran and failed, never a gate run that errored before any selection could be judged, so the adjudicator never sees those.
-- **A block is untyped and terminal.** `loom stage block <id> <reason>` takes free text and clears `failure_info` (`commands/status/render/attention_model.rs:265-266`). The daemon auto-retries only `SessionCrash` and `Timeout` (`orchestrator/retry.rs::should_auto_retry`). A gate defect and a missing credential look identical, and both wait for a person. A manual `loom stage retry` re-runs the same deterministic gate and blocks again.
+- **A block is untyped and terminal.** `loom stage block <id> <reason>` takes free text and clears `failure_info` (`stage_service/control_block.rs`). An agent's block is refused only while its latest completion shows a failing acceptance criterion; a gate that errors before any criterion result passes the refusal. The daemon auto-retries only `SessionCrash` and `Timeout` (`orchestrator/retry.rs::should_auto_retry`). A gate defect and a missing credential look identical, and both wait for a person. A manual `loom stage retry` re-runs the same deterministic gate and blocks again.
 
 See [[mistakes/verification-v2-delivery]], "The Impact Gate Failed a Stage on Its Own Spawn Error".
 
@@ -137,10 +137,6 @@ See [[mistakes/verification-v2-delivery]], "The Impact Gate Failed a Stage on It
 2. **A loom-internal block carries a type the daemon acts on**: a `--kind loom-defect` on `loom stage block`, or a `dispute-gate` command, recording the installed loom version. The daemon requeues such a stage when the installed loom version changes, and the adjudicator gains a verdict that waives one gate for one stage on evidence. A loom upgrade then releases every stage the defect parked, in every project, with no operator retry.
 
 Scope spans the daemon (retry policy, block record), the CLI (block and dispute surface), the adjudicator (a gate-waiver verdict kind) and status rendering, so it needs a plan.
-
-## A Stale `review_reason` Renders as the Block Reason
-
-`commands/status/render/attention.rs:95-96` prints `review_reason` as `Reason:` for every problem stage. A dispute sets it (`models/stage/methods.rs::try_request_adjudication`), and on guard-core neither the verdict nor the later `loom stage block` cleared it, so `loom status` showed the integrity dispute's text ("tightening only: execute shrank...") as the block reason. The real reason was only in the `Note:` line.
 
 ## `list_loom_branches` May Return Linked-Worktree Branches With a `+` Prefix
 

@@ -144,3 +144,13 @@ The pre-commit hook runs markdownlint with automatic fixes on every staged markd
 **Prevention:** Validate the symbol-to-claim association as well as file existence and line bounds before finalizing an audit.
 
 **Fix:** Cite settings-model.ts for statusKey and settings-dialog.tsx for replaceEntry; keep the independently confirmed UI race finding.
+
+## Loom's Own Repo Tooling Leaked Into a Generic Skill (2026-10-21)
+
+**What happened:** while fixing a stage that blocked on this repository's markdownlint criterion, a worker brief used `web/node_modules/.bin/markdownlint-cli2` as the example, and the worker put that path into `skills/loom-plan-writer/references/sandbox.md`. That skill is read by plans for every project loom runs, and most of those projects have no markdownlint, no `web/` and no `.markdownlint.json`.
+
+**Why:** the brief mixed two scopes, loom's own repository (a project loom runs on) and loom the product (doctrine for all projects), and gave a repo-specific tool as a generic example.
+
+**Prevention:** loom's doctrine, skills, signals, lints and defaults never name a tool, path or config that only some projects have. Before a brief touches a generic surface, check every example against an unrelated project. Repo-specific hygiene such as markdownlint stays in this repository's hooks and in plans that run on loom itself.
+
+**Fix:** the example became `node_modules/.bin/<tool>` / `.venv/bin/<tool>`, and the skill now says a lint or format check is a criterion only when the target project already runs it with its own config.
