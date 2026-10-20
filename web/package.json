@@ -46,6 +46,7 @@
     "@types/react-dom": "^19.2.4",
     "@vitejs/plugin-react": "^6.1.0",
     "jsdom": "30.0.1",
+    "markdownlint-cli2": "0.23.3",
     "oxfmt": "0.66.0",
     "oxlint": "^1.79.0",
     "typescript": "~6.0.2",
