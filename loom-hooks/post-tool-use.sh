@@ -276,6 +276,7 @@ remind_memory_capture() {
 │     loom memory note "mistake: ... Prevention: ..."                │
 │     loom memory note "found: ..."  or  "gotcha: ..."               │
 │     loom memory decision "chose X because Y" --context "details"   │
+│  A knowledge-distill stage records nothing once distilling begins. │
 │                                                                    │
 └────────────────────────────────────────────────────────────────────┘
 

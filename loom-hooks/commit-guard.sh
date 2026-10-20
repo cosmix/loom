@@ -362,6 +362,7 @@ remind_memory_usage() {
 		printf '%s\n' "------------------------------------------------------------" >&2
 		printf '%s\n' "No memory entries recorded for this stage." >&2
 		printf '%s\n' "Did you make decisions or discoveries worth recording?" >&2
+		printf '%s\n' "A knowledge-distill stage records nothing once distilling begins." >&2
 		printf '%s\n' "" >&2
 		printf '%s\n' "  loom memory decision \"choice\" --context \"why\"" >&2
 		printf '%s\n' "  loom memory note \"observation\"" >&2
