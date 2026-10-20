@@ -134,7 +134,7 @@ Include a Mermaid execution diagram (`&` = concurrent), as in the canonical temp
 - **integration-verify** — ⚠️ **TESTS PASSING ≠ FEATURE WORKING.** Runs after all feature stages: full build and test with ZERO tolerance, parallel `loom-code-reviewer` subagents (findings fixed by an engineer agent), and functional proof that the feature is WIRED IN (CLI registered, endpoint mounted, component rendered) with an end-to-end smoke test. Records discoveries to `loom memory`; no knowledge curation. In a `version: 2` plan its acceptance lists the full test command, it fixes or disputes every review finding and never defers one, and it weighs every pending reviewer suggestion.
 - **knowledge-distill** — single-agent, NO subagents. Starts from `loom memory pending --group`, applies every `stale-knowledge:` correction with `loom knowledge replace-section` FIRST, curates the rest, gives every entry a `loom memory resolve` receipt, and ends with `loom knowledge check --write-baseline doc/loom/knowledge/check-baseline.txt` when it removed structural issues. Acceptance: the bootstrap's check line plus `loom memory pending --strict`. In a `version: 2` plan it also records every unimplemented reviewer suggestion in knowledge before resolving it.
 
-Never give a knowledge stage a heading-presence grep on a tier-1 file: the scaffold already has `##` headings, so the criterion passes at base and cannot fail. Full bookend text: `references/bookend-stages.md`; full YAML: Section 10.
+Never give a knowledge stage a heading-presence grep on a tier-1 file: an established tier-1 file already carries `##` sections, so the criterion passes at base and cannot fail. Full bookend text: `references/bookend-stages.md`; full YAML: Section 10.
 
 ### Wiring stages (engines, drivers, shared integration files)
 
@@ -248,7 +248,7 @@ EVERY non-bookend stage MUST name, in the plan prose, which of Q1-Q4 forced it i
 ### Subagent file exclusivity (CRITICAL)
 
 - Each subagent has EXCLUSIVE write access to its files — **two subagents writing one file = LOST WORK.**
-- **Check TYPE/import dependencies too.** If A's file DEFINES a contract B's file imports, put it in a main-agent FOUNDATION step that completes BEFORE the consumers fan out.
+- **Check TYPE/import dependencies too.** If A's file DEFINES a contract B's file imports, assign it to a FOUNDATION worker that finishes BEFORE the consumers fan out; the main agent writes it only when it passes BLOCK-B point 1's small-change test.
 
 ### Briefs as files
 
@@ -291,7 +291,7 @@ The v2 rows need `version: 2`; a v1 plan using one is rejected. In a v2 plan eve
 
 - Errors: `|| true` / `|| :` masking an exit status; `HOME=` assigned from a variable or substitution (logged: `HOME=""` wrote the operator's real `~/.loom/config.toml`); a bare `mktemp -d` (denied in the sandbox; write `mktemp -d "${TMPDIR:-/tmp}/<name>.XXXXXX"`); a `TMPDIR=` override, a `/tmp/` path, or a write aimed outside the worktree.
 - Warnings: a network binary in a criterion (`curl`, `wget`, `gh`, `npm install`, `bun install`, `cargo install`, `cargo audit` without `--no-fetch`); a read of a `doc/plans/` path, which the plan lifecycle renames; `vitest -t`, whose unmatched filter exits 0; `PIPESTATUS` (criteria run under `sh -c`); `rg -r` (it means `--replace`); a test runner inside `wiring_tests`; a simple `rg`/`grep` criterion that already passes at HEAD, so it cannot tell a stage that did its work from one that did nothing.
-- Plan-version lints, errors in a `version: 2` plan and warnings in v1: a `loom` subcommand the CLI lacks (a warning when the stage or one it depends on changes `loom/src/cli`); a wiring regex, or an `rg`/`grep` pattern without `-F`, that does not compile or would be read as a flag; a network binary while the stage allows no network domain; a resource no sandbox grant reaches (`tmux`, `docker`, `loom map`, `loom knowledge context`); a knowledge check that cannot pass without `--baseline`; a contract `runner` no adapter answers to; an integration-verify stage with no full test command. Warnings in both: `[[` in a pattern, a Rust test filter that matches no module, a contract whose runner cannot be detected.
+- Plan-version lints, errors in a `version: 2` plan and warnings in v1: a `loom` subcommand the CLI lacks (a warning when the stage or one it depends on changes `loom/src/cli`); a wiring regex, or an `rg`/`grep` pattern without `-F`, that does not compile or would be read as a flag; a network binary while the stage allows no network domain; a resource no sandbox grant reaches (`tmux`, `docker`, `loom map`, `loom knowledge context`); a knowledge check that cannot pass without `--baseline`; a contract `runner` no adapter answers to; an integration-verify stage with no full test command; a plan without exactly one `knowledge-distill` stage, a distill stage with dependents, a stage the distill stage does not follow; a `standard` stage that is not an ancestor of an `integration-verify` stage. Warnings in both: `[[` in a pattern, a Rust test filter that matches no module, a contract whose runner cannot be detected.
 - **The full suite runs once, in integration-verify.** A standard stage's acceptance proves its own code (`cargo test --lib <module>::`, `--test <target>`, a name filter), plus build and lint; `loom plan verify` warns on an unfiltered run elsewhere.
 
 **Three rules no check enforces:**
@@ -340,7 +340,7 @@ Every stage description carries a short MEMORY block: record mistakes/decisions/
 
 ## 8. Sandbox & Execution Environment
 
-Resolve network domains, protected paths and required tools from the task and existing authorization; ask only for missing decisions. Then add a `sandbox` block. `loom init` prints domain suggestions for the project's package managers; `loom plan verify` errors on the registry, git-hook and JS-provision gaps it can see. `knowledge`, `integration-verify`, and `knowledge-distill` stages auto-get write access to `doc/loom/knowledge/**`.
+Resolve network domains, protected paths and required tools from the task and existing authorization; ask only for missing decisions. Then add a `sandbox` block. `loom init` prints domain suggestions for the project's package managers; `loom plan verify` errors on the registry, git-hook and JS-provision gaps it can see. Every stage's sandbox grants writes to `doc/loom/knowledge/**`, because the knowledge CLI runs inside it (`sandbox/config.rs`, `apply_knowledge_write_grant`); in a worktree `worktree-file-guard.sh` blocks Write and Edit on knowledge files, and only knowledge and knowledge-distill stages run `loom knowledge` writes.
 
 Configuration shape: `references/sandbox.md#configuration-shape`.
 

@@ -398,7 +398,7 @@ loom stage output get <dependency-stage-id> api_port
 
 ### During Knowledge-Bootstrap Stages
 
-Knowledge has a collapsed command surface: `loom knowledge sync` is the one user-facing verb. It rebuilds derived retrieval artifacts after knowledge-tree changes and performs the one-time flat-to-hierarchical upgrade. `loom knowledge context --query <text> [--budget-tokens N] [--scope knowledge|source|all]` is deterministic offline retrieval and the same entry point that builds every stage signal's Knowledge Brief. `loom knowledge update <target> [content]` is the only write path; `<target>` is a tier-1 file name or `<category>/<slug>` for a tier-2 topic. `loom map --outline <PATH>`, `--find-all <SYMBOL>`, and `--impact <SYMBOL_OR_PATH>` are read-only views over the derived source graph. `INDEX.md` regenerates automatically on every knowledge write; there is no index command or final index step.
+Knowledge has a collapsed command surface: `loom knowledge sync` is the one user-facing verb. It rebuilds derived retrieval artifacts after knowledge-tree changes and performs the one-time flat-to-hierarchical upgrade. `loom knowledge context --query <text> [--budget-tokens N] [--scope knowledge|source|all]` is deterministic offline retrieval and the same entry point that builds every stage signal's Knowledge Brief. `loom knowledge update <target> [content]` appends; `loom knowledge replace-section <target> "<heading>" "<body>"` rewrites one section in place, and `loom knowledge delete-section <target> "<heading>"` removes one with its subsections; `<target>` is a tier-1 file name or `<category>/<slug>` for a tier-2 topic. `loom map --outline <PATH>`, `--find-all <SYMBOL>`, and `--impact <SYMBOL_OR_PATH>` are read-only views over the derived source graph. `INDEX.md` regenerates automatically on every knowledge write; there is no index command or final index step.
 
 ```bash
 # Rebuild derived retrieval artifacts and upgrade a legacy flat tree if needed
@@ -407,7 +407,7 @@ loom knowledge sync
 # Retrieve targeted, deterministic context (also used for every stage Knowledge Brief)
 loom knowledge context --query "authentication flow" --budget-tokens 1200 --scope all
 
-# Populate knowledge — the only write path
+# Populate knowledge (update appends; replace-section and delete-section edit in place)
 loom knowledge update architecture "## New Section\n\nContent here"
 
 # Long content via heredoc
@@ -439,7 +439,7 @@ loom memory question "why is Z done this way?"
 loom memory change "src/foo.rs - Added bar() function"
 
 # Review what you've recorded
-loom memory list
+loom memory list --stage <stage-id>
 ```
 
 ### Memory & knowledge routing by stage type
@@ -461,7 +461,7 @@ loom memory note "IV: feature X reachable via CLI dispatch arm, confirmed end-to
 loom memory show --all
 loom knowledge update mistakes "## Lesson learned about X"
 loom knowledge update patterns "## New pattern discovered"
-loom review   # prune stale/duplicate knowledge entries
+loom review   # generate a code-review document from the stage memories
 ```
 
 ---
@@ -710,7 +710,8 @@ loom stage reset <id>                # Reset to queued
 loom stage complete <id>             # Mark done (runs acceptance)
 loom stage merge <id>                # Retry failed merge
 loom stage merge <id> --resolved     # After manual merge resolution
-loom stage hold/release <id>         # Pause/unpause auto-execution
+loom stage hold <id>                 # Pause auto-execution
+loom stage release <id>              # Resume auto-execution
 loom stage skip <id> --reason "..."  # Skip intentionally
 ```
 
@@ -731,7 +732,7 @@ loom memory list                     # Review entries
 loom memory show --all               # All stage memories
 loom knowledge sync                  # Rebuild derived retrieval artifacts
 loom knowledge context --query "..." # Deterministic offline retrieval
-loom knowledge update <target> [content] # The only knowledge write path
+loom knowledge update <target> [content] # Append to a knowledge file
 loom map --outline <path>            # Read-only source-graph outline
 loom map --find-all <symbol>         # Read-only source-graph symbol lookup
 loom map --impact <symbol-or-path>   # Read-only source-graph impact view

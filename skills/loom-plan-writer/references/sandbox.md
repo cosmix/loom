@@ -144,7 +144,7 @@ loom:
     auto_allow: true
     filesystem:
       deny_read: ["~/.ssh/**", "~/.aws/**", "~/.config/gcloud/**", "~/.gnupg/**"]
-      deny_write: [".loom/work/stages/**", "doc/loom/knowledge/**"]
+      deny_write: [".loom/work/stages/**"]
       allow_write: []              # paths OUTSIDE the worktree only; the worktree is writable
     network:                       # ⛔ MUST be a struct, NEVER the string "deny"
       allowed_domains: []          # empty = deny all; or list domains

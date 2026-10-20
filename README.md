@@ -483,7 +483,7 @@ When the codex model is unavailable to the account (codex rejects it as not supp
 loom plan verify <plan-path> [--strict] [--json] [--no-color]
 ```
 
-`loom plan verify` validates a plan file without touching `.loom/work/` or requiring a git repo. It runs the same fatal validation as `loom init` (schema errors, unknown or retired fields at every nested policy layer, duplicate IDs, unknown dependencies, path safety) plus advisory warnings (structural issues, a stage without a `summary`, missing knowledge-bootstrap stage, sandbox gaps). A retired top-level `truths` block is rejected; move behavioral commands to `acceptance`. It additionally rejects requirements a sandboxed stage cannot satisfy — an `allow_write` grant under `/tmp` or missing on the host, a `TMPDIR=<absolute path>` override, a hardcoded `/tmp/` path, and a `mkdir`, `touch` or output redirect aimed outside the worktree in `acceptance`, `setup`, `wiring_tests`, `before_stage` or `after_stage` commands — because the stage sandbox already provides a writable `$TMPDIR`. It rejects commands that cannot mean what they say inside a sandbox — an exit status masked by a final `|| true`, `|| :`, `|| exit 0` or `; true`, `HOME` assigned from a variable or substitution, and a bare `mktemp -d` — and warns on network tools, reads of `doc/plans/`, `rg -r`, and hardcoded `/tmp/` paths. A single `rg` or `grep` acceptance criterion that already passes at `HEAD` earns a `baseline` warning, since it cannot tell a stage that did its work from one that did nothing. A stage's `skills:` list is checked against the skill index: an empty, duplicate or unknown name is an error. It also warns when a stage description's worker/files-owned table claims overlapping paths between workers, or a claim outside the stage's declared `files`. Exits 0 on success, non-zero on fatal errors; `--strict` promotes warnings to errors.
+`loom plan verify` validates a plan file without touching `.loom/work/` or requiring a git repo. It runs the same fatal validation as `loom init` (schema errors, unknown or retired fields at every nested policy layer, duplicate IDs, unknown dependencies, path safety) plus advisory warnings (structural issues, a stage without a `summary`, a missing knowledge-bootstrap stage when the repository's knowledge tree is missing or holds only the scaffold, sandbox gaps). A retired top-level `truths` block is rejected; move behavioral commands to `acceptance`. It additionally rejects requirements a sandboxed stage cannot satisfy — an `allow_write` grant under `/tmp` or missing on the host, a `TMPDIR=<absolute path>` override, a hardcoded `/tmp/` path, and a `mkdir`, `touch` or output redirect aimed outside the worktree in `acceptance`, `setup`, `wiring_tests`, `before_stage` or `after_stage` commands — because the stage sandbox already provides a writable `$TMPDIR`. It rejects commands that cannot mean what they say inside a sandbox — an exit status masked by a final `|| true`, `|| :`, `|| exit 0` or `; true`, `HOME` assigned from a variable or substitution, and a bare `mktemp -d` — and warns on network tools, reads of `doc/plans/`, `rg -r`, and hardcoded `/tmp/` paths. A single `rg` or `grep` acceptance criterion that already passes at `HEAD` earns a `baseline` warning, since it cannot tell a stage that did its work from one that did nothing. A stage's `skills:` list is checked against the skill index: an empty, duplicate or unknown name is an error. It also warns when a stage description's worker/files-owned table claims overlapping paths between workers, or a claim outside the stage's declared `files`. Exits 0 on success, non-zero on fatal errors; `--strict` promotes warnings to errors.
 
 ### Stage Commands
 
@@ -555,6 +555,10 @@ loom memory pending [--stage <id>] [--group] [--strict] [--json]  # List notes, 
 ```
 
 A plan's `.loom/work/` state is archived to `<main>/.loom/memory/archive/<plan-id>-<timestamp>/` when the plan completes; `loom clean`/`loom init --clean` are what actually delete it.
+
+Plan completion, `loom clean` and `loom init --clean` copy `memory/` and `telemetry/` into the archive first. When archiving fails while the memory directory holds journals, `loom clean` and `loom init --clean` stop with an error naming the archive path and leave the state directory in place. Plan completion stops before the `DONE-` rename: the plan stays `IN_PROGRESS` with its state in place. A foreground `loom run` returns the error; under the daemon the error is only logged (`Warning: Failed to mark plan as done: ...`) and the run still reports completion. Fix the cause (the error names the path), then run the command again; for plan completion, run `loom run` again, which finds every stage merged and retries the completion step.
+
+To distill a failed run, start the new plan with `loom init`, then, before `loom run`, copy the archived journals into its state directory: `cp <main>/.loom/memory/archive/<plan-id>-<timestamp>/memory/*.md .loom/work/memory/`. The new plan's knowledge-distill stage lists them in `loom memory pending --group` and curates them with its own; `loom memory pending --strict` then requires a receipt for each. Journals are named by stage id, so an archived journal whose name matches a stage of the new plan (`integration-verify.md`, say) becomes that stage's journal, and the stage's signal recites its entries.
 
 See [Knowledge System](#knowledge-system) for how these fit together.
 
@@ -807,7 +811,7 @@ into `.loom/work/config.toml`'s `[context]` section at `loom init`.
 | `code_review`                      | No                     | `integration-verify` only: `dimensions` (string list) and `require_all` (bool); rendered as checklist in agent signal                                                                                                                |
 | `bug_fix`                          | No                     | Marks this stage as a bug fix; requires `regression_test` ([Bug-Fix Stages](#bug-fix-stages))                                                                                                                                        |
 | `regression_test`                  | Conditionally required | Required when `bug_fix` is `true`: `file` (test path, relative to `working_dir`) plus optional `must_contain` patterns                                                                                                               |
-| `model`                            | No                     | Model for this stage's main agent; omit to use the stage type's configured default ([Model Allocation](#model-allocation)), overridable via `[models]` in either config file, or set here as a deliberate per-stage override         |
+| `model`                            | No                     | Model for this stage's main agent; one of `haiku`, `sonnet`, `opus`, `fable` (any other value fails when the plan is parsed); omit to use the stage type's configured default ([Model Allocation](#model-allocation)), overridable via `[models]` in either config file, or set here as a deliberate per-stage override         |
 | `reasoning_effort`                 | No                     | `low`, `medium`, `high`, `xhigh`, `max`; omit to use the stage type's configured default ([Model Allocation](#model-allocation)), overridable the same way                                                                           |
 | `implementers`                     | No                     | Licensed agent lanes as a list, first = preferred for routine work: `["codex", "claude"]`. Default `["claude"]`. Listing a lane makes it available, not mandatory — a stage mixes lanes per subagent                                 |
 | `ultracode`                        | No                     | License this stage for large multi-agent fan-out; per-stage opt-in (default `false`)                                                                                                                                                 |
@@ -857,6 +861,8 @@ loom:
           from: "main"
           description: "the handler is reachable from main"
 ```
+
+In a `version: 2` plan, `loom plan verify` rejects a plan that does not have exactly one `knowledge-distill` stage, a distill stage that another stage depends on, a stage that is not an ancestor of the distill stage, and a `standard` stage that is not an ancestor of an `integration-verify` stage; a version-1 plan gets each of these as a warning. Stage types are resolved as the plan runs them, so an omitted `stage_type` counts by the stage's id and name.
 
 A v2 standard stage starts with a separate contract session that writes the contract tests, runs them red, and ends with `loom stage contracts freeze`; loom then hands the stage to the implementing session. `loom project detect` shows which test runner loom will use for each package. Runners without an adapter fall back to running the contract's `test` string and judging its exit code.
 
@@ -938,14 +944,14 @@ Loom's answer to "every session starts from zero" is a three-stage pipeline: cap
 
 ### 1. Capture — session memory
 
-While a stage runs, its agent journals to `.loom/work/memory/<session>.md`:
+While a stage runs, its agents journal to `.loom/work/memory/<stage-id>.md`, one journal per stage:
 
 ```bash
 loom memory note "gotcha: worktree exclude lives at <worktree>/.git/info/exclude, not <dir>/.git/..."
 loom memory decision "centralized plan lookup in plan/parser" --context "avoids an orchestrator→commands layering violation"
 ```
 
-Entries are typed (`note`, `decision`, `change`, `question`). The most recent are embedded in the _recitation_ section at the end of the next signal — the position with the highest model attention — so a later stage inherits the detail an earlier stage paid for instead of rediscovering it.
+Entries are typed (`note`, `decision`, `change`, `question`). The last ten entries of a stage's own journal are embedded in the _recitation_ section at the end of every later ordinary signal for that stage (a re-spawn, a handoff successor), the position with the highest model attention. A recovery signal, written when a crashed, hung or retried session is recovered, carries no recitation, so a recovered session reads its journal with `loom memory list --stage <stage-id>`. Another stage's signal does not embed them, except that integration-verify and knowledge-distill signals list wiring items found in their direct dependencies' journals. Knowledge-distill curates every journal into `doc/loom/knowledge/`, which later plans read.
 
 Memory is deliberately cheap and disposable. It is a working journal, not the deliverable.
 
@@ -1051,7 +1057,7 @@ The orchestrator decomposes the work, hands each subagent full context, then has
 | `loom-advisor`                            | Fable                                                | Diagnosis after a repeated failure — advice returned, nothing written                                                                                                                                            |
 | `loom-verifier`                           | Opus (effort xhigh)                                  | A standard stage's gate: build, tests, lint, format, and acceptance on the finished tree, reported pass or fail per step; writes nothing                                                                         |
 
-Fable-tier implementation — major bugs, visual/UI design, extremely challenging algorithmic design — has no dedicated agent type; it is spawned with an explicit model override rather than relying on inheritance.
+Fable-tier work — visual/UI design, a bug that survived a delegated fix attempt, or extremely challenging algorithmic design — has no dedicated agent type; it is spawned with an explicit model override rather than relying on inheritance.
 
 The `loom-codex-forwarder` row additionally depends on the `codex` CLI and its plugin's companion runtime being installed. `loom run` checks this at startup and prints an advisory warning if either is missing — it never blocks the run — and terra-tier work falls back to Sonnet and luna-tier work to Haiku for the duration; the stage signal states the fallback explicitly and does not spawn `loom-codex-forwarder`.
 
@@ -1077,7 +1083,6 @@ loom:
         - "../.worktrees/**"
       deny_write:
         - "../../**"
-        - "doc/loom/knowledge/**"
       allow_write:
         - "src/**"
     network:
@@ -1087,7 +1092,7 @@ loom:
       allow_unix_sockets: []
 ```
 
-Note: knowledge file writes are intentionally protected by sandbox defaults; knowledge updates should be done via `loom knowledge ...` commands. Plan-configured `excluded_commands` are rejected because broad executable exemptions bypass the host sandbox. When sandboxing is enabled, generated settings use host `denyRead` rules for sensitive paths and `failIfUnavailable: true`; failure to write those settings blocks session spawn. Unit tests pin the generated policy and blocked-spawn behavior. A credentialed Claude host-runtime canary across Bash, interpreters, build scripts, symlinks, and file tools remains a manual release check.
+Note: every stage's sandbox grants writes to `doc/loom/knowledge/**`, because the knowledge CLI runs inside it (`sandbox/config.rs`, `apply_knowledge_write_grant`); a `deny_write` entry for that path is ignored and `loom plan verify` warns about it, and in a worktree `worktree-file-guard.sh` blocks Write and Edit on knowledge files, so knowledge changes go through `loom knowledge ...` commands. Plan-configured `excluded_commands` are rejected because broad executable exemptions bypass the host sandbox. When sandboxing is enabled, generated settings use host `denyRead` rules for sensitive paths and `failIfUnavailable: true`; failure to write those settings blocks session spawn. Unit tests pin the generated policy and blocked-spawn behavior. A credentialed Claude host-runtime canary across Bash, interpreters, build scripts, symlinks, and file tools remains a manual release check.
 
 ### Command Confinement
 
@@ -1112,7 +1117,7 @@ loom:
 
 Plans are trusted artifacts, but trusted is not privileged: under `confined`, a plan line cannot read `GITHUB_TOKEN`, `AWS_*` or `ANTHROPIC_API_KEY` merely because you started loom from a shell that had them. The allowlist carries what a build toolchain needs to find itself — `HOME`, `PATH`, `USER`, `LOGNAME`, `CARGO_HOME`, `RUSTUP_HOME`, locale and terminal variables, `TMPDIR`, the proxy variables and the CA-bundle _locations_ (`SSL_CERT_FILE`, `SSL_CERT_DIR`, `NIX_SSL_CERT_FILE`). `SSH_AUTH_SOCK` is deliberately withheld, so an acceptance criterion that needs SSH auth fails by design rather than silently borrowing your agent.
 
-> **What confinement is not.** It is environment scrubbing — least-privilege hygiene, not a security boundary. Loom applies **no** namespace, seccomp, landlock, cgroup or network isolation to the commands it spawns: a confined command shares your network namespace, can read and write any path your user can, and can reach any Unix socket on the host. The `network:` settings above are emitted into the _agent session's_ sandbox and do not restrict plan-authored commands. Use `confined` to keep ambient credentials out of plan commands; do not use it to run code you would not run yourself.
+> **What confinement adds.** Under `confined`, loom also runs each plan-authored command inside an OS boundary it builds for that command: bubblewrap (`bwrap`, with `--unshare-all`) on Linux, `sandbox-exec` on macOS. Inside that boundary only the working tree and a private scratch directory are writable (the scratch holds the command's `TMPDIR`, `CARGO_HOME` and tool caches), the runtime and compiler installation directories are mounted read-only, and verification commands get no network. On macOS only, a verification command reuses the stage session's own Seatbelt boundary instead, when that boundary already covers the working tree (Linux always builds its own); it then keeps that session boundary's grants, which the plan's `sandbox` block sets, network included. `provision` entries always run in a boundary loom builds, with network so they can fetch dependencies, whatever `command_confinement` says. A host without the facility fails the command before any repository code runs. `command_confinement: inherit` adds no command-level boundary: the command keeps loom's ambient environment and runs inside whatever sandbox the calling process already runs in (the stage session's, for `loom stage complete`).
 
 ### Session State Confinement
 
@@ -1307,7 +1312,7 @@ project/
 │   │   ├── sessions/
 │   │   ├── signals/
 │   │   ├── handoffs/
-│   │   ├── memory/            # per-session journals
+│   │   ├── memory/            # per-stage journals
 │   │   ├── archive/
 │   │   ├── crashes/
 │   │   ├── logs/              # per-session captured stderr

@@ -154,8 +154,7 @@ loom:
         loom knowledge update. TIER ROUTING: findings ~40 lines or fewer go
         inline in the tier-1 file; larger findings go via loom knowledge update
         <category>/<slug> with a 2-4 line tier-1 summary + link. INDEX.md
-        regenerates automatically on every knowledge write; then loom review prunes
-        stale entries.
+        regenerates automatically on every knowledge write.
         Update README/CONTRIBUTING for changed behavior (relevant sections only);
         if nothing user-facing changed, skip but record WHY in memory.
         SUGGESTIONS: record every unimplemented reviewer suggestion (listed

@@ -72,7 +72,7 @@ The trigger is a `CONTEXT CEILING REACHED` line from the PostToolUse hook in you
 
 ### 3b. POST-COMPACTION RECOVERY
 
-After compaction or context loss: `loom memory list`, then your stage's latest handoff in `.loom/work/handoffs/`; resume from there.
+After compaction or context loss: `loom memory list --stage <stage-id>`, then your stage's latest handoff in `.loom/work/handoffs/`; resume from there.
 
 ### 4. COMMIT AND COMPLETE (HOOK-ENFORCED)
 

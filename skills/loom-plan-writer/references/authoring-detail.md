@@ -45,7 +45,7 @@ Classic mistakes:
 ### Subagent file exclusivity (CRITICAL)
 
 - Each subagent MUST have EXCLUSIVE write access to its files — **two subagents writing one file = LOST WORK.** Include a file-ownership table in the stage description.
-- **File-exclusivity is necessary but NOT sufficient — check TYPE/import dependencies too.** If subagent A's file DEFINES a type/signature/API that subagent B's file imports, running them in parallel is a race even with disjoint WRITE sets (B compiles against a contract A hasn't written). Put the shared type/signature/API in a main-agent FOUNDATION step that completes BEFORE the consumer subagents fan out.
+- **File-exclusivity is necessary but NOT sufficient — check TYPE/import dependencies too.** If subagent A's file DEFINES a type/signature/API that subagent B's file imports, running them in parallel is a race even with disjoint WRITE sets (B compiles against a contract A hasn't written). Assign the shared type/signature/API to a FOUNDATION worker that finishes BEFORE the consumer subagents fan out; the main agent writes it only when it passes BLOCK-B point 1's small-change test.
 
 ### Briefs as files
 
@@ -107,7 +107,7 @@ Match agent type to work: execution → `loom-software-engineer` (pins sonnet), 
 
 Common symptoms: `could not find Cargo.toml` → `working_dir` wrong; double-path `loom/loom/...` → drop the redundant prefix; `rg` finds nothing → searching from the wrong dir. **Mixed directories? Separate stages — one working_dir each.**
 
-Every stage description should carry a short MEMORY block reminding agents to record mistakes/decisions/surprises via `loom memory` **immediately** (not procedural noise), and that subagents must too. **NEVER** Claude Code auto-memory (`~/.claude/projects/*/memory/`) — invisible to loom, effectively lost. Cite knowledge by section HEADING, not line number (append-only files rot line refs). The subagent preamble (`loom-hooks/_subagent-preamble.txt`, prepended by `spawn-guard.sh`) injects this automatically.
+Every stage description should carry a short MEMORY block reminding agents to record mistakes/decisions/surprises via `loom memory` **immediately** (not procedural noise), and that subagents must too. **NEVER** Claude Code auto-memory (`~/.claude/projects/*/memory/`) — invisible to loom, effectively lost. Cite knowledge by section HEADING, not line number (line numbers rot as sections are added, replaced and deleted). The subagent preamble (`loom-hooks/_subagent-preamble.txt`, prepended by `spawn-guard.sh`) injects this automatically.
 
 ## Section 9 — Silent-failure awareness
 
