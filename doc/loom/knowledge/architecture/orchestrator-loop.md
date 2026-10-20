@@ -40,6 +40,7 @@ Full file list:
 - `handlers.rs` — `Handlers` struct: handoff/crash-report generation; holds optional `LivenessService`
 - `heartbeat.rs` — `HeartbeatWatcher` with 300s hung timeout
 - `hung_latch.rs` — when a silent session's report becomes escalation evidence rather than a warning (see [Signal Generation Pipeline](signal-generation.md) § Soft Signals for the detection pipeline this drives)
+- `judge_watchdog.rs`, `running_command.rs` — when a silent judge is closed, and the process probe that holds a judge while it waits on a command of its own
 - `context.rs` — `context_health(tokens, ceiling)` bands an absolute token count as a fraction of its resolved ceiling: Green `<60%`, Yellow `60-90%`, Red `>=90%` (see [Context Ceiling](context-ceiling.md))
 - `tests.rs` — Unit tests
 

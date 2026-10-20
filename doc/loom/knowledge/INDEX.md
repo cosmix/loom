@@ -44,13 +44,13 @@
 | [memory-spool](architecture/memory-spool.md) | Read before touching loom memory | 183 |
 | [merge-checkout-state](architecture/merge-checkout-state.md) | Guarded fast-forward; blocked retry | 28 |
 | [merge-flow](architecture/merge-flow.md) | Finished stage to target branch | 134 |
-| [orchestrator-loop](architecture/orchestrator-loop.md) | Tick order, liveness | 75 |
+| [orchestrator-loop](architecture/orchestrator-loop.md) | Tick order, liveness | 76 |
 | [owned-waits](architecture/owned-waits.md) | Worker-set waits, lease, boot ID | 70 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) | Plan fields v1/v2, checks, lints | 257 |
 | [quota-poller](architecture/quota-poller.md) | Usage-quota polling and rendering | 35 |
 | [remote-control](architecture/remote-control.md) | Capability, preflight, naming | 81 |
 | [security-and-isolation](architecture/security-and-isolation.md) | 4-layer worktree defense | 212 |
-| [signal-generation](architecture/signal-generation.md) | Signal assembly, cache, prefixes | 173 |
+| [signal-generation](architecture/signal-generation.md) | Signal assembly, cache, prefixes | 177 |
 | [skill-catalog](architecture/skill-catalog.md) | Skill roots, catalog | 154 |
 | [source-graph](architecture/source-graph.md) | Source graph contract, limits | 368 |
 | [source-graph-build](architecture/source-graph-build.md) | Builder, freshness, lease | 128 |
@@ -119,7 +119,7 @@
 | [codex-navigation](mistakes/codex-navigation.md) | Reader fixed by banning reads | 102 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 110 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) | Broker fallback, dup naming | 225 |
-| [completion-runner-blocks](mistakes/completion-runner-blocks.md) | Runner-env blocks, gate fails | 78 |
+| [completion-runner-blocks](mistakes/completion-runner-blocks.md) | Runner-env blocks, gate fails | 88 |
 | [completion-runtime](mistakes/completion-runtime.md) | Cargo churn, stall kills | 49 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread | 269 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes, save races | 46 |

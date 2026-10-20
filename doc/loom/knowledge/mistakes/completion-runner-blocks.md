@@ -76,3 +76,13 @@
 **Why:** the guard confines file tools to the worktree and the handoff write root; the scratch directory is neither.
 
 **Prevention:** read scratch output with `rg` from Bash, or keep intermediate output inside the worktree where the rules allow it.
+
+## Judges Were Closed While Their Criteria Run Was Still Going (2026-10-21)
+
+**What happened:** integration-verify disputed criterion 1 (`cargo test --all-targets`): tests binding Unix sockets fail only under the session sandbox. Each of three judge sessions started `loom check --no-cache` in the background and ended its turn to wait. The judge-stall watchdog closed each one after 300 s with no tool call ("JUDGE STALLED"), and the stage went to NeedsHumanReview: "Adjudication of dispute 1 produced no verdict after 3 session(s)".
+
+**Why:** the judge's stall budget is the stage's `subagent_timeout_secs` (default 300 s) and activity is heartbeats only (`monitor/hung_latch.rs::adjudicator_stall_event`). A judge must run the criteria, which now legitimately take up to the sum of their timeouts (`timeout_secs` up to 3600), so a judge waiting on its own command reads as hung.
+
+**Prevention:** a watchdog that closes a session must tell waiting on its own running command apart from silence. A budget derived from one setting cannot cover work whose length another setting controls.
+
+**Fix:** operator ruled on the dispute (criterion 1 skips the three sandbox-only tests, all of which pass outside it) and approved the review. `monitor/judge_watchdog.rs` now holds a judge whose own process has a running command child (a shell, `bwrap` or `sandbox-exec` that itself runs something, found by `monitor/running_command.rs` from `/proc` or `ps`) and prints `JUDGE WAITING:` once per wait, up to the disputed stage's summed criterion timeouts plus one budget; a judge with no heartbeat and no command of its own past the budget is still closed. The three tests skip themselves through `process/sandbox_probe.rs` when Unix sockets or nested confinement are unavailable, and `loom check` exits non-zero when a criterion fails.

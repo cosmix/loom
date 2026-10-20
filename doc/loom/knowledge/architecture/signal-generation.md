@@ -43,7 +43,7 @@ Hung-session detection is entirely heartbeat-driven; nothing reads session JSONL
 session is warned about, recovered, or parked in `NeedsHumanReview`, depending on whether it ever
 worked.
 
-**Detection (`orchestrator/monitor/heartbeat.rs`, `hung_latch.rs`, `never_worked.rs`):**
+**Detection (`orchestrator/monitor/heartbeat.rs`, `hung_latch.rs`, `judge_watchdog.rs`, `running_command.rs`, `never_worked.rs`):**
 
 1. `HeartbeatWatcher::check_session_hung(stage_id, session_id, timeout)` compares the session's
    last heartbeat against its response budget (`Stage::effective_subagent_timeout_secs()`, falling
@@ -60,10 +60,14 @@ worked.
    no heartbeat past `created_at` plus its budget. The token count decides because `session-start.sh`
    also fires on compaction and resume and rewrites the heartbeat in the same shape. Contract,
    Knowledge, Merge, BaseConflict and Adjudication sessions keep their own handling.
-4. Adjudication sessions (judges) are measured and latched separately (`adjudicator_stall_event`
-   → `MonitorEvent::AdjudicatorStalled`): a stalled judge has no stage to hand off, so it is closed
-   and the stage it left in `NeedsAdjudication` is re-judged on the next poll under the dispute's
-   own attempt budget, latched once.
+4. Adjudication sessions (judges) are measured and latched separately (`judge_watchdog.rs`
+   `adjudicator_stall_event` → `MonitorEvent::AdjudicatorStalled`): a stalled judge has no stage to
+   hand off, so it is closed and the stage it left in `NeedsAdjudication` is re-judged on the next
+   poll under the dispute's own attempt budget, latched once. A judge whose own process has a
+   running command (`running_command.rs`: a shell, `bwrap` or `sandbox-exec` child that itself runs
+   something) is held and announced once with `JUDGE WAITING:`, up to a ceiling of the disputed
+   stage's summed criterion timeouts plus one budget from its last heartbeat; a judge running nothing
+   is closed at the budget as before.
 5. A `subagent_timeout_secs: 0` stage never escalates (warnings only), so a mis-configured zero
    budget cannot get a session killed on its first poll.
 
