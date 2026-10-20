@@ -64,8 +64,7 @@ security audit, cargo-deny and dashboard checks under their path filters.
 flake workload. The Linux and macOS test jobs require tmux through
 `LOOM_E2E_REQUIRE_TMUX=1`; local platform coverage must be stated explicitly.
 Doctests need the explicit command above because the CI all-target test jobs do
-not select them. The current sweep outcomes and platform limits are recorded in
-`doc/astra-bug-sweep-2026-10-15.md`.
+not select them.
 
 Before interpreting failures from a stage environment, inspect ambient
 `LOOM_STAGE_ID`, `LOOM_SESSION_ID` and `LOOM_WORKTREE_PATH`: control-session paths

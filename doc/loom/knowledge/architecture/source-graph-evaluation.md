@@ -1,6 +1,6 @@
 # Source Graph Evaluation
 
-> Census, source windows, edge evaluator
+> Census, windows, evaluator
 
 Offline tools that say what the graph can and cannot see, and how well its edges hold up: the
 portfolio census, source windows and the edge-quality evaluator. Views and flags are in

@@ -86,7 +86,7 @@ Key public functions for `loom plan verify` to call:
 | ----------------------------------------------------- | ------------------------------------- | ------------------------------------------------- |
 | `validate(&metadata)`                               | `Result<(), Vec<ValidationError>>` | Fatal — called by `parse_plan()` automatically |
 | `validate_structural_preflight(&stages, repo_root)` | `Vec<String>`                      | Advisory warnings                              |
-| `check_knowledge_recommendations(&stages)`          | `Vec<String>`                      | Advisory suggestions                           |
+| `check_knowledge_recommendations(stages, repo_root)` | `Vec<String>`                     | Advisory; only when the knowledge tree is missing or scaffold-only |
 | `check_sandbox_recommendations(&metadata)`          | `Vec<String>`                      | Advisory suggestions                           |
 
 `validate()` runs inside `parse_and_validate()` → called by `parse_plan_content()` → called by `parse_plan()`. Any new command that calls `parse_plan()` automatically gets fatal validation for free.

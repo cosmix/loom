@@ -103,8 +103,8 @@ failure must never wedge a merge.
 2000 bytes, so one entry can exceed the platform's atomic-append window (~4096
 bytes) and concurrent subagents would interleave bytes on a line.
 
-**Reads merge the spool.** `loom memory list` is step one of post-compaction
-recovery (CLAUDE.md Rule 3b), so `query`/`list`/`show` merge undrained entries,
+**Reads merge the spool.** `loom memory list --stage <id>` is step one of
+post-compaction recovery (CLAUDE.md Rule 3b), so `query`/`list`/`show` merge undrained entries,
 and the aggregate `list`/`show` additionally surface a stage whose only entries
 are still pending — both enumerate journal *files*, which such a stage does not
 yet have. Daemon-side readers stay on the pure `read_journal`; they run after
@@ -170,7 +170,14 @@ The journals live in the state directory, which is removed when a plan finishes.
 `telemetry/` subdirectories, whichever exist, to
 `.loom/memory/archive/<plan-id-or-default>-<YYYYmmddTHHMMSSZ>/` under the main
 repository root. It runs at plan completion
-(`fs/plan_lifecycle.rs::archive_run_state_before_done`), in `loom clean`
-(`clean_state_directory`), and in the init-time state cleanup
-(`commands/init/cleanup.rs::cleanup_work_directory`). A failure prints a warning and
-returns `None`, so cleanup and completion continue.
+(`fs/plan_lifecycle.rs::archive_run_state_before_done`, which keeps its own `WorkDir`
+and explicit main root), in `loom clean` (`clean_state_directory`), and in the
+init-time state cleanup (`commands/init/cleanup.rs::cleanup_work_directory`); the last
+two go through `archive_state_dir`, which resolves the plan id from the config and the
+main root from the workspace.
+
+A failure while `memory/` holds a `*.md` journal (or `memory/` cannot be listed) is an
+`Err`: plan completion leaves the plan `IN_PROGRESS` for a retry, and `loom clean` and
+`loom init --clean` stop before removing the state directory. A failure with telemetry
+only prints a warning and returns `Ok(None)`. Under the daemon, `finish_orchestration`
+only logs the archive error (open gap in `concerns/merge-and-recovery-edge-cases.md`).

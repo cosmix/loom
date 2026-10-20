@@ -1,6 +1,6 @@
 # Mistakes & Lessons Learned
 
-> Mistakes and lessons learned
+> Mistakes and lessons
 >
 > **Format:** Describe what went wrong, why, and how to avoid it next time.
 >
@@ -235,7 +235,7 @@ A report quoted from a stage session is a defect report against loom's source: d
 
 ## Lint and Test-Discipline Summary
 
-Lint and test-discipline lessons spanning `--all-targets`, `--no-fail-fast`, ambient git config in tests, the maintainability ledger, `TODO` in string literals and platform-specific Bash/Rust traps. Racy tests (inherited descriptors, ETXTBSY, serial env, stdin hangs, real-home writes) and CI toolchain drift (clippy on rustup `stable`, offline `cargo audit`, `install.sh`, dependency build caches) have their own topics. → [Testing & Lint](mistakes/testing-and-lint.md), [Test Concurrency & Fixtures](mistakes/test-concurrency-and-fixtures.md), [CI Toolchain & Cargo](mistakes/ci-toolchain-and-cargo.md)
+Lint and test-discipline lessons spanning `--all-targets`, `--no-fail-fast`, ambient git config in tests, the maintainability ledger, `TODO` in string literals and platform-specific Bash/Rust traps. Racy tests (inherited descriptors, ETXTBSY, serial env, stdin hangs, real-home writes) and CI toolchain drift (clippy on rustup `stable`, offline `cargo audit`, `install.sh`, dependency build caches) have their own topics. → [Testing & Lint](mistakes/testing-and-lint.md), [Test Concurrency & Fixtures](mistakes/test-concurrency-and-fixtures.md), [CI Toolchain & Cargo](mistakes/ci-toolchain-and-cargo.md), [Test Sweep & Fixture Discipline](mistakes/test-sweep-and-fixture-discipline.md)
 
 ## Verification v2 Delivery Mistakes
 

@@ -100,3 +100,11 @@ exists, or pin the interface inline in the brief so codex does not wait for it.
 **Why:** the stage sandbox grants no network, which the wrapper needs for its workspace routing.
 
 **Prevention:** when the signal's Sandbox section says "No network access", route terra-tier units to sonnet and luna-tier units to haiku from the start; a codex unit then costs a brief and a boot and returns nothing.
+
+## A Brief Wrote a Command Argument Inside an Inline Code Span (2026-10-20)
+
+**What happened:** the bookends unit brief wrote the distill message as the word stage glued to a code span holding `{}`, and the codex unit dropped the space before the span. The sibling brief that set the placeholder `{distill_id}` apart by a space came out right.
+
+**Why:** a code span that abuts prose reads as part of the word, so a worker copying the text loses the separator.
+
+**Prevention:** put every literal a worker must reproduce exactly in its own fenced block or a span set apart by spaces, and name the placeholder (`{distill_id}`), never a bare `{}`.

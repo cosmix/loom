@@ -1,6 +1,6 @@
 # Stack & Dependencies
 
-> Dependencies, frameworks, tooling
+> Dependencies and tooling
 > Agents add discoveries with `loom knowledge update`, and correct or remove a stale section in place with `loom knowledge replace-section` or `loom knowledge delete-section`.
 >
 > **Related files:** [architecture.md](architecture.md) for how dependencies are used.

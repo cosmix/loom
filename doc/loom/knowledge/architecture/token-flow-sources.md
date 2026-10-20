@@ -1,6 +1,6 @@
 # Token Flow Sources
 
-> Token flow: sources, tracker, surfaces
+> Token flow sources
 
 ## Token Usage Sources
 

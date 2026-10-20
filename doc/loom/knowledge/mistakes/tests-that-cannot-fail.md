@@ -380,3 +380,13 @@ the emulation's effect first.
 **Prevention:** Use small data tables/helpers and apply rustfmt before inspecting final function ranges.
 
 **Fix:** Split repetitive setup and apply the reported match-arm formatting before final validation.
+
+## An Assertion on Text the Command Itself Echoes Passes Without the Command Running (2026-10-20)
+
+**What happened:** `plan_environment_contracts::failed_provision_names_command_and_dir` asserted `reason.contains("registry refused")`, but the error prefix embeds the command text `echo registry refused >&2; exit 7`, so the assertion held under the confined runner where the command never ran and the error was a confine failure.
+
+**Why:** the marker the test searched for was part of the input it passed in.
+
+**Prevention:** assert on the part of the output the command alone can produce (`reason[prefix.len()..]`), or use a marker that appears only in the command's output, never in its text.
+
+**Fix:** open; see [concerns](../concerns/sandbox-and-confinement-gaps.md).

@@ -1,6 +1,6 @@
 # Daemon Fork After Threads
 
-> Fork after threads, early ready byte
+> Fork after threads
 
 ## The Daemon Was Forked After Threads Existed, and the Ready Byte Went Out Before the Crash (2026-10-06)
 

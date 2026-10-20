@@ -1,6 +1,6 @@
 # Merge In Operator Checkout
 
-> Git in operator checkout; plan errors
+> Operator checkout git
 
 ## Merges Ran Git in the Operator's Checkout (2026-10-02)
 

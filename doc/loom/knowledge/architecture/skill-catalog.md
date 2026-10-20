@@ -3,7 +3,7 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Skill Catalog
 
-> Two skill roots; 65 catalogued skills
+> Skill roots, catalog
 
 ## Skill Catalog: Two Roots, and Why the Split
 

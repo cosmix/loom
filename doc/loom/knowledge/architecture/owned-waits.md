@@ -1,3 +1,16 @@
+---
+sources:
+- loom/src/commands/subagents/wait/mod.rs
+- loom/src/commands/subagents/wait/lease.rs
+- loom/src/commands/subagents/wait/stall.rs
+- loom/src/commands/subagents/wait/model.rs
+- loom/src/commands/subagents/wait/codex_binding.rs
+- loom-hooks/codex-forward-guard.sh
+- loom-hooks/codex-forward.sh
+- loom-hooks/subagent-start.sh
+- loom-hooks/subagent-stop.sh
+verified: ace1efbd8fd861fc0efcb26e8d49c2ef29876c67
+---
 # Owned Waits
 
 > Worker-set waits, lease, boot ID

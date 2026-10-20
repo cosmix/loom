@@ -272,3 +272,13 @@ can only be verified on another platform, say so and ask: offer CI as the verifi
 if the operator agrees.
 
 **Fix:** the subagent was stopped, and verification goes back to the operator's choice.
+
+## `git rm --cached` Staged a Deletion in a No-Staging Task (2026-10-20)
+
+**What happened:** a subagent told not to stage anything deleted a file with `git rm --cached`, which stages the removal.
+
+**Why:** the reflex to keep the index in sync with the working tree.
+
+**Prevention:** in a task that forbids staging, delete files with plain `rm`; `git rm` in any form touches the index.
+
+**Fix:** `git restore --staged <path>`.
