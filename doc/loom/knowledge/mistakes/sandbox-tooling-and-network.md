@@ -367,3 +367,13 @@ unprivileged user namespace `bwrap` creates. With both steps the confined tests 
 **Prevention:** Use Python -c for short read-only probes, known directory roots for rg, and an allowed diagnostic destination or approved host execution for build gates.
 
 **Fix:** Reissue affected read queries without shell temporary files or unmatched wildcards; run the lint gate with approved host cache/log access.
+
+## A Probe Asserted That a Read-Denied File Reads Empty
+
+**What happened:** A plan specified a bubblewrap probe asserting that `wc -c < <file>` prints 0 for every read-denied credential file. Claude Code binds such a file with `--ro-bind /dev/null <file>`; bubblewrap mounts that bind `nodev`, so the open fails with EACCES and the probe would have failed on its first real run, a host job no authoring or worker shell could run.
+
+**Why:** The plan recorded "a file is bound from `/dev/null` (reads empty)" from bundle strings without running a bind, and every shell that wrote or reviewed the probe could not nest bubblewrap, so nothing exercised the assertion before execution.
+
+**Prevention:** Before writing an assertion about a deny, measure its observable result (exit status and stderr, not only the bind) in a shell where bubblewrap starts, and pair the denied read with a readable control file.
+
+**Fix:** The probe asserts a non-zero `cat` exit status and 0 bytes per credential file, with an unlisted file reading its 6 bytes as the control, and keeps `--ro-bind` (never `--dev-bind`, which reads empty and is not what Claude Code does).

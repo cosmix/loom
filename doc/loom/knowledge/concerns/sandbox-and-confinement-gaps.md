@@ -218,9 +218,14 @@ allowed domain is one channel).
 How Claude Code applies a `denyRead` entry on Linux: a file is bound from `/dev/null`, a directory
 is covered by a tmpfs (with `allowRead` and `allowWrite` paths re-mounted inside it), an absent
 path mounts nothing, and a glob is expanded into one mount per match (a warning above 256). A plain
-path costs one mount.
+path costs one mount. bubblewrap mounts every non-dev bind `nodev`, so opening a read-denied file
+fails with EACCES (`Permission denied`); it does not read empty (measured with bubblewrap 0.11.1,
+also nested in a host-job-style `bwrap --unshare-all`; Claude Code 2.1.306 binds with
+`--ro-bind /dev/null <p>`). `npm config get`, `bun install`, `cargo build --offline` and
+`git credential-store get` still succeed with the credential files bound this way.
 
-The list is unchanged and the gap is open: no plan addresses it.
+The list is unchanged and the gap is open: no merged change closes it (the token-optimization
+programme's sandbox route-closure plan targets it).
 
 ## Sibling Worktrees and the Main Checkout Are Readable From Bash
 
