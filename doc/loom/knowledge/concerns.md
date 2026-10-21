@@ -242,8 +242,6 @@ recurred and want a check (the signal dropping `exit_code`, the watch exiting 6 
 
 ## Token Accounting Follow-Ups
 
-Open follow-ups from PLAN-token-optimization-2026-09-13 and PLAN-02-delivery-truth: git and bounded-runner hygiene,
-the forward-receipt runtime uncertainty, the IV fence wording, two fail-open guard choices, and the
-reviewer suggestions nobody implemented in the delivery-truth hooks.
+Open follow-ups from the token-accounting plans: git and bounded-runner hygiene, whether a failed forward fires PostToolUse, the IV fence wording, two fail-open guard choices, and the unimplemented reviewer suggestions of the delivery-truth and usage-evidence plans.
 
 → [Token Accounting Follow-Ups](concerns/token-accounting-and-proof-defects.md). Token flow limits, hardening and structure: [Token Flow Gaps](concerns/token-accounting-and-proof-defects.md#token-flow-gaps).

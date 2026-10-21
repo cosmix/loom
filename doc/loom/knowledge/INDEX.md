@@ -9,12 +9,12 @@
 | File | Description | Lines |
 | --- | --- | --- |
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 249 |
-| [entry-points.md](entry-points.md) | Key files agents should read first | 246 |
+| [entry-points.md](entry-points.md) | Key files agents should read first | 249 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 190 |
-| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 240 |
+| [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 247 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 250 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 249 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 247 |
 
 ## Tier 2 — Topics
 
@@ -22,7 +22,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | Dispute to verdict, per-kind rulings | 167 |
+| [adjudication-lifecycle](architecture/adjudication-lifecycle.md) | Dispute to verdict | 167 |
 | [codex-concurrency](architecture/codex-concurrency.md) | Codex fan-out limits | 128 |
 | [codex-plugin](architecture/codex-plugin.md) | Codex plugin install, forwarding | 364 |
 | [completion-recovery](architecture/completion-recovery.md) | HMAC attestation, exit_reason | 34 |
@@ -30,7 +30,7 @@
 | [context-ceiling](architecture/context-ceiling.md) | Resident-token ceiling tiers | 111 |
 | [context-retrieval](architecture/context-retrieval.md) | Graphs, lanes, gating, packs | 397 |
 | [context-retrieval-corpus](architecture/context-retrieval-corpus.md) | Stopwording, rescue floor, BM25 | 177 |
-| [context-retrieval-routing](architecture/context-retrieval-routing.md) | Intent routing, neighbours, caveats | 75 |
+| [context-retrieval-routing](architecture/context-retrieval-routing.md) | Intent routing, neighbours | 75 |
 | [context-retrieval-state](architecture/context-retrieval-state.md) | Layers, delivery records | 193 |
 | [contract-phase](architecture/contract-phase.md) | Contract session, freeze, handover | 157 |
 | [core-abstractions](architecture/core-abstractions.md) | ExecutionGraph, Stage, Session | 136 |
@@ -38,11 +38,11 @@
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) | Relayed signed commits | 157 |
 | [directory-structure](architecture/directory-structure.md) | Module tree, state layout | 50 |
 | [execution-containment](architecture/execution-containment.md) | Command containment, limits | 364 |
-| [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 301 |
+| [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 302 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Digest phase, receipts | 86 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | fs/knowledge, INDEX.md, checks | 263 |
 | [memory-spool](architecture/memory-spool.md) | Read before touching loom memory | 183 |
-| [merge-checkout-state](architecture/merge-checkout-state.md) | Guarded fast-forward; blocked retry | 28 |
+| [merge-checkout-state](architecture/merge-checkout-state.md) | Guarded fast-forward | 28 |
 | [merge-flow](architecture/merge-flow.md) | Finished stage to target branch | 134 |
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Tick order, liveness | 76 |
 | [owned-waits](architecture/owned-waits.md) | Worker-set waits, lease, boot ID | 70 |
@@ -50,7 +50,7 @@
 | [quota-poller](architecture/quota-poller.md) | Usage-quota polling and rendering | 35 |
 | [remote-control](architecture/remote-control.md) | Capability, preflight, naming | 81 |
 | [security-and-isolation](architecture/security-and-isolation.md) | 4-layer worktree defense | 212 |
-| [signal-generation](architecture/signal-generation.md) | Signal assembly, cache, prefixes | 177 |
+| [signal-generation](architecture/signal-generation.md) | Signal assembly, cache, prefixes | 228 |
 | [skill-catalog](architecture/skill-catalog.md) | Skill roots, catalog | 154 |
 | [source-graph](architecture/source-graph.md) | Source graph contract, limits | 368 |
 | [source-graph-build](architecture/source-graph-build.md) | Builder, freshness, lease | 128 |
@@ -61,8 +61,9 @@
 | [target-guard](architecture/target-guard.md) | Accepted-tip record, hook, holds | 127 |
 | [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends | 293 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) | Adapters, profiles, quoting | 57 |
-| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, compare, cache | 323 |
+| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, compare, cache | 368 |
 | [token-flow-sources](architecture/token-flow-sources.md) | Token flow sources | 75 |
+| [usage-evidence](architecture/usage-evidence.md) | Usage reasons, scope, trials | 127 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 180 |
 | [web-dashboard](architecture/web-dashboard.md) | status --web server, SPA, streams | 99 |
 | [web-terminal](architecture/web-terminal.md) | loom status --web terminals | 181 |
@@ -113,13 +114,13 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock | 200 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | A .git dir is no proof | 156 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Bug reports; brief flags | 156 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Bug reports; brief flags | 178 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, audit, install.sh | 294 |
-| [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented, not forwarded | 157 |
+| [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented itself | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader fixed by banning reads | 102 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 110 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) | Broker fallback, dup naming | 225 |
-| [completion-runner-blocks](mistakes/completion-runner-blocks.md) | Runner-env blocks, gate fails | 98 |
+| [completion-runner-blocks](mistakes/completion-runner-blocks.md) | Runner-env blocks, gate fails | 134 |
 | [completion-runtime](mistakes/completion-runtime.md) | Cargo churn, stall kills | 49 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread | 269 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes, save races | 46 |
@@ -131,9 +132,9 @@
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How knowledge goes stale | 229 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants live in constructor | 206 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why distill cannot write | 100 |
-| [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Ledger TUI padding, fan-out, panics | 83 |
+| [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Ledger TUI rendering bugs | 83 |
 | [live-state-pollution](mistakes/live-state-pollution.md) | Tests wrote live state and HOME | 117 |
-| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay tickets leaked past the hook | 34 |
+| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay tickets leaked | 34 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | A cleanup-boundary bug and its fix | 171 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Operator checkout git | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) | Resolver kept stage write denies | 15 |
@@ -142,7 +143,7 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 313 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard edges | 83 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 304 |
-| [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox path rules, permission sync | 367 |
+| [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox paths, permission sync | 367 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | hooks/ dir is sandbox-protected | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers vs work state | 298 |
 | [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Sandbox tool failures | 369 |
@@ -150,9 +151,9 @@
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) | deny_unknown_fields | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | LOOM_* wrapper exports contract | 126 |
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) | Session identity, liveness | 383 |
-| [shell-command-matchers](mistakes/shell-command-matchers.md) | Glued separators, forgeable lookups | 246 |
+| [shell-command-matchers](mistakes/shell-command-matchers.md) | Matcher separators, lookups | 246 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Resolver, cache, wiring, eval | 172 |
-| [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Stages flipped to waiting-for-input | 35 |
+| [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Spurious waiting-for-input | 35 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Frame overflow, read desync | 74 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Store written, never read | 104 |
 | [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, wave sizing, ownership | 376 |
@@ -169,7 +170,7 @@
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 368 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) capped by path | 141 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server concurrency | 393 |
-| [writer-reader-address](mistakes/writer-reader-address.md) | Layer written under an ignored key | 94 |
+| [writer-reader-address](mistakes/writer-reader-address.md) | Layer under an ignored key | 94 |
 
 ### concerns
 
@@ -182,13 +183,13 @@
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 window never named | 49 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps | 115 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry edge cases | 149 |
-| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Open gaps: commits, launch, stalls | 213 |
+| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Commit, launch, stall gaps | 213 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | tmux, orphan adoption edge cases | 150 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Canary, creds, env, caches | 359 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Language limits, open decisions | 79 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Unimplemented reviewer suggestions | 242 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package caches | 17 |
-| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token follow-ups | 236 |
+| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token follow-ups | 317 |
 | [typed-config-values](concerns/typed-config-values.md) | Config read-path gaps | 27 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) | v2 adapters, parsers, known gaps | 140 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Latent issues in status/web | 103 |

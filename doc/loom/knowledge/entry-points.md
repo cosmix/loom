@@ -237,9 +237,12 @@ Contract, integrity, review and impact gates, the 23 test-runner adapters, `loom
 
 ## Token Accounting and Receipt Surfaces
 
-- `loom/src/commands/usage/mod.rs` — `loom usage` args; providers in `provider_types.rs`, comparison in `comparison.rs`; the `reads` section (`sections/reads.rs`) measures rereads from transcripts
+- `loom/src/commands/usage/mod.rs` — `loom usage` dispatch; args in `args.rs` (`UsageArgs`, `has_explicit_selection`); providers in `provider_types.rs`; the `reads` section (`sections/reads.rs`) measures rereads from transcripts
+- `loom/src/commands/usage/completeness.rs`, `codex_scope.rs`, `spawn_join.rs` — `measured`/`partial` reasons and session-record inventory, receipt-scoped Codex rows, hook spawn requests joined to Claude starts
+- `loom/src/commands/usage/comparison.rs`, `comparison_net.rs`, `comparison_latency.rs`, `run_evidence.rs` (+ `run_evidence_stages.rs`) — `--compare`, the declared net-total rule, declared latency tolerance, and `--run-evidence` run-evidence producer
+- `loom/tests/signal_replay.rs` — signal replay harness ([Signal Generation](architecture/signal-generation.md))
 - `loom/src/verify/criteria/cache_contract.rs` — certified criterion-cache contract
-- `loom/src/models/forward_receipt.rs`, `loom/src/commands/hook/forward_receipt.rs`, `loom/src/commands/subagents/forward_jobs_wait.rs` — forward receipts and `loom subagents wait`
+- `loom/src/models/forward_receipt.rs` (+ `payload.rs`, `transcript/argv.rs`), `loom/src/commands/hook/forward_receipt.rs` (reads the PostToolUse payload on stdin), `loom/src/commands/subagents/forward_jobs_wait.rs` — forward receipts and `loom subagents wait`
 - `loom/src/commands/hook/worker_brief.rs` (worker briefs filed at issue), `loom/src/commands/hook/pre_compact.rs` (prompt-record reset on compaction), `loom/src/quota/history.rs` — worker briefs, compaction reset, quota history
 - `loom-hooks/_read_ledger.sh`, `loom-hooks/_read_discipline.sh` — sibling-read ledger and read-guard rules (no Rust read-receipt path exists)
 

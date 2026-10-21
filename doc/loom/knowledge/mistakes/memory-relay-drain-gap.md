@@ -7,7 +7,7 @@ verified: e88e8294c12301e520f82aaf968b1456d5f4ce92
 ---
 # Memory Relay Drain Gap
 
-> Relay tickets leaked past the hook
+> Relay tickets leaked
 
 ## A Ticket Whose Line Never Reached the Hook Was Leaked Forever (2026-09-18)
 

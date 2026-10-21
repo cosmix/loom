@@ -1,6 +1,6 @@
 # Platform And Commit Gaps
 
-> Open gaps: commits, launch, stalls
+> Commit, launch, stall gaps
 
 ## macOS CI Jobs and Remaining BSD Gaps
 

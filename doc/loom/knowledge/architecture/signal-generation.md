@@ -175,3 +175,54 @@ pub struct EmbeddedContext {
 ### Caching
 
 SHA-256 of stable prefix text → first 16 hex chars → `SignalMetrics::stable_prefix_hash`. Cache invalidated whenever the stable prefix Rust code changes. Semi-stable, dynamic, recitation sections are always regenerated.
+
+## Signal Replay Harness
+
+`loom/tests/signal_replay.rs` (modules in `tests/signal_replay/`: `input.rs`, `render.rs`,
+`report.rs`) renders every stage signal of a frozen plan, and every worker query, and prints bytes
+per section. It measures what a change to signal or worker-brief content costs in resident bytes.
+Run it at the base and the candidate revision on the same host and diff the two reports. Later
+plans locate it by path (`test -f tests/signal_replay.rs` from `loom/`); a grep cannot, because
+`tests/doctrine_guard_contracts.rs` also names `format_signal_with_metrics`.
+
+- **Test and invocation.** Test `signal_replay`, marked `#[ignore]`, so plain `cargo test` never
+  runs it and a gate must pass `--ignored`. From `loom/`:
+  `cargo test --test signal_replay -- --ignored --nocapture`. With `SIGNAL_REPLAY_OUT=<file>`
+  set, the printed lines are also written to that file, both marker lines included.
+- **Self-checks.** The harness renders twice, once under a nested root, and asserts the two
+  reports are identical (a leaked temp path or clock fails it), checks the section set and the
+  record shape, and requires at least one worker delivery record to deliver something.
+- **Frozen input** (`tests/fixtures/signal_replay/`, never edited after the first commit;
+  markdownlint skips `loom/tests/fixtures/`, so the pre-commit `--fix` pass cannot rewrite it).
+  Provenance is in the fixture's `README.md`: `plan.md` is the archived PLAN-token-flow plan,
+  `knowledge/` holds copies of the seven tier-1 files, `memory/token-core.md` is token-core's
+  archived journal, `recorded-spawn.json` is one recorded worker spawn payload, and
+  `requests.json` holds recorded request counts (unique assistant message ids per stage session;
+  worker: the median of token-core's 14 worker transcripts, 9.5 rounded half up).
+- **Rendering.** Signals go through `generate_signal_with_metrics` (the production context
+  build, then `format_signal_with_metrics`) and `generate_signal_with_skills` with no skill index,
+  so skill-catalog changes do not show; the asset lines report skill files by size. Worker
+  queries run through `loom hook worker-brief`. `parse_plan_content` takes the plan id from the
+  file stem, so the harness copies `plan.md` to `<root>/doc/plans/PLAN-token-flow.md` and parses
+  that path: every `stage.plan_id` reads `PLAN-token-flow` and the `worker_material` filter drops
+  `doc/plans/PLAN-*` items from briefs as in production. The skipped knowledge stage is set
+  `Completed` with `merged = true` through `verify::transitions::update_stage`; `save_stage` is
+  an alias of `create_stage` and refuses an existing stage.
+- **Output format `signal-replay v1`.** Between `=== signal-replay v1 ===` and
+  `=== end signal-replay ===`, tab-separated records. The header is
+  `signal-replay v1 plan=PLAN-token-flow estimate=bytes-times-recorded-requests`. Record kinds:
+  `signal` (stable prefix, semi-stable, dynamic, recitation, total and file bytes per stage),
+  `worker` (query, brief and envelope bytes per query), `asset` (template, preamble, agents and
+  skills file sizes) and `total`, whose fields are
+  `signal_bytes=<n> file_bytes=<n> brief_bytes=<n> asset_bytes=<n> resident_estimate=<n>`.
+  `resident_estimate` multiplies bytes by the recorded requests after the admission point and is
+  an estimate, not a measurement.
+- **Baseline.** On this tree the total reads `signal_bytes=214337 file_bytes=227124
+  brief_bytes=26569 asset_bytes=1619933 resident_estimate=19651501`; the usage-evidence plan
+  changed no signal content, so the number was the same before and after it.
+- **Known limits.** Signals render with the real `HOME` while `worker-brief` runs with an
+  isolated one, so developer-level config could shift byte counts between machines even though
+  the two-root check passes on one. `check_shape` compares asset paths as strings but
+  `asset_paths()` sorts `PathBuf`s component-wise; a skill `loom-md` beside `loom-md-tables`
+  would fail the self-check (see
+  [concerns](../concerns/token-accounting-and-proof-defects.md#unimplemented-reviewer-suggestions-from-the-usage-evidence-plan)).

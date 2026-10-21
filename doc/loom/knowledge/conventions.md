@@ -238,3 +238,10 @@ Configuration is the only authority for configurable behavior (no marker or stat
 ## Additive Schema Fields: Prefer `#[serde(default)]` Over Bespoke Migration
 
 See [Plan YAML and Hook Contracts](conventions/plan-yaml-and-hooks.md).
+
+## Live Paired Trials
+
+A candidate that needs subscription-quota evidence runs as an operator procedure, one clone per run,
+one arm at a time, with each run's evidence produced by `loom usage --run-evidence` as soon as it
+ends and every artifact judged by `loom usage --compare` under the net-total rule. Full procedure:
+[Live Paired Trials](architecture/usage-evidence.md#live-paired-trials).

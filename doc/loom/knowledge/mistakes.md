@@ -247,4 +247,4 @@ A test asserting an `flock` is free right after `drop` must poll to a deadline. 
 
 ## Source Graph Delivery
 
-Resolver fixtures, candidate narrowing across files, cache mutation outside GraphStore, wiring patterns missing from briefs, formatter passes that break size caps or frozen contracts, and eval cases without expect. See [Source Graph Delivery Mistakes](mistakes/source-graph-delivery.md).
+Resolver fixtures, candidate narrowing across files, cache mutation outside GraphStore, wiring patterns missing from briefs, formatter passes that break size caps or frozen contracts, and eval cases without expect. See [Source Graph Delivery Mistakes](mistakes/source-graph-delivery.md). `loom usage` read from a stage worktree through a symlinked work dir: [A Symlinked Work Dir](mistakes/completion-runner-blocks.md#a-symlinked-work-dir-made-every-session-record-read-as-unreadable).
