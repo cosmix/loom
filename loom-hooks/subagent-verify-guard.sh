@@ -7,9 +7,13 @@
 # runners are blocked at the tool boundary, narrowly-scoped runs (a filter,
 # one test target, a path) allowed.
 #
-# The MAIN AGENT IS NEVER AFFECTED: the hook acts only when `loom_is_subagent`
-# (loom-hooks/_common.sh) says so. That check gates on a LIVE loom session FIRST,
-# ALWAYS - LOOM_MAIN_AGENT_PID must be set and a live process-tree ancestor -
+# The MAIN AGENT is affected in exactly one case: a live loom STANDARD stage
+# session, where it may not run an unfiltered TEST SUITE (the stage gate runs
+# once, in `loom check`). Build, clippy, fmt, tsc, eslint and make stay allowed
+# for it. Everywhere else (no live session, any other stage type) it is never
+# blocked. The hook acts only on a live loom session: `loom_is_subagent`
+# (loom-hooks/_common.sh) and `live_loom_session` below both gate on
+# LOOM_MAIN_AGENT_PID being set and a live process-tree ancestor FIRST, ALWAYS,
 # because this hook installs globally at ~/.claude/hooks/loom/, so that
 # precondition is the only thing scoping the block to a loom stage session
 # rather than every Claude Code session on the machine. Only once that gate
@@ -23,11 +27,10 @@
 # mentions a ~/.claude/ path, e.g. sourcing a shell-snapshot file) can no
 # longer be mistaken for an intervening Claude process. Only when the payload
 # answers neither field does the hook fall back to counting Claude processes
-# between the caller and LOOM_MAIN_AGENT_PID. Two callers are carved out
-# below: a `loom-verifier` subagent, named by the payload's `.agent_type`
-# (it runs a standard stage's gate), and any subagent of an integration-verify
-# stage (its review subagents are supposed to run the full suite). There is
-# deliberately NO escape-hatch env var - an opt-out would
+# between the caller and LOOM_MAIN_AGENT_PID. One caller is carved out below:
+# any subagent of an integration-verify stage (its review subagents are
+# supposed to run the full suite). There is deliberately NO escape-hatch env
+# var - an opt-out would
 # defeat the whole purpose (commit-filter.sh already treats unsetting the
 # detection gate as evasion).
 #
@@ -62,31 +65,33 @@ if [[ "$TOOL_NAME" != "Bash" ]] || [[ -z "$COMMAND" ]]; then
 	exit 0
 fi
 
-# === SUBAGENT GATE === everything below is subagent-only; a main agent exits here
-loom_is_subagent "$INPUT_JSON" || exit 0
+# === CALLER ROLE ===
+# live_loom_session - the loom-session gate of `loom_is_subagent`, alone: it
+# separates a MAIN agent in a live session from no session at all, which
+# `loom_is_subagent` reports identically (non-zero).
+live_loom_session() {
+	local main_pid="${LOOM_MAIN_AGENT_PID:-}" ancestry=0
+	[[ -n "$main_pid" ]] || return 1
+	is_ancestor "$main_pid" || ancestry=$?
+	[[ $ancestry -ne 1 ]] || return 1
+	# 2 = no process information here; a still-signalable pid satisfies the gate
+	[[ $ancestry -ne 2 ]] || kill -0 "$main_pid" 2>/dev/null
+}
 
-# === LOOM-VERIFIER CARVE-OUT ===
-# A standard stage's gate runs in a loom-verifier subagent (agents/loom-verifier.md:
-# read-only, reports instead of fixing), so the full suite is its whole job.
-# Claude Code sets `.agent_type` from the spawn's subagent_type; nothing the
-# subagent writes reaches it, so it cannot be forged from inside the session.
-# Exact match only: a substring test would exempt any type whose name merely
-# contains this one.
-CALLER_AGENT_TYPE=$(printf '%s' "$INPUT_JSON" | jq -r '.agent_type // empty' 2>/dev/null || true)
-if [[ "$CALLER_AGENT_TYPE" == "loom-verifier" ]]; then
-	loom_debug "DEBUG: loom-verifier subagent - full-suite runs allowed"
-	exit 0
+ROLE=subagent
+if ! loom_is_subagent "$INPUT_JSON"; then
+	live_loom_session || exit 0
+	ROLE=main
 fi
 
-# === INTEGRATION-VERIFY CARVE-OUT ===
+# === STAGE LOOKUP ===
 # WHY LOOM_STAGE_ID IS SAFE HERE AND ONLY HERE: LOOM_STAGE_ID leaks into plain
 # Claude Code sessions (knowledge mistakes.md, "Worktree-Isolation Hooks Gated
 # on LOOM_STAGE_ID"), so it must never be an activation gate. It is not one
-# here: the subagent gate above ALWAYS proves LOOM_MAIN_AGENT_PID is a LIVE
-# ancestor FIRST - unconditionally, before it ever consults the payload to
-# classify main-vs-subagent - so we are demonstrably inside a live loom
-# session by the time this line runs, and this is a carve-out that only ever
-# RELAXES the hook. Do not "fix" this into a gate.
+# here: the role check above ALWAYS proves LOOM_MAIN_AGENT_PID is a LIVE
+# ancestor FIRST, so we are demonstrably inside a live loom session by the
+# time this line runs. The integration-verify carve-out only ever RELAXES the
+# hook; the main agent is guarded only when the file declares `standard`.
 #
 # AMBIGUITY IS FAIL-SAFE: stage files carry a depth prefix (02-<id>.md), so the
 # glob can match more than once. Taking the first would let a planted
@@ -94,29 +99,37 @@ fi
 # no escape hatch must not ship a cheap one. Preferring the match whose `id:`
 # agrees is no defence either - whoever writes the decoy writes its `id:`. So:
 # exactly ONE match may be consulted; duplicates, a missing file, or one not
-# declaring integration-verify all fall through to the checks below.
+# declaring the type all fall through to the checks below (subagent) or to
+# allow (main agent).
 STAGE_ID="${LOOM_STAGE_ID:-}"
 WORK_DIR="${LOOM_WORK_DIR:-}"
+STAGE_FILE=""
 if [[ -n "$STAGE_ID" && -n "$WORK_DIR" ]]; then
 	STAGE_MATCHES=()
 	for candidate in "${WORK_DIR}/stages/"*"-${STAGE_ID}.md"; do
 		if [[ -f "$candidate" ]]; then STAGE_MATCHES+=("$candidate"); fi
 	done
-
-	STAGE_FILE=""
 	if [[ ${#STAGE_MATCHES[@]} -eq 1 ]]; then
 		STAGE_FILE="${STAGE_MATCHES[0]}"
 	elif [[ ${#STAGE_MATCHES[@]} -eq 0 ]]; then
 		STAGE_FILE="${WORK_DIR}/stages/${STAGE_ID}.md"
 	else
-		loom_debug "DEBUG: ${#STAGE_MATCHES[@]} stage files match $STAGE_ID - no carve-out"
+		loom_debug "DEBUG: ${#STAGE_MATCHES[@]} stage files match $STAGE_ID - no stage type"
+		STAGE_FILE=""
 	fi
+fi
 
-	if [[ -n "$STAGE_FILE" && -r "$STAGE_FILE" ]] &&
-		grep -qE '^stage_type:[[:space:]]*integration-verify' "$STAGE_FILE" 2>/dev/null; then
-		loom_debug "DEBUG: integration-verify stage $STAGE_ID - full-suite runs allowed"
-		exit 0
-	fi
+# stage_declares <type> - the single consulted stage file declares stage_type.
+stage_declares() {
+	[[ -n "$STAGE_FILE" && -r "$STAGE_FILE" ]] &&
+		grep -qE "^stage_type:[[:space:]]*$1" "$STAGE_FILE" 2>/dev/null
+}
+
+if [[ "$ROLE" == main ]]; then
+	stage_declares standard || exit 0
+elif stage_declares integration-verify; then
+	loom_debug "DEBUG: integration-verify stage $STAGE_ID - full-suite runs allowed"
+	exit 0
 fi
 
 # Strip embedded content (heredoc bodies, -m messages) BEFORE matching, so
@@ -159,6 +172,12 @@ NTOK=${#TOKENS[@]}
 # loom/src/orchestrator/signals/tests_doctrine.rs fails if they drift.
 block() {
 	loom_debug "DEBUG: BLOCKED - $1"
+	if [[ "$ROLE" == main ]]; then
+		cat >&2 <<EOF
+⛔ BLOCKED: the stage gate runs once, in loom check $STAGE_ID; re-check one criterion with loom check $STAGE_ID --criterion <n>; run your own work with a filtered test
+EOF
+		exit 2
+	fi
 	cat >&2 <<'EOF'
 ⛔ BLOCKED: Subagent attempting project-wide verification.
 
@@ -286,7 +305,7 @@ check_cargo() {
 
 	sub="${TOKENS[$i]}"
 	case "$sub" in
-	build | clippy | fmt | check) block "cargo $sub" ;;
+	build | clippy | fmt | check) [[ "$ROLE" == main ]] || block "cargo $sub" ;;
 	test) block_unless_scoped $((i + 1)) "cargo test" ;;
 	nextest)
 		if [[ "${TOKENS[$((i + 1))]:-}" == "run" ]]; then
@@ -307,6 +326,7 @@ block_unless_scoped() {
 
 # tsc: -p/-b and a bare `tsc` typecheck everything; only a file list is scoped.
 check_tsc() {
+	[[ "$ROLE" != main ]] || return 0
 	block_on_word "$1" "-p --project -b --build -w --watch" "tsc whole-project"
 	if [[ -z "$(first_positional "$1" "--outDir --outFile --target -t --module --lib --rootDir")" ]]; then
 		block "tsc (no file argument)"
@@ -316,6 +336,7 @@ check_tsc() {
 
 check_eslint() {
 	local pos
+	[[ "$ROLE" != main ]] || return 0
 	pos=$(first_positional "$1" "--ext --config -c --format -f --rulesdir --resolve-plugins-relative-to")
 	case "$pos" in
 	"" | "." | "./" | "*" | "**" | "**/*") block "eslint over the whole project" ;;
@@ -327,7 +348,12 @@ check_eslint() {
 check_go() {
 	local sub="${TOKENS[$1]:-}"
 	case "$sub" in
-	test | build | vet) block_on_word $(($1 + 1)) "./... ... all" "go $sub" ;;
+	test)
+		# `go test -run X ./...` names a test: filtered, whatever the package
+		runner_args_have $(($1 + 1)) "-run -run=*" ||
+			block_on_word $(($1 + 1)) "./... ... all" "go test"
+		;;
+	build | vet) [[ "$ROLE" == main ]] || block_on_word $(($1 + 1)) "./... ... all" "go $sub" ;;
 	esac
 	return 0
 }
@@ -342,13 +368,81 @@ check_node_pm() {
 		;;
 	esac
 	case "$tok" in
-	test | build | lint | typecheck) block_unless_scoped $((i + 1)) "$pm $tok" ;;
+	test) block_unless_scoped $((i + 1)) "$pm $tok" ;;
+	build | lint | typecheck) [[ "$ROLE" == main ]] || block_unless_scoped $((i + 1)) "$pm $tok" ;;
+	vitest | jest | mocha | rspec | phpunit | ctest) check_command "$i" ;; # pnpm exec vitest, yarn jest
 	esac
 	return 0
 }
 
 check_make() {
+	[[ "$ROLE" != main ]] || return 0
 	block_on_word "$1" "test build check lint" "make"
+	return 0
+}
+
+# Options taking a separate value, so the value is not read as a test path.
+VALUE_FLAGS=" --config -c --reporter -r --project --root --configuration --framework -f --logger -l --settings -s --test-dir -C -j --parallel -pl -p "
+
+# runner_args_have <idx> <patterns> - an argument before the next separator
+# matches one of the space-separated glob patterns.
+runner_args_have() {
+	local i="$1" tok pat
+	local -a pats
+	IFS=' ' read -ra pats <<<"$2"
+	while [[ $i -lt $NTOK ]]; do
+		tok="${TOKENS[$i]}"
+		i=$((i + 1))
+		[[ "$tok" != ";" && "$tok" != "&&" && "$tok" != "||" && "$tok" != "|" && "$tok" != "&" ]] || break
+		for pat in "${pats[@]}"; do
+			# shellcheck disable=SC2053
+			[[ "$tok" == $pat ]] && return 0
+		done
+	done
+	return 1
+}
+
+# check_test_runner <idx> <label> <need> <skip> <scope> - block an unfiltered run.
+#   need  - words one of which must appear (the test subcommand); empty = none
+#   skip  - subcommand words that are not a test path
+#   scope - glob patterns of the runner's own name/tag/filter options
+# A positional argument (path or test name) or a scope option makes it filtered.
+check_test_runner() {
+	local i="$1" label="$2" need=" $3 " skip=" $4 " scope="$5" tok
+	local seen=0 scoped=0
+	[[ -n "${3// /}" ]] || seen=1
+	runner_args_have "$i" "$scope" && scoped=1
+	while [[ $i -lt $NTOK ]]; do
+		tok="${TOKENS[$i]}"
+		i=$((i + 1))
+		tok_kind "$tok"
+		if [[ "$TOK_KIND" == sep ]]; then break; fi
+		if [[ "$TOK_KIND" == redirop ]]; then i=$((i + 1)); continue; fi
+		if [[ "$TOK_KIND" == redir ]]; then continue; fi
+		case "$need" in *" $tok "*) seen=1; continue ;; esac
+		case "$VALUE_FLAGS" in *" $tok "*) i=$((i + 1)); continue ;; esac
+		case "$tok" in -*) continue ;; esac
+		case "$skip" in *" $tok "*) continue ;; esac
+		scoped=1
+	done
+	if [[ $seen -eq 1 && $scoped -eq 0 ]]; then block "$label (unfiltered)"; fi
+	return 0
+}
+
+# uv run [options] <command> - judge the command that follows.
+check_uv() {
+	local i="$1" tok
+	[[ "${TOKENS[$i]:-}" == run ]] || return 0
+	i=$((i + 1))
+	while [[ $i -lt $NTOK ]]; do
+		tok="${TOKENS[$i]}"
+		case "$tok" in
+		--with | --python | -p | --project | --directory | --group | --extra) i=$((i + 2)) ;;
+		-*) i=$((i + 1)) ;;
+		*) break ;;
+		esac
+	done
+	if [[ $i -lt $NTOK ]]; then check_command "$i"; fi
 	return 0
 }
 
@@ -360,6 +454,25 @@ check_command() {
 	case "$base" in
 	cargo) check_cargo $((idx + 1)) ;;
 	pytest) block_unless_scoped $((idx + 1)) "pytest" ;;
+	python | python3)
+		if [[ "${TOKENS[$((idx + 1))]:-}" == "-m" && "${TOKENS[$((idx + 2))]:-}" == "pytest" ]]; then
+			block_unless_scoped $((idx + 3)) "python -m pytest"
+		fi
+		;;
+	uv) check_uv $((idx + 1)) ;;
+	vitest) check_test_runner $((idx + 1)) vitest "" "run watch" "-t --testNamePattern --testNamePattern=*" ;;
+	jest) check_test_runner $((idx + 1)) jest "" "" "-t --testNamePattern --testNamePattern=*" ;;
+	mocha) check_test_runner $((idx + 1)) mocha "" "" "-g --grep --grep=*" ;;
+	rspec) check_test_runner $((idx + 1)) rspec "" "" "-e --example --example=* --tag --tag=*" ;;
+	phpunit) check_test_runner $((idx + 1)) phpunit "" "" "--filter --filter=*" ;;
+	dotnet) check_test_runner $((idx + 1)) "dotnet test" "test" "" "--filter --filter=*" ;;
+	mvn | mvnw) check_test_runner $((idx + 1)) "mvn test" "test verify" "clean compile package install" "-Dtest=*" ;;
+	gradle | gradlew) check_test_runner $((idx + 1)) "gradle test" "test" "clean build check" "--tests --tests=*" ;;
+	ctest) check_test_runner $((idx + 1)) ctest "" "" "-R --tests-regex --tests-regex=*" ;;
+	swift) check_test_runner $((idx + 1)) "swift test" "test" "" "--filter --filter=*" ;;
+	dart | flutter) check_test_runner $((idx + 1)) "$base test" "test" "" "-n --name --name=* -N --plain-name --plain-name=*" ;;
+	mix) check_test_runner $((idx + 1)) "mix test" "test" "" "--only --only=*" ;;
+	node) check_test_runner $((idx + 1)) "node --test" "--test" "" "--test-name-pattern --test-name-pattern=* --test-only" ;;
 	tsc) check_tsc $((idx + 1)) ;;
 	eslint) check_eslint $((idx + 1)) ;;
 	go) check_go $((idx + 1)) ;;
