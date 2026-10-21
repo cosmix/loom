@@ -116,6 +116,7 @@ fn js_repo(files: &[(&str, &str)]) -> TempDir {
     for (path, body) in files {
         write(repo.path(), path, body);
     }
+    isolated_git(&["add", "-A"], repo.path());
     repo
 }
 
@@ -198,6 +199,16 @@ fn a_package_without_dependencies_needs_no_provision() {
         "web/package.json",
         r#"{"scripts":{"test":"node --test"}}"#,
     );
+    let found = package_findings(&with_provision(2, &[]), repo.path());
+    assert!(found.is_empty(), "{found:?}");
+}
+
+/// A stage worktree is a checkout: a package only the operator's tree holds never
+/// reaches one.
+#[test]
+fn an_untracked_package_needs_no_provision() {
+    let repo = git_repo();
+    write(repo.path(), "output/tmp/cache/package.json", VITEST_PACKAGE);
     let found = package_findings(&with_provision(2, &[]), repo.path());
     assert!(found.is_empty(), "{found:?}");
 }

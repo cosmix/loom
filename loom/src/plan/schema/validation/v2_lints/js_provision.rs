@@ -4,8 +4,10 @@
 //! until something installs them. Plan `version: 2` only, because `provision`
 //! is v2-only.
 
+use std::collections::BTreeSet;
 use std::path::{Component, Path, PathBuf};
 
+use crate::git::run_git_checked;
 use crate::skills::project::{declares_dependencies, PackageDetail, ProjectProfile};
 use crate::testrun::registry::by_name;
 
@@ -47,10 +49,15 @@ pub(super) fn check(ctx: &LintContext<'_>, out: &mut Vec<LintFinding>) -> Vec<St
             normalized(package).starts_with(dir)
         })
     };
+    let tracked = tracked_manifests(root);
     for package in profile.package_details() {
         let Some(runner) = js_runner(&package) else {
             continue;
         };
+        let manifest = package.path.join("package.json");
+        if tracked.as_ref().is_some_and(|set| !set.contains(&manifest)) {
+            continue;
+        }
         let dir = profile.root.join(&package.path);
         // A package with no dependencies runs its tests without an install.
         if !covers(&package.path) && declares_dependencies(&profile.root, &dir) {
@@ -71,6 +78,20 @@ fn plan_finding(message: String) -> LintFinding {
         message,
         error_in_v2: true,
     }
+}
+
+/// The `package.json` files git tracks, `None` when git cannot list them. A stage
+/// worktree is a checkout, so a package only the operator's tree holds (a tool cache
+/// in an untracked directory) never reaches one and needs no provision entry.
+fn tracked_manifests(root: &Path) -> Option<BTreeSet<PathBuf>> {
+    let listed = run_git_checked(&["ls-files", "-z", "--", ":(glob)**/package.json"], root).ok()?;
+    Some(
+        listed
+            .split('\0')
+            .filter(|path| !path.is_empty())
+            .map(PathBuf::from)
+            .collect(),
+    )
 }
 
 /// The package's test-runner adapter name when it runs JavaScript tests.
