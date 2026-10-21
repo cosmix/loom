@@ -57,10 +57,7 @@ fn write_receipt(
 }
 
 fn transcript(identity: &ForwardIdentity) -> Transcript {
-    let timestamp = Utc
-        .with_ymd_and_hms(2026, 9, 13, 12, 1, 0)
-        .single()
-        .unwrap();
+    let timestamp = Utc.with_ymd_and_hms(2026, 9, 13, 12, 1, 0).unwrap();
     let request = Request {
         message_id: Some("message-1".to_owned()),
         timestamp,
@@ -90,6 +87,7 @@ fn transcript(identity: &ForwardIdentity) -> Transcript {
         session_id: identity.parent_session_id.clone(),
         agent_id: Some(identity.agent_id.clone()),
         agent_type: Some(FORWARDER_TYPE.to_owned()),
+        requested_model: None,
         stage_id: Some(identity.stage_id.clone()),
         loom_session_id: Some(identity.loom_session_id.clone()),
         forward_receipt: None,

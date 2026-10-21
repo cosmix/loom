@@ -4,7 +4,12 @@ use chrono::{TimeZone, Utc};
 use serde_json::json;
 
 use super::*;
+use crate::commands::usage::codex_scope::CodexScope;
+use crate::commands::usage::completeness::SessionInventory;
 use crate::commands::usage::transcript::Scope;
+
+// A `static` because a scope with a set inside cannot be promoted to `'static`.
+static UNSCOPED: CodexScope = CodexScope::Unscoped;
 
 fn write_start(stage_dir: &std::path::Path, parent_session_id: &str, agent_type: &str) {
     fs::create_dir_all(stage_dir).unwrap();
@@ -276,9 +281,11 @@ fn provider_input(selection: ProviderSelection) -> provider::ProviderEventInput<
         claude_transcripts: Vec::new(),
         claude_discovered_files: 0,
         claude_missing_roots: 0,
+        claude_sessions: SessionInventory::default(),
         codex_files: &[],
         codex_missing_roots: 0,
         codex_unreadable_directories: 0,
+        codex_scope: &UNSCOPED,
         receipts_root: None,
     }
 }

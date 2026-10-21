@@ -215,6 +215,20 @@ pub(crate) struct ProviderDiagnostics {
     pub(crate) forward_identity_absent: usize,
     pub(crate) forward_identity_ambiguous: usize,
     pub(crate) forward_identity_conflicts: usize,
+    /// Session records of the selected work that name a transcript the report
+    /// did not read.
+    pub(crate) missed_session_transcripts: usize,
+    /// Session records (or the session directory) that could not be read.
+    pub(crate) unreadable_session_records: usize,
+    /// Codex rows removed because no forward receipt of this project names
+    /// their thread.
+    pub(crate) foreign_codex_rows: usize,
+    /// Receipt threads in the window that no kept Codex row carries.
+    pub(crate) missing_forward_threads: usize,
+    /// In-window forward receipts that carry no thread id.
+    pub(crate) unthreaded_forward_receipts: usize,
+    /// 1 when the receipts could not be read, so the Codex scope is unknown.
+    pub(crate) codex_scope_unavailable: usize,
 }
 
 impl ProviderDiagnostics {
@@ -250,6 +264,12 @@ impl ProviderDiagnostics {
         self.forward_identity_absent += other.forward_identity_absent;
         self.forward_identity_ambiguous += other.forward_identity_ambiguous;
         self.forward_identity_conflicts += other.forward_identity_conflicts;
+        self.missed_session_transcripts += other.missed_session_transcripts;
+        self.unreadable_session_records += other.unreadable_session_records;
+        self.foreign_codex_rows += other.foreign_codex_rows;
+        self.missing_forward_threads += other.missing_forward_threads;
+        self.unthreaded_forward_receipts += other.unthreaded_forward_receipts;
+        self.codex_scope_unavailable += other.codex_scope_unavailable;
     }
 }
 
@@ -294,6 +314,7 @@ pub(crate) struct ProviderReport {
     pub(crate) stage_attribution: StageAttributionSummary,
     pub(crate) turnover: TurnoverRatios,
     pub(crate) diagnostics: ProviderDiagnostics,
+    pub(crate) completeness: super::completeness::Completeness,
 }
 
 #[derive(Debug, Clone, Serialize)]

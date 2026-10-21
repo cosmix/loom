@@ -138,6 +138,9 @@ pub struct Transcript {
     /// Spawn type from loom's hook-side `starts.jsonl` ledger. `None` for
     /// transcripts outside a loom run or when the optional ledger is absent.
     pub agent_type: Option<String>,
+    /// The model the spawn guard recorded for this agent, joined from
+    /// `spawns.jsonl`; `ambiguous` when the order join cannot decide.
+    pub requested_model: Option<String>,
     /// Hook-provided lifecycle metadata. It is absent rather than inferred.
     pub stage_id: Option<String>,
     pub loom_session_id: Option<String>,

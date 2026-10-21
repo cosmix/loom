@@ -1,6 +1,7 @@
 use chrono::{TimeZone, Utc};
 
 use super::*;
+use crate::commands::usage::completeness::CompletenessState;
 use crate::commands::usage::provider_types::{
     Attribution, ProviderTokenVector, StageAttributionState,
 };
@@ -85,4 +86,18 @@ fn quota_history_text_reports_state_and_point_count() {
     let history = super::super::quota_history::ProviderQuotaHistory::unavailable(Provider::Claude);
 
     assert_eq!(quota_history_summary(&history), "unavailable (0 points)");
+}
+
+#[test]
+fn unknown_usage_rows_make_the_report_partial() {
+    let rows = vec![event(ProvenanceStatus::UnknownUsage, None)];
+
+    let report = build(Provider::Claude, &rows, ProviderDiagnostics::default());
+
+    assert_eq!(report.completeness.state, CompletenessState::Partial);
+    assert_eq!(report.completeness.reasons, ["unknown-usage-rows"]);
+    assert_eq!(
+        completeness_summary(&report.completeness),
+        "partial: unknown-usage-rows"
+    );
 }

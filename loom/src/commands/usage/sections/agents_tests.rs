@@ -35,6 +35,7 @@ fn transcript(scope: Scope, session_id: &str, prompt: Option<&str>, models: &[&s
         session_id: session_id.to_owned(),
         agent_id: Some("agent-1".to_owned()),
         agent_type: None,
+        requested_model: None,
         stage_id: None,
         loom_session_id: None,
         forward_receipt: None,
@@ -231,4 +232,24 @@ fn build_counts_a_transcript_with_an_in_window_request() {
     let present = transcript(Scope::Subagent, "session-1", None, &["claude-sonnet-5"]);
     let report = build(&[present]);
     assert_eq!(report.subagent_transcripts, 1);
+}
+
+/// One agent type spawned with different requested models lands in one row
+/// per requested model, so a model override is visible against what ran.
+#[test]
+fn requested_model_splits_rows_of_one_agent_type() {
+    let mut sonnet = transcript(Scope::Subagent, "s", None, &["claude-sonnet-5"]);
+    sonnet.agent_type = Some("loom-software-engineer".to_owned());
+    sonnet.requested_model = Some("sonnet".to_owned());
+    let mut ambiguous = transcript(Scope::Subagent, "s", None, &["claude-sonnet-5"]);
+    ambiguous.agent_type = Some("loom-software-engineer".to_owned());
+    ambiguous.requested_model = Some("ambiguous".to_owned());
+
+    let rows = by_agent_model(&[&sonnet, &ambiguous]);
+
+    let requested = rows
+        .iter()
+        .map(|row| row.requested_model.as_str())
+        .collect::<Vec<_>>();
+    assert_eq!(requested, ["ambiguous", "sonnet"]);
 }

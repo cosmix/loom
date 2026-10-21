@@ -4,6 +4,7 @@ pub mod edits;
 pub mod fmt;
 pub mod lengths;
 pub mod lifecycle;
+pub mod lifecycle_orientation;
 pub mod peaks;
 pub mod polling;
 pub mod reads;

@@ -27,6 +27,7 @@ fn windows_exclude_synthetic_requests_just_like_totals() {
         session_id: "session-1".to_owned(),
         agent_id: None,
         agent_type: None,
+        requested_model: None,
         stage_id: None,
         loom_session_id: None,
         forward_receipt: None,

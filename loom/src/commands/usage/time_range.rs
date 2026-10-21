@@ -24,6 +24,9 @@ impl TimeRange {
 }
 
 pub(crate) fn parse_since_at(spec: &str, now: DateTime<Utc>) -> Result<DateTime<Utc>> {
+    if let Ok(instant) = DateTime::parse_from_rfc3339(spec) {
+        return Ok(instant.with_timezone(&Utc));
+    }
     if let Ok(date) = NaiveDate::parse_from_str(spec, "%Y-%m-%d") {
         let midnight = date
             .and_hms_opt(0, 0, 0)

@@ -234,3 +234,60 @@ fn missing_explicit_root_is_empty_and_diagnostic() -> Result<()> {
     assert!(root_is_missing(&options));
     Ok(())
 }
+
+fn slug_fixture() -> Result<(tempfile::TempDir, PathBuf)> {
+    let temp = tempfile::tempdir()?;
+    let repo = PathBuf::from("/work/proj");
+    for name in [
+        "-work-proj",
+        "-work-proj--worktrees-gone",
+        "-work-proj--worktrees-also",
+        "-work-proj-other",
+    ] {
+        fs::create_dir(temp.path().join(name))?;
+    }
+    Ok((temp, repo))
+}
+
+#[test]
+fn removed_worktree_slugs_are_selected_but_siblings_are_not() -> Result<()> {
+    let (temp, repo) = slug_fixture()?;
+
+    assert_eq!(
+        worktree_slugs(temp.path(), &project_slug(&repo)),
+        ["-work-proj--worktrees-also", "-work-proj--worktrees-gone"]
+    );
+    assert_eq!(
+        repository_slugs(temp.path(), &repo),
+        [
+            "-work-proj",
+            "-work-proj--worktrees-also",
+            "-work-proj--worktrees-gone"
+        ]
+    );
+    Ok(())
+}
+
+#[test]
+fn project_selection_includes_removed_worktrees_only() -> Result<()> {
+    let (temp, _) = slug_fixture()?;
+    let project = tempfile::tempdir()?;
+    let slug = project_slug(&absolute(project.path())?);
+    fs::create_dir(temp.path().join(&slug))?;
+    fs::create_dir(temp.path().join(format!("{slug}--worktrees-gone")))?;
+    fs::create_dir(temp.path().join(format!("{slug}-other")))?;
+    let options = DiscoveryOptions {
+        range: range(),
+        claude_root: Some(temp.path().to_path_buf()),
+        project: Some(project.path().to_path_buf()),
+        all: false,
+        stage: None,
+        plan: None,
+    };
+
+    assert_eq!(
+        selected_slugs(temp.path(), &options)?,
+        [slug.clone(), format!("{slug}--worktrees-gone")]
+    );
+    Ok(())
+}

@@ -2,6 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use chrono::{DateTime, Utc};
 use serde::Serialize;
 
 use super::provider_types::{
@@ -37,6 +38,13 @@ impl From<&ForwardReceipt> for ForwardMetadata {
     }
 }
 
+/// One loaded forward receipt, reduced to what the Codex scope needs.
+#[derive(Debug, Clone)]
+pub(crate) struct ReceiptThread {
+    pub(crate) thread_id: Option<String>,
+    pub(crate) observed_at: DateTime<Utc>,
+}
+
 enum Candidate {
     Unique(ForwardMetadata),
     Ambiguous,
@@ -46,6 +54,7 @@ pub(crate) struct ForwardJoin {
     by_receipt_id: HashMap<String, ForwardMetadata>,
     by_thread_id: HashMap<String, Candidate>,
     load_diagnostics: ProviderDiagnostics,
+    receipt_threads: Vec<ReceiptThread>,
 }
 
 impl ForwardJoin {
@@ -56,8 +65,13 @@ impl ForwardJoin {
             by_receipt_id: HashMap::new(),
             by_thread_id: HashMap::new(),
             load_diagnostics,
+            receipt_threads: Vec::new(),
         };
         for receipt in receipts {
+            result.receipt_threads.push(ReceiptThread {
+                thread_id: receipt_thread_id(&receipt),
+                observed_at: receipt.observed_at,
+            });
             let metadata = ForwardMetadata::from(&receipt);
             result
                 .by_receipt_id
@@ -67,6 +81,20 @@ impl ForwardJoin {
             }
         }
         result
+    }
+
+    pub(crate) fn receipt_threads(&self) -> &[ReceiptThread] {
+        &self.receipt_threads
+    }
+
+    /// False when the receipts could not be read completely, so no thread set
+    /// built from them can be trusted to name every project thread.
+    pub(crate) fn scope_available(&self) -> bool {
+        let load = &self.load_diagnostics;
+        load.forward_receipt_scope_unavailable == 0
+            && load.missing_forward_receipt_roots == 0
+            && load.truncated_forward_receipt_files == 0
+            && load.unreadable_files == 0
     }
 
     pub(crate) fn join_transcript(&self, transcript: &mut Transcript) {

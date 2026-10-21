@@ -36,6 +36,7 @@ fn subagent(prompt: &str, in_window_requests: usize) -> Transcript {
         session_id: "session-1".to_owned(),
         agent_id: Some("agent-1".to_owned()),
         agent_type: None,
+        requested_model: None,
         stage_id: None,
         loom_session_id: None,
         forward_receipt: None,
@@ -81,4 +82,63 @@ fn only_in_window_transcripts_contribute_to_the_count() {
     ];
     let lifecycle = build(&transcripts);
     assert_eq!(lifecycle.subagent_transcripts, 1);
+}
+
+fn tool_request(tool: &str, input: u64) -> Entry {
+    let mut item = request();
+    item.usage = TokenUsage {
+        input,
+        output: 1,
+        ..TokenUsage::default()
+    };
+    item.tool_uses
+        .push(crate::commands::usage::transcript::ToolUse {
+            id: "id".to_owned(),
+            name: tool.to_owned(),
+            input: serde_json::json!({}),
+        });
+    Entry::Assistant(Box::new(item))
+}
+
+#[test]
+fn a_main_session_orients_until_its_first_spawn() {
+    let mut main = subagent("none", 0);
+    main.scope = Scope::Main;
+    main.entries = vec![
+        tool_request("Read", 10),
+        tool_request("Grep", 20),
+        tool_request("Agent", 30),
+    ];
+    let orientation = lifecycle_orientation::build(&[main]);
+    assert_eq!(orientation.main.samples, 1);
+    assert_eq!(orientation.main.median_requests, 2);
+    assert_eq!(orientation.main.median_tokens, 32);
+}
+
+#[test]
+fn read_only_subagents_are_skipped_and_never_ending_ones_counted() {
+    let mut reviewer = subagent("none", 0);
+    reviewer.agent_type = Some("loom-code-reviewer".to_owned());
+    reviewer.entries = vec![tool_request("Read", 10)];
+    let mut reader = subagent("none", 0);
+    reader.entries = vec![tool_request("Read", 10)];
+    let orientation = lifecycle_orientation::build(&[reviewer, reader]);
+    assert_eq!(orientation.skipped_read_only, 1);
+    assert_eq!(orientation.subagent.samples, 0);
+    assert_eq!(orientation.subagent.without_end, 1);
+}
+
+#[test]
+fn main_orientation_alone_counts_as_lifecycle_data() {
+    let mut main = subagent("none", 0);
+    main.scope = Scope::Main;
+    main.entries = vec![tool_request("Read", 10), tool_request("Agent", 30)];
+    let lifecycle = build(&[main]);
+    assert_eq!(lifecycle.subagent_transcripts, 0);
+    assert!(has_data(&lifecycle));
+}
+
+#[test]
+fn an_empty_lifecycle_has_no_data() {
+    assert!(!has_data(&build(&[])));
 }

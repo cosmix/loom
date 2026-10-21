@@ -44,3 +44,36 @@ fn offset_aware_until_is_normalized_to_utc() -> Result<()> {
     assert_eq!(range.until, Some(instant(20)));
     Ok(())
 }
+
+#[test]
+fn since_accepts_rfc3339_instants_in_any_offset() -> Result<()> {
+    let now = instant(23);
+    let utc = TimeRange::parse("2026-10-14T06:30:00Z", None, now)?;
+    let offset = TimeRange::parse("2026-10-14T09:30:00+03:00", None, now)?;
+
+    assert_eq!(utc.since, offset.since);
+    assert_eq!(
+        utc.since,
+        Utc.with_ymd_and_hms(2026, 10, 14, 6, 30, 0)
+            .single()
+            .unwrap()
+    );
+    Ok(())
+}
+
+#[test]
+fn since_date_and_duration_forms_are_unchanged() -> Result<()> {
+    let now = instant(23);
+
+    assert_eq!(
+        TimeRange::parse("2026-10-14", None, now)?.since,
+        Utc.with_ymd_and_hms(2026, 10, 14, 0, 0, 0)
+            .single()
+            .unwrap()
+    );
+    assert_eq!(
+        TimeRange::parse("7d", None, now)?.since,
+        now - chrono::Duration::days(7)
+    );
+    Ok(())
+}
