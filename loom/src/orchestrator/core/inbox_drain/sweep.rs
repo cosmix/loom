@@ -125,9 +125,10 @@ fn retire(
     }
 }
 
-/// The permission fold-back stage completion runs, which a broker completion
-/// never reaches: it records the session's approvals into the loom-owned
-/// list. Best-effort; retirement never fails over it.
+/// The permission fold-back stage completion runs, which a completion the
+/// daemon applies from a host job never reaches: it records the session's
+/// approvals into the loom-owned list. Best-effort; retirement never fails
+/// over it.
 fn fold_back_permissions(record: &Session, repo_root: &Path) {
     let checkout = record
         .worktree_path

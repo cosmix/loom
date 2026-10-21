@@ -58,7 +58,7 @@ fn knowledge_then_build(work_dir: &std::path::Path, repo_root: std::path::PathBu
 }
 
 #[test]
-fn a_broker_completed_knowledge_stage_is_not_merged_again_and_releases_its_dependents() {
+fn a_daemon_completed_knowledge_stage_is_not_merged_again_and_releases_its_dependents() {
     let tmp = tempfile::tempdir().unwrap();
     let repo_root = tmp.path().to_path_buf();
     let work_dir = repo_root.join(".loom").join("work");

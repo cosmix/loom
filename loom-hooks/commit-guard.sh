@@ -320,7 +320,7 @@ remind_contract_freeze() {
 	fi
 	printf '%s\n' "  - do not commit" >&2
 	printf '%s\n' "  - do not complete the stage" >&2
-	printf '%s\n' "Stop after a successful freeze; loom ends this session." >&2
+	printf '%s\n' "After the freeze request, stop; loom ends this session." >&2
 	printf '%s\n' "Stopping after a refused freeze leaves the stage waiting-for-input;" >&2
 	printf '%s\n' "typing into this session or 'loom stage resume $stage_id' continues it." >&2
 	printf '%s\n' "================================================================" >&2

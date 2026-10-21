@@ -10,7 +10,7 @@ use anyhow::Result;
 /// The admin proof a `loom stage complete` invocation needs, if any.
 ///
 /// An unprivileged completion needs none. A privileged one authorizes itself
-/// through `admin_proof::authorize`, which uses a broker's `LOOM_ADMIN_PROOF`
+/// through `admin_proof::authorize`, which uses the caller's `LOOM_ADMIN_PROOF`
 /// when one is present and otherwise mints from the daemon token the operator
 /// can already read. No flag, and nothing for a human to carry between
 /// commands.

@@ -58,7 +58,7 @@ pub enum StageCommands {
         no_cache: bool,
     },
 
-    /// Mint a one-time proof for a trusted broker to hand to another process.
+    /// Mint a one-time proof to hand to another process.
     /// Operators do not need this: privileged commands authorize themselves.
     /// Supply the daemon token through LOOM_ADMIN_TOKEN; only the proof is printed.
     AdminProof {

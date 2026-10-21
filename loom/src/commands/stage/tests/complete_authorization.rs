@@ -7,7 +7,7 @@ fn privileged_completion_needs_no_proof_when_there_is_no_daemon_credential() {
     // `admin.token` exists only while the daemon runs, so with the daemon down
     // no proof is obtainable BY ANYONE. Demanding one locks the operator out of
     // their own stopped project while protecting nothing: a stage agent
-    // completes through the daemon broker (which needs the daemon) or by
+    // completes through the daemon's host job (which needs the daemon) or by
     // writing the state directory's `stages/*.md` directly (which `denyWrite` forbids it), so
     // the daemon's absence removes its ability to act, not just its credential.
     let work = tempfile::TempDir::new().unwrap();
