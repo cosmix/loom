@@ -67,7 +67,7 @@ W1 declares `pub mod digest; pub mod wait;` in `src/host_verify/mod.rs`; add `#[
    - The `relay` closure is how the caller emits the ticket (`RelayContext::check` + `emit` with the kind's `RequestKind`). That keeps `wait.rs` testable without a scratch session.
    - The scratch state file: `<scratch_dir>/host-verify/<stage>-<kind>.json`. Write it with mode 0600. Delete it after printing a terminal outcome.
    - `JobKind` serializes to snake_case for the file name.
-   - Printing: as common.md 3.7, to `out`. `✓`/`✗` lines in label order.
+   - Printing: as common.md 3.7, to `out`. A failed outcome with a `log` prints `full log: <job dir>/<log>` (absolute) after its summary. `✓`/`✗` lines in label order.
 7. **`loom check` in a session** (`commands/verify.rs::execute`):
    - In `relay::emit::mode(&EnvSnapshot::from_process_env())`'s `Relay(context)` case, call `context.check(RequestKind::Check, Some(stage_id), &cwd, uid)` (uid as `commands/stage/commit.rs` gets it).
    - The checkout is `context.worktree_path`, or the repository root for a knowledge session.

@@ -39,6 +39,7 @@ W4 removes every call into the broker from the completion command files it owns.
    - In `sandbox/settings/policy/tests.rs`, replace `enabled_sandbox_allows_nested_user_namespaces_on_linux_only` with `enabled_sandbox_never_allows_nested_user_namespaces`. It asserts the key is absent for an enabled config on every platform.
 5. **The completion hook.**
    - `../loom-hooks/loom-control-complete.sh`: delete the PostToolUse half (the broker call, output capture, outcome parsing and its messages). Keep the PreToolUse half: the pin of `loom stage complete <stage>` and the completion heartbeat (`loom_write_completion_heartbeat`). The stall monitor's `COMPLETION_ACTIVITY` depends on it.
+   - Keep `heredoc_openers_are_plain` and `completion_rejection_reason` byte for byte, with every helper the PreToolUse rejection calls. Plan 5 of the token-optimization programme edits them by name after this plan.
    - In `src/fs/permissions/hooks/config.rs`, remove the hook's PostToolUse registration and keep its PreToolUse one.
    - Update or delete the `loom-control-complete*.sh` hook tests to match. A test that pinned broker behaviour goes.
    - `bash ../scripts/check-hook-syntax.sh` must stay green.

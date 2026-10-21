@@ -69,6 +69,8 @@ pub struct CriterionOutcome {
     pub label: String,                 // "acceptance-<i>" (the 0-based [criterion i] index), "goal-backward"; daemon-completion adds others (4.4)
     pub passed: bool,
     pub summary: String,               // the printed block for this criterion, at most 8 KiB
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub log: Option<String>,           // file name, inside the job directory, of the criterion's full output
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -84,7 +86,7 @@ pub struct JobResult {
 
 ### 3.2 Store (`src/host_verify/store.rs`, owner W1)
 
-Layout under the state root (`.loom/work`): `verification/<stage-id>/current.json` (the stage's one current `JobRecord`), `verification/<stage-id>/<job-id>/progress.jsonl` (one `CriterionOutcome` per line, appended as each finishes, capped at 2 MiB), `verification/<stage-id>/<job-id>/result.json`, `verification/<stage-id>/<job-id>/child.log` (the child's stdout and stderr, capped at 4 MiB). The store keeps the current job's directory and the two before it, and removes older job directories when a new job is queued.
+Layout under the state root (`.loom/work`): `verification/<stage-id>/current.json` (the stage's one current `JobRecord`), `verification/<stage-id>/<job-id>/progress.jsonl` (one `CriterionOutcome` per line, appended as each finishes, capped at 2 MiB), `verification/<stage-id>/<job-id>/result.json`, `verification/<stage-id>/<job-id>/child.log` (the child's stdout and stderr, capped at 4 MiB), and `verification/<stage-id>/<job-id>/<label>.log` (one per criterion that ran a command: its full stdout then stderr, capped at 4 MiB with a final truncation line). The summaries are cut to the last 20 lines, so the per-criterion log is how a session reads a long failure whole. The store keeps the current job's directory and the two before it, and removes older job directories when a new job is queued.
 
 ```rust
 pub const VERIFICATION_DIR: &str = "verification";
@@ -174,7 +176,7 @@ Check pipeline:
 
 1. Resolve the stage worktree and acceptance dir as `verify_resolved_completion` does.
 2. Require `git rev-parse HEAD == record.head` and `digest::tree_digest(worktree) == record.tree_digest`. A mismatch is an error naming both values.
-3. Run acceptance (cache on unless `no_cache`), appending one `acceptance-<i>` outcome per criterion as each finishes.
+3. Run acceptance (cache on unless `no_cache`), appending one `acceptance-<i>` outcome per criterion as each finishes. Before appending, write the criterion's full output to `acceptance-<i>.log` and set `log`. A criterion answered from the cache has no output and no log.
 4. Run the goal-backward checks when the stage has any (`commands/verify.rs::run_and_verify_stage_goal`), appending `goal-backward`.
 5. Recompute the tree digest. A changed digest turns the result into an error `worktree changed during the run`.
 
@@ -192,7 +194,7 @@ The session-side protocol for `loom check <stage>` in Relay mode. Stage `daemon-
    - Not there yet: wait for it up to the wait budget.
    - Running or queued: wait for it, printing each new progress outcome's `summary` as it appears.
    - Terminal:
-     - Print the result: every failed outcome's summary, then one line per outcome `✓ <label>` or `✗ <label>`, then the error if any.
+     - Print the result: every failed outcome's summary followed by `full log: <absolute path>` when it has a log, then one line per outcome `✓ <label>` or `✗ <label>`, then the error if any.
      - Delete the scratch state.
      - Exit 0 when `Passed`, 1 when `Failed`, 4 when `Cancelled` or `Interrupted`. Exit 4 prints the detail and `Run the same command again to request a new run.`
    - Still running when the budget ends: print `Still running (<n> criteria done). Run the same command again to keep waiting.` and exit 3.
@@ -284,6 +286,7 @@ W4's `inbox_drain/apply.rs::stage_request` arm for `StageRequest::FreezeContract
 ### 4.5 What the session prints and what the doctrine says
 
 - `loom stage complete <stage>` in a session:
+  - In Legacy mode (`relay::emit::mode` returns `Legacy`: a session id without a relay scratch directory), refuses, exiting 1, with `This session cannot relay completion (no LOOM_SCRATCH_DIR). Run loom stage complete <stage> from the operator shell, or loom stage retry <stage> for a session that can.` The broker route that served such sessions is gone.
   - Refuses at once, exiting 1, with `Commit first: completion verifies committed content only.` when `git status --porcelain` is not empty.
   - Otherwise follows 3.7 with kind `complete`.
   - On exit 0 it prints `Stage '<stage>' was completed by the daemon. End the session now.`

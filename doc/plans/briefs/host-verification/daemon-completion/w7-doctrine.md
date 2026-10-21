@@ -12,10 +12,24 @@ You own:
 - `../agents/loom-verifier.md`, `../agents/loom-software-engineer.md`;
 - `../skills/loom-orchestration/SKILL.md`, `../skills/loom-plan-writer/SKILL.md`, `../skills/loom-plan-writer/references/*.md`, `../skills/loom-usage/SKILL.md`;
 - `../loom-hooks/_subagent-preamble.txt`, `../loom-hooks/commit-guard.sh`;
-- `src/orchestrator/signals/{helpers.rs, knowledge.rs, cache.rs, contract.rs}`, `src/orchestrator/signals/format/**`, `src/orchestrator/signals/tests_doctrine*.rs`;
+- `src/orchestrator/signals/{helpers.rs, knowledge.rs, cache.rs, contract.rs}`, `src/orchestrator/signals/cache/blocks.rs` (`VERIFIER_GATE`), `src/orchestrator/signals/format/**`, `src/orchestrator/signals/tests_doctrine*.rs`;
 - `src/orchestrator/adjudication/prompt/**`.
 
 Edit only the sentences about completion, `loom check`, the contract freeze, where criteria run and the verifier's gate. Leave every other sentence alone.
+
+## What plan 5 builds on (hard)
+
+Plan 5 of the token-optimization programme (`doc/plans/token-optim/PLAN-05-guidance-and-gate-output.md`) runs after this plan and edits the same doctrine. It freezes and pins some of it:
+
+- `../CLAUDE.md.template`: change no line that starts with `### `, `- ` or a number followed by `. ` (the hard stops, headings, rule bullets and steps plan 5 freezes), and add none. Rewrite Rule 4 and Rule 13 in their existing prose and code-block form.
+- `VERIFIER_GATE` keeps these exact substrings:
+  - `**The gate runs in a `loom-verifier`**`;
+  - `` `loom check <stage-id>` ``;
+  - `RUNNER-ENV`;
+  - and gains `SESSION-ENV` (fact 5).
+- `append_settled_completion_rules` (`signals/helpers.rs`) keeps `is the LAST act of your session` and `LOST WORK`.
+- `../agents/loom-verifier.md`: add no fenced code block. Plan 5's contract reads the first fenced `bash` block it adds.
+- `../skills/loom-orchestration/SKILL.md`: plan 5 deletes the paragraphs `**Complete ONLY a settled stage; ...**`, `**The gate in a standard stage.**` and `**When the stage cannot finish.**` in favour of their copies in the stable prefix. Rewrite them here anyway, so the skill is true until then, and keep every fact they carry also present in the stable-prefix copy (`append_settled_completion_rules`, `VERIFIER_GATE`, `STAGE_EXIT_RULES`).
 
 ## Size limits (hard)
 

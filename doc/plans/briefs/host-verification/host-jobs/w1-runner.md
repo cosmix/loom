@@ -24,6 +24,7 @@ W2 writes `src/host_verify/child.rs` and `tests_child.rs`; W3 writes `digest.rs`
    - Atomic writes: temp file in the same directory, then rename.
    - Refuse symlinks: open with `O_NOFOLLOW` on the target, and `symlink_metadata` on `verification/`, the stage directory and the job directory, refusing any that is a symlink. Follow the existing helpers in `src/fs/` (look for an `O_NOFOLLOW` atomic write such as the receipts append in `src/models/forward_receipt` or `src/fs/locking.rs`) and reuse one rather than writing a third.
    - `append_progress` refuses past 2 MiB of `progress.jsonl` by writing one final outcome `{label: "progress-truncated", passed: false, summary: "..."}` and ignoring later appends.
+   - `pub fn save_criterion_log(work_dir, stage_id, job_id, label: &str, bytes: &[u8]) -> Result<String>` writes `<job dir>/<label>.log` (label validated as `[a-z0-9:_-]+`), capped at 4 MiB with a final `[truncated at 4 MiB]` line, and returns the file name. W2's child calls it.
    - Pruning: when a new job is queued, remove job directories other than the newest three by `queued_at` of their record. A job directory holds only its own files; the record lives in `current.json`, so read each dir's mtime instead.
 3. **Submit and cancel** (`submit.rs`), common.md 3.3.
    - Both run under a lock on the stage directory. Use the locking primitive `daemon/server/control_complete.rs` uses (`fs::locking::locked_dir_update`).

@@ -70,6 +70,7 @@ W6 deletes the broker modules. You remove every call into them from your files, 
    - `DaemonRejected` for failed bindings carries the binding's message as `diagnostic_first_line`.
    - `Freeze` arms call `crate::host_verify::freeze::apply_freeze_result`.
 7. **In-session `loom stage complete`** (`complete.rs`, `control_session.rs`, `knowledge_complete.rs`, `complete_pipeline.rs`):
+   - In `Legacy` mode (a session id without a relay scratch directory), refuse with the message in common.md 4.5, exit 1. Test it with a hand-built `EnvSnapshot`.
    - In `Relay` mode (`relay::emit::mode`) for a stage or knowledge session:
      - Refuse `--no-verify`, `--force-unsafe` and `--assume-merged` with the existing message for sandboxed privileged flags.
      - Refuse a dirty tree with `Commit first: completion verifies committed content only.` (exit 1).
