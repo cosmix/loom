@@ -90,7 +90,7 @@
 | [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Signal gen, IPC, poll loop, spool | 110 |
 | [remote-control](patterns/remote-control.md) | Remote Control detect and resolve | 51 |
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Hooks, validation, sandbox config | 139 |
-| [stage-daemon-channels](patterns/stage-daemon-channels.md) | Stage agent to daemon | 118 |
+| [stage-daemon-channels](patterns/stage-daemon-channels.md) | Stage agent to daemon | 124 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage states, locked writes | 201 |
 | [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out, coordinators, teams | 98 |
 

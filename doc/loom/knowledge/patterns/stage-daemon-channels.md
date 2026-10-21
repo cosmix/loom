@@ -116,3 +116,9 @@ through `rg -n`; the marker arrived as `17:LOOM_CONTROL_...`, the bridge ignored
 stayed `Executing` (status: orphaned). Run the pinned command bare: no redirect, no pipe, no filter,
 even under Rule 14's output-trimming habit. Then confirm with `loom status` that the stage left
 `Executing`.
+
+## A Relayed Request Needs a Bash Call That Exits 0
+
+Claude Code runs PostToolUse hooks only after a Bash call that exits 0. A non-zero exit raises `PostToolUseFailure` instead (its payload carries `error` and no `tool_response`), and loom registers no hook for that event. `loom-relay.sh`, which delivers a `LOOM_RELAY_V1` line to the inbox, and `post-tool-use.sh`, which refreshes the heartbeat, are both PostToolUse hooks. A command that prints a relay line and then exits non-zero is never relayed, and the relay sweep does not recover it: control kinds are never swept, and a caller that loops on the same non-zero exit never produces a PostToolUse run. Session transcripts show it: 1,403 Bash results carrying `LOOM_RELAY_V1` that exited 0 all have a PostToolUse hook row, the 15 that exited non-zero none (Claude Code 2.1.299-2.1.306).
+
+Every command that emits a relay ticket exits 0 and reports its outcome in its output (`commands/stage/commit.rs::relay_commit` is the precedent). The relay line is the call's last stdout line, and `loom-relay.sh::relay_kind_at` must map the command to the kind it writes, or `loom hook relay` refuses the line; a control kind also needs a `drop_control_kinds` entry (`CONTRIBUTING.md`, "Hook Scripts").
