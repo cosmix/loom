@@ -47,20 +47,19 @@ verified: c8c167bb2dbba1c5ec65b7b9c61130873a249da2
 
 ## Scope and Evidence
 
-What PLAN-token-optimization-2026-09-13 built to measure consumption and to stop paying for
-repeated work: the provider ledger behind `loom usage`, the offline comparison, the certified
-criterion cache, and two delivery lifecycles (forward receipt, worker brief). Every line cited here
-was re-read at the revision in this page's `verified` frontmatter. That is a source check, not a
-runtime proof: the forward-receipt ordering assumption about Claude Code's transcript is still
-unmeasured (last section). The PATH `loom` can predate these commands; the clap definitions in
-source are authoritative.
+The token-accounting surface: the provider ledger behind `loom usage`, the offline comparison and
+run-evidence producer, the certified criterion cache, and two delivery lifecycles (forward
+receipt, worker brief). Every line cited here was re-read at the revision in this page's
+`verified` frontmatter. That is a source check, not a runtime proof: the open runtime question is
+in the last section. The PATH `loom` can predate these commands; the clap definitions in source
+are authoritative.
 
 ## Hook Phases
 
 | Event (hook) | Delegate | Effect |
 | --- | --- | --- |
 | PreToolUse:Read (`read-guard.sh`) | none (shell only) | rule 1 line-count advice and the sibling-read advisory from `_read_ledger.sh`; no Rust delegate runs |
-| PostToolUse (`post-tool-use.sh`) | `forward-receipt --transcript` | after a Bash call containing `codex-forward.sh task`; bound 5 s |
+| PostToolUse (`post-tool-use.sh`) | `forward-receipt` | after a Bash call containing `codex-forward.sh task`; the PostToolUse payload arrives on stdin, no flags; bound 5 s |
 | PostToolUse (`post-tool-use.sh`) | `context-ceilings` | ceiling pair, cached per session; bound 3 s |
 | PreToolUse:Task/Agent (`spawn-guard.sh`) | `worker-brief` | files the delivery record and returns the brief after the untyped-spawn gate passes; Codex-bound types are skipped; bound 5 s |
 | PreCompact (`pre-compact.sh`) | `pre-compact` | stage sessions: deletes the session's prompt delivery record; bound 3 s |
@@ -78,7 +77,8 @@ exactly like one that has nothing to write (see the forward-receipt tokenizer bu
 `loom usage` normalizes each provider's telemetry into `NormalizedEvent` rows and a
 `ProviderLedger` (`loom/src/commands/usage/provider_types.rs`, schema 1). The neutral
 `provider_data` module owns shared session/Codex inventory and Claude normalization;
-CLI, status and live token discovery consume it without core-to-command dependencies. Rules:
+CLI, status and live token discovery consume it without core-to-command dependencies. The
+clap surface is `UsageArgs` in `commands/usage/args.rs`. Rules:
 
 - **Providers stay separate.** `Provider` is Claude or Codex; `--provider` defaults to claude.
   Claude and Codex vectors are never added together or translated into each other's accounting.
@@ -103,17 +103,38 @@ CLI, status and live token discovery consume it without core-to-command dependen
   a protocol for an external producer; nothing in the tree writes them. A 5m/1h split mismatch
   marks the split unknown instead of rejecting the receipt (`receipt_provider.rs`).
 - **Attribution.** `Attribution.stage_state` is `Known`, `Unknown` or `NotApplicable`. New
-  attribution never infers a stage from a project slug.
+  attribution never infers a stage from a project slug. The requested model of a subagent row
+  comes from `spawn_join.rs`, which pairs hook spawn requests to Claude lifecycle starts by
+  agent type and second-resolution timestamps; `ambiguous` marks a pair it cannot decide.
+- **Project transcripts.** `--project` (default: this repository) reads the repository's slug,
+  its live `.worktrees/*` slugs and the slugs of worktrees loom has since removed
+  (`<slug>--worktrees-<stage>` under the Claude root; the separator keeps a sibling project
+  `<slug>-other` out, `discovery.rs`).
+- **Completeness and Codex scope.** Each provider reads `measured` or `partial` with reason codes,
+  including the evidence-loss reasons for unparseable lines, unreadable session records and
+  damaged forward receipts. `fallback_coverage_rows` is a coverage count, never a reason. A Codex
+  row counts for a project only through the threads its forward receipts name; without readable
+  receipts the scope is `Unavailable`, and `--all` is unscoped. Scope and session-record
+  reading use only the current `.loom/work`, so a window before the last `loom init` reads 0
+  Codex tokens. Reasons, windows and the session-record read:
+  [Usage Evidence](usage-evidence.md).
 - **Forward join.** `--forward-receipts-root` must be the selected project's own state root, even
   without `--project`, and conflicts with `--all`; it attaches forward receipts to forwarder
   transcripts and Codex threads (`forward_join.rs`). Join failures are counted in diagnostics.
-- **Time.** `--since` and `--until` bound event timestamps, not file mtimes.
+- **Time.** `--since` takes a duration (`7d`), an ISO date or an RFC3339 instant; `--until` is an
+  inclusive RFC3339 instant (`time_range.rs`). Both bound event timestamps, not file mtimes.
+- **Run evidence** (`--run-evidence <declaration.json> --project <dir> --since <rfc3339> --until
+  <rfc3339>`) writes the `RunEvidence` that `--compare` pairs, measuring only the stages that
+  started inside the window, refusing in-scope usage from an undeclared provider and mapping
+  review severities to critical, high, medium and low
+  ([details](usage-evidence.md#run-evidence)).
 - **Quota history** (`loom/src/quota/history.rs`). The poller appends a point after each successful
   poll (`record_successful_observation`, best effort); `read_history` never mutates the cache and
   reports `malformed`, `unsupported_schema` and `nonmonotonic` row counts plus a source state.
-  Continuity between two points compares both windows: a changed `resets_at` is `Reset`; a missing
-  window on one side, a missing reset time, or a lower `used_percent` under the same reset is
-  `Unknown`, and `Unknown` wins over `Reset`.
+  Continuity between two points compares both windows: a `resets_at` more than
+  `RESET_TOLERANCE_SECS` (300) apart is `Reset`; a missing window on one side, a missing reset
+  time, or a lower `used_percent` under the same reset is `Unknown`, and `Unknown` wins over
+  `Reset` ([quota-poller.md](quota-poller.md#history-consumers)).
 
 ## Offline Comparison (`loom usage --compare`)
 
@@ -123,10 +144,11 @@ rolls anything back.
 
 **Artifact contract** (`commands/usage/comparison_schema.rs`, `deny_unknown_fields`):
 `schema_version: 1`, an `intervention` manifest and `pairs`. The manifest names the intervention,
-the baseline and candidate implementation revisions, and the changed dimensions
-(`implementation-revision`, `provider-assignment`, `model-assignment`, `effort-assignment`); any
-unlisted workload, input, environment, contract, model or effort difference makes a pair
-incomparable. Each pair holds an opaque `work_unit_id` plus `baseline` and `candidate` runs. A run
+the baseline and candidate implementation revisions, the changed dimensions
+(`implementation-revision`, `provider-assignment`, `model-assignment`, `effort-assignment`), and
+optionally `token_rule` and `latency_tolerance_ms`; any unlisted workload, input, environment,
+contract, model or effort difference makes a pair incomparable. Each pair holds an opaque
+`work_unit_id` plus `baseline` and `candidate` runs. A run
 records workload and fixture ids, source-input revision and digest, environment and
 acceptance-contract ids, implementation revision, provider/model/effort assignments, acceptance and
 semantic-completion evidence, required checks, independent review dimensions, unresolved findings,
@@ -138,16 +160,43 @@ Artifacts over 16 MiB are refused.
 **Token-proxy verdict** (`comparison_token.rs`): raw normalized dimensions compared within each
 provider. Claude and Codex vectors stay separate, composite totals are not added to their
 components, Codex reasoning is not added to output, and Codex tokens never pass through Claude
-S1/S2/S3 weights. An improvement needs no increase in any comparable dimension and a strict
-decrease in at least one; a provider transfer, a cache-category trade-off, a missing dimension or
-an unchanged vector is inconclusive.
+S1/S2/S3 weights. With no `token_rule`, an improvement needs no increase in any comparable
+dimension and a strict decrease in at least one; a provider transfer, a cache-category trade-off,
+a missing dimension or an unchanged vector is inconclusive.
+
+**Declared net-total rule** (`"token_rule": "net-total"`, `comparison_net.rs`): per provider, a
+pair's net is `resident_input_tokens + output_tokens`, and the rule judges the mean
+baseline-minus-candidate difference over all usable pairs against 2 standard errors (sample
+variance, `n - 1`): `reduction`, `regression` or `within-noise`. A provider with fewer than 3
+pairs is `insufficient-pairs`, one with an absent dimension is `missing-dimension`
+(`missing-token-dimension`), and any pair whose two runs name different providers is
+`cross-provider-transfer`; all are inconclusive. A regression rejects (`net-total-regression`),
+noise is inconclusive (`net-total-within-noise`). The rule replaces dominance for tokens only;
+report-level reason codes still list pair-level dominance reasons next to a supported verdict.
+Quality and the quota check keep their per-pair veto: any rejected pair quality or rejected
+subscription verdict rejects the report, while an inconclusive subscription verdict does not
+hold back net-total support (quota resolves whole percents only).
+
+**Latency.** Without `latency_tolerance_ms`, each pair compares critical-path and notification
+latency strictly (any increase rejects, an absent value is `missing-latency-evidence`). With it,
+`comparison_latency.rs` judges the mean increase across pairs against the tolerance for each
+measure: over it rejects (`critical-path-regression`, `notification-latency-regression`). A
+measure absent from every pair is unmeasured: critical path is `missing-latency-evidence`
+(inconclusive); notification is reported as `notification-latency-unmeasured` and does not
+block support. A measure present in some pairs only is `missing-latency-evidence`. Produced
+run evidence always carries `notification_latency_ms: null`, so it needs the declared tolerance
+to reach `supported-candidate`.
 
 **Subscription verdict**: quota observations only, never token weights or API prices. Support
 needs matching provider/window sets and reset identities, same-reset continuity, known precision,
 no unrelated concurrent use, no worse consumption in any interval, and a reduction larger than the
-combined measurement uncertainty in at least one. A token-proxy improvement never becomes a
-subscription verdict on its own; the overall verdict also needs complete quality and latency
-evidence, and one regression in any pair rejects the candidate (no averaging).
+combined measurement uncertainty in at least one. Two `resets_at` values within
+`RESET_TOLERANCE_SECS` (300 s) are one reset, and interval lengths match when they differ by at
+most one poll interval (`POLL_INTERVAL`, 180 s; `comparison_quota.rs`). A token-proxy improvement
+never becomes a subscription verdict on its own; the overall verdict also needs complete quality
+and latency evidence. With no declared rule, one regression in any pair rejects the candidate (no
+averaging); "no averaging" holds only for an artifact that declares neither `token_rule` nor
+`latency_tolerance_ms`.
 
 **Exit codes**: 0 supported, 1 rejected (an observed quality, latency or consumption regression), 2
 inconclusive, including malformed or oversized artifacts (reason code in `--json`).
@@ -158,16 +207,14 @@ Implementation choices behind it:
   (`comparison_validation.rs`).
 - Comparison mode rejects explicit selection flags (transcript selection, provider, root, project,
   stage, plan, window); `--json` stays allowed. `UsageArgs` keeps them as `Option` and applies
-  defaults at the use site, so `has_explicit_selection` (`usage/mod.rs:147-160`) is a pure function
+  defaults at the use site, so `has_explicit_selection` (`usage/args.rs`) is a pure function
   of what clap parsed; an argv rescan against a hand-kept flag list would drift silently.
 - The artifact reader is local to `comparison.rs` (`take(limit + 1)` plus a post-read recheck,
   16 MiB). `fs/safe_read.rs::read_bounded` cannot serve it: it takes a root plus a relative path
   and opens every component no-follow, so an operator path through a symlinked `/tmp` would be
   refused.
 
-Known gaps (no artifact producer, dominance-only verdict, quota reset jitter) are listed in
-`concerns/token-accounting-and-proof-defects.md`; the paired canary protocol is plan 2 of
-the token-optimization metaplan (an untracked planning document).
+The evidence that feeds it is produced by `--run-evidence` ([Live Paired Trials](usage-evidence.md#live-paired-trials)).
 
 ## Criterion Cache Contract
 
@@ -188,18 +235,26 @@ a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
   `timed_out` (a companion job the wrapper cancelled at its own deadline), `unknown`
   (`ForwardState`); `is_terminal()` is `succeeded`, `failed`, `canceled` or `timed_out`.
   Backends: `companion`, `direct`.
-- **Writer.** `loom hook forward-receipt --transcript <path>`
-  (`loom/src/commands/hook/forward_receipt.rs`) reads the forwarder transcript and the wrapper's
-  markers, and appends under its own sidecar lock with an `O_NOFOLLOW` regular-file append, since
-  `fs::locking` opens targets with a plain `File::open` that follows symlinks. It recognises a
-  forwarding call through `exact_forward_argv` (`loom/src/models/forward_receipt/transcript.rs`),
-  which accepts only the 8-word wrapper argv. `codex-forward-guard.sh` is wider:
-  `is_exact_forward_command` accepts 8 or 10 words from the forwarder (the 10-word form adds
-  `--unit-id <unit>`), and `emit_authorized_input` rewrites the executed command to 12 words with
-  `--unit-id` and `--invocation-id inv-<32 hex>`. Recorded forwards carry `--unit-id`, so the
-  writer recognises none of them; it also runs at PostToolUse, before Claude Code writes the call's
-  result row, and skips calls with no result. No receipt forms
+- **Writer.** `loom hook forward-receipt` (`loom/src/commands/hook/forward_receipt.rs`) reads the
+  PostToolUse payload on stdin (bounded at 4 MiB; `post-tool-use.sh` pipes it after a Bash call
+  containing `codex-forward.sh task`) and needs `LOOM_WORK_DIR`, `LOOM_STAGE_ID` and
+  `LOOM_SESSION_ID`. `decode_payload` (`models/forward_receipt/payload.rs`) takes the identity
+  and the wrapper's stdout markers from the payload; only forwarder subagents run forwards, so a
+  payload without `agent_id` forms no receipt, and an absent `tool_response` decodes to no result
+  and writes nothing. It recognises the forwarding call through `forward_argv`
+  (`models/forward_receipt/transcript/argv.rs`), which accepts the three forms
+  `codex-forward-guard.sh` authorizes: 8 words, 10 words (adds `--unit-id <unit>`) and the
+  12-word form `emit_authorized_input` rewrites to (adds `--invocation-id inv-<32 hex>`), with
+  word 0 checked by `is_forward_wrapper`. Every observation of one call carries the PostToolUse
+  instant as `observed_at`, an end time; `same_fact` dedupes observations on every field but `observed_at`,
+  so a hook retry appends nothing. A companion END marker with outcome
+  `timed_out` records `timed_out` with exit 124. It appends under its own sidecar lock with an
+  `O_NOFOLLOW` regular-file append, since `fs::locking` opens targets with a plain `File::open`
+  that follows symlinks. `exact_forward_argv` (8 words only) is separate and still serves the
+  transcript classifier in `commands/subagents/forward_jobs_transcript.rs`
   ([Delivery-Proof and Quota-Continuity Defects](../concerns/token-accounting-and-proof-defects.md#delivery-proof-and-quota-continuity-defects)).
+  Stderr of the delegate is discarded by the shell. A damaged line in the receipts file stops all
+  receipt formation for that stage (persist refuses to append) and fails every Codex wait on it.
 - **Wait.** `loom subagents wait --receipt <64 hex> [--timeout <secs>] [--json]`
   (`loom/src/commands/subagents/forward_jobs_wait.rs`) polls every 2 s, default timeout 300 s, and
   never starts, cancels or retries anything. The stage comes from `LOOM_STAGE_ID`, else from a scan
@@ -257,22 +312,13 @@ recipient and the `LOOM_SESSION_ID` spawn record (`context/delivery/session.rs:1
 suppression consumer for them is future work (see
 [concerns](../concerns/token-accounting-and-proof-defects.md)).
 
-**Why briefs were missing, and the fix.** The delegate took 18.3 s on the recorded token-core spawn
-(pre-plan binary) and `spawn-guard.sh` killed it at its 3 s bound, so the spawn ran with no brief
-and no record. The worker query carried the whole stage description, and retrieval time grows with
-query length:
-
-| Query | Retrieval time |
-| --- | --- |
-| 2,048 bytes | 1.66 s |
-| about 15.6 KB | 13 s |
-| 12.1 KB envelope replay (planning) | 7.8-9.6 s |
-
-After the cap and the 5 s bound the replay takes 2.06 s on the release binary. A debug build runs
-retrieval about 4x slower (11.9 s), so time hook delegates with a release build; see
-[Worker Briefs Vanished Under a Fixed Hook Bound](../mistakes/hooks-shell-portability.md#worker-briefs-vanished-under-a-fixed-hook-bound-2026-10-20). Evidence
-from before the fix: 0 of 44 subagents in this repository's PLAN-token-flow and guard-integration
-runs carried a `loom-worker-brief nonce=` marker, against 541 transcripts in other projects.
+**Why the bounds are what they are.** Retrieval time grows with query length, and
+`spawn-guard.sh` kills the delegate at its bound with no brief and no record. Measured on the
+recorded token-core spawn: a 2,048-byte query takes 1.66 s, about 15.6 KB takes 13 s, and a
+12.1 KB envelope replay takes 7.8-9.6 s. The 2,048-byte cap and the 5 s bound keep the replay at
+2.06 s on the release binary. A debug build runs retrieval about 4x slower (11.9 s), so time hook
+delegates with a release build; see
+[Worker Briefs Vanished Under a Fixed Hook Bound](../mistakes/hooks-shell-portability.md#worker-briefs-vanished-under-a-fixed-hook-bound-2026-10-20).
 
 A Rust hook writer must resolve the state root through `WorkDir` the way `context::delivery` does:
 inside a worktree `.loom/work` is a symlink, and loom's safe writers open roots `O_NOFOLLOW`, so a
@@ -284,21 +330,20 @@ are YAML-indented and have no Markdown divider row; the parser accepts that shap
 
 ## Signal Caps and the IV Canonical Verifier
 
-`loom/src/orchestrator/signals/tests_size.rs` pins `CLAUDE_MD_TEMPLATE_MAX_BYTES` at 20,480, `STABLE_PREFIX_MAX_BYTES` at 8,192, `STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` at 10,240 and `PLAN_OVERVIEW_MAX_BYTES` at 4,096. The claim that the stable-prefix cap is 7,168 is incorrect. The overview cap mirrors `MAX_PLAN_OVERVIEW_BYTES` in `orchestrator/signals/generate/context.rs:98`. Trim doctrine before raising a cap.
+`loom/src/orchestrator/signals/tests_size.rs` pins `CLAUDE_MD_TEMPLATE_MAX_BYTES` at 20,480, `STABLE_PREFIX_MAX_BYTES` at 8,192, `STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` at 10,240 and `PLAN_OVERVIEW_MAX_BYTES` at 4,096. The overview cap mirrors `MAX_PLAN_OVERVIEW_BYTES` in `orchestrator/signals/generate/context.rs:98`. Trim doctrine before raising a cap.
 
 The IV stable prefix (`INTEGRATION_VERIFY_OVERRIDE`, `orchestrator/signals/cache.rs`) names ONE canonical verifier that runs the complete suite per immutable tree, environment and criterion contract; other reviewers run only targeted discriminating checks, which never substitute for the gate. After a review fix the owner re-evaluates invalidated checks, and only the repaired criteria cache decides reuse.
 
 ## Open Runtime Uncertainties
 
-- **Forward receipts never form, for a transcript ordering.** Claude Code writes a call's
-  tool_result row only after that call's PostToolUse hooks finish: in 828 of 831 sampled hook rows
-  across all projects (99 of 99 in this repository's stage transcripts) the PostToolUse hook row
-  precedes its result row. `loom hook forward-receipt` reads the forwarder transcript at
-  PostToolUse and skips a call with no result (`commands/hook/forward_receipt.rs:62-70`); a
-  forwarder makes one wrapper call, so no `forward-receipts.jsonl` exists and `forward_join.rs`
-  joins nothing. The PostToolUse payload's own `tool_response` carries the result
-  (`loom-hooks/codex-forward-result.sh:32-40` reads it). Plan 2 of the token-optimization metaplan
-  moves the forward receipt onto the payload.
+- **Does a failed forward fire PostToolUse?** `codex-forward.sh` exits 124 on its unit deadline
+  (`codex-forward.sh:363`), and the receipt writer runs only from `post-tool-use.sh` on
+  PostToolUse; no PostToolUseFailure hook is registered (`fs/permissions/hooks/config.rs`). If
+  Claude Code fires only PostToolUseFailure for a Bash call that exits non-zero, neither the
+  `running` nor the `timed_out`/124 line forms (the companion `timed_out` path is reached only
+  through unit tests) and that forward's Codex rows read foreign. Receipts for successful
+  forwards form (checked through the real hook and binary at integration-verify). Needs a live
+  check by the operator; a stage session has no network.
 
 ## Read Advisories and Reread Measurement
 

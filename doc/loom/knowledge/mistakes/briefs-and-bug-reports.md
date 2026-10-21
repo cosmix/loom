@@ -154,3 +154,25 @@ The pre-commit hook runs markdownlint with automatic fixes on every staged markd
 **Prevention:** loom's doctrine, skills, signals, lints and defaults never name a tool, path or config that only some projects have. Before a brief touches a generic surface, check every example against an unrelated project. Repo-specific hygiene such as markdownlint stays in this repository's hooks and in plans that run on loom itself.
 
 **Fix:** the example became `node_modules/.bin/<tool>` / `.venv/bin/<tool>`, and the skill now says a lint or format check is a criterion only when the target project already runs it with its own config.
+
+## Briefs for Workers That Cannot Compile Must Pin Import Roots, Placement and Error Cases
+
+**What happened:** across the usage-evidence plan four workers wrote code they could not compile
+or lint (the verify guard blocks both; codex units landed last), and each broke on something the
+brief left open: a `#[path]` child test module (`comparison_rules_tests.rs`) imported `super::`
+for the parent's items; integer literal types were left ambiguous; a review-fix worker appended
+`#[cfg(test)] mod tests` above an existing private fn in `comparison.rs`, failing clippy
+`items_after_test_module` under `-D warnings`; a payload decoder bailed on a missing
+`tool_response` although the converted hook test `absent_tool_result_writes_nothing` expects
+`Ok` with nothing written, because the brief listed the missing result among the decode errors; a
+fix worker ran `git status --short` once to see what `cargo fmt` touched, against the preamble.
+
+**Why:** a parallel fan-out compiles nothing until every piece lands, and a brief that omits a
+rule leaves a blind worker to guess it.
+
+**Prevention:** a brief that declares a `#[path]` child test module states the import root; a
+brief that adds an inline test module says "at the end of the file"; error cases come from the
+existing tests, not from a list of what "should" fail (an absent result decodes to `None`, and
+the caller already returns `Ok`); route one integration-fix worker after a parallel wave; tell fix
+workers the orchestrator reports tree state and that `cargo fmt` over the crate may reformat a
+sibling's files.

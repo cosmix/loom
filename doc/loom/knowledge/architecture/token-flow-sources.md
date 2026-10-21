@@ -19,7 +19,7 @@
 ## Quota History
 
 - The quota poller samples every 180 s, so quota slopes need a window of about 30 minutes.
-- `.loom/work/quota/history/<provider>.jsonl` flips the five-hour `resets_at` between two values one second apart on successive polls. `loom/src/quota/history.rs` `continuity_from_windows` marks any `resets_at` difference in either window as `Reset`, and the history store skips a row identical to the last one. A consumer that needs one reset period segments on the window's own `resets_at` with a tolerance instead of trusting `HistoryContinuity`.
+- `.loom/work/quota/history/<provider>.jsonl` flips the five-hour `resets_at` between two values one second apart on successive polls. `loom/src/quota/history.rs` `continuity_from_windows` marks a `resets_at` difference of more than `quota::RESET_TOLERANCE_SECS` (300) in either window as `Reset`, and the history store skips a row identical to the last one. The tracker (`tokens/quota_points.rs`) ignores `HistoryContinuity` and segments on `resets_at` with the same constant, because the continuity mark also flags seven-day window changes.
 
 ## Maintainability Baseline
 

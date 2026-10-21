@@ -1,6 +1,6 @@
 # Spurious waiting-for-input stages
 
-> Stages flipped to waiting-for-input
+> Spurious waiting-for-input
 
 ## What happened
 

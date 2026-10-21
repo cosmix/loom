@@ -165,22 +165,14 @@ The by-model legend aligns swatches, model names, shares and rates in shared gri
 
 ## Delivery-Proof and Quota-Continuity Defects
 
-Verified against the tree and this machine's transcripts; each blocks a token-saving claim that
-depends on it. The remediation sequence is the token-optimization metaplan (an untracked planning document).
+Verified against the tree; each gap blocks or weakens a token-saving claim that depends on it.
 
-- **Forward receipts never form.** Two causes, each enough alone. `loom hook forward-receipt`
-  reads the transcript at PostToolUse, before the call's result row exists, and skips calls with no
-  result (`loom/src/commands/hook/forward_receipt.rs`, `process`). Its argv parser
-  `exact_forward_argv` (`loom/src/models/forward_receipt/transcript.rs`) accepts only the 8-word
-  wrapper argv, while recorded forwards carry `--unit-id` (10 words) and `codex-forward-guard.sh`
-  (`emit_authorized_input`) rewrites the executed command to 12 words with `--invocation-id`. No
-  `forward-receipts.jsonl` exists, and Codex rows have no thread linkage.
 - **Worker-brief records credit nobody.** `store_record` files `<key>.json` at issue, and a
   dependent stage's `dependency_chunk_ids` reads them, but `delivered_to_session`
   (`loom/src/context/delivery/session.rs:104-126`) matches only the session's prompt recipient and
   its `LOOM_SESSION_ID` spawn record, so a worker's own prompt hook never skips what its brief
   carried. A suppression consumer, or removing the nonce and marker whose only remaining consumer
-  is `spawn-guard.sh` validation, is deferred to plan 4 of the token-optimization metaplan.
+  is `spawn-guard.sh` validation, is deferred.
 - **Compaction keeps spawn-brief credit (accepted limit).** `loom hook pre-compact` deletes only
   the prompt recipient's delivery record (`loom/src/commands/hook/pre_compact.rs`).
   `already_delivered` (`loom/src/commands/hook/user_prompt.rs:239-248`) still passes the
@@ -188,12 +180,45 @@ depends on it. The remediation sequence is the token-optimization metaplan (an u
   context epoch is unchanged. The case has not occurred: 0 of 282 stage transcripts on this
   machine compacted, and a compacted stage session re-reads its signal
   (`loom-hooks/session-start.sh:147-155`).
-- **Quota continuity reads jitter as a reset.** `continuity_from_windows`
-  (`loom/src/quota/history.rs:211-212`) marks any `resets_at` change as a reset, and
-  `reset_incomparable` (`loom/src/commands/usage/comparison_quota.rs:121-128`) compares `resets_at`
-  exactly across arms. The Claude five-hour and seven-day `resets_at` values alternate by one
-  second between polls. Quota is also reported in whole percents, so a subscription verdict cannot
-  resolve a plausible saving even once the jitter is tolerated.
+- **Quota resolution.** Quota is reported in whole percents, so a subscription verdict cannot
+  resolve a plausible saving. The offline comparison therefore lets an inconclusive subscription
+  verdict stand beside a supported net-total verdict and keeps only a rejected one as a veto
+  ([Offline Comparison](../architecture/token-accounting-and-receipts.md#offline-comparison-loom-usage---compare)).
+- **`exact_forward_argv` still rejects the 10-word forward.** `forward_jobs_transcript.rs`
+  (`loom subagents` classification) reads forwarder transcripts through `exact_forward_argv`,
+  which accepts only the 8-word wrapper argv, so a recorded forward carrying `--unit-id` is
+  invisible to it. The receipt writer uses the wider `forward_argv`
+  (`models/forward_receipt/transcript/argv.rs`); widening `exact_forward_argv` changes
+  `loom subagents` classification, so it was left alone.
+- **A "Full output saved to:" notice forms no receipt.** When Claude Code replaces a Bash result
+  with that notice, the payload's stdout decodes as `Absent` (`marker.rs` needs the START marker
+  on line 0), so `forward-receipt` writes nothing; `codex-forward-result.sh` handles the notice,
+  the payload writer does not. The forward's Codex rows read foreign.
+- **A damaged receipt line disables receipt formation.** `persist` refuses to append to a file
+  with a malformed or truncated line (`commands/hook/forward_receipt.rs:231-234`), every Codex
+  wait on the stage then fails, `post-tool-use.sh` discards the delegate's stderr, and there is
+  no repair step or trace file. `loom usage` reads it as `malformed-forward-receipts`.
+- **Receipts are unauthenticated.** `receipt_id` is an unkeyed SHA-256 of public identifiers
+  (`models/forward_receipt.rs:127`), so anyone able to write `forward-receipts.jsonl` can name a
+  Codex thread and have `codex_scope.rs` count its rows. Receipt integrity rests on work-dir
+  permissions.
+- **Spawn requests join Claude starts at one-second resolution.** `spawn_join.rs` stamps a spawn
+  with the hook's completion time, so parallel same-type spawns straddling a second boundary may
+  get swapped requested models; a single-model rule applies one model to every start even when
+  spawn and start counts differ; an oversized or unreadable ledger reads as empty with no
+  diagnostic. Making adjacent-second pairing ambiguous would rewrite
+  `spawn_join_tests.rs:72-155`, a test-integrity event, so it was disputed rather than fixed.
+- **Completeness blind spots.** Claude's `missing_timestamp_rows` counts every row type without a
+  timestamp (29,986 on a real three-day window), so it is a diagnostic, not a reason, and a usage
+  row without a timestamp is dropped without the report reading partial. Codex scope and
+  session-record completeness read only the current `.loom/work`, so a window before the last
+  `loom init` reads 0 Codex tokens. With no work dir the missed-transcript check cannot run and
+  Claude reads `measured` with no reason, while Codex reads `codex-scope-unavailable`. An invalid
+  session file of any stage makes every `--stage` report partial. `forward_join.rs` merges the
+  receipt-load diagnostics (`unreadable_files`) into the Claude report as well, so an unreadable
+  receipts file marks Claude partial although Claude totals do not depend on receipts.
+- **`loom plan verify --strict` lints untracked trees.** The provision lint scans untracked
+  directories such as `output/`, so a stray package directory fails verification.
 
 ## Unimplemented Reviewer Suggestions From the Delivery-Truth Plan
 
@@ -234,3 +259,59 @@ sibling-advisory wording, the `_bounded.sh` comment fix) are not listed.
 - **Relay-producing commands piped through a filter (recurrence).** `loom stage commit | rg -o ...` dropped the `LOOM_RELAY_V1` line, so the relay hook never saw the ticket and `loom request status` reported it not relayed. The same shape is in [Memory Relay Drain Gap](../mistakes/memory-relay-drain-gap.md). Proposal: a PreToolUse warning in `poll-guard.sh` when a Bash command pipes `loom stage commit` or `loom memory` into anything but `tail -3`; the instruction alone has not prevented the recurrence.
 - **BSD hook suite sits at the criterion timeout.** `LOOM_HOOK_TEST_BSD=1 run-all.sh` takes about 5.5 minutes standalone against the 300 s criterion limit, with per-test timings unchanged by the watchdog fix (171.9 s against 170.8 s). Proposal: split the suite across criteria or raise that criterion's timeout.
 - **`codex-forward-guard.sh` classifies test runs by ancestor environment.** The `bounded-stdin.py` case exits 2 instead of 0 when an ancestor process carries stage evidence, which fails in a stage's own gate; see [Hook Tests Inherit the Live Session's Environment](../mistakes/hooks-shell-portability.md).
+
+## Unimplemented Reviewer Suggestions From the Usage-Evidence Plan
+
+Open items from the plan's reviews, all small. The implemented ones are gone from this list.
+
+- **Receipt writer.** `post-tool-use.sh:246` prefilters on `*"codex-forward.sh task"*`, stricter
+  than `is_forward_wrapper`: a forwarder that quotes the absolute wrapper path runs the forward
+  and forms no receipt, so its Codex rows read foreign with no partial reason (`*codex-forward.sh*`
+  would match). `is_forward_wrapper` accepts the absolute spelling only in its canonical form
+  (`claude_hooks_dir` canonicalizes) while the shell guard also accepts the unresolved
+  `$HOME` path, and `forward_argv` accepts any `[A-Za-z0-9._-]{1,64}` model and effort while the
+  guard allows a fixed list. `plain_child` in `forward_receipt.rs` checks directories with
+  `exists()` and `symlink_metadata`, then opens by path with `O_NOFOLLOW` on the last component
+  only and does not check `nlink`; a dirfd-based open like `safe_read::open_regular_no_follow`
+  would close the swap and hard-link window. `read_payload` is the fourth bounded-stdin reader
+  in `commands/hook` (`worker_brief.rs`, `review_harvest.rs`, `relay.rs`); a shared helper in
+  `hook/mod.rs` would remove the duplication.
+- **Codex scope.** `unthreaded` counts receipts observed in `[since, until]` only, so a
+  thread-less receipt observed within `MAX_FORWARD_SECS` after `until` leaves its in-window rows
+  foreign with no reason (`[since, until + MAX_FORWARD_SECS]` would cover it). No test pins the
+  inclusive bounds (a receipt at exactly `since + 600 s`, exactly `until`, exactly `since`), so a
+  `>=` to `>` mutation passes. `classify_response_ids` in `codex_provider.rs` runs before the
+  scope drops foreign rows: a foreign and a project thread sharing a `response_id` with identical
+  usage (a forked or replayed rollout) could classify the project row `DuplicateExact` and lose it
+  once the foreign row goes; scope before classifying. Fresh forwarder threads cannot trigger it.
+- **Comparison and evidence.** `--run-evidence` does not conflict with `--windows` or `--json`,
+  which it ignores. A provider the declaration assigns but that has no measured rows makes
+  `accounting_provenance` unknown and excludes the pair from net-total
+  (`net-total-excluded-pairs`); the README does not say so. `net()` maps a `u64` overflow of
+  resident plus output to `None`, reported as `missing-dimension`. `TokenRule` derives
+  `Serialize` that nothing uses. `run_evidence.rs` and `comparison.rs` both `File::open` an
+  operator path, so a FIFO blocks and a symlink is followed; `print_evidence` repeats
+  `render_json`. The quota tolerance tests stop at 1, 200, 281 and 301 s, so the exact `300 s`
+  and `180 s` boundaries are unpinned, and nothing pins the human-mode failure report that now
+  prints a `reasons:` line.
+- **Sections.** `sections/tools.rs::is_subcommand` lists `rg`, `fd` and `jq`, so each distinct
+  `rg "pattern"` becomes its own key and the top 20 fills with per-pattern rows while the
+  aggregate `rg` volume never shows. `lifecycle_orientation.rs` drops entries older than
+  `--since` before scanning, so a session that began before the window measures orientation from
+  the cutoff (the transcript's unclipped `first_user_entry` is the real start), and it counts
+  synthetic-model requests that `agents.rs` and `polling.rs` skip. `polling.rs::tool_kind`
+  classifies by command prefix, so `git status && loom stage complete s1` counts as observation,
+  and a command repeated three times counts as observation even when it does work;
+  `repeated_set` duplicates `repeated_commands`.
+- **Duplicated helpers and test gaps.** `spawn_join.rs` reimplements `json_lines`,
+  `stage_directories`, `plain_directory` and `MAX_LEDGER_BYTES` from `provider_data/ledger.rs`
+  (a third `json_lines` lives in `commands/status/data/execution_models.rs`), and
+  `AMBIGUOUS_MODEL` is `pub(crate)` for a file-local use. No test pins `same_fact`'s comparison of `backend` and `backend_id` (dropping either passes). No test covers `receipt_matches` or the
+  receipt side of `resolve_wait_codex_execution`, and the damaged-journal error does not name the
+  receipts path. `discovery_tests.rs` pins `<slug>-other` but not `<slug>x--worktrees-y`. No test
+  pins the stderr filtering of session-controlled names in `completeness.rs`, and `inline_safe`
+  caps the whole enumeration diagnostic at 200 characters, which can elide a parse error tail.
+- **Replay harness.** `check_shape` compares asset paths as strings while `asset_paths()` sorts
+  `PathBuf`s component-wise, so a skill named `loom-md` beside `loom-md-tables` would fail the
+  self-check; no such pair exists. Signals render with the real `HOME` while `worker-brief` runs
+  with an isolated one, so developer-level config could shift byte counts between machines.

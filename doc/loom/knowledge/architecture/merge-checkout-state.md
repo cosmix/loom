@@ -1,6 +1,6 @@
 # Merge Checkout State
 
-> Guarded fast-forward; blocked retry
+> Guarded fast-forward
 
 ## Merge Checkout State
 

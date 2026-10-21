@@ -96,3 +96,39 @@
 **Prevention:** an automated commit in the operator's checkout stages the exact paths it changed, never `-u` or `-A`. Paths the operator already staged still ride along; `git commit --only -- <paths>` would exclude those too.
 
 **Fix:** the completion commit stages only the plan rename, and `unrelated_tracked_edits_stay_out_of_the_plan_done_commit` pins it. The follow-up commits `d4d8fe20` and `ac6c55f2` completed the swept work.
+
+## The Full Suite Fails 26 Tests in a Verifier Shell and Passes Under `loom check`
+
+**What happened:** four stages and the integration-verify gate each saw `cargo test --all-targets`
+fail the same 26 tests in a Claude Code sandboxed shell, none touched by the diff: 17 lib tests
+(`verify::before_after`, `goal_backward::truths`, criteria `working_dir`, confine `tool_tests`)
+with `EROFS` at `/var/tmp/.loom-command-*`, and 9 `hooks_subagent_verify_guard` integration tests.
+
+**Why:** `confine_scratch.rs` `scratch_roots` drops the root equal to the tree under test, leaving
+only `/tmp` and `/var/tmp`, both read-only in the sandbox. The 9 guard tests refuse a `TMPDIR`
+containing `claude` (`tests/integration/hooks_subagent_verify_guard.rs:44`); `TMPDIR` pointed at
+`$LOOM_SCRATCH_DIR` fixes those 9 and not the 17.
+
+**Prevention:** judge these names by `loom check <stage-id>`, the confined runner `loom stage
+complete` uses, which passes the full suite. Treat them as verifier-shell environment only when
+the diff touches neither `src/verify` nor the verify guard. Do not rerun with a `TMPDIR` override
+in a subagent shell to chase the 17.
+
+## A Symlinked Work Dir Made Every Session Record Read as Unreadable
+
+**What happened:** `loom usage` run from a stage worktree reported Claude `partial` with
+`unreadable-session-records` for all 8 records and printed no stderr line, while the same window
+with `--project` pointing at the main checkout read 0 unreadable.
+
+**Why:** from a stage worktree `.loom/work` is a symlink to the main checkout's work dir.
+`completeness.rs::missed_claude_transcripts` enumerated session records and then read each one
+through `fs::safe_read::read_to_string_bounded`, which opens its root with `O_NOFOLLOW`
+(`safe_fs.rs`, `safe_open_dirfd`), so every read through the symlinked root failed. The
+enumeration diagnostics were counted but never printed.
+
+**Prevention:** canonicalize a work dir once before handing it to a bounded no-follow reader as
+its root, and print per-record read failures (through `inline_safe`) so a count never stands
+alone. Run a new `loom usage` check from inside a stage worktree, where the symlink exists.
+
+**Fix:** `missed_claude_transcripts` resolves the root with `std::fs::canonicalize` and prints
+each diagnostic to stderr.

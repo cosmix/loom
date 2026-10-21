@@ -1,6 +1,6 @@
 # Context Retrieval Routing
 
-> Intent routing, neighbours, caveats
+> Intent routing, neighbours
 
 How a source-channel query is classified and routed, how neighbours are explained and capped, and
 what a pack says about its own weakness. The base ranking and the exact-rung gate are in

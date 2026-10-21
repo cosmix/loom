@@ -219,7 +219,8 @@ session's prompt delivery record; `pre-compact.sh` calls it in worktree sessions
 `reconcile-graph` (the detached, debounced source-graph self-heal), `context-ceilings` (the
 `<main>:<subagent>` pair `post-tool-use.sh` caches), `project-types`, `relay` (behind
 `loom-relay.sh`), `review-harvest` (`subagent-stop.sh`), and the receipt and brief delegates:
-`forward-receipt --transcript` (`post-tool-use.sh`, after a forwarding Bash call) and
+`forward-receipt` (`post-tool-use.sh` pipes the PostToolUse payload to its stdin after a Bash
+call containing `codex-forward.sh task`; it takes no flags) and
 `worker-brief` (`spawn-guard.sh`, skipped for Codex-bound spawn types). The shell runs the hook-called delegates through `loom_run_bounded`
 (`_bounded.sh`): 3 s for `context-ceilings` and `pre-compact`, 5 s for `worker-brief` and
 `forward-receipt`, 10 s for `review-harvest`; every failure is a silent no-op.

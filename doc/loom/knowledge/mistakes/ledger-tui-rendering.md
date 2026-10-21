@@ -2,7 +2,7 @@
 ---
 # Ledger Tui Rendering
 
-> Ledger TUI padding, fan-out, panics
+> Ledger TUI rendering bugs
 
 ## Ledger TUI: Wide Glyphs, Fan-Out Duplication, and Latent Panics (2026-09-04)
 
