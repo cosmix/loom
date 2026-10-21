@@ -29,6 +29,15 @@ pub struct UsageArgs {
     #[arg(long, value_name = "ARTIFACT.json")]
     pub compare: Option<PathBuf>,
 
+    /// Write one run's RunEvidence (the input `--compare` pairs) from a declaration file and this project's measured window
+    #[arg(
+        long,
+        value_name = "DECLARATION.json",
+        conflicts_with_all = ["compare", "all", "provider", "stage", "plan"],
+        requires_all = ["project", "since", "until"]
+    )]
+    pub run_evidence: Option<PathBuf>,
+
     /// How far back to look: a duration (`7d`, `24h`, `30m`), an ISO date (`2026-08-01`) or an RFC3339 instant (`2026-08-01T06:30:00Z`) (default: 7d)
     #[arg(long)]
     pub since: Option<String>,
