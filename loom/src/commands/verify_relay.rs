@@ -16,7 +16,7 @@ use crate::host_verify::wait::{self, TicketSink, WaitOutcome, WaitSite};
 use crate::host_verify::JobKind;
 use crate::models::stage::{Stage, StageType};
 use crate::relay::emit::{mode, EnvSnapshot, RelayContext, RelayMode};
-use crate::relay::RequestKind;
+use crate::relay::{HostJobRequest, RequestKind};
 use crate::verify::transitions::load_stage;
 
 const LEGACY_REFUSAL: &str = "This session cannot relay verification (no LOOM_SCRATCH_DIR). Run \
@@ -24,7 +24,13 @@ const LEGACY_REFUSAL: &str = "This session cannot relay verification (no LOOM_SC
 
 /// Route `loom check <stage_id>` by where it runs. Returns for the operator's
 /// shell, which then runs locally; a session's outcome ends the process here.
-pub(super) fn run(stage_id: &str, work_dir: &Path, suggest: bool) -> Result<()> {
+/// `criteria` is the `--criterion` selection; empty requests every criterion.
+pub(super) fn run(
+    stage_id: &str,
+    work_dir: &Path,
+    suggest: bool,
+    criteria: &[usize],
+) -> Result<()> {
     let mut out = std::io::stdout();
     match mode(&EnvSnapshot::from_process_env()) {
         RelayMode::Operator => Ok(()),
@@ -38,7 +44,7 @@ pub(super) fn run(stage_id: &str, work_dir: &Path, suggest: bool) -> Result<()> 
             }
             // Every session outcome ends here: requested and pending exit 0
             // too, and must never fall through to the local run.
-            let code = request_or_wait(&context, stage_id, work_dir, &mut out)?;
+            let code = request_or_wait(&context, stage_id, work_dir, criteria, &mut out)?;
             let _ = out.flush();
             std::process::exit(code)
         }
@@ -90,6 +96,7 @@ fn request_or_wait(
     context: &RelayContext,
     stage_id: &str,
     work_dir: &Path,
+    criteria: &[usize],
     out: &mut dyn Write,
 ) -> Result<i32> {
     let target = match target(context, stage_id, work_dir) {
@@ -104,11 +111,13 @@ fn request_or_wait(
         knowledge: target.knowledge,
         kind: JobKind::Check,
         no_cache: std::env::var("LOOM_ACCEPTANCE_CACHE").as_deref() == Ok("0"),
+        // The selection rides on the ticket; the daemon's job runs only it.
+        criteria: (!criteria.is_empty()).then_some(criteria),
         scratch_dir: &context.scratch_dir,
         budget: wait::budget_for(&target.stage),
     };
     let mut sink = TicketSink::default();
-    let mut relay = |request: &crate::relay::HostJobRequest| -> Result<String> {
+    let mut relay = |request: &HostJobRequest| -> Result<String> {
         let payload = serde_json::to_value(request)?;
         let line = context.emit(RequestKind::Check, payload, "loom check", false, &mut sink)?;
         Ok(line.id)

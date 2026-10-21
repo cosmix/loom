@@ -263,6 +263,7 @@ mod host_job_tests {
             head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
             tree_digest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             no_cache: false,
+            criteria: None,
         };
         let job = match submit(&work_dir, &request, chrono::Utc::now()).unwrap() {
             Submission::Queued(record) => record,

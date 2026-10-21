@@ -1,11 +1,14 @@
 //! Configuration types for acceptance criteria execution
 
+use std::collections::BTreeSet;
 use std::fmt;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::models::stage::CommandConfinement;
+use anyhow::{bail, ensure, Result};
+
+use crate::models::stage::{CommandConfinement, Stage};
 
 use super::cache::CachePolicy;
 use super::result::CriterionResult;
@@ -50,6 +53,10 @@ pub struct CriteriaConfig {
     /// Told each criterion's 0-based index and result as it finishes, before
     /// the next one starts. `None` by default.
     pub observer: Option<CriterionObserver>,
+
+    /// The 0-based indices of the criteria to run; `None` runs every one. A
+    /// criterion outside the set is neither run, cached nor reported.
+    pub only: Option<BTreeSet<usize>>,
 }
 
 /// The function a [`CriterionObserver`] wraps.
@@ -80,6 +87,7 @@ impl Default for CriteriaConfig {
             cache_dir: None,
             tree_root: None,
             observer: None,
+            only: None,
         }
     }
 }
@@ -123,5 +131,63 @@ impl CriteriaConfig {
     pub fn with_observer(mut self, observer: CriterionObserver) -> Self {
         self.observer = Some(observer);
         self
+    }
+
+    /// Run only the criteria at `only` (0-based); `None` runs every one.
+    pub fn with_only(mut self, only: Option<BTreeSet<usize>>) -> Self {
+        self.only = only;
+        self
+    }
+
+    /// Whether this run includes the criterion at `index`.
+    pub fn selects(&self, index: usize) -> bool {
+        self.only.as_ref().is_none_or(|only| only.contains(&index))
+    }
+
+    /// Refuse a selection that runs nothing or names an index past the
+    /// stage's list: either would report a pass for criteria that never ran.
+    pub(super) fn check_selection(&self, stage: &Stage) -> Result<()> {
+        let Some(only) = &self.only else {
+            return Ok(());
+        };
+        ensure!(!only.is_empty(), "the criterion selection is empty");
+        let len = stage.acceptance.len();
+        if let Some(index) = only.range(len..).next() {
+            bail!(
+                "criterion {index} is out of range: stage '{}' has {len} acceptance criteria, \
+                 numbered from 0",
+                stage.id
+            );
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::stage::AcceptanceCriterion;
+
+    #[test]
+    fn a_selection_past_the_list_or_empty_is_refused() {
+        let mut stage = Stage::new("subset".to_string(), None);
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("true".to_string()));
+        stage.add_acceptance_criterion(AcceptanceCriterion::Simple("true".to_string()));
+        let select = |only: &[usize]| {
+            CriteriaConfig::default().with_only(Some(only.iter().copied().collect()))
+        };
+
+        let error = select(&[1, 2]).check_selection(&stage).unwrap_err();
+        assert!(
+            error.to_string().contains("criterion 2 is out of range"),
+            "{error}"
+        );
+        assert!(
+            error.to_string().contains("has 2 acceptance criteria"),
+            "{error}"
+        );
+        assert!(select(&[]).check_selection(&stage).is_err());
+        assert!(select(&[0, 1]).check_selection(&stage).is_ok());
+        assert!(CriteriaConfig::default().check_selection(&stage).is_ok());
     }
 }

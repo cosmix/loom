@@ -116,6 +116,7 @@ fn running_record(stage_id: &str, pid: Option<u32>) -> JobRecord {
         head: "h".to_string(),
         tree_digest: "d".to_string(),
         no_cache: false,
+        criteria: None,
         state: JobState::Running,
         requests: vec!["r1".to_string()],
         queued_at: Utc::now(),

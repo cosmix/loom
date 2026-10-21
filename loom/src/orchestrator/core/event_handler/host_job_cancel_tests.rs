@@ -24,6 +24,7 @@ fn queue_check(work: &Path) -> JobRecord {
         head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         tree_digest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         no_cache: false,
+        criteria: None,
     };
     // Queued long past any job deadline, so the job no longer holds the
     // stage's stall escalation (common.md 4.5) and recovery runs.

@@ -26,7 +26,7 @@ const NEW_JOB: &str = "22222222222222222222222222222222";
 pub(super) struct Fx {
     _tmp: TempDir,
     pub(super) checkout: PathBuf,
-    work_dir: PathBuf,
+    pub(super) work_dir: PathBuf,
     scratch: PathBuf,
 }
 
@@ -74,6 +74,7 @@ impl Fx {
             knowledge: false,
             kind: JobKind::Check,
             no_cache,
+            criteria: None,
             scratch_dir: &self.scratch,
             budget,
         }
@@ -83,7 +84,7 @@ impl Fx {
         self.scratch.join("host-verify").join("s1-check.json")
     }
 
-    fn job(&self, id: &str, state: JobState, requests: &[&str]) -> JobRecord {
+    pub(super) fn job(&self, id: &str, state: JobState, requests: &[&str]) -> JobRecord {
         JobRecord {
             id: id.to_string(),
             stage_id: STAGE.to_string(),
@@ -92,6 +93,7 @@ impl Fx {
             head: head(&self.checkout).unwrap(),
             tree_digest: tree_digest(&self.checkout).unwrap(),
             no_cache: false,
+            criteria: None,
             state,
             requests: requests.iter().map(|id| id.to_string()).collect(),
             queued_at: Utc::now(),

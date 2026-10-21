@@ -296,10 +296,8 @@ pub enum Commands {
         #[arg(long)]
         suggest: bool,
 
-        /// Skip the acceptance-criterion pass cache: run every criterion for
-        /// real regardless of whether an identical tree already passed it.
-        #[arg(long = "no-cache")]
-        no_cache: bool,
+        #[command(flatten)]
+        args: crate::commands::verify::CheckArgs,
     },
 
     /// Build skill keyword index for skill-trigger hook

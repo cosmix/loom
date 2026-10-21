@@ -81,6 +81,7 @@ fn record(head: String, tree_digest: String) -> JobRecord {
         head,
         tree_digest,
         no_cache: true,
+        criteria: None,
         state: JobState::Running,
         requests: vec!["r1".to_string()],
         queued_at: now,

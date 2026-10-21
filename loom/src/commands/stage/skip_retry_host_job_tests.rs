@@ -25,6 +25,7 @@ fn retry_cancels_the_stages_host_job() {
         head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         tree_digest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         no_cache: false,
+        criteria: None,
     };
     let Submission::Queued(job) = submit(temp.path(), &request, Utc::now()).unwrap() else {
         panic!("expected a queued job");

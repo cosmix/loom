@@ -21,6 +21,7 @@ pub(super) struct RequestState {
     pub(super) head: String,
     pub(super) tree_digest: String,
     pub(super) no_cache: bool,
+    pub(super) criteria: Option<Vec<usize>>,
     pub(super) submitted_at: DateTime<Utc>,
 }
 
@@ -121,6 +122,7 @@ fn pruned(site: &WaitSite<'_>, state: &RequestState, job_id: &str) -> JobRecord 
         head: state.head.clone(),
         tree_digest: state.tree_digest.clone(),
         no_cache: state.no_cache,
+        criteria: state.criteria.clone(),
         state: JobState::Cancelled,
         requests: vec![state.request_id.clone()],
         queued_at: state.submitted_at,

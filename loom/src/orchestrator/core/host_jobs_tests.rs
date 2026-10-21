@@ -68,6 +68,7 @@ fn queue(work: &Path, kind: JobKind) -> JobRecord {
         head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         tree_digest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         no_cache: false,
+        criteria: None,
     };
     match submit(work, &request, Utc::now()).unwrap() {
         Submission::Queued(record) => record,

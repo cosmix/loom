@@ -218,6 +218,7 @@ pub fn complete_record(state: JobState, head: &str, tree_digest: &str) -> JobRec
         head: head.to_string(),
         tree_digest: tree_digest.to_string(),
         no_cache: false,
+        criteria: None,
         state,
         requests: vec!["r1".to_string()],
         queued_at: now,
