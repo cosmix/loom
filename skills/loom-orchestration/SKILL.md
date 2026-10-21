@@ -61,14 +61,24 @@ description"`, and wait for it with `loom request status <id> --wait 90`; never 
 **Complete ONLY a settled stage; completion is the session's LAST act.** All three conditions still
 hold (an abandoned subagent counts as returned only if you recorded why), every defect fixed and
 re-verified, `git status` clean. The stop hook only WARNS; confirming completion succeeded is your
-job. Afterwards STOP: post-completion work is LOST WORK.
+job. Completion asks the daemon to verify the committed tree in a host job: read the first line,
+`Host job: <state>`, never the exit code alone. `requested` or `pending` (exit 0) is not a result:
+run the same command again in your next Bash call. `completed` (exit 0): the daemon completed the
+stage; STOP, since post-completion work is LOST WORK. `failed` or `rejected` (exit 1): a criterion
+or check failed, or the daemon refused to complete; `refused` (exit 1): the request was refused or
+the tree is not committed. Fix, commit, run again. `stopped` (exit 4): the run was cancelled or
+interrupted; run again. Do nothing else while it waits.
 
 **The gate in a standard stage.** Once every implementer has returned, spawn ONE `loom-verifier`
 BY AGENT TYPE, without `name`, briefed with the stage's acceptance criteria and the project's build,
 test, lint, and format commands. It runs them on the complete tree, writes nothing, and reports PASS or FAIL per
 step with the command, exit code, and failing excerpt. It runs the acceptance criteria through
-`loom check <stage-id>`, the confined runner `loom stage complete` uses; a criterion that fails there
-but passes in its own shell comes back as RUNNER-ENV with both outputs, and you dispute it before completing. Each FAIL becomes a fix brief (Rule 7);
+`loom check <stage-id>`, the host runner that completes the stage, with the same `Host job:` first
+line and states (`passed` for `completed`); it is authoritative. A criterion that passes there but
+fails in its own shell comes back as SESSION-ENV: environment, not a FAIL, nothing disputed. One that
+fails there is a FAIL; when it fails only because of the confined runner (no network, timeout,
+git metadata) it also comes back as RUNNER-ENV with both outputs, and you dispute it before
+completing. Each FAIL becomes a fix brief (Rule 7);
 after the fixes, spawn a FRESH verifier, never a message to the old one. Do not repeat its run
 yourself. An integration-verify stage keeps its own gate, as its signal directs.
 
@@ -301,7 +311,9 @@ Revert the change behind each event, or dispute them together:
 `loom stage dispute-integrity <stage-id> --event <id> ... --reason "..."`. An accepted event stays
 accepted while it gets no worse.
 
-**What `loom stage complete` checks, in order.** It stops at the first check that fails.
+**What `loom stage complete` checks, in order.** The daemon's host job runs these checks (the
+review gate and test integrity are checked again by the daemon when it applies the result). It
+stops at the first check that fails.
 
 1. The acceptance criteria. A criterion whose test runner selected zero tests fails.
 2. The goal-backward checks: `artifacts`, `wiring`, `wiring_tests`, the dead-code check and

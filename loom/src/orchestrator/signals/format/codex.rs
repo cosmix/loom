@@ -178,8 +178,8 @@ fn push_codex_prompt_rules(content: &mut String) {
 fn push_codex_blast_radius_and_evidence(content: &mut String) {
     content.push_str(
         "- BLAST RADIUS: codex runs approval `never` - inside its own `workspace-write` sandbox where the\n\
-         stage sandbox lets it nest one (Linux), or with `--sandbox danger-full-access` where it does not\n\
-         (macOS refuses a nested Seatbelt, so the wrapper falls back to a direct `codex exec`) - and either\n\
+         stage sandbox lets it nest one, or with `--sandbox danger-full-access` where it does not\n\
+         (a nested bubblewrap or Seatbelt is refused, so the wrapper falls back to a direct `codex exec`) - and either\n\
          way it edits anything under the git root (the worktree) without asking, and loom's PreToolUse\n\
          hooks never see commands it runs in its own session. NEVER give it a path under `.loom/work/` (a\n\
          symlink to state shared with every parallel stage); tell it not to run git at all; check\n\
@@ -202,7 +202,7 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
         "  the trailer unit equals the unit you assigned, and its invocation matches that job's authorization.\n",
         "  A report with `state: timed_out` and an END marker carrying `\"outcome\":\"timed_out\"` means the\n",
         "  wrapper cancelled the job at the 540000 ms deadline: the unit was too large; re-split it. In\n",
-        "  `mode: direct (...)` (macOS inside the stage sandbox), `thread:` names one exact thread.\n",
+        "  `mode: direct (...)` (where the stage sandbox refuses nesting), `thread:` names one exact thread.\n",
         "  No matching markers, trailer, exact record, or exact thread leaves the forward state unresolved\n",
         "  for orchestrator review.\n",
     ));

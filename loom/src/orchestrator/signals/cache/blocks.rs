@@ -87,7 +87,7 @@ pub(super) fn append_subagent_ceiling_block(content: &mut String) {
 
 /// Where a standard stage's gate runs, stated as the opening line of its
 /// completion rules.
-const VERIFIER_GATE: &str = "**The gate runs in a `loom-verifier`** (opus, effort xhigh): once every implementer has returned, spawn ONE by agent type, without `name`, briefed with the stage's criteria. It writes nothing and reports PASS/FAIL per step with command, exit code and failing excerpt, running criteria via `loom check <stage-id>` (complete's runner); one failing there but passing in its shell is RUNNER-ENV, for you to dispute. Delegate each fix, then spawn a FRESH verifier.\n\n";
+const VERIFIER_GATE: &str = "**The gate runs in a `loom-verifier`** (opus, effort xhigh): once every implementer has returned, spawn ONE by agent type, without `name`, briefed with the criteria. It writes nothing and reports PASS/FAIL per step with command, exit code and failing excerpt, running criteria via `loom check <stage-id>` (authoritative); failing only in its own shell is SESSION-ENV, not a FAIL; failing there only from runner confinement is RUNNER-ENV, for you to dispute. Delegate each fix, then spawn a FRESH verifier.\n\n";
 
 /// Open a STANDARD stage's `**Completion:**` list with `VERIFIER_GATE`. The
 /// integration-verify prefix opens its list without it: that stage keeps its

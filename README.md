@@ -131,7 +131,7 @@ A plan is a markdown file holding a list of stages, each with its dependencies a
 1. **Init.** `loom init <plan-path>` parses the plan and creates the state for every stage under `.loom/work/`.
 2. **Schedule.** `loom run` starts a daemon and an orchestrator. Every stage whose dependencies are met gets its own worktree (`.worktrees/<stage-id>`, branch `loom/<stage-id>`) and its own Claude Code session, briefed by a signal file: the assignment, the relevant knowledge, and the memory of earlier sessions.
 3. **Work.** The session's main agent decomposes the stage, delegates implementation to cheaper subagents, and records what it learns with `loom memory`.
-4. **Verify.** `loom stage complete` runs the stage's acceptance criteria and the goal-backward checks. A failure leaves the stage `Executing`, and the agent has to fix the work and try again.
+4. **Verify.** `loom stage complete` asks the daemon to run the stage's acceptance criteria and the goal-backward checks in a host job. A failure leaves the stage `Executing`, and the agent has to fix the work and try again.
 5. **Merge.** A verified stage merges back to the target branch, which frees the stages that depend on it. A real conflict gets a dedicated resolution session that works in the stage's own worktree; loom lands the merge without touching your checkout's uncommitted work unless it overlaps.
 6. **Integrate.** Once the implementation stages have merged, an `integration-verify` stage reviews the combined work and runs the full suite against it.
 7. **Distill.** The plan's final `knowledge-distill` stage curates every stage's memory into `doc/loom/knowledge/`, which the next plan's sessions read first.
@@ -179,7 +179,7 @@ Everything loom does, one line each, grouped by what you are doing at the time. 
 - Use subagents for concrete file-level tasks and an agent team for work that needs discussion across agents. ([Agent Teams (Experimental)](#agent-teams-experimental))
 - Write a context handoff before a session's token ceiling forces a restart. ([Other Commands](#other-commands))
 - Detect crashed or hung sessions and retry or escalate them automatically. ([Crash recovery and liveness](#crash-recovery-and-liveness))
-- Complete a stage only on an attested evidence record that survives a handoff. ([Crash recovery and liveness](#crash-recovery-and-liveness))
+- Complete a stage only when the daemon's own host job verifies the committed tree. ([Crash recovery and liveness](#crash-recovery-and-liveness))
 
 **Verify**
 
@@ -290,7 +290,7 @@ Subagent detection is a live process-tree ancestry check, not a PPID comparison.
 
 ### Verification that outlives the agent's opinion
 
-`loom stage complete` is not a self-report. Loom executes the stage's acceptance criteria in-process and refuses completion on failure, leaving the stage `Executing` so the agent must fix and retry. On top of that, goal-backward verification asks whether the _outcome_ exists:
+`loom stage complete` is not a self-report. Loom executes the stage's acceptance criteria in a daemon host job and refuses completion on failure, leaving the stage `Executing` so the agent must fix and retry. On top of that, goal-backward verification asks whether the _outcome_ exists:
 
 - **`artifacts`** — files exist and contain real implementation (stub detection rejects `TODO`, `FIXME`, `unimplemented!`, `todo!`, `pass`, `NotImplementedError`)
 - **`wiring`** — regex proof that new code is actually referenced: module registered, route mounted, component rendered
@@ -334,7 +334,7 @@ Stages form a dependency DAG; everything independent runs at once, each in its o
 
 All orchestration state is plain files in `.loom/work/`, so nothing is lost when a process dies. The daemon polls every 5s, tracks PID liveness and per-session heartbeats, flags hung sessions after 300s and parks stalled stages for a person (see [Startup Checks and Stalled Stages](#startup-checks-and-stalled-stages)), and classifies failures across ten types into retryable (exponential backoff) and needs-diagnosis. Tool-call telemetry drives a stuck-session signal when a session's recent calls are overwhelmingly failures. Orphaned sessions are recovered on daemon restart.
 
-A stage completes only on an authenticated evidence record that survives handoffs, so a session that finished its work but died before the daemon observed it does not loop between retries. Each session records why it exited — completed, crashed, context ceiling, stalled, operator stop, criteria blocked, or replaced — and `loom status`, `loom status --live`, and the web dashboard surface a completion-pending or blocked state with that reason ahead of generic activity.
+A stage completes only when the daemon's host job verifies the committed tree and the daemon applies the result; a session's own report is never the evidence. A passing run from a session that is no longer running is rejected and a failing one ignored, so the successor session runs its own completion. Each session records why it exited — completed, crashed, context ceiling, stalled, operator stop, criteria blocked, or replaced — and `loom status`, `loom status --live`, and the web dashboard surface a completion-pending or blocked state with that reason ahead of generic activity.
 
 ### Sandboxing and plan hardening
 
@@ -491,7 +491,7 @@ loom stage amend <stage-id> --field acceptance|wiring|wiring-tests|contracts --o
 
 `loom stage human-review <stage-id> --force-complete` lands a stage parked in `NeedsHumanReview` without acceptance checks: it records the committed tip of `loom/<stage-id>` as the completion commit, replacing any earlier one, and merges it; it refuses a missing or zero-commit branch. `loom stage complete --force-unsafe` without `--assume-merged` records the same tip and leaves the stage unmerged for the daemon's auto-merge; `--no-verify` adds nothing to it.
 
-`loom stage dispute-criteria` is the sanctioned way for an agent to challenge a criterion it believes is wrong or impossible, instead of quietly weakening it. The daemon writes `request.md` and moves the stage to `NeedsAdjudication`; the verdict is daemon-written and never authored by the agent. `loom stage adjudicate` records that verdict from the adjudication session; `loom stage admin-proof` mints an operator's proof for a trusted broker; `loom stage amend` is the audited, operator-facing way to edit a stage's `acceptance`, `wiring`, or `wiring_tests` array directly. See [Disputes, Adjudication, and Amendments](#disputes-adjudication-and-amendments).
+`loom stage dispute-criteria` is the sanctioned way for an agent to challenge a criterion it believes is wrong or impossible, instead of quietly weakening it. The daemon writes `request.md` and moves the stage to `NeedsAdjudication`; the verdict is daemon-written and never authored by the agent. `loom stage adjudicate` records that verdict from the adjudication session; `loom stage admin-proof` mints an operator's one-time proof for a privileged action, passed to a process through `LOOM_ADMIN_PROOF`; `loom stage amend` is the audited, operator-facing way to edit a stage's `acceptance`, `wiring`, or `wiring_tests` array directly. See [Disputes, Adjudication, and Amendments](#disputes-adjudication-and-amendments).
 
 ### Stage Outputs
 
@@ -874,9 +874,11 @@ In a version 2 plan, `loom stage complete` also runs, in order: the contract che
 Artifact verification treats a stub as a failure: a file that exists but contains `TODO`, `FIXME`, `unimplemented!`, `todo!`, a bare `pass`, or `raise NotImplementedError` does not count as delivered.
 
 Normal stage completion crosses a narrow control boundary. The stage runs one exact pinned
-`loom stage complete <stage-id>` command; a PostToolUse bridge accepts only the matching stage and
-session, requires Loom's verification marker, and sends a non-extensible `CompleteStage` request to
-the daemon. The request cannot carry commands, paths, or bypass flags.
+`loom stage complete <stage-id>` command, which relays a non-extensible request to the daemon; the
+request cannot carry commands, paths, or bypass flags. The daemon runs the criteria in a host job
+under Loom's confinement and completes the stage itself. The command's first line is
+`Host job: <state>`: `requested` and `pending` (exit 0) are not results, so run it again; `completed`
+exits 0; `failed`, `rejected` and `refused` exit 1; `stopped` exits 4, also run again.
 
 The three bypass flags — `--no-verify`, `--force-unsafe`, `--assume-merged` — are the operator's, and
 cost the operator nothing: `loom stage complete <stage> --no-verify` just works from your shell. It
@@ -888,8 +890,8 @@ first use — you simply never handle it.
 The same applies to `loom stop`. Nothing asks a human to mint a credential they already hold; making
 them carry an HMAC between two commands added ceremony, not security.
 
-`loom stage admin-proof` remains for the case it was actually built for: a trusted broker minting a
-narrowly-scoped capability for another process. It takes the secret through `LOOM_ADMIN_TOKEN` and
+`loom stage admin-proof` remains for the case it was actually built for: minting a
+narrowly-scoped capability for another process, which receives it through `LOOM_ADMIN_PROOF`. It takes the secret through `LOOM_ADMIN_TOKEN` and
 never reads the token file, so a caller that can invoke loom but cannot read that file gains nothing.
 
 An agent that genuinely believes a criterion is wrong or impossible has a sanctioned path — `loom stage dispute-criteria` — rather than an incentive to weaken it.
@@ -1100,7 +1102,7 @@ loom:
 
 Plans are trusted artifacts, but trusted is not privileged: under `confined`, a plan line cannot read `GITHUB_TOKEN`, `AWS_*` or `ANTHROPIC_API_KEY` merely because you started loom from a shell that had them. The allowlist carries what a build toolchain needs to find itself — `HOME`, `PATH`, `USER`, `LOGNAME`, `CARGO_HOME`, `RUSTUP_HOME`, locale and terminal variables, `TMPDIR`, the proxy variables and the CA-bundle _locations_ (`SSL_CERT_FILE`, `SSL_CERT_DIR`, `NIX_SSL_CERT_FILE`). `SSH_AUTH_SOCK` is deliberately withheld, so an acceptance criterion that needs SSH auth fails by design rather than silently borrowing your agent.
 
-> **What confinement adds.** Under `confined`, loom also runs each plan-authored command inside an OS boundary it builds for that command: bubblewrap (`bwrap`, with `--unshare-all`) on Linux, `sandbox-exec` on macOS. Inside that boundary only the working tree and a private scratch directory are writable (the scratch holds the command's `TMPDIR`, `CARGO_HOME` and tool caches), the runtime and compiler installation directories are mounted read-only, and verification commands get no network. On macOS only, a verification command reuses the stage session's own Seatbelt boundary instead, when that boundary already covers the working tree (Linux always builds its own); it then keeps that session boundary's grants, which the plan's `sandbox` block sets, network included. `provision` entries always run in a boundary loom builds, with network so they can fetch dependencies, whatever `command_confinement` says. A host without the facility fails the command before any repository code runs. `command_confinement: inherit` adds no command-level boundary: the command keeps loom's ambient environment and runs inside whatever sandbox the calling process already runs in (the stage session's, for `loom stage complete`).
+> **What confinement adds.** Under `confined`, loom also runs each plan-authored command inside an OS boundary it builds for that command: bubblewrap (`bwrap`, with `--unshare-all`) on Linux, `sandbox-exec` on macOS. Inside that boundary only the working tree and a private scratch directory are writable (the scratch holds the command's `TMPDIR`, `CARGO_HOME` and tool caches), the runtime and compiler installation directories are mounted read-only, and verification commands get no network. Verification commands run in a host job the daemon starts, in a boundary loom builds on both platforms. `provision` entries always run in a boundary loom builds, with network so they can fetch dependencies, whatever `command_confinement` says. A host without the facility fails the command before any repository code runs. `command_confinement: inherit` adds no command-level boundary: the command keeps loom's ambient environment and runs inside whatever sandbox the calling process already runs in (the daemon's, for a host job).
 
 ### Session State Confinement
 

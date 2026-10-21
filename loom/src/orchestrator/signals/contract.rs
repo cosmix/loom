@@ -256,10 +256,10 @@ fn append_rules(content: &mut String, stage_id: &str) {
     );
     content.push_str(&format!(
         "7. Finish with `loom stage contracts freeze {stage_id}`. It checks that you changed \
-         only contract and harness files, runs every contract, and records them. If it \
-         refuses, fix what it names and run it again.\n\
-         8. After a successful freeze, stop. Loom ends this session and starts the \
-         implementation session.\n\n"
+         only contract and harness files, then asks the daemon to run every contract on the \
+         host and freeze them. If it refuses, fix what it names and run it again.\n\
+         8. After the freeze request, stop. The daemon freezes the contracts and starts \
+         the implementation session, or parks the stage with the refusal.\n\n"
     ));
     content.push_str("- Stay inside this worktree.\n");
     content.push_str(CONTEXT_CEILING_HANDOFF);

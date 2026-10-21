@@ -6,14 +6,13 @@ Read when: configuring a plan's `sandbox` block, or when an acceptance command w
 
 **Package-manager caches are pre-granted.** Loom emits the per-user cache directories of bun, npm, pnpm, yarn, deno, cargo, rustup, uv, pip and go (`sandbox/package_caches.rs`) into every stage's OS-level `allowWrite`, so a dependency install in a worktree does not need a plan `allow_write` line. Two gaps stay the plan's job: a cache relocated by an env var (`XDG_CACHE_HOME`, `CARGO_HOME`, `BUN_INSTALL_CACHE_DIR`, ...) must be listed in `allow_write` explicitly, and a cache directory that does not exist on the host at session start is skipped by the sandbox — a manager used for the very first time on that machine fails with `EROFS` until the directory exists.
 
-## Acceptance runs INSIDE the stage's sandbox — verify it THERE
+## Criteria run in the daemon's host job
 
-`loom stage complete` runs the acceptance list itself, from the agent's own process inside the
-worktree session. Every criterion therefore inherits that session's sandbox and that worktree's
-filesystem layout — NOT your main checkout, and not the host shell you tried it in. The daemon's
-host-side verification does not inherit them, which is why the same list can look green from an
-operator shell and be impossible from inside. **A command you confirmed by hand at the repo root
-has been confirmed in the wrong environment.**
+`loom stage complete` and `loom check` in a session ask the daemon to run the criteria in a host
+job: the stage worktree's filesystem layout under loom's confinement (no network, private `/tmp`,
+read-only git metadata), never the session's sandbox, your main checkout or a bare shell. Verify a
+criterion with `loom check <stage-id>` from a session or the host, not by running it bare. **A
+command you confirmed by hand at the repo root has been confirmed in the wrong environment.**
 
 **The ungrantable-resource rule: if a command needs something the stage's sandbox cannot be
 configured to grant, it is NOT an acceptance criterion — however well it would prove the
@@ -107,8 +106,8 @@ loom:
   edit the plan file and provision runs on the host. To change the entries during a run, the operator
   edits `[plan_provision]` and runs `loom stage retry <id>`.
 - **Versus `setup:`.** `setup:` only prefixes acceptance commands; it never runs as part of a
-  session's own work and runs wherever the acceptance command runs, sandboxed inside
-  `loom stage complete`. `provision` runs once per spawn, on the host, before the agent starts.
+  session's own work and runs wherever the acceptance command runs, in the daemon's host job.
+  `provision` runs once per spawn, on the host, before the agent starts.
 - **Repository-level lints.** `loom plan verify` judges the repository, not the stage: a repository
   with a JS package (this one has `web/`) needs a `provision` entry for it in every v2 plan, and a
   JS package with a test runner and at least one `dependencies` or `devDependencies` entry that no
@@ -124,8 +123,8 @@ hook fetches from.
 
 ## Where criteria run
 
-Acceptance, setup, wiring, truth and dead-code commands run in loom's confined runner at
-`loom stage complete`, not in the session sandbox:
+Acceptance, setup, wiring, truth, dead-code, contract and impact-test commands run in a host job
+the daemon starts (bubblewrap on Linux, `sandbox-exec` on macOS), not in the session sandbox:
 
 - No network, ever. The plan's `network.allowed_domains` reaches only the agent's session.
 - Git metadata is read-only; `/tmp` and `/var/tmp` are private to the run.
@@ -140,8 +139,9 @@ Acceptance, setup, wiring, truth and dead-code commands run in loom's confined r
   hooks or scripts) with its own config in the repository. Never carry a check over from another
   project or from loom's own repository.
 
-`loom check <stage-id>` runs the criteria through the same runner, so a mismatch shows before
-completion.
+`loom check <stage-id>` runs the criteria in the same host job, so a mismatch shows before
+completion; its first line `Host job: <state>` is the result (`requested` and `pending` are not:
+run it again).
 
 **Granting the session's network.** Think hard about `network.allowed_domains`: list every fetch the
 stage's own work does by reading the repo's manifests, lockfiles, scripts and hooks, and grant exactly

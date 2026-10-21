@@ -111,9 +111,9 @@ the daemon installs on the host before every spawn, so the stage needs no instal
 in-session `bun install` is the fallback only when the daemon cannot provision; it needs
 `registry.npmjs.org` in `allowed_domains` plus a `node_modules` write grant, and it must be the
 stage's FIRST task. The `setup:` field does not cover this: it only prefixes acceptance commands, so
-it never runs as part of the session's own task work — and an acceptance command is NOT reliably a
-host-side command either. It runs wherever it is invoked from: the daemon verifies on the host, and
-`loom stage complete` runs the same list from inside the sandboxed session (`SKILL.md` Section 8).
+it never runs as part of the session's own task work — and an acceptance command runs only in the
+daemon's host job, under loom's confinement (`SKILL.md` Section 8), so a result from any other
+shell proves nothing: verify it with `loom check <stage-id>`.
 
 ## Cross-Plan Contract Protocol (sibling plans in doc/plans/)
 

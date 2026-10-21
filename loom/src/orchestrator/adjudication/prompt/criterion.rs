@@ -105,8 +105,11 @@ fn run_the_criteria(input: &KindPromptInput<'_>, indices: &[usize]) -> String {
     s.push_str("```\n\n");
     s.push_str(&judge_every_failing("criterion"));
     s.push_str(
-        "This runs the criteria through Loom's setup, environment and confinement\n\
-         policy. Compare with these direct runs only to diagnose a difference:\n\n",
+        "This asks the daemon to run the criteria in a host job under Loom's setup,\n\
+         environment and confinement policy. While its first line reads\n\
+         `Host job: requested` or `pending`, run the same command again in your next\n\
+         Bash call: that is not a result. The printed outputs are the host runner's.\n\
+         Compare with these direct runs only to diagnose a difference:\n\n",
     );
     for &index in indices {
         match input.stage.acceptance.get(index) {
@@ -193,11 +196,13 @@ pub(super) fn what_the_run_decides() -> String {
 /// stage cannot answer.
 fn where_completion_runs() -> String {
     let mut s = String::new();
-    s.push_str("- It fails under Loom's runner only because of where completion runs —\n");
-    s.push_str("  network denied, git metadata absent, the command timeout, a sandbox\n");
-    s.push_str("  denial: accept with a portable `replace` (an extended criterion may set\n");
-    s.push_str("  `timeout_secs`, 1-3600), or with a `delete` when no form runs there,\n");
-    s.push_str("  naming in the reasoning what verification the deletion leaves to\n");
+    s.push_str("- It fails under Loom's runner, the daemon's host job, only because of where completion runs —\n");
+    s.push_str("  network denied, git metadata absent, the command\n");
+    s.push_str("  timeout, a sandbox denial: accept with a portable `replace` (an extended\n");
+    s.push_str("  criterion may set `timeout_secs`, 1-3600), or with a `delete` when no\n");
+    s.push_str(
+        "  form runs there, naming in the reasoning what verification the deletion leaves to\n",
+    );
     s.push_str("  integration-verify.\n");
     s.push_str("- A worktree that is gone keeps you from running it: needs-more-evidence,\n");
     s.push_str("  naming the blocker. Never request evidence no agent can produce (an\n");

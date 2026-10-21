@@ -22,7 +22,7 @@ If the acceptance criteria are missing, say so instead of guessing them. If the 
 ## What You Run
 
 1. **The gate**: build, tests, lint, format check, each as the complete command, never a filtered subset.
-2. **Every acceptance criterion**, through `loom check <stage-id>`, never retyped: it runs them in the confined runner and pass cache that `loom stage complete` uses, which is stricter than your shell (no network, read-only git metadata, a command timeout). If a criterion fails under `loom check` but passes when run from its `working_dir` in your shell, report it as `RUNNER-ENV` with both outputs: the orchestrator disputes it before completing. `loom check` may also run the stage's wiring checks; report them as they come.
+2. **Every acceptance criterion**, through `loom check <stage-id>`, never retyped. It asks the daemon to run them in a host job under loom's confinement (no network, read-only git metadata, a command timeout), the runner that completes the stage, and is authoritative. Its first line is `Host job: <state>`: `requested` or `pending` (exit 0) is not a result, so run the same command again in your next Bash call; `passed` is a pass; `failed` or `refused` (exit 1) is a FAIL, with the failing outputs and `full log:` paths printed; `stopped` (exit 4) means run it again. A criterion that passes under `loom check` but fails in your own shell is environment: report it as `SESSION-ENV` with both outputs; it is not a FAIL and nothing is disputed. A criterion that fails under `loom check` is a FAIL, whatever your shell shows; when it fails only because of the confined runner (no network, timeout, git metadata), also report it as `RUNNER-ENV` with both outputs: the orchestrator disputes it before completing. `loom check` may also run the stage's wiring checks; report them as they come.
 3. **The diff against the criteria**: read `git diff` and `git status --short`, then judge whether the change meets each criterion's intent or only passes its letter.
 
 Run each command once. Read stderr every time: exit 0 is not success when the output says blocked, denied, connection refused, or failed to download. A failure that does not reproduce is reported as flaky with both outputs, never retried until it passes.
@@ -47,6 +47,7 @@ STEP <n> <name>: PASS | FAIL
 
 Then:
 
-- **RUNNER-ENV**: each criterion that fails under `loom check` but passes in your shell, with the command and both outputs.
+- **SESSION-ENV**: each criterion that passes under `loom check` but fails in your shell, with the command and both outputs.
+- **RUNNER-ENV**: each criterion that fails under `loom check` only because of the confined runner, with the command and both outputs.
 - **Acceptance judgment**: per criterion, met or not met, with file:line evidence for each one not met.
 - **Verdict**: `GATE PASS` only when every step passed and every criterion is met; otherwise `GATE FAIL`, followed by the failing step numbers.

@@ -207,12 +207,12 @@ pub(super) fn append_knowledge_mission(content: &mut String) {
 /// place.
 pub(super) fn append_settled_completion_rules(content: &mut String) {
     content.push_str(
-        "- **`loom stage complete` is the LAST act of your session.** Run it ONLY when the stage is SETTLED: every subagent returned and absorbed, every defect found by review or verification fixed and re-verified, all work committed (`git status` clean).\n",
+        "- **`loom stage complete` is the LAST act of your session.** Run it ONLY when SETTLED: every subagent returned and absorbed, every defect fixed and re-verified, all work committed (`git status` clean).\n",
     );
     content.push_str(
-        "- **After it succeeds: STOP and end the session** — post-completion work is LOST WORK (the merge starts from the completed commit).\n",
+        "- **After `completed`: STOP and end the session** — post-completion work is LOST WORK.\n",
     );
-    content.push_str("- **Verify acceptance criteria** before marking stage complete\n");
+    content.push_str("- **Verify acceptance criteria** before completing\n");
 }
 
 /// BLOCK-F: when a stage cannot finish, the main agent disputes a wrong check
@@ -225,7 +225,7 @@ pub(super) fn append_completion_rules(content: &mut String) {
     append_settled_completion_rules(content);
     content.push_str("- No `loom stage retry` mid-session.\n");
     content.push_str(CONTEXT_CEILING_HANDOFF);
-    content.push_str("- Run `loom stage complete <stage-id>` from the worktree ROOT directory; on failing criteria, fix and rerun\n\n");
+    content.push_str("- Run `loom stage complete <stage-id>` from the worktree ROOT directory. `Host job:` `requested`/`pending`/`stopped` (exit 4): rerun; failed: fix, commit, rerun\n\n");
     content.push_str(STAGE_EXIT_RULES);
     content.push_str("\n\n");
 }

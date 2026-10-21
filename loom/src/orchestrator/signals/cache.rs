@@ -267,8 +267,8 @@ pub fn generate_knowledge_stable_prefix() -> String {
     append_settled_completion_rules(&mut content);
     append_knowledge_commit_bullet(&mut content);
     content.push_str(CONTEXT_CEILING_HANDOFF);
-    content.push_str("- **Run `loom stage complete <stage-id>`** when done (from the repo root)\n");
-    content.push_str("- **If acceptance criteria fail**: Fix the issues and run `loom stage complete <stage-id>` again\n\n");
+    content.push_str("- **Run `loom stage complete <stage-id>`** when done (from the repo root); on `requested`/`pending`/`stopped` (exit 4) run it again\n");
+    content.push_str("- **If `Host job:` reads `failed`, `rejected` or `refused`**: fix, commit, run it again\n\n");
 
     // Knowledge-specific commands
     content.push_str("**Knowledge Commands:**\n\n");
