@@ -75,6 +75,7 @@ relay_kind_at() {
 	memory:note | memory:decision | memory:change | memory:question | memory:resolve) echo memory ;;
 	stage:block) echo block ;;
 	stage:commit) echo commit ;;
+	stage:complete) echo complete ;;
 	stage:dispute-criteria)
 		# --field impact-tests files a plan v2 dispute kind, not a criterion.
 		if segment_has_option "$j" --field impact-tests; then echo file-dispute; else echo dispute; fi
@@ -121,7 +122,7 @@ drop_control_kinds() {
 	local kind kept="" IFS=,
 	for kind in $1; do
 		case "$kind" in
-		block | commit | dispute | handoff | merge-resolved | verdict | freeze-contracts | file-dispute) ;;
+		block | commit | complete | dispute | handoff | merge-resolved | verdict | freeze-contracts | file-dispute) ;;
 		*) kept=${kept:+$kept,}$kind ;;
 		esac
 	done

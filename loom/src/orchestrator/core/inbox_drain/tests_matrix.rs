@@ -7,12 +7,14 @@
 use chrono::Utc;
 
 use crate::fs::stage_request::StageRequest;
+use crate::host_verify::store::load_current;
+use crate::host_verify::{digest, JobKind};
 use crate::models::dispute::{request_file, verdict_file};
 use crate::models::session::{SessionStatus, SessionType};
 use crate::models::stage::StageStatus;
 use crate::relay::RequestKind;
 use crate::verify::contracts::store::load_freeze;
-use crate::verify::contracts::test_support::{contract_stage, contract_worktree, red_reports};
+use crate::verify::contracts::test_support::{contract_stage, contract_worktree};
 use crate::verify::transitions::{load_stage, save_stage};
 
 use super::test_support::{fixture, payload_for, FakeHost, Fixture, STAGE};
@@ -75,14 +77,7 @@ fn run_cell(session_type: SessionType, kind: RequestKind) -> Cell {
         RequestKind::FileDispute => fx.frozen_contract_stage(&record.id),
         _ => fx.stage(StageStatus::Executing, Some(&record.id)),
     }
-    let payload = match kind {
-        RequestKind::FreezeContracts => serde_json::to_value(StageRequest::FreezeContracts {
-            reports: red_reports(),
-        })
-        .unwrap(),
-        _ => payload_for(kind),
-    };
-    let entry = fx.relay(&record, kind, payload);
+    let entry = fx.relay(&record, kind, cell_payload(&fx, kind));
     let mut host = fx.host(true);
 
     let report = run_pass(&mut host, &fx.tick(Utc::now()));
@@ -99,6 +94,22 @@ fn run_cell(session_type: SessionType, kind: RequestKind) -> Cell {
             Cell::Refuse
         }
         Settle::Applied(_) => classify_applied(&fx, &host, session_type, kind),
+    }
+}
+
+/// The request body a cell relays. A freeze carries the worktree's own HEAD and
+/// digest, as the freeze command sends.
+fn cell_payload(fx: &Fixture, kind: RequestKind) -> serde_json::Value {
+    match kind {
+        RequestKind::FreezeContracts => {
+            let worktree = fx.repo_root.join(".worktrees").join(STAGE);
+            serde_json::to_value(StageRequest::FreezeContracts {
+                head: digest::head(&worktree).unwrap(),
+                tree_digest: digest::tree_digest(&worktree).unwrap(),
+            })
+            .unwrap()
+        }
+        _ => payload_for(kind),
     }
 }
 
@@ -133,23 +144,34 @@ fn classify_applied(
         RequestKind::Verdict => {
             assert!(verdict_file(&fx.work_dir.join("disputes"), STAGE, 1).exists());
         }
-        RequestKind::Telemetry => {
-            assert_eq!(
-                crate::telemetry::read_events(&fx.work_dir).unwrap().len(),
-                1
-            );
-        }
-        RequestKind::FreezeContracts => {
-            assert!(load_freeze(&fx.work_dir, STAGE).unwrap().is_some());
-        }
+        RequestKind::Telemetry => assert_telemetry_recorded(fx),
+        // The freeze is a contract run on the host: the drain queues it as
+        // the stage's current host job, and the daemon freezes when it
+        // applies the run's result.
+        RequestKind::FreezeContracts => assert_freeze_queued(fx),
         RequestKind::Commit => {
             unreachable!("SECTION_5 has no commit column; commit_tests covers the commit kind")
         }
         RequestKind::Check => {
             unreachable!("SECTION_5 has no check column; check.rs tests cover the check kind")
         }
+        RequestKind::Complete => {
+            unreachable!("SECTION_5 has no complete column; complete.rs tests cover the kind")
+        }
     }
     Cell::Apply
+}
+
+fn assert_telemetry_recorded(fx: &Fixture) {
+    assert_eq!(
+        crate::telemetry::read_events(&fx.work_dir).unwrap().len(),
+        1
+    );
+}
+
+fn assert_freeze_queued(fx: &Fixture) {
+    let job = load_current(&fx.work_dir, STAGE).unwrap();
+    assert_eq!(job.map(|job| job.kind), Some(JobKind::Freeze));
 }
 
 fn assert_no_effect(fx: &Fixture, host: &FakeHost, kind: RequestKind) {
@@ -161,6 +183,7 @@ fn assert_no_effect(fx: &Fixture, host: &FakeHost, kind: RequestKind) {
     assert!(crate::telemetry::read_events(&fx.work_dir)
         .unwrap()
         .is_empty());
+    assert!(load_current(&fx.work_dir, STAGE).unwrap().is_none());
     if kind == RequestKind::FileDispute {
         assert!(!request_file(&fx.work_dir.join("disputes"), STAGE, 1).exists());
     } else {

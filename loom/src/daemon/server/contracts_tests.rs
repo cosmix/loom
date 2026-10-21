@@ -46,8 +46,34 @@ fn fixture() -> Fixture {
     }
 }
 
+/// Freeze from `reports`, as a host run that hashed the files as they stand
+/// now would.
 fn freeze(fx: &Fixture, reports: &[ContractRunReport]) -> Response {
-    handle_freeze_contracts(&fx.work_dir, STAGE, &fx.session.id, reports).unwrap()
+    freeze_with_reports(
+        &fx.work_dir,
+        STAGE,
+        &fx.session.id,
+        reports,
+        &hashed_now(fx),
+    )
+    .unwrap()
+}
+
+/// The `(path, sha256)` of every file the freeze reads now; empty when the
+/// stage cannot be located (the freeze then refuses for that reason).
+fn hashed_now(fx: &Fixture) -> Vec<(String, String)> {
+    let stage = load_stage(STAGE, &fx.work_dir).unwrap();
+    let Ok(site) = locate(&fx.work_dir, &stage) else {
+        return Vec::new();
+    };
+    read_files(&site, &stage)
+        .map(|files| {
+            files
+                .iter()
+                .map(|(path, bytes)| (path.clone(), sha256_hex(bytes)))
+                .collect()
+        })
+        .unwrap_or_default()
 }
 
 fn refusal(response: Response) -> String {

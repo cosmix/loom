@@ -14,11 +14,22 @@
 //! what keeps a blip from ever reaching the second report: the elapsed time
 //! restarts from zero with it.
 //!
+//! While the stage has a host job that has not ended (a check, the
+//! completion or the contract run the session relayed), the session is
+//! waiting on the daemon, not hung: the warning may still be reported, but
+//! the escalating report is held until the job ends or passes its deadline
+//! ([`host_job_holds_escalation`]).
+//!
 //! Judges are silent in the same observable way and are dispatched from here
 //! to [`super::judge_watchdog`], which measures and reports them differently.
 
+use std::path::Path;
 use std::time::Duration;
 
+use chrono::{DateTime, Utc};
+
+use crate::host_verify::runner::job_deadline_secs;
+use crate::host_verify::JobRecord;
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::Stage;
 
@@ -73,33 +84,39 @@ impl Detection {
         }
         self.stage_silence_event(
             session,
-            stage_id,
             stages,
             heartbeat_watcher,
             timeout_secs,
             handlers,
+            &config.work_dir,
         )
     }
 
     /// A stage agent that has stopped heartbeating, or never started: the
     /// first silence past the budget is reported, then one more at the
-    /// escalation line.
+    /// escalation line, which a running host job of the stage holds back.
     fn stage_silence_event(
         &mut self,
         session: &Session,
-        stage_id: &str,
         stages: &[Stage],
         heartbeat_watcher: &HeartbeatWatcher,
         timeout_secs: u64,
         handlers: &Handlers,
+        work_dir: &Path,
     ) -> Option<MonitorEvent> {
+        let stage_id = session.stage_id.as_deref()?;
         let stale_duration_secs =
             self.stage_silence_secs(session, stage_id, heartbeat_watcher, timeout_secs)?;
-        let completion_line = running_completion_line(
-            heartbeat_watcher.get_heartbeat(stage_id),
-            &session.id,
-            stages.iter().find(|stage| stage.id == stage_id),
-        );
+        let stage = stages.iter().find(|stage| stage.id == stage_id);
+        let held = stage.is_some_and(|stage| {
+            host_job_holds_escalation(work_dir, stage, heartbeat_watcher.now())
+        });
+        let completion_line = if held {
+            Some(HELD_LINE)
+        } else {
+            let heartbeat = heartbeat_watcher.get_heartbeat(stage_id);
+            running_completion_line(heartbeat, &session.id, stage)
+        };
         // A dead PID is a crash, and crash detection in
         // `detect_session_changes` owns it, so only a live one is reported hung.
         if !self.hung_report_due(
@@ -209,6 +226,43 @@ impl Detection {
     }
 }
 
+/// The escalation line while a host job holds it: never reached, so the
+/// warning is still due and the escalating report is not, nor latched.
+const HELD_LINE: u64 = u64::MAX;
+
+/// Whether `stage`'s current host job holds its sessions' escalation: the
+/// job has not ended and is within its deadline (`job_deadline_secs`),
+/// counted from its start, or from its queueing while it waits for a slot,
+/// so a job no runner ever starts cannot hold a session forever. One small
+/// file is read; a record that cannot be read holds nothing.
+pub(crate) fn host_job_holds_escalation(
+    work_dir: &Path,
+    stage: &Stage,
+    now: DateTime<Utc>,
+) -> bool {
+    match crate::host_verify::store::load_current(work_dir, &stage.id) {
+        Ok(Some(record)) => job_holds(&record, job_deadline_secs(stage), now),
+        Ok(None) => false,
+        Err(error) => {
+            tracing::debug!(
+                stage_id = %stage.id,
+                error = %format!("{error:#}"),
+                "cannot read the stage's host job; its sessions' stalls are not held",
+            );
+            false
+        }
+    }
+}
+
+fn job_holds(record: &JobRecord, deadline_secs: u64, now: DateTime<Utc>) -> bool {
+    if record.state.is_terminal() {
+        return false;
+    }
+    let since = record.started_at.unwrap_or(record.queued_at);
+    let deadline = i64::try_from(deadline_secs).unwrap_or(i64::MAX);
+    now.signed_duration_since(since).num_seconds() < deadline
+}
+
 /// Build the `SessionHung` event for a session whose heartbeat has gone stale.
 ///
 /// Kept out of the detection loop so the classification has somewhere to live,
@@ -309,3 +363,7 @@ mod tests {
         assert!(detection.hung_report_due("session-1", 2_400, 300, Some(2_400)));
     }
 }
+
+#[cfg(test)]
+#[path = "hung_latch_hold_tests.rs"]
+mod hold_tests;

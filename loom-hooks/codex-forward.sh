@@ -109,11 +109,18 @@ task="${preamble}
 
 ${prompt}"
 
-# macOS nested Seatbelt refusal selects the direct lane; the outer sandbox
-# remains its boundary. PATH lookup is deliberate so tests can stub the probe.
+# A refused nested sandbox selects the direct lane; the outer sandbox remains
+# its boundary. PATH lookup is deliberate so tests can stub the probes. The
+# Linux probe needs bwrap on PATH; without it the companion lane stays in use
+# (revisit if codex runs on a Linux host without bubblewrap).
 nested_seatbelt_refused() {
 	command -v sandbox-exec >/dev/null 2>&1 || return 1
 	! sandbox-exec -p '(version 1)(allow default)' /usr/bin/true >/dev/null 2>&1
+}
+
+nested_bubblewrap_refused() {
+	[[ "$(uname -s)" == Linux ]] && command -v bwrap >/dev/null 2>&1 || return 1
+	! bwrap --ro-bind / / --dev /dev true >/dev/null 2>&1
 }
 
 # Provider output stays private until the wrapper-owned prefix is complete.
@@ -240,6 +247,9 @@ fi
 if nested_seatbelt_refused; then
 	mode=direct
 	deferred_notes='note: the outer sandbox refuses a nested Seatbelt profile; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)'
+elif nested_bubblewrap_refused; then
+	mode=direct
+	deferred_notes='note: the outer sandbox refuses a nested bubblewrap sandbox; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)'
 fi
 if ! command -v jq >/dev/null 2>&1; then
 	finish_without_end 1 '' 'codex-forward.sh requires jq to decode structured Codex output'

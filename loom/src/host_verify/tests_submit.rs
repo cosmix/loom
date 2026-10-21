@@ -162,3 +162,25 @@ fn cancel_ends_a_live_job_once_and_ignores_a_terminal_or_missing_one() {
     assert_eq!(cancel(&work, STAGE, "again").unwrap(), None);
     assert_eq!(load_current(&work, STAGE).unwrap(), Some(cancelled));
 }
+
+#[test]
+fn a_malformed_head_or_tree_digest_is_refused_and_queues_nothing() {
+    let (_dir, work) = state_root();
+    let now = Utc::now();
+    let upper = HEAD_A.to_uppercase();
+    for head in ["aaaa", upper.as_str(), ""] {
+        let refused = submit(&work, &request("r1", head, false), now).unwrap();
+        assert!(
+            matches!(&refused, Submission::Refused(why) if why.contains("head")),
+            "{refused:?}"
+        );
+    }
+    let mut bad_digest = request("r2", HEAD_A, false);
+    bad_digest.tree_digest = "bbbb";
+    let refused = submit(&work, &bad_digest, now).unwrap();
+    assert!(
+        matches!(&refused, Submission::Refused(why) if why.contains("tree_digest")),
+        "{refused:?}"
+    );
+    assert_eq!(load_current(&work, STAGE).unwrap(), None);
+}

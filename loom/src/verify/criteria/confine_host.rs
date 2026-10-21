@@ -41,28 +41,19 @@ pub(super) fn wrap(
     let tree = confined_tree(tree, &cwd)?;
     let git = git_roots::git_dirs(&tree, network);
     let resolved_program = resolve_program(original, &cwd)?;
-    // The outer boundary is reused only when it covers the whole granted tree.
-    let inherited = network == NetworkAccess::Denied && crate::daemon::inherited::available(&tree);
     // Only bubblewrap can bind a private directory at the host's Cargo home path.
-    let mount = cfg!(target_os = "linux") && !inherited;
+    let mount = cfg!(target_os = "linux");
     let scratch = CargoScratch::prepare(original, &tree, mount)?;
-    let dirs = git.as_ref();
-    let mut command = if inherited {
-        let mut command = Command::new(&resolved_program);
-        command.args(original.get_args());
-        command
-    } else {
-        platform_command(
-            original,
-            &tree,
-            &cwd,
-            &resolved_program,
-            &scratch,
-            network,
-            dirs,
-        )?
-    };
-    apply_environment(&mut command, original, &scratch, inherited);
+    let mut command = platform_command(
+        original,
+        &tree,
+        &cwd,
+        &resolved_program,
+        &scratch,
+        network,
+        git.as_ref(),
+    )?;
+    apply_environment(&mut command, original, &scratch);
     command
         .current_dir(&cwd)
         .stdin(Stdio::null())
@@ -76,21 +67,13 @@ pub(super) fn wrap(
     Ok((command, scratch, git))
 }
 
-/// `original`'s environment with private tool state from `scratch`. Under a
-/// fresh boundary Git reads no global config: the user's is unreadable there,
-/// and Git fails on a config file it cannot open (Seatbelt denies the read).
-fn apply_environment(
-    command: &mut Command,
-    original: &Command,
-    scratch: &CargoScratch,
-    inherited: bool,
-) {
+/// `original`'s environment with private tool state from `scratch`. Git reads
+/// no global config: the user's is unreadable inside the boundary, and Git
+/// fails on a config file it cannot open (Seatbelt denies the read).
+fn apply_environment(command: &mut Command, original: &Command, scratch: &CargoScratch) {
     command.env_clear();
     command.envs(original.get_envs().filter_map(|(k, v)| v.map(|v| (k, v))));
     scratch.apply_environment(command);
-    if inherited {
-        return;
-    }
     command.env("GIT_CONFIG_GLOBAL", "/dev/null");
     if cfg!(target_os = "linux") {
         // Bubblewrap mounts a private /tmp, so temporary files need no scratch

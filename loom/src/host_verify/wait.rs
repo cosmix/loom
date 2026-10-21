@@ -107,11 +107,39 @@ pub fn wait_or_request(
         return request(site, &path, relay, out, head, digest);
     };
     let outcome = follow(site, &state)?;
+    if awaits_application(site, &outcome) {
+        // The caller follows the application, reports it, then `release`s.
+        return Ok(outcome);
+    }
     if !matches!(outcome, WaitOutcome::Pending { .. }) {
         remove_state_if_owned(&path, &state.request_id);
     }
     report(site, &head, &outcome, out)?;
     Ok(outcome)
+}
+
+/// A passed completion is decided only once the daemon applies it, so its
+/// request outlives the job.
+fn awaits_application(site: &WaitSite<'_>, outcome: &WaitOutcome) -> bool {
+    site.kind == JobKind::Complete
+        && matches!(outcome, WaitOutcome::Finished(record, _) if record.state == JobState::Passed)
+}
+
+/// Forget the request once the caller has reported how the daemon applied
+/// `record`, the passed completion [`wait_or_request`] returned.
+pub fn release(site: &WaitSite<'_>, record: &JobRecord) -> Result<()> {
+    let path = state_path(site)?;
+    let owned = read_state(&path).filter(|state| record.requests.contains(&state.request_id));
+    if let Some(state) = owned {
+        remove_state_if_owned(&path, &state.request_id);
+    }
+    Ok(())
+}
+
+/// `Host job: <state> (<kind>, <short head>)`, the first line of every call.
+pub fn heading(kind: JobKind, state: &str, head: &str) -> String {
+    let short: String = head.chars().take(SHORT_HEAD).collect();
+    format!("Host job: {state} ({}, {short})", kind.name())
 }
 
 fn request(
@@ -122,7 +150,7 @@ fn request(
     head: String,
     tree_digest: String,
 ) -> Result<WaitOutcome> {
-    writeln!(out, "{}", first_line(site, "requested", &head))?;
+    writeln!(out, "{}", heading(site.kind, "requested", &head))?;
     writeln!(
         out,
         "This is not a result. Run the same command again in your next Bash call to wait for it."
@@ -200,7 +228,13 @@ fn ledger_outcome(
     site: &WaitSite<'_>,
     request_id: &str,
 ) -> Result<Option<(LedgerOutcome, String)>> {
-    let ledger = read_ledger(site.work_dir, site.session_id)?;
+    // In a stage worktree `.loom/work` is a symlink to the main repository's
+    // state directory, and the inbox reads refuse to follow symlinks.
+    let root = site
+        .work_dir
+        .canonicalize()
+        .with_context(|| format!("cannot resolve the state root {}", site.work_dir.display()))?;
+    let ledger = read_ledger(&root, site.session_id)?;
     let settled = ledger
         .into_iter()
         .rev()
@@ -266,18 +300,6 @@ fn pruned(site: &WaitSite<'_>, state: &RequestState, job_id: &str) -> JobRecord 
     }
 }
 
-fn first_line(site: &WaitSite<'_>, state: &str, head: &str) -> String {
-    let short: String = head.chars().take(SHORT_HEAD).collect();
-    format!("Host job: {state} ({}, {short})", kind_name(site.kind))
-}
-
-fn kind_name(kind: JobKind) -> String {
-    serde_json::to_value(kind)
-        .ok()
-        .and_then(|value| value.as_str().map(str::to_string))
-        .unwrap_or_default()
-}
-
 /// Print the outcome of a followed job: its first line, then the detail.
 fn report(
     site: &WaitSite<'_>,
@@ -288,11 +310,11 @@ fn report(
     let text = match outcome {
         WaitOutcome::Requested => return Ok(()),
         WaitOutcome::Refused(reason) => {
-            format!("{}\n{reason}\n", first_line(site, "refused", head))
+            format!("{}\n{reason}\n", heading(site.kind, "refused", head))
         }
         WaitOutcome::Pending { done } => format!(
             "{}: {done} criteria done. Run the same command again to keep waiting.\n",
-            first_line(site, "pending", head)
+            heading(site.kind, "pending", head)
         ),
         WaitOutcome::Finished(record, result) => {
             finished_text(site, head, record, result.as_ref())?
@@ -319,7 +341,7 @@ fn finished_text(
         None => read_progress(site.work_dir, site.stage_id, &record.id)?,
     };
     let dir = job_dir(site.work_dir, site.stage_id, &record.id)?;
-    let mut text = format!("{}\n", first_line(site, word, head));
+    let mut text = format!("{}\n", heading(site.kind, word, head));
     for outcome in outcomes.iter().filter(|outcome| !outcome.passed) {
         write_failure(&mut text, &dir, outcome);
     }
@@ -349,7 +371,7 @@ fn write_failure(text: &mut String, dir: &Path, outcome: &CriterionOutcome) {
 
 fn state_path(site: &WaitSite<'_>) -> Result<PathBuf> {
     crate::validation::validate_id(site.stage_id)?;
-    let name = format!("{}-{}.json", site.stage_id, kind_name(site.kind));
+    let name = format!("{}-{}.json", site.stage_id, site.kind.name());
     Ok(site.scratch_dir.join("host-verify").join(name))
 }
 

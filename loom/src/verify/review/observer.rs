@@ -24,9 +24,8 @@
 //! git directory ([`WorktreeGit::pinned`]), so the worktree's `.git` file does
 //! not choose the configuration git runs with.
 //!
-//! A stage session's sandbox denies `AF_UNIX`, so a sandboxed `loom stage
-//! complete` cannot ask; it leaves both gates to the daemon, which runs them
-//! when the completion broker asks it to apply the transition.
+//! The daemon runs both gates when it applies a finished completion host job
+//! (`host_verify::apply`).
 
 use anyhow::{bail, Context, Result};
 use std::fmt;

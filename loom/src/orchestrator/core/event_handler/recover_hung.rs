@@ -13,7 +13,9 @@
 //!    warning; escalation needs the silence to reach [`is_escalation`]'s line,
 //!    three response budgets deep or, while the session's pinned
 //!    `loom stage complete` runs, the completion's own line
-//!    ([`running_completion_line`]); any heartbeat in between resets the clock;
+//!    ([`running_completion_line`]); any heartbeat in between resets the clock,
+//!    and a host job of the stage that has not ended holds it until the job
+//!    ends or passes its deadline ([`host_job_holds_escalation`]);
 //! 2. the stage must still be `Executing` and still name this exact session,
 //!    which `begin_handoff` re-checks under the stage lock; and
 //! 3. a stage may be recovered this way [`MAX_STALL_RECOVERIES`] times. The
@@ -46,6 +48,7 @@ use crate::handoff::{
 use crate::models::session::{Session, SessionExitReason};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::monitor::heartbeat::{heartbeat_path, read_heartbeat};
+use crate::orchestrator::monitor::hung_latch::host_job_holds_escalation;
 use crate::orchestrator::monitor::never_worked::{is_escalation, never_worked};
 use crate::orchestrator::monitor::parked::hung_warning;
 use crate::orchestrator::monitor::stall_line::running_completion_line;
@@ -162,7 +165,17 @@ impl Orchestrator {
         ) {
             return Ok(());
         }
+        if self.escalation_held(stage.as_ref()) {
+            return Ok(());
+        }
         self.recover_stalled_stage(stage_id, &report, never_started, session.as_ref(), probes)
+    }
+
+    /// A running host job that holds the stage keeps its escalation back.
+    fn escalation_held(&self, stage: Option<&Stage>) -> bool {
+        stage.is_some_and(|stage| {
+            host_job_holds_escalation(&self.config.work_dir, stage, Utc::now())
+        })
     }
 
     /// The hung session's record. One that cannot be read is treated as

@@ -265,7 +265,11 @@ pub(super) fn payload_for(kind: RequestKind) -> Value {
             "estimated_tokens": 20,
             "unmet_required": 0,
         }),
-        RequestKind::FreezeContracts => json!({"request": "freeze_contracts", "reports": []}),
+        RequestKind::FreezeContracts => json!({
+            "request": "freeze_contracts",
+            "head": "0".repeat(40),
+            "tree_digest": "0".repeat(64),
+        }),
         RequestKind::FileDispute => json!({
             "request": "file_dispute",
             "kind": {"kind": "contract", "contract_id": CONTRACT_ID},
@@ -276,7 +280,7 @@ pub(super) fn payload_for(kind: RequestKind) -> Value {
             "expected_head": "0".repeat(40),
             "expected_tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
         }),
-        RequestKind::Check => json!({
+        RequestKind::Check | RequestKind::Complete => json!({
             "head": "0".repeat(40),
             "tree_digest": "0".repeat(64),
             "no_cache": false,

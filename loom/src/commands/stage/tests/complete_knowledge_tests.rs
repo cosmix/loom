@@ -1,5 +1,38 @@
 use super::*;
 
+/// A knowledge session completing with an untracked file in the knowledge
+/// directory is told to commit first, and relays nothing.
+#[test]
+#[serial]
+fn a_knowledge_session_with_uncommitted_knowledge_is_told_to_commit_first() {
+    let temp = setup_work_dir();
+    initialize_zero_commit_repo(temp.path());
+    let work_dir = temp.path().join(".loom/work");
+    let mut stage = create_test_stage("test-stage", StageStatus::Executing);
+    stage.stage_type = StageType::Knowledge;
+    save_test_stage(&work_dir, &stage);
+    let knowledge = temp.path().join("doc/loom/knowledge");
+    std::fs::create_dir_all(&knowledge).unwrap();
+    std::fs::write(knowledge.join("uncommitted.md"), "# Draft\n").unwrap();
+    let scratch_root = TempDir::new().unwrap();
+    let scratch = scratch_root.path().join("session-1");
+    std::fs::create_dir(&scratch).unwrap();
+    let private = <std::fs::Permissions as std::os::unix::fs::PermissionsExt>::from_mode(0o700);
+    std::fs::set_permissions(&scratch, private).unwrap();
+
+    let context = relay_context(scratch.clone(), "knowledge", &work_dir);
+    let call = session_call(&work_dir, temp.path(), false);
+    let (code, text) = routed(RelayMode::Relay(context), &call);
+
+    assert_eq!(code, Some(1), "{text}");
+    assert!(text.starts_with("Host job: refused (complete, "), "{text}");
+    assert!(
+        text.contains("Commit first: completion verifies committed content only."),
+        "{text}"
+    );
+    assert_eq!(std::fs::read_dir(&scratch).unwrap().count(), 0, "no ticket");
+}
+
 #[test]
 #[serial]
 fn human_review_force_completes_knowledge_without_a_branch() {

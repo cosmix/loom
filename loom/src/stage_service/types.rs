@@ -2,7 +2,6 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::ContractRunReport;
 use crate::models::dispute::{CriterionField, DisputeKind};
 
 /// One queued stage-control request, mirroring the `Request::BlockStage`,
@@ -15,8 +14,12 @@ use crate::models::dispute::{CriterionField, DisputeKind};
 /// no connection to check against, so the fields are simply absent and the
 /// daemon attributes the request to the worktree it found it in — see the
 /// module documentation.
+///
+/// Decoding refuses any key a variant does not declare, so a request shaped
+/// for another version (a freeze carrying session-made `reports`) is refused
+/// instead of being read as a request it does not mean.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "request", rename_all = "snake_case")]
+#[serde(tag = "request", rename_all = "snake_case", deny_unknown_fields)]
 pub enum StageRequest {
     /// `loom stage block <id> "<reason>"`.
     Block { reason: String },
@@ -30,8 +33,9 @@ pub enum StageRequest {
         #[serde(default, skip_serializing_if = "Option::is_none")]
         failure_output: Option<String>,
     },
-    /// `loom stage contracts freeze <id>`.
-    FreezeContracts { reports: Vec<ContractRunReport> },
+    /// `loom stage contracts freeze <id>`: run the contracts on the host
+    /// against the tree the session saw, then freeze them.
+    FreezeContracts { head: String, tree_digest: String },
     /// `loom stage dispute-findings|dispute-contract|dispute-integrity <id> ...`, and
     /// `loom stage dispute-criteria --field impact-tests --test <id> ...`.
     FileDispute {

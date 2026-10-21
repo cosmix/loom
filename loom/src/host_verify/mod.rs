@@ -6,13 +6,19 @@
 //! `<state root>/verification/<stage>/`, `submit` queues, joins and cancels
 //! jobs, `runner` starts and reaps the daemon's children, `child` is the
 //! `loom stage verify-host` process, `digest` fingerprints the tree a request
-//! saw, and `wait` is the session side.
+//! saw, `wait` is the session side, and `apply` is what the daemon does with a
+//! finished job: complete the stage, record a checkpoint, or freeze contracts
+//! (`freeze`).
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
+pub mod apply;
+mod apply_rejection;
 pub mod child;
+mod child_complete;
 pub mod digest;
+pub mod freeze;
 pub mod runner;
 mod signals;
 mod spawn;
@@ -22,9 +28,21 @@ pub mod submit;
 pub mod wait;
 
 #[cfg(test)]
+mod tests_apply;
+#[cfg(test)]
+mod tests_apply_recovery;
+#[cfg(test)]
 mod tests_child;
 #[cfg(test)]
+mod tests_child_complete;
+#[cfg(test)]
+mod tests_child_impact;
+#[cfg(test)]
+mod tests_complete_support;
+#[cfg(test)]
 mod tests_digest;
+#[cfg(test)]
+mod tests_freeze;
 #[cfg(test)]
 mod tests_runner;
 #[cfg(test)]
@@ -39,11 +57,26 @@ mod tests_wait;
 /// Most bytes a record's `detail` keeps.
 pub(crate) const DETAIL_MAX_BYTES: usize = 512;
 
-/// What a job runs.
+/// What a job runs: the stage's gate (`loom check`), the completion run
+/// whose pass lets the daemon complete the stage, or the contract run that
+/// freezes a stage's contracts.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum JobKind {
     Check,
+    Complete,
+    Freeze,
+}
+
+impl JobKind {
+    /// The kind as it is serialized: `check`, `complete` or `freeze`.
+    pub fn name(self) -> &'static str {
+        match self {
+            Self::Check => "check",
+            Self::Complete => "complete",
+            Self::Freeze => "freeze",
+        }
+    }
 }
 
 /// Where a job is in its life. `Queued` and `Running` are the only states a
@@ -105,7 +138,10 @@ pub struct JobRecord {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct CriterionOutcome {
-    /// `acceptance-<i>` (0-based) or `goal-backward`.
+    /// `acceptance-<i>` (0-based), `goal-backward`, or a completion check
+    /// (`contracts`, `impact-tests`, `reachable`, `after-stage`, `unwired`,
+    /// `duplicates`, `aggregated-wiring`); a freeze job's `contract:<id>`
+    /// and `format`.
     pub label: String,
     pub passed: bool,
     /// The printed block for this criterion, at most 8 KiB.

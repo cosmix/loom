@@ -1,5 +1,5 @@
 //! Stage application services shared by RPC and durable spool adapters.
-mod contracts;
+pub(crate) mod contracts;
 mod control_block;
 mod dispute;
 mod dispute_kinds;
@@ -25,7 +25,7 @@ pub enum Response {
     ContractsFrozen { files: usize },
 }
 
-/// How one contract test ran when the contract session froze it.
+/// How one contract test ran in the host contract run that froze it.
 ///
 /// `outcome` is `failed`, `build_failed` or `exit_nonzero_unverified`: a
 /// contract is frozen only while it fails.

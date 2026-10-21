@@ -82,12 +82,12 @@ Before ending any worktree session (hard stop 3):
 git add <specific-files>
 loom stage commit <stage-id> -m "feat(scope): <description>"
 loom request status <id> --wait 90   # its own Bash call, after the commit command returns
-loom stage complete <stage-id>   # from the worktree root
+loom stage complete <stage-id>
 ```
 
 Stage `git add <specific-files>` only, never `-A` or `.`; never run `git commit`.
 
-**When to commit — at the END, after ALL verification, never before.** Commits happen ONLY as the final step of the stage — never mid-stage, never "what is done so far" — once every subagent returned, the full gate is green (a `loom-verifier` round in a standard stage), and the review's findings are fixed (the `loom-orchestration` skill spells out the three conditions). Completion is the session's last act; work after it is lost.
+**When to commit — at the END, after ALL verification, never before.** Commits happen ONLY as the final step of the stage — never mid-stage, never "what is done so far" — once every subagent returned, the full gate is green (a `loom-verifier` round in a standard stage) and the review's findings are fixed (see the `loom-orchestration` skill). Completion is the session's last act. Its first line, `Host job: <state>`: `requested`, `pending`, `stopped` (exit 4): run again; `failed`, `rejected`, `refused`: fix, commit, run again; `completed`: stop.
 
 Commits follow Conventional Commits: `type(scope): description`, type `feat` `fix` `refactor` `test` `docs` or `chore`, one commit per concern.
 
@@ -182,7 +182,7 @@ In a knowledge-distill stage every memory ends with `loom memory resolve`; `loom
 
 ### 13. SILENT FAILURE DETECTION
 
-Exit code 0 ≠ success: sandbox blocks, dependency-fetch failures, and write denials all exit 0. Read stderr; on "blocked", "denied", "connection refused", "failed to download": stop and investigate. Confirm external dependencies exist. In a stage, the main agent disputes a wrong check, or one that fails only because of where completion runs (no network, unreadable git metadata, the command timeout, a sandbox denial), naming every such criterion in one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing, and blocks only a credential, a host install or a decision only a person can make with `loom stage block <stage-id> "<what is needed and why>"` (refused while the latest `loom stage complete` shows a failing criterion); a subagent reports either to its orchestrator.
+Exit code 0 ≠ success: sandbox blocks, dependency-fetch failures, and write denials all exit 0. Read stderr; on "blocked", "denied", "connection refused", "failed to download": stop and investigate. Confirm external dependencies exist. In a stage, the main agent disputes a wrong check, or one that fails only because of where completion runs (no network, git metadata, timeout, sandbox denial), naming every such criterion in one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing, and blocks only a credential, a host install or a decision only a person can make with `loom stage block <stage-id> "<what is needed and why>"` (refused while the latest `loom stage complete` shows a failing criterion); a subagent reports either to its orchestrator.
 
 ### 14. TOKEN EFFICIENCY (HARD REQUIREMENT)
 

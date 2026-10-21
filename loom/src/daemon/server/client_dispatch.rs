@@ -14,13 +14,7 @@ impl ClientDispatch<'_> {
         stream: &mut UnixStream,
         incoming: AuthorizedRequest,
     ) -> Result<bool> {
-        let AuthorizedRequest {
-            preface,
-            authorization,
-            peer_pid,
-            request,
-            _permit,
-        } = incoming;
+        let AuthorizedRequest { request, _permit } = incoming;
         match request {
             Request::Ping { .. } => write_message(stream, &Response::Pong)?,
             Request::SubscribeStatus { .. } => {
@@ -33,7 +27,7 @@ impl ClientDispatch<'_> {
                 return Ok(false);
             }
             request => {
-                let response = self.control(&preface, authorization, peer_pid, request);
+                let response = self.control(request);
                 write_message(stream, &response)?;
                 return Ok(false);
             }
@@ -41,31 +35,9 @@ impl ClientDispatch<'_> {
         Ok(true)
     }
 
-    fn control(
-        &self,
-        preface: &RequestPreface,
-        authorization: Authorization,
-        peer_pid: Option<u32>,
-        request: Request,
-    ) -> Response {
+    fn control(&self, request: Request) -> Response {
         match request {
             Request::Unsubscribe { .. } => Response::Ok,
-            Request::ValidateInheritedConfinement {
-                stage_id,
-                session_id,
-                working_dir,
-                ..
-            } => crate::daemon::inherited::authorize(
-                self.work_dir,
-                &stage_id,
-                &session_id,
-                &working_dir,
-                peer_pid,
-            ),
-            request
-            @ (Request::CompleteStage { .. } | Request::RecordCompletionEvidence { .. }) => {
-                complete(preface, authorization, peer_pid, request, self.work_dir)
-            }
             request @ (Request::DisputeCriteria { .. }
             | Request::FileDispute { .. }
             | Request::BlockStage { .. }

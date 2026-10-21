@@ -1,16 +1,19 @@
-//! The host child: one verification job, run by `loom stage verify-host`.
+//! The host child: one host job, run by `loom stage verify-host`.
 //!
 //! The daemon's runner starts it for a job it has set `Running`. The child
 //! verifies the tree the request named, records each criterion's outcome as
-//! it finishes, and writes the job's result. It prints nothing; the CLI
-//! wrapper prints the summary the runner captures in `child.log`.
+//! it finishes, and writes the job's result. A check runs the stage's gate, a
+//! completion its full completion run (`child_complete`), a freeze its
+//! contracts (`freeze`). It prints nothing; the CLI wrapper prints the
+//! summary the runner captures in `child.log`.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
 use anyhow::{bail, ensure, Context, Result};
 
-use super::{digest, store, CriterionOutcome, JobRecord, JobResult, JobState};
+use super::{child_complete, digest, freeze, store};
+use super::{CriterionOutcome, JobKind, JobRecord, JobResult, JobState};
 use crate::commands::stage::acceptance_runner::{resolve_acceptance_dir, StageExecutionPaths};
 use crate::commands::stage::criterion_output::format_criterion_result;
 use crate::commands::verify::run_and_verify_stage_goal;
@@ -24,7 +27,7 @@ use crate::verify::goal_backward::GoalBackwardResult;
 use crate::verify::transitions::load_stage;
 
 /// Most bytes of one outcome's summary; the full output is in its log.
-const SUMMARY_MAX_BYTES: usize = 8 * 1024;
+pub(super) const SUMMARY_MAX_BYTES: usize = 8 * 1024;
 /// Most bytes of a result's pipeline error.
 const ERROR_MAX_BYTES: usize = 2 * 1024;
 
@@ -34,9 +37,16 @@ const ERROR_MAX_BYTES: usize = 2 * 1024;
 pub fn run_job(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<JobResult> {
     let record = load_running(work_dir, stage_id, job_id)?;
     let _groups = record_groups(work_dir, stage_id, job_id);
-    let progress = Arc::new(Progress::new(work_dir, stage_id, job_id));
-    let checked = check(work_dir, &record, &progress);
-    let result = finish(&record, progress.take_outcomes(), checked);
+    let result = match record.kind {
+        JobKind::Check => {
+            let progress = Arc::new(Progress::new(work_dir, stage_id, job_id));
+            let checked = check(work_dir, &record, &progress);
+            finish(&record, progress.take_outcomes(), checked, None)
+        }
+        JobKind::Complete => child_complete::run(work_dir, &record),
+        JobKind::Freeze => freeze::run_freeze_job(work_dir, &record)
+            .unwrap_or_else(|error| finish(&record, Vec::new(), Err(error), None)),
+    };
     store::save_result(work_dir, stage_id, &result)?;
     Ok(result)
 }
@@ -104,7 +114,7 @@ fn plan_has_goal_checks(work_dir: &Path, stage_id: &str) -> Result<bool> {
     Ok(definition.has_any_goal_checks())
 }
 
-fn run_acceptance(
+pub(super) fn run_acceptance(
     stage: &Stage,
     tree: &JobTree,
     work_dir: &Path,
@@ -176,10 +186,13 @@ fn goal_summary(result: &GoalBackwardResult) -> String {
     }
 }
 
-fn finish(
+/// The job's result from its outcomes and how its pipeline ended:
+/// `Ok(Some(change))` names how the tree changed during the run.
+pub(super) fn finish(
     record: &JobRecord,
     criteria: Vec<CriterionOutcome>,
     checked: Result<Option<String>>,
+    policy_hash: Option<String>,
 ) -> JobResult {
     let error = match checked {
         Ok(None) => None,
@@ -194,16 +207,16 @@ fn finish(
         passed,
         criteria,
         error,
-        policy_hash: None,
+        policy_hash,
     }
 }
 
 /// The checkout a job verifies and where its criteria run: the stage
 /// worktree, or the repository root for a knowledge stage.
-struct JobTree {
+pub(super) struct JobTree {
     checkout: PathBuf,
-    paths: StageExecutionPaths,
-    knowledge: bool,
+    pub(super) paths: StageExecutionPaths,
+    pub(super) knowledge: bool,
 }
 
 impl JobTree {
@@ -212,7 +225,7 @@ impl JobTree {
     /// `acceptance_runner::resolve_knowledge_execution_paths` gives a process
     /// started in the repository root: no `worktree_root`, so a `working_dir`
     /// below the root does not grant the whole repository.
-    fn resolve(stage: &Stage, work_dir: &Path) -> Result<Self> {
+    pub(super) fn resolve(stage: &Stage, work_dir: &Path) -> Result<Self> {
         let repo_root = crate::fs::work_dir::WorkDir::new(work_dir)?
             .main_project_root()
             .context("the repository of the state root is unavailable")?;
@@ -243,7 +256,7 @@ impl JobTree {
     /// How the checkout's HEAD and digest differ from the record's, if they
     /// do. A clean commit leaves the digest unchanged, so HEAD is compared on
     /// its own.
-    fn differences(&self, record: &JobRecord) -> Result<Option<String>> {
+    pub(super) fn differences(&self, record: &JobRecord) -> Result<Option<String>> {
         let head = digest::head(&self.checkout)?;
         let digest = if self.knowledge {
             digest::knowledge_tree_digest(&self.checkout)?
@@ -267,7 +280,7 @@ impl JobTree {
 /// The outcomes of one job, persisted as each arrives. The acceptance
 /// observer cannot return an error, so the first store failure is kept and
 /// turned into the job's error once the criteria finish.
-struct Progress {
+pub(super) struct Progress {
     work_dir: PathBuf,
     stage_id: String,
     job_id: String,
@@ -281,7 +294,7 @@ struct ProgressState {
 }
 
 impl Progress {
-    fn new(work_dir: &Path, stage_id: &str, job_id: &str) -> Self {
+    pub(super) fn new(work_dir: &Path, stage_id: &str, job_id: &str) -> Self {
         Self {
             work_dir: work_dir.to_path_buf(),
             stage_id: stage_id.to_string(),
@@ -309,7 +322,7 @@ impl Progress {
         self.record(outcome, output);
     }
 
-    fn record(&self, mut outcome: CriterionOutcome, output: Option<Vec<u8>>) {
+    pub(super) fn record(&self, mut outcome: CriterionOutcome, output: Option<Vec<u8>>) {
         let stored = self.store(&mut outcome, output);
         let mut state = self.lock();
         if let Err(err) = stored {
@@ -328,14 +341,19 @@ impl Progress {
         store::append_progress(work_dir, stage_id, job_id, outcome)
     }
 
-    fn take_failure(&self) -> Result<()> {
+    pub(super) fn take_failure(&self) -> Result<()> {
         match self.lock().failure.take() {
             Some(failure) => bail!("cannot record the job's progress: {failure}"),
             None => Ok(()),
         }
     }
 
-    fn take_outcomes(&self) -> Vec<CriterionOutcome> {
+    /// Whether any outcome recorded so far failed.
+    pub(super) fn any_failed(&self) -> bool {
+        self.lock().outcomes.iter().any(|outcome| !outcome.passed)
+    }
+
+    pub(super) fn take_outcomes(&self) -> Vec<CriterionOutcome> {
         std::mem::take(&mut self.lock().outcomes)
     }
 }

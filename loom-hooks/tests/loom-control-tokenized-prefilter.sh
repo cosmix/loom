@@ -9,7 +9,7 @@
 # This covers the three properties that pin that fix: the pinned command is
 # still accepted, quote-obfuscated forgeries are caught, and the two
 # false-positive classes are cured. The pre-existing sibling test covers the
-# rest of the bridge (trusted-binary resolution, marker, broker route).
+# rest of the hook (trusted-binary resolution, the pinned command).
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -19,11 +19,10 @@ trap 'rm -rf "$TMP"' EXIT
 
 WORKTREE="$TMP/repo/.worktrees/build-api"
 mkdir -p "$TMP/bin" "$WORKTREE"
-LOG="$TMP/broker.log"
 
 cat >"$TMP/bin/loom" <<'SH'
 #!/usr/bin/env bash
-printf '%s\n' "$*" >>"$BROKER_LOG"
+exit 0
 SH
 chmod +x "$TMP/bin/loom"
 
@@ -32,10 +31,9 @@ PINNED="$TMP/bin/loom stage complete build-api"
 invoke_hook() {
 	local payload
 	payload=$(jq -n --arg command "$1" '{tool_name:"Bash",tool_input:{command:$command}}')
-	rm -f "$LOG"
 	set +e
 	HOOK_OUTPUT=$(printf '%s' "$payload" |
-		env PATH="$TMP/bin:/usr/bin:/bin" BROKER_LOG="$LOG" LOOM_CONTROL_TESTING=1 \
+		env PATH="$TMP/bin:/usr/bin:/bin" LOOM_CONTROL_TESTING=1 \
 			LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" LOOM_STAGE_ID="build-api" \
 			LOOM_SESSION_ID="session-123" LOOM_WORKTREE_PATH="$WORKTREE" \
 			bash "$HOOK" 2>&1)
@@ -54,7 +52,6 @@ expect_reaches_pin() {
 		echo "FAIL: $label had no reason-bearing error: $HOOK_OUTPUT" >&2
 		exit 1
 	}
-	[[ ! -e "$LOG" ]] || { echo "FAIL: $label reached the broker" >&2; exit 1; }
 }
 
 expect_allowed() {
@@ -64,7 +61,6 @@ expect_allowed() {
 		echo "FAIL: $label was blocked: $command: $HOOK_OUTPUT" >&2
 		exit 1
 	}
-	[[ ! -e "$LOG" ]] || { echo "FAIL: $label reached the broker" >&2; exit 1; }
 }
 
 # 1. REGRESSION: the pinned command itself must still reach the pin AND be
@@ -121,11 +117,5 @@ expect_allowed 'echo done' "an unrelated command"
 expect_allowed 'echo "run loom stage complete later"' "quoted completion prose"
 expect_allowed 'cat docs/loom-stage-complete.md' "a completion-shaped path"
 expect_allowed 'rg "stage complete" loom/' "a quoted search pattern"
-
-# Nothing above may reach the completion broker.
-[[ ! -e "$LOG" ]] || {
-	echo "FAIL: the pre-filter cases reached the broker: $(cat "$LOG")" >&2
-	exit 1
-}
 
 echo "PASS"

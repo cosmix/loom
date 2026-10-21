@@ -212,10 +212,14 @@ fn subagent_preamble_opens_with_spawn_guard_preamble_line() {
 
 fn assert_lifecycle_hooks(hooks: &Value) {
     let post_tool = hooks["PostToolUse"].as_array().unwrap();
-    assert_eq!(post_tool.len(), 3);
+    assert_eq!(post_tool.len(), 2);
     assert_hook(&post_tool[0], "AskUserQuestion", "ask-user-post.sh");
-    assert_hook(&post_tool[1], "Bash", "loom-control-complete.sh");
-    assert_hook(&post_tool[2], "Bash", "codex-forward-result.sh");
+    assert_hook(&post_tool[1], "Bash", "codex-forward-result.sh");
+    assert!(!contains_hook(
+        post_tool,
+        "Bash",
+        "loom-control-complete.sh"
+    ));
 
     let stop = hooks["Stop"].as_array().unwrap();
     assert_eq!(stop.len(), 1);

@@ -21,7 +21,7 @@ use crate::sandbox::{MergedSandboxConfig, SettingsTarget};
 
 /// The relay hook every kind registers (PostToolUse, matcher `Bash`).
 const RELAY_SCRIPT: &str = "loom-relay.sh";
-/// The completion broker's hook; only the kinds that complete through it keep it.
+/// The completion pin hook (PreToolUse); only the kinds that complete through it keep it.
 const CONTROL_COMPLETE_SCRIPT: &str = "loom-control-complete.sh";
 
 /// Everything [`capsule_settings`] reads.
@@ -82,14 +82,6 @@ pub(super) fn capsule_settings(inputs: &CapsuleInputs<'_>) -> Result<Value> {
             cwd: Some(inputs.cwd),
         },
     )?;
-    // Seatbelt cannot nest. The read-only inheritance RPC needs this one
-    // socket; all daemon mutations retain their own authorization gates.
-    #[cfg(target_os = "macos")]
-    extend_strings(
-        &mut settings,
-        &["sandbox", "network", "allowUnixSockets"],
-        &[utf8(&crate::daemon::socket_path(inputs.state_root))?.to_string()],
-    );
     let plans = inputs.repo_root.join("doc").join("plans");
     let plans_read = format!("Read(/{}/**)", utf8(&plans)?);
     extend_strings(&mut settings, &["permissions", "allow"], &[plans_read]);
@@ -153,7 +145,7 @@ fn add_scratch_grant(settings: &mut Value, scratch_dir: &Path) -> Result<()> {
 }
 
 /// The kind's `hooks` block: loom's global guard set for every kind (the
-/// completion broker's hook only for Stage, Contract and Knowledge), every
+/// completion pin hook only for Stage, Contract and Knowledge), every
 /// session hook event for those three but only the PostToolUse heartbeat for
 /// the others, and the relay hook for every kind.
 fn capsule_hooks(
@@ -162,15 +154,15 @@ fn capsule_hooks(
     python3: Option<&Path>,
     python_hooks: &[PathBuf],
 ) -> Value {
-    let brokered = matches!(
+    let completes_stages = matches!(
         kind,
         SessionType::Stage | SessionType::Contract | SessionType::Knowledge
     );
     let mut hooks = crate::fs::permissions::guard_hooks_config(&hooks_dir.display().to_string());
-    if !brokered {
+    if !completes_stages {
         drop_script(&mut hooks, CONTROL_COMPLETE_SCRIPT);
     }
-    let events: &[HookEvent] = if brokered {
+    let events: &[HookEvent] = if completes_stages {
         HookEvent::all()
     } else {
         &[HookEvent::PostToolUse]

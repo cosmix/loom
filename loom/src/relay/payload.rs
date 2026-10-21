@@ -40,9 +40,9 @@ pub struct CommitPayload {
     pub expected_tree: String,
 }
 
-/// `{head, tree_digest, no_cache}` for a host verification request (`check`):
-/// the HEAD and tree digest the session saw, and whether it asked to bypass
-/// the acceptance cache. The child re-checks both on the host.
+/// `{head, tree_digest, no_cache}` for a host job request (`check` and
+/// `complete`): the HEAD and tree digest the session saw, and whether it asked
+/// to bypass the acceptance cache. The child re-checks both on the host.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostJobRequest {
@@ -65,6 +65,7 @@ pub enum RequestPayload {
     FileDispute(StageRequest),
     Commit(CommitPayload),
     Check(HostJobRequest),
+    Complete(HostJobRequest),
 }
 
 /// Decode `payload` under the shape `kind` promises. `block`, `dispute`,
@@ -97,6 +98,7 @@ pub fn decode_payload(kind: RequestKind, payload: &Value) -> Result<RequestPaylo
         )?)),
         RequestKind::Commit => Ok(RequestPayload::Commit(decode(payload, "commit")?)),
         RequestKind::Check => Ok(RequestPayload::Check(decode(payload, "check")?)),
+        RequestKind::Complete => Ok(RequestPayload::Complete(decode(payload, "complete")?)),
     }
 }
 
@@ -232,20 +234,20 @@ mod tests {
 
     #[test]
     fn decodes_freeze_contracts_and_refuses_it_under_dispute() {
+        let head = "a".repeat(40);
         let freeze = serde_json::json!({
             "request": "freeze_contracts",
-            "reports": [{
-                "contract_id": "rejects-x",
-                "adapter": "cargo-test",
-                "outcome": "failed",
-                "exit_code": 101,
-            }],
+            "head": head,
+            "tree_digest": "b".repeat(64),
         });
         assert!(matches!(
             decode_payload(RequestKind::FreezeContracts, &freeze).unwrap(),
-            RequestPayload::FreezeContracts(StageRequest::FreezeContracts { reports })
-                if reports.len() == 1
+            RequestPayload::FreezeContracts(StageRequest::FreezeContracts { head: decoded, .. })
+                if decoded == head
         ));
+        let mut with_reports = freeze.clone();
+        with_reports["reports"] = serde_json::json!([]);
+        assert!(decode_payload(RequestKind::FreezeContracts, &with_reports).is_err());
         assert!(decode_payload(RequestKind::Dispute, &freeze).is_err());
         assert!(
             decode_payload(RequestKind::FreezeContracts, &stage_request_json("block")).is_err()
@@ -310,6 +312,25 @@ mod tests {
         extra["reports"] = serde_json::json!([]);
         assert!(decode_payload(RequestKind::Check, &extra).is_err());
         assert!(decode_payload(RequestKind::Check, &serde_json::json!({})).is_err());
+    }
+
+    #[test]
+    fn decodes_a_complete_payload_and_refuses_an_unknown_field() {
+        let payload = serde_json::json!({
+            "head": "a".repeat(40),
+            "tree_digest": "b".repeat(64),
+            "no_cache": false,
+        });
+        assert!(matches!(
+            decode_payload(RequestKind::Complete, &payload).unwrap(),
+            RequestPayload::Complete(HostJobRequest {
+                no_cache: false,
+                ..
+            })
+        ));
+        let mut extra = payload.clone();
+        extra["evidence"] = serde_json::json!({});
+        assert!(decode_payload(RequestKind::Complete, &extra).is_err());
     }
 
     #[test]

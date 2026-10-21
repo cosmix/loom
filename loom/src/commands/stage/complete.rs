@@ -1,6 +1,7 @@
 //! Stage completion logic
 
 use anyhow::{bail, Context, Result};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::daemon::DaemonServer;
@@ -11,14 +12,14 @@ use crate::git::worktree::find_repo_root_from_cwd;
 use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::orchestrator::merge_attribution::{attribute_main_repo_merge, MergeAttribution};
+use crate::relay::emit::{mode, EnvSnapshot};
 use crate::verify::transitions::{list_all_stages, load_stage, update_stage};
 
 use super::acceptance_runner::{
     resolve_stage_execution_paths, run_acceptance_with_display, AcceptanceDisplayOptions,
     StageExecutionPaths,
 };
-use super::completion_evidence::impact_record::after_failed_completion;
-use super::knowledge_complete::{complete_knowledge_stage, verify_knowledge_for_broker};
+use super::knowledge_complete::complete_knowledge_stage;
 use super::merge_resolver::{spawn_merge_resolver, MergeResolverResult};
 use super::merge_verify::verify_or_derive_completed_commit;
 use super::progressive_complete::complete_with_merge;
@@ -30,17 +31,16 @@ pub(super) mod complete_authorization;
 mod complete_cache;
 #[path = "complete_force.rs"]
 mod complete_force;
+#[path = "complete_impact.rs"]
+pub(crate) mod complete_impact;
+#[path = "complete_relay.rs"]
+pub(super) mod complete_relay;
 #[path = "complete_verification.rs"]
-mod complete_verification;
-#[path = "control_complete.rs"]
-pub(super) mod control_complete;
-#[path = "control_session.rs"]
-mod control_session;
+pub(crate) mod complete_verification;
 
 use complete_authorization::authorize_privileged_completion;
 use complete_cache::bypass_acceptance_cache;
 use complete_force::handle_force_unsafe_completion;
-use control_session::{handle_broker_request, sandbox_control_session};
 
 pub(crate) use super::admin_proof::{
     mint_completion_proof_from_env, strip_privileged_env_for_runtime,
@@ -70,10 +70,14 @@ pub fn complete(
 ) -> Result<()> {
     let work_dir_buf = crate::commands::common::work_dir_path()?;
     let work_dir: &Path = &work_dir_buf;
-    let is_privileged = no_verify || force_unsafe || assume_merged;
-    if handle_broker_request(&stage_id, session_id.as_deref(), is_privileged, work_dir)? {
-        return Ok(());
-    }
+    let privileged = no_verify || force_unsafe || assume_merged;
+    end_session_call(
+        &stage_id,
+        session_id.as_deref(),
+        privileged,
+        no_cache,
+        work_dir,
+    )?;
     authorize_privileged_completion(
         &stage_id,
         no_verify,
@@ -83,74 +87,49 @@ pub fn complete(
         work_dir,
     )?;
 
-    let (stage, control_session) =
-        prepare_completion(&stage_id, session_id.as_deref(), no_cache, work_dir)?;
+    let stage = load_stage(&stage_id, work_dir)?;
+    bypass_acceptance_cache(no_cache);
     if stage.stage_type == StageType::Knowledge {
-        return complete_knowledge(
-            &stage,
-            session_id.as_deref(),
-            control_session.as_deref(),
-            no_verify,
-            force_unsafe,
-            is_privileged,
-            work_dir,
-        );
+        return complete_knowledge_stage(&stage.id, session_id.as_deref(), no_verify, force_unsafe);
     }
-
-    let stage_session = control_session.is_some();
     complete_pipeline::complete_stage(
         stage,
         session_id,
         no_verify,
         force_unsafe,
         assume_merged,
-        control_session,
         work_dir,
     )
-    .inspect_err(|error| after_failed_completion(&stage_id, stage_session, work_dir, error))
+    .inspect_err(|error| complete_impact::after_failed_completion(&stage_id, work_dir, error))
 }
 
-fn prepare_completion(
+/// Inside a session, request the daemon's completion job or follow it, and
+/// end the process with the outcome's exit code; requested and pending exit
+/// 0 too, and none may fall through to a local completion. Returns for the
+/// operator's shell, which completes locally.
+fn end_session_call(
     stage_id: &str,
     session_id: Option<&str>,
+    privileged: bool,
     no_cache: bool,
     work_dir: &Path,
-) -> Result<(Stage, Option<String>)> {
-    let stage = load_stage(stage_id, work_dir)?;
-    bypass_acceptance_cache(no_cache);
-    let control_session = sandbox_control_session(&stage, stage_id, session_id, work_dir)?;
-    Ok((stage, control_session))
-}
-
-fn complete_knowledge(
-    stage: &Stage,
-    session_id: Option<&str>,
-    control_session: Option<&str>,
-    no_verify: bool,
-    force_unsafe: bool,
-    is_privileged: bool,
-    work_dir: &Path,
 ) -> Result<()> {
-    if let Some(control) = control_session {
-        return verify_knowledge_for_broker(stage, control, is_privileged, work_dir);
-    }
-    complete_knowledge_stage(&stage.id, session_id, no_verify, force_unsafe)
-}
-
-/// Explains that verification passing on the sandboxed worktree route does NOT
-/// mean the stage is completed — that transition is applied out-of-band by
-/// the daemon via the completion bridge, not by this process.
-pub(super) fn print_sandboxed_completion_pending_notice(stage_id: &str) {
-    println!();
-    println!(
-        "Verification passed, but stage '{stage_id}' is NOT completed yet — \
-         completion is applied out-of-band by the daemon via the completion \
-         bridge, which reads the EOF-delimited evidence record below. Do not \
-         treat this output as completion: the confirmation to \
-         look for is the bridge's own message, \"Stage '{stage_id}' completion \
-         was accepted by the daemon.\" If that confirmation never appears, the \
-         stage is still Executing and this work is NOT landed."
-    );
+    let cwd = std::env::current_dir().context("Failed to get current directory")?;
+    let call = complete_relay::SessionCall {
+        stage_id,
+        session_id,
+        privileged,
+        no_cache: no_cache || std::env::var("LOOM_ACCEPTANCE_CACHE").as_deref() == Ok("0"),
+        work_dir,
+        cwd: &cwd,
+    };
+    let mut stdout = std::io::stdout();
+    let relay_mode = mode(&EnvSnapshot::from_process_env());
+    let Some(code) = complete_relay::route(relay_mode, &call, &mut stdout)? else {
+        return Ok(());
+    };
+    let _ = stdout.flush();
+    std::process::exit(code)
 }
 
 fn ensure_acceptance_passed(result: Option<bool>, stage_id: &str) -> Result<()> {

@@ -3,11 +3,8 @@
 mod admission;
 mod broadcast;
 mod client;
-mod completion_dispatch;
-mod completion_evidence;
 mod contracts;
 mod control_block;
-mod control_complete;
 mod core;
 mod dispute;
 mod dispute_kinds;
@@ -36,9 +33,8 @@ pub use dispute::handle_dispute_criteria;
 pub(crate) use dispute_kinds::handle_file_dispute;
 pub(crate) use environment::daemon_environment_pairs;
 pub use launch::{await_ready, disable_spawn_for_tests, ReadyTiming};
+pub(crate) use observer::check_completion_gates;
 pub(crate) use peer_identity::caller_is_inside_session;
-#[cfg(target_os = "macos")]
-pub(crate) use peer_identity::peer_pid;
 pub(crate) use shutdown::DaemonUnavailable;
 pub use status::collect_completion_summary;
 pub use tokens::{admin_token_path, read_auth_token, read_user_token};

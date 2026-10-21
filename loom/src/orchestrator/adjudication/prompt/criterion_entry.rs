@@ -127,7 +127,9 @@ fn build_instructions(input: &KindPromptInput<'_>, entry: &Entry) -> String {
     s.push_str(&run_before_judging());
     s.push_str(&format!(
         "First run `loom check {} --no-cache` from {} and inspect the reported\n\
-         results. Use the direct checks below to diagnose differences.\n\n",
+         results; it runs them in a daemon host job, so run it again while its first line\n\
+         reads `Host job: requested` or `pending`. Use the direct checks below to\n\
+         diagnose differences.\n\n",
         input.stage.id,
         shell_quote(&input.site.path.to_string_lossy())
     ));

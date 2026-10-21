@@ -4,7 +4,7 @@
 //! re-verification (D11) and the recorded review gate (D12). Later v2 checks
 //! belong here too.
 
-use super::{completed_definitions, VerificationChecks};
+use super::{completed_definitions, CheckSink, VerificationChecks, IMPACT_TESTS_LABEL};
 use crate::context::worktree_graph::build_for_worktree;
 use crate::models::stage::StageType;
 use crate::plan::schema::StageDefinition;
@@ -14,36 +14,38 @@ use crate::verify::{contracts::completion, impact_tests, integrity, review::gate
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
-/// Run every v2 check, cheap deterministic failures first. The review gate
-/// runs last: every edit made to fix an earlier failure needs a re-review.
+/// Run every v2 check, cheap deterministic failures first, handing the
+/// contract check, the impact-selected tests and the reachable
+/// re-verification to `sink` under their labels. The review gate runs last:
+/// every edit made to fix an earlier failure needs a re-review.
 ///
 /// The test-integrity and review gates compare this worktree's change
 /// fingerprint with values the loom daemon recorded, so the daemon computes
-/// it (`fingerprint::compute`). A sandboxed stage session (`control_session`)
-/// cannot reach the daemon; its completion reaches the daemon through the
-/// broker instead, and the daemon runs both gates before it applies the
-/// transition, so they are not run here.
-pub(super) fn run_v2(checks: &VerificationChecks<'_>, target_branch: &str) -> Result<()> {
+/// it (`fingerprint::compute`). With `daemon_gates` (the daemon's completion
+/// job) they are not run here: the daemon runs both when it applies the
+/// job's result, before it completes the stage.
+pub(super) fn run_v2(
+    checks: &VerificationChecks<'_>,
+    target_branch: &str,
+    sink: &mut CheckSink<'_>,
+) -> Result<()> {
     let (stage, work_dir) = (checks.stage, checks.work_dir);
     let standard = stage.stage_type == StageType::Standard;
     let integration = stage.stage_type == StageType::IntegrationVerify;
-    let daemon_gates = checks.control_session.is_some();
     if standard && !stage.contracts.is_empty() {
-        let worktree_root = worktree(checks, "check contracts in")?;
-        let acceptance_dir = checks.acceptance_dir.unwrap_or(Path::new("."));
-        completion::check(stage, work_dir, acceptance_dir, worktree_root)?;
+        sink("contracts", check_contracts(checks))?;
     }
-    if (standard || integration) && !daemon_gates {
+    if (standard || integration) && !checks.daemon_gates {
         let worktree_root = worktree(checks, "check test integrity in")?;
         integrity::check(stage, work_dir, worktree_root, target_branch)?;
     }
     if standard {
-        run_impact_tests(checks, target_branch)?;
+        sink(IMPACT_TESTS_LABEL, run_impact_tests(checks, target_branch))?;
     }
     if integration {
-        reverify_reachable(checks)?;
+        sink("reachable", reverify_reachable(checks))?;
     }
-    if daemon_gates {
+    if checks.daemon_gates {
         if gate::covers(stage) {
             println!(
                 "Test integrity and the review gate are checked by the loom daemon when it \
@@ -53,6 +55,13 @@ pub(super) fn run_v2(checks: &VerificationChecks<'_>, target_branch: &str) -> Re
         return Ok(());
     }
     gate::check_at_completion(stage, work_dir, checks.worktree_root, target_branch)
+}
+
+/// DESIGN D9: every frozen contract still passes on the stage's tree.
+fn check_contracts(checks: &VerificationChecks<'_>) -> Result<()> {
+    let worktree_root = worktree(checks, "check contracts in")?;
+    let acceptance_dir = checks.acceptance_dir.unwrap_or(Path::new("."));
+    completion::check(checks.stage, checks.work_dir, acceptance_dir, worktree_root)
 }
 
 /// The stage's worktree, which every check reading the tree needs.

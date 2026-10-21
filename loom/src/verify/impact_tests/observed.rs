@@ -4,19 +4,13 @@
 //! this record into the dispute's evidence, so the filing agent's request
 //! adds nothing to what the adjudicator reads.
 //!
-//! Trust boundary: the record is not authenticated. A stage session runs
-//! `loom stage complete` inside its sandbox, which writes no loom state; its
-//! failing run prints the record as the last lines of its output
-//! (`commands/stage/completion_evidence/impact_record.rs`), and the
-//! completion broker, which the PostToolUse hook runs outside the sandbox on
-//! the output of exactly the pinned `loom stage complete <stage>`, writes it
-//! here. That run executes the stage's own code, which can print a forged
-//! record and end loom before loom prints its own, so every field (outcome,
-//! command, base result, tests, output) is the stage session's claim. The
-//! adjudicator re-runs each disputed selection before accepting it, and an
-//! accepted failure excuses only a later failure identical to it
-//! (`accepted`). A completion outside a stage session (an operator's, with no
-//! sandbox to cross) writes the record directly. Every field is bounded and
+//! Trust boundary: the record is not authenticated. The host job that runs a
+//! stage's completion (`host_verify`) writes it after a failing run, and an
+//! operator's own completion writes it directly. Either run executes the
+//! stage's own code, so every field (outcome, command, base result, tests,
+//! output) carries that code's output. The adjudicator re-runs each disputed
+//! selection before accepting it, and an accepted failure excuses only a
+//! later failure identical to it (`accepted`). Every field is bounded and
 //! stripped of control characters (`ImpactFailure::bounded`).
 
 use anyhow::{bail, Result};

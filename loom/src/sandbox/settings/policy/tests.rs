@@ -261,18 +261,13 @@ fn test_generate_settings_never_emits_excluded_commands() {
 }
 
 #[test]
-fn enabled_sandbox_allows_nested_user_namespaces_on_linux_only() {
+fn enabled_sandbox_never_allows_nested_user_namespaces() {
     let mut config = config();
     config.enabled = true;
     let json = generate_settings_json(&config);
-    let nested = &json["sandbox"]["allowNestedUserNamespaces"];
-    if cfg!(target_os = "linux") {
-        assert_eq!(nested, true);
-    } else {
-        assert!(nested.is_null(), "got {nested}");
-    }
-
-    config.enabled = false;
-    let json = generate_settings_json(&config);
-    assert!(json["sandbox"]["allowNestedUserNamespaces"].is_null());
+    assert!(!json["sandbox"]
+        .as_object()
+        .unwrap()
+        .keys()
+        .any(|key| key.ends_with("UserNamespaces")));
 }

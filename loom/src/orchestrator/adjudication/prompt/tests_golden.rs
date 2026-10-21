@@ -75,8 +75,11 @@ Judge every disputed criterion AND every other criterion `loom check` reports
 failing; a verdict may patch any of them. The aggregate command exit status
 decides nothing.
 
-This runs the criteria through Loom's setup, environment and confinement
-policy. Compare with these direct runs only to diagnose a difference:
+This asks the daemon to run the criteria in a host job under Loom's setup,
+environment and confinement policy. While its first line reads
+`Host job: requested` or `pending`, run the same command again in your next
+Bash call: that is not a result. The printed outputs are the host runner's.
+Compare with these direct runs only to diagnose a difference:
 
 ```bash
 # acceptance criterion 0
@@ -120,11 +123,11 @@ CRITERION AS WRITTEN?
   If a portable amendment preserves the assertion and runs under Loom,
   accept with that plan_patch; the system applies it automatically. Do
   not ask the operator to edit criteria or weaken the assertion.
-- It fails under Loom's runner only because of where completion runs —
-  network denied, git metadata absent, the command timeout, a sandbox
-  denial: accept with a portable `replace` (an extended criterion may set
-  `timeout_secs`, 1-3600), or with a `delete` when no form runs there,
-  naming in the reasoning what verification the deletion leaves to
+- It fails under Loom's runner, the daemon's host job, only because of where completion runs —
+  network denied, git metadata absent, the command
+  timeout, a sandbox denial: accept with a portable `replace` (an extended
+  criterion may set `timeout_secs`, 1-3600), or with a `delete` when no
+  form runs there, naming in the reasoning what verification the deletion leaves to
   integration-verify.
 - A worktree that is gone keeps you from running it: needs-more-evidence,
   naming the blocker. Never request evidence no agent can produce (an

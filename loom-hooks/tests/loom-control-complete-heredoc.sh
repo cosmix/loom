@@ -14,8 +14,7 @@ trap 'rm -rf "$TMP"' EXIT
 
 WORKTREE="$TMP/repo/.worktrees/build-api"
 mkdir -p "$TMP/bin" "$WORKTREE"
-LOG="$TMP/broker.log"
-printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"$BROKER_LOG"\n' >"$TMP/bin/loom"
+printf '#!/usr/bin/env bash\nexit 0\n' >"$TMP/bin/loom"
 chmod +x "$TMP/bin/loom"
 PINNED="$TMP/bin/loom stage complete build-api"
 
@@ -30,46 +29,36 @@ read_cmd() {
 	CMD=${CMD%$'\n'}
 }
 
-# invoke_hook <command> [pre|post] - Run the hook with a scrubbed environment.
+# invoke_hook <command> - Run the hook with a scrubbed environment.
 invoke_hook() {
 	local payload
-	if [[ "${2:-pre}" == post ]]; then
-		payload=$(jq -n --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c},tool_result:{output:"ok",is_error:false}}')
-	else
-		payload=$(jq -n --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c}}')
-	fi
-	rm -f "$LOG"
+	payload=$(jq -n --arg c "$1" '{tool_name:"Bash",tool_input:{command:$c}}')
 	set +e
 	HOOK_OUTPUT=$(printf '%s' "$payload" |
-		env -i PATH="$PATH" HOME="$TMP" BROKER_LOG="$LOG" LOOM_CONTROL_TESTING=1 \
+		env -i PATH="$PATH" HOME="$TMP" LOOM_CONTROL_TESTING=1 \
 			LOOM_CONTROL_TEST_BIN="$TMP/bin/loom" LOOM_STAGE_ID=build-api \
 			LOOM_SESSION_ID=session-123 LOOM_WORKTREE_PATH="$WORKTREE" bash "$HOOK" 2>&1)
 	HOOK_RC=$?
 	set -e
-	[[ ! -e "$LOG" ]] || fail "$3 reached the broker"
 }
 
 expect_allowed() {
-	local label=$1 phase
-	for phase in pre post; do
-		invoke_hook "$CMD" "$phase" "$label"
-		[[ "$HOOK_RC" == 0 && -z "$HOOK_OUTPUT" ]] || fail "$label ($phase) was blocked: $HOOK_OUTPUT"
-	done
+	local label=$1
+	invoke_hook "$CMD"
+	[[ "$HOOK_RC" == 0 && -z "$HOOK_OUTPUT" ]] || fail "$label was blocked: $HOOK_OUTPUT"
 }
 
 expect_refused() {
 	local label=$1
-	invoke_hook "$CMD" pre "$label"
+	invoke_hook "$CMD"
 	[[ "$HOOK_RC" == 2 && "$HOOK_OUTPUT" == *LOOM_CONTROL_ERROR:* ]] ||
 		fail "$label was not refused (rc $HOOK_RC): $HOOK_OUTPUT"
 	PRE_OUTPUT=$HOOK_OUTPUT
-	invoke_hook "$CMD" post "$label"
-	[[ "$HOOK_RC" == 2 ]] || fail "$label passed PostToolUse (rc $HOOK_RC)"
 }
 
 # 1. The pinned command is untouched by the heredoc path.
 CMD=$PINNED
-invoke_hook "$CMD" pre "the pinned command"
+invoke_hook "$CMD"
 [[ "$HOOK_RC" == 0 ]] || fail "the pinned command was refused: $HOOK_OUTPUT"
 
 # 2. Heredoc prose is data. Each body spells the completion shape at a line

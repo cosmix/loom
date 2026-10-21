@@ -5,7 +5,6 @@ pub(super) fn build(hooks_dir: &str) -> Value {
         "PreToolUse": pre_tool_hooks(hooks_dir),
         "PostToolUse": [
             hook(hooks_dir, "AskUserQuestion", "ask-user-post.sh"),
-            hook(hooks_dir, "Bash", "loom-control-complete.sh"),
             hook(hooks_dir, "Bash", "codex-forward-result.sh"),
         ],
         "Stop": [hook(hooks_dir, "*", "commit-guard.sh")],

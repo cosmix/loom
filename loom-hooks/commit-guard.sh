@@ -579,6 +579,9 @@ main() {
 	message+="\nresult, fix every defect, commit - and only THEN run loom stage complete."
 	message+="\nloom stage complete is the LAST act of the session. Complete only a SETTLED stage,"
 	message+="\nand run NOTHING after it - post-completion work is lost work."
+	message+="\nRead its first line, Host job: <state>. requested, pending and stopped (exit 4):"
+	message+="\nrun it again. failed, rejected and refused: fix, commit, run it again."
+	message+="\ncompleted: end the session."
 
 	message+="\n\nDo NOT end this session until all steps are complete, or a dispute or block is filed."
 

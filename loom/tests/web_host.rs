@@ -30,7 +30,6 @@ const RELAY_ENV_VARS: &[&str] = &[
     "LOOM_BIN",
     "LOOM_HOOK_PATH",
     "LOOM_HOOK_CONTEXT",
-    "LOOM_CONTROL_BROKER",
 ];
 
 const STARTUP_DEADLINE: Duration = Duration::from_secs(10);

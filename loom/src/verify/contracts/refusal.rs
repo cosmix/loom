@@ -9,8 +9,10 @@
 //! `loom-hooks/commit-guard.sh` runs `loom stage waiting`, which parks the
 //! stage in `WaitingForInput` with the problems as its `review_reason`, the
 //! reason `loom status` prints ([`standing`], [`park`]). A relayed freeze the
-//! daemon refuses parks the same way from the inbox drain
-//! ([`park_refused_relay`]): the relay told the writer to end its turn.
+//! daemon refuses parks the same way, from the inbox drain
+//! ([`park_refused_relay`]) or from the application of a finished freeze host
+//! job (`host_verify::freeze::apply_freeze_result`): the relay told the writer
+//! to end its turn.
 //!
 //! Typing into the session continues the contract phase: the monitor moves a
 //! waiting stage back to `Executing` once its session runs a tool, and so do

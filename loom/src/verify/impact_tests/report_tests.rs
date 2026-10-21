@@ -2,9 +2,6 @@
 //! accepted, as the daemon records them and the gate reads them back.
 
 use super::*;
-use crate::commands::stage::completion_evidence::impact_record::{
-    format_impact_record, parse_impact_record,
-};
 use crate::testrun::{registry, TestTarget};
 use crate::verify::criteria::{ProbeRun, ProbeRunner};
 use crate::verify::impact_tests::base::BaseRunner;
@@ -158,9 +155,9 @@ fn an_accepted_failure_covers_only_an_identical_one() {
     }
 }
 
-/// Stage code can print a forged record and end loom before loom prints its
-/// own, so the broker keeps the forgery. Accepted, it excuses only the exact
-/// failure it claims: an inflated count covers no real run that differs.
+/// A record carries the stage code's own output, so its claim may be inflated.
+/// Accepted, it excuses only the exact failure it claims: an inflated count
+/// covers no real run that differs.
 #[test]
 fn a_forged_record_once_accepted_covers_nothing_but_its_claim() {
     let forged = ObservedImpact::of(&[ImpactFailure {
@@ -172,13 +169,11 @@ fn a_forged_record_once_accepted_covers_nothing_but_its_claim() {
         accepted: None,
         output: "500 failed".to_string(),
     }]);
-    let output = format!("test output\n{}", format_impact_record(&forged).unwrap());
-    let kept = parse_impact_record(&output).unwrap().unwrap();
     let work = TempDir::new().unwrap();
     append_impact_acceptance(
         work.path(),
         "s",
-        &[AcceptedFailure::of(&kept.failures[0], 3)],
+        &[AcceptedFailure::of(&forged.failures[0], 3)],
     )
     .unwrap();
     let accepted = load_accepted(work.path(), "s").unwrap();

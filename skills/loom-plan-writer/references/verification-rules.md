@@ -19,7 +19,8 @@ canonical gate" is a floor on COVERAGE, never a licence to ship a command the pl
 never watched pass. Acceptance is what `loom stage complete` runs, so a criterion that is red for
 reasons the stage's diff cannot touch does not report a problem — it STRANDS a finished,
 committed stage, and the agent cannot wave it through (`--no-verify` needs a one-time operator
-proof derived from `.loom/work/admin.token` (or the legacy `.work/admin.token`), which the session sandbox denies by design). Before any
+proof derived from `.loom/work/admin.token` (or the legacy `.work/admin.token`), which the session sandbox denies by design). Acceptance runs in the daemon's
+host job (`loom check <stage-id>` runs the same job). Before any
 command enters `acceptance`:
 
 1. **Run it, at HEAD, before the plan exists.** Not "it is the repo's standard command" — RUN it.

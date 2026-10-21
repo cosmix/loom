@@ -123,5 +123,5 @@ fn contract_rules_name_the_formatter_and_size_limits() {
     assert!(content.contains("`cargo fmt --all`"));
     assert!(content.contains("every test function under 50 lines and every file under 400"));
     assert!(content.contains("7. Finish with `loom stage contracts freeze s1`"));
-    assert!(content.contains("8. After a successful freeze, stop"));
+    assert!(content.contains("8. After the freeze request, stop"));
 }

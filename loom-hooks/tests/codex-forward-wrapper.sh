@@ -36,6 +36,13 @@ cat >"$BIN_DIR/sandbox-exec" <<'STUB'
 exit 0
 STUB
 
+# The Linux nested-sandbox probe runs `bwrap`; a stub that succeeds keeps the
+# companion-mode cases independent of the host.
+cat >"$BIN_DIR/bwrap" <<'STUB'
+#!/usr/bin/env bash
+exit 0
+STUB
+
 cat >"$BIN_DIR/node" <<'STUB'
 #!/usr/bin/env bash
 set -euo pipefail
@@ -90,7 +97,7 @@ cancel)
 *) exit 94 ;;
 esac
 STUB
-chmod +x "$BIN_DIR/node" "$BIN_DIR/sandbox-exec"
+chmod +x "$BIN_DIR/node" "$BIN_DIR/sandbox-exec" "$BIN_DIR/bwrap"
 
 prompt=$'literal; operator\nsecond line with $HOME and `ticks`'
 START='LOOM-FORWARD-START {"v":1,"backend":"companion","job_id":"job-exact"}'

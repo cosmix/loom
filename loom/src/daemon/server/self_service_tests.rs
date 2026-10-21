@@ -70,44 +70,9 @@ fn block(session_id: &str) -> Request {
     }
 }
 
-fn evidence_request(session_id: &str) -> Request {
-    use crate::handoff::{CompletionAttemptEvidence, CompletionPhase, VerificationCheckpoint};
-    Request::RecordCompletionEvidence {
-        auth_token: "t".to_string(),
-        stage_id: "build-api".to_string(),
-        session_id: session_id.to_string(),
-        evidence: Box::new(CompletionAttemptEvidence {
-            version: 1,
-            stage_id: "build-api".to_string(),
-            session_id: session_id.to_string(),
-            commit: "a".repeat(40),
-            check_definition_hash: "definition".to_string(),
-            exact_command: "check".to_string(),
-            evidence_nonce: "fedcba9876543210".to_string(),
-            verification: VerificationCheckpoint::default(),
-            phase: CompletionPhase::EvidenceMissing,
-            external_failure_code: None,
-            diagnostic_first_line: None,
-            observed_at: "2026-09-14T00:00:00Z".to_string(),
-            attestation: None,
-        }),
-    }
-}
-
 #[test]
 fn only_the_own_stage_requests_can_be_authorized_by_the_connection() {
     assert_eq!(Some("s1"), self_service_session(&block("s1")));
-    assert_eq!(Some("s0"), self_service_session(&evidence_request("s0")));
-    assert_eq!(
-        Some("s2"),
-        self_service_session(&Request::CompleteStage {
-            auth_token: "t".to_string(),
-            stage_id: "build-api".to_string(),
-            session_id: "s2".to_string(),
-            nonce: "0123456789abcdef0123456789abcdef".to_string(),
-            evidence_nonce: "fedcba9876543210fedcba9876543210".to_string(),
-        })
-    );
     assert_eq!(Some("s3"), self_service_session(&dispute("s3")));
     assert_eq!(Some("s5"), self_service_session(&file_dispute("s5")));
     assert_eq!(
@@ -116,7 +81,8 @@ fn only_the_own_stage_requests_can_be_authorized_by_the_connection() {
             auth_token: "t".to_string(),
             stage_id: "build-api".to_string(),
             session_id: "s4".to_string(),
-            reports: Vec::new(),
+            head: "a".repeat(40),
+            tree_digest: "b".repeat(64),
         })
     );
 
@@ -138,18 +104,7 @@ fn only_the_own_stage_requests_can_be_authorized_by_the_connection() {
 }
 
 #[test]
-fn completion_ownership_is_left_to_its_own_locked_handler() {
-    assert_eq!(
-        None,
-        ownership_to_enforce(&Request::CompleteStage {
-            auth_token: "t".to_string(),
-            stage_id: "build-api".to_string(),
-            session_id: "s1".to_string(),
-            nonce: "0123456789abcdef0123456789abcdef".to_string(),
-            evidence_nonce: "fedcba9876543210fedcba9876543210".to_string(),
-        })
-    );
-    assert_eq!(None, ownership_to_enforce(&evidence_request("s1")));
+fn ownership_is_enforced_for_the_session_scoped_requests() {
     assert_eq!(
         Some(("build-api", "s1", BLOCK_KINDS)),
         ownership_to_enforce(&block("s1"))

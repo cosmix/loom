@@ -40,9 +40,8 @@ use std::path::{Path, PathBuf};
 /// A snapshot of the environment variables [`mode`] and [`RelayContext`]
 /// decide from: `LOOM_SESSION_ID`, `LOOM_SCRATCH_DIR`, `LOOM_STAGE_ID`,
 /// `LOOM_SESSION_TYPE` (kept as the raw string), `LOOM_WORKTREE_PATH`,
-/// `LOOM_WORK_DIR`, and the `LOOM_HOOK_CONTEXT`/`LOOM_CONTROL_BROKER` flags.
-/// Nothing in this module reads the process environment outside
-/// [`EnvSnapshot::from_process_env`].
+/// `LOOM_WORK_DIR`, and the `LOOM_HOOK_CONTEXT` flag. Nothing in this module
+/// reads the process environment outside [`EnvSnapshot::from_process_env`].
 #[derive(Debug, Clone, Default)]
 pub struct EnvSnapshot {
     pub session_id: Option<String>,
@@ -52,7 +51,6 @@ pub struct EnvSnapshot {
     pub worktree_path: Option<PathBuf>,
     pub work_dir: Option<PathBuf>,
     pub hook_context: bool,
-    pub control_broker: bool,
 }
 
 impl EnvSnapshot {
@@ -72,7 +70,6 @@ impl EnvSnapshot {
             worktree_path: std::env::var_os("LOOM_WORKTREE_PATH").map(PathBuf::from),
             work_dir: std::env::var_os("LOOM_WORK_DIR").map(PathBuf::from),
             hook_context: std::env::var("LOOM_HOOK_CONTEXT").ok().as_deref() == Some("1"),
-            control_broker: std::env::var("LOOM_CONTROL_BROKER").ok().as_deref() == Some("1"),
         }
     }
 
@@ -86,26 +83,27 @@ impl EnvSnapshot {
 /// presence only — never from a write error.
 #[derive(Debug, Clone)]
 pub enum RelayMode {
-    /// Both `LOOM_SESSION_ID` and `LOOM_SCRATCH_DIR` are set, and neither a
-    /// hook nor the control broker is running: CLI writes must go through a
-    /// ticket.
+    /// Both `LOOM_SESSION_ID` and `LOOM_SCRATCH_DIR` are set and no hook is
+    /// running: CLI writes must go through a ticket.
     Relay(RelayContext),
     /// `LOOM_SESSION_ID` is set but `LOOM_SCRATCH_DIR` is not — a session
-    /// spawned before the relay upgrade. Writes directly, unchanged.
+    /// spawned before the relay upgrade. Writes directly, unchanged; the
+    /// commands the daemon runs on the host (`loom check`, `loom stage
+    /// complete`) refuse instead.
     Legacy,
-    /// No session identity, or a hook/control-broker process running outside
-    /// the sandbox. Writes directly or via the socket, as today.
+    /// No session identity, or a hook process running outside the sandbox.
+    /// Writes directly or via the socket, as today.
     Operator,
 }
 
 /// Decide [`RelayMode`] from `env`. A hook (`pre-compact.sh`, `session-end.sh`,
-/// the ask-user hooks) or the control broker always writes directly, even
-/// when it happens to inherit a scratch directory from its parent session.
+/// the ask-user hooks) always writes directly, even when it happens to
+/// inherit a scratch directory from its parent session.
 pub fn mode(env: &EnvSnapshot) -> RelayMode {
     let Some(session_id) = env.session_id.clone() else {
         return RelayMode::Operator;
     };
-    if env.hook_context || env.control_broker {
+    if env.hook_context {
         return RelayMode::Operator;
     }
     let Some(scratch_dir) = env.scratch_dir.clone() else {

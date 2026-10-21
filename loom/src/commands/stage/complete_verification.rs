@@ -1,10 +1,13 @@
-//! Verification-only checks used by the stage completion command.
+//! Verification-only checks used by the stage completion command: by the
+//! operator's `loom stage complete` on the host, and by the daemon's
+//! completion job (`host_verify::child_complete`).
 
-use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::models::stage::{Stage, StageStatus, StageType, TruthCheck};
 use crate::plan::parser::{load_stage_definition_from_plan, parse_plan, ParsedPlan};
 use crate::plan::schema::{CommandConfinement, StageDefinition};
 use crate::verify::criteria::{plan_confinement, resolve_confinement};
 use crate::verify::duplicate_detection::detect_duplicate_symbols;
+use crate::verify::goal_backward::VerificationGap;
 use crate::verify::wiring_detection::{detect_unwired_files, UnwiredFile};
 use anyhow::{bail, Context, Result};
 use std::path::Path;
@@ -12,14 +15,26 @@ use std::path::Path;
 #[path = "complete_verification_v2.rs"]
 mod complete_verification_v2;
 
-pub(super) struct VerificationChecks<'a> {
+pub(crate) struct VerificationChecks<'a> {
     pub stage: &'a Stage,
     pub stage_id: &'a str,
     pub acceptance_dir: Option<&'a Path>,
     pub worktree_root: Option<&'a Path>,
-    pub control_session: Option<&'a str>,
+    /// Leave test integrity and the review gate to the daemon, which checks
+    /// them when it applies a completion job's result.
+    pub daemon_gates: bool,
+    /// Fail the completion when unwired-file or duplicate-symbol detection
+    /// cannot run, instead of warning.
+    pub fail_closed: bool,
     pub work_dir: &'a Path,
 }
+
+/// Where [`run_checks`] hands each check's label and outcome. Its `Err` stops
+/// the run; an `Ok` for a failed check only records it.
+pub(crate) type CheckSink<'s> = dyn FnMut(&'static str, Result<()>) -> Result<()> + 's;
+
+/// The label of the impact-selected tests, whose failure a dispute names.
+pub(crate) const IMPACT_TESTS_LABEL: &str = "impact-tests";
 
 impl VerificationChecks<'_> {
     /// Confinement level for the plan-authored commands these checks run:
@@ -32,31 +47,55 @@ impl VerificationChecks<'_> {
     }
 }
 
+/// Every check, stopping at the first that fails: the operator's completion.
 pub(super) fn run(checks: &VerificationChecks<'_>) -> Result<()> {
+    run_checks(checks, &mut |_, checked| checked)
+}
+
+/// Run every check that applies to the stage, handing each one's label and
+/// outcome to `sink`, which decides whether a failure stops the run.
+pub(crate) fn run_checks(checks: &VerificationChecks<'_>, sink: &mut CheckSink<'_>) -> Result<()> {
     let repo_root = crate::fs::work_dir::WorkDir::new(checks.work_dir)?
         .main_project_root()
         .context("completion repository is unavailable")?;
     let base_branch = crate::fs::resolve_target_branch_from_config(checks.work_dir, &repo_root)?;
     let stage_def = load_stage_definition_from_plan(checks.stage_id, checks.work_dir)?;
 
-    run_goal_checks(checks, stage_def.as_ref())?;
-    if checks.stage.plan_version == 2 {
-        complete_verification_v2::run_v2(checks, &base_branch)?;
+    if stage_def
+        .as_ref()
+        .is_some_and(StageDefinition::has_any_goal_checks)
+    {
+        sink("goal-backward", run_goal_checks(checks))?;
     }
-    run_after_checks(checks, stage_def.as_ref())?;
-    run_unwired_check(checks, &base_branch)?;
-    run_duplicate_check(checks, &base_branch)?;
-    run_aggregated_check(checks)?;
+    if checks.stage.plan_version == 2 {
+        complete_verification_v2::run_v2(checks, &base_branch, sink)?;
+    }
+    let after_stage = stage_def
+        .as_ref()
+        .map_or(&[][..], |def| &def.after_stage[..]);
+    if !after_stage.is_empty() {
+        sink("after-stage", run_after_checks(checks, after_stage))?;
+    }
+    let Some(worktree_root) = checks.worktree_root else {
+        return Ok(());
+    };
+    sink(
+        "unwired",
+        run_unwired_check(checks, worktree_root, &base_branch),
+    )?;
+    sink(
+        "duplicates",
+        run_duplicate_check(checks, worktree_root, &base_branch),
+    )?;
+    if checks.stage.stage_type == StageType::IntegrationVerify {
+        println!("Running aggregated wiring re-verification...");
+        let checked = aggregated_wiring(worktree_root, checks.work_dir, checks.stage.plan_version);
+        sink("aggregated-wiring", checked)?;
+    }
     Ok(())
 }
 
-fn run_goal_checks(
-    checks: &VerificationChecks<'_>,
-    stage_def: Option<&StageDefinition>,
-) -> Result<()> {
-    if !stage_def.is_some_and(StageDefinition::has_any_goal_checks) {
-        return Ok(());
-    }
+fn run_goal_checks(checks: &VerificationChecks<'_>) -> Result<()> {
     println!("Running goal-backward verification...");
     let verification_dir = checks.acceptance_dir.unwrap_or(Path::new("."));
     let result = crate::commands::verify::run_and_verify_stage_goal(
@@ -76,22 +115,27 @@ fn run_goal_checks(
     }
     crate::commands::stage::acceptance_runner::print_acceptance_failure_guidance(checks.stage_id);
     bail!(
-        "Goal-backward verification failed for stage '{}'",
-        checks.stage_id
+        "Goal-backward verification failed for stage '{}'{}",
+        checks.stage_id,
+        gap_list(result.gaps())
     )
 }
 
-fn run_after_checks(
-    checks: &VerificationChecks<'_>,
-    stage_def: Option<&StageDefinition>,
-) -> Result<()> {
-    let Some(stage_def) = stage_def.filter(|definition| !definition.after_stage.is_empty()) else {
-        return Ok(());
-    };
+/// `: <gap>; <gap>` naming each gap, so a failure read from its message
+/// alone (a host job's outcome) still says what is missing.
+fn gap_list(gaps: &[VerificationGap]) -> String {
+    if gaps.is_empty() {
+        return String::new();
+    }
+    let descriptions: Vec<&str> = gaps.iter().map(|gap| gap.description.as_str()).collect();
+    format!(": {}", descriptions.join("; "))
+}
+
+fn run_after_checks(checks: &VerificationChecks<'_>, after_stage: &[TruthCheck]) -> Result<()> {
     println!("Running after-stage verification...");
     let verification_dir = checks.acceptance_dir.unwrap_or(Path::new("."));
     let gaps = crate::verify::before_after::run_after_stage_checks(
-        &stage_def.after_stage,
+        after_stage,
         verification_dir,
         checks.worktree_root,
         checks.command_confinement(),
@@ -105,16 +149,18 @@ fn run_after_checks(
         eprintln!("    → {}", gap.suggestion);
     }
     bail!(
-        "After-stage verification failed for stage '{}'",
-        checks.stage_id
+        "After-stage verification failed for stage '{}'{}",
+        checks.stage_id,
+        gap_list(&gaps)
     )
 }
 
-fn run_unwired_check(checks: &VerificationChecks<'_>, base_branch: &str) -> Result<()> {
-    let Some(verification_dir) = checks.worktree_root else {
-        return Ok(());
-    };
-    let result = match detect_unwired_files(verification_dir, base_branch) {
+fn run_unwired_check(
+    checks: &VerificationChecks<'_>,
+    worktree_root: &Path,
+    base_branch: &str,
+) -> Result<()> {
+    let result = match detect_unwired_files(worktree_root, base_branch) {
         Ok(result) => result,
         Err(error) => {
             fail_closed_or_warn(checks, "Wiring detection", error)?;
@@ -157,11 +203,12 @@ fn report_unwired_files(files: &[UnwiredFile]) {
     }
 }
 
-fn run_duplicate_check(checks: &VerificationChecks<'_>, base_branch: &str) -> Result<()> {
-    let Some(verification_dir) = checks.worktree_root else {
-        return Ok(());
-    };
-    let duplicates = match detect_duplicate_symbols(verification_dir, base_branch) {
+fn run_duplicate_check(
+    checks: &VerificationChecks<'_>,
+    worktree_root: &Path,
+    base_branch: &str,
+) -> Result<()> {
+    let duplicates = match detect_duplicate_symbols(worktree_root, base_branch) {
         Ok(duplicates) => duplicates,
         Err(error) => return fail_closed_or_warn(checks, "Duplicate-symbol detection", error),
     };
@@ -181,17 +228,6 @@ fn run_duplicate_check(checks: &VerificationChecks<'_>, base_branch: &str) -> Re
         );
     }
     Ok(())
-}
-
-fn run_aggregated_check(checks: &VerificationChecks<'_>) -> Result<()> {
-    if checks.stage.stage_type != StageType::IntegrationVerify {
-        return Ok(());
-    }
-    let Some(worktree_root) = checks.worktree_root else {
-        return Ok(());
-    };
-    println!("Running aggregated wiring re-verification...");
-    aggregated_wiring(worktree_root, checks.work_dir, checks.stage.plan_version)
 }
 
 /// Re-verify the wiring of every completed stage. Every stage of one plan
@@ -229,7 +265,7 @@ fn stage_wiring_gaps(
     definition: &StageDefinition,
     worktree_root: &Path,
     plan_version: u32,
-) -> Result<Vec<crate::verify::goal_backward::VerificationGap>> {
+) -> Result<Vec<VerificationGap>> {
     if definition.wiring.is_empty() {
         return Ok(Vec::new());
     }
@@ -256,8 +292,8 @@ fn fail_closed_or_warn(
     label: &str,
     error: anyhow::Error,
 ) -> Result<()> {
-    if checks.control_session.is_some() {
-        bail!("{label} failed inside trusted completion verification: {error}");
+    if checks.fail_closed {
+        bail!("{label} could not run, so the completion fails: {error}");
     }
     eprintln!("Warning: {label} skipped: {error}");
     Ok(())

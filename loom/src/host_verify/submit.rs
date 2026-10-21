@@ -54,6 +54,9 @@ pub fn submit(
     request: &SubmitRequest<'_>,
     now: DateTime<Utc>,
 ) -> Result<Submission> {
+    if let Some(problem) = invalid_binding(request) {
+        return Ok(Submission::Refused(problem.to_string()));
+    }
     let _lock = store::lock_stage(work_dir, request.stage_id)?;
     let current = store::load_current(work_dir, request.stage_id)?
         .filter(|record| !record.state.is_terminal());
@@ -82,6 +85,27 @@ pub fn submit(
     })
 }
 
+/// Whether `text` is exactly one of `lengths` long and all lowercase hex.
+pub(crate) fn is_lower_hex(text: &str, lengths: &[usize]) -> bool {
+    lengths.contains(&text.len())
+        && text
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
+}
+
+/// Why the request's tree binding is malformed, if it is. Every route that
+/// queues a job passes through `submit`, so none can store an unverifiable
+/// binding.
+fn invalid_binding(request: &SubmitRequest<'_>) -> Option<&'static str> {
+    if !is_lower_hex(request.head, &[40, 64]) {
+        return Some("head must be 40 or 64 lowercase hex characters");
+    }
+    if !is_lower_hex(request.tree_digest, &[64]) {
+        return Some("tree_digest must be 64 lowercase hex characters");
+    }
+    None
+}
+
 /// Cancel the stage's non-terminal job with `reason` and return it; a
 /// terminal or missing record is `None`.
 pub fn cancel(work_dir: &Path, stage_id: &str, reason: &str) -> Result<Option<JobRecord>> {
@@ -106,7 +130,11 @@ fn covers(current: &JobRecord, request: &SubmitRequest<'_>) -> bool {
     current.head == request.head
         && current.tree_digest == request.tree_digest
         && (current.no_cache || !request.no_cache)
-        && current.kind == request.kind
+        && match (current.kind, request.kind) {
+            (JobKind::Complete, JobKind::Complete) => current.session_id == request.session_id,
+            (JobKind::Complete, JobKind::Check) => true,
+            (current_kind, request_kind) => current_kind == request_kind,
+        }
 }
 
 fn new_record(request: &SubmitRequest<'_>, now: DateTime<Utc>) -> JobRecord {

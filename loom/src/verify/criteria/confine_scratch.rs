@@ -31,9 +31,9 @@ enum CargoHome {
     /// directory warmed outside the boundary stays warm inside it.
     Mounted(PathBuf),
     /// A stable directory per working tree, outside it, linking the host's
-    /// `registry` and `git`. Used where paths cannot be remapped (Seatbelt, or
-    /// an inherited outer boundary). It persists across commands and is never
-    /// removed: one small directory per tree.
+    /// `registry` and `git`. Used where paths cannot be remapped (Seatbelt). It
+    /// persists across commands and is never removed: one small directory per
+    /// tree.
     Linked {
         home: PathBuf,
         sources: Vec<(&'static str, PathBuf)>,

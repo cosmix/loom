@@ -143,10 +143,11 @@ pub const CODEX_SANDBOX_DOMAINS: [&str; 4] = [
 /// which spawns `codex app-server` itself, so no `-c` CLI override can be
 /// threaded through a forward.
 ///
-/// That holds for the companion path (Linux). On macOS inside a stage sandbox
-/// a nested Seatbelt is refused outright, so `loom-hooks/codex-forward.sh` bypasses
-/// the companion and passes `--sandbox danger-full-access` to `codex exec`
-/// itself; this file then plays no part in the run.
+/// That holds for the companion path. Where the outer sandbox refuses the
+/// nesting (a nested Seatbelt on macOS, a nested bubblewrap on Linux when
+/// `bwrap` is on PATH), `loom-hooks/codex-forward.sh` bypasses the companion and
+/// passes `--sandbox danger-full-access` to `codex exec` itself; this file then
+/// plays no part in the run.
 pub fn codex_config_path() -> Option<PathBuf> {
     dirs::home_dir().map(|home| home.join(".codex/config.toml"))
 }
@@ -162,7 +163,7 @@ pub fn codex_config_path() -> Option<PathBuf> {
 /// /tmp/.git: Read-only file system` before the model runs a single command.
 /// On macOS the nesting is refused altogether (`sandbox-exec: sandbox_apply:
 /// Operation not permitted`) and the wrapper's direct `codex exec` mode is the
-/// fix there, so this key is Linux-only.
+/// fix there, so this key matters only where the nesting works: Linux.
 ///
 /// `sandbox_workspace_write.exclude_slash_tmp = true` removes `/tmp` from the
 /// writable roots (the session `$TMPDIR` remains, and IS writable in the outer

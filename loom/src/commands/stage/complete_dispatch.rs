@@ -5,19 +5,10 @@ pub(super) fn dispatch_route(
     stage: &mut Stage,
     force_unsafe: bool,
     assume_merged: bool,
-    sandboxed: bool,
     work_dir: &Path,
 ) -> Result<bool> {
     let (route, repo_root) =
         resolve_completion_route(stage, force_unsafe, assume_merged, work_dir)?;
-
-    // A sandboxed wrapper may perform verification only. Resolver spawning,
-    // phantom-merge repair, and administrative completion all mutate trusted
-    // state before the verification marker and therefore belong to the host
-    // orchestrator, not this route.
-    if sandboxed && !matches!(&route, CompleteConflictRoute::Proceed) {
-        bail!("sandboxed completion cannot perform conflict or recovery operations");
-    }
 
     if matches!(route, CompleteConflictRoute::Proceed) {
         return Ok(false);

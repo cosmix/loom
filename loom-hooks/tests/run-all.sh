@@ -59,7 +59,7 @@ run_test "post-tool-use: heartbeat only, no tool event" "$SCRIPT_DIR/post-tool-u
 run_test "progress-heartbeat: polling advances observation, not progress" "$SCRIPT_DIR/progress-heartbeat.sh"
 run_test "post-tool-use does not persist tool output" "$SCRIPT_DIR/post-tool-use-empty-output.sh"
 run_test "post-tool-use: forwarding Bash invokes the receipt writer only" "$SCRIPT_DIR/post-tool-use-forward-receipt.sh"
-run_test "loom-control-complete: exact verified route only" "$SCRIPT_DIR/loom-control-complete.sh"
+run_test "loom-control-complete: exact pinned command only" "$SCRIPT_DIR/loom-control-complete.sh"
 run_test "loom-control-complete: tokenized pre-filter catches forged quoting, ignores prose" "$SCRIPT_DIR/loom-control-tokenized-prefilter.sh"
 run_test "loom-control-complete: Knowledge sessions are pinned, heredoc prose is data" "$SCRIPT_DIR/loom-control-complete-knowledge.sh"
 run_test "loom-control-complete: inert heredoc bodies ignored, shell-fed or ambiguous ones held" "$SCRIPT_DIR/loom-control-complete-heredoc.sh"
