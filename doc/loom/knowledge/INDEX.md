@@ -9,7 +9,7 @@
 | File | Description | Lines |
 | --- | --- | --- |
 | [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 247 |
-| [entry-points.md](entry-points.md) | Key files agents should read first | 71 |
+| [entry-points.md](entry-points.md) | Key files agents should read first | 68 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 187 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 136 |
@@ -72,11 +72,11 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch, plan pipeline | 192 |
+| [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch, plan pipeline | 191 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) | Context retrieval, source graph | 79 |
-| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs, handoff, sandbox | 127 |
-| [hooks](entry-points/hooks.md) | Hook scripts, events, matching | 148 |
-| [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Orchestrator, daemon, signals | 248 |
+| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs, handoff, sandbox | 126 |
+| [hooks](entry-points/hooks.md) | Hook scripts, events, matching | 147 |
+| [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Orchestrator, daemon, signals | 247 |
 | [remote-control](entry-points/remote-control.md) | Remote-control detection call sites | 99 |
 
 ### patterns
@@ -178,7 +178,7 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Bendable checks backlog | 323 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Knowledge followups | 85 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Oversized units, hooks | 216 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Oversized units, hooks | 256 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat starvation | 49 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 window never named | 49 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps | 115 |
@@ -187,7 +187,7 @@
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | tmux, orphan adoption edge cases | 150 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Canary, creds, env, caches | 383 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Language limits, open decisions | 79 |
-| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Unimplemented reviewer suggestions | 384 |
+| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Unimplemented reviewer suggestions | 387 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package caches | 17 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token follow-ups | 317 |
 | [typed-config-values](concerns/typed-config-values.md) | Config read-path gaps | 27 |
