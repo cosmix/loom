@@ -91,9 +91,11 @@ The preamble's integration-verify exception (the three lines starting `- EXCEPTI
 
 ```text
 - EXCEPTION - integration-verify stages: if its orchestrator named you
-  the ONE canonical verifier, IGNORE this block; running the FULL build,
-  test suite, and linter IS your job. Other reviewers run targeted checks.
+  the ONE canonical verifier, IGNORE this block; run loom check
+  <stage-id> and the steps it lists. Other reviewers run targeted checks.
 ```
+
+gate-dedup's W5 also edits `_subagent-preamble.txt` lines 12-22: re-read the file, anchor the verifier exception on what gate-dedup left, and still swap `you still write nothing` for `you write only your gate logs`.
 
 Do not touch BLOCK-A: `block_a_agrees_across_every_surface` (`tests_doctrine.rs`) requires it byte-identical across the prefixes, this file and `subagent-verify-guard.sh`. In the loom-verifier exception (the bullet starting `- EXCEPTION - if you were spawned as a loom-verifier`), change only `and you still write nothing` to `and you write only your gate logs`: W1 gives the verifier gate logs, and the old words would contradict its definition. Every other line stays. The preamble is prepended to every typed spawn, so the two rewordings cost about 28 bytes per spawn (22 + 6); keep them to these words. `subagent-verify-guard.sh` is unchanged: it lets every IV subagent run full suites, and the fence is guidance.
 

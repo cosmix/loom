@@ -40,9 +40,9 @@ Re-read the file first. Change only the lines named here; plan B's text elsewher
    rg -n -m 20 -B 2 -A 8 -M 300 --max-columns-preview '<failure pattern>' "$LOOM_SCRATCH_DIR/gate-<step>.log" | head -c 6000
    ```
 
-   `<step>` is a short step name (`build`, `test`, `doctest`, `clippy`, `fmt`, `doc`). `<failure pattern>` is the runner's failure marker; for cargo, `FAILED|panicked at|^error|^warning:`. The log keeps the full output, because the Bash tool cuts output past 12,000 characters and a step printed whole can lose its failure list. The first line reports the step's own exit code and the log path. The excerpt is bounded in lines and bytes, so one huge failing line cannot flood the report. Never pipe the step itself into `tail` or `head`: the pipe reports the last command's status, so a failing step reads as exit 0. When the excerpt does not explain a failure, read more of the log with `rg` or by line range.
+   `<step>` is a short step name for a step the orchestrator lists outside acceptance (`markdownlint`, `hooks`, `flake`). `<failure pattern>` is the runner's failure marker; for cargo, `FAILED|panicked at|^error|^warning:`. The log keeps the full output, because the Bash tool cuts output past 12,000 characters and a step printed whole can lose its failure list. The first line reports the step's own exit code and the log path. The excerpt is bounded in lines and bytes, so one huge failing line cannot flood the report. Never pipe the step itself into `tail` or `head`: the pipe reports the last command's status, so a failing step reads as exit 0. When the excerpt does not explain a failure, read more of the log with `rg` or by line range.
 
-   Criteria are not run through the recipe. Run `loom check <stage-id>` bare, as its own Bash call with stdout unfiltered: it relays a request, and a redirect or pipe hides the line the relay needs. On exit 3 run it again. For each failing criterion it prints `full log: <path>`; read that file with the recipe's `rg ... | head -c 6000` line.
+   Criteria are not run through the recipe. Run `loom check <stage-id>` bare, as its own Bash call with stdout unfiltered: it relays a request, and a redirect or pipe hides the line the relay needs. Run it again while its first line reads `Host job: requested` or `pending`. For each failing criterion it prints `full log: <path>`; read that file with the recipe's `rg ... | head -c 6000` line. Keep gate-dedup's `--criterion` fix-round sentence and its `loom check` text (pinned by `tests_doctrine_gate.rs`).
    ````
 
 3. `## Constraints`, the first bullet (anchored by `**Writes no files**`): replace the whole bullet line with this line (the `text` fence is not part of it):
@@ -63,9 +63,10 @@ Re-read the constant: plan B set its current text. Rewrite its string by these r
    - `**The gate runs in a`loom-verifier`**` (`only_the_standard_prefix_sends_the_gate_to_a_loom_verifier`, `tests_doctrine_prefixes.rs`, pins it);
    - `` `loom check <stage-id>` ``;
    - `RUNNER-ENV`;
-   - `SESSION-ENV`.
+   - `SESSION-ENV`;
+   - `--criterion`.
 
-   The relocation manifest pins the last three: once this plan removes the orchestration skill's gate paragraph, they are the main agent's only rule for the verifier's environment reports.
+   The relocation manifest pins the last four: once this plan removes the orchestration skill's gate paragraph (`**The gate in a standard stage.**`, which after gate-dedup carries the `--criterion` fix round and "Do not repeat its run yourself"), they are the main agent's only rule for the verifier's environment reports and fix rounds.
 2. It says the verifier writes only gate logs in `$LOOM_SCRATCH_DIR`, in place of any "writes nothing" wording.
 3. It drops `(opus, effort xhigh)`, because the agent definition pins model and effort.
 4. Its byte length is no greater than the base's. The standard stable prefix and floor sit near their ceilings (`STABLE_PREFIX_MAX_BYTES` 8,192 and `STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` 10,240 in `tests_size.rs`). Shorter is better.
@@ -74,7 +75,7 @@ Re-read the constant: plan B set its current text. Rewrite its string by these r
 A text in the right shape, measured at 463 bytes and to be trimmed to the base's length:
 
 ```text
-**The gate runs in a `loom-verifier`**: once every implementer returned, spawn ONE by agent type, without `name`, briefed with the criteria. It writes only gate logs in `$LOOM_SCRATCH_DIR`, reports PASS/FAIL per step with exit code and failing excerpt, and runs criteria via `loom check <stage-id>`: pass there, fail in its shell is SESSION-ENV (no FAIL); fail only from the confined runner is RUNNER-ENV, yours to dispute. Delegate fixes; spawn a FRESH verifier.\n\n
+**The gate runs in a `loom-verifier`**: once every implementer returned, spawn ONE by agent type, without `name`, briefed with the criteria. It writes only gate logs in `$LOOM_SCRATCH_DIR`, reports PASS/FAIL per step with exit code and failing excerpt, and runs criteria via `loom check <stage-id>`: pass there, fail in its shell is SESSION-ENV (no FAIL); fail only from the confined runner is RUNNER-ENV, yours to dispute. Delegate fixes; the next verifier re-checks failed criteria with `loom check <stage-id> --criterion <n>`.\n\n
 ```
 
 Do not change the doc comment or `append_verifier_completion_header`. Keep the constant on one line.

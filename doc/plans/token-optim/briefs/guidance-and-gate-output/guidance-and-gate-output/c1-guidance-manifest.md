@@ -54,7 +54,7 @@ Declared at this level, the filter `cargo test --lib signals::tests_guidance_man
    }
    ```
 
-   `const RELOCATIONS: &[Relocation]` with these eighteen entries, in this order (`-` in the frozen column means `None`; the needle column names a line of the needle block below). Entries 1-8 are template relocations. Entries 9-18 pin, in the surface its recipient reads, the instruction of each orchestration-skill paragraph the Claude wave removes. `R<n>` is the removal's number in W2's brief. The skill's R6-R9 instructions are Rule 6 bullets the frozen list already pins, so they get no entry.
+   `const RELOCATIONS: &[Relocation]` with these nineteen entries, in this order (`-` in the frozen column means `None`; the needle column names a line of the needle block below). Entries 1-8 are template relocations. Entries 9-19 pin, in the surface its recipient reads, the instruction of each orchestration-skill paragraph the Claude wave removes. `R<n>` is the removal's number in W2's brief. The skill's R6-R9 instructions are Rule 6 bullets the frozen list already pins, so they get no entry.
 
    | # | item | frozen | home | needle |
    | --- | --- | --- | --- | --- |
@@ -76,6 +76,7 @@ Declared at this level, the filter `cargo test --lib signals::tests_guidance_man
    | 16 | `R5 the subagent preamble file` | - | `CLAUDE.md.template` | N16 |
    | 17 | `R10 fable override at spawn` | - | `CLAUDE.md.template` | N17 |
    | 18 | `R11 when the stage cannot finish` | - | `standard stable prefix` | N18 |
+   | 19 | `R3 failed criteria are re-checked one by one` | - | `standard stable prefix` | N19 |
 
    The needles, one per line after the `Nk:` label, copied byte for byte; no needle has leading or trailing spaces. Write each as a raw string `r#"..."#`.
 
@@ -98,9 +99,10 @@ Declared at this level, the filter `cargo test --lib signals::tests_guidance_man
    N16: _subagent-preamble.txt
    N17: Fable-tier work has no pinned agent type
    N18: **When the stage cannot finish.**
+   N19: --criterion
    ```
 
-   Before writing the needles, confirm each of N1-N6 and N9-N18 is a substring of its home today with `rg -n -F`. For "standard stable prefix", search `loom/src/orchestrator/signals/helpers.rs` and `loom/src/orchestrator/signals/cache/blocks.rs`; `session-start.sh` was edited by an earlier plan. If one is missing, report it and the text you found; do not invent another needle. Plan B wrote N10-N14 and N18's homes and was required to keep those phrases, so a missing one is a plan-B defect to report. N7 and N8 are absent today by design: Claude workers add them after you.
+   Before writing the needles, confirm each of N1-N6 and N9-N19 is a substring of its home today with `rg -n -F`. For "standard stable prefix", search `loom/src/orchestrator/signals/helpers.rs` and `loom/src/orchestrator/signals/cache/blocks.rs`; `session-start.sh` was edited by an earlier plan. If one is missing, report it and the text you found; do not invent another needle. Plan B wrote N10-N14 and N18's homes (gate-dedup wrote N19's) and was required to keep those phrases, so a missing one is a plan-B defect to report. N7 and N8 are absent today by design: Claude workers add them after you.
 5. `fn home_text(home: &str) -> String`: `"CLAUDE.md.template"` gives `TEMPLATE`, `"agents/loom-verifier.md"` gives `VERIFIER`, `"loom-hooks/post-tool-use.sh"` gives `HOOK_POST_TOOL_USE`, `"loom-hooks/session-start.sh"` gives `HOOK_SESSION_START`, `"standard stable prefix"` gives `generate_stable_prefix()`; any other label panics naming it.
 6. `fn missing_frozen_lines(template: &str) -> Vec<&'static str>`: every `FROZEN_LINES` entry that is neither a whole line of `template` (`template.lines().any(|l| l == frozen)`) nor the `frozen` value of some relocation entry, in `FROZEN_LINES` order.
 7. `fn missing_relocations(text_of: impl Fn(&str) -> String) -> Vec<String>`: for every `RELOCATIONS` entry whose needle is not a substring of `text_of(home)`, one string naming item, home and needle, in table order. The tests call it with `home_text` and with a closure that alters one home.
