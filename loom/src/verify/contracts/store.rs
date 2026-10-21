@@ -9,7 +9,8 @@
 //!
 //! `freeze.json` is written last and atomically: its presence is what ends the
 //! contract phase, so it must never describe copies that are not on disk yet.
-//! A re-freeze follows the same order: copies first, then the record.
+//! A re-freeze follows the same order: copies first, then the record, then
+//! the removal of the copies the new record no longer names.
 //!
 //! Lock order: a caller may already hold the stages-dir lock (from
 //! `crate::verify::transitions::update_stage`/`update_stage_at_path`) while
@@ -29,6 +30,7 @@ use crate::daemon::ContractRunReport;
 use crate::fs::locking::{atomic_write_locked, locked_dir_update};
 use crate::fs::safe_fs::{
     safe_create_dir_all_in_workdir, safe_locked_write_in_workdir, safe_open_dirfd,
+    safe_remove_in_workdir,
 };
 use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::plan::schema::ContractSpec;
@@ -228,19 +230,21 @@ pub fn write_freeze(
     })
 }
 
-/// Re-freeze `files` (path relative to the working directory, content) at the
-/// given content: replace their frozen copies, then rewrite `freeze.json` with
-/// their new hashes, adding a path the record did not list, and with each of
+/// Re-freeze the stage at `files` (path relative to the working directory,
+/// content), its whole frozen set: replace the frozen copies, then rewrite
+/// `freeze.json` with exactly these files and hashes, and with each of
 /// `contracts` recorded with its adapter, file and run directory: a contract
 /// the record lists keeps its freeze-time run result, one it does not list is
-/// added as [`REFROZEN_OUTCOME`]. The adjudication of an accepted contract dispute is
-/// the only caller; the stage must already be frozen.
-pub fn refreeze(
+/// added as [`REFROZEN_OUTCOME`]. A path the record held that `files` lacks
+/// is dropped, its copy removed once the record no longer names it. Returns
+/// the dropped paths. The adjudication of an accepted contract dispute is the
+/// only caller; the stage must already be frozen.
+pub fn refreeze_set(
     work_dir: &Path,
     stage_id: &str,
     files: &[(String, Vec<u8>)],
     contracts: &[RefrozenContract],
-) -> Result<()> {
+) -> Result<Vec<String>> {
     let root = canonical_work_dir(work_dir, stage_id)?;
     for (path, _) in files {
         validate_relative(path)?;
@@ -258,21 +262,38 @@ pub fn refreeze(
         for contract in contracts {
             upsert_contract(&mut record.contracts, contract);
         }
-        for (path, bytes) in files {
-            let sha256 = sha256_hex(bytes);
-            match record.files.iter_mut().find(|file| file.path == *path) {
-                Some(file) => file.sha256 = sha256,
-                None => record.files.push(FrozenFile {
-                    path: path.clone(),
-                    sha256,
-                }),
-            }
-        }
-        atomic_write_locked(
-            &dir.join(FREEZE_FILE),
-            &serde_json::to_string_pretty(&record)?,
-        )
+        let dropped: Vec<String> = record
+            .files
+            .iter()
+            .filter(|file| !files.iter().any(|(path, _)| *path == file.path))
+            .map(|file| file.path.clone())
+            .collect();
+        record.files = files
+            .iter()
+            .map(|(path, bytes)| FrozenFile {
+                path: path.clone(),
+                sha256: sha256_hex(bytes),
+            })
+            .collect();
+        let json = serde_json::to_string_pretty(&record)?;
+        atomic_write_locked(&dir.join(FREEZE_FILE), &json)?;
+        remove_copies(&dir, &dropped)?;
+        Ok(dropped)
     })
+}
+
+/// Remove the frozen copies of `paths`; one already gone is no error.
+fn remove_copies(dir: &Path, paths: &[String]) -> Result<()> {
+    let dirfd = safe_open_dirfd(dir)?;
+    for path in paths {
+        match safe_remove_in_workdir(dirfd.as_raw_fd(), &Path::new(FILES_DIR).join(path)) {
+            Err(error) if !is_not_found(&error) => {
+                return Err(error.context(format!("failed to remove frozen copy '{path}'")))
+            }
+            _ => {}
+        }
+    }
+    Ok(())
 }
 
 fn upsert_contract(frozen: &mut Vec<FrozenContract>, contract: &RefrozenContract) {

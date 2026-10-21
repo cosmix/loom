@@ -46,7 +46,6 @@ use std::path::{Path, PathBuf};
 
 use super::ownership::session_owns_stage_as;
 use super::{ContractRunReport, Response};
-use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::git::worktree::WorktreeGit;
 use crate::host_verify::submit::{submit, Submission, SubmitRequest};
 use crate::host_verify::JobKind;
@@ -54,20 +53,16 @@ use crate::models::session::SessionType;
 use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::relay::sha256_hex;
 use crate::testrun::registry;
+use crate::verify::contracts::frozen_set::read_frozen_set;
 use crate::verify::contracts::refusal::end_wait;
 use crate::verify::contracts::run_dir::resolve_run;
 use crate::verify::contracts::store::{
-    self, FreezeRecord, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION, MAX_FROZEN_FILE_BYTES,
+    self, FreezeRecord, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION,
 };
 use crate::verify::contracts::{
     changes, is_contract_or_harness, normalize, resolve_adapter, site::stage_site, RED_OUTCOMES,
 };
 use crate::verify::transitions::{load_stage, update_stage};
-
-/// Bounds on what one freeze copies into `.loom/work`: the harness globs
-/// come from the plan, but the files they match are the agent's.
-const MAX_FROZEN_FILES: usize = 500;
-const MAX_FROZEN_TOTAL_BYTES: usize = 64 * 1024 * 1024;
 
 /// Queue the host contract run of `stage_id` for its contract writer
 /// `session_id`, against the `head` and `tree_digest` the writer saw. A job
@@ -96,6 +91,7 @@ pub(crate) fn handle_freeze_contracts(
         head,
         tree_digest,
         no_cache: false,
+        criteria: None,
     };
     Ok(match submit(&work_dir, &request, Utc::now())? {
         Submission::Queued(_) | Submission::Joined(_) | Submission::Superseded { .. } => {
@@ -330,34 +326,11 @@ fn check_changes(site: &Site, stage: &Stage, base: &str) -> Result<()> {
     Ok(())
 }
 
-/// Every contract file (each must exist) and every existing harness match,
-/// read without following a symlink anywhere beneath the working directory.
+/// Every contract file (each must exist) and every existing harness match
+/// (`frozen_set::read_frozen_set`).
 pub(crate) fn read_files(site: &Site, stage: &Stage) -> Result<Vec<(String, Vec<u8>)>> {
-    let contract_files: BTreeSet<String> =
-        stage.contracts.iter().map(|c| normalize(&c.file)).collect();
     let harness = changes::harness_files(&site.git, &site.working_dir, &stage.harness)?;
-    let paths: BTreeSet<&String> = contract_files.iter().chain(&harness).collect();
-    if paths.len() > MAX_FROZEN_FILES {
-        bail!(
-            "{} files match the contracts and harness; at most {MAX_FROZEN_FILES} can be frozen",
-            paths.len()
-        );
-    }
-    let mut files = Vec::with_capacity(paths.len());
-    let mut total = 0usize;
-    for path in paths {
-        let bytes = match read_bounded(&site.working_dir, Path::new(path), MAX_FROZEN_FILE_BYTES) {
-            Ok(bytes) => bytes,
-            Err(error) if is_not_found(&error) && !contract_files.contains(path) => continue,
-            Err(error) => return Err(error.context(format!("cannot freeze '{path}'"))),
-        };
-        total += bytes.len();
-        if total > MAX_FROZEN_TOTAL_BYTES {
-            bail!("the frozen files exceed {MAX_FROZEN_TOTAL_BYTES} bytes together");
-        }
-        files.push((path.clone(), bytes));
-    }
-    Ok(files)
+    read_frozen_set(&site.working_dir, &stage.contracts, &harness, &[])
 }
 
 /// The files read now must be the ones the run hashed: the same paths, each

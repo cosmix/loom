@@ -2,7 +2,9 @@
 //!
 //! A contract session writes the contract tests first and freezes them while
 //! they fail; the stage session then implements until they pass. [`store`]
-//! keeps the freeze, [`changes`] reads what the contract session changed,
+//! keeps the freeze, [`frozen_set`] reads the files a freeze or an accepted
+//! contract dispute's re-freeze holds, [`changes`] reads what the contract
+//! session changed,
 //! [`refusal`] keeps a refused freeze until the writer stops and parks its
 //! stage for the operator, [`completion`] checks the frozen contracts when the
 //! stage completes, [`run_dir`] resolves where and how a contract runs. The
@@ -13,6 +15,7 @@
 pub mod changes;
 pub mod completion;
 pub mod format_gate;
+pub mod frozen_set;
 pub mod refusal;
 pub mod run_dir;
 pub mod site;

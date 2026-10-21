@@ -1,29 +1,41 @@
 //! A contract dispute's verdicts (DESIGN D15), routed here by `apply_kinds.rs`.
 //!
 //! `accept` means the frozen contract was wrong and the agent's edit is right:
-//! the verdict's optional `contracts` amendment is applied, then the disputed
-//! contract and every contract the record no longer describes are re-frozen:
-//! their files at their current worktree content, their files and run
-//! directories recorded (see `refrozen_contracts`). `reject` means the contract stands: the agent
-//! restores it and implements against it. Neither sends the stage to a human, except an amendment that hits the
-//! per-stage amendment cap, exactly as for a criterion dispute.
+//! the verdict's optional `contracts` amendment is applied, then the stage's
+//! whole frozen set (contract and harness files) is re-frozen at its current
+//! worktree content, deleted harness files dropped, and the disputed contract
+//! and every contract the record no longer describes get their files and run
+//! directories recorded (see `refrozen_contracts`). `reject` means the
+//! contract stands: the agent restores it and implements against it. Neither
+//! sends the stage to a human, except an amendment that hits the per-stage
+//! amendment cap, exactly as for a criterion dispute.
 
 use anyhow::{bail, Context, Result};
-use std::path::{Path, PathBuf};
+use std::path::Path;
 
-use crate::fs::safe_read::read_bounded;
 use crate::models::dispute::PlanPatch;
 use crate::models::stage::Stage;
 use crate::plan::amendment::{AmendmentField, AmendmentRequest};
+use crate::stage_service::contracts::{locate, Site};
+use crate::verify::contracts::changes::harness_files;
+use crate::verify::contracts::frozen_set::read_frozen_set;
 use crate::verify::contracts::run_dir::resolve_run;
 use crate::verify::contracts::store::{self as contract_store, FreezeRecord, RefrozenContract};
-use crate::verify::contracts::{normalize, resolve_adapter, site::stage_site};
+use crate::verify::contracts::{normalize, resolve_adapter};
 
 use super::apply::amend_plan;
 use super::plan_patch;
 
 /// Apply an accepted contract dispute and return the feedback for the agent,
 /// or `None` when the amendment cap escalated the stage instead.
+///
+/// The re-freeze covers the stage's whole frozen set as the worktree holds it
+/// now (`frozen_set::read_frozen_set`): every contract file of the amended
+/// stage, every harness match listed afresh, and every path the record holds
+/// plus the disputed contract's file from before the amendment. A recorded or
+/// harness path deleted from the worktree leaves the freeze. The set derives
+/// from the stage, the record's paths and the worktree, so a retry after a
+/// partial failure writes the same record.
 pub(super) fn accept(
     work_dir: &Path,
     stage: &mut Stage,
@@ -31,7 +43,7 @@ pub(super) fn accept(
     contract_id: &str,
     plan_patch: &PlanPatch,
 ) -> Result<Option<String>> {
-    let mut files: Vec<String> = contract_file(stage, contract_id).into_iter().collect();
+    let mut recorded: Vec<String> = contract_file(stage, contract_id).into_iter().collect();
     if let Some(request) = contracts_amendment(&stage.id, plan_patch, dispute)? {
         if !amend_plan(work_dir, stage, request)? {
             return Ok(None);
@@ -40,28 +52,41 @@ pub(super) fn accept(
     let Some(record) = contract_store::load_freeze(work_dir, &stage.id)? else {
         bail!("the contracts of stage '{}' were never frozen", stage.id);
     };
-    files.extend(recorded_file(&record, contract_id));
-    files.extend(contract_file(stage, contract_id));
-    if files.is_empty() {
+    recorded.extend(recorded_file(&record, contract_id));
+    recorded.extend(contract_file(stage, contract_id));
+    if recorded.is_empty() {
         bail!(
             "stage '{}' has no contract '{contract_id}' to re-freeze",
             stage.id
         );
     }
-    let (worktree_root, working_dir) = stage_paths(work_dir, stage)?;
-    let site = (worktree_root.as_path(), working_dir.as_path());
-    let contracts = refrozen_contracts(stage, &record, contract_id, site)?;
-    files.extend(contracts.iter().map(|contract| contract.file.clone()));
-    files.sort();
-    files.dedup();
-    let contents = read_worktree_files(&working_dir, &files)?;
-    contract_store::refreeze(work_dir, &stage.id, &contents, &contracts)?;
-    Ok(Some(format!(
-        "The adjudicator accepted your contract dispute: contract '{contract_id}' is \
-         re-frozen at its current content ({}).\n\nAction: implement until every contract \
-         passes.\n",
-        files.join(", ")
-    )))
+    recorded.extend(record.files.iter().map(|file| file.path.clone()));
+    let site = stage_site(work_dir, stage)?;
+    let contracts = refrozen_contracts(stage, &record, contract_id, &site)?;
+    let harness = harness_files(&site.git, &site.working_dir, &stage.harness)?;
+    let files = read_frozen_set(&site.working_dir, &stage.contracts, &harness, &recorded)?;
+    let dropped = contract_store::refreeze_set(work_dir, &stage.id, &files, &contracts)?;
+    Ok(Some(accept_notice(contract_id, &files, &dropped)))
+}
+
+/// The feedback for an accepted contract dispute: the paths re-frozen and
+/// the ones dropped from the freeze.
+fn accept_notice(contract_id: &str, files: &[(String, Vec<u8>)], dropped: &[String]) -> String {
+    let paths: Vec<&str> = files.iter().map(|(path, _)| path.as_str()).collect();
+    let dropped = if dropped.is_empty() {
+        String::new()
+    } else {
+        format!(
+            " Dropped from the freeze, as the worktree no longer holds them: {}.",
+            dropped.join(", ")
+        )
+    };
+    format!(
+        "The adjudicator accepted your contract dispute on contract '{contract_id}': the \
+         stage's contract and harness files are re-frozen at their current content ({}).\
+         {dropped}\n\nAction: implement until every contract passes.\n",
+        paths.join(", ")
+    )
 }
 
 /// The feedback for a rejected contract dispute.
@@ -111,15 +136,15 @@ fn contracts_amendment(
 /// entry lacks a file or run directory. Each is resolved with the run
 /// directory the record holds for its file (`store::recorded_cwd`), so a
 /// runner config planted since cannot move a contract whose file is
-/// unchanged. The choice reads only the record, which `refreeze` rewrites
-/// last, so a retry after a partial failure makes the same one. `site` is
-/// the stage's worktree root and working directory.
+/// unchanged. The choice reads only the record, which `refreeze_set` rewrites
+/// last, so a retry after a partial failure makes the same one.
 fn refrozen_contracts(
     stage: &Stage,
     record: &FreezeRecord,
     contract_id: &str,
-    (worktree_root, working_dir): (&Path, &Path),
+    site: &Site,
 ) -> Result<Vec<RefrozenContract>> {
+    let (worktree_root, working_dir) = (site.worktree_root.as_path(), site.working_dir.as_path());
     let mut refrozen = Vec::new();
     for contract in &stage.contracts {
         let file = normalize(&contract.file);
@@ -159,28 +184,11 @@ fn recorded_file(record: &FreezeRecord, id: &str) -> Option<String> {
         .and_then(|entry| entry.file.clone())
 }
 
-/// The current content of `paths` (relative to `working_dir`) in the stage's
-/// worktree, read without following a symlink, as the freeze read it.
-fn read_worktree_files(working_dir: &Path, paths: &[String]) -> Result<Vec<(String, Vec<u8>)>> {
-    paths
-        .iter()
-        .map(|path| {
-            let bytes = read_bounded(
-                working_dir,
-                Path::new(path),
-                contract_store::MAX_FROZEN_FILE_BYTES,
-            )
-            .with_context(|| format!("cannot re-freeze '{path}'"))?;
-            Ok((path.clone(), bytes))
-        })
-        .collect()
-}
-
-/// The stage's worktree root and working directory inside it, located the
-/// way the freeze handler (`daemon/server/contracts.rs`) locates them.
-fn stage_paths(work_dir: &Path, stage: &Stage) -> Result<(PathBuf, PathBuf)> {
+/// The stage's worktree, located the way the freeze handler
+/// (`stage_service/contracts.rs`) locates it.
+fn stage_site(work_dir: &Path, stage: &Stage) -> Result<Site> {
     let work_dir = work_dir
         .canonicalize()
         .with_context(|| format!("failed to resolve {}", work_dir.display()))?;
-    stage_site(&work_dir, stage)
+    locate(&work_dir, stage)
 }
