@@ -89,6 +89,17 @@ impl fmt::Display for ImpactTestsFailed {
 
 impl std::error::Error for ImpactTestsFailed {}
 
+#[cfg(test)]
+impl ImpactTestsFailed {
+    /// The error `into_outcome` builds, for a test of a caller that downcasts it.
+    pub(crate) fn for_test(stage_id: &str, failures: Vec<ImpactFailure>) -> Self {
+        Self {
+            message: failure_message(stage_id, &failures),
+            failures,
+        }
+    }
+}
+
 fn failure_message(stage_id: &str, failures: &[ImpactFailure]) -> String {
     let lines: Vec<String> = failures.iter().map(ImpactFailure::line).collect();
     let (kept, beyond) = failures.split_at(failures.len().min(MAX_OBSERVED_FAILURES));
