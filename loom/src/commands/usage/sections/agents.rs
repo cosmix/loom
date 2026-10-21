@@ -91,30 +91,14 @@ pub fn render(report: &AgentReport) {
     );
     row("under-500-output subagents", report.tiny_subagents.len());
     for agent in &report.tiny_subagents {
-        println!(
-            "    {} [{} / {}]: output {} input {}",
-            inline_safe(&agent.agent_id),
-            agent.agent_type,
-            inline_safe(&agent.model),
-            format_u64(agent.output),
-            format_u64(agent.input)
-        );
+        println!("{}", tiny_line(agent));
     }
     if report.by_agent_model.is_empty() {
         row("agent type and model", "no data");
     } else {
         println!("  agent type and model:");
         for item in &report.by_agent_model {
-            println!(
-                "    {} / requested {} / {}: {} requests, input {}, output {}, S2 {}",
-                item.agent_type,
-                inline_safe(&item.requested_model),
-                inline_safe(&item.model),
-                item.requests,
-                format_u64(item.fresh_input),
-                format_u64(item.output),
-                format_f64(item.s2)
-            );
+            println!("{}", agent_model_line(item));
         }
     }
     let parent = &report.parent_model;
@@ -122,6 +106,32 @@ pub fn render(report: &AgentReport) {
         "  parent-model requests: same {} different {} unknown {} (same known {:.1}%)",
         parent.same, parent.different, parent.unknown, parent.same_share_of_known
     );
+}
+
+// Every identity field is transcript or ledger text, so each goes through
+// `inline_safe` before it reaches the terminal.
+fn tiny_line(agent: &TinySubagent) -> String {
+    format!(
+        "    {} [{} / {}]: output {} input {}",
+        inline_safe(&agent.agent_id),
+        inline_safe(&agent.agent_type),
+        inline_safe(&agent.model),
+        format_u64(agent.output),
+        format_u64(agent.input)
+    )
+}
+
+fn agent_model_line(item: &AgentModelRow) -> String {
+    format!(
+        "    {} / requested {} / {}: {} requests, input {}, output {}, S2 {}",
+        inline_safe(&item.agent_type),
+        inline_safe(&item.requested_model),
+        inline_safe(&item.model),
+        item.requests,
+        format_u64(item.fresh_input),
+        format_u64(item.output),
+        format_f64(item.s2)
+    )
 }
 
 fn parent_models(transcripts: &[Transcript]) -> BTreeMap<String, String> {

@@ -9,6 +9,10 @@ use serde::Serialize;
 
 use super::provider_types::{CoverageCounts, Provider, ProviderDiagnostics};
 use super::time_range::TimeRange;
+use crate::context::untrusted::inline_safe;
+
+/// The bound `enumerate_sessions` puts on a session record read.
+const MAX_RECORD_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "kebab-case")]
@@ -105,7 +109,11 @@ pub(crate) fn missed_claude_transcripts(
     let Some(work_dir) = work_dir else {
         return inventory;
     };
-    let enumeration = match crate::fs::session_files::enumerate_sessions(work_dir) {
+    // From a stage worktree `.loom/work` is a symlink to the main checkout's
+    // work dir, and the bounded record reads open their root without following
+    // links: resolve it once, or every record reads as invalid.
+    let root = std::fs::canonicalize(work_dir).unwrap_or_else(|_| work_dir.to_path_buf());
+    let enumeration = match crate::fs::session_files::enumerate_sessions(&root) {
         Ok(enumeration) => enumeration,
         Err(error) => {
             eprintln!("loom usage: cannot enumerate session records: {error:#}");
@@ -113,25 +121,25 @@ pub(crate) fn missed_claude_transcripts(
             return inventory;
         }
     };
-    // A record that failed enumeration cannot be attributed to a stage.
+    // A record that failed enumeration cannot be attributed to a stage. Its
+    // file name and parse error are session-controlled text bound for a terminal.
+    for diagnostic in &enumeration.diagnostics {
+        eprintln!("loom usage: {}", inline_safe(diagnostic));
+    }
     inventory.unreadable += enumeration.diagnostics.len();
+    let read = ReadSet::new(read);
     for record in &enumeration.records {
-        let selected = stages.is_none_or(|stages| {
-            record
-                .stage_id
-                .as_deref()
-                .is_some_and(|stage| stages.contains(stage))
-        });
-        if !selected {
+        if !is_selected(record.stage_id.as_deref(), stages) {
             continue;
         }
-        match record_transcript(&record.path, range) {
-            Ok(Some(path)) if !was_read(&path, read) => inventory.missed += 1,
+        match record_transcript(&root, &record.path, range) {
+            Ok(Some(path)) if !read.contains(&path) => inventory.missed += 1,
             Ok(_) => {}
             Err(error) => {
                 eprintln!(
-                    "loom usage: cannot read session record {}: {error:#}",
-                    record.path.display()
+                    "loom usage: cannot read session record {}: {}",
+                    inline_safe(&record.path.display().to_string()),
+                    inline_safe(&format!("{error:#}"))
                 );
                 inventory.unreadable += 1;
             }
@@ -140,11 +148,22 @@ pub(crate) fn missed_claude_transcripts(
     inventory
 }
 
+fn is_selected(stage_id: Option<&str>, stages: Option<&HashSet<String>>) -> bool {
+    stages.is_none_or(|stages| stage_id.is_some_and(|stage| stages.contains(stage)))
+}
+
 /// The record's transcript path when the session was active in the window.
-fn record_transcript(path: &Path, range: &TimeRange) -> anyhow::Result<Option<PathBuf>> {
+/// `path` lies under `root`; the read is bounded and follows no symlink, as
+/// `enumerate_sessions` reads the same record.
+fn record_transcript(
+    root: &Path,
+    path: &Path,
+    range: &TimeRange,
+) -> anyhow::Result<Option<PathBuf>> {
     use anyhow::Context;
 
-    let content = std::fs::read_to_string(path)
+    let relative = path.strip_prefix(root)?;
+    let content = crate::fs::safe_read::read_to_string_bounded(root, relative, MAX_RECORD_BYTES)
         .with_context(|| format!("Failed to read {}", path.display()))?;
     let session = crate::parser::frontmatter::parse_from_markdown::<crate::models::session::Session>(
         &content, "Session",
@@ -157,18 +176,30 @@ fn record_transcript(path: &Path, range: &TimeRange) -> anyhow::Result<Option<Pa
         .map(PathBuf::from))
 }
 
-fn was_read(path: &Path, read: &[PathBuf]) -> bool {
-    if read.iter().any(|candidate| candidate == path) {
-        return true;
+/// The transcripts already read, as given and canonicalized once, so a record
+/// costs one canonicalization rather than one per read file.
+struct ReadSet<'a> {
+    literal: HashSet<&'a Path>,
+    canonical: HashSet<PathBuf>,
+}
+
+impl<'a> ReadSet<'a> {
+    fn new(read: &'a [PathBuf]) -> Self {
+        Self {
+            literal: read.iter().map(PathBuf::as_path).collect(),
+            canonical: read
+                .iter()
+                .filter_map(|path| path.canonicalize().ok())
+                .collect(),
+        }
     }
-    let Ok(canonical) = path.canonicalize() else {
-        return false;
-    };
-    read.iter().any(|candidate| {
-        candidate
-            .canonicalize()
-            .is_ok_and(|other| other == canonical)
-    })
+
+    fn contains(&self, path: &Path) -> bool {
+        self.literal.contains(path)
+            || path
+                .canonicalize()
+                .is_ok_and(|canonical| self.canonical.contains(&canonical))
+    }
 }
 
 #[cfg(test)]

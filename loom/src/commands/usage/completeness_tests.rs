@@ -136,6 +136,26 @@ fn enumeration_error_gives_unreadable_one() {
     );
 }
 
+/// A stage worktree reaches the work dir through a `.loom/work` symlink; the
+/// no-follow record reads must not turn every record into an unreadable one.
+#[test]
+fn work_dir_reached_through_a_symlink_reads_its_records() {
+    let temp = tempfile::tempdir().unwrap();
+    let real = temp.path().join("real-work");
+    std::fs::create_dir(&real).unwrap();
+    write_record(&real, "s1", "stage-a", Some("/gone/a.jsonl"), at(11));
+    let link = temp.path().join("work");
+    std::os::unix::fs::symlink(&real, &link).unwrap();
+
+    assert_eq!(
+        inventory(&link, &[], None),
+        SessionInventory {
+            missed: 1,
+            unreadable: 0
+        }
+    );
+}
+
 #[test]
 fn no_work_dir_reads_nothing() {
     assert_eq!(
