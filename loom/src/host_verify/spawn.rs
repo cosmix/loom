@@ -67,6 +67,15 @@ pub(super) fn spawn_child(
     Ok((OwnedProcess::new(child), log))
 }
 
+/// What an exited child left its job in.
+pub(super) struct Reaped {
+    pub(super) state: JobState,
+    pub(super) detail: Option<String>,
+    /// No readable `result.json`: the child may have died (a signal, the OOM
+    /// killer) while its criteria still ran.
+    pub(super) without_result: bool,
+}
+
 /// The state an exited child leaves its job in, from its `result.json`; with
 /// none, `Failed` and a detail naming the exit and the end of `child.log`.
 pub(super) fn reaped_outcome(
@@ -75,7 +84,7 @@ pub(super) fn reaped_outcome(
     job_id: &str,
     status: ExitStatus,
     log: &File,
-) -> (JobState, Option<String>) {
+) -> Reaped {
     let exited = match status.code() {
         Some(code) => format!("verify-host exited {code}"),
         None => format!(
@@ -83,17 +92,25 @@ pub(super) fn reaped_outcome(
             status.signal().unwrap_or(0)
         ),
     };
-    match store::load_result(work_dir, stage_id, job_id) {
-        Ok(Some(result)) if result.passed => (JobState::Passed, None),
-        Ok(Some(_)) => (JobState::Failed, None),
-        Ok(None) => {
-            let prefix = format!("{exited} without a result");
-            (JobState::Failed, Some(with_log_tail(&prefix, log)))
+    let detail = match store::load_result(work_dir, stage_id, job_id) {
+        Ok(Some(result)) => {
+            return Reaped {
+                state: if result.passed {
+                    JobState::Passed
+                } else {
+                    JobState::Failed
+                },
+                detail: None,
+                without_result: false,
+            };
         }
-        Err(error) => {
-            let detail = format!("{exited}; its result is unreadable: {error:#}");
-            (JobState::Failed, Some(detail))
-        }
+        Ok(None) => with_log_tail(&format!("{exited} without a result"), log),
+        Err(error) => format!("{exited}; its result is unreadable: {error:#}"),
+    };
+    Reaped {
+        state: JobState::Failed,
+        detail: Some(detail),
+        without_result: true,
     }
 }
 

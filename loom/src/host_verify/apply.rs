@@ -26,6 +26,7 @@ use crate::fs::session_files::load_session_exact;
 use crate::handoff::completion::content::VerificationSnapshot;
 use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::stage_service::ownership::owns_stage_as;
 use crate::verify::transitions::{load_stage, update_stage};
 
 /// The job file whose presence marks a job as applied; its content says how.
@@ -151,20 +152,22 @@ fn apply_complete(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
 }
 
 fn apply_failed(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
+    // Ownership is judged on the records read here: a failure to read state
+    // is an `Err` a later attempt may not hit, never the verdict that the
+    // session lost the stage.
     let stage = load_stage(&record.stage_id, work_dir)?;
-    // Read before judging ownership: a failure to read state is an `Err` a
-    // later attempt may not hit, never the verdict that the session lost the
-    // stage.
     let session = load_session_exact(work_dir, &record.session_id)?;
-    let owned = crate::stage_service::ownership::session_owns_stage_as(
-        work_dir,
-        &record.stage_id,
-        &record.session_id,
-        COMPLETING_SESSION_TYPES,
-    );
     // The successor of a handed-off, retired or reset session runs its own
     // completion.
-    let Some(session) = session.filter(|_| owned.is_ok()) else {
+    let Some(session) = session.filter(|session| {
+        owns_stage_as(
+            &stage,
+            session,
+            &record.stage_id,
+            &record.session_id,
+            COMPLETING_SESSION_TYPES,
+        )
+    }) else {
         return Ok(Applied::Ignored(
             "session no longer owns the stage".to_string(),
         ));

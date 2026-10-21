@@ -274,3 +274,48 @@ fn pruning_keeps_the_three_newest_job_directories_and_the_current_one() {
         .join("current.json")
         .is_file());
 }
+
+#[test]
+fn store_files_are_refused_as_job_files_or_criterion_logs() {
+    let (_dir, work) = state_root();
+    let job = record(JobState::Running);
+    save_current(&work, &job).unwrap();
+
+    for name in [
+        "record.json",
+        "result.json",
+        "groups",
+        "child.log",
+        "progress.jsonl",
+    ] {
+        assert!(
+            save_job_file(&work, STAGE, &job.id, name, b"x").is_err(),
+            "{name}"
+        );
+    }
+    assert!(save_criterion_log(&work, STAGE, &job.id, "child", b"x").is_err());
+    assert_eq!(load_job_record(&work, STAGE, &job.id).unwrap(), Some(job));
+}
+
+#[test]
+fn pruning_keeps_a_job_cancelled_after_its_start_before_its_pid_was_written() {
+    let (_dir, work) = state_root();
+    let mut started = record(JobState::Cancelled);
+    started.started_at = Some(Utc::now());
+    started.finished_at = Some(Utc::now());
+    save_current(&work, &started).unwrap();
+    age(&work, &started.id, 1_000);
+    let newer: Vec<JobRecord> = (0..4).map(|_| record(JobState::Passed)).collect();
+    for (index, job) in newer.iter().enumerate() {
+        save_current(&work, job).unwrap();
+        age(&work, &job.id, 2_000 + index as u64);
+    }
+
+    prune_jobs(&work, STAGE, &newer[3].id).unwrap();
+
+    assert!(!job_dir(&work, STAGE, &newer[0].id).unwrap().exists());
+    assert!(
+        job_dir(&work, STAGE, &started.id).unwrap().exists(),
+        "the directory the runner reads to retire the job was pruned"
+    );
+}

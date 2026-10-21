@@ -1,4 +1,5 @@
 use crate::models::session::{Session, SessionStatus, SessionType};
+use crate::models::stage::Stage;
 use crate::parser::frontmatter::parse_from_markdown;
 use crate::verify::transitions::load_stage;
 use anyhow::{bail, Context, Result};
@@ -26,12 +27,26 @@ pub(crate) fn session_owns_stage_as(
             .with_context(|| format!("failed to read active session '{session_id}'"))?;
     let session: Session =
         parse_from_markdown(&content, "session").context("invalid active session file")?;
-    if session.id != session_id
-        || session.stage_id.as_deref() != Some(stage_id)
-        || !allowed.contains(&session.session_type)
-        || session.status != SessionStatus::Running
-    {
+    if !owns_stage_as(&stage, &session, stage_id, session_id, allowed) {
         bail!("request does not match the active running stage session");
     }
     Ok(())
+}
+
+/// The ownership test on records already read: the stage names the session,
+/// and the session's record is that session, of an allowed type, running for
+/// that stage. A caller that reads the records itself keeps a read failure
+/// apart from a mismatch, which `session_owns_stage_as` reports as one error.
+pub(crate) fn owns_stage_as(
+    stage: &Stage,
+    session: &Session,
+    stage_id: &str,
+    session_id: &str,
+    allowed: &[SessionType],
+) -> bool {
+    stage.session.as_deref() == Some(session_id)
+        && session.id == session_id
+        && session.stage_id.as_deref() == Some(stage_id)
+        && allowed.contains(&session.session_type)
+        && session.status == SessionStatus::Running
 }

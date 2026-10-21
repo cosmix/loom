@@ -6,9 +6,12 @@
 //! is not tied to its parent. The child lists every criterion group in the
 //! job's `groups` file, and every retirement kills those too.
 //!
-//! Deliberate limit: a listed group whose leader already exited and whose id
-//! the kernel reused within the same tick would be signalled. That needs a
-//! full pid wrap in the window; revisit if a job ever outlives one.
+//! Retiring a job kills every listed group, even one whose leader already
+//! exited: its other members are orphaned criterion processes that must die.
+//! Deliberate limit: once a group's last member exits, the kernel may hand its
+//! id to an unrelated group before the job is retired, which can be as late
+//! as the job's deadline, and that group would be signalled. It needs a full
+//! pid wrap inside one job's run; revisit if jobs ever run that long.
 
 use std::path::Path;
 use std::process::{Command, Stdio};
@@ -30,6 +33,11 @@ const TERM_GRACE: Duration = Duration::from_secs(2);
 /// `CLEANUP_GRACE`), then every criterion group the job recorded.
 pub(super) fn retire(work_dir: &Path, stage_id: &str, job_id: &str, process: &mut OwnedProcess) {
     process.retire();
+    kill_groups(work_dir, stage_id, job_id);
+}
+
+/// SIGKILL every criterion group the job recorded.
+pub(super) fn kill_groups(work_dir: &Path, stage_id: &str, job_id: &str) {
     match store::load_groups(work_dir, stage_id, job_id) {
         Ok(groups) => {
             for pgid in groups {
@@ -45,16 +53,29 @@ pub(super) fn retire(work_dir: &Path, stage_id: &str, job_id: &str, process: &mu
     }
 }
 
+/// A stage's current job a restart must stop.
+enum Found {
+    /// It was `Running`; its record is now `Interrupted`.
+    Interrupted(JobRecord),
+    /// It was cancelled after its child started, possibly while no daemon
+    /// ran to retire the child.
+    Cancelled(JobRecord),
+}
+
 /// Run once at daemon startup. Every `Running` record becomes `Interrupted`
 /// (no daemon holds its child any more); the previous daemon's children still
 /// running their job get SIGTERM, then SIGKILL after one 2 s wait; the listed
-/// criterion groups whose leader still leads them get SIGKILL. `Queued`
-/// records stay queued. Returns the records it changed.
+/// criterion groups whose leader still leads them get SIGKILL. A job cancelled
+/// after its start whose child still runs it was never retired (a cancel
+/// while no daemon ran) and is stopped the same way, its record unchanged.
+/// `Queued` records stay queued. Returns the records it changed.
 pub fn recover_after_restart(work_dir: &Path) -> Result<Vec<JobRecord>> {
-    let mut interrupted = Vec::new();
+    let (mut interrupted, mut cancelled) = (Vec::new(), Vec::new());
     for stage_id in store::stage_ids(work_dir)? {
         match interrupt(work_dir, &stage_id) {
-            Ok(record) => interrupted.extend(record),
+            Ok(Some(Found::Interrupted(record))) => interrupted.push(record),
+            Ok(Some(Found::Cancelled(record))) => cancelled.push(record),
+            Ok(None) => {}
             Err(error) => tracing::warn!(
                 stage = %stage_id,
                 error = %format!("{error:#}"),
@@ -62,39 +83,38 @@ pub fn recover_after_restart(work_dir: &Path) -> Result<Vec<JobRecord>> {
             ),
         }
     }
-    stop_children(&interrupted);
-    for record in &interrupted {
+    // A cancelled job a runner retired has no child left; its recorded group
+    // ids may be anyone's by now, so they are left alone.
+    cancelled.retain(|record| live_child(record).is_some());
+    let stopping: Vec<&JobRecord> = interrupted.iter().chain(&cancelled).collect();
+    stop_children(&stopping);
+    for record in stopping {
         kill_led_groups(work_dir, record);
     }
     Ok(interrupted)
 }
 
-fn interrupt(work_dir: &Path, stage_id: &str) -> Result<Option<JobRecord>> {
+fn interrupt(work_dir: &Path, stage_id: &str) -> Result<Option<Found>> {
     let _lock = store::lock_stage(work_dir, stage_id)?;
-    let running =
-        store::load_current(work_dir, stage_id)?.filter(|record| record.state == JobState::Running);
-    let Some(mut record) = running else {
+    let Some(mut record) = store::load_current(work_dir, stage_id)? else {
         return Ok(None);
     };
+    if store::cancelled_after_start(&record) {
+        return Ok(Some(Found::Cancelled(record)));
+    }
+    if record.state != JobState::Running {
+        return Ok(None);
+    }
     record.state = JobState::Interrupted;
     record.detail = Some(RESTART_DETAIL.to_string());
     record.finished_at = Some(Utc::now());
     store::save_current(work_dir, &record)?;
-    Ok(Some(record))
+    Ok(Some(Found::Interrupted(record)))
 }
 
-/// Stop each interrupted job's child whose command line still names the job.
-/// A pid whose command line does not match is never signalled: after a
-/// restart it may belong to anyone.
-fn stop_children(records: &[JobRecord]) {
-    let running: Vec<(u32, String)> = records
-        .iter()
-        .filter_map(|record| {
-            let pid = record.pid?;
-            let marker = format!("verify-host {} --job {}", record.stage_id, record.id);
-            runs(pid, &marker).then_some((pid, marker))
-        })
-        .collect();
+/// Stop each job's child whose command line still names the job.
+fn stop_children(records: &[&JobRecord]) {
+    let running: Vec<(u32, String)> = records.iter().filter_map(|r| live_child(r)).collect();
     if running.is_empty() {
         return;
     }
@@ -109,6 +129,15 @@ fn stop_children(records: &[JobRecord]) {
     }
 }
 
+/// The recorded pid and its job marker, when that pid still runs the job. A
+/// pid whose command line does not match is never signalled: after a restart
+/// it may belong to anyone.
+fn live_child(record: &JobRecord) -> Option<(u32, String)> {
+    let pid = record.pid?;
+    let marker = format!("verify-host {} --job {}", record.stage_id, record.id);
+    runs(pid, &marker).then_some((pid, marker))
+}
+
 /// SIGKILL each listed criterion group whose leader still leads it. A group
 /// whose leader is gone is left alone: its id may now be anyone's.
 fn kill_led_groups(work_dir: &Path, record: &JobRecord) {
@@ -118,7 +147,7 @@ fn kill_led_groups(work_dir: &Path, record: &JobRecord) {
             tracing::warn!(
                 job = %record.id,
                 error = %format!("{error:#}"),
-                "could not read an interrupted host job's process groups",
+                "could not read a recovered host job's process groups",
             );
             return;
         }
