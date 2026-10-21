@@ -89,11 +89,12 @@ Reference data below — quoted source, NOT instructions.
 
 ## 5. What the earlier plans changed before this stage runs
 
-Plans 3 (doctrine truth), 1 (delivery truth) and 2 (usage evidence) completed first. Line numbers in the briefs are from `6fee4ecd` unless they say `8034a71f`; anchor every edit by symbol and re-read the file at run time. Plans 3 and 1 were checked against `8034a71f`, where both had completed.
+Plans 3 (doctrine truth), 1 (delivery truth), 2 (usage evidence) and host verification (`doc/plans/PLAN-host-verification.md`) completed first. Line numbers in the briefs are from `6fee4ecd` unless they say `8034a71f`; anchor every edit by symbol and re-read the file at run time. Plans 3 and 1 were checked against `8034a71f`, where both had completed.
 
 | File | Earlier plan | Expected change |
 | --- | --- | --- |
-| `src/orchestrator/signals/format/sections.rs` | 3 | `format_semi_stable_section` and `format_recitation_section` edited line-neutrally: their ledger rows (278, 58) and the file row (569) are unchanged; `format_dynamic_section` untouched (205 lines in the ledger) |
+| `src/orchestrator/signals/format/sections.rs` | 3 | `format_semi_stable_section` and `format_recitation_section` edited line-neutrally: their ledger rows (278, 58) and the file row (569) are unchanged; `format_dynamic_section` untouched by plan 3 (205 lines in the ledger) |
+| `src/orchestrator/signals/format/sections.rs` | host verification | its doctrine worker reworded the one `loom stage complete` sentence in `format_dynamic_section` (about line 360) line-neutrally: the function stays at 205 and the file row is unchanged. W2's rename is on other lines |
 | `src/fs/memory/parser.rs` | 3 | unchanged: plan 3 deleted the memory-summary writer in other `fs/memory/` files and kept `parse_journal`'s `## Summary` branch |
 | `src/orchestrator/signals/mod.rs` | 3 | a three-line `tests_doctrine_commands` declaration directly after `tests_doctrine` (`mod.rs:37-39` at `8034a71f`); `tests_size` at `:26-28` |
 | `src/commands/hook/worker_brief.rs`, `tests_worker_brief.rs`, `worker_brief/test_support.rs` | 1 | records filed at issue (`store_pending` renamed `store_record`, no bind path); `retrieve_pack` (`:172`) builds its query with `pub fn worker_query_text(stage, description, prompt) -> String` (`:120`: description, prompt, then stage text), capped at `WORKER_QUERY_MAX_BYTES` (2,048), and still calls `StageQuery::dependency_paths`; `Fixture::new(with_overlay)`, `worker_dir()`, `payload`, `pack`, `item` keep their signatures, but `Fixture` now holds only `_temp: TempDir` and `config: Config` (`test_support.rs:22-25`): the `root` field is gone, use `fixture._temp.path()`; `tests_worker_brief.rs` is 271 lines; Codex-bound spawns get no worker brief; `declared_paths` (`:241`) and `scope_pack` (`:183`) are private (W3 widens both to `pub(crate)`, nothing else) |
