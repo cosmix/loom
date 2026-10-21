@@ -175,7 +175,7 @@ function BandPlot({
           points={band.points}
           fill={colors.get(band.id)}
           fillOpacity={0.55}
-          stroke={colors.get(band.id)}
+          className="stroke-neutral-700 dark:stroke-neutral-300"
           strokeWidth={1}
           vectorEffect="non-scaling-stroke"
         />
