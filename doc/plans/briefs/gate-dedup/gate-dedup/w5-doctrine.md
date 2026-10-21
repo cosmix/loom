@@ -39,7 +39,10 @@ Tier: sonnet. Files owned are listed in the stage's worker table. Read `common.m
    - Update `references/verification-rules.md:51-58`, `references/v2-contracts.md:136-140`, `references/sandbox.md:143` and `references/plan-template.md:101-110` to the same flow.
    - `references/v2-contracts.md:129`: an accepted contract dispute re-freezes the stage's contract and harness files at their current content and drops deleted harness files (W2's change).
 8. `loom-hooks/_subagent-preamble.txt:12-22`: the no-verify rule adds that the main agent re-checks one criterion with `loom check <stage-id> --criterion <n>`.
-9. `README.md`: `loom check` usage (:430) gains `[--criterion <n>]...`; the verification section (:858-872) states the flow.
+9. `README.md`:
+   - `loom check` usage (:430) gains `[--criterion <n>]...`.
+   - The verification section (:858-872) states the flow.
+   - :319, :1031 and the `loom-verifier` row at :1041 say the verifier runs "the build, tests, lint, format": it runs `loom check` (the stage's criteria, lint and format included) plus the steps acceptance cannot carry.
 10. New `orchestrator/signals/tests_doctrine_gate.rs`, declared in `orchestrator/signals/mod.rs` under `#[cfg(test)]`. It asserts:
     - `agents/loom-verifier.md` (via `include_str!`), `VERIFIER_GATE` and `references/plan-template.md` each contain `loom check`;
     - none of them contains "never a filtered subset" or instructs a full `cargo test --all-targets` run in the verifier's shell;

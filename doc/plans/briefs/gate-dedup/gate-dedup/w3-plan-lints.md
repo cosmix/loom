@@ -24,6 +24,14 @@ Tier: sonnet. Files owned: `src/plan/schema/validation_suite.rs` and `src/plan/s
    - and both run in the same `working_dir` (criteria share the stage's `working_dir`, so this means the same stage);
 
    then warn: "Acceptance criterion #<n> is a filtered <A> run the full-suite criterion #<m> already covers; drop it, or move the proof into stdout_contains on #<m>". Use the 1-based numbering the existing warning uses.
+
+   **Not subsumed**, because the full run does not execute what it selects:
+   - a criterion with `--doc`: `--all-targets` runs no doctests, and `--doc` is in cargo's `TARGET_FLAGS` (`testrun/adapters/cargo_test.rs:59-69`);
+   - a criterion with `--ignored` or `--include-ignored` (`SUBSET_FLAGS`, :72);
+   - a criterion whose leading `VAR=value` assignments differ from the full-suite criterion's (`strip_environment`, `testrun/recognize.rs:162`, drops them before recognition, so compare the raw prefixes);
+   - the equivalents in other adapters: a run selecting tests the adapter's full run skips (for example pytest `-m` with a marker the default run deselects).
+
+   Test each exemption. Use the real criteria from `doc/plans/token-optim/PLAN-04`/`05`/`06` and from gate-dedup's own integration-verify (`cargo test --doc --workspace --all-features -- --test-threads=1`, `cargo test --test signal_replay -- --ignored`, `LOOM_TEST_REQUIRE_SANDBOX_FREE=1 cargo test --lib tests_capsule_denies::bwrap::`): none of them warns.
 3. Tests in `validation_suite_tests.rs`:
    - full and filtered runs for at least cargo test, vitest (`bunx vitest run` vs `bunx vitest run src/a.test.ts`), pytest (`uv run pytest` vs `uv run pytest tests/test_a.py`), jest, and go test (`go test ./...` vs `go test ./pkg/a`);
    - the subsumed warning fires for an integration-verify stage with `cargo test` plus `cargo test --lib foo::`;
