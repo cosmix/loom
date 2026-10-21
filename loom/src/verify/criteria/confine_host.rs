@@ -16,6 +16,10 @@ pub(super) use super::scratch::CargoScratch;
 #[path = "confine_git.rs"]
 pub(super) mod git_roots;
 
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[path = "confine_protected.rs"]
+mod protected;
+
 #[cfg(target_os = "macos")]
 #[path = "confine_developer_tools.rs"]
 mod developer_tools;
@@ -210,6 +214,8 @@ fn seatbelt_path_rules(
             quote(&root.canonicalize()?)
         ));
     }
+    let paths = protected::protected(tree);
+    profile.push_str(&protected::seatbelt_rules(&paths, quote));
     Ok(profile)
 }
 
@@ -282,6 +288,7 @@ fn platform_command(
     for root in git.into_iter().flat_map(|git| &git.roots) {
         command.arg("--ro-bind").arg(root).arg(root);
     }
+    protected::bind(&mut command, &protected::protected(tree));
     bind_resolver_target(&mut command, Path::new("/etc/resolv.conf"))?;
     // The new root is a writable tmpfs in which `--bind` created the working
     // tree's parents; left writable, writes outside the working tree and the
