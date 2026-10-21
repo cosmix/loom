@@ -9,7 +9,7 @@ Write:
 - `loom/src/orchestrator/signals/tests_guidance_manifest.rs` (new)
 - `loom/src/orchestrator/signals/mod.rs` (one three-line module declaration)
 
-Read only: `CLAUDE.md.template`, `agents/loom-verifier.md`, `loom-hooks/post-tool-use.sh`, `loom-hooks/session-start.sh`, `loom/src/orchestrator/signals/helpers.rs` (`CONTEXT_CEILING_HANDOFF`), `loom/src/orchestrator/signals/cache.rs` (`generate_stable_prefix`), `loom/src/fs/permissions/constants.rs` (`HOOK_POST_TOOL_USE`, `HOOK_SESSION_START`), `loom/src/orchestrator/signals/tests_size.rs` (import style to mirror).
+Read only: `CLAUDE.md.template`, `agents/loom-verifier.md`, `loom-hooks/post-tool-use.sh`, `loom-hooks/session-start.sh`, `loom/src/orchestrator/signals/helpers.rs` (`CONTEXT_CEILING_HANDOFF`, `append_settled_completion_rules`, `STAGE_EXIT_RULES`), `loom/src/orchestrator/signals/cache.rs` (`generate_stable_prefix`), `loom/src/orchestrator/signals/cache/blocks.rs` (`VERIFIER_GATE`, part of the standard stable prefix), `loom/src/fs/permissions/constants.rs` (`HOOK_POST_TOOL_USE`, `HOOK_SESSION_START`), `loom/src/orchestrator/signals/tests_size.rs` (import style to mirror).
 
 Never run git and never write under `.loom/`. The `loom map` and `loom knowledge context` commands answer from the stage's base commit; read files directly with `sed -n` or `rg`.
 
@@ -31,7 +31,7 @@ Declared at this level, the filter `cargo test --lib signals::tests_guidance_man
 
 ## Step 2: data in `tests_guidance_manifest.rs`
 
-1. Module doc comment (`//!`), three or four lines: the installed template also serves sessions outside loom plans, so guidance is relocated and never deleted; this file lists each relocated item with its new home and a literal needle, and freezes the template's `###` headings and rule bullets as they stood at 6fee4ecd. Write any `<placeholder>` in a doc comment inside backticks (rustdoc runs with warnings denied).
+1. Module doc comment (`//!`), three or four lines: the installed template also serves sessions outside loom plans, so guidance is relocated and never deleted; this file lists each relocated item (template rules and removed orchestration-skill paragraphs) with its new home and a literal needle, and freezes the template's `###` headings and rule bullets as they stand at this plan's base. Write any `<placeholder>` in a doc comment inside backticks (rustdoc runs with warnings denied).
 2. Homes:
 
    ```rust
@@ -42,7 +42,7 @@ Declared at this level, the filter `cargo test --lib signals::tests_guidance_man
    const VERIFIER: &str = include_str!("../../../../agents/loom-verifier.md");
    ```
 
-3. `const RULE_14_VERBOSE_BULLET: &str = r#"..."#;` holding line 40 of the frozen list below, and `const FROZEN_LINES: &[&str]` holding all 40 lines in order, each as a raw string `r#"..."#` copied byte for byte (em dashes, backticks and double quotes included), with `RULE_14_VERBOSE_BULLET` standing in for line 40. No line contains the two-character sequence `"#`, so `r#` delimiters are safe.
+3. `const RULE_14_VERBOSE_BULLET: &str = r#"..."#;` holding the frozen-list entry whose text starts `- Don't narrate between tool calls` (entry 35 of 40; entry 40 is `### 19. WRITING STYLE`, which must stay mandatory). Identify it by that text, never by position. Then `const FROZEN_LINES: &[&str]` holding all 40 entries in order, each as a raw string `r#"..."#` copied byte for byte (em dashes, backticks and double quotes included), with `RULE_14_VERBOSE_BULLET` standing in for that one entry. No line contains the two-character sequence `"#`, so `r#` delimiters are safe.
 4. The relocation table:
 
    ```rust
@@ -54,7 +54,7 @@ Declared at this level, the filter `cargo test --lib signals::tests_guidance_man
    }
    ```
 
-   `const RELOCATIONS: &[Relocation]` with these eight entries, in this order (`-` in the frozen column means `None`; the needle column names a line of the needle block below):
+   `const RELOCATIONS: &[Relocation]` with these eighteen entries, in this order (`-` in the frozen column means `None`; the needle column names a line of the needle block below). Entries 1-8 are template relocations. Entries 9-18 pin, in the surface its recipient reads, the instruction of each orchestration-skill paragraph the Claude wave removes. `R<n>` is the removal's number in W2's brief. The skill's R6-R9 instructions are Rule 6 bullets the frozen list already pins, so they get no entry.
 
    | # | item | frozen | home | needle |
    | --- | --- | --- | --- | --- |
@@ -66,6 +66,16 @@ Declared at this level, the filter `cargo test --lib signals::tests_guidance_man
    | 6 | `Rule 3b latest handoff` | - | `loom-hooks/session-start.sh` | N6 |
    | 7 | `Rule 14 verbose output` | `Some(RULE_14_VERBOSE_BULLET)` | `CLAUDE.md.template` | N7 |
    | 8 | `Rule 14 verbose output` | `Some(RULE_14_VERBOSE_BULLET)` | `agents/loom-verifier.md` | N8 |
+   | 9 | `R1 loom plans on explicit request` | - | `CLAUDE.md.template` | N9 |
+   | 10 | `R2 completion is the last act` | - | `standard stable prefix` | N10 |
+   | 11 | `R2 post-completion work is lost` | - | `standard stable prefix` | N11 |
+   | 12 | `R3 criteria run through loom check` | - | `standard stable prefix` | N12 |
+   | 13 | `R3 runner-only failure is disputed` | - | `standard stable prefix` | N13 |
+   | 14 | `R3 session-only failure is no FAIL` | - | `standard stable prefix` | N14 |
+   | 15 | `R4 one commit per concern` | - | `CLAUDE.md.template` | N15 |
+   | 16 | `R5 the subagent preamble file` | - | `CLAUDE.md.template` | N16 |
+   | 17 | `R10 fable override at spawn` | - | `CLAUDE.md.template` | N17 |
+   | 18 | `R11 when the stage cannot finish` | - | `standard stable prefix` | N18 |
 
    The needles, one per line after the `Nk:` label, copied byte for byte; no needle has leading or trailing spaces. Write each as a raw string `r#"..."#`.
 
@@ -78,24 +88,38 @@ Declared at this level, the filter `cargo test --lib signals::tests_guidance_man
    N6: /handoffs/ file
    N7: 2>&1; echo "exit=$?"
    N8: 2>&1; echo "exit=$? log=
+   N9: **Loom plans:** only on explicit request
+   N10: is the LAST act of your session
+   N11: LOST WORK
+   N12: `loom check <stage-id>`
+   N13: RUNNER-ENV
+   N14: SESSION-ENV
+   N15: one commit per concern
+   N16: _subagent-preamble.txt
+   N17: Fable-tier work has no pinned agent type
+   N18: **When the stage cannot finish.**
    ```
 
-   Before writing the first six needles, confirm each one is a substring of today's file with `rg -n -F` (`session-start.sh` was edited by an earlier plan; the stable-prefix needle is in `CONTEXT_CEILING_HANDOFF` in `helpers.rs`). If one is missing, report it and the text you found; do not invent another needle. The last two are absent today by design: Claude workers add them after you.
+   Before writing the needles, confirm each of N1-N6 and N9-N18 is a substring of its home today with `rg -n -F`. For "standard stable prefix", search `loom/src/orchestrator/signals/helpers.rs` and `loom/src/orchestrator/signals/cache/blocks.rs`; `session-start.sh` was edited by an earlier plan. If one is missing, report it and the text you found; do not invent another needle. Plan B wrote N10-N14 and N18's homes and was required to keep those phrases, so a missing one is a plan-B defect to report. N7 and N8 are absent today by design: Claude workers add them after you.
 5. `fn home_text(home: &str) -> String`: `"CLAUDE.md.template"` gives `TEMPLATE`, `"agents/loom-verifier.md"` gives `VERIFIER`, `"loom-hooks/post-tool-use.sh"` gives `HOOK_POST_TOOL_USE`, `"loom-hooks/session-start.sh"` gives `HOOK_SESSION_START`, `"standard stable prefix"` gives `generate_stable_prefix()`; any other label panics naming it.
 6. `fn missing_frozen_lines(template: &str) -> Vec<&'static str>`: every `FROZEN_LINES` entry that is neither a whole line of `template` (`template.lines().any(|l| l == frozen)`) nor the `frozen` value of some relocation entry, in `FROZEN_LINES` order.
+7. `fn missing_relocations(text_of: impl Fn(&str) -> String) -> Vec<String>`: for every `RELOCATIONS` entry whose needle is not a substring of `text_of(home)`, one string naming item, home and needle, in table order. The tests call it with `home_text` and with a closure that alters one home.
 
-## Step 3: four tests in the same file
+## Step 3: seven tests in the same file
 
 Each `#[test]` fn under 50 lines:
 
-- `every_relocated_item_is_carried_by_its_home`: collect every entry whose needle is not a substring of `home_text(home)` as a string naming item, home and needle; assert the collection is empty and print all of it on failure (not only the first).
+- `every_relocated_item_is_carried_by_its_home`: `missing_relocations(home_text)` is empty; the message prints all of it (not only the first).
 - `every_frozen_template_line_survives_or_is_relocated`: `missing_frozen_lines(TEMPLATE)` is empty; the message lists the missing lines.
 - `a_deleted_frozen_heading_fails_the_manifest_check`: `missing_frozen_lines(&TEMPLATE.replace("### 3b. POST-COMPACTION RECOVERY", ""))` equals `vec!["### 3b. POST-COMPACTION RECOVERY"]`. This keeps the check from passing vacuously.
+- `the_writing_style_heading_is_still_mandatory`: `missing_frozen_lines(&TEMPLATE.replace("### 19. WRITING STYLE", ""))` equals `vec!["### 19. WRITING STYLE"]`. Entry 40 is not the relocated Rule 14 bullet.
+- `replacing_the_rule_14_bullet_is_allowed`: `missing_frozen_lines(&TEMPLATE.replace(RULE_14_VERBOSE_BULLET, "- replaced"))` is empty.
+- `a_removed_skill_instruction_home_fails_the_relocation_check`: `missing_relocations` with a closure that returns `home_text(home).replace("LOST WORK", "")` for `"standard stable prefix"` and `home_text(home)` otherwise yields exactly one string, naming `R2 post-completion work is lost`.
 - `frozen_list_counts_the_base_template_shape`: `FROZEN_LINES.len()` is 40 and exactly 21 entries start with `###`.
 
-Keep the file under 360 lines: the limit is 400, and the orchestrator's `cargo fmt` pass only grows hand-wrapped code.
+Keep the file under 380 lines: the limit is 400, and the orchestrator's `cargo fmt` pass only grows hand-wrapped code.
 
-## The 40 frozen lines (6fee4ecd, `rg '^(### |- |[0-9]+\. )' CLAUDE.md.template`)
+## The 40 frozen lines (6fee4ecd; byte-identical on 2026-10-21 after plans 3, 1 and 2, and plan B may not change them; `rg '^(### |- |[0-9]+\. )' CLAUDE.md.template`)
 
 One line per entry, in order; the text block fence is not part of any line.
 
