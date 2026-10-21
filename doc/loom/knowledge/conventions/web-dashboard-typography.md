@@ -28,7 +28,7 @@ The Web UI help dialog must preserve the complete stage-state legend as a dedica
 
 ## Help uses operational illustrations
 
-Help topics pair concise operating instructions with diagrams and recognizable control examples. Avoid decorative taglines such as “The same live run. A little more context.” Graph navigation needs a dependency diagram and labeled controls; terminal guidance needs visible view/control examples. Preserve the complete Legend topic. Preview the rendered changes before committing.
+Each help topic is a set of scenes: a real-component illustration with numbered pins on the controls it explains, and one short sentence per pin below it (`HelpScene` in `web/src/components/help-topics.ts`, rendered by `SceneFigure` in `help-scene.tsx`). Pins anchor to CSS selectors inside the illustration and are measured at runtime; hovering a note rings its target. Facts that have no control to point at go in a short "Good to know" tip list, never in prose sections: the operator rejected paragraphs of text set apart from the graphics they describe. Illustrations carry no static highlights that imply state (no permanently active step), and the graph example shows no dimmed nodes. Type in help is at least 13px. Avoid decorative taglines. Preserve the complete Legend topic. Preview the rendered changes before committing.
 
 ## Help illustrations use real components
 
