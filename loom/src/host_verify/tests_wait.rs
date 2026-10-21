@@ -23,9 +23,9 @@ const SESSION: &str = "session-1";
 const OLD_JOB: &str = "11111111111111111111111111111111";
 const NEW_JOB: &str = "22222222222222222222222222222222";
 
-struct Fx {
+pub(super) struct Fx {
     _tmp: TempDir,
-    checkout: PathBuf,
+    pub(super) checkout: PathBuf,
     work_dir: PathBuf,
     scratch: PathBuf,
 }
@@ -44,7 +44,7 @@ fn git(dir: &Path, args: &[&str]) {
     assert!(output.status.success(), "git {args:?}: {output:?}");
 }
 
-fn fixture() -> Fx {
+pub(super) fn fixture() -> Fx {
     let tmp = tempfile::tempdir().unwrap();
     let checkout = tmp.path().join("checkout");
     let work_dir = tmp.path().join(".loom").join("work");
@@ -65,7 +65,7 @@ fn fixture() -> Fx {
 }
 
 impl Fx {
-    fn site(&self, budget: Duration, no_cache: bool) -> WaitSite<'_> {
+    pub(super) fn site(&self, budget: Duration, no_cache: bool) -> WaitSite<'_> {
         WaitSite {
             work_dir: &self.work_dir,
             stage_id: STAGE,
@@ -79,7 +79,7 @@ impl Fx {
         }
     }
 
-    fn state_file(&self) -> PathBuf {
+    pub(super) fn state_file(&self) -> PathBuf {
         self.scratch.join("host-verify").join("s1-check.json")
     }
 
@@ -162,7 +162,7 @@ impl Write for Shared {
 }
 
 #[test]
-fn with_no_state_the_request_lines_print_before_the_relay_runs() {
+fn with_no_state_the_request_lines_print_once_the_request_is_recorded() {
     let fx = fixture();
     let out = Shared::default();
     let seen = Rc::new(RefCell::new(Vec::new()));
@@ -177,12 +177,16 @@ fn with_no_state_the_request_lines_print_before_the_relay_runs() {
     assert_eq!(outcome, WaitOutcome::Requested);
     assert_eq!(exit_code(&outcome), 0);
     assert_eq!(calls, 1);
-    let before = String::from_utf8(seen.borrow().clone()).unwrap();
     assert!(
-        before.starts_with("Host job: requested (check, "),
-        "{before}"
+        seen.borrow().is_empty(),
+        "nothing prints before the request"
     );
-    assert!(before.contains("This is not a result."), "{before}");
+    let printed = String::from_utf8(out.0.borrow().clone()).unwrap();
+    assert!(
+        printed.starts_with("Host job: requested (check, "),
+        "{printed}"
+    );
+    assert!(printed.contains("This is not a result."), "{printed}");
     assert!(fx.state_file().is_file());
 }
 

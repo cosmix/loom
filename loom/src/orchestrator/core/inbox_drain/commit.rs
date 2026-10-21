@@ -118,7 +118,7 @@ fn prepare_stage(site: &CommitSite<'_>) -> Result<Prepared, String> {
     let stage = require_owner(site.work_dir, site.stage_id, site.record)?;
     require_executing(&stage)?;
     Ok(Prepared {
-        git: pinned_worktree(site, &stage)?,
+        git: pinned_worktree(site.repo_root, &stage)?,
         scope: CommitScope::StageBranch {
             stage_id: site.stage_id.to_string(),
         },
@@ -186,7 +186,7 @@ fn prepare_merge(site: &CommitSite<'_>) -> Result<Prepared, String> {
         ));
     }
     Ok(Prepared {
-        git: pinned_worktree(site, &stage)?,
+        git: pinned_worktree(site.repo_root, &stage)?,
         scope: CommitScope::Merge {
             stage_id: site.stage_id.to_string(),
         },
@@ -220,9 +220,9 @@ fn require_executing(stage: &Stage) -> Result<(), String> {
 }
 
 /// Git pinned to the stage's worktree, the worktree id validated first.
-fn pinned_worktree(site: &CommitSite<'_>, stage: &Stage) -> Result<WorktreeGit, String> {
-    let path = stage_worktree_path(stage, site.repo_root).map_err(|error| format!("{error:#}"))?;
-    WorktreeGit::pinned(site.repo_root, &path).map_err(|error| {
+pub(super) fn pinned_worktree(repo_root: &Path, stage: &Stage) -> Result<WorktreeGit, String> {
+    let path = stage_worktree_path(stage, repo_root).map_err(|error| format!("{error:#}"))?;
+    WorktreeGit::pinned(repo_root, &path).map_err(|error| {
         format!(
             "{} is not a registered worktree of this repository: {error:#}",
             path.display()

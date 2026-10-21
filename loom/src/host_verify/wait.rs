@@ -4,27 +4,32 @@
 //! Both exit 0 while nothing is decided, because Claude Code runs the relay
 //! and heartbeat hooks only after a Bash call that exits 0.
 
-use std::fmt::Write as _;
 use std::io::Write;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
-use chrono::{DateTime, Utc};
-use serde::{Deserialize, Serialize};
+use chrono::Utc;
 
 use super::digest::{head, knowledge_tree_digest, tree_digest};
-use super::store::{job_dir, load_current, load_job_record, load_result, read_progress};
-use super::{CriterionOutcome, JobKind, JobRecord, JobResult, JobState};
-use crate::fs::inbox::{read_ledger, LedgerOutcome};
+use super::store::{load_result, read_progress};
+use super::wait_report::report;
+use super::wait_state::{
+    find_job, job_id_of, ledger_outcome, read_state, remove_state_if_owned, state_path,
+    write_state, RequestState,
+};
+use super::{JobKind, JobRecord, JobResult, JobState};
+use crate::fs::inbox::LedgerOutcome;
 use crate::models::stage::Stage;
+use crate::relay::emit::{RelaySink, StdSink};
 use crate::relay::HostJobRequest;
+
+pub use super::wait_report::{head_or_empty, heading, refusal};
 
 /// How long a request may sit with no ledger outcome and no job naming it
 /// before the call reports that it never reached the daemon.
 const REQUEST_GRACE: Duration = Duration::from_secs(120);
 const POLL: Duration = Duration::from_secs(1);
-const SHORT_HEAD: usize = 12;
 
 /// Where a wait runs and what it waits for.
 pub struct WaitSite<'a> {
@@ -47,14 +52,34 @@ pub enum WaitOutcome {
     Refused(String),
 }
 
-/// The request this session last relayed for a kind of job.
-#[derive(Debug, Serialize, Deserialize)]
-struct RequestState {
-    request_id: String,
-    head: String,
-    tree_digest: String,
-    no_cache: bool,
-    submitted_at: DateTime<Utc>,
+/// A relay sink that holds the ticket's `LOOM_RELAY_V1` line back from stdout
+/// until [`TicketSink::print_line`]. The caller prints it once
+/// [`wait_or_request`] returned `Requested`: the request state is on disk by
+/// then, the relay line is the last line of stdout, and a call that failed
+/// shows no ticket the hook would never relay.
+#[derive(Default)]
+pub struct TicketSink {
+    line: Vec<u8>,
+    std: StdSink,
+}
+
+impl RelaySink for TicketSink {
+    fn stdout(&mut self) -> &mut dyn Write {
+        &mut self.line
+    }
+
+    fn stderr(&mut self) -> &mut dyn Write {
+        self.std.stderr()
+    }
+}
+
+impl TicketSink {
+    /// Write the held relay line to `out`, once.
+    pub fn print_line(&mut self, out: &mut dyn Write) -> Result<()> {
+        out.write_all(&std::mem::take(&mut self.line))?;
+        out.flush()?;
+        Ok(())
+    }
 }
 
 /// The process exit code of an outcome: 0 while undecided or passed, 1 for a
@@ -85,10 +110,27 @@ pub fn budget_for(stage: &Stage) -> Duration {
 }
 
 /// Request the job, or follow the one this session already requested.
-/// `relay` emits the ticket and returns its request id; the
-/// `Host job: requested` lines are written to `out` before it runs, so the
-/// relay line stays the last line of stdout.
+/// `relay` emits the ticket into a [`TicketSink`] and returns its request id;
+/// the `Host job: requested` lines are written to `out` once the ticket is
+/// emitted and its state recorded. Any failure ends as `Refused` with its
+/// `Host job: refused` first line, never a bare error, so a session always
+/// has a state to act on.
 pub fn wait_or_request(
+    site: &WaitSite<'_>,
+    relay: &mut dyn FnMut(&HostJobRequest) -> Result<String>,
+    out: &mut dyn Write,
+) -> Result<WaitOutcome> {
+    match drive(site, relay, out) {
+        Ok(outcome) => Ok(outcome),
+        Err(error) => {
+            let message = format!("{error:#}");
+            refusal(out, site.kind, &head_or_empty(site.checkout), &message)?;
+            Ok(WaitOutcome::Refused(message))
+        }
+    }
+}
+
+fn drive(
     site: &WaitSite<'_>,
     relay: &mut dyn FnMut(&HostJobRequest) -> Result<String>,
     out: &mut dyn Write,
@@ -136,12 +178,10 @@ pub fn release(site: &WaitSite<'_>, record: &JobRecord) -> Result<()> {
     Ok(())
 }
 
-/// `Host job: <state> (<kind>, <short head>)`, the first line of every call.
-pub fn heading(kind: JobKind, state: &str, head: &str) -> String {
-    let short: String = head.chars().take(SHORT_HEAD).collect();
-    format!("Host job: {state} ({}, {short})", kind.name())
-}
-
+/// The ticket, then its state, then the request's lines. The lines come last
+/// so a request that failed prints `Host job: refused` first, never a
+/// `requested` state that a rerun would meet again; the ticket's relay line
+/// stays in the caller's sink, so a state that cannot be written withholds it.
 fn request(
     site: &WaitSite<'_>,
     path: &Path,
@@ -150,27 +190,26 @@ fn request(
     head: String,
     tree_digest: String,
 ) -> Result<WaitOutcome> {
+    let request_id = relay(&HostJobRequest {
+        head: head.clone(),
+        tree_digest: tree_digest.clone(),
+        no_cache: site.no_cache,
+    })
+    .context("the request was not sent")?;
+    let state = RequestState {
+        request_id,
+        head: head.clone(),
+        tree_digest,
+        no_cache: site.no_cache,
+        submitted_at: Utc::now(),
+    };
+    write_state(path, &state).context("the request was not sent")?;
     writeln!(out, "{}", heading(site.kind, "requested", &head))?;
     writeln!(
         out,
         "This is not a result. Run the same command again in your next Bash call to wait for it."
     )?;
     out.flush()?;
-    let request_id = relay(&HostJobRequest {
-        head: head.clone(),
-        tree_digest: tree_digest.clone(),
-        no_cache: site.no_cache,
-    })?;
-    write_state(
-        path,
-        &RequestState {
-            request_id,
-            head,
-            tree_digest,
-            no_cache: site.no_cache,
-            submitted_at: Utc::now(),
-        },
-    )?;
     Ok(WaitOutcome::Requested)
 }
 
@@ -221,180 +260,4 @@ fn poll(site: &WaitSite<'_>, state: &RequestState) -> Result<Poll> {
         Box::new(record),
         result,
     ))))
-}
-
-/// The session's ledger outcome for `request_id`, with its note or reason.
-fn ledger_outcome(
-    site: &WaitSite<'_>,
-    request_id: &str,
-) -> Result<Option<(LedgerOutcome, String)>> {
-    // In a stage worktree `.loom/work` is a symlink to the main repository's
-    // state directory, and the inbox reads refuse to follow symlinks.
-    let root = site
-        .work_dir
-        .canonicalize()
-        .with_context(|| format!("cannot resolve the state root {}", site.work_dir.display()))?;
-    let ledger = read_ledger(&root, site.session_id)?;
-    let settled = ledger
-        .into_iter()
-        .rev()
-        .find(|record| record.id == request_id && record.outcome.is_some());
-    Ok(settled.and_then(|record| {
-        let reason = record.reason.unwrap_or_default();
-        record.outcome.map(|outcome| match outcome {
-            LedgerOutcome::UnknownAfterRestart => (
-                outcome,
-                "the daemon restarted before the request was applied".to_string(),
-            ),
-            _ => (outcome, reason),
-        })
-    }))
-}
-
-/// `host job <id> ...` names the job a request became.
-fn job_id_of(note: &str) -> Option<String> {
-    let rest = note.strip_prefix("host job ")?;
-    rest.split_whitespace().next().map(str::to_string)
-}
-
-/// The job record: `current.json` when it is this request's job, else the
-/// job's own copy; a job whose directory was pruned reads as cancelled.
-fn find_job(
-    site: &WaitSite<'_>,
-    state: &RequestState,
-    applied: Option<&str>,
-) -> Result<Option<JobRecord>> {
-    let (work_dir, stage_id) = (site.work_dir, site.stage_id);
-    if let Some(current) = load_current(work_dir, stage_id)? {
-        let named =
-            applied == Some(current.id.as_str()) || current.requests.contains(&state.request_id);
-        if named {
-            return Ok(Some(current));
-        }
-    }
-    let Some(job_id) = applied else {
-        return Ok(None);
-    };
-    Ok(Some(match load_job_record(work_dir, stage_id, job_id)? {
-        Some(record) => record,
-        None => pruned(site, state, job_id),
-    }))
-}
-
-fn pruned(site: &WaitSite<'_>, state: &RequestState, job_id: &str) -> JobRecord {
-    JobRecord {
-        id: job_id.to_string(),
-        stage_id: site.stage_id.to_string(),
-        session_id: site.session_id.to_string(),
-        kind: site.kind,
-        head: state.head.clone(),
-        tree_digest: state.tree_digest.clone(),
-        no_cache: state.no_cache,
-        state: JobState::Cancelled,
-        requests: vec![state.request_id.clone()],
-        queued_at: state.submitted_at,
-        started_at: None,
-        finished_at: None,
-        pid: None,
-        detail: Some("the job's record was pruned".to_string()),
-    }
-}
-
-/// Print the outcome of a followed job: its first line, then the detail.
-fn report(
-    site: &WaitSite<'_>,
-    head: &str,
-    outcome: &WaitOutcome,
-    out: &mut dyn Write,
-) -> Result<()> {
-    let text = match outcome {
-        WaitOutcome::Requested => return Ok(()),
-        WaitOutcome::Refused(reason) => {
-            format!("{}\n{reason}\n", heading(site.kind, "refused", head))
-        }
-        WaitOutcome::Pending { done } => format!(
-            "{}: {done} criteria done. Run the same command again to keep waiting.\n",
-            heading(site.kind, "pending", head)
-        ),
-        WaitOutcome::Finished(record, result) => {
-            finished_text(site, head, record, result.as_ref())?
-        }
-    };
-    out.write_all(text.as_bytes())?;
-    out.flush()?;
-    Ok(())
-}
-
-fn finished_text(
-    site: &WaitSite<'_>,
-    head: &str,
-    record: &JobRecord,
-    result: Option<&JobResult>,
-) -> Result<String> {
-    let word = match record.state {
-        JobState::Passed => "passed",
-        JobState::Failed => "failed",
-        _ => "stopped",
-    };
-    let outcomes = match result {
-        Some(result) => result.criteria.clone(),
-        None => read_progress(site.work_dir, site.stage_id, &record.id)?,
-    };
-    let dir = job_dir(site.work_dir, site.stage_id, &record.id)?;
-    let mut text = format!("{}\n", heading(site.kind, word, head));
-    for outcome in outcomes.iter().filter(|outcome| !outcome.passed) {
-        write_failure(&mut text, &dir, outcome);
-    }
-    for outcome in &outcomes {
-        let mark = if outcome.passed { '✓' } else { '✗' };
-        let _ = writeln!(text, "{mark} {}", outcome.label);
-    }
-    if let Some(error) = result.and_then(|result| result.error.as_deref()) {
-        let _ = writeln!(text, "{error}");
-    }
-    if let Some(detail) = &record.detail {
-        let _ = writeln!(text, "{detail}");
-    }
-    if word == "stopped" {
-        let _ = writeln!(text, "Run the same command again to request a new run.");
-    }
-    Ok(text)
-}
-
-fn write_failure(text: &mut String, dir: &Path, outcome: &CriterionOutcome) {
-    let _ = writeln!(text, "{}", outcome.summary.trim_end());
-    if let Some(log) = &outcome.log {
-        let path = std::path::absolute(dir.join(log)).unwrap_or_else(|_| dir.join(log));
-        let _ = writeln!(text, "full log: {}", path.display());
-    }
-}
-
-fn state_path(site: &WaitSite<'_>) -> Result<PathBuf> {
-    crate::validation::validate_id(site.stage_id)?;
-    let name = format!("{}-{}.json", site.stage_id, site.kind.name());
-    Ok(site.scratch_dir.join("host-verify").join(name))
-}
-
-fn read_state(path: &Path) -> Option<RequestState> {
-    serde_json::from_slice(&std::fs::read(path).ok()?).ok()
-}
-
-/// Atomic and private: a temp file in the same directory, renamed over.
-fn write_state(path: &Path, state: &RequestState) -> Result<()> {
-    let dir = path.parent().context("request state has no directory")?;
-    std::fs::create_dir_all(dir).with_context(|| format!("cannot create {}", dir.display()))?;
-    let mut file = tempfile::NamedTempFile::new_in(dir)?;
-    file.write_all(&serde_json::to_vec(state)?)?;
-    file.persist(path)
-        .with_context(|| format!("cannot write {}", path.display()))?;
-    Ok(())
-}
-
-/// Delete the state only while it still holds `request_id`: two verifier
-/// subagents of one session share the file, and one waiter's end must not
-/// discard a newer request another wrote.
-fn remove_state_if_owned(path: &Path, request_id: &str) {
-    if read_state(path).is_some_and(|state| state.request_id == request_id) {
-        let _ = std::fs::remove_file(path);
-    }
 }

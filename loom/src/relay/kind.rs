@@ -127,7 +127,7 @@ mod tests {
     }
 
     #[test]
-    fn is_control_matches_the_seven_control_kinds() {
+    fn is_control_matches_the_nine_control_kinds() {
         let control: Vec<RequestKind> = RequestKind::all()
             .into_iter()
             .filter(|kind| kind.is_control())

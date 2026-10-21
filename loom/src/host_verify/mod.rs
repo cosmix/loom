@@ -26,6 +26,8 @@ pub mod store;
 mod store_fs;
 pub mod submit;
 pub mod wait;
+mod wait_report;
+mod wait_state;
 
 #[cfg(test)]
 mod tests_apply;
@@ -42,6 +44,8 @@ mod tests_complete_support;
 #[cfg(test)]
 mod tests_digest;
 #[cfg(test)]
+mod tests_digest_pinned;
+#[cfg(test)]
 mod tests_freeze;
 #[cfg(test)]
 mod tests_runner;
@@ -53,6 +57,8 @@ mod tests_store;
 mod tests_submit;
 #[cfg(test)]
 mod tests_wait;
+#[cfg(test)]
+mod tests_wait_refusal;
 
 /// Most bytes a record's `detail` keeps.
 pub(crate) const DETAIL_MAX_BYTES: usize = 512;
