@@ -11,7 +11,7 @@ use super::{git_command, git_label, git_timeout, global_args, run_bounded_git, s
 
 /// Variables that point git at a repository, work tree or index other than the
 /// ones under its working directory.
-const REPO_REDIRECT_ENV: [&str; 4] = [
+pub(crate) const REPO_REDIRECT_ENV: [&str; 4] = [
     "GIT_DIR",
     "GIT_WORK_TREE",
     "GIT_INDEX_FILE",

@@ -25,9 +25,8 @@ use crate::context::source_graph::FileCoverage;
 use crate::context::store::CACHE_RELATIVE_DIR;
 use crate::context::view::{build_cold, relink, ResolvedView, ViewIdentity};
 use crate::fs::work_dir::WorkDir;
-use crate::git::branch::{commits_between, is_ancestor_of};
-use crate::git::runner::{run_git_checked, run_git_records};
-use crate::git::worktree::is_worktree_scaffold_path;
+use crate::git::worktree::{is_worktree_scaffold_path, WorktreeGit};
+use crate::verify::review::fingerprint::checkout_git;
 
 /// Overlay generation of the in-memory view a worktree graph is built as, so
 /// it can never be mistaken for a persisted base view.
@@ -47,52 +46,49 @@ pub struct WorktreeGraph {
     pub changed: Vec<PathBuf>,
 }
 
-/// Build the graph of the worktree containing `working_dir`, discovering
-/// everything with read-only git.
+/// Build the graph of the worktree containing `working_dir`, with read-only
+/// git through `checkout_git`: as the worktree's own `.git` directs it, or,
+/// for a stage worktree, pinned to the git directory the project registered
+/// for it. Verification runs outside the stage's sandbox, where a `.git` file
+/// the stage repointed would otherwise choose the toplevel, the base revision
+/// and the changed set, and run the configuration of the directory it names.
 ///
-/// The worktree is `--show-toplevel`; the project root, where the shared cache
-/// lives, is the parent of the absolute `--git-common-dir`; the base revision
-/// is the published base layer nearest to `HEAD` among its ancestors, or
-/// `HEAD` itself when there is none (which then degrades).
+/// The worktree is the checkout's root; the project root, where the shared
+/// cache lives, is the parent of the absolute `--git-common-dir`; the base
+/// revision is the published base layer nearest to `HEAD` among its
+/// ancestors, or `HEAD` itself when there is none (which then degrades).
 pub fn build_for_worktree(working_dir: &Path) -> Result<WorktreeGraph> {
-    let toplevel = run_git_checked(&["rev-parse", "--show-toplevel"], working_dir)?;
-    let worktree = PathBuf::from(toplevel);
-    let common_dir = PathBuf::from(run_git_checked(
-        &["rev-parse", "--path-format=absolute", "--git-common-dir"],
-        working_dir,
-    )?);
+    let git = checkout_git(working_dir)?;
+    let common_dir =
+        git.run_checked(&["rev-parse", "--path-format=absolute", "--git-common-dir"])?;
+    let common_dir = PathBuf::from(common_dir.trim());
     let project_root = common_dir
         .parent()
         .with_context(|| format!("git common dir has no parent: {}", common_dir.display()))?;
     let base_dir = read_only_store(project_root)?.base_dir();
-    let base_revision = match nearest_ancestor_base(&base_dir, &worktree)? {
+    let base_revision = match nearest_ancestor_base(&base_dir, &git)? {
         Some(revision) => revision,
-        None => run_git_checked(&["rev-parse", "HEAD"], &worktree)?,
+        None => git.run_checked(&["rev-parse", "HEAD"])?.trim().to_string(),
     };
-    let changed = changed_paths(&worktree, &base_revision)?;
-    build_worktree_graph(
-        project_root,
-        &worktree,
-        working_dir,
-        &base_revision,
-        &changed,
-    )
+    let changed = changed_paths(&git, &base_revision)?;
+    build_worktree_graph(project_root, &git, working_dir, &base_revision, &changed)
 }
 
 /// Build the graph from the base layer published for `base_revision` with
-/// every path in `changed` (worktree-relative) re-read from `worktree`.
+/// every path in `changed` (worktree-relative) re-read from `git`'s worktree.
 ///
 /// When no base layer exists for `base_revision`, every tracked or untracked
 /// source file under `working_dir` is extracted instead and
 /// [`WorktreeGraph::degraded`] names the reason.
 pub fn build_worktree_graph(
     project_root: &Path,
-    worktree: &Path,
+    git: &WorktreeGit,
     working_dir: &Path,
     base_revision: &str,
     changed: &[PathBuf],
 ) -> Result<WorktreeGraph> {
     let extractors = extract::registry();
+    let worktree = git.work_tree();
     let store = read_only_store(project_root)?;
     // A base written under another schema counts as missing.
     let base = store
@@ -105,7 +101,7 @@ pub fn build_worktree_graph(
             (graph, None, seed)
         }
         None => {
-            let graph = from_scratch(worktree, working_dir, &extractors)?;
+            let graph = from_scratch(git, working_dir, &extractors)?;
             let reason = format!(
                 "no source-graph base layer is published for {base_revision}; extracted {} \
                  source files under {} instead",
@@ -190,17 +186,31 @@ fn read_only_store(project_root: &Path) -> Result<GraphStore> {
 }
 
 /// The published base revision nearest to `HEAD` among its ancestors.
-fn nearest_ancestor_base(base_dir: &Path, worktree: &Path) -> Result<Option<String>> {
+fn nearest_ancestor_base(base_dir: &Path, git: &WorktreeGit) -> Result<Option<String>> {
     let mut ancestors = Vec::new();
     for revision in published_revisions(base_dir)? {
-        // A revision git cannot resolve here is unusable, not an error: a
-        // base can outlive the commit it describes.
-        if matches!(is_ancestor_of(&revision, "HEAD", worktree), Ok(true)) {
-            let distance = commits_between("HEAD", &revision, worktree)?;
+        if let Some(distance) = distance_to_head(git, &revision)? {
             ancestors.push((distance, revision));
         }
     }
     Ok(ancestors.into_iter().min().map(|(_, revision)| revision))
+}
+
+/// How many commits `HEAD` has beyond `revision`; `None` when `revision` is
+/// no ancestor of `HEAD` or git cannot resolve it, which makes it unusable
+/// rather than an error: a base can outlive the commit it describes.
+fn distance_to_head(git: &WorktreeGit, revision: &str) -> Result<Option<usize>> {
+    let ancestry = git.run(&["merge-base", "--is-ancestor", revision, "HEAD"]);
+    if !ancestry.is_ok_and(|output| output.status.success()) {
+        return Ok(None);
+    }
+    let range = format!("{revision}..HEAD");
+    let count = git.run_checked(&["rev-list", "--count", &range])?;
+    let count = count
+        .trim()
+        .parse()
+        .with_context(|| format!("git rev-list --count {range} printed {count:?}"))?;
+    Ok(Some(count))
 }
 
 /// Revisions that have a base layer file in `base_dir`. Only object-id stems
@@ -233,15 +243,9 @@ fn is_object_id(value: &str) -> bool {
 /// files. Plumbing `diff-index` never refreshes the index, so it writes
 /// nothing; the cost is that a stat-dirty but unchanged file is listed too.
 /// Without rename detection a move lists both its old and its new path.
-fn changed_paths(worktree: &Path, base_revision: &str) -> Result<Vec<PathBuf>> {
-    let diff = run_git_records(
-        &["diff-index", "--name-only", "-z", base_revision, "--"],
-        worktree,
-    )?;
-    let untracked = run_git_records(
-        &["ls-files", "-z", "--others", "--exclude-standard"],
-        worktree,
-    )?;
+fn changed_paths(git: &WorktreeGit, base_revision: &str) -> Result<Vec<PathBuf>> {
+    let diff = git.run_checked(&["diff-index", "--name-only", "-z", base_revision, "--"])?;
+    let untracked = git.run_checked(&["ls-files", "-z", "--others", "--exclude-standard"])?;
     let paths: BTreeSet<&str> = nul_separated(&diff)
         .chain(nul_separated(&untracked))
         .filter(|path| !is_worktree_scaffold_path(path))
@@ -250,23 +254,27 @@ fn changed_paths(worktree: &Path, base_revision: &str) -> Result<Vec<PathBuf>> {
 }
 
 /// Every tracked or untracked file under `working_dir` an extractor claims,
-/// extracted from `worktree`.
+/// extracted from `git`'s worktree.
 fn from_scratch(
-    worktree: &Path,
+    git: &WorktreeGit,
     working_dir: &Path,
     extractors: &[BoxedExtractor],
 ) -> Result<ResolvedGraph> {
-    let listing = run_git_records(
-        &[
-            "ls-files",
-            "-z",
-            "--full-name",
-            "--cached",
-            "--others",
-            "--exclude-standard",
-        ],
-        working_dir,
-    )?;
+    let mut args = vec![
+        "ls-files",
+        "-z",
+        "--full-name",
+        "--cached",
+        "--others",
+        "--exclude-standard",
+    ];
+    // Git runs at the worktree root, so the directory is a pathspec.
+    let scope = scope_pathspec(git, working_dir)?;
+    if let Some(scope) = &scope {
+        args.extend(["--", scope.as_str()]);
+    }
+    let listing = git.run_checked(&args)?;
+    let worktree = git.work_tree();
     let mut graph = ResolvedGraph::default();
     for path in nul_separated(&listing)
         .filter(|path| !is_worktree_scaffold_path(path))
@@ -276,6 +284,28 @@ fn from_scratch(
         apply_file(&mut graph.files, worktree, path, extractors);
     }
     Ok(graph)
+}
+
+/// `working_dir` as a literal pathspec relative to `git`'s worktree root;
+/// `None` for the root itself.
+fn scope_pathspec(git: &WorktreeGit, working_dir: &Path) -> Result<Option<String>> {
+    let directory = working_dir
+        .canonicalize()
+        .with_context(|| format!("Failed to resolve {}", working_dir.display()))?;
+    let relative = directory.strip_prefix(git.work_tree()).with_context(|| {
+        format!(
+            "{} is outside the worktree {}",
+            directory.display(),
+            git.work_tree().display()
+        )
+    })?;
+    if relative.as_os_str().is_empty() {
+        return Ok(None);
+    }
+    let relative = relative
+        .to_str()
+        .with_context(|| format!("{} is not valid UTF-8", relative.display()))?;
+    Ok(Some(format!(":(literal){relative}")))
 }
 
 /// Replace `path`'s entry with a fresh extraction of the worktree copy, or

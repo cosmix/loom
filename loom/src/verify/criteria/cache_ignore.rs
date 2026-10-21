@@ -9,17 +9,9 @@
 //! ignored paths. [`references_ignored_path`] is the guard
 //! `is_cacheable` applies before ever storing a pass for such a command.
 
-use crate::git::runner::NO_HOOKS_ARGS;
-use std::io::Write;
 use std::path::Path;
-use std::process::{Command, Stdio};
-use std::time::Duration;
 
-use wait_timeout::ChildExt;
-
-/// Timeout for the single batched `git check-ignore` call. Mirrors
-/// `GIT_READ_TIMEOUT` in `crate::git::runner`, which is not itself `pub`.
-const CHECK_IGNORE_TIMEOUT: Duration = Duration::from_secs(15);
+use crate::verify::review::fingerprint::checkout_git;
 
 /// True when `command` names at least one path-like token that `git`
 /// considers ignored under `acceptance_dir`, or the check could not be
@@ -81,58 +73,35 @@ fn strip_quotes(token: &str) -> &str {
     token
 }
 
-/// Run `git -C <acceptance_dir> check-ignore -q --stdin -z` once, feeding
-/// every candidate as a NUL-separated line on stdin. `Ok(true)` means at
-/// least one candidate is ignored (`-q` exits 0), `Ok(false)` means none are
-/// (exit 1); any other outcome — spawn failure, a write or wait error, exit
-/// 128 (no repository, bad arguments) — is `None`.
+/// Run `git check-ignore` once over every candidate, through the git of the
+/// checkout holding `acceptance_dir` ([`checkout_git`]): the host child runs
+/// this outside the stage's sandbox, where a `.git` the stage controls would
+/// otherwise choose the repository, and with it the exclude rules, that
+/// answer. Git runs at the checkout's root, so each candidate is made
+/// relative to it. `Some(true)` means at least one candidate is ignored
+/// (exit 0), `Some(false)` means none are (exit 1); any other outcome (no
+/// checkout, a non-UTF-8 path, a spawn or deadline failure, exit 128 for a
+/// path outside the repository) is `None`.
 fn check_ignore(candidates: &[String], acceptance_dir: &Path) -> Option<bool> {
-    let mut payload = Vec::new();
-    for candidate in candidates {
-        payload.extend_from_slice(candidate.as_bytes());
-        payload.push(0);
-    }
-
-    let mut child = Command::new("git")
-        .arg("-C")
-        .arg(acceptance_dir)
-        .args(NO_HOOKS_ARGS)
-        .args(["check-ignore", "-q", "--stdin", "-z"])
-        .env("LC_ALL", "C")
-        .env("LANG", "C")
-        .stdin(Stdio::piped())
-        .stdout(Stdio::null())
-        .stderr(Stdio::null())
-        .spawn()
-        .ok()?;
-
-    // Write, then drop the handle to close the write end of the pipe:
-    // `check-ignore --stdin` reads until EOF before it can decide whether
-    // any candidate is ignored.
-    let wrote = child
-        .stdin
-        .take()
-        .is_some_and(|mut stdin| stdin.write_all(&payload).is_ok());
-
-    let status = match child.wait_timeout(CHECK_IGNORE_TIMEOUT) {
-        Ok(Some(status)) => Some(status),
-        Ok(None) => {
-            let _ = child.kill();
-            let _ = child.wait();
-            None
-        }
-        Err(_) => None,
-    };
-
-    if !wrote {
-        return None;
-    }
-    match status.and_then(|s| s.code()) {
+    let acceptance_dir = acceptance_dir.canonicalize().ok()?;
+    let git = checkout_git(&acceptance_dir).ok()?;
+    let prefix = acceptance_dir.strip_prefix(git.work_tree()).ok()?;
+    let paths = candidates
+        .iter()
+        .map(|candidate| prefix.join(candidate).to_str().map(str::to_string))
+        .collect::<Option<Vec<_>>>()?;
+    let mut args = vec!["check-ignore", "--"];
+    args.extend(paths.iter().map(String::as_str));
+    match git.run(&args).ok()?.status.code() {
         Some(0) => Some(true),
         Some(1) => Some(false),
         _ => None,
     }
 }
+
+#[cfg(test)]
+#[path = "cache_ignore_tests.rs"]
+mod checkout_tests;
 
 #[cfg(test)]
 mod tests {

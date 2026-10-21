@@ -41,13 +41,12 @@ use std::time::Duration;
 use crate::context::graph_store::ResolvedGraph;
 use crate::context::source_graph::{file_node_id, SourceNode, SourceNodeKind};
 use crate::context::worktree_graph::{build_for_worktree, WorktreeGraph};
-use crate::git::runner::run_git_checked;
 use crate::models::stage::{CommandConfinement, Stage};
 use crate::skills::project::ProjectProfile;
 use crate::testrun::{registry, SelectionNames, TestRunnerAdapter, TestTarget};
 use crate::verify::contracts::{normalize, owning_package};
 use crate::verify::criteria::{CriteriaConfig, CriteriaProbe, ProbeRunner};
-use crate::verify::review::fingerprint::{changes_since_merge_base, local_git};
+use crate::verify::review::fingerprint::{changes_since_merge_base, checkout_git, local_git};
 
 pub(in crate::verify) use accepted::ACCEPTED_FILE;
 pub use accepted::{load_accepted, AcceptedFailure, AcceptedImpact};
@@ -115,10 +114,10 @@ fn check(
 ) -> Result<Report> {
     let graph =
         build_for_worktree(working_dir).context("failed to build the worktree source graph")?;
-    let root = PathBuf::from(
-        run_git_checked(&["rev-parse", "--show-toplevel"], working_dir)
-            .context("failed to find the worktree root")?,
-    );
+    let root = checkout_git(working_dir)
+        .context("failed to find the worktree root")?
+        .work_tree()
+        .to_path_buf();
     let changes = Changes::list(&root, &graph, target_branch);
     let config = CriteriaConfig {
         command_timeout: IMPACT_TIMEOUT,

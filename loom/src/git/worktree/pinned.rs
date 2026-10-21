@@ -22,13 +22,16 @@
 //! key git does not write itself (see `config_worktree`).
 
 use anyhow::{ensure, Context, Result};
-use std::ffi::OsStr;
+use std::ffi::{OsStr, OsString};
 use std::path::{Path, PathBuf};
 use std::process::Output;
 
 use crate::fs::safe_read::read_to_string_bounded;
 use crate::fs::work_dir::WorkDir;
-use crate::git::runner::{run_git, run_git_checked, run_git_with_env};
+use crate::git::runner::{
+    run_git, run_git_checked, run_git_in_env_within, run_git_with_env, GIT_READ_TIMEOUT,
+    REPO_REDIRECT_ENV,
+};
 use crate::git::worktree::config_worktree::check_worktree_config;
 
 /// Largest `gitdir` or `commondir` file read from an administrative directory.
@@ -106,12 +109,56 @@ impl WorktreeGit {
             return run_git(args, &self.work_tree);
         };
         check_worktree_config(&pin.repo_root, &pin.git_dir)?;
-        let env: [(&str, &OsStr); 3] = [
+        run_git_with_env(args, &self.pin_env(pin), &self.work_tree)
+    }
+
+    /// [`Self::run`] that must succeed: git's stdout as UTF-8 text, untrimmed
+    /// (NUL-separated records stay intact). Fails naming the command, the
+    /// worktree and git's stderr when git exits non-zero, and when its output
+    /// is not UTF-8, which for a listing means a path that cannot be matched.
+    pub fn run_checked(&self, args: &[&str]) -> Result<String> {
+        let output = self.run(args)?;
+        ensure!(
+            output.status.success(),
+            "git {} failed in {}: {}",
+            args.join(" "),
+            self.work_tree.display(),
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+        String::from_utf8(output.stdout).context("git records contain a non-UTF-8 path")
+    }
+
+    /// `git <args>`, a command that only reads, within the runner's read
+    /// deadline, from this process's environment without `REPO_REDIRECT_ENV`
+    /// and with `env` added: git finds the repository from the worktree, or
+    /// the pin names it. A pinned run checks `config.worktree` first, as
+    /// [`Self::run`] does.
+    pub fn read_isolated(&self, args: &[&str], env: &[(&str, &OsStr)]) -> Result<Output> {
+        let mut vars: Vec<(OsString, OsString)> = std::env::vars_os()
+            .filter(|(key, _)| !REPO_REDIRECT_ENV.iter().any(|name| key == name))
+            .collect();
+        let pin_env = match &self.pin {
+            Some(pin) => {
+                check_worktree_config(&pin.repo_root, &pin.git_dir)?;
+                self.pin_env(pin).to_vec()
+            }
+            None => Vec::new(),
+        };
+        vars.extend(
+            env.iter()
+                .chain(&pin_env)
+                .map(|&(key, value)| (OsString::from(key), value.to_os_string())),
+        );
+        run_git_in_env_within(&self.work_tree, args, &vars, GIT_READ_TIMEOUT)
+    }
+
+    /// The variables that pin git to `pin`'s directories.
+    fn pin_env<'a>(&'a self, pin: &'a Pin) -> [(&'static str, &'a OsStr); 3] {
+        [
             ("GIT_DIR", pin.git_dir.as_os_str()),
             ("GIT_WORK_TREE", self.work_tree.as_os_str()),
             ("GIT_COMMON_DIR", pin.common_dir.as_os_str()),
-        ];
-        run_git_with_env(args, &env, &self.work_tree)
+        ]
     }
 }
 

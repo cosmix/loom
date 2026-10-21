@@ -67,7 +67,9 @@ struct ContractReports {
 }
 
 impl ContractReports {
-    /// The binding of the stage's worktree as it stands now.
+    /// The binding of the stage's worktree as it stands now, read through
+    /// the site's pinned git (the child and the daemon run outside the
+    /// stage's sandbox).
     fn capture(site: &Site, stage: &Stage) -> Result<Self> {
         let files = read_files(site, stage)?
             .iter()
@@ -77,8 +79,8 @@ impl ContractReports {
             })
             .collect();
         Ok(Self {
-            head: digest::head(&site.worktree_root)?,
-            tree_digest: digest::tree_digest(&site.worktree_root)?,
+            head: digest::head_in(&site.git)?,
+            tree_digest: digest::tree_digest_in(&site.git)?,
             contracts_digest: contracts_digest(stage)?,
             files,
             reports: Vec::new(),

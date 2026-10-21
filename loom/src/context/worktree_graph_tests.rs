@@ -7,6 +7,8 @@ use crate::context::source_graph::{
     SourceEdgeKind, SourceNode, SourceNodeKind, MAX_EXTRACTED_FILE_BYTES,
 };
 use crate::context::store::ContextStore;
+use crate::git::runner::run_git_checked;
+use crate::verify::contracts::test_support::{contract_worktree, plant_foreign_git_dir};
 use std::fs;
 use tempfile::TempDir;
 
@@ -275,4 +277,60 @@ fn a_base_view_of_stale_parser_entries_is_not_copied_into_the_worktree_graph() {
             .all(|node| node.parser_version != "retired-extractor@0"),
         "the stale base entry was served"
     );
+}
+
+/// The positive control runs last: git that follows the repointed `.git`
+/// file runs the filter and reports the planted directory as the common
+/// directory, so the unchanged graph before comes from the pin.
+#[test]
+fn a_repointed_git_file_neither_runs_its_filter_nor_moves_the_graph() {
+    let tmp = TempDir::new().unwrap();
+    let repo = tmp.path().join("repo");
+    let worktree = contract_worktree(&repo, "s1");
+    publish_head_base(&repo);
+    let git_file = worktree.join(".git");
+    let registered = fs::read(&git_file).unwrap();
+    let marker = plant_foreign_git_dir(&worktree);
+    let planted = fs::read(&git_file).unwrap();
+
+    let attacked = build_for_worktree(&worktree).unwrap();
+
+    assert!(!marker.exists(), "the graph ran the stage's clean filter");
+    fs::write(&git_file, &registered).unwrap();
+    let honest = build_for_worktree(&worktree).unwrap();
+    assert_eq!(attacked, honest);
+    assert_eq!(honest.degraded, None, "the project's base layer was missed");
+    assert!(honest.changed.contains(&PathBuf::from("README.md")));
+    assert!(honest
+        .changed
+        .contains(&PathBuf::from("tests/x_contract.rs")));
+
+    fs::write(&git_file, &planted).unwrap();
+    let common = ["rev-parse", "--path-format=absolute", "--git-common-dir"];
+    let followed = run_git_checked(&common, &worktree).unwrap();
+    assert_ne!(
+        Path::new(&followed),
+        repo.join(".git").canonicalize().unwrap()
+    );
+    run_git_checked(&["status", "--porcelain"], &worktree).unwrap();
+    assert!(marker.exists(), "the fixture's filter never runs");
+}
+
+#[test]
+fn a_scratch_extraction_lists_only_the_working_directory_literally() {
+    let tmp = TempDir::new().unwrap();
+    let worktree = contract_worktree(&tmp.path().join("repo"), "s1");
+    for file in ["pkg[1]/a.rs", "pkg1/b.rs", "other/c.rs"] {
+        fs::create_dir_all(worktree.join(file).parent().unwrap()).unwrap();
+        fs::write(worktree.join(file), "pub fn f() {}\n").unwrap();
+    }
+
+    let nested = build_for_worktree(&worktree.join("pkg[1]")).unwrap();
+    let whole = build_for_worktree(&worktree).unwrap();
+
+    assert!(nested.degraded.is_some(), "no base layer is published");
+    let nested_files: Vec<&str> = nested.graph.files.keys().map(String::as_str).collect();
+    assert_eq!(nested_files, ["pkg[1]/a.rs"]);
+    assert!(whole.graph.files.contains_key("other/c.rs"));
+    assert!(whole.graph.files.contains_key("pkg1/b.rs"));
 }
