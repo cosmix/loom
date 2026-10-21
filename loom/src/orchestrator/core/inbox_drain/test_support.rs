@@ -276,5 +276,10 @@ pub(super) fn payload_for(kind: RequestKind) -> Value {
             "expected_head": "0".repeat(40),
             "expected_tree": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
         }),
+        RequestKind::Check => json!({
+            "head": "0".repeat(40),
+            "tree_digest": "0".repeat(64),
+            "no_cache": false,
+        }),
     }
 }

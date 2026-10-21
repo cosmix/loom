@@ -135,9 +135,12 @@ impl PreparedCommand {
         if let Some(wrapped) = self.wrapped.take() {
             self.command = wrapped;
         }
-        self.command
+        let child = self
+            .command
             .spawn()
-            .with_context(|| format!("Failed to spawn command: {}", self.display))
+            .with_context(|| format!("Failed to spawn command: {}", self.display))?;
+        super::spawn_observer::notify_spawned(child.id());
+        Ok(child)
     }
 }
 

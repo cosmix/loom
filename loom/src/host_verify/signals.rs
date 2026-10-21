@@ -1,0 +1,167 @@
+//! Signalling a job's process groups: retiring a child the runner holds, and
+//! stopping a previous daemon's children after a restart.
+//!
+//! A criterion leads its own process group (`verify/criteria/confine.rs`), so
+//! killing the child's group does not reach it, and on macOS `sandbox-exec`
+//! is not tied to its parent. The child lists every criterion group in the
+//! job's `groups` file, and every retirement kills those too.
+//!
+//! Deliberate limit: a listed group whose leader already exited and whose id
+//! the kernel reused within the same tick would be signalled. That needs a
+//! full pid wrap in the window; revisit if a job ever outlives one.
+
+use std::path::Path;
+use std::process::{Command, Stdio};
+use std::time::Duration;
+
+use anyhow::Result;
+use chrono::Utc;
+use nix::sys::signal::{killpg, Signal};
+use nix::unistd::{getpgrp, Pid};
+
+use super::{store, JobRecord, JobState};
+use crate::process::OwnedProcess;
+
+const RESTART_DETAIL: &str = "daemon restarted during the run";
+/// How long a previous daemon's children get to exit on SIGTERM.
+const TERM_GRACE: Duration = Duration::from_secs(2);
+
+/// Kill a held job's child (its own group, reaped within
+/// `CLEANUP_GRACE`), then every criterion group the job recorded.
+pub(super) fn retire(work_dir: &Path, stage_id: &str, job_id: &str, process: &mut OwnedProcess) {
+    process.retire();
+    match store::load_groups(work_dir, stage_id, job_id) {
+        Ok(groups) => {
+            for pgid in groups {
+                signal_group(pgid, Signal::SIGKILL);
+            }
+        }
+        Err(error) => tracing::warn!(
+            stage = %stage_id,
+            job = %job_id,
+            error = %format!("{error:#}"),
+            "could not read a host job's process groups; its criteria may outlive it",
+        ),
+    }
+}
+
+/// Run once at daemon startup. Every `Running` record becomes `Interrupted`
+/// (no daemon holds its child any more); the previous daemon's children still
+/// running their job get SIGTERM, then SIGKILL after one 2 s wait; the listed
+/// criterion groups whose leader still leads them get SIGKILL. `Queued`
+/// records stay queued. Returns the records it changed.
+pub fn recover_after_restart(work_dir: &Path) -> Result<Vec<JobRecord>> {
+    let mut interrupted = Vec::new();
+    for stage_id in store::stage_ids(work_dir)? {
+        match interrupt(work_dir, &stage_id) {
+            Ok(record) => interrupted.extend(record),
+            Err(error) => tracing::warn!(
+                stage = %stage_id,
+                error = %format!("{error:#}"),
+                "could not interrupt a stage's host job after a restart",
+            ),
+        }
+    }
+    stop_children(&interrupted);
+    for record in &interrupted {
+        kill_led_groups(work_dir, record);
+    }
+    Ok(interrupted)
+}
+
+fn interrupt(work_dir: &Path, stage_id: &str) -> Result<Option<JobRecord>> {
+    let _lock = store::lock_stage(work_dir, stage_id)?;
+    let running =
+        store::load_current(work_dir, stage_id)?.filter(|record| record.state == JobState::Running);
+    let Some(mut record) = running else {
+        return Ok(None);
+    };
+    record.state = JobState::Interrupted;
+    record.detail = Some(RESTART_DETAIL.to_string());
+    record.finished_at = Some(Utc::now());
+    store::save_current(work_dir, &record)?;
+    Ok(Some(record))
+}
+
+/// Stop each interrupted job's child whose command line still names the job.
+/// A pid whose command line does not match is never signalled: after a
+/// restart it may belong to anyone.
+fn stop_children(records: &[JobRecord]) {
+    let running: Vec<(u32, String)> = records
+        .iter()
+        .filter_map(|record| {
+            let pid = record.pid?;
+            let marker = format!("verify-host {} --job {}", record.stage_id, record.id);
+            runs(pid, &marker).then_some((pid, marker))
+        })
+        .collect();
+    if running.is_empty() {
+        return;
+    }
+    for (pid, _) in &running {
+        signal_group(*pid, Signal::SIGTERM);
+    }
+    std::thread::sleep(TERM_GRACE);
+    for (pid, marker) in &running {
+        if runs(*pid, marker) {
+            signal_group(*pid, Signal::SIGKILL);
+        }
+    }
+}
+
+/// SIGKILL each listed criterion group whose leader still leads it. A group
+/// whose leader is gone is left alone: its id may now be anyone's.
+fn kill_led_groups(work_dir: &Path, record: &JobRecord) {
+    let groups = match store::load_groups(work_dir, &record.stage_id, &record.id) {
+        Ok(groups) => groups,
+        Err(error) => {
+            tracing::warn!(
+                job = %record.id,
+                error = %format!("{error:#}"),
+                "could not read an interrupted host job's process groups",
+            );
+            return;
+        }
+    };
+    for pgid in groups {
+        if ps_field("pgid", pgid).is_some_and(|leader| leader == pgid.to_string()) {
+            signal_group(pgid, Signal::SIGKILL);
+        }
+    }
+}
+
+fn runs(pid: u32, marker: &str) -> bool {
+    ps_field("command", pid).is_some_and(|command| command.contains(marker))
+}
+
+/// `ps -o <field>= -p <pid>`, trimmed; `None` when `ps` fails or finds no
+/// such process.
+fn ps_field(field: &str, pid: u32) -> Option<String> {
+    let program = if Path::new("/bin/ps").exists() {
+        "/bin/ps"
+    } else {
+        "ps"
+    };
+    let output = Command::new(program)
+        .args(["-o", &format!("{field}="), "-p", &pid.to_string()])
+        .stdin(Stdio::null())
+        .stderr(Stdio::null())
+        .output()
+        .ok()?;
+    output
+        .status
+        .success()
+        .then(|| String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+/// Send `signal` to the process group `pgid`, ignoring every error (`ESRCH`
+/// above all). Never group 0 or 1, and never loom's own group.
+fn signal_group(pgid: u32, signal: Signal) {
+    let Ok(raw) = i32::try_from(pgid) else {
+        return;
+    };
+    if raw <= 1 || raw == getpgrp().as_raw() {
+        return;
+    }
+    let _ = killpg(Pid::from_raw(raw), signal);
+}

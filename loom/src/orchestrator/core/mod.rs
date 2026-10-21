@@ -16,6 +16,7 @@ mod crash_classification;
 mod crash_handler;
 mod event_handler;
 mod heartbeat_apply;
+mod host_jobs;
 mod inbox_drain;
 mod judge_close;
 mod lifecycle_snapshot;
@@ -24,6 +25,7 @@ mod merge_handler;
 #[path = "merge_lifecycle_e2e_tests.rs"]
 mod merge_lifecycle_e2e_tests;
 mod orchestrator;
+mod orchestrator_result;
 mod orphan_adoption;
 mod persistence;
 mod provision_gate;
@@ -53,9 +55,8 @@ pub(crate) use crash_classification::spawn_failure_type;
 pub(crate) use merge_handler::resolver_attempts::{
     merge_resolver_attempts, MAX_MERGE_RESOLVER_ATTEMPTS,
 };
-pub use orchestrator::{
-    Orchestrator, OrchestratorConfig, OrchestratorResult, DEFAULT_KILL_CONFIRM_TIMEOUT,
-};
+pub use orchestrator::{Orchestrator, OrchestratorConfig, DEFAULT_KILL_CONFIRM_TIMEOUT};
+pub use orchestrator_result::OrchestratorResult;
 pub use state_identity::{abort_foreign_state, check_lock_identity, LockCheck, LockIdentity};
 
 /// Clear the current line (status line) before printing a message.

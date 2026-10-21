@@ -38,7 +38,7 @@ pub fn run_acceptance_with_config(
     let zero_test_guard = stage.plan_version == 2;
     let mut collected = CollectedResults::default();
 
-    for criterion in &stage.acceptance {
+    for (index, criterion) in stage.acceptance.iter().enumerate() {
         let prepared = prepare_criterion(
             criterion,
             setup.as_deref(),
@@ -49,6 +49,9 @@ pub fn run_acceptance_with_config(
         );
         let evaluated = run_criterion(prepared, working_dir, confinement, config)
             .with_context(|| format!("Failed to execute criterion: {}", criterion.command()))?;
+        if let Some(observer) = &config.observer {
+            observer.notify(index, &evaluated.result);
+        }
         collected.push(evaluated);
     }
     collected.warn_on_suspicious_stderr();

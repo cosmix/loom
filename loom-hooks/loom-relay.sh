@@ -84,6 +84,7 @@ relay_kind_at() {
 	stage:adjudicate) echo verdict ;;
 	stage:contracts) [[ "${LOOM_TOKENS[$((j + 3))]:-}" == freeze ]] && echo freeze-contracts ;;
 	knowledge:context) echo telemetry ;;
+	check:*) echo check ;;
 	handoff:*) echo handoff ;;
 	esac
 	return 0

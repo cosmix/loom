@@ -172,6 +172,7 @@ pub(super) fn dispatch_stage(command: StageCommands) -> Result<()> {
         StageCommands::Output { command } => dispatch_stage_output(command),
         StageCommands::Contracts { command } => dispatch_stage_contracts(command),
         StageCommands::Review { command } => dispatch_stage_review(command),
+        StageCommands::VerifyHost { stage_id, job } => stage::verify_host::execute(stage_id, job),
     }
 }
 

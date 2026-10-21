@@ -20,6 +20,7 @@
 //! runs `git commit`.
 
 mod apply;
+mod check;
 mod commit;
 mod entry;
 mod merge_resolved;

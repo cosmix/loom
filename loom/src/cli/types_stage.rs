@@ -323,6 +323,17 @@ pub enum StageCommands {
         #[command(subcommand)]
         command: ReviewCommands,
     },
+
+    /// Run one host verification job; the daemon starts it, never a session
+    #[command(hide = true)]
+    VerifyHost {
+        #[arg(value_parser = clap_id_validator)]
+        stage_id: String,
+
+        /// The job to run: the id of the stage's current running job
+        #[arg(long)]
+        job: String,
+    },
 }
 
 #[derive(Subcommand)]

@@ -17,13 +17,16 @@ use crate::verify::criteria::resolve_confinement;
 use crate::verify::goal_backward::{run_goal_backward_verification, GoalBackwardResult};
 use crate::verify::transitions::load_stage;
 
+#[path = "verify_relay.rs"]
+mod session_relay;
+
 /// Execute the verify command
 pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
     // Resolves the state directory (works in main repo and worktrees, where it
     // is a symlink), bailing with a clear error if this is not a loom workspace.
     let work_dir = crate::commands::common::work_dir_path()?;
 
-    // Load stage
+    session_relay::run(stage_id, &work_dir, suggest)?;
     let stage = load_stage(stage_id, &work_dir)
         .with_context(|| format!("Failed to load stage '{stage_id}'"))?;
 

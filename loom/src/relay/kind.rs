@@ -1,4 +1,4 @@
-//! The ten request kinds a CLI invocation can relay to the daemon.
+//! The eleven request kinds a CLI invocation can relay to the daemon.
 
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
@@ -20,15 +20,16 @@ pub enum RequestKind {
     FreezeContracts,
     FileDispute,
     Commit,
+    Check,
 }
 
 impl RequestKind {
-    /// All ten kinds, in the per-writer matrix's order
+    /// All eleven kinds, in the per-writer matrix's order
     /// (`doc/plans/PLAN-loom-state-confinement.md` section 5, then
     /// `freeze-contracts` from verification v2's contract phase,
     /// `file-dispute` from its dispute kinds, and `commit`, the staged index
-    /// the daemon commits for a session).
-    pub fn all() -> [RequestKind; 10] {
+    /// the daemon commits for a session, and `check`, a host verification job).
+    pub fn all() -> [RequestKind; 11] {
         [
             RequestKind::Memory,
             RequestKind::Block,
@@ -40,6 +41,7 @@ impl RequestKind {
             RequestKind::FreezeContracts,
             RequestKind::FileDispute,
             RequestKind::Commit,
+            RequestKind::Check,
         ]
     }
 
@@ -72,6 +74,7 @@ impl RequestKind {
             RequestKind::FreezeContracts => "freeze-contracts",
             RequestKind::FileDispute => "file-dispute",
             RequestKind::Commit => "commit",
+            RequestKind::Check => "check",
         }
     }
 }

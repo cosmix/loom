@@ -169,6 +169,15 @@ expect '' 'loom stage commit s1 -m "feat(x): y"' general-purpose
 expect '' 'cd loom && loom stage commit s1 -m x' general-purpose
 expect '' 'echo "loom stage commit s1"'
 
+# `loom check` relays the `check` kind, which is not a control kind: the
+# main agent and a subagent (a loom-verifier) both keep it.
+expect check 'loom check s1'
+expect check 'loom check s1 --no-cache'
+expect check 'cd loom && loom check s1'
+expect check 'loom check s1' general-purpose
+expect check 'cd loom && loom check s1 --no-cache' general-purpose
+expect '' 'echo "loom check s1"'
+
 # A `loom memory` write command reaches the helper even when its own output
 # carries no relay line (the case the helper's leftover-ticket sweep exists
 # for); an unrelated command never does, and stays completely silent.

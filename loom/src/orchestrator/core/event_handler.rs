@@ -23,6 +23,7 @@ mod loop_recovery;
 mod recover_hung;
 mod stage_takedown;
 mod stalled_judge;
+mod takedown_evidence;
 
 use handoff_state::mark_needs_handoff;
 use human_review::announce_needs_human_review;
@@ -371,6 +372,8 @@ impl Orchestrator {
 mod governor_retry_tests;
 #[cfg(test)]
 mod governor_tests;
+#[cfg(test)]
+mod host_job_cancel_tests;
 #[cfg(test)]
 mod recover_hung_park_tests;
 #[cfg(test)]

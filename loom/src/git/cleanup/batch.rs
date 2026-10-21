@@ -55,8 +55,10 @@ pub fn cleanup_after_merge(
 }
 
 /// Drain a stage's memory and telemetry spools one last time before its
-/// worktree is removed. The spool files live inside the worktree, so anything
-/// still pending when the worktree is deleted is lost for good.
+/// worktree is removed, and cancel the stage's host job. The spool files live
+/// inside the worktree, so anything still pending when the worktree is
+/// deleted is lost for good; a host job still verifying the tree would fail on
+/// the missing worktree, so the daemon's runner kills it instead.
 ///
 /// Best-effort and NEVER fails the cleanup: a stage whose spool could not
 /// be drained must still have its worktree and branches removed, otherwise a
@@ -84,6 +86,13 @@ fn drain_spool_before_removal(stage_id: &str, repo_root: &Path) {
     };
     drain_memory_spool(stage_id, &work_dir, &worktree_root);
     drain_telemetry_spool(stage_id, &work_dir, &worktree_root);
+    if let Err(e) = crate::host_verify::submit::cancel(&work_dir, stage_id, "worktree removed") {
+        tracing::warn!(
+            stage_id = %stage_id,
+            error = %format!("{e:#}"),
+            "Failed to cancel the stage's host job before worktree removal"
+        );
+    }
 }
 
 fn drain_memory_spool(stage_id: &str, work_dir: &Path, worktree_root: &Path) {
@@ -230,4 +239,43 @@ pub fn needs_cleanup(stage_id: &str, repo_root: &Path) -> bool {
 
     // Check base branch exists; an unanswerable query counts as "absent".
     super::base::base_branch_exists(stage_id, repo_root).unwrap_or(false)
+}
+
+#[cfg(test)]
+mod host_job_tests {
+    use super::*;
+    use crate::host_verify::store::load_current;
+    use crate::host_verify::submit::{submit, Submission, SubmitRequest};
+    use crate::host_verify::{JobKind, JobState};
+    use tempfile::TempDir;
+
+    #[test]
+    fn removing_a_worktree_cancels_the_stages_host_job() {
+        let repo = TempDir::new().unwrap();
+        let work_dir = repo.path().join(".loom").join("work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        std::fs::create_dir_all(Worktree::worktree_path(repo.path(), "stage-a")).unwrap();
+        let request = SubmitRequest {
+            stage_id: "stage-a",
+            session_id: "session-a",
+            request_id: "r1",
+            kind: JobKind::Check,
+            head: "aaaa",
+            tree_digest: "bbbb",
+            no_cache: false,
+        };
+        let job = match submit(&work_dir, &request, chrono::Utc::now()).unwrap() {
+            Submission::Queued(record) => record,
+            other => panic!("expected a queued job, got {other:?}"),
+        };
+
+        drain_spool_before_removal("stage-a", repo.path());
+
+        let current = load_current(&work_dir, "stage-a")
+            .unwrap()
+            .expect("a current record");
+        assert_eq!(current.id, job.id);
+        assert_eq!(current.state, JobState::Cancelled);
+        assert_eq!(current.detail.as_deref(), Some("worktree removed"));
+    }
 }

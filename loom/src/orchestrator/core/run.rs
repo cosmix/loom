@@ -17,6 +17,21 @@ impl Orchestrator {
     pub fn run(&mut self) -> Result<OrchestratorResult> {
         install_terminal_panic_hook();
         let started_at = Utc::now();
+        let looped = self.run_until_stopped();
+        // Every way out of the loop, an error included, stops the host jobs:
+        // no waiter may wait on a child this daemon no longer runs.
+        self.stop_host_jobs();
+        let spawned = looped?;
+        // Clear liveness even when the final snapshot cannot be read.
+        tick::clear(&self.config.work_dir);
+        crate::orchestrator::scheduling_report::clear(&self.config.work_dir);
+        cleanup_terminal();
+        super::run_result::collect_result(&self.config.work_dir, &self.graph, spawned, started_at)
+    }
+
+    /// Initialize, then tick until shutdown or the mode's exit condition;
+    /// returns the sessions spawned.
+    fn run_until_stopped(&mut self) -> Result<usize> {
         let mut spawned = self.initialize_run()?;
         let mut printed = false;
         let mut status_update = Instant::now();
@@ -34,11 +49,7 @@ impl Orchestrator {
             }
             self.wait_for_next_tick();
         }
-        // Clear liveness even when the final snapshot cannot be read.
-        tick::clear(&self.config.work_dir);
-        crate::orchestrator::scheduling_report::clear(&self.config.work_dir);
-        cleanup_terminal();
-        super::run_result::collect_result(&self.config.work_dir, &self.graph, spawned, started_at)
+        Ok(spawned)
     }
 
     // Reconcile before syncing and before orphan recovery: recovery removes merge attribution.
@@ -46,6 +57,9 @@ impl Orchestrator {
         self.assert_state_identity();
         validate_work_dir_state(&self.config.repo_root)
             .context("Work directory integrity check failed")?;
+        // No daemon holds a child of a job left running: settle those first.
+        let recovered = crate::host_verify::runner::recover_after_restart(&self.config.work_dir);
+        self.report_host_job_recovery(recovered);
         // Ahead of reconcile, the sync and the spawn pass, which can all merge.
         self.start_target_guard();
         self.reconcile_and_update_graph()
@@ -92,6 +106,7 @@ impl Orchestrator {
             .context("Failed to spawn merge resolution sessions")?;
         self.drain_stage_spools();
         self.drain_session_inboxes();
+        self.tick_host_jobs();
         self.sweep_merged_leftovers();
         tick::record(&self.config.work_dir, tick::Phase::Spawning);
         self.hand_off_frozen_contract_phases();

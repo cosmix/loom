@@ -33,7 +33,7 @@ pub(crate) const COMPLETION_ACTIVITY: &str = "Stage completion running";
 /// Time past the stage's own commands for the completion's later work:
 /// goal-backward and contract checks, impact tests and the review gate. Six
 /// command timeouts; revisit if those checks gain timeouts of their own.
-const COMPLETION_MARGIN_SECS: u64 = 1_800;
+pub(crate) const COMPLETION_MARGIN_SECS: u64 = 1_800;
 
 /// Whether a silence has run long enough to be treated as a dead session
 /// rather than a slow one. `completion_line` is the session's
