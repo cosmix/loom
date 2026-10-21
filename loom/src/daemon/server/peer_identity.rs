@@ -7,16 +7,17 @@
 //!
 //! # Why this exists
 //!
-//! `CompleteStage` is the one RPC a stage agent is *supposed* to make, and it
-//! was authenticated with `.loom/work/user.token` — a credential the agent must
-//! read to use, and which `sandbox/settings.rs` denies it reading (S-1),
-//! because that same token also authorizes every other User-capability RPC. So
-//! the only sanctioned way for a worktree stage to complete required reading a
-//! file the same generator forbade. Both halves were individually right and
+//! The self-service RPCs (block, dispute, freeze, observe) are ones a stage
+//! agent is *supposed* to make, and they were authenticated with
+//! `.loom/work/user.token` — a credential the agent must read to use, and
+//! which `sandbox/settings.rs` denies it reading (S-1), because that same
+//! token also authorizes every other User-capability RPC. So the only
+//! sanctioned way for a worktree stage to call them required reading a file
+//! the same generator forbade. Both halves were individually right and
 //! mutually exclusive.
 //!
 //! A secret that must be readable to be usable cannot express "this caller may
-//! complete its own stage, and nothing else". Connection identity can: it
+//! act on its own stage, and nothing else". Connection identity can: it
 //! cannot be read, leaked, or denied, and it is scoped to the process that
 //! holds the socket.
 

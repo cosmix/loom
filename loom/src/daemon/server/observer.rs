@@ -11,7 +11,7 @@
 //!
 //! A stage session's sandbox cannot reach this socket, so its `loom stage
 //! complete` compares no fingerprint. The completion transition
-//! (`control_complete.rs`) runs both fingerprint gates here instead, before
+//! (`host_verify::apply`) runs both fingerprint gates here instead, before
 //! it applies (`check_completion_gates`).
 
 use anyhow::{Context, Result};
@@ -73,8 +73,8 @@ fn observe(work_dir: &Path, stage_id: &str) -> Result<(String, ChangeFingerprint
 /// by this daemon: fail unless `reviews/<stage>/integrity.json` accepts every
 /// test-integrity event of the worktree, the latest well-formed review round
 /// saw exactly its current changes, and no finding is open. Any other stage
-/// passes. The completion transition runs this before it applies.
-pub(super) fn check_completion_gates(work_dir: &Path, stage_id: &str) -> Result<()> {
+/// passes. The host job's apply step runs this before it completes the stage.
+pub(crate) fn check_completion_gates(work_dir: &Path, stage_id: &str) -> Result<()> {
     let stage = load_stage(stage_id, work_dir)?;
     if !gate::covers(&stage) {
         return Ok(());

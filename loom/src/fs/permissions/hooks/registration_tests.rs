@@ -68,9 +68,9 @@ fn test_plans_path_guard_registered_for_every_write_tool() {
 }
 
 #[test]
-fn test_completion_control_hook_registered_before_and_after_bash_only() {
+fn test_completion_control_hook_registered_before_bash_only() {
     let config = loom_hooks_config();
-    for phase in ["PreToolUse", "PostToolUse"] {
+    for (phase, expected) in [("PreToolUse", 1), ("PostToolUse", 0)] {
         let entries = config[phase].as_array().unwrap();
         let matches: Vec<_> = entries
             .iter()
@@ -80,8 +80,14 @@ fn test_completion_control_hook_registered_before_and_after_bash_only() {
                     .is_some_and(|command| command.contains("loom-control-complete.sh"))
             })
             .collect();
-        assert_eq!(matches.len(), 1, "unexpected {phase} registration count");
-        assert_eq!(matches[0]["matcher"], "Bash");
+        assert_eq!(
+            matches.len(),
+            expected,
+            "unexpected {phase} registration count"
+        );
+        if let Some(entry) = matches.first() {
+            assert_eq!(entry["matcher"], "Bash");
+        }
     }
 }
 

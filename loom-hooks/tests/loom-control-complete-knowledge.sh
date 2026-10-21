@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # loom-control-complete.sh admission and binary choice (plan section 9): a
 # confined Knowledge session (LOOM_SESSION_TYPE=knowledge plus
-# LOOM_SCRATCH_DIR) is held to the pinned completion route; Merge,
+# LOOM_SCRATCH_DIR) is held to the pinned completion command; Merge,
 # adjudication and legacy Knowledge sessions are not engaged; LOOM_BIN is
 # preferred when it passes the trusted-binary checks and ignored when it lies
 # inside the checkout the session can write.
@@ -18,12 +18,10 @@ TMP=$(cd "$TMP" && pwd -P)
 
 WORK_DIR="$TMP/repo/.loom/work"
 WORKTREE="$TMP/repo/.worktrees/build-api"
-LOG="$TMP/broker.log"
 mkdir -p "$TMP/bin" "$WORK_DIR" "$WORKTREE/bin" "$TMP/repo/bin" "$TMP/scratch/session-k"
-# The fake broker records its argv, drains the evidence on stdin, and answers
-# with the outcome line the hook requires.
+# The hook only compares paths; these binaries are never run.
 for bin in "$TMP/bin/loom" "$TMP/repo/bin/loom" "$WORKTREE/bin/loom"; do
-	printf '#!/usr/bin/env bash\nprintf "%%s\\n" "$*" >>"$BROKER_LOG"\ncat >/dev/null\necho "LOOM_CONTROL_OUTCOME accepted"\n' >"$bin"
+	printf '#!/usr/bin/env bash\nexit 0\n' >"$bin"
 	chmod +x "$bin"
 done
 
@@ -32,27 +30,19 @@ fail() {
 	exit 1
 }
 pre() { jq -nc --arg c "$1" '{tool_name: "Bash", tool_input: {command: $c}}'; }
-post() {
-	jq -nc --arg c "$1" --arg o "$2" \
-		'{tool_name: "Bash", tool_input: {command: $c}, tool_result: {output: $o, is_error: false}}'
-}
 
 # run_hook <payload> [VAR=value...] - no test override: the hook resolves its
 # binary exactly as in production, from LOOM_BIN or the fixed locations.
 run_hook() {
 	local input=$1
 	shift
-	printf '%s' "$input" | env -i HOME="$TMP/home" PATH="$PATH" BROKER_LOG="$LOG" \
+	printf '%s' "$input" | env -i HOME="$TMP/home" PATH="$PATH" \
 		LOOM_STAGE_ID=kstage LOOM_SESSION_ID=session-k LOOM_WORK_DIR="$WORK_DIR" \
 		LOOM_BIN="$TMP/bin/loom" ${1+"$@"} bash "$HOOK"
-}
-broker_calls() {
-	if [[ -e "$LOG" ]]; then wc -l <"$LOG" | tr -d ' '; else echo 0; fi
 }
 
 CONFINED=(LOOM_SESSION_TYPE=knowledge "LOOM_SCRATCH_DIR=$TMP/scratch/session-k")
 PINNED="$TMP/bin/loom stage complete kstage"
-MARKER='LOOM_CONTROL_VERIFICATION_PASSED stage=kstage session=session-k'
 
 # 1. A confined Knowledge session is held to the pinned route, end to end.
 if err=$(run_hook "$(pre 'loom stage complete kstage')" "${CONFINED[@]}" 2>&1); then
@@ -60,20 +50,12 @@ if err=$(run_hook "$(pre 'loom stage complete kstage')" "${CONFINED[@]}" 2>&1); 
 fi
 [[ "$err" == *"retry with the pinned command: $PINNED"* ]] || fail "knowledge: wrong refusal: $err"
 run_hook "$(pre "$PINNED")" "${CONFINED[@]}" >/dev/null || fail "knowledge: the pinned command was refused"
-[[ "$(broker_calls)" == 0 ]] || fail "knowledge: PreToolUse reached the broker"
-out=$(run_hook "$(post "$PINNED" "$MARKER")" "${CONFINED[@]}") || fail "knowledge: PostToolUse failed"
-[[ "$(broker_calls)" == 1 ]] || fail "knowledge: the verified completion did not reach the broker once"
-rg -qx 'stage complete kstage --session session-k' "$LOG" || fail "knowledge: broker argv: $(<"$LOG")"
-[[ "$out" == *"accepted by the daemon"* ]] || fail "knowledge: no confirmation: $out"
-rm -f "$LOG"
 
 # 2. Merge, adjudication and legacy (unconfined) Knowledge sessions stay out.
 not_engaged() {
 	local label=$1
 	shift
 	run_hook "$(pre 'loom stage complete kstage')" "$@" >/dev/null 2>&1 || fail "$label: an unpinned completion was blocked"
-	run_hook "$(post "$PINNED" "$MARKER")" "$@" >/dev/null 2>&1 || fail "$label: PostToolUse failed"
-	[[ "$(broker_calls)" == 0 ]] || fail "$label: reached the broker"
 }
 not_engaged merge LOOM_SESSION_TYPE=merge "LOOM_SCRATCH_DIR=$TMP/scratch/session-k"
 not_engaged adjudication LOOM_SESSION_TYPE=adjudication "LOOM_SCRATCH_DIR=$TMP/scratch/session-k"
@@ -94,8 +76,7 @@ err=$(run_hook "$(pre 'loom stage complete kstage')" LOOM_WORKTREE_PATH="$WORKTR
 
 # 5. A heredoc body is data: a confined Knowledge session's replace-section whose
 # prose spells the completion shape and carries an apostrophe is no completion
-# attempt in either phase, while the same body fed to bash is still refused.
-rm -f "$LOG"
+# attempt, while the same body fed to bash is still refused.
 IFS= read -r -d '' SECTION_CMD <<'CASE' || true
 loom knowledge replace-section doc/loom/knowledge/mistakes/finalize.md "Finalize guard" <<'EOF'
 The guard's prefilter used to scan this body; it's data.
@@ -104,9 +85,6 @@ EOF
 CASE
 SECTION_CMD=${SECTION_CMD%$'\n'}
 run_hook "$(pre "$SECTION_CMD")" "${CONFINED[@]}" >/dev/null 2>&1 || fail "knowledge: a heredoc replace-section was blocked"
-run_hook "$(post "$SECTION_CMD" 'section replaced')" "${CONFINED[@]}" >/dev/null 2>&1 ||
-	fail "knowledge: a heredoc replace-section failed PostToolUse"
-[[ "$(broker_calls)" == 0 ]] || fail "knowledge: a heredoc replace-section reached the broker"
 SHELL_CMD="bash <<'EOF'"$'\n'"${SECTION_CMD#*$'\n'}"
 err=$(run_hook "$(pre "$SHELL_CMD")" "${CONFINED[@]}" 2>&1) && fail "knowledge: a heredoc run by bash was not refused"
 [[ "$err" == *LOOM_CONTROL_ERROR:* ]] || fail "knowledge: wrong refusal for a heredoc run by bash: $err"

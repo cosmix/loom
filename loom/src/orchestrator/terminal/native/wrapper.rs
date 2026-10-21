@@ -196,9 +196,9 @@ cd {dir_escaped} || {{ echo "Failed to cd to working directory"; exit 1; }}
 /// * `LOOM_WORKTREE_PATH` — only `Stage` and `Contract`, the stage agents.
 ///   Merge sessions run in the stage worktree but are not stage agents, and
 ///   knowledge and base-conflict sessions `cd` into the main repo; exporting
-///   the var for them makes presence-based gates (`sandbox_control_session`,
-///   `loom-control-complete.sh`) misread them as a sandboxed stage agent, which
-///   is what once made knowledge stages impossible to complete.
+///   the var for them makes presence-based gates (`loom-control-complete.sh`,
+///   `relay::emit::mode`) misread them as a sandboxed stage agent, which is
+///   what once made knowledge stages impossible to complete.
 fn kind_env(kind: SessionType, working_dir: Option<&Path>) -> (String, String) {
     let merge = if kind == SessionType::Merge {
         format!("    LOOM_MERGE_SESSION=1 {CONTINUATION}")

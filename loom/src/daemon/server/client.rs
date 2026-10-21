@@ -107,7 +107,7 @@ fn refuse_unauthenticated(preface: &RequestPreface) -> Response {
 }
 
 /// Finish the authorization the preface had to defer, now that the body is
-/// known. Returns the kernel peer fact on success or the refusal to send.
+/// known. Returns the refusal to send on failure.
 ///
 /// Two independent gates, and a self-service request has to pass both:
 ///
@@ -128,7 +128,7 @@ fn authorize_body(
     authorization: Authorization,
     preface: &RequestPreface,
     request: &Request,
-) -> std::result::Result<Option<u32>, Response> {
+) -> std::result::Result<(), Response> {
     let peer_pid = super::peer_identity::peer_pid(stream);
     if authorization == Authorization::PendingPeerIdentity {
         let Some(session_id) = self_service::self_service_session(request) else {
@@ -152,7 +152,7 @@ fn authorize_body(
             return Err(Response::AuthenticationFailed);
         }
     }
-    Ok(peer_pid)
+    Ok(())
 }
 
 /// Clone a client stream for use as a broadcast subscriber, applying a write
@@ -168,21 +168,6 @@ fn prepare_subscriber_clone(stream: &UnixStream) -> std::result::Result<UnixStre
         .set_write_timeout(Some(SUBSCRIBER_WRITE_TIMEOUT))
         .map_err(|e| format!("Failed to set subscriber write timeout: {e}"))?;
     Ok(clone)
-}
-
-fn complete(
-    preface: &RequestPreface,
-    authorization: Authorization,
-    peer_pid: Option<u32>,
-    request: Request,
-    work_dir: &Path,
-) -> Response {
-    let auth = super::completion_dispatch::AuthorizedCompletion::from_authenticated_connection(
-        preface.capability(),
-        authorization == Authorization::Granted,
-        peer_pid,
-    );
-    super::completion_dispatch::dispatch(&auth, request, work_dir)
 }
 
 /// Puts an accepted stream into the mode the handler needs. `false` means the
@@ -204,9 +189,6 @@ fn prepare_client_stream(stream: &UnixStream) -> Result<bool> {
 mod dispatch;
 
 struct AuthorizedRequest {
-    preface: RequestPreface,
-    authorization: Authorization,
-    peer_pid: Option<u32>,
     request: Request,
     _permit: super::admission::BytePermit,
 }
@@ -240,17 +222,11 @@ fn receive_request(
         }
         Err(_) => return Ok(None),
     };
-    let peer_pid = match authorize_body(stream, work_dir, authorization, &preface, &request) {
-        Ok(peer_pid) => peer_pid,
-        Err(refusal) => {
-            write_message(stream, &refusal)?;
-            return Ok(None);
-        }
-    };
+    if let Err(refusal) = authorize_body(stream, work_dir, authorization, &preface, &request) {
+        write_message(stream, &refusal)?;
+        return Ok(None);
+    }
     Ok(Some(AuthorizedRequest {
-        preface,
-        authorization,
-        peer_pid,
         request,
         _permit: permit,
     }))

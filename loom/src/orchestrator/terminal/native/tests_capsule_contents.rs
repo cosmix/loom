@@ -209,7 +209,7 @@ fn every_kind_registers_the_relay_hook_and_runs_every_hook_under_bin_bash() {
 }
 
 #[test]
-fn stage_and_knowledge_get_every_session_hook_and_the_completion_broker() {
+fn stage_and_knowledge_get_every_session_hook_and_the_completion_pin() {
     for kind in [
         SessionType::Stage,
         SessionType::Contract,
@@ -225,7 +225,6 @@ fn stage_and_knowledge_get_every_session_hook_and_the_completion_broker() {
             ("SubagentStart", "subagent-start.sh"),
             ("SubagentStop", "subagent-stop.sh"),
             ("PreToolUse", "loom-control-complete.sh"),
-            ("PostToolUse", "loom-control-complete.sh"),
             ("PreToolUse", "commit-filter.sh"),
         ] {
             assert!(
@@ -233,6 +232,10 @@ fn stage_and_knowledge_get_every_session_hook_and_the_completion_broker() {
                 "{kind} must register {script} on {event}"
             );
         }
+        assert!(
+            !registers(&settings, "PostToolUse", "loom-control-complete.sh"),
+            "{kind} must not register the completion pin on PostToolUse"
+        );
     }
 }
 
@@ -257,7 +260,7 @@ fn merge_base_conflict_and_adjudication_get_only_the_heartbeat_and_the_guards() 
             !hooks(&settings)
                 .iter()
                 .any(|(_, _, command)| command.ends_with("/loom-control-complete.sh")),
-            "{kind} must not register the completion broker"
+            "{kind} must not register the completion pin"
         );
     }
 }

@@ -143,4 +143,32 @@ assert result.exit_code == 125
 PY
 assert_gone "$d/survivor.pid"
 
+# Linux: a refused nested bubblewrap selects direct mode; a working one leaves
+# the companion lane. The macOS probe is absent here (no sandbox-exec stub), so
+# only the bwrap probe can decide. The mode line stays byte-identical; the note
+# line names bubblewrap.
+if [[ "$(uname -s)" == Linux ]]; then
+	LINUX_BIN="$d/linux-bin"
+	mkdir -p "$LINUX_BIN"
+	cp "$BIN_DIR/codex" "$LINUX_BIN/codex"
+	for status in 1 0; do
+		printf '#!/usr/bin/env bash\nexit %s\n' "$status" >"$LINUX_BIN/bwrap"
+		chmod +x "$LINUX_BIN/bwrap"
+		OUT="$d/bwrap-$status.out"; ERR="$d/bwrap-$status.err"
+		HOME="$d/home" PATH="$LINUX_BIN:$PATH" FAKE_CODEX_PID="$d/bwrap-$status.pid" \
+			FAKE_CODEX_ARGV="$d/bwrap-$status.argv" LOOM_STAGE_ID=stage-one LOOM_SESSION_ID=session-one \
+			bash "$WRAPPER" task 'bwrap probe' --model gpt-5.6-terra --effort xhigh --write \
+			--unit-id unit-a --invocation-id "$INVOCATION" >"$OUT" 2>"$ERR" || true
+		if [[ $status -eq 1 ]]; then
+			rg -qF 'LOOM-FORWARD-START {"v":1,"backend":"direct"' "$OUT"
+			rg -qFx 'mode: direct (codex exec --sandbox danger-full-access; nested Seatbelt refused)' "$OUT"
+			rg -qF 'refuses a nested bubblewrap sandbox' "$OUT"
+			assert_gone "$d/bwrap-$status.pid"
+		else
+			! rg -qF '"backend":"direct"' "$OUT"
+			[[ ! -e "$d/bwrap-$status.argv" ]]
+		fi
+	done
+fi
+
 printf '%s\n' PASS

@@ -59,12 +59,12 @@ fn debug_file_dispute(request: &Request, formatter: &mut fmt::Formatter<'_>) -> 
         .finish()
 }
 
-/// Contract ids are agent-written, so only the number of reports is shown.
 fn debug_freeze(request: &Request, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
     let Request::FreezeContracts {
         stage_id,
         session_id,
-        reports,
+        head,
+        tree_digest,
         ..
     } = request
     else {
@@ -75,41 +75,9 @@ fn debug_freeze(request: &Request, formatter: &mut fmt::Formatter<'_>) -> fmt::R
         .field("auth_token", &"[REDACTED]")
         .field("stage_id", stage_id)
         .field("session_id", session_id)
-        .field("reports", &reports.len())
+        .field("head", head)
+        .field("tree_digest", tree_digest)
         .finish()
-}
-
-fn debug_completion(request: &Request, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
-    match request {
-        Request::CompleteStage {
-            stage_id,
-            session_id,
-            nonce,
-            evidence_nonce,
-            ..
-        } => formatter
-            .debug_struct("CompleteStage")
-            .field("auth_token", &"[REDACTED]")
-            .field("stage_id", stage_id)
-            .field("session_id", session_id)
-            .field("nonce", nonce)
-            .field("evidence_nonce", evidence_nonce)
-            .finish(),
-        Request::RecordCompletionEvidence {
-            stage_id,
-            session_id,
-            evidence,
-            ..
-        } => formatter
-            .debug_struct("RecordCompletionEvidence")
-            .field("auth_token", &"[REDACTED]")
-            .field("stage_id", stage_id)
-            .field("session_id", session_id)
-            .field("phase", &evidence.phase)
-            .field("evidence_nonce", &evidence.evidence_nonce)
-            .finish(),
-        _ => unreachable!("debug_completion called for another request variant"),
-    }
 }
 
 impl fmt::Debug for Request {
@@ -120,9 +88,6 @@ impl fmt::Debug for Request {
             Request::Stop { .. } => credential_only(formatter, "Stop"),
             Request::Unsubscribe { .. } => credential_only(formatter, "Unsubscribe"),
             Request::Ping { .. } => credential_only(formatter, "Ping"),
-            Request::ValidateInheritedConfinement { .. } => {
-                credential_only(formatter, "ValidateInheritedConfinement")
-            }
             Request::DisputeCriteria { .. } => debug_dispute(self, formatter),
             Request::FileDispute { .. } => debug_file_dispute(self, formatter),
             Request::BlockStage {
@@ -136,9 +101,6 @@ impl fmt::Debug for Request {
                 .field("session_id", session_id)
                 .field("reason", &"[REDACTED]")
                 .finish(),
-            Request::CompleteStage { .. } | Request::RecordCompletionEvidence { .. } => {
-                debug_completion(self, formatter)
-            }
             Request::FreezeContracts { .. } => debug_freeze(self, formatter),
             Request::ObserveChanges {
                 stage_id,

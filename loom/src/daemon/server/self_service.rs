@@ -5,9 +5,9 @@
 //! and writing `.loom/work/stages/<id>.md`, because stage state belongs to the
 //! daemon. Between them they used to leave an agent that had finished its work
 //! — or found it could not finish — with no way to say so. Peer identity
-//! (`peer_identity.rs`) reopened that door for `CompleteStage`; this module is
-//! where the policy for widening it to blocking, disputing, freezing and
-//! reading the stage's change fingerprint lives, so that widening it further
+//! (`peer_identity.rs`) reopened that door; this module is where the policy
+//! for blocking, disputing, freezing and reading the stage's change
+//! fingerprint lives, so that widening it further
 //! is a deliberate edit in one place.
 //!
 //! Two separate questions, kept apart because neither answer implies the other:
@@ -37,14 +37,11 @@ use crate::models::session::SessionType;
 /// a request carrying neither a token nor a session.
 pub(super) fn self_service_session(request: &Request) -> Option<&str> {
     match request {
-        Request::CompleteStage { session_id, .. }
-        | Request::RecordCompletionEvidence { session_id, .. }
-        | Request::DisputeCriteria { session_id, .. }
+        Request::DisputeCriteria { session_id, .. }
         | Request::FileDispute { session_id, .. }
         | Request::BlockStage { session_id, .. }
         | Request::FreezeContracts { session_id, .. }
-        | Request::ObserveChanges { session_id, .. }
-        | Request::ValidateInheritedConfinement { session_id, .. } => Some(session_id),
+        | Request::ObserveChanges { session_id, .. } => Some(session_id),
         _ => None,
     }
 }
@@ -65,12 +62,9 @@ const OBSERVE_KINDS: &[SessionType] = &[SessionType::Stage, SessionType::Contrac
 /// runs, with the session kinds admitted, or `None` when there is nothing to
 /// prove.
 ///
-/// Completion and evidence requests are deliberately absent: their handlers re-validate the
-/// identical binding under the sessions-directory lock, together with the
-/// `Executing` requirement that only completion imposes. Checking it here too
-/// would report that failure as an authentication error and lose the handler's
-/// more precise message. `FreezeContracts` is absent for the same reason: its
-/// handler proves the binding for a `Contract` session and says so.
+/// `FreezeContracts` is deliberately absent: its handler proves the binding
+/// for a `Contract` session and says so, which reports a precise message
+/// instead of an authentication error.
 ///
 /// A request with an empty session id — an operator shell that authenticated
 /// with the user token — has no session whose ownership could be checked, and
@@ -109,13 +103,11 @@ pub(super) fn ownership_to_enforce(
 /// Both directions are checked — the stage's `session` field and the session
 /// record's `stage_id` — plus the session kind and [`SessionStatus::Running`],
 /// so a live session cannot act on a stage that is not its own and a finished
-/// session cannot act at all. Completion admits knowledge sessions as well as
-/// stage sessions; see `control_complete`.
+/// session cannot act at all.
 ///
-/// Deliberately NOT checked here: [`crate::models::stage::StageStatus`].
-/// Completion needs the stage to still be `Executing` and keeps that
-/// requirement in `control_complete`; a stage may legitimately be blocked or
-/// disputed from other states, and each handler validates its own transition.
+/// Deliberately NOT checked here: [`crate::models::stage::StageStatus`]. A
+/// stage may legitimately be blocked or disputed from several states, and
+/// each handler validates its own transition.
 ///
 /// This runs before the handler takes any lock, so the binding it proves could
 /// in principle change before the handler mutates. That is acceptable for an

@@ -1,6 +1,5 @@
 use serde::{Deserialize, Serialize};
 
-use crate::handoff::CompletionAttemptEvidence;
 use crate::models::dispute::{CriterionField, DisputeKind};
 use crate::models::stage::StageStatus;
 use crate::verify::review::fingerprint::ChangeFingerprint;
@@ -88,7 +87,7 @@ pub use crate::stage_service::ContractRunReport;
 ///
 /// `User` requests are unprivileged RPCs (Ping, SubscribeStatus,
 /// SubscribeLogs, Unsubscribe, DisputeCriteria, FileDispute, BlockStage,
-/// CompleteStage, RecordCompletionEvidence, FreezeContracts, ObserveChanges).
+/// FreezeContracts, ObserveChanges).
 /// They use the user token. The stage self-service RPCs are additionally
 /// accepted only for the exact stage/session pair the caller names.
 /// State-transition requests carry no command, path, or privileged flags;
@@ -167,25 +166,6 @@ pub enum Request {
         session_id: String,
         reason: String,
     },
-    /// Apply the narrow post-verification completion transition.
-    ///
-    /// Acceptance/build commands run in the calling session's host sandbox.
-    /// A trusted PostToolUse hook sends this data-only request only after that
-    /// exact sandboxed command reports successful verification.
-    CompleteStage {
-        auth_token: String,
-        stage_id: String,
-        session_id: String,
-        nonce: String,
-        evidence_nonce: String,
-    },
-    /// Persist completion evidence without authorizing a stage transition.
-    RecordCompletionEvidence {
-        auth_token: String,
-        stage_id: String,
-        session_id: String,
-        evidence: Box<CompletionAttemptEvidence>,
-    },
     /// Record the contract freeze that ends a stage's contract phase.
     ///
     /// Only the stage's running `Contract` session may send it; the daemon
@@ -196,14 +176,8 @@ pub enum Request {
         auth_token: String,
         stage_id: String,
         session_id: String,
-        reports: Vec<ContractRunReport>,
-    },
-    /// Prove a live sandboxed session may inherit its protected launch capsule.
-    ValidateInheritedConfinement {
-        auth_token: String,
-        stage_id: String,
-        session_id: String,
-        working_dir: std::path::PathBuf,
+        head: String,
+        tree_digest: String,
     },
     /// Ask for a stage's change fingerprint, which only the daemon computes
     /// (`verify::review::observer`). The request names the stage alone; the
@@ -231,11 +205,8 @@ impl Request {
             | Request::DisputeCriteria { .. }
             | Request::FileDispute { .. }
             | Request::BlockStage { .. }
-            | Request::CompleteStage { .. }
-            | Request::RecordCompletionEvidence { .. }
             | Request::FreezeContracts { .. }
-            | Request::ObserveChanges { .. }
-            | Request::ValidateInheritedConfinement { .. } => Capability::User,
+            | Request::ObserveChanges { .. } => Capability::User,
         }
     }
 
@@ -252,11 +223,8 @@ impl Request {
             | Request::DisputeCriteria { auth_token, .. }
             | Request::FileDispute { auth_token, .. }
             | Request::BlockStage { auth_token, .. }
-            | Request::CompleteStage { auth_token, .. }
-            | Request::RecordCompletionEvidence { auth_token, .. }
             | Request::FreezeContracts { auth_token, .. }
-            | Request::ObserveChanges { auth_token, .. }
-            | Request::ValidateInheritedConfinement { auth_token, .. } => auth_token,
+            | Request::ObserveChanges { auth_token, .. } => auth_token,
         }
     }
 }
