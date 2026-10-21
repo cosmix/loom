@@ -2,7 +2,7 @@
 //! by every project on the machine, so a row counts only when a forward
 //! receipt of this project names its thread; every other row is foreign.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashSet};
 
 use chrono::Duration;
 
@@ -62,19 +62,9 @@ impl CodexScope {
             receipt.observed_at >= from
                 && range.until.is_none_or(|until| receipt.observed_at <= until)
         };
-        let mut scope = Self::Threads {
-            threads: BTreeSet::new(),
-            in_window: BTreeSet::new(),
-            unthreaded: 0,
-        };
-        let Self::Threads {
-            threads: all,
-            in_window,
-            unthreaded,
-        } = &mut scope
-        else {
-            return scope;
-        };
+        let mut all = BTreeSet::new();
+        let mut in_window = BTreeSet::new();
+        let mut unthreaded = 0;
         for receipt in threads {
             match &receipt.thread_id {
                 Some(thread_id) => {
@@ -83,11 +73,15 @@ impl CodexScope {
                         in_window.insert(thread_id.clone());
                     }
                 }
-                None if observed_by(receipt, range.since) => *unthreaded += 1,
+                None if observed_by(receipt, range.since) => unthreaded += 1,
                 None => {}
             }
         }
-        scope
+        Self::Threads {
+            threads: all,
+            in_window,
+            unthreaded,
+        }
     }
 }
 
@@ -122,13 +116,14 @@ pub(crate) fn apply(scope: &CodexScope, rows: &mut Vec<NormalizedEvent>) -> Scop
                         .is_none_or(|thread| !threads.contains(thread))
             });
             outcome.unthreaded_receipts = *unthreaded;
+            let seen: HashSet<&str> = rows
+                .iter()
+                .filter(|row| is_rollout_row(row))
+                .filter_map(|row| row.codex_thread_id.as_deref())
+                .collect();
             outcome.missing_threads = in_window
                 .iter()
-                .filter(|thread| {
-                    !rows.iter().any(|row| {
-                        is_rollout_row(row) && row.codex_thread_id.as_deref() == Some(thread)
-                    })
-                })
+                .filter(|thread| !seen.contains(thread.as_str()))
                 .count();
         }
     }

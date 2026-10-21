@@ -268,6 +268,32 @@ fn removed_worktree_slugs_are_selected_but_siblings_are_not() -> Result<()> {
     Ok(())
 }
 
+/// A longer project slug that merely starts with this one's, such as
+/// `/work/projx`, owns `-work-projx--worktrees-y`; it is not a worktree of
+/// `/work/proj`.
+#[test]
+fn worktree_slug_of_a_longer_project_slug_is_not_selected() -> Result<()> {
+    let temp = tempfile::tempdir()?;
+    for name in [
+        "-work-proj",
+        "-work-proj--worktrees-gone",
+        "-work-projx--worktrees-y",
+        "-work-proj-other",
+    ] {
+        fs::create_dir(temp.path().join(name))?;
+    }
+
+    assert_eq!(
+        worktree_slugs(temp.path(), "-work-proj"),
+        ["-work-proj--worktrees-gone"]
+    );
+    assert_eq!(
+        repository_slugs(temp.path(), Path::new("/work/proj")),
+        ["-work-proj", "-work-proj--worktrees-gone"]
+    );
+    Ok(())
+}
+
 #[test]
 fn project_selection_includes_removed_worktrees_only() -> Result<()> {
     let (temp, _) = slug_fixture()?;
