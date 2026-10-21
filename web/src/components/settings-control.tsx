@@ -1,4 +1,4 @@
-import { ChevronDownIcon } from "lucide-react";
+import { ChevronDownIcon, XIcon } from "lucide-react";
 import type { ReactElement } from "react";
 import { useState } from "react";
 
@@ -198,7 +198,7 @@ export interface LaneSlotProps {
   onWrite: (value: ConfigValue | null) => void;
 }
 
-/// The ✕ that clears a set value back to its fallback; a title spells out
+/// The button that clears a set value back to its fallback; a title spells out
 /// what that fallback is before the operator commits to clicking it.
 function ClearButton({
   field,
@@ -219,7 +219,7 @@ function ClearButton({
       title={title}
       onClick={onClear}
     >
-      ✕
+      <XIcon aria-hidden="true" className="size-3" />
     </button>
   );
 }

@@ -1,4 +1,5 @@
 import { cn } from "cn";
+import { TriangleAlertIcon } from "lucide-react";
 
 import type { ProviderQuota, QuotaLeft, QuotaSnapshot, WindowKind } from "@/api/schema";
 import { toneClass } from "@/components/state-badge";
@@ -212,7 +213,7 @@ function QuotaError({ text }: { text: string }) {
             toneClass("warning"),
           )}
         >
-          <span aria-hidden="true">⚠ </span>
+          <TriangleAlertIcon aria-hidden="true" className="mr-1 inline-block size-3 align-middle" />
           {text}
         </span>
       </TooltipTrigger>

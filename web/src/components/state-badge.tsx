@@ -11,22 +11,30 @@ export function toneClass(tone: Tone): string {
 
 /// The state glyph alone, for lines where the label is carried by the text.
 export function StateGlyph({ status, className }: { status: StageStatus; className?: string }) {
-  const { icon, label } = STAGE_STATES[status];
+  const { icon: Icon, label } = STAGE_STATES[status];
   const { tone } = stateMeta(status);
   return (
     <span
       aria-label={label}
       role="img"
-      className={cn("inline-block w-[1.1em] text-center font-mono", toneClass(tone), className)}
+      className={cn(
+        "inline-flex shrink-0 items-center justify-center align-middle",
+        toneClass(tone),
+        className,
+      )}
     >
-      {icon}
+      <Icon
+        aria-hidden="true"
+        className="size-[1em]"
+        fill={status === "executing" ? "currentColor" : "none"}
+      />
     </span>
   );
 }
 
 /// Glyph plus label, toned as the TUI's STATE column.
 export function StateBadge({ status, className }: { status: StageStatus; className?: string }) {
-  const { icon, label } = STAGE_STATES[status];
+  const { icon: Icon, label } = STAGE_STATES[status];
   const { tone, bold } = stateMeta(status);
   return (
     <span
@@ -37,8 +45,8 @@ export function StateBadge({ status, className }: { status: StageStatus; classNa
         className,
       )}
     >
-      <span aria-hidden="true" className="inline-block w-[1.1em] text-center font-mono">
-        {icon}
+      <span aria-hidden="true" className="inline-flex shrink-0 items-center justify-center">
+        <Icon className="size-[1em]" fill={status === "executing" ? "currentColor" : "none"} />
       </span>
       <span>{label}</span>
     </span>

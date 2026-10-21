@@ -1,5 +1,6 @@
 import { cn } from "cn";
 import { useAtomValue } from "jotai/react";
+import { CircleXIcon, InfoIcon, TriangleAlertIcon, type LucideIcon } from "lucide-react";
 
 import type { Alert } from "@/api/schema";
 import { HazardRail } from "@/aurora-ui/feedback/HazardPanel";
@@ -7,15 +8,15 @@ import { toneClass } from "@/components/state-badge";
 import type { Tone } from "@/lib/format";
 import { alertsAtom } from "@/state/atoms";
 
-/// Marker and tone per severity, as `render_scheduler_alerts` draws them; a
+/// Icon and tone per severity; a
 /// warning or critical row carries the kit's caution-tape rail.
 const SEVERITY: Record<
   Alert["severity"],
-  { marker: string; tone: Tone; bold: boolean; hazard: "warning" | "error" | null }
+  { icon: LucideIcon; tone: Tone; bold: boolean; hazard: "warning" | "error" | null }
 > = {
-  info: { marker: "·", tone: "executing", bold: false, hazard: null },
-  warning: { marker: "!", tone: "warning", bold: false, hazard: "warning" },
-  critical: { marker: "✖", tone: "blocked", bold: true, hazard: "error" },
+  info: { icon: InfoIcon, tone: "executing", bold: false, hazard: null },
+  warning: { icon: TriangleAlertIcon, tone: "warning", bold: false, hazard: "warning" },
+  critical: { icon: CircleXIcon, tone: "blocked", bold: true, hazard: "error" },
 };
 
 /// Scheduler alerts, one thin row each; absent when there are none.
@@ -25,7 +26,7 @@ export function AlertsBand() {
   return (
     <section aria-label="alerts" className="flex flex-col gap-1">
       {alerts.map((alert, index) => {
-        const { marker, tone, bold, hazard } = SEVERITY[alert.severity];
+        const { icon: Icon, tone, bold, hazard } = SEVERITY[alert.severity];
         return (
           <div
             key={`${alert.severity}:${alert.text}:${index}`}
@@ -42,9 +43,7 @@ export function AlertsBand() {
               <span aria-hidden="true" className="w-2.5 shrink-0 self-stretch bg-(--tone)/40" />
             )}
             <span className="flex items-baseline gap-2.5 px-3 py-1.5">
-              <span aria-hidden="true" className="w-3 shrink-0 text-center font-mono">
-                {marker}
-              </span>
+              <Icon aria-hidden="true" className="size-3 shrink-0 self-center" />
               <span className="text-foreground">{alert.text}</span>
               <span className="sr-only">{alert.severity}</span>
             </span>
