@@ -24,6 +24,20 @@ pub(super) struct Intervention {
     pub(super) baseline_revision: String,
     pub(super) candidate_revision: String,
     pub(super) changed_dimensions: Vec<InterventionDimension>,
+    #[serde(default)]
+    pub(super) token_rule: TokenRule,
+    #[serde(default)]
+    pub(super) latency_tolerance_ms: Option<u64>,
+}
+
+/// How the token verdict is formed: per-dimension dominance (the default) or
+/// the per-provider net total with variance.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub(super) enum TokenRule {
+    #[default]
+    Dominance,
+    NetTotal,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
@@ -43,7 +57,7 @@ pub(super) struct ComparisonPair {
     pub(super) candidate: RunEvidence,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct RunEvidence {
     pub(super) run_id: String,
@@ -71,7 +85,7 @@ pub(super) struct RunEvidence {
     pub(super) quota_observations: Option<Vec<QuotaObservation>>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ProviderAssignment {
     pub(super) provider: Provider,
@@ -79,7 +93,7 @@ pub(super) struct ProviderAssignment {
     pub(super) effort: String,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct CheckEvidence {
     pub(super) command_id: String,
@@ -87,7 +101,7 @@ pub(super) struct CheckEvidence {
     pub(super) verdict: EvidenceVerdict,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct ReviewEvidence {
     pub(super) dimension: String,
@@ -95,14 +109,14 @@ pub(super) struct ReviewEvidence {
     pub(super) verdict: EvidenceVerdict,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct FindingEvidence {
     pub(super) finding_id: String,
     pub(super) severity: FindingSeverity,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(super) enum FindingSeverity {
     Low,
@@ -111,7 +125,7 @@ pub(super) enum FindingSeverity {
     Critical,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(super) enum EvidenceVerdict {
     Passed,
@@ -119,7 +133,7 @@ pub(super) enum EvidenceVerdict {
     Unknown,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "kebab-case")]
 pub(super) enum AccountingProvenance {
     Measured,
@@ -127,7 +141,7 @@ pub(super) enum AccountingProvenance {
     Unknown,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(deny_unknown_fields)]
 pub(super) struct QuotaObservation {
     pub(super) provider: Provider,
@@ -206,5 +220,9 @@ pub(super) struct ComparisonReport {
     pub(super) subscription_verdict: Outcome,
     pub(super) reason_codes: Vec<&'static str>,
     pub(super) pairs: Vec<PairResult>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) net_total: Option<super::comparison_net::NetTotalSummary>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(super) latency: Option<super::comparison_latency::LatencySummary>,
     pub(super) claim_scope: &'static str,
 }

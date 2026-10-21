@@ -1,13 +1,24 @@
 use std::collections::BTreeSet;
 
+use super::comparison_latency::{self, LatencySummary};
+use super::comparison_net::{self, NetTotalSummary};
 use super::comparison_quality;
 use super::comparison_quota;
 use super::comparison_schema::{
     ComparisonArtifact, ComparisonPair, ComparisonReport, Outcome, PairResult, ProviderAssignment,
-    COMPARISON_SCHEMA_VERSION,
+    TokenRule, COMPARISON_SCHEMA_VERSION,
 };
 use super::comparison_token;
 use super::comparison_validation;
+
+/// One pair's verdict plus the pieces the declared rules recombine.
+struct PairOutcome {
+    result: PairResult,
+    quality: Outcome,
+    latency: Outcome,
+    /// Structurally valid with measured, complete accounting on both runs.
+    usable: bool,
+}
 
 pub(super) fn evaluate(artifact: ComparisonArtifact) -> ComparisonReport {
     let artifact_reasons = comparison_validation::artifact_reasons(&artifact);
@@ -20,7 +31,7 @@ pub(super) fn evaluate(artifact: ComparisonArtifact) -> ComparisonReport {
         .iter()
         .map(|pair| evaluate_pair(&artifact, pair, &duplicates))
         .collect::<Vec<_>>();
-    aggregate_report(pairs)
+    aggregate_report(&artifact, pairs)
 }
 
 pub(super) fn failure_report(mut reasons: Vec<&'static str>) -> ComparisonReport {
@@ -32,6 +43,8 @@ pub(super) fn failure_report(mut reasons: Vec<&'static str>) -> ComparisonReport
         subscription_verdict: Outcome::Inconclusive,
         reason_codes: reasons,
         pairs: Vec::new(),
+        net_total: None,
+        latency: None,
         claim_scope: "finite-fixture-set",
     }
 }
@@ -40,11 +53,16 @@ fn evaluate_pair(
     artifact: &ComparisonArtifact,
     pair: &ComparisonPair,
     duplicate_ids: &BTreeSet<String>,
-) -> PairResult {
+) -> PairOutcome {
     let mut reasons = comparison_validation::pair_reasons(artifact, pair, duplicate_ids);
     let structurally_valid = reasons.is_empty() && comparable(artifact, pair, &mut reasons);
     let quality = comparison_quality::evaluate(pair, &mut reasons);
-    let latency = latency_verdict(pair, &mut reasons);
+    // A declared tolerance moves the latency judgement to the report level.
+    let latency = if artifact.intervention.latency_tolerance_ms.is_some() {
+        Outcome::SupportedCandidate
+    } else {
+        latency_verdict(pair, &mut reasons)
+    };
     let (token_proxy, subscription) = if structurally_valid {
         (
             comparison_token::evaluate(&pair.baseline, &pair.candidate, &mut reasons),
@@ -56,7 +74,7 @@ fn evaluate_pair(
     };
     let verdict = overall_pair(structurally_valid, quality, latency, subscription);
     sort_reasons(&mut reasons);
-    PairResult {
+    let result = PairResult {
         work_unit_id: safe_work_unit_id(&pair.work_unit_id),
         verdict,
         token_proxy_verdict: token_proxy,
@@ -65,6 +83,14 @@ fn evaluate_pair(
         baseline_provider_tokens: pair.baseline.provider_tokens.clone(),
         candidate_provider_tokens: pair.candidate.provider_tokens.clone(),
         quota_comparisons: comparison_quota::evidence(&pair.baseline, &pair.candidate),
+    };
+    PairOutcome {
+        result,
+        quality,
+        latency,
+        usable: structurally_valid
+            && comparison_token::complete_accounting(&pair.baseline)
+            && comparison_token::complete_accounting(&pair.candidate),
     }
 }
 
@@ -205,14 +231,20 @@ fn overall_pair(
     }
 }
 
-fn aggregate_report(pairs: Vec<PairResult>) -> ComparisonReport {
-    let verdict = aggregate(pairs.iter().map(|pair| pair.verdict));
-    let token_proxy = aggregate(pairs.iter().map(|pair| pair.token_proxy_verdict));
-    let subscription = aggregate(pairs.iter().map(|pair| pair.subscription_verdict));
-    let mut reasons = pairs
+fn aggregate_report(artifact: &ComparisonArtifact, outcomes: Vec<PairOutcome>) -> ComparisonReport {
+    let mut reasons = outcomes
         .iter()
-        .flat_map(|pair| pair.reason_codes.iter().copied())
+        .flat_map(|outcome| outcome.result.reason_codes.iter().copied())
         .collect::<Vec<_>>();
+    let latency = artifact
+        .intervention
+        .latency_tolerance_ms
+        .map(|tolerance| declared_latency(artifact, tolerance, &mut reasons));
+    let net_total = (artifact.intervention.token_rule == TokenRule::NetTotal)
+        .then(|| declared_net_total(artifact, &outcomes, &mut reasons));
+    let verdict = overall_verdict(&outcomes, net_total.as_ref(), latency.as_ref());
+    let token_proxy = aggregate(outcomes.iter().map(|o| o.result.token_proxy_verdict));
+    let subscription = aggregate(outcomes.iter().map(|o| o.result.subscription_verdict));
     sort_reasons(&mut reasons);
     ComparisonReport {
         schema_version: COMPARISON_SCHEMA_VERSION,
@@ -220,8 +252,66 @@ fn aggregate_report(pairs: Vec<PairResult>) -> ComparisonReport {
         token_proxy_verdict: token_proxy,
         subscription_verdict: subscription,
         reason_codes: reasons,
-        pairs,
+        pairs: outcomes.into_iter().map(|o| o.result).collect(),
+        net_total,
+        latency,
         claim_scope: "finite-fixture-set",
+    }
+}
+
+fn declared_latency(
+    artifact: &ComparisonArtifact,
+    tolerance_ms: u64,
+    reasons: &mut Vec<&'static str>,
+) -> LatencySummary {
+    let all = artifact.pairs.iter().collect::<Vec<_>>();
+    comparison_latency::evaluate(&all, tolerance_ms, reasons)
+}
+
+fn declared_net_total(
+    artifact: &ComparisonArtifact,
+    outcomes: &[PairOutcome],
+    reasons: &mut Vec<&'static str>,
+) -> NetTotalSummary {
+    let usable = artifact
+        .pairs
+        .iter()
+        .zip(outcomes)
+        .filter_map(|(pair, outcome)| outcome.usable.then_some(pair))
+        .collect::<Vec<_>>();
+    let summary = comparison_net::evaluate(&usable, outcomes.len() - usable.len());
+    reasons.extend(summary.reason_codes.iter().copied());
+    summary
+}
+
+fn overall_verdict(
+    outcomes: &[PairOutcome],
+    net_total: Option<&NetTotalSummary>,
+    latency: Option<&LatencySummary>,
+) -> Outcome {
+    let declared_latency = latency.map(|summary| summary.verdict);
+    let Some(net_total) = net_total else {
+        let pairs = aggregate(outcomes.iter().map(|o| o.result.verdict));
+        return declared_latency.map_or(pairs, |latency| pairs.worse(latency));
+    };
+    let quality = aggregate(outcomes.iter().map(|o| o.quality));
+    let latency = declared_latency
+        .unwrap_or_else(|| aggregate(outcomes.iter().map(|outcome| outcome.latency)));
+    // Quota is whole percents and cannot resolve a plausible saving, so an
+    // inconclusive subscription verdict does not hold back net-total support.
+    let subscription_rejected = outcomes
+        .iter()
+        .any(|o| o.result.subscription_verdict == Outcome::Rejected);
+    let parts = [quality, latency, net_total.verdict];
+    if subscription_rejected || parts.contains(&Outcome::Rejected) {
+        Outcome::Rejected
+    } else if parts
+        .iter()
+        .all(|part| *part == Outcome::SupportedCandidate)
+    {
+        Outcome::SupportedCandidate
+    } else {
+        Outcome::Inconclusive
     }
 }
 
@@ -248,3 +338,7 @@ fn sort_reasons(reasons: &mut Vec<&'static str>) {
     reasons.sort_unstable();
     reasons.dedup();
 }
+
+#[cfg(test)]
+#[path = "comparison_rules_tests.rs"]
+mod rules_tests;

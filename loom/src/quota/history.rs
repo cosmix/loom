@@ -2,6 +2,7 @@
 
 use super::cache;
 use super::model::{ProviderQuota, QuotaWindow, WindowKind};
+use super::RESET_TOLERANCE_SECS;
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -209,7 +210,9 @@ fn continuity_from_windows(previous: &[QuotaWindow], next: &[QuotaWindow]) -> Hi
             (Some(previous), Some(next)) => {
                 compared = true;
                 match (previous.resets_at, next.resets_at) {
-                    (Some(left), Some(right)) if left != right => reset = true,
+                    (Some(left), Some(right)) if left.abs_diff(right) > RESET_TOLERANCE_SECS => {
+                        reset = true;
+                    }
                     (Some(_), Some(_)) if next.used_percent < previous.used_percent => {
                         unknown = true;
                     }

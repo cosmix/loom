@@ -243,3 +243,25 @@ fn reader_drops_nonmonotonic_rows_without_reordering() {
     );
     assert_eq!(history.diagnostics.nonmonotonic_rows, 1);
 }
+
+#[test]
+fn one_second_resets_at_alternation_reads_same_reset() {
+    let dir = tempdir().unwrap();
+    append(dir.path(), "claude", &dual_quota(NOW - 30, 500, 900));
+    append(dir.path(), "claude", &dual_quota(NOW - 20, 501, 899));
+    append(dir.path(), "claude", &dual_quota(NOW - 10, 500, 900));
+
+    let history = read_history(dir.path(), "claude", 0, None);
+    assert_eq!(
+        history
+            .points
+            .iter()
+            .map(|point| point.continuity)
+            .collect::<Vec<_>>(),
+        vec![
+            HistoryContinuity::Initial,
+            HistoryContinuity::SameReset,
+            HistoryContinuity::SameReset
+        ]
+    );
+}

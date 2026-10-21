@@ -26,7 +26,7 @@ use std::sync::Arc;
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
 
-pub(super) const POLL_INTERVAL: Duration = Duration::from_secs(180);
+pub(crate) const POLL_INTERVAL: Duration = Duration::from_secs(180);
 const MAX_BACKOFF: Duration = Duration::from_secs(900);
 const RATE_LIMIT_MIN_BACKOFF: Duration = Duration::from_secs(300);
 const CODEX_DEADLINE: Duration = Duration::from_secs(15);

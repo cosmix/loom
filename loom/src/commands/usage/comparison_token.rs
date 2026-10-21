@@ -25,7 +25,7 @@ pub(super) fn evaluate(
     compare_vectors(baseline, candidate, reasons)
 }
 
-fn complete_accounting(run: &RunEvidence) -> bool {
+pub(super) fn complete_accounting(run: &RunEvidence) -> bool {
     run.accounting_complete && run.accounting_provenance == AccountingProvenance::Measured
 }
 
