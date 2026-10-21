@@ -9,13 +9,13 @@ Write:
 - `loom/src/orchestrator/signals/tests_guidance_manifest.rs` (new)
 - `loom/src/orchestrator/signals/mod.rs` (one three-line module declaration)
 
-Read only: `CLAUDE.md.template`, `agents/loom-verifier.md`, `loom-hooks/post-tool-use.sh`, `loom-hooks/session-start.sh`, `loom/src/orchestrator/signals/helpers.rs` (`CONTEXT_CEILING_HANDOFF`, `append_settled_completion_rules`, `STAGE_EXIT_RULES`), `loom/src/orchestrator/signals/cache.rs` (`generate_stable_prefix`), `loom/src/orchestrator/signals/cache/blocks.rs` (`VERIFIER_GATE`, part of the standard stable prefix), `loom/src/fs/permissions/constants.rs` (`HOOK_POST_TOOL_USE`, `HOOK_SESSION_START`), `loom/src/orchestrator/signals/tests_size.rs` (import style to mirror).
+Read only: `CLAUDE.md.template`, `loom-hooks/post-tool-use.sh`, `loom-hooks/session-start.sh`, `loom/src/orchestrator/signals/helpers.rs` (`CONTEXT_CEILING_HANDOFF`, `append_settled_completion_rules`, `STAGE_EXIT_RULES`), `loom/src/orchestrator/signals/cache.rs` (`generate_stable_prefix`), `loom/src/orchestrator/signals/cache/blocks.rs` (the orchestrator gate block gate-dedup wrote, part of the standard stable prefix), `loom/src/fs/permissions/constants.rs` (`HOOK_POST_TOOL_USE`, `HOOK_SESSION_START`), `loom/src/orchestrator/signals/tests_size.rs` (import style to mirror).
 
 Never run git and never write under `.loom/`. The `loom map` and `loom knowledge context` commands answer from the stage's base commit; read files directly with `sed -n` or `rg`.
 
 ## Why
 
-`CLAUDE.md.template` is installed as every session's `~/.claude/CLAUDE.md`, inside and outside loom stages. Claude workers running after you shrink its Rules 3 and 3b to one line each (the hooks print both procedures) and rewrite the fifth Rule 14 bullet; `agents/loom-verifier.md` gains a gate-log recipe. This test records where each relocated item now lives and fails when a template heading or rule bullet disappears without a recorded home.
+`CLAUDE.md.template` is installed as every session's `~/.claude/CLAUDE.md`, inside and outside loom stages. Claude workers running after you shrink its Rules 3 and 3b to one line each (the hooks print both procedures) and rewrite the fifth Rule 14 bullet. This test records where each relocated item now lives and fails when a template heading or rule bullet disappears without a recorded home.
 
 ## Step 1: declare the module in `loom/src/orchestrator/signals/mod.rs`
 
@@ -39,7 +39,6 @@ Declared at this level, the filter `cargo test --lib signals::tests_guidance_man
    use crate::fs::permissions::constants::{HOOK_POST_TOOL_USE, HOOK_SESSION_START};
 
    const TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
-   const VERIFIER: &str = include_str!("../../../../agents/loom-verifier.md");
    ```
 
 3. `const RULE_14_VERBOSE_BULLET: &str = r#"..."#;` holding the frozen-list entry whose text starts `- Don't narrate between tool calls` (entry 35 of 40; entry 40 is `### 19. WRITING STYLE`, which must stay mandatory). Identify it by that text, never by position. Then `const FROZEN_LINES: &[&str]` holding all 40 entries in order, each as a raw string `r#"..."#` copied byte for byte (em dashes, backticks and double quotes included), with `RULE_14_VERBOSE_BULLET` standing in for that one entry. No line contains the two-character sequence `"#`, so `r#` delimiters are safe.
@@ -54,7 +53,7 @@ Declared at this level, the filter `cargo test --lib signals::tests_guidance_man
    }
    ```
 
-   `const RELOCATIONS: &[Relocation]` with these nineteen entries, in this order (`-` in the frozen column means `None`; the needle column names a line of the needle block below). Entries 1-8 are template relocations. Entries 9-19 pin, in the surface its recipient reads, the instruction of each orchestration-skill paragraph the Claude wave removes. `R<n>` is the removal's number in W2's brief. The skill's R6-R9 instructions are Rule 6 bullets the frozen list already pins, so they get no entry.
+   `const RELOCATIONS: &[Relocation]` with these sixteen entries, in this order (`-` in the frozen column means `None`; the needle column names a line of the needle block below). Entries 1-7 are template relocations. Entries 8-16 pin, in the surface its recipient reads, the instruction of each orchestration-skill paragraph the Claude wave removes. `R<n>` is the removal's number in W2's brief. The skill's R6-R9 instructions are Rule 6 bullets the frozen list already pins, so they get no entry.
 
    | # | item | frozen | home | needle |
    | --- | --- | --- | --- | --- |
@@ -65,18 +64,15 @@ Declared at this level, the filter `cargo test --lib signals::tests_guidance_man
    | 5 | `Rule 3b memory list` | - | `loom-hooks/session-start.sh` | N5 |
    | 6 | `Rule 3b latest handoff` | - | `loom-hooks/session-start.sh` | N6 |
    | 7 | `Rule 14 verbose output` | `Some(RULE_14_VERBOSE_BULLET)` | `CLAUDE.md.template` | N7 |
-   | 8 | `Rule 14 verbose output` | `Some(RULE_14_VERBOSE_BULLET)` | `agents/loom-verifier.md` | N8 |
-   | 9 | `R1 loom plans on explicit request` | - | `CLAUDE.md.template` | N9 |
-   | 10 | `R2 completion is the last act` | - | `standard stable prefix` | N10 |
-   | 11 | `R2 post-completion work is lost` | - | `standard stable prefix` | N11 |
-   | 12 | `R3 criteria run through loom check` | - | `standard stable prefix` | N12 |
-   | 13 | `R3 runner-only failure is disputed` | - | `standard stable prefix` | N13 |
-   | 14 | `R3 session-only failure is no FAIL` | - | `standard stable prefix` | N14 |
-   | 15 | `R4 one commit per concern` | - | `CLAUDE.md.template` | N15 |
-   | 16 | `R5 the subagent preamble file` | - | `CLAUDE.md.template` | N16 |
-   | 17 | `R10 fable override at spawn` | - | `CLAUDE.md.template` | N17 |
-   | 18 | `R11 when the stage cannot finish` | - | `standard stable prefix` | N18 |
-   | 19 | `R3 failed criteria are re-checked one by one` | - | `standard stable prefix` | N19 |
+   | 8 | `R1 loom plans on explicit request` | - | `CLAUDE.md.template` | N8 |
+   | 9 | `R2 completion is the last act` | - | `standard stable prefix` | N9 |
+   | 10 | `R2 post-completion work is lost` | - | `standard stable prefix` | N10 |
+   | 11 | `R3 criteria run through loom check` | - | `standard stable prefix` | N11 |
+   | 12 | `R4 one commit per concern` | - | `CLAUDE.md.template` | N12 |
+   | 13 | `R5 the subagent preamble file` | - | `CLAUDE.md.template` | N13 |
+   | 14 | `R10 fable override at spawn` | - | `CLAUDE.md.template` | N14 |
+   | 15 | `R11 when the stage cannot finish` | - | `standard stable prefix` | N15 |
+   | 16 | `R3 failed criteria are re-checked one by one` | - | `standard stable prefix` | N16 |
 
    The needles, one per line after the `Nk:` label, copied byte for byte; no needle has leading or trailing spaces. Write each as a raw string `r#"..."#`.
 
@@ -88,22 +84,19 @@ Declared at this level, the filter `cargo test --lib signals::tests_guidance_man
    N5: loom memory list
    N6: /handoffs/ file
    N7: 2>&1; echo "exit=$?"
-   N8: 2>&1; echo "exit=$? log=
-   N9: **Loom plans:** only on explicit request
-   N10: is the LAST act of your session
-   N11: LOST WORK
-   N12: `loom check <stage-id>`
-   N13: RUNNER-ENV
-   N14: SESSION-ENV
-   N15: one commit per concern
-   N16: _subagent-preamble.txt
-   N17: Fable-tier work has no pinned agent type
-   N18: **When the stage cannot finish.**
-   N19: --criterion
+   N8: **Loom plans:** only on explicit request
+   N9: is the LAST act of your session
+   N10: LOST WORK
+   N11: `loom check <stage-id>`
+   N12: one commit per concern
+   N13: _subagent-preamble.txt
+   N14: Fable-tier work has no pinned agent type
+   N15: **When the stage cannot finish.**
+   N16: --criterion
    ```
 
-   Before writing the needles, confirm each of N1-N6 and N9-N19 is a substring of its home today with `rg -n -F`. For "standard stable prefix", search `loom/src/orchestrator/signals/helpers.rs` and `loom/src/orchestrator/signals/cache/blocks.rs`; `session-start.sh` was edited by an earlier plan. If one is missing, report it and the text you found; do not invent another needle. Plan B wrote N10-N14 and N18's homes (gate-dedup wrote N19's) and was required to keep those phrases, so a missing one is a plan-B defect to report. N7 and N8 are absent today by design: Claude workers add them after you.
-5. `fn home_text(home: &str) -> String`: `"CLAUDE.md.template"` gives `TEMPLATE`, `"agents/loom-verifier.md"` gives `VERIFIER`, `"loom-hooks/post-tool-use.sh"` gives `HOOK_POST_TOOL_USE`, `"loom-hooks/session-start.sh"` gives `HOOK_SESSION_START`, `"standard stable prefix"` gives `generate_stable_prefix()`; any other label panics naming it.
+   Before writing the needles, confirm each of N1-N6 and N8-N16 is a substring of its home today with `rg -n -F`. For "standard stable prefix", search `loom/src/orchestrator/signals/helpers.rs` and `loom/src/orchestrator/signals/cache/blocks.rs`; `session-start.sh` was edited by an earlier plan. If one is missing, report it and the text you found; do not invent another needle. Plan B wrote the homes of N9, N10 and N15, and gate-dedup the orchestrator gate block that holds N11 and N16; each was required to keep those phrases, so a missing one is a defect of that plan to report. N7 is absent today by design: a Claude worker adds it after you.
+5. `fn home_text(home: &str) -> String`: `"CLAUDE.md.template"` gives `TEMPLATE`, `"loom-hooks/post-tool-use.sh"` gives `HOOK_POST_TOOL_USE`, `"loom-hooks/session-start.sh"` gives `HOOK_SESSION_START`, `"standard stable prefix"` gives `generate_stable_prefix()`; any other label panics naming it.
 6. `fn missing_frozen_lines(template: &str) -> Vec<&'static str>`: every `FROZEN_LINES` entry that is neither a whole line of `template` (`template.lines().any(|l| l == frozen)`) nor the `frozen` value of some relocation entry, in `FROZEN_LINES` order.
 7. `fn missing_relocations(text_of: impl Fn(&str) -> String) -> Vec<String>`: for every `RELOCATIONS` entry whose needle is not a substring of `text_of(home)`, one string naming item, home and needle, in table order. The tests call it with `home_text` and with a closure that alters one home.
 
@@ -172,7 +165,7 @@ Cross-check a few long lines against the worktree's `CLAUDE.md.template` with `r
 
 ## Done means
 
-Both files written and no other file touched. Run no build, no test and no formatter: a crate build can outlast the 540-second forward deadline, and the orchestrator formats, compiles and tests right after you. The orchestrator then runs `cargo test --lib signals::tests_guidance_manifest` and expects, at this point, exactly one failing test, `every_relocated_item_is_carried_by_its_home`, naming exactly the two `Rule 14 verbose output` entries (their needles land after you). Any other failure is yours.
+Both files written and no other file touched. Run no build, no test and no formatter: a crate build can outlast the 540-second forward deadline, and the orchestrator formats, compiles and tests right after you. The orchestrator then runs `cargo test --lib signals::tests_guidance_manifest` and expects, at this point, exactly one failing test, `every_relocated_item_is_carried_by_its_home`, naming exactly the one `Rule 14 verbose output` entry (its needle lands after you). Any other failure is yours.
 
 ## Report
 

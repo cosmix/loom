@@ -87,26 +87,24 @@ If the file no longer captures the PreToolUse output in `PRE_OUTPUT`, use the va
 
 ## Part C: the integration-verify fence (`loom-hooks/_subagent-preamble.txt`)
 
-The preamble's integration-verify exception (the three lines starting `- EXCEPTION - integration-verify stages`; anchor by that text, plan B edited earlier lines of this file) tells every integration-verify subagent to run the full build, suite and linter, while the IV prefix (`INTEGRATION_VERIFY_OVERRIDE`, `loom/src/orchestrator/signals/cache.rs`) assigns ONE canonical verifier and has other reviewers run targeted checks. Replace those three lines with exactly:
+The preamble's integration-verify exception (the three lines starting `- EXCEPTION - integration-verify stages`; anchor by that text, plan B and gate-dedup edited other lines of this file) tells every integration-verify subagent to run the full build, suite and linter. The IV prefix (`INTEGRATION_VERIFY_OVERRIDE`, `loom/src/orchestrator/signals/cache.rs`, as gate-dedup wrote it) has the orchestrator run `loom check integration-verify` once, which carries the full suite, and has reviewers run only targeted checks. Replace those three lines with exactly:
 
 ```text
-- EXCEPTION - integration-verify stages: if its orchestrator named you
-  the ONE canonical verifier, IGNORE this block; run loom check
-  <stage-id> and the steps it lists. Other reviewers run targeted checks.
+- EXCEPTION - integration-verify stages: the orchestrator runs loom check
+  integration-verify itself; reviewers run only targeted checks, never
+  the full suite.
 ```
 
-gate-dedup's W5 also edits `_subagent-preamble.txt` lines 12-22: re-read the file, anchor the verifier exception on what gate-dedup left, and still swap `you still write nothing` for `you write only your gate logs`.
+Gate-dedup rewrote the no-verify rule above this bullet and deleted the exception that followed it; re-read the file first. Do not touch BLOCK-A: `block_a_agrees_across_every_surface` (`tests_doctrine.rs`) requires it byte-identical across the prefixes, this file and `subagent-verify-guard.sh`. Every other line stays. The preamble is prepended to every typed spawn; the new bullet is 163 bytes against the old 197, so keep it to these words. `subagent-verify-guard.sh` is unchanged: it lets every IV subagent run full suites, and the fence is guidance.
 
-Do not touch BLOCK-A: `block_a_agrees_across_every_surface` (`tests_doctrine.rs`) requires it byte-identical across the prefixes, this file and `subagent-verify-guard.sh`. In the loom-verifier exception (the bullet starting `- EXCEPTION - if you were spawned as a loom-verifier`), change only `and you still write nothing` to `and you write only your gate logs`: W1 gives the verifier gate logs, and the old words would contradict its definition. Every other line stays. The preamble is prepended to every typed spawn, so the two rewordings cost about 28 bytes per spawn (22 + 6); keep them to these words. `subagent-verify-guard.sh` is unchanged: it lets every IV subagent run full suites, and the fence is guidance.
-
-In `loom/src/orchestrator/signals/tests_doctrine_prefixes.rs`, next to `integration_verify_prefix_assigns_one_canonical_gate_owner` (`:215-242`), add:
+In `loom/src/orchestrator/signals/tests_doctrine_prefixes.rs`, next to the test that pins `INTEGRATION_VERIFY_OVERRIDE`'s gate owner (gate-dedup re-pointed it; find it by `generate_integration_verify_stable_prefix`), add:
 
 ```rust
 #[test]
-fn subagent_preamble_names_the_one_canonical_iv_verifier()
+fn subagent_preamble_limits_iv_reviewers_to_targeted_checks()
 ```
 
-asserting that `crate::fs::permissions::constants::HOOK_SUBAGENT_PREAMBLE` contains `the ONE canonical verifier, IGNORE this block`, `Other reviewers run targeted checks.` and `and you write only your gate logs`, does not contain `if you were spawned to review or` or `you still write nothing`, and that `generate_integration_verify_stable_prefix()` contains `ONE canonical verifier`. The file's existing needles stay unchanged.
+asserting that `crate::fs::permissions::constants::HOOK_SUBAGENT_PREAMBLE` contains `- EXCEPTION - integration-verify stages: the orchestrator runs loom check` and `reviewers run only targeted checks, never`, does not contain `if you were spawned to review or`, and that `generate_integration_verify_stable_prefix()` contains `loom check integration-verify`. If that last needle is not in the prefix at your base, report the text the prefix carries and do not assert a needle it lacks. The file's existing needles stay unchanged.
 
 ## Your one check
 

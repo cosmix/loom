@@ -139,7 +139,7 @@ The stage's acceptance selects `orchestrator::signals::generate::dependency_find
 cargo test --test dependency_findings_contracts
 ```
 
-The subagent guard blocks `cargo build`, `clippy`, `fmt`, `doc` and an unscoped `cargo test`; the orchestrator runs `cargo fmt --all`, `cargo test --lib orchestrator::signals::` and both contract targets after you return, and the verifier runs the rest. Before returning, `rg -n 'wiring_checklist|Downstream Wiring Checklist|build_wiring_checklist|wiring_items' src` must print nothing (an rg, not a check). No git commands, no edits outside your list, no change to `maintainability-baseline.txt`; keep every file at or under 400 lines and every function at or under 50 by counting.
+The subagent guard blocks `cargo build`, `clippy`, `fmt`, `doc` and an unscoped `cargo test`; the orchestrator runs `cargo fmt --all`, `cargo test --lib orchestrator::signals::` and both contract targets after you return, and its `loom check` runs the rest. Before returning, `rg -n 'wiring_checklist|Downstream Wiring Checklist|build_wiring_checklist|wiring_items' src` must print nothing (an rg, not a check). No git commands, no edits outside your list, no change to `maintainability-baseline.txt`; keep every file at or under 400 lines and every function at or under 50 by counting.
 
 ## Report
 

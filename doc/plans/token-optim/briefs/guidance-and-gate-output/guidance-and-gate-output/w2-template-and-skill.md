@@ -4,15 +4,16 @@ Tier: sonnet (`loom-software-engineer`). Working directory for cargo: `loom/`. P
 
 ## Files you own
 
-- `CLAUDE.md.template` (Rules 3, 3b, the fifth Rule 14 bullet, and the `loom-verifier` row of Rule 7's agent table only)
+- `CLAUDE.md.template` (Rules 3, 3b and the fifth Rule 14 bullet only)
 - `skills/loom-orchestration/SKILL.md`
 - `loom/src/orchestrator/signals/tests_size.rs`
 - `loom/src/orchestrator/signals/tests_doctrine_v2.rs` (`block_f_agrees_across_every_surface` and the `BLOCK_F` doc comment)
+- `loom/src/orchestrator/signals/tests_doctrine_gate.rs` (the orchestration-skill operand of its `loom check`/`--criterion` assertion only, Part B)
 - `loom/src/orchestrator/signals/helpers.rs` (the `STAGE_EXIT_RULES` doc comment only)
 - `loom-hooks/tests/post-tool-use-ceiling-hard-block.sh` (one assertion)
 - `loom-hooks/tests/session-start-compact.sh` (two assertions)
 
-Read-only: `loom-hooks/post-tool-use.sh:121-143` (`_loom_ctx_check_main_ceiling`), `loom-hooks/session-start.sh:147-156`, `loom/src/orchestrator/signals/helpers.rs:36` (`CONTEXT_CEILING_HANDOFF`), `:200-231`, `loom/src/orchestrator/signals/cache.rs:90-166`, `loom/src/orchestrator/signals/cache/blocks.rs`, `loom/src/orchestrator/signals/tests_guidance_manifest.rs` (the relocation manifest). W1 edits `agents/loom-verifier.md` and `VERIFIER_GATE` in parallel; W3 edits `post-tool-use.sh` away from the ceiling message.
+Read-only: `loom-hooks/post-tool-use.sh:121-143` (`_loom_ctx_check_main_ceiling`), `loom-hooks/session-start.sh:147-156`, `loom/src/orchestrator/signals/helpers.rs:36` (`CONTEXT_CEILING_HANDOFF`), `:200-231`, `loom/src/orchestrator/signals/cache.rs:90-166`, `loom/src/orchestrator/signals/cache/blocks.rs`, `loom/src/orchestrator/signals/tests_guidance_manifest.rs` (the relocation manifest). W1 edits the Go skill's triggers in parallel; W3 edits `post-tool-use.sh` away from the ceiling message.
 
 The codex unit C1 ran before you and wrote `loom/src/orchestrator/signals/tests_guidance_manifest.rs`; never edit it. It freezes 40 template lines as they stand at this plan's base (the 21 `###` headings, the 6 hard stops, Rule 6's 4 bullets, Rule 12's 4 steps and Rule 14's 5 bullets; identical to 6fee4ecd) and lists each relocated item with a needle in its new home, including the instructions of the skill paragraphs you remove (Part B), pinned in the template or the standard stable prefix.
 
@@ -20,6 +21,8 @@ Plan B (`doc/plans/PLAN-host-verification.md`) ran before this plan:
 
 - It rewrote template Rules 4 and 13 and the skill's paragraphs under the labels `**Complete ONLY a settled stage; ...**`, `**The gate in a standard stage.**` and `**When the stage cannot finish.**`, keeping those bold labels.
 - It made `loom check` relay to a daemon host job. A redirected or piped `loom` command loses its relay line.
+
+Gate-dedup (`doc/plans/PLAN-gate-dedup.md`) ran after plan B. It removed the verifier subagent: the orchestrator runs `loom check <stage-id>` itself, once, and a fix round re-checks with `--criterion <n>`. It rewrote the skill's `**The gate in a standard stage.**` paragraph, template Rules 4 and 5 and the stable prefix's gate block (`cache/blocks.rs`) to that flow, deleted the verifier row of Rule 7's table, and added `tests_doctrine_gate.rs`.
 
 Anchor every removal by its bold label, never by line number. Your Part A must leave every one of those lines in place except the fifth Rule 14 bullet, which the manifest records as relocated, and your new Rule 14 bullet must contain the needle `2>&1; echo "exit=$?"`.
 
@@ -50,19 +53,18 @@ Both procedures already live in hook output: the ceiling message (`post-tool-use
    ```
 
    The `${LOOM_SCRATCH_DIR:-${TMPDIR:-/tmp}}` fallback matters: the installed template also serves sessions outside loom, where `LOOM_SCRATCH_DIR` is unset. "Never redirect `loom` commands" matters because `loom check`, `loom stage commit` and the other relaying commands print a line the relay hook must see. Rule 8's row (`` `cat`, `head`, `tail` as file readers ``) stays.
-4. Rule 7's agent table, the `loom-verifier` row: if it still says `writes nothing`, change those two words to `writes only its gate logs`. If plan B already reworded the row, make the same change to whatever says the verifier writes nothing, or leave the row alone when nothing does.
 
 Measure the template before and after these edits (`wc -c`) and report both. The template must end smaller than at the base: integration-verify compares it with this plan's base (on 2026-10-21 the base text was 20,320 bytes, and the edits above are about 150 bytes net shorter). Nothing else in the template changes: `## KNOWLEDGE-FIRST` is pinned byte for byte (`knowledge_consumption_contract_agrees_with_claude_md_template`, `tests_doctrine_prefixes.rs:128-141`), Rule 4's commit sentinels are pinned (`tests_commit_timing.rs`).
 
 ## Part B: `skills/loom-orchestration/SKILL.md`
 
-Every stage main session loads this skill, so its bytes (24,573 at 6fee4ecd, 25,019 on 2026-10-21) are paid on every later request. Remove the paragraphs below. Each one has a surviving copy in `CLAUDE.md.template` or in the standard and integration-verify stable prefixes (the two prefixes whose sessions load the skill, `LOAD_ORCHESTRATION_SKILL` in `cache.rs`). C1's manifest pins each surviving instruction in that surface. Before removing R2, R3 and R11, read their plan-B text against the surviving copy named below. A fact the paragraph carries that the surviving copy lacks is a report to the main agent, not a silent deletion. Anchor each removal by its opening text, and delete the blank line that follows it. Line numbers in the table are 6fee4ecd history.
+Every stage main session loads this skill, so its bytes (24,573 at 6fee4ecd, 25,019 on 2026-10-21) are paid on every later request. Remove the paragraphs below. Each one has a surviving copy in `CLAUDE.md.template` or in the standard and integration-verify stable prefixes (the two prefixes whose sessions load the skill, `LOAD_ORCHESTRATION_SKILL` in `cache.rs`). C1's manifest pins each surviving instruction in that surface. Before removing R2, R3 and R11, read their current text (plan B's; gate-dedup's for R3) against the surviving copy named below. A fact the paragraph carries that the surviving copy lacks is a report to the main agent, not a silent deletion. Anchor each removal by its opening text, and delete the blank line that follows it. Line numbers in the table are 6fee4ecd history.
 
 | # | Remove (opening text, line at 6fee4ecd) | Surviving copy |
 | --- | --- | --- |
 | R1 | The whole `## Rule 1 — Plans and stage execution` section (`:38-46`) | Template `### 1. PLANS` (`:61-63`), "**Loom plans:** only on explicit request ... **Executing a stage:** your signal's tasks and completion checklist are binding" |
 | R2 | `**Complete ONLY a settled stage; completion is the session's LAST act.**` (`:61-64`) | Stable prefix `append_settled_completion_rules` (`helpers.rs:208-216`): "`loom stage complete` is the LAST act of your session ... post-completion work is LOST WORK" |
-| R3 | `**The gate in a standard stage.**` (`:66-71`) | Stable prefix `VERIFIER_GATE` (`cache/blocks.rs`), which W1 keeps carrying `` `loom check <stage-id>` ``, `RUNNER-ENV` and `SESSION-ENV`; the verifier definition (`agents/loom-verifier.md`); template Rule 5 (`:96`) "A standard stage's full gate runs in a `loom-verifier`; integration-verify keeps its own" and Rule 7 (`:126`) "a standard stage's gate goes to a fresh `loom-verifier` each round" |
+| R3 | `**The gate in a standard stage.**` (`:66-71`) | The stable prefix's orchestrator gate block (`cache/blocks.rs`, gate-dedup's), which carries `` `loom check <stage-id>` `` and `--criterion`; template Rule 5 (a standard stage's gate is the orchestrator's single `loom check`) and Rule 4 (the commit follows a green `loom check` and the final review) |
 | R4 | `Group commits logically: 5 files across 3 concerns = 3 commits, not 1 or 5.` (`:73`) | Template Rule 4 (`:92`) "one commit per concern"; stable prefix `append_commit_timing_rules` (`helpers.rs:150`) "One logical commit per concern" |
 | R5 | The whole `## Rule 5 — Subagent preamble` section (`:75-87`) | Template `### 5. SUBAGENT RESTRICTIONS` (`:96`), which names the preamble file, its contents, the spawn guard and the codex route |
 | R6 | `**GROUP TASKS: small tasks go to ONE subagent, never one per task or file.**` (`:100-104`) | Template Rule 6, first bullet (`:102`). Keep its last sentence: move `The ≤~6 threshold counts subagents after grouping, never raw tasks.` to the end of the `Team lead:` paragraph (`:97-98`) |
@@ -71,6 +73,8 @@ Every stage main session loads this skill, so its bytes (24,573 at 6fee4ecd, 25,
 | R9 | `**Never pass`name`to a subagent spawn**` (`:145-148`) | Template Rule 6, third bullet (`:104`) |
 | R10 | `Fable-tier work has no pinned agent type; pass the model override explicitly at spawn.` (`:197`, first line under `## Rule 7`) | Template Rule 7 (`:122`), the same sentence |
 | R11 | `**When the stage cannot finish.**` (`:292`, BLOCK-F) | `STAGE_EXIT_RULES` (`helpers.rs:221`), appended to the standard, integration-verify and knowledge-distill stable prefixes by `append_completion_rules` (`:224-231`) |
+
+Gate-dedup's `tests_doctrine_gate.rs` asserts that the orchestration skill contains `loom check` and `--criterion`, which R3's paragraph carries. After the removals, run `rg -n -F -e 'loom check' -e '--criterion' skills/loom-orchestration/SKILL.md`. If either is gone, remove only the skill from that assertion and keep the gate block's operand and every `loom-verifier` absence assertion: the manifest pins both needles in the standard stable prefix, which the stage main session reads. The main agent disputes the integrity event this raises.
 
 Then replace the intro paragraph (`:29-31`, starts `The rules a session needs`) with:
 `The rules a session needs when it spawns subagents or runs a loom stage as its main agent, beyond what`~/.claude/CLAUDE.md`and the stage signal already carry, filed under the CLAUDE.md rule number they belong to. A single-agent session does not need this skill.`
@@ -99,11 +103,11 @@ No test pins either procedure today: `post-tool-use-ceiling-hard-block.sh` check
 
 ## Your one check
 
-`cargo test --lib signals::`, once, from `loom/`. It includes C1's manifest: a manifest failure that names `agents/loom-verifier.md` belongs to W1, which runs in parallel, so report it and do not act on it; any other manifest failure is yours to fix in your own files. The main agent runs the gate and the hook suite.
+`cargo test --lib signals::`, once, from `loom/`. It includes C1's manifest and gate-dedup's `tests_doctrine_gate.rs`: a failure in either is yours to fix in your own files. The main agent runs the gate and the hook suite.
 
 ## Traps
 
-- The manifest's `FROZEN_LINES` holds the base text of the Rule 14 bullet you rewrite; its relocation entry is what lets that line go. Any other frozen line you change or drop fails `every_frozen_template_line_survives_or_is_relocated`. The Rule 7 table row is not a frozen line (the frozen list holds only `### `, `- ` and numbered lines).
+- The manifest's `FROZEN_LINES` holds the base text of the Rule 14 bullet you rewrite; its relocation entry is what lets that line go. Any other frozen line you change or drop fails `every_frozen_template_line_survives_or_is_relocated`.
 - A manifest failure naming a skill relocation (an R-item needle missing from the template or the standard stable prefix) means a surviving copy is gone: report it; do not restore the removed paragraph.
 - After Part B, `rg -n 'Rule 5|Rule 1' skills/loom-orchestration/SKILL.md` and read each hit: references to "Rule 5's preamble" now point at the template's Rule 5, which still describes the preamble; nothing should point at a removed section.
 - Measure both byte counts after `cargo fmt` and after any final wording change; the ceilings are exact.

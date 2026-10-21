@@ -107,7 +107,7 @@ A file that differs from this table in a way your brief depends on: stop and rep
 ## 6. Rules
 
 - Run no `git` that writes (no commit, add, checkout, stash, reset). Read-only git inside a test's own TempDir is fine.
-- Run exactly the ONE scoped check your brief names, once. `loom-hooks/subagent-verify-guard.sh` blocks `cargo build`, `clippy`, `fmt` and `check`, and any unscoped `cargo test`, for every subagent except a `loom-verifier`. The orchestrator runs `cargo fmt --all` and the wave's tests after you return, and the verifier runs build, clippy, fmt and doc.
+- Run exactly the ONE scoped check your brief names, once. `loom-hooks/subagent-verify-guard.sh` blocks `cargo build`, `clippy`, `fmt` and `check`, and any unscoped `cargo test`, for every subagent. The orchestrator runs `cargo fmt --all` and the wave's tests after you return, and its `loom check` runs build, clippy, fmt and doc.
 - Never edit a frozen contract file (`tests/dependency_inputs_contracts.rs`, `tests/dependency_findings_contracts.rs`). `loom stage contracts show dependency-findings` prints them.
 - Every file at or under 400 lines and every function at or under 50, after `cargo fmt` (`cargo test --test maintainability`). `loom/maintainability-baseline.txt` is exact and a ratchet file: no row may change.
 - Record surprises, decisions and every knowledge claim the tree contradicts with `loom memory note` / `loom memory decision` (with `--evidence <path:line>`), as you go. Never Claude Code auto-memory.
