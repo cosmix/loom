@@ -55,10 +55,10 @@ pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIM
    codex in implementers AND when the codex CLI + plugin are installed;
    otherwise terra-tier work goes to sonnet and luna-tier work to haiku (loom
    warns at startup when a stage lists codex it cannot use). In a standard
-   stage the GATE (build, tests, lint, format, acceptance) runs in ONE
-   loom-verifier subagent (opus, effort xhigh) per round; an
-   integration-verify stage runs the gate its own signal names. Either
-   way the orchestrator owns fixes and the commit. Spawn BY AGENT TYPE.
+   stage the GATE is the orchestrator's single `loom check` (a fix round
+   re-checks with `--criterion <n>`); an integration-verify stage runs the
+   gate its own signal names. Either way the orchestrator owns fixes and the
+   commit. Spawn BY AGENT TYPE.
 4. ESCALATE ON EVIDENCE, NOT ON HUNCH. Start at the cheapest plausible tier. A
    fix that failed ONCE against clear acceptance criteria moves up exactly one
    tier — haiku to sonnet, sonnet to opus, opus to fable — with the failed
@@ -145,9 +145,9 @@ pub(super) const RETIRED_PHRASES: &[&str] = &[
         "ends your turn and sends the stage to ",
         "adjudication; loom retires"
     ),
-    // Retired when a standard stage's gate moved to the loom-verifier: the
-    // orchestrator still owns fixes and the commit, but no longer runs the
-    // gate itself outside integration-verify.
+    // Retired when a standard stage's gate moved off the orchestrator's own
+    // shell: the orchestrator owns fixes and the commit, and runs the gate
+    // only as `loom check`.
     concat!("Verification NEVER ", "delegates"),
     concat!("verification never ", "delegates"),
 ];

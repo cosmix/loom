@@ -68,7 +68,7 @@ Consequences for how you write a plan:
     3. Wire `pub mod retry;` into src/http/mod.rs.
     4. Use thiserror for errors, matching src/http/error.rs.
     Spawn ONE loom-software-engineer (sonnet) subagent with this same detail;
-    then a loom-verifier for the gate; commit.
+    then `loom check` for the gate; commit.
 ```
 
 **Size each subagent's assignment by cost — decompose, don't up-model for headroom.** A subagent typically finishes under about 400,000 tokens, and every spawn pays a boot cost of about 28,000 tokens before it reads anything, plus a brief and a harvest turn. Two levers, in order: (1) group small tasks into one assignment and never split below what 400,000 tokens needs — an assignment likely to pass that is two assignments; (2) past about six assignments, decompose with a subagent hierarchy (`SKILL.md` Section 5) so the orchestrator (and any coordinator subagent) stays a THIN COORDINATOR at every level — workers burn their own (discarded) context and return compact summaries. **Delegation is a cost decision, tokens times model tier (BLOCK-B point 1):** a stage's main agent makes a small change itself (at most 20 changed lines in at most 2 files it has already read, proven by one command) and delegates everything larger. A stage whose bulk of implementation lands in the main session pays the main session's tier for every token of it; write the stage so that work is assigned to subagents.

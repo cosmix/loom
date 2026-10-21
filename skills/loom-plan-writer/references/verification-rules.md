@@ -61,7 +61,11 @@ command enters `acceptance`:
    adjudication of that criterion.
    Reserve the unfiltered run for the integration-verify stage, and let sandbox-sensitive tests
    self-skip rather than carrying a `--skip` list. `loom plan verify` warns when a full-suite run
-   appears outside integration-verify.
+   appears outside integration-verify. A stage description lists no shell gate beyond
+   `loom check` plus the steps acceptance cannot carry, and lint and format are acceptance
+   criteria, so the orchestrator's one `loom check` covers them and a fix round re-runs only
+   `loom check <stage-id> --criterion <n>`. In integration-verify, put a specific test's proof
+   into `stdout_contains` on the full-suite criterion instead of a second filtered run.
 
 **Criteria about an artifact the stage has yet to PRODUCE — the baseline rule cannot reach them.**
 A criterion asserting a fact about a file the stage will generate MUST be red at HEAD, so "run it

@@ -136,8 +136,8 @@ impl StageType {
             // verification, gets the highest effort available.
             StageType::IntegrationVerify => "xhigh",
             // Ordinary orchestration: plan the work, delegate, commit. The
-            // gate runs in a loom-verifier subagent at xhigh, so the
-            // orchestrator itself needs only medium.
+            // gate is one `loom check` whose output is a short summary, so
+            // the orchestrator itself needs only medium.
             StageType::Standard => "medium",
         }
     }

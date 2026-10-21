@@ -170,7 +170,7 @@ expect '' 'cd loom && loom stage commit s1 -m x' general-purpose
 expect '' 'echo "loom stage commit s1"'
 
 # `loom check` relays the `check` kind, which is not a control kind: the
-# main agent and a subagent (a loom-verifier) both keep it.
+# main agent and a subagent both keep it.
 expect check 'loom check s1'
 expect check 'loom check s1 --no-cache'
 expect check 'cd loom && loom check s1'

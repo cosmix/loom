@@ -45,7 +45,7 @@ description: |
   Coordinator A verify (optional, ONE scoped check, skip if unsure): cargo test --test rest_api
   Coordinator B verify (optional, ONE scoped check, skip if unsure): cargo test --test graphql
   Territories are DISJOINT. Workers NEVER spawn subagents.
-  Coordinators return compact summaries only. A loom-verifier the main agent
-  spawns runs the full build/test/lint gate — a coordinator's scoped check never
-  substitutes for it.
+  Coordinators return compact summaries only. The main agent's single
+  `loom check` is the gate — a coordinator's scoped check never substitutes
+  for it.
 ```

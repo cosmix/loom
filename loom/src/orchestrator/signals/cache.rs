@@ -8,9 +8,9 @@ use super::helpers::{
 
 mod blocks;
 use blocks::{
-    append_adversarial_review, append_execution_rules_header, append_isolation_boundaries_simple,
-    append_no_verify_block, append_path_boundaries, append_review_dimension_details,
-    append_subagent_ceiling_block, append_verifier_completion_header, LOAD_ORCHESTRATION_SKILL,
+    append_adversarial_review, append_execution_rules_header, append_gate_completion_header,
+    append_isolation_boundaries_simple, append_no_verify_block, append_path_boundaries,
+    append_review_dimension_details, append_subagent_ceiling_block, LOAD_ORCHESTRATION_SKILL,
 };
 mod distill_ordering;
 use distill_ordering::append_memory_ordering_doctrine;
@@ -75,7 +75,7 @@ pub fn compute_hash(content: &str) -> String {
 /// Gate/review pairs interpolated into `append_commit_timing_rules` — one per
 /// stage family (code-producing vs. documentation) — so the argument strings
 /// are defined once rather than repeated at each of the two call sites.
-const CODE_STAGE_GATE: &str = "build, tests, lint, format, plus this stage's acceptance criteria";
+const CODE_STAGE_GATE: &str = "this stage's acceptance criteria run through `loom check` (the full suite runs once, in integration-verify)";
 const CODE_STAGE_REVIEW: &str = "The mini adversarial code review has RETURNED, every finding is FIXED, and the gate is green AGAIN after those fixes.";
 const DOC_STAGE_GATE: &str = "this stage's acceptance criteria";
 const DOC_STAGE_REVIEW: &str = "You have re-read every knowledge file you wrote — nothing stale left standing, no duplicate headings — and the acceptance criteria pass AGAIN after any fix.";
@@ -105,7 +105,7 @@ pub fn generate_stable_prefix() -> String {
     append_subagent_ceiling_block(&mut content);
     append_adversarial_review(&mut content);
 
-    append_verifier_completion_header(&mut content);
+    append_gate_completion_header(&mut content);
     append_commit_timing_rules(&mut content, CODE_STAGE_GATE, CODE_STAGE_REVIEW, FILES);
     append_completion_rules(&mut content);
 
@@ -113,15 +113,15 @@ pub fn generate_stable_prefix() -> String {
 }
 
 const INTEGRATION_VERIFY_OVERRIDE: &str = "⚠️ **INTEGRATION-VERIFY OVERRIDE — the no-verify rule above does NOT apply here:**\n\n\
-         The IV orchestrator explicitly assigns ONE canonical verifier to run the COMPLETE suite \
+         The IV orchestrator runs `loom check integration-verify` ONCE; it carries the COMPLETE suite \
          (e.g. `cargo build`, `cargo test`, `cargo clippy -- -D warnings`, `cargo fmt --check`) \
-         and read all stderr for each immutable tree, environment, and criterion contract. That \
-         canonical owner is the IV review/verification subagent meant by Rule 5's complete-suite \
-         instruction. Other reviewers inspect independently and may request or run targeted \
+         and the orchestrator reads all stderr for each immutable tree, environment, and criterion \
+         contract. That check is the complete-suite run Rule 5's complete-suite \
+         instruction means. Reviewers inspect independently and run only targeted \
          discriminating security/functional checks; targeted checks are additional evidence, never \
          a substitute for the canonical gate. Each check summary records command, real exit, \
          criterion verdict, input/contract identity, elapsed time, and an evidence pointer when \
-         available. A missing receipt means run the check. After any review fix, the owner \
+         available. A missing receipt means run the check. After any review fix, the orchestrator \
          re-evaluates invalidated checks; only the repaired criteria cache decides reuse, and stale \
          evidence never waives a failing gate.\n\n";
 

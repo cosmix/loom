@@ -87,14 +87,14 @@ pub(super) fn append_subagent_ceiling_block(content: &mut String) {
 
 /// Where a standard stage's gate runs, stated as the opening line of its
 /// completion rules.
-const VERIFIER_GATE: &str = "**The gate runs in a `loom-verifier`** (opus, effort xhigh): once every implementer has returned, spawn ONE by agent type, without `name`, briefed with the criteria. It writes nothing and reports PASS/FAIL per step with command, exit code and failing excerpt, running criteria via `loom check <stage-id>` (authoritative); failing only in its own shell is SESSION-ENV, not a FAIL; failing there only from runner confinement is RUNNER-ENV, for you to dispute. Delegate each fix, then spawn a FRESH verifier.\n\n";
+const ORCHESTRATOR_GATE: &str = "**The gate is `loom check`**: once every implementer has returned, run the formatter, then `loom check <stage-id>` once plus the steps this stage lists outside acceptance, while the final review round runs. A fix round runs `loom check <stage-id> --criterion <n>` for each failed criterion plus the lint and format criteria. Never re-run a test, build or lint command the check covers.\n\n";
 
-/// Open a STANDARD stage's `**Completion:**` list with `VERIFIER_GATE`. The
+/// Open a STANDARD stage's `**Completion:**` list with `ORCHESTRATOR_GATE`. The
 /// integration-verify prefix opens its list without it: that stage keeps its
 /// own gate, set by its override block.
-pub(super) fn append_verifier_completion_header(content: &mut String) {
+pub(super) fn append_gate_completion_header(content: &mut String) {
     content.push_str("**Completion:**\n");
-    content.push_str(VERIFIER_GATE);
+    content.push_str(ORCHESTRATOR_GATE);
 }
 
 /// Append the mandatory mini adversarial code review block.
@@ -134,7 +134,7 @@ pub(super) fn append_review_dimension_details(content: &mut String) {
     content.push_str("**Review Dimension Details** — spawn these as PARALLEL subagents; `loom-code-reviewer` is READ-ONLY, so hand its findings to an engineer to fix:\n\n");
     content.push_str(&format!("1. **Security** — invoke {}: OWASP Top 10, hardcoded secrets, dependency CVEs, boundary sanitization, error-message leakage.\n", crate::skills::skill_invocation("loom-security-audit")));
     content.push_str("2. **Architecture** — module coupling, swallowed errors, over/under-abstraction, naming consistency, dead code and unreachable paths.\n");
-    content.push_str("3. **Build/test/sandbox** — full suite plus ALL stderr, warnings even when tests pass; any \"blocked\", \"denied\", \"connection refused\" or \"failed to download\" is a BLOCKER, not a workaround. Exit code 0 does NOT mean success.\n");
+    content.push_str("3. **Build/test/sandbox** — `loom check` output plus ALL stderr, warnings even when tests pass; any \"blocked\", \"denied\", \"connection refused\" or \"failed to download\" is a BLOCKER, not a workaround. Exit code 0 does NOT mean success.\n");
     content.push_str("4. **Functional** — RUN the feature end-to-end on realistic inputs; confirm the output is correct and the feature is registered, mounted, and callable.\n\n");
 }
 

@@ -38,6 +38,9 @@ mod tests_doctrine;
 #[path = "tests_doctrine_commands.rs"]
 mod tests_doctrine_commands;
 #[cfg(test)]
+#[path = "tests_doctrine_gate.rs"]
+mod tests_doctrine_gate;
+#[cfg(test)]
 #[path = "tests_doctrine_prefixes.rs"]
 mod tests_doctrine_prefixes;
 #[cfg(test)]

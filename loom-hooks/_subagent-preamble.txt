@@ -18,9 +18,8 @@ VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
 - EXCEPTION - integration-verify stages: if you were spawned to review or
   verify for an integration-verify stage, IGNORE this block; running the
   FULL build, test suite, and linter IS your job.
-- EXCEPTION - loom-verifier: if you were spawned as a loom-verifier, IGNORE
-  this block; running the stage's FULL gate IS your job, and you still write
-  nothing.
+- A subagent never runs the stage's gate; the main agent re-checks one
+  criterion with `loom check <stage-id> --criterion <n>`.
 
 CONTEXT CEILING - HOOK-REPORTED ONLY:
 - Your ceiling is roughly 800,000 tokens, the same number your orchestrator gets - reading a handful of files never gets you close.
