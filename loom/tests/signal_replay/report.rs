@@ -48,7 +48,10 @@ fn asset_paths() -> Result<Vec<PathBuf>> {
             paths.push(Path::new("skills").join(name).join("SKILL.md"));
         }
     }
-    paths.sort();
+    // `check_shape` compares the rendered strings; `PathBuf` order is
+    // component-wise and puts `skills/a/` before `skills/a-b/`, the string
+    // order does not.
+    paths.sort_by_cached_key(|path| path.display().to_string());
     Ok(paths)
 }
 
