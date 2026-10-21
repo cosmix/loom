@@ -32,7 +32,7 @@ Read only: `src/orchestrator/terminal/native/tests_capsule_denies.rs` (the impor
 
    Add the field `pub workflow_licensed: bool` to `CapsuleInputs` (after `hidden_sockets`), doc: "Whether the session may use the Workflow tool: true only for the Stage session of an `ultracode: true` stage (`launch::workflow_licensed`)."
 
-   Add `fn capsule_deny_rules(inputs: &CapsuleInputs<'_>) -> Vec<String>`: `inputs.denies.edit` cloned, then every `SESSION_TOOL_DENIES` entry, then `WORKFLOW_TOOL` unless `inputs.workflow_licensed`. Inside `capsule_settings` replace exactly the line `extend_strings(&mut settings, &["permissions", "deny"], &denies.edit);` with `extend_strings(&mut settings, &["permissions", "deny"], &capsule_deny_rules(inputs));`. `capsule_settings` is exactly 50 lines and must stay 50; `denies` is still used by the `deny_write` line above it. Mention the tool denies in `capsule_settings`'s doc comment.
+   Add `fn capsule_deny_rules(inputs: &CapsuleInputs<'_>) -> Vec<String>`: `inputs.denies.edit` cloned, then every `SESSION_TOOL_DENIES` entry, then `WORKFLOW_TOOL` unless `inputs.workflow_licensed`. Inside `capsule_settings` replace exactly the line `extend_strings(&mut settings, &["permissions", "deny"], &denies.edit);` with `extend_strings(&mut settings, &["permissions", "deny"], &capsule_deny_rules(inputs));`. `capsule_settings` is at most 50 lines (42 after host verification removed its macOS daemon-socket block) and must not grow; `denies` is still used by the `deny_write` line above it. Mention the tool denies in `capsule_settings`'s doc comment.
 2. **`session_settings.rs`.** Add `pub workflow_licensed: bool` to `CapsuleRequest` (doc as above) and pass `workflow_licensed: request.workflow_licensed,` into the `contents::CapsuleInputs` literal in `write_session_capsule`. Register the new test file beside the others at the bottom:
 
    ```rust
@@ -53,7 +53,7 @@ Read only: `src/orchestrator/terminal/native/tests_capsule_denies.rs` (the impor
 
 ## Traps
 
-- `capsule_settings` must stay at 50 lines and `tests_session_settings.rs` at or under 400 (397 at 6fee4ecd plus your one line).
+- `capsule_settings` must stay at most 50 lines (42 after host verification; this one-for-one replacement keeps it there) and `tests_session_settings.rs` at or under 400 (397 at 6fee4ecd plus your one line).
 - Never deny a tool by a `Read`-shaped entry, and never add `--disallowedTools` anywhere.
 - `Workflow` follows the same predicate as the prompt keyword. A Contract, Merge, Knowledge or Adjudication session of an ultracode stage still gets the deny, since its prompt carries no keyword.
 

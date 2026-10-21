@@ -66,7 +66,7 @@ Consumers of `CREDENTIAL_DENY_READ_PATHS` that stay correct without an edit, bec
    ~/.kube/config  ~/.pypirc  ~/.cargo/credentials.toml  ~/.cargo/credentials  ~/.codex/auth.json
    ```
 
-   Write the expected list as string literals, never built from the consts: a wrong const must fail it. Add two tests:
+   Write the expected list as string literals, never built from the consts: a wrong const must fail it. Add two tests directly after `adds_mandatory_credentials_and_filters_parent_traversal`, never appended at the end of the file: host verification replaced the file's last test with `enabled_sandbox_never_allows_nested_user_namespaces`, and that test stays last and unchanged.
    - `a_codex_licensed_stage_keeps_reading_its_auth_file`: `config()` with `implementers = Implementers::new(vec![Implementer::Claude, Implementer::Codex])`; the patterns hold every credential file and not `~/.codex/auth.json`.
    - `every_credential_file_entry_is_a_plain_home_path`: every `CREDENTIAL_FILE_DENY_READ_PATHS` entry starts with `~/` and contains none of `* ? [ ] {`.
 4. **`settings/tests.rs`** is ledgered at exactly 1565 lines; change two lines in place and nothing else. Line 2, `use crate::fs::permissions::state_root::CREDENTIAL_DENY_READ_PATHS;`, becomes `use super::policy::mandatory_deny_read;`. In `test_generate_settings_keeps_mandatory_credential_deny_when_empty`, the line `json!(CREDENTIAL_DENY_READ_PATHS)` becomes `json!(mandatory_deny_read(false))`. First run `rg -n CREDENTIAL_DENY_READ_PATHS src/sandbox/settings/tests.rs`: if any other line uses the const, keep the import and add `mandatory_deny_read` to a `use` line that already exists instead. Run `wc -l src/sandbox/settings/tests.rs` after `cargo fmt`: it must print 1565.

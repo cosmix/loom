@@ -28,9 +28,9 @@ X1 is the one codex unit: a new module with pinned signatures and pure unit test
 ## Facts measured or read while planning (2026-10-18/19, HEAD 6fee4ecd)
 
 - **bubblewrap 0.11.1 refuses a mount point beneath a read-only bind.** `bwrap --bind / / --dev /dev --ro-bind D D --ro-bind /dev/null D/absent true` exits 1 with `Can't create file at D/absent: Read-only file system`. The reverse order (absent file first, then `D`) runs, and leaves a 0-byte file on the host. A bind over a file that already exists inside `D` runs in either order. Rule that follows: loom never emits a `denyWrite` entry beneath another `denyWrite` directory it emits.
-- **Claude Code 2.1.302** (the installed `claude`; bundle at `~/.local/share/claude/versions/2.1.302`) creates an empty `config.worktree` with an exclusive create in the git common directory and in every `worktrees/<name>/` directory entry, then denies it and that entry's `commondir`. An absent `config.worktree.lock` goes to a scrub list, not a bind. These built-in denies are pushed before the settings sources' `denyWrite` entries. Read from minified bundle strings, never observed live.
+- **Claude Code 2.1.302** (the installed `claude`; bundle at `~/.local/share/claude/versions/2.1.302`) creates an empty `config.worktree` with an exclusive create in the git common directory and in every `worktrees/<name>/` directory entry, then denies it and that entry's `commondir`. An absent `config.worktree.lock` goes to a scrub list, not a bind. These built-in denies are pushed before the settings sources' `denyWrite` entries. Read from minified bundle strings, never observed live; measured on 2.1.302; re-check on the installed version (2.1.306 at the time of this edit) before W3 and W5 rely on it.
 - **The srt emulation runs the other order.** `tests_confinement_srt.rs` `srt_settings` appends its emulation of Claude Code's git denies (`claude_code_git_denies`, which lists `worktrees/*/commondir` whether or not it exists) after the capsule's `denyWrite`, and the e2e fixture (`tests_confinement_e2e.rs` `repo_with_worktree`) writes admin directories with no `commondir`. With a sibling directory denied whole, that order puts an absent-file bind beneath a read-only directory bind. W3 moves the emulated denies first, which is Claude Code's order. These e2e tests skip without `srt` and `socat`; CI installs neither.
-- **`--disallowedTools` is variadic** (`claude --help`: `--disallowedTools, --disallowed-tools <tools...>`), and `build_claude_command` (`orchestrator/terminal/native/mod.rs`, the `format!` at about line 174) puts the positional prompt right after the capsule flags, so the flag would swallow the prompt. `build_claude_command_capsule_flags_precede_positional_prompt` (`tests_capsule.rs`, about lines 83-103) checks only string order. Tool denies go in `permissions.deny`.
+- **`--disallowedTools` is variadic** (`claude --help`: `--disallowedTools, --disallowed-tools <tools...>`; measured on 2.1.302; re-check on the installed version (2.1.306 at the time of this edit) before W3 and W5 rely on it), and `build_claude_command` (`orchestrator/terminal/native/mod.rs`, the `format!` at about line 174) puts the positional prompt right after the capsule flags, so the flag would swallow the prompt. `build_claude_command_capsule_flags_precede_positional_prompt` (`tests_capsule.rs`, about lines 83-103) checks only string order. Tool denies go in `permissions.deny`.
 - **Tools that stay.** `SendMessage` and `ListAgents` serve agent teams (`orchestrator/terminal/native/wrapper.rs`, the `CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS=1` line near 363). `WebFetch` and `WebSearch` are in the `tools:` lines of `agents/loom-software-engineer.md` and `agents/loom-senior-software-engineer.md`, and their sandbox bypass is unverified.
 - **Workflow is a sanctioned feature for ultracode stages.** `launch.rs` `initial_prompt` (about lines 130-145) licenses the Workflow tool by putting the keyword "ultracode" in the Stage session's prompt when `stage.ultracode`; `orchestrator/signals/format/sections.rs` (about line 263) tells that session to use the Workflow tool. A blanket `Workflow` deny would break every ultracode stage.
 - **Never a `Read(` deny.** Claude Code prompts on every relative-path `rg`, `grep`, `diff`, `git`, `cp` and `mv` once any `Read` or `Read(...)` entry exists under `permissions.deny` (knowledge: `concerns/sandbox-and-confinement-gaps.md`, "No `Read(...)` Deny Rule May Exist in Any Settings File"). Bare tool names do not trip that predicate (`r === "Read" || r.startsWith("Read(")`).
@@ -47,7 +47,7 @@ X1 is the one codex unit: a new module with pinned signatures and pure unit test
 
 | File | Lines | Constraint |
 | --- | --- | --- |
-| `src/orchestrator/terminal/native/session_settings/contents.rs` | 321 | `capsule_settings` is exactly 50 lines: replace lines one for one, never add |
+| `src/orchestrator/terminal/native/session_settings/contents.rs` | about 313 (321 at 6fee4ecd) | `capsule_settings` is at most 50 lines: 42 after host verification removed its macOS daemon-socket block (`contents.rs:72-113`, the deny line about `:97`). Replace lines one for one, never add |
 | `src/orchestrator/terminal/native/session_settings.rs` | 290 | |
 | `src/orchestrator/terminal/native/launch.rs` | 366 | `prepare_session_launch_with` is 46 lines |
 | `src/orchestrator/terminal/native/tests_session_settings.rs` | 397 | at most one added line |
@@ -59,19 +59,20 @@ X1 is the one codex unit: a new module with pinned signatures and pure unit test
 | `src/orchestrator/terminal/native/tests_confinement_e2e.rs` | 400 | never edit |
 | `src/sandbox/control_surfaces/session_denies.rs` | 244 | `session_denies` is 46 lines |
 | `src/sandbox/control_surfaces/tests_session_denies.rs` | 320 | new tests go in a new file |
-| `src/sandbox/settings/policy.rs` | 176 | `filesystem_settings` is ledgered at exactly 52: do not edit it |
+| `src/sandbox/settings/policy.rs` | 176 (host verification removed its opt-out block, returning it to the 6fee4ecd length) | `filesystem_settings` is ledgered at exactly 52: do not edit it |
 | `src/sandbox/settings/tests.rs` | 1565 | ledgered at exactly 1565: edit lines in place, never add or remove one |
 | `src/git/worktree/config_worktree.rs` | 125 | |
 | `src/git/worktree/config_worktree_tests.rs` | 160 | |
 | `src/orchestrator/core/stage_spawn.rs` | 398 | may shrink, may grow by at most two |
-| `src/orchestrator/core/mod.rs` | 347 | |
+| `src/orchestrator/core/mod.rs` | 347 at 6fee4ecd; host verification edited it, so re-measure | |
 
 Run `wc -l` on every file you touch before and after `cargo fmt`, and keep each one at or under its limit.
 
 ## Rules for every worker
 
 - Read this file, then your brief, then the ranges your brief names. Anchor every edit by symbol: line numbers above are from 6fee4ecd and drift.
-- Plans 3, 1, 2, 4 and 5 of the token-optimization programme merge before this one. None of them edits a file this stage owns, but re-read each file before editing it and re-run `wc -l`.
+- Plans 3, 1, 2, host verification, 4 and 5 of the token-optimization programme merge before this one. Host verification edits five files this stage owns: `contents.rs` (removed the macOS daemon-socket block from `capsule_settings`), `sandbox/settings/policy.rs` (removed the `allowNestedUserNamespaces` opt-out), `sandbox/settings/policy/tests.rs` (its last test is now `enabled_sandbox_never_allows_nested_user_namespaces`), `src/orchestrator/core/mod.rs` and `../README.md` (the "What confinement adds" blockquote under "### Command Confinement" and the completion and verifier paragraphs). No other earlier plan edits a file this stage owns. Re-read each file before editing it and re-run `wc -l`.
+- After host verification your shell cannot create user namespaces, so tests that need nested bubblewrap (the probe included) print SKIP in your check; criteria run on the host through `loom check`, where they run for real.
 - Never run git, never touch a `.loom/` path, never edit a file outside your brief's ownership list. Other workers edit the crate in parallel: a compile error in a file you do not own is not yours. Report it and stop, and never wait for it.
 - Run the one check your brief names, once. The stage's main agent runs the full gate.
 - Keep every test name and module path your brief gives verbatim: the stage's acceptance lists four of them (`cargo test --lib -- --list | rg -qF ...`), and the bubblewrap one exists only on Linux, where the stage runs.
