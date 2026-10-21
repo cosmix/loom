@@ -176,6 +176,6 @@ Both views also put a `BackButton` in the dialog header (`terminal-view.tsx:178`
 "Back to details", its `onBack` is `toDetails`): the way back in control mode, where Esc goes to
 the agent, and there the control hint reads "leave with ← Back to details or ✕".
 
-## Viewer wheel sensitivity (2026-09-26)
+## Viewer wheel sensitivity
 
 Alternate-screen viewing scroll accumulates one browser viewport of wheel movement before sending a page request, capped at one page per event. The previous three-line threshold could emit five PageUp/PageDown keys from one event and skip visible output. Keep the bounded page protocol: raw arrows recall prompts. Normal-buffer scrolling stays local and line-based.

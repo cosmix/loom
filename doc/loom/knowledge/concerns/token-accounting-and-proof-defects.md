@@ -20,7 +20,7 @@ verified: 499b09b6297aeee4896a66df3da86d00f652a618
 
 > Token follow-ups
 
-## Open Follow-Ups After the Token-Optimization Plan (2026-09-13)
+## Open Follow-Ups After the Token-Optimization Plan
 
 Found during the plan's stages and integration-verify, verified against the tree at this page's
 `verified` revision, and not fixed by the plan. Each names its owner.
@@ -63,7 +63,7 @@ Found during the plan's stages and integration-verify, verified against the tree
   the live `.loom/work` (recorded in [Verification Harness](../mistakes/verification-harness.md));
   agents never edit `.loom/work` directly.
 
-## Open Follow-Ups From the Efficiency-and-Acceptance Plan (2026-09-19)
+## Open Follow-Ups From the Efficiency-and-Acceptance Plan
 
 - **Knowledge check baseline.** After `./dev-install.sh`, run `loom knowledge check --strict`. It exits 0 on this tree,
   so no baseline file is needed; if a newer binary reports issues, record them with

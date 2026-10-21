@@ -119,7 +119,55 @@ A request to commit and leave the repo clean means no uncommitted changes to tra
 
 `rg` and `fd` skip the token files through the state root's `.ignore`; sessions the daemon spawns additionally get `RIPGREP_CONFIG_PATH`, which backstops `rg` alone, so `rg -uu` sweeps skip them too. The daemon publishes both `.ignore` and `ripgreprc` before either token exists (`daemon/server/tokens.rs::publish_fresh_tokens`), and the wrapper only exports `RIPGREP_CONFIG_PATH` when `ripgreprc` is already on disk, so a `loom run --foreground` session — which has no daemon, no tokens, and no exclusion files — never exports it either.
 
-## Integration Tests Spawn the Loom Binary Only Through `tests/integration/helpers.rs` (2026-09-13)
+## A Function Called From `$(...)` Cannot `exit` to Block Its Caller
+
+A shell function invoked inside a command substitution (`X=$(normalize_lexical ...)`) runs in a
+subshell — calling `exit` inside it only terminates that subshell, not the calling script, and
+relying on `set -e`'s command-substitution-assignment behavior to propagate the failure is fragile
+and non-obvious. Convention in this repo's hook scripts: have the function return a plain nonzero
+status and let the CALL SITE do `if ! X=$(normalize_lexical ...); then block_target; exit 2; fi` — an
+`if`-tested command is explicitly exempt from `set -e`, so this is both correct and matches the rest
+of the file's style.
+
+## Install a New loom Binary Only After the Running Plan Completes
+
+The operator installs a freshly built `loom` (`dev-install.sh`) only once the plan being executed has completed, never between its stages: `dev-install.sh` stops the daemon, and a plan runs to completion on the binary it started with. Fixes committed to `main` mid-plan therefore take effect only for the next plan. Anything measured with the installed binary before then, such as `loom knowledge eval` scores, measures the older code. Re-measure after the install.
+
+`dev-install.sh` keeps release optimization but overrides the build invocation with LTO off, 16 codegen units, and incremental compilation. Cargo jobs default to the available CPU count (`nproc`, then `getconf _NPROCESSORS_ONLN`, then four); an explicit `CARGO_BUILD_JOBS` takes precedence. These command-local environment overrides preserve the ordinary release profile (fat LTO and one codegen unit) and the installer contract at `loom/target/release/loom`. The first build with these settings rebuilds affected artifacts; later dev installs reuse the incremental cache.
+
+## CI Jobs Run on Path Filters; the `rust` Filter Must Name Every Repo-Root Path the Crate Reads
+
+`.github/workflows/ci.yml` triggers on every push to main and every pull request; its `changes` job (`dorny/paths-filter`) decides which jobs run. `rust` gates lint, test, flake-check, their macOS counterparts lint-macos, test-macos and flake-check-macos, audit and deny; `web` gates the dashboard job; `shell` gates hook-syntax and hooks-macos. The workflow has no `paths:` trigger, so the filter list is the only place CI names paths. A new gate whose result can depend on the target OS gets a `macos-latest` job beside its Linux one.
+
+The crate compiles in files outside `loom/`: the asset roots in `loom/build/assets.rs` (`agents/`, `commands/`, `skills/`, `codex/skills/`, `web/dist/`, both `*.md.template` files), `loom-hooks/`, `install.sh` and `dev-install.sh` through `include_str!`, and `web/src/api/` fixtures through tests. A new asset root, or a new `include_str!` or `CARGO_MANIFEST_DIR`-relative read of a repo-root path, needs an entry in the `rust` filter. Without it, a change to that path alone skips every Rust job. To audit, list `rg -o 'include_(str|bytes)!\("(\.\./)+[A-Za-z0-9._-]+' loom/src loom/tests` against the filter.
+
+## Signed Commits: What the Operator's Setup Must Provide
+
+With `commit.gpgsign` true, the daemon signs every stage, knowledge and merge commit and the plan-completion
+commit unattended, with no terminal ([Daemon-Owned Commits](../architecture/daemon-owned-commits.md)). The
+signer must therefore work without a prompt, and `loom run` refuses to start when a probe signature fails in
+either the operator's environment or the daemon's:
+
+- **gpg-agent with a cached passphrase, or a GUI pinentry.** A terminal pinentry cannot prompt the daemon.
+  The agent forgets a cached passphrase `default-cache-ttl` (600 s) after its last use and at most
+  `max-cache-ttl` (7200 s) after the first, so raise both in `gpg-agent.conf` for a long run; `loom run`
+  prints this caveat when `gpg.format` is openpgp. `loom run` sets `GPG_TTY` from `ttyname(stdin)` for its own
+  probe when stdin is a terminal and `GPG_TTY` is unset, so a terminal pinentry can prompt once and the agent
+  caches the passphrase.
+- **SSH signing through the agent.** With `gpg.format` ssh, the key must be loaded in a running ssh-agent
+  reachable through `SSH_AUTH_SOCK`; no cache expiry applies.
+- **`GNUPGHOME` is honoured** (a non-default home works). `GNUPGHOME` and `SSH_AUTH_SOCK` are captured by
+  the daemon at startup and passed only to the signing call, never to a session.
+- **`commit.gpgsign` comes from a config file.** The daemon sees the operator's global configuration through
+  `XDG_CONFIG_HOME` and `GIT_CONFIG_GLOBAL` but not `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*` or `git -c`; `loom run`
+  refuses when the two environments read different values (`git config --global commit.gpgsign true`).
+- **Check before running:** `git commit-tree -S` on an empty tree in the repository, from the shell that
+  will run `loom run`.
+
+A stage whose commit fails to sign is blocked (fix signing, then `loom stage retry`); a merge commit that
+fails to sign parks the stage in needs-human-review (fix signing, then `loom stage human-review <id> --approve`).
+
+## Integration Tests Spawn the Loom Binary Only Through `tests/integration/helpers.rs`
 
 Every integration test that spawns the loom binary goes through `loom_cmd`, `clear_relay_env` and
 `loom_bin_path` in `tests/integration/helpers.rs`; `tests/integration/binary_spawn_guard.rs`
@@ -134,17 +182,7 @@ the worktree" code path instead of the one under test) — it passes 8/8 with th
 target with `LOOM_*` unset, or scrub them the way the sanctioned spawners do, when it fails only
 inside a live stage session and not in a clean shell.
 
-## A Function Called From `$(...)` Cannot `exit` to Block Its Caller
-
-A shell function invoked inside a command substitution (`X=$(normalize_lexical ...)`) runs in a
-subshell — calling `exit` inside it only terminates that subshell, not the calling script, and
-relying on `set -e`'s command-substitution-assignment behavior to propagate the failure is fragile
-and non-obvious. Convention in this repo's hook scripts: have the function return a plain nonzero
-status and let the CALL SITE do `if ! X=$(normalize_lexical ...); then block_target; exit 2; fi` — an
-`if`-tested command is explicitly exempt from `set -e`, so this is both correct and matches the rest
-of the file's style.
-
-## Shared-Checkout Git Hygiene (2026-09-13)
+## Shared-Checkout Git Hygiene
 
 - **Never `git stash` in a tree that carries other work.** In the shared main checkout a
   stash, `checkout stash@{0} -- <files>`, `stash drop` sequence rewrote files other agents were
@@ -188,41 +226,3 @@ of the file's style.
   bound any blocking read from it with a short timeout.
 - **No AI attribution trailers in this repo**, whatever a harness reminder asks. CLAUDE.md Rule 9
   forbids them and `commit-filter.sh` blocks the whole Bash call; see [Commits](commits.md).
-
-## Install a New loom Binary Only After the Running Plan Completes
-
-The operator installs a freshly built `loom` (`dev-install.sh`) only once the plan being executed has completed, never between its stages: `dev-install.sh` stops the daemon, and a plan runs to completion on the binary it started with. Fixes committed to `main` mid-plan therefore take effect only for the next plan. Anything measured with the installed binary before then, such as `loom knowledge eval` scores, measures the older code. Re-measure after the install.
-
-`dev-install.sh` keeps release optimization but overrides the build invocation with LTO off, 16 codegen units, and incremental compilation. Cargo jobs default to the available CPU count (`nproc`, then `getconf _NPROCESSORS_ONLN`, then four); an explicit `CARGO_BUILD_JOBS` takes precedence. These command-local environment overrides preserve the ordinary release profile (fat LTO and one codegen unit) and the installer contract at `loom/target/release/loom`. The first build with these settings rebuilds affected artifacts; later dev installs reuse the incremental cache.
-
-## CI Jobs Run on Path Filters; the `rust` Filter Must Name Every Repo-Root Path the Crate Reads
-
-`.github/workflows/ci.yml` triggers on every push to main and every pull request; its `changes` job (`dorny/paths-filter`) decides which jobs run. `rust` gates lint, test, flake-check, their macOS counterparts lint-macos, test-macos and flake-check-macos, audit and deny; `web` gates the dashboard job; `shell` gates hook-syntax and hooks-macos. The workflow has no `paths:` trigger, so the filter list is the only place CI names paths. A new gate whose result can depend on the target OS gets a `macos-latest` job beside its Linux one.
-
-The crate compiles in files outside `loom/`: the asset roots in `loom/build/assets.rs` (`agents/`, `commands/`, `skills/`, `codex/skills/`, `web/dist/`, both `*.md.template` files), `loom-hooks/`, `install.sh` and `dev-install.sh` through `include_str!`, and `web/src/api/` fixtures through tests. A new asset root, or a new `include_str!` or `CARGO_MANIFEST_DIR`-relative read of a repo-root path, needs an entry in the `rust` filter. Without it, a change to that path alone skips every Rust job. To audit, list `rg -o 'include_(str|bytes)!\("(\.\./)+[A-Za-z0-9._-]+' loom/src loom/tests` against the filter.
-
-## Signed Commits: What the Operator's Setup Must Provide
-
-With `commit.gpgsign` true, the daemon signs every stage, knowledge and merge commit and the plan-completion
-commit unattended, with no terminal ([Daemon-Owned Commits](../architecture/daemon-owned-commits.md)). The
-signer must therefore work without a prompt, and `loom run` refuses to start when a probe signature fails in
-either the operator's environment or the daemon's:
-
-- **gpg-agent with a cached passphrase, or a GUI pinentry.** A terminal pinentry cannot prompt the daemon.
-  The agent forgets a cached passphrase `default-cache-ttl` (600 s) after its last use and at most
-  `max-cache-ttl` (7200 s) after the first, so raise both in `gpg-agent.conf` for a long run; `loom run`
-  prints this caveat when `gpg.format` is openpgp. `loom run` sets `GPG_TTY` from `ttyname(stdin)` for its own
-  probe when stdin is a terminal and `GPG_TTY` is unset, so a terminal pinentry can prompt once and the agent
-  caches the passphrase.
-- **SSH signing through the agent.** With `gpg.format` ssh, the key must be loaded in a running ssh-agent
-  reachable through `SSH_AUTH_SOCK`; no cache expiry applies.
-- **`GNUPGHOME` is honoured** (a non-default home works). `GNUPGHOME` and `SSH_AUTH_SOCK` are captured by
-  the daemon at startup and passed only to the signing call, never to a session.
-- **`commit.gpgsign` comes from a config file.** The daemon sees the operator's global configuration through
-  `XDG_CONFIG_HOME` and `GIT_CONFIG_GLOBAL` but not `GIT_CONFIG_COUNT`/`GIT_CONFIG_KEY_*` or `git -c`; `loom run`
-  refuses when the two environments read different values (`git config --global commit.gpgsign true`).
-- **Check before running:** `git commit-tree -S` on an empty tree in the repository, from the shell that
-  will run `loom run`.
-
-A stage whose commit fails to sign is blocked (fix signing, then `loom stage retry`); a merge commit that
-fails to sign parks the stage in needs-human-review (fix signing, then `loom stage human-review <id> --approve`).

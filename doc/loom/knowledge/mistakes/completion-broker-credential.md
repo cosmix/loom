@@ -12,7 +12,7 @@ the sanctioned path itself, not an environment quirk.
 
 **The three-layer contradiction, each layer individually defensible:**
 
-1. `commands/stage/control_complete.rs` sent `read_user_token(work_dir).unwrap_or_default()` — an
+1. commands/stage/control_complete.rs (removed) sent `read_user_token(work_dir).unwrap_or_default()` — an
    EMPTY token when the read fails — with a comment asserting the daemon "falls back to identifying
    the caller by its socket peer credentials". The server really does implement that
    (`Authorization::PendingPeerIdentity` → `peer_identity::caller_is_inside_session`).
@@ -49,13 +49,6 @@ refusing it outright — see the section below.
   files. Any caller handing it a worktree's `.loom/work` path, or a sandbox-masked path, gets `Err` even
   though the underlying file is fine. That is deliberate hardening — design callers so the failure
   is survivable, as the broker now does.
-
-## Two Files Are Named `control_complete.rs`
-
-`commands/stage/control_complete.rs` (broker CLIENT: credential selection, socket send) and
-`daemon/server/control_complete.rs` (daemon-side transition HANDLER) are unrelated files sharing a
-basename, each wired via `#[path]` from a different parent. `cargo test control_complete` runs both
-test sets, and a bare-filename grep finds both — qualify with the directory before editing.
 
 ## A Sandboxed `stage complete` Exits 0 Without Completing Anything (2026-08-26)
 
@@ -148,7 +141,7 @@ from its worktree) passed verification four times and was refused four times wit
 completion evidence credential`. The stage ran to its context ceiling still blocked, and recorded a
 wrong hypothesis — stale tokens, the daemon needing a restart — in its own concerns file.
 
-**Why:** a31c2122 added `daemon/server/completion_dispatch.rs`, whose `dispatch` refuses
+**Why:** a31c2122 added daemon/server/completion_dispatch.rs (removed), whose `dispatch` refuses
 `CompleteStage` and `RecordCompletionEvidence` with `AuthenticationFailed` unless the connection
 authenticated with the `user.token` credential. The broker client still read the token through the
 worktree's symlinked `.loom/work` — `safe_open_dirfd` opens the root `O_NOFOLLOW`, which fails with
@@ -167,11 +160,11 @@ moment any server path starts requiring presence. A daemon-online replay of the 
 against a real socket is the test that would have caught this — see also
 `mistakes/tests-that-cannot-fail.md`.
 
-**Fix:** `completion_credential` (`commands/stage/control_complete.rs`) canonicalizes the work dir
+**Fix:** `completion_credential` (commands/stage/control_complete.rs (removed)) canonicalizes the work dir
 before `read_user_token`, mirroring `attestation_key` (`handoff/completion/attest.rs`). The
 symlinked-work-dir test now asserts the token is read rather than dropped, and the refusal message
 names the missing token and the path searched. A second trap sat in the same fix:
-`commands/stage/completion_evidence.rs` imported `daemon/rpc.rs::user_credential` under the alias
+commands/stage/completion_evidence.rs (removed) imported `daemon/rpc.rs::user_credential` under the alias
 `completion_credential`, so `RecordCompletionEvidence` — the request sent first, and the one failing
 live — never went through the fixed function. Both requests now use
 `control_complete::completion_credential`; `user_credential` stays the peer-identity credential for
@@ -208,7 +201,7 @@ conventions must not advise `run_in_background` for the completion.
 
 **What happened:** the initial investigation attributed `loom: not found` during knowledge acceptance to a missing PATH entry and recommended an absolute path without testing the command sandbox.
 
-**Why:** `verify/criteria/confine_host.rs::read_roots` exposes selected toolchain directories but omits the running Loom binary under `~/.local/bin`. Linux always adds the bubblewrap boundary (`daemon/inherited.rs::available` returns false), even inside a stage session. A present PATH entry cannot find a binary hidden from that filesystem view; an absolute path alone cannot fix that.
+**Why:** `verify/criteria/confine_host.rs::read_roots` exposes selected toolchain directories but omits the running Loom binary under `~/.local/bin`. Linux always adds the bubblewrap boundary (daemon/inherited.rs::available (removed) returns false), even inside a stage session. A present PATH entry cannot find a binary hidden from that filesystem view; an absolute path alone cannot fix that.
 
 **Prevention:** inspect both the effective environment and the child filesystem namespace when a host-installed command is missing. Reproduce through the actual confined runner before naming an absolute path as a sufficient recovery.
 
@@ -223,3 +216,10 @@ conventions must not advise `run_in_background` for the completion.
 **Prevention:** preserve ordinary `loom ...` criteria. Require evidence from `loom check <stage> --no-cache`, inspect the disputed entry's result, and distinguish a direct-shell diagnostic from the runner's verdict.
 
 **Fix:** the command runner supplies its own executable path and read-only binary mount automatically. Adjudication instructions require runner evidence and permit a portable assertion-preserving amendment through `plan_patch`; a direct-shell pass alone cannot justify rejection or operator criterion edits.
+
+## Two Removed Files Shared the Basename control_complete.rs
+
+commands/stage/control_complete.rs (removed) (broker CLIENT: credential selection, socket send) and
+daemon/server/control_complete.rs (removed) (daemon-side transition HANDLER) were unrelated files sharing a
+basename, each wired via `#[path]` from a different parent. A bare-filename grep found both, so qualify
+a basename with its directory before editing.

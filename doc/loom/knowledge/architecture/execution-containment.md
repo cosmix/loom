@@ -4,7 +4,7 @@
 
 ## Read This First: What "Containment" Means In Loom
 
-`CommandConfinement::Confined` prepares an OS boundary in `verify/criteria/confine_host.rs` as well as rebuilding the child environment. Fresh host verification commands use macOS Seatbelt or Linux bubblewrap, allow selected runtime/toolchain reads and worktree writes, and deny network access. Missing containment support is an error.
+`CommandConfinement::Confined` prepares an OS boundary in `verify/criteria/confine_host.rs` as well as rebuilding the child environment. Fresh host verification commands use macOS Seatbelt or Linux bubblewrap, allow selected runtime/toolchain reads and worktree writes, and deny network access. Missing containment support is an error. Confined commands run only in a host job's child (`loom stage verify-host`, see [Host Verification Jobs](verification-v2-gates.md)). A session never runs one, so a session sandbox never nests a boundary and needs no nested user namespaces.
 
 The writable tree and the working directory are separate inputs: a command starts in its acceptance or package directory but binds the whole stage worktree root, so monorepo siblings, root `node_modules` and editable path dependencies stay visible. Callers pass the root explicitly (`CriteriaConfig::with_tree_root`, `run_spec_in_optional_tree`), never inferred from a `.git` walk; a working directory outside the tree is refused. With no tree (provisioning, knowledge stages, `spawn_confined`) the working directory is the tree.
 
@@ -19,13 +19,11 @@ Private per-command scratch (`verify/criteria/confine_scratch.rs`) stays outside
 The Cargo home is stable across commands, never per command: Cargo fingerprints registry packages by their absolute `$CARGO_HOME/registry/src` path, so a home that changes between commands rebuilds every dependency ([incident](../mistakes/completion-runtime.md)).
 
 - **Linux (`CargoHome::Mounted`):** `CARGO_HOME` stays the host path. Bubblewrap binds `<scratch>/cargo` writable at it, after every other read root, then the host `bin`, `registry` and `git` read-only over it (`confine_host.rs::bind_read_roots`). Sources keep the paths the session's own `cargo` builds against, so a target directory warmed outside the boundary stays warm inside it, and the host Cargo config and credentials files stay hidden.
-- **Elsewhere (`CargoHome::Linked`):** Seatbelt, an inherited boundary, or a Linux Cargo home that overlaps the tree. A persistent per-tree `<temp root>/.loom-cargo-<sha256(tree)[..12]>` links the host `registry` and `git`, and Seatbelt grants it read and write. A same-user stage agent can create or edit it, so `confine_linked_home.rs::populate` reduces it before every command, through one directory descriptor opened without following links, to those links and Cargo's regular state files (`.package-cache`, `.package-cache-mutate`, `.global-cache`, `.global-cache-journal`). A symlinked or foreign-owned home is refused. Entries written after populate survive until the next command's populate.
+- **Elsewhere (`CargoHome::Linked`):** Seatbelt, or a Linux Cargo home that overlaps the tree. A persistent per-tree `<temp root>/.loom-cargo-<sha256(tree)[..12]>` links the host `registry` and `git`, and Seatbelt grants it read and write. A same-user stage agent can create or edit it, so `confine_linked_home.rs::populate` reduces it before every command, through one directory descriptor opened without following links, to those links and Cargo's regular state files (`.package-cache`, `.package-cache-mutate`, `.global-cache`, `.global-cache-journal`). A symlinked or foreign-owned home is refused. Entries written after populate survive until the next command's populate.
 
 The confined command preparer derives `LOOM_BIN` from the running executable, prepends its directory to `PATH`, and exposes only that binary as a read-only runtime path. Ambient `LOOM_BIN` cannot select another binary. The containment cache policy revision is `host-os-boundary-v9`; randomized scratch path arguments are normalized for stable cache identity.
 
-On macOS, an already sandboxed stage can reuse its inherited capsule only through `daemon/inherited`: kernel sandbox evidence, protected daemon and stage/session/capsule records, authenticated socket peer identity, live process ancestry and reciprocal stage ownership must agree. Environment strings and tokens alone cannot authorize inheritance. Session settings grant the exact daemon socket; existing sessions without that grant require relaunch.
-
-Inherited execution retains approved capsule permissions, including network/shared-cache grants. Fresh host verification uses the stricter command policy. Stage `NetworkConfig` controls the session capsule, not a per-command network override. `ConfinedChild` and the criterion executor retain resources until owned-process retirement.
+No command inherits a boundary: a confined command never reuses a session's sandbox or capsule, on macOS or Linux, and an existing session's grants do not reach a criterion. Stage `NetworkConfig` controls the session capsule, not a per-command network override. `ConfinedChild` and the criterion executor retain resources until owned-process retirement.
 
 ## The Two Confinement Levels
 
@@ -33,8 +31,8 @@ Inherited execution retains approved capsule permissions, including network/shar
 
 | Level | YAML | Behavior |
 | --- | --- | --- |
-| `Confined` | `confined` (default) | Rebuild the allowlisted environment and apply the host OS boundary or authenticate an existing macOS stage boundary. |
-| `Inherit` | `inherit` | Explicitly retain the invoking environment and containment. |
+| `Confined` | `confined` (default) | Rebuild the allowlisted environment and apply the host OS boundary (Seatbelt or bubblewrap). |
+| `Inherit` | `inherit` | Explicitly retain the invoking environment; no OS boundary is added (`verify/criteria/confine.rs`). |
 
 The plan sets `command_confinement`; a stage may override it. `resolve_confinement` and `plan_confinement` centralize precedence.
 
@@ -78,7 +76,7 @@ that cannot run `cargo` fails the stage as loudly as a real defect.
 
 ## Honest Limits
 
-Fresh host containment and authenticated inherited containment have different permissions. Inheritance preserves the stage capsule, including its approved network and package-cache grants. `Inherit` is an explicit opt-in to the caller environment/boundary.
+Fresh host containment is the only OS boundary a confined command gets. `Inherit` is an explicit opt-in to the caller environment, with no boundary added.
 
 The policy is OS-specific and permits the runtime/toolchain paths needed to execute commands. It is not a CPU/memory quota or an immutable-input snapshot. Generated dependencies can remain ambient, and before/after verification snapshots do not detect transient mutate-and-restore behavior. Boundary tests must exercise actual launchers with readable/writable outside canaries and report platform skips; unit tests of environment construction alone do not prove confinement.
 
@@ -107,86 +105,6 @@ Two things not to "fix" without reading the reasoning first:
 
 `allow_write` rules also have parent traversal filtered out at the emitter, which
 is what actually closes the path-escape hole at the point of use.
-
-## Sandbox-List vs Permission-Rule Path Syntax, and Where Each Resolves From (2026-09-13)
-
-Two settings surfaces read a leading `/` differently, confirmed against the Claude Code docs
-(<https://code.claude.com/docs/en/settings-reference.md#sandbox-path-prefixes>, <https://code.claude.com/docs/en/permissions.md#read-and-edit>):
-
-- **`sandbox.filesystem` lists** (`allowWrite`, `denyWrite`, `denyRead`, ...): `/p` and `//p` are
-  both absolute, `~/p` is under home, and a bare path is relative to the project root (to
-  `~/.claude` in user settings).
-- **`Edit`/`Read`/`Write`/`NotebookEdit` permission rules**: `//p` is absolute, `~/p` is under home,
-  a bare path is cwd-relative, and a single leading `/` is relative to the SETTINGS SOURCE — the
-  directory of the `--settings <file>` that recorded it, which for a capsule is `W/capsules/`.
-
-`sandbox/config.rs::expand_paths`'s doc comment used to claim Claude Code prepends the project root
-to an absolute sandbox path. It does not, and the comment is corrected in place — a bare (no-slash)
-sandbox path is project-relative, but a `/`-prefixed one is already absolute, matching the docs
-above. The docs suggest an OLDER Claude Code version read a single-slash sandbox path as
-project-relative, which is why some older loom code favors `./path` there.
-
-Two more facts from the same pass:
-
-- On Linux and WSL2, a `denyWrite` entry for a path that does not exist yet is still enforced: the
-  sandbox mounts a 0-byte read-only placeholder for it while the sandboxed command runs.
-- `--setting-sources` that excludes a settings source drops that source's `sandbox.filesystem`
-  entries, `Edit` rules and `Read` denies from the sandbox — not just its `permissions.*` block.
-
-Open: how a `/`-prefixed permission or sandbox path resolves in a `--settings` file OUTSIDE the
-project is unconfirmed. Live checklist item.
-
-Also unconfirmed: whether Claude Code resolves settings only from the session's start directory, so
-a nested `x/.claude/` several levels below the worktree root would never be read (cited:
-`anthropics/claude-code#74023`, `#37344`, `#12962` — not independently verified against the
-installed bundle). Loom passes `--settings <file>` explicitly on every spawn, so root-level gating
-does not depend on the answer either way.
-
-## A Denied Missing Path Shows Up in the Session's `git status` (2026-09-13)
-
-Inside a Claude Code Bash sandbox, a write-denied path that does not exist is held by a read-only
-bind mount of `/dev/null`. Observed at `<cwd>/.mcp.json`: `stat` reports a character special file
-(size 0, owner `nobody`, mtime of the device node), and `/proc/self/mountinfo` lists it as a
-`devtmpfs udev` mount. On the host the mount point is an empty regular file that exists while a
-sandboxed command runs and is removed afterwards
-([Claude Code Grants a Linked Worktree Its Whole Git Common Directory](#claude-code-grants-a-linked-worktree-its-whole-git-common-directory)).
-
-Consequences for a stage session, which runs git inside its sandbox:
-
-- `git status` lists the mount point as untracked (`?? .mcp.json`), so an agent checking that the
-  tree is clean before `loom stage complete` sees noise.
-- `git add` of a character device fails, which is one more reason the git-add guard forbids `-A`
-  and `.`.
-- The daemon's own git runs outside the sandbox; between sandboxed commands it sees no entry, and
-  during one it can see an empty file.
-
-Do not commit or delete such an entry; confirm it with `stat -c %F <path>` first. The same
-mechanism explains the 0-byte placeholders the Claude Code docs describe for missing `.claude`
-settings files (sandboxing.md, Troubleshooting).
-
-## Confinement E2E Lives Outside the Sandbox (2026-09-13)
-
-Status (2026-09-14): passed outside the sandbox. The operator ran it with
-`LOOM_TEST_REQUIRE_SANDBOX_FREE=1` and a PATH shim for `srt` (`exec bunx @anthropic-ai/sandbox-runtime "$@"`).
-The srt tests are `#[serial]`: when four ran in parallel, two srt CLI instances died with an uncaught
-Node.js exception, and the exact error was never captured. Loom's parallel stages each run their own
-Claude Code sandbox and have not shown this. Treat it as an srt CLI concurrency issue until proven
-otherwise, and keep the probes' sentinel rule (`mistakes/verification-harness.md`, "A Must-Fail Probe
-That Counts Any Non-Zero Exit Passes When the Harness Never Started").
-
-`orchestrator/terminal/native/tests_confinement_e2e.rs` and its `srt`-backed sibling
-`tests_confinement_srt.rs` (loaded via `#[path]`, registered from `native/launch.rs`), plus
-`tests/integration/confinement_status.rs`, exercise the OS-level sandbox denies end to end. Run with
-`env -u LOOM_WORK_DIR LOOM_TEST_REQUIRE_SANDBOX_FREE=1 cargo test confinement` outside the Claude
-Code Bash sandbox: `srt` (`@anthropic-ai/sandbox-runtime`, runnable via `bunx`) cannot run INSIDE
-that sandbox because it binds a Unix socket (`srt-mux-*.sock`) and AF_UNIX is blocked there.
-
-`srt` behavior worth knowing when reading a probe result: a denied path that does not exist yet
-inside an otherwise-writable directory is mounted from `/dev/null`, so a write to it exits 0 and
-lands nowhere — `bwrap` creates an empty host mount-point file for it and `srt` removes that file on
-exit. A refusal against a fake-home path or `.git/hooks`/`.git/config` does not by itself prove a
-capsule rule is doing the work; both are denied by `srt`'s own built-in defaults regardless of
-loom's rules.
 
 ## Package-Manager Caches Are Granted To Every Stage
 
@@ -245,7 +163,126 @@ produced.
 | `loom/src/orchestrator/terminal/native/wrapper.rs:181` | the **second**, diverging copy of the allowlist (see `concerns.md`) |
 | `loom/src/verify/criteria/tests/confine_tests.rs` | the matched-control test pattern |
 
-## Missing Grants Are Reported Before the Session Starts (2026-09-13)
+## Claude Code Grants a Linked Worktree Its Whole Git Common Directory
+
+Measured against Claude Code 2.1.286 (its bundle, and live `claude -p` runs in a scratch
+repository), these sandbox rules decide what loom's capsule can and cannot express on Linux:
+
+- **The git-dir grant.** For a session whose cwd is a linked worktree, Claude Code adds the whole
+  git common directory to `allowWrite` itself. Its detector reads the worktree's `.git` file,
+  requires the `gitdir` to lie in `<common dir>/worktrees/` with a back-pointer naming the
+  worktree, and adds the common directory; it then denies `hooks`, `config`, `config.lock`,
+  `config.worktree`, `commondir`, `objects/info/alternates`, `objects/info/http-alternates` and
+  each `worktrees/*/{config.worktree,commondir}`. No setting turns the grant off. A session whose
+  `.git` is a directory gets `.git/hooks` and `.git/config` denied instead.
+- **Bind order.** Every `allowWrite` entry is bound first and every `denyWrite` entry after, so a
+  deny always wins and an allow nested inside a deny never reopens it. `allowRead` reopens a path
+  inside a `denyRead` directory; nothing reopens a write deny.
+- **Globs.** `allowWrite` and `denyWrite` glob entries are skipped on Linux. `denyRead` globs are
+  expanded into one mount per match, with a warning above 256.
+- **Absent paths.** A `denyWrite` path that does not exist is bound from `/dev/null` (or an empty
+  directory at its first missing ancestor). bwrap creates the mount point on the host filesystem
+  when the parent is a host directory bound into the sandbox, so host processes see an empty
+  regular file there while each sandboxed command runs; Claude Code removes it afterwards (a killed
+  sandbox can leave it). A `denyRead` path that does not exist mounts nothing.
+- **Reads.** A `denyRead` file is bound from `/dev/null`; a directory is covered by a tmpfs with
+  the `allowRead` and `allowWrite` paths inside it re-mounted.
+- **Environment.** A top-level `env` in a `--settings` file reaches Bash commands; Claude Code
+  sets `TMPDIR` per command to `<CLAUDE_CODE_TMPDIR or /tmp>/claude-<uid>`.
+- **srt.** `@anthropic-ai/sandbox-runtime` 0.0.78 shares this bind logic but not the git-dir
+  grant, so an srt test of a linked worktree must add the common directory to `allowWrite` itself.
+
+What this exposes, and why no deny-list can narrow it, is in
+[Agent Rule-Bending Hardening](../concerns/agent-rule-bending-hardening.md), G2.
+Loom's own `config.worktree` deny and check: [Loom's `config.worktree` Deny and Check](security-and-isolation.md#looms-configworktree-deny-and-check).
+
+## In-Tree `allow_write` Entries Are Not Emitted
+
+`sandbox::build_settings` (`sandbox/settings.rs`) drops every non-glob `allow_write` entry whose resolved path is the session's working directory or inside it, so it reaches neither `sandbox.filesystem.allowWrite` nor an `Edit(...)` allow. The predicate is `sandbox/grant_paths.rs::is_inside_cwd`: `~/`, `/` and `//` entries resolve as absolute, a bare entry against the cwd, and both sides through symlinks, so an entry reaching through a link to a target outside the cwd (a worktree's `.loom/work/...`) is kept; globs (`*`, `?`, `[`, `{`) and entries that fail to resolve are kept too. `SettingsTarget::cwd` carries the working directory, and the session capsule (`orchestrator/terminal/native/session_settings/contents.rs::capsule_settings`) always sets it. `loom plan verify` warns on a relative non-glob entry outside `.loom/` and `.work/` (`plan/schema/validation/v2_lints/sandbox_capability.rs::report_in_tree_grants`).
+
+Why: the cwd is writable already, so the entry grants nothing, while Claude Code's Linux sandbox bind-mounts every listed non-glob path on its own and the kernel refuses to unlink or rename a mount point: git replacing the file, or `rm -rf` of a listed directory, fails with `Device or resource busy`. Deny rules still win, so effective permissions do not change. One side effect: under `permission_mode: default` a dropped exact-path entry no longer yields an `Edit(...)` allow, so a file-tool edit there can prompt; a glob keeps its rule.
+
+## Sandbox-List vs Permission-Rule Path Syntax, and Where Each Resolves From
+
+Two settings surfaces read a leading `/` differently, confirmed against the Claude Code docs
+(<https://code.claude.com/docs/en/settings-reference.md#sandbox-path-prefixes>, <https://code.claude.com/docs/en/permissions.md#read-and-edit>):
+
+- **`sandbox.filesystem` lists** (`allowWrite`, `denyWrite`, `denyRead`, ...): `/p` and `//p` are
+  both absolute, `~/p` is under home, and a bare path is relative to the project root (to
+  `~/.claude` in user settings).
+- **`Edit`/`Read`/`Write`/`NotebookEdit` permission rules**: `//p` is absolute, `~/p` is under home,
+  a bare path is cwd-relative, and a single leading `/` is relative to the SETTINGS SOURCE — the
+  directory of the `--settings <file>` that recorded it, which for a capsule is `W/capsules/`.
+
+`sandbox/config.rs::expand_paths`'s doc comment used to claim Claude Code prepends the project root
+to an absolute sandbox path. It does not, and the comment is corrected in place — a bare (no-slash)
+sandbox path is project-relative, but a `/`-prefixed one is already absolute, matching the docs
+above. The docs suggest an OLDER Claude Code version read a single-slash sandbox path as
+project-relative, which is why some older loom code favors `./path` there.
+
+Two more facts from the same pass:
+
+- On Linux and WSL2, a `denyWrite` entry for a path that does not exist yet is still enforced: the
+  sandbox mounts a 0-byte read-only placeholder for it while the sandboxed command runs.
+- `--setting-sources` that excludes a settings source drops that source's `sandbox.filesystem`
+  entries, `Edit` rules and `Read` denies from the sandbox — not just its `permissions.*` block.
+
+Open: how a `/`-prefixed permission or sandbox path resolves in a `--settings` file OUTSIDE the
+project is unconfirmed. Live checklist item.
+
+Also unconfirmed: whether Claude Code resolves settings only from the session's start directory, so
+a nested `x/.claude/` several levels below the worktree root would never be read (cited:
+`anthropics/claude-code#74023`, `#37344`, `#12962` — not independently verified against the
+installed bundle). Loom passes `--settings <file>` explicitly on every spawn, so root-level gating
+does not depend on the answer either way.
+
+## A Denied Missing Path Shows Up in the Session's `git status`
+
+Inside a Claude Code Bash sandbox, a write-denied path that does not exist is held by a read-only
+bind mount of `/dev/null`. Observed at `<cwd>/.mcp.json`: `stat` reports a character special file
+(size 0, owner `nobody`, mtime of the device node), and `/proc/self/mountinfo` lists it as a
+`devtmpfs udev` mount. On the host the mount point is an empty regular file that exists while a
+sandboxed command runs and is removed afterwards
+([Claude Code Grants a Linked Worktree Its Whole Git Common Directory](#claude-code-grants-a-linked-worktree-its-whole-git-common-directory)).
+
+Consequences for a stage session, which runs git inside its sandbox:
+
+- `git status` lists the mount point as untracked (`?? .mcp.json`), so an agent checking that the
+  tree is clean before `loom stage complete` sees noise.
+- `git add` of a character device fails, which is one more reason the git-add guard forbids `-A`
+  and `.`.
+- The daemon's own git runs outside the sandbox; between sandboxed commands it sees no entry, and
+  during one it can see an empty file.
+
+Do not commit or delete such an entry; confirm it with `stat -c %F <path>` first. The same
+mechanism explains the 0-byte placeholders the Claude Code docs describe for missing `.claude`
+settings files (sandboxing.md, Troubleshooting).
+
+## Confinement E2E Lives Outside the Sandbox
+
+Status (2026-09-14): passed outside the sandbox. The operator ran it with
+`LOOM_TEST_REQUIRE_SANDBOX_FREE=1` and a PATH shim for `srt` (`exec bunx @anthropic-ai/sandbox-runtime "$@"`).
+The srt tests are `#[serial]`: when four ran in parallel, two srt CLI instances died with an uncaught
+Node.js exception, and the exact error was never captured. Loom's parallel stages each run their own
+Claude Code sandbox and have not shown this. Treat it as an srt CLI concurrency issue until proven
+otherwise, and keep the probes' sentinel rule (`mistakes/verification-harness.md`, "A Must-Fail Probe
+That Counts Any Non-Zero Exit Passes When the Harness Never Started").
+
+`orchestrator/terminal/native/tests_confinement_e2e.rs` and its `srt`-backed sibling
+`tests_confinement_srt.rs` (loaded via `#[path]`, registered from `native/launch.rs`), plus
+`tests/integration/confinement_status.rs`, exercise the OS-level sandbox denies end to end. Run with
+`env -u LOOM_WORK_DIR LOOM_TEST_REQUIRE_SANDBOX_FREE=1 cargo test confinement` outside the Claude
+Code Bash sandbox: `srt` (`@anthropic-ai/sandbox-runtime`, runnable via `bunx`) cannot run INSIDE
+that sandbox because it binds a Unix socket (`srt-mux-*.sock`) and AF_UNIX is blocked there.
+
+`srt` behavior worth knowing when reading a probe result: a denied path that does not exist yet
+inside an otherwise-writable directory is mounted from `/dev/null`, so a write to it exits 0 and
+lands nowhere — `bwrap` creates an empty host mount-point file for it and `srt` removes that file on
+exit. A refusal against a fake-home path or `.git/hooks`/`.git/config` does not by itself prove a
+capsule rule is doing the work; both are denied by `srt`'s own built-in defaults regardless of
+loom's rules.
+
+## Missing Grants Are Reported Before the Session Starts
 
 A plan or stage `allow_write` path that does not exist on the host when a session starts is not
 bound, and a `mkdir` inside the session cannot create it: the directory it would create is the one
@@ -266,13 +303,13 @@ and returns the ones missing on the host. Both consumers read the merged plan an
 The remedy is always on the host: create the path, then restart the stage's session.
 Package-manager cache paths are not checked here; their own signal note covers them.
 
-## `loom status` Marks the Caller's Own Executing Stage "Orphaned" Inside Its Own Sandbox (2026-09-14)
+## `loom status` Marks the Caller's Own Executing Stage "Orphaned" Inside Its Own Sandbox
 
 Running `loom status` FROM INSIDE a stage's own sandboxed session reports that stage's session as orphaned/dead (`session_alive` false, `render/graph.rs:133-137`), even though it is the live session asking the question. **Why:** bubblewrap's PID namespace hides the host PID from the sandboxed process, so the liveness check (which compares against a host PID) cannot see its own process as alive. This is a sandbox artifact of the caller inspecting itself from inside its own namespace, not evidence the session actually died — treat a self-reported "orphaned" from inside a stage sandbox as uninformative, never as a signal to intervene.
 
-**Boundary-aware tests:** macOS capsules grant the exact daemon socket for authenticated inherited-confinement requests; sessions started without that grant require relaunch. Unix-socket availability on other sandbox paths depends on their emitted policy, so tests must report the actual boundary they exercise. A live companion, local TCP listener or tmux server can still require host execution. Use focused transport/route fixtures where the caller sandbox prevents the real boundary, and do not count a skipped boundary test as successful execution.
+**Boundary-aware tests:** Unix-socket availability depends on the emitted sandbox policy of the path under test, so tests must report the actual boundary they exercise. A live companion, local TCP listener or tmux server can still require host execution. Use focused transport/route fixtures where the caller sandbox prevents the real boundary, and do not count a skipped boundary test as successful execution.
 
-## macOS: the stage sandbox refuses a nested Seatbelt, so the wrapper runs codex exec directly (2026-09-02)
+## macOS: the stage sandbox refuses a nested Seatbelt, so the wrapper runs codex exec directly
 
 **Symptom.** Five `loom-codex-forwarder` spawns in a stage session each reached gpt-5.6-terra and the
 companion exited 0, but zero files were written: every shell command codex ran, even `pwd`, died with
@@ -323,42 +360,3 @@ gone, but the stage sandbox's domain allowlist still applies.
 
 See [Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md) for the verification gap that
 let this ship.
-
-## Claude Code Grants a Linked Worktree Its Whole Git Common Directory
-
-Measured against Claude Code 2.1.286 (its bundle, and live `claude -p` runs in a scratch
-repository), these sandbox rules decide what loom's capsule can and cannot express on Linux:
-
-- **The git-dir grant.** For a session whose cwd is a linked worktree, Claude Code adds the whole
-  git common directory to `allowWrite` itself. Its detector reads the worktree's `.git` file,
-  requires the `gitdir` to lie in `<common dir>/worktrees/` with a back-pointer naming the
-  worktree, and adds the common directory; it then denies `hooks`, `config`, `config.lock`,
-  `config.worktree`, `commondir`, `objects/info/alternates`, `objects/info/http-alternates` and
-  each `worktrees/*/{config.worktree,commondir}`. No setting turns the grant off. A session whose
-  `.git` is a directory gets `.git/hooks` and `.git/config` denied instead.
-- **Bind order.** Every `allowWrite` entry is bound first and every `denyWrite` entry after, so a
-  deny always wins and an allow nested inside a deny never reopens it. `allowRead` reopens a path
-  inside a `denyRead` directory; nothing reopens a write deny.
-- **Globs.** `allowWrite` and `denyWrite` glob entries are skipped on Linux. `denyRead` globs are
-  expanded into one mount per match, with a warning above 256.
-- **Absent paths.** A `denyWrite` path that does not exist is bound from `/dev/null` (or an empty
-  directory at its first missing ancestor). bwrap creates the mount point on the host filesystem
-  when the parent is a host directory bound into the sandbox, so host processes see an empty
-  regular file there while each sandboxed command runs; Claude Code removes it afterwards (a killed
-  sandbox can leave it). A `denyRead` path that does not exist mounts nothing.
-- **Reads.** A `denyRead` file is bound from `/dev/null`; a directory is covered by a tmpfs with
-  the `allowRead` and `allowWrite` paths inside it re-mounted.
-- **Environment.** A top-level `env` in a `--settings` file reaches Bash commands; Claude Code
-  sets `TMPDIR` per command to `<CLAUDE_CODE_TMPDIR or /tmp>/claude-<uid>`.
-- **srt.** `@anthropic-ai/sandbox-runtime` 0.0.78 shares this bind logic but not the git-dir
-  grant, so an srt test of a linked worktree must add the common directory to `allowWrite` itself.
-
-What this exposes, and why no deny-list can narrow it, is in
-[Agent Rule-Bending Hardening](../concerns/agent-rule-bending-hardening.md), G2.
-Loom's own `config.worktree` deny and check: [Loom's `config.worktree` Deny and Check](security-and-isolation.md#looms-configworktree-deny-and-check).
-
-## In-Tree `allow_write` Entries Are Not Emitted
-
-`sandbox::build_settings` (`sandbox/settings.rs`) drops every non-glob `allow_write` entry whose resolved path is the session's working directory or inside it, so it reaches neither `sandbox.filesystem.allowWrite` nor an `Edit(...)` allow. The predicate is `sandbox/grant_paths.rs::is_inside_cwd`: `~/`, `/` and `//` entries resolve as absolute, a bare entry against the cwd, and both sides through symlinks, so an entry reaching through a link to a target outside the cwd (a worktree's `.loom/work/...`) is kept; globs (`*`, `?`, `[`, `{`) and entries that fail to resolve are kept too. `SettingsTarget::cwd` carries the working directory, and the session capsule (`orchestrator/terminal/native/session_settings/contents.rs::capsule_settings`) always sets it. `loom plan verify` warns on a relative non-glob entry outside `.loom/` and `.work/` (`plan/schema/validation/v2_lints/sandbox_capability.rs::report_in_tree_grants`).
-
-Why: the cwd is writable already, so the entry grants nothing, while Claude Code's Linux sandbox bind-mounts every listed non-glob path on its own and the kernel refuses to unlink or rename a mount point: git replacing the file, or `rm -rf` of a listed directory, fails with `Device or resource busy`. Deny rules still win, so effective permissions do not change. One side effect: under `permission_mode: default` a dropped exact-path entry no longer yields an `Edit(...)` allow, so a file-tool edit there can prompt; a glob keeps its rule.

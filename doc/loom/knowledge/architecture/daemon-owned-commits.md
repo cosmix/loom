@@ -32,7 +32,7 @@ daemon never runs repository hooks (`NO_HOOKS_ARGS` pins `core.hooksPath` away f
 | Signing | `git/signing.rs`: `commit_tree`, `SigningEnv`, `SIGN_TIMEOUT` (30 s), `take_from_process`, `probe_in` |
 | Daemon handler | `orchestrator/core/inbox_drain/commit.rs` (`apply_commit`, `prepare_*`), merge hold in `merge_handler/landing.rs` |
 | Status polling | `commands/request/status.rs` (`loom request status <id> --wait <s>`) |
-| Completion guard | `daemon/server/completion_evidence.rs` `refuse_uncommitted_index` |
+| Completion guard | `orchestrator/core/inbox_drain/complete.rs::validate` (uncommitted changes and a HEAD mismatch are refused before a host job is queued) |
 | Startup check | `commands/run/signing_preflight.rs` |
 | Hook block | `loom-hooks/commit-filter.sh` `git_runs_commit` |
 
@@ -86,13 +86,7 @@ A refusal quotes the path with `{:?}`: the daemon logs the reason and a session 
 
 ## Completion binds the commit
 
-Completion evidence binds HEAD, and the commit applies asynchronously, so `loom stage complete`
-before the commit landed would bind the old HEAD (and the stage would no longer be `Executing` for
-the late commit). `refuse_uncommitted_index` therefore refuses completion with `staged changes are
-not committed: run loom stage commit and wait for it with loom request status <id> --wait 90` while
-the worktree index differs from HEAD; its Knowledge branch compares the main checkout's index under
-the knowledge prefix, so any staged knowledge change blocks it, including one staged by another
-session. Merge sessions never complete.
+Completion binds HEAD, and the commit applies asynchronously, so a stage completion issued before the commit landed would bind the old HEAD. The inbox drain (`orchestrator/core/inbox_drain/complete.rs::validate`) refuses a relayed completion while the checkout has uncommitted changes (`Commit first`) or its committed HEAD differs from the HEAD the request names. The host job then verifies committed content only, and the application binds the run's head again (`host_verify/apply.rs::bind_and_complete`). Only the completing session types in `host_verify/apply.rs::COMPLETING_SESSION_TYPES` complete a stage.
 
 ## Signing failure routing
 

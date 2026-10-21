@@ -1,6 +1,6 @@
 # Architecture
 
-> Components, data flow, modules
+> Components, data flow, dependencies
 >
 > **Related files:** [patterns.md](patterns.md) for design patterns, [entry-points.md](entry-points.md) for code navigation, [conventions.md](conventions.md) for coding standards.
 
@@ -197,9 +197,7 @@ cheap, and its incremental relink is proven equal to a cold build.
 
 ## Execution Containment (`loom/src/verify/criteria/confine.rs`)
 
-Plan-authored commands run through `spawn_confined`, which scrubs the environment and enforces OS isolation for fresh host commands through Seatbelt or bubblewrap. Authenticated macOS stage inheritance retains the approved capsule permissions. The environment-only description is incorrect; `verify/criteria/confine_host.rs::wrap` chooses the actual launcher or authenticated inherited boundary.
-
-→ [Execution Containment](architecture/execution-containment.md)
+Plan-authored commands run through `spawn_confined`, which scrubs the environment and enforces OS isolation through Seatbelt or bubblewrap (`verify/criteria/confine_host.rs::wrap`). They run only in a host job child (`loom stage verify-host`, see [Host Verification Jobs](architecture/verification-v2-gates.md)), never inside a session. → [Execution Containment](architecture/execution-containment.md)
 
 ## Memory Spool and Drain (`fs/memory/spool.rs`, `orchestrator/core/spool_drain.rs`) [DETAILED]
 
@@ -233,7 +231,7 @@ A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoi
 
 ## Owned Subagent Waits
 
-`loom subagents watch/wait` bind an explicit `--worker claude:<id>`/`--worker codex:<unit-id>` set once per session, replacing an unbound `--timeout`-only poll. Trusted completion writers separately HMAC-sign completion evidence with a host-only key, closing a forgery path through sandbox-writable `handoffs/`; `Session.exit_reason` is independent from `SessionStatus`. See [Owned Waits](architecture/owned-waits.md) and [Completion Recovery](architecture/completion-recovery.md).
+`loom subagents watch/wait` bind an explicit `--worker claude:<id>`/`--worker codex:<unit-id>` set once per session, replacing an unbound `--timeout`-only poll. Trusted writers (the host-job application and receipt persistence) HMAC-sign completion evidence with a host-only key, closing a forgery path through sandbox-writable `handoffs/`; `Session.exit_reason` is independent from `SessionStatus`. See [Owned Waits](architecture/owned-waits.md) and [Completion Recovery](architecture/completion-recovery.md).
 
 ## Typed Config Values (`ConfigValue` Read-Path Seam)
 

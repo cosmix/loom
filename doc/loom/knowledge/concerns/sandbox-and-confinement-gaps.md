@@ -339,12 +339,11 @@ The Cargo home was the same defect and is now stable ([execution containment](..
 
 ## Tests and Criteria That Pass in a Session Fail Under the Confined Runner
 
-`loom stage complete` runs each acceptance criterion through `verify/criteria/confine_host.rs::wrap`, nested inside the stage's Claude Code session sandbox. The runner gives Linux criteria a private `/tmp` and `/var/tmp` (`TMPDIR=/tmp`), binds the resolver's target when it exists, mounts a linked worktree's git metadata read-only, and accepts `timeout_secs` on an extended criterion ([Execution Containment](../architecture/execution-containment.md#read-this-first-what-containment-means-in-loom)). What still differs from the session shell:
+A session's `loom check` and `loom stage complete` relay a host job, and the daemon's host child runs each acceptance criterion through `verify/criteria/confine_host.rs::wrap`, outside the session sandbox ([Criteria Run Outside the Session Sandbox](#criteria-run-outside-the-session-sandbox)). The wrapper gives Linux criteria a private `/tmp` and `/var/tmp` (`TMPDIR=/tmp`), binds the resolver's target when it exists, mounts a linked worktree's git metadata read-only, and accepts `timeout_secs` on an extended criterion ([Execution Containment](../architecture/execution-containment.md#read-this-first-what-containment-means-in-loom)). What still differs from the session shell:
 
 | Symptom confined | Cause | Direction |
 | --- | --- | --- |
 | a criterion fetching packages (`bunx`, `npx`, `uvx`, `pip install`, `cargo install`, `curl`) fails `ConnectionRefused` | criteria never get network, whatever the plan's `allowed_domains` say; those reach only the session | by design: install the tool from a `provision` entry and call the installed binary; `loom plan verify` reports it (`v2_lints/registry_domains.rs`) |
-| tests that bind a Unix socket fail EPERM | the outer Claude Code session sandbox denies `socket(AF_UNIX)`, not bwrap | grant `allow_all_unix_sockets` for the stage, or dispute the criterion |
 | an inner confined run cannot find `~/.cargo/bin` | an outer Linked Cargo home on Linux (only when the Cargo home overlaps the tree) is inherited by the inner wrap | open |
 | `plan_environment_contracts::failed_provision_names_command_and_dir` passes without the command running | `contains("registry refused")` matches the command text embedded in the asserted prefix | assert on `reason[prefix.len()..]` |
 
@@ -352,8 +351,33 @@ Environmental, not defects: `cargo audit` fails in a session because the user's 
 
 **What to do when a criterion cannot pass confined.** Dispute it: one `loom stage dispute-criteria <stage> --criterion-index <n> [--criterion-index <n> ...]` filing names every criterion that fails only because of where completion runs, and the adjudicator replaces or deletes each. `loom stage block` is refused while the latest `loom stage complete` shows a failing criterion. The incident that forced this rule is [Completion Runner Blocks](../mistakes/completion-runner-blocks.md).
 
-## Claude Code 2.1.306+ Refuses the Nested Criteria Runner on Linux
+## Criteria Run Outside the Session Sandbox
 
-Claude Code 2.1.306 starts its Linux Bash sandbox with `bwrap --disable-userns` (when bubblewrap is 0.8.0+, not setuid, and no seccomp helper is in use), so a sandboxed command cannot create a user namespace unless the settings carry `sandbox.allowNestedUserNamespaces: true`. In-session `loom stage complete` on Linux runs criteria in-process through `verify/criteria/confine_host.rs::wrap`, a nested `bwrap` (the daemon socket is granted only on macOS, `session_settings/contents.rs`); without the key every criterion exits 1 with `No permissions to create a new namespace` before its command runs, while the session-shell `loom-verifier` gate still passes.
+A session cannot run confined criteria itself. Claude Code's Linux Bash sandbox starts with
+`bwrap --disable-userns` (Claude Code 2.1.306+), so a `bwrap` nested inside it cannot create the user
+namespace it needs. Loom emits no `sandbox.allowNestedUserNamespaces` key and reads no opt-out for it.
+`loom check` and `loom stage complete` in a session relay a host job instead (`commands/verify_relay.rs`,
+`commands/stage/complete_relay.rs`). The daemon runs `loom stage verify-host` on the host, and that child
+runs criteria through the confined wrapper outside the session's sandbox
+(see [Stage-to-Daemon Channels](../patterns/stage-daemon-channels.md)).
 
-Loom therefore emits `allowNestedUserNamespaces: true` in every enabled Linux capsule (`sandbox/settings/policy.rs::sandbox_settings`). Claude Code documents the cost: a sandboxed command that creates its own user namespace can bypass `filesystem.denyWrite`, `denyRead` and credential-file denies in any folder it may write. The key goes once criteria and the other confined checks run on the host rather than nested in the session.
+**Trade-off.** The session's own shell keeps `--disable-userns`, so a sandboxed command cannot create a user
+namespace. Claude Code documents that a command which creates its own user namespace can bypass
+`filesystem.denyWrite`, `denyRead` and credential-file denies in any folder it may write, so keeping that
+route closed is the point. The cost falls on the project: in-session work that needs user namespaces
+(its own `bwrap` or `unshare` calls, rootless containers) cannot run inside a stage session.
+
+**Non-goal.** Projects whose in-session work needs user namespaces are not supported. Revisit when such work
+can run as a host job, or when Claude Code's sandbox offers a nested-namespace setting that keeps the
+denyWrite and credential denies in force. The history of this failure is in
+[Sandbox Tooling and Network](../mistakes/sandbox-tooling-and-network.md).
+
+## Host-Side Git Needs a Pin, Not Hardening
+
+- **Hardening does not stop a planted filter.** `NO_HOOKS_ARGS` (`git/runner.rs`: `core.hooksPath=/dev/null`, `core.fsmonitor=false`) does not stop a planted gitdir's `filter.<x>.clean` from running under `git status` or `git diff`. Only `WorktreeGit::pinned` (`git/worktree/pinned.rs`) does. Any git that the host child or the daemon runs in a stage worktree must be pinned.
+- **The main checkout cannot be pinned.** `WorktreeGit::pinned` accepts registered linked worktrees only. Git in a knowledge stage's checkout, in the merge flow and in every daemon git call there runs unpinned, while the session's allowlist grants writes under `<project>/.git`. A knowledge session can therefore plant a `.git/config` that daemon or host-child git reads. Fix direction: a pinned form for the main checkout in `git/worktree/pinned.rs`, plus a knowledge-session deny on `.git/config` and `hooks`.
+- **Possible pin bypass through a gitlink, unreproduced.** A pinned `git status` or `git diff` recurses into any gitlink (mode 160000) index entry, reading the nested repository's own `.git` and config (`is_submodule_modified`). A stage that `git add`s an embedded repository with `filter.x.clean` and a stat-dirty file could make a pinned run in the host child (`tree_digest_in`, `committed_content`, the stage-commit checks) run that filter. Probe: add a gitlink to a stage worktree index, run `tree_digest_in` on the pinned git, and check for the filter's marker. If it fires, refuse an index holding a 160000 entry in the pinned run and `read_isolated`, or pass `--ignore-submodules=dirty`.
+
+## Bubblewrap Hides a Secret Only If It Exists at Command Start
+
+`bwrap` can mask a state-root secret only when the file exists when the command starts, because `--ro-bind /dev/null` needs a target. `completion-attestation.key` (`handoff/completion/attest.rs`) is created lazily, so the host child creates it with `attestation_key` before any criterion runs (`host_verify/child.rs`). A mask added for a file that a criterion's command has not yet created does not hold. Revisit when a new state-root secret is added: create it before the wrapper starts.

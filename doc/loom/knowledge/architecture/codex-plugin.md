@@ -55,131 +55,6 @@ reasoning effort / session id) to **stderr** on every healthy run. Loom's silent
 flags that `sandbox` substring as a possible block; it is benign. Judge a run by the echoed model
 line and the actual reply, not by the presence of `sandbox` in stderr.
 
-## The loom-codex-forwarder lane (2026-08-07)
-
-Loom's doctrine now spawns `subagent_type: "loom-codex-forwarder"` for all codex implementation
-work, never the plugin agent directly. The rogue-wrapper incident (see
-[Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md)) showed the plugin agent's
-`tools: Bash` frontmatter is not enforced for in-process subagents: a wrapper holding a codex
-prompt implemented all the edits itself on sonnet and nothing surfaced it. Three shipped layers:
-
-1. **`agents/loom-codex-forwarder.md`** — loom-owned forwarding shim (sonnet, `tools: Bash`),
-   installed by `install.sh` with the other `loom-*` agents. Unlike the plugin wrapper, its
-   `tools:` allowlist IS hard-enforced — user-scope agents enforce the field, plugin agents
-   ignore it by design (code.claude.com/docs/en/sub-agents#available-tools) — so Edit/Read are
-   blocked at the harness level and the hook only has to police Bash-shaped escapes. Contract: resolve the companion by
-   glob (`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`, highest
-   version — `${CLAUDE_PLUGIN_ROOT}` is unset outside plugin agents), ONE Bash call, `--write`
-   plus `--model`/`--effort` exactly as the prompt states, stdout verbatim followed by a
-   `--- LOOM-CODEX-EVIDENCE ---` trailer (`exit:`, `mode:`, then either the newest
-   `state/*/jobs/*.json` paths in companion mode or the `session:` rollout path in direct mode —
-   see the macOS section below).
-   On failure: report verbatim prefixed `LOOM-CODEX-FORWARD-ERROR`, never implement.
-2. **`loom-hooks/codex-forward-guard.sh`** — PreToolUse on Bash/Edit/Write/Read/Task/Agent. Primary
-   gate: payload `agent_type` ∈ {`loom-codex-forwarder`, `codex:codex-rescue`} → only the exact
-   `~/.claude/hooks/loom/codex-forward.sh task ...` wrapper invocation passes
-   (`is_exact_forward_command`, `codex-forward-guard.sh:104-130`); everything else exits 2 with
-   forwarding doctrine on stderr. Every block first runs `require_stage_evidence`, so without
-   stage evidence the guard enforces nothing and the stock plugin runs untouched. Fallback gate: `transcript_path` under `*/subagents/agent-*.jsonl` whose
-   opening bytes carry `LOOM-CODEX-FORWARD-ONLY`. Fail-open everywhere else. `loom_is_subagent`
-   was unusable here — it is process-tree based and returns false for in-process subagents.
-3. **Signal doctrine** (`format_codex_implementers_section`, also emitted on the recovery path):
-   spawn the forwarder by type, put `CODEX_FORWARD_SENTINEL` (`loom/src/codex.rs`) as the codex
-   prompt's FIRST line, and accept a codex report only with the evidence trailer — verify the
-   newest listed job record for the worktree exists with `phase: done`, or, for `mode: direct`,
-   that the listed session rollout exists and postdates the spawn. A report without the
-   trailer, or edits with no matching record, is a failed delegation: revert and respawn, or
-   keep only after a full review.
-
-Cross-surface pins: `tests_doctrine.rs::codex_forward_sentinel_agrees_across_surfaces` ties the
-sentinel constant to the hook script and the agent definition, and requires CLAUDE.md.template
-and the plan-writer SKILL to name the forwarder; `tests_cache.rs` pins the generated section to
-carry the sentinel, the trailer name, and the `loom-codex-forwarder` spawn line.
-
-## The sandbox must grant codex its state dirs (2026-08-10)
-
-Codex is a subprocess, so the Bash sandbox — not Claude Code's tool permissions — decides whether it
-can run at all. Its write set is the working directory plus the session temp dir, and codex needs two
-directories outside both:
-
-| Path                                       | Written by            | Failure when denied                            |
-| ------------------------------------------ | --------------------- | ---------------------------------------------- |
-| `~/.codex`                                 | codex CLI (sqlite state runtime, sessions, logs) | `failed to initialize state runtime`, `Read-only file system (os error 30)` |
-| `~/.claude/plugins/data/codex-openai-codex` | codex-companion (per-job state) | `ENOENT: no such file or directory, mkdir '.../state/<cwd>-<hash>/jobs'` |
-
-Both are declared once as `CODEX_SANDBOX_WRITE_PATHS` (`loom/src/codex.rs`) and emitted as
-`sandbox.filesystem.allowWrite` — additive, OS-enforced for child processes, and the mechanism the
-settings schema names for exactly this. `CODEX_SANDBOX_DOMAINS` does the same for the hosts codex
-reaches (no domain is pre-allowed by default, and an unlisted host raises a mid-run permission
-decision). `sandbox/settings/policy.rs::filesystem_settings` emits them into a codex-licensed
-stage's settings (every stage worktree and `loom repair --fix`), and
-`sandbox/control_surfaces.rs::session_writable_roots` counts them among the session's writable
-roots, so no hook path or `LOOM_BIN` under them is accepted. `fs/permissions/settings.rs` emits no
-codex grant. Sessions outside a loom repo need the same block in `~/.claude/settings.json` — loom
-does not own that file.
-
-**This is Linux-specific in origin, not in fix.** macOS Seatbelt let these writes through, so the
-lane looked healthy there; the native bubblewrap sandbox enforces the allowlist and broke it.
-
-**Never route around it with `dangerouslyDisableSandbox`.** That retry re-enters the permission gate
-and the auto-mode classifier denies it, which is how the lane went from "sandboxed" to "unusable" —
-see [Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md).
-
-## Codex's own sandbox must exclude /tmp (2026-08-11)
-
-`allowWrite` was necessary but not sufficient: codex (0.147+) wraps every exec in its OWN nested
-bubblewrap sandbox. In `workspace-write` mode its default writable roots are the cwd, `/tmp`, and
-`$TMPDIR`, and it masks `.git` under every writable root (`codex-rs/linux-sandbox/src/bwrap.rs`).
-`/tmp/.git` does not exist, so bwrap must create that mountpoint — and the outer stage sandbox
-keeps `/tmp` read-only (only `/tmp/claude` and `$TMPDIR` are writable), so every codex exec dies at
-namespace setup with `bwrap: Can't mkdir /tmp/.git: Read-only file system` before the model runs a
-single command. Reproduce and verify without a model call:
-
-```bash
-codex sandbox -c sandbox_mode="workspace-write" -- echo hi            # bwrap: Can't mkdir /tmp/.git
-codex sandbox -c sandbox_mode="workspace-write" \
-  -c sandbox_workspace_write.exclude_slash_tmp=true -- echo hi        # hi
-```
-
-The fix is `[sandbox_workspace_write] exclude_slash_tmp = true` in `~/.codex/config.toml` — the only
-channel loom controls, because the companion spawns `codex app-server` itself and no `-c` override
-can be threaded through a forward. `loom/src/codex.rs` owns detection
-(`codex_config_excludes_slash_tmp`) and the comment-preserving edit
-(`ensure_codex_config_excludes_slash_tmp`, `toml_edit`); `loom repair --fix` applies it and
-`advisory_codex_lane_preflight` (`commands/run/checks.rs`) warns at `loom run` startup when the lane
-is licensed but the key is missing. Both are Linux-gated: on macOS the question never arises,
-because inside the stage sandbox codex's Seatbelt cannot be applied at all (see the macOS section of
-[Execution Containment](execution-containment.md)) and
-outside it the default roots are harmless.
-
-Do NOT "fix" this by adding `/tmp` to the outer sandbox's `allowWrite` instead: bwrap's mountpoint
-mkdir writes through to the host, and a stray `/tmp/.git` makes git discovery under any `/tmp`
-directory find a phantom repository.
-
-## Availability fallback: codex CLI/plugin not installed (2026-08-08)
-
-Stage licensing (`implementers` listing `codex`) says a stage MAY use the lane; it says nothing
-about whether the lane is actually reachable on this machine. `loom/src/codex.rs` adds a second,
-independent gate for that: `codex_lane_status()` does the real check (codex CLI resolvable via
-`find_codex_path()`, and the plugin's companion runtime present at
-`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`), and a memoized
-`codex_lane_available()` wraps it as a cheap per-spawn boolean — the same
-capability/preflight/resolve shape as [Remote Control](remote-control.md)'s `preflight()` /
-`resolve()`.
-
-- **`commands/run/`** runs the check once at startup and prints an advisory warning when the lane
-  is unavailable, mirroring `run_startup_preflight` for Remote Control: informative, never a hard
-  failure — a missing codex install must not block a run that never intended to use codex on most
-  of its stages.
-- **Signal doctrine.** When the lane is unavailable, `format_codex_implementers_section` emits a
-  fallback note in place of the normal codex doctrine block: terra-tier work routes to
-  sonnet and luna-tier work to haiku for the run, and the orchestrator must NOT spawn `loom-codex-forwarder` — spawning it
-  against a missing companion runtime would just fail the one Bash call the forwarder is allowed
-  to make.
-- **Scope.** The check does not mutate `implementers` or stage state; it only changes what the
-  signal tells the orchestrator to do at spawn time, the same way Remote Control's `resolve()`
-  gates the `--remote-control` flag without touching `.loom/work/config.toml`.
-
 ## Plugin-owned hooks and Loom-native hooks
 
 | Event        | Script                       | Timeout |
@@ -266,29 +141,6 @@ states the user/project rule as the requirement.
 The capsule mechanics, what survives from the checkout's local file and what still writes it are in
 [Claude Code Plugin Scope in Loom Repos](../conventions/guidance-channels-and-plugin-scope.md).
 
-## What Codex Actually Reads (verified 2026-08-29)
-
-Codex loads a project doc file named AGENTS.md from its working directory and never reads
-`CLAUDE.md`. Probed both directions with `codex exec -m gpt-6-luna` in a scratch repo: a
-passphrase planted in a file named AGENTS.md came back verbatim; the identical file renamed
-`CLAUDE.md` produced `UNKNOWN`.
-`loom install-assets` now writes `~/.codex/AGENTS.md` from the repo-root AGENTS.md.template file
-(`loom/src/assets/install.rs:110-127`), capped at 12,288 bytes (`loom/src/assets/mod.rs:22`) —
-well under codex's own 32,768-byte `project_doc_max_bytes` truncation point.
-
-Two consequences:
-
-- Codex still starts every run with no doctrine beyond what a project's `~/.codex/AGENTS.md` and
-  the prompt carry, since a scratch repo or one that never ran `loom install-assets` has neither.
-  `loom-hooks/codex-forward.sh` still prepends its own per-task stage contract on every forwarded task —
-  the one channel an orchestrator writing a prompt cannot forget, and the standing `~/.codex/AGENTS.md`
-  does not make it redundant.
-- The old signal doctrine's claim that codex "inherits CLAUDE.md's knowledge-first rule" named the
-  wrong mechanism. The rule reached codex because orchestrators pasted CLAUDE.md Rule 5's Claude
-  preamble ("READ CLAUDE.md IMMEDIATELY AND FOLLOW ALL ITS RULES") into codex prompts. Codex obeyed,
-  read the file, hit KNOWLEDGE-FIRST, and paged a ~200k-token corpus through shell reads. Never send
-  that preamble to a codex prompt.
-
 ## The Navigation Kit
 
 Codex's harness is shell-based, so the cure for slow reading is a shell command that returns
@@ -320,7 +172,155 @@ session, including a sibling unit's earlier changes in that stage. See
 [Parallel Worktree Shared State](../mistakes/parallel-worktree-shared-state.md) for the general rule
 this instance follows.
 
-## Direct-lane runs: benign stderr, closed stdin, and what the report must be (2026-09-02)
+## The loom-codex-forwarder lane
+
+Loom's doctrine now spawns `subagent_type: "loom-codex-forwarder"` for all codex implementation
+work, never the plugin agent directly. The rogue-wrapper incident (see
+[Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md)) showed the plugin agent's
+`tools: Bash` frontmatter is not enforced for in-process subagents: a wrapper holding a codex
+prompt implemented all the edits itself on sonnet and nothing surfaced it. Three shipped layers:
+
+1. **`agents/loom-codex-forwarder.md`** — loom-owned forwarding shim (sonnet, `tools: Bash`),
+   installed by `install.sh` with the other `loom-*` agents. Unlike the plugin wrapper, its
+   `tools:` allowlist IS hard-enforced — user-scope agents enforce the field, plugin agents
+   ignore it by design (code.claude.com/docs/en/sub-agents#available-tools) — so Edit/Read are
+   blocked at the harness level and the hook only has to police Bash-shaped escapes. Contract: resolve the companion by
+   glob (`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`, highest
+   version — `${CLAUDE_PLUGIN_ROOT}` is unset outside plugin agents), ONE Bash call, `--write`
+   plus `--model`/`--effort` exactly as the prompt states, stdout verbatim followed by a
+   `--- LOOM-CODEX-EVIDENCE ---` trailer (`exit:`, `mode:`, then either the newest
+   `state/*/jobs/*.json` paths in companion mode or the `session:` rollout path in direct mode —
+   see the macOS section below).
+   On failure: report verbatim prefixed `LOOM-CODEX-FORWARD-ERROR`, never implement.
+2. **`loom-hooks/codex-forward-guard.sh`** — PreToolUse on Bash/Edit/Write/Read/Task/Agent. Primary
+   gate: payload `agent_type` ∈ {`loom-codex-forwarder`, `codex:codex-rescue`} → only the exact
+   `~/.claude/hooks/loom/codex-forward.sh task ...` wrapper invocation passes
+   (`is_exact_forward_command`, `codex-forward-guard.sh:104-130`); everything else exits 2 with
+   forwarding doctrine on stderr. Every block first runs `require_stage_evidence`, so without
+   stage evidence the guard enforces nothing and the stock plugin runs untouched. Fallback gate: `transcript_path` under `*/subagents/agent-*.jsonl` whose
+   opening bytes carry `LOOM-CODEX-FORWARD-ONLY`. Fail-open everywhere else. `loom_is_subagent`
+   was unusable here — it is process-tree based and returns false for in-process subagents.
+3. **Signal doctrine** (`format_codex_implementers_section`, also emitted on the recovery path):
+   spawn the forwarder by type, put `CODEX_FORWARD_SENTINEL` (`loom/src/codex.rs`) as the codex
+   prompt's FIRST line, and accept a codex report only with the evidence trailer — verify the
+   newest listed job record for the worktree exists with `phase: done`, or, for `mode: direct`,
+   that the listed session rollout exists and postdates the spawn. A report without the
+   trailer, or edits with no matching record, is a failed delegation: revert and respawn, or
+   keep only after a full review.
+
+Cross-surface pins: `tests_doctrine.rs::codex_forward_sentinel_agrees_across_surfaces` ties the
+sentinel constant to the hook script and the agent definition, and requires CLAUDE.md.template
+and the plan-writer SKILL to name the forwarder; `tests_cache.rs` pins the generated section to
+carry the sentinel, the trailer name, and the `loom-codex-forwarder` spawn line.
+
+## The sandbox must grant codex its state dirs
+
+Codex is a subprocess, so the Bash sandbox — not Claude Code's tool permissions — decides whether it
+can run at all. Its write set is the working directory plus the session temp dir, and codex needs two
+directories outside both:
+
+| Path                                       | Written by            | Failure when denied                            |
+| ------------------------------------------ | --------------------- | ---------------------------------------------- |
+| `~/.codex`                                 | codex CLI (sqlite state runtime, sessions, logs) | `failed to initialize state runtime`, `Read-only file system (os error 30)` |
+| `~/.claude/plugins/data/codex-openai-codex` | codex-companion (per-job state) | `ENOENT: no such file or directory, mkdir '.../state/<cwd>-<hash>/jobs'` |
+
+Both are declared once as `CODEX_SANDBOX_WRITE_PATHS` (`loom/src/codex.rs`) and emitted as
+`sandbox.filesystem.allowWrite` — additive, OS-enforced for child processes, and the mechanism the
+settings schema names for exactly this. `CODEX_SANDBOX_DOMAINS` does the same for the hosts codex
+reaches (no domain is pre-allowed by default, and an unlisted host raises a mid-run permission
+decision). `sandbox/settings/policy.rs::filesystem_settings` emits them into a codex-licensed
+stage's settings (every stage worktree and `loom repair --fix`), and
+`sandbox/control_surfaces.rs::session_writable_roots` counts them among the session's writable
+roots, so no hook path or `LOOM_BIN` under them is accepted. `fs/permissions/settings.rs` emits no
+codex grant. Sessions outside a loom repo need the same block in `~/.claude/settings.json` — loom
+does not own that file.
+
+**This is Linux-specific in origin, not in fix.** macOS Seatbelt let these writes through, so the
+lane looked healthy there; the native bubblewrap sandbox enforces the allowlist and broke it.
+
+**Never route around it with `dangerouslyDisableSandbox`.** That retry re-enters the permission gate
+and the auto-mode classifier denies it, which is how the lane went from "sandboxed" to "unusable" —
+see [Codex Lane Rogue Wrapper](../mistakes/codex-lane-rogue-wrapper.md).
+
+## Codex's own sandbox must exclude /tmp
+
+`allowWrite` was necessary but not sufficient: codex (0.147+) wraps every exec in its OWN nested
+bubblewrap sandbox. In `workspace-write` mode its default writable roots are the cwd, `/tmp`, and
+`$TMPDIR`, and it masks `.git` under every writable root (`codex-rs/linux-sandbox/src/bwrap.rs`).
+`/tmp/.git` does not exist, so bwrap must create that mountpoint — and the outer stage sandbox
+keeps `/tmp` read-only (only `/tmp/claude` and `$TMPDIR` are writable), so every codex exec dies at
+namespace setup with `bwrap: Can't mkdir /tmp/.git: Read-only file system` before the model runs a
+single command. Reproduce and verify without a model call:
+
+```bash
+codex sandbox -c sandbox_mode="workspace-write" -- echo hi            # bwrap: Can't mkdir /tmp/.git
+codex sandbox -c sandbox_mode="workspace-write" \
+  -c sandbox_workspace_write.exclude_slash_tmp=true -- echo hi        # hi
+```
+
+The fix is `[sandbox_workspace_write] exclude_slash_tmp = true` in `~/.codex/config.toml` — the only
+channel loom controls, because the companion spawns `codex app-server` itself and no `-c` override
+can be threaded through a forward. `loom/src/codex.rs` owns detection
+(`codex_config_excludes_slash_tmp`) and the comment-preserving edit
+(`ensure_codex_config_excludes_slash_tmp`, `toml_edit`); `loom repair --fix` applies it and
+`advisory_codex_lane_preflight` (`commands/run/checks.rs`) warns at `loom run` startup when the lane
+is licensed but the key is missing. Both are Linux-gated: on macOS the question never arises,
+because inside the stage sandbox codex's Seatbelt cannot be applied at all (see the macOS section of
+[Execution Containment](execution-containment.md)) and
+outside it the default roots are harmless.
+
+Do NOT "fix" this by adding `/tmp` to the outer sandbox's `allowWrite` instead: bwrap's mountpoint
+mkdir writes through to the host, and a stray `/tmp/.git` makes git discovery under any `/tmp`
+directory find a phantom repository.
+
+## Availability fallback: codex CLI/plugin not installed
+
+Stage licensing (`implementers` listing `codex`) says a stage MAY use the lane; it says nothing
+about whether the lane is actually reachable on this machine. `loom/src/codex.rs` adds a second,
+independent gate for that: `codex_lane_status()` does the real check (codex CLI resolvable via
+`find_codex_path()`, and the plugin's companion runtime present at
+`~/.claude/plugins/cache/openai-codex/codex/*/scripts/codex-companion.mjs`), and a memoized
+`codex_lane_available()` wraps it as a cheap per-spawn boolean — the same
+capability/preflight/resolve shape as [Remote Control](remote-control.md)'s `preflight()` /
+`resolve()`.
+
+- **`commands/run/`** runs the check once at startup and prints an advisory warning when the lane
+  is unavailable, mirroring `run_startup_preflight` for Remote Control: informative, never a hard
+  failure — a missing codex install must not block a run that never intended to use codex on most
+  of its stages.
+- **Signal doctrine.** When the lane is unavailable, `format_codex_implementers_section` emits a
+  fallback note in place of the normal codex doctrine block: terra-tier work routes to
+  sonnet and luna-tier work to haiku for the run, and the orchestrator must NOT spawn `loom-codex-forwarder` — spawning it
+  against a missing companion runtime would just fail the one Bash call the forwarder is allowed
+  to make.
+- **Scope.** The check does not mutate `implementers` or stage state; it only changes what the
+  signal tells the orchestrator to do at spawn time, the same way Remote Control's `resolve()`
+  gates the `--remote-control` flag without touching `.loom/work/config.toml`.
+
+## What Codex Actually Reads
+
+Codex loads a project doc file named AGENTS.md from its working directory and never reads
+`CLAUDE.md`. Probed both directions with `codex exec -m gpt-6-luna` in a scratch repo: a
+passphrase planted in a file named AGENTS.md came back verbatim; the identical file renamed
+`CLAUDE.md` produced `UNKNOWN`.
+`loom install-assets` now writes `~/.codex/AGENTS.md` from the repo-root AGENTS.md.template file
+(`loom/src/assets/install.rs:110-127`), capped at 12,288 bytes (`loom/src/assets/mod.rs:22`) —
+well under codex's own 32,768-byte `project_doc_max_bytes` truncation point.
+
+Two consequences:
+
+- Codex still starts every run with no doctrine beyond what a project's `~/.codex/AGENTS.md` and
+  the prompt carry, since a scratch repo or one that never ran `loom install-assets` has neither.
+  `loom-hooks/codex-forward.sh` still prepends its own per-task stage contract on every forwarded task —
+  the one channel an orchestrator writing a prompt cannot forget, and the standing `~/.codex/AGENTS.md`
+  does not make it redundant.
+- The old signal doctrine's claim that codex "inherits CLAUDE.md's knowledge-first rule" named the
+  wrong mechanism. The rule reached codex because orchestrators pasted CLAUDE.md Rule 5's Claude
+  preamble ("READ CLAUDE.md IMMEDIATELY AND FOLLOW ALL ITS RULES") into codex prompts. Codex obeyed,
+  read the file, hit KNOWLEDGE-FIRST, and paged a ~200k-token corpus through shell reads. Never send
+  that preamble to a codex prompt.
+
+## Direct-lane runs: benign stderr, closed stdin, and what the report must be
 
 A healthy `mode: direct` run logs these repeatedly on stderr while the model call succeeds and the
 files land:
@@ -355,7 +355,7 @@ at all. `codex-forward-guard.sh` is now registered for `SendMessage` too
 (`loom/src/fs/permissions/hooks/config.rs`, pinned by `assert_codex_forward_guard_matchers`), and
 `agents/loom-codex-forwarder.md` states that the final message is the report.
 
-## The forward guard engages only inside a loom stage (2026-09-18)
+## The forward guard engages only inside a loom stage
 
 `loom-hooks/codex-forward-guard.sh` classifies `loom-codex-forwarder` AND the stock plugin agent `codex:codex-rescue` as forwarding shims. Until 2026-09-18 it blocked such a call whenever no stage could be resolved, so with loom's hooks installed the stock Codex plugin was unusable in every ordinary Claude Code session. Every blocking and rewriting path now passes `require_stage_evidence` first: with no stage evidence the guard exits 0 for every payload, including the missing-metadata and missing-jq blocks. With any evidence, behaviour is what it was, including the block when the stage cannot be resolved; the block message names the evidence when it is not the hook's own environment.
 

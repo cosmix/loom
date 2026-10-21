@@ -203,7 +203,7 @@ Warning: could not mark stage 'climate-timezone-data' NeedsHandoff: Failed to op
 ```
 
 **Why:** a worktree agent's Bash sandbox write allow-list grants `.loom/work/handoffs` but not
-`.loom/work/stages` — deliberately, since `daemon/server/control_complete.rs` exists so a sandboxed
+`.loom/work/stages` — deliberately, since daemon/server/control_complete.rs (removed) exists so a sandboxed
 agent cannot mutate trusted `.loom/work` state directly. `loom handoff` wrote the document and could
 not apply the `Executing -> NeedsHandoff` transition. `commands/handoff/create.rs` treated that
 failure as a warning on a command that exited 0. The daemon's recovery is level-triggered on
@@ -293,6 +293,6 @@ the daemon runs both before it applies the `CompleteStage` transition.
 
 **Why:** `commands/request/status.rs` anchored its inbox reads on the uncanonicalized `resolve_work_dir()` root. `safe_fs::safe_open_dirfd` opens with `O_NOFOLLOW`, and a worktree's `.loom/work` is always a symlink to the main repository's state.
 
-**Prevention:** a command that reads `.loom/work` through the no-follow helpers must canonicalize the work-dir root once before anchoring. Everything beneath the root stays no-follow. `commands/stage/control_complete.rs` and `commands/request/status.rs` (`canonical_root`) follow this pattern. Test such a command with a worktree-shaped fixture: `wt/.loom/work` symlinked to a real work dir.
+**Prevention:** a command that reads `.loom/work` through the no-follow helpers must canonicalize the work-dir root once before anchoring. Everything beneath the root stays no-follow. commands/stage/control_complete.rs (removed) and `commands/request/status.rs` (`canonical_root`) follow this pattern. Test such a command with a worktree-shaped fixture: `wt/.loom/work` symlinked to a real work dir.
 
 **Fix:** `status.rs` canonicalizes the root before `resolve_status`; `a_work_dir_symlink_resolves_once_canonicalized` pins it.

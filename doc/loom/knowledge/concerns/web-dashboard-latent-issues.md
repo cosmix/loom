@@ -35,7 +35,7 @@
   half-closed peer while gated — not an oversight; a busy dashboard could in principle have all
   8 slots pinned by stalled peers for up to ~32s before any reclaim.
 
-## Settings lanes (2026-09-12)
+## Settings lanes
 
 Current settings behavior and remaining concerns:
 
@@ -53,7 +53,7 @@ Current settings behavior and remaining concerns:
    candidate work if bundle size becomes a real budget: dynamic `import()` for the
    terminal and graph routes.
 
-## Dashboard settings: themes and notifications (2026-09-18)
+## Dashboard settings: themes and notifications
 
 Two gaps accepted rather than closed while adding the theme picker and notification switch:
 

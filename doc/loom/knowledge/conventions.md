@@ -15,7 +15,8 @@ bump rule, and version/release identity → [Code Style and Structure](conventio
 
 ## Error Handling
 
-See [Code Style and Structure](conventions/code-style-and-structure.md).
+Application code returns `anyhow::Result<T>` with actionable context at layer crossings; typed errors only where callers match on variants; native adapter errors stay native at their boundary; git errors carry command, directory, exit code, stdout and stderr.
+Full rules: [Code Style and Structure](conventions/code-style-and-structure.md#error-handling).
 
 ## Serialization
 
@@ -198,7 +199,9 @@ See [Git and Build Workflow](conventions/git-and-build-workflow.md).
 
 ## `cargo test` Is Not This Repo's Test Gate — `--all-targets --no-fail-fast` Is
 
-See [Git and Build Workflow](conventions/git-and-build-workflow.md).
+Run Rust gates from `loom/`: `cargo test --all-targets --no-fail-fast -- --test-threads=4`, plus the separate doctest, fmt, clippy and rustdoc commands.
+Reconcile Cargo metadata with harness summaries; a timeout before harness entry leaves a target unverified.
+Full gate, CI jobs and ambient-identity caveats: [Git and Build Workflow](conventions/git-and-build-workflow.md#cargo-test-is-not-this-repos-test-gate--all-targets---no-fail-fast-is).
 
 ## Bump `INDEX_VERSION` Whenever `lexical::tokenize` Changes
 

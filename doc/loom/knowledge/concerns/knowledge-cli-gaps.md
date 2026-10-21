@@ -2,7 +2,7 @@
 
 > Knowledge CLI gaps
 
-## `loom knowledge update` Cannot Set a Topic Blurb (2026-07-28)
+## `loom knowledge update` Cannot Set a Topic Blurb
 
 A new topic is seeded with a fixed scaffold — a title derived from the slug and the blurb
 "Topic notes for the `<category>` knowledge area" — and user content is appended _after_ it.
@@ -13,7 +13,7 @@ own, so seeding and correcting the blurb are two calls, and a leading `>` line i
 content becomes a second, redundant blurb-shaped paragraph in the body rather than replacing the
 scaffold's.
 
-## `loom knowledge` Cannot Rename a Section Heading (2026-08-17)
+## `loom knowledge` Cannot Rename a Section Heading
 
 `loom knowledge replace-section <file> <heading> [content]` replaces a section's **body** and
 keeps the existing heading line. `splice_section` (`fs/knowledge/splice.rs`) matches the EXISTING heading and
@@ -28,7 +28,7 @@ missing.
 **Fix:** either accept a `--heading <new>` flag, or match the OLD heading and re-emit whatever
 heading line the content passed in.
 
-## Two Fenced-Code-Block Models Disagree in `fs/knowledge/` (2026-08-26)
+## Two Fenced-Code-Block Models Disagree in `fs/knowledge/`
 
 `splice.rs`'s `fence_mask` (the level-agnostic `replace-section` splicer) requires a closing
 fence's run length to be at least as long as the opener's — CommonMark-correct. `chunker.rs`'s
@@ -40,7 +40,7 @@ reading through to the real closer. Consequence: the span `loom knowledge contex
 heading from is not necessarily the span `replace-section` will overwrite. Should become one
 shared scanner.
 
-## `replace-section` Silently Converts CRLF to LF and Can Drop Trailing Blank Lines (2026-08-26)
+## `replace-section` Silently Converts CRLF to LF and Can Drop Trailing Blank Lines
 
 `splice.rs::assemble_replacement` rebuilds the file from `base.lines()` (which strips both `\n`
 and any preceding `\r`) joined back with plain `\n`, so a CRLF knowledge file is silently
@@ -50,7 +50,7 @@ the match is not copied forward. Harmless today — this tree's knowledge files 
 knowing so a surprising whitespace-only diff after a `replace-section` call is explainable rather
 than alarming.
 
-## `loom knowledge update` Trims Stdin Content But Not Inline Content (2026-08-26)
+## `loom knowledge update` Trims Stdin Content But Not Inline Content
 
 `commands/knowledge/mod.rs::resolve_content` trims stdin input (`read_content_from_stdin` calls
 `buffer.trim()`) but passes an inline CLI argument through untrimmed (`Some(c) => c`). An inline
@@ -84,7 +84,7 @@ What remains is discipline, not backlog:
   extractor that finds the section end MUST skip fenced code: a `# comment` line inside a fence is not a heading, and one
   split truncated a section at such a line and left an unclosed fence that made the checker count 152 lines.
 
-## File Tools Are Blocked on Knowledge Files, and No Command Renames a Heading (2026-09-13)
+## File Tools Are Blocked on Knowledge Files, and No Command Renames a Heading
 
 The worktree file guard refuses Edit and Write under `doc/loom/knowledge/` ("knowledge files are
 recorded through `loom knowledge update`, not file tools"), in a knowledge-distill stage too. The

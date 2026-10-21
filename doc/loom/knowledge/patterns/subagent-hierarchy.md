@@ -61,7 +61,7 @@ rg -n "HIERARCHY SECOND" skills/   # must be ZERO hits (criteria-keyed, not rank
 
 **Watch item:** whether Claude Code hooks (PreToolUse etc.) fire identically for depth-2 subagents is undocumented upstream. Loom's `commit-filter.sh` detection walks the process tree (nearest claude ancestor vs `LOOM_MAIN_AGENT_PID`) and is depth-agnostic by construction, but re-verify on major Claude Code upgrades. Separately, PreToolUse hooks do NOT see commands codex runs internally — codex is handed `workspace-write` with approval `never`, so never give it a `.loom/work/` path.
 
-## Model Playbook: Orchestration Model Is Per Stage Type, Configurable (2026-07-28)
+## Model Playbook: Orchestration Model Is Per Stage Type, Configurable
 
 Every stage's main agent runs the model and reasoning effort configured for its stage type
 (`models/stage/defaults.rs::default_model` / `default_reasoning_effort`): `standard`, `knowledge`,

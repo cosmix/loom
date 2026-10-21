@@ -4,7 +4,7 @@
 
 ## What happened
 
-Two stages of PLAN-loop-recovery (`worker-evidence`, 2026-09-13T22:10:52Z; `completion-recovery`, 2026-09-14T11:23:23Z) went `Executing -> WaitingForInput` while their sessions kept running tools for hours. `loom status` showed `?` with the resume hint; the completion broker refused `loom stage complete` with `stage is not executing` (`daemon/server/control_complete.rs`, `validate_active_identity`). Both flips landed a few seconds after the main agent's turn ended with a Stop hook, while a freshly spawned `loom-codex-forwarder` subagent was in its first model turn.
+Two stages of PLAN-loop-recovery (`worker-evidence`, 2026-09-13T22:10:52Z; `completion-recovery`, 2026-09-14T11:23:23Z) went `Executing -> WaitingForInput` while their sessions kept running tools for hours. `loom status` showed `?` with the resume hint; the completion broker refused `loom stage complete` with `stage is not executing` (daemon/server/control_complete.rs (removed), `validate_active_identity`). Both flips landed a few seconds after the main agent's turn ended with a Stop hook, while a freshly spawned `loom-codex-forwarder` subagent was in its first model turn.
 
 ## Why
 

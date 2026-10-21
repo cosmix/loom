@@ -117,7 +117,7 @@ A hook that Claude Code itself invokes (a `PreToolUse` guard, a global `UserProm
 
 **Worktree detection gotcha:** `_common.sh:loom_current_worktree()` decides membership by LOCATION, never by `LOOM_STAGE_ID`, which leaks into plain sessions from prior runs. A session counts as inside a worktree when EITHER the current directory is inside `.worktrees/<stage>/`, OR `LOOM_WORKTREE_PATH` points into `.worktrees/` and that directory still exists on disk (the on-disk check rejects a stale, leaked value). An earlier version of this note said both conditions were required.
 
-## Hook Behaviors Added by the Efficiency Plan (2026-09-19)
+## Hook Behaviors Added by the Efficiency Plan
 
 - **`spawn-guard.sh` injects the subagent preamble.** A typed spawn whose prompt lacks `PREAMBLE_LINE` gets
   `loom-hooks/_subagent-preamble.txt`, a blank line, then its own prompt byte for byte (`spawn-guard.sh:267-285`).

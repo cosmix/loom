@@ -130,24 +130,6 @@ pub enum AcceptanceCriterion {
 
 **Why untagged**: avoids requiring a `type: simple` / `type: extended` discriminator in user-authored YAML. The trade-off is that serde error messages on malformed input are less precise.
 
-## Extract the Decision When the Failure Mode Is Not Reproducible in CI (2026-08-08)
-
-**Problem shape:** a rule guards an OS failure that no CI runner can produce. The test written against
-the real command passes _for the wrong reason_ and would still pass with the rule deleted.
-
-Concretely: the e2e case meant to pin tmux's "exit 0 but stderr non-empty is a failure" rule used an
-unwritable socket parent — which makes tmux exit **1**, so the plain exit-code check alone satisfied
-it. The genuine condition needs the socket dir to exist while socket _creation_ is denied.
-
-**Pattern:** split the rule into a pure decision fn over already-gathered inputs
-(`evaluate_new_session(socket, status_success, stderr)`) and unit-test _that_. The impure caller keeps
-only the gathering. Applied again in `build_overview_argv`, which takes the viewer socket and
-`(socket, tracking_key)` pairs as parameters rather than deriving them, so the whole argv sequence is
-assertable without tmux.
-
-**Rule:** when an OS failure mode is not reproducible in CI, extract the decision and test it directly.
-Never settle for a test that passes for the wrong reason — see `mistakes/tests-that-cannot-fail.md`.
-
 ## Matched Positive and Negative Controls for a Boundary Test
 
 `verify/criteria/tests/confine_tests.rs` ships
@@ -199,3 +181,21 @@ A stage that cannot finish disputes a wrong check or blocks on a need only a per
 - **Refused while a criterion fails.** An agent's block (RPC naming a session, spool, inbox) goes through `stage_service/control_block.rs::handle_agent_block_stage`: when the session's latest trusted completion checkpoint records a failing `acceptance-<i>` result, the block is refused with the `dispute-criteria --criterion-index <i>...` command naming each one, plus the other dispute routes. No checkpoint, an unreadable one, or a failure with no failing criterion lets the block through. The operator's block and the signing block keep `handle_block_stage`. The rule text: a criterion failing only because of where completion runs is disputed in one filing, never blocked; block is for a credential, a host install or a person-only decision.
 - **Subagents never block or dispute.** `CLAUDE.md.template` and `loom-hooks/_subagent-preamble.txt` tell a subagent to report the need to its orchestrator: a relayed subagent block would retire the main session mid-orchestration. A relayed dispute's notice tells the agent to end its turn, as a relayed block's does.
 - **Gaps.** See [agent-rule-bending-hardening](../concerns/agent-rule-bending-hardening.md#stage-agents-stop-and-report-instead-of-disputing-or-blocking).
+
+## Extract the Decision When the Failure Mode Is Not Reproducible in CI
+
+**Problem shape:** a rule guards an OS failure that no CI runner can produce. The test written against
+the real command passes _for the wrong reason_ and would still pass with the rule deleted.
+
+Concretely: the e2e case meant to pin tmux's "exit 0 but stderr non-empty is a failure" rule used an
+unwritable socket parent — which makes tmux exit **1**, so the plain exit-code check alone satisfied
+it. The genuine condition needs the socket dir to exist while socket _creation_ is denied.
+
+**Pattern:** split the rule into a pure decision fn over already-gathered inputs
+(`evaluate_new_session(socket, status_success, stderr)`) and unit-test _that_. The impure caller keeps
+only the gathering. Applied again in `build_overview_argv`, which takes the viewer socket and
+`(socket, tracking_key)` pairs as parameters rather than deriving them, so the whole argv sequence is
+assertable without tmux.
+
+**Rule:** when an OS failure mode is not reproducible in CI, extract the decision and test it directly.
+Never settle for a test that passes for the wrong reason — see `mistakes/tests-that-cannot-fail.md`.

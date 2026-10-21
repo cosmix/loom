@@ -61,6 +61,11 @@ parent's `mod` declaration does not surface it any further up on its own.
 - Naming: `test_<action>_<condition>`
 - Inline `#[cfg(test)] mod tests {}` for simple cases; separate `tests.rs` for complex suites
 - Integration tests in `loom/tests/integration/`, shared helpers in `helpers.rs`
+- Probe guards: `process/sandbox_probe.rs::skip_unless(probe_ok, ..)` returns `true` when the test must skip, so the guard is `if skip_unless(..) { return; }`. `if !skip_unless(..)` runs the test only when the probe fails.
+- Tests that spawn the real `loom verify-host` binary belong in an integration target (`loom/tests/host_verification_e2e.rs` holds the freeze deadline test). `CARGO_BIN_EXE_loom` is set only for integration test targets, so `cargo test --lib` cannot build the binary.
+- Process-group tests: spawn the stand-in criterion from Rust with `process_group(0)` and record its pid with `store::append_group` (`host_verify/tests_runner.rs`). Under `/bin/sh` (dash) without a tty, `set -m; sleep 600 &` leaves the job in the shell's process group, so the test passes without exercising groups.
+- Absence checks: anchor a grep on the removed symbol (`daemon::socket_path`), not a substring of a live one (`socket_path` also matches `sandbox::hidden_socket_paths`).
+- `Applied` outcomes: name them through a variant match (`variant()` in `loom/tests/daemon_completion_contracts.rs`) or `apply::describe` (`host_verify/apply.rs`), never `{:?}`. The output does not depend on the derived `Debug`.
 
 ## ID and Input Validation
 
@@ -266,7 +271,7 @@ filename, e.g. `settings-model.test.ts`, `settings-cards.test.tsx`, `settings-di
 there is no one-test-file-per-component guarantee; a component file may have no matching test file
 at all.
 
-## Splitting a Test File That Sits at the 400-Line Cap (2026-09-19)
+## Splitting a Test File That Sits at the 400-Line Cap
 
 A test file at `FILE_LINE_LIMIT` (400) cannot take a `#[path = "..."] mod x;` pair: the declaration alone pushes it
 to 401 lines. `loom/src/assets/tests.rs` avoided that with a bare `mod skill_references;`, which resolves to

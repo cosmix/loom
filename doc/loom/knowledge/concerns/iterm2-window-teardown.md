@@ -2,7 +2,7 @@
 
 > iTerm2 window never named
 
-## iTerm2 Windows Survive Stage Completion — Spawn Never Names the Window (GitHub #7, 2026-08-29)
+## iTerm2 Windows Survive Stage Completion — Spawn Never Names the Window (GitHub #7)
 
 GitHub issue #7 (open since 2026-02-04) reports that a completed stage leaves the iTerm2 window
 open on macOS while Linux DEs close theirs. Commit `2a68aee2` (2026-02-05) added the per-terminal

@@ -132,3 +132,31 @@ alone. Run a new `loom usage` check from inside a stage worktree, where the syml
 
 **Fix:** `missed_claude_transcripts` resolves the root with `std::fs::canonicalize` and prints
 each diagnostic to stderr.
+
+**Recurrence (2026-10-21, host-jobs):** the same no-follow read failed on the completion wait path. `wait::ledger_outcome` read the inbox ledger through the worktree's `.loom/work` symlink, and `safe_open_dirfd` (`O_NOFOLLOW`) refused it, so `loom stage complete` failed on `host_verification_e2e` and `tests_commit_timing` after the verifier rounds had passed. A doctrine rewrite had also dropped the sentinel sentence "Commits happen ONLY as the final step of the stage", which `tests_commit_timing` pins.
+
+**Why:** a bounded no-follow reader rejects a symlinked root, and every session-side read of the work dir goes through the symlink. The verifier rounds ran before the last doctrine edit, so they did not cover the text that broke.
+
+**Prevention:** canonicalize the work dir before every `safe_fs` or inbox read reached from a session, and rerun the full criteria list after the last doctrine edit.
+
+**Fix:** not recorded in the memory.
+
+## A Relay Branch That Returned Ok Ran the Criteria in the Session (2026-10-21)
+
+**What happened:** in the host-jobs stage, `verify_relay::run` returned `Ok` when the wait exited 0 in Relay mode. `execute` then fell through to the local run: it parsed the plan and ran the criteria in the session instead of stopping at the daemon's result.
+
+**Why:** the Relay success path returned normally, so the caller had no signal that the relayed run had finished and continued into the local path.
+
+**Prevention:** a routing function whose branch ends the process must not return `Ok` on the success path. The Relay branch exits with the wait code.
+
+**Fix:** the Relay branch always calls `std::process::exit(code)` (`loom/src/commands/verify_relay.rs:33` and `:43`).
+
+## Claude Code Refused the Nested Criteria Runner on Linux, and the First Relay Design Exited 3 (2026-10-21)
+
+**What happened:** Claude Code 2.1.306 started its Linux Bash sandbox with `bwrap --disable-userns`, so the nested `bwrap` that in-session stage completion used for criteria (`verify/criteria/confine_host.rs::wrap`) failed every criterion with `No permissions to create a new namespace` before its command ran. The 2.1.302 binary has no such flag. Commit `d7ef6a8e` kept loom working in the interim by emitting `sandbox.allowNestedUserNamespaces: true` in every enabled Linux capsule; with the key, a sandboxed `bwrap --ro-bind / / --dev /dev true` exits 0, without it 1. Claude Code documents that key as letting a sandboxed command bypass `denyWrite`, `denyRead` and credential denies in any folder it may write. The host-verification plan then moved `loom check`, stage completion and the contract freeze to host jobs the daemon runs, and its first draft had the requesting and still-running calls exit 3 ("run it again"). The plan's 2026-10-21 pressure test caught that draft before any code shipped.
+
+**Why:** the in-session path ran criteria inside the session, nested in Claude Code's own sandbox, and reported a verdict through the completion broker (the `LOOM_CONTROL_EVIDENCE_V1` record plus the `RecordCompletionEvidence` and `CompleteStage` RPCs). That session-trusted path could not survive the refusal without the opt-out, and the opt-out widened every session's reach. With the daemon running the criteria on the host the session's verdict is not needed, and keeping the broker RPCs would leave a second, weaker completion route, so the broker was removed instead of adapted. The exit-3 design failed because Claude Code runs PostToolUse hooks, `loom-relay.sh` among them, only for a Bash call that exits 0: across session transcripts 1,403 Bash results carrying `LOOM_RELAY_V1` that exited 0 all have a PostToolUse row, and the 15 that exited non-zero have none. A call that printed a ticket and exited 3 would never have been relayed, and its progress heartbeat (also PostToolUse-only) would have gone missing.
+
+**Prevention:** before pinning a relay protocol to exit codes, check which Claude Code hook events fire for a non-zero exit; a Bash call that prints a relay line exits 0, and the doctrine tells agents to read the `Host job:` first line, never the exit code alone. Pin it with a test that the requesting call exits 0 (the plan's `rejects:` text names the exit-non-zero variant). Pressure-test a protocol plan before its first stage starts. Treat a nested-sandbox opt-out as a stopgap with a removal condition ("until criteria run on the host").
+
+**Fix:** in-session `loom check`, stage completion and the contract freeze relay a request; the daemon runs the job as a host child under loom's own confinement and completes or freezes only from its own run. Requested, pending, passed and completed exit 0 under a `Host job: <state> (<kind>, <short head>)` first line; failed, rejected and refused exit 1; stopped exits 4. The completion broker, the macOS daemon-socket grant, inherited confinement and the user-namespace opt-out are gone (plan `IN_PROGRESS-PLAN-host-verification.md`, Protocol decision 1 and deviations 2-3).

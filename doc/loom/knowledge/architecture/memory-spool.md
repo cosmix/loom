@@ -37,7 +37,7 @@ The session-inbox relay (`relay/emit.rs`) is the default write path. Direct writ
 fallback serves only sessions spawned without `LOOM_SCRATCH_DIR` (`RelayMode::Legacy`).
 
 ```text
-RelayMode::Relay (default: LOOM_SESSION_ID + LOOM_SCRATCH_DIR set, no hook/control-broker)
+RelayMode::Relay (default: LOOM_SESSION_ID + LOOM_SCRATCH_DIR set, no hook process)
 sandboxed agent      loom memory note "..."
                      └─ writes a ticket to the session's scratch/inbox dir (relay/emit.rs::mode)
                         — never touches .loom/work directly, so EROFS never triggers here
@@ -58,7 +58,7 @@ daemon (outside the sandbox)
   at teardown        final drain in cleanup_after_merge, before removal
 ```
 
-`RelayMode::Operator` (no session id, or a hook / control-broker process) writes directly.
+`RelayMode::Operator` (no session id, or a hook process) writes directly.
 `commands/memory/handlers/record.rs::record_with_mode` makes the choice.
 
 **Attribution is by filesystem location** for the Legacy/spool path. The spool payload carries
@@ -114,10 +114,10 @@ the drain.
 
 - Stage may only record to its own journal: `record()` rejects a `--stage` that
   disagrees with `LOOM_STAGE_ID` on **both** write paths. `validate_stage_id`
-  blocks path separators but not a sibling stage's id.
-- The completion broker solves the same "sandboxed agent needs privileged state
-  written" problem a different way — hook outside the sandbox plus an
-  authenticated RPC. See [mistakes/completion-broker-credential.md](../mistakes/completion-broker-credential.md).
+  blocks path separators but not the id of a sibling stage.
+- Completion takes the same route as other privileged work a session cannot do:
+  the session relays a request and the daemon runs a host job. See
+  [Host Verification Jobs](verification-v2-gates.md).
 
 ## Entry Identity, Evidence and Receipts
 

@@ -36,41 +36,6 @@ Duplications needing consolidation: `parse_stage_from_markdown` (4 copies), `bra
 `format!()` calls), `extract_yaml_frontmatter` (2), `compute_level` (4, in status modules). Full details:
 [conventions.md § Code Consolidation Opportunities](conventions.md#code-consolidation-opportunities-2026-01-29)
 
-## `loom pressure` Known Gaps
-
-### Vendored commands / Codex skill install LOCAL-only
-
-`install.sh` installs `commands/*.md` (→ `~/.claude/commands/`) and `codex/skills/pressure/SKILL.md` (→ `~/.codex/skills/pressure/`) ONLY in the local (cloned-repo) branch — `install_commands`/`install_codex_skill` run under the `else` of `is_curl_pipe` in `main()` (~install.sh:619). The remote `curl | bash` install path does NOT ship the `loom pressure` slash commands or the Codex skill. A user who installs via curl-pipe and then runs `loom pressure` will be missing `/pressure`, `/address`, and the `$pressure` skill.
-
-### `loom pressure` real-invocation smokes are manual-only
-
-The two end-to-end smokes — Claude `/pressure` actually editing the plan, and Codex `$pressure` writing the `codex-` sidecar — need network + agent auth and are NOT exercised by `loom stage complete`. They are manual release-validation. Automated coverage is dry-run + 10 unit tests (argv, step order, exit classification, path resolution).
-
-### `git rev-parse --show-toplevel` Duplication (2026-08-18, updated 2026-09-10)
-
-Repo-root resolution is inlined in two places: the merge-side resolution at
-`commands/stage/merge/preflight.rs` and the pressure-side one at
-`commands/pressure/paths.rs::resolve_repo_root`. Both are below the "extract at 3+" threshold in
-conventions.md Import Deduplication — not an active consolidation candidate, but the two copies
-could still drift.
-
-## Deferred Worktree Cleanup Has Two Residual Edge Cases (2026-07-22)
-
-Two residuals in worktree cleanup: daemon cleanup can still race SessionEnd hooks during the short
-SIGTERM teardown window, and manual `loom stage complete` with no daemon running defers cleanup
-until the next recovery pass or an explicit `loom worktree remove`.
-
-## Sandbox Denial Has No End-to-End CI Canary
-
-Nothing proves sandbox denial holds against a live Claude Code runtime, and the srt stand-in misses
-the git-dir grant and every read deny. Also: credential reads confined to five home paths, sibling
-worktrees readable from Bash, the codex lane's whole `~/.codex` grant, an inert credential-guard
-rule, three stage-env allowlists (sessions get no proxy, CA or `CLAUDE_CONFIG_DIR` names), and the `Read(...)` deny-rule ban, among others.
-"Tool Routes That Run Outside the Bash Sandbox" lists the tools (LSP plugins, cross-session
-messaging, `WebFetch`, `RemoteTrigger`) the OS sandbox does not wrap.
-
-→ [Sandbox and Confinement Gaps](concerns/sandbox-and-confinement-gaps.md)
-
 ## Long Codex Runs Starve the Loom Heartbeat
 
 A foreground codex-lane run is ONE blocking Bash call, so neither `PostToolUse` nor `SubagentStop`
@@ -98,26 +63,6 @@ corpus stopwording empties.
 
 Full detail: [automatic-knowledge-source-graph-followups.md](concerns/automatic-knowledge-source-graph-followups.md).
 
-## iTerm2 Windows Survive Stage Completion — Spawn Never Names the Window (GitHub #7, 2026-08-29)
-
-Teardown closes an iTerm2 window by title, but the spawn arm never names the window, so the close
-query matches nothing and only the `claude` process dies; the shell and window survive. A second
-defect in the same path: teardown addresses `tell application "iTerm2"` while the scriptable name is
-`iTerm`. Naming the window alone is not enough. Terminal.app is unverified (needs a macOS host).
-
-Full detail: [iterm2-window-teardown.md](concerns/iterm2-window-teardown.md).
-
-## Guard Hooks: Four Design Questions Deliberately Left Open (2026-08-30)
-
-The adversarial review of the guard hooks left four behaviours unpatched pending a spec decision (the
-deny threshold, ledger TSV atomicity, `loom_deny_enabled`'s line-oriented match, an unreachable
-`poll-guard` branch). The entry also covers the wider runtime/session cluster: tmux-warning false
-failures, live overview-attach panes, the unreaped viewer socket, path-swap races, `loom attach`'s
-stage-bound lifetime, startup-only orphan adoption, `get_work_dir()`'s substring trust, and
-process-global cwd mutation in memory tests.
-
-→ [Runtime and Session Safety](concerns/runtime-and-session-safety.md)
-
 ## Tier-1 Knowledge Housekeeping Backlog
 
 `loom knowledge check --strict` exits 0 on this tree under the tier-1 limits (250 lines per file, 40 per
@@ -134,90 +79,11 @@ tree that cannot clear it yet; none is needed while `--strict` stays green.
 
 Four issues reviewed and deliberately left unchanged in `loom/src/commands/status/web/`: a mutex-poisoning cascade risk, a cosmetic `GET /ws` status-code mismatch, an inherited partial-frame truncation risk shared with the TUI, and a left-in-place bundle-size warning. Detail: [concerns/web-dashboard-latent-issues.md](concerns/web-dashboard-latent-issues.md).
 
-## Merge Path Follow-Ups After the Silent-Unmerged Fix
-
-The merge/recovery edge cases: `loom stage merge`'s worktree-cwd requirement, a git-error-as-unverified
-revert path, the `BranchMissing` phantom-merge risk, the heuristic `BaseConflict` carve-out,
-`retry --force` racing orphan-recovery, `started_at` not resetting on retry, the completion-broker's
-post-transition nonce-burn ordering, the attribution code that has nothing left to attribute, the
-editor residual between stash and pop, the `update-ref` window,
-accumulating autostash backup refs, `human-review --force-complete` requiring no operator proof by design, a
-newline inside a refused fast-forward path, and a loom gate error that parks a stage with no self-recovery (no
-dispute covers loom's own gates, a deliberate block is never retried; proposed: a could-not-evaluate gate result).
-
-→ [Merge and Recovery Edge Cases](concerns/merge-and-recovery-edge-cases.md)
-
-## State Confinement Gaps (2026-09-13) [DETAILED]
-
-Shared package-manager caches stay session-writable, so a stage can edit an extracted crate's
-`build.rs` that the operator's next host build runs.
-
-→ [State Confinement Gaps](concerns/state-confinement-gaps.md)
-
-## Agent Rule-Bending Hardening (2026-09-16)
-
-Only the OS sandbox, the capsule denies and the daemon's ancestry checks carry authority. Eight
-gaps, led by text-matched commits, the whole git common directory writable from a stage (Claude
-Code's own grant; host git follows the agent's `.git` pointer; the merge gate fails open), no
-live proof that any denial holds, and a knowledge-file guard that gates tool names over a directory
-the sandbox grants to every stage (G8). No plan addresses G1-G3, G7's caches or G8.
-
-→ [Agent Rule-Bending Hardening](concerns/agent-rule-bending-hardening.md)
-
-## Typed Config Values: Known Gaps (2026-09-16)
-
-Accepted limitations and test-coverage gaps in the typed config read-path (TUI control-char stripping, no non-interactive unset, an untagged-enum wire limitation, a TUI test gap). See [Typed Config Values: Known Gaps](concerns/typed-config-values.md).
-
-## Execution Graph: `mark_queued` Skips Node's Own Status (2026-09-18)
-
-`ExecutionGraph::mark_queued` (`loom/src/plan/graph/mod.rs:247-285`) checks only the
-file-declared stage's dependency list (each dep must be `Completed` and `merged`) before
-unconditionally setting `node.status = StageStatus::Queued`; it never checks the node's own
-current status first. A stale in-memory graph -- e.g. a daemon still running plan P5 after
-`.loom/work/` was replaced by `loom init` for plan P6 -- can force a `Completed` node straight
-back to `Queued` for any P6 stage that shares an id with a no-deps P5 stage. Not yet fixed;
-candidate remedies: validate `node.status` is a legitimate pre-queued state before overwriting
-it, or have callers refuse to sync when the file's declared deps disagree with the graph node's
-own dependency list.
-
-## Codex Forward Guard: macOS Stage-Evidence Branches Were Never Executed (2026-09-18)
-
-`loom_stage_evidence` (`loom-hooks/_codex_forward.sh`) decides whether `codex-forward-guard.sh` enforces anything. Its Linux branches are covered by `loom-hooks/tests/codex-forward-guard-stage-evidence.sh` with real ancestry and a real `bwrap`. Its macOS branches were written and reviewed on Linux and have NOT been run. Background: [The forward guard engages only inside a loom stage](architecture/codex-plugin.md).
-
-**To do on a Mac, before relying on the guard there:**
-
-- Run `bash loom-hooks/tests/codex-forward-guard-stage-evidence.sh` and `bash loom-hooks/tests/run-all.sh`. The Seatbelt case (guard under `/usr/bin/sandbox-exec -p '(version 1)(allow default)'` with a clean env, expects exit 2 naming `sandbox confinement (seatbelt)`) only runs on Darwin; on Linux it prints `SKIP`.
-- E2 parent walk: `_loom_parent_pid` parses `/bin/ps -o ppid= -p <pid>`. Confirm the value is a bare integer after the `read -r` trim under bash 3.2.
-- E2 environment read: `_loom_pid_env_has_stage_var` matches `LOOM_STAGE_ID=`, `LOOM_SESSION_ID=`, `LOOM_WORK_DIR=` in `/bin/ps eww -o command= -p <pid>`. Confirm `ps eww` prints the environment of the user's own `claude`/node process on the macOS versions in use (SIP and hardened-runtime processes can hide it), and that the nested-session test (an ancestor with `LOOM_STAGE_ID`, guard run under `env -i`) exits 2.
-- `/bin/ps` is setuid root and may be refused inside a Seatbelt profile. If it is, E2 yields nothing there and E3 must carry the case: check that a guard run inside the stage sandbox with a scrubbed env still exits 2 through the `sandbox-exec` refusal probe.
-- E3 probe: confirm `/usr/bin/sandbox-exec` and `/usr/bin/true` exist and that the probe SUCCEEDS (no evidence) in an ordinary unsandboxed session, so the stock Codex plugin is usable there: a `codex:codex-rescue` call in a plain session must not be blocked.
-- The Rust test `forward_guard_allows_when_no_stage_evidence_exists` (`loom/src/fs/permissions/hooks/policy_tests_stage_gate.rs`) skips only on LOOM_*in its own env or `/proc/1/comm == bwrap`. Under a macOS Seatbelt with no LOOM_* it would FAIL instead of skipping; add a Seatbelt skip if that combination occurs in practice.
-
-**Known limits, all platforms:** a nested `claude` whose launcher controls its environment can set `BASH_ENV` or a config directory with no hooks, which no hook can police (sandbox policy's job); a plain session inside the user's own bubblewrap or Seatbelt wrapper counts as confined and stays blocked.
-
-## Knowledge Bootstrap Follow-Ups (2026-09-22)
-
-- **Guard duplication:** `commands/knowledge/bootstrap/mod.rs::guard_not_in_stage` inlines its own
-  `LOOM_STAGE_ID` check instead of calling `commands::hook::target::non_empty_env`, because
-  `commands/hook/mod.rs:14` declares `mod target;` private (`mistakes/visibility-and-reachability.md`).
-  Widen the module (`pub(crate) mod target` or a re-export) to de-duplicate.
-- **Dry-run argv quoting:** `knowledge bootstrap --dry-run` prints the `claude` argv with
-  `argv.join(" ")` (no shell quoting), copied from `pressure::render_dry_run_step` whose output is
-  pinned by tests. The multi-line `--append-system-prompt` value and the positional prompt run
-  together, so the printed line cannot be pasted into a shell. A shared quoting helper would fix
-  both call sites.
-
 ## Markdown Lint Blocks Only at Push
 
 `loom/.githooks/pre-commit:63` runs `markdownlint-cli2 --fix` and ignores its exit status (it warns only when `bunx`
 cannot run), so an error `--fix` cannot repair, such as a table row missing a cell (MD055/MD056), commits silently;
 `pre-push:48` blocks it. Lint new markdown with `bunx markdownlint-cli2 <files>` before committing.
-
-## Verification v2 Follow-Ups (2026-09-25)
-
-Nine of the 23 test-runner adapters (cargo-nextest, gradle, maven, sbt, rspec, phpunit, pest, swift-test, mix-test) have
-fixtures written from documented output, not captured runs, so their parsers are unproven. Adapter gaps, contract-phase
-gaps, duplicated helpers, provision and environment-lint gaps, gate and dispute backlog: [verification-v2-followups](concerns/verification-v2-followups.md).
 
 ## Source Graph Limits and Review Backlog
 
@@ -245,3 +111,102 @@ recurred and want a check (the signal dropping `exit_code`, the watch exiting 6 
 Open follow-ups from the token-accounting plans: git and bounded-runner hygiene, whether a failed forward fires PostToolUse, the IV fence wording, two fail-open guard choices, and the unimplemented reviewer suggestions of the delivery-truth and usage-evidence plans.
 
 → [Token Accounting Follow-Ups](concerns/token-accounting-and-proof-defects.md). Token flow limits, hardening and structure: [Token Flow Gaps](concerns/token-accounting-and-proof-defects.md#token-flow-gaps).
+
+## Host-Verification Review Suggestions
+
+Open and fixed reviewer findings on the host-verification code, one bullet per defect with its file:line. The open ones cover the apply and recovery path, criteria confinement, observer git discovery, and skill and reference text that still describes the session sandbox as the criteria environment.
+
+→ [Host-Verification Review Suggestions](concerns/source-graph-review-backlog.md)
+
+## Pressure and Bootstrap Gaps
+
+`loom pressure` slash commands and the Codex skill ship only from a cloned-repo install (not `curl | bash`), and its
+two real-invocation smokes are manual-only. The knowledge bootstrap command inlines a stage guard it could share and
+prints a dry-run argv that cannot be pasted into a shell; repo-root resolution is duplicated in two places.
+
+→ [Pressure and Bootstrap Gaps](concerns/automatic-knowledge-source-graph-followups.md)
+
+## Execution Graph and Forward Guard Gaps
+
+`ExecutionGraph::mark_queued` never checks the status of the node itself, so a stale in-memory graph can force a `Completed`
+node back to `Queued`. The macOS branches of `loom_stage_evidence` (the Codex forward guard) were written on Linux and
+never run; the topic lists the checks to do on a Mac.
+
+→ [Execution Graph and Forward Guard Gaps](concerns/code-quality-and-hook-debt.md)
+
+## Deferred Worktree Cleanup Has Two Residual Edge Cases
+
+Two residuals in worktree cleanup: daemon cleanup can still race SessionEnd hooks during the short
+SIGTERM teardown window, and manual `loom stage complete` with no daemon running defers cleanup
+until the next recovery pass or an explicit `loom worktree remove`.
+
+## iTerm2 Windows Survive Stage Completion — Spawn Never Names the Window (GitHub #7)
+
+Teardown closes an iTerm2 window by title, but the spawn arm never names the window, so the close
+query matches nothing and only the `claude` process dies; the shell and window survive. A second
+defect in the same path: teardown addresses `tell application "iTerm2"` while the scriptable name is
+`iTerm`. Naming the window alone is not enough. Terminal.app is unverified (needs a macOS host).
+
+Full detail: [iterm2-window-teardown.md](concerns/iterm2-window-teardown.md).
+
+## Guard Hooks: Four Design Questions Deliberately Left Open
+
+The adversarial review of the guard hooks left four behaviours unpatched pending a spec decision (the
+deny threshold, ledger TSV atomicity, `loom_deny_enabled`'s line-oriented match, an unreachable
+`poll-guard` branch). The entry also covers the wider runtime/session cluster: tmux-warning false
+failures, live overview-attach panes, the unreaped viewer socket, path-swap races, `loom attach`'s
+stage-bound lifetime, startup-only orphan adoption, `get_work_dir()`'s substring trust, and
+process-global cwd mutation in memory tests.
+
+→ [Runtime and Session Safety](concerns/runtime-and-session-safety.md)
+
+## State Confinement Gaps [DETAILED]
+
+Shared package-manager caches stay session-writable, so a stage can edit an extracted crate's
+`build.rs` that the operator's next host build runs.
+
+→ [State Confinement Gaps](concerns/state-confinement-gaps.md)
+
+## Agent Rule-Bending Hardening
+
+Only the OS sandbox, the capsule denies and the daemon's ancestry checks carry authority. Eight
+gaps, led by text-matched commits, the whole git common directory writable from a stage (Claude
+Code's own grant; host git follows the agent's `.git` pointer; the merge gate fails open), no
+live proof that any denial holds, and a knowledge-file guard that gates tool names over a directory
+the sandbox grants to every stage (G8). No plan addresses G1-G3, G7's caches or G8.
+
+→ [Agent Rule-Bending Hardening](concerns/agent-rule-bending-hardening.md)
+
+## Typed Config Values: Known Gaps
+
+Accepted limitations and test-coverage gaps in the typed config read-path (TUI control-char stripping, no non-interactive unset, an untagged-enum wire limitation, a TUI test gap). See [Typed Config Values: Known Gaps](concerns/typed-config-values.md).
+
+## Verification v2 Follow-Ups
+
+Nine of the 23 test-runner adapters (cargo-nextest, gradle, maven, sbt, rspec, phpunit, pest, swift-test, mix-test) have
+fixtures written from documented output, not captured runs, so their parsers are unproven. Adapter gaps, contract-phase
+gaps, duplicated helpers, provision and environment-lint gaps, gate and dispute backlog: [verification-v2-followups](concerns/verification-v2-followups.md).
+
+## Merge Path and Recovery Gaps
+
+The merge/recovery edge cases: `loom stage merge`'s worktree-cwd requirement, a git-error-as-unverified
+revert path, the `BranchMissing` phantom-merge risk, the heuristic `BaseConflict` carve-out,
+`retry --force` racing orphan-recovery, `started_at` not resetting on retry, the completion-broker's
+post-transition nonce-burn ordering, the attribution code that has nothing left to attribute, the
+editor residual between stash and pop, the `update-ref` window,
+accumulating autostash backup refs, `human-review --force-complete` requiring no operator proof by design, a
+newline inside a refused fast-forward path, and a loom gate error that parks a stage with no self-recovery (no
+dispute covers loom's own gates, a deliberate block is never retried; proposed: a could-not-evaluate gate result).
+
+→ [Merge and Recovery Edge Cases](concerns/merge-and-recovery-edge-cases.md)
+
+## Sandbox Denial Is Unproven End to End
+
+Nothing proves sandbox denial holds against a live Claude Code runtime, and the srt stand-in misses
+the git-dir grant and every read deny. Also: credential reads confined to five home paths, sibling
+worktrees readable from Bash, the codex lane's whole `~/.codex` grant, an inert credential-guard
+rule, three stage-env allowlists (sessions get no proxy, CA or `CLAUDE_CONFIG_DIR` names), and the `Read(...)` deny-rule ban, among others.
+"Tool Routes That Run Outside the Bash Sandbox" lists the tools (LSP plugins, cross-session
+messaging, `WebFetch`, `RemoteTrigger`) the OS sandbox does not wrap.
+
+→ [Sandbox and Confinement Gaps](concerns/sandbox-and-confinement-gaps.md)

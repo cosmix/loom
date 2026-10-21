@@ -13,13 +13,15 @@ none of them.
 and duplicate checks, the aggregated check (integration-verify only). Inside `run_v2`
 (`complete_verification_v2.rs`): contract check (standard stages with contracts), test integrity (standard and
 integration-verify), impact-selected tests (standard), reachable re-verification (integration-verify), and
-the review gate last. A stage session runs inside a sandbox that cannot reach the daemon's socket
-(`checks.control_session.is_some()`), so `run_v2` skips test integrity and the review gate there and returns;
-the daemon runs both (`daemon/server/observer.rs::check_completion_gates`) before it applies the
-`CompleteStage` transition — see "Review gate and harvest" below. `complete_verification.rs` sits at 399 lines, so new v2 calls go in `run_v2`.
+the review gate last. A host completion job (`checks.daemon_gates`, the child run in `host_verify/child_complete.rs`)
+skips test integrity and the review gate in `run_v2`; the daemon runs both when it applies the job
+(`daemon/server/observer.rs::check_completion_gates`, called from `host_verify/apply.rs::check_outside_lock`)
+before it completes the stage. See "Review gate and harvest" below. `complete_verification.rs` sits at 399 lines, so new v2 calls go in `run_v2`.
 `complete_verification_v2` is a `#[path]` child of `complete_verification.rs`, so its tests run as
 `commands::stage::complete::complete_verification::complete_verification_v2::tests::*`; a filter
 `commands::stage::complete_verification_v2` selects zero tests.
+
+**Integration-verify has no separate loom-verifier.** Its acceptance criteria are the full gate, and `loom stage complete` runs every one of them. The orchestrator runs only what completion does not: functional checks, markdownlint, flake-check, Cargo.lock and ledger diffs, and clippy, fmt and maintainability checks first. Only the standard stage's gate spawns a `loom-verifier` (`VERIFIER_GATE`, `orchestrator/signals/cache/blocks.rs`).
 
 **Zero-test guard** (`testrun::registry::recognize`, called from `verify/criteria/runner.rs`). After a v2
 criterion runs, an adapter that recognises the command and parses `executed == Some(0)` fails it with
@@ -43,8 +45,8 @@ rests only on them.
 exact name, preferring symbol-level nodes over `File` nodes (a `File` node takes its stem as its name, so
 `from: main` would otherwise make everything in `main.rs` reachable), walks `impact_with`, passes when any
 symbol node is reached from any `from` node. That is a false-pass risk for bare names such as `run`; use a
-distinctive name. `has_any_goal_checks` counts `reachable` and `regression_test`; a stage whose only goal
-check is `reachable` used to skip it at completion. A field added to `has_any_goal_checks` also needs a
+distinctive name. `has_any_goal_checks` counts `reachable` and `regression_test`, so a stage whose only goal
+check is `reachable` runs it at completion. A field added to `has_any_goal_checks` also needs a
 subsection in `signals/format/sections/goal_backward_section.rs`, or the signal emits an empty
 `## Goal-Backward Verification` header.
 The worktree graph (`context/worktree_graph.rs`, `build_for_worktree`) is in-memory and read-only: newest base
@@ -69,26 +71,21 @@ Impact-selected tests have their own section below.
 **One observer for the change fingerprint** (`verify/review/observer.rs`, `verify/review/fingerprint.rs`,
 `daemon/server/observer.rs`). Both the review gate (comparing a round's fingerprint with the current one) and
 the test-integrity gate (comparing counts derived from it) need one value computed the same way at both ends.
-Before this design, a round's fingerprint came from the host `subagent-stop.sh` hook running
-`loom hook review-harvest`, while completion computed its own inside the agent's sandbox: a sandbox mounts
-`/dev/null` over root dotfiles the host does not have (`verify/tool_artifacts.rs`), masks git's global config,
-and runs with its own `HOME`, so the two processes' fingerprints for identical content differed and a round
-could never match — see mistakes/sandbox-state-channels.md, "The Same Value Computed in Two Filesystem Views
-Never Matches". Now the loom daemon that owns
+A sandbox's view of the tree differs from the host's: a sandbox mounts `/dev/null` over root dotfiles the host
+does not have (`verify/tool_artifacts.rs`), masks git's global config, and runs with its own `HOME`, so two
+processes computing the fingerprint for identical content disagree (see mistakes/sandbox-state-channels.md,
+"The Same Value Computed in Two Filesystem Views Never Matches"). The loom daemon that owns
 the worktree is the one observer: `fingerprint::compute` asks it over `Request::ObserveChanges` on
 `.loom/work/orchestrator.sock`, naming only the stage id, and the daemon resolves the worktree, target branch
 and fingerprint itself (`fingerprint::compute_local`, git pinned to the stage's registered git directory via
 `WorktreeGit::pinned` so the worktree's own `.git` file cannot pick the configuration). `compute` computes
 locally itself only when `worktree` names no stage worktree, or when nothing answers on the socket AND the
 daemon's singleton lock proves no daemon runs (`DaemonServer::proven_stopped`, an unheld `flock`-able regular
-lock file); every other outcome is the typed `DaemonUnreachable` error, and the caller fails closed rather
+file). Every other outcome is the typed `DaemonUnreachable` error, and the caller fails closed rather
 than falling back to its own view. `loom stage review status`/`review integrity` may fall back to a locally
 computed value labelled as such, for display only, never for a value recorded or compared.
 
-A stage session's sandbox denies `AF_UNIX` (or, under `allow_all_unix_sockets`, masks the daemon socket, which `daemon/rpc.rs` classifies the same way), so a sandboxed `loom stage complete` cannot ask and runs neither
-gate locally (`complete_verification_v2.rs`, above); the daemon runs both
-(`daemon/server/observer.rs::check_completion_gates`) right before it applies the `CompleteStage` transition
-(`control_complete.rs`), outside the session lock since both gates only read.
+A stage session cannot reach the daemon socket (its sandbox denies `AF_UNIX`, or, under `allow_all_unix_sockets`, masks the daemon socket, which `daemon/rpc.rs` classifies the same way), so a session's `loom stage complete` relays the completion and computes neither gate itself. The completion job's application runs both gates at the daemon (`daemon/server/observer.rs::check_completion_gates`) before it completes the stage, outside the session lock since both gates only read.
 
 **Review gate and harvest** (`verify/review/`, `commands/hook/review_harvest.rs`,
 `commands/hook/review_transcript.rs`). The `loom-code-reviewer` ends its report with a fenced `loom-review`
@@ -161,20 +158,74 @@ compile error the stage made. Each remaining failure fails the gate with `Impact
 `loom stage dispute-criteria <stage> --field impact-tests --test <id>` for the first 32; the message names the ids past
 that as not disputable after this run.
 
-**The observed record** (`impact_tests/observed.rs`, `reviews/<stage>/impact-observed.json`) holds the failures the
+**The observed record** (`verify/impact_tests/observed.rs`, `reviews/<stage>/impact-observed.json`) holds the failures the
 stage's latest failing completion run reported, each bounded and stripped of control characters
 (`ImpactFailure::bounded`: 32 failures, 64 test names, 4 KiB output tail keeping `\n` and `\t`, 1 KiB texts). A
 dispute names ids only and the daemon copies its evidence from this record (see
 [adjudication-lifecycle](adjudication-lifecycle.md#dispute-kinds-criterion-findings-contract-integrity-impact-tests)),
 so the filing agent's request adds nothing to `impact.json` or the judge's evidence. The record is not authenticated.
-A stage session's sandbox writes no state: its failing `loom stage complete` prints the record as the last two
-non-empty lines of its stdout (`completion_evidence/impact_record.rs`), and the completion broker, run by the
-PostToolUse hook outside the sandbox on the exact pinned command's output, writes it. That run executes the stage's
-own code, which can write a forged record to loom's stdout and kill loom before loom prints its own; the broker then
-keeps the forgery. The adjudicator is the trust gate: its prompt labels every field as reported by the stage session
+The host job that runs a completion writes it after a failing run (`host_verify/child_complete.rs::record_failed_impact`),
+and an operator's own completion writes it directly. Either run executes the stage's own code, so every field carries
+that code's output. The adjudicator is the trust gate: its prompt labels every field as reported by the stage session
 and tells it to re-run each disputed selection in the worktree, and the base in a separate checkout, before accepting
-(`orchestrator/adjudication/prompt/impact.rs`). An accepted forgery excuses only the exact failure it claims. A host
-completion writes the record directly. Every failing completion clears the record when it reports no impact failure,
-prints no record, or prints one that does not parse, so a dispute names only failures of the latest run. The hook
-hands the broker one output field (the first string of `stdout`/`output` the harness filled), never a join of them.
-A pinned command piped or redirected gives no record, and a dispute of its failures is refused.
+(`orchestrator/adjudication/prompt/impact.rs`). An accepted forgery excuses only the exact failure it claims. A failing
+run replaces the record; a passing run leaves it, and the adjudicator's re-run judges any stale failure again.
+
+# Host Verification Jobs
+
+> Daemon-run host jobs for completion, checks and freezes: state, child, apply
+
+A stage's completion, its gate check and its contract freeze run as host jobs. The session relays a request, the daemon queues a job, and a child process that the daemon starts on the host does the work under loom's own confinement. The session follows the job through the state directory. The daemon applies the finished job, and that application is the only step that changes stage state.
+
+## Job Records and State
+
+Records live under `<state root>/verification/<stage>/` (`host_verify/store.rs`): `current.json` holds the stage's current record, and each job has a directory with its record copy, `progress.jsonl`, the result, logs and a `groups` file of criterion process groups.
+
+- Kinds (`JobKind`): `check` runs the stage gate and changes no state; `complete` runs the completion and is applied as a completion; `freeze` runs the contracts for [Contract Phase](contract-phase.md).
+- States (`JobState`): `queued` and `running` leave; `passed`, `failed`, `cancelled` and `interrupted` are terminal.
+- Every record change is a compare-and-set under the stage lock (`submit.rs`, `runner.rs`): the record is reloaded and changed only while it is still this job in the expected state.
+
+## Components
+
+- `commands/stage/complete_relay.rs`: the session side of completion. It relays a `complete` request, follows the job, then follows the daemon's application. A legacy session is refused; an operator's shell completes locally.
+- `orchestrator/core/inbox_drain/complete.rs`, `check.rs`, `freeze.rs`: the daemon queues a relayed request as a job and settles the ticket at once with the job id.
+- `orchestrator/core/host_jobs.rs`: the runner's tick, the startup recovery and the apply retries. The runner is `host_jobs: Option<HostJobRunner>` on `Orchestrator` (`orchestrator/core/orchestrator.rs`); the `OrchestratorResult` type lives in `orchestrator/core/orchestrator_result.rs`.
+- `host_verify/runner.rs`: starts each queued job as a `loom stage verify-host` child, polls it with `try_wait`, and ends it on cancellation, deadline or output cap. The tick blocks on a child only while retiring it, for at most the process cleanup grace.
+- `commands/stage/verify_host.rs`, `host_verify/child.rs`, `child_complete.rs`, `freeze.rs`: the child run.
+- `host_verify/apply.rs`, `apply_rejection.rs`, `freeze.rs`: the daemon's application of a finished job.
+- `host_verify/wait.rs`, `wait_state.rs`, `wait_report.rs`: the session's follow. A call with no matching request state relays a ticket and returns at once; a call that finds one waits inside its budget. Both exit 0 while nothing is decided, because Claude Code runs the relay and heartbeat hooks only after a Bash call that exits 0.
+- `host_verify/signals.rs`, `submit.rs`, `digest.rs`, `store_fs.rs`: process signalling, queueing and cancellation, the tree digest, and the no-symlink file access under the state root.
+
+## Child Run
+
+- Paths come from the state root (`JobTree::resolve`). A stage's checkout is its worktree. A knowledge stage runs in the repository root with no worktree root, so a `working_dir` below the root does not grant the whole repository. The child reads the repository through `WorkDir::main_project_root` and `resolve_acceptance_dir`; it does not call `acceptance_runner::resolve_knowledge_execution_paths`.
+- Caching follows the record. Unless the record says `no_cache`, the child sets `CachePolicy::Use` and the cache directory under the state root, so the daemon's environment never decides caching.
+- A knowledge stage's child creates the completion attestation key first (`handoff::attestation_key`), because its confinement binds over the state root's secret files.
+- Acceptance runs first. The completion checks (`complete_verification`) then each run, even after an earlier failure, so one run names every failing check. Test integrity and the review gate are not run by the child; the daemon runs them at apply.
+
+## Cancellation and Restart
+
+- Only `take_down_agents` cancels a job (`orchestrator/core/event_handler/stage_takedown.rs::cancel_host_job`). A takedown, retirement, handoff, stall requeue, park or contract hand-off all reach it through that one function.
+- A cancellation is a state write. The runner kills a child whose record is no longer `running` on its next tick.
+- A cancelled job that no runner retired is found at restart by its child: the child still runs, and its command line names the job (`signals.rs::stop_children`). Elapsed time does not decide it.
+
+## Escalation Hold
+
+`orchestrator/monitor/hung_latch.rs::host_job_holds_session(work_dir, stage, session_id, now)` holds a session's escalation while the session's relayed job is unfinished and within its deadline, counted from its start or, while it waits for a slot, from its queueing. A record that cannot be read holds nothing. `host_job_holds_escalation(work_dir, stage, now)` keeps its three-argument signature, is test-only, and judges `stage.session`; the hung latch calls `host_job_holds_session` with the session it judges.
+
+## Reading The Tree
+
+- The tree digest (`host_verify/digest.rs`) runs through `WorktreeGit::read_isolated` (`git/worktree/pinned.rs`) on both sides. A session reads its checkout as discovered; the child and the daemon read it pinned to the stage's registered git directory, so the worktree's `.git` file cannot name a git directory that runs a command.
+- `checkout_git` and `local_git` (`verify/review/observer.rs`) pin to the OUTERMOST stage worktree among a directory and its ancestors, not the nearest, because a stage can lay out a nested `.git` beside its own worktree. Deliberate limit: a repository nested inside a stage worktree is read through the enclosing stage's git. Revisit if a host process must read a loom project kept inside a stage worktree.
+
+## Application
+
+`host_verify/apply.rs::apply_finished` runs for each finished record, and on startup for each terminal record with no `applied` marker. The `applied` marker is written last, so a crash between the transition and the marker repeats the step, and the session's waiter reads the marker before it reads the stage.
+
+- Passing `complete`: `check_outside_lock` checks ownership and runs `daemon::check_completion_gates` (`daemon/server/observer.rs`: test integrity and the review gate, against the change fingerprint). Then `bind_and_complete`, under the stage lock, requires that the stage is still `Executing` with the same session, that the run passed at the record's head, that the committed content and the check-definition hash still match the run, and then sets `completed_commit` to the run's head. A knowledge stage is also marked merged; any other stage waits for the merge flow. The session is retired and its acceptance receipt is written.
+- A binding or gate refusal writes a rejection checkpoint (`apply_rejection.rs`).
+- Failing `complete`: a failure checkpoint and attempt evidence come from the failed result.
+- Cancelled or interrupted `complete`: nothing is written. A checkpoint would replace the latest attempt a block reads and spend the session's evidence.
+- `check`: changes no stage state.
+- `freeze`: `freeze::apply_freeze_result` freezes the contracts only while the binding holds, and parks the stage otherwise.
+- An application that fails with an I/O or state error is retried at each later tick, up to `MAX_APPLY_ATTEMPTS` (`orchestrator/core/host_jobs.rs`). The last failure writes the marker as `apply failed: <error>`, so it is never retried again.

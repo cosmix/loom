@@ -126,15 +126,16 @@ The freeze CLI resolves each contract's run dir for its red run, and the daemon 
 
 ## In-Session Completion Gaps
 
-Seen together on 2026-10-20 ([incident](../mistakes/completion-runtime.md)); none is fixed.
+Open after host jobs moved the run out of the session: `loom check` and `loom stage complete` in a session relay the run to the daemon ([Stage-to-Daemon Channels](../patterns/stage-daemon-channels.md)).
 
-- **No pass cache in a session.** `loom stage complete` writes its acceptance cache to the state directory, which the session sandbox mounts read-only. Every in-session retry re-runs every criterion.
-- **Results arrive only at the end.** `commands/stage/acceptance_runner.rs::run_acceptance_with_display` prints per-criterion results after the last criterion, and no per-criterion record is kept. A run killed mid-way names nothing, and the session's `BASH_MAX_OUTPUT_LENGTH=12000` (`orchestrator/terminal/native/wrapper.rs::resource_limit_env`) can cut the results of a finished run.
 - **The gate diverges from the runner.** A stage's `loom-verifier` runs criteria from the session shell, not through the confined runner, so its gate can pass while the real completion fails or runs far longer.
-- **Suites that cannot pass in a session.** Under the confined runner nested in the session sandbox, these fail at base too and are disputed, not blocked:
-  - AF_UNIX bind is denied (EPERM, by the session seccomp the nested bwrap inherits);
-  - `/var/tmp` is read-only (EROFS);
-  - TMPDIR contains "claude" (`hooks_subagent_verify_guard`);
+- **Suites that fail in the session shell.** These fail there at base, not under the host job:
+  - a TMPDIR that contains "claude" (`hooks_subagent_verify_guard`);
   - the bounded-stdin hook test reads `LOOM_*` from an ancestor process;
   - a worktree-file-guard scratchpad test;
-  - `plan_environment_contracts`.
+  - `plan_environment_contracts` (see [Tests and Criteria That Pass in a Session Fail Under the Confined Runner](sandbox-and-confinement-gaps.md)).
+
+## Dispute Accept and Host-Job Recovery Gaps
+
+- **Accept re-freezes only the disputed contract's files.** `orchestrator/adjudication/apply_contract.rs` `accept()` collects the contract's file, the recorded file for that contract and the refrozen contracts. Any other file in the freeze record, such as a harness-glob file the disputed diff touched (`tests/host_verification_contracts/support.rs` in the host-verification stage), keeps its old hash. `loom stage complete` then fails with `frozen file ... changed after the freeze` (`verify/contracts/completion.rs`) while every criterion is green. Fix direction: re-freeze every frozen file the disputed diff touched, or every harness-glob file, on accept.
+- **Recovery signals groups of dead children.** `host_verify/signals.rs::kill_led_groups` runs for `Interrupted` records whose child is long gone (the daemon was down for hours, or the host rebooted). The leader check cannot tell a recycled pid that leads its own group from the old criterion leader, so the SIGKILL can reach an unrelated service group. Gating the call on a live `verify-host` child breaks `recovery_interrupts_running_jobs_and_leaves_queued_ones_alone` (`host_verify/tests_runner_recovery.rs`), which asserts that a led group is killed while the record's pid is a stranger. Revisit: record a start time or command line per group, then rewrite that test.

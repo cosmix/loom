@@ -2,7 +2,7 @@
 
 > Shared package caches
 
-## Open Gap (2026-09-13)
+## Open Gap
 
 One accepted risk remains open; no plan addresses it:
 

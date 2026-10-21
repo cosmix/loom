@@ -125,3 +125,13 @@ Rust test module names also need graph lookup: `orchestrator::core::tests` does 
 **Prevention:** any test that compares a path produced by the install-root resolver (or any canonicalizing production code) builds it from `temp.path().canonicalize()`. To reproduce on Linux, point `TMPDIR` at a symlink to a real directory under a SHORT path (for example `/tmp/lt`): a long path breaks the unix-socket length tests, and the sandbox confinement tests fail under a symlinked temp root on Linux regardless, so judge only the tests under investigation.
 
 **Fix:** commit 61a1a8fc canonicalizes the temp home in the three tests.
+
+## A Unit Fixture Wrote a Plan Without the METADATA Block (2026-10-21)
+
+**What happened:** the host-jobs stage's `tests_child` fixture wrote a plan file without the `<!-- loom METADATA -->` block. `parse_plan` rejected it, so 8 child tests failed with "No loom METADATA block found".
+
+**Why:** the fixture hand-wrote the plan YAML instead of reusing the plan writer that the frozen contract fixture already has, and the parser requires the block.
+
+**Prevention:** a unit-test fixture that needs a parseable plan reuses the plan writer in `tests/host_verification_contracts/support.rs` (`write_plan`), not a hand-written string.
+
+**Fix:** `tests_child.rs:125` wraps its plan in the METADATA markers, the same wrapper as `write_plan` at `tests/host_verification_contracts/support.rs:138`.
