@@ -87,7 +87,7 @@ loom stage complete <stage-id>
 
 Stage `git add <specific-files>` only, never `-A` or `.`; never run `git commit`.
 
-**When to commit — at the END, after ALL verification, never before.** Commit ONLY as the stage's final step, once every subagent returned, the full gate is green (a `loom-verifier` round in a standard stage) and the review's findings are fixed (see the `loom-orchestration` skill). Completion is the session's last act. Its first line, `Host job: <state>`: `requested`, `pending`, `stopped` (exit 4): run again; `failed`, `rejected`, `refused`: fix, commit, run again; `completed`: stop.
+**When to commit — at the END, after ALL verification, never before.** Commits happen ONLY as the final step of the stage — never mid-stage, never "what is done so far" — once every subagent returned, the full gate is green (a `loom-verifier` round in a standard stage) and the review's findings are fixed (see the `loom-orchestration` skill). Completion is the session's last act. Its first line, `Host job: <state>`: `requested`, `pending`, `stopped` (exit 4): run again; `failed`, `rejected`, `refused`: fix, commit, run again; `completed`: stop.
 
 Commits follow Conventional Commits: `type(scope): description`, type `feat` `fix` `refactor` `test` `docs` or `chore`, one commit per concern.
 

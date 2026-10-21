@@ -228,7 +228,13 @@ fn ledger_outcome(
     site: &WaitSite<'_>,
     request_id: &str,
 ) -> Result<Option<(LedgerOutcome, String)>> {
-    let ledger = read_ledger(site.work_dir, site.session_id)?;
+    // In a stage worktree `.loom/work` is a symlink to the main repository's
+    // state directory, and the inbox reads refuse to follow symlinks.
+    let root = site
+        .work_dir
+        .canonicalize()
+        .with_context(|| format!("cannot resolve the state root {}", site.work_dir.display()))?;
+    let ledger = read_ledger(&root, site.session_id)?;
     let settled = ledger
         .into_iter()
         .rev()
