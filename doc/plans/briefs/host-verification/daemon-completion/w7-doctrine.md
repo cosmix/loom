@@ -17,6 +17,21 @@ You own:
 
 Edit only the sentences about completion, `loom check`, the contract freeze, where criteria run and the verifier's gate. Leave every other sentence alone.
 
+## Size limits (hard)
+
+`src/orchestrator/signals/tests_size.rs` caps the doctrine sessions receive:
+
+- `CLAUDE_MD_TEMPLATE_MAX_BYTES` is 20,480; the template is 20,320 bytes at `fb927c6e`.
+- `STABLE_PREFIX_MAX_BYTES` is 8,192.
+- `STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` is 10,240, with tens of bytes of headroom.
+
+Plan 5 of the token-optimization programme measures and lowers these later. Therefore:
+
+- Every replacement in `../CLAUDE.md.template` and in signal text (`signals/helpers.rs`, `signals/format/**`, `knowledge.rs`, `cache.rs`, `contract.rs`) is no longer than the text it replaces. Check with `wc -c` before and after, and report both numbers per file.
+- Never change a ceiling constant.
+- If a fact cannot fit, shorten the surrounding completion text it replaces, never other rules.
+- `../skills/loom-orchestration/SKILL.md` has no ceiling, but treat it the same way: net growth at most a few hundred bytes, reported.
+
 ## The new facts to state
 
 1. **Where criteria run.**
