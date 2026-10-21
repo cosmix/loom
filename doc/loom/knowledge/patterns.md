@@ -17,12 +17,6 @@ Stage has 13 states (WaitingForDeps → ... → Completed, terminal); dependents
 
 → [Stage Lifecycle & Verification](patterns/stage-lifecycle-and-verification.md)
 
-## Progressive Merge Pattern
-
-Dependencies merge to main before dependents start; `MergeLock` serializes concurrent merges. Covers the merge-conflict recovery flow (anti-respawn signal, attribution-aware recovery via `attribute_main_repo_merge`, the pure `route_complete_for_conflicts` routing helper), the three-file dispute authority split, and the plan-amendment atomic write.
-
-→ [Merge & Recovery](patterns/merge-and-recovery.md)
-
 ## Daemon IPC Pattern
 
 Unix socket IPC (`.loom/work/orchestrator.sock`, mode 0600) admits bounded requests under a stable-file `flock`; the 5-second polling loop syncs the stage graph, spawns ready stages, and drains monitor events. Signal generation (Manus KV-cache prefix layout), heartbeat/context-health monitoring, session backend dispatch (native/tmux), and the memory-spool drain for sandboxed writes are all part of the same daemon loop.
@@ -51,14 +45,6 @@ Registering a CLI command needs Clap (3 files: `cli/types.rs`, `cli/dispatch.rs`
 
 → [CLI, Process & Conventions](patterns/cli-process-and-conventions.md)
 
-## Remote Control Capability/Preflight/Resolve Pattern (2026-05-14)
-
-The three-phase shape for driving an external agent binary: detect capability, preflight the
-environment, then resolve the concrete invocation. Keeps unsupported combinations failing
-early with an actionable message instead of mid-run.
-
-→ [Remote Control Pattern](patterns/remote-control.md)
-
 ## Subagent Hierarchy + Ultracode Guidance
 
 When to fan out flat, when to use a 2-level coordinator→worker hierarchy, and when to reach
@@ -69,31 +55,6 @@ spawns — and a plan should prefer one ultracode stage over several parallel si
 doing the same operation on disjoint file sets.
 
 → [Subagent Hierarchy](patterns/subagent-hierarchy.md)
-
-## Doctrine Blocks, Fail-Safe Gates, and Shell Matchers (2026-07-28)
-
-Guidance that must appear byte-identically on several surfaces needs an equality test, not N
-greps; privilege lookups from state files must treat ambiguity as refusal; and shell-command
-classification in a hook has a specific normalise-then-tokenise shape.
-
-→ [Doctrine & Fail-Safe Patterns](patterns/doctrine-cross-surface.md)
-
-## Tiered Knowledge Hierarchy (2026-07-28)
-
-The knowledge base is **two-tier**. Tier-1 files (`architecture.md`, `patterns.md`, …) hold
-short summaries that link out; tier-2 topics live at `<category>/<slug>.md` and hold the detail.
-`INDEX.md` is generated and is the single layout predicate — a directory is hierarchical **iff**
-`INDEX.md` exists.
-
-Reading protocol: index first, then the tier-1 summary for your area, then only the tier-2
-topics you actually touch. Writing protocol: a tier-1 section that grows past ~40 lines is spilled
-into a topic and replaced by a 2-4 line summary plus a relative link.
-
-A human-readable title pointing to `category/slug.md` in a **tier-1** file is the house convention:
-relative, `.md` extension, no `./`, no anchor. No audit enforces it today; an earlier version of
-this doc claimed two link-form checks required exactly this form, but no such checks exist in the
-tree. See [Knowledge Hierarchy](architecture/knowledge-hierarchy.md) for the mechanics and the
-`catalog::build` diagnostics that actually run.
 
 ## Base Layer Plus Per-Stage Overlay, Shadowing Wholesale
 
@@ -119,10 +80,7 @@ destructive step which cannot verify its own precondition must decline rather th
 
 ## Stage-to-Daemon Channels
 
-Three routes a stage agent uses to change its own stage state, picked by `DaemonReach`: a live
-daemon's answer (refusals included, never routed around), a local fallback when nothing is
-listening, and a worktree spool when the sandbox denies AF_UNIX outright. Covers why the socket
-alone cannot reach a sandboxed stage, and why a spooled request carries no stage id.
+Three routes a stage agent uses to change its own stage state, picked by `DaemonReach`: a live daemon's answer (refusals included, never routed around), a local fallback when nothing is listening, and a worktree spool when the sandbox denies AF_UNIX outright. Covers why the socket alone cannot reach a sandboxed stage, why a spooled request carries no stage id, the relay kinds and their hook mapping, the `Host job:` first line with its exit codes, and why every relay call exits 0.
 
 → [Stage-to-Daemon Channels](patterns/stage-daemon-channels.md)
 
@@ -136,21 +94,6 @@ helpers explicitly, and name them by path in every later worker's brief. Absent 
 orchestrator convergence pass after the fan-out returns rather than assuming disjoint files stayed
 consistent. See [Ledger TUI Rendering](mistakes/ledger-tui-rendering.md) for three independent
 instances of this in one stage.
-
-## Offline File Harness for a Visual Review Under a No-Network Sandbox (2026-09-12)
-
-When a stage sandbox denies loopback TCP (see
-[mistakes/sandbox-tooling-and-network.md](mistakes/sandbox-tooling-and-network.md#a-stage-sandbox-can-deny-loopback-tcp-even-while-the-server-reports-listening-but-not-always-2026-09-12))
-but a plan step needs a real browser render for review, build the harness as static
-files instead of a server: `vite build --base ./` produces a bundle loadable via
-`file://`; wire real routes with `createMemoryRouter` at the URL under review (e.g.
-`/?settings=1`); stub `fetch` with the plan's own fixture JSON and stub `WebSocket` so
-the app never tries the network; screenshot with Playwright's `chrome-headless-shell`
-launched with `--allow-file-access-from-files` (required for `file://` fetches of
-sibling assets). Keep the harness itself out of the reviewed bundle (e.g.
-`web/node_modules/.harness/`) and write any screenshots inside the worktree proper, not
-under `node_modules/` — the Read tool's worktree guard opens images by path, and a
-`node_modules`-nested directory is easy to exclude by accident from later tooling.
 
 ## Draining a Stuck `loom-relay` Ticket Backlog
 
@@ -188,3 +131,57 @@ before writing a new one.
 ## Optional Status Field From a Daemon-Written File
 
 A field the daemon derives slowly (token flow) gets its own thread that persists a compact file; the collector reads it bounded (`read_bounded`: no-follow, non-blocking, size-capped), keeps it only while fresh, and sanitizes strings and numbers at that boundary. The key is absent when stale, the web schema marks it optional, and a frame whose only defects sit under that key drops the block alone, so ordinary status always wins over the overlay. Shedding rules keep the file under a quarter of the response frame. Instance: [architecture/token-flow-sources.md](architecture/token-flow-sources.md#collector-boundary).
+
+## Remote Control Capability/Preflight/Resolve Pattern
+
+The three-phase shape for driving an external agent binary: detect capability, preflight the
+environment, then resolve the concrete invocation. Keeps unsupported combinations failing
+early with an actionable message instead of mid-run.
+
+→ [Remote Control Pattern](patterns/remote-control.md)
+
+## Doctrine Blocks, Fail-Safe Gates, and Shell Matchers
+
+Guidance that must appear byte-identically on several surfaces needs an equality test, not N
+greps; privilege lookups from state files must treat ambiguity as refusal; and shell-command
+classification in a hook has a specific normalise-then-tokenise shape.
+
+→ [Doctrine & Fail-Safe Patterns](patterns/doctrine-cross-surface.md)
+
+## Tiered Knowledge Hierarchy
+
+The knowledge base is **two-tier**. Tier-1 files (`architecture.md`, `patterns.md`, …) hold
+short summaries that link out; tier-2 topics live at `<category>/<slug>.md` and hold the detail.
+`INDEX.md` is generated and is the single layout predicate — a directory is hierarchical **iff**
+`INDEX.md` exists.
+
+Reading protocol: index first, then the tier-1 summary for your area, then only the tier-2
+topics you actually touch. Writing protocol: a tier-1 section that grows past ~40 lines is spilled
+into a topic and replaced by a 2-4 line summary plus a relative link.
+
+A human-readable title pointing to `category/slug.md` in a **tier-1** file is the house convention:
+relative, `.md` extension, no `./`, no anchor. No audit enforces it today; an earlier version of
+this doc claimed two link-form checks required exactly this form, but no such checks exist in the
+tree. See [Knowledge Hierarchy](architecture/knowledge-hierarchy.md) for the mechanics and the
+`catalog::build` diagnostics that actually run.
+
+## Offline File Harness for a Visual Review Under a No-Network Sandbox
+
+When a stage sandbox denies loopback TCP (see
+[mistakes/sandbox-tooling-and-network.md](mistakes/sandbox-tooling-and-network.md#a-stage-sandbox-can-deny-loopback-tcp-even-while-the-server-reports-listening-but-not-always-2026-09-12))
+but a plan step needs a real browser render for review, build the harness as static
+files instead of a server: `vite build --base ./` produces a bundle loadable via
+`file://`; wire real routes with `createMemoryRouter` at the URL under review (e.g.
+`/?settings=1`); stub `fetch` with the plan's own fixture JSON and stub `WebSocket` so
+the app never tries the network; screenshot with Playwright's `chrome-headless-shell`
+launched with `--allow-file-access-from-files` (required for `file://` fetches of
+sibling assets). Keep the harness itself out of the reviewed bundle (e.g.
+`web/node_modules/.harness/`) and write any screenshots inside the worktree proper, not
+under `node_modules/` — the Read tool's worktree guard opens images by path, and a
+`node_modules`-nested directory is easy to exclude by accident from later tooling.
+
+## Progressive Merge and Conflict Recovery
+
+Dependencies merge to main before dependents start; `MergeLock` serializes concurrent merges. Covers the merge-conflict recovery flow (anti-respawn signal, attribution-aware recovery via `attribute_main_repo_merge`, the pure `route_complete_for_conflicts` routing helper), the three-file dispute authority split, and the plan-amendment atomic write.
+
+→ [Merge & Recovery](patterns/merge-and-recovery.md)

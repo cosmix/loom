@@ -109,19 +109,6 @@ bypassable. The working shape:
 6. **Allow unmatched commands.** A false block strands a subagent mid-task with no recourse;
    the gate is a guardrail, not a whitelist.
 
-## Fail-Safe Direction for Destructive Sweeps (2026-08-08)
-
-Any sweep that kills or deletes must resolve *uncertainty* toward inaction:
-
-- **Cannot read the evidence ⇒ do not destroy.** `tmux/socket.rs`'s `socket_session_is_alive` returns
-  `false` for an absent session file but **`true`** for one that exists and cannot be parsed — a file
-  caught mid-write must not be read as "dead".
-- **Cannot positively attribute ⇒ do not destroy.** Reap only resources provably owned by *this* work
-  dir. Shared per-user namespaces (the tmux socket dir) make "no matching state file" match other
-  checkouts' live resources.
-- **Report what you skipped.** Unattributable resources are surfaced to the user, never silently
-  killed and never silently ignored.
-
 ## Advisory Preflight: Do the Work, Report the Failure, Never Bail
 
 `advisory_source_graph_preflight` (`commands/run/checks.rs:103-111`) is the second
@@ -136,3 +123,16 @@ is three rules and no more:
 Use it for derived state that IMPROVES a run but must never block one. The signature is
 the enforcement: a function that cannot return an error cannot be made load-bearing by a
 later caller who forgets it was optional.
+
+## Fail-Safe Direction for Destructive Sweeps
+
+Any sweep that kills or deletes must resolve *uncertainty* toward inaction:
+
+- **Cannot read the evidence ⇒ do not destroy.** `tmux/socket.rs`'s `socket_session_is_alive` returns
+  `false` for an absent session file but **`true`** for one that exists and cannot be parsed — a file
+  caught mid-write must not be read as "dead".
+- **Cannot positively attribute ⇒ do not destroy.** Reap only resources provably owned by *this* work
+  dir. Shared per-user namespaces (the tmux socket dir) make "no matching state file" match other
+  checkouts' live resources.
+- **Report what you skipped.** Unattributable resources are surfaced to the user, never silently
+  killed and never silently ignored.

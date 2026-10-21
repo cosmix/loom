@@ -20,16 +20,16 @@ unverified.
 ### Class 1 — env read in the agent's own shell
 
 Every loom CLI call an agent makes reads its identity from its own process environment:
-`commands/stage/control_session.rs:124-131` (`WrapperEnv::from_process_env`), `relay/emit.rs:68-75`,
-`commands/memory/handlers/record.rs:120`, `commands/handoff/create.rs:287-299`,
-`commands/subagents/render.rs:61`. `env -u LOOM_STAGE_ID loom …` changes what all of them see. The
-review's claim holds here exactly.
+`relay/emit.rs::from_process_env` (`LOOM_SESSION_ID`, `LOOM_SCRATCH_DIR`, `LOOM_STAGE_ID` and the
+rest), `commands/memory/handlers/record.rs:120`, `commands/handoff/create.rs:287-299`,
+`commands/subagents/render.rs:61`. `env -u LOOM_STAGE_ID loom …` changes what all of them see.
 
-It buys nothing, because none of them grants a capability. `route_control_session`
-(`commands/stage/control_session.rs:161-209`) uses the variables to choose *between* the broker
-route and the in-process route; unset them and the in-process route is taken, which then fails
-writing `.loom/work` because the capsule mounts it read-only. **Env selects a route; the sandbox
-and the ancestry checks grant the right.**
+It buys nothing, because none of them grants a capability. `relay::emit::mode` (`relay/emit.rs:102`)
+reads the same variables to choose the route: without `LOOM_SESSION_ID`, or in a hook context, the
+operator route; with a session but no `LOOM_SCRATCH_DIR`, the legacy route, which host-job commands
+refuse; with both, a ticket relayed to the daemon. Unset them and the call takes the operator route,
+whose direct writes to `.loom/work` fail because the capsule mounts it read-only. **Env selects a route;
+the sandbox and the ancestry checks grant the right.**
 
 ### Class 2 — hook process
 
@@ -133,11 +133,11 @@ commit is doctrine plus a best-effort hook, not a boundary.
   `core.fsmonitor`, not filters, and the shell hooks run bare git. Discovering callers:
   `monitor/parked.rs`, `handoff/session_content.rs`, `verify/before_after.rs`,
   `merge_lifecycle/containment.rs`, `git/cleanup/removal.rs`, `git/cleanup/worktree.rs`,
-  `git/merge/in_progress.rs`; on an operator's host `loom stage complete` also
-  `verify/criteria/cache_fingerprint.rs`, `verify/wiring_detection.rs`,
-  `verify/duplicate_detection.rs`, `context/worktree_graph.rs`; hooks `commit-guard.sh`,
-  `stage-terminal-guard.sh`, `codex-forward-guard.sh` (`poll-guard.sh`,
-  `no-preexisting-failures.sh` and `_progress-classification.sh` run no git).
+  `git/merge/in_progress.rs`, and `verify/impact_tests.rs` `check()`, which reaches git through
+  `checkout_git` (`verify/review/observer.rs`). `checkout_git` pins git to a stage worktree's
+  registered git directory; for any other directory it discovers git as the `.git` there directs.
+  Hooks `commit-guard.sh`, `stage-terminal-guard.sh` and `codex-forward-guard.sh` run bare git
+  (`poll-guard.sh`, `no-preexisting-failures.sh` and `_progress-classification.sh` run no git).
 - **A planted `commondir` in `R/.git`** redirects every discovery-based git call in `R`;
   `GIT_COMMON_DIR` stops it, `GIT_DIR` alone does not. Checkout-rooted sessions (knowledge stages,
   merge resolution, an adjudicator in `R`) can plant it.
@@ -229,11 +229,10 @@ exposure.
   macOS `sandbox-exec`), allows worktree writes and selected toolchain reads, and denies network.
   Missing containment support is an error. [Execution Containment](../architecture/execution-containment.md)
   is the owner of this contract.
-- **In a session.** `loom stage complete` runs as a sandboxed control session
-  (`commands/stage/control_session.rs::sandbox_control_session`), so those commands run inside
-  both the session sandbox and the command boundary. The daemon's `CompleteStage`
-  (`daemon/server/control_complete.rs`) runs no plan or worktree command: it reads files and runs
-  pinned git.
+- **In a session.** `loom check` and `loom stage complete` relay a host job. The daemon's host child
+  runs the criteria through the same boundary, outside the session sandbox (`host_verify/child.rs`),
+  and the daemon's application of a passed run (`host_verify/apply.rs`) reads files and git state and
+  runs no plan command.
 - **Residual exposure.** A plan that sets `command_confinement: inherit` opts out of the OS
   boundary and hands children loom's ambient environment; on the host (an operator's
   `loom stage complete`/`verify`/`check` outside a session, or the daemon's `before_stage` truth

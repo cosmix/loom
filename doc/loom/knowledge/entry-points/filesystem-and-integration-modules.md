@@ -103,7 +103,13 @@ Two more subdirectories, resolved by their own modules rather than a `WorkDir` h
 
 This is the pattern for loom's HTTP consumers (self-update). The adjudicator is NOT one of them: an earlier version of this line said an adjudicator HTTP client should mirror it, but the adjudicator spawns a `claude -p` session and makes no HTTP call at all — see conventions.md § Adjudicator Transport Convention.
 
-## Tiered Knowledge Base (2026-07-28)
+## Installation Asset Roots
+
+`assets::install::default_paths` (`assets/install/resolve.rs`) is the one resolver for installation roots: canonical `<home>/.claude` and `<home>/.codex` (`canonical_or_lexical`, so a symlinked `~/.claude` matches the shell guards' `pwd -P` spelling and the sandbox denies cover the real path). A missing or relative `$HOME` is an error; `require_default_roots` (`orchestrator/terminal/native/launch/host.rs`) turns it into a refused spawn and a refused `loom run`, and `fs/permissions/approved.rs` refuses the approved-list fold-back. `loom install-assets` takes no root flags and honours no root env var; tests isolate it by pointing `HOME` at a temp dir (`assets/install/test_env.rs` `InstallRootsEnv` pins `HOME` and `LOOM_HOOKS_DIR`).
+
+Every reader of an installed asset uses those roots: the hooks dir (`hooks::generator::find_hooks_dir`, via `claude_hooks_dir`), hook registration and drift, the skill index, `loom skill-index`/`repair`/`init`, the forward-wrapper spelling (the signal names `~/.claude/hooks/loom/codex-forward.sh`; the guard and `models/forward_receipt/transcript/argv.rs` accept that tilde form, the `$HOME` path or the canonical path), and the shell hooks, which resolve everything from `$HOME`. `skill-trigger.sh` alone reads its own location, to tell its `~/.claude` copy from its `~/.codex` copy. These are the directories Claude Code and Codex read for their defaults, which is why no other location is offered: see "A relocated Claude root never reached stage sessions" in [computed-values-and-hidden-couplings](../mistakes/computed-values-and-hidden-couplings.md) and "Loom Assets Outside ~/.claude Need a Plugin" in [guidance-channels-and-plugin-scope](../conventions/guidance-channels-and-plugin-scope.md).
+
+## Tiered Knowledge Base
 
 | Path                                               | Role                                                                                                                        |
 | ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
@@ -118,9 +124,3 @@ This is the pattern for loom's HTTP consumers (self-update). The adjudicator is 
 `loom knowledge sync`, or any `loom knowledge update`, regenerates `INDEX.md` — the index
 regenerates on every knowledge write — and on a flat directory creates it, which is what flips
 the layout to hierarchical. See [Knowledge Hierarchy](../architecture/knowledge-hierarchy.md).
-
-## Installation Asset Roots
-
-`assets::install::default_paths` (`assets/install/resolve.rs`) is the one resolver for installation roots: canonical `<home>/.claude` and `<home>/.codex` (`canonical_or_lexical`, so a symlinked `~/.claude` matches the shell guards' `pwd -P` spelling and the sandbox denies cover the real path). A missing or relative `$HOME` is an error; `require_default_roots` (`orchestrator/terminal/native/launch/host.rs`) turns it into a refused spawn and a refused `loom run`, and `fs/permissions/approved.rs` refuses the approved-list fold-back. `loom install-assets` takes no root flags and honours no root env var; tests isolate it by pointing `HOME` at a temp dir (`assets/install/test_env.rs` `InstallRootsEnv` pins `HOME` and `LOOM_HOOKS_DIR`).
-
-Every reader of an installed asset uses those roots: the hooks dir (`hooks::generator::find_hooks_dir`, via `claude_hooks_dir`), hook registration and drift, the skill index, `loom skill-index`/`repair`/`init`, the forward-wrapper spelling (the signal names `~/.claude/hooks/loom/codex-forward.sh`; the guard and `models/forward_receipt/transcript/argv.rs` accept that tilde form, the `$HOME` path or the canonical path), and the shell hooks, which resolve everything from `$HOME`. `skill-trigger.sh` alone reads its own location, to tell its `~/.claude` copy from its `~/.codex` copy. These are the directories Claude Code and Codex read for their defaults, which is why no other location is offered: see "A relocated Claude root never reached stage sessions" in [computed-values-and-hidden-couplings](../mistakes/computed-values-and-hidden-couplings.md) and "Loom Assets Outside ~/.claude Need a Plugin" in [guidance-channels-and-plugin-scope](../conventions/guidance-channels-and-plugin-scope.md).

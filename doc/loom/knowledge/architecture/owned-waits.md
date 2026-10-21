@@ -15,7 +15,20 @@ verified: ace1efbd8fd861fc0efcb26e8d49c2ef29876c67
 
 > Worker-set waits, lease, boot ID
 
-## Owned Subagent Waits (`loom subagents wait`/`watch`, 2026-09-13)
+## Never Pipe a Background `loom subagents watch`/`wait` Through `tail`
+
+A background `loom subagents watch --worker ... | tail -20` "completes" immediately with exit 0 even while workers are still running, because the pipe's exit status is `tail`'s, not `watch`'s — a stale, unversioned PATH `loom` binary lacking a new flag (e.g. `--worker`) also fails with "unexpected argument" that a `tail`-piped background call then silently swallows. **Prevention:** never pipe a background wait through `tail` or any other command; run it bare through `run_in_background` so its own exit code reaches the harness, and check `loom subagents watch --help` against the actual PATH binary (not `loom/target/debug/loom`) before relying on a new flag — an installed binary can lag the worktree's own tree.
+
+## Where the Boot ID Comes From
+
+A wait lease persists its deadline under the boot it was written in (`Deadline.boot_id` in `commands/subagents/wait/model.rs`), and the engine ends a wait with "system boot changed while waiting" when the identity differs. `SystemBootClock::boot_id` calls `process::boot_id::current_boot_id`, which resolves in this order:
+
+1. `LOOM_BOOT_ID` from the environment, when it is UUID-shaped (trimmed; anything else is ignored).
+2. The OS source: `/proc/sys/kernel/random/boot_id` on Linux, `sysctl kern.bootsessionuuid` on macOS. Other platforms bail.
+
+The daemon computes the OS value when it writes a session wrapper (`launch/host.rs` `wrapper_env`, `WrapperHostEnv.boot_id`) and the wrapper exports it as `LOOM_BOOT_ID`, because the daemon reads the source unsandboxed and a session's sandbox can deny it (the macOS sandbox's `sysctl-read` allowlist has no `kern.bootsessionuuid`). `kern.boottime` is not an acceptable identity: macOS recomputes it when the wall clock is stepped, and a value written under one source and read under the other looks like another boot. See [Hook Tests Passed Without Exercising the BSD Forms](../mistakes/hooks-shell-portability.md) for the platform-portability work that introduced this.
+
+## Owned Subagent Waits (`loom subagents wait`/`watch`)
 
 > One bound wait per parent session, keyed to an explicit worker set, replacing a bare-timeout background poll.
 
@@ -33,11 +46,7 @@ verified: ace1efbd8fd861fc0efcb26e8d49c2ef29876c67
 
 **Codex unit verification limit:** `/tmp/loom-loop-checks` (and the stage TMPDIR generally) is mounted READ-ONLY inside the codex companion sandbox, so any test a codex unit runs against stage fixtures fails at setup before exercising code. Never ask a codex unit to run fixture-backed tests for its own acceptance; at most a compile-only check (`cargo check`/`cargo test --no-run`) — the orchestrator runs the unit's real module tests immediately afterward. A compile-only check cannot catch a behavioral regression (e.g. a swapped-out test fixture helper that silently changes what state a test observes) — the orchestrator's post-unit test run is what catches those, so run it right after every codex unit, not batched at the end.
 
-## Never Pipe a Background `loom subagents watch`/`wait` Through `tail`
-
-A background `loom subagents watch --worker ... | tail -20` "completes" immediately with exit 0 even while workers are still running, because the pipe's exit status is `tail`'s, not `watch`'s — a stale, unversioned PATH `loom` binary lacking a new flag (e.g. `--worker`) also fails with "unexpected argument" that a `tail`-piped background call then silently swallows. **Prevention:** never pipe a background wait through `tail` or any other command; run it bare through `run_in_background` so its own exit code reaches the harness, and check `loom subagents watch --help` against the actual PATH binary (not `loom/target/debug/loom`) before relying on a new flag — an installed binary can lag the worktree's own tree.
-
-## Known limitation: the deadline race window (2026-09-14)
+## Known limitation: the deadline race window
 
 `codex-forward.sh` reports `timed_out` whenever the 540000 ms `status --wait` returns with the job still `queued`/`running`; it does not re-check whether the job completed in the instant between that return and its bounded `cancel` call. A job finishing inside that window is reported timed out and cancelled, though its edits stay in the tree. Deliberate: closing it needs a second non-wait `status` call, which every test stub (`loom-hooks/tests/codex-forward-wrapper.sh`, `loom/tests/codex_evidence/fake_companion.rs`) pins against. The re-split guidance remains correct at that boundary.
 
@@ -59,12 +68,3 @@ resolves against the wrong namespace. Treat that exit as unverified and wait for
 `LOOM-FORWARD-END` report before concluding the job failed. Separately, a watch naming only `codex:`
 workers exits 5 ("worker set does not resolve to one Claude parent UUID") — always include the
 forwarder's own `claude:<agent-id>` in the `--worker` set alongside the codex unit id.
-
-## Where the Boot ID Comes From
-
-A wait lease persists its deadline under the boot it was written in (`Deadline.boot_id` in `commands/subagents/wait/model.rs`), and the engine ends a wait with "system boot changed while waiting" when the identity differs. `SystemBootClock::boot_id` calls `process::boot_id::current_boot_id`, which resolves in this order:
-
-1. `LOOM_BOOT_ID` from the environment, when it is UUID-shaped (trimmed; anything else is ignored).
-2. The OS source: `/proc/sys/kernel/random/boot_id` on Linux, `sysctl kern.bootsessionuuid` on macOS. Other platforms bail.
-
-The daemon computes the OS value when it writes a session wrapper (`launch/host.rs` `wrapper_env`, `WrapperHostEnv.boot_id`) and the wrapper exports it as `LOOM_BOOT_ID`, because the daemon reads the source unsandboxed and a session's sandbox can deny it (the macOS sandbox's `sysctl-read` allowlist has no `kern.bootsessionuuid`). `kern.boottime` is not an acceptable identity: macOS recomputes it when the wall clock is stepped, and a value written under one source and read under the other looks like another boot. See [Hook Tests Passed Without Exercising the BSD Forms](../mistakes/hooks-shell-portability.md) for the platform-portability work that introduced this.

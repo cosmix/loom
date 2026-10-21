@@ -240,3 +240,148 @@ Anchors are `path:line` at merge time; locate by symbol (`loom map --find-all`).
 - Chaining several `loom memory` commands with `&&` in one Bash call is refused by the relay hook (it relays only a call
   that runs one loom command); the tickets were recovered on the next single call, which duplicated one entry. A `while`
   loop over a single command form works.
+
+# Host Verification Review Suggestions
+
+> Host-verification review suggestions: open and fixed defects by file:line
+
+## FAILED_APPLIES Is Process-Wide State
+
+- `loom/src/orchestrator/core/host_jobs.rs:40` keeps `FAILED_APPLIES`, a static keyed by state root, outside the runner. Move the retry list next to the runner and the `give_up` marker write beside `APPLIED_MARKER` in `loom/src/host_verify/apply.rs`. Open.
+
+## Drain Tick Runs committed_content Inline
+
+- `loom/src/orchestrator/core/inbox_drain/complete.rs:80` calls `committed_content` (`loom/src/handoff/completion/content.rs:10`, a git status walk) on the single-threaded tick; `apply_passed` adds snapshot and fingerprint passes there, so a large repository delays every session. Open.
+
+## Startup Scan Covers Current Records Only
+
+- `loom/src/host_verify/apply.rs:100` `unapplied_terminal_records` reads each stage current record only. A terminal unapplied job replaced by a newer submit is applied only while the in-memory retry list survives. Open.
+
+## Reachable Label Missing From Brief Section 4.2
+
+- `loom/src/host_verify/child_complete.rs:111`: the `reachable` label (`loom/src/host_verify/mod.rs:148`) and acceptance-first gating of completion checks are not in `doc/plans/briefs/host-verification/common.md` section 4.2. Open.
+
+## Requested Line Follows Ticket Emit
+
+- `loom/src/host_verify/wait.rs:207` writes `Host job: requested` only after the ticket is relayed and its state written; an emit failure ends as `Refused` (`wait.rs:118-131`). Fixed in tree.
+
+## Verification Read Grant Is Undocumented
+
+- `loom/src/sandbox/settings.rs:39` `STATE_READ_DIRS` includes `verification`, so every session reads other stages check logs. The grant is in place; a sentence documenting it is open.
+
+## Permission Restore Has No Drop Guard
+
+- `loom/src/host_verify/tests_runner.rs:300-320` restores 0o755 only on the success path; a panic leaves the 0o111 directory and fails tempdir cleanup. A Drop guard would cover it. Low value. Open.
+
+## Relay Errors Carry The Host Job First Line
+
+- `loom/src/commands/verify_relay.rs:95-97`: `request_or_wait` routes target errors through `refuse`, which prints `Host job: refused` via `wait::refusal`. Fixed in tree.
+
+## Goal-Backward Signal Recommends --suggest
+
+- `loom/src/orchestrator/signals/format/sections/goal_backward_section.rs:19` tells the session to run `loom check <stage-id> --suggest`; `loom/src/commands/verify_relay.rs:37` ignores `--suggest` in a session and prints no `Fix:` lines. `skills/loom-orchestration/SKILL.md:351` names the flag too. Open.
+
+## Verifier Once-Rule Lacks Host-Job Exception
+
+- `agents/loom-verifier.md:28` says run each command once beside line 25, which reruns `requested`, `pending` and `stopped`. Adding "except the host-job states above" removes the apparent conflict. Open, wording only.
+
+## README Relay Ticket Command List
+
+- `README.md:1111` lists `loom check`, `loom stage complete` and `loom stage contracts freeze` among the ticket writers. Fixed in tree.
+
+## README Host Job Wording For The Operator Shell
+
+- `README.md:134` says the operator shell runs the checks locally. Fixed in tree.
+- Stale, not a README line: `skills/loom-usage/SKILL.md:719` reads `# Mark done (runs acceptance in a host job)`. It should read `# Mark done (in a session: acceptance runs in a host job; from the operator shell: runs locally)`. Open; the skill file is outside the knowledge stage.
+
+## Unix Socket Inventory Names allow_all_unix_sockets
+
+- `skills/loom-plan-writer/SKILL.md:356` lists `allow_all_unix_sockets` as the way to let an acceptance command create a socket. That flag shapes the session sandbox only (`skills/loom-plan-writer/references/sandbox.md:35-43` describes it that way). Criteria run in the host job, whose bubblewrap (`--unshare-all`) already permits AF_UNIX. Open.
+
+## Commit Guard Freeze Wording
+
+- `loom-hooks/commit-guard.sh:323` prints `After the freeze request, stop; loom ends this session.` Fixed in tree.
+
+## Judge Prompt Omits stopped And refused
+
+- `loom/src/orchestrator/adjudication/prompt/criterion.rs:110` covers only `requested` and `pending`; a `stopped` (exit 4) or `refused` first line gives the judge no instruction. Open.
+
+## README --no-cache Scope
+
+- `README.md:872` limits `--no-cache` on `loom stage complete` to the operator shell. Fixed in tree.
+
+## Reaped Child Without Result Skips Group Kill
+
+- `loom/src/host_verify/runner.rs:171` `settle` ends a record without the group kill of `signals::retire`. A child reaped without `result.json` (signal, OOM, `pkill verify-host`) leaves criterion groups that lead their own pgid alive. Open.
+
+## apply_failed Read Errors Stay Errors
+
+- `loom/src/host_verify/apply.rs:154-159` returns `Err` when the stage or session record cannot be read, never the verdict that the session lost the stage. Fixed in tree.
+
+## COMMAND_SECS Derives From The Shared Timeout
+
+- `loom/src/host_verify/runner.rs:35` derives from `crate::verify::DEFAULT_COMMAND_TIMEOUT`. Fixed in tree.
+
+## Give-Up Leaves Freeze Jobs Unparked
+
+- `loom/src/orchestrator/core/host_jobs.rs:212` `give_up` marks the job `apply failed`. For a Freeze job no park or freeze results, and its writer has ended its turn; `park_refused_relay` is not called from `host_jobs.rs`. Open.
+
+## Spooled Legacy Reports Refusal Has A Test
+
+- `loom/src/fs/stage_request/tests/apply.rs:169` documents the test that refuses a spooled freeze carrying session-made `reports`. Fixed in tree.
+
+## command_confinement Inherit Has No Command Boundary
+
+- `loom/src/verify/criteria/confine.rs:258` `Inherit` leaves host-job commands with the operator access. The plan documents it; no `loom plan verify` warning names such stages. Open.
+
+## job_holds Restarts On Resubmission
+
+- `loom/src/orchestrator/monitor/hung_latch.rs:283` takes `started_at` from the current job, so a session resubmitting checks with a changing tree digest restarts the hold. Bounded by the session own activity. Open, low.
+
+## hash_content Follows Intermediate Symlinks
+
+- `loom/src/host_verify/digest.rs:164-165`: `symlink_metadata` runs on the joined path, so an intermediate directory swapped for a symlink is followed. Hashed, never returned: low impact. Open.
+
+## Completion Gates Run Before The Sessions Lock
+
+- `loom/src/host_verify/apply.rs:228` `check_outside_lock` calls `crate::daemon::check_completion_gates` before `bind_and_complete` (`apply.rs:287`) takes the lock and re-checks only HEAD and policy. Review rounds recorded in between are not re-read. Open.
+
+## Legacy Refusal Printers Share One Helper
+
+- `loom/src/commands/verify_relay.rs:48-55` and `loom/src/commands/stage/complete_relay.rs:240` both build the refusal through `wait::head_or_empty` and `wait::refusal`. Fixed in tree.
+
+## Knowledge-Stage Checkout Rule Repeated
+
+- The rule `repository root, else stage worktree` is still written inline at `loom/src/host_verify/child.rs:238`; the suggestion also lists `verify_relay.rs`, `complete_relay.rs`, `inbox_drain/check.rs` and `handoff/completion/content.rs`. Open.
+
+## Daemon-Completion Fixture Duplicates Helpers
+
+- `loom/tests/daemon_completion_contracts/support.rs:4` says the file is copied from the host-verification contracts fixture; `isolate_git`, `git`, `init_repo_with_worktree`, `Fixture`, `build_fixture` and `state_root` are duplicated. Open.
+
+## stall_line Module Comment
+
+- `loom/src/orchestrator/monitor/stall_line.rs:5-7` describes completion as calls of about 100 s each. Fixed in tree.
+
+## Broker Wording In Completion Authorization
+
+- `loom/src/commands/stage/complete_authorization.rs` and its tests no longer say broker. Fixed in tree.
+
+## Relay Kind Test Name
+
+- `loom/src/relay/kind.rs:130` is `is_control_matches_the_nine_control_kinds`. Fixed in tree.
+
+## Spawn Observer Warns Only On Group Store Failure
+
+- `loom/src/host_verify/child.rs:78-80` only warns when `append_group` fails. On macOS the recorded group is the only route by which cancel, deadline and restart reach a criterion. Open.
+
+## Waiting Progress Wording In Brief
+
+- `doc/plans/briefs/host-verification/common.md:280` says a waiting call prints each new progress summary. `wait.rs` prints none until the terminal text, which keeps `Host job:` as the first line. The brief should say so. Open.
+
+## kill_led_groups On Restart-Interrupted Records
+
+- `loom/src/host_verify/signals.rs:92` (in `recover_after_restart`) runs for `Interrupted` records whose child is long dead. The leader check cannot tell a recycled pid that leads its own group, so SIGKILL could reach an unrelated process. Open.
+
+## orchestrator.sock Reachable In Knowledge Criteria
+
+- `loom/src/verify/criteria/confine_protected.rs:76-88`: `orchestrator.sock` stays connectable inside a knowledge criterion under `--unshare-all`; the daemon peer-identity gate refuses the caller once `user.token` is masked. Hardening only. Open.

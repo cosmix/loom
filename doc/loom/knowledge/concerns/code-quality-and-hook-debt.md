@@ -2,7 +2,7 @@
 
 > Oversized units, hooks
 
-## Oversized Rust Units Remain Controlled Debt (2026-08-09)
+## Oversized Rust Units Remain Controlled Debt
 
 The maintainability gate does not yet prove that every production Rust file is at most 400 lines or
 every function at most 50 lines. Existing violations are recorded by exact identity and size in
@@ -15,7 +15,7 @@ an entry whenever its unit is brought under the limit.
 
 `eprintln!` statements with 'Debug:' prefix in production code (complete.rs, orchestrator.rs). Should use tracing crate with log levels.
 
-## Hook Debug Logging to /tmp/ (2026-03-31)
+## Hook Debug Logging to /tmp/
 
 Several hooks (worktree-isolation.sh, commit-filter.sh, prefer-modern-tools.sh) hardcode debug log paths to `/tmp/<name>-debug.log`. Under `set -euo pipefail`, if `/tmp/` is not writable (e.g., sandboxed environments), the hook script exits immediately with error. `git-add-guard.sh` already uses a gated `debug()` pattern that only writes when `GIT_ADD_GUARD_DEBUG=1` is set. Other hooks should adopt the same pattern.
 
@@ -23,11 +23,11 @@ Several hooks (worktree-isolation.sh, commit-filter.sh, prefer-modern-tools.sh) 
 
 The Rust `strip_embedded_content` in `bash.rs:79` uses `line.trim() == marker` (tolerates indented terminators), while the shell version in `_common.sh:44` uses `$0 == marker` (exact line match). Both fail-safe but should be aligned for consistency.
 
-## Remote Releases Do Not Deliver Hooks (PRE-EXISTING, 2026-07-28)
+## Remote Releases Do Not Deliver Hooks (PRE-EXISTING)
 
 Remote releases deliver hooks through the embedded-assets binary. `install.sh` downloads or builds the binary, checks that it exposes `install-assets`, then invokes `loom install-assets --skills "$SKILLS_MODE"` (`install.sh:354-366`). There is no `install_hooks_remote` function or separate per-hook release download. Hook inventory comes from `LOOM_HOOKS` in `loom/src/fs/permissions/constants.rs`, consumed by the asset installer.
 
-## No-Verify Doctrine Block Carries Only a Rust Example (2026-07-28)
+## No-Verify Doctrine Block Carries Only a Rust Example
 
 The doctrine block must stay byte-identical across the signal, the template, and the hook's
 refusal message, so it carries a single scoped-command example — a `cargo` one. A blocked Python
@@ -80,7 +80,7 @@ variant.
 fallback recommendations. **Fix:** derive `detect_project_languages` from the markers probe, or move both onto
 one manifest table.
 
-## Low-Severity Cleanups Deferred From the Verification Gate (2026-08-17)
+## Low-Severity Cleanups Deferred From the Verification Gate
 
 - `refresh/source_graph.rs:111` is a bare `let _ = mark_semantic_stale(..)` while that
   function's own doc (`:341-343`) says callers log and continue. The sibling caller in
@@ -91,7 +91,7 @@ one manifest table.
   delivery records under a different namespace than the graph overlay and dirty paths. Route
   all three through one derivation.
 
-## Telemetry Under-Reports the Failures It Exists to Measure (2026-08-17)
+## Telemetry Under-Reports the Failures It Exists to Measure
 
 `orchestrator/core/stage_telemetry.rs:25` calls `.ok()` on
 `load_deliveries`, collapsing a genuine I/O error into the same
@@ -100,7 +100,7 @@ miss. The file exists to measure how often stages spawn without a context brief,
 folding read failures into "no record" under-reports precisely the failures it is
 for. **Fix:** give the error branch its own reason string.
 
-## `git/worktree/settings.rs` Is Still Over Cap After Its Tests Moved Out (2026-08-27, size reconfirmed 2026-09-10)
+## `git/worktree/settings.rs` Is Still Over Cap After Its Tests Moved Out (size reconfirmed)
 
 Splitting the inline test module into `tests_settings.rs` / `tests_settings_env.rs` took the file
 from 1263 to 637 lines and its ledger entry from 1119 to 637 — a large win, but the production
@@ -119,7 +119,7 @@ would have collided with four agents working the same tree. Worth a dedicated st
 any file at or near its ledger cap must be refactored in the same change that grows it (see
 `mistakes/testing-and-lint.md`).
 
-## Ledger TUI: Tech Debt From the Live-Ledger-Dashboard Plan (2026-09-04)
+## Ledger TUI: Tech Debt From the Live-Ledger-Dashboard Plan
 
 - **`StageSummary.session_backend` has no Rust reader.** Populated by `build_stage_summary`
   (`commands/status/data/collector.rs`, from `session.backend`), but no ledger column, static
@@ -151,7 +151,7 @@ any file at or near its ledger cap must be refactored in the same change that gr
   from daemon exit / `Response::Error` through to `panels::render_footer`, but no ledger test ever
   sets it non-`None` (`commands/status/ui/tui/ledger/tests.rs:189`, `commands/status/ui/tui/ledger/layout.rs:295` both pass `None`).
 
-## Efficiency-Plan Debt: Hook File Size, Unwired False Positives, Baseline Pressure, Criterion Rendering (2026-09-19)
+## Efficiency-Plan Debt: Hook File Size, Unwired False Positives, Baseline Pressure, Criterion Rendering
 
 - **`loom-hooks/commit-filter.sh` is 494 lines** (491 before the hook-guards stage added one attribution sentence).
   Rule 17's 400-line file cap is not enforced for `loom-hooks/*.sh`: `loom/tests/maintainability.rs`'s scanner walks
@@ -183,3 +183,74 @@ Reviewer suggestions the plan left unimplemented:
 - `orchestrator/signals/tests_doctrine_commands.rs` scans the signal templates and skills but not `README.md`, `agents/*.md` or `loom-hooks/_subagent-preamble.txt`, which also teach loom commands.
 - `fs/plan_lifecycle.rs::archive_run_state_before_done` repeats `archive_state_dir`'s two-line plan-id lookup because it already holds a `WorkDir` and an explicit main root; take a plan-id helper from `fs/memory/archive.rs` if a third caller appears. `archive_state_dir` has no direct test for its derived plan id and main root: the clean and init tests only check that an archive appears, so an archive named `default-<ts>` would pass them.
 - `v2_lints/bookends.rs` imports `StageDefinition` and `StageType` on separate lines from `crate::plan::schema`; one `use crate::plan::schema::{StageDefinition, StageType};` matches the test file.
+
+# Execution Graph And Forward Guard Gaps
+
+> mark_queued status skip; macOS forward-guard branches unrun
+
+## Execution Graph: `mark_queued` Skips Node's Own Status
+
+`ExecutionGraph::mark_queued` (`loom/src/plan/graph/mod.rs:247-285`) checks only the
+file-declared stage's dependency list (each dep must be `Completed` and `merged`) before
+unconditionally setting `node.status = StageStatus::Queued`; it never checks the node's own
+current status first. A stale in-memory graph -- e.g. a daemon still running plan P5 after
+`.loom/work/` was replaced by `loom init` for plan P6 -- can force a `Completed` node straight
+back to `Queued` for any P6 stage that shares an id with a no-deps P5 stage. Not yet fixed;
+candidate remedies: validate `node.status` is a legitimate pre-queued state before overwriting
+it, or have callers refuse to sync when the file's declared deps disagree with the graph node's
+own dependency list.
+
+## Codex Forward Guard: macOS Stage-Evidence Branches Were Never Executed
+
+`loom_stage_evidence` (`loom-hooks/_codex_forward.sh`) decides whether `codex-forward-guard.sh` enforces anything. Its Linux branches are covered by `loom-hooks/tests/codex-forward-guard-stage-evidence.sh` with real ancestry and a real `bwrap`. Its macOS branches were written and reviewed on Linux and have NOT been run. Background: [The forward guard engages only inside a loom stage](../architecture/codex-plugin.md).
+
+**To do on a Mac, before relying on the guard there:**
+
+- Run `bash loom-hooks/tests/codex-forward-guard-stage-evidence.sh` and `bash loom-hooks/tests/run-all.sh`. The Seatbelt case (guard under `/usr/bin/sandbox-exec -p '(version 1)(allow default)'` with a clean env, expects exit 2 naming `sandbox confinement (seatbelt)`) only runs on Darwin; on Linux it prints `SKIP`.
+- E2 parent walk: `_loom_parent_pid` parses `/bin/ps -o ppid= -p <pid>`. Confirm the value is a bare integer after the `read -r` trim under bash 3.2.
+- E2 environment read: `_loom_pid_env_has_stage_var` matches `LOOM_STAGE_ID=`, `LOOM_SESSION_ID=`, `LOOM_WORK_DIR=` in `/bin/ps eww -o command= -p <pid>`. Confirm `ps eww` prints the environment of the user's own `claude`/node process on the macOS versions in use (SIP and hardened-runtime processes can hide it), and that the nested-session test (an ancestor with `LOOM_STAGE_ID`, guard run under `env -i`) exits 2.
+- `/bin/ps` is setuid root and may be refused inside a Seatbelt profile. If it is, E2 yields nothing there and E3 must carry the case: check that a guard run inside the stage sandbox with a scrubbed env still exits 2 through the `sandbox-exec` refusal probe.
+- E3 probe: confirm `/usr/bin/sandbox-exec` and `/usr/bin/true` exist and that the probe SUCCEEDS (no evidence) in an ordinary unsandboxed session, so the stock Codex plugin is usable there: a `codex:codex-rescue` call in a plain session must not be blocked.
+- The Rust test `forward_guard_allows_when_no_stage_evidence_exists` (`loom/src/fs/permissions/hooks/policy_tests_stage_gate.rs`) skips only on LOOM_*in its own env or `/proc/1/comm == bwrap`. Under a macOS Seatbelt with no LOOM_* it would FAIL instead of skipping; add a Seatbelt skip if that combination occurs in practice.
+
+**Known limits, all platforms:** a nested `claude` whose launcher controls its environment can set `BASH_ENV` or a config directory with no hooks, which no hook can police (sandbox policy's job); a plain session inside the user's own bubblewrap or Seatbelt wrapper counts as confined and stays blocked.
+
+## check_ignore Git Discovery Is Pinned
+
+- `loom/src/verify/criteria/cache_ignore.rs:87,95` runs `check-ignore` through `checkout_git` and its pinned `git.run`. Fixed in tree.
+
+## DIGEST_ENV Hides The Excludes File
+
+- `loom/src/host_verify/digest.rs:36-40` points `XDG_CONFIG_HOME` at a nonexistent path, so git default excludes file is not read. Fixed in tree.
+
+## hung_latch Module Doc Link
+
+- `loom/src/orchestrator/monitor/hung_latch.rs:21` links `host_job_holds_session`; `host_job_holds_escalation` stays `cfg(test)`. Fixed in tree.
+
+## Network Config Test Name
+
+- `loom/src/models/stage/tests/network_config.rs:4` is `default_network_config_denies_unix_sockets`. Fixed in tree.
+
+## Verification Rules AF_UNIX Example
+
+- `skills/loom-plan-writer/references/verification-rules.md:43-46` frames the AF_UNIX limit as the session sandbox `allow_all_unix_sockets`. Criteria run in the host job bubblewrap, which does not forbid AF_UNIX. Open.
+
+## Pinned Git Gitlink Route Is Unverified
+
+- `loom/src/git/worktree/pinned.rs:107`: a pinned `git status` or `git diff` runs `git status --porcelain=2` inside a gitlink (160000) entry, using the nested repo config, so a `filter.<name>.clean` there could run outside the sandbox. Not reproduced. Probe: add a gitlink to a stage index and check for a marker file.
+
+## Observer Source Uses Path-Only Locate
+
+- `loom/src/verify/review/observer.rs:96` `source()` calls `locate(worktree)` on the given path, not `enclosing_stage`; a subdirectory of a stage worktree would get `WorktreeGit::discovered`. Every current caller passes the worktree root. Open, low.
+
+## Redundant Canonicalize In Observer
+
+- `loom/src/verify/review/observer.rs:146` and `:168` canonicalize again in `enclosing_stage`, and `locate` canonicalizes each ancestor. Correct, redundant syscalls. Open, low.
+
+## Wait Request State After Writeln Failure
+
+- `loom/src/host_verify/wait.rs:206-207`: a failed `requested` write after `write_state` leaves the request state, so a rerun follows a ticket never relayed until `REQUEST_GRACE` ends. Needs closed stdout to trigger. Open, low.
+
+## Duplicate Refusal Import In Freeze
+
+- `loom/src/commands/stage/contracts/freeze.rs:18` imports the refusal as `host_refusal`, so the clash is resolved. Fixed in tree.

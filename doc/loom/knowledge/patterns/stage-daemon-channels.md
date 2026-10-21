@@ -11,10 +11,6 @@ belongs to the daemon and `.loom/work/` is read-only from a worktree. And it can
 `.loom/work/user.token`, because that one credential authorizes every User RPC, not just the ones a
 stage agent is entitled to (S-1).
 
-Both denials are correct. Together they once left the agent with no way to say anything at all: a
-stage finished, correct and committed, sat waiting on a human because two of its acceptance
-criteria were defective and it could report neither fact.
-
 `daemon::rpc::try_send_request` returns a three-way `DaemonReach`, and each arm picks a route:
 
 | `DaemonReach` | What happened | Route taken |
@@ -72,11 +68,10 @@ poll loop.
 
 **The payload carries no stage id and no session id, on purpose.** Attribution comes from WHICH
 WORKTREE the daemon drained the entry from: a worktree agent cannot write outside its own worktree,
-but it could trivially forge a field. That is what replaces peer identity when there is no
+and a field it wrote would be forgeable. That is what replaces peer identity when there is no
 connection to identify.
 
-**The guarantee holds only against worktree agents.** An earlier version of this section said
-without qualification that an agent cannot forge the worktree it runs in. Main-checkout sessions
+**The guarantee holds only against worktree agents.** Main-checkout sessions
 (Knowledge, Merge, Adjudication) run with the whole checkout writable, every
 `.worktrees/<id>/.loom/*-spool.jsonl` included, so one of them can append a request the daemon
 attributes to another stage. Closing that is part of the pending `.loom` confinement work; see
@@ -100,25 +95,97 @@ that already name the memory spool: `is_worktree_scaffold_path`, so `git status`
 *agent work*, and `WORKTREE_EXCLUDE_PATTERNS`, so it reaches `info/exclude` and cannot be committed.
 Deliberately not a blanket `.loom/` — a project may legitimately track `.loom/config.toml`.
 
-## The Completion Bridge Needs `loom stage complete` Output Verbatim (2026-09-13)
+## Relay Kinds and Their Hook Mapping
 
-`loom-hooks/loom-control-complete.sh` holds any Bash call that could be a completion attempt to one
-exact pinned string, `<loom-bin> stage complete <stage-id>` (`PINNED_COMMAND`, line 169). Its
-pre-filter is deliberately loose (argv[0] merely containing `loom` or a `$`, the verb merely
-containing `complete`), so a command whose text only resembles a completion can be rejected; one
-distill session tripped it with an inline heredoc body, and feeding the text from a file avoided it.
-After the pinned command runs, the bridge looks for an output line exactly equal to
-`LOOM_CONTROL_VERIFICATION_PASSED stage=<id> session=<id>` (line 191; a persisted-output file is
-recovered too).
+A session Bash call that relays a request prints one `LOOM_RELAY_V1` line as its last stdout line.
+The PostToolUse hook `loom-hooks/loom-relay.sh` derives the kinds the command may write from its
+argv (`relay_kind_at`), and `loom hook relay` admits the line only when the ticket's kind equals the
+line's kind (`commands/hook/relay/ticket_check.rs`). A command whose kind the hook does not derive
+is never relayed. The nine control kinds (`RequestKind::is_control`, `loom/src/relay/kind.rs`) are
+dropped from a subagent by `drop_control_kinds` before an inbox entry exists, so a new control kind
+needs an entry there.
 
-A proof-and-regression orchestrator redirected the completion output to a file and printed it back
-through `rg -n`; the marker arrived as `17:LOOM_CONTROL_...`, the bridge ignored it, and the stage
-stayed `Executing` (status: orphaned). Run the pinned command bare: no redirect, no pipe, no filter,
-even under Rule 14's output-trimming habit. Then confirm with `loom status` that the stage left
-`Executing`.
+| Session command | Kind | Control |
+| --- | --- | --- |
+| `loom memory note`, `decision`, `change`, `question`, `resolve` | `memory` | no |
+| `loom stage block` | `block` | yes |
+| `loom stage commit` | `commit` | yes |
+| `loom stage complete` | `complete` | yes |
+| `loom stage dispute-criteria` | `dispute`; `file-dispute` with `--field impact-tests` | yes |
+| `loom stage dispute-findings`, `dispute-contract`, `dispute-integrity` | `file-dispute` | yes |
+| `loom stage merge --resolved` | `merge-resolved` | yes |
+| `loom stage adjudicate` | `verdict` | yes |
+| `loom stage contracts freeze` | `freeze-contracts` | yes |
+| `loom knowledge context` | `telemetry` | no |
+| `loom check` | `check` | no |
+| `loom handoff` | `handoff` | yes |
 
-## A Relayed Request Needs a Bash Call That Exits 0
+`check` is not a control kind, so a subagent may relay it. `loom check` and `loom stage complete`
+in a session are host jobs (below): the daemon runs the gate on the host, and only a passing
+`complete` job lets the daemon complete the stage.
 
-Claude Code runs PostToolUse hooks only after a Bash call that exits 0. A non-zero exit raises `PostToolUseFailure` instead (its payload carries `error` and no `tool_response`), and loom registers no hook for that event. `loom-relay.sh`, which delivers a `LOOM_RELAY_V1` line to the inbox, and `post-tool-use.sh`, which refreshes the heartbeat, are both PostToolUse hooks. A command that prints a relay line and then exits non-zero is never relayed, and the relay sweep does not recover it: control kinds are never swept, and a caller that loops on the same non-zero exit never produces a PostToolUse run. Session transcripts show it: 1,403 Bash results carrying `LOOM_RELAY_V1` that exited 0 all have a PostToolUse hook row, the 15 that exited non-zero none (Claude Code 2.1.299-2.1.306).
+**The completion pin is a PreToolUse hook, not a bridge.** `loom-hooks/loom-control-complete.sh`
+refuses every spelling of the completion command except the exact pinned
+`<loom-bin> stage complete <stage-id>` (exit 2, `LOOM_CONTROL_ERROR`) and writes the completion
+heartbeat the stall monitor reads. It carries no verdict. A Bash call whose text names the
+completion subcommand is refused unless it is that exact command, so a heredoc that edits relay or
+hook scripts is refused too: make such edits with the Edit tool. Run the pinned command bare, with
+no redirect or pipe, since the verdict comes from the daemon's host job rather than from output.
 
-Every command that emits a relay ticket exits 0 and reports its outcome in its output (`commands/stage/commit.rs::relay_commit` is the precedent). The relay line is the call's last stdout line, and `loom-relay.sh::relay_kind_at` must map the command to the kind it writes, or `loom hook relay` refuses the line; a control kind also needs a `drop_control_kinds` entry (`CONTRIBUTING.md`, "Hook Scripts").
+## Every Relay Command Exits 0
+
+Claude Code runs PostToolUse hooks only after a Bash call that exits 0. A non-zero exit raises
+`PostToolUseFailure` (its payload carries `error` and no `tool_response`), and loom registers no hook for that
+event. A command that prints a relay line and then exits non-zero is never relayed.
+
+Every command that emits a relay ticket therefore exits 0 and reports its outcome in its output
+(`commands/stage/commit.rs::relay_commit` is the precedent). The host-job waits follow the same rule:
+`host_verify/wait.rs` exits 0 while a job is requested or pending.
+
+## Host Jobs: First Line and Exit Codes
+
+`loom check` in a session (`commands/verify_relay.rs`) and `loom stage complete` in a session
+(`commands/stage/complete_relay.rs`) request a host job and follow it across Bash calls. Every call
+prints `Host job: <state> (<kind>, <short head>)` as its first stdout line, where `<kind>` is `check`
+or `complete` and `<short head>` is the first 12 characters of HEAD (`host_verify/wait_report.rs::heading`).
+A call buffers its output, so the first line is the one the agent reads when the call ends. The
+states and exit codes:
+
+| First line | Printed when | Exit |
+| --- | --- | --- |
+| `requested` | the ticket was emitted; the job is queued | 0 |
+| `pending` | the job is still running; `N criteria done` | 0 |
+| `passed` | `check` job passed | 0 |
+| `failed` | the job failed; each failing criterion follows | 1 |
+| `stopped` | the job was cancelled or interrupted | 4 |
+| `refused` | the call could not request or follow a job (a legacy session, a bad state, an emit failure) | 1 |
+| `completed` | `complete` only: the daemon applied a passing run and completed the stage | 0 |
+| `rejected` | `complete` only: the daemon rejected the application | 1 |
+
+A `complete` call that follows a passing run waits for the daemon's application, so `passed` never
+appears for it. A session that cannot relay (no `LOOM_SCRATCH_DIR`) is refused; the operator's shell
+completes locally.
+
+**Known limit.** `wait_or_request` writes the `requested` lines before the emit closure runs. If the
+emit then fails, the call prints `Host job: refused` after them, so a call can open with `requested`
+and end with `refused`. The test that pins the order (`host_verify/tests_wait.rs`,
+`with_no_state_the_request_lines_print_before_the_relay_runs`) must change before the order can
+change. Revisit when the relay sink can fail before the first line is written.
+
+## The Host Job State Directory
+
+Job state lives under `<state root>/verification/<stage>/` (`host_verify/store.rs`):
+
+- `current.json`, the stage's current job record, and `.lock`, the flock that serializes writes.
+- `<job_id>/`, one directory per job, holding `record.json` (a copy of the record), `progress.jsonl`,
+  `result.json`, `groups` (the criterion process groups), `child.log`, and files saved through
+  `save_job_file` such as the `applied` marker.
+
+Sessions read the directory (`sandbox/settings.rs`, `STATE_READ_DIRS`). `store_fs` opens every path
+beneath the state root with no symlink followed at any component.
+
+Writes other than `save_current` (`save_result`, `save_criterion_log`, `save_job_file`, the `append_*`
+functions) require the job directory to exist: `write_atomic` does not recreate a job directory that was
+pruned. `save_current` creates the job directory, so a test or a caller that writes a job file first
+gets `ENOENT`. `save_job_file` refuses the five store files (`record.json`, `progress.jsonl`,
+`result.json`, `groups`, `child.log`) and accepts other names, including `applied`.

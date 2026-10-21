@@ -125,7 +125,7 @@ the module (`pub(crate) mod target` or a re-export) to de-duplicate is tracked i
 ## A Re-Export Whose Only Users Are macOS-Gated Breaks the Linux Build
 
 **What happened:** `loom/src/daemon/server/mod.rs` re-exported `peer_identity::peer_pid`
-unconditionally. Its only users, `daemon/inherited/transport.rs` and `daemon/inherited/tests.rs`, sit
+unconditionally. Its only users, daemon/inherited/transport.rs (removed) and daemon/inherited/tests.rs (removed), sit
 behind `#[cfg(target_os = "macos")]`, so on Linux the re-export was unused and every Linux CI job
 (clippy, test, flake check, build) failed to compile under `-D warnings` while every macOS job passed.
 

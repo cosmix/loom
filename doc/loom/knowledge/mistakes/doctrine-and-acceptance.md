@@ -208,28 +208,8 @@ defect to fix, not to amend away.
 
 ## Stage Fragmentation: Compile-Order Is Not a Stage Boundary (2026-08-07)
 
-**What happened:** the most common loom plan-authoring error is splitting ONE cohesive feature into
-one stage per architectural layer (schema → runtime → doctrine → tests) because each layer imports
-the one before it. This plan deliberately did not: the whole codex-implementer feature shipped as a
-SINGLE standard stage between the knowledge/integration-verify bookends, with a foundation edit
-followed by parallel subagents over disjoint files.
-
-**Why:** "B imports A" is a COMPILE-ORDER dependency, and one stage resolves it for free by writing
-A first — that is a foundation step, not a stage boundary. Only a MERGE-ORDER dependency is a real
-boundary: the dependent work must run against _merged, gate-passed_ code. Each extra stage costs a
-worktree, a session, a merge, and a FULL re-run of the acceptance gate.
-
-**Prevention (detection rule):** if a plan has one stage per architectural layer of a single feature
-and their `files:` sets are DISJOINT, it is fragmented — merge them. Disjoint file sets are evidence
-_for_ merging (parallel subagents can own them), not against it. `/loom-plan-writer` now enforces
-this: the Stage Necessity Test (`skills/loom-plan-writer/SKILL.md:388`) requires every non-bookend
-stage to name which of Q1-Q4 forced it, the validation checklist re-checks that at `:825`, and
-`:771` states outright that a compile-order dependency is a foundation step, not a stage split. A
-stage that cannot cite a question is fragmentation.
-
-**Fix:** one stage, foundation edit first, then fan out. Derive the foundation sweep from
-`cargo build`, never from the plan's hand-counted file table — in execution the foundation step had
-to fix three `Stage` struct literals, not the one the plan named, before fan-out could compile.
+Compile-order dependencies are foundation steps, not stage boundaries; one stage per layer of a cohesive feature is fragmentation.
+Details: [Stage Fragmentation](phantom-merges.md).
 
 ## Premature Stage Completion and Deadline Takeovers (2026-08-14)
 

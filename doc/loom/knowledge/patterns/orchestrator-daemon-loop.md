@@ -108,3 +108,11 @@ a stage recovered as still-Executing.
 Known gap: with no daemon running at all, spooled entries stay pending until the next
 tick or a teardown drain. `record_via_spool` says so in its own warning
 (`record.rs:131`) rather than pretending the write landed.
+
+## Host-Job Retry List Is a Process-Wide Mutex
+
+Applications that failed to record a finished host job wait for a retry in `FAILED_APPLIES`, a process-wide
+`Mutex<BTreeMap<PathBuf, Vec<FailedApply>>>` in `orchestrator/core/host_jobs.rs`, keyed by the state root. It is
+not an `Orchestrator` field: `orchestrator.rs` cannot grow past the 400-line limit. The runner reaches the
+orchestrator through `set_host_job_runner` (`HostJobRunner` in `host_verify/runner.rs`). Each state root has one
+orchestrator, so each root's list is its own key.

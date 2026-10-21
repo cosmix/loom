@@ -71,7 +71,7 @@ Investigating the above, the obvious-looking alternative was to route knowledge 
 the same daemon broker worktree stages use. Three independent blockers, recorded so it is not
 re-proposed:
 
-1. `validate_active_identity` (`daemon/server/control_complete.rs`) requires
+1. `validate_active_identity` (daemon/server/control_complete.rs (removed)) requires
    `session_type == SessionType::Stage`; knowledge sessions are `SessionType::Knowledge`.
 2. `handle_complete_stage` calls `try_complete(None)` and never sets `merged = true`. Knowledge
    stages have no branch, so nothing else ever would — the plan could never reach `DONE-`.
@@ -85,7 +85,7 @@ block into the main checkout's `.claude/settings.local.json`. That write is gone
 [Where a Session's Write Grants Come From](../architecture/security-and-isolation.md#where-a-sessions-write-grants-come-from-stale-corrected-2026-09-13)),
 and blockers 1 and 2 above are lifted: `session_owns_stage_as`
 (`daemon/server/self_service.rs:87-97`) now admits `SessionType::Knowledge`, and
-`handle_complete_stage` (`daemon/server/control_complete.rs:50-52`) sets `stage.merged = true` for a
+`handle_complete_stage` (daemon/server/control_complete.rs:50-52 (removed)) sets `stage.merged = true` for a
 knowledge stage before calling `try_complete`. Knowledge completion goes through the broker like
 every other kind.
 

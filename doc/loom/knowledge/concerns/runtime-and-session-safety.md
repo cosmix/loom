@@ -2,7 +2,7 @@
 
 > tmux, orphan adoption edge cases
 
-## `evaluate_new_session` Fails a Working Spawn on a Benign `~/.tmux.conf` Warning (2026-08-08)
+## `evaluate_new_session` Fails a Working Spawn on a Benign `~/.tmux.conf` Warning
 
 The rule "any stderr with exit 0 is a failure" is a plan mandate, pinned by unit tests and carried by
 an explicit stage decision — so it was **deliberately left as-is**. But tmux prints `~/.tmux.conf`
@@ -16,7 +16,7 @@ The `has-session` probe that immediately follows is the authoritative signal and
 two cases. Gating the stderr rule on that probe is a design call for the plan owner, not an
 integration-verify defect.
 
-## `loom attach` Overview Panes Are Live, Writable Agent Terminals (2026-08-08)
+## `loom attach` Overview Panes Are Live, Writable Agent Terminals
 
 The overview's panes are full interactive attach clients (no `-r`), so a stray keystroke goes into a
 live autonomous agent's input, and `C-b x` kills the **stage's** pane — the inner servers have no
@@ -26,7 +26,7 @@ Left as-is deliberately: the plan mandates the exact pane string. If the overvie
 _viewer_ rather than N live terminals, adding `-r` to `attach-session` on the **overview path only**
 (never on `loom attach <stage-id>`, which is the intentionally interactive path) is a one-word change.
 
-## Nothing Reaps the Overview Viewer Socket (2026-08-08)
+## Nothing Reaps the Overview Viewer Socket
 
 `list_loom_sockets` skips `loom-view-<8hex>` by name so `clean`/`init` do not report it as
 unattributable, and the skip comment concedes "Nothing currently reaps this socket". After
@@ -37,7 +37,7 @@ It is the one socket whose name is a pure function of the repo root, so reaping 
 cross-checkout risk — roughly two lines in `cleanup_orphaned_sessions` and `clean::sessions` once
 `viewer_socket_name` is crate-visible.
 
-## PreToolUse File Guards Cannot Eliminate Path-Swap Races (2026-08-08)
+## PreToolUse File Guards Cannot Eliminate Path-Swap Races
 
 The canonical `worktree-file-guard.sh` now covers Read, Write, Edit, Glob, and Grep; canonicalizes
 paths; compares path components; and rejects both leaf and parent symlinks. This closes the concrete
@@ -50,7 +50,7 @@ boundary. A race-free design requires a dedicated file-operation broker that per
 the actual open relative to an already-open worktree directory using no-follow semantics. Do not
 describe the current hook boundary as TOCTOU-free.
 
-## `loom attach <stage-id>` Dies With Its Stage (2026-08-26)
+## `loom attach <stage-id>` Dies With Its Stage
 
 **Direct attach dies with its stage by design.** `loom attach <stage-id>` `exec`s into the stage's
 OWN server (`commands/attach/mod.rs`), whose lifetime is the stage's (default `exit-empty`;
@@ -61,7 +61,7 @@ to the viewer's lifetime, not the stage's (note `split-window` unzooms, and the 
 healthy viewer instead of `kill-session`-ing it). Daemon log for any attach/reconcile question:
 `.loom/work/orchestrator.log`, level fixed by `RUST_LOG` in the shell BEFORE `loom run`.
 
-## Orphan Adoption Only Runs at Daemon Startup (2026-08-29)
+## Orphan Adoption Only Runs at Daemon Startup
 
 `adopt_orphaned_agents` is called from `recover_orphaned_sessions`, which
 `orchestrator.rs` invokes exactly ONCE, at daemon startup — not on the poll loop, despite the
@@ -72,7 +72,7 @@ the duplicate-spawn hole independently, so this is a narrower reach rather than 
 per-tick is a one-line addition to the scheduler loop; the pass is already idempotent and pinned as
 such by a test, so the only question is cost — it scans `.loom/work/pids/` per Executing stage.
 
-## `get_work_dir()` Trusts Any Path Containing `.worktrees/` (2026-08-29)
+## `get_work_dir()` Trusts Any Path Containing `.worktrees/`
 
 `find_worktree_root_from_cwd` (`git/worktree/paths.rs`) is a pure substring match on `.worktrees/`
 in the cwd string — it never checks that the directory is a loom-managed worktree. `get_work_dir`'s
@@ -88,7 +88,7 @@ during post-compaction recovery (Rule 3b). Fix shape if it is ever worth doing: 
 candidate root is a real worktree — a `.git` FILE containing a `gitdir:` pointer — before trusting
 its `.loom/work`.
 
-## `commands::memory` Tests Mutate the Process-Global Working Directory (2026-08-29)
+## `commands::memory` Tests Mutate the Process-Global Working Directory
 
 Those tests call `env::set_current_dir` and rely on `#[serial]`, which only serializes a test
 against OTHER `#[serial]` tests — anything unmarked in the same binary runs concurrently with a
@@ -102,7 +102,7 @@ unrelated to its own subject. Fix shape: inject the working directory instead of
 process's, as `orchestrator/merge_lifecycle/tests.rs:321` already does deliberately for this exact
 reason.
 
-## Guard Hooks: Four Design Questions Deliberately Left Open (2026-08-30)
+## Guard Hooks: Four Design Questions Deliberately Left Open
 
 The adversarial review of `read-guard.sh`/`poll-guard.sh`/`_read_discipline.sh` surfaced four
 behaviours kept AS SPECIFIED rather than patched, because each needs a spec decision, not a

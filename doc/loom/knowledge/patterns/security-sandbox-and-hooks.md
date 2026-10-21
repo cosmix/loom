@@ -77,7 +77,7 @@ callers that disagree on that behavior would need a mode flag threading through 
 When two near-duplicate pieces of logic differ only on the safety-relevant branch, duplicating the
 few lines that matter is clearer than parameterizing a shared function to hide the disagreement.
 
-## Every Host-Side Open of an Agent-Writable Worktree Path Must Use `fs::safe_read::open_regular_no_follow` (2026-09-10)
+## Every Host-Side Open of an Agent-Writable Worktree Path Must Use `fs::safe_read::open_regular_no_follow`
 
 The host daemon runs trusted and outside the sandbox, but polls several paths a sandboxed
 stage session can write: `fs/memory/spool.rs` (`drain_spool`), `telemetry/spool.rs`
@@ -95,7 +95,7 @@ Prevention: any new host-side read or write of a worktree-writable path goes thr
 `fs::safe_read`/`fs::safe_fs`, never `std::fs`/`OpenOptions` directly — the daemon trusts its
 own code, not the worktree's contents.
 
-## A Worktree's `.git` File Is Agent-Writable Too, So Daemon-Side Git Never Follows It (2026-09-25)
+## A Worktree's `.git` File Is Agent-Writable Too, So Daemon-Side Git Never Follows It
 
 A linked worktree's `.git` is a plain file naming its administrative directory; the stage agent
 that controls the worktree can rewrite it to name a directory of its own choosing, whose
@@ -115,7 +115,7 @@ agent's own CLI inside its sandbox, never the daemon or a host-side hook.
 (`WorktreeGit::pinned`/`pinned_in_project_of`), never discovers it; a stage's own process may
 discover, since it already has no more privilege than the worktree it would misconfigure.
 
-## A Local Fallback Needs Proof That No Daemon Runs (2026-09-25)
+## A Local Fallback Needs Proof That No Daemon Runs
 
 `verify::review::observer::source` computes a stage's change fingerprint itself only when it holds
 POSITIVE evidence no daemon owns the project: nothing answers on `.loom/work/orchestrator.sock`
@@ -127,7 +127,7 @@ reason. Every other outcome, including a permission error opening the socket, is
 could disagree with the daemon's. The same asymmetry as the credential-narrowing entries in
 `mistakes/sandbox-state-channels.md`: absence of evidence for a denial is not evidence of absence.
 
-## Re-Export a `pub(crate)` Helper Into a New Caller Instead of Re-Encoding Its Logic (2026-09-13)
+## Re-Export a `pub(crate)` Helper Into a New Caller Instead of Re-Encoding Its Logic
 
 `fs/permissions/drift.rs::flatten_hook_triples` already turned a hooks JSON value into the
 `(event, matcher, command)` triples the drift check compares. When the spawn preflight's

@@ -68,7 +68,7 @@ runs on the host (pre-push) and in CI.
   microseconds. Mark them `#[serial]`.
 - `daemon/server/lifecycle/tests.rs` holds the 103/104/105-byte boundary tests of
   `daemon::socket::socket_path_fits`, which has no boundary test of its own; `rpc_tests.rs`,
-  `commands/stage/tests/control_complete.rs` and the PR's original test hold three near-identical
+  commands/stage/tests/control_complete.rs (removed) and the PR's original test hold three near-identical
   "worktree spelling past `sun_path`" cases.
 - `launch.rs` prints the pre-redirect pipe text (`self.text`) as is while the log tail goes through
   `terminal_safe`. The text comes from the daemon child, so the risk is low, but the two are

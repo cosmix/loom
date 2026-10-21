@@ -192,20 +192,6 @@ Alongside it on the `Stage` struct (all shipped): `dispute_count` (600), `eviden
 | `verify/before_after.rs`                                        | `run_before_stage_checks()` + `run_after_stage_checks()` — both delegate to `verify_truth_checks()`                                                              |
 | `verify/goal_backward/truths.rs:16-134`                         | `verify_truth_checks(checks, working_dir)` → `Vec<VerificationGap>`, 30s timeout per check                                                                       |
 
-## Subagent Verification Guard (2026-07-28)
-
-| Path                                                             | Role                                                                                                   |
-| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `loom-hooks/subagent-verify-guard.sh`                                 | PreToolUse:Bash guard — blocks project-wide verification for subagents (over the Rule 17 400-line cap — see [concerns.md](../concerns.md)) |
-| `loom-hooks/_common.sh`                                               | `loom_is_subagent()` — payload-first detection gate, process-tree walk as fallback; 619 lines, also over the Rule 17 cap — see [concerns.md](../concerns.md) |
-| `loom/src/orchestrator/signals/tests_doctrine.rs`                | pins the doctrine blocks byte-for-byte across signal, template, and hook                               |
-| `loom/tests/integration/hooks_subagent_verify_guard.rs`          | harness: process-tree construction, env scrubbing, payload building                                    |
-| `loom/tests/integration/hooks_subagent_verify_guard_cases.rs`    | `BLOCK_CASES` / `ALLOW_CASES` table data                                                               |
-| `loom/tests/integration/hooks_subagent_verify_guard_carveout.rs` | integration-verify carve-out **refusal** directions (decoy, wrong type, missing)                       |
-
-Split into three files because they grow for different reasons; wired with `#[path]` submodules
-so the children reach the parent's private helpers via `use super::*` without widening visibility.
-
 ## Post-Tool Heartbeat
 
 `loom-hooks/post-tool-use.sh` writes only private heartbeat metadata under `.loom/work/heartbeat/`. It does not persist tool names, commands, output, byte counts, or previews. This prevents credentials and private source printed by tools from becoming durable shared state.
@@ -245,3 +231,17 @@ The legacy `ToolEvent` reader remains able to consume an older `.loom/work/tool-
 - `web/src/lib/tokens.ts`, `web/src/components/token-flow-panel.tsx`, `token-models.tsx`, `stage-tokens.tsx`, `graph/node-tokens.tsx` - web helpers and surfaces
 
 Design and limits: [architecture/token-flow-sources.md](../architecture/token-flow-sources.md).
+
+## Subagent Verification Guard
+
+| Path                                                             | Role                                                                                                   |
+| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
+| `loom-hooks/subagent-verify-guard.sh`                                 | PreToolUse:Bash guard — blocks project-wide verification for subagents (over the Rule 17 400-line cap — see [concerns.md](../concerns.md)) |
+| `loom-hooks/_common.sh`                                               | `loom_is_subagent()` — payload-first detection gate, process-tree walk as fallback; 619 lines, also over the Rule 17 cap — see [concerns.md](../concerns.md) |
+| `loom/src/orchestrator/signals/tests_doctrine.rs`                | pins the doctrine blocks byte-for-byte across signal, template, and hook                               |
+| `loom/tests/integration/hooks_subagent_verify_guard.rs`          | harness: process-tree construction, env scrubbing, payload building                                    |
+| `loom/tests/integration/hooks_subagent_verify_guard_cases.rs`    | `BLOCK_CASES` / `ALLOW_CASES` table data                                                               |
+| `loom/tests/integration/hooks_subagent_verify_guard_carveout.rs` | integration-verify carve-out **refusal** directions (decoy, wrong type, missing)                       |
+
+Split into three files because they grow for different reasons; wired with `#[path]` submodules
+so the children reach the parent's private helpers via `use super::*` without widening visibility.

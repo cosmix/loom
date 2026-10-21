@@ -124,15 +124,13 @@ cuts the reason to `DISPUTE_REASON_MAX_BYTES`.
 **Impact-test evidence comes from the observed record, never the filing agent's request.** The CLI sends ids
 alone (`IT-<runner>:<package>`, checked by `verify::impact_tests::check_failure_id`), and the handler drops any
 evidence a request carries and copies each named failure from the observed record
-(`verify/impact_tests/observed.rs`). That record is the stage session's unauthenticated report: its failing
-`loom stage complete` prints it as the last two non-empty lines, a `LOOM_CONTROL_IMPACT_V1` line and a
-`LOOM_CONTROL_IMPACT_EOF` line (`commands/stage/completion_evidence/impact_record.rs`), and the completion broker,
-which the PostToolUse hook runs outside the sandbox on the exact pinned command's output, writes it. The run executes
-the stage's code, which can print a forged record and kill loom before loom prints its own, so the adjudicator is the
-trust gate: it re-runs each disputed selection before accepting, and an accepted failure excuses only a later
-failure identical to it (kind, count and test set; `verify/impact_tests/accepted.rs`). A host completion (no stage
-session) writes the record directly. An id the record does not hold is refused; every failing completion replaces
-the record, so only failures of the latest run can be disputed.
+(`verify/impact_tests/observed.rs`). The host job that runs a completion writes the record after a failing run
+(`host_verify/child_complete.rs::record_failed_impact`), and an operator's own completion writes it directly. Both
+runs execute the stage's code, so the record is unauthenticated: a run can print a forged failure. The adjudicator is
+the trust gate: it re-runs each disputed selection before accepting, and an accepted failure excuses only a later
+failure identical to it (kind, count and test set; `verify/impact_tests/accepted.rs`). An id the record does not hold
+is refused. A failing run replaces the record; a passing run leaves it, so a dispute names failures of the latest
+failing run.
 
 **Verdict rules** (`orchestrator/adjudication/verdict.rs`, `verdict_kinds.rs`, `apply.rs`, `apply_kinds.rs`).
 `FindingRuling.ruling` reuses `verify::review::store::RulingKind`. `defer` is valid only when the disputing

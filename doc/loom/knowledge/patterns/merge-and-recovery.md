@@ -74,13 +74,13 @@ that and costs you a shutdown story.
 
 ## Dispute File Authority Split Pattern
 
-Three-file trust boundary to prevent self-approval attacks:
+Three-file trust boundary to prevent self-approval attacks. The files are written at runtime under the work directory's disputes/<stage-id>/<n>/ folder (one folder per dispute round n):
 
-| File             | Writer                             | Content                  | Rationale                                            |
-| ---------------- | ----------------------------------- | ------------------------ | ---------------------------------------------------- |
-| `.loom/work/disputes/<stage-id>/<n>/request.md`     | Daemon (on agent's behalf via RPC) | Agent's evidence payload | Agent can read but never write directly              |
-| `.loom/work/disputes/<stage-id>/<n>/verdict.md`     | Daemon worker thread only          | Verdict + citations      | Stage agents never write here — daemon-authored only |
-| `.loom/work/disputes/<stage-id>/<n>/applied.marker` | Daemon only (zero-byte)            | Idempotency guard        | Prevents re-application on restart                   |
+| File           | Writer                             | Content                  | Rationale                                            |
+| -------------- | ---------------------------------- | ------------------------ | ---------------------------------------------------- |
+| request.md     | Daemon (on agent's behalf via RPC) | Agent's evidence payload | Agent can read but never write directly              |
+| verdict.md     | Daemon worker thread only          | Verdict + citations      | Stage agents never write here — daemon-authored only |
+| applied.marker | Daemon only (zero-byte)            | Idempotency guard        | Prevents re-application on restart                   |
 
 If the agent could write both request and verdict, it could pre-fill `verdict: Accept` and self-approve. The split enforces the trust boundary at the filesystem level.
 

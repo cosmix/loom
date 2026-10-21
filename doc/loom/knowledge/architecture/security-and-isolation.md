@@ -49,22 +49,6 @@ Two write sites:
   `.claude/settings.local.json` (never the committed `settings.json`, to avoid
   imposing on non-loom teammates), alongside the agent-teams env var.
 
-## Worktree Membership Is Anchored to the END of the Path (2026-09-12)
-
-`loom-hooks/_common.sh`'s `loom_current_worktree` and `loom-hooks/loom-control-complete.sh` used an
-unanchored pattern (`.worktrees/[^/]+`) to decide whether a path is inside a loom worktree, and
-Rust's `is_loom_worktree_path` only checked that a `.worktrees` segment appeared somewhere in the
-path. Because `LOOM_WORKTREE_PATH` is always the worktree root end-to-end (`stage_executor.rs`'s
-`resolve_worktree` → `spawn_setup.rs`'s `get_or_create_worktree` → `operations.rs`'s
-`repo_root/.worktrees/<stage_id>`, passed as the spawned session's `cwd`), any path _nested
-inside_ that root — the repository checked out again a level down, or a `TMPDIR` placed there —
-also matched and was miscounted as its own worktree root.
-
-**Fix:** anchor the pattern to the end of the path — `/\.worktrees/[^/]+/?$` in the shell hooks,
-and "parent directory is literally named `.worktrees`" in `is_loom_worktree_path`. A path several
-segments below a real worktree root no longer counts as one; nested worktree resolution now
-selects the innermost stage.
-
 ## Where a Session's Write Grants Come From
 
 Loom's spawn path writes no `.claude/settings.local.json`; only `loom repair` writes the main checkout's file (via `ensure_loom_hooks_local`). Every session kind launches from a generated
@@ -110,54 +94,43 @@ exposure this caused.
 
 ## Session Requests Travel Through a Hook-Written Inbox
 
-A sandboxed session cannot write loom state directly (owner decision 3). Every write request goes by
-reference: the CLI writes a ticket into `$LOOM_SCRATCH_DIR` and prints one line ending `LOOM_RELAY_V1`
-naming the ticket id and its SHA-256, with no path in the line, so fixture output, docs and echoed
-transcripts that merely print the line do nothing. The ten relayed kinds (`relay/kind.rs`) are
-`memory`, `block`, `dispute`, `handoff`, `merge-resolved`, `verdict`, `telemetry`, `freeze-contracts`,
-`file-dispute` and `commit`; every one but `memory` and `telemetry` is a control kind that only the
-session's lead process may relay. `commit` carries a session's staged index (message, the HEAD and
-tree it saw) for the daemon to commit and sign; see
-[Daemon-Owned Commits](daemon-owned-commits.md).
+A sandboxed session cannot write loom state directly (owner decision 3). Every write request goes by reference: the CLI writes a ticket into `$LOOM_SCRATCH_DIR` and prints one line ending `LOOM_RELAY_V1` naming the ticket id and its SHA-256, with no path in the line, so fixture output, docs and echoed transcripts that merely print the line do nothing. The twelve relayed kinds (`relay/kind.rs`) are `memory`, `block`, `dispute`, `handoff`, `merge-resolved`, `verdict`, `telemetry`, `freeze-contracts`, `file-dispute`, `commit`, `check` and `complete`. Nine of them, every kind except `memory`, `telemetry` and `check`, are control kinds that only the session's lead process may relay (`RequestKind::is_control`). `commit` carries a session's staged index (message, the HEAD and tree it saw) for the daemon to commit and sign; see [Daemon-Owned Commits](daemon-owned-commits.md).
 
-**Stage completion is not a relayed request.** `loom stage complete` in a worktree verifies, and the
-trusted PostToolUse hook `loom-hooks/loom-control-complete.sh` (outside the session sandbox, with
-`LOOM_CONTROL_BROKER=1`) runs the completion broker: `commands/stage/control_complete.rs` reads
-`user.token`, which the sandbox denies the agent, and sends `RecordCompletionEvidence` and
-`CompleteStage` over the daemon socket through `daemon::send_request`. Without that token the daemon
-refuses completion, so peer identity alone authorizes `BlockStage` and `DisputeCriteria` but not
-completion; completion is never spooled. The broker's history is in
-[Completion Broker Credential](../mistakes/completion-broker-credential.md).
+**Stage completion is a host job.** The completion command in a session relays a `complete` ticket (`commands/stage/complete_relay.rs`). The daemon's inbox drain (`orchestrator/core/inbox_drain/complete.rs`) queues a `Complete` host job for it and settles the ticket with the job id. The daemon's runner starts `loom stage verify-host` on the host, outside the session sandbox, and the daemon completes the stage only from that job's passing run (`host_verify/apply.rs`). No token, socket credential or nonce carries completion. The trusted PreToolUse pin `loom-hooks/loom-control-complete.sh` allows only the one exact completion command, holds no verdict and writes the completion heartbeat. A legacy session is refused, and an operator's shell completes locally. Details: [Host Verification Jobs](verification-v2-gates.md).
 
-`loom-hooks/loom-relay.sh` (PostToolUse, matcher `Bash`) runs a fast bash check on the command's
-shell tokens, then hands off to `loom hook relay`, which proves the request came from the session it
-claims by process ancestry, verifies the ticket against the printed hash, and writes the entry to
-`W/inbox/<session-id>/`. The daemon's `drain_session_inboxes` applies each entry at most once against
-a per-session ledger.
+`loom-hooks/loom-relay.sh` (PostToolUse, matcher `Bash`) runs a fast bash check on the command's shell tokens, then hands off to `loom hook relay`, which proves the request came from the session it claims by process ancestry, verifies the ticket against the printed hash, and writes the entry to `W/inbox/<session-id>/`. The daemon's `drain_session_inboxes` applies each entry at most once against a per-session ledger.
 
-**Leftover tickets are swept.** A ticket's line can fail to reach the hook: stdout redirected or
-piped through `tail`, a script file, a background call, or more than `MAX_LINES_PER_CALL` (16) lines
-in one output. `loom hook relay` therefore relays its own lines and then every other `<id>.req` still
-in the scratch directory whose kind is in `--allowed-kinds` and is NOT a control kind
-(`commands/hook/relay/sweep.rs`), so only `memory` and `telemetry` are swept. A control ticket stays
-bound to its own line: one a subagent wrote is refused, and sweeping it during a later main-agent
-call would relay the subagent's block, handoff or verdict under the main agent's authority. A swept
-ticket has no announced hash; `ticket_check::read_unlisted` requires the same file shape
-(single-link regular file, no symlink, owner uid, size cap) and a decoded id equal to the file stem.
-The hash never bound a ticket to anything the session could not produce itself; the session proof
-and the command-derived kinds authorise a relay, and both apply to the sweep. The hook's fast path
-lets any payload containing ` memory ` through so the helper runs even when the line was hidden, and
-stays silent unless a relay line was present. History:
-[Memory Relay Drain Gap](../mistakes/memory-relay-drain-gap.md).
+**Leftover tickets are swept.** A ticket's line can fail to reach the hook: stdout redirected or piped through `tail`, a script file, a background call, or more than `MAX_LINES_PER_CALL` (16) lines in one output. `loom hook relay` therefore relays its own lines and then every other `<id>.req` still in the scratch directory whose kind is in `--allowed-kinds` and is NOT a control kind (`commands/hook/relay/sweep.rs`), so only the non-control kinds (`memory`, `telemetry`, `check`) are swept. A control ticket stays bound to its own line: one a subagent wrote is refused, and sweeping it during a later main-agent call would relay the subagent's block, handoff or verdict under the main agent's authority. A swept ticket has no announced hash; `ticket_check::read_unlisted` requires the same file shape (single-link regular file, no symlink, owner uid, size cap) and a decoded id equal to the file stem. The hash never bound a ticket to anything the session could not produce itself; the session proof and the command-derived kinds authorise a relay, and both apply to the sweep. The hook's fast path lets any payload containing ` memory ` through so the helper runs even when the line was hidden, and stays silent unless a relay line was present. History: [Memory Relay Drain Gap](../mistakes/memory-relay-drain-gap.md).
 
-Modules: `loom/src/relay/*` (protocol: kind, line, ticket, payload, inbox, matrix, scratch),
-`fs/inbox/*` (layout, ledger, dedupe), `commands/hook/relay*` (the `loom hook relay` CLI),
-`orchestrator/core/inbox_drain/*` (the daemon side), `commands/request/*` (`loom request status`,
-for polling a request's outcome). See
-[Inbox Ledger Has Two Rows Per Request Id](../mistakes/concurrency-and-locking.md#inbox-ledger-has-two-rows-per-request-id--a-lookup-must-take-the-latest-2026-09-13)
-before writing any code that looks a request up by id.
+Modules: `loom/src/relay/*` (protocol: kind, line, ticket, payload, inbox, matrix, scratch), `fs/inbox/*` (layout, ledger, dedupe), `commands/hook/relay*` (the `loom hook relay` CLI), `orchestrator/core/inbox_drain/*` (the daemon side), `commands/request/*` (`loom request status`, for polling a request's outcome). See [Inbox Ledger Has Two Rows Per Request Id](../mistakes/concurrency-and-locking.md#inbox-ledger-has-two-rows-per-request-id--a-lookup-must-take-the-latest-2026-09-13) before writing any code that looks a request up by id.
 
-## Spawn Preflight and the Merge Gate (2026-09-13)
+## Loom's `config.worktree` Deny and Check
+>
+> config.worktree deny and check
+
+The capsule (`session_denies` in `sandbox/control_surfaces/session_denies.rs`) denies, for every session kind, `<common>/worktrees/<name>/config.worktree` of every worktree that exists when the capsule is built (`worktree_admin_dirs` in `git/worktree/config_worktree.rs`). For a linked-worktree session this duplicates Claude Code's own `worktrees/*/config.worktree` deny. For a checkout-rooted session (knowledge, adjudication, base-conflict: `.git` is a directory and Claude Code denies only `.git/hooks` and `.git/config`) it is the only deny.
+
+A worktree created after a session spawned is covered by neither, so the daemon checks before running git there: `WorktreeGit::run` (`git/worktree/pinned.rs`) calls `check_worktree_config`. When the main repository enables `extensions.worktreeConfig` and `<admin>/config.worktree` is non-empty, the check lists its keys as data (`git config --file .. --name-only --list` in the main repository) and refuses unless every key is one git itself writes there: `core.sparseCheckout`, `core.sparseCheckoutCone`, `index.sparse`, and the keys `git worktree add` copies from a sparse main worktree. An empty regular file is accepted without spawning git; a symlink goes through the full check. The remaining race is recorded in [Sandbox and Confinement Gaps](../concerns/sandbox-and-confinement-gaps.md).
+
+The srt confinement e2e (`orchestrator/terminal/native/tests_confinement_e2e.rs`, `tests_confinement_srt.rs`) emulates Claude Code's linked-worktree grant and its denies, so stage probes run against what production grants; the knowledge-capsule probe is the one that proves loom's `config.worktree` deny.
+
+## Worktree Membership Is Anchored to the END of the Path
+
+`loom-hooks/_common.sh`'s `loom_current_worktree` and `loom-hooks/loom-control-complete.sh` used an
+unanchored pattern (`.worktrees/[^/]+`) to decide whether a path is inside a loom worktree, and
+Rust's `is_loom_worktree_path` only checked that a `.worktrees` segment appeared somewhere in the
+path. Because `LOOM_WORKTREE_PATH` is always the worktree root end-to-end (`stage_executor.rs`'s
+`resolve_worktree` → `spawn_setup.rs`'s `get_or_create_worktree` → `operations.rs`'s
+`repo_root/.worktrees/<stage_id>`, passed as the spawned session's `cwd`), any path _nested
+inside_ that root — the repository checked out again a level down, or a `TMPDIR` placed there —
+also matched and was miscounted as its own worktree root.
+
+**Fix:** anchor the pattern to the end of the path — `/\.worktrees/[^/]+/?$` in the shell hooks,
+and "parent directory is literally named `.worktrees`" in `is_loom_worktree_path`. A path several
+segments below a real worktree root no longer counts as one; nested worktree resolution now
+selects the innermost stage.
+
+## Spawn Preflight and the Merge Gate
 
 `sandbox::validate_config` (`sandbox/config.rs:167`) refuses three settings unconditionally, with no
 plan-author acknowledgement possible: `permission_mode: bypass-permissions`, `sandbox.enabled: false`
@@ -200,13 +173,3 @@ The hooks directory comes from a SCOPED read of `core.hooksPath` (local, then gl
 loom's own git runner prepends `-c core.hooksPath=/dev/null -c core.fsmonitor=false` to every git call
 it makes (`git/runner.rs` `NO_HOOKS_ARGS`, owner decision 10), which silently wins over an UNSCOPED read of the same key. See
 [`-c core.hooksPath=/dev/null` Silently Overrides a Scoped Read](../mistakes/sandbox-tooling-and-network.md#-c-corehookspathdevnull-silently-overrides-a-scoped-corehookspath-read-2026-09-13).
-
-## Loom's `config.worktree` Deny and Check
->
-> config.worktree deny and check
-
-The capsule (`session_denies` in `sandbox/control_surfaces/session_denies.rs`) denies, for every session kind, `<common>/worktrees/<name>/config.worktree` of every worktree that exists when the capsule is built (`worktree_admin_dirs` in `git/worktree/config_worktree.rs`). For a linked-worktree session this duplicates Claude Code's own `worktrees/*/config.worktree` deny. For a checkout-rooted session (knowledge, adjudication, base-conflict: `.git` is a directory and Claude Code denies only `.git/hooks` and `.git/config`) it is the only deny.
-
-A worktree created after a session spawned is covered by neither, so the daemon checks before running git there: `WorktreeGit::run` (`git/worktree/pinned.rs`) calls `check_worktree_config`. When the main repository enables `extensions.worktreeConfig` and `<admin>/config.worktree` is non-empty, the check lists its keys as data (`git config --file .. --name-only --list` in the main repository) and refuses unless every key is one git itself writes there: `core.sparseCheckout`, `core.sparseCheckoutCone`, `index.sparse`, and the keys `git worktree add` copies from a sparse main worktree. An empty regular file is accepted without spawning git; a symlink goes through the full check. The remaining race is recorded in [Sandbox and Confinement Gaps](../concerns/sandbox-and-confinement-gaps.md).
-
-The srt confinement e2e (`orchestrator/terminal/native/tests_confinement_e2e.rs`, `tests_confinement_srt.rs`) emulates Claude Code's linked-worktree grant and its denies, so stage probes run against what production grants; the knowledge-capsule probe is the one that proves loom's `config.worktree` deny.

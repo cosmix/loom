@@ -74,7 +74,7 @@ proves the renderer works and says nothing about whether anything populates it.
 ### 3. A root-only fixture that cannot distinguish a resolver from string equality
 
 `rank.rs` compared a raw markdown link target against a chunk root-relative path.
-Markdown targets are relative to the CONTAINING directory, so `mistakes/a.md` linking
+Markdown targets are relative to the CONTAINING directory, so a mistakes topic file linking
 to `verification-harness.md` never matched the chunk at
 `mistakes/verification-harness.md` — the link-neighbour boost was dead for every
 tier-2 file in the real knowledge base. The unit test passed because its fixture

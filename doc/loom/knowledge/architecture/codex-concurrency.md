@@ -106,7 +106,7 @@ Do not write "as observed in execution" about parallel codex implementers until 
 with codex listed in `implementers`; check `.loom/work/stages/*.md` for the field before claiming runtime
 evidence.
 
-## Wave Planning for Codex-Heavy Stages (2026-09-13)
+## Wave Planning for Codex-Heavy Stages
 
 What the four implementation stages of PLAN-token-optimization-2026-09-13 converged on; each ran
 sol/terra xhigh units through `loom-codex-forwarder`:

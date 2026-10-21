@@ -8,12 +8,6 @@ How a completed worktree stage reaches the target branch, in the order the daemo
 what every outcome leaves on disk. Knowledge stages are outside this flow: they commit to the
 base directly and `complete_knowledge_stage` sets `merged: true` with no branch.
 
-## Brokered completion precedes automatic merge
-
-Brokered `loom stage complete` inside a worktree verifies before requesting completion. The PostToolUse broker forwards `CompleteStage` to the daemon. `daemon/server/control_complete.rs::complete_under_lock` validates active ownership and current evidence, rechecks policy/content under the stage lock, records the verified `completed_commit`, and transitions the stage to Completed with `merged: false` for non-knowledge stages. The claim that broker completion stores `completed_commit: null` is incorrect. Missing proof cannot be filled merely from a newer branch tip to authorize landing.
-
-Operator progressive completion performs its merge before the final Completed transition (`commands/stage/progressive_complete/finish.rs`). The universal claim that every completion precedes its merge is incorrect.
-
 ## Where the first merge attempt actually happens
 
 Graph synchronization and the StageCompleted monitor handler both reach `try_auto_merge` (`orchestrator/core/merge_handler/auto_merge_dispatch.rs`). An already merged stage proceeds to cleanup. Eligible pending merges check automatic-merge policy, target/control-path/commit-ahead preconditions and persisted completion proof before overlay reconciliation and `attempt_auto_merge`.
@@ -95,9 +89,9 @@ landing; other consumers still read the live ref ([open list](target-guard.md#un
 
 ## Recovery from every non-merged outcome
 
-The resolver works in `.worktrees/<id>` and commits the target merge on `loom/<id>`. `loom stage merge <id> --resolved` reaches the authenticated `MergeResolved` handler in `orchestrator/core/inbox_drain/merge_resolved.rs`, or the local CLI resolved-merge path. Both call `commands/stage/complete_resolved.rs::verify_resolved_completion` before landing. The ancestry-and-cleanliness-only authorization described by the old flow is insufficient: resolved content must pass fresh completion gates.
+The resolver works in `.worktrees/<id>` and commits the target merge on `loom/<id>`. `loom stage merge <id> --resolved` reaches the authenticated `MergeResolved` handler in `orchestrator/core/inbox_drain/merge_resolved.rs`, or the local CLI resolved-merge path. Both call `commands/stage/complete_resolved.rs::verify_resolved_completion` before landing. Ancestry and cleanliness alone do not authorize a landing: resolved content must pass fresh completion gates.
 
-The shared verifier checks the registered branch/worktree and original commit ancestry, captures content and effective-policy snapshots, runs acceptance and the complete verification pipeline, then validates the snapshot against current state under the stage lock before updating `completed_commit`. The merge lock compares the landing tip to that verified commit. This preserves the Merge session authorization boundary; ordinary completion broker ownership is not widened. Resolver verification runs synchronously in its trusted caller.
+The shared verifier checks the registered branch/worktree and original commit ancestry, captures content and effective-policy snapshots, runs acceptance and the complete verification pipeline, then validates the snapshot against current state under the stage lock before updating `completed_commit`. The merge lock compares the landing tip to that verified commit. The merge session's authorization stays separate from the completion host job. Resolver verification runs synchronously in its trusted caller.
 
 A clean resolved worktree can also use `loom stage complete <id>` to run the ordinary operator pipeline. Resolver exit uses the shared verifier before automatic landing. Failed verification retains the worktree and original proof and routes an exited resolver to review with completion guidance; relay failure is refused. A live resolver retains its worktree after a successful relay until exit cleanup. Already landed content requires ancestry proof before cleanup.
 
@@ -132,3 +126,9 @@ Conflict entry preserves the existing `completed_commit`; the claim that it reco
 ## Completion generated-output policy
 
 Completion validates committed tracked content and rejects untracked inputs, except loom's own state (tool-artifact mount placeholders, `.claude/settings*`, spools, `.loom/cache/`, scaffold symlinks) and untracked output that the committed `.gitignore` files ignore (`src/handoff/completion/generated.rs`). No ecosystem directory list exists: a project states its generated output (`target/`, `_build/`, `build/`, `__pycache__/`, `node_modules/`) in the ignore rules it commits. `.git/info/exclude` and `core.excludesFile` are never honoured; an untracked `.gitignore` that git reads is itself a refused input, and tracked `.gitignore` edits fail the tracked-diff check. Knowledge stages honour no ignore rules. A stage declaration that names an ignored path (the path, or a directory above it holding no tracked file, after trailing wildcard-only components are dropped) makes it a required input to commit with `git add -f`; a broad declaration such as `packages/**` over tracked sources does not. Verification snapshots and merge landing remain bound to the exact verified commit.
+
+## Completion precedes automatic merge
+
+`loom stage complete` in a session relays a `complete` request, and the daemon completes the stage only from a passing host job (`host_verify/apply.rs::bind_and_complete`). It records the verified `completed_commit`, and transitions the stage to Completed with `merged: false` for non-knowledge stages; the merge flow lands it afterwards. Missing proof cannot be filled from a newer branch tip to authorize landing. See [Host Verification Jobs](verification-v2-gates.md).
+
+Operator progressive completion performs its merge before the final Completed transition (`commands/stage/progressive_complete/finish.rs`). The host-job completion does not.

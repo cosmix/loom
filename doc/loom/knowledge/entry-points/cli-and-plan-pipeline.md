@@ -130,30 +130,6 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 - Line 333: `artifacts: Vec<String>` — deferred to v2
 - NOT amendable: `id`, `name`, `dependencies`, `working_dir`, `model`, `sandbox`, `execution`
 
-## New CLI Surface (2026-08-17)
-
-**Documented from the clap definitions, not from `--help`.** The installed PATH binary can
-lag `main` mid-plan: at the end of this plan `loom knowledge context` worked while
-`loom map --outline`, `loom context` and `loom hook` all reported "unrecognized subcommand"
-from the same binary. Verify a flag against `loom/src/cli/` before documenting it.
-
-| Command                              | Defined in                      | Options                                                                                                                                                                                                                                  |
-| ------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `loom knowledge context`             | `commands/knowledge/context.rs` | `--query <QUERY>` (**required**), `--stage <STAGE>`, `--budget-tokens <N>` (default 2000), `--scope <knowledge\|source\|all>` (default `all`), `--require-id <ID>` (repeatable), `--explain`, `--json`.                                  |
-| `loom knowledge sync`                | `commands/knowledge/sync.rs`    | `--structural-only`, `--json`. Rebuilds derived context artifacts after the knowledge tree changes.                                                                                                                                      |
-| `loom map --outline <PATH>`          | `commands/map.rs:34`            | prints the indexed symbols of one file, in source order                                                                                                                                                                                  |
-| `loom map --find-all <SYMBOL>`       | `commands/map.rs:37`            | prints every indexed node whose name matches                                                                                                                                                                                             |
-| `loom map --impact <SYMBOL_OR_PATH>` | `commands/map.rs:40`            | prints what reaches a symbol or file, with path confidence                                                                                                                                                                               |
-| `loom context record-edit`           | `cli/types_ops.rs:78`           | `--stage <STAGE>`, `--path <PATH>` (**required**, repeatable). Keeps a stage's context overlay current.                                                                                                                                  |
-| `loom hook user-prompt`              | `cli/types_ops.rs:92`           | no options. `UserPromptSubmit` entry point; emits a retrieval brief or nothing.                                                                                                                                                          |
-
-The three `loom map` view flags short-circuit the original knowledge-file analysis
-(`map.rs:56-58`): if any is set, `map` is a read-only source-graph view and does not write
-knowledge. `--deep`, `--focus` and `--overwrite` remain the analysis-mode flags.
-
-Plan YAML gained `command_confinement: confined | inherit` at plan level
-(`plan/schema/types.rs:52`) and as a per-stage override (`models/stage/types.rs:305`).
-
 ## `loom pressure` — Plan Pressure-Testing Files
 
 - `loom/src/commands/pressure/mod.rs` — the driver. Key fns: `resolve_plan_path` (raw→`doc/plans/` fallback, `is_file()` check, repo-relative `invocation`), `codex_report_path` (`codex-<basename>` sibling), `codex_log_path`/`claude_marker_path` (per-pid temp paths), `plan_steps` (ordered pipeline; `Step::{DeleteReport, Pressure{claude,codex}, Address}` — the `Pressure` variant is the parallel Claude+Codex pair), `claude_args(slash, marker, model)`/`codex_args(repo_root, skill, model)` (single-source argv builders; `claude_args` injects `completion_instruction(marker)` via `--append-system-prompt`), `render_dry_run`/`render_dry_run_step`, `classify_exit`/`classify_code`, `run_claude_foreground` (foreground TTY + marker-watch, delegating shutdown to `terminate_idle_session` — SIGTERM→grace→SIGKILL; returns `ClaudeOutcome`), `spawn_codex_background`/`wait_codex` (background codex → log + spinner), `should_stop`/`claude_should_stop`, `print_run_header`, `run_pressure_step`/`run_pipeline` (both take `StepContext<'a>`, the bundle of paths + models that keeps the per-step helpers to one parameter), `execute`. Unit tests in `loom/src/commands/pressure/tests.rs`.
@@ -189,3 +165,27 @@ Plan YAML gained `command_confinement: confined | inherit` at plan level
 | `loom/src/orchestrator/adjudication/{verdict_kinds,apply_kinds,prompt/*}.rs`, `daemon/server/{contracts,dispute_kinds}.rs` | dispute kinds: verdicts, apply, judge prompts, daemon handlers |
 | `loom/src/plan/schema/{types_v2.rs,validation/v2_lints/}` | v2 fields and `plan verify` lints |
 | `doc/loom/knowledge/architecture/verification-v2-gates.md` | current gate order, owners and runtime inputs |
+
+## New CLI Surface
+
+**Documented from the clap definitions, not from `--help`.** The installed PATH binary can
+lag `main` mid-plan: at the end of this plan `loom knowledge context` worked while
+`loom map --outline`, `loom context` and `loom hook` all reported "unrecognized subcommand"
+from the same binary. Verify a flag against `loom/src/cli/` before documenting it.
+
+| Command                              | Defined in                      | Options                                                                                                                                                                                                                                  |
+| ------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loom knowledge context`             | `commands/knowledge/context.rs` | `--query <QUERY>` (**required**), `--stage <STAGE>`, `--budget-tokens <N>` (default 2000), `--scope <knowledge\|source\|all>` (default `all`), `--require-id <ID>` (repeatable), `--explain`, `--json`.                                  |
+| `loom knowledge sync`                | `commands/knowledge/sync.rs`    | `--structural-only`, `--json`. Rebuilds derived context artifacts after the knowledge tree changes.                                                                                                                                      |
+| `loom map --outline <PATH>`          | `commands/map.rs:34`            | prints the indexed symbols of one file, in source order                                                                                                                                                                                  |
+| `loom map --find-all <SYMBOL>`       | `commands/map.rs:37`            | prints every indexed node whose name matches                                                                                                                                                                                             |
+| `loom map --impact <SYMBOL_OR_PATH>` | `commands/map.rs:40`            | prints what reaches a symbol or file, with path confidence                                                                                                                                                                               |
+| `loom context record-edit`           | `cli/types_ops.rs:78`           | `--stage <STAGE>`, `--path <PATH>` (**required**, repeatable). Keeps a stage's context overlay current.                                                                                                                                  |
+| `loom hook user-prompt`              | `cli/types_ops.rs:92`           | no options. `UserPromptSubmit` entry point; emits a retrieval brief or nothing.                                                                                                                                                          |
+
+The three `loom map` view flags short-circuit the original knowledge-file analysis
+(`map.rs:56-58`): if any is set, `map` is a read-only source-graph view and does not write
+knowledge. `--deep`, `--focus` and `--overwrite` remain the analysis-mode flags.
+
+Plan YAML gained `command_confinement: confined | inherit` at plan level
+(`plan/schema/types.rs:52`) and as a per-stage override (`models/stage/types.rs:305`).

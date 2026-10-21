@@ -186,3 +186,56 @@ places at three different strengths (`commands/status/data/execution_models.rs:3
 **Prevention:** when validating a value that becomes a path COMPONENT, reject `.` and `..` by name
 explicitly — a charset check alone is not a path-component allowlist, whatever language it's written
 in. For concerns.md: the four copies are a shared-helper candidate.
+
+# Design and Boundary Lessons
+
+> Unwired stores, schema and address mismatches, visibility, boundary audits
+
+## Shipping the Store Without the Consumer
+
+A deliberately-deferred consumer left a trail of `pub` items that all look wired and compile
+clean. For every new `pub` item, **name the production caller** — the compiler never warns.
+
+→ [Store Without Consumer](store-without-consumer.md)
+
+## A Strict Schema Attribute Broke a Second, Unnoticed Reader
+
+`deny_unknown_fields` added to catch typo'd PLAN keys also governed a second deserialization source and silently broke it. Also: the `LoomConfig` vs outer-document deserialization root, a scalar config field that silently asserted "exactly one" when a stage could legitimately want several at once.
+
+→ [Schema Reuse and Silent Skips](schema-reuse-and-silent-skips.md)
+
+## Writer and Reader Disagreeing on One Address
+
+A derived layer written under a key its reader never consults is indistinguishable from doing nothing. One shared definition of the key, and a round-trip test through the consumer's address, are the only defences. The daemon socket path is one such key: every client resolves it through `daemon::socket_path`.
+
+→ [Writer/Reader Address](writer-reader-address.md)
+
+## The Channel a Doctrine Names Must Be Privileged, or the Doctrine Disables It
+
+"Only `loom knowledge ...` may write knowledge" assumed the loom CLI was a privileged writer. It is an ordinary child of the sandboxed shell, so correcting an inert `Write(...)` rule to `Edit(...)` disabled distillation outright — the no-op was load-bearing.
+
+→ [Knowledge Write Channel](knowledge-write-channel.md)
+
+## Computed Values and Hidden Couplings (2026-08-21)
+
+Three lessons: a value computed and carried correctly was still wrong because something OUTSIDE the function reading it depended on it — an uncapped value shipped unpublished, a "reason" field that was secretly also a control signal, a ratio-based threshold whose meaning changed as its corpus grew.
+
+→ [Computed Values and Hidden Couplings](computed-values-and-hidden-couplings.md)
+
+## Visibility Is Capped by Path Reachability
+
+`pub(crate)` on an item means nothing if a module on its path is private, and `tests/` is an external crate that can only reach `pub` items. Also: sweeping for the wrapper struct instead of the struct itself, a field name that names the wrong domain object.
+
+→ [Visibility and Reachability](visibility-and-reachability.md)
+
+## Auditing an Untrusted-Value Boundary
+
+Enumerate every PRODUCER of a rendered field, not every field — one `unwrap_or` upstream defeats a normalizer you already read. Classify by DESTINATION, not origin. Also: consolidated security findings, UTF-8 byte-slicing panics, character-class allowlists that admit `..`. → [Untrusted Value Boundaries](untrusted-value-boundaries.md)
+
+## A Raw String's Own Body Can End It Early
+
+`r#"...## heading..."#` truncated silently at the first `"#` inside the body (a markdown heading
+quoted inside it) instead of erroring. Check the body for a `"` followed by N `#`s before picking
+a raw-string delimiter.
+
+→ [Testing & Lint](testing-and-lint.md)

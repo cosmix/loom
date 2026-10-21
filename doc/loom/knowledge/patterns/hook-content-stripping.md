@@ -84,12 +84,12 @@ the invocation on tokens; inspect message content on the raw string.
 
 ## Two Ways The Stage-Finalize Prefilter Blocks A Command You Never Typed
 
-The finalize bridge hook (`loom-hooks/loom-control-*.sh`) guards the most destructive
+The completion pin (`loom-hooks/loom-control-complete.sh`, a PreToolUse hook) guards the most destructive
 operation in loom, so it fails closed: anything its prefilter matches must be
 byte-identical to the pinned invocation or it is rejected. The prefilter was
 hardened to tokenize the Bash command instead of globbing the raw string, and that
 fix is real - matching now happens on argv VALUES at command positions, so quoting
-can neither forge nor evade it (`is_completion_attempt`, lines 47-111).
+can neither forge nor evade it (`scan_completion_segment` and `detect_completion`, `loom-hooks/loom-control-complete.sh:68-147`).
 
 Both remaining false-positive paths were reproduced from a knowledge-distillation
 stage, the stage type most exposed to them because its whole job is feeding long
@@ -98,21 +98,20 @@ prose through the loom CLI.
 ### Path 1 - the tokenizer succeeds and matches your EXAMPLE
 
 The matcher looks for three tokens at a command position: argv[0] whose basename
-contains `loom`, argv[1] exactly `stage`, and argv[2] containing the finalize verb.
+contains `loom`, argv[1] exactly `stage`, and argv[2] containing the completion verb.
 Prose that spells that shape out verbatim - in a heredoc, a doc comment, or a
 knowledge file - tokenizes into exactly those three tokens and matches. The matcher
 is behaving correctly; a quoted example is indistinguishable from the real
 invocation.
 
 **So the pinned triple cannot be written literally inside any Bash command.**
-Writing this very section was blocked twice before the examples were replaced with
-placeholders. Render it as `loom stage <VERB> x` and name the verb in prose.
+Render it as `loom stage <VERB> x` and name the verb in prose.
 
 ### Path 2 - the heredoc body is not stripped, so the raw command text decides
 
-`is_completion_command` (`loom-hooks/loom-control-complete.sh:143-216`) strips heredoc bodies
-through `strip_embedded_content` first, and a stripped body is ignored only when it is provably
-inert. The raw decision still stands (the old raw-substring glob over the lowercased command,
+`is_completion_command` (`loom-hooks/loom-control-complete.sh:208-219`) strips heredoc bodies
+through `strip_heredoc_bodies` first, and a stripped body is ignored only when it is provably
+inert (`heredoc_bodies_are_inert`). The raw decision still stands (the old raw-substring glob over the lowercased command,
 matching `loom` followed anywhere by the verb) when any of these hold:
 
 - a body has no terminator, or the quote-blind `-m`/`--message` rewrite fired;
@@ -136,8 +135,8 @@ backtick or `${` does not, and the block message names no completion command you
 
 ### Detection and what to do
 
-**Detection:** a hard block naming a finalize command you never typed, on a command that is
-obviously not a finalize attempt. Identify which path fired: does the text contain the three-token
+**Detection:** a hard block naming a completion command you never typed, on a command that is
+obviously not a completion attempt. Identify which path fired: does the text contain the three-token
 shape (path 1), or is the heredoc outside the trusted-inert conditions above (path 2)?
 
 **What to do:** prefer a quoted delimiter and an inert reader, keep the body free of backticks,
@@ -152,7 +151,7 @@ and it defeats a control that exists to prevent lost work. Do not write the know
 file tool from a path outside the worktree either: `worktree-file-guard.sh` blocks file tools
 outside the worktree. The one exception is the session's own harness scratchpad
 (`/tmp/claude-<uid>/<project>/<session>/scratchpad/`), allowed by `allow_scratchpad`
-(`loom-hooks/worktree-file-guard.sh:174-196`) when the path is canonical and owned by the uid.
+(`loom-hooks/worktree-file-guard.sh:172`) when the path is canonical and owned by the uid.
 
 **Do not "fix" the raw fallback by loosening it.** A non-match on that branch exits 0 and ALLOWS,
 so the fallback is fail-safe by construction, and narrowing it opens a bypass rather than merely

@@ -8,13 +8,6 @@
 - Use Conventional Commit messages: `type(scope): description`, such as `fix(skills): discover project types for skill routing`. This applies to small UI edits and generated bundle commits too.
 - Never add AI attribution to commit subjects, bodies, or trailers, including generated-by boilerplate or AI co-author trailers.
 
-## Stage Commit Messages Carry No Trailers, Even When the Harness Asks (2026-09-19)
-
-The harness attribution reminder asks for `Co-Authored-By` and `Claude-Session` trailers. The
-`loom-hooks/commit-filter.sh` hook blocks the WHOLE Bash call when a `Co-Authored-By` line names Claude or
-Anthropic, and a `git add` chained in the same call does not run either. This file's rule wins: write stage commit
-messages with no trailers and no attribution line.
-
 ## Attribution Is Off in Project Settings
 
 `loom init` (`fs/permissions/settings/merge.rs::ensure_no_attribution`) writes `"attribution": {"commit": "", "pr": "", "sessionUrl": false}` into the repo's committed `.claude/settings.json`, and worktree settings inherit it. Claude Code then adds no Co-Authored-By trailer or PR footer, matching the no-attribution rule. It is inserted only when the key is absent: a repo that sets its own `attribution` keeps it. Owner decision (2026-09-19): project scope, not `~/.claude/settings.json`, which loom does not own.
@@ -22,3 +15,10 @@ messages with no trailers and no attribution line.
 ## Commit scope in a shared checkout
 
 An instruction to commit completed task work covers the task changes and their knowledge updates. Keep unrelated pre-existing edits and untracked artifacts out of those commits; clarify scope when the user says to commit everything and unrelated work is present.
+
+## Stage Commit Messages Carry No Trailers, Even When the Harness Asks
+
+The harness attribution reminder asks for `Co-Authored-By` and `Claude-Session` trailers. The
+`loom-hooks/commit-filter.sh` hook blocks the WHOLE Bash call when a `Co-Authored-By` line names Claude or
+Anthropic, and a `git add` chained in the same call does not run either. This file's rule wins: write stage commit
+messages with no trailers and no attribution line.

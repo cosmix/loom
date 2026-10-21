@@ -101,7 +101,24 @@ Some fields may use `tool_response` instead of `tool_result` depending on Claude
 
 **Stop hook (session end):** receives `{"reason": "...", "exit_code": N}`. Used by `commit-guard.sh` and `learning-validator.sh`.
 
-## Additive Schema Fields: Prefer `#[serde(default)]` Over Bespoke Migration (2026-08-07)
+## Verification v2 Conventions
+
+- **Plans:** `version: 2` on new plans; every `standard` stage has contracts, one contract per behaviour, each with a
+  `scenario` and the `rejects` wrong implementation; `harness` globs cover test-only files; `wiring` pins the entry
+  module or uses `reachable`; `ratchet_files` lists every baseline or ledger file a stage could loosen (this repo:
+  `loom/maintainability-baseline.txt`); integration-verify lists the full test command. Detail:
+  [plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md).
+- **Adapter commands:** every `{test}` and `{file}` is shell-quoted through `testrun/command.rs`, regex-escaped where
+  the runner's filter is a regex; a fixture is captured from a real run or carries a `PROVENANCE.md`.
+- **New relay `RequestKind`:** a `relay_kind_at` case, a `drop_control_kinds` entry when `is_control()`, and a
+  `loom-hooks/tests/*.sh` test with its `run_test` line in the same change.
+- **Worker briefs for a wave:** shared declaration sites owned by one worker, at most about 30 files per worker, no
+  `name` parameter on stage workers, `cargo fmt` by the main agent before the maintainability test. Detail:
+  [verification-v2-delivery](../mistakes/verification-v2-delivery.md).
+- **Pre-commit gate:** build, `cargo clippy --all-targets -D warnings`, `cargo fmt --check`,
+  `RUSTDOCFLAGS='-D warnings' cargo doc --no-deps`, full `cargo test`.
+
+## Additive Schema Fields: Prefer `#[serde(default)]` Over Bespoke Migration
 
 For a new additive stage field, `#[serde(default)]` carries existing plan files and in-flight
 `.loom/work/stages/*.md` without a bespoke upgrade pass. This compatibility rule does not make removed or
@@ -141,7 +158,7 @@ for any new field (`loom/tests/integration/implementer_defaults.rs`):
 Schema-only tests are not enough: they never touch the state files already on disk, which is exactly
 where a non-defaulted field breaks a running plan.
 
-## A Main-Agent Smoke Command Must Not Unset `LOOM_MAIN_AGENT_PID` (2026-09-22)
+## A Main-Agent Smoke Command Must Not Unset `LOOM_MAIN_AGENT_PID`
 
 A stage signal's smoke/acceptance command, run directly by the main agent's own Bash tool (not
 inside `wiring_tests`), is blocked by `commit-filter.sh` if it unsets `LOOM_MAIN_AGENT_PID` — that
@@ -151,23 +168,6 @@ a main-agent command must drop that one variable (every other `RELAY_ENV_VARS_TO
 still safe to unset). `wiring_tests` entries run by `loom check` are a different execution path and
 are unaffected.
 
-## A Substantial Plan-Structure Change Bumps `version` (2026-09-24)
+## A Substantial Plan-Structure Change Bumps `version`
 
 `loom.version` is checked in `plan/schema/validation.rs` (only 1 is accepted today). Operator rule: a substantial change to the structure of a loom plan (new verification sections, changed stage shape) ships as the next plan version, v2, with the version check, the plan-writer skill template and the parser changed together. Additive optional fields that leave every existing plan's meaning unchanged follow the `#[serde(default)]` convention above and do not need a bump.
-
-## Verification v2 Conventions
-
-- **Plans:** `version: 2` on new plans; every `standard` stage has contracts, one contract per behaviour, each with a
-  `scenario` and the `rejects` wrong implementation; `harness` globs cover test-only files; `wiring` pins the entry
-  module or uses `reachable`; `ratchet_files` lists every baseline or ledger file a stage could loosen (this repo:
-  `loom/maintainability-baseline.txt`); integration-verify lists the full test command. Detail:
-  [plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md).
-- **Adapter commands:** every `{test}` and `{file}` is shell-quoted through `testrun/command.rs`, regex-escaped where
-  the runner's filter is a regex; a fixture is captured from a real run or carries a `PROVENANCE.md`.
-- **New relay `RequestKind`:** a `relay_kind_at` case, a `drop_control_kinds` entry when `is_control()`, and a
-  `loom-hooks/tests/*.sh` test with its `run_test` line in the same change.
-- **Worker briefs for a wave:** shared declaration sites owned by one worker, at most about 30 files per worker, no
-  `name` parameter on stage workers, `cargo fmt` by the main agent before the maintainability test. Detail:
-  [verification-v2-delivery](../mistakes/verification-v2-delivery.md).
-- **Pre-commit gate:** build, `cargo clippy --all-targets -D warnings`, `cargo fmt --check`,
-  `RUSTDOCFLAGS='-D warnings' cargo doc --no-deps`, full `cargo test`.
