@@ -389,3 +389,13 @@ put the doc edits in the implementation brief.
 **Prevention:** for a loom product change, each cause and fix must apply to any project loom drives. Drop any item specific to loom's own test suite, and implement an adapter method for every adapter in loom/src/testrun/adapters/, never for one runner.
 
 **Fix:** removed the sandbox-test item from PLAN-gate-dedup, and required is_unfiltered for all 24 adapters.
+
+## Amending a commit on the target branch during loom run held the target
+
+**What happened:** during a live `loom run` on token-optimization, the operator session committed plan docs (6282b596), then amended that commit to add knowledge files. The daemon had already accepted 6282b596 as the target tip. The amended tip was not a fast-forward, so loom held the target (`loom target status`: HELD, not a fast-forward) and stopped merging stages.
+
+**Why:** amending a commit the daemon's target guard has accepted rewrites history the guard tracks. Whether the branch has an upstream is irrelevant.
+
+**Prevention:** while a plan runs against a branch, never amend, rebase or reset commits on it. Add a new commit instead. Check `loom target status` before rewriting anything on the target.
+
+**Fix:** reviewed the move (only docs commits) and ran `loom target accept --to <tip>`.
