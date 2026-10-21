@@ -1,10 +1,14 @@
 //! Runner recovery after a restart, and the environment the child runs in.
 
+use std::os::unix::process::CommandExt;
+use std::process::{Child, Command, Stdio};
+use std::time::{Duration, Instant};
+
 use chrono::Utc;
 use serial_test::serial;
 use tempfile::TempDir;
 
-use super::runner::{job_deadline_secs, recover_after_restart, HostJobRunner};
+use super::runner::{installed_binary, job_deadline_secs, recover_after_restart, HostJobRunner};
 use super::spawn::is_session_variable;
 use super::store::{append_group, load_current, save_current};
 use super::tests_runner::{
@@ -152,4 +156,91 @@ fn recovery_interrupts_running_jobs_and_leaves_queued_ones_alone() {
         stranger.0.try_wait().unwrap().is_none(),
         "recovery signalled a pid whose command line names no job"
     );
+}
+
+/// A stand-in `verify-host` child of `record`: a shell leading its own group
+/// whose command line names the job, as the runner's child's does.
+fn job_child(record: &JobRecord) -> Criterion {
+    let marker = format!("verify-host {} --job {}", record.stage_id, record.id);
+    let child = Command::new("/bin/sh")
+        .args(["-c", "sleep 600; :", &marker])
+        .process_group(0)
+        .stdin(Stdio::null())
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .unwrap();
+    Criterion(child)
+}
+
+/// Whether `child` exited within 5 s.
+fn exits(child: &mut Child) -> bool {
+    let start = Instant::now();
+    while start.elapsed() < Duration::from_secs(5) {
+        if child.try_wait().unwrap().is_some() {
+            return true;
+        }
+        std::thread::sleep(Duration::from_millis(50));
+    }
+    false
+}
+
+fn cancelled(record: &mut JobRecord, pid: u32) {
+    record.pid = Some(pid);
+    record.state = JobState::Cancelled;
+    record.finished_at = Some(Utc::now());
+}
+
+#[test]
+fn recovery_stops_a_job_cancelled_while_no_daemon_ran() {
+    let (_dir, work) = state_root();
+    let mut record = running_record(STAGE, None);
+    let mut child = job_child(&record);
+    cancelled(&mut record, child.0.id());
+    save_current(&work, &record).unwrap();
+    let mut criterion = Criterion::spawn();
+    append_group(&work, STAGE, &record.id, criterion.0.id()).unwrap();
+
+    let changed = recover_after_restart(&work).unwrap();
+
+    assert!(changed.is_empty(), "{changed:?}");
+    assert_eq!(load_current(&work, STAGE).unwrap(), Some(record));
+    assert!(exits(&mut child.0), "the cancelled job's child survived");
+    assert!(
+        criterion.killed(),
+        "a criterion of the cancelled job survived"
+    );
+}
+
+#[test]
+fn recovery_leaves_the_groups_of_a_retired_cancelled_job_alone() {
+    let (_dir, work) = state_root();
+    let mut stranger = Criterion::spawn();
+    let mut record = running_record(STAGE, None);
+    cancelled(&mut record, stranger.0.id());
+    save_current(&work, &record).unwrap();
+    let mut reused = Criterion::spawn();
+    append_group(&work, STAGE, &record.id, reused.0.id()).unwrap();
+
+    recover_after_restart(&work).unwrap();
+
+    assert!(
+        reused.0.try_wait().unwrap().is_none(),
+        "recovery signalled a group of a job whose child is gone"
+    );
+    assert!(stranger.0.try_wait().unwrap().is_none());
+}
+
+#[test]
+fn a_replaced_binary_is_spawned_from_its_installed_path() {
+    let dir = TempDir::new().unwrap();
+    let installed = dir.path().join("loom");
+    std::fs::write(&installed, b"").unwrap();
+
+    assert_eq!(
+        installed_binary(dir.path().join("loom (deleted)")),
+        installed
+    );
+    let gone = dir.path().join("gone (deleted)");
+    assert_eq!(installed_binary(gone.clone()), gone);
 }

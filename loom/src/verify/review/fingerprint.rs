@@ -18,7 +18,7 @@ use crate::git::worktree::{is_worktree_scaffold_path, WorktreeGit};
 use crate::verify::contracts::changes::{changed_names, git};
 use crate::verify::tool_artifacts::is_tool_artifact;
 
-pub(crate) use super::observer::local_git;
+pub(crate) use super::observer::{checkout_git, local_git};
 
 const MAX_REVIEW_FILE_BYTES: usize = 10 * 1024 * 1024;
 

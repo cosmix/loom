@@ -7,7 +7,7 @@
 
 use chrono::Utc;
 
-use crate::git::worktree::{stage_worktree_path, WorktreeGit};
+use crate::git::worktree::WorktreeGit;
 use crate::host_verify::submit::{is_lower_hex, submit, Submission, SubmitRequest};
 use crate::host_verify::JobKind;
 use crate::models::session::{Session, SessionType};
@@ -16,6 +16,7 @@ use crate::relay::HostJobRequest;
 use crate::verify::transitions::load_stage;
 
 use super::apply::{is_live_judge, require_owner};
+use super::commit::pinned_worktree;
 use super::{InboxHost, Settle};
 
 /// Validate and queue one relayed `check`.
@@ -109,14 +110,7 @@ fn checkout_head(host: &dyn InboxHost, stage: &Stage) -> Result<String, String> 
     let git = if stage.stage_type == StageType::Knowledge {
         WorktreeGit::discovered(host.repo_root())
     } else {
-        let path =
-            stage_worktree_path(stage, host.repo_root()).map_err(|error| format!("{error:#}"))?;
-        WorktreeGit::pinned(host.repo_root(), &path).map_err(|error| {
-            format!(
-                "{} is not a registered worktree of this repository: {error:#}",
-                path.display()
-            )
-        })?
+        pinned_worktree(host.repo_root(), stage)?
     };
     let output = git
         .run(&["rev-parse", "HEAD"])

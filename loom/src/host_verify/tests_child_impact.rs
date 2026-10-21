@@ -8,13 +8,13 @@ use tempfile::TempDir;
 use super::child_complete::{observe_impact, record_failed_impact};
 use crate::commands::stage::complete::complete_verification::IMPACT_TESTS_LABEL;
 use crate::verify::impact_tests::{
-    load_observed, record_observed, FailureKind, ImpactFailure, ObservedImpact,
+    load_observed, record_observed, FailureKind, ImpactFailure, ImpactTestsFailed, ObservedImpact,
 };
 
 const STAGE: &str = "stage-a";
 
-fn failed_selection() -> ObservedImpact {
-    ObservedImpact::of(&[ImpactFailure {
+fn failures() -> Vec<ImpactFailure> {
+    vec![ImpactFailure {
         id: "IT-cargo-test:.".to_string(),
         command: "cargo test -- a".to_string(),
         tests: vec!["a".to_string()],
@@ -22,7 +22,11 @@ fn failed_selection() -> ObservedImpact {
         base: "it passes at the stage's base 0123abcd".to_string(),
         accepted: None,
         output: "a failed".to_string(),
-    }])
+    }]
+}
+
+fn failed_selection() -> ObservedImpact {
+    ObservedImpact::of(&failures())
 }
 
 #[test]
@@ -33,6 +37,19 @@ fn a_failed_run_writes_the_failures_its_impact_selection_observed() {
     record_failed_impact(work.path(), STAGE, Some(observed.clone()), false);
 
     assert_eq!(load_observed(work.path(), STAGE).unwrap(), observed);
+}
+
+#[test]
+fn an_impact_gate_failure_is_observed_as_the_failures_it_carries() {
+    let mut impact = Some(ObservedImpact::default());
+
+    let gate = Err(anyhow::Error::new(ImpactTestsFailed::for_test(
+        "s",
+        failures(),
+    )));
+    observe_impact(&mut impact, IMPACT_TESTS_LABEL, &gate);
+
+    assert_eq!(impact, Some(failed_selection()));
 }
 
 #[test]

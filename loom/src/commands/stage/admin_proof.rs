@@ -313,8 +313,8 @@ fn refuse_operator_inside_a_session() -> Result<()> {
 /// person doing it had the credential the whole time. So the ceremony is gone:
 /// a privileged command mints its own proof and proceeds.
 ///
-/// `LOOM_ADMIN_PROOF` still wins when present, because a trusted broker minting
-/// out of band is a real case (`loom stage admin-proof`) and its proof is
+/// `LOOM_ADMIN_PROOF` still wins when present, because a process minting a
+/// proof out of band is a real case (`loom stage admin-proof`) and its proof is
 /// bound more narrowly than what this function would produce.
 ///
 /// # What still stops an agent

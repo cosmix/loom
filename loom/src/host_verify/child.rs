@@ -17,6 +17,7 @@ use super::{CriterionOutcome, JobKind, JobRecord, JobResult, JobState};
 use crate::commands::stage::acceptance_runner::{resolve_acceptance_dir, StageExecutionPaths};
 use crate::commands::stage::criterion_output::format_criterion_result;
 use crate::commands::verify::run_and_verify_stage_goal;
+use crate::git::worktree::WorktreeGit;
 use crate::models::dispute::truncate_to_byte_limit;
 use crate::models::stage::{Stage, StageType};
 use crate::verify::criteria::{
@@ -214,7 +215,12 @@ pub(super) fn finish(
 /// The checkout a job verifies and where its criteria run: the stage
 /// worktree, or the repository root for a knowledge stage.
 pub(super) struct JobTree {
-    checkout: PathBuf,
+    /// Git in the checkout. This process runs outside every sandbox, so a
+    /// stage worktree's git is pinned to its registered git directory: the
+    /// worktree's `.git` file cannot choose the configuration git runs. A
+    /// knowledge stage's checkout is the repository root, whose git directory
+    /// every daemon git call trusts.
+    git: WorktreeGit,
     pub(super) paths: StageExecutionPaths,
     pub(super) knowledge: bool,
 }
@@ -231,7 +237,7 @@ impl JobTree {
             .context("the repository of the state root is unavailable")?;
         let knowledge = stage.stage_type == StageType::Knowledge;
         let (checkout, worktree_root) = if knowledge {
-            (repo_root, None)
+            (repo_root.clone(), None)
         } else {
             let root = crate::git::worktree::stage_worktree_path(stage, &repo_root)?;
             (root.clone(), Some(root))
@@ -243,8 +249,18 @@ impl JobTree {
             checkout.display()
         );
         let acceptance_dir = resolve_acceptance_dir(Some(&checkout), stage.working_dir.as_deref())?;
+        if knowledge {
+            // The criteria's confinement holds the state root and hides each
+            // secret by binding over the file (`confine_protected`), so the
+            // attestation key, else made on the first completion, exists first.
+            crate::handoff::attestation_key(work_dir)?;
+        }
+        let git = match &worktree_root {
+            Some(root) => WorktreeGit::pinned(&repo_root, root)?,
+            None => WorktreeGit::discovered(&checkout),
+        };
         Ok(Self {
-            checkout,
+            git,
             paths: StageExecutionPaths {
                 worktree_root,
                 acceptance_dir,
@@ -257,11 +273,11 @@ impl JobTree {
     /// do. A clean commit leaves the digest unchanged, so HEAD is compared on
     /// its own.
     pub(super) fn differences(&self, record: &JobRecord) -> Result<Option<String>> {
-        let head = digest::head(&self.checkout)?;
+        let head = digest::head_in(&self.git)?;
         let digest = if self.knowledge {
-            digest::knowledge_tree_digest(&self.checkout)?
+            digest::knowledge_tree_digest_in(&self.git)?
         } else {
-            digest::tree_digest(&self.checkout)?
+            digest::tree_digest_in(&self.git)?
         };
         let mut found = Vec::new();
         if head != record.head {

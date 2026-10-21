@@ -35,6 +35,14 @@ const PROGRESS_FILE: &str = "progress.jsonl";
 const RESULT_FILE: &str = "result.json";
 const GROUPS_FILE: &str = "groups";
 const CHILD_LOG_FILE: &str = "child.log";
+/// Job files only the store's own functions write.
+const STORE_FILES: [&str; 5] = [
+    RECORD_FILE,
+    PROGRESS_FILE,
+    RESULT_FILE,
+    GROUPS_FILE,
+    CHILD_LOG_FILE,
+];
 /// `progress.jsonl` takes no outcome past this size but the truncation marker.
 const PROGRESS_MAX_BYTES: u64 = 2 * 1024 * 1024;
 /// Lines `groups` holds at most; a pgid is at most ten digits and a newline.
@@ -185,13 +193,17 @@ pub fn save_criterion_log(
         "criterion label {label:?} is not [a-z0-9:_-]+"
     );
     let name = format!("{label}.log");
+    ensure!(
+        !STORE_FILES.contains(&name.as_str()),
+        "{name} is a store file"
+    );
     let rel = job_rel(stage_id, job_id)?.join(&name);
     write_atomic(&open_root(work_dir)?, &rel, &capped_log(bytes))?;
     Ok(name)
 }
 
-/// Write `<job dir>/<name>` atomically; `name` is `[a-z0-9._-]+` and does not
-/// start with a dot (the lock and the temp files do).
+/// Write `<job dir>/<name>` atomically; `name` is `[a-z0-9._-]+`, does not
+/// start with a dot (the lock and the temp files do) and names no store file.
 pub fn save_job_file(
     work_dir: &Path,
     stage_id: &str,
@@ -199,6 +211,7 @@ pub fn save_job_file(
     name: &str,
     bytes: &[u8],
 ) -> Result<()> {
+    ensure!(!STORE_FILES.contains(&name), "{name} is a store file");
     let rel = job_file_rel(stage_id, job_id, name)?;
     ensure!(
         bytes.len() <= MAX_LOG_BYTES,
@@ -303,11 +316,18 @@ pub(crate) fn prune_jobs(work_dir: &Path, stage_id: &str, keep: &str) -> Result<
 }
 
 /// How long after `finished_at` a cancelled job that ran may still be held by
-/// the runner; the runner reaps it on its next tick, well inside this.
+/// the runner. The runner retires it on its next tick, which assumes the
+/// orchestrator ticks well inside this (its `poll_interval` is 5 s).
 const RETIRE_GRACE_SECS: i64 = 60;
 
+/// Whether a cancelled job's child may have been spawned: the runner sets
+/// `started_at` before the spawn and `pid` only after it.
+pub(crate) fn cancelled_after_start(record: &JobRecord) -> bool {
+    record.state == JobState::Cancelled && record.started_at.is_some()
+}
+
 /// Whether the runner may still need the job directory: a non-terminal job,
-/// or a cancelled one that ran (`pid` set) and ended within the grace. The
+/// or a cancelled one that started and ended within the grace. The
 /// runner's `retire` reads the job's `groups` file to kill its criteria, so
 /// pruning the directory first would orphan them. An unreadable record is
 /// not protected, so a corrupt directory cannot pin itself forever.
@@ -321,7 +341,7 @@ fn awaiting_retire(work_dir: &Path, stage_id: &str, job_id: &str) -> bool {
     let recent = record
         .finished_at
         .is_none_or(|at| (chrono::Utc::now() - at).num_seconds() < RETIRE_GRACE_SECS);
-    record.state == JobState::Cancelled && record.pid.is_some() && recent
+    cancelled_after_start(&record) && recent
 }
 
 /// A job id is exactly 32 lowercase hex digits.

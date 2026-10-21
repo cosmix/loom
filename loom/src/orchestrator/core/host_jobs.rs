@@ -2,7 +2,8 @@
 //! the runner after the session inboxes drain, recovery once at startup, and
 //! a graceful stop when the run ends. Every job the runner ends is applied
 //! here (`host_verify::apply::apply_finished`), and so is every job a restart
-//! interrupted or left unapplied.
+//! interrupted or left unapplied. While no runner can be built, each tick
+//! tries again and fails every queued job with the reason.
 //!
 //! An application that fails (an I/O or state-file error a later attempt may
 //! not hit) is retried at the start of each later tick, [`MAX_APPLY_ATTEMPTS`]
@@ -19,7 +20,7 @@ use anyhow::Result;
 
 use super::Orchestrator;
 use crate::host_verify::apply::{apply_finished, unapplied_terminal_records, APPLIED_MARKER};
-use crate::host_verify::runner::{HostJobRunner, RunnerConfig};
+use crate::host_verify::runner::{fail_queued, HostJobRunner, RunnerConfig};
 use crate::host_verify::{store, JobRecord};
 
 /// How many times one job's application is attempted.
@@ -40,7 +41,7 @@ static FAILED_APPLIES: Mutex<BTreeMap<PathBuf, Vec<FailedApply>>> = Mutex::new(B
 
 /// The runner the daemon starts with: the running loom binary's
 /// `stage verify-host`. `None`, logged, when that binary cannot be located:
-/// host jobs then stay disabled for this run instead of stopping it.
+/// host jobs then wait for [`retry_runner`] instead of stopping the run.
 pub(super) fn daemon_runner(work_dir: &Path) -> Option<HostJobRunner> {
     match RunnerConfig::daemon_default() {
         Ok(config) => Some(HostJobRunner::new(work_dir.to_path_buf(), config)),
@@ -65,6 +66,9 @@ impl Orchestrator {
             .into_iter()
             .map(|failed| (failed.record, failed.failures));
         apply_records(&work_dir, retried);
+        if self.host_jobs.is_none() {
+            self.host_jobs = retry_runner(&work_dir);
+        }
         let Some(runner) = self.host_jobs.as_mut() else {
             return;
         };
@@ -125,6 +129,28 @@ impl Orchestrator {
             runner.shutdown();
         }
     }
+}
+
+/// Build the runner `Orchestrator::new` could not. While none can be built,
+/// every queued job fails with the reason, so no waiter reports it pending
+/// forever.
+fn retry_runner(work_dir: &Path) -> Option<HostJobRunner> {
+    let error = match RunnerConfig::daemon_default() {
+        Ok(config) => return Some(HostJobRunner::new(work_dir.to_path_buf(), config)),
+        Err(error) => error,
+    };
+    let detail = format!("no verify-host runner: {error:#}");
+    match fail_queued(work_dir, &detail) {
+        Ok(failed) => {
+            log_records("host job failed: no runner", &failed);
+            apply_records(work_dir, failed.into_iter().map(|record| (record, 0)));
+        }
+        Err(error) => tracing::warn!(
+            error = %format!("{error:#}"),
+            "could not fail the queued host jobs no runner can start",
+        ),
+    }
+    None
 }
 
 /// Apply each record, which has already failed `failures` times; keep the

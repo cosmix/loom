@@ -165,6 +165,41 @@ fn a_malformed_line_is_counted_and_the_request_after_it_still_lands() {
     );
 }
 
+/// `QueuedRequest` flattens `StageRequest`, whose `deny_unknown_fields` is what
+/// refuses a freeze that still carries session-made `reports`: a spooled one
+/// must be skipped as malformed, never read as a freeze request.
+#[test]
+fn a_spooled_freeze_with_legacy_reports_is_refused_as_malformed() {
+    let (_temp, work_dir, worktree_root) = setup("build-api", StageStatus::Executing, 1);
+    let path = spool_path(&worktree_root);
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    let freeze = |extra: &str| {
+        format!(
+            r#"{{"request_id":"r1","request":"freeze_contracts","head":"{}","tree_digest":"{}"{extra}}}"#,
+            "a".repeat(40),
+            "b".repeat(64)
+        )
+    };
+
+    std::fs::write(&path, format!("{}\n", freeze(""))).unwrap();
+    assert_eq!(
+        read_pending(&worktree_root).unwrap().len(),
+        1,
+        "the freeze without reports is a request"
+    );
+
+    std::fs::write(&path, format!("{}\n", freeze(r#","reports":[]"#))).unwrap();
+    assert!(read_pending(&worktree_root).unwrap().is_empty());
+    let outcome = drain_requests(&work_dir, "build-api", &worktree_root).unwrap();
+    assert_eq!(
+        outcome,
+        DrainOutcome {
+            applied: 0,
+            skipped: 1
+        }
+    );
+}
+
 #[test]
 fn a_refused_request_is_counted_and_discarded_not_redelivered_forever() {
     // A Completed stage cannot be blocked. That is an ANSWER from the handler,

@@ -39,8 +39,8 @@ const NO_COMMIT_GRAPH_ARGS: [&str; 2] = ["-c", "core.commitGraph=false"];
 
 mod pinned;
 mod stream;
-pub(crate) use pinned::run_git_pinned_within;
 pub use pinned::{run_git_pinned, run_git_pinned_checked};
+pub(crate) use pinned::{run_git_pinned_within, REPO_REDIRECT_ENV};
 pub(crate) use stream::run_git_stream;
 
 fn git_timeout(args: &[&str]) -> Duration {

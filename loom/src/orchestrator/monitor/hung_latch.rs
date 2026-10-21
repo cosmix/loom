@@ -18,7 +18,9 @@
 //! completion or the contract run the session relayed), the session is
 //! waiting on the daemon, not hung: the warning may still be reported, but
 //! the escalating report is held until the job ends or passes its deadline
-//! ([`host_job_holds_escalation`]).
+//! ([`host_job_holds_session`]). Only the session that relayed the job is
+//! held: a crashed or replaced session's job may outlive it, and must not
+//! hide its successor's stall.
 //!
 //! Judges are silent in the same observable way and are dispatched from here
 //! to [`super::judge_watchdog`], which measures and reports them differently.
@@ -109,7 +111,7 @@ impl Detection {
             self.stage_silence_secs(session, stage_id, heartbeat_watcher, timeout_secs)?;
         let stage = stages.iter().find(|stage| stage.id == stage_id);
         let held = stage.is_some_and(|stage| {
-            host_job_holds_escalation(work_dir, stage, heartbeat_watcher.now())
+            host_job_holds_session(work_dir, stage, &session.id, heartbeat_watcher.now())
         });
         let completion_line = if held {
             Some(HELD_LINE)
@@ -230,18 +232,38 @@ impl Detection {
 /// warning is still due and the escalating report is not, nor latched.
 const HELD_LINE: u64 = u64::MAX;
 
-/// Whether `stage`'s current host job holds its sessions' escalation: the
-/// job has not ended and is within its deadline (`job_deadline_secs`),
-/// counted from its start, or from its queueing while it waits for a slot,
-/// so a job no runner ever starts cannot hold a session forever. One small
-/// file is read; a record that cannot be read holds nothing.
+/// Whether `stage`'s current host job holds the escalation of the stage's
+/// active session ([`host_job_holds_session`]); a stage with none holds
+/// nothing.
+#[cfg(test)]
 pub(crate) fn host_job_holds_escalation(
     work_dir: &Path,
     stage: &Stage,
     now: DateTime<Utc>,
 ) -> bool {
+    stage
+        .session
+        .as_deref()
+        .is_some_and(|session_id| host_job_holds_session(work_dir, stage, session_id, now))
+}
+
+/// Whether `stage`'s current host job holds the escalation of `session_id`:
+/// that session relayed the job, which has not ended and is within its
+/// deadline (`job_deadline_secs`), counted from its start, or from its
+/// queueing while it waits for a slot, so a job no runner ever starts cannot
+/// hold a session forever. One small file is read; a record that cannot be
+/// read holds nothing.
+pub(crate) fn host_job_holds_session(
+    work_dir: &Path,
+    stage: &Stage,
+    session_id: &str,
+    now: DateTime<Utc>,
+) -> bool {
     match crate::host_verify::store::load_current(work_dir, &stage.id) {
-        Ok(Some(record)) => job_holds(&record, job_deadline_secs(stage), now),
+        Ok(Some(record)) if record.session_id == session_id => {
+            job_holds(&record, job_deadline_secs(stage), now)
+        }
+        Ok(Some(_)) => false,
         Ok(None) => false,
         Err(error) => {
             tracing::debug!(

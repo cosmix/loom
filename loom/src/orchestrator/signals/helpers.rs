@@ -225,7 +225,7 @@ pub(super) fn append_completion_rules(content: &mut String) {
     append_settled_completion_rules(content);
     content.push_str("- No `loom stage retry` mid-session.\n");
     content.push_str(CONTEXT_CEILING_HANDOFF);
-    content.push_str("- Run `loom stage complete <stage-id>` from the worktree ROOT directory. `Host job:` `requested`/`pending`/`stopped` (exit 4): rerun; failed: fix, commit, rerun\n\n");
+    content.push_str("- Run `loom stage complete <stage-id>` in the worktree ROOT directory. `Host job:` requested/pending/stopped: rerun; failed/rejected/refused: fix, commit, rerun\n\n");
     content.push_str(STAGE_EXIT_RULES);
     content.push_str("\n\n");
 }

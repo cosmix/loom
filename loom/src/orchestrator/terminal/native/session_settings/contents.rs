@@ -54,7 +54,7 @@ pub(super) struct CapsuleInputs<'a> {
     /// is a python shebang.
     pub python_hooks: &'a [PathBuf],
     /// The host's Unix sockets to hide, when the stage is granted every Unix
-    /// socket (`sandbox::hidden_socket_paths`); empty otherwise.
+    /// socket (the `sandbox::host_sockets` scan); empty otherwise.
     pub hidden_sockets: &'a [String],
 }
 

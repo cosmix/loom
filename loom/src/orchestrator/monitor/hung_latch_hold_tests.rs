@@ -6,9 +6,11 @@ use tempfile::TempDir;
 use super::*;
 use crate::host_verify::{new_job_id, store, JobKind, JobState};
 
+/// Stage-1, owned by session-1.
 fn stage() -> Stage {
     Stage {
         id: "stage-1".to_string(),
+        session: Some("session-1".to_string()),
         ..Stage::default()
     }
 }
@@ -87,4 +89,32 @@ fn a_finished_or_overdue_job_releases_the_escalation() {
         detection.hung_report_due("session-1", 900, 300, None),
         "once released, the held escalation is reported"
     );
+}
+
+#[test]
+fn a_job_relayed_by_another_session_holds_nothing() {
+    let temp = TempDir::new().unwrap();
+    save_job(temp.path(), JobState::Running, 60);
+    let now = Utc::now();
+    let successor = Stage {
+        session: Some("session-2".to_string()),
+        ..stage()
+    };
+
+    assert!(host_job_holds_session(
+        temp.path(),
+        &stage(),
+        "session-1",
+        now
+    ));
+    assert!(
+        !host_job_holds_session(temp.path(), &successor, "session-2", now),
+        "a crashed session's job held its successor's escalation"
+    );
+    assert!(!host_job_holds_escalation(temp.path(), &successor, now));
+    let unowned = Stage {
+        session: None,
+        ..stage()
+    };
+    assert!(!host_job_holds_escalation(temp.path(), &unowned, now));
 }

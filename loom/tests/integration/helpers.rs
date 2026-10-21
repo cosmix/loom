@@ -209,7 +209,6 @@ pub const RELAY_ENV_VARS_TO_CLEAR: &[&str] = &[
     "LOOM_BIN",
     "LOOM_HOOK_PATH",
     "LOOM_HOOK_CONTEXT",
-    "LOOM_CONTROL_BROKER",
 ];
 
 /// Remove every variable in [`RELAY_ENV_VARS_TO_CLEAR`] from `command`. Callers

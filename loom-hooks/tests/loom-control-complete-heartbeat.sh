@@ -1,9 +1,11 @@
 #!/usr/bin/env bash
-# The pinned `loom stage complete` is one long foreground call. When the
-# PreToolUse branch admits it, the session's heartbeat must say a completion
-# is running (the daemon then allows a longer silence). An observation or a
-# subagent's heartbeat keeps that mark; a main-agent progress heartbeat, the
-# command's own PostToolUse among them, replaces it. Nothing else writes it.
+# A session's `loom stage complete` is a series of foreground calls of at most
+# about 100 s each, rerun while the host job is requested or pending; each
+# exits 0, so PostToolUse fires after it. When the PreToolUse branch admits
+# one, the session's heartbeat must say a completion is running (the daemon
+# then allows a longer silence). An observation or a subagent's heartbeat
+# keeps that mark; a main-agent progress heartbeat, the command's own
+# PostToolUse among them, replaces it until the next call. Nothing else writes it.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"

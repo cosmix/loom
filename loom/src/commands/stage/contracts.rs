@@ -22,6 +22,7 @@ use crate::daemon::{
     current_session_id, try_send_request, user_credential, DaemonReach, Request, Response,
 };
 use crate::fs::stage_request::{append_to_spool, spool_path, spool_target_from_cwd, StageRequest};
+use crate::host_verify::wait::TicketSink;
 use crate::models::stage::Stage;
 use crate::relay::emit::{RelayMode, RelaySink};
 use crate::relay::RequestKind;
@@ -105,14 +106,18 @@ fn send_freeze(
     if let RelayMode::Relay(context) = relay_mode {
         let payload =
             serde_json::to_value(&request).context("failed to serialize the freeze request")?;
-        println!("{RUN_REQUESTED}");
+        // The ticket is held back so a request that could not be written never
+        // claims it was made, and the relay line still comes last.
+        let mut ticket = TicketSink::default();
         context.emit(
             RequestKind::FreezeContracts,
             payload,
             "stage contracts freeze",
             true,
-            sink,
+            &mut ticket,
         )?;
+        println!("{RUN_REQUESTED}");
+        ticket.print_line(sink.stdout())?;
         return Ok(());
     }
 

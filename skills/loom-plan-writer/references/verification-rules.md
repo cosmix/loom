@@ -26,8 +26,10 @@ command enters `acceptance`:
 1. **Run it, at HEAD, before the plan exists.** Not "it is the repo's standard command" — RUN it.
    Record the observed baseline in the plan prose (`cargo test --all-targets` at HEAD: N passed,
    0 failed) so a stage agent inheriting a red gate can tell your evidence from your assumption.
-2. **Run it where the STAGE will run it** — from a worktree, under the stage's own sandbox — not
-   from your main checkout with your own permissions (`SKILL.md` Section 8, `sandbox.md`).
+2. **Run it where the STAGE will run it** — in the daemon's host job, under loom's confinement (no
+   network; the tree and a private scratch writable), never the session's sandbox and not from
+   your main checkout with your own permissions. `loom check <stage-id>` from a session runs it
+   there (`SKILL.md` Section 8, `sandbox.md`).
 3. **A red baseline is a fork in the plan, never a footnote.** Either the plan OWNS the repair (a
    first stage that fixes or guards the failing target, with that repair as its own acceptance),
    or the gate EXCLUDES the known-red target by an explicit narrow filter (`--skip <name>`,
@@ -37,11 +39,13 @@ command enters `acceptance`:
    finished and committed.
 4. **Environment-dependent tests are the usual culprit** — anything needing a daemon, a socket, a
    display, a container, or the network. A test that cannot pass in the environment the gate runs
-   in belongs behind a self-skip guard, not inside a stage's acceptance list. (In this repo the
-   tmux e2e suite cannot create an `AF_UNIX` socket under a session sandbox without
-   `allow_all_unix_sockets`, and says so in its
-   own file header — which is exactly the kind of header a plan author must read before writing
-   `--all-targets` into a gate.)
+   in belongs behind a self-skip guard, not inside a stage's acceptance list. The gate runs in the
+   host job's bubblewrap (`--unshare-all`, network denied, private `/tmp`): a test can create and
+   use a Unix socket under that private `/tmp` or in the tree, but no host daemon, host socket
+   (`/run`, docker, D-Bus), display or container runtime is reachable. A stage session's own
+   sandbox is stricter: it denies `AF_UNIX` unless the stage sets `allow_all_unix_sockets`, so an
+   agent's own run of the tmux e2e suite there skips itself when its bind probe fails (its file
+   header says so). Read such a header before writing `--all-targets` into a gate.
 5. **Scratch directories and `HOME` — enforced by `loom plan verify`.** It rejects a bare
    `mktemp -d`, `HOME=` assigned from a variable or substitution, a `TMPDIR=<absolute path>`
    override, a literal `/tmp/` path or grant, an absolute grant missing on the host, and a

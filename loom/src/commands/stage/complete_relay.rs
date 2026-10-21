@@ -18,10 +18,10 @@ use crate::handoff::completion::content::committed_content;
 use crate::handoff::generator::load_session_checkpoint;
 use crate::handoff::schema::CompletionPhase;
 use crate::host_verify::apply::APPLIED_MARKER;
-use crate::host_verify::wait::{self, WaitOutcome, WaitSite};
-use crate::host_verify::{digest, store, JobKind, JobRecord, JobState};
+use crate::host_verify::wait::{self, TicketSink, WaitOutcome, WaitSite};
+use crate::host_verify::{store, JobKind, JobRecord, JobState};
 use crate::models::stage::{Stage, StageStatus, StageType};
-use crate::relay::emit::{RelayContext, RelayMode, StdSink};
+use crate::relay::emit::{RelayContext, RelayMode};
 use crate::relay::{HostJobRequest, RequestKind};
 use crate::verify::transitions::load_stage;
 
@@ -58,7 +58,7 @@ pub(crate) fn route(
                  session that can.",
                 stage = call.stage_id
             );
-            refuse(out, &head_or_empty(call.cwd), &message)?
+            refuse(out, call.cwd, &message)?
         }
         RelayMode::Relay(context) => relay(&context, call, out)?,
     };
@@ -74,15 +74,15 @@ struct Target {
 
 fn relay(context: &RelayContext, call: &SessionCall<'_>, out: &mut dyn Write) -> Result<i32> {
     if call.privileged {
-        return refuse(out, &head_or_empty(call.cwd), PRIVILEGED_REFUSAL);
+        return refuse(out, call.cwd, PRIVILEGED_REFUSAL);
     }
     let target = match target(context, call) {
         Ok(target) => target,
-        Err(error) => return refuse(out, &head_or_empty(call.cwd), &format!("{error:#}")),
+        Err(error) => return refuse(out, call.cwd, &format!("{error:#}")),
     };
     if let Err(error) = committed_content(&target.stage, &target.repo_root) {
         let message = format!("{COMMIT_FIRST}\n{error:#}");
-        return refuse(out, &head_or_empty(&target.checkout), &message);
+        return refuse(out, &target.checkout, &message);
     }
     let started = Instant::now();
     let site = WaitSite {
@@ -96,7 +96,7 @@ fn relay(context: &RelayContext, call: &SessionCall<'_>, out: &mut dyn Write) ->
         scratch_dir: &context.scratch_dir,
         budget: wait::budget_for(&target.stage),
     };
-    let mut sink = StdSink::default();
+    let mut sink = TicketSink::default();
     let mut emit = |request: &HostJobRequest| -> Result<String> {
         let payload = serde_json::to_value(request)?;
         let what = "loom stage complete";
@@ -104,9 +104,14 @@ fn relay(context: &RelayContext, call: &SessionCall<'_>, out: &mut dyn Write) ->
         Ok(line.id)
     };
     match wait::wait_or_request(&site, &mut emit, out)? {
+        WaitOutcome::Requested => {
+            sink.print_line(out)?;
+            Ok(0)
+        }
         WaitOutcome::Finished(record, _) if record.state == JobState::Passed => {
             let remaining = site.budget.saturating_sub(started.elapsed());
             follow_application(&site, &record, remaining, out)
+                .or_else(|error| refuse(out, &target.checkout, &format!("{error:#}")))
         }
         outcome => Ok(wait::exit_code(&outcome)),
     }
@@ -152,6 +157,8 @@ enum Application {
 /// Wait up to `budget` for the daemon to apply the passed job `record`, and
 /// report it: completed (exit 0), rejected or not applied (exit 1), or still
 /// pending (exit 0, the request kept so the next call follows the same job).
+/// The request is released before the lines print, so a failure to release
+/// still ends in one refusal first line.
 fn follow_application(
     site: &WaitSite<'_>,
     record: &JobRecord,
@@ -184,11 +191,11 @@ fn follow_application(
             None => std::thread::sleep(POLL.min(end.saturating_duration_since(Instant::now()))),
         }
     };
+    wait::release(site, record)?;
     for line in lines {
         writeln!(out, "{line}")?;
     }
     out.flush()?;
-    wait::release(site, record)?;
     Ok(code)
 }
 
@@ -228,15 +235,7 @@ fn application(site: &WaitSite<'_>, record: &JobRecord) -> Result<Option<Applica
     ))))
 }
 
-fn refuse(out: &mut dyn Write, head: &str, message: &str) -> Result<i32> {
-    writeln!(out, "{}", wait::heading(JobKind::Complete, "refused", head))?;
-    writeln!(out, "{message}")?;
-    out.flush()?;
-    Ok(1)
-}
-
-/// HEAD of the checkout at `dir`, or nothing when it cannot be read: a
-/// refusal still prints its first line.
-fn head_or_empty(dir: &Path) -> String {
-    digest::head(dir).unwrap_or_default()
+/// The refusal's first line names HEAD of the checkout at `dir`.
+fn refuse(out: &mut dyn Write, dir: &Path, message: &str) -> Result<i32> {
+    wait::refusal(out, JobKind::Complete, &wait::head_or_empty(dir), message)
 }

@@ -16,7 +16,7 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 use chrono::Utc;
 
-use super::signals::retire;
+use super::signals::{kill_groups, retire};
 use super::spawn::{reaped_outcome, spawn_child};
 use super::{bounded_detail, store, JobRecord, JobState};
 use crate::models::stage::{AcceptanceCriterion, Stage};
@@ -32,7 +32,7 @@ pub(crate) const DAEMON_STOPPED: &str = "daemon stopped";
 /// `child.log` past this size ends the job.
 const CHILD_LOG_MAX_BYTES: u64 = 4 * 1024 * 1024;
 /// Seconds a command without its own timeout counts toward a deadline.
-const COMMAND_SECS: u64 = 300;
+const COMMAND_SECS: u64 = crate::verify::DEFAULT_COMMAND_TIMEOUT.as_secs();
 
 /// What the runner spawns: `<program> <args_prefix..> <stage> --job <id>`.
 pub struct RunnerConfig {
@@ -46,7 +46,7 @@ impl RunnerConfig {
     pub fn daemon_default() -> Result<Self> {
         let program = std::env::current_exe().context("cannot locate the loom binary")?;
         Ok(Self {
-            program,
+            program: installed_binary(program),
             args_prefix: vec!["stage".to_string(), "verify-host".to_string()],
             slots: DEFAULT_SLOTS,
         })
@@ -158,8 +158,13 @@ impl HostJobRunner {
         let Some(status) = job.process.try_wait()? else {
             return Ok(None);
         };
-        let (state, detail) = reaped_outcome(&self.work_dir, &stage_id, job_id, status, &job.log);
-        self.settle(&stage_id, job_id, state, detail)
+        let reaped = reaped_outcome(&self.work_dir, &stage_id, job_id, status, &job.log);
+        if reaped.without_result {
+            // A child that died mid-run never stopped its criteria, which
+            // lead groups of their own.
+            kill_groups(&self.work_dir, &stage_id, job_id);
+        }
+        self.settle(&stage_id, job_id, reaped.state, reaped.detail)
     }
 
     /// End a held job's record and release the job.
@@ -186,16 +191,7 @@ impl HostJobRunner {
         if self.running.len() >= self.config.slots {
             return Ok(ended);
         }
-        let mut queued = Vec::new();
-        for stage_id in store::stage_ids(&self.work_dir)? {
-            match store::load_current(&self.work_dir, &stage_id) {
-                Ok(Some(record)) if record.state == JobState::Queued => queued.push(record),
-                Ok(_) => {}
-                Err(error) => warn_job(&stage_id, "could not read a stage's host job", &error),
-            }
-        }
-        queued.sort_by_key(|record| record.queued_at);
-        for record in queued {
+        for record in queued_records(&self.work_dir)? {
             if self.running.len() >= self.config.slots {
                 break;
             }
@@ -278,6 +274,48 @@ impl Drop for HostJobRunner {
             retire(&self.work_dir, &job.stage_id, job_id, &mut job.process);
         }
     }
+}
+
+/// Fail every queued job with `detail`: no runner can start it, and its
+/// waiter must not report it pending forever. Returns the records it failed.
+pub fn fail_queued(work_dir: &Path, detail: &str) -> Result<Vec<JobRecord>> {
+    let mut failed = Vec::new();
+    for record in queued_records(work_dir)? {
+        let (stage_id, job_id) = (record.stage_id.as_str(), record.id.as_str());
+        match compare_and_set(work_dir, stage_id, job_id, JobState::Queued, |r| {
+            end_record(r, JobState::Failed, Some(detail.to_string()));
+        }) {
+            Ok(Cas::Applied(record)) => failed.push(record),
+            Ok(Cas::Refused(_)) => {}
+            Err(error) => warn_job(job_id, "could not fail a queued host job", &error),
+        }
+    }
+    Ok(failed)
+}
+
+/// Every stage's current record that is queued, oldest first.
+fn queued_records(work_dir: &Path) -> Result<Vec<JobRecord>> {
+    let mut queued = Vec::new();
+    for stage_id in store::stage_ids(work_dir)? {
+        match store::load_current(work_dir, &stage_id) {
+            Ok(Some(record)) if record.state == JobState::Queued => queued.push(record),
+            Ok(_) => {}
+            Err(error) => warn_job(&stage_id, "could not read a stage's host job", &error),
+        }
+    }
+    queued.sort_by_key(|record| record.queued_at);
+    Ok(queued)
+}
+
+/// `current_exe` of a binary replaced on disk under the running process (a
+/// reinstall) reads `<path> (deleted)` on Linux; the binary now at `<path>`
+/// is the one to spawn.
+pub(super) fn installed_binary(exe: PathBuf) -> PathBuf {
+    exe.to_str()
+        .and_then(|path| path.strip_suffix(" (deleted)"))
+        .map(PathBuf::from)
+        .filter(|path| path.exists())
+        .unwrap_or(exe)
 }
 
 /// The longest a job of `stage` may run: every acceptance criterion at its

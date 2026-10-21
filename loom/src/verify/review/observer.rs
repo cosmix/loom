@@ -123,14 +123,57 @@ pub(super) fn source(worktree: &Path) -> Result<Source> {
     }
 }
 
-/// The git through which this process reads `worktree` itself: pinned to its
-/// registered git directory when it is a stage worktree, whatever `.git`
-/// in it says, and as discovered otherwise.
+/// The git through which this process reads `worktree` itself: pinned to the
+/// registered git directory of the stage worktree that is or holds it,
+/// whatever `.git` entries lie in it, and as discovered otherwise.
 pub(crate) fn local_git(worktree: &Path) -> Result<WorktreeGit> {
-    match locate(worktree)? {
+    match enclosing_stage(worktree)? {
         Some(stage) => stage.git(),
         None => Ok(WorktreeGit::discovered(worktree)),
     }
+}
+
+/// Git for the checkout holding `dir`. A process that runs outside the
+/// stage's sandbox (the host child, the daemon) reads a stage worktree
+/// through this, and the stage controls every `.git` in it: it can repoint
+/// the worktree's `.git` file, or create `<worktree>/<sub>/.git` naming a git
+/// directory whose configuration runs a command. So a `dir` inside a stage
+/// worktree gets git pinned to that worktree's registered git directory,
+/// whatever `.git` lies between them. Any other `dir` gets git as it finds
+/// it, at the nearest ancestor of its canonical path with a `.git`.
+pub(crate) fn checkout_git(dir: &Path) -> Result<WorktreeGit> {
+    let dir = dir
+        .canonicalize()
+        .with_context(|| format!("cannot resolve {}", dir.display()))?;
+    if let Some(stage) = enclosing_stage(&dir)? {
+        return stage.git();
+    }
+    let root = dir
+        .ancestors()
+        .find(|ancestor| ancestor.join(".git").symlink_metadata().is_ok())
+        .with_context(|| format!("{} is inside no git checkout", dir.display()))?;
+    Ok(WorktreeGit::discovered(root))
+}
+
+/// The outermost stage worktree ([`locate`]) among `dir` and its ancestors,
+/// whatever `.git` entries lie below it. Outermost, because a stage can lay
+/// out `<worktree>/<sub>/.worktrees/<id>` beside a `<sub>/.git` of its own,
+/// which `locate` cannot tell from a stage worktree, and reach it through a
+/// symlink. Deliberate limit: a repository nested in a stage worktree, such
+/// as a test fixture under a `TMPDIR` inside the worktree, is read through
+/// the enclosing stage's git; a planted one cannot be told from it. Revisit
+/// if a host process must read a loom project kept inside a stage worktree.
+fn enclosing_stage(dir: &Path) -> Result<Option<StageWorktree>> {
+    let dir = dir
+        .canonicalize()
+        .with_context(|| format!("cannot resolve {}", dir.display()))?;
+    let mut outermost = None;
+    for ancestor in dir.ancestors() {
+        if let Some(stage) = locate(ancestor)? {
+            outermost = Some(stage);
+        }
+    }
+    Ok(outermost)
 }
 
 /// The project, state directory and stage of `worktree` when it is a stage
@@ -179,3 +222,7 @@ fn observe_request(work_dir: &Path, stage_id: &str) -> Request {
         session_id,
     }
 }
+
+#[cfg(test)]
+#[path = "observer_tests.rs"]
+mod tests;

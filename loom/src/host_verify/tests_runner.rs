@@ -10,8 +10,8 @@ use std::time::{Duration, Instant};
 use chrono::{DateTime, Utc};
 use tempfile::TempDir;
 
-use super::runner::{HostJobRunner, RunnerConfig};
-use super::store::{append_group, load_current};
+use super::runner::{fail_queued, HostJobRunner, RunnerConfig};
+use super::store::{append_group, load_current, save_current};
 use super::submit::{cancel, submit, Submission, SubmitRequest};
 use super::{JobKind, JobRecord, JobState};
 use crate::models::stage::{Stage, StageStatus};
@@ -319,4 +319,49 @@ fn a_failed_start_pass_still_returns_the_records_already_settled() {
 
     std::fs::set_permissions(&verification, std::fs::Permissions::from_mode(0o755)).unwrap();
     assert!(returned.unwrap(), "the cancelled record was never returned");
+}
+
+#[test]
+fn a_child_killed_mid_run_takes_its_criteria_with_it() {
+    let (_dir, work) = state_root();
+    let mut runner = HostJobRunner::new(work.clone(), shell("kill -9 $$", 1));
+    let job = queue(&work, STAGE, Utc::now());
+    let mut criterion = Criterion::spawn();
+    append_group(&work, STAGE, &job.id, criterion.0.id()).unwrap();
+
+    let ended = tick_until(&mut runner, &work, STAGE, |r| r.state.is_terminal());
+
+    assert_eq!(ended.state, JobState::Failed, "{ended:?}");
+    let detail = ended.detail.unwrap_or_default();
+    assert!(
+        detail.starts_with("verify-host exited on signal 9"),
+        "{detail}"
+    );
+    assert!(
+        criterion.killed(),
+        "a criterion of a child killed mid-run survived it"
+    );
+}
+
+#[test]
+fn failing_queued_jobs_ends_each_with_the_reason_and_no_other() {
+    let (_dir, work) = state_root();
+    let queued = queue(&work, STAGE, Utc::now());
+    let mut running = queue(&work, "stage-b", Utc::now());
+    running.state = JobState::Running;
+    save_current(&work, &running).unwrap();
+
+    let failed = fail_queued(&work, "no verify-host runner: gone").unwrap();
+
+    assert_eq!(failed.len(), 1, "{failed:?}");
+    let current = load_current(&work, STAGE).unwrap().unwrap();
+    assert_eq!(current.id, queued.id);
+    assert_eq!(current.state, JobState::Failed);
+    assert_eq!(
+        current.detail.as_deref(),
+        Some("no verify-host runner: gone")
+    );
+    assert!(current.finished_at.is_some());
+    assert_eq!(failed[0], current);
+    assert_eq!(load_current(&work, "stage-b").unwrap(), Some(running));
 }

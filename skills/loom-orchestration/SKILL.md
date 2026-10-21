@@ -311,17 +311,17 @@ Revert the change behind each event, or dispute them together:
 `loom stage dispute-integrity <stage-id> --event <id> ... --reason "..."`. An accepted event stays
 accepted while it gets no worse.
 
-**What `loom stage complete` checks, in order.** The daemon's host job runs these checks (the
-review gate and test integrity are checked again by the daemon when it applies the result). It
-stops at the first check that fails.
+**What `loom stage complete` checks, in order.** The daemon's host job runs acceptance first. Only
+a pass continues to steps 2 to 6, and each of those runs even after an earlier one failed, so one
+run names every failing check. Steps 7 and 8 are not in the host job: the daemon runs each once,
+when it applies a passing run.
 
 1. The acceptance criteria. A criterion whose test runner selected zero tests fails.
 2. The goal-backward checks: `artifacts`, `wiring`, `wiring_tests`, the dead-code check and
    `reachable`. A stage whose only goal-backward check is `reachable` skips this step.
 3. Standard stages with contracts: every frozen file matches its frozen hash, and every contract
    test passes.
-4. Test integrity (standard and integration-verify).
-5. Standard stages: the tests that reach the stage's changed code pass. A test loom cannot select
+4. Standard stages: the tests that reach the stage's changed code pass. A test loom cannot select
    or run only prints a note, and so does a selection whose tests fail at the stage's base with
    at least as many failures counted (a build failure or unreadable output at both still fails).
    A failure the stage did not cause is disputed, never blocked:
@@ -329,10 +329,12 @@ stops at the first check that fails.
    with the ids (`IT-<runner>:<package>`) the last failing run of the exact
    `loom stage complete <stage-id>` listed: loom recorded those failures, and the dispute names
    them. An accepted failure stays accepted while it gets no worse.
-6. Integration-verify: every completed stage's `reachable` checks, re-run on the merged tree.
-7. The review gate (standard and integration-verify): the latest well-formed round matches the
-   current change fingerprint, and no finding, own or carried, is open.
-8. The checks every stage gets: `after_stage` commands, unwired files and duplicate symbols. Integration-verify also re-runs every completed stage's `wiring` checks.
+5. Integration-verify: every completed stage's `reachable` checks, re-run on the merged tree.
+6. The checks every stage gets: `after_stage` commands, unwired files and duplicate symbols. Integration-verify also re-runs every completed stage's `wiring` checks.
+7. Test integrity (standard and integration-verify), applied by the daemon.
+8. The review gate (standard and integration-verify), applied by the daemon: the latest
+   well-formed round matches the current change fingerprint, and no finding, own or carried, is
+   open.
 
 **Integration-verify.** Its signal lists every pending reviewer suggestion of the plan's stages,
 with its id. Consider each one: implement it, or leave it pending for knowledge-distill to record.

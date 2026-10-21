@@ -10,8 +10,9 @@ use std::process::Command;
 use super::cache_executable;
 use super::cache_git_state::hash_git_state;
 use super::confine::{GitDirs, PreparedCommand};
-use crate::git::runner::{run_git, run_git_checked};
+use crate::git::worktree::WorktreeGit;
 use crate::models::stage::CommandConfinement;
+use crate::verify::review::fingerprint::checkout_git;
 
 const HASH_BUDGET_BYTES: u64 = 64 * 1024 * 1024;
 const MAX_GIT_CONTEXT_BYTES: usize = 8 * 1024 * 1024;
@@ -64,17 +65,21 @@ pub(super) fn capture_with_budget(
     identity: &ExecutionIdentity,
     hash_budget: u64,
 ) -> Option<InputFingerprint> {
-    let repo_root = resolve_repo_root(acceptance_dir)?;
     let acceptance_dir = acceptance_dir.canonicalize().ok()?;
+    // The host child fingerprints outside every sandbox, and a criterion can
+    // rewrite the worktree's `.git` file: `checkout_git` pins git.
+    let git = checkout_git(&acceptance_dir).ok()?;
+    let repo_root = git.work_tree().to_path_buf();
     if !acceptance_dir.starts_with(&repo_root) {
         return None;
     }
-    let head = run_git_checked(&["rev-parse", "HEAD"], &repo_root).ok()?;
+    let head = String::from_utf8(git_bytes(&git, &["rev-parse", "HEAD"])?).ok()?;
+    let head = head.trim().to_string();
     let status = git_bytes(
+        &git,
         &["status", "--porcelain=v2", "--untracked-files=all", "-z"],
-        &repo_root,
     )?;
-    let tracked = git_bytes(&["ls-files", "-s", "-z"], &repo_root)?;
+    let tracked = git_bytes(&git, &["ls-files", "-s", "-z"])?;
     if !tracked_entries_are_regular(&tracked) {
         return None;
     }
@@ -103,17 +108,12 @@ pub(super) fn capture_with_budget(
     })
 }
 
-fn git_bytes(args: &[&str], repo_root: &Path) -> Option<Vec<u8>> {
-    let output = run_git(args, repo_root).ok()?;
+fn git_bytes(git: &WorktreeGit, args: &[&str]) -> Option<Vec<u8>> {
+    let output = git.run(args).ok()?;
     if !output.status.success() || output.stdout.len() > MAX_GIT_CONTEXT_BYTES {
         return None;
     }
     Some(output.stdout)
-}
-
-fn resolve_repo_root(acceptance_dir: &Path) -> Option<PathBuf> {
-    let root = run_git_checked(&["rev-parse", "--show-toplevel"], acceptance_dir).ok()?;
-    PathBuf::from(root).canonicalize().ok()
 }
 
 fn tracked_entries_are_regular(raw: &[u8]) -> bool {
@@ -255,3 +255,7 @@ pub(super) fn hash_field(hasher: &mut Sha256, value: &[u8]) {
     hasher.update(u64::try_from(value.len()).unwrap_or(u64::MAX).to_le_bytes());
     hasher.update(value);
 }
+
+#[cfg(test)]
+#[path = "cache_fingerprint_tests.rs"]
+mod tests;

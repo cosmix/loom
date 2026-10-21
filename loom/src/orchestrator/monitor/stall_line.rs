@@ -2,16 +2,19 @@
 //! and becomes evidence its agent is gone, and the longer line a session gets
 //! while its pinned `loom stage complete` runs.
 //!
-//! The completion is one foreground Bash call: no PostToolUse heartbeat fires
-//! until every acceptance criterion and later check has run, and a stage with
-//! many compiling criteria runs well past three response budgets. When the
+//! A session's completion is a series of foreground Bash calls of at most
+//! about 100 s each, rerun while the daemon's host job is `requested` or
+//! `pending`; each exits 0, so PostToolUse fires after it. The job runs every
+//! acceptance criterion and later check, and a stage with many compiling
+//! criteria runs well past three response budgets in all. When the
 //! PreToolUse branch of `loom-hooks/loom-control-complete.sh` admits the pinned
 //! command it writes the session's heartbeat with [`COMPLETION_ACTIVITY`].
 //! While that heartbeat is the session's latest, its line is
 //! [`completion_line_secs`]. An observation or a subagent's heartbeat keeps
 //! the activity; a main-agent progress heartbeat, the command's own
-//! PostToolUse among them, replaces it and ends the allowance. The line stays
-//! finite, so a completion that truly hangs is still recovered.
+//! PostToolUse among them, replaces it and ends the allowance until the next
+//! call writes it again. The line stays finite, so a completion that truly
+//! hangs is still recovered.
 
 use crate::models::stage::Stage;
 use crate::verify::DEFAULT_COMMAND_TIMEOUT;

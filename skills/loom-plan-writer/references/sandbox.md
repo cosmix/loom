@@ -2,7 +2,7 @@
 
 Read when: configuring a plan's `sandbox` block, or when an acceptance command writes files, needs a host resource, the network, or `HOME`.
 
-**Walk the writes.** For every acceptance command in every stage, list the paths it writes and confirm each lands either inside the worktree or under an `allow_write` entry. Writes inside the worktree need no `allow_write` line: the session's working directory is writable already, so build outputs (`dist/`, `.vite/`, `target/`), in-tree caches and the lockfile are covered. `allow_write` is for paths OUTSIDE the worktree. Loom drops every non-glob `allow_write` entry that lies inside the working directory, because each one would become a separate bind mount, and git cannot replace a file on a mount point (`unable to unlink ... Device or resource busy`); `loom plan verify` warns on a relative one. A blocked write can exit 0 (`SKILL.md` Section 9) — the stage "passes" while nothing landed. **And a path you cannot get INTO `allow_write` disqualifies the command — see below.**
+**Walk the writes.** For every acceptance command in every stage, list the paths it writes and confirm each lands inside the worktree or in the command's private scratch: a criterion runs in the daemon's host job, where only those two are writable, and `allow_write` never applies to it. Build outputs (`dist/`, `.vite/`, `target/`), in-tree caches and the lockfile are inside the worktree, so they are covered. `allow_write` is for the session's own writes OUTSIDE the worktree. Loom drops every non-glob `allow_write` entry that lies inside the working directory, because each one would become a separate bind mount, and git cannot replace a file on a mount point (`unable to unlink ... Device or resource busy`); `loom plan verify` warns on a relative one. A blocked write can exit 0 (`SKILL.md` Section 9) — the stage "passes" while nothing landed. **And a criterion that must write outside the tree and the scratch is disqualified — see below.**
 
 **Package-manager caches are pre-granted.** Loom emits the per-user cache directories of bun, npm, pnpm, yarn, deno, cargo, rustup, uv, pip and go (`sandbox/package_caches.rs`) into every stage's OS-level `allowWrite`, so a dependency install in a worktree does not need a plan `allow_write` line. Two gaps stay the plan's job: a cache relocated by an env var (`XDG_CACHE_HOME`, `CARGO_HOME`, `BUN_INSTALL_CACHE_DIR`, ...) must be listed in `allow_write` explicitly, and a cache directory that does not exist on the host at session start is skipped by the sandbox — a manager used for the very first time on that machine fails with `EROFS` until the directory exists.
 
@@ -14,9 +14,9 @@ read-only git metadata), never the session's sandbox, your main checkout or a ba
 criterion with `loom check <stage-id>` from a session or the host, not by running it bare. **A
 command you confirmed by hand at the repo root has been confirmed in the wrong environment.**
 
-**The ungrantable-resource rule: if a command needs something the stage's sandbox cannot be
-configured to grant, it is NOT an acceptance criterion — however well it would prove the
-feature.** Prove the behavior another way (a test that INJECTS the root/handle instead of
+**The ungrantable-resource rule: if a command needs something the host job's confinement does
+not grant a criterion (no `allow_write` or `allowed_domains` entry reaches it), it is NOT an
+acceptance criterion — however well it would prove the feature.** Prove the behavior another way (a test that INJECTS the root/handle instead of
 resolving it, a read-only/`--dry-run` flag, an `artifacts` check on something the code already
 wrote) and state in the prose what was traded away. Proving that a write can never be granted is
 the moment to DROP the command — not to write the finding down as a known limitation and keep it.
