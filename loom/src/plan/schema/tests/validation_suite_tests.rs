@@ -47,6 +47,101 @@ fn test_is_full_suite_run_ignores_scoped_runs() {
     }
 }
 
+const FULL_AND_FILTERED: &[(&str, &str)] = &[
+    ("cargo test", "cargo test --lib foo::"),
+    ("bunx vitest run", "bunx vitest run src/a.test.ts"),
+    ("uv run pytest", "uv run pytest tests/test_a.py"),
+    ("bunx jest", "bunx jest src/a.test.ts"),
+    ("go test ./...", "go test ./pkg/a"),
+];
+
+#[test]
+fn test_is_full_suite_run_covers_other_runners() {
+    for (full, filtered) in FULL_AND_FILTERED {
+        assert!(is_full_suite_run(full), "expected full run for: {full}");
+        assert!(
+            !is_full_suite_run(filtered),
+            "expected filtered run for: {filtered}"
+        );
+    }
+}
+
+fn subsumed_warnings(stage_type: Option<StageType>, commands: &[&str]) -> Vec<String> {
+    let mut stage = make_stage("stage-1", "Stage One");
+    stage.stage_type = stage_type;
+    stage.acceptance = commands
+        .iter()
+        .map(|c| AcceptanceCriterion::Simple((*c).to_string()))
+        .collect();
+    stage.artifacts = vec!["README.md".to_string()];
+    validate_structural_preflight(&[stage], None)
+        .into_iter()
+        .filter(|w| w.contains("already covers"))
+        .collect()
+}
+
+#[test]
+fn test_subsumed_filtered_run_warns_in_integration_verify() {
+    for (full, filtered) in FULL_AND_FILTERED {
+        let warnings = subsumed_warnings(Some(StageType::IntegrationVerify), &[full, filtered]);
+        assert_eq!(warnings.len(), 1, "{full} + {filtered}: {warnings:?}");
+        assert!(warnings[0].contains("criterion #2 is a filtered"));
+        assert!(warnings[0].contains("criterion #1 already covers"));
+    }
+}
+
+#[test]
+fn test_subsumed_filtered_run_ignored_outside_integration_verify_and_across_runners() {
+    let commands = ["cargo test", "cargo test --lib foo::"];
+    assert!(subsumed_warnings(None, &commands).is_empty());
+    let mixed = ["cargo test", "bunx vitest run src/a.test.ts"];
+    assert!(subsumed_warnings(Some(StageType::IntegrationVerify), &mixed).is_empty());
+}
+
+#[test]
+fn test_skip_or_build_config_difference_defeats_subsumption() {
+    let cases = [
+        ("cargo test -- --skip net_fetch", "cargo test net_fetch"),
+        ("cargo test --skip net_fetch", "cargo test net_fetch"),
+        ("cargo test", "cargo test --features tls x"),
+        ("cargo test", "cargo test --features=tls x"),
+        ("cargo test", "cargo test -Ftls x"),
+        ("cargo test", "cargo test -pfoo x"),
+        ("cargo test", "cargo test --release x"),
+        ("cargo test --features a", "cargo test --features b x"),
+    ];
+    for (full, filtered) in cases {
+        let warnings = subsumed_warnings(Some(StageType::IntegrationVerify), &[full, filtered]);
+        assert!(warnings.is_empty(), "{full} + {filtered}: {warnings:?}");
+    }
+    let same = ["cargo test --features tls", "cargo test --features=tls x"];
+    let warnings = subsumed_warnings(Some(StageType::IntegrationVerify), &same);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+    let plain = ["cargo test", "cargo test --lib foo::"];
+    let warnings = subsumed_warnings(Some(StageType::IntegrationVerify), &plain);
+    assert_eq!(warnings.len(), 1, "{warnings:?}");
+}
+
+#[test]
+fn test_filtered_runs_the_full_suite_does_not_execute_are_not_subsumed() {
+    let exempt = [
+        "cargo test --doc --workspace --all-features -- --test-threads=1",
+        "cargo test --test signal_replay -- --ignored",
+        "cargo test --lib foo:: -- --include-ignored",
+        "LOOM_TEST_REQUIRE_SANDBOX_FREE=1 cargo test --lib tests_capsule_denies::bwrap::",
+        "uv run pytest -m slow",
+    ];
+    for filtered in exempt {
+        let full = if filtered.starts_with("uv") {
+            "uv run pytest"
+        } else {
+            "cargo test --all-targets"
+        };
+        let warnings = subsumed_warnings(Some(StageType::IntegrationVerify), &[full, filtered]);
+        assert!(warnings.is_empty(), "{filtered} warned: {warnings:?}");
+    }
+}
+
 #[test]
 fn test_preflight_warns_on_full_suite_run_for_standard_stage() {
     let mut stage = make_stage("stage-1", "Stage One");
