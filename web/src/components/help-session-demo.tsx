@@ -10,29 +10,7 @@ import { NodeTokens } from "@/components/graph/node-tokens";
 import { stageFlow } from "@/lib/tokens";
 
 export function StageAnatomy() {
-  return (
-    <div>
-      <GraphDemo single />
-      <dl className="help-anatomy-key">
-        <div>
-          <dt>State & name</dt>
-          <dd>The badge identifies the state. The title and stage ID identify the work.</dd>
-        </div>
-        <div>
-          <dt>Top-right controls</dt>
-          <dd>The corner frame opens details; the terminal glyph opens the session.</dd>
-        </div>
-        <div>
-          <dt>Activity row</dt>
-          <dd>Recent tool use and elapsed time sit in the tray below the stage ID.</dd>
-        </div>
-        <div>
-          <dt>Context & tokens</dt>
-          <dd>The segmented meter shows context use. The trace shows fresh token rate.</dd>
-        </div>
-      </dl>
-    </div>
-  );
+  return <GraphDemo single />;
 }
 
 export function TerminalDemo() {
@@ -40,10 +18,6 @@ export function TerminalDemo() {
   return (
     <HelpExample>
       <figure className="help-figure">
-        <div className="help-figure-label">
-          <span>View & control</span>
-          <span>Interactive example · no live session</span>
-        </div>
         <div className="help-terminal-demo terminal-frame tone-executing" data-mode={mode}>
           <header className="terminal-head">
             <div>
@@ -74,7 +48,7 @@ export function TerminalDemo() {
         <figcaption aria-live="polite">
           {mode === "control"
             ? "In a live terminal, Esc and Tab go to the agent. Use release to return to viewing."
-            : "Try take control above. This example changes mode without connecting to a session."}
+            : "Try it: flip the switch. This example never connects to a session."}
         </figcaption>
       </figure>
     </HelpExample>
@@ -89,15 +63,8 @@ export function ResourceDiagram() {
   return (
     <HelpExample>
       <figure className="help-figure">
-        <div className="help-figure-label">
-          <span>Context, token flow & provider quotas</span>
-          <span>Sample readings</span>
-        </div>
         <div className="help-meter-example">
-          <div>
-            <h3>On a stage card</h3>
-            <p>Context is capacity; the trace is consumption.</p>
-          </div>
+          <h4>On a stage card</h4>
           <div className="help-stage-instruments tone-executing">
             <ContextMeter stage={HELP_STAGE} />
             {flow && <NodeTokens stage={HELP_STAGE} tokens={flow} />}
@@ -107,9 +74,8 @@ export function ResourceDiagram() {
           <TokenFlowPanel />
         </div>
         <div className="help-quota-example">
-          <h3>In the footer</h3>
+          <h4>In the footer</h4>
           <QuotaMeters snapshot={quota} quotaLeft={tokens?.quota_left ?? []} nowSecs={now} />
-          <p>Notched bars show usage. The thin line below tracks the time to reset.</p>
         </div>
       </figure>
     </HelpExample>

@@ -34,7 +34,7 @@ export function Header({ onOpenHelp }: { onOpenHelp: () => void }) {
       <div className="mx-auto grid max-w-[1920px] grid-cols-[auto_1fr] items-center gap-x-5 gap-y-3 px-4 py-4 sm:px-6 lg:grid-cols-[auto_1fr_auto_auto] lg:gap-x-3 lg:gap-y-0">
         <Link
           to="/"
-          className="col-start-1 row-start-1 text-(--logo) lg:row-span-2 lg:self-start lg:pt-1"
+          className="col-start-1 row-start-1 text-(--logo) lg:row-span-2 lg:self-start lg:pt-1 lg:mr-3"
           aria-label="overview"
         >
           <Logo className="h-8 w-auto sm:h-10 lg:h-14" />

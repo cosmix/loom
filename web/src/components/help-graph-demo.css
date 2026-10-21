@@ -1,13 +1,10 @@
 .help-real-graph {
-  height: 420px;
-  border: 1px solid var(--hairline);
-  border-radius: 8px;
+  height: 360px;
   overflow: hidden;
 }
 .help-real-graph.help-single-stage {
   height: 235px;
 }
-.help-graph-figure,
 .help-real-graph *,
 .help-real-graph *::before,
 .help-real-graph *::after {
@@ -23,29 +20,31 @@
 .help-real-graph {
   pointer-events: none;
 }
-.help-control-key {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 18px;
-  border-top: 1px solid var(--border);
-  padding: 18px 0;
+.help-graph-figure {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
 }
-.help-control-key dt {
-  font-size: 12px;
-  font-weight: 550;
+.help-ledger {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 14px;
 }
-.help-control-key dd {
-  margin-top: 7px;
-  font-size: 12px;
-  line-height: 1.7;
-  color: var(--muted-foreground);
+.help-ledger .ledger,
+.help-ledger [data-slot="table-container"] {
+  width: 100%;
+  overflow: hidden;
+}
+/* Models, activity, tokens and time: the ledger keeps them; the illustration does not need them. */
+.help-ledger :is(th, td):is(:nth-child(4), :nth-child(5), :nth-child(7), :nth-child(8)) {
+  display: none;
 }
 @media (max-width: 767px) {
   .help-real-graph {
     height: 350px;
   }
-  .help-control-key {
-    grid-template-columns: 1fr;
-    gap: 12px;
+  .help-ledger :is(th, td):nth-child(6) {
+    display: none;
   }
 }

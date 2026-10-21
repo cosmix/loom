@@ -1,244 +1,183 @@
 import {
   CheckIcon,
-  GitMergeIcon,
-  Rows3Icon,
-  WorkflowIcon,
-  SlidersHorizontalIcon,
   CircleHelpIcon,
-  CopyIcon,
+  GitMergeIcon,
+  HourglassIcon,
+  ListOrderedIcon,
+  MonitorIcon,
+  PlayIcon,
+  Rows3Icon,
+  SlidersHorizontalIcon,
+  WorkflowIcon,
+  type LucideIcon,
 } from "lucide-react";
-import { GraphDemo } from "@/components/help-graph-demo";
-import type { HelpTopic } from "@/components/help-topics";
+import { GraphDemo, LedgerDemo } from "@/components/help-graph-demo";
+import type { HelpVisualId } from "@/components/help-topics";
 import { StageAnatomy, TerminalDemo, ResourceDiagram } from "@/components/help-session-demo";
 import { HelpExample, HELP_SNAPSHOT } from "@/components/help-example";
+import { toneClass } from "@/components/state-badge";
 import { Button } from "@/components/ui/button";
 import { ThemeToggle } from "@/aurora-ui/theme/ThemeToggle";
 import { HazardPanel } from "@/aurora-ui/feedback/HazardPanel";
 import { CopyCommand } from "@/components/copy-command";
 import { DaemonLine } from "@/components/header-lines";
+import type { Tone } from "@/lib/format";
 import "./help-visuals.css";
 
-export function HelpVisual({ topic }: { topic: HelpTopic["id"] }) {
-  switch (topic) {
-    case "start":
-      return <RunDiagram />;
+export function HelpVisual({ visual }: { visual: HelpVisualId }) {
+  switch (visual) {
+    case "lifecycle":
+      return <Lifecycle />;
+    case "header":
+      return <HeaderControls />;
     case "graph":
       return <GraphDemo />;
-    case "stages":
+    case "ledger":
+      return <LedgerDemo />;
+    case "card":
       return <StageAnatomy />;
-    case "terminals":
-      return <TerminalDemo />;
-    case "tokens":
-      return <ResourceDiagram />;
-    case "settings":
-      return <SettingsDiagram />;
-    case "shortcuts":
-      return <HeaderControls />;
     case "attention":
       return <AttentionDiagram />;
-    case "activity":
+    case "connection":
       return <ConnectionDiagram />;
-    default:
-      return null;
+    case "terminal":
+      return <TerminalDemo />;
+    case "resources":
+      return <ResourceDiagram />;
+    case "scopes":
+      return <SettingsDiagram />;
   }
 }
 
-function RunDiagram() {
+const LIFECYCLE: { pin: string; label: string; tone: Tone; Icon: LucideIcon }[] = [
+  { pin: "waiting", label: "Waiting", tone: "pending", Icon: HourglassIcon },
+  { pin: "queued", label: "Queued", tone: "queued", Icon: ListOrderedIcon },
+  { pin: "executing", label: "Executing", tone: "executing", Icon: PlayIcon },
+  { pin: "completed", label: "Completed", tone: "completed", Icon: CheckIcon },
+  { pin: "merged", label: "Merged", tone: "merged", Icon: GitMergeIcon },
+];
+
+function Lifecycle() {
   return (
-    <figure className="help-figure">
-      <div className="help-figure-label">
-        <span>Stage lifecycle</span>
-        <span>Successful path</span>
-      </div>
-      <ol className="help-run-path">
-        <li>
-          <span>01</span>
-          <strong>Waiting</strong>
-          <small>Dependencies</small>
-        </li>
-        <li>
-          <span>02</span>
-          <strong>Queued</strong>
-          <small>Execution slot</small>
-        </li>
-        <li>
-          <span>03</span>
-          <strong>Executing</strong>
-          <small>Agent session</small>
-        </li>
-        <li>
-          <span>
-            <CheckIcon />
+    <ol className="help-run-path">
+      {LIFECYCLE.map(({ pin, label, tone, Icon }) => (
+        <li key={pin} className={toneClass(tone)}>
+          <span data-pin={pin}>
+            <Icon aria-hidden="true" />
           </span>
-          <strong>Completed</strong>
-          <small>Work verified</small>
+          <strong>{label}</strong>
         </li>
-        <li>
-          <span>
-            <GitMergeIcon />
-          </span>
-          <strong>Merged</strong>
-          <small>Changes integrated</small>
-        </li>
-      </ol>
-      <figcaption>
-        <GitMergeIcon />
-        <span>
-          <strong>Completed + merged</strong> releases downstream stages.
-        </span>
-      </figcaption>
-      <HeaderControls compact />
-    </figure>
+      ))}
+    </ol>
   );
 }
 
-function HeaderControls({ compact = false }: { compact?: boolean }) {
+function HeaderControls() {
   return (
-    <div className={`help-header-key ${compact ? "is-compact" : ""}`}>
-      <p className="help-figure-label">Find it in the header</p>
-      <dl>
-        <div>
-          <dt className="view-switch" aria-label="Example view switch">
-            <span className="view-tab is-active">
-              <WorkflowIcon className="size-3.5" />
-              graph
-            </span>
-            <span className="view-tab">
-              <Rows3Icon className="size-3.5" />
-              ledger
-            </span>
-          </dt>
-          <dd>Switch views</dd>
-        </div>
-        <div>
-          <dt>
-            <div inert>
-              <ThemeToggle />
-            </div>
-          </dt>
-          <dd>Change theme</dd>
-        </div>
-        {[
-          { Icon: SlidersHorizontalIcon, label: "settings", description: "Configure Loom" },
-          { Icon: CircleHelpIcon, label: "help", description: "Open this guide" },
-        ].map(({ Icon, label, description }) => (
-          <div key={label}>
-            <dt>
-              <Button asChild variant="ghost" size="sm">
-                <span>
-                  <Icon />
-                  {label}
-                </span>
-              </Button>
-            </dt>
-            <dd>{description}</dd>
-          </div>
-        ))}
-      </dl>
+    <div className="help-header-strip">
+      <span className="view-switch" data-pin="views" aria-label="Example view switch">
+        <span className="view-tab is-active">
+          <WorkflowIcon className="size-3.5" />
+          graph
+        </span>
+        <span className="view-tab">
+          <Rows3Icon className="size-3.5" />
+          ledger
+        </span>
+      </span>
+      <span data-pin="theme" inert>
+        <ThemeToggle />
+      </span>
+      {[
+        { Icon: SlidersHorizontalIcon, label: "settings" },
+        { Icon: CircleHelpIcon, label: "help" },
+      ].map(({ Icon, label }) => (
+        <Button key={label} asChild variant="ghost" size="sm" data-pin={label}>
+          <span>
+            <Icon />
+            {label}
+          </span>
+        </Button>
+      ))}
     </div>
   );
 }
 
 function SettingsDiagram() {
   return (
-    <figure className="help-figure">
-      <div className="help-figure-label">
-        <span>Configuration precedence</span>
-        <span>Highest priority first</span>
-      </div>
+    <div className="help-scopes">
       <ol className="help-scope-path">
-        <li>
+        <li data-pin="project">
           <strong>Project</strong>
-          <span>This workspace’s override</span>
+          <span>this workspace</span>
         </li>
-        <li>
+        <li data-pin="user">
           <strong>User</strong>
-          <span>Your fallback across projects</span>
+          <span>all your projects</span>
         </li>
-        <li>
+        <li data-pin="default">
           <strong>Default</strong>
-          <span>Loom’s built-in value</span>
+          <span>built in</span>
         </li>
       </ol>
-      <figcaption>
-        <SlidersHorizontalIcon />
-        <span>Removing an override falls back to the next available value.</span>
-      </figcaption>
-      <div className="help-local-settings">
-        <SlidersHorizontalIcon />
-        <p>
-          <strong>Theme & notifications</strong>Saved in this browser, outside the configuration
-          scopes above.
-        </p>
+      <div className="help-local-settings" data-pin="browser">
+        <MonitorIcon aria-hidden="true" />
+        <strong>This browser</strong>
+        <span>theme · notifications</span>
       </div>
-    </figure>
+    </div>
   );
 }
 
 function AttentionDiagram() {
   return (
-    <figure className="help-figure">
-      <div className="help-figure-label">
-        <span>Read the guidance before acting</span>
+    <div className="help-attention">
+      <div data-pin="problem">
+        <HazardPanel
+          tone="error"
+          title="ACCEPTANCE FAILED"
+          className="bg-card"
+          bodyClassName="flex flex-col gap-2.5 text-sm"
+        >
+          <p>
+            <strong>Example stage</strong>{" "}
+            <code className="text-xs text-muted-foreground">api</code>
+          </p>
+          <p className="self-start" data-pin="guidance">
+            Read the failure evidence and fix the underlying problem before retrying.
+          </p>
+          <span className="self-start" data-pin="copy">
+            <CopyCommand command="loom stage retry <id>" />
+          </span>
+        </HazardPanel>
       </div>
-      <HazardPanel
-        tone="error"
-        title="ACCEPTANCE FAILED"
-        className="bg-card"
-        bodyClassName="flex flex-col gap-2.5 text-sm"
-      >
-        <p>
-          <strong>Example stage</strong> <code className="text-xs text-muted-foreground">api</code>
-        </p>
-        <p>Read the failure evidence and fix the underlying problem before retrying.</p>
-        <CopyCommand command="loom stage retry <id>" />
-      </HazardPanel>
-      <div className="help-automatic-example">
-        <GitMergeIcon />
-        <p>
-          <strong>Handled by loom</strong>Recovery or review is already running automatically.
-        </p>
+      <div className="help-automatic-example" data-pin="auto">
+        <GitMergeIcon aria-hidden="true" />
+        <strong>Handled by loom</strong>
+        <span>merge resolution running</span>
       </div>
-      <figcaption>
-        <CopyIcon />
-        <span>The copy button puts the command on your clipboard. Run it in your own shell.</span>
-      </figcaption>
-    </figure>
+    </div>
   );
 }
 
 function ConnectionDiagram() {
   return (
-    <figure className="help-figure">
-      <div className="help-figure-label">
-        <span>Read the connection separately from the daemon</span>
-      </div>
-      <dl className="help-connection-key">
-        <div>
-          <dt>
-            <HelpExample>
-              <DaemonLine snapshot={HELP_SNAPSHOT} />
-            </HelpExample>
-          </dt>
-          <dd>New snapshots show current activity.</dd>
-        </div>
-        <div>
-          <dt>
-            <HelpExample>
-              <DaemonLine snapshot={{ ...HELP_SNAPSHOT, daemon: "not-running" }} />
-            </HelpExample>
-          </dt>
-          <dd>The connection works; the daemon is stopped.</dd>
-        </div>
-        <div>
-          <dt>
-            <HelpExample phase="offline">
-              <DaemonLine snapshot={HELP_SNAPSHOT} />
-            </HelpExample>
-          </dt>
-          <dd>The last snapshot stays visible while reconnecting.</dd>
-        </div>
-      </dl>
-    </figure>
+    <div className="help-connection-key">
+      <span data-pin="live">
+        <HelpExample>
+          <DaemonLine snapshot={HELP_SNAPSHOT} />
+        </HelpExample>
+      </span>
+      <span data-pin="stopped">
+        <HelpExample>
+          <DaemonLine snapshot={{ ...HELP_SNAPSHOT, daemon: "not-running" }} />
+        </HelpExample>
+      </span>
+      <span data-pin="offline">
+        <HelpExample phase="offline">
+          <DaemonLine snapshot={HELP_SNAPSHOT} />
+        </HelpExample>
+      </span>
+    </div>
   );
 }

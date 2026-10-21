@@ -9,92 +9,187 @@ import {
   TerminalIcon,
   TriangleAlertIcon,
   ZapIcon,
+  type LucideIcon,
 } from "lucide-react";
 
-export const HELP_TOPICS = [
+/// Where a note's numbered pin sits against its target: above it (the
+/// default), on a corner, or beside it.
+export type PinPlace = "t" | "tl" | "tr" | "l" | "r";
+
+/// One numbered note, pinned to the element `at` selects inside its illustration.
+export interface HelpNote {
+  at: string;
+  text: string;
+  place?: PinPlace;
+}
+
+export type HelpVisualId =
+  | "lifecycle"
+  | "header"
+  | "graph"
+  | "ledger"
+  | "card"
+  | "attention"
+  | "connection"
+  | "terminal"
+  | "resources"
+  | "scopes";
+
+export interface HelpScene {
+  title: string;
+  visual: HelpVisualId;
+  notes: HelpNote[];
+}
+
+export interface HelpShortcutGroup {
+  title: string;
+  rows: readonly (readonly [string, string])[];
+}
+
+export interface HelpTopic {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  intro: string;
+  scenes: HelpScene[];
+  tips?: string[];
+  shortcuts?: HelpShortcutGroup[];
+}
+
+export const HELP_TOPICS: HelpTopic[] = [
   {
     id: "start",
     label: "Getting started",
     icon: BookOpenIcon,
-    intro: "Follow a plan from the first session to the final merge.",
-    sections: [
+    intro:
+      "Loom splits a plan into stages, runs each in its own worktree, checks it, and merges it.",
+    scenes: [
       {
-        title: "Your live view of a run",
-        body: "Loom breaks a plan into stages, runs agent sessions in separate worktrees, checks their work, and merges the results. This dashboard shows the dependency graph, live session activity, verification outcomes, and the work that needs your attention.",
-      },
-      {
-        title: "A useful first pass",
-        steps: [
-          "Check the header for the plan name, daemon status, and overall progress.",
-          "Use the graph to see which stages can run together and what is holding up downstream work.",
-          "Open a stage for its session, dependencies, verification results, and operator guidance.",
-          "Read Needs attention for decisions you must make; Handled by loom shows recovery already in progress.",
+        title: "A stage’s journey",
+        visual: "lifecycle",
+        notes: [
+          {
+            at: "[data-pin=waiting]",
+            text: "Waits until every dependency is completed and merged.",
+          },
+          {
+            at: "[data-pin=queued]",
+            text: "Ready, waiting for a free execution slot.",
+            place: "tl",
+          },
+          {
+            at: "[data-pin=executing]",
+            text: "An agent session works in its own worktree.",
+            place: "tl",
+          },
+          {
+            at: "[data-pin=completed]",
+            text: "Done and verified, but maybe not merged yet.",
+            place: "tl",
+          },
+          {
+            at: "[data-pin=merged]",
+            text: "Integrated. Downstream stages can start.",
+            place: "tl",
+          },
         ],
       },
       {
-        title: "When is a stage really finished?",
-        body: "Completed means the work is done and verified. It may still be waiting to merge. Dependencies need completed, merged work before they can proceed; skipping a stage does not satisfy its dependents. Check both the stage state and its merge status.",
+        title: "Your controls",
+        visual: "header",
+        notes: [
+          { at: "[data-pin=views]", text: "Switch between the graph and the ledger." },
+          { at: "[data-pin=theme]", text: "Light or dark." },
+          { at: "[data-pin=settings]", text: "Configuration, themes and notifications." },
+          { at: "[data-pin=help]", text: "This guide. Press ? anywhere." },
+        ],
       },
-      {
-        title: "What you can do here",
-        body: "Inspect stages, follow live terminals when enabled, change settings, and copy the commands shown in attention cards. Run copied commands in your own shell in the project. Copying a command does not execute it.",
-      },
+    ],
+    tips: [
+      "Skipping a stage does not satisfy its dependents.",
+      "Copying a command never runs it. Paste it into your own shell.",
     ],
   },
   {
     id: "graph",
     label: "Graph & navigation",
     icon: GitBranchIcon,
-    intro: "Read the dependencies, trace a thread, and open the stage behind it.",
-    sections: [
+    intro: "Two views of the same live run: a dependency map and a compact table.",
+    scenes: [
       {
-        title: "Trace the plan",
-        body: "Each card is a stage; connecting threads show dependencies. Click a stage once to highlight its upstream and downstream thread. Click it again, click empty space, or press Escape while the graph has focus to clear the selection.",
+        title: "The graph",
+        visual: "graph",
+        notes: [
+          {
+            at: ".key-chip",
+            text: "Hover a state to light its stages; click to pin it.",
+            place: "l",
+          },
+          {
+            at: ".react-flow__node[data-id=api] .stage-card",
+            text: "Click a card to trace what it needs and what waits on it.",
+            place: "l",
+          },
+          {
+            at: ".react-flow__node[data-id=api] .stage-open",
+            text: "Open the stage here, by double-click, or with Enter.",
+          },
+          { at: ".react-flow__controls-zoomin", text: "Zoom in and out.", place: "l" },
+          {
+            at: ".react-flow__controls-fitview",
+            text: "Bring the whole plan back into frame.",
+            place: "l",
+          },
+        ],
       },
       {
-        title: "Open a stage",
-        body: "Double-click a card, press Enter on a focused card, or use its corner open button. The stage dialog can open from either view. Its full-page link gives you more room, and the browser Back button closes a stage opened through navigation.",
-      },
-      {
-        title: "Find a state",
-        body: "Hover a state chip above the graph to highlight matching stages. Click the chip to pin that highlight; click again to clear it. The state key only shows states present in the current plan.",
-      },
-      {
-        title: "Move around",
-        body: "Drag the canvas to pan. Use the zoom controls to move in or out, and Fit view to bring the plan back into frame. Cards stay in their dependency layout; dragging them does not rearrange the plan.",
-      },
-      {
-        title: "Switch to the ledger",
-        body: "Use the graph and ledger buttons in the header to switch between the dependency map and the compact stage table. Both show the same live run. The Loom logo returns you to the overview.",
+        title: "The ledger",
+        visual: "ledger",
+        notes: [
+          { at: "[data-pin=views]", text: "Switch views in the header.", place: "r" },
+          { at: "thead th:nth-child(2)", text: "One row per stage, indented by dependency depth." },
+          { at: "thead th:nth-child(3)", text: "What each stage waits for." },
+          { at: "tbody tr:nth-child(2) a", text: "Click a name to open the stage.", place: "r" },
+          { at: "thead th:last-child", text: "Whether the work is merged yet." },
+        ],
       },
     ],
+    tips: ["Press Esc, or click empty canvas, to clear a highlight."],
   },
   {
     id: "stages",
     label: "Stage details",
     icon: ListChecksIcon,
-    intro: "Understand what a stage is doing and what it is waiting for.",
-    sections: [
+    intro: "Everything a card tells you, and where to click for more.",
+    scenes: [
       {
-        title: "Read beyond the badge",
-        body: "Open a stage to inspect its activity, model and session, dependencies, context use, verification, merge information, and available guidance. Fields appear when they apply and data is available; hover field labels for explanations.",
+        title: "Reading a card",
+        visual: "card",
+        notes: [
+          { at: ".stage-card header > :first-child", text: "The stage’s state." },
+          { at: ".stage-open", text: "Open full details: session, dependencies, verification." },
+          { at: ".terminal-glyph", text: "Open the live terminal.", place: "r" },
+          {
+            at: ".stage-tray > :first-child",
+            text: "Activity, merge status and elapsed time.",
+            place: "l",
+          },
+          {
+            at: ".stage-tray [role=img]",
+            text: "Context used against the session’s ceiling.",
+            place: "l",
+          },
+          {
+            at: ".node-tokens",
+            text: "Fresh tokens per minute, and the recent trace.",
+            place: "l",
+          },
+        ],
       },
-      {
-        title: "Dependencies and readiness",
-        body: "Waiting stages still have dependencies to satisfy. Queued stages are ready but need a free execution slot. An executing stage has a working session. A stage can be ready without starting immediately when concurrency limits or scheduling conditions prevent a launch.",
-      },
-      {
-        title: "Contract-writing phase",
-        body: "A purple card marks a contract writer creating failing tests before implementation. It is still an executing standard stage. The card returns to the execution tone when the implementation session takes over.",
-      },
-      {
-        title: "Handoffs",
-        body: "Needs handoff means the session reached its context ceiling. A fresh session can resume the stage with its handoff information. This is different from a process crash or a failed acceptance check.",
-      },
-      {
-        title: "Verification and merge",
-        body: "Inspect the failure evidence and operator guidance before retrying or reviewing a stage. Completed work can remain unmerged; merge conflicts and merge errors have their own states and recovery sessions. The header’s merge counts show the remaining integration work.",
-      },
+    ],
+    tips: [
+      "Purple card: a contract writer is writing failing tests before implementation.",
+      "Needs handoff: the session filled its context. A fresh one resumes the stage.",
     ],
   },
   {
@@ -102,182 +197,190 @@ export const HELP_TOPICS = [
     label: "Legend",
     icon: CircleHelpIcon,
     intro: "Every stage state, activity word, and resource indicator at a glance.",
-    sections: [],
+    scenes: [],
   },
   {
     id: "attention",
     label: "Attention & recovery",
     icon: TriangleAlertIcon,
-    intro: "Know when to step in and when Loom is already handling it.",
-    sections: [
+    intro: "Know when to step in, and when Loom is already on it.",
+    scenes: [
       {
-        title: "Needs attention",
-        body: "These cards identify work waiting on you. Read the evidence, the complete note, and the suggested action. Open the linked stage for context, then copy the supplied command if you need to act from your shell. The header’s attention count includes operator items.",
+        title: "Cards that need you",
+        visual: "attention",
+        notes: [
+          { at: "[data-pin=problem]", text: "What went wrong, and on which stage." },
+          { at: "[data-pin=guidance]", text: "What to do about it. Read this first.", place: "l" },
+          {
+            at: "[data-pin=copy]",
+            text: "Copy the fix command, then run it in your shell.",
+            place: "r",
+          },
+          {
+            at: "[data-pin=auto]",
+            text: "Handled by loom: recovery is already running. No retry needed.",
+            place: "r",
+          },
+        ],
       },
-      {
-        title: "Handled by loom",
-        body: "These entries describe automatic work such as merge resolution or adjudication. Read the note to see what recovery is doing. An automatic entry is not a request for a manual retry.",
-      },
-      {
-        title: "Waiting for input",
-        body: "The agent needs an answer in its session. Open its terminal when available, take control to respond, then release control when finished. If browser terminals are unavailable, use the session access command shown by the dashboard.",
-      },
-      {
-        title: "Review and retry",
-        body: "A human-review request asks for a decision; the card shows the available review choices. A blocked or failed stage may need its underlying problem fixed before retrying. Follow the stage-specific command and note: forcing completion and approving a review have different consequences.",
-      },
-      {
-        title: "Scheduling alerts",
-        body: "The alert band explains run-wide scheduling conditions. A queued stage with no session is not necessarily stuck: inspect these alerts and the daemon state before intervening.",
-      },
+    ],
+    tips: [
+      "Waiting for input means the agent asked a question. Answer it in its terminal.",
+      "A queued stage with no session is not necessarily stuck. Check the alert band first.",
     ],
   },
   {
     id: "activity",
     label: "Activity & connection",
     icon: ActivityIcon,
-    intro: "Separate a quiet agent from a disconnected dashboard.",
-    sections: [
+    intro: "Tell a quiet agent apart from a disconnected dashboard.",
+    scenes: [
       {
-        title: "The live feed",
-        body: "The header reports both feed health and daemon state. If the feed drops, the dashboard keeps the last snapshot, marks the daemon unknown, and shows how long it has been without data. It reconnects automatically. Frozen cards are not proof that sessions have stopped.",
+        title: "Reading the daemon line",
+        visual: "connection",
+        notes: [
+          { at: "[data-pin=live]", text: "Connected, and the daemon is running.", place: "r" },
+          { at: "[data-pin=stopped]", text: "Connected, but the daemon has stopped.", place: "r" },
+          {
+            at: "[data-pin=offline]",
+            text: "Feed lost. You see the last snapshot while it reconnects.",
+            place: "r",
+          },
+        ],
       },
-      {
-        title: "A stopped daemon",
-        body: "A live feed can report a stopped daemon. That is different from an offline browser connection. Check the daemon state and scheduling alerts when progress pauses.",
-      },
-      {
-        title: "Recent activity",
-        body: "The Activity panel lists stage transitions this page has observed, newest first. The initial snapshot is its baseline, so an empty panel after opening or reloading the page does not mean the run has done no work.",
-      },
-      {
-        title: "Session activity",
-        body: "Working means recent tool use; idle means an alive session with no current activity. Stale means no heartbeat for five minutes. Orphaned means execution has no session record; crashed means the process died. The Legend topic keeps the full activity key alongside stage states.",
-      },
+    ],
+    tips: [
+      "Recent activity starts empty after a reload. It lists only what this page has seen.",
+      "Stale means no heartbeat for five minutes; crashed means the process died.",
     ],
   },
   {
     id: "terminals",
     label: "Terminals",
     icon: TerminalIcon,
-    intro: "Watch a session, then deliberately take control when you need to answer.",
-    sections: [
+    intro: "Watch an agent work, and take the keyboard when it needs an answer.",
+    scenes: [
       {
-        title: "Open the session",
-        body: "Use the terminal glyph on a stage or its Terminal button. You can inspect it in the stage dialog or open the dedicated terminal page for more space. Availability depends on how the dashboard was started and the stage’s session.",
+        title: "Try it",
+        visual: "terminal",
+        notes: [
+          {
+            at: ".terminal-key",
+            text: "Take control to type into the session. Release to go back.",
+            place: "l",
+          },
+          {
+            at: ".help-terminal-screen",
+            text: "Stripes mean your keys reach the real agent.",
+            place: "tl",
+          },
+          {
+            at: ".terminal-hint",
+            text: "Esc and Tab go to the agent while you control it.",
+            place: "r",
+          },
+        ],
       },
-      {
-        title: "View and control",
-        body: "Terminals open in view mode. Take control to send keyboard input to the agent’s session. Release control returns to viewing; reloading also returns to view mode. Keystrokes in control mode affect the real session.",
-      },
-      {
-        title: "Escape stays with the agent",
-        body: "While controlling a terminal, Escape and Tab are terminal input. Escape does not release control or close the stage dialog. Use the release control switch first, then close the dialog or return to stage details.",
-      },
-      {
-        title: "If a terminal is unavailable",
-        body: "Read the terminal’s notice for the exact reason and next step. Live browser terminals require the dashboard’s --terminals option and a supported live tmux session. Remote access can require the authenticated startup URL. Use the retry control after resolving a connection problem.",
-      },
+    ],
+    tips: [
+      "No terminal? Start the dashboard with --terminals and use a tmux session.",
+      "Reloading the page always returns to view mode.",
     ],
   },
   {
     id: "tokens",
     label: "Tokens & quotas",
     icon: ZapIcon,
-    intro: "Distinguish session capacity, token consumption, and provider limits.",
-    sections: [
+    intro: "Session capacity, token spend, and provider limits are three different things.",
+    scenes: [
       {
-        title: "Context is resident capacity",
-        body: "The stage’s context meter compares resident session tokens with its context ceiling. It describes how full this session is, rather than all tokens spent on the stage. A handoff lets a fresh session continue when the ceiling is reached.",
-      },
-      {
-        title: "Fresh token flow",
-        body: "Fresh tokens combine uncached input, cache writes, and output. The flow chart shows the rate over time; fresh tokens per minute uses a five-minute average. Cached reads are accounted for separately through cache-hit information.",
-      },
-      {
-        title: "Totals and models",
-        body: "The header shows the plan token total and cache hit when available. The token-flow panel provides the rate chart and model breakdown. Stage cards can show their own token traces. A missing meter means no corresponding data is available, not necessarily zero usage.",
-      },
-      {
-        title: "Provider quotas",
-        body: "Footer gauges show the provider usage windows and reset information that Loom can retrieve. The five-hour time-left estimate uses the last thirty minutes’ average consumption; changing activity changes that estimate. Provider quota and a session’s context ceiling measure different limits.",
+        title: "Three meters",
+        visual: "resources",
+        notes: [
+          {
+            at: ".help-stage-instruments > :first-child",
+            text: "Context: how full this session is.",
+            place: "l",
+          },
+          {
+            at: ".help-stage-instruments .node-tokens",
+            text: "Fresh tokens per minute, five-minute average.",
+            place: "r",
+          },
+          {
+            at: ".help-token-panel",
+            text: "The plan’s token rate over time, by model.",
+            place: "tl",
+          },
+          {
+            at: ".help-quota-example",
+            text: "Provider usage windows and when they reset.",
+            place: "tl",
+          },
+        ],
       },
     ],
+    tips: ["A missing meter means no data yet, not zero usage."],
   },
   {
     id: "settings",
     label: "Settings & appearance",
     icon: SlidersHorizontalIcon,
-    intro: "Tune the dashboard and inspect the configuration behind the run.",
-    sections: [
+    intro: "Tune the dashboard, and see which configuration value wins.",
+    scenes: [
       {
-        title: "Find a setting",
-        body: "Open Settings in the header. Filter by key, value, or help text; press / outside a field to focus the filter. With a non-empty filter focused, Escape clears it first. Press Escape again to close Settings.",
+        title: "Which value applies",
+        visual: "scopes",
+        notes: [
+          { at: "[data-pin=project]", text: "A project override wins over everything." },
+          { at: "[data-pin=user]", text: "Your own value, used across projects." },
+          {
+            at: "[data-pin=default]",
+            text: "Loom’s built-in value, used when nothing else is set.",
+          },
+          { at: "[data-pin=browser]", text: "Theme and notifications stay in this browser." },
+        ],
       },
-      {
-        title: "Scope and effective values",
-        body: "The configuration shows user and project scopes alongside the effective value. Project overrides take precedence over user values, with defaults beneath both. Removing an override restores the fallback; it does not necessarily turn a setting off.",
-      },
-      {
-        title: "Save feedback",
-        body: "Configuration edits are written individually. Watch each control’s pending, saved, or error feedback. Remote writes require authorization from the dashboard startup URL. A failed write needs attention before you assume the new value is active.",
-      },
-      {
-        title: "Appearance",
-        body: "Choose Ledger, Aubergine, Pacific, or Graphite in the dashboard settings, or use the header’s theme toggle. Appearance preferences are saved in this browser, separately from project and user configuration.",
-      },
-      {
-        title: "Notifications",
-        body: "Enable browser notifications in Settings and allow the browser permission prompt. Notifications cover new attention items, handoffs, and a finished run. They require a secure context such as localhost or HTTPS; plain HTTP on a remote host cannot enable them. Keep the dashboard open to receive updates.",
-      },
+    ],
+    tips: [
+      "Press / to filter settings. Esc clears the filter, then closes.",
+      "Watch for each control’s saved or error mark before trusting a change.",
+      "Notifications need localhost or HTTPS, and an open dashboard tab.",
     ],
   },
   {
     id: "shortcuts",
     label: "Keyboard & controls",
     icon: KeyboardIcon,
-    intro: "The shortcuts depend on where focus is. Terminal control keeps its own keys.",
-    sections: [
+    intro: "Shortcuts depend on where focus is. A controlled terminal keeps every key.",
+    scenes: [],
+    shortcuts: [
       {
-        title: "Across the dashboard",
+        title: "Anywhere",
         rows: [
-          ["?", "Open or close Help, outside text inputs."],
-          [
-            "Esc",
-            "Close a dialog. Terminal control and a populated settings filter have special behavior.",
-          ],
-          ["Tab / Shift + Tab", "Move between controls; focus stays inside an open dialog."],
-          ["Enter / Space", "Activate a focused button."],
+          ["?", "Open or close Help"],
+          ["Esc", "Close a dialog"],
+          ["Tab / Shift + Tab", "Move between controls"],
+          ["Enter / Space", "Press the focused button"],
         ],
       },
       {
         title: "On the graph",
         rows: [
-          ["Click", "Trace a stage’s thread, or pin a state chip."],
-          ["Double-click", "Open a stage card."],
-          ["Enter", "Open the focused stage card."],
-          ["Esc / empty canvas", "Clear the graph’s pinned highlight."],
+          ["Click", "Trace a stage, or pin a state"],
+          ["Double-click", "Open a stage"],
+          ["Enter", "Open the focused stage"],
+          ["Esc / Click empty canvas", "Clear the highlight"],
         ],
       },
       {
         title: "In Settings",
         rows: [
-          ["/", "Focus the filter when outside a field."],
-          ["Esc in the filter", "Clear a non-empty filter before closing Settings."],
+          ["/", "Focus the filter"],
+          ["Esc", "Clear the filter, then close"],
         ],
       },
-      {
-        title: "In a controlled terminal",
-        body: "Keyboard input, including Escape and Tab, goes to the session. Use release control to return to view mode and normal dashboard keyboard navigation.",
-      },
     ],
+    tips: ["In a controlled terminal every key, Esc included, goes to the agent."],
   },
-] as const;
-
-export type HelpTopic = (typeof HELP_TOPICS)[number];
-export interface HelpSection {
-  title: string;
-  body?: string;
-  steps?: readonly string[];
-  rows?: readonly (readonly [string, string])[];
-}
+];

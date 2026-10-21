@@ -1,0 +1,168 @@
+/* Scenes: an illustration with numbered pins, and the notes they point to */
+.help-scene {
+  margin-bottom: 36px;
+}
+.help-scene > h3,
+.help-shortcut-group > h3 {
+  margin-bottom: 14px;
+  font-size: 17px;
+  font-weight: 600;
+  letter-spacing: -0.015em;
+}
+.help-scene-canvas {
+  padding: 30px 34px;
+  border: 1px solid var(--hairline);
+  border-radius: 14px;
+  background:
+    radial-gradient(
+        circle at 1px 1px,
+        color-mix(in oklch, var(--foreground) 9%, transparent) 1px,
+        transparent 0
+      )
+      0 0 / 18px 18px,
+    color-mix(in oklch, var(--muted) 45%, var(--card));
+}
+/* The graph brings its own ruled sheet, so its canvas drops the dot grid. */
+.help-scene-canvas:has(.help-real-graph) {
+  padding: 22px 26px;
+  background: var(--card);
+}
+.help-scene-stage {
+  position: relative;
+}
+.help-scene-overlay {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+.help-pin {
+  position: absolute;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  border: 2px solid var(--card);
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  box-shadow: 0 1px 4px oklch(0 0 0 / 0.22);
+  pointer-events: auto;
+  cursor: default;
+  transition: transform 140ms ease;
+}
+.help-pin[data-active] {
+  transform: scale(1.18);
+}
+.help-ring {
+  position: absolute;
+  z-index: 1;
+  border: 2px solid var(--ring);
+  border-radius: 8px;
+  box-shadow: 0 0 0 4px color-mix(in oklch, var(--primary) 22%, transparent);
+  animation: help-ring-in 160ms ease-out both;
+}
+@keyframes help-ring-in {
+  from {
+    opacity: 0;
+    transform: scale(1.04);
+  }
+}
+.help-notes {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 4px 20px;
+  margin-top: 16px;
+}
+.help-notes li {
+  display: flex;
+  align-items: flex-start;
+  gap: 11px;
+  padding: 8px 10px;
+  margin: 0 -10px;
+  border-radius: 8px;
+  transition: background-color 140ms ease;
+}
+.help-notes li[data-active] {
+  background: color-mix(in oklch, var(--primary) 12%, transparent);
+}
+.help-note-number {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  border-radius: 50%;
+  background: var(--primary);
+  color: var(--primary-foreground);
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+.help-notes p {
+  padding-top: 1px;
+  font-size: 14px;
+  line-height: 1.5;
+  text-wrap: pretty;
+}
+
+/* Tips */
+.help-tips {
+  padding: 18px 22px;
+  border-radius: 12px;
+  background: color-mix(in oklch, var(--primary) 9%, transparent);
+}
+.help-tips h3 {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+  font-size: 14px;
+  font-weight: 600;
+}
+.help-tips h3 svg {
+  width: 16px;
+  height: 16px;
+  color: var(--ring);
+}
+.help-tips ul {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+.help-tips li {
+  position: relative;
+  padding-left: 30px;
+  font-size: 14px;
+  line-height: 1.5;
+  color: color-mix(in oklch, var(--foreground) 82%, var(--muted-foreground));
+}
+.help-tips li::before {
+  content: "";
+  position: absolute;
+  top: 0.62em;
+  left: 8px;
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ring);
+}
+
+@media (max-width: 767px) {
+  .help-scene-canvas {
+    padding: 22px 16px;
+  }
+  .help-notes {
+    grid-template-columns: 1fr;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .help-ring {
+    animation: none;
+  }
+}

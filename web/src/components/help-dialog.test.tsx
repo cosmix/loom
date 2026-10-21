@@ -50,6 +50,21 @@ describe("help guide", () => {
     expect(screen.getByText(/fresh tokens per minute/)).toBeTruthy();
   });
 
+  it("pairs each illustration with its numbered notes", () => {
+    render(<HelpDialog open onOpenChange={() => {}} />);
+    fireEvent.click(screen.getByRole("button", { name: "Graph & navigation" }));
+    const ledger = screen
+      .getByRole("heading", { level: 3, name: "The ledger" })
+      .closest("section")!;
+    expect(within(ledger).getByRole("table")).toBeTruthy();
+    expect(
+      within(ledger)
+        .getAllByRole("listitem")
+        .map((note) => note.textContent),
+    ).toEqual(HELP_TOPICS[1].scenes[1].notes.map((note, i) => `${i + 1}${note.text}`));
+    expect(screen.queryByText("Write the docs")).toBeNull();
+  });
+
   it("opens on the topic list on phones and returns from a topic", () => {
     vi.spyOn(window, "matchMedia").mockImplementation((query) => ({
       matches: query === "(max-width: 767px)",

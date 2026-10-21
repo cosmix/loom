@@ -1,4 +1,6 @@
 import { useMemo } from "react";
+import { MemoryRouter, useInRouterContext } from "react-router";
+import { Rows3Icon, WorkflowIcon } from "lucide-react";
 import {
   Background,
   BackgroundVariant,
@@ -9,6 +11,8 @@ import {
 import { StageNode, type StageNodeType } from "@/components/graph/stage-node";
 import { ThreadEdge, type ThreadEdgeType } from "@/components/graph/thread-edge";
 import { buildEdges, buildNodes } from "@/components/graph/stage-graph";
+import { StateKey } from "@/components/graph/state-key";
+import { LedgerTable } from "@/components/ledger-table";
 import { layoutStages } from "@/lib/graph";
 import { HELP_SNAPSHOT, HELP_STAGE, HelpExample } from "@/components/help-example";
 import { useMediaQuery } from "@/lib/use-media-query";
@@ -25,13 +29,6 @@ const root = {
   elapsed_secs: null,
 };
 const api = { ...HELP_STAGE, id: "api", name: "Build the API", dependencies: ["schema"] };
-const docs = {
-  ...HELP_STAGE,
-  id: "docs",
-  name: "Write the docs",
-  dependencies: ["schema"],
-  context_tokens: 120000,
-};
 const verify = {
   ...root,
   id: "verify",
@@ -41,7 +38,11 @@ const verify = {
   merged: false,
   activity_status: "Idle" as const,
 };
-const DEMO_STAGES = [root, api, docs, verify];
+const DEMO_STAGES = [root, api, verify];
+const LEDGER_SNAPSHOT = {
+  ...HELP_SNAPSHOT,
+  status: { ...HELP_SNAPSHOT.status, stages: DEMO_STAGES },
+};
 const SINGLE_STAGE = [HELP_STAGE];
 const nodeTypes = { stage: StageNode };
 const edgeTypes = { thread: ThreadEdge };
@@ -49,33 +50,42 @@ const edgeTypes = { thread: ThreadEdge };
 export function GraphDemo({ single = false }: { single?: boolean }) {
   return (
     <HelpExample>
-      <figure className="help-figure help-graph-figure">
-        <div className="help-figure-label">
-          <span>{single ? "Reading a stage card" : "Dependency graph"}</span>
-          <span>Static example</span>
-        </div>
+      <div className="help-graph-figure">
+        {!single && (
+          <div inert>
+            <StateKey stages={DEMO_STAGES} pinned={null} onHover={() => {}} onPin={() => {}} />
+          </div>
+        )}
         <ReactFlowProvider>
           <ExampleCanvas single={single} />
         </ReactFlowProvider>
-        {!single && (
-          <dl className="help-control-key">
-            <div>
-              <dt>Click a card</dt>
-              <dd>Trace its dependencies and dependents.</dd>
-            </div>
-            <div>
-              <dt>+ / −</dt>
-              <dd>Zoom in and out with the graph controls.</dd>
-            </div>
-            <div>
-              <dt>Fit view</dt>
-              <dd>Use the corner-frame control to see all stages.</dd>
-            </div>
-          </dl>
-        )}
-      </figure>
+      </div>
     </HelpExample>
   );
+}
+
+/// The ledger over the same three stages. Its rows link into the app, so a
+/// render outside the app's router (tests) supplies an inert one.
+export function LedgerDemo() {
+  const routed = useInRouterContext();
+  const table = (
+    <HelpExample snapshot={LEDGER_SNAPSHOT}>
+      <div className="help-ledger" inert>
+        <span className="view-switch" data-pin="views">
+          <span className="view-tab">
+            <WorkflowIcon className="size-3.5" />
+            graph
+          </span>
+          <span className="view-tab is-active">
+            <Rows3Icon className="size-3.5" />
+            ledger
+          </span>
+        </span>
+        <LedgerTable />
+      </div>
+    </HelpExample>
+  );
+  return routed ? table : <MemoryRouter>{table}</MemoryRouter>;
 }
 
 function useExampleGraph(single: boolean) {
@@ -97,7 +107,7 @@ function ExampleCanvas({ single }: { single: boolean }) {
   const { nodes, edges, mobile } = useExampleGraph(single);
   const description = single
     ? "Stage card with state, open and terminal controls, activity, context meter, and token trace."
-    : "Build the API depends on Define the schema and unlocks Integration tests. The parallel Write the docs stage is dimmed.";
+    : "Build the API depends on Define the schema and unlocks Integration tests.";
   return (
     <>
       <div
@@ -134,7 +144,6 @@ function ExampleCanvas({ single }: { single: boolean }) {
           </ReactFlow>
         </div>
       </div>
-      <figcaption>{description}</figcaption>
     </>
   );
 }
