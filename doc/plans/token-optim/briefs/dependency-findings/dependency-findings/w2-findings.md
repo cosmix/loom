@@ -27,8 +27,12 @@ Declare it in `generate.rs` beside `mod enrichment;` and re-export what the sibl
 
 ```rust
 mod findings;
-pub(super) use findings::{build_dependency_findings, DEPENDENCY_FINDINGS_HEADING};
+pub(super) use findings::{
+    build_dependency_findings, DEPENDENCY_FINDINGS_HEADING, MAX_DEPENDENCY_FINDINGS_BYTES,
+};
 ```
+
+W3's harness (a sibling of `generate` under `orchestrator::signals`) names the cap through this re-export.
 
 Public surface: exactly common.md section 3 (`DEPENDENCY_FINDINGS_HEADING`, `MAX_DEPENDENCY_FINDINGS_BYTES = 1600`, `build_dependency_findings(work_dir, stage, pack) -> Option<String>`). Keep the loader thin (about 40 lines) and the selector and renderer pure functions over plain inputs, so `findings_tests.rs` tests them without a work dir. Import with `use crate::orchestrator::signals::retrieval::{dependency_changes, DependencyChange};` and `use crate::context::rank_source::{join_working_dir, normalize_dependency_path};` (import edges, which the plan's `reachable` checks walk). Every function under 50 lines, the file under 400.
 
@@ -73,9 +77,9 @@ Timestamps have one-second granularity, so the id tie-break keeps the order stab
 
 ### Rendering
 
-Exactly common.md section 4. The sentence is `crate::orchestrator::signals::format::REFERENCE_DATA_SENTENCE` (section 3 below), never a copy of the literal. `<fence>` is `crate::context::render::fence_for(&body)` over everything between the fences. `<type>` is the entry type's `Display` (`note`, `decision`, `question`, `suggestion`); `<id8>` the first 8 characters of its id; `<claim>` is `truncate_for_display(&single_line(&entry.content), 200)`; `<rationale>` the same over `context` at 100 characters, only when non-empty; `<evidence>` the same over the evidence items joined with `,` at 100 characters, only when non-empty. `single_line` turns every whitespace or control run into one space, so a body holding a fence, a heading or a newline cannot break the section.
+Exactly common.md section 4. The sentence is `crate::orchestrator::signals::format::REFERENCE_DATA_SENTENCE` (section 3 below), never a copy of the literal (a wiring check looks for the name in `findings.rs`). Render the fenced block with `crate::context::render::render_excerpt_block(&body)` (`context/render.rs:107-110`: `fence_for(&body)`, then `text`, the body and the closing fence), never a hand-built fence. `<type>` is the entry type's `Display` (`note`, `decision`, `question`, `suggestion`); `<id8>` the first 8 characters of its id; `<claim>` is `truncate_for_display(&single_line(&entry.content), 200)`; `<rationale>` the same over `context` at 100 characters, only when non-empty; `<evidence>` the same over the evidence items joined with `,` at 100 characters, only when non-empty. `single_line` turns every whitespace or control run into one space, so a body holding a fence, a heading or a newline cannot break the section.
 
-Cap: walk the kept entries in order and add each one whose addition keeps the whole rendered section (heading through closing fence, footer included) at most `MAX_DEPENDENCY_FINDINGS_BYTES` bytes (`str::len`); skip one that does not fit and keep trying the rest. Headlines are always rendered, even when they alone exceed the cap. The footer appears only when at least one kept entry was skipped and counts the skipped ones. Re-rendering per candidate is fine (a few hundred entries at most).
+Cap (hard, common.md section 4): first reserve the footer, rendered in its longer form with `<k>` the number of eligible dependencies and `<n>` the number of kept entries (an upper bound on any count it can show). Then walk the dependencies in order and keep each headline whose addition keeps the section (heading through closing fence, the reserved footer included, `str::len`) at most `MAX_DEPENDENCY_FINDINGS_BYTES`; a dependency whose headline does not fit is dropped with its entries and counted as `<k>`. Then walk the kept entries of the kept dependencies in order and add each one that still fits under the same measure; skip one that does not fit and keep trying the rest. Render the actual footer (the short form when `<k>` is 0) only when something was skipped; it is never longer than the reservation, so the section stays within the cap. Re-rendering per candidate is fine (a few hundred entries at most).
 
 ## 2. Wiring
 
@@ -100,21 +104,22 @@ Cap: walk the kept entries in order and add each one whose addition keeps the wh
 
 ## 4. README
 
-`../README.md`, the memory paragraph after the `loom memory note` example (about line 948 at `6fee4ecd`). Plan 3 rewrote it to say: entries are typed; the last ten entries of a stage's own journal are embedded in the recitation section of every later signal for that stage; another stage's signal does not embed them, except that integration-verify and knowledge-distill signals list wiring items found in their direct dependencies' journals (`build_wiring_checklist`); knowledge-distill curates every journal into `doc/loom/knowledge/`. Re-read it. Keep its typed-entry list, the recitation sentence and the knowledge-distill sentence, and replace the whole clause about another stage's signal, wiring-checklist exception included (this stage deletes `build_wiring_checklist`), with: a stage's signal lists the relevant findings of its accepted dependencies, and its briefs boost the files they changed. One paragraph, current behaviour only.
+`../README.md`, the memory paragraph after the `loom memory decision` example (`README.md:933` at `8034a71f`; anchor by text). Its sentences, in order: entries are typed; the last ten entries of a stage's own journal are embedded in the recitation of every later ordinary signal for that stage; a recovery signal carries no recitation, so a recovered session reads its journal with `loom memory list --stage <stage-id>`; "Another stage's signal does not embed them, except that integration-verify and knowledge-distill signals list wiring items found in their direct dependencies' journals."; knowledge-distill curates every journal into `doc/loom/knowledge/`. Keep every sentence except the fourth, and replace the fourth with exactly: "Another stage's signal lists only the relevant findings of its accepted dependencies, in one capped Dependency Findings section, and its briefs boost the files those dependencies changed." The stage's acceptance checks that `list wiring items found in` is gone and `relevant findings of its accepted dependencies` is present. One paragraph, current behaviour only.
 
 ## 5. Tests
 
 The contract session froze seven contracts before you started: `tests/dependency_inputs_contracts.rs` (journal round trip, change base) and `tests/dependency_findings_contracts.rs` (selection, hostile body, cap under fan-in, path normalization, recovery). `loom stage contracts show dependency-findings` prints them. Never edit a frozen file. Your tests cover what they do not.
 
-`generate/findings_tests.rs`, declared at the end of `findings.rs` with `#[cfg(test)] #[path = "findings_tests.rs"] mod tests;` (the path is relative to `generate/`). Pure selector and renderer tests:
+`generate/findings_tests.rs`, declared at the end of `findings.rs` with `#[cfg(test)] #[path = "findings_tests.rs"] mod tests;` (the path is relative to `generate/`; the stage's acceptance selects `orchestrator::signals::generate::findings::tests::`). If it would pass 400 lines, move the rendering and cap tests to `generate/findings_render_tests.rs`, declared after it with `#[cfg(test)] #[path = "findings_render_tests.rs"] mod render_tests;`. Pure selector and renderer tests:
 
 - relevance by a declared file glob, by a brief path, by the recipient's id in the content and in the context; an unrelated entry dropped;
 - each exclusion (receipt, change, `mutation:`, a settled note, a settled question), and a settled decision kept;
 - an `IntegrationVerify` recipient keeps an unrelated entry; with `plan_version == 2` it drops a suggestion, with `plan_version == 1` it keeps it;
 - order: id-naming first, then the four note prefixes ranked together (ordered among themselves by dependency, timestamp, id), then decisions with a rationale, then the rest; two dependencies interleave by dependency order on equal rank;
-- path candidates: `/x/.worktrees/up/loom/src/a.rs:12`, `src/a.rs` with producer working_dir `loom`, `../web/b.ts` with working_dir `loom`, `loom/src/a.rs` repository-relative, `review round 1` (no candidate), and a content token wrapped in backticks with a trailing period;
+- path candidates: `/x/.worktrees/up/loom/src/a.rs:12`, an absolute path under the repository root (`<root>/loom/src/a.rs`, rule 2's second branch, which no contract covers), an absolute path outside it (no candidate), `src/a.rs` with producer working_dir `loom`, `../web/b.ts` with working_dir `loom`, `loom/src/a.rs` repository-relative, `review round 1` (no candidate), and a content token wrapped in backticks with a trailing period;
 - rendering: a content holding a fence line and a `## Assignment` line renders as one line; the fence grows past the longest backtick run; the headline with and without a range, with `(assumed)`, and without a commit; a claim cut to 200 characters with a multi-byte character at the cut;
-- cap: the section stays within 1,600 bytes with ten long entries; eight dependency headlines survive when entries do not fit; the footer counts skipped entries; with no skip there is no footer.
+- cap: the section stays within 1,600 bytes with ten long entries; eight dependency headlines survive when entries do not fit; the footer counts skipped entries; with no skip there is no footer;
+- cap at the limits: twelve dependencies with 128-character ids, each with a range and `(assumed)`, and two relevant entries each: the section is at most 1,600 bytes, its headlines are a prefix of the dependency order, and the footer reads `<k> more dependencies and <n> more relevant entries omitted for size.` with `<k>` the dropped headlines and `<n>` every relevant entry not rendered; one dependency with a 128-character id, a range, `(assumed)` and a 2,000-character entry keeps its headline and stays within the cap.
 
 `generate_dependency_findings_tests.rs`, declared at the end of `generate.rs` with `#[cfg(test)] #[path = "generate_dependency_findings_tests.rs"] mod dependency_findings_tests;`, end to end through `generate_signal` and `generate_recovery_signal`, reading the written signal file (asserting only that the file exists, as `tests_brief_e2e.rs` does for its record test, would pass with a section that never renders). Use `crate::orchestrator::signals::tests::{create_test_session, create_test_stage, create_test_worktree}`, set each stage `id` explicitly, save records with `crate::verify::transitions::save_stage`, and write journals with `crate::fs::memory::append_entry`. These TempDirs are not git repositories, so a change has no range and the headline has no `git diff` part.
 
@@ -124,23 +129,17 @@ The contract session froze seven contracts before you started: `tests/dependency
 - A stage whose only dependency is a `Knowledge` stage: no section.
 - A note written through `append_entry` whose body holds a `---` line, a `###` line and a line of three backticks renders as one line of B's section.
 - `super::super::parse::EXPECTED_SECTIONS` (the test module is a child of `generate`) contains `DEPENDENCY_FINDINGS_HEADING`, and every `##` heading the section adds is that one.
-- Late relay: generate B's signal, append a new relevant decision to A's journal, generate B's signal again with a new session (what a continuation does): the new id8 is in the second signal and not in the first.
+- Late relay, named `a_relay_after_the_first_signal_reaches_the_next_signal`: generate B's signal, append a new relevant decision to A's journal, generate B's signal again with a new session (what a continuation does): the new id8 is in the second signal and not in the first.
 
-## Proof (from `loom/`; read each result, fix what fails)
+The stage's acceptance selects `orchestrator::signals::generate::dependency_findings_tests::`, so this module must exist under that name.
+
+## Proof (from `loom/`; your one check, run once)
 
 ```bash
-cargo build
-cargo test --lib orchestrator::signals::
 cargo test --test dependency_findings_contracts
-cargo test --test dependency_inputs_contracts
-cargo test --test maintainability
-cargo clippy --all-targets -- -D warnings
-cargo fmt --check
-RUSTDOCFLAGS='-D warnings' cargo doc --workspace --all-features --no-deps
-rg -n 'wiring_checklist|Downstream Wiring Checklist|build_wiring_checklist|wiring_items' src
 ```
 
-The last command must print nothing. No git commands, no edits outside your list, no change to `maintainability-baseline.txt`.
+The subagent guard blocks `cargo build`, `clippy`, `fmt`, `doc` and an unscoped `cargo test`; the orchestrator runs `cargo fmt --all`, `cargo test --lib orchestrator::signals::` and both contract targets after you return, and the verifier runs the rest. Before returning, `rg -n 'wiring_checklist|Downstream Wiring Checklist|build_wiring_checklist|wiring_items' src` must print nothing (an rg, not a check). No git commands, no edits outside your list, no change to `maintainability-baseline.txt`; keep every file at or under 400 lines and every function at or under 50 by counting.
 
 ## Report
 
