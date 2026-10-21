@@ -12,7 +12,7 @@ use super::marker::{decode_marker_channel, MarkerChannel, MAX_PREFIX_BYTES};
 
 mod argv;
 mod identity;
-pub use argv::exact_forward_argv;
+pub use argv::{exact_forward_argv, forward_argv};
 pub use identity::TranscriptIdentity;
 
 const MAX_TRANSCRIPT_BYTES: usize = 16 * 1024 * 1024;
@@ -245,7 +245,7 @@ fn tool_result_text(block: &Value) -> String {
     }
 }
 
-fn collect_strings(value: &Value, output: &mut Vec<String>) {
+pub(super) fn collect_strings(value: &Value, output: &mut Vec<String>) {
     match value {
         Value::String(value) => output.push(value.clone()),
         Value::Array(values) => values

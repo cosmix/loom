@@ -1,5 +1,7 @@
 use std::path::{Path, PathBuf};
 
+use super::codex_scope::{self, CodexScope};
+use super::completeness::SessionInventory;
 use super::provider_types::{
     NormalizedEvent, Provider, ProviderDiagnostics, ProviderLedger, TimeRangeView,
     PROVIDER_LEDGER_SCHEMA_VERSION,
@@ -14,9 +16,11 @@ pub(crate) struct ProviderEventInput<'a> {
     pub(crate) claude_transcripts: Vec<Transcript>,
     pub(crate) claude_discovered_files: usize,
     pub(crate) claude_missing_roots: usize,
+    pub(crate) claude_sessions: SessionInventory,
     pub(crate) codex_files: &'a [PathBuf],
     pub(crate) codex_missing_roots: usize,
     pub(crate) codex_unreadable_directories: usize,
+    pub(crate) codex_scope: &'a CodexScope,
     pub(crate) receipts_root: Option<&'a Path>,
 }
 
@@ -39,14 +43,14 @@ pub(crate) fn normalize_provider_events(
             .claude_discovered_files
             .saturating_sub(input.claude_transcripts.len());
         claude_diagnostics.missing_roots += input.claude_missing_roots;
+        claude_diagnostics.missed_session_transcripts = input.claude_sessions.missed;
+        claude_diagnostics.unreadable_session_records = input.claude_sessions.unreadable;
         rows.extend(normalized.rows);
     }
     if input.selection.includes(Provider::Codex) {
-        let normalized = super::codex_provider::normalize(input.codex_files, &input.range);
-        codex_diagnostics = normalized.diagnostics;
-        codex_diagnostics.missing_roots += input.codex_missing_roots;
-        codex_diagnostics.unreadable_files += input.codex_unreadable_directories;
-        rows.extend(normalized.rows);
+        let (codex_rows, diagnostics) = normalize_codex(&input);
+        codex_diagnostics = diagnostics;
+        rows.extend(codex_rows);
     }
     merge_receipts(
         &input,
@@ -72,6 +76,22 @@ pub(crate) fn normalize_provider_events(
         claude_transcripts: input.claude_transcripts,
         ledger: build_ledger(input.range, providers, rows),
     }
+}
+
+/// Codex rollout rows of the selection, reduced to the threads the project's
+/// forward receipts name.
+fn normalize_codex(input: &ProviderEventInput<'_>) -> (Vec<NormalizedEvent>, ProviderDiagnostics) {
+    let normalized = super::codex_provider::normalize(input.codex_files, &input.range);
+    let mut diagnostics = normalized.diagnostics;
+    let mut rows = normalized.rows;
+    diagnostics.missing_roots += input.codex_missing_roots;
+    diagnostics.unreadable_files += input.codex_unreadable_directories;
+    let outcome = codex_scope::apply(input.codex_scope, &mut rows);
+    diagnostics.foreign_codex_rows = outcome.foreign_rows;
+    diagnostics.missing_forward_threads = outcome.missing_threads;
+    diagnostics.unthreaded_forward_receipts = outcome.unthreaded_receipts;
+    diagnostics.codex_scope_unavailable = usize::from(outcome.unavailable);
+    (rows, diagnostics)
 }
 
 fn build_ledger(

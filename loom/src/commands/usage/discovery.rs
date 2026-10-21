@@ -103,12 +103,19 @@ fn selected_slugs(root: &Path, options: &DiscoveryOptions) -> Result<Vec<String>
         return all_slugs(root);
     }
     if let Some(project) = options.project.as_deref() {
-        return Ok(vec![project_slug(&absolute(project)?)]);
+        let slug = project_slug(&absolute(project)?);
+        let mut slugs = vec![slug.clone()];
+        slugs.extend(worktree_slugs(root, &slug));
+        return Ok(slugs);
     }
-    let repo = repository_root()?;
-    let mut paths = vec![repo.clone()];
-    let worktrees = repo.join(".worktrees");
-    if let Ok(entries) = fs::read_dir(worktrees) {
+    Ok(repository_slugs(root, &repository_root()?))
+}
+
+/// The repository slug, its live `.worktrees/*` slugs and the slugs of
+/// worktrees loom has since removed, deduplicated in that order.
+fn repository_slugs(root: &Path, repo: &Path) -> Vec<String> {
+    let mut paths = vec![repo.to_path_buf()];
+    if let Ok(entries) = fs::read_dir(repo.join(".worktrees")) {
         paths.extend(
             entries
                 .flatten()
@@ -116,7 +123,31 @@ fn selected_slugs(root: &Path, options: &DiscoveryOptions) -> Result<Vec<String>
                 .filter(|path| path.is_dir()),
         );
     }
-    Ok(paths.iter().map(|path| project_slug(path)).collect())
+    let mut slugs: Vec<String> = Vec::new();
+    let removed = worktree_slugs(root, &project_slug(repo));
+    for slug in paths.iter().map(|path| project_slug(path)).chain(removed) {
+        if !slugs.contains(&slug) {
+            slugs.push(slug);
+        }
+    }
+    slugs
+}
+
+/// Slugs under the Claude projects root belonging to worktrees of `slug`
+/// (`<slug>--worktrees-<stage>`), whether or not the worktree still exists.
+/// The `--worktrees-` separator keeps a sibling project `<slug>-other` out.
+fn worktree_slugs(root: &Path, slug: &str) -> Vec<String> {
+    let prefix = format!("{slug}--worktrees-");
+    let Ok(entries) = fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let mut slugs: Vec<String> = entries
+        .flatten()
+        .filter_map(|entry| entry.file_name().into_string().ok())
+        .filter(|name| name.starts_with(&prefix))
+        .collect();
+    slugs.sort();
+    slugs
 }
 
 fn all_slugs(root: &Path) -> Result<Vec<String>> {
@@ -250,7 +281,7 @@ fn filter_plan(files: Vec<DiscoveredFile>, plan: &str) -> Result<Vec<DiscoveredF
         .collect())
 }
 
-fn plan_stage_ids(plan: &str) -> Result<Option<HashSet<String>>> {
+pub(crate) fn plan_stage_ids(plan: &str) -> Result<Option<HashSet<String>>> {
     let work_dir = match crate::commands::common::work_dir_path() {
         Ok(work_dir) => work_dir,
         Err(error) => {

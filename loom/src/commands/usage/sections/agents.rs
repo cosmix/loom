@@ -32,6 +32,7 @@ pub struct TinySubagent {
 #[derive(Debug, serde::Serialize)]
 pub struct AgentModelRow {
     pub agent_type: String,
+    pub requested_model: String,
     pub model: String,
     pub requests: usize,
     pub fresh_input: u64,
@@ -105,8 +106,9 @@ pub fn render(report: &AgentReport) {
         println!("  agent type and model:");
         for item in &report.by_agent_model {
             println!(
-                "    {} / {}: {} requests, input {}, output {}, S2 {}",
+                "    {} / requested {} / {}: {} requests, input {}, output {}, S2 {}",
                 item.agent_type,
+                inline_safe(&item.requested_model),
                 inline_safe(&item.model),
                 item.requests,
                 format_u64(item.fresh_input),
@@ -168,17 +170,22 @@ fn tiny_subagents(subagents: &[&Transcript]) -> Vec<TinySubagent> {
 }
 
 fn by_agent_model(subagents: &[&Transcript]) -> Vec<AgentModelRow> {
-    let mut grouped = BTreeMap::<(String, String), AgentModelRow>::new();
+    let mut grouped = BTreeMap::<(String, String, String), AgentModelRow>::new();
     for transcript in subagents {
         let kind = agent_type(transcript);
+        let requested = transcript
+            .requested_model
+            .clone()
+            .unwrap_or_else(|| "unknown".to_owned());
         for request in transcript.requests() {
             if request.model == SYNTHETIC_MODEL {
                 continue;
             }
             let row = grouped
-                .entry((kind.clone(), request.model.clone()))
+                .entry((kind.clone(), requested.clone(), request.model.clone()))
                 .or_insert_with(|| AgentModelRow {
                     agent_type: kind.clone(),
+                    requested_model: requested.clone(),
                     model: request.model.clone(),
                     requests: 0,
                     fresh_input: 0,
@@ -201,6 +208,7 @@ fn by_agent_model(subagents: &[&Transcript]) -> Vec<AgentModelRow> {
             .s2
             .total_cmp(&left.s2)
             .then_with(|| left.agent_type.cmp(&right.agent_type))
+            .then_with(|| left.requested_model.cmp(&right.requested_model))
             .then_with(|| left.model.cmp(&right.model))
     });
     rows

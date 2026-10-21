@@ -39,6 +39,71 @@ pub(super) fn exact_forward_argv_in(
     Some((words[4].clone(), words[6].clone()))
 }
 
+/// `forward_argv_in` against the installed hooks directory.
+pub fn forward_argv(command: &str) -> Option<(String, String)> {
+    forward_argv_in(command, &crate::assets::install::claude_hooks_dir()?)
+}
+
+/// The `(model, effort)` of `command` when it is a forward the guard
+/// authorizes: the 8-word wrapper call, optionally followed by
+/// `--unit-id <unit>` and then `--invocation-id inv-<32 hex>`.
+pub(super) fn forward_argv_in(command: &str, hooks_dir: &Path) -> Option<(String, String)> {
+    if !safe_shell_syntax(command) {
+        return None;
+    }
+    let words = shell_words::split(command).ok()?;
+    if !matches!(words.len(), 8 | 10 | 12)
+        || !is_forward_wrapper(command, &words[0], hooks_dir)
+        || words[1] != "task"
+        || words[2].is_empty()
+        || words[3] != "--model"
+        || words[5] != "--effort"
+        || words[7] != "--write"
+        || !bounded_diagnostic(&words[4])
+        || !bounded_diagnostic(&words[6])
+        || !optional_flags_valid(&words[8..])
+    {
+        return None;
+    }
+    Some((words[4].clone(), words[6].clone()))
+}
+
+/// The words after `--write`: nothing, `--unit-id <unit>`, or that followed by
+/// `--invocation-id <id>`.
+fn optional_flags_valid(rest: &[String]) -> bool {
+    match rest {
+        [] => true,
+        [flag, unit] => flag == "--unit-id" && is_unit_id(unit),
+        [flag, unit, invocation_flag, invocation] => {
+            flag == "--unit-id"
+                && is_unit_id(unit)
+                && invocation_flag == "--invocation-id"
+                && is_invocation_id(invocation)
+        }
+        _ => false,
+    }
+}
+
+/// `^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`
+fn is_unit_id(value: &str) -> bool {
+    let bytes = value.as_bytes();
+    (1..=64).contains(&bytes.len())
+        && bytes[0].is_ascii_alphanumeric()
+        && bytes
+            .iter()
+            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'.' | b'_' | b'-'))
+}
+
+/// `^inv-[0-9a-f]{32}$`
+fn is_invocation_id(value: &str) -> bool {
+    value.strip_prefix("inv-").is_some_and(|hex| {
+        hex.len() == 32
+            && hex
+                .bytes()
+                .all(|byte| matches!(byte, b'0'..=b'9' | b'a'..=b'f'))
+    })
+}
+
 /// Whether `program`, word 0 of `command`, names loom's forwarding wrapper
 /// exactly: the absolute `<hooks_dir>/codex-forward.sh`, or the
 /// `~/.claude/hooks/loom/codex-forward.sh` spelling when `command` wrote that

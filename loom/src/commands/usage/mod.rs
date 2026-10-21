@@ -13,10 +13,12 @@
 //! partial write (dropped rather than mis-parsed).
 
 mod accounting;
+mod args;
 mod claude_provider;
 mod claude_usage;
 pub(crate) mod codex_discovery;
 mod codex_provider;
+mod codex_scope;
 mod codex_tokens;
 mod comparison;
 mod comparison_eval;
@@ -25,6 +27,7 @@ mod comparison_quota;
 mod comparison_schema;
 mod comparison_token;
 mod comparison_validation;
+mod completeness;
 #[cfg(test)]
 mod cross_surface_tests;
 mod discovery;
@@ -38,6 +41,7 @@ mod quota_history;
 mod receipt_provider;
 mod report_types;
 mod sections;
+mod spawn_join;
 mod stream_types;
 mod time_range;
 mod transcript;
@@ -48,119 +52,12 @@ mod transcript_merge;
 // sibling module tree that a plain `mod` declaration would not reach.
 pub(crate) mod transcript_types;
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 use anyhow::{ensure, Result};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, clap::ValueEnum, serde::Serialize)]
-#[serde(rename_all = "kebab-case")]
-pub enum ProviderSelection {
-    Claude,
-    Codex,
-    All,
-}
-
-impl ProviderSelection {
-    fn includes(self, provider: provider_types::Provider) -> bool {
-        matches!(self, Self::All)
-            || matches!(
-                (self, provider),
-                (Self::Claude, provider_types::Provider::Claude)
-                    | (Self::Codex, provider_types::Provider::Codex)
-            )
-    }
-}
-
-/// Arguments for `loom usage`. Lives here rather than in the CLI enum so the
-/// command owns its own surface - the same reasoning `SubagentsArgs` documents.
-#[derive(Debug, clap::Args)]
-pub struct UsageArgs {
-    /// Compare a bounded, offline paired-evaluation artifact
-    #[arg(long, value_name = "ARTIFACT.json")]
-    pub compare: Option<PathBuf>,
-
-    /// How far back to look: a duration (`7d`, `24h`, `30m`) or an ISO date (`2026-08-01`) (default: 7d)
-    #[arg(long)]
-    pub since: Option<String>,
-
-    /// Inclusive UTC RFC3339 upper bound for event timestamps
-    #[arg(long)]
-    pub until: Option<String>,
-
-    /// Provider telemetry to normalize (default: claude)
-    #[arg(long, value_enum)]
-    pub provider: Option<ProviderSelection>,
-
-    /// Explicit Claude projects root; never falls back when supplied
-    #[arg(long)]
-    pub claude_root: Option<PathBuf>,
-
-    /// Explicit Codex root containing sessions/ and archived_sessions/
-    #[arg(long)]
-    pub codex_root: Option<PathBuf>,
-
-    /// Explicit directory containing execution receipt protocol files
-    #[arg(long)]
-    pub receipts_root: Option<PathBuf>,
-
-    /// Single-project Loom state root containing forward receipt stage files
-    #[arg(long, value_name = "DIR", conflicts_with = "all")]
-    pub forward_receipts_root: Option<PathBuf>,
-
-    /// Project directory to read transcripts for (defaults to this repository
-    /// plus each of its `.worktrees/*` subdirectories)
-    #[arg(long, conflicts_with = "all")]
-    pub project: Option<PathBuf>,
-
-    /// Read every project under ~/.claude/projects/
-    #[arg(long)]
-    pub all: bool,
-
-    /// Only transcripts belonging to this stage
-    #[arg(long)]
-    pub stage: Option<String>,
-
-    /// Only transcripts belonging to this plan
-    #[arg(long)]
-    pub plan: Option<String>,
-
-    /// Which windowing to report the three accountings under (default: 5h)
-    #[arg(long, value_enum)]
-    pub windows: Option<accounting::Windowing>,
-
-    /// Emit machine-readable JSON instead of the table report
-    #[arg(long)]
-    pub json: bool,
-}
-
-impl UsageArgs {
-    fn since(&self) -> &str {
-        self.since.as_deref().unwrap_or("7d")
-    }
-
-    fn provider(&self) -> ProviderSelection {
-        self.provider.unwrap_or(ProviderSelection::Claude)
-    }
-
-    fn windows(&self) -> accounting::Windowing {
-        self.windows.unwrap_or(accounting::Windowing::FiveHour)
-    }
-
-    fn has_explicit_selection(&self) -> bool {
-        self.since.is_some()
-            || self.until.is_some()
-            || self.provider.is_some()
-            || self.claude_root.is_some()
-            || self.codex_root.is_some()
-            || self.receipts_root.is_some()
-            || self.forward_receipts_root.is_some()
-            || self.project.is_some()
-            || self.all
-            || self.stage.is_some()
-            || self.plan.is_some()
-            || self.windows.is_some()
-    }
-}
+pub use args::{ProviderSelection, UsageArgs};
 
 /// Parses every discovered transcript, warning on and skipping any file that
 /// fails to parse rather than failing the whole report.
@@ -172,6 +69,7 @@ fn parse_all(
 ) -> Vec<transcript::Transcript> {
     let started_agent_types =
         crate::commands::subagents::ledger::StartedAgentTypeIndex::load(work_dir);
+    let requested_models = spawn_join::RequestedModels::load(work_dir);
     let mut transcripts = Vec::with_capacity(files.len());
     for file in files {
         let metadata = file
@@ -184,6 +82,13 @@ fn parse_all(
                     transcript.agent_type = Some(metadata.agent_type);
                     transcript.stage_id = metadata.stage_id;
                     transcript.loom_session_id = metadata.loom_session_id;
+                    transcript.requested_model = file
+                        .agent_id
+                        .as_deref()
+                        .and_then(|agent_id| {
+                            requested_models.requested_model(agent_id, &file.session_id)
+                        })
+                        .map(str::to_owned);
                 }
                 forward_join.join_transcript(&mut transcript);
                 transcripts.push(transcript);
@@ -266,6 +171,50 @@ fn normalize_usage(
         work_dir,
     )?;
     let forward_join = forward_join::ForwardJoin::load(forward_root);
+    let claude = discover_claude(args, range, work_dir, &forward_join)?;
+    let codex = if args.provider().includes(provider_types::Provider::Codex) {
+        codex_discovery::discover(args.codex_root.as_deref())
+    } else {
+        codex_discovery::CodexDiscovery::default()
+    };
+    let scope = codex_scope::CodexScope::for_selection(args.all, &forward_join, &range);
+    let mut normalized = provider::normalize_provider_events(provider::ProviderEventInput {
+        selection: args.provider(),
+        range,
+        claude_transcripts: claude.transcripts,
+        claude_discovered_files: claude.discovered,
+        claude_missing_roots: claude.missing_roots,
+        claude_sessions: claude.sessions,
+        codex_files: &codex.files,
+        codex_missing_roots: codex.missing_roots,
+        codex_unreadable_directories: codex.unreadable_directories,
+        codex_scope: &scope,
+        receipts_root: args.receipts_root.as_deref(),
+    });
+    forward_join.join_ledger(&mut normalized.ledger);
+    // `join_ledger` merges the receipt-load diagnostics after the reports were
+    // built, so their assessment is stale until repeated.
+    for report in &mut normalized.ledger.providers {
+        report.completeness =
+            completeness::assess(report.provider, &report.coverage, &report.diagnostics);
+    }
+    Ok(normalized)
+}
+
+struct ClaudeInput {
+    transcripts: Vec<transcript::Transcript>,
+    discovered: usize,
+    missing_roots: usize,
+    sessions: completeness::SessionInventory,
+}
+
+fn discover_claude(
+    args: &UsageArgs,
+    range: time_range::TimeRange,
+    work_dir: Option<&Path>,
+    forward_join: &forward_join::ForwardJoin,
+) -> Result<ClaudeInput> {
+    let included = args.provider().includes(provider_types::Provider::Claude);
     let options = discovery::DiscoveryOptions {
         range,
         claude_root: args.claude_root.clone(),
@@ -274,34 +223,41 @@ fn normalize_usage(
         stage: args.stage.clone(),
         plan: args.plan.clone(),
     };
-    let claude_missing_roots = usize::from(
-        args.provider().includes(provider_types::Provider::Claude)
-            && discovery::root_is_missing(&options),
-    );
-    let files = if args.provider().includes(provider_types::Provider::Claude) {
+    let missing_roots = usize::from(included && discovery::root_is_missing(&options));
+    let files = if included {
         discovery::discover(&options)?
     } else {
         Vec::new()
     };
-    let transcripts = parse_all(&files, &range, work_dir, &forward_join);
-    let codex = if args.provider().includes(provider_types::Provider::Codex) {
-        codex_discovery::discover(args.codex_root.as_deref())
+    let sessions = if included && !args.all {
+        let read: Vec<PathBuf> = files.iter().map(|file| file.path.clone()).collect();
+        let stages = session_stage_filter(args);
+        completeness::missed_claude_transcripts(work_dir, &read, &range, stages.as_ref())
     } else {
-        codex_discovery::CodexDiscovery::default()
+        completeness::SessionInventory::default()
     };
-    let mut normalized = provider::normalize_provider_events(provider::ProviderEventInput {
-        selection: args.provider(),
-        range,
-        claude_transcripts: transcripts,
-        claude_discovered_files: files.len(),
-        claude_missing_roots,
-        codex_files: &codex.files,
-        codex_missing_roots: codex.missing_roots,
-        codex_unreadable_directories: codex.unreadable_directories,
-        receipts_root: args.receipts_root.as_deref(),
-    });
-    forward_join.join_ledger(&mut normalized.ledger);
-    Ok(normalized)
+    Ok(ClaudeInput {
+        transcripts: parse_all(&files, &range, work_dir, forward_join),
+        discovered: files.len(),
+        missing_roots,
+        sessions,
+    })
+}
+
+/// The stages whose session records count toward missed transcripts: the
+/// `--stage`, the `--plan`'s stages (none when the plan cannot be resolved),
+/// or every stage.
+fn session_stage_filter(args: &UsageArgs) -> Option<HashSet<String>> {
+    if let Some(stage) = &args.stage {
+        return Some(HashSet::from([stage.clone()]));
+    }
+    let plan = args.plan.as_deref()?;
+    Some(
+        discovery::plan_stage_ids(plan)
+            .ok()
+            .flatten()
+            .unwrap_or_default(),
+    )
 }
 
 fn forward_receipts_root<'a>(

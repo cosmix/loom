@@ -126,6 +126,7 @@ fn build_transcript(file: &super::discovery::DiscoveredFile, scan: ScanResult) -
         session_id: file.session_id.clone(),
         agent_id: file.agent_id.clone(),
         agent_type: None,
+        requested_model: None,
         stage_id: None,
         loom_session_id: None,
         forward_receipt: None,

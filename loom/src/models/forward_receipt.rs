@@ -7,6 +7,7 @@ pub mod job_record;
 mod load;
 pub mod locator;
 pub mod marker;
+pub mod payload;
 pub mod transcript;
 pub use load::{fold_observations, load_receipts, ReceiptLoad};
 pub const FORWARD_RECEIPT_SCHEMA: u16 = 1;

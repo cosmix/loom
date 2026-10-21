@@ -121,3 +121,88 @@ fn a_dollar_in_the_wrapper_word_is_refused_in_every_quoting() {
         None
     );
 }
+
+const UNIT: &str = "--unit-id unit-1.a_b";
+const INVOCATION: &str = "--invocation-id inv-0123456789abcdef0123456789abcdef";
+
+/// `program` followed by [`ARGS`] and `extra`, parsed by `forward_argv_in`.
+fn forward(program: &str, extra: &[&str], hooks_dir: &str) -> Option<(String, String)> {
+    let mut command = format!("{program} {ARGS}");
+    for part in extra {
+        command.push(' ');
+        command.push_str(part);
+    }
+    forward_argv_in(&command, Path::new(hooks_dir))
+}
+
+#[test]
+fn forward_argv_accepts_the_8_10_and_12_word_forms() {
+    let absolute = format!("{DEFAULT_HOOKS}/codex-forward.sh");
+    for program in [DEFAULT_FORWARD_WRAPPER, absolute.as_str()] {
+        assert_eq!(forward(program, &[], DEFAULT_HOOKS), accepted());
+        assert_eq!(forward(program, &[UNIT], DEFAULT_HOOKS), accepted());
+        assert_eq!(
+            forward(program, &[UNIT, INVOCATION], DEFAULT_HOOKS),
+            accepted()
+        );
+    }
+}
+
+#[test]
+fn forward_argv_rejects_malformed_optional_flags() {
+    for extra in [
+        vec!["--unit-id"],
+        vec!["--unit-id", "../x"],
+        vec!["--unit-id", "-x"],
+        vec![UNIT, "--invocation-id"],
+        vec![
+            UNIT,
+            "--invocation-id",
+            "inv-0123456789abcdef0123456789abcde",
+        ],
+        vec![
+            UNIT,
+            "--invocation-id",
+            "inv-0123456789ABCDEF0123456789abcdef",
+        ],
+        vec![INVOCATION],
+        vec![UNIT, "--other", "inv-0123456789abcdef0123456789abcdef"],
+    ] {
+        assert_eq!(
+            forward(DEFAULT_FORWARD_WRAPPER, &extra, DEFAULT_HOOKS),
+            None,
+            "{extra:?}"
+        );
+    }
+}
+
+#[test]
+fn forward_argv_refuses_the_wrapper_words_the_8_word_form_refuses() {
+    let tilde_spellings = [
+        "'~/.claude/hooks/loom/codex-forward.sh'",
+        "\"~/.claude/hooks/loom/codex-forward.sh\"",
+        "\\~/.claude/hooks/loom/codex-forward.sh",
+        "'~'/.claude/hooks/loom/codex-forward.sh",
+        "~/.claude/hooks/loom/codex-forward\\.sh",
+        "~/.claude/hooks/loom/codex-forward.sh''",
+        "''~/.claude/hooks/loom/codex-forward.sh",
+    ];
+    let foreign = [
+        "/tmp/codex-forward.sh",
+        "/home/op/.claude/hooks/loom/../codex-forward.sh",
+        "/home/op/.claude/hooks/loom/x/codex-forward.sh",
+        "/opt/agents/claude/hooks/loom/codex-forward.sh",
+        "codex-forward.sh",
+        "./x/codex-forward.sh",
+        "$HOME/.claude/hooks/loom/codex-forward.sh",
+    ];
+    for program in tilde_spellings.into_iter().chain(foreign) {
+        for extra in [vec![UNIT], vec![UNIT, INVOCATION]] {
+            assert_eq!(
+                forward(program, &extra, DEFAULT_HOOKS),
+                None,
+                "{program} {extra:?}"
+            );
+        }
+    }
+}

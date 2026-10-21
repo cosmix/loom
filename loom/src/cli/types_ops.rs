@@ -111,13 +111,10 @@ pub enum HookCommands {
     #[command(hide = true)]
     ContextCeilings,
 
-    /// Persist authoritative lifecycle observations for one Codex forward.
+    /// Persist authoritative lifecycle observations for one Codex forward;
+    /// reads the forward's PostToolUse payload on stdin.
     #[command(hide = true)]
-    ForwardReceipt {
-        /// Exact subagent transcript containing the forwarding Bash call.
-        #[arg(long)]
-        transcript: std::path::PathBuf,
-    },
+    ForwardReceipt,
 
     /// Retrieve a scoped brief for a typed worker.
     #[command(hide = true)]

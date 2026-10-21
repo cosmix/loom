@@ -26,6 +26,7 @@ fn transcript(models: &[&str]) -> Transcript {
         session_id: "session-1".to_owned(),
         agent_id: Some("agent-1".to_owned()),
         agent_type: None,
+        requested_model: None,
         stage_id: None,
         loom_session_id: None,
         forward_receipt: None,

@@ -135,9 +135,7 @@ fn dispatch_hook(command: HookCommands) -> Result<()> {
         HookCommands::ReconcileGraph { cancel } => hook::reconcile_graph::reconcile_graph(cancel),
         HookCommands::PreCompact => hook::pre_compact::pre_compact(),
         HookCommands::ContextCeilings => hook::context_ceilings::context_ceilings(),
-        HookCommands::ForwardReceipt { transcript } => {
-            hook::forward_receipt::forward_receipt(&transcript)
-        }
+        HookCommands::ForwardReceipt => hook::forward_receipt::forward_receipt(),
         HookCommands::WorkerBrief => hook::worker_brief::worker_brief(),
         HookCommands::ProjectTypes => hook::project_types::execute(),
         HookCommands::Relay { allowed_kinds } => hook::relay::relay(&allowed_kinds),

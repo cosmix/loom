@@ -8,6 +8,7 @@ use std::collections::BTreeMap;
 use crate::commands::usage::transcript::{Entry, Scope, Transcript};
 
 use super::fmt::{heading, no_data, percentile, row};
+use super::lifecycle_orientation::{self, Orientation, OrientationScope};
 
 #[derive(Debug, serde::Serialize)]
 pub struct Lifecycle {
@@ -16,6 +17,7 @@ pub struct Lifecycle {
     pub brief: BriefPresence,
     pub requests_before_first_edit: RequestDelay,
     pub post_turn_messages: usize,
+    pub orientation: Orientation,
 }
 
 #[derive(Debug, serde::Serialize)]
@@ -53,15 +55,37 @@ pub fn build(transcripts: &[Transcript]) -> Lifecycle {
         brief,
         requests_before_first_edit,
         post_turn_messages,
+        orientation: lifecycle_orientation::build(transcripts),
     }
 }
 
 pub fn render(lifecycle: &Lifecycle) {
     heading("Subagent lifecycle");
-    if lifecycle.subagent_transcripts == 0 {
+    if !has_data(lifecycle) {
         no_data("subagent lifecycle");
         return;
     }
+    if lifecycle.subagent_transcripts > 0 {
+        render_subagents(lifecycle);
+    }
+    render_orientation("main", &lifecycle.orientation.main);
+    render_orientation("subagent", &lifecycle.orientation.subagent);
+    row(
+        "orientation skipped (read-only subagents)",
+        lifecycle.orientation.skipped_read_only,
+    );
+}
+
+/// Main-session orientation exists without any subagent transcript.
+fn has_data(lifecycle: &Lifecycle) -> bool {
+    let scopes = [&lifecycle.orientation.main, &lifecycle.orientation.subagent];
+    lifecycle.subagent_transcripts > 0
+        || scopes
+            .iter()
+            .any(|scope| scope.samples > 0 || scope.without_end > 0)
+}
+
+fn render_subagents(lifecycle: &Lifecycle) {
     println!("  spawn prompt classes:");
     for class in &lifecycle.classes {
         println!("    {}: {}", class.class, class.transcripts);
@@ -79,6 +103,18 @@ pub fn render(lifecycle: &Lifecycle) {
     row(
         "messages after first assistant turn",
         lifecycle.post_turn_messages,
+    );
+}
+
+fn render_orientation(label: &str, scope: &OrientationScope) {
+    println!(
+        "  orientation ({label}): median {} requests / {} tokens, p90 {} requests / {} tokens ({} ended, {} never ended)",
+        scope.median_requests,
+        scope.median_tokens,
+        scope.p90_requests,
+        scope.p90_tokens,
+        scope.samples,
+        scope.without_end
     );
 }
 

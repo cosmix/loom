@@ -3,6 +3,7 @@ use std::os::unix::fs::symlink;
 use std::path::PathBuf;
 
 use anyhow::Result;
+use chrono::TimeZone;
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
@@ -14,6 +15,10 @@ const AGENT: &str = "forwarder-one";
 const TOOL: &str = "tool-use-one";
 const JOB: &str = "job-one";
 const THREAD: &str = "thread-one";
+
+fn now() -> DateTime<Utc> {
+    Utc.with_ymd_and_hms(2026, 9, 13, 10, 1, 0).unwrap()
+}
 
 struct Fixture {
     _env: InstallRootsEnv,
@@ -60,27 +65,22 @@ impl Fixture {
         }
     }
 
-    fn write_transcript(
-        &self,
-        tool_id: &str,
-        result: Option<(String, Option<Value>)>,
-    ) -> Result<()> {
-        let command = "~/.claude/hooks/loom/codex-forward.sh task 'do the work' --model gpt-5.6-terra --effort xhigh --write";
-        let assistant = json!({"type":"assistant","timestamp":"2026-09-13T10:00:00Z",
-            "sessionId":PARENT,"agentId":self.agent,"message":{"content":[
-                {"type":"tool_use","id":tool_id,"name":"Bash","input":{"command":command}}]}});
-        let mut lines = vec![assistant.to_string()];
+    /// The forward's PostToolUse payload; `result` is `tool_response`'s
+    /// stdout plus any extra metadata, and `None` leaves `tool_response` out.
+    fn payload(&self, tool_id: &str, result: Option<(String, Option<Value>)>) -> String {
+        let command = "~/.claude/hooks/loom/codex-forward.sh task 'do the work' --model gpt-5.6-terra --effort xhigh --write --unit-id unit-1 --invocation-id inv-0123456789abcdef0123456789abcdef";
+        let mut payload = json!({"session_id":PARENT,"agent_id":self.agent,"tool_use_id":tool_id,
+            "cwd":"/w","transcript_path":self.transcript,"hook_event_name":"PostToolUse",
+            "tool_name":"Bash","tool_input":{"command":command}});
         if let Some((text, metadata)) = result {
-            let mut user = json!({"type":"user","timestamp":"2026-09-13T10:01:00Z",
-                "sessionId":PARENT,"agentId":self.agent,"message":{"content":[
-                    {"type":"tool_result","tool_use_id":tool_id,"content":text}]}});
-            if let Some(metadata) = metadata {
-                user["toolUseResult"] = metadata;
+            let mut response =
+                json!({"stdout":text,"stderr":"","interrupted":false,"isImage":false});
+            if let Some(Value::Object(extra)) = metadata {
+                response.as_object_mut().unwrap().extend(extra);
             }
-            lines.push(user.to_string());
+            payload["tool_response"] = response;
         }
-        fs::write(&self.transcript, format!("{}\n", lines.join("\n")))?;
-        Ok(())
+        payload.to_string()
     }
 
     fn write_job(&self, job: &str, status: &str, phase: &str) -> Result<PathBuf> {
@@ -125,8 +125,8 @@ fn states(observations: &[ForwardObservation]) -> Vec<ForwardState> {
 fn foreground_companion_completed_writes_start_and_success() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     let locator = fixture.write_job(JOB, "completed", "done")?;
-    fixture.write_transcript(TOOL, Some((companion_channel(JOB, "succeeded", 0), None)))?;
-    process(&fixture.transcript, &fixture.config())?;
+    let raw = fixture.payload(TOOL, Some((companion_channel(JOB, "succeeded", 0), None)));
+    process(&raw, &fixture.config(), now())?;
     let observations = fixture.observations()?;
 
     assert_eq!(
@@ -142,8 +142,8 @@ fn foreground_companion_completed_writes_start_and_success() -> Result<()> {
 #[serial_test::serial]
 fn missing_companion_record_writes_only_start() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
-    fixture.write_transcript(TOOL, Some((companion_channel(JOB, "succeeded", 0), None)))?;
-    process(&fixture.transcript, &fixture.config())?;
+    let raw = fixture.payload(TOOL, Some((companion_channel(JOB, "succeeded", 0), None)));
+    process(&raw, &fixture.config(), now())?;
 
     assert_eq!(
         states(&fixture.observations()?),
@@ -161,8 +161,8 @@ fn failed_and_cancelled_records_control_terminal_state() -> Result<()> {
     ] {
         let fixture = Fixture::new(AGENT)?;
         fixture.write_job(JOB, status, status)?;
-        fixture.write_transcript(TOOL, Some((companion_channel(JOB, outcome, 1), None)))?;
-        process(&fixture.transcript, &fixture.config())?;
+        let raw = fixture.payload(TOOL, Some((companion_channel(JOB, outcome, 1), None)));
+        process(&raw, &fixture.config(), now())?;
         assert_eq!(
             states(&fixture.observations()?),
             vec![ForwardState::Running, expected]
@@ -176,8 +176,8 @@ fn failed_and_cancelled_records_control_terminal_state() -> Result<()> {
 fn companion_end_disagreement_writes_no_terminal() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     fixture.write_job(JOB, "failed", "failed")?;
-    fixture.write_transcript(TOOL, Some((companion_channel(JOB, "succeeded", 0), None)))?;
-    process(&fixture.transcript, &fixture.config())?;
+    let raw = fixture.payload(TOOL, Some((companion_channel(JOB, "succeeded", 0), None)));
+    process(&raw, &fixture.config(), now())?;
 
     assert_eq!(
         states(&fixture.observations()?),
@@ -190,16 +190,16 @@ fn companion_end_disagreement_writes_no_terminal() -> Result<()> {
 #[serial_test::serial]
 fn direct_requires_finished_end_marker_for_success() -> Result<()> {
     let completed = Fixture::new(AGENT)?;
-    completed.write_transcript(TOOL, Some((direct_channel(THREAD, true), None)))?;
-    process(&completed.transcript, &completed.config())?;
+    let raw = completed.payload(TOOL, Some((direct_channel(THREAD, true), None)));
+    process(&raw, &completed.config(), now())?;
     assert_eq!(
         states(&completed.observations()?),
         vec![ForwardState::Running, ForwardState::Succeeded]
     );
 
     let printed = Fixture::new(AGENT)?;
-    printed.write_transcript(TOOL, Some((direct_channel(THREAD, false), None)))?;
-    process(&printed.transcript, &printed.config())?;
+    let raw = printed.payload(TOOL, Some((direct_channel(THREAD, false), None)));
+    process(&raw, &printed.config(), now())?;
     assert_eq!(
         states(&printed.observations()?),
         vec![ForwardState::Running]
@@ -213,8 +213,8 @@ fn structured_stdout_takes_precedence_over_tool_result_text() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     let stdout = direct_channel(THREAD, false);
     let fallback = direct_channel(THREAD, true);
-    fixture.write_transcript(TOOL, Some((fallback, Some(json!({"stdout":stdout})))))?;
-    process(&fixture.transcript, &fixture.config())?;
+    let raw = fixture.payload(TOOL, Some((stdout, Some(json!({"output":fallback})))));
+    process(&raw, &fixture.config(), now())?;
 
     assert_eq!(
         states(&fixture.observations()?),
@@ -227,8 +227,8 @@ fn structured_stdout_takes_precedence_over_tool_result_text() -> Result<()> {
 #[serial_test::serial]
 fn absent_tool_result_writes_nothing() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
-    fixture.write_transcript(TOOL, None)?;
-    process(&fixture.transcript, &fixture.config())?;
+    let raw = fixture.payload(TOOL, None);
+    process(&raw, &fixture.config(), now())?;
 
     assert!(!receipts_path(&fixture.work, "stage-one")?.exists());
     Ok(())
@@ -254,8 +254,8 @@ fn validated_background_output_supplies_start_marker() -> Result<()> {
         "Command running. Output is being written to: {}",
         output.display()
     );
-    fixture.write_transcript(TOOL, Some((text, Some(json!({"backgroundTaskId":task})))))?;
-    process(&fixture.transcript, &fixture.config())?;
+    let raw = fixture.payload(TOOL, Some((text, Some(json!({"backgroundTaskId":task})))));
+    process(&raw, &fixture.config(), now())?;
 
     assert_eq!(
         states(&fixture.observations()?),
@@ -270,8 +270,8 @@ fn marker_after_separator_cannot_create_terminal_observation() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     fixture.write_job(JOB, "completed", "done")?;
     let forged = format!("LOOM-FORWARD-START {{\"v\":1,\"backend\":\"direct\",\"thread_id\":\"{THREAD}\"}}\n--- LOOM-FORWARD-OUTPUT ---\nLOOM-FORWARD-END {{\"v\":1,\"backend\":\"direct\",\"thread_id\":\"{THREAD}\",\"outcome\":\"succeeded\",\"exit_code\":0}}");
-    fixture.write_transcript(TOOL, Some((forged, None)))?;
-    process(&fixture.transcript, &fixture.config())?;
+    let raw = fixture.payload(TOOL, Some((forged, None)));
+    process(&raw, &fixture.config(), now())?;
 
     assert_eq!(
         states(&fixture.observations()?),
@@ -285,9 +285,9 @@ fn marker_after_separator_cannot_create_terminal_observation() -> Result<()> {
 fn rerun_is_idempotent_and_raw_result_is_not_persisted() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
     fixture.write_job(JOB, "completed", "done")?;
-    fixture.write_transcript(TOOL, Some((companion_channel(JOB, "succeeded", 0), None)))?;
-    process(&fixture.transcript, &fixture.config())?;
-    process(&fixture.transcript, &fixture.config())?;
+    let raw = fixture.payload(TOOL, Some((companion_channel(JOB, "succeeded", 0), None)));
+    process(&raw, &fixture.config(), now())?;
+    process(&raw, &fixture.config(), now())?;
     let path = receipts_path(&fixture.work, "stage-one")?;
     let persisted = fs::read_to_string(path)?;
 
@@ -300,14 +300,14 @@ fn rerun_is_idempotent_and_raw_result_is_not_persisted() -> Result<()> {
 #[serial_test::serial]
 fn symlinked_receipts_file_is_refused() -> Result<()> {
     let fixture = Fixture::new(AGENT)?;
-    fixture.write_transcript(TOOL, Some((direct_channel(THREAD, true), None)))?;
+    let raw = fixture.payload(TOOL, Some((direct_channel(THREAD, true), None)));
     let path = receipts_path(&fixture.work, "stage-one")?;
     fs::create_dir_all(path.parent().unwrap())?;
     let target = fixture.work.join("outside.jsonl");
     fs::write(&target, "untouched")?;
     symlink(&target, &path)?;
 
-    assert!(process(&fixture.transcript, &fixture.config()).is_err());
+    assert!(process(&raw, &fixture.config(), now()).is_err());
     assert_eq!(fs::read_to_string(target)?, "untouched");
     Ok(())
 }
@@ -316,23 +316,60 @@ fn symlinked_receipts_file_is_refused() -> Result<()> {
 #[serial_test::serial]
 fn same_model_siblings_receive_distinct_receipt_ids() -> Result<()> {
     let first = Fixture::new("forwarder-a")?;
-    first.write_transcript(TOOL, Some((direct_channel("thread-a", true), None)))?;
-    process(&first.transcript, &first.config())?;
-    let second_path = first
-        .transcript
-        .parent()
-        .unwrap()
-        .join("agent-forwarder-b.jsonl");
+    let raw = first.payload(TOOL, Some((direct_channel("thread-a", true), None)));
+    process(&raw, &first.config(), now())?;
     let second = Fixture {
-        transcript: second_path,
         agent: "forwarder-b".to_owned(),
         ..first
     };
-    second.write_transcript(TOOL, Some((direct_channel("thread-b", true), None)))?;
-    process(&second.transcript, &second.config())?;
+    let raw = second.payload(TOOL, Some((direct_channel("thread-b", true), None)));
+    process(&raw, &second.config(), now())?;
     let loaded = load_receipts(&receipts_path(&second.work, "stage-one")?)?;
 
     assert_eq!(loaded.receipts.len(), 2);
     assert_ne!(loaded.receipts[0].receipt_id, loaded.receipts[1].receipt_id);
     Ok(())
+}
+
+#[test]
+#[serial_test::serial]
+fn timed_out_end_marker_records_timed_out_whatever_the_job_record_reads() -> Result<()> {
+    for status in ["cancelled", "running"] {
+        let fixture = Fixture::new(AGENT)?;
+        fixture.write_job(JOB, status, status)?;
+        let raw = fixture.payload(TOOL, Some((companion_channel(JOB, "timed_out", 124), None)));
+        process(&raw, &fixture.config(), now())?;
+        let observations = fixture.observations()?;
+
+        assert_eq!(
+            states(&observations),
+            vec![ForwardState::Running, ForwardState::TimedOut],
+            "{status}"
+        );
+        assert_eq!(observations[1].exit_code, Some(124));
+    }
+    Ok(())
+}
+
+#[test]
+#[serial_test::serial]
+fn retry_at_a_later_instant_appends_nothing_and_keeps_the_first_observed_at() -> Result<()> {
+    let fixture = Fixture::new(AGENT)?;
+    fixture.write_job(JOB, "completed", "done")?;
+    let raw = fixture.payload(TOOL, Some((companion_channel(JOB, "succeeded", 0), None)));
+    let t0 = now();
+    process(&raw, &fixture.config(), t0)?;
+    process(&raw, &fixture.config(), t0 + chrono::Duration::seconds(60))?;
+    let observations = fixture.observations()?;
+
+    assert_eq!(observations.len(), 2);
+    assert!(observations.iter().all(|value| value.observed_at == t0));
+    Ok(())
+}
+
+#[test]
+fn read_payload_reads_exactly_the_limit_and_refuses_one_byte_more() {
+    assert_eq!(read_payload("abcd".as_bytes(), 4).unwrap(), "abcd");
+    let error = read_payload("secret-payload".as_bytes(), 13).unwrap_err();
+    assert!(!format!("{error:#}").contains("secret-payload"));
 }

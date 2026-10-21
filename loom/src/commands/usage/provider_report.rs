@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use chrono::Datelike;
 
+use super::completeness;
 use super::provider_types::{
     CoverageCounts, Distribution, FreshStartSummary, GroupTotals, NormalizedEvent,
     ProvenanceStatus, Provider, ProviderDiagnostics, ProviderGroupings, ProviderReport,
@@ -40,6 +41,7 @@ pub(crate) fn build(
         .collect::<Vec<_>>();
     ProviderReport {
         provider,
+        completeness: completeness::assess(provider, &coverage, &diagnostics),
         coverage,
         fallback_coverage_totals: totals(&fallback),
         groupings: groupings(&measured),
@@ -244,6 +246,10 @@ pub(crate) fn render(ledger: &super::provider_types::ProviderLedger) {
             &format!("{provider} output"),
             format_u64(report.totals.output.value),
         );
+        row(
+            &format!("{provider} completeness"),
+            completeness_summary(&report.completeness),
+        );
     }
     if let Some(history) = &ledger.quota_history {
         for provider in &history.providers {
@@ -251,6 +257,15 @@ pub(crate) fn render(ledger: &super::provider_types::ProviderLedger) {
                 &format!("{} quota history", provider.provider.name()),
                 quota_history_summary(provider),
             );
+        }
+    }
+}
+
+fn completeness_summary(completeness: &completeness::Completeness) -> String {
+    match completeness.state {
+        completeness::CompletenessState::Measured => "measured".to_owned(),
+        completeness::CompletenessState::Partial => {
+            format!("partial: {}", completeness.reasons.join(", "))
         }
     }
 }

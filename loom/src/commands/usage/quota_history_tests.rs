@@ -5,9 +5,14 @@ use chrono::{TimeZone, Utc};
 use serde_json::json;
 
 use super::*;
+use crate::commands::usage::codex_scope::CodexScope;
+use crate::commands::usage::completeness::SessionInventory;
 use crate::commands::usage::{
     attach_quota_history, provider, time_range::TimeRange, ProviderSelection,
 };
+
+// A `static` because a scope with a set inside cannot be promoted to `'static`.
+static UNSCOPED: CodexScope = CodexScope::Unscoped;
 
 fn range() -> TimeRange {
     TimeRange {
@@ -29,9 +34,11 @@ fn normalized(
         claude_transcripts: Vec::new(),
         claude_discovered_files: 0,
         claude_missing_roots: 0,
+        claude_sessions: SessionInventory::default(),
         codex_files: &[],
         codex_missing_roots: 0,
         codex_unreadable_directories: 0,
+        codex_scope: &UNSCOPED,
         receipts_root,
     })
 }

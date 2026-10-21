@@ -4,14 +4,15 @@ use crate::models::forward_receipt::locator::{
     LocatorResolution,
 };
 use crate::models::forward_receipt::marker::{EndMarker, MarkerChannel, StartMarker};
+use crate::models::forward_receipt::payload::decode_payload;
 use crate::models::forward_receipt::transcript::{
-    self, evidence_channel, ForwardingInvocation, ForwardingResult,
+    evidence_channel, ForwardingInvocation, ForwardingResult,
 };
 use crate::models::forward_receipt::{
     is_safe_id, load_receipts, receipts_path, ForwardBackend, ForwardIdentity, ForwardObservation,
     ForwardState, FORWARD_RECEIPT_SCHEMA,
 };
-use anyhow::{ensure, Context, Result};
+use anyhow::{bail, ensure, Context, Result};
 use chrono::{DateTime, Utc};
 use fs2::FileExt;
 use std::os::unix::fs::{DirBuilderExt, OpenOptionsExt, PermissionsExt};
@@ -21,6 +22,7 @@ use std::{
     io::{Read, Write},
 };
 const MAX_EXISTING_BYTES: u64 = 8 * 1024 * 1024;
+const MAX_PAYLOAD_BYTES: u64 = 4 * 1024 * 1024;
 struct Config {
     work_dir: PathBuf,
     stage_id: String,
@@ -28,15 +30,32 @@ struct Config {
     task_roots: Vec<PathBuf>,
     companion_roots: Vec<PathBuf>,
 }
-pub fn forward_receipt(transcript: &Path) -> Result<()> {
+/// Persist the lifecycle observations of the forward whose PostToolUse payload
+/// arrives on stdin.
+pub fn forward_receipt() -> Result<()> {
     let Some(config) = Config::from_env() else {
         return Ok(());
     };
-    if let Err(error) = process(transcript, &config) {
+    let outcome = read_payload(std::io::stdin().lock(), MAX_PAYLOAD_BYTES)
+        .and_then(|raw| process(&raw, &config, Utc::now()));
+    if let Err(error) = outcome {
         let message = error.to_string().replace(['\n', '\r'], " ");
         eprintln!("loom hook forward-receipt: {message}");
     }
     Ok(())
+}
+/// All of `reader`, refused when longer than `limit` bytes. The error never
+/// carries payload text.
+fn read_payload(reader: impl Read, limit: u64) -> Result<String> {
+    let mut raw = String::new();
+    reader
+        .take(limit + 1)
+        .read_to_string(&mut raw)
+        .context("reading payload")?;
+    if raw.len() as u64 > limit {
+        bail!("payload exceeds {limit} bytes");
+    }
+    Ok(raw)
 }
 impl Config {
     fn from_env() -> Option<Self> {
@@ -54,28 +73,25 @@ impl Config {
         })
     }
 }
-fn process(transcript: &Path, config: &Config) -> Result<()> {
+fn process(raw: &str, config: &Config, now: DateTime<Utc>) -> Result<()> {
     ensure!(config.work_dir.is_dir(), "work directory is unavailable");
     ensure!(is_safe_id(&config.stage_id), "unsafe stage id");
     ensure!(
         is_safe_id(&config.loom_session_id),
         "unsafe Loom session id"
     );
-    let transcript = transcript::read(transcript)?;
-    let mut observations = Vec::new();
-    for call in &transcript.invocations {
-        let Some(result) = call.result.as_ref() else {
-            continue;
-        };
-        let identity = ForwardIdentity::new(
-            &transcript.identity.parent_session_id,
-            &transcript.identity.agent_id,
-            &call.id,
-            &config.stage_id,
-            &config.loom_session_id,
-        )?;
-        observations.extend(observe(&identity, call, result, config));
-    }
+    let forward = decode_payload(raw, now)?;
+    let Some(result) = forward.invocation.result.as_ref() else {
+        return Ok(());
+    };
+    let identity = ForwardIdentity::new(
+        &forward.parent_session_id,
+        &forward.agent_id,
+        &forward.invocation.id,
+        &config.stage_id,
+        &config.loom_session_id,
+    )?;
+    let observations = observe(&identity, &forward.invocation, result, config);
     if !observations.is_empty() {
         persist(config, &observations)?;
     }
@@ -158,15 +174,21 @@ fn terminal_evidence(
 ) -> Option<(ForwardState, Option<i32>)> {
     match backend {
         ForwardBackend::Direct => end.map(|end| (end.outcome, Some(end.exit_code))),
-        ForwardBackend::Companion => {
-            authoritative
+        // The wrapper cancels a job at its cap, so the record reads `cancelled`
+        // (or `running` before the cancel lands) while the END marker says
+        // `timed_out`; the END marker is the verdict.
+        ForwardBackend::Companion => match end {
+            Some(end) if end.outcome == ForwardState::TimedOut => {
+                Some((ForwardState::TimedOut, Some(end.exit_code)))
+            }
+            end => authoritative
                 .filter(|state| state.is_terminal())
                 .and_then(|state| {
                     end.as_ref()
                         .is_none_or(|end| end.outcome == state)
                         .then(|| (state, end.map(|value| value.exit_code)))
-                })
-        }
+                }),
+        },
     }
 }
 #[allow(clippy::too_many_arguments)]
@@ -240,12 +262,22 @@ fn encode_new_observations(
     let mut append = String::new();
     for observation in observations
         .iter()
-        .filter(|value| !existing.contains(value))
+        .filter(|value| !existing.iter().any(|old| same_fact(old, value)))
     {
         append.push_str(&observation.encode_line()?);
         append.push('\n');
     }
     Ok(append)
+}
+
+/// Whether two observations record the same fact: every field but
+/// `observed_at`, so a hook retry at a later instant adds nothing.
+fn same_fact(old: &ForwardObservation, new: &ForwardObservation) -> bool {
+    old.receipt_id == new.receipt_id
+        && old.state == new.state
+        && old.exit_code == new.exit_code
+        && old.codex_thread_id == new.codex_thread_id
+        && old.locator == new.locator
 }
 
 fn append_receipts(path: &Path, append: &str) -> Result<()> {
