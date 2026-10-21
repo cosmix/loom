@@ -68,6 +68,13 @@ pub(super) fn sandbox_settings(config: &MergedSandboxConfig) -> Value {
     if config.linux.enable_weaker_nested {
         sandbox["enableWeakerNestedSandbox"] = json!(true);
     }
+    // Claude Code 2.1.306+ refuses user namespaces inside its Linux sandbox,
+    // and in-session completion runs criteria under a nested bubblewrap. A
+    // sandboxed command can then bypass write denies in writable folders.
+    // Revisit when criteria run on the host instead of in the session.
+    if config.enabled && cfg!(target_os = "linux") {
+        sandbox["allowNestedUserNamespaces"] = json!(true);
+    }
     sandbox
 }
 

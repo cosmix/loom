@@ -259,3 +259,20 @@ fn test_generate_settings_never_emits_excluded_commands() {
     .to_string();
     assert!(error.contains("excluded_commands"));
 }
+
+#[test]
+fn enabled_sandbox_allows_nested_user_namespaces_on_linux_only() {
+    let mut config = config();
+    config.enabled = true;
+    let json = generate_settings_json(&config);
+    let nested = &json["sandbox"]["allowNestedUserNamespaces"];
+    if cfg!(target_os = "linux") {
+        assert_eq!(nested, true);
+    } else {
+        assert!(nested.is_null(), "got {nested}");
+    }
+
+    config.enabled = false;
+    let json = generate_settings_json(&config);
+    assert!(json["sandbox"]["allowNestedUserNamespaces"].is_null());
+}
