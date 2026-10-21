@@ -49,6 +49,14 @@ Tier: sonnet. Files owned: `../loom-hooks/subagent-verify-guard.sh`, `tests/inte
    - Extend `_cases.rs` with one blocked and one allowed case per new runner, for a subagent.
    - Then run `cargo test --test integration hooks_subagent_verify_guard`. Run it with `TMPDIR` set to a directory without "claude" in its path (GOTCHA 1); the sandbox's default `TMPDIR` breaks these tests, which is not your defect.
 
+4. **Verifier carve-out removal.** The `loom-verifier` agent is removed (W5 deletes its definition).
+   - Delete the `loom-verifier` carve-out (:68-79) and its header comment lines (:26-29).
+   - Delete or rewrite the tests that pin it:
+     - cases (j) and (k) in `../loom-hooks/tests/subagent-gate-payload.sh:134-145`;
+     - the `loom-verifier` cases in `tests/integration/hooks_subagent_verify_guard_carveout.rs`.
+   - A subagent typed `loom-verifier` is now blocked like any other subagent. Add one case asserting that.
+   - The integration-verify carve-out stays.
+
 ## Contract you must turn green
 
 `guard-blocks-main-agent-full-vitest-run`.

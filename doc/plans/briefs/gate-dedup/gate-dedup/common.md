@@ -21,7 +21,11 @@ Loom stages in every project run the same verification several times per tree, a
 ## 4. The new gate flow (W5 writes it; everyone follows it while working)
 
 - Implementers run filtered tests only.
-- A standard stage's verifier runs `loom check <stage>`, plus only the steps the plan lists outside acceptance. A fix round runs `loom check <stage> --criterion <n>` for the failed criteria plus the lint and format criteria. `loom stage complete` runs once on the final tree.
+- There is no verifier subagent; the `loom-verifier` agent is removed.
+- After the workers return, the orchestrator runs `cargo fmt --all` (or the project's formatter), then `loom check <stage>` once, plus only the steps the plan lists outside acceptance. It runs no test, build or lint command itself.
+- The final `loom-code-reviewer` round runs beside the check. It also judges the diff against each acceptance criterion's intent.
+- A fix round runs `loom check <stage> --criterion <n>` for the failed criteria plus the lint and format criteria.
+- `loom stage complete` runs once on the final tree, and reuses the cached passes.
 - The full suite runs once, in integration-verify.
 
 ## 5. Conduct
