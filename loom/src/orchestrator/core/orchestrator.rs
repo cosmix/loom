@@ -180,6 +180,9 @@ pub struct Orchestrator {
     /// Injectable Remote Control probe, so crash classification is unit
     /// testable without depending on the host's own claude install.
     pub(super) remote_control_active: fn(&Path) -> bool,
+    /// The host-job runner `tick_host_jobs` drives; `None` when it could not
+    /// be built, which leaves host jobs disabled for this run.
+    pub(super) host_jobs: Option<crate::host_verify::runner::HostJobRunner>,
 }
 
 impl Orchestrator {
@@ -200,6 +203,7 @@ impl Orchestrator {
 
         let detected_languages = detect_project_languages(&config.repo_root);
         Self::reconcile_plan_amendments(&config);
+        let host_jobs = super::host_jobs::daemon_runner(&config.work_dir);
 
         Ok(Self {
             config,
@@ -228,6 +232,7 @@ impl Orchestrator {
             target_guard_error: None,
             merge_probe_error: None,
             remote_control_active: crate::remote_control::resolve,
+            host_jobs,
         })
     }
 
@@ -364,36 +369,5 @@ fn resolve_plan_path_for_startup(work_dir: &std::path::Path) -> Option<PathBuf> 
             .ok()
             .and_then(|wd| wd.parent().map(|p| p.to_path_buf()))?;
         Some(root.join(path))
-    }
-}
-
-/// Result of orchestrator run
-#[derive(Debug)]
-pub struct OrchestratorResult {
-    pub completed_stages: Vec<String>,
-    /// Stages that ended in a terminal failure status (`Blocked`,
-    /// `MergeConflict`, `CompletedWithFailures`, `MergeBlocked`,
-    /// `NeedsHumanReview`) — the run cannot make progress on these without
-    /// intervention.
-    pub failed_stages: Vec<String>,
-    /// Stages that were merely mid-flight when the run stopped (`Queued`,
-    /// `WaitingForDeps`, `Executing`, `WaitingForInput`,
-    /// `NeedsAdjudication`) — e.g. after `loom stop`. Distinct from
-    /// `failed_stages`: nothing about these needs diagnosis, they just
-    /// haven't finished.
-    pub unfinished_stages: Vec<String>,
-    pub needs_handoff: Vec<String>,
-    pub total_sessions_spawned: usize,
-    /// When the orchestrator started running
-    pub started_at: DateTime<Utc>,
-    /// When the orchestrator finished running
-    pub completed_at: DateTime<Utc>,
-}
-
-impl OrchestratorResult {
-    pub fn is_success(&self) -> bool {
-        self.failed_stages.is_empty()
-            && self.unfinished_stages.is_empty()
-            && self.needs_handoff.is_empty()
     }
 }

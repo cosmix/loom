@@ -18,7 +18,7 @@ const TAIL_LINES: usize = 20;
 /// commands (when any ran), and the tails of stderr and stdout — otherwise
 /// the cause of a failure stayed invisible until someone re-ran the command
 /// by hand.
-pub(super) fn format_criterion_result(
+pub(crate) fn format_criterion_result(
     index: usize,
     result: &CriterionResult,
     setup: &[String],

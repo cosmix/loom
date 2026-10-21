@@ -228,7 +228,26 @@ fn kill_orphan_session(work_dir: &Path, evidence: &OrphanEvidence) -> Result<()>
 pub fn reset(stage_id: String, hard: bool, kill_session: bool) -> Result<()> {
     let work_dir = crate::commands::common::work_dir_path()?;
     let runtime = loop_recovery::OsRuntime::new(&work_dir);
-    loop_recovery::reset_with(&work_dir, &stage_id, hard, kill_session, &runtime)
+    reset_and_cancel(&work_dir, &stage_id, hard, kill_session, &runtime)
+}
+
+/// Reset the stage, then cancel its host job: a run for the attempt the reset
+/// discarded has nobody left to report to. The host-job store's stage lock
+/// makes this write safe against the daemon's runner; a failure is reported
+/// and the reset stands.
+fn reset_and_cancel(
+    work_dir: &Path,
+    stage_id: &str,
+    hard: bool,
+    kill_session: bool,
+    runtime: &impl loop_recovery::ResetRuntime,
+) -> Result<()> {
+    loop_recovery::reset_with(work_dir, stage_id, hard, kill_session, runtime)?;
+    let cancelled = crate::host_verify::submit::cancel(work_dir, stage_id, "stage reset");
+    if let Err(error) = cancelled {
+        eprintln!("Warning: could not cancel the host job of stage '{stage_id}': {error:#}");
+    }
+    Ok(())
 }
 
 /// Mark a stage as waiting for user input (called by hooks)
@@ -355,3 +374,7 @@ fn apply_reset(stage: &mut Stage) {
 #[cfg(test)]
 #[path = "state_tests.rs"]
 mod state_tests;
+
+#[cfg(test)]
+#[path = "state_host_job_tests.rs"]
+mod host_job_tests;

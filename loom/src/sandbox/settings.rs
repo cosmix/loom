@@ -36,7 +36,7 @@ pub fn apply_default_mode(settings: &mut Value, mode: PermissionMode) -> Result<
 
 /// State-root subdirectories every session may read.
 #[rustfmt::skip]
-const STATE_READ_DIRS: [&str; 6] = ["signals", "handoffs", "disputes", "memory", "contracts", "reviews"];
+const STATE_READ_DIRS: [&str; 7] = ["signals", "handoffs", "disputes", "memory", "contracts", "reviews", "verification"];
 
 /// Detect whether a settings target is a loom worktree (vs. the main repo root).
 ///

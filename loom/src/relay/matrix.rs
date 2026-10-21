@@ -2,6 +2,7 @@
 //! 5), keyed by session type and request kind.
 
 use super::kind::RequestKind;
+use super::matrix_host::HOST_JOB_MATRIX;
 use crate::models::session::SessionType;
 
 /// What the daemon does with a relayed request of a given kind from a given
@@ -340,6 +341,7 @@ const MATRIX: &[(SessionType, RequestKind, MatrixVerdict)] = &[
 pub fn verdict(session: SessionType, kind: RequestKind) -> MatrixVerdict {
     MATRIX
         .iter()
+        .chain(HOST_JOB_MATRIX)
         .find(|(s, k, _)| *s == session && *k == kind)
         .map(|(_, _, verdict)| *verdict)
         .expect("MATRIX covers every SessionType x RequestKind pair")

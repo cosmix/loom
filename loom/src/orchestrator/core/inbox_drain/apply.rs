@@ -27,11 +27,13 @@ use crate::telemetry::{append_record, TelemetryEvent, TelemetryRecord};
 use crate::verify::contracts::refusal;
 use crate::verify::transitions::{load_stage, update_stage};
 
+use super::check;
 use super::commit::{self, CommitSite};
 use super::{InboxHost, Settle};
 
 /// An entry the matrix lets through, with its payload decoded.
 pub(super) struct Admitted {
+    request_id: String,
     stage_id: String,
     relayed_at: DateTime<Utc>,
     matrix: MatrixVerdict,
@@ -60,6 +62,7 @@ pub(super) fn admit(record: &Session, inbox_entry: &InboxEntry) -> Result<Admitt
     let payload =
         decode_payload(inbox_entry.kind, &inbox_entry.payload).map_err(|e| format!("{e:#}"))?;
     Ok(Admitted {
+        request_id: inbox_entry.id.clone(),
         stage_id: inbox_entry.stage_id.clone(),
         relayed_at: inbox_entry.relayed_at,
         matrix,
@@ -111,6 +114,9 @@ pub(super) fn apply(host: &mut dyn InboxHost, record: &Session, admitted: Admitt
                 record,
             };
             commit::apply_commit(host, &site, &payload)
+        }
+        RequestPayload::Check(request) => {
+            check::apply_check(host, stage_id, record, &request, &admitted.request_id)
         }
     }
 }
@@ -277,6 +283,14 @@ fn end_turn(work_dir: &Path, stage_id: &str, session_id: &str) -> String {
     }
 }
 
+/// Whether `record` is a running adjudication session whose process is
+/// alive: the only session a judge's verdict or `loom check` is taken from.
+pub(super) fn is_live_judge(host: &dyn InboxHost, record: &Session) -> bool {
+    record.session_type == SessionType::Adjudication
+        && record.status == SessionStatus::Running
+        && matches!(host.session_alive(record), Ok(true))
+}
+
 /// A judge's verdict, recorded only for the live adjudication session of the
 /// stage and under the recording path's own guards.
 fn adjudication_verdict(
@@ -285,10 +299,7 @@ fn adjudication_verdict(
     record: &Session,
     request: &VerdictRequest,
 ) -> Settle {
-    let live = record.session_type == SessionType::Adjudication
-        && record.status == SessionStatus::Running
-        && matches!(host.session_alive(record), Ok(true));
-    if !live {
+    if !is_live_judge(host, record) {
         return Settle::Refused(format!(
             "only the live adjudication session for stage '{stage_id}' may record its verdict"
         ));

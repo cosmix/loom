@@ -12,7 +12,7 @@ pub mod completion_evidence;
 #[path = "completion_evidence/producer.rs"]
 mod completion_producer;
 mod contracts;
-mod criterion_output;
+pub(crate) mod criterion_output;
 mod dispute_criteria;
 mod dispute_kinds;
 mod dispute_transport;
@@ -29,6 +29,7 @@ mod review_status;
 pub(crate) mod session;
 mod skip_retry;
 mod state;
+pub(crate) mod verify_host;
 
 #[cfg(test)]
 mod tests;

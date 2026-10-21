@@ -242,7 +242,7 @@ fn test_generate_settings_with_filesystem() {
     // never bare `.loom/work/**` / `.work/**`, which would also expose `admin.token` /
     // `user.token` (S-1).
     let allow = json["permissions"]["allow"].as_array().unwrap();
-    let dirs = "config.toml signals/** handoffs/** disputes/** memory/** contracts/** reviews/**";
+    let dirs = "config.toml signals/** handoffs/** disputes/** memory/** contracts/** reviews/** verification/**";
     let reads: Vec<String> = [".loom/work", ".work"]
         .iter()
         .flat_map(|root| {
@@ -250,7 +250,7 @@ fn test_generate_settings_with_filesystem() {
                 .map(move |dir| format!("Read({root}/{dir})"))
         })
         .collect();
-    assert_eq!(allow.len(), 15);
+    assert_eq!(allow.len(), 17);
     assert_eq!(allow[0], "Edit(src/**)");
     assert_eq!(allow[1..], reads[..]);
 }
@@ -662,7 +662,7 @@ fn test_allow_write_trims_whitespace_and_drops_empty() {
     // contributes nothing - allow.len() is 1 (allow_write) + 7 (.loom/work/ state
     // permissions) + 7 (legacy .work/ state permissions), same as a single
     // ordinary entry would produce.
-    assert_eq!(allow.len(), 15, "got: {allow:?}");
+    assert_eq!(allow.len(), 17, "got: {allow:?}");
     assert_eq!(allow[0], "Edit(loom/src/**)");
 }
 

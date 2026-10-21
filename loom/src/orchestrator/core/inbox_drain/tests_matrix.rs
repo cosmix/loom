@@ -145,6 +145,9 @@ fn classify_applied(
         RequestKind::Commit => {
             unreachable!("SECTION_5 has no commit column; commit_tests covers the commit kind")
         }
+        RequestKind::Check => {
+            unreachable!("SECTION_5 has no check column; check.rs tests cover the check kind")
+        }
     }
     Cell::Apply
 }

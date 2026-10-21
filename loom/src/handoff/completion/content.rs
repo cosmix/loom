@@ -125,7 +125,7 @@ fn verify_checkout_branch(stage: &Stage, git: &WorktreeGit) -> Result<()> {
 
 // Loom's own state in the checkout, whatever the project ignores. Keep this
 // list narrower than cleanup's directory-level scaffold exemptions.
-fn completion_scaffold(path: &str, root: &Path) -> bool {
+pub(crate) fn completion_scaffold(path: &str, root: &Path) -> bool {
     if crate::verify::tool_artifacts::is_tool_artifact(root, path) {
         return true;
     }

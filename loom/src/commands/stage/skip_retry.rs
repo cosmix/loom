@@ -268,6 +268,12 @@ fn persist_retry_delta(
         reset_contract_budget(current, work_dir)?;
         Ok(())
     })?;
+    // The requeued stage starts a fresh attempt; a run for the old one has
+    // nobody left to report to. The host-job store's stage lock makes this
+    // write safe against the daemon's runner.
+    if let Err(error) = crate::host_verify::submit::cancel(work_dir, stage_id, "stage retried") {
+        eprintln!("Warning: could not cancel the host job of stage '{stage_id}': {error:#}");
+    }
     Ok(())
 }
 
@@ -377,3 +383,7 @@ fn session_is_live(work_dir: &Path, session_id: &str) -> bool {
 #[cfg(test)]
 #[path = "skip_retry_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "skip_retry_host_job_tests.rs"]
+mod host_job_tests;

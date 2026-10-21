@@ -40,6 +40,17 @@ pub struct CommitPayload {
     pub expected_tree: String,
 }
 
+/// `{head, tree_digest, no_cache}` for a host verification request (`check`):
+/// the HEAD and tree digest the session saw, and whether it asked to bypass
+/// the acceptance cache. The child re-checks both on the host.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HostJobRequest {
+    pub head: String,
+    pub tree_digest: String,
+    pub no_cache: bool,
+}
+
 /// A ticket payload, decoded to the type its `kind` promises.
 #[derive(Debug, Clone, PartialEq)]
 pub enum RequestPayload {
@@ -53,6 +64,7 @@ pub enum RequestPayload {
     FreezeContracts(StageRequest),
     FileDispute(StageRequest),
     Commit(CommitPayload),
+    Check(HostJobRequest),
 }
 
 /// Decode `payload` under the shape `kind` promises. `block`, `dispute`,
@@ -84,6 +96,7 @@ pub fn decode_payload(kind: RequestKind, payload: &Value) -> Result<RequestPaylo
             "file_dispute",
         )?)),
         RequestKind::Commit => Ok(RequestPayload::Commit(decode(payload, "commit")?)),
+        RequestKind::Check => Ok(RequestPayload::Check(decode(payload, "check")?)),
     }
 }
 
@@ -280,6 +293,23 @@ mod tests {
         });
         assert!(decode_payload(RequestKind::Commit, &extra).is_err());
         assert!(decode_payload(RequestKind::Commit, &serde_json::json!({})).is_err());
+    }
+
+    #[test]
+    fn decodes_a_check_payload_and_refuses_an_unknown_field() {
+        let payload = serde_json::json!({
+            "head": "a".repeat(40),
+            "tree_digest": "b".repeat(64),
+            "no_cache": true,
+        });
+        assert!(matches!(
+            decode_payload(RequestKind::Check, &payload).unwrap(),
+            RequestPayload::Check(HostJobRequest { no_cache: true, .. })
+        ));
+        let mut extra = payload.clone();
+        extra["reports"] = serde_json::json!([]);
+        assert!(decode_payload(RequestKind::Check, &extra).is_err());
+        assert!(decode_payload(RequestKind::Check, &serde_json::json!({})).is_err());
     }
 
     #[test]

@@ -11,6 +11,7 @@ mod inbox;
 mod kind;
 mod line;
 mod matrix;
+mod matrix_host;
 mod payload;
 mod scratch;
 mod ticket;
@@ -19,7 +20,9 @@ pub use inbox::{AgentRole, InboxEntry};
 pub use kind::RequestKind;
 pub use line::RelayLine;
 pub use matrix::{verdict, MatrixVerdict};
-pub use payload::{decode_payload, CommitPayload, HandoffRequest, RequestPayload, VerdictRequest};
+pub use payload::{
+    decode_payload, CommitPayload, HandoffRequest, HostJobRequest, RequestPayload, VerdictRequest,
+};
 pub use scratch::{
     ensure_dir_0700, scratch_root, scratch_root_from_env, session_dir, validate_session_dir,
     Platform,

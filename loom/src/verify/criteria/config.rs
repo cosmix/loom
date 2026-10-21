@@ -1,11 +1,14 @@
 //! Configuration types for acceptance criteria execution
 
+use std::fmt;
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 use std::time::Duration;
 
 use crate::models::stage::CommandConfinement;
 
 use super::cache::CachePolicy;
+use super::result::CriterionResult;
 
 /// Default timeout for command execution (5 minutes)
 pub const DEFAULT_COMMAND_TIMEOUT: Duration = Duration::from_secs(300);
@@ -43,6 +46,29 @@ pub struct CriteriaConfig {
     /// worktree root, which contains the directory the command starts in.
     /// `None` confines each command to its own working directory.
     pub tree_root: Option<PathBuf>,
+
+    /// Told each criterion's 0-based index and result as it finishes, before
+    /// the next one starts. `None` by default.
+    pub observer: Option<CriterionObserver>,
+}
+
+/// The function a [`CriterionObserver`] wraps.
+pub type CriterionCallback = dyn Fn(usize, &CriterionResult) + Send + Sync;
+
+/// Callback the runner invokes as each acceptance criterion finishes.
+#[derive(Clone)]
+pub struct CriterionObserver(pub Arc<CriterionCallback>);
+
+impl CriterionObserver {
+    pub(super) fn notify(&self, index: usize, result: &CriterionResult) {
+        (self.0)(index, result);
+    }
+}
+
+impl fmt::Debug for CriterionObserver {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("CriterionObserver").finish_non_exhaustive()
+    }
 }
 
 impl Default for CriteriaConfig {
@@ -53,6 +79,7 @@ impl Default for CriteriaConfig {
             cache: CachePolicy::from_env(),
             cache_dir: None,
             tree_root: None,
+            observer: None,
         }
     }
 }
@@ -89,6 +116,12 @@ impl CriteriaConfig {
     /// containing their working directory.
     pub fn with_tree_root(mut self, tree_root: Option<&Path>) -> Self {
         self.tree_root = tree_root.map(Path::to_path_buf);
+        self
+    }
+
+    /// Report each criterion to `observer` as it finishes.
+    pub fn with_observer(mut self, observer: CriterionObserver) -> Self {
+        self.observer = Some(observer);
         self
     }
 }

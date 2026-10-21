@@ -4,10 +4,9 @@
 //! handoff paths call in here; nothing else does.
 
 use std::collections::HashSet;
-use std::path::Path;
 use std::time::{Duration, Instant};
 
-use anyhow::{bail, Context, Result};
+use anyhow::{Context, Result};
 
 use crate::fs::session_files::{load_session_exact, mark_session_terminal_reason};
 use crate::handoff::HandoffOrigin;
@@ -18,58 +17,9 @@ use crate::orchestrator::signals::remove_signal;
 use crate::orchestrator::terminal::native::{session_process_status, SessionProcessStatus};
 
 use super::super::{persistence::Persistence, Orchestrator};
+use super::takedown_evidence::{include_assigned_session, retain_missing_identity};
 
 const KILL_CONFIRM_POLL_INTERVAL: Duration = Duration::from_millis(50);
-
-fn retain_missing_identity(missing: bool, session: &Session, survivors: &mut Vec<String>) -> bool {
-    if !missing {
-        return false;
-    }
-    eprintln!(
-        "Warning: Session '{}' had no PID identity evidence before takedown; refusing to treat \
-         absence as confirmed death",
-        session.id
-    );
-    survivors.push(session.id.clone());
-    true
-}
-
-fn include_assigned_session(
-    agents: &mut Vec<Session>,
-    stage_id: &str,
-    assigned_id: &str,
-    work_dir: &Path,
-) -> Result<()> {
-    if let Some(assigned) = agents.iter().find(|session| session.id == assigned_id) {
-        anyhow::ensure!(
-            assigned.stage_id.as_deref() == Some(stage_id),
-            "assigned session '{}' belongs to stage {:?}, not '{}'",
-            assigned.id,
-            assigned.stage_id,
-            stage_id
-        );
-        return Ok(());
-    }
-
-    let Some(assigned) = load_session_exact(work_dir, assigned_id)? else {
-        bail!(
-            "stage '{stage_id}' assigns session '{assigned_id}', but no exact session record \
-             exists; refusing to re-queue without durable proof that its writer is gone"
-        );
-    };
-    anyhow::ensure!(
-        assigned.stage_id.as_deref() == Some(stage_id),
-        "assigned session '{}' belongs to stage {:?}, not '{}'",
-        assigned.id,
-        assigned.stage_id,
-        stage_id
-    );
-    // Terminal is workflow state, not process-death evidence. Completion is
-    // persisted before the agent finishes its merge/teardown path, so a
-    // restarted daemon must still probe and take down the exact record.
-    agents.push(assigned);
-    Ok(())
-}
 
 impl Orchestrator {
     /// Every agent the daemon can find for `stage_id`: the one it tracks in
@@ -206,6 +156,7 @@ impl Orchestrator {
         agents: Vec<Session>,
         reason: SessionExitReason,
     ) -> Result<Vec<String>> {
+        self.cancel_host_job(stage_id);
         let mut survivors = Vec::new();
         for session in &agents {
             // Capture whether identity evidence existed BEFORE teardown. A
@@ -247,6 +198,23 @@ impl Orchestrator {
             self.active_sessions.remove(stage_id);
         }
         Ok(survivors)
+    }
+
+    /// Cancel the stage's host job: its result would be for agents this
+    /// takedown removes. Every takedown, retirement, handoff, stall requeue,
+    /// park and contract hand-off reaches it through `take_down_agents`. A
+    /// failure is logged; the takedown goes on.
+    fn cancel_host_job(&self, stage_id: &str) {
+        let work_dir = &self.config.work_dir;
+        let cancelled =
+            crate::host_verify::submit::cancel(work_dir, stage_id, "stage agents taken down");
+        if let Err(error) = cancelled {
+            tracing::warn!(
+                stage = %stage_id,
+                error = %format!("{error:#}"),
+                "could not cancel the stage's host job",
+            );
+        }
     }
 
     /// Whether `session`'s process is gone, waiting up to
