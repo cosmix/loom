@@ -241,10 +241,11 @@ fi
 
 loom_post_tool_write_heartbeat
 
-# Rust revalidates this bounded, best-effort forward lifecycle notification.
-if [[ "$TOOL_NAME" == "Bash" && "$COMMAND" == *"codex-forward.sh task"* && -n "$TRANSCRIPT_PATH" ]] \
+# Rust revalidates this bounded, best-effort forward lifecycle notification. The
+# call's tool_result row is written after this hook, so the payload carries it.
+if [[ "$TOOL_NAME" == "Bash" && "$COMMAND" == *"codex-forward.sh task"* && -n "$INPUT_JSON" ]] \
 	&& command -v "${LOOM_BIN:-loom}" &>/dev/null; then
-	LOOM_HOOK_CONTEXT=1 loom_run_bounded 5 "${LOOM_BIN:-loom}" hook forward-receipt --transcript "$TRANSCRIPT_PATH" >/dev/null 2>&1 || true
+	printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 loom_run_bounded 5 "${LOOM_BIN:-loom}" hook forward-receipt >/dev/null 2>&1 || true
 fi
 
 # Tool results are not persisted: a shell hook cannot append race-free without
