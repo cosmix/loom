@@ -2,7 +2,8 @@ use std::collections::BTreeMap;
 
 use super::comparison_schema::{Outcome, QuotaComparisonEvidence, QuotaObservation, RunEvidence};
 use super::provider_types::Provider;
-use crate::quota::{HistoryContinuity, WindowKind};
+use crate::quota::poller::POLL_INTERVAL;
+use crate::quota::{HistoryContinuity, WindowKind, RESET_TOLERANCE_SECS};
 
 type QuotaKey = (Provider, u8);
 
@@ -85,7 +86,7 @@ fn compare_interval(
     candidate: &QuotaObservation,
     reasons: &mut Vec<&'static str>,
 ) -> Outcome {
-    if interval_duration(baseline) != interval_duration(candidate) {
+    if !intervals_match(baseline, candidate) {
         reasons.push("quota-interval-mismatch");
         return Outcome::Inconclusive;
     }
@@ -118,9 +119,18 @@ fn interval_duration(observation: &QuotaObservation) -> Option<i64> {
         .checked_sub(observation.observed_start_at)
 }
 
+/// Intervals compare when both lengths are known and differ by at most one
+/// poll interval, the resolution of the observation endpoints.
+fn intervals_match(baseline: &QuotaObservation, candidate: &QuotaObservation) -> bool {
+    match (interval_duration(baseline), interval_duration(candidate)) {
+        (Some(left), Some(right)) => left.abs_diff(right) <= POLL_INTERVAL.as_secs(),
+        _ => false,
+    }
+}
+
 fn reset_incomparable(baseline: &QuotaObservation, candidate: &QuotaObservation) -> bool {
     baseline.reset_id != candidate.reset_id
-        || baseline.resets_at != candidate.resets_at
+        || baseline.resets_at.abs_diff(candidate.resets_at) > RESET_TOLERANCE_SECS
         || baseline.continuity != HistoryContinuity::SameReset
         || candidate.continuity != HistoryContinuity::SameReset
         || baseline.observed_end_at >= baseline.resets_at

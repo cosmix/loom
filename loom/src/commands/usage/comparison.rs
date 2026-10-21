@@ -74,6 +74,12 @@ fn render_json(report: &ComparisonReport) -> Result<()> {
 fn render_human(report: &ComparisonReport) -> Result<()> {
     let stdout = io::stdout();
     let mut output = stdout.lock();
+    write_human(&mut output, report)?;
+    output.flush()?;
+    Ok(())
+}
+
+fn write_human(output: &mut dyn Write, report: &ComparisonReport) -> Result<()> {
     writeln!(
         output,
         "comparison: {}; token proxy: {}; subscription: {}",
@@ -90,10 +96,22 @@ fn render_human(report: &ComparisonReport) -> Result<()> {
             human_reasons(&pair.reason_codes)
         )?;
     }
-    if report.pairs.is_empty() && !report.reason_codes.is_empty() {
-        writeln!(output, "reasons: {}", report.reason_codes.join(", "))?;
+    // Report-level codes (net total, latency tolerance, ...) that no pair line
+    // already printed.
+    let unshown: Vec<&str> = report
+        .reason_codes
+        .iter()
+        .copied()
+        .filter(|code| {
+            !report
+                .pairs
+                .iter()
+                .any(|pair| pair.reason_codes.contains(code))
+        })
+        .collect();
+    if !unshown.is_empty() {
+        writeln!(output, "reasons: {}", unshown.join(", "))?;
     }
-    output.flush()?;
     Ok(())
 }
 
@@ -102,5 +120,37 @@ fn human_reasons(reasons: &[&str]) -> String {
         String::new()
     } else {
         format!(" ({})", reasons.join(", "))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::commands::usage::comparison_schema::{Outcome, PairResult};
+
+    #[test]
+    fn report_level_reason_prints_beside_pair_lines() {
+        let mut report =
+            comparison_eval::failure_report(vec!["pair-shared", "net-total-regression"]);
+        report.verdict = Outcome::Rejected;
+        report.pairs.push(PairResult {
+            work_unit_id: "unit-a".to_string(),
+            verdict: Outcome::SupportedCandidate,
+            token_proxy_verdict: Outcome::SupportedCandidate,
+            subscription_verdict: Outcome::SupportedCandidate,
+            reason_codes: vec!["pair-shared"],
+            baseline_provider_tokens: Default::default(),
+            candidate_provider_tokens: Default::default(),
+            quota_comparisons: Vec::new(),
+        });
+        let mut out = Vec::new();
+        write_human(&mut out, &report).unwrap();
+        let text = String::from_utf8(out).unwrap();
+        assert!(
+            text.contains("unit-a: supported-candidate (pair-shared)"),
+            "{text}"
+        );
+        assert!(text.contains("reasons: net-total-regression"), "{text}");
+        assert!(!text.contains("reasons: pair-shared"), "{text}");
     }
 }

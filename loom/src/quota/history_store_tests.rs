@@ -67,8 +67,8 @@ fn a_changed_plan_is_preserved_even_when_windows_match() {
 fn either_window_reset_starts_a_reset_segment() {
     let dir = tempdir().unwrap();
     append(dir.path(), "claude", &dual_quota(NOW - 30, 500, 900));
-    append(dir.path(), "claude", &dual_quota(NOW - 20, 600, 900));
-    append(dir.path(), "claude", &dual_quota(NOW - 10, 600, 1_000));
+    append(dir.path(), "claude", &dual_quota(NOW - 20, 900, 900));
+    append(dir.path(), "claude", &dual_quota(NOW - 10, 900, 1_300));
 
     let history = read_history(dir.path(), "claude", 0, None);
     assert_eq!(

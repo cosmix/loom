@@ -7,10 +7,6 @@ use crate::quota::cache::{provider_path, quota_dir};
 use crate::quota::{read_history, read_snapshot, ProviderQuota, QuotaWindow, WindowKind};
 use std::path::{Path, PathBuf};
 
-/// Five-hour `resets_at` values further apart than this belong to different
-/// periods. Real history alternates `resets_at` by 1 s between polls.
-const RESET_SLACK_SECS: u64 = 300;
-
 /// One five-hour reading.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct FivePoint {
@@ -58,8 +54,9 @@ pub(super) fn quota_inputs(work_root: &Path) -> [PathBuf; 4] {
 /// first, with the cached snapshot appended when it carries a five-hour window
 /// observed after the newest history row (the history store skips a row equal
 /// to the last one). `None` when the newest point has no five-hour window.
-/// History continuity marks are ignored: they flag the 1 s `resets_at` jitter
-/// and seven-day window changes as resets.
+/// History continuity marks are ignored: they flag seven-day window changes as
+/// resets, and the estimate segments on `resets_at` with
+/// `quota::RESET_TOLERANCE_SECS` instead.
 fn five_hour_points(
     work_root: &Path,
     provider: &str,
@@ -110,11 +107,11 @@ fn newest_period(points: &[FivePoint]) -> (Vec<(i64, f64)>, Option<i64>) {
 }
 
 /// Whether `next` opens a new period after `previous`: its usage dropped, or
-/// its `resets_at` moved more than [`RESET_SLACK_SECS`] (only when both are
+/// its `resets_at` moved more than [`crate::quota::RESET_TOLERANCE_SECS`] (only when both are
 /// known).
 fn starts_period(previous: &FivePoint, next: &FivePoint) -> bool {
     let moved = match (previous.resets_at, next.resets_at) {
-        (Some(before), Some(after)) => before.abs_diff(after) > RESET_SLACK_SECS,
+        (Some(before), Some(after)) => before.abs_diff(after) > crate::quota::RESET_TOLERANCE_SECS,
         _ => false,
     };
     next.used < previous.used || moved

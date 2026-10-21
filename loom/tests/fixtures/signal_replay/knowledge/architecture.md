@@ -1,0 +1,249 @@
+# Architecture
+
+> Components, data flow, modules
+>
+> **Related files:** [patterns.md](patterns.md) for design patterns, [entry-points.md](entry-points.md) for code navigation, [conventions.md](conventions.md) for coding standards.
+
+## Project Overview
+
+Loom is a Rust CLI for orchestrating parallel agent sessions across Git worktrees, with crash recovery, context handoffs, verification, and progressive merging. Module structure is documented in [Directory Structure](architecture/directory-structure.md).
+
+## Directory Structure
+
+Full `loom/src/` module tree, `.loom/work/` state layout, repo-root asset directories.
+
+→ [Directory Structure](architecture/directory-structure.md)
+
+## Core Abstractions
+
+`ExecutionGraph`, `Stage`, `Session`, `Orchestrator`, `TerminalBackend`, `KnowledgeDir`, data flow, `.loom/work/` file ownership.
+
+→ [Core Abstractions, Data Flow & File Ownership](architecture/core-abstractions.md)
+
+## Worktree Isolation (4-Layer Defense) and Security Model
+
+→ [Worktree Isolation & Security](architecture/security-and-isolation.md)
+
+## Context Budget Enforcement
+
+`context_ceiling_tokens` — an ABSOLUTE resident-token ceiling, resolved stage -> project `[context]` -> user `~/.loom/config.toml` `[context]` -> default, enforced at three independent thresholds (1.0x hook, 1.25x daemon, 1.5x native compaction).
+
+→ [Context Ceiling](architecture/context-ceiling.md)
+
+## Merge Flow (post-completion auto-merge) [DETAILED]
+
+→ [Merge Flow](architecture/merge-flow.md), [Merge Checkout State](architecture/merge-checkout-state.md)
+
+**Target guard** (`git/target_guard/`, `loom-hooks/git-reference-transaction-hook.sh`): a daemon-owned record of the last target tip loom accepted plus a git `reference-transaction` hook that attests host-side moves. A move loom did not make is evaluated (history rewrite, control paths, unattested gap, unmerged `loom/*` work); a hit holds every merge (`MergeBlock::TargetHeld`) until `loom target accept` or a restore, and loom never restores. → [Target Guard](architecture/target-guard.md)
+
+**Daemon-owned commits and launch**: sessions never run `git commit`; `loom stage commit` relays the staged index and the daemon commits and signs it with plumbing, and loom's merge commits sign under `commit.gpgsign`. The daemon is re-executed as `loom run --daemon-child`, never forked, and every client dials `daemon::socket_path`. → [Daemon-Owned Commits](architecture/daemon-owned-commits.md), [Daemon Launch](architecture/daemon-launch.md)
+
+## Skills Module (loom/src/skills/)
+
+Also covers the Diagnosis (`loom/src/diagnosis/`) and Map (`loom/src/map/`) modules.
+
+→ [Skill Catalog § Component Architecture](architecture/skill-catalog.md)
+
+## Handoff System
+
+→ [Context Ceiling § Handoff System](architecture/context-ceiling.md)
+
+## macOS Terminal Detection Priority
+
+→ [Terminal Backends](architecture/terminal-backends.md)
+
+## KnowledgeDir API (fs/knowledge/dir.rs)
+
+KnowledgeFile enum: Architecture, EntryPoints, Patterns, Conventions, Mistakes, Stack, Concerns. Tier-1 methods: new(root), from_root(path), root(), exists(), has_content(), initialize(), file_path(file), read(file), append(file, content), replace_section(file, heading, body). Tier-2 and index methods: layout(), index_path(), read_index(), write_index(), target_path(target), read_target(target), append_target(target, content), replace_section_target, delete_section_target, set_section_state_target(target, heading, state), list_topics(). There is no read_all, list_files or summary method.
+
+## Adding New Plan Fields Checklist
+
+The 10-step checklist for adding a new stage/plan field end-to-end.
+
+→ [Plan Lifecycle & Fields](architecture/plan-lifecycle-and-fields.md)
+
+## Goal-Backward Verification (verify/goal_backward/)
+
+Four verification layers; **`truths` is NOT one of them** — merged into acceptance.
+
+→ [Plan Lifecycle & Fields § Goal-Backward Verification](architecture/plan-lifecycle-and-fields.md)
+
+## Per-Worktree Gitignore for settings.local.json
+
+→ [Worktree Isolation & Security § Per-Worktree Gitignore](architecture/security-and-isolation.md)
+
+## Claude Code Worktree Isolation Disabled in Generated Settings
+
+→ [Worktree Isolation & Security § Claude Code Worktree Isolation Disabled](architecture/security-and-isolation.md)
+
+## Hook System Architecture (loom-hooks/)
+
+The `loom-hooks/` scripts, how they are embedded and installed, the SessionStart `hookSpecificOutput` contract, and the enforcement layers that keep subagents inside their lane (`commit-filter.sh`, `subagent-verify-guard.sh`, the worktree guards).
+
+→ [Hook System](architecture/hook-system.md)
+
+## Monitor Subsystem (orchestrator/monitor/)
+
+→ [Orchestrator Loop & Monitor](architecture/orchestrator-loop.md)
+
+## Status Data Model [DETAILED]
+
+Where every `loom status` field comes from, the 13 `StageStatus` variants, and what is not yet surfaced.
+
+→ [Status Data Model](architecture/status-data-model.md)
+
+## Status Command Architecture (commands/status/)
+
+→ [Status Data Model § Status Command Module Layout](architecture/status-data-model.md)
+
+## Orchestrator Main-Loop Tick Sequence (Exact Call Order)
+
+→ [Orchestrator Loop & Monitor](architecture/orchestrator-loop.md)
+
+## Stage State Machine — 13 Variants
+
+→ [Core Abstractions § Stage State Machine](architecture/core-abstractions.md)
+
+## Adjudication Persistence and Stage Resumption [DETAILED]
+
+Durable artifact chain under `.loom/work/disputes/`, materialization into stage state, and what a fresh successor session receives.
+
+→ [Adjudication Persistence and Stage Resumption](architecture/adjudication-lifecycle.md)
+
+## Plan Versioning / Runtime Amendment (Shipped — `plan/amendment.rs`)
+
+→ [Plan Lifecycle & Fields § Plan Versioning / Runtime Amendment](architecture/plan-lifecycle-and-fields.md)
+
+## Plan Immutability Invariant (Narrowed, Not Removed)
+
+→ [Plan Lifecycle & Fields § Plan Immutability Invariant](architecture/plan-lifecycle-and-fields.md)
+
+## Remote Control Module (loom/src/remote_control.rs)
+
+→ [Remote Control Module](architecture/remote-control.md)
+
+## Signal Generation Pipeline (orchestrator/signals/) [DETAILED]
+
+→ [Signal Generation Pipeline](architecture/signal-generation.md)
+
+## before_stage / after_stage / code_review Schema Fields — Execution Status
+
+Also covers `load_stage_definition_from_plan` — the centralized plan lookup.
+
+→ [Plan Lifecycle & Fields § before_stage / after_stage / code_review](architecture/plan-lifecycle-and-fields.md)
+
+## `loom pressure` Command (Plan Pressure-Testing Driver)
+
+→ [Remote Control Module § loom pressure Command](architecture/remote-control.md)
+
+## Tiered Knowledge Base (`fs/knowledge/`, `commands/knowledge/`)
+
+Two-tier curated knowledge: generated `INDEX.md`, tier-1 summary files, and tier-2 topics at
+`<category>/<slug>.md`. Layout is `Hierarchical` **iff** `INDEX.md` exists. Covers module split,
+target parsing, index generation, the `catalog::build` diagnostics (duplicate heading, generic
+blurb, broken link, missing source ref), opt-in migration, and lock ordering.
+
+→ [Knowledge Hierarchy](architecture/knowledge-hierarchy.md)
+
+## `loom knowledge bootstrap` (Operator Command)
+
+Rebuilds `doc/loom/knowledge/` from scratch in a repo not managed by loom plans: a deterministic
+host phase (scaffold, refresh, directory clusters with content digests) followed by an
+interactive Claude session that writes only through `loom knowledge`, then a committed receipt
+(`doc/loom/knowledge/.bootstrap-receipt.json`) that makes `--refresh` incremental and idempotent.
+
+→ [Knowledge Bootstrap](architecture/knowledge-bootstrap.md)
+
+## Codex Plugin (openai-codex) [DETAILED]
+
+Marketplace install/scope, the `loom-codex-forwarder` lane, per-stage `implementers`, sonnet fallback.
+
+→ [Codex Plugin](architecture/codex-plugin.md)
+
+## Codex Concurrency [DETAILED]
+
+Foreground fan-out verified safe to 6 concurrent codex-companion tasks; background fan-out ruled out.
+
+→ [Codex Concurrency](architecture/codex-concurrency.md)
+
+## Terminal Backends: SessionBackend / TmuxBackend [DETAILED]
+
+`SessionBackend` dispatches every spawn/kill/liveness call to a `Native` or opt-in `Tmux` lane, recorded on `Session.backend`.
+
+→ [Terminal Backends](architecture/terminal-backends.md)
+
+## Context Retrieval (`loom/src/context/`)
+
+Deterministic, model-free, network-free retrieval over the curated knowledge hierarchy: chunk the prose (curated plus indexed project prose under `doc/`), rank per channel, fuse by **two-tier fusion** (exact-rung candidates first by raw score, the lexical remainder by reciprocal-rank fusion — NOT plain RRF), pack to a token budget. One entry point — `context::retrieve_for_stage` — serves the `loom knowledge context`/`loom knowledge eval` commands, signal generation and the prompt hook alike. Two graphs exist — the knowledge-chunk catalog and the tree-sitter source graph — and both are ranked and fused into one pack, each through a persistent per-revision BM25 index behind the full scan (the scan stays the correctness oracle).
+
+Full detail: [architecture/context-retrieval.md](architecture/context-retrieval.md); the base/overlay layering rule and what is derived versus durable are in [architecture/context-retrieval-state.md](architecture/context-retrieval-state.md), and the stopwording, BM25 index and prose corpus in [architecture/context-retrieval-corpus.md](architecture/context-retrieval-corpus.md).
+
+## Source Graph (`loom/src/context/source_graph/`, `context/extract/`)
+
+A derived tree-sitter graph of the repo's own source over twelve dialects in three grammar packs, with
+two live consumers: `loom map` and the `Source` retrieval channel, ranked by `context::rank_source` and
+fused into the same `ContextPack` as knowledge chunks. Its defining property is an explicit honesty
+contract: every edge carries one of seven evidence classes with a named confidence constant, sites and
+(when ambiguous) a bounded candidate set, cross-file binding refuses rather than guesses, and no file is
+ever silently omitted: a degraded file is reported as degraded. A persisted resolved view keeps queries
+cheap, and its incremental relink is proven equal to a cold build.
+
+- Contract, extractors and dialects, identity, cache and coverage: [source-graph](architecture/source-graph.md)
+- Local binding, resolver rules 1 to 7, path conventions: [source-graph-resolution](architecture/source-graph-resolution.md)
+- Builder, freshness states, the reconcile lease: [source-graph-build](architecture/source-graph-build.md)
+- Resolved view, persistence, relink equivalence: [source-graph-view](architecture/source-graph-view.md)
+- Census, source windows, edge-quality evaluator: [source-graph-evaluation](architecture/source-graph-evaluation.md)
+- Intent routing, explained neighbours, caveats, windows: [context-retrieval-routing](architecture/context-retrieval-routing.md)
+
+## Execution Containment (`loom/src/verify/criteria/confine.rs`)
+
+Plan-authored commands run through `spawn_confined`, which scrubs the environment and enforces OS isolation for fresh host commands through Seatbelt or bubblewrap. Authenticated macOS stage inheritance retains the approved capsule permissions. The environment-only description is incorrect; `verify/criteria/confine_host.rs::wrap` chooses the actual launcher or authenticated inherited boundary.
+
+→ [Execution Containment](architecture/execution-containment.md)
+
+## Memory Spool and Drain (`fs/memory/spool.rs`, `orchestrator/core/spool_drain.rs`) [DETAILED]
+
+A sandboxed stage cannot write `.loom/work/memory/<stage>.md` — `.loom/work` is a symlink out of the
+worktree and the sandbox grants no `Edit` there — so `loom memory` appends to
+`<worktree>/.loom/memory-spool.jsonl` instead and the daemon drains it each tick, plus once
+more in `cleanup_after_merge` before the worktree is destroyed. The payload carries **no
+stage id**: attribution comes from which worktree an entry was drained from, which an agent
+cannot forge.
+
+Why the allowlist could not simply be widened, the drain invariants that are easy to break,
+and the read-path merge: [architecture/memory-spool.md](architecture/memory-spool.md).
+
+## Telemetry (`loom/src/telemetry/`)
+
+→ [Signal Generation Pipeline § Telemetry](architecture/signal-generation.md)
+
+## Quota Poller
+
+A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoint and `codex app-server` every 180 s and caches one `ProviderQuota` per provider under `.loom/work/quota/`; `StatusData.quota` is read from that cache, never polled, and rendered in the `--live` and `--web` footers. Sources, backoff, cache hygiene, and the token-handling rules: [architecture/quota-poller.md](architecture/quota-poller.md). A second daemon thread (`loom/src/tokens/tracker.rs`) reads stage transcripts every 5 s into `.loom/work/tokens/flow.json`, which `StatusData.tokens` carries to the TUI and web (fresh tokens, rates, series, quota time left): [architecture/token-flow-sources.md](architecture/token-flow-sources.md).
+
+## Web Dashboard
+
+`loom status --web [PORT] [--host HOST]` serves an embedded React SPA over HTTP/WebSocket, streaming the same `StatusData` the live TUI renders. Viewing routes remain public on remote binds; the startup token protects configuration writes and terminal access (`loom/src/commands/status/web/connection.rs:132-161`).
+
+→ [Web Dashboard](architecture/web-dashboard.md)
+
+## Token Accounting and Receipts [DETAILED]
+
+`loom usage` provider ledger and `--compare`, the certified criterion cache, the forward-receipt and worker-brief lifecycles, the read advisories, exact waits and their hook phases: [architecture/token-accounting-and-receipts.md](architecture/token-accounting-and-receipts.md). Token usage sources (transcripts, rollouts, receipts, quota history): [architecture/token-flow-sources.md](architecture/token-flow-sources.md).
+
+## Owned Subagent Waits
+
+`loom subagents watch/wait` bind an explicit `--worker claude:<id>`/`--worker codex:<unit-id>` set once per session, replacing an unbound `--timeout`-only poll. Trusted completion writers separately HMAC-sign completion evidence with a host-only key, closing a forgery path through sandbox-writable `handoffs/`; `Session.exit_reason` is independent from `SessionStatus`. See [Owned Waits](architecture/owned-waits.md) and [Completion Recovery](architecture/completion-recovery.md).
+
+## Typed Config Values (`ConfigValue` Read-Path Seam)
+
+Typed value read-path replacing the old stringly `UserConfig::value_of`. See [Typed Config Values](architecture/config-value-types.md).
+
+## Verification v2 (Plan Version 2)
+
+`loom.version: 2` turns on contracts (tests written and frozen by a separate `Contract` session before the
+implementer starts), the zero-test guard, wiring v2 and `reachable`, test integrity, impact-selected tests, and a
+recorded review gate, all read from `stage.plan_version == 2`. Disputes gain three kinds (findings, contract,
+integrity). Detail: [contract-phase](architecture/contract-phase.md), [verification-v2-gates](architecture/verification-v2-gates.md),
+[test-runner-adapters](architecture/test-runner-adapters.md), [plan fields and lints, provision, freeze formatter gate](architecture/plan-lifecycle-and-fields.md),
+[adjudication-lifecycle](architecture/adjudication-lifecycle.md).

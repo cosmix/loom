@@ -22,6 +22,8 @@ mod codex_scope;
 mod codex_tokens;
 mod comparison;
 mod comparison_eval;
+mod comparison_latency;
+mod comparison_net;
 mod comparison_quality;
 mod comparison_quota;
 mod comparison_schema;
@@ -40,6 +42,8 @@ mod provider_types;
 mod quota_history;
 mod receipt_provider;
 mod report_types;
+mod run_evidence;
+mod run_evidence_stages;
 mod sections;
 mod spawn_join;
 mod stream_types;
@@ -136,6 +140,9 @@ pub fn execute(args: UsageArgs) -> Result<()> {
         }
         return Ok(());
     }
+    if let Some(declaration) = args.run_evidence.as_deref() {
+        return run_evidence::produce(&args, declaration);
+    }
     ensure!(
         !(args.all && args.forward_receipts_root.is_some()),
         "--forward-receipts-root cannot be used with --all"
@@ -143,7 +150,7 @@ pub fn execute(args: UsageArgs) -> Result<()> {
     let range =
         time_range::TimeRange::parse(args.since(), args.until.as_deref(), chrono::Utc::now())?;
     let work_dir = usage_work_dir(args.project.as_deref(), args.all);
-    let mut normalized = normalize_usage(&args, range, work_dir.as_deref())?;
+    let mut normalized = normalize_usage(&args, args.provider(), range, work_dir.as_deref())?;
     attach_quota_history(
         &mut normalized.ledger,
         args.provider(),
@@ -161,6 +168,7 @@ pub fn execute(args: UsageArgs) -> Result<()> {
 
 fn normalize_usage(
     args: &UsageArgs,
+    selection: ProviderSelection,
     range: time_range::TimeRange,
     work_dir: Option<&Path>,
 ) -> Result<provider::NormalizedProviderEvents> {
@@ -171,15 +179,15 @@ fn normalize_usage(
         work_dir,
     )?;
     let forward_join = forward_join::ForwardJoin::load(forward_root);
-    let claude = discover_claude(args, range, work_dir, &forward_join)?;
-    let codex = if args.provider().includes(provider_types::Provider::Codex) {
+    let claude = discover_claude(args, selection, range, work_dir, &forward_join)?;
+    let codex = if selection.includes(provider_types::Provider::Codex) {
         codex_discovery::discover(args.codex_root.as_deref())
     } else {
         codex_discovery::CodexDiscovery::default()
     };
     let scope = codex_scope::CodexScope::for_selection(args.all, &forward_join, &range);
     let mut normalized = provider::normalize_provider_events(provider::ProviderEventInput {
-        selection: args.provider(),
+        selection,
         range,
         claude_transcripts: claude.transcripts,
         claude_discovered_files: claude.discovered,
@@ -210,11 +218,12 @@ struct ClaudeInput {
 
 fn discover_claude(
     args: &UsageArgs,
+    selection: ProviderSelection,
     range: time_range::TimeRange,
     work_dir: Option<&Path>,
     forward_join: &forward_join::ForwardJoin,
 ) -> Result<ClaudeInput> {
-    let included = args.provider().includes(provider_types::Provider::Claude);
+    let included = selection.includes(provider_types::Provider::Claude);
     let options = discovery::DiscoveryOptions {
         range,
         claude_root: args.claude_root.clone(),

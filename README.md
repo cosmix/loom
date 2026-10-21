@@ -322,7 +322,7 @@ Loom's savings come from **delegation, not downgrade**:
 - **Context budgets prevent compaction**, which is the expensive failure: an uncached re-read that costs more and produces worse work.
 - **Tiered knowledge and a skill index** keep the working set small — at most 5 matched skills are injected per stage, out of 75 installed.
 - **Waits are settled by receipts, never by polling.** An orchestrator waits on a backgrounded Codex forward by its exact receipt (`loom subagents wait --receipt <id>`), and repeated `loom subagents list` polling is counted by the poll guard. A whole-file read that another agent of the session already requested is advised once, from the session's ledger of requested reads, which records an attempt and proves no delivery.
-- **Consumption is measured, not assumed.** `loom usage` reports Claude and Codex separately from provider-native telemetry, and `loom usage --compare` judges a candidate policy offline against paired runs. A token-proxy gain alone never counts as a subscription saving, and any quality or latency regression rejects the candidate; see [the evaluation contract](doc/loom/knowledge/architecture/token-accounting-and-receipts.md#offline-comparison-loom-usage---compare).
+- **Consumption is measured, not assumed.** `loom usage` reports Claude and Codex separately from provider-native telemetry, and `loom usage --compare` judges a candidate policy offline against paired runs. A token-proxy gain alone never counts as a subscription saving, and any quality regression, or a latency regression beyond a declared tolerance, rejects the candidate; see [the evaluation contract](doc/loom/knowledge/architecture/token-accounting-and-receipts.md#offline-comparison-loom-usage---compare).
 
 Per-stage `model`, `reasoning_effort`, and `ultracode` fields let you override any of this explicitly.
 
@@ -545,11 +545,13 @@ See [Knowledge System](#knowledge-system) for how these fit together.
 
 ```bash
 loom review [--ai-summary]                                                   # Generate a code-review doc from stage memories; --ai-summary uses headless `claude -p`
-loom usage [--since <duration|date>] [--until <rfc3339>] [--provider claude|codex|all] [--project <path> | --all] [--stage <id>] [--plan <name>] [--windows 5h|week] [--json]
+loom usage [--since <duration|date|rfc3339>] [--until <rfc3339>] [--provider claude|codex|all] [--project <path> | --all] [--stage <id>] [--plan <name>] [--windows 5h|week] [--json]
                                                                              # Report what agent sessions actually consumed, per provider (Claude and Codex are never summed), including peak resident context by scope in a `peaks` section (main vs subagent p50/p90/max, share above 250k and 400k tokens)
 loom usage [--claude-root <dir>] [--codex-root <dir>] [--receipts-root <dir>] [--forward-receipts-root <dir>]
                                                                              # Read explicit telemetry roots; a supplied root never falls back
 loom usage --compare <artifact.json> [--json]                                # Offline paired evaluation: exit 0 supported, 1 rejected, 2 inconclusive (doc/loom/knowledge/architecture/token-accounting-and-receipts.md)
+loom usage --run-evidence <declaration.json> --project <dir> --since <rfc3339> --until <rfc3339> [--claude-root <dir>] [--codex-root <dir>]
+                                                                             # Print one run's RunEvidence for --compare
 loom subagents list | harvest [--id <id>] [--json]                           # One-shot diagnostics only: list shows liveness, harvest prints a terminal report (optionally one agent's); watch/wait below are the blocking waits
 loom subagents watch --worker <kind>:<id> [--worker <kind>:<id> ...] [--session <claude-parent-uuid>] --timeout <secs> [--json]
                                                                              # One owned wait, inside a loom stage only (needs LOOM_STAGE_ID/LOOM_SESSION_ID/LOOM_WORK_DIR): exit 0 all bound workers have fresh correlated success; 2 deadline passed; 3 worker failed/cancelled
@@ -578,6 +580,8 @@ loom config [-k <key> [<value>] | --list | --print]                          # R
 loom install-assets [--skills core|all]  # Install loom's agents, skills, commands, hooks and doctrine files into ~/.claude and ~/.codex; see Install script below for what --skills core|all installs where
 loom completions [<shell>] [--install] [--migrate]
 ```
+
+`loom usage --project` also reads the transcripts of the project's removed stage worktrees. Each provider reads `measured` or `partial` with reasons: a session record naming an unread transcript, an unreadable session record, unparseable lines, unknown or ambiguous rows, a forward receipt whose thread has no rollout, or a damaged forward receipt. Codex rows count for a project only through the threads its forward receipts name, so `--all` is the way to see every Codex rollout. `--run-evidence` takes the run identities from the declaration (the fields of the artifact contract, minus the measured ones) and measures tokens, retries, fixes, the critical path and the open review findings of the stages that started inside the `--since`/`--until` window; both bounds must be RFC3339, and a stage straddling either bound aborts the producer. It refuses usage from a provider the declaration does not assign. Review severities critical, major, minor and unspecified map to critical, high, medium and low. An artifact may declare `"token_rule": "net-total"` and `"latency_tolerance_ms"`.
 
 `loom handoff` writes the document a successor session resumes from, under `.loom/work/handoffs/`. Loom's `pre-compact` hook calls it automatically before a compaction, and an agent that reaches its context ceiling calls it explicitly with `--trigger ceiling`.
 

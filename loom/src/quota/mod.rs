@@ -14,6 +14,10 @@ pub mod model;
 pub mod poller;
 mod shared;
 
+/// `resets_at` values further apart than this belong to different reset
+/// periods. Real history alternates `resets_at` by one second between polls.
+pub const RESET_TOLERANCE_SECS: u64 = 300;
+
 pub use history::{
     read_history, HistoryContinuity, HistorySourceState, QuotaHistoryDiagnostics,
     QuotaHistoryPoint, QuotaHistoryRead,
