@@ -379,3 +379,13 @@ put the doc edits in the implementation brief.
 **Why:** the metaplan restated the gate without the plan-writer's placement rule, and the authors treated the metaplan as overriding the skill.
 **Prevention:** a standard stage runs the unfiltered suite in its `loom-verifier` round, and its acceptance runs build, doctests, clippy, fmt, rustdoc and module-filtered tests; integration-verify runs the unfiltered suite once. A metaplan or task brief that names the gate says where each part runs. A check on a file outside the stage's `working_dir` is an `after_stage` or acceptance `rg` command, never a `wiring` source.
 **Fix:** the six plans under `doc/plans/token-optim/` place the unfiltered suite in the verifier round and integration-verify.
+
+## A loom-wide fix was scoped to loom's own test suite
+
+**What happened:** PLAN-gate-dedup was meant to cut repeated gate runs in every project that uses loom. The draft included a stage fixing 26 loom tests that fail only in a sandboxed shell, and made the new adapter method cargo-only, with other runners left at a conservative false.
+
+**Why:** the evidence came mostly from loom's own stages, and loom's test-suite quirks were read as product causes.
+
+**Prevention:** for a loom product change, each cause and fix must apply to any project loom drives. Drop any item specific to loom's own test suite, and implement an adapter method for every adapter in loom/src/testrun/adapters/, never for one runner.
+
+**Fix:** removed the sandbox-test item from PLAN-gate-dedup, and required is_unfiltered for all 24 adapters.

@@ -127,7 +127,7 @@
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork after threads | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) | Two daemons shared .loom/work | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | No process may outlive its test | 55 |
-| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine drift, acceptance | 381 |
+| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine drift, acceptance | 391 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | Hook portability, delegate bounds | 344 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How knowledge goes stale | 229 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants live in constructor | 206 |
