@@ -33,8 +33,9 @@ pub struct DiscoveryOptions {
     pub plan: Option<String>,
 }
 
-/// Parse `--since`: a duration (`7d`, `24h`, `30m`) or an ISO date
-/// (`2026-08-01`, interpreted as that date's midnight UTC).
+/// Parse `--since`: a duration (`7d`, `24h`, `30m`), an ISO date
+/// (`2026-08-01`, interpreted as that date's midnight UTC) or an RFC3339
+/// instant (`2026-08-01T12:30:00Z`).
 #[cfg(test)]
 pub fn parse_since(spec: &str) -> anyhow::Result<chrono::DateTime<chrono::Utc>> {
     super::time_range::parse_since_at(spec, Utc::now())

@@ -59,10 +59,10 @@ _loom_poll_active_receipt() {
 	[[ -n "$body" ]] || return 1
 	rows=$(printf '%s\n' "$body" | jq -rs --arg session "$LOOM_SESSION_ID" '
 		map(select(.loom_session_id == $session) |
-			if ((.receipt_id | type) == "string" and (.state == "queued" or .state == "running" or .state == "succeeded" or .state == "failed" or .state == "canceled"))
+			if ((.receipt_id | type) == "string" and (.state == "queued" or .state == "running" or .state == "succeeded" or .state == "failed" or .state == "canceled" or .state == "timed_out"))
 			then {id: .receipt_id, state: .state} else error("malformed forward receipt") end) as $receipts |
 		[$receipts[].id] | unique | .[] as $id |
-		select([$receipts[] | select(.id == $id and (.state == "succeeded" or .state == "failed" or .state == "canceled"))] | length == 0) | $id
+		select([$receipts[] | select(.id == $id and (.state == "succeeded" or .state == "failed" or .state == "canceled" or .state == "timed_out"))] | length == 0) | $id
 	' 2>/dev/null) || return 1
 	while IFS= read -r id; do [[ -n "$id" ]] && active+=("$id"); done <<<"$rows"
 	[[ ${#active[@]} -eq 1 && "${active[0]}" =~ ^[0-9a-f]{64}$ ]] || return 1

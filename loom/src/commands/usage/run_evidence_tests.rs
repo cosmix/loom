@@ -381,3 +381,6 @@ fn the_window_flags_must_be_rfc3339() {
         .contains("--until"));
     assert!(rfc3339_flag("--since", Some("2026-10-14T00:00:00Z")).is_ok());
 }
+
+#[path = "run_evidence_provenance_tests.rs"]
+mod provenance_tests;

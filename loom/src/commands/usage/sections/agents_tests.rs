@@ -253,3 +253,28 @@ fn requested_model_splits_rows_of_one_agent_type() {
         .collect::<Vec<_>>();
     assert_eq!(requested, ["ambiguous", "sonnet"]);
 }
+
+/// An agent type comes from the hook ledger, which a repository can write; an
+/// OSC clipboard write in it must not reach the terminal from either table.
+#[test]
+fn rendered_agent_type_carries_no_escape_byte() {
+    let hostile = "\u{1b}]52;c;x\u{7}";
+    let tiny = TinySubagent {
+        agent_type: hostile.to_owned(),
+        agent_id: "agent-1".to_owned(),
+        model: "claude-sonnet-5".to_owned(),
+        output: 3,
+        input: 5,
+    };
+    let mut sub = transcript(Scope::Subagent, "s", None, &["claude-sonnet-5"]);
+    sub.agent_type = Some(hostile.to_owned());
+    let rows = by_agent_model(&[&sub]);
+
+    for line in [tiny_line(&tiny), agent_model_line(&rows[0])] {
+        assert!(
+            !line.contains('\u{1b}') && !line.contains('\u{7}'),
+            "{line}"
+        );
+        assert!(line.contains("52;c;x"), "{line}");
+    }
+}

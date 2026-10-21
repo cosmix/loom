@@ -3,7 +3,7 @@ use std::collections::BTreeSet;
 use serde::Serialize;
 
 use super::comparison_schema::{ComparisonPair, Outcome};
-use super::provider_types::Provider;
+use super::provider_types::{Provider, ProviderTokenVector};
 
 #[derive(Debug, Serialize)]
 pub(super) struct NetTotalSummary {
@@ -27,15 +27,23 @@ pub(super) fn evaluate(pairs: &[&ComparisonPair], excluded_pairs: usize) -> NetT
     if excluded_pairs > 0 {
         return summary(
             Outcome::Inconclusive,
-            "net-total-excluded-pairs",
+            Some("net-total-excluded-pairs"),
             Vec::new(),
         );
     }
     if pairs.is_empty() {
-        return summary(Outcome::Inconclusive, "insufficient-pairs", Vec::new());
+        return summary(
+            Outcome::Inconclusive,
+            Some("insufficient-pairs"),
+            Vec::new(),
+        );
     }
     if cross_provider_transfer(pairs) {
-        return summary(Outcome::Inconclusive, "cross-provider-transfer", Vec::new());
+        return summary(
+            Outcome::Inconclusive,
+            Some("cross-provider-transfer"),
+            Vec::new(),
+        );
     }
 
     let providers = providers(pairs)
@@ -48,16 +56,12 @@ pub(super) fn evaluate(pairs: &[&ComparisonPair], excluded_pairs: usize) -> NetT
 
 fn summary(
     verdict: Outcome,
-    reason: &'static str,
+    reason: Option<&'static str>,
     providers: Vec<ProviderNetTotal>,
 ) -> NetTotalSummary {
     NetTotalSummary {
         verdict,
-        reason_codes: if reason.is_empty() {
-            Vec::new()
-        } else {
-            vec![reason]
-        },
+        reason_codes: reason.into_iter().collect(),
         providers,
     }
 }
@@ -127,7 +131,7 @@ fn provider_summary(provider: Provider, pairs: &[&ComparisonPair]) -> ProviderNe
     }
 }
 
-fn net(vector: &super::provider_types::ProviderTokenVector) -> Option<u64> {
+fn net(vector: &ProviderTokenVector) -> Option<u64> {
     vector
         .resident_input_tokens?
         .checked_add(vector.output_tokens?)
@@ -154,18 +158,18 @@ fn classification(mean: f64, standard_error: f64) -> &'static str {
     }
 }
 
-fn summary_result(providers: &[ProviderNetTotal]) -> (Outcome, &'static str) {
+fn summary_result(providers: &[ProviderNetTotal]) -> (Outcome, Option<&'static str>) {
     if providers
         .iter()
         .any(|provider| provider.classification == "missing-dimension")
     {
-        return (Outcome::Inconclusive, "missing-token-dimension");
+        return (Outcome::Inconclusive, Some("missing-token-dimension"));
     }
     if providers
         .iter()
         .any(|provider| provider.classification == "insufficient-pairs")
     {
-        return (Outcome::Inconclusive, "insufficient-pairs");
+        return (Outcome::Inconclusive, Some("insufficient-pairs"));
     }
 
     let reduction = providers
@@ -179,13 +183,13 @@ fn summary_result(providers: &[ProviderNetTotal]) -> (Outcome, &'static str) {
             .iter()
             .all(|provider| provider.classification == "reduction")
     {
-        (Outcome::SupportedCandidate, "")
+        (Outcome::SupportedCandidate, None)
     } else if reduction && regression {
-        (Outcome::Inconclusive, "cross-provider-transfer")
+        (Outcome::Inconclusive, Some("cross-provider-transfer"))
     } else if regression {
-        (Outcome::Rejected, "net-total-regression")
+        (Outcome::Rejected, Some("net-total-regression"))
     } else {
-        (Outcome::Inconclusive, "net-total-within-noise")
+        (Outcome::Inconclusive, Some("net-total-within-noise"))
     }
 }
 

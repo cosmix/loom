@@ -93,6 +93,21 @@ printf '{"receipt_id":"%s","loom_session_id":"%s","backend":"companion","backend
 output=$(third_output 'loom subagents list' foreign-session)
 [[ "$output" == *"loom subagents wait --receipt $id_b --timeout 3600"* ]] || fail "foreign receipt was not ignored: $output"
 
+# A terminal line closes its receipt: succeeded and timed_out (the wrapper's
+# END-marker verdict at its wall-clock cap) both leave nothing to wait on.
+for terminal in succeeded timed_out; do
+	printf '{"receipt_id":"%s","loom_session_id":"%s","backend":"companion","backend_id":"job-a","state":"running"}\n' "$id_a" "$session" >"$receipts"
+	printf '{"receipt_id":"%s","loom_session_id":"%s","backend":"companion","backend_id":"job-a","state":"%s"}\n' "$id_a" "$session" "$terminal" >>"$receipts"
+	output=$(third_output 'loom subagents list' "closed-$terminal")
+	[[ "$output" == *"forward state is unresolved"* && "$output" != *"wait --receipt"* ]] || fail "running then $terminal still named an active receipt: $output"
+done
+
+printf '{"receipt_id":"%s","loom_session_id":"%s","backend":"companion","backend_id":"job-a","state":"running"}\n' "$id_a" "$session" >"$receipts"
+printf '{"receipt_id":"%s","loom_session_id":"%s","backend":"companion","backend_id":"job-a","state":"timed_out"}\n' "$id_a" "$session" >>"$receipts"
+printf '{"receipt_id":"%s","loom_session_id":"%s","backend":"companion","backend_id":"job-b","state":"running"}\n' "$id_b" "$session" >>"$receipts"
+output=$(third_output 'loom subagents list' timed-out-beside-live)
+[[ "$output" == *"loom subagents wait --receipt $id_b --timeout 3600"* && "$output" != *"$id_a"* ]] || fail "timed_out receipt hid the live one: $output"
+
 printf '{not-json}\n' >"$receipts"
 output=$(third_output 'loom subagents list' malformed)
 [[ "$output" == *"forward state is unresolved"* ]] || fail "malformed receipt did not fail open: $output"

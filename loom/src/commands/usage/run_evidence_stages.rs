@@ -21,16 +21,17 @@ pub(super) struct StageEvidence {
 /// mutable, so the result is the state at the time of the call; the producer
 /// never reconstructs a past run.
 pub(super) fn stage_evidence(work_dir: &Path, range: &TimeRange) -> Result<StageEvidence> {
-    let all = crate::verify::transitions::list_all_stages(work_dir)
+    let mut all = crate::verify::transitions::list_all_stages(work_dir)
         .context("reading the stage records")?;
+    // Directory order is arbitrary; sort first so the findings list and the
+    // stage a straddle abort names are the same on every call over one state.
+    all.sort_by(|a, b| a.id.cmp(&b.id));
     let mut members = Vec::new();
     for stage in all {
         if is_member(&stage, range)? {
             members.push(stage);
         }
     }
-    // Directory order is arbitrary; sort so the findings list is reproducible.
-    members.sort_by(|a, b| a.id.cmp(&b.id));
     let mut unresolved_findings = Vec::new();
     for stage in &members {
         unresolved_findings.extend(open_findings(work_dir, stage)?);

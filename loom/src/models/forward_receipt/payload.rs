@@ -36,6 +36,9 @@ pub fn decode_payload(raw: &str, now: DateTime<Utc>) -> Result<PayloadForward> {
         bail!("payload command is not a forward");
     };
     let tool_use_id = safe_id(&payload, "tool_use_id")?;
+    // Only forwarder subagents run forwards, so a payload without `agent_id`
+    // (a main-session call) is refused and forms no receipt;
+    // `codex-forward-result.sh` requires `.agent_id` the same way.
     let agent_id = safe_id(&payload, "agent_id")?;
     let parent_session_id = safe_id(&payload, "session_id")?;
     // A call without a result has nothing to observe; the hook writes nothing for it.

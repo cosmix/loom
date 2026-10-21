@@ -186,6 +186,37 @@ fn receipt_well_after_since_without_rows_is_missing() {
     assert_eq!(apply(&scope, &mut rows).missing_threads, 1);
 }
 
+/// `in_window` is `[since + MAX_FORWARD_SECS, until]`, both ends inclusive.
+#[test]
+fn receipt_exactly_at_the_cutoff_without_rows_is_missing() {
+    let range = window(None);
+    let observed = range.since + Duration::seconds(MAX_FORWARD_SECS);
+    let scope = CodexScope::from_receipt_threads(&[receipt(Some("t-a"), observed)], &range);
+    let mut rows = Vec::new();
+
+    assert_eq!(apply(&scope, &mut rows).missing_threads, 1);
+}
+
+#[test]
+fn receipt_exactly_at_until_without_rows_is_missing() {
+    let until = at(11, 0, 0);
+    let range = window(Some(until));
+    let scope = CodexScope::from_receipt_threads(&[receipt(Some("t-a"), until)], &range);
+    let mut rows = Vec::new();
+
+    assert_eq!(apply(&scope, &mut rows).missing_threads, 1);
+}
+
+/// `unthreaded` is `[since, until]`, both ends inclusive.
+#[test]
+fn unthreaded_receipt_exactly_at_since_counts() {
+    let range = window(Some(at(11, 0, 0)));
+    let scope = CodexScope::from_receipt_threads(&[receipt(None, range.since)], &range);
+    let mut rows = Vec::new();
+
+    assert_eq!(apply(&scope, &mut rows).unthreaded_receipts, 1);
+}
+
 #[test]
 fn unthreaded_receipts_count_only_inside_the_window() {
     let range = window(Some(at(11, 0, 0)));

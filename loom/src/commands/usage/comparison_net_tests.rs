@@ -119,6 +119,74 @@ fn mismatched_provider_keys_are_inconclusive() {
     assert!(summary.providers.is_empty());
 }
 
+#[test]
+fn a_mean_inside_twice_the_standard_error_is_within_noise() {
+    // Reductions +50, -40, +45, -35: mean 5, sample variance 7250 / 3, so the
+    // standard error is sqrt(7250 / 12), about 24.6.
+    let pairs = token_pairs(&[(1_000, 950), (1_000, 1_040), (1_000, 955), (1_000, 1_035)]);
+
+    let summary = evaluate_pairs(&pairs);
+    let provider = &summary.providers[0];
+
+    assert!((provider.mean_reduction.expect("mean") - 5.0).abs() < 1e-9);
+    assert!(
+        (provider.standard_error.expect("standard error") - (7_250.0_f64 / 12.0).sqrt()).abs()
+            < 1e-9
+    );
+    assert_eq!(provider.classification, "within-noise");
+    assert_eq!(summary.verdict, Outcome::Inconclusive);
+    assert_eq!(summary.reason_codes, vec!["net-total-within-noise"]);
+}
+
+#[test]
+fn a_mean_between_one_and_two_standard_errors_is_within_noise_in_both_directions() {
+    // Reductions +30, -10, +40, 0: mean 15, standard error about 11.9, so the
+    // mean is 1.26 standard errors out: a 1 SE gate would call it a reduction.
+    let reduced = token_pairs(&[(1_000, 970), (1_000, 1_010), (1_000, 960), (1_000, 1_000)]);
+    let raised = token_pairs(&[(1_000, 1_030), (1_000, 990), (1_000, 1_040), (1_000, 1_000)]);
+
+    for pairs in [reduced, raised] {
+        let summary = evaluate_pairs(&pairs);
+
+        assert_eq!(summary.providers[0].classification, "within-noise");
+        assert_eq!(summary.verdict, Outcome::Inconclusive);
+    }
+}
+
+#[test]
+fn two_usable_pairs_are_insufficient_even_when_they_agree() {
+    let pairs = token_pairs(&[(1_000, 900), (1_000, 900)]);
+
+    let summary = evaluate_pairs(&pairs);
+    let provider = &summary.providers[0];
+
+    assert_eq!(provider.pairs, 2);
+    assert_eq!(provider.classification, "insufficient-pairs");
+    assert_eq!(provider.mean_reduction, None);
+    assert_eq!(provider.standard_error, None);
+    assert_eq!(summary.verdict, Outcome::Inconclusive);
+    assert_eq!(summary.reason_codes, vec!["insufficient-pairs"]);
+}
+
+#[test]
+fn three_tight_reduction_pairs_are_evaluated() {
+    // Reductions 100, 110, 90: mean 100, sample variance 100, standard error
+    // sqrt(100 / 3).
+    let pairs = token_pairs(&[(1_000, 900), (1_000, 890), (1_000, 910)]);
+
+    let summary = evaluate_pairs(&pairs);
+    let provider = &summary.providers[0];
+
+    assert_eq!(provider.pairs, 3);
+    assert!((provider.mean_reduction.expect("mean") - 100.0).abs() < 1e-9);
+    assert!(
+        (provider.standard_error.expect("standard error") - (100.0_f64 / 3.0).sqrt()).abs() < 1e-9
+    );
+    assert_eq!(provider.classification, "reduction");
+    assert_eq!(summary.verdict, Outcome::SupportedCandidate);
+    assert_eq!(summary.reason_codes, Vec::<&str>::new());
+}
+
 fn evaluate_pairs(pairs: &[ComparisonPair]) -> super::NetTotalSummary {
     let refs = pairs.iter().collect::<Vec<_>>();
     evaluate(&refs, 0)
