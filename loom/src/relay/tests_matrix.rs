@@ -316,6 +316,27 @@ fn check_is_applied_for_stage_knowledge_and_adjudication_only() {
     }
 }
 
+/// The `complete` column: only the sessions that complete their own stage.
+const COMPLETE_COLUMN: [(SessionType, MatrixVerdict); 6] = [
+    (SessionType::Stage, MatrixVerdict::Apply),
+    (SessionType::Knowledge, MatrixVerdict::Apply),
+    (SessionType::Merge, MatrixVerdict::Refuse),
+    (SessionType::BaseConflict, MatrixVerdict::Refuse),
+    (SessionType::Adjudication, MatrixVerdict::Refuse),
+    (SessionType::Contract, MatrixVerdict::Refuse),
+];
+
+#[test]
+fn complete_is_applied_for_stage_and_knowledge_only() {
+    for (session, expected_verdict) in COMPLETE_COLUMN {
+        assert_eq!(
+            verdict(session, RequestKind::Complete),
+            expected_verdict,
+            "{session:?} x complete"
+        );
+    }
+}
+
 #[test]
 fn matches_the_full_six_by_nine_writer_matrix() {
     assert_eq!(EXPECTED.len(), 54, "6 session types x 9 kinds");

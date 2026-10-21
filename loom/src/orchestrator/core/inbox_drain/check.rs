@@ -8,7 +8,7 @@
 use chrono::Utc;
 
 use crate::git::worktree::{stage_worktree_path, WorktreeGit};
-use crate::host_verify::submit::{submit, Submission, SubmitRequest};
+use crate::host_verify::submit::{is_lower_hex, submit, Submission, SubmitRequest};
 use crate::host_verify::JobKind;
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::{Stage, StageType};
@@ -33,7 +33,7 @@ pub(super) fn apply_check(
     if let Err(reason) = validate(host, &stage, request) {
         return Settle::Refused(reason);
     }
-    let submission = submit(
+    settle_submission(submit(
         host.work_dir(),
         &SubmitRequest {
             stage_id,
@@ -45,7 +45,12 @@ pub(super) fn apply_check(
             no_cache: request.no_cache,
         },
         Utc::now(),
-    );
+    ))
+}
+
+/// Maps a submitted host job to the request's settlement. Shared with the
+/// `complete` relay, which settles its submissions the same way.
+pub(super) fn settle_submission(submission: anyhow::Result<Submission>) -> Settle {
     match submission {
         Ok(Submission::Queued(job)) => Settle::Applied(Some(format!("host job {} queued", job.id))),
         Ok(Submission::Joined(job)) => Settle::Applied(Some(format!("host job {} joined", job.id))),
@@ -74,13 +79,20 @@ fn admit_session(host: &dyn InboxHost, stage_id: &str, record: &Session) -> Resu
         .map_err(|error| format!("stage '{stage_id}' could not be loaded: {error:#}"))
 }
 
-fn validate(host: &dyn InboxHost, stage: &Stage, request: &HostJobRequest) -> Result<(), String> {
+/// The request's head and tree digest are well-formed hex ids. Shared with the
+/// `complete` relay.
+pub(super) fn validate_ids(request: &HostJobRequest) -> Result<(), String> {
     if !is_lower_hex(&request.head, &[40, 64]) {
         return Err("head must be 40 or 64 lowercase hex characters".to_string());
     }
     if !is_lower_hex(&request.tree_digest, &[64]) {
         return Err("tree_digest must be 64 lowercase hex characters".to_string());
     }
+    Ok(())
+}
+
+fn validate(host: &dyn InboxHost, stage: &Stage, request: &HostJobRequest) -> Result<(), String> {
+    validate_ids(request)?;
     let head = checkout_head(host, stage)?;
     if head != request.head {
         return Err(format!(
@@ -89,13 +101,6 @@ fn validate(host: &dyn InboxHost, stage: &Stage, request: &HostJobRequest) -> Re
         ));
     }
     Ok(())
-}
-
-fn is_lower_hex(text: &str, lengths: &[usize]) -> bool {
-    lengths.contains(&text.len())
-        && text
-            .bytes()
-            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
 
 /// HEAD of the stage's checkout, read with git pinned to that directory: the

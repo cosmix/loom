@@ -26,6 +26,9 @@ pub use super::signals::recover_after_restart;
 
 /// Jobs the daemon runs at once.
 const DEFAULT_SLOTS: usize = 2;
+/// The detail of a job the graceful shutdown cancelled. Unlike a superseding
+/// cancel, no successor job exists, so a freeze job carrying it is parked.
+pub(crate) const DAEMON_STOPPED: &str = "daemon stopped";
 /// `child.log` past this size ends the job.
 const CHILD_LOG_MAX_BYTES: u64 = 4 * 1024 * 1024;
 /// Seconds a command without its own timeout counts toward a deadline.
@@ -120,7 +123,7 @@ impl HostJobRunner {
         for (job_id, mut job) in self.running.drain() {
             let stage_id = job.stage_id.as_str();
             let stopped = compare_and_set(work_dir, stage_id, &job_id, JobState::Running, |r| {
-                end_record(r, JobState::Cancelled, Some("daemon stopped".to_string()));
+                end_record(r, JobState::Cancelled, Some(DAEMON_STOPPED.to_string()));
             });
             if let Err(error) = stopped {
                 warn_job(&job_id, "could not mark a host job stopped", &error);

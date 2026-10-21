@@ -260,8 +260,8 @@ mod host_job_tests {
             session_id: "session-a",
             request_id: "r1",
             kind: JobKind::Check,
-            head: "aaaa",
-            tree_digest: "bbbb",
+            head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            tree_digest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             no_cache: false,
         };
         let job = match submit(&work_dir, &request, chrono::Utc::now()).unwrap() {

@@ -17,12 +17,15 @@
 //!
 //! A relayed `commit` is applied by the `commit` module: the daemon commits
 //! the session's staged index, because a session cannot sign and so never
-//! runs `git commit`.
+//! runs `git commit`. A relayed `check` or `complete` queues a host job
+//! (`check`, `complete`), which the daemon runs on the host.
 
 mod apply;
 mod check;
 mod commit;
+mod complete;
 mod entry;
+mod freeze;
 mod merge_resolved;
 mod session_pass;
 mod sweep;

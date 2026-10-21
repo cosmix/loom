@@ -1,9 +1,12 @@
-//! `loom stage contracts freeze`: prove every contract test fails before any
-//! implementation exists, then ask the daemon to freeze the contract files
+//! `loom stage contracts freeze`: ask the daemon to prove every contract test
+//! fails before any implementation exists, then freeze the contract files
 //! (DESIGN D8). The rules are two pure functions, [`check_changes`] and
-//! [`judge_run`]; [`freeze`] gathers their real inputs. In a relayed session
-//! it also keeps each attempt's outcome for the Stop hook
-//! ([`crate::verify::contracts::refusal`]).
+//! [`judge_run`]. The CLI checks the changes where it runs, then requests a
+//! host contract run for the HEAD and tree it saw; the daemon's job
+//! (`host_verify::freeze`) runs every contract with [`run_contract`] and the
+//! format gate with [`check_formatting`]. No CLI path runs a contract. In a
+//! relayed session the CLI also keeps each attempt's outcome for the Stop
+//! hook ([`crate::verify::contracts::refusal`]).
 
 use anyhow::{bail, Context, Result};
 use std::path::Path;
@@ -11,18 +14,18 @@ use std::time::Duration;
 
 use crate::daemon::ContractRunReport;
 use crate::git::worktree::WorktreeGit;
+use crate::host_verify::wait::heading;
+use crate::host_verify::{digest, JobKind};
 use crate::models::stage::CommandConfinement;
 use crate::plan::schema::ContractSpec;
-use crate::relay::emit::{mode, EnvSnapshot, RelayMode, StdSink};
+use crate::relay::emit::{mode, EnvSnapshot, RelayMode, RelaySink, StdSink};
 use crate::relay::RequestKind;
 use crate::testrun::{classify, RunOutcome, RunOutput, RunSummary, TestRunnerAdapter};
 use crate::verify::contracts::changes::{changed_paths, stage_base};
 use crate::verify::contracts::format_gate::format_problems;
 use crate::verify::contracts::run_dir::resolve_run;
 use crate::verify::contracts::{is_contract_or_harness, refusal, resolve_adapter};
-use crate::verify::criteria::{
-    plan_confinement, resolve_confinement, run_spec_in_optional_tree, CommandSpec,
-};
+use crate::verify::criteria::{run_spec_in_optional_tree, CommandSpec};
 
 use super::{send_freeze, ContractSite};
 
@@ -130,29 +133,54 @@ pub fn freeze(stage_id: String) -> Result<()> {
         }
         RelayMode::Legacy | RelayMode::Operator => None,
     };
-    let outcome = checked_reports(&stage_id)
-        .and_then(|reports| send_freeze(&stage_id, reports, relay_mode, &mut StdSink::default()));
+    let outcome = request_run(&stage_id, relay_mode, &mut StdSink::default());
     if let Some(scratch_dir) = scratch_dir {
         keep_outcome(&scratch_dir, &outcome);
     }
     outcome
 }
 
-/// D8 steps 1 to 3, run where the contract session runs: the changes, then
-/// the red run, which yields the reports the daemon is sent. Git runs as the
+/// D8 steps 1 and 2 where the contract session runs, then the request for
+/// the host run of the HEAD and tree this process sees. Git runs as the
 /// worktree's `.git` directs it: this is the session's own process, and the
 /// daemon checks the changes again with git pinned to the stage's registered
-/// git directory before it freezes anything.
-fn checked_reports(stage_id: &str) -> Result<Vec<ContractRunReport>> {
+/// git directory, before the run and before it freezes anything.
+fn request_run(stage_id: &str, relay_mode: RelayMode, sink: &mut dyn RelaySink) -> Result<()> {
     let site = ContractSite::load(stage_id)?;
+    check_site_changes(&site, &WorktreeGit::discovered(&site.worktree_root))?;
+    let head = digest::head(&site.worktree_root)?;
+    let tree_digest = digest::tree_digest(&site.worktree_root)?;
+    if matches!(relay_mode, RelayMode::Legacy) {
+        refuse_legacy(stage_id, &head);
+    }
+    send_freeze(stage_id, &head, &tree_digest, relay_mode, sink)
+}
+
+/// A session that cannot relay would have to run the contracts itself, which
+/// would nest the sandbox: refuse, as the session's completion does.
+fn refuse_legacy(stage_id: &str, head: &str) -> ! {
+    println!("{}", heading(JobKind::Freeze, "refused", head));
+    println!(
+        "This session cannot relay the contract freeze (no LOOM_SCRATCH_DIR). Run loom stage \
+         contracts freeze {stage_id} from the operator shell, or loom stage retry {stage_id} for \
+         a session that can."
+    );
+    std::process::exit(1)
+}
+
+/// D8 steps 1 and 2 with `repo`: the stage declares contracts, every changed
+/// path is a contract file or matches a `harness` glob, and every contract
+/// file exists. A failure is a refusal listing the problems.
+pub(crate) fn check_site_changes(site: &ContractSite, repo: &WorktreeGit) -> Result<()> {
     let stage = &site.stage;
     if stage.contracts.is_empty() {
-        bail!("Stage '{stage_id}' declares no contracts, so there is nothing to freeze");
+        bail!(
+            "Stage '{}' declares no contracts, so there is nothing to freeze",
+            stage.id
+        );
     }
-
-    let repo = WorktreeGit::discovered(&site.worktree_root);
-    let base = stage_base(&repo, &site.work_dir)?;
-    let changed = changed_paths(&repo, &site.working_dir, &base)?;
+    let base = stage_base(repo, &site.work_dir)?;
+    let changed = changed_paths(repo, &site.working_dir, &base)?;
     let existing = |file: &str| site.working_dir.join(file).is_file();
     let inputs = FreezeInputs {
         contracts: &stage.contracts,
@@ -161,25 +189,17 @@ fn checked_reports(stage_id: &str) -> Result<Vec<ContractRunReport>> {
         existing: &existing,
     };
     refuse(
-        stage_id,
+        &stage.id,
         check_changes(&inputs).err().unwrap_or_default(),
         "The contract phase may change only contract files and files matching the stage's \
          `harness` globs. Revert every other change (`git checkout -- <path>`, or delete the \
          untracked file), then",
-    )?;
-
-    let confinement = resolve_confinement(
-        stage.sandbox.command_confinement,
-        plan_confinement(&site.work_dir),
-    );
-    check_formatting(&site, confinement)?;
-
-    run_contracts(&site, confinement)
+    )
 }
 
 /// The formatter gate: a frozen file cannot change, so a contract or harness file
 /// that fails one of the stage's formatter checks is refused before the freeze.
-fn check_formatting(site: &ContractSite, confinement: CommandConfinement) -> Result<()> {
+pub(crate) fn check_formatting(site: &ContractSite, confinement: CommandConfinement) -> Result<()> {
     let stage = &site.stage;
     let unformatted = format_problems(
         &stage.acceptance,
@@ -226,10 +246,15 @@ impl std::error::Error for Refusal {}
 /// What a failed attempt tells the operator: the problems a refusal listed,
 /// else the error the attempt failed with.
 fn listed_problems(error: &anyhow::Error) -> Vec<String> {
-    match error.downcast_ref::<Refusal>() {
-        Some(refused) => refused.problems.clone(),
-        None => vec![format!("{error:#}")],
-    }
+    refused_problems(error).map_or_else(|| vec![format!("{error:#}")], <[String]>::to_vec)
+}
+
+/// The problems `error` lists when it is a refusal of this module; `None`
+/// for any other error, such as a check that could not run.
+pub(crate) fn refused_problems(error: &anyhow::Error) -> Option<&[String]> {
+    error
+        .downcast_ref::<Refusal>()
+        .map(|refused| refused.problems.as_slice())
 }
 
 /// Fail with every problem listed, and the way out.
@@ -248,38 +273,10 @@ fn refuse(stage_id: &str, problems: Vec<String>, fix: &str) -> Result<()> {
     Err(Refusal { problems, message }.into())
 }
 
-/// Run every contract with the criteria executor and judge each run.
-fn run_contracts(
-    site: &ContractSite,
-    confinement: CommandConfinement,
-) -> Result<Vec<ContractRunReport>> {
-    let stage = &site.stage;
-    let (mut reports, mut problems) = (Vec::new(), Vec::new());
-    for contract in &stage.contracts {
-        match run_contract(
-            &site.worktree_root,
-            &site.working_dir,
-            contract,
-            confinement,
-        )? {
-            Ok(report) => reports.push(report),
-            Err(problem) => problems.push(problem),
-        }
-    }
-    refuse(
-        &stage.id,
-        problems,
-        "Every contract test must fail now, before any implementation exists; a failing \
-         assertion and a compile or collection failure both count. Fix the tests named above, \
-         then",
-    )?;
-    Ok(reports)
-}
-
-/// Run one contract from its run directory and judge the run. The outer
-/// `Err` means the command could not be run at all; the inner one is a
-/// problem the agent must fix.
-fn run_contract(
+/// Run one contract from its run directory with the criteria executor and
+/// judge the run. The outer `Err` means the command could not be run at all;
+/// the inner one is a problem the agent must fix.
+pub(crate) fn run_contract(
     worktree_root: &Path,
     working_dir: &Path,
     contract: &ContractSpec,

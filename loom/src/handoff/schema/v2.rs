@@ -33,7 +33,7 @@ pub enum HandoffOrigin {
     /// applied (its successor starts against the amended criteria), or before
     /// the dispute escalates to human review.
     Retired,
-    /// The trusted host broker or daemon recorded completion verification
+    /// The daemon applying a host job recorded completion verification
     /// evidence for this exact session.
     CompletionEvidence,
 }

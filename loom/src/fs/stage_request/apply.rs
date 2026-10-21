@@ -4,10 +4,10 @@
 //! the same `handle_agent_block_stage` an agent's `BlockStage` RPC calls, a spooled
 //! dispute through the same `handle_dispute_criteria` or `handle_file_dispute`
 //! its RPC calls, and a spooled contract freeze through the same
-//! `handle_freeze_contracts` the `FreezeContracts` RPC calls, so the two ways a
-//! request can arrive cannot disagree about what it does - including the
-//! refusals, the budget check, the id allocation and the `validate_id` guard on
-//! the stage id.
+//! `handle_freeze_contracts` the `FreezeContracts` RPC calls (which queues the
+//! host contract run), so the two ways a request can arrive cannot disagree
+//! about what it does - including the refusals, the budget check, the id
+//! allocation and the `validate_id` guard on the stage id.
 
 use anyhow::Result;
 use std::path::Path;
@@ -16,7 +16,7 @@ use super::spool::{drain_identified, DrainOutcome};
 use super::types::StageRequest;
 use crate::stage_service::{
     handle_agent_block_stage, handle_dispute_criteria_identified, handle_file_dispute_identified,
-    handle_freeze_contracts, ContractRunReport, Response,
+    handle_freeze_contracts, Response,
 };
 use crate::verify::transitions::load_stage;
 
@@ -80,8 +80,8 @@ fn apply_request(
             failure_output.clone(),
             Some(request_id),
         )?,
-        StageRequest::FreezeContracts { reports } => {
-            freeze_as_current_session(work_dir, stage_id, reports)?
+        StageRequest::FreezeContracts { head, tree_digest } => {
+            freeze_as_current_session(work_dir, stage_id, head, tree_digest)?
         }
         StageRequest::FileDispute {
             kind,
@@ -102,14 +102,17 @@ fn apply_request(
 
 /// A spool names no session, so a spooled freeze speaks for the session the
 /// stage runs now; the handler refuses it unless that is the stage's running
-/// contract session.
+/// contract session. The spool line has no relay request id, so the job is
+/// joined under a fresh one.
 fn freeze_as_current_session(
     work_dir: &Path,
     stage_id: &str,
-    reports: &[ContractRunReport],
+    head: &str,
+    tree_digest: &str,
 ) -> Result<Response> {
     let session = load_stage(stage_id, work_dir)?.session.unwrap_or_default();
-    handle_freeze_contracts(work_dir, stage_id, &session, reports)
+    let request_id = crate::host_verify::new_job_id();
+    handle_freeze_contracts(work_dir, stage_id, &session, head, tree_digest, &request_id)
 }
 
 /// Log what the daemon did with one drained request, and count the refusals.

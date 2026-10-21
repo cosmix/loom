@@ -36,4 +36,37 @@ pub(super) const HOST_JOB_MATRIX: &[(SessionType, RequestKind, MatrixVerdict)] =
         RequestKind::Check,
         MatrixVerdict::Refuse,
     ),
+    // `complete` asks the daemon to verify the stage on the host and, if the
+    // run passes, complete it: only the sessions that complete their own
+    // stage (`Stage` in its worktree, `Knowledge` in the repository root).
+    (
+        SessionType::Stage,
+        RequestKind::Complete,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Knowledge,
+        RequestKind::Complete,
+        MatrixVerdict::Apply,
+    ),
+    (
+        SessionType::Adjudication,
+        RequestKind::Complete,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Merge,
+        RequestKind::Complete,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::BaseConflict,
+        RequestKind::Complete,
+        MatrixVerdict::Refuse,
+    ),
+    (
+        SessionType::Contract,
+        RequestKind::Complete,
+        MatrixVerdict::Refuse,
+    ),
 ];

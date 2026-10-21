@@ -141,11 +141,13 @@ fn aggregated_reachable_reverified_in_iv() {
         stage_id: IV_STAGE,
         acceptance_dir: Some(acceptance_dir.as_path()),
         worktree_root: Some(repo.path()),
-        control_session: None,
+        daemon_gates: false,
+        fail_closed: false,
         work_dir: work.path(),
     };
 
-    let error = run_v2(&checks, "main").expect_err("an unreachable symbol must fail completion");
+    let error = run_v2(&checks, "main", &mut |_, checked| checked)
+        .expect_err("an unreachable symbol must fail completion");
     let message = format!("{error:#}");
     assert!(
         message.contains("stage 'wire-orphan': orphan is not reachable from main"),

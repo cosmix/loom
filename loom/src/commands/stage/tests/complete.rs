@@ -1,18 +1,16 @@
 //! Tests for complete command
 
 use super::super::admin_proof::{mint_admin_proof, AdminProofRequest};
+use super::super::complete::complete_relay::{route, SessionCall};
 use super::super::complete::{complete, complete_authorization::require_admin_capability};
-use super::super::completion_evidence::{
-    format_evidence_record, parse_evidence_record, verified_evidence, EVIDENCE_EOF_MARKER,
-    EVIDENCE_RECORD_PREFIX,
-};
 use super::{create_test_stage, save_test_stage, setup_work_dir};
 use crate::models::stage::{StageStatus, StageType};
 use crate::plan::schema::AcceptanceCriterion;
+use crate::relay::emit::{RelayContext, RelayMode};
 use crate::verify::transitions::load_stage;
 use anyhow::Result;
 use serial_test::serial;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use tempfile::TempDir;
 
 /// Calls `complete()` with the session, `force_unsafe`, `assume_merged`, and
@@ -272,20 +270,69 @@ fn test_complete_standard_stage_not_routed_to_knowledge() {
     let _ = result;
 }
 
-#[test]
-fn verified_evidence_record_has_broker_boundaries() {
-    let stage = create_test_stage("build-api", StageStatus::Executing);
-    let evidence = verified_evidence(
-        &stage,
-        "session-123",
-        "a".repeat(40),
-        "/usr/bin/loom stage complete build-api".into(),
-    );
-    let output = format_evidence_record(&evidence).unwrap();
+/// An in-session `loom stage complete test-stage` run from `cwd`.
+fn session_call<'a>(work_dir: &'a Path, cwd: &'a Path, privileged: bool) -> SessionCall<'a> {
+    SessionCall {
+        stage_id: "test-stage",
+        session_id: None,
+        privileged,
+        no_cache: false,
+        work_dir,
+        cwd,
+    }
+}
 
-    assert!(output.starts_with(EVIDENCE_RECORD_PREFIX));
-    assert_eq!(output.trim_end().lines().last(), Some(EVIDENCE_EOF_MARKER));
-    assert_eq!(parse_evidence_record(&output).unwrap(), evidence);
+/// A stage or knowledge session `session-1`'s relay context, scratch
+/// directory `scratch`.
+fn relay_context(scratch: PathBuf, session_type: &str, work_dir: &Path) -> RelayContext {
+    RelayContext {
+        session_id: "session-1".to_string(),
+        scratch_dir: scratch,
+        stage_id: Some("test-stage".to_string()),
+        session_type: Some(session_type.to_string()),
+        worktree_path: None,
+        work_dir: Some(work_dir.to_path_buf()),
+    }
+}
+
+/// Route `call` under `mode`; returns the exit code and the printed lines.
+fn routed(mode: RelayMode, call: &SessionCall<'_>) -> (Option<i32>, String) {
+    let mut out = Vec::new();
+    let code = route(mode, call, &mut out).unwrap();
+    (code, String::from_utf8(out).unwrap())
+}
+
+#[test]
+fn a_legacy_session_is_refused_and_pointed_at_the_operator_shell() {
+    let temp = TempDir::new().unwrap();
+    let (code, text) = routed(
+        RelayMode::Legacy,
+        &session_call(temp.path(), temp.path(), false),
+    );
+    assert_eq!(code, Some(1), "{text}");
+    assert!(text.starts_with("Host job: refused (complete, "), "{text}");
+    assert!(
+        text.contains("This session cannot relay completion (no LOOM_SCRATCH_DIR)."),
+        "{text}"
+    );
+    assert!(text.contains("loom stage retry test-stage"), "{text}");
+}
+
+#[test]
+fn a_session_completion_refuses_the_privileged_flags() {
+    let temp = TempDir::new().unwrap();
+    let work_dir = temp.path().join(".loom").join("work");
+    let scratch = temp.path().join("session-1");
+    let context = relay_context(scratch.clone(), "stage", &work_dir);
+    let call = session_call(&work_dir, temp.path(), true);
+    let (code, text) = routed(RelayMode::Relay(context), &call);
+    assert_eq!(code, Some(1), "{text}");
+    assert!(text.starts_with("Host job: refused (complete, "), "{text}");
+    assert!(
+        text.contains("--no-verify, --force-unsafe and --assume-merged are refused"),
+        "{text}"
+    );
+    assert!(!scratch.exists(), "no ticket was written");
 }
 
 #[path = "complete_authorization_tests.rs"]

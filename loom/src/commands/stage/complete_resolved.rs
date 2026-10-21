@@ -26,7 +26,8 @@ pub(crate) fn verify_resolved_completion(stage: &Stage, work_dir: &Path) -> Resu
         stage_id: &stage.id,
         acceptance_dir: paths.acceptance_dir.as_deref(),
         worktree_root: paths.worktree_root.as_deref(),
-        control_session: None,
+        daemon_gates: false,
+        fail_closed: false,
         work_dir,
     })?;
     update_stage(&stage.id, work_dir, |current| {

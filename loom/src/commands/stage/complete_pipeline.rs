@@ -13,7 +13,6 @@ pub(super) struct VerificationPhase<'a> {
     pub acceptance_dir: &'a Option<PathBuf>,
     pub worktree_root: &'a Option<PathBuf>,
     pub session_id: Option<&'a str>,
-    pub control_session: Option<&'a str>,
     pub work_dir: &'a Path,
 }
 
@@ -26,14 +25,12 @@ pub(super) fn run_verification_phase(phase: VerificationPhase<'_>) -> Result<()>
         stage_id: phase.stage_id,
         acceptance_dir: phase.acceptance_dir.as_deref(),
         worktree_root: phase.worktree_root.as_deref(),
-        control_session: phase.control_session,
+        daemon_gates: false,
+        fail_closed: false,
         work_dir: phase.work_dir,
     })?;
     let snapshot = phase.snapshot.context("missing verification snapshot")?;
     snapshot.validate(phase.stage, phase.work_dir)?;
-    if let Some(control) = phase.control_session {
-        return emit_control_completion_evidence(phase.stage, phase.stage_id, control, snapshot);
-    }
     merge_verified_stage(phase, snapshot)
 }
 
@@ -117,45 +114,30 @@ fn no_verify_snapshot(
     }
 }
 
-fn emit_control_completion_evidence(
-    stage: &Stage,
-    stage_id: &str,
-    control_session: &str,
-    snapshot: &crate::handoff::completion::content::VerificationSnapshot,
-) -> Result<()> {
-    print_sandboxed_completion_pending_notice(stage_id);
-    super::super::completion_producer::emit_verified_evidence(stage, control_session, snapshot)
-}
-
 pub(super) fn complete_stage(
     mut stage: Stage,
     session_id: Option<String>,
     no_verify: bool,
     force_unsafe: bool,
     assume_merged: bool,
-    control_session: Option<String>,
     work_dir: &Path,
 ) -> Result<()> {
     if force_unsafe && no_verify {
         eprintln!("Note: --force-unsafe runs no checks, so --no-verify adds nothing.");
     }
-    if super::complete_dispatch::dispatch_route(
-        &mut stage,
-        force_unsafe,
-        assume_merged,
-        control_session.is_some(),
-        work_dir,
-    )? {
+    // Only the operator's shell reaches this pipeline (a session's
+    // completion is a host job).
+    if super::complete_dispatch::dispatch_route(&mut stage, force_unsafe, assume_merged, work_dir)?
+    {
         return Ok(());
     }
-    complete_normal_stage(stage, session_id, no_verify, control_session, work_dir)
+    complete_normal_stage(stage, session_id, no_verify, work_dir)
 }
 
 fn complete_normal_stage(
     mut stage: Stage,
     session_id: Option<String>,
     no_verify: bool,
-    control_session: Option<String>,
     work_dir: &Path,
 ) -> Result<()> {
     let stage_id = stage.id.clone();
@@ -167,9 +149,7 @@ fn complete_normal_stage(
         worktree_root,
         acceptance_dir,
     } = &execution_paths;
-    if control_session.is_none() {
-        sync_worktree_permissions(worktree_root, acceptance_dir);
-    }
+    sync_worktree_permissions(worktree_root, acceptance_dir);
     let snapshot = if no_verify {
         None
     } else {
@@ -184,7 +164,6 @@ fn complete_normal_stage(
         acceptance_dir,
         worktree_root,
         session_id: session_id.as_deref(),
-        control_session: control_session.as_deref(),
         work_dir,
     })?;
     Ok(())

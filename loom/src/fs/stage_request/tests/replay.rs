@@ -69,7 +69,11 @@ fn later_sink_failure_does_not_replay_the_first_dispute_effect() {
 #[test]
 fn freeze_stage_read_failure_keeps_the_request_pending() {
     let (_temp, work_dir, root) = setup("freeze", StageStatus::Executing, 0);
-    append_to_spool(&root, &StageRequest::FreezeContracts { reports: vec![] }).unwrap();
+    let freeze = StageRequest::FreezeContracts {
+        head: "a".repeat(40),
+        tree_digest: "b".repeat(64),
+    };
+    append_to_spool(&root, &freeze).unwrap();
     std::fs::remove_dir_all(work_dir.join("stages")).unwrap();
     assert!(drain_requests(&work_dir, "freeze", &root).is_err());
     assert_eq!(read_pending(&root).unwrap().len(), 1);

@@ -1,5 +1,5 @@
-//! A knowledge stage completed through the broker arrives Completed with
-//! `merged = true` (`daemon::server::control_complete`). The daemon then has
+//! A knowledge stage completed by a host job arrives Completed with
+//! `merged = true` (`host_verify::apply`). The daemon then has
 //! nothing to merge, and the stage's dependents start through the ordinary
 //! graph sync.
 

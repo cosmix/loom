@@ -46,8 +46,8 @@ pub const MAX_PERSISTED_OUTPUT_BYTES: u64 = 64 * 1024 * 1024;
 /// and relay paths share one cap so neither becomes the softer one.
 pub const MAX_TICKET_BYTES: usize = crate::daemon::MAX_REQUEST_BYTES;
 
-/// 128 random bits as 32 lowercase hex characters — the same shape the
-/// completion nonce uses (`commands/stage/control_complete.rs`).
+/// 128 random bits as 32 lowercase hex characters — the same shape a host job
+/// id has (`host_verify::new_job_id`).
 pub fn new_request_id() -> String {
     uuid::Uuid::new_v4().simple().to_string()
 }

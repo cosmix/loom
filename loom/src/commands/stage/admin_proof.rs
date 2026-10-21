@@ -7,7 +7,10 @@ use super::admin_hmac::{constant_time_eq, hmac_sha256};
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 
-/// Environment variable used to pass a proof from a trusted host broker.
+/// Environment variable carrying the one-time admin proof for a privileged
+/// action (stage completion, daemon stop). The proof is minted by the
+/// proof-minting command (`LOOM_ADMIN_TOKEN`) and verified here before the
+/// action runs.
 ///
 /// The value is deliberately not accepted as a command-line argument, so it is
 /// absent from process listings and shell history. Callers must remove it from

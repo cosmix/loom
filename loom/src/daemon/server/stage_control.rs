@@ -5,7 +5,7 @@
 
 use std::path::Path;
 
-use crate::daemon::protocol::{ContractRunReport, Request, Response};
+use crate::daemon::protocol::{Request, Response};
 use crate::models::dispute::{CriterionField, DisputeKind};
 
 /// Serve one `DisputeCriteria`.
@@ -68,18 +68,29 @@ fn serve_block_stage(work_dir: &Path, stage_id: &str, session_id: &str, reason: 
     })
 }
 
-/// Serve one `FreezeContracts`. Every refusal comes back from the handler as
-/// `Response::Error`; an `Err` means the freeze itself could not be written.
+/// Serve one `FreezeContracts`: queue the host contract run. Every refusal
+/// comes back from the handler as `Response::Error`; an `Err` means the job
+/// could not be queued. A socket request carries no relay id, so the job is
+/// joined under a fresh one.
 fn serve_freeze_contracts(
     work_dir: &Path,
     stage_id: &str,
     session_id: &str,
-    reports: &[ContractRunReport],
+    head: &str,
+    tree_digest: &str,
 ) -> Response {
-    super::contracts::handle_freeze_contracts(work_dir, stage_id, session_id, reports)
-        .unwrap_or_else(|error| Response::Error {
-            message: format!("Contract freeze failed: {error:#}"),
-        })
+    let request_id = crate::host_verify::new_job_id();
+    super::contracts::handle_freeze_contracts(
+        work_dir,
+        stage_id,
+        session_id,
+        head,
+        tree_digest,
+        &request_id,
+    )
+    .unwrap_or_else(|error| Response::Error {
+        message: format!("Contract run request failed: {error:#}"),
+    })
 }
 
 /// Serve one of the requests a stage agent makes about its own stage, once
@@ -119,9 +130,10 @@ pub(super) fn serve_stage_control(work_dir: &Path, request: Request) -> Response
         Request::FreezeContracts {
             stage_id,
             session_id,
-            reports,
+            head,
+            tree_digest,
             ..
-        } => serve_freeze_contracts(work_dir, &stage_id, &session_id, &reports),
+        } => serve_freeze_contracts(work_dir, &stage_id, &session_id, &head, &tree_digest),
         Request::ObserveChanges { stage_id, .. } => {
             super::observer::handle_observe_changes(work_dir, &stage_id)
         }

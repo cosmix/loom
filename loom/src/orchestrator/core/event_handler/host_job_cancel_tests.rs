@@ -21,11 +21,13 @@ fn queue_check(work: &Path) -> JobRecord {
         session_id: "session-a",
         request_id: "r1",
         kind: JobKind::Check,
-        head: "aaaa",
-        tree_digest: "bbbb",
+        head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        tree_digest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         no_cache: false,
     };
-    match submit(work, &request, Utc::now()).unwrap() {
+    // Queued long past any job deadline, so the job no longer holds the
+    // stage's stall escalation (common.md 4.5) and recovery runs.
+    match submit(work, &request, Utc::now() - chrono::Duration::days(30)).unwrap() {
         Submission::Queued(record) => record,
         other => panic!("expected a queued job, got {other:?}"),
     }

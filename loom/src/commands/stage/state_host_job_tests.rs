@@ -47,8 +47,8 @@ fn reset_cancels_the_stages_host_job() {
         session_id: "session-a",
         request_id: "r1",
         kind: JobKind::Check,
-        head: "aaaa",
-        tree_digest: "bbbb",
+        head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        tree_digest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         no_cache: false,
     };
     let Submission::Queued(job) = submit(work, &request, chrono::Utc::now()).unwrap() else {

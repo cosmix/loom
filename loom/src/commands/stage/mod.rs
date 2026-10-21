@@ -8,10 +8,7 @@ pub(crate) mod admin_proof;
 mod amend;
 pub mod commit;
 pub mod complete;
-pub mod completion_evidence;
-#[path = "completion_evidence/producer.rs"]
-mod completion_producer;
-mod contracts;
+pub(crate) mod contracts;
 pub(crate) mod criterion_output;
 mod dispute_criteria;
 mod dispute_kinds;

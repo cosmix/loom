@@ -178,6 +178,14 @@ expect check 'loom check s1' general-purpose
 expect check 'cd loom && loom check s1 --no-cache' general-purpose
 expect '' 'echo "loom check s1"'
 
+# `loom stage complete` relays the `complete` control kind: the main agent's
+# completion request reaches the daemon, a subagent's never does.
+expect complete 'loom stage complete s1'
+expect complete 'cd loom && loom stage complete s1'
+expect '' 'loom stage complete s1' general-purpose
+expect '' 'cd loom && loom stage complete s1' general-purpose
+expect '' 'echo "loom stage complete s1"'
+
 # A `loom memory` write command reaches the helper even when its own output
 # carries no relay line (the case the helper's leftover-ticket sweep exists
 # for); an unrelated command never does, and stays completely silent.

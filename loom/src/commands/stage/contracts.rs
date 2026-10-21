@@ -7,7 +7,7 @@
 //! session, else the socket, else the worktree spool when this process may
 //! not dial the socket at all.
 
-mod freeze;
+pub(crate) mod freeze;
 mod restore;
 mod show;
 
@@ -19,8 +19,7 @@ use anyhow::{bail, Context, Result};
 use std::path::{Component, Path, PathBuf};
 
 use crate::daemon::{
-    current_session_id, try_send_request, user_credential, ContractRunReport, DaemonReach, Request,
-    Response,
+    current_session_id, try_send_request, user_credential, DaemonReach, Request, Response,
 };
 use crate::fs::stage_request::{append_to_spool, spool_path, spool_target_from_cwd, StageRequest};
 use crate::models::stage::Stage;
@@ -30,8 +29,13 @@ use crate::verify::transitions::load_stage;
 
 use super::acceptance_runner::resolve_stage_execution_paths;
 
+/// What every accepted request prints: the daemon does the rest.
+const RUN_REQUESTED: &str = "Contract run requested. End your turn now: the daemon runs the \
+     contracts on the host, then freezes them and starts the implementation session, or parks \
+     the stage with the refusal.";
+
 /// A stage and the places its contract files live.
-struct ContractSite {
+pub(crate) struct ContractSite {
     work_dir: PathBuf,
     stage: Stage,
     worktree_root: PathBuf,
@@ -41,7 +45,8 @@ struct ContractSite {
 }
 
 impl ContractSite {
-    /// Load the stage the way `loom stage complete` does inside a session.
+    /// Load the stage the way the session's own commands do, from the
+    /// state root the current directory names.
     fn load(stage_id: &str) -> Result<Self> {
         let work_dir = crate::commands::common::work_dir_path()?;
         let stage = load_stage(stage_id, &work_dir)?;
@@ -58,6 +63,22 @@ impl ContractSite {
         })
     }
 
+    /// A site the caller has already resolved: the daemon's host run, which
+    /// resolves it from the state root and never from its current directory.
+    pub(crate) fn resolved(
+        work_dir: PathBuf,
+        stage: Stage,
+        worktree_root: PathBuf,
+        working_dir: PathBuf,
+    ) -> Self {
+        Self {
+            work_dir,
+            stage,
+            worktree_root,
+            working_dir,
+        }
+    }
+
     /// `working_dir` relative to the worktree root; empty when they coincide.
     fn working_dir_prefix(&self) -> PathBuf {
         let declared = self.stage.working_dir.as_deref().unwrap_or(".");
@@ -68,17 +89,23 @@ impl ContractSite {
     }
 }
 
-/// Send the freeze over the relay, the socket, or the spool.
+/// Request the host contract run for `head` and `tree_digest` over the
+/// relay, the socket, or the spool. The relay line is the last line printed.
 fn send_freeze(
     stage_id: &str,
-    reports: Vec<ContractRunReport>,
+    head: &str,
+    tree_digest: &str,
     relay_mode: RelayMode,
     sink: &mut dyn RelaySink,
 ) -> Result<()> {
+    let request = StageRequest::FreezeContracts {
+        head: head.to_string(),
+        tree_digest: tree_digest.to_string(),
+    };
     if let RelayMode::Relay(context) = relay_mode {
-        let request = StageRequest::FreezeContracts { reports };
         let payload =
             serde_json::to_value(&request).context("failed to serialize the freeze request")?;
+        println!("{RUN_REQUESTED}");
         context.emit(
             RequestKind::FreezeContracts,
             payload,
@@ -90,51 +117,42 @@ fn send_freeze(
     }
 
     let work_dir = crate::commands::common::work_dir_path()?;
-    let request = Request::FreezeContracts {
+    let rpc = Request::FreezeContracts {
         auth_token: user_credential(&work_dir),
         stage_id: stage_id.to_string(),
         session_id: current_session_id(),
-        reports: reports.clone(),
+        head: head.to_string(),
+        tree_digest: tree_digest.to_string(),
     };
-    match try_send_request(&work_dir, &request)? {
+    match try_send_request(&work_dir, &rpc)? {
         DaemonReach::Answered(response) => handle_freeze_response(stage_id, response),
         DaemonReach::NotListening => bail!(
-            "No daemon is listening on the state directory's orchestrator.sock, so the freeze \
-             cannot be recorded. Nothing was frozen; run the command again once the daemon is \
-             running."
+            "No daemon is listening on the state directory's orchestrator.sock, so the contract \
+             run cannot be requested. Nothing was frozen; run the command again once the daemon \
+             is running."
         ),
-        DaemonReach::Unreachable => queue_freeze(stage_id, reports),
+        DaemonReach::Unreachable => queue_freeze(stage_id, &request),
     }
 }
 
-/// Queue the freeze for the daemon to record, for the caller that cannot
-/// reach it. The daemon runs the same handler on it, so the session and path
-/// checks still apply, and attributes it to the worktree it drained it from.
-fn queue_freeze(stage_id: &str, reports: Vec<ContractRunReport>) -> Result<()> {
+/// Queue the request for the daemon, for the caller that cannot reach it.
+/// The daemon runs the same handler on it, so the session and path checks
+/// still apply, and attributes it to the worktree it drained it from.
+fn queue_freeze(stage_id: &str, request: &StageRequest) -> Result<()> {
     let worktree_root = spool_target_from_cwd()?;
-    append_to_spool(&worktree_root, &StageRequest::FreezeContracts { reports })?;
+    append_to_spool(&worktree_root, request)?;
 
-    println!("Queued the contract freeze for stage '{stage_id}' for the loom daemon to record.");
+    println!("Queued the contract run of stage '{stage_id}' for the loom daemon.");
     println!("Queued at: {}", spool_path(&worktree_root).display());
-    println!();
-    println!(
-        "The daemon records the freeze on its next poll and then ends this session. Stop now: \
-         do not implement anything, do not commit, and do not complete the stage."
-    );
+    println!("{RUN_REQUESTED}");
     Ok(())
 }
 
 /// A live daemon's refusal is authoritative and reported verbatim.
 fn handle_freeze_response(stage_id: &str, response: Response) -> Result<()> {
     match response {
-        Response::ContractsFrozen { files } => {
-            println!("Froze {files} contract file(s) for stage '{stage_id}'.");
-            println!();
-            println!(
-                "The contract phase is over. Stop now: do not implement anything, do not \
-                 commit, and do not complete the stage. Loom ends this session and starts the \
-                 implementation session against the frozen contracts."
-            );
+        Response::Ok => {
+            println!("{RUN_REQUESTED}");
             Ok(())
         }
         Response::Error { message } => bail!("Daemon refused the freeze: {message}"),

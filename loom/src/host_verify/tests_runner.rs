@@ -18,7 +18,7 @@ use crate::models::stage::{Stage, StageStatus};
 
 pub(super) const STAGE: &str = "stage-a";
 /// Writes a passing `result.json` for the job the runner named.
-pub(super) const PASS: &str = r#"printf '{"job_id":"%s","head":"h","passed":true,"criteria":[],"error":null}' "$3" > "$LOOM_WORK_DIR/verification/$1/$3/result.json""#;
+pub(super) const PASS: &str = r#"printf '{"job_id":"%s","head":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","passed":true,"criteria":[],"error":null}' "$3" > "$LOOM_WORK_DIR/verification/$1/$3/result.json""#;
 
 pub(super) fn write_stage(work: &Path, stage_id: &str) {
     let stage = Stage {
@@ -53,8 +53,8 @@ pub(super) fn queue(work: &Path, stage_id: &str, at: DateTime<Utc>) -> JobRecord
         session_id: "session-a",
         request_id: "r1",
         kind: JobKind::Check,
-        head: "h",
-        tree_digest: "d",
+        head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        tree_digest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         no_cache: false,
     };
     match submit(work, &request, at).unwrap() {

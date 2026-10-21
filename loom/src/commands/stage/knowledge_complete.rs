@@ -13,40 +13,12 @@ use super::acceptance_runner::{
     print_acceptance_failure_guidance, resolve_knowledge_execution_paths,
     run_acceptance_with_display, AcceptanceDisplayOptions,
 };
-use super::complete::print_sandboxed_completion_pending_notice;
 use super::session::cleanup_session_resources;
 
-/// Verification for a sandboxed knowledge session (`LOOM_SESSION_TYPE=knowledge`,
-/// routed by `control_session::sandbox_control_session`).
-///
-/// Acceptance runs in the main repository exactly as
-/// [`complete_knowledge_stage`] runs it; then the EOF-delimited evidence record
-/// hands the transition to the daemon through the completion broker. The
-/// daemon sets `merged = true` and retires the session itself
-/// (`daemon/server/control_complete.rs`). Nothing is written here: a sandboxed
-/// session cannot write the state directory.
-pub(super) fn verify_knowledge_for_broker(
-    stage: &Stage,
-    control_session: &str,
-    privileged: bool,
-    work_dir: &Path,
-) -> Result<()> {
-    if privileged {
-        bail!(
-            "sandboxed knowledge completion runs verification only; --no-verify, \
-             --force-unsafe and --assume-merged are refused"
-        );
-    }
-    let snapshot =
-        crate::handoff::completion::content::VerificationSnapshot::capture(stage, work_dir)?;
-    verify_knowledge_acceptance(stage, work_dir)?;
-    print_sandboxed_completion_pending_notice(&stage.id);
-    snapshot.validate(stage, work_dir)?;
-    super::completion_producer::emit_verified_evidence(stage, control_session, &snapshot)?;
-    Ok(())
-}
-
-/// Complete a knowledge stage without requiring merge.
+/// Complete a knowledge stage without requiring merge, from the operator's
+/// shell. A knowledge session's completion is a host job instead: the daemon
+/// runs its acceptance in the repository root and applies the transition
+/// (`host_verify::apply`).
 ///
 /// Knowledge stages run in the main repo context (no worktree) and update
 /// documentation in `doc/loom/knowledge/`. Since they don't have a branch

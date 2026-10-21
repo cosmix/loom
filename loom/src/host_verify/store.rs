@@ -98,6 +98,17 @@ pub fn save_current(work_dir: &Path, record: &JobRecord) -> Result<()> {
     write_atomic(&root, &current, &bytes)
 }
 
+/// The stage's current record when relay request `request_id` queued or
+/// joined it.
+pub fn job_for_request(
+    work_dir: &Path,
+    stage_id: &str,
+    request_id: &str,
+) -> Result<Option<JobRecord>> {
+    let current = load_current(work_dir, stage_id)?;
+    Ok(current.filter(|record| record.requests.iter().any(|id| id == request_id)))
+}
+
 pub fn load_job_record(work_dir: &Path, stage_id: &str, job_id: &str) -> Result<Option<JobRecord>> {
     let rel = job_rel(stage_id, job_id)?.join(RECORD_FILE);
     read_json(work_dir, &rel, RECORD_MAX_BYTES)

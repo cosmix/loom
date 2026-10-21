@@ -1,4 +1,4 @@
-//! The eleven request kinds a CLI invocation can relay to the daemon.
+//! The twelve request kinds a CLI invocation can relay to the daemon.
 
 use anyhow::bail;
 use serde::{Deserialize, Serialize};
@@ -21,15 +21,18 @@ pub enum RequestKind {
     FileDispute,
     Commit,
     Check,
+    Complete,
 }
 
 impl RequestKind {
-    /// All eleven kinds, in the per-writer matrix's order
+    /// All twelve kinds, in the per-writer matrix's order
     /// (`doc/plans/PLAN-loom-state-confinement.md` section 5, then
     /// `freeze-contracts` from verification v2's contract phase,
-    /// `file-dispute` from its dispute kinds, and `commit`, the staged index
-    /// the daemon commits for a session, and `check`, a host verification job).
-    pub fn all() -> [RequestKind; 11] {
+    /// `file-dispute` from its dispute kinds, `commit`, the staged index the
+    /// daemon commits for a session, `check`, a host verification job, and
+    /// `complete`, the host job whose passing run lets the daemon complete
+    /// the stage).
+    pub fn all() -> [RequestKind; 12] {
         [
             RequestKind::Memory,
             RequestKind::Block,
@@ -42,10 +45,11 @@ impl RequestKind {
             RequestKind::FileDispute,
             RequestKind::Commit,
             RequestKind::Check,
+            RequestKind::Complete,
         ]
     }
 
-    /// The eight kinds only a session's lead process may relay; the relay
+    /// The nine kinds only a session's lead process may relay; the relay
     /// hook drops these from a teammate before an inbox entry is ever
     /// written, and the daemon's drain refuses one that arrives anyway.
     pub fn is_control(self) -> bool {
@@ -59,6 +63,7 @@ impl RequestKind {
                 | RequestKind::FreezeContracts
                 | RequestKind::FileDispute
                 | RequestKind::Commit
+                | RequestKind::Complete
         )
     }
 
@@ -75,6 +80,7 @@ impl RequestKind {
             RequestKind::FileDispute => "file-dispute",
             RequestKind::Commit => "commit",
             RequestKind::Check => "check",
+            RequestKind::Complete => "complete",
         }
     }
 }
@@ -137,6 +143,7 @@ mod tests {
                 RequestKind::FreezeContracts,
                 RequestKind::FileDispute,
                 RequestKind::Commit,
+                RequestKind::Complete,
             ]
         );
     }

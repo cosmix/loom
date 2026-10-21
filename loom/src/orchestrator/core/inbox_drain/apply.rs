@@ -20,15 +20,14 @@ use crate::models::session::{Session, SessionStatus, SessionType};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::adjudication::record::{self, AdjudicateOutcome};
 use crate::relay::{
-    decode_payload, verdict as matrix_verdict, AgentRole, HandoffRequest, InboxEntry,
-    MatrixVerdict, RequestPayload, VerdictRequest,
+    decode_payload, verdict as matrix_verdict, AgentRole, CommitPayload, HandoffRequest,
+    InboxEntry, MatrixVerdict, RequestPayload, VerdictRequest,
 };
 use crate::telemetry::{append_record, TelemetryEvent, TelemetryRecord};
-use crate::verify::contracts::refusal;
 use crate::verify::transitions::{load_stage, update_stage};
 
-use super::check;
 use super::commit::{self, CommitSite};
+use super::{check, complete, freeze};
 use super::{InboxHost, Settle};
 
 /// An entry the matrix lets through, with its payload decoded.
@@ -72,8 +71,17 @@ pub(super) fn admit(record: &Session, inbox_entry: &InboxEntry) -> Result<Admitt
 
 /// Hand one admitted request to the handler that owns its kind.
 pub(super) fn apply(host: &mut dyn InboxHost, record: &Session, admitted: Admitted) -> Settle {
-    let work_dir = host.work_dir().to_path_buf();
-    let stage_id = admitted.stage_id.as_str();
+    let (work_dir, repo_root) = (
+        host.work_dir().to_path_buf(),
+        host.repo_root().to_path_buf(),
+    );
+    let (stage_id, request_id) = (admitted.stage_id.as_str(), admitted.request_id.as_str());
+    let site = RequestSite {
+        work_dir: &work_dir,
+        repo_root: &repo_root,
+        stage_id,
+        record,
+    };
     match admitted.payload {
         RequestPayload::Memory(entry) => memory(&work_dir, stage_id, &entry),
         // A resolver is not its stage's worker, so its block is a give-up.
@@ -86,18 +94,9 @@ pub(super) fn apply(host: &mut dyn InboxHost, record: &Session, admitted: Admitt
         | RequestPayload::Dispute(request)
         | RequestPayload::FreezeContracts(request)
         | RequestPayload::FileDispute(request) => {
-            stage_request(&work_dir, stage_id, record, request)
+            stage_request(&work_dir, stage_id, record, request, request_id)
         }
-        RequestPayload::Handoff(request) => {
-            let repo_root = host.repo_root().to_path_buf();
-            let site = HandoffSite {
-                work_dir: &work_dir,
-                repo_root: &repo_root,
-                stage_id,
-                record,
-            };
-            handoff(&site, &request, admitted.matrix)
-        }
+        RequestPayload::Handoff(request) => handoff(&site, &request, admitted.matrix),
         RequestPayload::MergeResolved => host.resolve_merge(record, stage_id),
         RequestPayload::Verdict(request) => {
             adjudication_verdict(&*host, stage_id, record, &request)
@@ -105,23 +104,32 @@ pub(super) fn apply(host: &mut dyn InboxHost, record: &Session, admitted: Admitt
         RequestPayload::Telemetry(event) => {
             telemetry(&work_dir, stage_id, record, event, admitted.relayed_at)
         }
-        RequestPayload::Commit(payload) => {
-            let repo_root = host.repo_root().to_path_buf();
-            let site = CommitSite {
-                work_dir: &work_dir,
-                repo_root: &repo_root,
-                stage_id,
-                record,
-            };
-            commit::apply_commit(host, &site, &payload)
-        }
+        RequestPayload::Commit(payload) => commit_request(host, &site, &payload),
         RequestPayload::Check(request) => {
-            check::apply_check(host, stage_id, record, &request, &admitted.request_id)
+            check::apply_check(host, stage_id, record, &request, request_id)
+        }
+        RequestPayload::Complete(request) => {
+            complete::apply_complete(host, stage_id, record, &request, request_id)
         }
     }
 }
 
-fn failed(error: anyhow::Error) -> Settle {
+/// A relayed commit, applied by `commit` from the request's site.
+fn commit_request(
+    host: &mut dyn InboxHost,
+    site: &RequestSite<'_>,
+    payload: &CommitPayload,
+) -> Settle {
+    let commit_site = CommitSite {
+        work_dir: site.work_dir,
+        repo_root: site.repo_root,
+        stage_id: site.stage_id,
+        record: site.record,
+    };
+    commit::apply_commit(host, &commit_site, payload)
+}
+
+pub(super) fn failed(error: anyhow::Error) -> Settle {
     Settle::Refused(format!("could not be applied: {error:#}"))
 }
 
@@ -140,6 +148,7 @@ fn stage_request(
     stage_id: &str,
     record: &Session,
     request: StageRequest,
+    request_id: &str,
 ) -> Settle {
     if let Err(reason) = require_owner(work_dir, stage_id, record) {
         return Settle::Refused(reason);
@@ -161,12 +170,16 @@ fn stage_request(
             evidence_commit,
             failure_output,
         ),
-        StageRequest::FreezeContracts { reports } => {
-            let response = handle_freeze_contracts(work_dir, stage_id, &record.id, &reports);
-            if let Ok(Response::Error { message }) = &response {
-                park_refused_freeze(work_dir, stage_id, &record.id, message);
-            }
-            response
+        StageRequest::FreezeContracts { head, tree_digest } => {
+            let queued = handle_freeze_contracts(
+                work_dir,
+                stage_id,
+                &record.id,
+                &head,
+                &tree_digest,
+                request_id,
+            );
+            return freeze::settle(work_dir, stage_id, &record.id, request_id, queued);
         }
         StageRequest::FileDispute {
             kind,
@@ -174,30 +187,18 @@ fn stage_request(
             evidence_commit,
         } => handle_file_dispute(work_dir, stage_id, kind, reason, evidence_commit),
     };
+    settle_response(response)
+}
+
+/// Settles a stage handler's daemon answer: an error reply refuses the request
+/// with its message, and a handler failure refuses it with the error.
+fn settle_response(response: anyhow::Result<Response>) -> Settle {
     match response {
         Ok(Response::Ok) => Settle::Applied(None),
         Ok(Response::DisputeCreated { id }) => Settle::Applied(Some(format!("dispute {id} filed"))),
-        Ok(Response::ContractsFrozen { files }) => {
-            Settle::Applied(Some(format!("contracts frozen ({files} files)")))
-        }
         Ok(Response::Error { message }) => Settle::Refused(message),
         Ok(other) => Settle::Refused(format!("unexpected daemon answer: {other:?}")),
         Err(error) => failed(error),
-    }
-}
-
-/// A relayed freeze tells its writer to end the turn, so a refusal here would
-/// leave the stage `Executing` with no one at work: park it for the operator
-/// with the refusal as its reason (`verify::contracts::refusal`). The refusal
-/// is settled whether or not the park lands.
-fn park_refused_freeze(work_dir: &Path, stage_id: &str, session_id: &str, message: &str) {
-    if let Err(error) = refusal::park_refused_relay(work_dir, stage_id, session_id, message) {
-        tracing::warn!(
-            stage_id = %stage_id,
-            session_id = %session_id,
-            error = %format!("{error:#}"),
-            "Could not park the stage of a refused contract freeze for the operator"
-        );
     }
 }
 
@@ -224,15 +225,15 @@ pub(super) fn require_owner(
     Ok(stage)
 }
 
-/// Where a relayed handoff is written from.
-struct HandoffSite<'a> {
+/// Where a relayed handoff or commit is applied from.
+struct RequestSite<'a> {
     work_dir: &'a Path,
     repo_root: &'a Path,
     stage_id: &'a str,
     record: &'a Session,
 }
 
-fn handoff(site: &HandoffSite<'_>, request: &HandoffRequest, matrix: MatrixVerdict) -> Settle {
+fn handoff(site: &RequestSite<'_>, request: &HandoffRequest, matrix: MatrixVerdict) -> Settle {
     let stage = match load_stage(site.stage_id, site.work_dir) {
         Ok(stage) => stage,
         Err(error) => return failed(error),
