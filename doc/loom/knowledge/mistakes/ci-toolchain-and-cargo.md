@@ -317,6 +317,6 @@ The sweep follow-ups on executable startup, cache coverage, hook-path navigation
 
 **Why:** git opens the SSH session to the remote and reads its ref advertisement before it runs the pre-push hook, and keeps that session idle while the hook runs. When the remote closes the session during the hook, the first write after the hook returns hits a closed pipe and git dies of SIGPIPE (exit 141) without a message. Reproduced with a fake SSH transport that drops after 2 s and a hook that sleeps 4 s: the hook's last line prints, exit 141, the remote stays empty.
 
-**Prevention:** the hook's runtime must stay below the remote's idle-session lifetime, or the checks must run before git opens the connection. A reflog entry only shows a ref changed, not which push changed it; confirm a hooked push from its own output (`To <url>` plus a ref line, or exit status 0).
+**Prevention:** a hook cannot reopen git's connection, so a long pre-push hook must make the rerun cheap. A reflog entry only shows a ref changed, not which push changed it; confirm a hooked push from its own output (`To <url>` plus a ref line, or exit status 0).
 
-**Fix:** pending.
+**Fix:** the hook exits at once when its stdin lists no refs to update. After a full pass on a clean tracked tree it records HEAD in `<git-common-dir>/loom-pre-push-verified` and says so, so rerunning the same push skips the checks; a push touching any non-branch ref (a tag) always runs them. `scripts/push.sh` runs the hook against HEAD before connecting, then `git push`es on a fresh connection.
