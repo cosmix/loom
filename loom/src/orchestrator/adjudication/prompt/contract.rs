@@ -4,18 +4,21 @@ use std::fs;
 use std::path::Path;
 
 use super::{KindPromptInput, Prompt};
-use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::models::dispute::DisputeKind;
 use crate::plan::schema::ContractSpec;
-use crate::relay::sha256_hex;
 use crate::verify::contracts::run_dir::{resolve_run, ContractRun};
-use crate::verify::contracts::store::FreezeRecord;
-use crate::verify::contracts::{normalize, resolve_adapter, store};
+use crate::verify::contracts::{resolve_adapter, store};
 
-const FROZEN_SET_HEADING: &str = "## Other frozen files changed since the freeze";
-/// Bounds on the frozen-set evidence: one file's diff, and the whole section.
-const MAX_FROZEN_SET_DIFF_BYTES: usize = 8 * 1024;
-const MAX_FROZEN_SET_SECTION_BYTES: usize = 32 * 1024;
+#[path = "contract_frozen_set.rs"]
+mod frozen_set;
+use frozen_set::FROZEN_SET_HEADING;
+
+/// The evidence headings whose fences the truncation pass halves
+/// (`truncate.rs`): a contract file appears in three of them, so they go
+/// before the frozen-set section is ever reached.
+pub(super) const FROZEN_CONTENT_HEADING: &str = "## Frozen content";
+pub(super) const CURRENT_CONTENT_HEADING: &str = "## Current content";
+pub(super) const DIFF_HEADING: &str = "## Diff (frozen vs current)";
 
 pub(super) fn build(input: &KindPromptInput<'_>) -> Prompt {
     Prompt {
@@ -50,9 +53,11 @@ fn build_instructions(input: &KindPromptInput<'_>) -> String {
     s.push_str("- accept: the changed test still covers the scenario and rejects the stated\n");
     s.push_str("  plausible wrong implementation. Omit plan_patch unless the contract\n");
     s.push_str("  spec itself needs a replacement in the stage's contracts array. An accept\n");
-    s.push_str("  re-freezes every contract and harness file at its current content and\n");
-    s.push_str("  drops deleted harness files, so judge the changes listed under\n");
-    s.push_str(&format!("  `{FROZEN_SET_HEADING}` too.\n"));
+    s.push_str("  re-freezes every contract and harness file at its current content, adds\n");
+    s.push_str("  new harness files and drops deleted ones, so judge the changes and new\n");
+    s.push_str(&format!(
+        "  files listed under `{FROZEN_SET_HEADING}` too.\n"
+    ));
     s.push_str("- reject: the change weakens the contract's scenario or rejects clause.\n");
     s.push_str("- needs-more-evidence: you cannot decide; list specific questions.\n\n");
     s.push_str("Accept and reject require reasoning and citations to real lines in the\n");
@@ -188,11 +193,11 @@ fn build_evidence(input: &KindPromptInput<'_>) -> String {
     }
     let frozen = frozen_content(input, contract);
     let current = current_content(input, contract);
-    push_content(&mut s, "Frozen content", &frozen);
-    push_content(&mut s, "Current content", &current);
+    push_content(&mut s, FROZEN_CONTENT_HEADING, &frozen);
+    push_content(&mut s, CURRENT_CONTENT_HEADING, &current);
     s.push_str("## Agent's reason\n\n");
     s.push_str(&input.request.reason);
-    s.push_str("\n\n## Diff (frozen vs current)\n\n");
+    s.push_str(&format!("\n\n{DIFF_HEADING}\n\n"));
     match (frozen, current, contract) {
         (Ok(before), Ok(after), Some(contract)) => {
             s.push_str("```diff\n");
@@ -201,92 +206,8 @@ fn build_evidence(input: &KindPromptInput<'_>) -> String {
         }
         _ => s.push_str("(diff unavailable because frozen or current content is unavailable)\n\n"),
     }
-    s.push_str(&frozen_set_section(input, contract));
+    s.push_str(&frozen_set::section(input, contract));
     s
-}
-
-/// Every frozen file other than the disputed contract's whose worktree bytes
-/// differ from the freeze: a bounded diff of each, and a line naming each
-/// deleted one. An accept re-freezes the changed files and drops the deleted.
-fn frozen_set_section(input: &KindPromptInput<'_>, contract: Option<&ContractSpec>) -> String {
-    let record = store::load_freeze(input.work_dir, &input.stage.id);
-    let body = match (record, input.worktree) {
-        (_, None) => "(stage worktree unavailable)\n\n".to_string(),
-        (Ok(None), _) => "(the contracts are not frozen)\n\n".to_string(),
-        (Err(error), _) => format!("(freeze record unreadable: {error:#})\n\n"),
-        (Ok(Some(record)), Some(_)) => {
-            let disputed = contract.map(|contract| normalize(&contract.file));
-            changed_frozen_files(input, &record, disputed.as_deref())
-        }
-    };
-    format!("{FROZEN_SET_HEADING}\n\n{body}")
-}
-
-fn changed_frozen_files(
-    input: &KindPromptInput<'_>,
-    record: &FreezeRecord,
-    disputed: Option<&str>,
-) -> String {
-    let mut out = String::new();
-    for file in record
-        .files
-        .iter()
-        .filter(|file| Some(file.path.as_str()) != disputed)
-    {
-        let path = &file.path;
-        let current = read_bounded(
-            &input.site.path,
-            Path::new(path),
-            store::MAX_FROZEN_FILE_BYTES,
-        );
-        let entry = match current {
-            Ok(bytes) if sha256_hex(&bytes) == file.sha256 => continue,
-            Ok(bytes) => changed_entry(input, path, &bytes),
-            Err(error) if is_not_found(&error) => {
-                format!("- `{path}` is deleted from the worktree\n\n")
-            }
-            Err(error) => format!("- `{path}` is unreadable in the worktree: {error:#}\n\n"),
-        };
-        if out.len() + entry.len() > MAX_FROZEN_SET_SECTION_BYTES {
-            out.push_str("(more changed frozen files omitted; compare them in the worktree)\n\n");
-            break;
-        }
-        out.push_str(&entry);
-    }
-    if out.is_empty() {
-        out.push_str("(none)\n\n");
-    }
-    out
-}
-
-/// The diff of the frozen copy of `path` against its `current` bytes, cut to
-/// [`MAX_FROZEN_SET_DIFF_BYTES`].
-fn changed_entry(input: &KindPromptInput<'_>, path: &str, current: &[u8]) -> String {
-    let frozen = frozen_copy(input, path).ok();
-    let before = frozen
-        .as_deref()
-        .and_then(|bytes| std::str::from_utf8(bytes).ok());
-    let (Some(before), Ok(after)) = (before, std::str::from_utf8(current)) else {
-        return format!("- `{path}` changed (no text diff: a side is unreadable or not UTF-8)\n\n");
-    };
-    let mut diff = super::diff::unified_diff(before, after, path);
-    if diff.len() > MAX_FROZEN_SET_DIFF_BYTES {
-        let mut end = MAX_FROZEN_SET_DIFF_BYTES;
-        while !diff.is_char_boundary(end) {
-            end -= 1;
-        }
-        diff.truncate(end);
-        diff.push_str("\n... [diff truncated] ...\n");
-    }
-    format!("- `{path}` changed:\n\n```diff\n{diff}```\n\n")
-}
-
-/// The frozen copy of `path`, read without following a symlink.
-fn frozen_copy(input: &KindPromptInput<'_>, path: &str) -> anyhow::Result<Vec<u8>> {
-    let root = input.work_dir.canonicalize()?;
-    let copy = store::frozen_file_path(&root, &input.stage.id, path);
-    let relative = copy.strip_prefix(&root)?;
-    read_bounded(&root, relative, store::MAX_FROZEN_FILE_BYTES)
 }
 
 fn valid_file(path: &str) -> bool {
@@ -349,7 +270,7 @@ fn read_confined(root: &Path, path: &Path, label: &str) -> Result<String, String
 }
 
 fn push_content(out: &mut String, heading: &str, content: &Result<String, String>) {
-    out.push_str(&format!("## {heading}\n\n"));
+    out.push_str(&format!("{heading}\n\n"));
     match content {
         Ok(text) => {
             out.push_str("```text\n");

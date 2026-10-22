@@ -57,3 +57,7 @@ pub fn read_frozen_set(
     }
     Ok(files)
 }
+
+#[cfg(test)]
+#[path = "frozen_set_tests.rs"]
+mod tests;
