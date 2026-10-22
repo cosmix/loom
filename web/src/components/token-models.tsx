@@ -1,14 +1,25 @@
 import type { TokenFlow } from "@/api/schema";
+import { ModelHistoryChart } from "@/components/model-history-chart";
 import { compactTokens, modelGroups, modelRates, modelShares, wholePercents } from "@/lib/tokens";
 
-/// Equal hue spacing maximizes minimum separation: five models get 72°.
-/// Name order keeps colours stable as token shares and slice order change.
+const MODEL_COLORS = [
+  "oklch(0.66 0.18 255)", // blue
+  "oklch(0.76 0.16 75)", // amber
+  "oklch(0.65 0.20 330)", // magenta
+  "oklch(0.70 0.15 155)", // green
+  "oklch(0.65 0.19 25)", // coral
+  "oklch(0.68 0.16 295)", // violet
+  "oklch(0.78 0.15 110)", // lime
+  "oklch(0.72 0.12 205)", // cyan
+] as const;
+
+/// Contrast comes first; name order keeps colors stable as shares change.
 function modelColors(shares: ReturnType<typeof modelShares>): Map<string, string> {
   const names = shares.map(({ model }) => model).sort();
   return new Map(
     names.map((model, index) => [
       model,
-      `oklch(0.7 0.15 ${(25 + (360 * index) / names.length) % 360})`,
+      MODEL_COLORS[index] ?? `oklch(0.58 0.13 ${(index * 137.508) % 360})`,
     ]),
   );
 }
@@ -37,6 +48,7 @@ export function TokenModels({ flow }: { flow: TokenFlow }) {
         <h3 className="eyebrow">By model</h3>
         <span className="text-xs text-muted-foreground">fresh so far</span>
       </div>
+      <ModelHistoryChart flow={flow} colors={colors} />
       <div className="@container flex flex-wrap items-start gap-4">
         <div className="flex min-w-0 basis-[26rem] flex-col items-stretch gap-4 @min-[26rem]:flex-row @min-[26rem]:items-center">
           <Pie shares={shares} colors={colors} />
@@ -91,7 +103,8 @@ function Pie({
       <circle cx={21} cy={21} r={RADIUS} fill="none" stroke="var(--muted)" strokeWidth={6} />
       {shares.map(({ model, share }) => {
         const pct = share * 100;
-        const offset = 25 - before;
+        const gap = shares.length > 1 ? Math.min(0.8, pct / 3) : 0;
+        const offset = 25 - before - gap / 2;
         before += pct;
         return (
           <circle
@@ -103,7 +116,7 @@ function Pie({
             fill="none"
             stroke={colors.get(model)}
             strokeWidth={6}
-            strokeDasharray={`${pct} ${100 - pct}`}
+            strokeDasharray={`${pct - gap} ${100 - pct + gap}`}
             strokeDashoffset={offset}
           />
         );

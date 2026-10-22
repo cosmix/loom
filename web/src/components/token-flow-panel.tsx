@@ -1,6 +1,7 @@
 import { cn } from "cn";
 import { useAtomValue } from "jotai/react";
 import { InfoIcon } from "lucide-react";
+import { useId } from "react";
 
 import type { StageFlow, TokenFlow, TokenUsage } from "@/api/schema";
 import { TokenModels } from "@/components/token-models";
@@ -65,7 +66,7 @@ export function TokenFlowPanel() {
       </div>
       <div className="flex flex-col gap-4 rounded-lg border border-hairline bg-card/60 p-4 shadow-xs">
         <div className="flex items-baseline gap-2">
-          <span className="font-mono text-3xl leading-none font-semibold tabular-nums">
+          <span className="font-mono text-3xl leading-none font-normal tabular-nums">
             {compactTokens(fresh(flow.plan.rate))}
           </span>
           <span className="text-sm text-muted-foreground">fresh / min</span>
@@ -90,35 +91,41 @@ function stageColors(planIds: string[], stages: StageFlow[]): Map<string, string
 const plotX = (index: number) => (index / (POINTS - 1)) * 100;
 const plotY = (value: number, max: number) => 100 - (value / max) * 100;
 
-/// One stage's polygon: its `id` and the svg `points` outlining its layer.
+/// One stage's layer: its `id`, the svg `points` outlining it, and `edge`, the
+/// upper points alone. `empty` marks a stage with no tokens in the window.
 interface Band {
   id: string;
   points: string;
+  edge: string;
+  empty: boolean;
 }
 
-/// One polygon per stage, stacked in `stages` order, and the chart's top: the tallest
-/// stacked cell, at least 1.
-function stackBands(stages: StageFlow[]): { bands: Band[]; max: number } {
+/// One band per stage, stacked in `stages` order, the chart's top (the tallest
+/// stacked cell, at least 1) and `last`, the stacked total at the newest point.
+function stackBands(stages: StageFlow[]): { bands: Band[]; max: number; last: number } {
   const base = Array.from({ length: POINTS }, () => 0);
   const layers = stages.map((stage) => {
     const lower = [...base];
-    lastValues(stage.series, POINTS).forEach((value, index) => {
+    const values = lastValues(stage.series, POINTS);
+    values.forEach((value, index) => {
       base[index] = (base[index] ?? 0) + value;
     });
-    return { id: stage.stage_id, lower, upper: [...base] };
+    return { id: stage.stage_id, lower, upper: [...base], empty: values.every((v) => v === 0) };
   });
   const max = maxOf(base, 1);
   const point = (value: number, index: number) =>
     `${plotX(index).toFixed(2)},${plotY(value, max).toFixed(2)}`;
-  const bands = layers.map(({ id, lower, upper }) => ({
+  const bands = layers.map(({ id, lower, upper, empty }) => ({
     id,
     points: [...upper.map(point), ...lower.map(point).reverse()].join(" "),
+    edge: upper.map(point).join(" "),
+    empty,
   }));
-  return { bands, max };
+  return { bands, max, last: base[POINTS - 1] ?? 0 };
 }
 
 function StageChart({ stages, colors }: { stages: StageFlow[]; colors: Map<string, string> }) {
-  const { bands, max } = stackBands(stages);
+  const { bands, max, last } = stackBands(stages);
   return (
     <div className="flex flex-col gap-2">
       {/* The bands are drawn in a stretched 100 x 100 box at a fixed pixel
@@ -131,6 +138,13 @@ function StageChart({ stages, colors }: { stages: StageFlow[]; colors: Map<strin
         <div className="relative">
           <BandPlot bands={bands} max={max} colors={colors} />
           <AxisLabels max={max} />
+          {last > 0 && (
+            <span
+              aria-hidden="true"
+              className="absolute right-0 size-2 translate-x-1/2 -translate-y-1/2 rounded-full bg-foreground ring-2 ring-card"
+              style={{ top: `${plotY(last, max)}%` }}
+            />
+          )}
         </div>
       </div>
       <StageLegend stages={stages} colors={colors} />
@@ -147,6 +161,8 @@ function BandPlot({
   max: number;
   colors: Map<string, string>;
 }) {
+  const prefix = useId().replace(/:/g, "");
+  const drawn = bands.map((band, index) => ({ band, index })).filter(({ band }) => !band.empty);
   return (
     <svg
       role="img"
@@ -157,31 +173,56 @@ function BandPlot({
       preserveAspectRatio="none"
       className="block overflow-visible"
     >
-      {TICKS.map((tick) => (
-        <line
-          key={tick}
-          x1={0}
-          x2={100}
-          y1={plotY(max * tick, max)}
-          y2={plotY(max * tick, max)}
-          stroke="var(--hairline)"
-          strokeWidth={1}
-          vectorEffect="non-scaling-stroke"
-        />
-      ))}
-      {bands.map((band) => (
+      <defs>
+        {drawn.map(({ band, index }) => (
+          <linearGradient key={band.id} id={`${prefix}-${index}`} x1={0} y1={0} x2={0} y2={1}>
+            <stop offset={0} stopColor={colors.get(band.id)} stopOpacity={0.85} />
+            <stop offset={1} stopColor={colors.get(band.id)} stopOpacity={0.12} />
+          </linearGradient>
+        ))}
+      </defs>
+      <GridLines max={max} />
+      {drawn.map(({ band, index }) => (
         <polygon
           key={band.id}
           points={band.points}
-          fill={colors.get(band.id)}
-          fillOpacity={0.55}
-          className="stroke-neutral-700 dark:stroke-neutral-300"
-          strokeWidth={1}
+          fill={`url(#${prefix}-${index})`}
+          stroke="none"
+        />
+      ))}
+      {/* Reverse stack order: where an upper band is zero-thick, the lower edge wins. */}
+      {[...drawn].reverse().map(({ band }) => (
+        <polyline
+          key={band.id}
+          points={band.edge}
+          fill="none"
+          stroke={colors.get(band.id)}
+          strokeWidth={1.5}
+          strokeLinejoin="round"
+          strokeLinecap="round"
           vectorEffect="non-scaling-stroke"
         />
       ))}
     </svg>
   );
+}
+
+/// The baseline is a solid hairline; the upper ticks are dashed and fainter.
+function GridLines({ max }: { max: number }) {
+  return TICKS.map((tick) => (
+    <line
+      key={tick}
+      x1={0}
+      x2={100}
+      y1={plotY(max * tick, max)}
+      y2={plotY(max * tick, max)}
+      stroke="var(--hairline)"
+      strokeWidth={1}
+      strokeDasharray={tick === 0 ? undefined : "2 4"}
+      strokeOpacity={tick === 0 ? undefined : 0.7}
+      vectorEffect="non-scaling-stroke"
+    />
+  ));
 }
 
 /// The value labels left of the plot and the time labels under it, positioned

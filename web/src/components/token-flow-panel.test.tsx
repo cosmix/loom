@@ -72,8 +72,12 @@ describe("TokenFlowPanel", () => {
     expect(chart.getAttribute("height")).toBe("96");
     expect(chart.getAttribute("preserveAspectRatio")).toBe("none");
     expect(chart.querySelectorAll("text")).toHaveLength(0);
+    expect(chart.querySelectorAll("polygon").length).toBeGreaterThan(0);
+    for (const edge of Array.from(chart.querySelectorAll("polyline"))) {
+      expect(edge.getAttribute("vector-effect")).toBe("non-scaling-stroke");
+    }
     for (const polygon of Array.from(chart.querySelectorAll("polygon"))) {
-      expect(polygon.getAttribute("vector-effect")).toBe("non-scaling-stroke");
+      expect(polygon.getAttribute("stroke")).toBe("none");
     }
 
     for (const label of ["per 30 s", "−30m", "−15m", "now", "21.6k"]) {
@@ -87,9 +91,10 @@ describe("TokenFlowPanel", () => {
     const bandFills = (raw: unknown) => {
       renderWith(raw, <TokenFlowPanel />);
       const chart = screen.getByRole("img", { name: "fresh tokens per stage, last 30 min" });
-      const fills = Array.from(chart.querySelectorAll("polygon"), (p) => p.getAttribute("fill"));
+      const fills = Array.from(chart.querySelectorAll("polyline"), (p) => p.getAttribute("stroke"));
       cleanup();
-      return fills;
+      // Edges are drawn in reverse stack order; restore the stage order.
+      return fills.reverse();
     };
     const [serverAlone] = bandFills(fixture);
     // The tracker publishes stages in id order, so "client" comes before "server".
