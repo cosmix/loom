@@ -236,9 +236,12 @@ pub fn write_freeze(
 /// `contracts` recorded with its adapter, file and run directory: a contract
 /// the record lists keeps its freeze-time run result, one it does not list is
 /// added as [`REFROZEN_OUTCOME`]. A path the record held that `files` lacks
-/// is dropped, its copy removed once the record no longer names it. Returns
-/// the dropped paths. The adjudication of an accepted contract dispute is the
-/// only caller; the stage must already be frozen.
+/// is dropped: `freeze.json` is rewritten first and the copy removed after, so
+/// the record never names a missing copy. A failed removal leaves an orphaned
+/// copy that a retry cannot find, as the record no longer names it; restore
+/// and completion read only the copies the record names, so an orphan is
+/// harmless. Returns the dropped paths. The adjudication of an accepted
+/// contract dispute is the only caller; the stage must already be frozen.
 pub fn refreeze_set(
     work_dir: &Path,
     stage_id: &str,

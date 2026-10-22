@@ -5,6 +5,8 @@
 use std::path::Path;
 
 use super::cache::generate_stable_prefix;
+use super::v2_section::append_v2_section;
+use crate::models::stage::{Stage, StageType};
 
 const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
 const ORCHESTRATION_SKILL: &str = include_str!("../../../../skills/loom-orchestration/SKILL.md");
@@ -57,5 +59,37 @@ fn code_reviewer_judges_criteria_intent() {
     assert!(
         CODE_REVIEWER.contains("acceptance criterion") && CODE_REVIEWER.contains("intent"),
         "loom-code-reviewer must judge the diff against each acceptance criterion's intent"
+    );
+}
+
+/// The reviewer is read-only and never sees the stage signal, so the criteria it
+/// judges reach it only through the orchestrator's brief.
+#[test]
+fn orchestrator_pastes_the_acceptance_criteria_into_the_reviewer_brief() {
+    let work_dir = tempfile::tempdir().expect("create a temporary work dir");
+    let stage = Stage {
+        id: "gate".to_string(),
+        plan_version: 2,
+        stage_type: StageType::Standard,
+        ..Stage::default()
+    };
+    let mut gate = String::new();
+    append_v2_section(&mut gate, &stage, work_dir.path());
+    let needle =
+        "paste the stage's acceptance criteria (with `exit_code` and `stdout_contains` where set)";
+
+    for (label, text) in [
+        ("the rendered review gate", gate.as_str()),
+        ("skills/loom-orchestration/SKILL.md", ORCHESTRATION_SKILL),
+    ] {
+        let one_line = text.split_whitespace().collect::<Vec<_>>().join(" ");
+        assert!(
+            one_line.contains(needle),
+            "{label} must tell the orchestrator to `{needle}` into every reviewer brief"
+        );
+    }
+    assert!(
+        CODE_REVIEWER.contains("acceptance criterion in your brief"),
+        "loom-code-reviewer must take the criteria from its brief, not a signal it never sees"
     );
 }

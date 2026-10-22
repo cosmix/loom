@@ -34,8 +34,7 @@ pub const BLOCK_CASES: &[(&str, &str)] = &[
     ("go test ./...", "go test walks the whole module"),
     ("make test", "make test"),
     ("npm run build", "npm run build with no path"),
-    // --- Regressions: tokenizer edge cases, expected to still fail
-    // until the concurrent hook fix lands (do not weaken - re-run) ---
+    // --- Regressions: tokenizer edge cases (do not weaken) ---
     (
         "cargo test 2>&1 | tail -50",
         "REGRESSION: stdout/stderr redirection must not count as a scope",
@@ -139,6 +138,40 @@ pub const BLOCK_CASES: &[(&str, &str)] = &[
     ("uv run pytest", "pytest behind uv run"),
     ("python -m pytest", "pytest as a module"),
     ("go test -v ./...", "go test of every package"),
+    // --- Every remaining adapter runner (loom/src/testrun/adapters): the
+    // guard must classify a command as the adapter's `is_full_run` does ---
+    ("sbt test", "bare sbt test task"),
+    ("sbt clean test", "sbt test task behind another task"),
+    (
+        "sbt app/test",
+        "sbt project-scoped test task is still the whole suite",
+    ),
+    ("python -m unittest", "unittest as a module"),
+    (
+        "python3 -m unittest discover",
+        "unittest discover with no selector",
+    ),
+    ("uv run python -m unittest", "unittest behind uv run"),
+    ("unittest", "bare unittest"),
+    ("rake test", "bare rake test"),
+    ("rails test", "bare rails test"),
+    ("bin/rails test", "rails test by path"),
+    ("bundle exec rake test", "rake test behind bundle exec"),
+    ("bundle exec rspec", "rspec behind bundle exec"),
+    ("pest", "bare pest"),
+    ("vendor/bin/pest --parallel", "pest with flags only"),
+    ("php vendor/bin/pest", "pest behind php"),
+    ("php vendor/bin/phpunit", "phpunit behind php"),
+    ("cargo nextest r", "`r` is nextest's alias of `run`"),
+    ("dart run test", "`dart run test` is `dart test`"),
+    (
+        "go test",
+        "bare go test runs the current package's whole suite",
+    ),
+    ("go test .", "go test of the current package"),
+    ("go test -v", "go test flags only"),
+    ("bun test", "bare bun test"),
+    ("jest", "bare jest"),
 ];
 
 pub const ALLOW_CASES: &[(&str, &str)] = &[
@@ -219,4 +252,90 @@ pub const ALLOW_CASES: &[(&str, &str)] = &[
     ("go test -run TestLogin ./...", "go test -run"),
     ("dotnet build", "dotnet build is not a test run"),
     ("mvn package", "mvn package is not a test run"),
+    // --- Every remaining adapter runner: a filtered run is allowed ---
+    ("sbt testOnly com.acme.LoginSpec", "sbt testOnly"),
+    (
+        r#"sbt "testOnly com.acme.LoginSpec""#,
+        "sbt testOnly quoted into one word",
+    ),
+    (
+        "sbt app/testOnly com.acme.LoginSpec",
+        "sbt project testOnly",
+    ),
+    ("sbt compile", "sbt compile is not a test run"),
+    (
+        "python -m unittest tests.test_login",
+        "unittest module path",
+    ),
+    (
+        "python -m unittest discover -s tests",
+        "unittest discover -s",
+    ),
+    ("python3 -m unittest -k login", "unittest -k"),
+    (
+        "uv run python -m unittest tests.test_login",
+        "unittest module behind uv run",
+    ),
+    ("unittest tests.test_login", "unittest module path"),
+    ("rake test TEST=test/a_test.rb", "rake test TEST="),
+    (
+        "TEST=test/a_test.rb rake test",
+        "TEST= assignment before rake narrows the run",
+    ),
+    (
+        "env TEST=test/a_test.rb bundle exec rake test",
+        "TEST= assignment behind env and bundle exec",
+    ),
+    ("rails test test/models/user_test.rb", "rails test file"),
+    ("rails test -n test_login", "rails test -n"),
+    ("rails test --name=test_login", "rails test --name="),
+    (
+        "bundle exec rails test test/a_test.rb",
+        "rails test behind bundle exec",
+    ),
+    (
+        "ruby -Itest test/a_test.rb",
+        "one minitest file is not a full run",
+    ),
+    (
+        "bundle exec rspec spec/a_spec.rb",
+        "rspec path behind bundle exec",
+    ),
+    ("pest tests/Unit/LoginTest.php", "pest path"),
+    ("vendor/bin/pest --filter login", "pest --filter"),
+    (
+        "php vendor/bin/pest --group smoke",
+        "pest --group behind php",
+    ),
+    (
+        "php vendor/bin/phpunit --filter testLogin",
+        "phpunit behind php",
+    ),
+    ("phpunit --testsuite unit", "phpunit --testsuite"),
+    ("cargo nextest r login::", "nextest r with a filter"),
+    (
+        "cargo nextest run --partition count:1/2",
+        "nextest --partition is a subset",
+    ),
+    (
+        "dart run test test/a_test.dart",
+        "`dart run test` with a path",
+    ),
+    (
+        "dart run test --tags=unit",
+        "`dart run test` with a tag filter",
+    ),
+    ("go test ./pkg", "go test of one package"),
+    ("go test -v ./pkg", "go test of one package with flags"),
+    ("go test -run TestLogin", "go test -run without a package"),
+    (
+        "go test -bench . -benchtime 1s",
+        "go test -bench selects benchmarks",
+    ),
+    ("bun test src/a.test.ts", "bun test path"),
+    (
+        "bun test --test-name-pattern=login",
+        "bun test name pattern",
+    ),
+    ("jest --testPathPattern=login", "jest --testPathPattern"),
 ];

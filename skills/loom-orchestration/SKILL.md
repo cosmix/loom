@@ -284,7 +284,9 @@ the worktree. A contract that is itself wrong is disputed, never edited:
 1. Spawn a `loom-code-reviewer` BY AGENT TYPE, without `name`, for the stage diff. Only that type is recorded:
    when it stops, a hook records the `loom-review` block from its `SubagentHandback` report, or
    from its final message when it hands back nothing, as the next review round. Neither carrying a
-   valid block records a malformed round, which counts for nothing.
+   valid block records a malformed round, which counts for nothing. The reviewer never sees the
+   stage signal: paste the stage's acceptance criteria (with `exit_code` and `stdout_contains`
+   where set) and its description into every reviewer brief.
 2. Brief every re-review with the output of `loom stage review status <stage-id>`: the rounds,
    every open finding (own and carried) with its id, whether the latest round matches the
    worktree, and the files changed since that round. A re-review covers those files plus the open
@@ -298,7 +300,7 @@ the worktree. A contract that is itself wrong is disputed, never edited:
    disputes of each kind (findings, contract, integrity, impact tests); one more escalates it
    to `NeedsHumanReview`.
 
-**Review order (plan v2):** fix every finding, run the full gate, then run the final review round, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.
+**Review order (plan v2):** run `loom check` once beside the final review round; fix every finding and failed criterion, re-check the failed criteria with `loom check <stage-id> --criterion <n>` and re-review the changed files, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.
 
 **When the stage cannot finish.** Fix what the stage can fix. A wrong criterion, wiring check, contract, review finding or test-integrity event gets a dispute: `loom stage dispute-criteria` (`--field` for wiring, wiring-tests, impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session; the daemon starts a fresh one with the verdict. Never revert, weaken or postpone correct work to avoid a dispute. A criterion failing only because of where completion runs (no network, unreadable git metadata, timeout, sandbox denial) is disputed, never blocked: one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing names every such criterion. `loom stage block <stage-id> "<what is needed and why>"` is for a credential, a host install or a decision only a person can make; loom refuses it while the latest `loom stage complete` shows a failing criterion. Commit before filing either. Never end a turn asking the operator to act while the stage is executing.
 

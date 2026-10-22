@@ -209,7 +209,8 @@ pub(crate) fn run_selected_acceptance(
     }
 
     if result.all_passed() {
-        println!("All acceptance criteria passed!");
+        let which = if only.is_some() { "Selected" } else { "All" };
+        println!("{which} acceptance criteria passed!");
     }
 
     Ok(result.all_passed())

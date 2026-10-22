@@ -1,26 +1,34 @@
 //! Keeping a briefing inside [`MAX_PROMPT_BYTES`](super::MAX_PROMPT_BYTES).
 //!
 //! The evidence sections are trimmed in order of expendability — diff first,
-//! then the failure output, then the listing, then the plan excerpt — and the
-//! instructions are never touched: a session that cannot see the whole diff
-//! can still go and read the tree, but a session that has lost half its
-//! protocol has no way back.
+//! then a contract's quoted files, the failure output, the listing, then the
+//! plan excerpt — and the instructions are never touched: a session that
+//! cannot see the whole diff can still go and read the tree, but a session
+//! that has lost half its protocol has no way back.
 
+use super::contract::{CURRENT_CONTENT_HEADING, DIFF_HEADING, FROZEN_CONTENT_HEADING};
 use super::{Prompt, MAX_PROMPT_BYTES};
 
 pub(super) const TRUNCATION_MARKER: &str = "\n... [truncated] ...\n";
 
-/// Enforce [`MAX_PROMPT_BYTES`] by truncating the diff / failure-output
-/// sections of the evidence first, then the listing, then the plan excerpt.
+/// Enforce [`MAX_PROMPT_BYTES`] by truncating the diff / contract-content /
+/// failure-output sections of the evidence first, then the listing, then the
+/// plan excerpt.
 pub(super) fn truncate_to_budget(prompt: &mut Prompt) {
     if prompt.total_len() <= MAX_PROMPT_BYTES {
         return;
     }
-    // Strategy: repeatedly halve the diff fence first, then the failure
-    // output fence, then the listing fence, then the plan excerpt.
+    // Strategy: repeatedly halve the diff fences first, then the contract
+    // content fences, the failure output fence, the listing fence, and the
+    // plan excerpt.
     let candidates = [
         super::impact::STAGE_DIFF_HEADING,
         "## Evidence commit diff (git show)",
+        // A contract briefing quotes the contract file twice and diffs it once;
+        // these go before the frozen-set section at its tail is cut.
+        DIFF_HEADING,
+        FROZEN_CONTENT_HEADING,
+        CURRENT_CONTENT_HEADING,
         "## Failure output (what the criterion produced)",
         "## Worktree top-level files (3-deep listing)",
         "## Plan acceptance criteria source (from plan file)",

@@ -28,11 +28,12 @@
 # longer be mistaken for an intervening Claude process. Only when the payload
 # answers neither field does the hook fall back to counting Claude processes
 # between the caller and LOOM_MAIN_AGENT_PID. One caller is carved out below:
-# any subagent of an integration-verify stage (its review subagents are
-# supposed to run the full suite). There is deliberately NO escape-hatch env
-# var - an opt-out would
-# defeat the whole purpose (commit-filter.sh already treats unsetting the
-# detection gate as evasion).
+# any subagent of an integration-verify stage, because that stage keeps its own
+# gate (its orchestrator runs `loom check`; the reviewers run only targeted
+# checks, which is doctrine in the subagent preamble, not enforced here). There
+# is deliberately NO escape-hatch env var - an opt-out would defeat the whole
+# purpose (commit-filter.sh already treats unsetting the detection gate as
+# evasion).
 #
 # SECURITY NOTE (best-effort, defense-in-depth): matching is token-based, not a
 # shell parser, so a runner hidden in a quoted string (`bash -c "cargo test"`)
@@ -242,7 +243,7 @@ scan_args() {
 		case "$tok" in
 		--all | --workspace | --all-targets | --doc) echo "all"; return 0 ;;
 		--test | --test=* | --bin | --bin=* | --example | --example=* | --bench | --bench=* | \
-			-p | --package | --package=* | -k | -m) echo "scoped"; return 0 ;;
+			-p | --package | --package=* | -k | -m | --test-name-pattern | --test-name-pattern=*) echo "scoped"; return 0 ;;
 		--manifest-path | --target-dir | --features | -F | --target | --profile | \
 			--color | --message-format | --config | -j | --jobs) skip=1 ;;
 		--) ;;
@@ -308,9 +309,11 @@ check_cargo() {
 	build | clippy | fmt | check) [[ "$ROLE" == main ]] || block "cargo $sub" ;;
 	test) block_unless_scoped $((i + 1)) "cargo test" ;;
 	nextest)
-		if [[ "${TOKENS[$((i + 1))]:-}" == "run" ]]; then
-			block_unless_scoped $((i + 2)) "cargo nextest run"
-		fi
+		# `r` is nextest's alias of `run`; -E/--filterset/--partition select a subset
+		case "${TOKENS[$((i + 1))]:-}" in
+		run | r) runner_args_have $((i + 2)) "-E --filterset* --filter-expr* --partition*" ||
+			block_unless_scoped $((i + 2)) "cargo nextest run" ;;
+		esac
 		;;
 	esac
 	return 0
@@ -344,14 +347,21 @@ check_eslint() {
 	return 0
 }
 
-# go test/build/vet ./... walks the whole module; ./pkg/... is scoped.
+# go test/build/vet ./... walks the whole module; ./pkg/... is scoped. A bare
+# `go test` or `go test .` runs the current package's whole suite.
+GO_FILTER_FLAGS="-run -run=* -skip -skip=* -bench -bench=* -fuzz -fuzz=* -list -list=* -test.run -test.run=* -test.skip -test.skip=*"
+GO_VALUE_FLAGS="-run -skip -bench -fuzz -list -count -timeout -parallel -cpu -tags -mod -modfile -vet -exec -coverprofile -coverpkg -covermode -coverdir -gcflags -ldflags"
 check_go() {
 	local sub="${TOKENS[$1]:-}"
 	case "$sub" in
 	test)
 		# `go test -run X ./...` names a test: filtered, whatever the package
-		runner_args_have $(($1 + 1)) "-run -run=*" ||
+		if ! runner_args_have $(($1 + 1)) "$GO_FILTER_FLAGS"; then
 			block_on_word $(($1 + 1)) "./... ... all" "go test"
+			case "$(first_positional $(($1 + 1)) "$GO_VALUE_FLAGS")" in
+			"" | . | ./) block "go test (current package, unfiltered)" ;;
+			esac
+		fi
 		;;
 	build | vet) [[ "$ROLE" == main ]] || block_on_word $(($1 + 1)) "./... ... all" "go $sub" ;;
 	esac
@@ -362,7 +372,7 @@ check_node_pm() {
 	local i="$1" pm="$2" tok
 	tok="${TOKENS[$i]:-}"
 	case "$tok" in
-	run | run-script | exec)
+	run | run-script | exec | dlx)
 		i=$((i + 1))
 		tok="${TOKENS[$i]:-}"
 		;;
@@ -382,7 +392,7 @@ check_make() {
 }
 
 # Options taking a separate value, so the value is not read as a test path.
-VALUE_FLAGS=" --config -c --reporter -r --project --root --configuration --framework -f --logger -l --settings -s --test-dir -C -j --parallel -pl -p "
+VALUE_FLAGS=" --config -c --reporter -r --project --root --configuration --framework -f --logger -l --settings -s --test-dir -C -j --parallel -pl -p --seed --exclude -e --durations "
 
 # runner_args_have <idx> <patterns> - an argument before the next separator
 # matches one of the space-separated glob patterns.
@@ -400,6 +410,18 @@ runner_args_have() {
 		done
 	done
 	return 1
+}
+
+# PHPUnit and Pest select a subset by filter, group or test suite.
+PHP_FILTERS="--filter* --group* --exclude-group* --testsuite*"
+
+# sbt: a `test` (or <project>/test) task with no testOnly/testQuick task runs the
+# whole suite. Tasks may be quoted into one word (`sbt "testOnly a.B"`), so the
+# patterns allow one quote character around them.
+check_sbt() {
+	runner_args_have "$1" "test */test ?test? ?*/test?" || return 0
+	runner_args_have "$1" "*testOnly* *testQuick*" || block "sbt test (unfiltered)"
+	return 0
 }
 
 # check_test_runner <idx> <label> <need> <skip> <scope> - block an unfiltered run.
@@ -454,23 +476,44 @@ check_command() {
 	case "$base" in
 	cargo) check_cargo $((idx + 1)) ;;
 	pytest) block_unless_scoped $((idx + 1)) "pytest" ;;
-	python | python3)
-		if [[ "${TOKENS[$((idx + 1))]:-}" == "-m" && "${TOKENS[$((idx + 2))]:-}" == "pytest" ]]; then
-			block_unless_scoped $((idx + 3)) "python -m pytest"
+	python | python[0-9]*)
+		# `python -m <module>` runs the module as the command, as recognize.rs reads it
+		if [[ "${TOKENS[$((idx + 1))]:-}" == "-m" && $((idx + 2)) -lt $NTOK ]]; then
+			check_command $((idx + 2))
 		fi
 		;;
+	bundle)
+		if [[ "${TOKENS[$((idx + 1))]:-}" == "exec" && $((idx + 2)) -lt $NTOK ]]; then
+			check_command $((idx + 2))
+		fi
+		;;
+	php) # `php vendor/bin/pest` and `php vendor/bin/phpunit`
+		case "${TOKENS[$((idx + 1))]:-}" in
+		pest | */pest | phpunit | */phpunit) check_command $((idx + 1)) ;;
+		esac
+		;;
 	uv) check_uv $((idx + 1)) ;;
+	unittest) check_test_runner $((idx + 1)) unittest "" "discover" "-k* -s* -p* -t* --start-directory* --pattern* --top-level-directory*" ;;
+	sbt) check_sbt $((idx + 1)) ;;
+	rake | rails)
+		# TEST=/TESTOPTS= narrow a run even when they precede the command word
+		if [[ "${TOKENS[$((idx + 1))]:-}" == "test" && $TEST_ASSIGNED -eq 0 ]]; then
+			check_test_runner $((idx + 2)) "$base test" "" "" "-n* --name* TEST=* TESTOPTS=*"
+		fi
+		;;
 	vitest) check_test_runner $((idx + 1)) vitest "" "run watch" "-t --testNamePattern --testNamePattern=*" ;;
-	jest) check_test_runner $((idx + 1)) jest "" "" "-t --testNamePattern --testNamePattern=*" ;;
+	jest) check_test_runner $((idx + 1)) jest "" "" "-t --testNamePattern --testNamePattern=* --testPathPattern*" ;;
 	mocha) check_test_runner $((idx + 1)) mocha "" "" "-g --grep --grep=*" ;;
 	rspec) check_test_runner $((idx + 1)) rspec "" "" "-e --example --example=* --tag --tag=*" ;;
-	phpunit) check_test_runner $((idx + 1)) phpunit "" "" "--filter --filter=*" ;;
+	phpunit) check_test_runner $((idx + 1)) phpunit "" "" "$PHP_FILTERS" ;;
+	pest) check_test_runner $((idx + 1)) pest "" "" "$PHP_FILTERS" ;;
 	dotnet) check_test_runner $((idx + 1)) "dotnet test" "test" "" "--filter --filter=*" ;;
 	mvn | mvnw) check_test_runner $((idx + 1)) "mvn test" "test verify" "clean compile package install" "-Dtest=*" ;;
 	gradle | gradlew) check_test_runner $((idx + 1)) "gradle test" "test" "clean build check" "--tests --tests=*" ;;
 	ctest) check_test_runner $((idx + 1)) ctest "" "" "-R --tests-regex --tests-regex=*" ;;
 	swift) check_test_runner $((idx + 1)) "swift test" "test" "" "--filter --filter=*" ;;
-	dart | flutter) check_test_runner $((idx + 1)) "$base test" "test" "" "-n --name --name=* -N --plain-name --plain-name=*" ;;
+	# `dart run test` is `dart test`: `run` is no test path
+	dart | flutter) check_test_runner $((idx + 1)) "$base test" "test" "run" "-n --name* -N --plain-name* -t --tags* -x --exclude-tags*" ;;
 	mix) check_test_runner $((idx + 1)) "mix test" "test" "" "--only --only=*" ;;
 	node) check_test_runner $((idx + 1)) "node --test" "--test" "" "--test-name-pattern --test-name-pattern=* --test-only" ;;
 	tsc) check_tsc $((idx + 1)) ;;
@@ -489,6 +532,7 @@ DQ='"'
 SQ="'"
 i=0
 cmd_pos=1
+TEST_ASSIGNED=0 # a TEST=/TESTOPTS= assignment precedes the current command word
 in_quote=""
 while [[ $i -lt $NTOK ]]; do
 	TOK="${TOKENS[$i]}"
@@ -519,6 +563,11 @@ while [[ $i -lt $NTOK ]]; do
 			i=$((i + 2))
 			continue
 			;;
+		TEST=* | TESTOPTS=*)
+			TEST_ASSIGNED=1
+			i=$((i + 1))
+			continue
+			;;
 		[A-Za-z_]*=* | env | sudo | time | nohup | command | exec | nice | xargs | npx | bunx | -*)
 			# Env assignment or command prefix: the real command follows
 			i=$((i + 1))
@@ -532,6 +581,7 @@ while [[ $i -lt $NTOK ]]; do
 	";" | "&&" | "||" | "|" | "&" | "(" | ")" | "{" | "}" | "!" | \
 		"if" | "elif" | "while" | "until" | "then" | "do" | "else")
 		cmd_pos=1
+		TEST_ASSIGNED=0
 		;;
 	*) cmd_pos=0 ;;
 	esac

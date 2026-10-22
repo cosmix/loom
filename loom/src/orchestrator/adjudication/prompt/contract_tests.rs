@@ -1,12 +1,15 @@
 //! Tests for the contract dispute briefing.
 
 use super::*;
+use crate::fs::work_dir::WorkDir;
 use crate::models::dispute::DisputeRequest;
 use crate::models::stage::Stage;
-use crate::orchestrator::adjudication::prompt::ExecutionSite;
-use crate::verify::contracts::test_support::contract;
+use crate::orchestrator::adjudication::prompt::truncate::truncate_to_budget;
+use crate::orchestrator::adjudication::prompt::{ExecutionSite, MAX_PROMPT_BYTES};
+use crate::relay::sha256_hex;
+use crate::verify::contracts::test_support::{contract, contract_worktree};
 use chrono::Utc;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 fn request() -> DisputeRequest {
     DisputeRequest {
@@ -26,16 +29,16 @@ fn request() -> DisputeRequest {
 /// Fixture for [`full_briefing_quotes_each_source_and_the_diff`]: a
 /// stage with one contract, its frozen file and current worktree file
 /// written to disk, ready for [`KindPromptInput`] to borrow from.
-struct ContractFixture {
+pub(super) struct ContractFixture {
     _tmp: tempfile::TempDir,
     work_dir: PathBuf,
-    worktree: PathBuf,
-    stage: Stage,
+    pub(super) worktree: PathBuf,
+    pub(super) stage: Stage,
     request: DisputeRequest,
     site: ExecutionSite,
 }
 
-fn contract_fixture() -> ContractFixture {
+pub(super) fn contract_fixture() -> ContractFixture {
     let tmp = tempfile::tempdir().unwrap();
     let work_dir = tmp.path().join(".loom/work");
     let worktree = tmp.path().join(".worktrees/demo");
@@ -195,18 +198,8 @@ fn the_spec_block_shows_the_plan_and_recorded_cwd() {
         .contains("`cwd` is the optional directory"));
 }
 
-/// Freezes four files, then changes one in the worktree, leaves one unchanged
-/// and deletes one.
-fn freeze_then_change_support_files(fx: &ContractFixture) {
-    let frozen = [
-        ("tests/x_contract.rs", "assert!(false);\n"),
-        (
-            "tests/support/changed.rs",
-            "pub fn ready() -> bool { false }\n",
-        ),
-        ("tests/support/same.rs", "pub fn same() {}\n"),
-        ("tests/support/gone.rs", "pub fn gone() {}\n"),
-    ];
+/// Writes the freeze of the `demo` stage holding exactly `frozen`.
+fn freeze(work_dir: &Path, frozen: &[(&str, &str)]) {
     let record = store::FreezeRecord {
         version: store::FREEZE_RECORD_VERSION,
         stage_id: "demo".to_string(),
@@ -226,7 +219,24 @@ fn freeze_then_change_support_files(fx: &ContractFixture) {
         .iter()
         .map(|(path, content)| (path.to_string(), content.as_bytes().to_vec()))
         .collect();
-    store::write_freeze(&fx.work_dir, &record, &copies).unwrap();
+    store::write_freeze(work_dir, &record, &copies).unwrap();
+}
+
+/// Freezes four files, then changes one in the worktree, leaves one unchanged
+/// and deletes one.
+pub(super) fn freeze_then_change_support_files(fx: &ContractFixture) {
+    freeze(
+        &fx.work_dir,
+        &[
+            ("tests/x_contract.rs", "assert!(false);\n"),
+            (
+                "tests/support/changed.rs",
+                "pub fn ready() -> bool { false }\n",
+            ),
+            ("tests/support/same.rs", "pub fn same() {}\n"),
+            ("tests/support/gone.rs", "pub fn gone() {}\n"),
+        ],
+    );
     let support = fx.site.path.join("tests/support");
     fs::create_dir_all(&support).unwrap();
     fs::write(
@@ -268,4 +278,107 @@ fn the_briefing_shows_each_changed_and_deleted_frozen_file() {
     assert!(!section.contains("same.rs"), "{section}");
     assert!(!section.contains("x_contract.rs"), "{section}");
     assert!(prompt.instructions.contains(FROZEN_SET_HEADING));
+}
+
+fn input_of(fx: &ContractFixture) -> KindPromptInput<'_> {
+    KindPromptInput {
+        stage: &fx.stage,
+        dispute_id: 4,
+        request: &fx.request,
+        site: &fx.site,
+        worktree: Some(&fx.worktree),
+        work_dir: &fx.work_dir,
+    }
+}
+
+/// The frozen-set section of a briefing built for `fx`.
+pub(super) fn frozen_set_of(fx: &ContractFixture) -> String {
+    let prompt = build(&input_of(fx));
+    let start = prompt
+        .evidence
+        .find(FROZEN_SET_HEADING)
+        .expect("the section");
+    prompt.evidence[start..].to_string()
+}
+
+/// A contract file the cap lets the briefing quote three times must not push
+/// the frozen-set section off the end of the prompt.
+#[test]
+fn a_large_contract_file_leaves_the_frozen_set_section_after_truncation() {
+    let fx = contract_fixture();
+    freeze_then_change_support_files(&fx);
+    let frozen: String = (0..2500)
+        .map(|n| format!("assert!(case_{n}());\n"))
+        .collect();
+    let current = frozen.replace("case_1250()", "other()");
+    let file = &fx.stage.contracts[0].file;
+    let frozen_copy = store::frozen_file_path(&fx.work_dir, "demo", file);
+    fs::write(frozen_copy, &frozen).unwrap();
+    fs::write(fx.site.path.join(file), &current).unwrap();
+    let mut prompt = build(&input_of(&fx));
+    assert!(
+        prompt.total_len() > MAX_PROMPT_BYTES,
+        "the fixture must overflow"
+    );
+
+    truncate_to_budget(&mut prompt);
+
+    assert!(prompt.total_len() <= MAX_PROMPT_BYTES);
+    let start = prompt
+        .evidence
+        .find(FROZEN_SET_HEADING)
+        .expect("the section");
+    let section = &prompt.evidence[start..];
+    assert!(
+        section.contains("- `tests/support/changed.rs` changed:"),
+        "{section}"
+    );
+    assert!(
+        section.contains("+pub fn ready() -> bool { true }"),
+        "{section}"
+    );
+    assert!(
+        section.contains("- `tests/support/gone.rs` is deleted"),
+        "{section}"
+    );
+}
+
+/// A git worktree for `demo` whose freeze holds the contract file and an
+/// unchanged `tests/support/old.rs`; the stage's harness is `tests/support/**`.
+pub(super) fn harness_fixture() -> ContractFixture {
+    let tmp = tempfile::tempdir().unwrap();
+    let repo = tmp.path().join("repo");
+    let worktree = contract_worktree(&repo, "demo");
+    let workspace = WorkDir::new(&repo).unwrap();
+    workspace.adopt_existing().unwrap();
+    let work_dir = workspace.root().to_path_buf();
+    freeze(
+        &work_dir,
+        &[
+            ("tests/x_contract.rs", "assert!(false);\n"),
+            ("tests/support/old.rs", "pub fn old() {}\n"),
+        ],
+    );
+    fs::create_dir_all(worktree.join("tests/support")).unwrap();
+    fs::write(worktree.join("tests/support/old.rs"), "pub fn old() {}\n").unwrap();
+    let site = ExecutionSite {
+        path: worktree.clone(),
+        working_dir: ".".to_string(),
+        worktree_present: true,
+        root: worktree.clone(),
+    };
+    let stage = Stage {
+        id: "demo".to_string(),
+        harness: vec!["tests/support/**".to_string()],
+        contracts: vec![contract()],
+        ..Stage::default()
+    };
+    ContractFixture {
+        _tmp: tmp,
+        work_dir,
+        worktree,
+        stage,
+        request: request(),
+        site,
+    }
 }

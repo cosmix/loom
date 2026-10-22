@@ -110,13 +110,15 @@ fn path_to_cstring(bytes: &[u8]) -> Result<CString> {
     CString::new(bytes).context("safe_fs: path contains interior NUL byte")
 }
 
-/// Try `openat2` once with the given flags/mode; returns `Ok(Some(fd))` on
-/// success, `Ok(None)` if the kernel does not support `openat2` (ENOSYS /
-/// EINVAL on the syscall itself, not on path resolution), or `Err` for any
-/// other failure (including ELOOP, EACCES, ENOENT, EXDEV from RESOLVE_BENEATH).
+/// Try `openat2` once: `Ok(Some(fd))` on success, `Ok(None)` when the kernel
+/// lacks it or seccomp blocks it (ENOSYS / EPERM, cached process-wide) or a
+/// test thread forced the portable path, `Err` for any other failure.
 #[cfg(target_os = "linux")]
 fn try_openat2(dirfd: RawFd, path: &[u8], flags: i32, mode: u32) -> Result<Option<RawFd>> {
-    // Quick negative cache to avoid repeated ENOSYS syscalls.
+    #[cfg(test)]
+    if FORCE_PORTABLE.get() {
+        return Ok(None);
+    }
     if OPENAT2_SUPPORT.load(Ordering::Relaxed) == 2 {
         return Ok(None);
     }
@@ -746,15 +748,13 @@ pub fn safe_create_dir_all(work_dir: &Path, relpath: &Path, mode: libc::mode_t) 
     safe_create_dir_all_in_workdir(dirfd.as_raw_fd(), relpath, mode)
 }
 
-/// Forces the cached openat2 support flag — used in tests to exercise both
-/// kernel and portable paths.
-#[cfg(all(test, target_os = "linux"))]
+#[cfg(test)]
+thread_local!(static FORCE_PORTABLE: std::cell::Cell<bool> = const { std::cell::Cell::new(false) });
+/// Forces the portable path on the calling test thread only, so it never leaks into other tests.
+#[cfg(test)]
 pub(crate) fn force_disable_openat2_for_tests() {
-    OPENAT2_SUPPORT.store(2, Ordering::Relaxed);
+    FORCE_PORTABLE.set(true);
 }
-
-#[cfg(all(test, not(target_os = "linux")))]
-pub(crate) fn force_disable_openat2_for_tests() {}
 
 #[cfg(test)]
 mod tests {

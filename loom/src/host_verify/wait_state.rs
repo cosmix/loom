@@ -46,8 +46,10 @@ pub(super) fn write_state(path: &Path, state: &RequestState) -> Result<()> {
     Ok(())
 }
 
-/// Delete the state only while it still holds `request_id`: two verifier
-/// subagents of one session share the file, and one waiter's end must not
+/// Delete the state only while it still holds `request_id`: every call of one
+/// session for a stage and kind shares the file, and a call whose tree,
+/// no-cache flag or criteria differ (a `--criterion` check beside a full one,
+/// a rerun after an edit) replaces the request, so one waiter's end must not
 /// discard a newer request another wrote.
 pub(super) fn remove_state_if_owned(path: &Path, request_id: &str) {
     if read_state(path).is_some_and(|state| state.request_id == request_id) {

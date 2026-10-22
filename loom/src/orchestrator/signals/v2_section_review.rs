@@ -17,7 +17,7 @@ use crate::verify::review::store::load_carried;
 
 /// DESIGN D16 BLOCK-E, byte for byte. doctrine-v2 pins it against the
 /// orchestration skill's copy.
-const REVIEW_ORDER: &str = "**Review order (plan v2):** fix every finding, run the full gate, then run the final review round, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.";
+const REVIEW_ORDER: &str = "**Review order (plan v2):** run `loom check` once beside the final review round; fix every finding and failed criterion, re-check the failed criteria with `loom check <stage-id> --criterion <n>` and re-review the changed files, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.";
 
 /// The review gate of a v2 standard or integration-verify stage: what
 /// `loom stage complete` checks, how reviews are run and briefed, the review
@@ -40,7 +40,9 @@ pub(super) fn append_review_gate(content: &mut String, stage: &Stage, work_dir: 
          that type is recorded: when it stops, a hook records the `loom-review` block from its \
          `SubagentHandback` report, or from its final message when it hands back nothing, as \
          the next review round. Neither carrying a valid block records a malformed round, \
-         which counts for nothing.\n\
+         which counts for nothing. The reviewer never sees this signal: paste the stage's \
+         acceptance criteria (with `exit_code` and `stdout_contains` where set) and its \
+         description into every reviewer brief.\n\
          - Paste the output of `loom stage review status {id}` into every re-review brief. It \
          lists the rounds, every open finding with its id, whether the latest round matches the \
          current worktree, and the files changed since that round.\n\

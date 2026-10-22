@@ -31,7 +31,7 @@ const SKILLS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../skills");
 
 /// BLOCK-E - the plan-v2 review order, verbatim (DESIGN D16). The v2 review
 /// section of a stage signal and the orchestration skill carry it byte for byte.
-const BLOCK_E: &str = "**Review order (plan v2):** fix every finding, run the full gate, then run the final review round, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.";
+const BLOCK_E: &str = "**Review order (plan v2):** run `loom check` once beside the final review round; fix every finding and failed criterion, re-check the failed criteria with `loom check <stage-id> --criterion <n>` and re-review the changed files, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.";
 
 /// BLOCK-F - when the stage cannot finish, verbatim. Every stable prefix and the
 /// orchestration skill carry it byte for byte.
