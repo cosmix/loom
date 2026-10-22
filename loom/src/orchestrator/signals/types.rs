@@ -64,8 +64,8 @@ pub struct EmbeddedContext {
     pub sandbox_summary: Option<SandboxSummary>,
     /// Cross-stage change summary for integration-verify stages
     pub cross_stage_summary: Option<String>,
-    /// Memory-based wiring checklist aggregated from all stages
-    pub wiring_checklist: Option<String>,
+    /// The "## Dependency Findings" section built by `generate/findings.rs`
+    pub dependency_findings: Option<String>,
     /// Whether the stage is licensed for ultracode Workflow orchestration
     pub ultracode: bool,
     /// Which agent lanes this stage may spawn subagents from, in preference order

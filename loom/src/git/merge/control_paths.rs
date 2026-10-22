@@ -118,6 +118,72 @@ pub(crate) fn changed_paths(repo_root: &Path, base: &str, branch_rev: &str) -> R
         .collect())
 }
 
+/// Where the change a stage merge brought to `target` starts.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum AcceptedBase {
+    /// The first-parent history of `target` holds `merge`, whose second
+    /// parent is the stage commit; `base` is `merge-base <merge>^1 <completed>`.
+    Merged { merge: String, base: String },
+    /// No such merge: `base` is `merge-base <completed> <target>`. That is
+    /// the fork point when the stage has not merged yet (a dependency used
+    /// as a base branch), and `completed` itself when the commit already
+    /// reached `target` another way; the caller treats the second as unknown.
+    Unmerged { base: String },
+}
+
+/// Locates the merge that brought stage commit `completed` to branch `target`
+/// and the base its change starts from. `merge_stage` writes the merge as
+/// `[old target tip, stage tip]`, so the match is on the second parent.
+pub(crate) fn accepted_change_base(
+    repo_root: &Path,
+    completed: &str,
+    target: &str,
+) -> Result<AcceptedBase> {
+    if !is_commit_id(completed) {
+        bail!("{completed:?} is not a full commit id");
+    }
+    let target_ref = branch_ref(target);
+    let range = format!("{completed}..{target_ref}");
+    let listing = crate::git::run_git_checked(
+        &[
+            "rev-list",
+            "--first-parent",
+            "--merges",
+            "--parents",
+            "--ancestry-path",
+            &range,
+        ],
+        repo_root,
+    )?;
+    let merge = listing.lines().find_map(|line| {
+        let mut fields = line.split_whitespace();
+        let commit = fields.next()?;
+        fields
+            .nth(1)
+            .filter(|parent| parent.eq_ignore_ascii_case(completed))
+            .map(|_| commit.to_string())
+    });
+    match merge {
+        Some(merge) => {
+            let first_parent = format!("{merge}^1");
+            let base =
+                crate::git::run_git_checked(&["merge-base", &first_parent, completed], repo_root)?;
+            Ok(AcceptedBase::Merged { merge, base })
+        }
+        None => {
+            let base =
+                crate::git::run_git_checked(&["merge-base", completed, &target_ref], repo_root)?;
+            Ok(AcceptedBase::Unmerged { base })
+        }
+    }
+}
+
+/// Whether `value` is a full SHA-1 or SHA-256 commit id (hex only, so it can
+/// never reach git's option parser).
+fn is_commit_id(value: &str) -> bool {
+    matches!(value.len(), 40 | 64) && value.bytes().all(|byte| byte.is_ascii_hexdigit())
+}
+
 /// Whether `path` (repository-relative, forward-slashed, as `git diff -z
 /// --name-only` reports it) is a control path: `.claude`, `.mcp.json`,
 /// `.loom`, the tracked git hooks directory, or anything under a directory
@@ -183,3 +249,7 @@ pub fn resolve_hooks_dir_prefix(
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+#[path = "control_paths/tests_accepted.rs"]
+mod tests_accepted;

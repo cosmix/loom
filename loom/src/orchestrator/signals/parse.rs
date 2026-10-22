@@ -14,7 +14,7 @@ use super::types::SignalContent;
 /// "unexpected section" warning below (see the `Context`/`Handoff`/prefix
 /// exemptions there for sections not listed here), so a missing entry is
 /// silent false-positive noise on every signal of that kind, not a failure.
-const EXPECTED_SECTIONS: &[&str] = &[
+pub(super) const EXPECTED_SECTIONS: &[&str] = &[
     "Worktree Context",
     "Target",
     "Assignment",
@@ -43,7 +43,7 @@ const EXPECTED_SECTIONS: &[&str] = &[
     "Section Title",
     "Review Dimensions",
     "Cross-Stage Changes",
-    "Downstream Wiring Checklist",
+    super::generate::DEPENDENCY_FINDINGS_HEADING,
     "Goal-Backward Verification",
     "Adjudicator Feedback (from your prior dispute)",
 ];

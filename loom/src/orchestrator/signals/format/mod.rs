@@ -20,7 +20,7 @@ pub use skills::format_skill_recommendations;
 // The recovery signal is built outside the semi-stable path but still needs the
 // codex lane's rules, the stage's response budget, and the knowledge brief; see
 // recovery_format.rs.
-pub(crate) use brief::{format_knowledge_brief, format_stage_brief};
+pub(crate) use brief::{format_knowledge_brief, format_stage_brief, REFERENCE_DATA_SENTENCE};
 pub(crate) use codex::format_codex_implementers_section;
 pub(crate) use helpers::format_subagent_timeout_section;
 

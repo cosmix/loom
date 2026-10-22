@@ -11,11 +11,16 @@ use crate::models::stage::Stage;
 #[cfg(test)]
 use std::fs;
 
-use super::generate::build_embedded_context_with_stage;
+use super::generate::{build_dependency_findings, build_embedded_context_with_stage};
 use super::recovery_format::format_recovery_signal;
 use super::recovery_types::RecoverySignalContent;
 
 /// Generate a recovery signal file
+///
+/// The Dependency Findings section is appended here, after
+/// `format_recovery_signal`, rather than rendered inside it: the
+/// maintainability ledger pins that function's length, and a stage resumed by
+/// `loom stage retry` must keep the findings its fresh signal carried.
 pub fn generate_recovery_signal(
     content: &RecoverySignalContent,
     stage: &Stage,
@@ -42,8 +47,14 @@ pub fn generate_recovery_signal(
     // failure: a retry must never fail because a brief could not be built.
     embedded_context.context_pack = super::helpers::retrieve_stage_pack(work_dir, stage);
     embedded_context.knowledge_tree_empty = super::helpers::knowledge_tree_is_empty(work_dir);
+    embedded_context.dependency_findings =
+        build_dependency_findings(work_dir, stage, embedded_context.context_pack.as_ref());
 
     let mut signal_content = format_recovery_signal(content, stage, &embedded_context);
+    if let Some(findings) = &embedded_context.dependency_findings {
+        super::helpers::ensure_trailing_newline(&mut signal_content);
+        signal_content.push_str(&format!("{findings}\n\n"));
+    }
     // A recovery signal briefs an implementation session, which `start_stage`
     // spawns only once a v2 stage's contracts are frozen: it needs the same
     // frozen-contracts block a fresh implementation signal carries.

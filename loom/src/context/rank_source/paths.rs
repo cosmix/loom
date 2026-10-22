@@ -80,6 +80,39 @@ pub fn normalize_dependency_path(path: &str) -> String {
     normalized
 }
 
+/// `path` joined to the project-relative directory `working_dir`, with `.` and
+/// `..` resolved lexically and the result normalized like
+/// [`normalize_dependency_path`]. `None` for an empty or absolute `path`, or
+/// when `..` climbs above the project root. Glob characters pass through.
+///
+/// A stage declares its files relative to its `working_dir`, while source-graph
+/// nodes are project-relative, so this join is what lets the two meet. An
+/// absolute `working_dir` is also `None`: it names no project-relative
+/// directory, so no honest join exists.
+pub fn join_working_dir(working_dir: Option<&str>, path: &str) -> Option<String> {
+    let path = normalize_dependency_path(path);
+    if path.is_empty() || path.starts_with('/') {
+        return None;
+    }
+    let base = working_dir
+        .map(normalize_dependency_path)
+        .unwrap_or_default();
+    if base.starts_with('/') {
+        return None;
+    }
+    let mut segments: Vec<&str> = Vec::new();
+    for segment in base.split('/').chain(path.split('/')) {
+        match segment {
+            "" | "." => {}
+            ".." => {
+                segments.pop()?;
+            }
+            other => segments.push(other),
+        }
+    }
+    (!segments.is_empty()).then(|| segments.join("/"))
+}
+
 /// Multiply a test file's score by `test_path_factor`.
 ///
 /// Ordering pressure, not exclusion: reasons and confidence are untouched, and
@@ -132,3 +165,7 @@ fn is_test_file_name(name: &str) -> bool {
         || name.contains(".test.")
         || name.contains(".spec.")
 }
+
+#[cfg(test)]
+#[path = "paths_tests.rs"]
+mod tests;

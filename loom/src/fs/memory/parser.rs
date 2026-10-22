@@ -109,7 +109,9 @@ fn parse_entry_line(builder: &mut EntryBuilder, line: &str) {
         if !builder.content.is_empty() {
             builder.content.push('\n');
         }
-        builder.content.push_str(line);
+        builder
+            .content
+            .push_str(line.strip_prefix('\\').unwrap_or(line));
     }
 }
 
@@ -146,6 +148,25 @@ fn parse_receipt(value: &str) -> Option<Receipt> {
     })
 }
 
+/// `content` with one `\` in front of every line the journal parser would
+/// read as structure; `parse_entry_line` strips it again.
+fn escape_body(content: &str) -> String {
+    content
+        .split('\n')
+        .map(|line| {
+            let structural = ["\\", "---", "#", "<!--", "*"]
+                .iter()
+                .any(|prefix| line.starts_with(prefix));
+            if structural {
+                format!("\\{line}")
+            } else {
+                line.to_string()
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n")
+}
+
 /// Format a memory entry for markdown output.
 pub fn format_entry(entry: &MemoryEntry) -> String {
     let mut output = format!(
@@ -154,7 +175,7 @@ pub fn format_entry(entry: &MemoryEntry) -> String {
         entry.entry_type.display_name(),
         entry.timestamp.format("%Y-%m-%d %H:%M:%S"),
         entry.id,
-        entry.content
+        escape_body(&entry.content)
     );
     let has_metadata = entry.context.is_some()
         || !entry.evidence.is_empty()
@@ -162,7 +183,11 @@ pub fn format_entry(entry: &MemoryEntry) -> String {
         || entry.receipt.is_some();
 
     if let Some(context) = &entry.context {
-        output.push_str(&format!("*Context:* {context}\n"));
+        // One line: the parser keeps only the rest of the `*Context:*` line.
+        output.push_str(&format!(
+            "*Context:* {}\n",
+            context.replace(['\r', '\n'], " ")
+        ));
     }
     if !entry.evidence.is_empty() {
         let evidence = entry
@@ -189,3 +214,7 @@ pub fn format_entry(entry: &MemoryEntry) -> String {
     output.push_str("---\n\n");
     output
 }
+
+#[cfg(test)]
+#[path = "tests/parser_escaping.rs"]
+mod escaping_tests;

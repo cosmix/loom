@@ -180,7 +180,7 @@ fn retrieve_pack(config: &Config, payload: &HookPayload, paths: &[String]) -> Op
     Some(pack)
 }
 
-fn scope_pack(pack: &mut ContextPack, required_ids: &[String]) {
+pub(crate) fn scope_pack(pack: &mut ContextPack, required_ids: &[String]) {
     let mut scoped = Vec::with_capacity(pack.items.len());
     for item in std::mem::take(&mut pack.items) {
         if worker_material(&item) {
@@ -238,7 +238,7 @@ fn skills_line(skills: &[String]) -> Option<String> {
     ))
 }
 
-fn declared_paths(prompt: &str) -> Vec<String> {
+pub(crate) fn declared_paths(prompt: &str) -> Vec<String> {
     let mut paths = Vec::new();
     let mut in_paths = false;
     for line in prompt.lines() {
