@@ -164,6 +164,34 @@ fn go_generic_words_do_not_qualify_golang_on_a_rust_prompt() {
 }
 
 #[test]
+fn every_removed_go_word_does_not_qualify_golang_on_a_rust_prompt() {
+    if skip_unless_python3(
+        "hooks_skill_trigger::every_removed_go_word_does_not_qualify_golang_on_a_rust_prompt",
+    ) {
+        return;
+    }
+    let home = FakeHome::new();
+    home.index_real_skill("loom-golang");
+    let (_hook_dir, hook) = install_hook();
+    // Every bare word removed from the Go triggers, plus `error` and `sync`
+    // (indexer stopwords), together on one Rust prompt.
+    let out = run_hook(
+        &hook,
+        &home,
+        "in this rust crate, rewrite the interface, channel, struct, pointer, slice, map, \
+         mutex, defer, echo, error and sync handling so we can go on",
+        None,
+        false,
+    );
+    assert_eq!(out.code, 0, "stderr={}", out.stderr);
+    assert!(
+        !out.stdout.contains("loom-golang"),
+        "every removed bare Go word must not recommend the Go skill on a Rust prompt: {}",
+        out.stdout
+    );
+}
+
+#[test]
 fn repeated_prompt_in_same_session_is_silent_second_time() {
     if skip_unless_python3(
         "hooks_skill_trigger::repeated_prompt_in_same_session_is_silent_second_time",
