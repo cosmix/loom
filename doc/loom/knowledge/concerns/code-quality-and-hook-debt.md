@@ -11,14 +11,6 @@ existing entry, or a stale baseline entry. CI runs that gate, so the exception s
 or shrink. Treat this as controlled decomposition debt, not as completed decomposition, and remove
 an entry whenever its unit is brought under the limit.
 
-## Debug Output in Production
-
-`eprintln!` statements with 'Debug:' prefix in production code (complete.rs, orchestrator.rs). Should use tracing crate with log levels.
-
-## Hook Debug Logging to /tmp/
-
-Several hooks (worktree-isolation.sh, commit-filter.sh, prefer-modern-tools.sh) hardcode debug log paths to `/tmp/<name>-debug.log`. Under `set -euo pipefail`, if `/tmp/` is not writable (e.g., sandboxed environments), the hook script exits immediately with error. `git-add-guard.sh` already uses a gated `debug()` pattern that only writes when `GIT_ADD_GUARD_DEBUG=1` is set. Other hooks should adopt the same pattern.
-
 ## Rust/Shell Heredoc Terminator Divergence
 
 The Rust `strip_embedded_content` in `bash.rs:79` uses `line.trim() == marker` (tolerates indented terminators), while the shell version in `_common.sh:44` uses `$0 == marker` (exact line match). Both fail-safe but should be aligned for consistency.
@@ -31,8 +23,8 @@ Remote releases deliver hooks through the embedded-assets binary. `install.sh` d
 
 The doctrine block must stay byte-identical across the signal, the template, and the hook's
 refusal message, so it carries a single scoped-command example — a `cargo` one. A blocked Python
-or Go subagent is shown a Rust example. `loom-hooks/subagent-verify-guard.sh` is at the 400-line cap
-with no slack, so the fix is to append language-specific examples **after** the pinned block as
+or Go subagent is shown a Rust example. `loom-hooks/subagent-verify-guard.sh` is over the 400-line cap
+(591 lines). The fix is to append language-specific examples **after** the pinned block as
 explicitly hook-local guidance, the same way the `BLOCKED:` framing line already sits outside it.
 
 ## `subagent-verify-guard.sh` Still Regexes Raw Command Strings
@@ -51,9 +43,17 @@ against the OLD pattern — a fully green suite showed nothing. Read
 `mistakes/shell-command-matchers.md` § "Converting a Raw-String Matcher to Token Scanning
 Silently Narrows It" before starting, and budget for the differential testing it describes.
 
-## Three Hook Files Exceed Rule 17's 400-Line Cap
+## Seven Hook Files Exceed Rule 17's 400-Line Cap
 
 Several shell hooks exceed the repository file-size limit. Refactor by responsibility while preserving shell sourcing order and hook registration.
+
+- `loom-hooks/_common.sh` 1665 lines
+- `loom-hooks/commit-guard.sh` 606 lines
+- `loom-hooks/subagent-verify-guard.sh` 591 lines
+- `loom-hooks/credential-guard.sh` 570 lines
+- `loom-hooks/commit-filter.sh` 487 lines
+- `loom-hooks/codex-forward.sh` 406 lines
+- `loom-hooks/prefer-modern-tools.sh` 402 lines
 
 `loom/src/fs/permissions/constants.rs` embeds hook sources and lists `LOOM_HOOKS`; the hook configuration builder registers invoked hooks, and asset tests check installed inventory. `install.sh` invokes the binary asset installer and has no duplicated `all_hooks` arrays. Add a new embedded helper to the inventory, and register it as an event hook only if it is invoked directly.
 
@@ -186,19 +186,18 @@ Reviewer suggestions the plan left unimplemented:
 
 ## Execution Graph And Forward Guard Gaps
 
-> mark_queued status skip; macOS forward-guard branches unrun
+> recovery sync resets a finished node; macOS forward-guard branches unrun
 
-## Execution Graph: `mark_queued` Skips Node's Own Status
+## Execution Graph: Recovery Sync Resets a Finished Node
 
-`ExecutionGraph::mark_queued` (`loom/src/plan/graph/mod.rs:247-285`) checks only the
-file-declared stage's dependency list (each dep must be `Completed` and `merged`) before
-unconditionally setting `node.status = StageStatus::Queued`; it never checks the node's own
-current status first. A stale in-memory graph -- e.g. a daemon still running plan P5 after
-`.loom/work/` was replaced by `loom init` for plan P6 -- can force a `Completed` node straight
-back to `Queued` for any P6 stage that shares an id with a no-deps P5 stage. Not yet fixed;
-candidate remedies: validate `node.status` is a legitimate pre-queued state before overwriting
-it, or have callers refuse to sync when the file's declared deps disagree with the graph node's
-own dependency list.
+`ExecutionGraph::mark_queued` (`loom/src/plan/graph/mod.rs:195`) refuses a node whose own
+status cannot move to `Queued` (`Completed`, `Skipped`, `WaitingForInput`, `MergeConflict`);
+`Executing` is allowed for the handoff requeue. `project_stage`
+(`loom/src/orchestrator/core/recovery_sync.rs:84`) treats any `mark_queued` error as
+`force_status(WaitingForDeps)`, so a stale graph node that is `Completed` or `Skipped` while its
+stage file says `Queued` is still reset and later re-promoted by `refresh_ready_status`. The stage
+file is authoritative there by design; if the stale-graph case matters, skip the force when the
+node is already terminal.
 
 ## Codex Forward Guard: macOS Stage-Evidence Branches Were Never Executed
 

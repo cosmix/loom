@@ -10,31 +10,28 @@
 
 ## Architecture Concerns
 
-### Layering Violations (2026-01-29)
+### Layering Violations
 
-Lower layers import from higher ones: daemon imports commands (`mark_plan_done_if_all_merged`), orchestrator
-imports commands (`check_merge_state`), git/worktree imports orchestrator (hook config), models imports
-plan/schema. Full details: [architecture.md § Review Findings - Layering Violations](architecture.md#review-findings---layering-violations-2026-01-29)
+Lower layers import from higher ones:
+
+- daemon calls commands: `loom/src/daemon/server/client.rs:72` (`commands::stage::admin_proof::verify_and_consume_admin_proof`), `loom/src/daemon/server/status.rs:16` and `loom/src/daemon/protocol.rs:241` (`commands::status::data`)
+- orchestrator calls commands: `loom/src/orchestrator/core/coherence.rs:41` (`commands::stage::complete::strip_privileged_env_for_runtime`), `loom/src/orchestrator/core/inbox_drain/merge_resolved.rs:53` and `loom/src/orchestrator/core/merge_handler/resolver_exit.rs:128` (`commands::stage::complete::verify_resolved_completion`)
+- git imports orchestrator: `loom/src/git/cleanup/orphans.rs:10` (`orchestrator::merge_lifecycle::{CleanupOutcome, MergeLifecycle}`)
+- models imports plan: `loom/src/models/dispute.rs:14`, `loom/src/models/stage/types.rs:6`, `loom/src/models/stage/checks.rs:8`, `loom/src/models/stage/methods.rs:5`
 
 ## Code Quality Concerns
 
-### Oversized Rust Units Remain Controlled Debt (2026-08-09)
+### Oversized Rust Units Remain Controlled Debt
 
 The maintainability gate does not yet prove every production Rust file is at most 400 lines or
 every function at most 50 lines; exceptions are tracked by exact identity and size in
 `loom/maintainability-baseline.txt` and pinned by `loom/tests/maintainability.rs`, which rejects
 new entries, growth of an existing entry, or a stale one, so the exception set can only shrink.
 This entry now also covers the wider code-quality/hook-debt cluster: duplicated
-extension-to-language tables, hook debug logging to `/tmp/`, hook files over the 400-line cap, the
+extension-to-language tables, hook files over the 400-line cap, the
 `subagent-verify-guard.sh` raw-regex gap, and undelivered remote hooks.
 
 → [Code Quality and Hook Debt](concerns/code-quality-and-hook-debt.md)
-
-### Code Consolidation Needed
-
-Duplications needing consolidation: `parse_stage_from_markdown` (4 copies), `branch_name_for_stage` (22+ inline
-`format!()` calls), `extract_yaml_frontmatter` (2), `compute_level` (4, in status modules). Full details:
-[conventions.md § Code Consolidation Opportunities](conventions.md#code-consolidation-opportunities-2026-01-29)
 
 ## Long Codex Runs Starve the Loom Heartbeat
 
@@ -47,11 +44,6 @@ the global timeout was considered and rejected. The `loom status` badge shows su
 (open tool call) and measures silence against the same per-stage budget as the monitor.
 
 Full detail: [codex-heartbeat-starvation.md](concerns/codex-heartbeat-starvation.md).
-
-## Potential Concerns
-
-- **18 TODO comments** found in source files
-- **7 FIXME comments** found in source files
 
 ## Automatic-Knowledge Plan Followups
 
@@ -81,9 +73,9 @@ Four issues reviewed and deliberately left unchanged in `loom/src/commands/statu
 
 ## Markdown Lint Blocks Only at Push
 
-`loom/.githooks/pre-commit:63` runs `markdownlint-cli2 --fix` and ignores its exit status (it warns only when `bunx`
+`loom/.githooks/pre-commit:72` runs `markdownlint-cli2 --fix` and ignores its exit status (it warns only when `bunx`
 cannot run), so an error `--fix` cannot repair, such as a table row missing a cell (MD055/MD056), commits silently;
-`pre-push:48` blocks it. Lint new markdown with `bunx markdownlint-cli2 <files>` before committing.
+`pre-push:113` blocks it. Lint new markdown with `bunx markdownlint-cli2 <files>` before committing.
 
 ## Source Graph Limits and Review Backlog
 
@@ -128,8 +120,8 @@ prints a dry-run argv that cannot be pasted into a shell; repo-root resolution i
 
 ## Execution Graph and Forward Guard Gaps
 
-`ExecutionGraph::mark_queued` never checks the status of the node itself, so a stale in-memory graph can force a `Completed`
-node back to `Queued`. The macOS branches of `loom_stage_evidence` (the Codex forward guard) were written on Linux and
+`ExecutionGraph::mark_queued` refuses a finished node, but recovery sync answers that refusal by forcing the node to
+`WaitingForDeps`, so a stale in-memory graph can still reset a `Completed` node. The macOS branches of `loom_stage_evidence` (the Codex forward guard) were written on Linux and
 never run; the topic lists the checks to do on a Mac.
 
 → [Execution Graph and Forward Guard Gaps](concerns/code-quality-and-hook-debt.md)
@@ -226,7 +218,3 @@ suggestions are in [Agent Rule-Bending Hardening](concerns/agent-rule-bending-ha
 The plan 4 harness printed a stop-rule FAIL on all three recorded pairs (guard-core to guard-integration gains -444 and -2,221 tokens against a 12,190 cost); the operator overrode it and the verdict is printed, not asserted. Also open: spool id validation, render and path-normalization cost bounds, evidence-matching edges, test gaps, and the finalization-guard heredoc scan.
 
 → [Dependency Findings Follow-Ups](concerns/token-accounting-and-proof-defects.md#dependency-findings-follow-ups)
-
-## Reviewer Rounds Are Recorded Twice
-
-A `loom-code-reviewer` that delivers its `loom-review` block through `SubagentHandback` and again in its final message records two review rounds with duplicate finding ids; the sandbox route-closure stages hit it in route-closure (rounds 4 and 5) and integration-verify, after earlier hits in [Review Rounds Recorded Twice](mistakes/subagent-orchestration.md). Each duplicate id then needs its own `resolved` listing. Proposal: the round recorder keeps one round per reviewer agent id (the later delivery replaces the earlier one when the blocks are equal), instead of every brief having to name a single delivery channel.

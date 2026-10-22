@@ -59,6 +59,6 @@ Three things hid the cause:
 
 **What happened:** integration-verify criterion 1 (`cargo test --all-targets --no-fail-fast`) was killed at the 300 s default criterion timeout while `tests/host_verification_e2e.rs` ran; every test before it passed (lib: 8376 passed, 125 s). The second host job passed with the lib at 8380, but test time alone was about 225 s, so the first run's timeout was the cold test-profile compile on top.
 
-**Why:** the plan wrote the criterion as a plain string; DONE-PLAN-03 gave the same criterion `timeout_secs: 1200` (`doc/plans/token-optim/DONE-PLAN-03-usage-evidence.md:731-732`).
+**Why:** the plan wrote the criterion as a plain string; DONE-PLAN-03 gave the same criterion `timeout_secs: 1200` (`doc/plans/archive/DONE-PLAN-03-usage-evidence.md:731-732`).
 
 **Prevention:** an integration-verify full-suite criterion is an extended criterion with `timeout_secs` of at least 1200 (`verify/criteria/config.rs`).
