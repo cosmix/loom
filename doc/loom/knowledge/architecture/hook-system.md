@@ -95,7 +95,7 @@ Three-layer defense: documentation (the subagent preamble `spawn-guard.sh` prepe
 | Hook                       | Enforces                                                                                                                                                                                                                |
 | -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `commit-filter.sh`         | subagents may not run git operations; blocks AI attribution in commit messages. Matches argv TOKENS (raw-regex fallback on an unterminated quote), so quoted prose about git is not a git invocation                     |
-| `subagent-verify-guard.sh` | **still matches raw command strings** (see concerns.md). subagents may not run project-wide build/test/lint/typecheck suites — at most one narrowly-scoped check. `integration-verify` stages are carved out and may run the full suite. Deliberately has **no opt-out env var** |
+| `subagent-verify-guard.sh` | **still matches raw command strings** (see concerns.md). Subagents may not run project-wide build/test/lint/typecheck suites: at most one narrowly-scoped check. In a live standard stage it also blocks the main agent from an unfiltered test suite of any adapter runner; build, clippy and fmt stay allowed. Subagents of `integration-verify` stages are carved out, because that stage keeps its own gate. Ordinary sessions are never blocked (`live_loom_session`, `loom-hooks/subagent-verify-guard.sh:72-85`, needs a live `LOOM_MAIN_AGENT_PID` ancestor). Deliberately has **no opt-out env var** |
 
 **Detection is payload-first, not a PPID comparison.** Both hooks gate on `loom_is_subagent()` in
 `loom-hooks/_common.sh`, which first requires `LOOM_MAIN_AGENT_PID` to be a **live ancestor** of the
@@ -118,14 +118,6 @@ teammate as a subagent before ancestry. That keeps the parent heartbeat intact a
 subagent ceiling. A Task-tool subagent, by contrast, runs **in-process** (the same claude process
 as the main agent), so the process-tree walk alone finds no intervening Claude process between it
 and `LOOM_MAIN_AGENT_PID` — payload identity is what classifies both shapes correctly.
-
-### Heartbeat writer protocol
-
-`loom-hooks/session-start.sh`, `loom-hooks/post-tool-use.sh` and `loom-hooks/subagent-stop.sh` write the stage-keyed heartbeat. The PreToolUse branch of `loom-hooks/loom-control-complete.sh` also writes it: once it admits the exact pinned `loom stage complete <stage>`, `loom_write_completion_heartbeat` (`_post-tool-heartbeat.sh`) records activity "Stage completion running". The daemon then gives that session a longer stall line ([orchestrator loop](orchestrator-loop.md#stall-escalation-during-a-running-completion)).
-
-While that mark is the session's latest heartbeat, a write for the same session keeps it in two cases: the tool use is classified as observation (`_progress-classification.sh`), or it comes from a subagent. A main-agent progress write ends it, and so does the completion command's own PostToolUse.
-
-Every writer acquires a portable `mkdir` lock, validates the stage's current `session:` owner while holding it, and replaces the JSON via a same-directory temp-file rename. Late hooks from an old session therefore cannot overwrite a successor, concurrent subagent refreshes cannot roll the parent's token count backward, and the Rust watcher never observes a partially truncated JSON document. Lock metadata permits conservative recovery after a dead writer leaves an abandoned lock; live or uncertain owners are never stolen.
 
 ## Portable Shell Helpers and the SubagentStop Ledgers
 

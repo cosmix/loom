@@ -153,13 +153,9 @@ See [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugi
 ## Guidance Delivery Channels Convention
 
 Vendored-asset location, guidance-channel selection (hooks vs. signals vs. skills vs.
-CLAUDE.md, and when to escalate prose to a hook), the implementers-do-not-verify rule and the loom-verifier gate,
-and Claude Code plugin scope/settings-regeneration behaviour in loom repos
+CLAUDE.md, and when to escalate prose to a hook), the implementers-do-not-verify rule and the orchestrator's
+`loom check` gate, and Claude Code plugin scope/settings-regeneration behaviour in loom repos
 → [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugin-scope.md).
-
-## Implementers Do Not Verify; the Gate Runs in a Verifier
-
-A standard stage's gate runs in a `loom-verifier` subagent (opus, xhigh); integration-verify uses its own canonical verifier. See [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugin-scope.md).
 
 ## Git Push Requires Explicit User Request
 
@@ -248,3 +244,7 @@ A candidate that needs subscription-quota evidence runs as an operator procedure
 one arm at a time, with each run's evidence produced by `loom usage --run-evidence` as soon as it
 ends and every artifact judged by `loom usage --compare` under the net-total rule. Full procedure:
 [Live Paired Trials](architecture/usage-evidence.md#live-paired-trials).
+
+## Implementers Do Not Verify
+
+A subagent runs at most one narrowly-scoped check. The gate is the orchestrator's `loom check <stage-id>`, run once after the implementers return. See [Guidance Channels and Plugin Scope](conventions/guidance-channels-and-plugin-scope.md).

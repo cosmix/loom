@@ -281,10 +281,6 @@ Anchors are `path:line` at merge time; locate by symbol (`loom map --find-all`).
 
 - `loom/src/orchestrator/signals/format/sections/goal_backward_section.rs:19` tells the session to run `loom check <stage-id> --suggest`; `loom/src/commands/verify_relay.rs:37` ignores `--suggest` in a session and prints no `Fix:` lines. `skills/loom-orchestration/SKILL.md:351` names the flag too. Open.
 
-## Verifier Once-Rule Lacks Host-Job Exception
-
-- `agents/loom-verifier.md:28` says run each command once beside line 25, which reruns `requested`, `pending` and `stopped`. Adding "except the host-job states above" removes the apparent conflict. Open, wording only.
-
 ## README Relay Ticket Command List
 
 - `README.md:1111` lists `loom check`, `loom stage complete` and `loom stage contracts freeze` among the ticket writers. Fixed in tree.

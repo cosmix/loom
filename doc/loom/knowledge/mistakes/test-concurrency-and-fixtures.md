@@ -312,3 +312,11 @@ expects to expire stays short. Reproduce a timing failure by looping the test un
 **Prevention:** Use the full module path with --exact and check the executed test count.
 
 **Fix:** Invoke generated::standard_completion_verifies_accepts_and_merges_with_generated_dependencies explicitly; a zero-test run provides no verification.
+
+## A Test Hook Set a Process-Wide Cache for Every Later Test
+
+**What happened:** `host_verify::tests_runner::a_failed_start_pass_still_returns_the_records_already_settled` failed only in the full lib run. `fs::safe_fs::tests::rejects_intermediate_symlink_portable_path` called `force_disable_openat2_for_tests`, which stored 2 in the process-wide `OPENAT2_SUPPORT` cache. Every later test in the binary then used the portable open walk. That walk opens each directory for reading and gets EACCES through the search-only (0o111) directory of the runner test, so `load_current` failed on every tick.
+
+**Why:** libtest runs every test of a binary in one process, and the hook changed a shared cache.
+
+**Prevention:** a test hook that changes a process-wide cache must be scoped to the calling test thread or restored. The fix uses a `cfg(test)` thread-local `FORCE_PORTABLE`, checked first in `try_openat2` (`loom/src/fs/safe_fs.rs:118`), which leaves the 1019-line baseline pin unchanged.

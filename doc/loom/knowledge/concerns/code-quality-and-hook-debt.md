@@ -254,3 +254,9 @@ own dependency list.
 ## Duplicate Refusal Import In Freeze
 
 - `loom/src/commands/stage/contracts/freeze.rs:18` imports the refusal as `host_refusal`, so the clash is resolved. Fixed in tree.
+
+## Hook Rejects Commands That Name Stage Completion
+
+- `loom-hooks/loom-control-complete.sh` (PreToolUse) rejects any Bash command whose text contains a stage-complete-like phrase, such as a Python heredoc that mentions "complete" near "request" or "stage". Put the edit script in a scratch file with the Write tool, or use the Edit tool.
+- A subagent Bash command that names `src/commands/stage/complete_relay.rs` is refused as an unpinned `stage complete` call. Read such files with the Read tool.
+- `subagent-verify-guard.sh` refuses `cargo build --all-targets` in a subagent even when the brief asks for it. Briefs should name only the scoped `cargo test` check as runnable.

@@ -21,7 +21,14 @@ before it completes the stage. See "Review gate and harvest" below. `complete_ve
 `commands::stage::complete::complete_verification::complete_verification_v2::tests::*`; a filter
 `commands::stage::complete_verification_v2` selects zero tests.
 
-**Integration-verify has no separate loom-verifier.** Its acceptance criteria are the full gate, and `loom stage complete` runs every one of them. The orchestrator runs only what completion does not: functional checks, markdownlint, flake-check, Cargo.lock and ledger diffs, and clippy, fmt and maintainability checks first. Only the standard stage's gate spawns a `loom-verifier` (`VERIFIER_GATE`, `orchestrator/signals/cache/blocks.rs`).
+**No gate has a verifier subagent.** Integration-verify: the orchestrator runs `loom check integration-verify`
+once, and that check carries the complete suite; reviewers run only targeted checks (`INTEGRATION_VERIFY_OVERRIDE`,
+`orchestrator/signals/cache.rs:115`). Its acceptance criteria are the full gate, and `loom stage complete` runs
+every one of them again. Beyond that check, the orchestrator runs only what completion does not: functional
+checks, markdownlint, flake-check, Cargo.lock and ledger diffs, and clippy, fmt and maintainability checks first.
+Standard stage: the orchestrator runs `loom check <stage-id>` once (`ORCHESTRATOR_GATE`,
+`orchestrator/signals/cache/blocks.rs:90`), a fix round runs `loom check <stage-id> --criterion <n>`, and the
+loom-code-reviewer round judges the diff against each criterion's intent. Completion runs once per final tree.
 
 **Zero-test guard** (`testrun::registry::recognize`, called from `verify/criteria/runner.rs`). After a v2
 criterion runs, an adapter that recognises the command and parses `executed == Some(0)` fails it with

@@ -14,9 +14,9 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 
 Signals use four sections: stable prefix, semi-stable context, dynamic stage details and recitation. `format/mod.rs::format_signal_with_metrics` assembles them and computes `SignalMetrics`. `cache.rs::stable_prefix_for` selects the prefix for Standard, IntegrationVerify, KnowledgeDistill or Knowledge; `recovery_format.rs` uses the same selector.
 
-The standard prefix contains worktree and path boundaries, the working-directory reminder, execution rules and knowledge navigation, the orchestration-skill pointer, the subagent verification and context-ceiling blocks, adversarial review, and verifier/completion rules. Its generator is `generate_stable_prefix`; there is no `generate_standard_stable_prefix`.
+The standard prefix contains worktree and path boundaries, the working-directory reminder, execution rules and knowledge navigation, the orchestration-skill pointer, the subagent verification and context-ceiling blocks, adversarial review, and the completion rules, which open with `ORCHESTRATOR_GATE` (the orchestrator's `loom check`). Its generator is `generate_stable_prefix`; there is no `generate_standard_stable_prefix`.
 
-Integration verification adds its mission, review dimensions, and one canonical verifier for the complete gate. Knowledge distillation has a single curator and memory-ordering guidance. Knowledge/bootstrap has its own mission and completion workflow. Documentation prefixes omit the code-review block.
+Integration verification adds its mission, review dimensions, and the `INTEGRATION_VERIFY_OVERRIDE` block, under which the orchestrator runs `loom check integration-verify` once for the complete gate. Knowledge distillation has a single curator and memory-ordering guidance. Knowledge/bootstrap has its own mission and completion workflow. Documentation prefixes omit the code-review block.
 
 Delegation details live in `skills/loom-orchestration/SKILL.md`. The prefix uses `LOAD_ORCHESTRATION_SKILL`; it does not emit a separate delegation paragraph. The signal assemblers do not call `append_subagent_restrictions`, `append_anti_slop_guidance`, `append_git_staging_full`, `append_git_staging_rules` or `append_common_footer`. Source: `loom/src/orchestrator/signals/cache.rs`, `cache/blocks.rs`, `helpers.rs`.
 
@@ -31,7 +31,7 @@ Shared signal blocks live in `cache/blocks.rs` and `signals/helpers.rs`.
 | `cache/blocks.rs` | `append_no_verify_block`, `append_subagent_ceiling_block`: pinned worker contracts |
 | `cache/blocks.rs` | `append_adversarial_review`: six review dimensions for code-producing stages |
 | `cache/blocks.rs` | `append_review_dimension_details`: integration-verification dimensions |
-| `cache/blocks.rs` | `append_verifier_completion_header`: standard-stage gate owner |
+| `cache/blocks.rs` | `append_gate_completion_header`: opens a standard stage's `**Completion:**` list with `ORCHESTRATOR_GATE`, which makes the orchestrator's `loom check` the gate |
 | `helpers.rs` | `append_commit_timing_rules`, `append_completion_rules`, `append_settled_completion_rules`: completion ordering |
 | `helpers.rs` | `append_knowledge_commit_header`, `append_knowledge_commit_bullet`, `append_knowledge_mission`: knowledge workflow |
 

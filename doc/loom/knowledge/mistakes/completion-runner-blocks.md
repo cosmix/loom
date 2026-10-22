@@ -54,12 +54,12 @@
 
 - `rg -q -g '!tests/**' read-receipt ../loom-hooks` still matched `loom-hooks/tests/post-tool-use-tool-event.sh`. The glob is applied relative to the search root, so `!tests/**` never excludes `../loom-hooks/tests/`; `'!**/tests/**'` does.
 - A wiring pattern spanning a call's first argument (`let text = worker_query_text(&config.stage`) broke when rustfmt split the call across lines (`worker_brief.rs`).
-- `loom check` exits 0 when an acceptance criterion fails: `execute` returns `Ok(())` after `print_summary` whatever `acceptance_passed` is (`loom/src/commands/verify.rs:138`). Its summary shows `Acceptance: ✗` instead.
+- `loom check` exits non-zero when an acceptance criterion fails: `ensure_passed` (`loom/src/commands/verify.rs:127`) returns an error when acceptance or the goal check fails, and the summary shows `Acceptance: ✗`. An earlier note here read the exit code as 0; the tree does not.
 - `loom check` shows only the last 20 lines of a failing criterion's output (`TAIL_LINES`, `loom/src/commands/stage/criterion_output.rs:7`) and persists no full output, so an unfiltered `cargo test` failure cannot be named from it.
 
-**Why:** the runner's report is a rendering of the result, and each one drops something a shell run shows: the exit code, the full output, rustfmt's final layout.
+**Why:** the runner's report is a rendering of the result, and each one drops something a shell run shows: the full output and rustfmt's final layout.
 
-**Prevention:** read the Summary line of `loom check`, never its exit code. Run a long criterion in the shell to name its failing tests. Write `rg` globs as `'!**/dir/**'` and run single-line wiring patterns against rustfmt-formatted output, or anchor them on a token that cannot wrap.
+**Prevention:** read the Summary line and the exit code of `loom check`; run a long criterion in the shell to name its failing tests. Write `rg` globs as `'!**/dir/**'` and run single-line wiring patterns against rustfmt-formatted output, or anchor them on a token that cannot wrap.
 
 ## The Agent Sandbox Fails Part of the Full Gate for Environment Reasons (2026-10-20)
 
@@ -67,7 +67,7 @@
 
 **Why:** the confined runner and the session shell differ in network, sockets, temp directories and ancestor environment, so a criterion can pass in one and fail in the other without a code defect.
 
-**Prevention:** a criterion that fails only because of where completion runs is disputed in one `loom stage dispute-criteria` filing naming each index, never blocked and never weakened. Confirm it by running the same command in the other environment first; a `loom-verifier` run that is green there is the evidence. Plan authors should avoid unfiltered suites that need sockets.
+**Prevention:** a criterion that fails only because of where completion runs is disputed in one `loom stage dispute-criteria` filing naming each index, never blocked and never weakened. Confirm it by running the same command in the other environment first; a `loom check` run that is green there is the evidence. Plan authors should avoid unfiltered suites that need sockets.
 
 ## The Read Tool Cannot Read `$LOOM_SCRATCH_DIR` in a Worktree Session (2026-10-20)
 
@@ -159,4 +159,38 @@ each diagnostic to stderr.
 
 **Prevention:** before pinning a relay protocol to exit codes, check which Claude Code hook events fire for a non-zero exit; a Bash call that prints a relay line exits 0, and the doctrine tells agents to read the `Host job:` first line, never the exit code alone. Pin it with a test that the requesting call exits 0 (the plan's `rejects:` text names the exit-non-zero variant). Pressure-test a protocol plan before its first stage starts. Treat a nested-sandbox opt-out as a stopgap with a removal condition ("until criteria run on the host").
 
-**Fix:** in-session `loom check`, stage completion and the contract freeze relay a request; the daemon runs the job as a host child under loom's own confinement and completes or freezes only from its own run. Requested, pending, passed and completed exit 0 under a `Host job: <state> (<kind>, <short head>)` first line; failed, rejected and refused exit 1; stopped exits 4. The completion broker, the macOS daemon-socket grant, inherited confinement and the user-namespace opt-out are gone (plan `IN_PROGRESS-PLAN-host-verification.md`, Protocol decision 1 and deviations 2-3).
+**Fix:** in-session `loom check`, stage completion and the contract freeze relay a request; the daemon runs the job as a host child under loom's own confinement and completes or freezes only from its own run. Requested, pending, passed and completed exit 0 under a `Host job: <state> (<kind>, <short head>)` first line; failed, rejected and refused exit 1; stopped exits 4. The completion broker, the macOS daemon-socket grant, inherited confinement and the user-namespace opt-out are gone (the host-verification plan, Protocol decision 1 and deviations 2-3).
+
+## Cached Criterion Verdicts Lost Their Test Count on Completion
+
+**What happened:** after `loom check` passed on a tree with contracts, every later `loom stage complete` on that tree failed all six contracts with `contract test not selected`. Host job 9b04bb92 failed at 22:10 and 22:13 on the same commit where job 8123be80 passed. The first suspicion, a target-dir race from a concurrent cargo, was wrong.
+
+**Why:** completion's contract judge and the impact-test judge re-parsed acceptance output. A cache hit returns only the 4 KiB `stdout_tail`, which for `cargo test <name> -- --exact` holds only the trailing `running 0 tests` blocks. The judge read NotSelected although the cached verdict recorded `tests_executed=1`.
+
+**Prevention:** judge a cache hit by its cached verdict (`tests_executed`), or run the probe uncached. A test-selection judge reads the cached run, never the replayed stdout.
+
+**Fix:** `judge_cached` in `verify/contracts/completion.rs:166` and in `verify/impact_tests/runs.rs:130` decide a certified cache hit from `CachedRun.tests_executed`. `ProbeRun` carries the cached count (`verify/criteria/runner.rs:199`). The impact-test judge reached this branch with the fast-forward to d758634d, which brought in upstream commit 5753d07a.
+
+## Gate Verifier Subagents Repeated the Suite That Completion Runs Again
+
+**What happened:** the gate-dedup and integration-verify stages counted gate commands in their transcripts. The previous integration-verify ran `cargo test` 30 times across 4 verifier sessions and 15 completions.
+
+| Run | Verifier subagents | `cargo test` calls | `loom check` host jobs | `loom stage complete` calls |
+| --- | --- | --- | --- | --- |
+| Previous integration-verify | 4 sessions | 30 | not counted | 15 completions |
+| gate-dedup | 0 | 21: 19 by 9 workers, every one filtered; 2 by the main agent | 3 passed | 11: 2 refused, 9 pinned for 3 host jobs |
+| integration-verify (to 06:46Z) | 0 | 15, every one filtered: 11 by workers, 4 by the main agent | 3: one `--criterion 4`, one failed on the openat2 flake, one passed | 0 so far |
+
+The unfiltered suite ran only inside host jobs.
+
+**Why:** the verifier round re-ran criteria that `loom stage complete` runs again. Completion could not reuse the check's passes, because the cache key pins HEAD ([Acceptance Cache Key Pins the Commit](../concerns/verification-v2-followups.md#acceptance-cache-key-pins-the-commit)).
+
+**Prevention:** the orchestrator runs `loom check` once per tree, fix rounds run `loom check <stage-id> --criterion <n>`, and completion runs once on the final committed tree. Count gate commands in transcripts before accepting a claim about gate cost.
+
+## A Functional Check Briefed Through a Scratch Repo Cannot Finish in a Stage
+
+**What happened:** integration-verify's functional check (a scratch repo, `loom init` of a two-stage plan, `loom check <stage> --criterion 1`) could not finish in a stage session. `loom init` worked, but `loom check` refused with `Stage has no assigned worktree`. Only `loom run` assigns one, through a daemon on a unix socket the session sandbox denies. `commit-filter.sh` also refused `git commit` in the scratch repo. The stage ran `loom check integration-verify --criterion 4` through the relay instead, which printed `Host job: passed`.
+
+**Why:** the brief assumed a stage session could reach a daemon-run stage.
+
+**Prevention:** brief a functional check through the stage's own `loom check --criterion`, or name the fixture the contract test uses (`loom/tests/gate_dedup_contracts.rs:61`, `check_criterion_runs_only_named_criteria`).

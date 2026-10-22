@@ -328,12 +328,6 @@ writer that joins the raw env path silently writes nothing.
 in a stage description (a path claimed twice, a path outside the stage's `files`). Real plan tables
 are YAML-indented and have no Markdown divider row; the parser accepts that shape.
 
-## Signal Caps and the IV Canonical Verifier
-
-`loom/src/orchestrator/signals/tests_size.rs` pins `CLAUDE_MD_TEMPLATE_MAX_BYTES` at 20,480, `STABLE_PREFIX_MAX_BYTES` at 8,192, `STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` at 10,240 and `PLAN_OVERVIEW_MAX_BYTES` at 4,096. The overview cap mirrors `MAX_PLAN_OVERVIEW_BYTES` in `orchestrator/signals/generate/context.rs:98`. Trim doctrine before raising a cap.
-
-The IV stable prefix (`INTEGRATION_VERIFY_OVERRIDE`, `orchestrator/signals/cache.rs`) names ONE canonical verifier that runs the complete suite per immutable tree, environment and criterion contract; other reviewers run only targeted discriminating checks, which never substitute for the gate. After a review fix the owner re-evaluates invalidated checks, and only the repaired criteria cache decides reuse.
-
 ## Open Runtime Uncertainties
 
 - **Does a failed forward fire PostToolUse?** `codex-forward.sh` exits 124 on its unit deadline
@@ -366,3 +360,9 @@ Rereads are measured after the fact: the `reads` section of `loom usage`
 (`loom/src/commands/usage/sections/reads.rs`) counts native and shell reads from transcripts. If
 that measurement shows same-agent rereads above 2% of Read characters, the revival design is
 completion at the agent's next Read, from a transcript offset recorded at prepare time.
+
+## Signal Caps and the IV Gate
+
+`loom/src/orchestrator/signals/tests_size.rs` pins `CLAUDE_MD_TEMPLATE_MAX_BYTES` at 20,480, `STABLE_PREFIX_MAX_BYTES` at 8,192, `STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` at 10,240 and `PLAN_OVERVIEW_MAX_BYTES` at 4,096. The overview cap mirrors `MAX_PLAN_OVERVIEW_BYTES` in `orchestrator/signals/generate/context.rs:98`. Trim doctrine before raising a cap.
+
+The IV stable prefix (`INTEGRATION_VERIFY_OVERRIDE`, `orchestrator/signals/cache.rs`) has the orchestrator run `loom check integration-verify` once; that check carries the complete suite. Reviewers run only targeted discriminating checks, which never substitute for that gate. After a review fix the orchestrator re-evaluates invalidated checks, and only the repaired criteria cache decides reuse.

@@ -302,3 +302,11 @@ before the parent's import can go.
 **Prevention:** after a commit of specific files, run `git status --short` for untracked sources and `cargo check` at the new tip. When `cargo fmt --check` fails on files that are clean in isolation, look for a missing module before suspecting the files.
 
 **Fix:** commit `7170a07e` added the two files; they are tracked now.
+
+## A New Field on a Widely Built Struct Broke Its Literal Sites Outside Every File Table
+
+**What happened:** W1 added a `criteria` field to `SubmitRequest`, `JobRecord` and `HostJobRequest`. About 25 struct literals outside every worker's file table broke, so the crate did not compile when W1 to W5 returned. The sites included `stage_service/contracts.rs`, `inbox_drain/check.rs`, `inbox_drain/complete.rs`, `git/cleanup/batch.rs`, eight test files, three integration test files, the `host_verify` test modules and the `tests/*/support.rs` fixtures.
+
+**Why:** the plan's worker table listed the owners of the struct, not its literal construction sites.
+
+**Prevention:** when a plan adds a field to a struct without `Default`, grep the struct literals (`rg 'StructName \{'`) and assign every site to a worker's territory before spawning.

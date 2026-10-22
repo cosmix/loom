@@ -386,3 +386,14 @@ denyWrite and credential denies in force. The history of this failure is in
 ## Bubblewrap Hides a Secret Only If It Exists at Command Start
 
 `bwrap` can mask a state-root secret only when the file exists when the command starts, because `--ro-bind /dev/null` needs a target. `completion-attestation.key` (`handoff/completion/attest.rs`) is created lazily, so the host child creates it with `attestation_key` before any criterion runs (`host_verify/child.rs`). A mask added for a file that a criterion's command has not yet created does not hold. Revisit when a new state-root secret is added: create it before the wrapper starts.
+
+## The Full Suite Fails 26 Tests Only in a Sandboxed Shell
+
+The unfiltered `cargo test --all-targets` fails 26 loom tests in a Claude Code sandboxed shell and passes under `loom check`, the confined runner that `loom stage complete` uses. The mistake and its evidence: [The Full Suite Fails 26 Tests in a Verifier Shell](../mistakes/completion-runner-blocks.md#the-full-suite-fails-26-tests-in-a-verifier-shell-and-passes-under-loom-check).
+
+- 17 lib tests (`verify::before_after`, `goal_backward::truths`, criteria `working_dir`, confine `tool_tests`) fail with `EROFS` at `/var/tmp/.loom-command-*`. `scratch_roots` (`verify/criteria/confine_scratch.rs:135-140`) drops the root equal to the tree under test and keeps `/tmp` and `/var/tmp`, both read-only in the sandbox.
+- 9 `hooks_subagent_verify_guard` integration tests refuse a TMPDIR containing `claude` (`loom/tests/integration/hooks_subagent_verify_guard.rs:44`), because that name collapses the guard's main-agent and subagent detection. A TMPDIR under `$LOOM_SCRATCH_DIR` fixes those 9 and not the 17.
+- The gate-dedup contract tests create their temp dir under `CARGO_TARGET_TMPDIR` for the same reason (`loom/tests/gate_dedup_contracts/support.rs`).
+- Confined criteria cannot start in a worker's sandboxed shell, because bwrap has no user namespaces there. Runner and child tests that run real commands fail or skip in that shell. A unit test of selection logic sets `stage.sandbox.command_confinement = Some(Inherit)`. `check_criterion_runs_only_named_criteria` (`loom/tests/gate_dedup_contracts.rs:61`) needs `LOOM_TEST_ROOT` outside `/tmp` and working confinement.
+
+Revisit when `scratch_roots` keeps the tree root or the guard stops keying on the TMPDIR name.

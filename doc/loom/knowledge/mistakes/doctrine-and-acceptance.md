@@ -357,7 +357,7 @@ put the doc edits in the implementation brief.
 
 **What happened:** The untracked token-optimization metaplan ("Rules for every plan") told every code stage to run the whole pre-push gate, `cargo test --all-targets --no-fail-fast` included. Three of the six plan authors put that command in standard-stage acceptance, and `loom plan verify --strict` failed on `warn_full_suite_outside_integration_verify` (`plan/schema/validation_suite.rs:148`). The same three wrote `wiring` entries whose `source` began `../loom-hooks/`, which verify rejects as path traversal (`plan/schema/validation.rs:440`).
 **Why:** the metaplan restated the gate without the plan-writer's placement rule, and the authors treated the metaplan as overriding the skill.
-**Prevention:** a standard stage runs the unfiltered suite in its `loom-verifier` round, and its acceptance runs build, doctests, clippy, fmt, rustdoc and module-filtered tests; integration-verify runs the unfiltered suite once. A metaplan or task brief that names the gate says where each part runs. A check on a file outside the stage's `working_dir` is an `after_stage` or acceptance `rg` command, never a `wiring` source.
+**Prevention:** a standard stage's acceptance runs build, doctests, clippy, fmt, rustdoc and module-filtered tests through the orchestrator's single `loom check`; integration-verify runs the unfiltered suite once. A metaplan or task brief that names the gate says where each part runs. A check on a file outside the stage's `working_dir` is an `after_stage` or acceptance `rg` command, never a `wiring` source.
 **Fix:** the six plans under `doc/plans/token-optim/` place the unfiltered suite in the verifier round and integration-verify.
 
 ## A loom-wide fix was scoped to loom's own test suite

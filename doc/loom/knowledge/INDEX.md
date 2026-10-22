@@ -32,13 +32,13 @@
 | [context-retrieval-corpus](architecture/context-retrieval-corpus.md) | Stopwording, rescue floor, BM25 | 177 |
 | [context-retrieval-routing](architecture/context-retrieval-routing.md) | Intent routing, neighbours | 75 |
 | [context-retrieval-state](architecture/context-retrieval-state.md) | Layers, delivery records | 193 |
-| [contract-phase](architecture/contract-phase.md) | Contract session, freeze, handover | 157 |
+| [contract-phase](architecture/contract-phase.md) | Contract session, freeze, handover | 168 |
 | [core-abstractions](architecture/core-abstractions.md) | ExecutionGraph, Stage, Session | 136 |
 | [daemon-launch](architecture/daemon-launch.md) | Re-exec launch, readiness | 65 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) | Relayed signed commits | 151 |
 | [directory-structure](architecture/directory-structure.md) | Module tree, state layout | 50 |
 | [execution-containment](architecture/execution-containment.md) | Command containment, limits | 362 |
-| [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 302 |
+| [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 294 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Digest phase, receipts | 86 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | fs/knowledge, INDEX.md, checks | 263 |
 | [memory-spool](architecture/memory-spool.md) | Read before touching loom memory | 183 |
@@ -64,7 +64,7 @@
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, compare, cache | 368 |
 | [token-flow-sources](architecture/token-flow-sources.md) | Token flow sources | 75 |
 | [usage-evidence](architecture/usage-evidence.md) | Usage reasons, scope, trials | 127 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 231 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | v2 completion gates, order, owners | 238 |
 | [web-dashboard](architecture/web-dashboard.md) | status --web server, SPA, streams | 99 |
 | [web-terminal](architecture/web-terminal.md) | loom status --web terminals | 181 |
 
@@ -103,7 +103,7 @@
 | [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) | Config, plan-only, gate rules | 19 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute authority, budgets | 119 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, cargo, CI paths, size ledger | 228 |
-| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, plugin scope | 160 |
+| [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, plugin scope | 138 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] precedence, value types | 103 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML, hook I/O, skills | 173 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard type and CSS gotchas | 47 |
@@ -115,12 +115,12 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock | 200 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | A .git dir is no proof | 156 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Bug reports; brief flags | 185 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, audit, install.sh | 294 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, audit, install.sh | 302 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented itself | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader fixed by banning reads | 102 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 110 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) | Broker fallback, dup naming | 225 |
-| [completion-runner-blocks](mistakes/completion-runner-blocks.md) | Runner-env blocks, gate fails | 162 |
+| [completion-runner-blocks](mistakes/completion-runner-blocks.md) | Runner-env blocks, gate fails | 196 |
 | [completion-runtime](mistakes/completion-runtime.md) | Cargo churn, stall kills | 49 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread | 269 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes, save races | 46 |
@@ -138,11 +138,11 @@
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | A cleanup-boundary bug and its fix | 171 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Operator checkout git | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) | Resolver kept stage write denies | 15 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races | 323 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races | 331 |
 | [phantom-merges](mistakes/phantom-merges.md) | merged=true without proof | 337 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 313 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard edges | 83 |
-| [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 304 |
+| [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 312 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox paths, permission sync | 367 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | hooks/ dir is sandbox-protected | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers vs work state | 298 |
@@ -159,7 +159,7 @@
 | [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, wave sizing, ownership | 376 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Subagent liveness; watch traps | 377 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 348 |
-| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY | 314 |
+| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY | 322 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) | Sweep: startup, cache, fixtures | 137 |
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass with the bug | 392 |
@@ -167,7 +167,7 @@
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server gotchas | 52 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Producers of a rendered field | 241 |
 | [verification-harness](mistakes/verification-harness.md) | Suspect the harness | 399 |
-| [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 378 |
+| [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 386 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) capped by path | 141 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server concurrency | 393 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Layer under an ignored key | 94 |
@@ -178,18 +178,18 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Bendable checks backlog | 323 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Knowledge followups | 85 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Oversized units, hooks | 256 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Oversized units, hooks | 262 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat starvation | 49 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 window never named | 49 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps | 115 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry edge cases | 134 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Commit, launch, stall gaps | 213 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | tmux, orphan adoption edge cases | 150 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Canary, creds, env, caches | 388 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Canary, creds, env, caches | 399 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Language limits, open decisions | 79 |
-| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Unimplemented reviewer suggestions | 387 |
+| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Unimplemented reviewer suggestions | 383 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package caches | 17 |
-| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token follow-ups | 317 |
+| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token follow-ups | 313 |
 | [typed-config-values](concerns/typed-config-values.md) | Config read-path gaps | 27 |
-| [verification-v2-followups](concerns/verification-v2-followups.md) | v2 adapters, parsers, known gaps | 141 |
+| [verification-v2-followups](concerns/verification-v2-followups.md) | v2 adapters, parsers, known gaps | 177 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Latent issues in status/web | 103 |

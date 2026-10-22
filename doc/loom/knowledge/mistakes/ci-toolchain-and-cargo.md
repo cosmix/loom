@@ -292,3 +292,11 @@ run 38397957790 is the first with every macOS job green.
 ## Related Topic
 
 The sweep follow-ups on executable startup, cache coverage, hook-path navigation and fixture or tempdir discipline are in [Test Sweep and Fixture Discipline](test-sweep-and-fixture-discipline.md).
+
+## A Stage Passed Its Gate and Failed the Commit's Maintainability Test
+
+**What happened:** the gate (`loom check`) passed and the review rounds closed, but `loom stage commit`'s pre-commit maintainability test failed on a 67-line test function that W2 added in `orchestrator/adjudication/prompt/contract_tests.rs:199`.
+
+**Why:** no acceptance criterion ran `cargo test --test maintainability`, and the signal's extra steps checked only that the baseline file was unchanged.
+
+**Prevention:** run `cargo test --test maintainability` as its own step before the final review round.

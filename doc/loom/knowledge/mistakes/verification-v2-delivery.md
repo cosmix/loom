@@ -376,3 +376,11 @@ tests parent, `rg` the name in sibling files that glob-import `super::*`.
 **Prevention:** never re-parse a cached `CriterionResult`'s output for a verdict. Read the record's proof: `CriterionResult::cached_tests_executed`, surfaced to probes as `ProbeRun::cached`.
 
 **Fix:** `completion::judge_cached` decides a cache hit from `CachedRun::tests_executed`: `Some(0)` is not selected, `Some(n)` with exit 0 passes, `None` falls back to the exit code.
+
+## A Stage Could Not Use the Criterion Flag It Added
+
+**What happened:** the stage that added `loom check --criterion <n>` could not use it for its own fix rounds. The `loom` on PATH predated the stage and rejected the flag with exit 2. The stage fell back to a bare `loom check`, relying on the host-job cache.
+
+**Why:** the fix rounds ran the installed binary, not the one the stage was building.
+
+**Prevention:** a stage that adds a CLI flag must not depend on it for its own fix rounds. Plan those rounds on the bare gate, and run the flag form after the stage completes and the binary is installed.
