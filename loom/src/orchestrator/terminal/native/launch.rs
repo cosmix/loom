@@ -269,6 +269,7 @@ pub(crate) fn prepare_session_launch(
 }
 
 /// The session's settings capsule, written from the host's resolved facts.
+// Kept separate: the only caller passes its own values, and `CapsuleRequest` already bundles them.
 #[allow(clippy::too_many_arguments)]
 fn write_capsule(
     host: &LaunchHost,

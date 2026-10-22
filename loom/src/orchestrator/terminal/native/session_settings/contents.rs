@@ -120,11 +120,8 @@ pub(super) fn capsule_settings(inputs: &CapsuleInputs<'_>) -> Result<Value> {
     let denies = inputs.denies;
     let deny_write = ["sandbox", "filesystem", "denyWrite"];
     extend_strings(&mut settings, &deny_write, &denies.deny_write);
-    extend_strings(
-        &mut settings,
-        &["permissions", "deny"],
-        &capsule_deny_rules(inputs),
-    );
+    let deny_rules = capsule_deny_rules(inputs);
+    extend_strings(&mut settings, &["permissions", "deny"], &deny_rules);
     let deny_read = ["sandbox", "filesystem", "denyRead"];
     extend_strings(
         &mut settings,

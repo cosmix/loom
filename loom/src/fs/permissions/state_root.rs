@@ -60,9 +60,12 @@ pub(crate) const CREDENTIAL_DENY_READ_PATHS: [&str; 5] = [
 /// and PyPI tokens, git credential-store logins, docker registry auths, the
 /// kube client config, and cargo registry tokens in both spellings. Entries are
 /// plain paths, not globs: a `denyRead` glob expands to one mount per match,
-/// while a plain path that does not exist mounts nothing. Kept apart from
-/// [`CREDENTIAL_DENY_READ_PATHS`] so that a `Read(...)` rule an operator wrote
-/// for one of these files is never mistaken for a loom-written mirror.
+/// while a plain path that does not exist mounts nothing. A listed file that is
+/// absent when the session spawns is not denied, so a session can create it and
+/// read back what it wrote; that file holds nothing the operator placed there.
+/// Kept apart from [`CREDENTIAL_DENY_READ_PATHS`] so that a `Read(...)` rule an
+/// operator wrote for one of these files is never mistaken for a loom-written
+/// mirror.
 pub(crate) const CREDENTIAL_FILE_DENY_READ_PATHS: [&str; 9] = [
     "~/.config/gh/hosts.yml",
     "~/.netrc",

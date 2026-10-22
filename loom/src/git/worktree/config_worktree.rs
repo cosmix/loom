@@ -27,7 +27,8 @@ const GIT_WRITTEN_KEYS: [&str; 3] = [
 ];
 
 /// The administrative directories under `<common dir>/worktrees/` of the
-/// repository at `repo_root`: real directories only, no symlinks. A directory
+/// repository at `repo_root`: real directories only, no symlinks. A symlinked
+/// registry entry is therefore never listed, so it gets no deny. A directory
 /// with no `.git` has no worktrees.
 pub fn worktree_admin_dirs(repo_root: &Path) -> Result<Vec<PathBuf>> {
     if !repo_root.join(".git").exists() {
@@ -65,15 +66,17 @@ pub struct AdminDirs {
 
 /// Split [`worktree_admin_dirs`] into the one registered for `worktree` and
 /// the rest; with `worktree` `None` (a session in the checkout) every
-/// directory is a sibling. With no administrative directory at all,
-/// `worktree` is never touched, so it need not exist.
+/// directory is a sibling. With no administrative directory at all there is
+/// nothing to deny, and `worktree` is never touched, so it need not exist:
+/// pinned git refuses an unregistered worktree on its own.
 ///
-/// A `worktree` that no directory names, or that two directories name, is an
-/// error: the capsule cannot tell which directory is the session's own, so
-/// the spawn is refused. That fails closed for a directory on disk that no
-/// registry entry claims, the adjudication judge (`judge_cwd`) and the merge
-/// resolver (`merge_resolver_worktree` in `orchestrator/terminal/backend.rs`)
-/// included, since both check only `is_dir()`.
+/// Once the registry lists at least one directory, a `worktree` that no
+/// directory names, or that two directories name, is an error: the capsule
+/// cannot tell which directory is the session's own, so the spawn is refused.
+/// That fails closed for a directory on disk that no registry entry claims,
+/// the adjudication judge (`judge_cwd`) and the merge resolver
+/// (`merge_resolver_worktree` in `orchestrator/terminal/backend.rs`) included,
+/// since both check only `is_dir()`.
 ///
 /// The listing is taken at spawn. A worktree registered later is covered
 /// only for its `config.worktree` content (`WorktreeGit::run`'s
