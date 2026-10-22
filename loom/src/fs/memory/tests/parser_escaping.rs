@@ -155,8 +155,10 @@ fn an_entry_id_or_receipt_event_id_cannot_forge_an_entry() {
     assert!(entries
         .iter()
         .all(|entry| !entry.content.contains("forged")));
-    // Entries whose flattened heading or receipt line no longer parses are dropped;
-    // only the neighbours' integrity is asserted, not the count.
+    // The flattened id no longer parses as one, so its entry is dropped; the
+    // flattened event id stays inside a receipt line that still parses, so the
+    // receipt entry is kept.
+    assert_eq!(entries.len(), 3);
     assert_eq!(entries.first(), Some(&first));
     assert_eq!(entries.last(), Some(&last));
 }
