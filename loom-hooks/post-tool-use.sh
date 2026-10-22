@@ -173,7 +173,7 @@ _loom_ctx_check_subagent_ceiling() {
 # === LARGE BASH OUTPUT NOTICE ===
 # A Bash result whose stdout+stderr crosses this threshold is a long scroll
 # the agent will re-read from context instead of a file; Rule 14 asks for
-# verbose output to go through a file and a targeted tail/rg read instead.
+# verbose output to be logged to a file and its failures read back with rg.
 # Advisory only (never blocks), capped per session (ledger kind "bigout") so
 # it does not spam every big test run once the agent has already been told.
 readonly LOOM_BIGOUT_THRESHOLD_CHARS=20000
@@ -205,7 +205,7 @@ _loom_bash_output_notice() {
 	count=$(_loom_polls_count "$ledger" "notice")
 	((count < LOOM_BIGOUT_MAX_NOTICES)) || return 0
 
-	echo "This Bash result was ${size} characters (stdout+stderr) - send verbose output to a file and read the failing part (\`tail\`, \`rg -B2 -A5 'FAIL|error'\`)." >&2
+	echo "This Bash result was ${size} characters (stdout+stderr) - send verbose output to a file (\`> <log> 2>&1; echo \"exit=\$?\"\`) and read the failures with \`rg -n\`." >&2
 	_loom_ledger_append "$ledger" "notice"
 	return 0
 }
@@ -311,23 +311,28 @@ fi
 # === MAIN-SESSION SIZE ADVISORY ===
 # A stage's main session that changes more than 20 lines or more than 2 files
 # itself gets one advisory (CLAUDE.md Rule 7, hard stop 6). It never blocks.
-# Tally: one "edit" row per Write/Edit/MultiEdit/NotebookEdit call by the main
-# agent (not a subagent) on a file inside the worktree and outside .loom/.
+# This function is the only owner of that rule; it keeps a per-session ledger
+# with one "edit" row per Write/Edit/MultiEdit/NotebookEdit call by the main
+# agent (never a subagent) on a code file inside the worktree. Exempt and not
+# tallied: .loom/, doc/, any *.md, the distill scratch names (.kb_tmp_*,
+# .distill-body-*) and any path containing "/../".
 # Changed lines per call: an Edit counts the larger side of its replacement,
 # MultiEdit sums its edits, Write counts its whole content, NotebookEdit its
-# new source. Once the "warned" row exists the ledger stops growing, because
-# the ledger keeps only its newest rows and would otherwise rotate it away.
+# new source; one trailing newline is not a line. Once the "warned" row exists
+# the ledger stops growing, because the ledger keeps only its newest rows and
+# would otherwise rotate it away. The main-agent guards gate the ledger write
+# as well as the print, so a subagent hook never writes the "warned" row.
 readonly LOOM_MAIN_EDIT_MAX_LINES=20
 readonly LOOM_MAIN_EDIT_MAX_FILES=2
 readonly LOOM_MAIN_EDIT_LINES_JQ='
-	def n: if type == "string" and length > 0 then (split("\n") | length) else 0 end;
+	def n: if type == "string" and length > 0 then (rtrimstr("\n") | split("\n") | length) else 0 end;
 	def pair: [(.old_string | n), (.new_string | n)] | max;
 	if (.edits | type) == "array" then ([.edits[] | pair] | add // 0)
 	elif has("content") then (.content | n)
 	elif has("new_source") then (.new_source | n)
 	else pair end'
 
-_loom_main_edit_tally() {
+_loom_main_edit_advisory() {
 	case "$TOOL_NAME" in
 	Write | Edit | MultiEdit | NotebookEdit) ;;
 	*) return 0 ;;
@@ -340,9 +345,13 @@ _loom_main_edit_tally() {
 	local path wt="${LOOM_WORKTREE_PATH%/}"
 	path=$(printf '%s' "$TOOL_INPUT" | jq -r '.file_path // .notebook_path // empty' 2>/dev/null || true)
 	case "$path" in
-	"$wt"/.loom/*) return 0 ;;
+	*/../*) return 0 ;;
+	"$wt"/.loom/* | "$wt"/doc/* | *.md) return 0 ;;
 	"$wt"/*) ;;
 	*) return 0 ;;
+	esac
+	case "${path##*/}" in
+	.kb_tmp_* | .distill-body-*) return 0 ;;
 	esac
 
 	local ledger lines
@@ -351,23 +360,14 @@ _loom_main_edit_tally() {
 	lines=$(printf '%s' "$TOOL_INPUT" | jq -r "$LOOM_MAIN_EDIT_LINES_JQ" 2>/dev/null || true)
 	[[ "$lines" =~ ^[0-9]+$ ]] || return 0
 	_loom_ledger_append "$ledger" "edit" "$path" "$lines"
-	return 0
-}
-
-_loom_main_edit_advisory() {
-	local ledger
-	ledger=$(_loom_ledger_file "mainedits" "main" "$LOOM_SESSION_ID")
 	[[ -r "$ledger" ]] || return 0
-	[[ "$(_loom_polls_count "$ledger" "warned")" == "0" ]] || return 0
 
-	local kind path lines _stamp total=0 files=0 seen=$'\n'
-	local digits_re='^[0-9]+$'
-	while IFS=$'\t' read -r kind path lines _stamp; do
-		[[ "$kind" == "edit" ]] || continue
-		[[ "$lines" =~ $digits_re ]] || continue
-		total=$((total + lines))
-		if [[ "$seen" != *$'\n'"$path"$'\n'* ]]; then
-			seen="${seen}${path}"$'\n'
+	local kind row_path row_lines _stamp total=0 files=0 seen=$'\n'
+	while IFS=$'\t' read -r kind row_path row_lines _stamp; do
+		[[ "$kind" == "edit" && "$row_lines" =~ ^[0-9]+$ ]] || continue
+		total=$((total + 10#$row_lines))
+		if [[ "$seen" != *$'\n'"$row_path"$'\n'* ]]; then
+			seen="${seen}${row_path}"$'\n'
 			files=$((files + 1))
 		fi
 	done <"$ledger"
@@ -393,7 +393,6 @@ else
 fi
 
 # After the ceiling checks, which exit 2 and would discard this stdout JSON.
-_loom_main_edit_tally
 _loom_main_edit_advisory
 
 exit 0

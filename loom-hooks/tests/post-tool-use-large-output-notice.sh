@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # A Bash result whose stdout+stderr exceeds 20,000 characters gets one
-# advisory notice pointing at a file + tail/rg instead of a raw re-read; the
+# advisory notice pointing at a log file + rg instead of a raw re-read; the
 # notice fires at most three times per session (ledger kind "bigout") and
 # must not disturb the heartbeat write this hook also performs.
 set -euo pipefail
@@ -34,6 +34,12 @@ fi
 FIRST=$(run_hook "$BIG")
 if [[ "$FIRST" != *"20050 characters"* || "$FIRST" != *"send verbose output to a file"* ]]; then
 	echo "FAIL: first large-output call should warn with the size and guidance, got: $FIRST"
+	exit 1
+fi
+
+# Rule 14: log to a file, then read failures with rg; a piped tail is not advised.
+if [[ "$FIRST" != *'rg -n'* || "$FIRST" == *tail* ]]; then
+	echo "FAIL: the notice must name the log-then-rg recipe and not tail, got: $FIRST"
 	exit 1
 fi
 
