@@ -35,7 +35,7 @@ Loom teaches a 2-level subagent hierarchy (main agent → coordinator subagents 
 
 **Surface inventory:**
 
-1. `skills/loom-orchestration/SKILL.md` — the canonical home of the orchestrator doctrine: Rule 1 stage execution, Rule 4 commit timing, Rule 5 preamble, Rule 6 (shapes table, file-ownership table, coordinator/worker preambles, `2-level cap`, BLOCK-C waiting protocol), Rule 7 model allocation (BLOCK-B), the plan-version-2 stages section (BLOCK-E) and BLOCK-F. `CLAUDE.md.template` carries the hard stops and a body for every rule 1-19, 3b and 9b included: Rule 6 keeps four binding bullets and points at the skill, Rule 7 keeps the agent table (with the `loom-codex-forwarder` row) and a one-paragraph allocation summary. The template is capped at `CLAUDE_MD_TEMPLATE_MAX_BYTES` 20,480 (`tests_size.rs`)
+1. `skills/loom-orchestration/SKILL.md` — the canonical home of the orchestrator doctrine beyond the template: Rule 4 commit timing, Rule 6 (shapes table, file-ownership table, coordinator/worker preambles, `2-level cap`, BLOCK-C waiting protocol), Rule 7 model allocation (BLOCK-B) and the plan-version-2 stages section (BLOCK-E). BLOCK-F (stage exits) is not in the skill; it lives in the three stable prefixes. Rule 5's subagent preamble text lives only in `CLAUDE.md.template` Rule 5 and `loom-hooks/_subagent-preamble.txt`, which `spawn-guard.sh` prepends to every typed spawn; the skill's coordinator and worker preambles open with it by reference. `CLAUDE.md.template` carries the hard stops and a body for every rule 1-19, 3b and 9b included (Rule 6's four binding bullets, Rule 12's four steps, Rule 14's bullets, Rule 7's agent table with the `loom-codex-forwarder` row and a one-paragraph allocation summary). `tests_size.rs` caps the template at `CLAUDE_MD_TEMPLATE_MAX_BYTES`, set to its measured size (20,138 bytes), and the skill at its own `ORCHESTRATION_SKILL_MAX_BYTES` (20,530); `tests_guidance_manifest.rs` is the relocation manifest that keeps every item moved out of either file findable in its new home
 2. `skills/loom-plan-writer/SKILL.md` — §4 criteria-keyed strategies block (1/2/2a/2b/3 — deliberately NOT a ranking), decision table `>~6 worker tasks?` column, HIERARCHICAL EXECUTION PLAN BLOCKS subsection, ULTRACODE STAGES subsection, §5 description requirements, Example 5 (flat-12 vs 3×4 honest cost comparison), the codex install/scope subsection (`:276-298`)
 3. `orchestrator/signals/cache.rs` + `cache/blocks.rs` — for the hierarchy, the stable prefixes carry only the `LOAD_ORCHESTRATION_SKILL` pointer (`cache/blocks.rs:33`) and the subagent ceiling block, and no hierarchy block. Its forward reference to the codex block must spell the section name WITHOUT `##` (see pinning tests)
 4. `orchestrator/signals/format/sections.rs` — the semi-stable section carries no delegation section (see [signal-generation.md](../architecture/signal-generation.md)); the gated "## Ultracode Mode" lives here and the gated "## Codex Implementers" (`format_codex_implementers_section`) in `format/codex.rs:36`
@@ -74,8 +74,9 @@ type via `[models]` in `~/.loom/config.toml` (user tier) or `<repo>/.loom/work/c
 Savings come from **delegation, not downgrade**, and delegation is a cost decision (tokens times
 model tier; BLOCK-B point 1 in `skills/loom-orchestration/SKILL.md`): the main agent makes a change
 itself only when it is at most 20 lines in at most 2 files it has already read, needs no further
-exploration and one command proves it (a fable main session delegates even those; the
-`worktree-file-guard.sh` edit advisory warns past that size). Everything larger goes to subagents
+exploration and one command proves it (a fable main session delegates even those;
+`_loom_main_edit_advisory` in `loom-hooks/post-tool-use.sh` gives a stage's main session a one-time
+advisory past that size; see [hook-system.md](../architecture/hook-system.md)). Everything larger goes to subagents
 spawned by agent type across these tiers (BLOCK-B point 3):
 
 - haiku (`model: haiku` on `loom-software-engineer`): mechanical edits, boilerplate, scaffolding,

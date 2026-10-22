@@ -84,7 +84,7 @@ Lower severity than the creation-path bug fixed alongside it (`mistakes/ambient-
 both of `get_work_dir`'s branches only ever RETURN a `.loom/work` that already exists, so this
 misattributes reads rather than manufacturing stray directories. Left alone deliberately, because
 changing it would alter the reuse and read-only degrade paths that `loom memory list` depends on
-during post-compaction recovery (Rule 3b). Fix shape if it is ever worth doing: confirm the
+during post-compaction recovery (the SessionStart re-anchor message in `loom-hooks/session-start.sh` names it). Fix shape if it is ever worth doing: confirm the
 candidate root is a real worktree — a `.git` FILE containing a `gitdir:` pointer — before trusting
 its `.loom/work`.
 

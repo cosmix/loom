@@ -260,3 +260,34 @@ own dependency list.
 - `loom-hooks/loom-control-complete.sh` (PreToolUse) rejects any Bash command whose text contains a stage-complete-like phrase, such as a Python heredoc that mentions "complete" near "request" or "stage". Put the edit script in a scratch file with the Write tool, or use the Edit tool.
 - A subagent Bash command that names `src/commands/stage/complete_relay.rs` is refused as an unpinned `stage complete` call. Read such files with the Read tool.
 - `subagent-verify-guard.sh` refuses `cargo build --all-targets` in a subagent even when the brief asks for it. Briefs should name only the scoped `cargo test` check as runnable.
+
+## Guidance-and-Gate-Output Plan Follow-Ups
+
+Reviewer suggestions and findings the plan left unimplemented, with no fix in the plan.
+
+**Hooks**
+
+- **The large-output notice may never reach the model.** `_loom_bash_output_notice` in `loom-hooks/post-tool-use.sh` prints its notice on stderr and exits 0. Claude Code passes a hook's stderr to the model only on exit 2, so the notice reaches only the transcript. The fix shape is the stdout `additionalContext` JSON channel that `_loom_main_edit_advisory` uses ([hook-system.md](../architecture/hook-system.md)). The notice text already matches Rule 14 (log with `2>&1; echo "exit=$?"`, read failures with `rg -n`, no `tail`), and `loom-hooks/tests/post-tool-use-large-output-notice.sh` pins that wording.
+- **`post-tool-use.sh` is 398 of 400 lines (Rule 17).** The next addition moves `_loom_main_edit_advisory` into a sourced helper, as `_read_ledger.sh` was split for size; a new embedded helper costs the four hook-registration surfaces (`fs/permissions/constants.rs`, the hook configuration builder, the asset tests, `install.sh`).
+- **The advisory's tally is heavier than it needs to be.** It runs three `jq` processes per edit call (agent id, file path, line count), computes the ledger path twice and re-extracts the edited path that the EDIT RECORDING block already extracts. One `jq` call and a shared ledger-path helper would cut the hot-path cost; the recording block needs the `loom` binary and the tally must not, so the extractor cannot simply be shared.
+- **Worktree containment is a lexical prefix test.** A symlinked spelling of the worktree never tallies, unlike `is_within` in `worktree-file-guard.sh`, which canonicalizes with `pwd -P`. Risk is low because `terminal/native/wrapper.rs` canonicalizes `LOOM_WORKTREE_PATH`.
+- **The `warned` check and the `warned` append are not locked.** Two parallel main-agent edit calls that both cross the limit can each print the advisory once. Rare duplicate, no data loss.
+- **`completion_rejection_reason` in `loom-hooks/loom-control-complete.sh` tests the unquoted-heredoc pattern first and against the raw command.** A refused command with an inner `cat <<X` inside a quoted body, or a `<<n` shift, reports "quote the delimiter" instead of the real cause (a separator, a relative path, a shell wrapper). Message text only; the refusal is unchanged. Check it after the `ATTEMPT_*` reasons.
+- **`loom-hooks/session-start.sh` opens its re-anchor with "Context was compacted."** even for source `resume`, which template Rule 3b now routes to the same message; the wording could name both.
+- **The Rule 14 recipe logs to `${LOOM_SCRATCH_DIR:-${TMPDIR:-/tmp}}/<step>.log`.** With neither variable set that is a predictable name in shared `/tmp` (symlink clobbering on a multi-user host), and Rule 10 forbids reading outside the worktree while the Read tool cannot read scratch ([completion-runner-blocks.md](../mistakes/completion-runner-blocks.md)), so Bash `rg` is the only reader. The template sits at its byte ceiling, so a "scratch excepted" clause needs an offsetting trim. `skills/loom-debugging/SKILL.md` still shows a `for ...; do cargo test ... 2>&1 | tee /tmp/run || break; done` loop whose `|| break` tests `tee`.
+- **A subagent `git rm --cached` has now happened twice** ([subagent-orchestration.md](../mistakes/subagent-orchestration.md)). A PreToolUse rule in `commit-filter.sh` or `git-add-guard.sh` that denies `git rm --cached` and `git restore --staged` for a subagent would replace the brief sentence.
+
+**Doctrine text**
+
+- **`INTEGRATION_VERIFY_OVERRIDE` (`signals/cache.rs`) says "Rule 5's complete-suite instruction"**, but template Rule 5 has no such text, and its heading "does NOT apply here" reads against `_subagent-preamble.txt` (reviewers run only targeted checks). Reword both together; `tests_doctrine_prefixes.rs` pins them.
+- **Review dimension 3 (`signals/cache/blocks.rs`) hands a reviewer "`loom check` output plus ALL stderr"** while the preamble forbids reviewers from running the gate; nothing tells the orchestrator to pass the check summary and the full-log paths to that reviewer.
+- **`ORCHESTRATOR_GATE` says "for each failed criterion"**, which reads as one run per criterion; the repeatable `--criterion <n>` survives only in `README.md` and the CLI help (`commands/verify.rs`). "One run with a repeated `--criterion <n>`" would be exact.
+- **The knowledge (bootstrap) stable prefix never carried BLOCK-F**, and template Rule 13 lacks "Filing ends this session" and "Commit before filing". Decide whether bootstrap sessions carry `STAGE_EXIT_RULES`.
+- **BLOCK-F's "Commit before filing" and `append_commit_timing_rules` disagree**; see [agent-rule-bending-hardening.md](agent-rule-bending-hardening.md).
+
+**Tests**
+
+- **`tests_guidance_manifest.rs` has gaps.** `RELOCATIONS` has no length assertion while `FROZEN_LINES` is pinned at 40 lines and 21 headings, so deleting an entry together with its home text passes silently. Old template Rule 3's "committing nothing unverified (Rule 4)" has no entry. `the_writing_style_heading_is_still_mandatory` repeats `a_deleted_frozen_heading_fails_the_manifest_check` for a different heading and could fold into one table-driven test.
+- **`CLAUDE_MD_TEMPLATE` and `ORCHESTRATION_SKILL` `include_str!` constants are declared in seven test files.** A shared test-constants module would remove it.
+- **Go skill triggers.** `skills/loom-golang/SKILL.md` keeps the two-word triggers `go code`, `go test`, `go mod` and `in go` as weight-2 solo qualifiers; an imperative-"go" Rust prompt could hit them. `error` and `sync` are dropped by the indexer's `STOPWORDS` (`skill_index.rs`). `hooks_skill_trigger_evidence.rs` skips silently when `python3` is missing (`skip_unless_python3`); run the gate with `LOOM_TEST_REQUIRE_SANDBOX_FREE=1` so a skip fails. The Go test fails only when two or more removed bare words return, since one bare hit scores 1 against `MIN_SCORE` 2 (`skill-trigger.sh`); asserting that the built `skill-keywords.json` has no bare key for the ten removed words would catch a single one.
+- **`loom/tests/guidance_gate_contracts.rs` spawns about 320 bash plus `jq` pipelines serially.** It is isolated and correct, and the slowest test of the suite for its size.
