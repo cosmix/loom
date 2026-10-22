@@ -68,4 +68,27 @@ if echo "$OUTPUT2" | jq -e '.hookSpecificOutput' >/dev/null 2>&1; then
     exit 1
 fi
 
+# Assert resume source re-anchors the same way as compact
+OUTPUT3=$(echo '{"source":"resume"}' | \
+    LOOM_WORK_DIR="$LOOM_WORK_DIR" \
+    LOOM_STAGE_ID="$LOOM_STAGE_ID" \
+    LOOM_SESSION_ID="$LOOM_SESSION_ID" \
+    bash "$HOOK")
+
+if ! echo "$OUTPUT3" | jq -e '.hookSpecificOutput.additionalContext' >/dev/null 2>&1; then
+    echo "FAIL: additionalContext not found in output for 'resume' source"
+    echo "Output was: $OUTPUT3"
+    exit 1
+fi
+
+if ! echo "$OUTPUT3" | jq -r '.hookSpecificOutput.additionalContext' | grep -qF "loom memory list --stage test-stage"; then
+    echo "FAIL: 'loom memory list --stage test-stage' not found in additionalContext for 'resume' source"
+    exit 1
+fi
+
+if ! echo "$OUTPUT3" | jq -r '.hookSpecificOutput.additionalContext' | grep -qF "/handoffs/"; then
+    echo "FAIL: '/handoffs/' not found in additionalContext for 'resume' source"
+    exit 1
+fi
+
 echo "PASS: session-start compact/resume re-anchor test"
