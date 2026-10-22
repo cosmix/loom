@@ -130,7 +130,7 @@ jobs:
 
       - name: Run the bubblewrap capsule probe
         working-directory: loom
-        run: cargo test --lib tests_capsule_denies::bwrap::
+        run: "cargo test --lib tests_capsule_denies::bwrap::"
         env:
           LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
 
