@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # `head`/`tail` given a real file operand point at the Read tool (CLAUDE.md
-# rule 8); used as a pipe filter over another command's stdout (Rule 14's own
-# recommended pattern), with no file operand, they must stay silent.
+# rule 8); used as a pipe filter over another command's stdout, with no file
+# operand, they must stay silent.
 set -euo pipefail
 # See prefer-modern-tools-grep.sh for why the live stage vars must be unset.
 unset LOOM_WORK_DIR LOOM_SESSION_ID LOOM_STAGE_ID LOOM_SESSION_TYPE

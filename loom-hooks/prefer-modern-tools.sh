@@ -256,11 +256,11 @@ _pmt_head_tail_has_file() {
 # _pmt_grep_is_pipeline_filter - true when a real grep invocation is (a)
 # preceded by a single pipe character (never `||`) and (b) has at most one
 # non-flag argument in its own segment (just the search pattern, no file
-# operand) - i.e. it is filtering another command's stdout, the pattern Rule
-# 14 asks agents to pipe verbose output through, not the anti-pattern Rule 8
-# targets. Raw-text pipe detection: the tokenizer collapses `;`, `&&`, `|`,
-# and redirections to the same "%%SEP%%" sentinel, so the separator's actual
-# character survives only in the original text.
+# operand) - i.e. it is a filter on another command's piped stdout, not the
+# file-reading anti-pattern Rule 8 targets. Raw-text pipe detection: the
+# tokenizer collapses `;`, `&&`, `|`, and redirections to the same "%%SEP%%"
+# sentinel, so the separator's actual character survives only in the original
+# text.
 _pmt_grep_is_pipeline_filter() {
 	[[ $TOKENIZED -eq 1 ]] || return 1
 	echo "$STRIPPED_COMMAND" | grep -qE '(^|[^|])\|[[:space:]]*(/usr/bin/|/bin/)?grep([[:space:]]|$)' || return 1
