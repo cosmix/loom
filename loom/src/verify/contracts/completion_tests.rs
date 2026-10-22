@@ -2,6 +2,7 @@
 //! captured `cargo test` output instead of running anything.
 
 use super::*;
+use crate::verify::contracts::frozen_set::read_frozen_set;
 use crate::verify::contracts::store::{
     write_freeze, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION,
 };
@@ -235,4 +236,49 @@ fn a_contract_that_cannot_be_resolved_is_reported_with_the_rest() {
         error.contains("contract check failed for stage 's1'"),
         "{error}"
     );
+}
+
+/// Re-freeze `fx`'s stage the way an accepted contract dispute does: its
+/// contract files, the harness matches `harness` and every recorded path.
+fn refreeze_as_accept(fx: &Fixture, harness: &[String]) -> Vec<String> {
+    let record = store::load_freeze(&fx.work_dir, "s1").unwrap().unwrap();
+    let recorded: Vec<String> = record.files.iter().map(|f| f.path.clone()).collect();
+    let files = read_frozen_set(&fx.worktree, &fx.stage.contracts, harness, &recorded).unwrap();
+    store::refreeze_set(&fx.work_dir, "s1", &files, &[]).unwrap()
+}
+
+#[test]
+fn after_an_accepted_refreeze_no_frozen_file_is_changed() {
+    let fx = fixture();
+    let support = fx.worktree.join("tests/support");
+    std::fs::create_dir_all(&support).unwrap();
+    std::fs::write(
+        support.join("helper.rs"),
+        "pub fn ready() -> bool { false }\n",
+    )
+    .unwrap();
+    std::fs::write(support.join("gone.rs"), "pub fn gone() {}\n").unwrap();
+    let harness = ["tests/support/gone.rs", "tests/support/helper.rs"].map(String::from);
+    refreeze_as_accept(&fx, &harness);
+    std::fs::write(
+        support.join("helper.rs"),
+        "pub fn ready() -> bool { true }\n",
+    )
+    .unwrap();
+    std::fs::remove_file(support.join("gone.rs")).unwrap();
+    std::fs::write(
+        fx.worktree.join(CONTRACT_FILE),
+        b"#[test]\nfn rejects_x() {}\n",
+    )
+    .unwrap();
+    let record = store::load_freeze(&fx.work_dir, "s1").unwrap().unwrap();
+    let before = changed_frozen_files(&record, &fx.worktree, &fx.worktree).unwrap();
+    assert_eq!(before.len(), 3, "{before:?}");
+
+    let dropped = refreeze_as_accept(&fx, &harness[1..]);
+
+    assert_eq!(dropped, vec!["tests/support/gone.rs".to_string()]);
+    let record = store::load_freeze(&fx.work_dir, "s1").unwrap().unwrap();
+    let after = changed_frozen_files(&record, &fx.worktree, &fx.worktree).unwrap();
+    assert!(after.is_empty(), "{after:?}");
 }

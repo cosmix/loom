@@ -103,7 +103,7 @@ the stage signal reroutes terra-tier work to sonnet and luna-tier work to haiku,
    `loom-codex-forwarder` subagents in the FOREGROUND, each with the tier-appropriate model —
    `--model gpt-5.6-terra` (common implementation, integration tests) or, only when the user or plan
    asks for luna, `--model gpt-6-luna` (boilerplate, scaffolding, simple unit tests) — always `--effort xhigh`, an explicit Bash
-   timeout of 600000 ms (the Bash tool's maximum), and a DISJOINT file set; spawn a loom-verifier for the gate, then commit yourself." (The forwarder is
+   timeout of 600000 ms (the Bash tool's maximum), and a DISJOINT file set; run `loom check` for the gate, then commit yourself." (The forwarder is
    loom's own shim; never spawn the plugin's `codex:codex-rescue`
    directly — plugin agents' tools restriction is ignored by design, so that wrapper runs
    unrestricted. The orchestrator's signal carries the sentinel and evidence-trailer protocol;

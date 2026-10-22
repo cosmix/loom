@@ -73,7 +73,8 @@ Prefer extending existing tests. Trivial edits need no ceremonial tests. Inspect
 assertions and external-call timeout/error handling; a passing suite alone proves neither.
 
 Follow the task's verification boundary. A read-only review can inspect tests but must not
-claim they ran. Stage implementers keep their one-check limit; the assigned verifier owns the gate.
+claim they ran. Stage implementers keep their one-check limit; the stage's main agent owns the gate,
+which runs through `loom check <stage-id>`.
 
 ## Loom stages
 

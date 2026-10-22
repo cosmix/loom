@@ -44,6 +44,7 @@ pub(super) fn apply_complete(
             head: &request.head,
             tree_digest: &request.tree_digest,
             no_cache: request.no_cache,
+            criteria: None,
         },
         Utc::now(),
     ))

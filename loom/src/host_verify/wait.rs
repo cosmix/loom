@@ -40,6 +40,10 @@ pub struct WaitSite<'a> {
     pub knowledge: bool,
     pub kind: JobKind,
     pub no_cache: bool,
+    /// The 0-based criteria a check runs; `None` runs every one. A request
+    /// is followed only by a call selecting the same criteria, so a subset
+    /// result never answers a full check.
+    pub criteria: Option<&'a [usize]>,
     pub scratch_dir: &'a Path,
     pub budget: Duration,
 }
@@ -143,7 +147,10 @@ fn drive(
     };
     let path = state_path(site)?;
     let state = read_state(&path).filter(|state| {
-        state.head == head && state.tree_digest == digest && state.no_cache == site.no_cache
+        state.head == head
+            && state.tree_digest == digest
+            && state.no_cache == site.no_cache
+            && state.criteria.as_deref() == site.criteria
     });
     let Some(state) = state else {
         return request(site, &path, relay, out, head, digest);
@@ -194,6 +201,7 @@ fn request(
         head: head.clone(),
         tree_digest: tree_digest.clone(),
         no_cache: site.no_cache,
+        criteria: site.criteria.map(<[usize]>::to_vec),
     })
     .context("the request was not sent")?;
     let state = RequestState {
@@ -201,6 +209,7 @@ fn request(
         head: head.clone(),
         tree_digest,
         no_cache: site.no_cache,
+        criteria: site.criteria.map(<[usize]>::to_vec),
         submitted_at: Utc::now(),
     };
     write_state(path, &state).context("the request was not sent")?;

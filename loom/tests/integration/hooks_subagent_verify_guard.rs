@@ -2,8 +2,9 @@
 //!
 //! The hook blocks a SUBAGENT (a Claude Code process running under a main
 //! agent, per the same detector `commit-filter.sh` uses) from running
-//! project-wide verification (`cargo test`, `cargo clippy`, etc). Main
-//! agents are unaffected; scoped runs are still allowed; subagents running
+//! project-wide verification (`cargo test`, `cargo clippy`, etc). The main
+//! agent is blocked only on an unfiltered test suite in a live standard stage
+//! (see the `main` submodule); scoped runs are still allowed; subagents running
 //! inside an `integration-verify` stage are exempted (they are supposed to
 //! run the full suite); git commits are never blocked by this hook even
 //! when their message body mentions a verification command.
@@ -317,6 +318,9 @@ fn subagent_in_integration_verify_stage_allowed() {
 
 #[path = "hooks_subagent_verify_guard_carveout.rs"]
 mod carveout;
+
+#[path = "hooks_subagent_verify_guard_main.rs"]
+mod main;
 
 // =============================================================================
 // Non-vacuous message-stripping check: the "&&" lives INSIDE the quoted -m

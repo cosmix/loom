@@ -87,13 +87,13 @@ loom stage complete <stage-id>
 
 Stage `git add <specific-files>` only, never `-A` or `.`; never run `git commit`.
 
-**When to commit — at the END, after ALL verification, never before.** Commits happen ONLY as the final step of the stage — never mid-stage, never "what is done so far" — once every subagent returned, the full gate is green (a `loom-verifier` round in a standard stage) and the review's findings are fixed (see the `loom-orchestration` skill). Completion is the session's last act: `loom stage complete` prints `Host job: <state>` first. `requested`/`pending`/`stopped`: rerun; `failed`/`rejected`/`refused`: fix, commit, rerun; `completed`: stop.
+**When to commit — at the END, after ALL verification, never before.** Commits happen ONLY as the final step of the stage — never mid-stage, never "what is done so far" — once every subagent returned, `loom check` is green and the final review is done, and the review's findings are fixed (see the `loom-orchestration` skill). Completion is the session's last act: `loom stage complete` prints `Host job: <state>` first. `requested`/`pending`/`stopped`: rerun; `failed`/`rejected`/`refused`: fix, commit, rerun; `completed`: stop.
 
 Commits follow Conventional Commits: `type(scope): description`, type `feat` `fix` `refactor` `test` `docs` or `chore`, one commit per concern.
 
 ### 5. SUBAGENT RESTRICTIONS
 
-Subagents write code and report; the main agent owns fixes and all git operations (hard stop 3). A subagent runs at most one narrowly scoped check, once. A standard stage's full gate runs in a `loom-verifier`; integration-verify keeps its own. `loom-hooks/spawn-guard.sh` prepends the subagent preamble, `loom-hooks/_subagent-preamble.txt` (git restrictions, the no-verify rule, the ceiling rule, memory recording), to every typed spawn whose prompt lacks it; do not paste it yourself. Codex subagents get their own rules from `loom-hooks/codex-forward.sh`.
+Subagents write code and report; the main agent owns fixes and all git operations (hard stop 3). A subagent runs at most one narrowly scoped check, once. A standard stage's gate is the main agent's single `loom check`, never re-run; integration-verify keeps its own. `loom-hooks/spawn-guard.sh` prepends the subagent preamble, `loom-hooks/_subagent-preamble.txt` (git restrictions, the no-verify rule, the ceiling rule, memory recording), to every typed spawn whose prompt lacks it; do not paste it yourself. Codex subagents get their own rules from `loom-hooks/codex-forward.sh`.
 
 ### 6. SUBAGENTS
 
@@ -116,14 +116,13 @@ Check skills and agents before implementing; the prompt-submit hook surfaces mat
 | `loom-code-reviewer` | — | Read-only code/security/architecture review |
 | `Explore` | — | Codebase exploration |
 | `loom-advisor` | Fable | Read-only advisory for debugging and repeated failures — receives full detail, returns a diagnosis and next step, writes nothing |
-| `loom-verifier` | Opus (effort xhigh) | Runs a standard stage's gate (build, tests, lint, format, acceptance), reports pass/fail per step, writes nothing |
 | `loom-codex-forwarder` | gpt-5.6-terra; gpt-6-luna only on explicit request | Codex lane on stages listing codex in `implementers`; state `--model <tier> --effort xhigh` in the prompt; write-capable, foreground only, never verifies; a unit is one file (or a file plus its test), at most three steps, sized for the wrapper's 540 s deadline; an overrun exits 124 `timed_out` — re-split, never re-forward as is |
 
 Fable-tier work has no pinned agent type; pass the model override explicitly at spawn.
 
 Outside a loom stage `loom-codex-forwarder` is blocked; when the official Codex plugin is installed (the `codex:codex-rescue` agent type is listed), delegate codex work to that agent or `/codex:rescue`. Pick the lane per task: codex for well-specified implementation with pinned interfaces, Claude for exploration, cross-cutting changes, debugging, and work that iterates on tests.
 
-Model allocation, in full in the `loom-orchestration` skill. Delegation is a cost decision, tokens times model tier: the main agent makes a change itself only when it is at most 20 lines in at most 2 files already read, proven by one command, and a fable main session delegates even those. Everything else goes to as few subagents as the work allows at the cheapest capable tier, escalating one tier only after a failed attempt; a standard stage's gate goes to a fresh `loom-verifier` each round.
+Model allocation, in full in the `loom-orchestration` skill. Delegation is a cost decision, tokens times model tier: the main agent makes a change itself only when it is at most 20 lines in at most 2 files already read, proven by one command, and a fable main session delegates even those. Everything else goes to as few subagents as the work allows at the cheapest capable tier, escalating one tier only after a failed attempt.
 
 ### 8. NATIVE TOOLS AND CODE FORMATTING
 

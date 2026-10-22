@@ -140,7 +140,7 @@ the daemon starts (bubblewrap on Linux, `sandbox-exec` on macOS), not in the ses
   project or from loom's own repository.
 
 `loom check <stage-id>` runs the criteria in the same host job, so a mismatch shows before
-completion; its first line `Host job: <state>` is the result (`requested` and `pending` are not:
+completion (`--criterion <n>` re-runs only the named, 0-based criteria); its first line `Host job: <state>` is the result (`requested` and `pending` are not:
 run it again).
 
 **Granting the session's network.** Think hard about `network.allowed_domains`: list every fetch the

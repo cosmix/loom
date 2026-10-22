@@ -1,6 +1,7 @@
 //! An accepted contract dispute's re-freeze (`apply_contract.rs`): which run
 //! directory each contract keeps or gets and which files are re-hashed, with
-//! and without an amendment, and on a retry that finds the amendment applied.
+//! and without an amendment, on a retry that finds the amendment applied, and
+//! for harness files changed, added or deleted since the freeze.
 
 use chrono::Utc;
 use serde_json::json;
@@ -35,6 +36,7 @@ loom:
       name: s1
       stage_type: standard
       working_dir: "."
+      harness: ["tests/support/**"]
       contracts:
         - id: rejects-x
           file: "tests/x_contract.rs"
@@ -55,13 +57,34 @@ struct Fixture {
     worktree: PathBuf,
 }
 
+/// The harness file [`fixture_with_harness`] freezes.
+const HARNESS_FILE: &str = "tests/support/helper.rs";
+const HARNESS_CONTENT: &[u8] = b"pub fn ready() -> bool { false }\n";
+
 /// A stage worktree holding the contract file, its state directory naming
 /// [`PLAN`], and the stage under adjudication, its contract frozen with the
 /// run directory `cwd` recorded for its file.
 fn fixture(cwd: Option<&str>) -> Fixture {
+    fixture_with(cwd, &[])
+}
+
+/// [`fixture`] with [`HARNESS_FILE`] in the worktree and in the freeze.
+fn fixture_with_harness() -> Fixture {
+    fixture_with(Some("."), &[(HARNESS_FILE, HARNESS_CONTENT)])
+}
+
+/// [`fixture`] with each of `harness` written to the worktree and frozen
+/// beside the contract file.
+fn fixture_with(cwd: Option<&str>, harness: &[(&str, &[u8])]) -> Fixture {
     let tmp = TempDir::new().unwrap();
     let repo = tmp.path().join("repo");
     let worktree = contract_worktree(&repo, "s1");
+    std::fs::create_dir_all(worktree.join("tests/support")).unwrap();
+    let mut copies = vec![(CONTRACT_FILE.to_string(), CONTRACT_CONTENT.to_vec())];
+    for (path, content) in harness {
+        std::fs::write(worktree.join(path), content).unwrap();
+        copies.push((path.to_string(), content.to_vec()));
+    }
     let workspace = WorkDir::new(&repo).unwrap();
     workspace.adopt_existing().unwrap();
     let work = workspace.root().to_path_buf();
@@ -81,13 +104,15 @@ fn fixture(cwd: Option<&str>) -> Fixture {
         session_id: "contract-session".to_string(),
         frozen_at: Utc::now(),
         base: "main".to_string(),
-        files: vec![FrozenFile {
-            path: CONTRACT_FILE.to_string(),
-            sha256: sha256_hex(CONTRACT_CONTENT),
-        }],
+        files: copies
+            .iter()
+            .map(|(path, content)| FrozenFile {
+                path: path.clone(),
+                sha256: sha256_hex(content),
+            })
+            .collect(),
         contracts: frozen,
     };
-    let copies = [(CONTRACT_FILE.to_string(), CONTRACT_CONTENT.to_vec())];
     contract_store::write_freeze(&work, &record, &copies).unwrap();
     Fixture {
         _tmp: tmp,
@@ -101,6 +126,7 @@ fn stage(contracts: Vec<ContractSpec>) -> Stage {
     Stage {
         plan_version: 2,
         worktree: Some("s1".to_string()),
+        harness: vec!["tests/support/**".to_string()],
         contracts,
         ..make_stage("s1")
     }
@@ -295,4 +321,46 @@ fn a_retry_records_and_freezes_an_amended_file_the_record_lacks() {
     assert_eq!(frozen_hash(&fx, "tests/y_contract.rs"), Some(expected));
     let original = sha256_hex(CONTRACT_CONTENT);
     assert_eq!(frozen_hash(&fx, CONTRACT_FILE), Some(original));
+}
+
+#[test]
+fn a_changed_harness_file_is_refrozen() {
+    let fx = fixture_with_harness();
+    let changed: &[u8] = b"pub fn ready() -> bool { true }\n";
+    write_worktree_file(&fx, HARNESS_FILE, changed);
+
+    accept(&fx, json!({}));
+
+    assert_eq!(frozen_hash(&fx, HARNESS_FILE), Some(sha256_hex(changed)));
+    let copy = contract_store::frozen_file_path(&fx.work, "s1", HARNESS_FILE);
+    assert_eq!(std::fs::read(copy).unwrap(), changed);
+    let contract = sha256_hex(CONTRACT_CONTENT);
+    assert_eq!(frozen_hash(&fx, CONTRACT_FILE), Some(contract));
+}
+
+#[test]
+fn a_new_harness_file_is_added() {
+    let fx = fixture_with_harness();
+    let added: &[u8] = b"pub const FIXTURE: &str = \"x\";\n";
+    write_worktree_file(&fx, "tests/support/fixture.rs", added);
+
+    accept(&fx, json!({}));
+
+    let expected = sha256_hex(added);
+    assert_eq!(frozen_hash(&fx, "tests/support/fixture.rs"), Some(expected));
+    let kept = sha256_hex(HARNESS_CONTENT);
+    assert_eq!(frozen_hash(&fx, HARNESS_FILE), Some(kept));
+}
+
+#[test]
+fn a_deleted_harness_file_is_dropped() {
+    let fx = fixture_with_harness();
+    std::fs::remove_file(fx.worktree.join(HARNESS_FILE)).unwrap();
+
+    accept(&fx, json!({}));
+
+    assert_eq!(frozen_hash(&fx, HARNESS_FILE), None);
+    let copy = contract_store::frozen_file_path(&fx.work, "s1", HARNESS_FILE);
+    assert!(!copy.exists(), "the dropped file's copy must go");
+    assert!(frozen_hash(&fx, CONTRACT_FILE).is_some());
 }

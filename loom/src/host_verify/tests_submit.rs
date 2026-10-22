@@ -31,6 +31,14 @@ fn request<'a>(request_id: &'a str, head: &'a str, no_cache: bool) -> SubmitRequ
         head,
         tree_digest: DIGEST,
         no_cache,
+        criteria: None,
+    }
+}
+
+fn subset<'a>(request_id: &'a str, criteria: &[usize]) -> SubmitRequest<'a> {
+    SubmitRequest {
+        criteria: Some(criteria.to_vec()),
+        ..request(request_id, HEAD_A, false)
     }
 }
 
@@ -182,5 +190,57 @@ fn a_malformed_head_or_tree_digest_is_refused_and_queues_nothing() {
         matches!(&refused, Submission::Refused(why) if why.contains("tree_digest")),
         "{refused:?}"
     );
+    assert_eq!(load_current(&work, STAGE).unwrap(), None);
+}
+
+#[test]
+fn a_subset_request_joins_a_running_full_check() {
+    let (_dir, work) = state_root();
+    let full = queued(submit(&work, &request("r1", HEAD_A, false), Utc::now()).unwrap());
+
+    let job = joined(submit(&work, &subset("r2", &[1, 3]), Utc::now()).unwrap());
+
+    assert_eq!(job.id, full.id);
+    assert_eq!(job.criteria, None);
+}
+
+#[test]
+fn a_full_request_does_not_join_a_subset_job() {
+    let (_dir, work) = state_root();
+    let partial = queued(submit(&work, &subset("r1", &[1]), Utc::now()).unwrap());
+    assert_eq!(partial.criteria, Some(vec![1]));
+
+    let (cancelled, full) =
+        superseded(submit(&work, &request("r2", HEAD_A, false), Utc::now()).unwrap());
+
+    assert_eq!(cancelled.id, partial.id);
+    assert_eq!(full.criteria, None);
+}
+
+#[test]
+fn equal_subsets_join_and_a_wider_subset_supersedes() {
+    let (_dir, work) = state_root();
+    let first = queued(submit(&work, &subset("r1", &[0, 2]), Utc::now()).unwrap());
+
+    let same = joined(submit(&work, &subset("r2", &[2, 0]), Utc::now()).unwrap());
+    let (cancelled, _) = superseded(submit(&work, &subset("r3", &[0, 1]), Utc::now()).unwrap());
+
+    assert_eq!(same.id, first.id);
+    assert_eq!(cancelled.id, first.id);
+}
+
+#[test]
+fn a_selection_outside_a_check_or_naming_nothing_is_refused() {
+    let (_dir, work) = state_root();
+    let whole_run = SubmitRequest {
+        kind: JobKind::Complete,
+        ..subset("r1", &[0])
+    };
+    let empty = subset("r2", &[]);
+
+    for request in [whole_run, empty] {
+        let refused = submit(&work, &request, Utc::now()).unwrap();
+        assert!(matches!(refused, Submission::Refused(_)), "{refused:?}");
+    }
     assert_eq!(load_current(&work, STAGE).unwrap(), None);
 }

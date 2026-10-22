@@ -6,7 +6,7 @@ use super::matrix::MatrixVerdict;
 use crate::models::session::SessionType;
 
 /// `check` runs the stage's gate on the host for the sessions that verify:
-/// `Stage` (and its `loom-verifier` subagents), `Knowledge`, and the judge
+/// `Stage`, `Knowledge`, and the judge
 /// (`Adjudication`, whose first step is `loom check <stage> --no-cache`).
 /// Merge, base-conflict and contract sessions never request one.
 pub(super) const HOST_JOB_MATRIX: &[(SessionType, RequestKind, MatrixVerdict)] = &[

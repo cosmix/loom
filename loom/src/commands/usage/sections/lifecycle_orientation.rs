@@ -8,12 +8,7 @@ use super::fmt::percentile;
 
 /// Subagent types whose last act is a recorded verdict, so they have no
 /// orientation phase to measure.
-const READ_ONLY_TYPES: [&str; 4] = [
-    "loom-code-reviewer",
-    "loom-verifier",
-    "loom-advisor",
-    "Explore",
-];
+const READ_ONLY_TYPES: [&str; 3] = ["loom-code-reviewer", "loom-advisor", "Explore"];
 
 #[derive(Debug, serde::Serialize, Default)]
 pub struct Orientation {

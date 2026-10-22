@@ -50,6 +50,7 @@ fn reset_cancels_the_stages_host_job() {
         head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         tree_digest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         no_cache: false,
+        criteria: None,
     };
     let Submission::Queued(job) = submit(work, &request, chrono::Utc::now()).unwrap() else {
         panic!("expected a queued job");

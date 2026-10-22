@@ -17,9 +17,9 @@ use crate::models::stage::{AcceptanceCriterion, Stage, StageStatus, StageType};
 use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
 use crate::verify::transitions::save_stage;
 
-const STAGE: &str = "stage-a";
+pub(super) const STAGE: &str = "stage-a";
 
-fn confinement_unavailable(test_name: &str) -> bool {
+pub(super) fn confinement_unavailable(test_name: &str) -> bool {
     skip_unless(
         confined_commands_runnable(),
         test_name,
@@ -47,16 +47,16 @@ fn git(dir: &Path, args: &[&str]) -> String {
 /// A repository with one commit, the stage worktree `.worktrees/stage-a`,
 /// the state root `<repo>/.loom/work` holding the stage, and a plan without
 /// goal checks that the state root's `config.toml` names.
-struct Fixture {
+pub(super) struct Fixture {
     _dir: TempDir,
     repo: PathBuf,
-    work_dir: PathBuf,
+    pub(super) work_dir: PathBuf,
     worktree: PathBuf,
     stage_type: StageType,
 }
 
 impl Fixture {
-    fn new(acceptance: &[&str], stage_type: StageType) -> Self {
+    pub(super) fn new(acceptance: &[&str], stage_type: StageType) -> Self {
         let dir = TempDir::new().expect("temp dir");
         let repo = dir.path().canonicalize().expect("canonical temp dir");
         git(&repo, &["init", "-q", "-b", "main"]);
@@ -147,7 +147,7 @@ impl Fixture {
     }
 
     /// Save a current job record for the checkout as it stands now.
-    fn job(&self, state: JobState, no_cache: bool) -> JobRecord {
+    pub(super) fn job(&self, state: JobState, no_cache: bool) -> JobRecord {
         let tree_digest = match self.stage_type {
             StageType::Knowledge => digest::knowledge_tree_digest(&self.repo),
             _ => digest::tree_digest(&self.worktree),
@@ -162,6 +162,7 @@ impl Fixture {
             head: self.job_head(),
             tree_digest,
             no_cache,
+            criteria: None,
             state,
             requests: vec!["r1".to_string()],
             queued_at: now,
@@ -174,7 +175,7 @@ impl Fixture {
         record
     }
 
-    fn run(&self, record: &JobRecord) -> JobResult {
+    pub(super) fn run(&self, record: &JobRecord) -> JobResult {
         let result = run_job(&self.work_dir, STAGE, &record.id).expect("run_job");
         let saved = store::load_result(&self.work_dir, STAGE, &record.id).expect("load result");
         assert_eq!(
@@ -186,7 +187,7 @@ impl Fixture {
     }
 }
 
-fn labels_and_verdicts(result: &JobResult) -> Vec<(&str, bool)> {
+pub(super) fn labels_and_verdicts(result: &JobResult) -> Vec<(&str, bool)> {
     result
         .criteria
         .iter()

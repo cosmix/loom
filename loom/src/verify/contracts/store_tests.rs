@@ -123,7 +123,7 @@ fn a_refreeze_records_each_contracts_run_dir() {
     write_freeze(tmp.path(), &frozen, &[]).unwrap();
     let files = vec![("a.rs".to_string(), b"new".to_vec())];
 
-    refreeze(
+    refreeze_set(
         tmp.path(),
         "s1",
         &files,
@@ -139,7 +139,7 @@ fn a_refreeze_records_each_contracts_run_dir() {
     assert_eq!(loaded.contracts, vec![updated]);
     assert_eq!(loaded.files[0].sha256, sha256_hex(b"new"));
     let bad = [refrozen("rejects-x", "../x")];
-    assert!(refreeze(tmp.path(), "s1", &files, &bad).is_err());
+    assert!(refreeze_set(tmp.path(), "s1", &files, &bad).is_err());
 }
 
 #[test]
@@ -149,7 +149,7 @@ fn a_refreeze_adds_a_contract_the_record_did_not_list() {
     frozen.contracts = vec![red(Some("."))];
     write_freeze(tmp.path(), &frozen, &[]).unwrap();
 
-    refreeze(tmp.path(), "s1", &[], &[refrozen("rejects-y", "apps/web")]).unwrap();
+    refreeze_set(tmp.path(), "s1", &[], &[refrozen("rejects-y", "apps/web")]).unwrap();
 
     let loaded = load_freeze(tmp.path(), "s1").unwrap().unwrap();
     let added = FrozenContract {
@@ -161,6 +161,43 @@ fn a_refreeze_adds_a_contract_the_record_did_not_list() {
         cwd: Some("apps/web".to_string()),
     };
     assert_eq!(loaded.contracts, vec![red(Some(".")), added]);
+}
+
+#[test]
+fn a_refreeze_replaces_the_frozen_set_and_drops_what_it_lacks() {
+    let tmp = TempDir::new().unwrap();
+    let mut frozen = record("s1", "a.rs", &sha256_hex(b"old"));
+    frozen.files.push(FrozenFile {
+        path: "gone.rs".to_string(),
+        sha256: sha256_hex(b"gone"),
+    });
+    let copies = [
+        ("a.rs".to_string(), b"old".to_vec()),
+        ("gone.rs".to_string(), b"gone".to_vec()),
+    ];
+    write_freeze(tmp.path(), &frozen, &copies).unwrap();
+    let files = [
+        ("a.rs".to_string(), b"new".to_vec()),
+        ("added.rs".to_string(), b"added".to_vec()),
+    ];
+
+    let dropped = refreeze_set(tmp.path(), "s1", &files, &[]).unwrap();
+
+    assert_eq!(dropped, vec!["gone.rs".to_string()]);
+    let loaded = load_freeze(tmp.path(), "s1").unwrap().unwrap();
+    let hashes: Vec<(&str, String)> = loaded
+        .files
+        .iter()
+        .map(|file| (file.path.as_str(), file.sha256.clone()))
+        .collect();
+    let expected = vec![
+        ("a.rs", sha256_hex(b"new")),
+        ("added.rs", sha256_hex(b"added")),
+    ];
+    assert_eq!(hashes, expected);
+    assert!(!frozen_file_path(tmp.path(), "s1", "gone.rs").exists());
+    let added = std::fs::read(frozen_file_path(tmp.path(), "s1", "added.rs")).unwrap();
+    assert_eq!(added, b"added");
 }
 
 fn refrozen(id: &str, cwd: &str) -> RefrozenContract {
@@ -231,5 +268,5 @@ fn a_recorded_file_must_be_a_plain_relative_path() {
         file: "/a.rs".to_string(),
         ..refrozen("x", ".")
     };
-    assert!(refreeze(tmp.path(), "s2", &[], &[bad]).is_err());
+    assert!(refreeze_set(tmp.path(), "s2", &[], &[bad]).is_err());
 }

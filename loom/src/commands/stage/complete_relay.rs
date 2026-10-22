@@ -93,6 +93,7 @@ fn relay(context: &RelayContext, call: &SessionCall<'_>, out: &mut dyn Write) ->
         knowledge: target.stage.stage_type == StageType::Knowledge,
         kind: JobKind::Complete,
         no_cache: call.no_cache,
+        criteria: None,
         scratch_dir: &context.scratch_dir,
         budget: wait::budget_for(&target.stage),
     };

@@ -45,6 +45,7 @@ fn check_request<'a>(request_id: &'a str, head: &'a str, digest: &'a str) -> Sub
         head,
         tree_digest: digest,
         no_cache: false,
+        criteria: None,
     }
 }
 

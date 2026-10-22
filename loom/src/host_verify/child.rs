@@ -7,6 +7,7 @@
 //! contracts (`freeze`). It prints nothing; the CLI wrapper prints the
 //! summary the runner captures in `child.log`.
 
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 
@@ -91,9 +92,12 @@ fn check(work_dir: &Path, record: &JobRecord, progress: &Arc<Progress>) -> Resul
     if let Some(mismatch) = tree.differences(record)? {
         bail!("the tree does not match the request: {mismatch}");
     }
-    run_acceptance(&stage, &tree, work_dir, record.no_cache, progress)?;
+    let only = record.criteria.clone().map(BTreeSet::from_iter);
+    let config = acceptance_config(&stage, &tree, work_dir, record.no_cache, progress);
+    run_configured(&stage, &tree, &config.with_only(only))?;
     progress.take_failure()?;
-    if goal_checks {
+    // The goal-backward checks belong to a run of every criterion.
+    if goal_checks && record.criteria.is_none() {
         run_goal(&stage, &tree, work_dir, progress)?;
         progress.take_failure()?;
     }
@@ -115,6 +119,9 @@ fn plan_has_goal_checks(work_dir: &Path, stage_id: &str) -> Result<bool> {
     Ok(definition.has_any_goal_checks())
 }
 
+/// Run every acceptance criterion, as a completion does. A check builds the
+/// same configuration, so a completion reuses each pass a check on the same
+/// tree cached.
 pub(super) fn run_acceptance(
     stage: &Stage,
     tree: &JobTree,
@@ -122,6 +129,19 @@ pub(super) fn run_acceptance(
     no_cache: bool,
     progress: &Arc<Progress>,
 ) -> Result<()> {
+    let config = acceptance_config(stage, tree, work_dir, no_cache, progress);
+    run_configured(stage, tree, &config)
+}
+
+/// A job's acceptance configuration: each criterion is recorded as it
+/// finishes, and the record decides caching, never the daemon's environment.
+fn acceptance_config(
+    stage: &Stage,
+    tree: &JobTree,
+    work_dir: &Path,
+    no_cache: bool,
+    progress: &Arc<Progress>,
+) -> CriteriaConfig {
     let observer = {
         let progress = Arc::clone(progress);
         let setup = stage.setup.clone();
@@ -134,12 +154,15 @@ pub(super) fn run_acceptance(
         .with_tree_root(tree.paths.worktree_root.as_deref())
         .with_observer(observer);
     if !no_cache {
-        // The record decides caching, never the daemon's environment.
         config = config
             .with_cache_dir(work_dir)
             .with_cache_policy(CachePolicy::Use);
     }
-    run_acceptance_with_config(stage, tree.paths.acceptance_dir.as_deref(), &config)
+    config
+}
+
+fn run_configured(stage: &Stage, tree: &JobTree, config: &CriteriaConfig) -> Result<()> {
+    run_acceptance_with_config(stage, tree.paths.acceptance_dir.as_deref(), config)
         .context("Failed to run acceptance criteria")?;
     Ok(())
 }

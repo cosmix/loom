@@ -86,6 +86,7 @@ impl Fixture {
             head: digest::head(&self.worktree).unwrap(),
             tree_digest: digest::tree_digest(&self.worktree).unwrap(),
             no_cache: false,
+            criteria: None,
             state,
             requests: vec!["r1".to_string()],
             queued_at: Utc::now(),

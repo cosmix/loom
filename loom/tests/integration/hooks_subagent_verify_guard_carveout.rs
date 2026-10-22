@@ -1,5 +1,5 @@
 //! Carve-out tests for `subagent-verify-guard.sh`: the integration-verify
-//! refusals and both directions of the `loom-verifier` carve-out.
+//! refusals and the types that have no carve-out (`loom-verifier` included).
 //!
 //! Split from the parent file for size. The parent covers the integration-verify
 //! GRANTED direction; the refusals here are where the security actually lives:
@@ -130,11 +130,10 @@ fn carve_out_refused_when_no_stage_file_exists() {
 }
 
 // =============================================================================
-// The loom-verifier carve-out keys on the payload's `.agent_type`, which
-// classifies the caller as a subagent on its own once the live-session gate
-// passes. Granted for the exact type only: an implementer, or a type that
-// merely contains the name, stays blocked. The blocked half is what makes the
-// granted half non-vacuous: it proves the same harness reaches the guard.
+// A typed caller's `.agent_type` classifies it as a subagent on its own once
+// the live-session gate passes, and no type carries a carve-out: an
+// implementer, the removed `loom-verifier`, or a type that merely contains that
+// name all stay blocked.
 // =============================================================================
 
 /// A Bash payload carrying the caller's `.agent_type`, as Claude Code sends it
@@ -149,30 +148,6 @@ fn typed_bash_payload(command: &str, agent_type: &str) -> String {
 }
 
 #[test]
-fn loom_verifier_caller_may_run_the_full_suite() {
-    if skip_unless_gate_visible("carveout::loom_verifier_caller_may_run_the_full_suite") {
-        return;
-    }
-    let dir = temp_dir_no_claude();
-    let hook_path = install_hook(dir.path());
-
-    for command in ["cargo test", "cargo build", "cargo clippy -- -D warnings"] {
-        let (code, stderr) = run_hook_in_tree(
-            dir.path(),
-            &hook_path,
-            false,
-            &typed_bash_payload(command, "loom-verifier"),
-            &[],
-        );
-        assert_eq!(
-            code, 0,
-            "a loom-verifier subagent runs the stage's gate, so {command:?} must be \
-             allowed; stderr={stderr}"
-        );
-    }
-}
-
-#[test]
 fn other_typed_callers_stay_blocked() {
     if skip_unless_gate_visible("carveout::other_typed_callers_stay_blocked") {
         return;
@@ -183,6 +158,7 @@ fn other_typed_callers_stay_blocked() {
     for agent_type in [
         "loom-software-engineer",
         "loom-senior-software-engineer",
+        "loom-verifier",
         "loom-verifier-extra",
         "not-loom-verifier",
     ] {
@@ -195,7 +171,7 @@ fn other_typed_callers_stay_blocked() {
         );
         assert_eq!(
             code, 2,
-            "a {agent_type} caller is not the verifier, so a full-suite run must \
+            "a {agent_type} caller has no carve-out, so a full-suite run must \
              stay blocked; stderr={stderr}"
         );
         assert!(

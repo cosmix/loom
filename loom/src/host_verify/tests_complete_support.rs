@@ -190,6 +190,7 @@ impl Fixture {
             head: self.head(),
             tree_digest,
             no_cache: false,
+            criteria: None,
             state,
             requests: vec!["r1".to_string()],
             queued_at: now,

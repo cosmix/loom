@@ -57,19 +57,19 @@ fn settled_completion_doctrine_present_in_all_stable_prefixes() {
     }
 }
 
-/// A standard stage's gate runs in a `loom-verifier`; integration-verify keeps
-/// its own gate, so the verifier block must not reach its prefix.
+/// A standard stage's gate is the orchestrator's single `loom check`;
+/// integration-verify keeps its own gate, so the gate block must not reach its
+/// prefix.
 #[test]
-fn only_the_standard_prefix_sends_the_gate_to_a_loom_verifier() {
-    let needle = "**The gate runs in a `loom-verifier`**";
+fn only_the_standard_prefix_carries_the_loom_check_gate_block() {
+    let needle = "**The gate is `loom check`**";
     assert!(
         generate_stable_prefix().contains(needle),
-        "the standard stable prefix must tell the orchestrator to spawn a loom-verifier \
-         for the gate"
+        "the standard stable prefix must tell the orchestrator to run `loom check` for the gate"
     );
     assert!(
         !generate_integration_verify_stable_prefix().contains(needle),
-        "integration-verify keeps its own gate; the verifier block must not reach its prefix"
+        "integration-verify keeps its own gate; the gate block must not reach its prefix"
     );
 }
 
@@ -217,15 +217,15 @@ fn integration_verify_prefix_assigns_one_canonical_gate_owner() {
     let prefix = generate_integration_verify_stable_prefix();
 
     for needle in [
-        "ONE canonical verifier",
+        "runs `loom check integration-verify` ONCE",
         "immutable tree, environment, and criterion contract",
         "Rule 5's complete-suite instruction",
-        "Other reviewers inspect independently",
+        "Reviewers inspect independently and run only targeted",
         "targeted checks are additional evidence, never a substitute",
         "command, real exit, criterion verdict, input/contract identity, elapsed time",
         "evidence pointer when available",
         "A missing receipt means run the check",
-        "owner re-evaluates invalidated checks",
+        "orchestrator re-evaluates invalidated checks",
         "only the repaired criteria cache decides reuse",
         "stale evidence never waives a failing gate",
     ] {

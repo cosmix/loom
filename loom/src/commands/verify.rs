@@ -6,10 +6,11 @@
 
 use anyhow::{bail, Context, Result};
 use colored::Colorize;
+use std::collections::BTreeSet;
 use std::path::Path;
 
 use crate::commands::stage::acceptance_runner::{
-    resolve_stage_execution_paths, run_acceptance_with_display, AcceptanceDisplayOptions,
+    resolve_stage_execution_paths, run_selected_acceptance, AcceptanceDisplayOptions,
     StageExecutionPaths,
 };
 use crate::plan::parser::parse_plan;
@@ -20,13 +21,29 @@ use crate::verify::transitions::load_stage;
 #[path = "verify_relay.rs"]
 mod session_relay;
 
-/// Execute the verify command
-pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
-    // Resolves the state directory (works in main repo and worktrees, where it
-    // is a symlink), bailing with a clear error if this is not a loom workspace.
+/// `loom check`'s run options.
+#[derive(Debug, Clone, clap::Args)]
+pub struct CheckArgs {
+    /// Skip the acceptance-criterion pass cache: run every criterion for
+    /// real regardless of whether an identical tree already passed it.
+    #[arg(long = "no-cache")]
+    pub no_cache: bool,
+
+    /// Run only the acceptance criterion at this 0-based index, the number in
+    /// its `[criterion <n>]` label (repeatable). A subset run skips the
+    /// goal-backward checks.
+    #[arg(long = "criterion", value_name = "INDEX")]
+    pub criterion: Vec<usize>,
+}
+
+/// Execute the verify command. `criteria` limits the run to those 0-based
+/// acceptance criteria; empty runs every criterion and the goal-backward
+/// checks. The state directory resolves in the main repository and in a
+/// worktree (where it is a symlink); outside a loom workspace this bails.
+pub fn execute(stage_id: &str, suggest: bool, criteria: &[usize]) -> Result<()> {
     let work_dir = crate::commands::common::work_dir_path()?;
 
-    session_relay::run(stage_id, &work_dir, suggest)?;
+    session_relay::run(stage_id, &work_dir, suggest, criteria)?;
     let stage = load_stage(stage_id, &work_dir)
         .with_context(|| format!("Failed to load stage '{stage_id}'"))?;
 
@@ -56,19 +73,21 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
 
     // 1. Run standard acceptance criteria first
     println!("{}", "Acceptance Criteria:".bold());
-    let acceptance_passed = run_acceptance_with_display(
+    let only = selection(criteria);
+    let acceptance_passed = run_selected_acceptance(
         &stage,
         stage_id,
         &execution_paths,
         &work_dir,
-        AcceptanceDisplayOptions {
-            stage_label: None,
-            show_empty_message: false,
-        },
+        AcceptanceDisplayOptions::default(),
+        only.as_ref(),
     )?;
 
     // 2. Run goal-backward verification
-    let goal_passed = if stage_def.has_any_goal_checks() {
+    let goal_passed = if let Some(only) = &only {
+        print_subset_summary(only, acceptance_passed);
+        true
+    } else if stage_def.has_any_goal_checks() {
         run_goal_section(
             stage_id,
             &execution_paths,
@@ -83,6 +102,24 @@ pub fn execute(stage_id: &str, suggest: bool) -> Result<()> {
     };
 
     ensure_passed(acceptance_passed, goal_passed)
+}
+
+/// The criteria a `--criterion` list selects; `None` when it names none.
+fn selection(criteria: &[usize]) -> Option<BTreeSet<usize>> {
+    (!criteria.is_empty()).then(|| criteria.iter().copied().collect())
+}
+
+/// Close a subset run: the goal-backward checks belong to a full run.
+fn print_subset_summary(only: &BTreeSet<usize>, acceptance_passed: bool) {
+    println!("\n{}", "Goal-Backward Verification:".dimmed());
+    println!("  {} Skipped in a --criterion run", "−".dimmed());
+    let indices: Vec<String> = only.iter().map(usize::to_string).collect();
+    let mark = if acceptance_passed { "✓" } else { "✗" };
+    println!(
+        "\n{} subset: {} | Acceptance: {mark}",
+        "Summary:".bold(),
+        indices.join(", ")
+    );
 }
 
 /// Turn the gate outcomes into the command's exit status: callers (stage agents,

@@ -48,8 +48,8 @@ work it to completion.
 ## Rule 4 — Commit and complete
 
 The commit is legitimate only once all three hold: (1) every subagent, coordinator, team, and
-Workflow returned and was absorbed; (2) the full gate (build, tests, lint, format, acceptance) is
-green on the complete tree, as a `loom-verifier` round reports it in a standard stage; (3) the mini
+Workflow returned and was absorbed; (2) the gate is green on the complete tree (in a standard stage,
+your `loom check <stage-id>`); (3) the mini
 adversarial code review returned, every finding fixed, gate green again. In a plan version 2 stage
 `loom stage complete` enforces condition (3): it fails until a recorded review round matches the
 worktree and no finding is open. A handoff is no reason
@@ -69,30 +69,29 @@ or check failed, or the daemon refused to complete; `refused` (exit 1): the requ
 the tree is not committed. Fix, commit, run again. `stopped` (exit 4): the run was cancelled or
 interrupted; run again. Do nothing else while it waits.
 
-**The gate in a standard stage.** Once every implementer has returned, spawn ONE `loom-verifier`
-BY AGENT TYPE, without `name`, briefed with the stage's acceptance criteria and the project's build,
-test, lint, and format commands. It runs them on the complete tree, writes nothing, and reports PASS or FAIL per
-step with the command, exit code, and failing excerpt. It runs the acceptance criteria through
-`loom check <stage-id>`, the host runner that completes the stage, with the same `Host job:` first
-line and states (`passed` for `completed`); it is authoritative. A criterion that passes there but
-fails in its own shell comes back as SESSION-ENV: environment, not a FAIL, nothing disputed. One that
-fails there is a FAIL; when it fails only because of the confined runner (no network, timeout,
-git metadata) it also comes back as RUNNER-ENV with both outputs, and you dispute it before
-completing. Each FAIL becomes a fix brief (Rule 7);
-after the fixes, spawn a FRESH verifier, never a message to the old one. Do not repeat its run
-yourself. An integration-verify stage keeps its own gate, as its signal directs.
+**The gate in a standard stage.** Once every implementer has returned, format the tree
+(`cargo fmt --all` or the project's formatter), then run `loom check <stage-id>` once, plus the
+steps the plan lists outside acceptance, while the final review round runs. `loom check` is the
+host runner that completes the stage, with the same `Host job:` first line and states (`passed` for
+`completed`); it prints a per-criterion summary and writes full logs to files. Run no test, build or
+lint command yourself. A fix round runs `loom check <stage-id> --criterion <n>` (0-based,
+repeatable) for each failed criterion plus the lint and format criteria. A criterion that fails
+only because of the confined runner (no network, timeout, git metadata) is disputed before
+completing. Do not repeat the check's run yourself. The final review round also judges the diff
+against each criterion's intent; a re-review covers the changed files and open findings only. An
+integration-verify stage keeps its own gate, as its signal directs.
 
 Group commits logically: 5 files across 3 concerns = 3 commits, not 1 or 5.
 
 ## Rule 5 — Subagent preamble
 
 Subagents write code and report; the main agent owns fixes, the commit, and all git operations
-(hard stop 3), and a standard stage's gate runs in a `loom-verifier` (Rule 4). Every typed Claude
+(hard stop 3), and a standard stage's gate is your single `loom check` (Rule 4). Every typed Claude
 spawn opens with the preamble in `loom-hooks/_subagent-preamble.txt` (installed beside
 `spawn-guard.sh`). The spawn guard prepends that file to any typed spawn whose prompt lacks its
 first line, so you do not paste it; a prompt that already opens with that line, such as a
 coordinator's (below), is left alone. The file carries the git restrictions, the
-no-verify rule (BLOCK-A, with exceptions for integration-verify and the `loom-verifier`), the
+no-verify rule (BLOCK-A, with an exception for integration-verify), the
 context-ceiling rule (BLOCK-D), memory recording, and the auto-memory prohibition.
 
 Claude subagents only; `loom-hooks/codex-forward.sh` prepends codex's own rules to forwarded
@@ -243,10 +242,10 @@ Fable-tier work has no pinned agent type; pass the model override explicitly at 
    codex in implementers AND when the codex CLI + plugin are installed;
    otherwise terra-tier work goes to sonnet and luna-tier work to haiku (loom
    warns at startup when a stage lists codex it cannot use). In a standard
-   stage the GATE (build, tests, lint, format, acceptance) runs in ONE
-   loom-verifier subagent (opus, effort xhigh) per round; an
-   integration-verify stage runs the gate its own signal names. Either
-   way the orchestrator owns fixes and the commit. Spawn BY AGENT TYPE.
+   stage the GATE is the orchestrator's single `loom check` (a fix round
+   re-checks with `--criterion <n>`); an integration-verify stage runs the
+   gate its own signal names. Either way the orchestrator owns fixes and the
+   commit. Spawn BY AGENT TYPE.
 4. ESCALATE ON EVIDENCE, NOT ON HUNCH. Start at the cheapest plausible tier. A
    fix that failed ONCE against clear acceptance criteria moves up exactly one
    tier — haiku to sonnet, sonnet to opus, opus to fable — with the failed

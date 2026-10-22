@@ -289,6 +289,7 @@ fn a_contract_that_never_ends_is_stopped_by_the_job_deadline() {
         head: &head,
         tree_digest: &tree,
         no_cache: false,
+        criteria: None,
     };
     let job = match submit(&fx.work_dir, &request, Utc::now()).expect("submit") {
         Submission::Queued(job) => job,

@@ -105,8 +105,10 @@ loom:
         not just tests passing. NEVER Claude Code auto-memory.
         CONTEXT: read the plan (doc/plans/), loom memory show --all,
         doc/loom/knowledge/INDEX.md and only the relevant sections.
-        BUILD & TEST (zero tolerance — fix ALL warnings/errors): full suite,
-        lint as errors, build.
+        BUILD & TEST (zero tolerance — fix ALL warnings/errors): run
+        `loom check integration-verify` once (full suite, lint as errors,
+        build); a specific test's proof goes in stdout_contains on the
+        full-suite criterion, not a second filtered run.
         CODE REVIEW: spawn parallel loom-code-reviewer subagents (security,
         architecture, test coverage); fix ALL findings with an engineer agent.
         Every finding is fixed or disputed, never deferred.

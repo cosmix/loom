@@ -187,15 +187,15 @@ fn dispatch_complete(shell: &str, args: &[String]) -> Result<()> {
 /// `loom check` dispatch, extracted so `--no-cache` can toggle the acceptance
 /// pass cache before running verification without growing the already
 /// oversized `dispatch` match arm.
-fn run_check(stage_id: String, suggest: bool, no_cache: bool) -> Result<()> {
-    if no_cache {
+fn run_check(stage_id: String, suggest: bool, args: verify::CheckArgs) -> Result<()> {
+    if args.no_cache {
         // Single-threaded at this point in a one-shot CLI invocation — no
         // concurrent reader of the environment exists yet — so a plain
         // process-wide set is safe. `CriteriaConfig::default()` (built inside
         // `run_acceptance_with_display`) reads this once.
         std::env::set_var("LOOM_ACCEPTANCE_CACHE", "0");
     }
-    verify::execute(&stage_id, suggest)
+    verify::execute(&stage_id, suggest, &args.criterion)
 }
 
 /// `loom {sessions,worktree} <subcommand>` dispatch.
@@ -360,8 +360,8 @@ pub fn dispatch(command: Commands) -> Result<()> {
         Commands::Check {
             stage_id,
             suggest,
-            no_cache,
-        } => run_check(stage_id, suggest, no_cache),
+            args,
+        } => run_check(stage_id, suggest, args),
         Commands::SkillIndex => skill_index::execute(),
         Commands::Completions {
             shell,

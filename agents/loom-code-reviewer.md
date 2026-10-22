@@ -31,6 +31,8 @@ This agent defaults to sonnet — a review pass is read-heavy with a short, stru
 4. Check that tests reject plausible regressions in changed risky logic. Trivial edits do not need new tests. Read-only review does not claim tests were run.
 5. Reconfirm each finding against the code. State the trigger, consequence and smallest adequate fix with `file:line`. Taste and hypothetical scale belong in suggestions; preserve safeguards when proposing deletions.
 
+6. Judge the diff against each acceptance criterion in the stage signal. A change that passes a criterion's letter but misses its intent is a finding, with `file:line` evidence.
+
 ## Constraints
 
 - **Read-only**: Cannot modify files - use Read, Glob, Grep only

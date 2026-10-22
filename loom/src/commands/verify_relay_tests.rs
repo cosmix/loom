@@ -35,7 +35,7 @@ fn a_failing_relay_guard_is_refused_with_the_first_line_and_writes_no_ticket() {
     };
     let mut out = Vec::new();
 
-    let code = request_or_wait(&context, "s1", temp.path(), &mut out).unwrap();
+    let code = request_or_wait(&context, "s1", temp.path(), &[], &mut out).unwrap();
 
     let text = String::from_utf8(out).unwrap();
     assert_eq!(code, 1, "{text}");

@@ -25,6 +25,7 @@ pub fn run_acceptance_with_config(
     working_dir: Option<&Path>,
     config: &CriteriaConfig,
 ) -> Result<AcceptanceResult> {
+    config.check_selection(stage)?;
     if stage.acceptance.is_empty() {
         return Ok(AcceptanceResult::AllPassed {
             results: Vec::new(),
@@ -38,7 +39,8 @@ pub fn run_acceptance_with_config(
     let zero_test_guard = stage.plan_version == 2;
     let mut collected = CollectedResults::default();
 
-    for (index, criterion) in stage.acceptance.iter().enumerate() {
+    let selected = stage.acceptance.iter().enumerate();
+    for (index, criterion) in selected.filter(|(index, _)| config.selects(*index)) {
         let prepared = prepare_criterion(
             criterion,
             setup.as_deref(),
@@ -337,6 +339,9 @@ fn detect_stderr_warnings(result: &CriterionResult) -> Vec<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::verify::criteria::CriterionObserver;
+    use std::collections::BTreeSet;
+    use std::sync::{Arc, Mutex};
 
     fn make_result(success: bool, stderr: &str) -> CriterionResult {
         CriterionResult::new(
@@ -356,6 +361,34 @@ mod tests {
         let failure = make_result(false, "connection refused");
         assert_eq!(detect_stderr_warnings(&warning).len(), 2);
         assert!(detect_stderr_warnings(&failure).is_empty());
+    }
+
+    #[test]
+    fn only_runs_the_named_criteria_under_their_own_indices() {
+        let dir = tempfile::TempDir::new().unwrap();
+        let mut stage = Stage::new("subset".to_string(), None);
+        stage.sandbox.command_confinement = Some(CommandConfinement::Inherit); // selection only
+        for index in 0..3 {
+            let command = format!("touch ran-{index}");
+            stage.add_acceptance_criterion(AcceptanceCriterion::Simple(command));
+        }
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let observed = Arc::clone(&seen);
+        let observer = CriterionObserver(Arc::new(move |index: usize, _: &CriterionResult| {
+            observed.lock().unwrap().push(index);
+        }));
+        let past_end = CriteriaConfig::default().with_only(Some(BTreeSet::from([3])));
+        assert!(run_acceptance_with_config(&stage, Some(dir.path()), &past_end).is_err());
+        let config = CriteriaConfig::default().with_only(Some(BTreeSet::from([0, 2])));
+        let config = config.with_observer(observer);
+
+        let result = run_acceptance_with_config(&stage, Some(dir.path()), &config).unwrap();
+
+        assert!(result.all_passed());
+        assert_eq!(result.results().len(), 2);
+        assert_eq!(result.results()[1].command, "touch ran-2");
+        assert_eq!(*seen.lock().unwrap(), [0, 2]);
+        assert!(!dir.path().join("ran-1").exists(), "criterion 1 ran");
     }
 
     #[test]

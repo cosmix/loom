@@ -4,6 +4,7 @@
 //! where acceptance criteria should be executed.
 
 use anyhow::{Context, Result};
+use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
 use super::criterion_output::format_criterion_result;
@@ -162,8 +163,21 @@ pub(crate) fn run_acceptance_with_display(
     work_dir: &Path,
     options: AcceptanceDisplayOptions<'_>,
 ) -> Result<bool> {
+    run_selected_acceptance(stage, stage_id, paths, work_dir, options, None)
+}
+
+/// [`run_acceptance_with_display`] limited to the 0-based criteria in `only`
+/// (`loom check --criterion`); `None` runs every criterion.
+pub(crate) fn run_selected_acceptance(
+    stage: &Stage,
+    stage_id: &str,
+    paths: &StageExecutionPaths,
+    work_dir: &Path,
+    options: AcceptanceDisplayOptions<'_>,
+    only: Option<&BTreeSet<usize>>,
+) -> Result<bool> {
     let acceptance_dir = paths.acceptance_dir.as_deref();
-    if stage.acceptance.is_empty() {
+    if stage.acceptance.is_empty() && only.is_none() {
         if options.show_empty_message {
             println!("No acceptance criteria defined, treating as passed.");
         }
@@ -180,14 +194,17 @@ pub(crate) fn run_acceptance_with_display(
     let config = CriteriaConfig::default()
         .with_plan_confinement(plan_confinement(work_dir))
         .with_cache_dir(work_dir)
-        .with_tree_root(paths.worktree_root.as_deref());
+        .with_tree_root(paths.worktree_root.as_deref())
+        .with_only(only.cloned());
     let result = run_acceptance_with_config(stage, acceptance_dir, &config)
         .context("Failed to run acceptance criteria")?;
 
-    // Index matches `stage.acceptance` 1:1 (run_acceptance_with_config pushes
-    // one CriterionResult per criterion, in loop order) and is what
-    // `loom stage dispute-criteria --criterion-index` takes as an argument.
-    for (index, criterion_result) in result.results().iter().enumerate() {
+    // run_acceptance_with_config pushes one CriterionResult per selected
+    // criterion, in list order, so each result pairs with its index in
+    // `stage.acceptance`: the index `loom stage dispute-criteria
+    // --criterion-index` and `loom check --criterion` take.
+    let indices = (0..stage.acceptance.len()).filter(|index| config.selects(*index));
+    for (index, criterion_result) in indices.zip(result.results()) {
         print_criterion_result(index, criterion_result, &stage.setup);
     }
 

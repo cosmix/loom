@@ -40,15 +40,19 @@ pub struct CommitPayload {
     pub expected_tree: String,
 }
 
-/// `{head, tree_digest, no_cache}` for a host job request (`check` and
-/// `complete`): the HEAD and tree digest the session saw, and whether it asked
-/// to bypass the acceptance cache. The child re-checks both on the host.
+/// `{head, tree_digest, no_cache, criteria?}` for a host job request (`check`
+/// and `complete`): the HEAD and tree digest the session saw, whether it asked
+/// to bypass the acceptance cache, and for a check the 0-based criteria
+/// `loom check --criterion` selected. The child re-checks the tree on the host.
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct HostJobRequest {
     pub head: String,
     pub tree_digest: String,
     pub no_cache: bool,
+    /// Absent for every criterion; a completion never carries one.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub criteria: Option<Vec<usize>>,
 }
 
 /// A ticket payload, decoded to the type its `kind` promises.
@@ -97,14 +101,33 @@ pub fn decode_payload(kind: RequestKind, payload: &Value) -> Result<RequestPaylo
             "file_dispute",
         )?)),
         RequestKind::Commit => Ok(RequestPayload::Commit(decode(payload, "commit")?)),
-        RequestKind::Check => Ok(RequestPayload::Check(decode(payload, "check")?)),
-        RequestKind::Complete => Ok(RequestPayload::Complete(decode(payload, "complete")?)),
+        RequestKind::Check => Ok(RequestPayload::Check(decode_check(payload)?)),
+        RequestKind::Complete => Ok(RequestPayload::Complete(decode_completion(payload)?)),
     }
 }
 
 fn decode<T: for<'de> Deserialize<'de>>(payload: &Value, kind: &str) -> Result<T> {
     serde_json::from_value(payload.clone())
         .with_context(|| format!("{kind} request payload did not match its expected shape"))
+}
+
+/// A check's selection names at least one criterion: an empty one would pass
+/// having run nothing.
+fn decode_check(payload: &Value) -> Result<HostJobRequest> {
+    let request: HostJobRequest = decode(payload, "check")?;
+    if request.criteria.as_ref().is_some_and(Vec::is_empty) {
+        bail!("a check request's criteria must name at least one criterion");
+    }
+    Ok(request)
+}
+
+/// A completion runs every criterion, so it carries no selection.
+fn decode_completion(payload: &Value) -> Result<HostJobRequest> {
+    let request: HostJobRequest = decode(payload, "complete")?;
+    if request.criteria.is_some() {
+        bail!("a completion runs every criterion and takes no criteria");
+    }
+    Ok(request)
 }
 
 fn decode_stage_request(payload: &Value, expected: &str) -> Result<StageRequest> {
@@ -306,8 +329,20 @@ mod tests {
         });
         assert!(matches!(
             decode_payload(RequestKind::Check, &payload).unwrap(),
-            RequestPayload::Check(HostJobRequest { no_cache: true, .. })
+            RequestPayload::Check(HostJobRequest {
+                no_cache: true,
+                criteria: None,
+                ..
+            })
         ));
+        let mut subset = payload.clone();
+        subset["criteria"] = serde_json::json!([1, 3]);
+        assert!(matches!(
+            decode_payload(RequestKind::Check, &subset).unwrap(),
+            RequestPayload::Check(HostJobRequest { criteria: Some(c), .. }) if c == [1, 3]
+        ));
+        subset["criteria"] = serde_json::json!([]);
+        assert!(decode_payload(RequestKind::Check, &subset).is_err());
         let mut extra = payload.clone();
         extra["reports"] = serde_json::json!([]);
         assert!(decode_payload(RequestKind::Check, &extra).is_err());
@@ -331,6 +366,9 @@ mod tests {
         let mut extra = payload.clone();
         extra["evidence"] = serde_json::json!({});
         assert!(decode_payload(RequestKind::Complete, &extra).is_err());
+        let mut subset = payload.clone();
+        subset["criteria"] = serde_json::json!([0]);
+        assert!(decode_payload(RequestKind::Complete, &subset).is_err());
     }
 
     #[test]

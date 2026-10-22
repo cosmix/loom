@@ -194,3 +194,78 @@ fn the_spec_block_shows_the_plan_and_recorded_cwd() {
         .instructions
         .contains("`cwd` is the optional directory"));
 }
+
+/// Freezes four files, then changes one in the worktree, leaves one unchanged
+/// and deletes one.
+fn freeze_then_change_support_files(fx: &ContractFixture) {
+    let frozen = [
+        ("tests/x_contract.rs", "assert!(false);\n"),
+        (
+            "tests/support/changed.rs",
+            "pub fn ready() -> bool { false }\n",
+        ),
+        ("tests/support/same.rs", "pub fn same() {}\n"),
+        ("tests/support/gone.rs", "pub fn gone() {}\n"),
+    ];
+    let record = store::FreezeRecord {
+        version: store::FREEZE_RECORD_VERSION,
+        stage_id: "demo".to_string(),
+        session_id: "contract-session".to_string(),
+        frozen_at: Utc::now(),
+        base: "main".to_string(),
+        files: frozen
+            .iter()
+            .map(|(path, content)| store::FrozenFile {
+                path: path.to_string(),
+                sha256: sha256_hex(content.as_bytes()),
+            })
+            .collect(),
+        contracts: Vec::new(),
+    };
+    let copies: Vec<(String, Vec<u8>)> = frozen
+        .iter()
+        .map(|(path, content)| (path.to_string(), content.as_bytes().to_vec()))
+        .collect();
+    store::write_freeze(&fx.work_dir, &record, &copies).unwrap();
+    let support = fx.site.path.join("tests/support");
+    fs::create_dir_all(&support).unwrap();
+    fs::write(
+        support.join("changed.rs"),
+        "pub fn ready() -> bool { true }\n",
+    )
+    .unwrap();
+    fs::write(support.join("same.rs"), "pub fn same() {}\n").unwrap();
+}
+
+#[test]
+fn the_briefing_shows_each_changed_and_deleted_frozen_file() {
+    let fx = contract_fixture();
+    freeze_then_change_support_files(&fx);
+    let input = KindPromptInput {
+        stage: &fx.stage,
+        dispute_id: 4,
+        request: &fx.request,
+        site: &fx.site,
+        worktree: Some(&fx.worktree),
+        work_dir: &fx.work_dir,
+    };
+
+    let prompt = build(&input);
+
+    let start = prompt
+        .evidence
+        .find(FROZEN_SET_HEADING)
+        .expect("the section");
+    let section = &prompt.evidence[start..];
+    for expected in [
+        "- `tests/support/changed.rs` changed:",
+        "-pub fn ready() -> bool { false }",
+        "+pub fn ready() -> bool { true }",
+        "- `tests/support/gone.rs` is deleted from the worktree",
+    ] {
+        assert!(section.contains(expected), "missing {expected}:\n{section}");
+    }
+    assert!(!section.contains("same.rs"), "{section}");
+    assert!(!section.contains("x_contract.rs"), "{section}");
+    assert!(prompt.instructions.contains(FROZEN_SET_HEADING));
+}

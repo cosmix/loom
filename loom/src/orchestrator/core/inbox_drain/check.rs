@@ -44,6 +44,7 @@ pub(super) fn apply_check(
             head: &request.head,
             tree_digest: &request.tree_digest,
             no_cache: request.no_cache,
+            criteria: request.criteria.clone(),
         },
         Utc::now(),
     ))
@@ -64,8 +65,7 @@ pub(super) fn settle_submission(submission: anyhow::Result<Submission>) -> Settl
     }
 }
 
-/// A stage or knowledge session must own the stage (a `loom-verifier`
-/// subagent's request arrives as its stage session's); a judge must be the
+/// A stage or knowledge session must own the stage; a judge must be the
 /// live adjudication session of this stage.
 fn admit_session(host: &dyn InboxHost, stage_id: &str, record: &Session) -> Result<Stage, String> {
     if record.session_type != SessionType::Adjudication {

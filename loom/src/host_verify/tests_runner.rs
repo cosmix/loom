@@ -56,6 +56,7 @@ pub(super) fn queue(work: &Path, stage_id: &str, at: DateTime<Utc>) -> JobRecord
         head: "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
         tree_digest: "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
         no_cache: false,
+        criteria: None,
     };
     match submit(work, &request, at).unwrap() {
         Submission::Queued(record) => record,

@@ -105,6 +105,7 @@ fn request<'a>(kind: JobKind, request_id: &'a str, head: &'a str) -> SubmitReque
         head,
         tree_digest: DIGEST,
         no_cache: false,
+        criteria: None,
     }
 }
 

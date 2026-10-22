@@ -40,6 +40,8 @@ mod tests_child_complete;
 #[cfg(test)]
 mod tests_child_impact;
 #[cfg(test)]
+mod tests_child_reuse;
+#[cfg(test)]
 mod tests_complete_support;
 #[cfg(test)]
 mod tests_digest;
@@ -57,6 +59,8 @@ mod tests_store;
 mod tests_submit;
 #[cfg(test)]
 mod tests_wait;
+#[cfg(test)]
+mod tests_wait_criteria;
 #[cfg(test)]
 mod tests_wait_refusal;
 
@@ -128,6 +132,9 @@ pub struct JobRecord {
     /// Digest of the tree the request saw (`digest::tree_digest`).
     pub tree_digest: String,
     pub no_cache: bool,
+    /// The 0-based acceptance criteria a check runs (`loom check
+    /// --criterion`); `None` runs every one. Only a check carries one.
+    pub criteria: Option<Vec<usize>>,
     pub state: JobState,
     /// Relay request ids joined to this job, the last 16 kept.
     pub requests: Vec<String>,

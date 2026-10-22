@@ -28,6 +28,9 @@ pub struct SubmitRequest<'a> {
     pub head: &'a str,
     pub tree_digest: &'a str,
     pub no_cache: bool,
+    /// The 0-based criteria a check runs; `None` runs every one. Only a
+    /// check carries one.
+    pub criteria: Option<Vec<usize>>,
 }
 
 /// What `submit` did with a request.
@@ -103,7 +106,11 @@ fn invalid_binding(request: &SubmitRequest<'_>) -> Option<&'static str> {
     if !is_lower_hex(request.tree_digest, &[64]) {
         return Some("tree_digest must be 64 lowercase hex characters");
     }
-    None
+    match &request.criteria {
+        Some(_) if request.kind != JobKind::Check => Some("only a check runs a criterion subset"),
+        Some(criteria) if criteria.is_empty() => Some("criteria must name at least one criterion"),
+        _ => None,
+    }
 }
 
 /// Cancel the stage's non-terminal job with `reason` and return it; a
@@ -125,16 +132,29 @@ pub fn cancel(work_dir: &Path, stage_id: &str, reason: &str) -> Result<Option<Jo
 }
 
 /// Whether the non-terminal `current` job answers `request` as well: the same
-/// tree and kind, and a cached request is answered by an uncached run too.
+/// tree and kind, a cached request is answered by an uncached run too, and
+/// the job runs every criterion the request selects.
 fn covers(current: &JobRecord, request: &SubmitRequest<'_>) -> bool {
     current.head == request.head
         && current.tree_digest == request.tree_digest
         && (current.no_cache || !request.no_cache)
+        && runs_selection(current.criteria.as_deref(), request.criteria.as_deref())
         && match (current.kind, request.kind) {
             (JobKind::Complete, JobKind::Complete) => current.session_id == request.session_id,
             (JobKind::Complete, JobKind::Check) => true,
             (current_kind, request_kind) => current_kind == request_kind,
         }
+}
+
+/// Whether a job running `job`'s criteria runs all of `request`'s: a job
+/// without a selection runs every criterion, and only such a job answers a
+/// request for every criterion.
+fn runs_selection(job: Option<&[usize]>, request: Option<&[usize]>) -> bool {
+    match (job, request) {
+        (None, _) => true,
+        (Some(_), None) => false,
+        (Some(job), Some(request)) => request.iter().all(|index| job.contains(index)),
+    }
 }
 
 fn new_record(request: &SubmitRequest<'_>, now: DateTime<Utc>) -> JobRecord {
@@ -146,6 +166,7 @@ fn new_record(request: &SubmitRequest<'_>, now: DateTime<Utc>) -> JobRecord {
         head: request.head.to_string(),
         tree_digest: request.tree_digest.to_string(),
         no_cache: request.no_cache,
+        criteria: request.criteria.clone(),
         state: JobState::Queued,
         requests: vec![request.request_id.to_string()],
         queued_at: now,

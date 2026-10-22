@@ -240,6 +240,7 @@ pub fn record(stage_id: &str, state: JobState, head: &str, tree_digest: &str) ->
         head: head.to_string(),
         tree_digest: tree_digest.to_string(),
         no_cache: false,
+        criteria: None,
         state,
         requests: vec!["r1".to_string()],
         queued_at: now,
