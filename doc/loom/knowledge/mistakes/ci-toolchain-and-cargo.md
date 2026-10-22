@@ -300,3 +300,23 @@ The sweep follow-ups on executable startup, cache coverage, hook-path navigation
 **Why:** no acceptance criterion ran `cargo test --test maintainability`, and the signal's extra steps checked only that the baseline file was unchanged.
 
 **Prevention:** run `cargo test --test maintainability` as its own step before the final review round.
+
+## A `run:` Line Ending in `::` Makes the Whole Workflow File Invalid
+
+**What happened:** a CI step was added as `run: cargo test --lib tests_capsule_denies::bwrap::`. GitHub rejected `.github/workflows/ci.yml` (`error in your yaml syntax on line 133`), so every push run failed with zero jobs and `gh run view` printed only "likely failed because of a workflow file issue".
+
+**Why:** in a YAML plain scalar, a colon followed by a space or a line end is a mapping indicator. The trailing `::` ends the line with a colon, which turns the value into a nested mapping (`mapping values are not allowed here`). Nothing local parses the workflow files: the pre-push hook and `loom check` never load them.
+
+**Prevention:** quote any `run:` value containing `:` or ending in `:`, or use a `|` block. After editing a workflow, parse it once: `uv run --with pyyaml python -I -c 'import sys,yaml; yaml.safe_load(open(sys.argv[1]))' .github/workflows/ci.yml`. When a run has zero jobs, the parse error is shown only on the run's web page (`https://github.com/<owner>/<repo>/actions/runs/<id>`); the jobs and check-runs APIs return nothing.
+
+**Fix:** the step's command is double-quoted.
+
+## A Slow Pre-Push Hook Lets the Push Connection Die, and Git Exits Silently
+
+**What happened:** `git push` ran `loom/.githooks/pre-push` for about 13 minutes, printed `All pre-push checks passed.`, then printed nothing more and pushed nothing. The operator had to rerun `git push --no-verify`. An agent asked to diagnose it read the `update by push` entry in `git reflog show origin/main` as proof the hooked push worked; the `--no-verify` rerun writes the same entry.
+
+**Why:** git opens the SSH session to the remote and reads its ref advertisement before it runs the pre-push hook, and keeps that session idle while the hook runs. When the remote closes the session during the hook, the first write after the hook returns hits a closed pipe and git dies of SIGPIPE (exit 141) without a message. Reproduced with a fake SSH transport that drops after 2 s and a hook that sleeps 4 s: the hook's last line prints, exit 141, the remote stays empty.
+
+**Prevention:** the hook's runtime must stay below the remote's idle-session lifetime, or the checks must run before git opens the connection. A reflog entry only shows a ref changed, not which push changed it; confirm a hooked push from its own output (`To <url>` plus a ref line, or exit status 0).
+
+**Fix:** pending.
