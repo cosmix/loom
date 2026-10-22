@@ -6,6 +6,8 @@ use crate::context::schema::UnmetRequirement;
 #[path = "worker_brief/test_support.rs"]
 mod support;
 use support::*;
+#[path = "tests_worker_brief_dependency.rs"]
+mod dependency;
 
 const NONCE_A: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const NONCE_B: &str = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
