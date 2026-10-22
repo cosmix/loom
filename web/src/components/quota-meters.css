@@ -1,0 +1,56 @@
+.quota-meters {
+  min-width: 0;
+  container-type: inline-size;
+}
+.quota-providers {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 24px;
+}
+.quota-provider {
+  display: flex;
+  align-items: center;
+  gap: 8px 16px;
+}
+.quota-provider-label {
+  white-space: nowrap;
+}
+@container (max-width: 1100px) {
+  .quota-detail {
+    display: none;
+  }
+}
+/* Keep provider pairs inline until both groups no longer fit together. */
+@container (max-width: 680px) {
+  .quota-providers {
+    display: grid;
+    grid-template-columns: max-content max-content max-content;
+    gap: 8px 16px;
+  }
+  .quota-provider {
+    display: grid;
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+  }
+  .quota-provider-label {
+    max-width: 14ch;
+    white-space: normal;
+  }
+  .quota-error {
+    grid-column: 2 / -1;
+  }
+}
+@container (max-width: 400px) {
+  .quota-providers {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    row-gap: 12px;
+  }
+  .quota-provider-label {
+    grid-column: 1 / -1;
+    max-width: none;
+  }
+  .quota-error {
+    grid-column: 1 / -1;
+  }
+}

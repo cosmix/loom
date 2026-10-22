@@ -17,6 +17,7 @@ import {
   type QuotaHealth,
 } from "@/lib/quota";
 import { quotaLeftText } from "@/lib/tokens";
+import "./quota-meters.css";
 
 const HEALTH_TONE: Record<QuotaHealth, Tone> = {
   green: "completed",
@@ -50,16 +51,18 @@ export function QuotaMeters({
   const rows = providerRows(snapshot);
   if (rows.length === 0) return null;
   return (
-    <div className={cn("flex flex-wrap items-center gap-x-6 gap-y-1", className)}>
-      {rows.map(([provider, quota]) => (
-        <ProviderGroup
-          key={provider}
-          provider={provider}
-          quota={quota}
-          left={quotaLeft.find((entry) => entry.provider === provider)}
-          nowSecs={nowSecs}
-        />
-      ))}
+    <div className={cn("quota-meters", className)}>
+      <div className="quota-providers">
+        {rows.map(([provider, quota]) => (
+          <ProviderGroup
+            key={provider}
+            provider={provider}
+            quota={quota}
+            left={quotaLeft.find((entry) => entry.provider === provider)}
+            nowSecs={nowSecs}
+          />
+        ))}
+      </div>
     </div>
   );
 }
@@ -77,11 +80,8 @@ function ProviderGroup({
 }) {
   const age = ageText(quota.observed_at, nowSecs);
   return (
-    <div
-      data-stale={age === null ? undefined : ""}
-      className="group inline-flex flex-wrap items-center gap-x-4 gap-y-1"
-    >
-      <span className="eyebrow whitespace-nowrap">
+    <div data-stale={age === null ? undefined : ""} className="quota-provider group">
+      <span className="quota-provider-label eyebrow">
         {provider}
         {age !== null && <span className="tracking-normal normal-case"> · {age}</span>}
       </span>
@@ -170,14 +170,14 @@ function QuotaGauge({
           <span className="w-[4ch] text-right font-mono text-xs tabular-nums group-data-stale:text-muted-foreground">
             {percent === null ? "—" : `${percent}%`}
           </span>
-          <span className="min-w-[6ch] font-mono text-[11px] tabular-nums text-muted-foreground max-[899px]:hidden">
+          <span className="quota-detail min-w-[6ch] font-mono text-[11px] tabular-nums text-muted-foreground">
             {reset}
           </span>
           {timeLeft !== null && (
             <span
               title="At the last 30 min average"
               className={cn(
-                "font-mono text-[11px] tabular-nums max-[899px]:hidden",
+                "quota-detail font-mono text-[11px] tabular-nums",
                 toneClass(timeLeft.tone),
               )}
             >
@@ -209,7 +209,7 @@ function QuotaError({ text }: { text: string }) {
         <span
           tabIndex={0}
           className={cn(
-            "inline-block max-w-40 truncate rounded-sm text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
+            "quota-error inline-block max-w-40 truncate rounded-sm text-[11px] outline-none focus-visible:ring-2 focus-visible:ring-ring/60",
             toneClass("warning"),
           )}
         >

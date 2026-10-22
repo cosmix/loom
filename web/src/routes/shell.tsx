@@ -69,7 +69,7 @@ function Footer() {
 
   return (
     <footer className="z-10 border-t border-border bg-background/90 backdrop-blur-sm">
-      <div className="mx-auto flex w-full max-w-[1920px] items-center gap-x-6 px-4 py-3 text-xs text-muted-foreground sm:px-6">
+      <div className="mx-auto grid w-full max-w-[1920px] grid-cols-1 items-center gap-x-6 gap-y-2 px-4 py-3 text-xs text-muted-foreground sm:px-6 lg:grid-cols-[minmax(0,1fr)_auto]">
         {hasQuota && (
           <QuotaMeters
             snapshot={quota}
@@ -78,7 +78,7 @@ function Footer() {
           />
         )}
         <span
-          className="ml-auto shrink-0 self-end font-mono text-xs text-muted-foreground"
+          className="col-start-1 justify-self-end self-end font-mono text-xs text-muted-foreground lg:col-start-2"
           title="loom version"
         >
           v{snapshot.version}
