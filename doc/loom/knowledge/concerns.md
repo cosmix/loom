@@ -210,3 +210,9 @@ rule, three stage-env allowlists (sessions get no proxy, CA or `CLAUDE_CONFIG_DI
 messaging, `WebFetch`, `RemoteTrigger`) the OS sandbox does not wrap.
 
 → [Sandbox and Confinement Gaps](concerns/sandbox-and-confinement-gaps.md)
+
+## Dependency Findings Follow-Ups
+
+The plan 4 harness printed a stop-rule FAIL on all three recorded pairs (guard-core to guard-integration gains -444 and -2,221 tokens against a 12,190 cost); the operator overrode it and the verdict is printed, not asserted. Also open: spool id validation, render and path-normalization cost bounds, evidence-matching edges, test gaps, and the finalization-guard heredoc scan.
+
+→ [Dependency Findings Follow-Ups](concerns/token-accounting-and-proof-defects.md#dependency-findings-follow-ups)

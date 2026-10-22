@@ -92,3 +92,13 @@ fixing an address bug, and test with a path past the limit through each client.
 **Fix:** `daemon/socket.rs` (`socket_path`, `socket_path_fits`, `socket_path_problem`); the broker uses
 `daemon::send_request`; `loom run` refuses a root that does not fit
 ([The Socket Path Rule](../architecture/daemon-launch.md#the-socket-path-rule)).
+
+## The StageDependency Boost Never Fired: Producer and Consumer Shared a Normalizer, Not a Path Base
+
+**What happened:** `StageQuery::dependency_paths` returned each dependency's declared files and globs relative to the dependency's `working_dir`, and `rank_source/paths.rs::names_dependency_path` compared them by exact string with repository-relative node paths. Code stages here declare paths under `working_dir: loom`, so a declared `src/<file>.rs` never equalled the node path `loom/src/<file>.rs` and a glob matched nothing: `StageDependency` never fired in this repository. Ranking still succeeded and no test failed.
+
+**Why:** producer and consumer shared a normalizer (`normalize_dependency_path`) but not a path base, and the unit test used a dependency with no `working_dir`, where the two bases coincide.
+
+**Prevention:** test a boost end to end with a stage that has a `working_dir` and a glob, and assert the `SelectionReason` appears. Two functions that share a normalizer still need one stated base for the paths they pass between them. See also [A Field Name Can Name the Wrong Domain Object](visibility-and-reachability.md), the earlier way this boost went inert.
+
+**Fix:** the boosted paths are now each dependency's accepted change from git (`signals/retrieval.rs::dependency_changes`, `git/merge/control_paths.rs::accepted_change_base`), repository-relative by construction; the declared files, joined to `working_dir` by `join_working_dir`, are only the fallback. Current behaviour: [Two Graphs, Two Lanes, Both Wired](../architecture/context-retrieval.md).

@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 136 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 212 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 218 |
 
 ## Tier 2 — Topics
 
@@ -41,7 +41,7 @@
 | [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 294 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Digest phase, receipts | 86 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | fs/knowledge, INDEX.md, checks | 263 |
-| [memory-spool](architecture/memory-spool.md) | Read before touching loom memory | 183 |
+| [memory-spool](architecture/memory-spool.md) | Read before touching loom memory | 196 |
 | [merge-checkout-state](architecture/merge-checkout-state.md) | Guarded fast-forward | 28 |
 | [merge-flow](architecture/merge-flow.md) | Finished stage to target branch | 134 |
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Tick order, liveness | 76 |
@@ -50,7 +50,7 @@
 | [quota-poller](architecture/quota-poller.md) | Usage-quota polling and rendering | 35 |
 | [remote-control](architecture/remote-control.md) | Capability, preflight, naming | 81 |
 | [security-and-isolation](architecture/security-and-isolation.md) | 4-layer worktree defense | 175 |
-| [signal-generation](architecture/signal-generation.md) | Signal assembly, cache, prefixes | 228 |
+| [signal-generation](architecture/signal-generation.md) | Signal assembly, cache, prefixes | 240 |
 | [skill-catalog](architecture/skill-catalog.md) | Skill roots, catalog | 154 |
 | [source-graph](architecture/source-graph.md) | Source graph contract, limits | 368 |
 | [source-graph-build](architecture/source-graph-build.md) | Builder, freshness, lease | 128 |
@@ -158,19 +158,19 @@
 | [store-without-consumer](mistakes/store-without-consumer.md) | Store written, never read | 104 |
 | [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, wave sizing, ownership | 376 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Subagent liveness; watch traps | 377 |
-| [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 348 |
+| [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 358 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY | 322 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) | Sweep: startup, cache, fixtures | 137 |
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass with the bug | 392 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn failures, cleanup | 146 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server gotchas | 52 |
-| [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Producers of a rendered field | 241 |
+| [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Producers of a rendered field | 251 |
 | [verification-harness](mistakes/verification-harness.md) | Suspect the harness | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 386 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) capped by path | 141 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server concurrency | 400 |
-| [writer-reader-address](mistakes/writer-reader-address.md) | Layer under an ignored key | 94 |
+| [writer-reader-address](mistakes/writer-reader-address.md) | Layer under an ignored key | 104 |
 
 ### concerns
 
@@ -189,7 +189,7 @@
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Language limits, open decisions | 79 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Unimplemented reviewer suggestions | 383 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package caches | 17 |
-| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token follow-ups | 313 |
+| [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token follow-ups | 348 |
 | [typed-config-values](concerns/typed-config-values.md) | Config read-path gaps | 27 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) | v2 adapters, parsers, known gaps | 177 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Latent issues in status/web | 103 |

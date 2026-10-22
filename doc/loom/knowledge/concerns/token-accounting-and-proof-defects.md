@@ -311,3 +311,38 @@ Open items from the plan's reviews, all small. The implemented ones are gone fro
   `PathBuf`s component-wise, so a skill named `loom-md` beside `loom-md-tables` would fail the
   self-check; no such pair exists. Signals render with the real `HOME` while `worker-brief` runs
   with an isolated one, so developer-level config could shift byte counts between machines.
+
+## Dependency Findings Follow-Ups
+
+### Harness Verdicts and the Operator Override
+
+The offline harness (`orchestrator/signals/tests_dependency_harness.rs`) measured the Dependency Findings section and the change-set boost on three recorded pairs. All three print a stop-rule FAIL; the figures are upper bounds, never savings.
+
+| Pair | First-arrival gain | Replay-weighted gain | Section cost |
+| --- | --- | --- | --- |
+| guard-core to guard-integration | -444 tokens (old 6,722 over 6 files, new 6,278 over 5) | -2,221 (old 56,438, new 54,217) | 12,190 (462 bytes, 115 tokens x 106 main calls) |
+| token-core to tui-tokens | 0 | 0 | 5,130 (54 tokens x 95 calls) |
+| token-core to web-tokens | 0 | 0 | 2,430 (54 tokens x 45 calls) |
+
+For guard-core the old arm boosted nothing (its 15 declared paths were `working_dir`-relative), so the change set only reordered worker packs and cost one covered file; the change set reproduced the recorded 28 paths and no knowledge was lost. The operator overrode the stop rule and plan 4 completed: the guard-core harness test prints its verdict instead of asserting it, and no wave was re-run or tuned. Revisit when a pair with a real overlap between a dependency's change set and a successor's reads is recorded. The plan file `doc/plans/token-optim/IN_PROGRESS-PLAN-04-dependency-findings.md` still says the stop rule is asserted and has no Deviations entry for the override.
+
+Signal replay at plan 4 integration-verify against the plan base: dynamic bytes tui-tokens +172, web-tokens +172, integration-verify +245; total signal bytes 214,457 to 192,068, a drop outside the dynamic sections whose cause is unattributed because per-signal base numbers were not recorded.
+
+### Open Reviewer Suggestions
+
+None has a failure on the merged tree. Each is a design extension, a performance bound unreached at current journal sizes, or a root cause outside the plan.
+
+- **Spool id validation.** `validate_spooled_entry` (`fs/memory/spool.rs:169`) does not validate the id or receipt event id (32 hex), the session, or receipt presence per entry type; fix at the spool boundary ([mistake](../mistakes/untrusted-value-boundaries.md)).
+- **Journal round trip.** A body with CRLF reads back with LF and leading and trailing whitespace is trimmed (`fs/memory/types.rs`). `fs/memory/tests/parser_escaping.rs` pins three surviving entries, which includes a receipt with a mangled event id (harmless, it matches no event); update it if `parse_receipt` ever validates the event id. Add CR, U+2028, U+0085, a `*`-leading body line, and line breaks in session and target to the hostile-body tests (`findings_render_tests.rs`, `tests/dependency_inputs_contracts.rs`).
+- **`single_line` Unicode.** `verify/review/report.rs::single_line` leaves format characters (U+202E bidi override, zero-width) in place; not structural, can mislead terminal display.
+- **Render cost.** `findings.rs::render` rebuilds the section for each candidate line, O(P x L^2) in dependencies and entries; stop once no line can fit. `names_dependency_path` allocates a normalized copy per candidate per node, and `dependency_paths` is now an uncapped change set on the worker-brief hook bounded at 5 seconds; pre-normalize once per query or cap the list if harness wall time shows cost. `dependency_paths` also runs three git calls per dependency, which matters for integration-verify.
+- **Duplicate dependency id.** A plan listing the same dependency twice builds two producers over one journal, so headline and entries render and count twice; dedupe changes by stage id.
+- **Evidence matching.** `strip_line_span` drops only `:<n>` and `:<n>-<n>`, so `src/a.rs:12:5` misses its file. A declared directory (`src/`) joins to a literal pattern and matches nothing beneath it; by design, the spec matches declared files as globs. `repository_relative` maps any absolute path containing `/.worktrees/` from any repository; require the `<root>/.worktrees/` prefix. The headline prints `prefix8` of the dependency's commit without `is_commit_id` validation when `range` is `None` (the stage record is loom-owned).
+- **Shared prefix list.** `findings.rs` `RANKED_NOTE_PREFIXES` repeats the list `commands/memory/handlers/prefix.rs::NotePrefix::parse` owns, with different matching (case-insensitive and `trim_start`, against exact `starts_with`); a shared constant in `fs::memory` would stop drift.
+- **Test gaps.** No test fails if the Completed filter (`findings.rs:99`) or the status gate in `retrieval.rs` is removed; add a dependency that is Completed then reopened (Queued or Executing) and still carries a commit. The harness (`tests_dependency_harness/packs.rs`) re-implements `retrieve_stage_pack` and `worker_brief::retrieve_pack`; assert that its stage pack ids equal `retrieve_stage_pack`'s on the same scratch repo.
+- **Structure.** `findings.rs` sits at 395 of 400 lines; move the path-reading helpers (`path_candidates` through `repository_relative`) to a sibling module before the next edit. The `git/merge/control_paths.rs` module doc covers only the control-path gate while `accepted_change_base` and `AcceptedBase` live there; document them or move them.
+
+### Guard and Verification Gaps
+
+- **Heredoc scan recurrence.** `loom-hooks/loom-control-complete.sh` rejected an inline Python heredoc whose text held signal strings such as `loom memory list --stage` and the commit field name, reading it as a finalization command. It happened in two stages of this plan and again in knowledge-distill, which also hit it with a `loom knowledge` heredoc. The mistake is recorded in [hooks-shell-portability](../mistakes/hooks-shell-portability.md); a hook fix (match command-start positions only) is proposed, not built. Until then write multi-line scripts and long bodies to a scratch file and run them by path.
+- **Missing per-criterion logs.** `loom check` `result.json` names `acceptance-<n>.log` files that are absent from `.loom/work/verification/integration-verify/<job id>/`, which holds only `applied`, `groups`, `progress.jsonl`, `record.json` and `result.json`. A session cannot read the harness or signal-replay output from the job directory; record the figures from a foreground run.
