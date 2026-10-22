@@ -80,6 +80,11 @@ fn a_value_that_is_not_a_commit_id_is_refused() {
     let root = temp.path();
     assert!(accepted_change_base(root, "--all", "main").is_err());
     assert!(accepted_change_base(root, "abc", "main").is_err());
+    git_ok(root, &["branch", &"g".repeat(40)]);
+    // Values git itself accepts as revisions: only the commit-id guard refuses them.
+    assert!(accepted_change_base(root, "HEAD", "main").is_err());
+    assert!(accepted_change_base(root, "main", "main").is_err());
+    assert!(accepted_change_base(root, &"g".repeat(40), "main").is_err());
 }
 
 #[test]
