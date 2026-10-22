@@ -330,3 +330,13 @@ The sweep follow-ups on executable startup, cache coverage, hook-path navigation
 **Prevention:** A name used only inside a `#[cfg(...)]`-gated item is imported inside that item or written fully qualified, never at module level.
 
 **Fix:** Dropped the import; the Linux test spells `std::ffi::OsStr` inline.
+
+## A Dirty Tracked File Kept the Pre-Push Pass From Being Recorded, So the Rerun Ran Every Check Again
+
+**What happened:** after four local commits the operator ran `git push`; the remote dropped the idle connection during the checks and nothing was pushed. The rerun ran the whole suite again instead of skipping it, and pushed only because the connection survived that time. The agent had told the operator to run `git push` while it knew `CHANGELOG.md` held an uncommitted change from another session.
+
+**Why:** `loom/.githooks/pre-push` records HEAD as verified only when the tracked tree is clean before and after the checks, because the checks read the working tree. The modified `CHANGELOG.md` failed that test, so `loom-pre-push-verified` never got the new HEAD. The hook's fallback hint names `scripts/push.sh`, which refuses a dirty tracked tree too, leaving only `--no-verify`.
+
+**Prevention:** before telling the operator to push, check `git status --short --untracked-files=no`. With tracked changes present, say the pass will not be recorded and the push may need a second full run; with a clean tree, recommend `scripts/push.sh` over `git push`.
+
+**Fix:** `scripts/push.sh` no longer needs a clean tree: it checks HEAD in a persistent detached worktree at `${XDG_CACHE_HOME:-$HOME/.cache}/loom-push-check/<cksum of the git common dir>` (own `loom/target`, so later runs build incrementally), runs that commit's hook there with `LOOM_PUSH_CHECK=1`, refuses to push unless HEAD landed in `loom-pre-push-verified`, then `git push`es on a fresh connection. A `mkdir` lock beside the worktree serializes runs. The hook's "Result not recorded" hint for a dirty tree points at `scripts/push.sh`.
