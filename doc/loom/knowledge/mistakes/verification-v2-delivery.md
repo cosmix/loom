@@ -366,3 +366,13 @@ tests parent, `rg` the name in sibling files that glob-import `super::*`.
 **Prevention:** a confined command's start directory and its visible tree are separate inputs. A caller that starts below the worktree root passes the root explicitly; never infer it from the nearest `.git`, which a vendored submodule also has.
 
 **Fix:** see [execution containment](../architecture/execution-containment.md#read-this-first-what-containment-means-in-loom).
+
+## Contract Check Re-Parsed a Cache Hit's 4 KB Output Tail
+
+**What happened:** `verify::contracts::completion::judge` parsed the stdout of every contract run. A certified cache hit hands back only the last `DIAGNOSTIC_TAIL_BYTES` (4 KB) of the original output, which for `cargo test <name> -- --exact` holds only the trailing `running 0 tests` blocks of other test binaries. The first completion on a tree passed its contracts; every later completion on the same tree failed them as "contract test not selected".
+
+**Why:** the cache stores a diagnostic tail, while its proof (exit code, zero-test count) lives in the record's `AssertionVerdict`. The judge treated the tail as the full output.
+
+**Prevention:** never re-parse a cached `CriterionResult`'s output for a verdict. Read the record's proof: `CriterionResult::cached_tests_executed`, surfaced to probes as `ProbeRun::cached`.
+
+**Fix:** `completion::judge_cached` decides a cache hit from `CachedRun::tests_executed`: `Some(0)` is not selected, `Some(n)` with exit 0 passes, `None` falls back to the exit code.

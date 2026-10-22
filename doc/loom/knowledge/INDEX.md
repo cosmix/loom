@@ -146,7 +146,7 @@
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox paths, permission sync | 367 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | hooks/ dir is sandbox-protected | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers vs work state | 298 |
-| [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Sandbox tool failures | 369 |
+| [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Sandbox tool failures | 379 |
 | [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) | Only Edit(path) rules are enforced | 57 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) | deny_unknown_fields | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | LOOM_* wrapper exports contract | 126 |
@@ -167,7 +167,7 @@
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server gotchas | 52 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Producers of a rendered field | 241 |
 | [verification-harness](mistakes/verification-harness.md) | Suspect the harness | 399 |
-| [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 368 |
+| [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 378 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | pub(crate) capped by path | 141 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Dashboard server concurrency | 393 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Layer under an ignored key | 94 |
@@ -185,7 +185,7 @@
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry edge cases | 134 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Commit, launch, stall gaps | 213 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | tmux, orphan adoption edge cases | 150 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Canary, creds, env, caches | 383 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Canary, creds, env, caches | 388 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Language limits, open decisions | 79 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Unimplemented reviewer suggestions | 387 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package caches | 17 |
