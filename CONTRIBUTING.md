@@ -57,7 +57,7 @@ Prerequisites:
 - Rust stable via `rustup`. CI installs the latest stable, so a new clippy lint can fail CI while passing locally; run `rustup update stable` regularly (the pre-push hook warns when a newer stable exists).
 - `git`, `jq` (every hook parses its payload with it — required), `rg` and `fd` (recommended).
 - `bun` — both git hooks lint markdown with `bunx markdownlint-cli2`, and the web dashboard builds with it.
-- `cargo-audit` (`cargo install cargo-audit`) — the pre-push hook runs `cargo audit`.
+- `cargo-audit` (`cargo install cargo-audit`) — optional; CI runs `cargo audit`, and you can run it before a push that changes dependencies.
 - `tmux` — optional; used by the tmux-backend e2e tests. CI's Linux test job installs it and sets `LOOM_E2E_REQUIRE_TMUX=1`.
 
 Enable the git hooks once, from the repo root:
@@ -72,7 +72,7 @@ Web dashboard: `cd web && bun install && bun run build`. Without `web/dist`, the
 
 ## The Gate: What Must Pass Before You Push
 
-The authoritative list is `loom/.githooks/pre-push`; CI runs the same checks. Read that file rather than assembling a subset from memory. From `loom/`:
+The pre-push hook (`loom/.githooks/pre-push`) runs the fast subset; CI runs the Rust checks below (and the web job) on every push to `main` and every pull request that touches `loom/`, `web/` or `scripts/`. Read the hook rather than assembling a subset from memory. Before relying on CI for a change that can break the suite, run the full gate from `loom/`:
 
 ```bash
 cargo fmt --check
@@ -105,10 +105,9 @@ Why the flags matter:
 What the hooks do:
 
 - `pre-commit`: refuses a commit when a staged file also has unstaged changes (stage whole files); runs `cargo fmt` and `markdownlint-cli2 --fix`, then re-stages the files you staged; runs the maintainability gate (`cargo test --quiet --test maintainability`); runs the rustdoc gate when the staged diff adds or edits a `///` or `//!` line.
-- `pre-push`: the gate above. If markdown lint auto-fixes anything, the push stops so you can commit the fixes. It skips when nothing is pushed, or when every pushed branch commit already passed on a clean tree (recorded in `<git-common-dir>/loom-pre-push-verified`); tag pushes always run the checks.
-- `scripts/push.sh [git push args]`: runs the checks before connecting, then pushes. git opens the connection before the hook runs, so a long run lets the remote close it and git exits 141 silently with nothing pushed. Use it instead of `git push` when the checks run that long. It checks the HEAD commit in a detached worktree at `${XDG_CACHE_HOME:-$HOME/.cache}/loom-push-check/<id>`, so uncommitted files in your checkout do not matter and the push needs no clean tree. The first run builds that worktree's `loom/target` from scratch; later runs build incrementally. Rerunning the same `git push` also skips once the commit is recorded, but only when the checks ran on a clean tracked tree.
+- `pre-push`: runs `cargo fmt --check`, markdown lint, `cargo clippy --all-targets -- -D warnings`, rustdoc, `cargo test --all-targets --no-run` (every test target compiles), `cargo test --test maintainability`, and a smoke run of the built binary (`loom --version`, `loom --help`). If markdown lint auto-fixes anything, the push stops so you can commit the fixes. It skips when nothing is pushed. It stays short on purpose: `git push` opens the connection to GitHub before the hook runs, and GitHub closes it while the hook is idle, so a long hook makes git exit 141 silently with nothing pushed. CI runs the full test suite and flake-check on Linux and macOS, and `cargo audit` on Linux.
 
-CI (`.github/workflows/ci.yml`) runs when a push to `main` or a pull request touches `loom/`, `web/` or `scripts/`: build, tests (Linux full run; macOS compile-only), clippy, maintainability, flake-check, docs, fmt, hook syntax (`scripts/check-hook-syntax.sh`, `scripts/test-pre-commit-partial-staging.sh`), `cargo audit`, `cargo deny check`, the web job (`bun install --frozen-lockfile`, `bun run check`, and a check that the committed `web/dist` matches a fresh build), and smoke tests of the web dashboard and terminal.
+CI (`.github/workflows/ci.yml`) runs when a push to `main` or a pull request touches `loom/`, `web/` or `scripts/`: build, tests (full runs on Linux and macOS), clippy, maintainability, flake-check (Linux and macOS), docs, fmt, hook syntax (`scripts/check-hook-syntax.sh`, `scripts/test-pre-commit-partial-staging.sh`), `cargo audit`, `cargo deny check`, the web job (`bun install --frozen-lockfile`, `bun run check`, and a check that the committed `web/dist` matches a fresh build), and smoke tests of the web dashboard and terminal.
 
 ## Code Guidelines
 
@@ -130,7 +129,7 @@ CI (`.github/workflows/ci.yml`) runs when a push to `main` or a pull request tou
 - Never create a process that can outlive the test. `cargo test` reports nothing about a leaked detached child; one such leak once exhausted 125 GB of RAM. Guard the spawn at the lowest level, and wrap any `Child` a test holds in a guard that kills and waits on drop.
 - Tests that shell out to `git` must assert every setup command's exit status and isolate ambient git config (`GIT_CONFIG_GLOBAL` / `GIT_CONFIG_SYSTEM` pointed at nonexistent paths, `GIT_CONFIG_NOSYSTEM=1`).
 - CI runners have no terminal emulator; a test that builds an `Orchestrator` must configure the tmux backend so no terminal detection runs.
-- Build identity: every untagged commit builds a `-dev` prerelease; a commit a release tag points at builds the bare release version, so the suite also runs against a release build (the pre-push hook of a tag push, and the release workflow). A test whose expectation depends on this reads `loom::version::VERSION` instead of assuming `-dev`.
+- Build identity: every untagged commit builds a `-dev` prerelease; a commit a release tag points at builds the bare release version, so the suite also runs against a release build (the release workflow). A test whose expectation depends on this reads `loom::version::VERSION` instead of assuming `-dev`.
 - A validator that newly rejects a command shape must be checked against the repository's own fixtures first: a lone `true` is a placeholder criterion in dozens of tests, so `rg -n '"true"' loom/src loom/tests` before tightening a `loom plan verify` lint.
 - A test must be able to fail: drive the real entry point, assert on data production code produced, and when you cap something assert both the ceiling and a floor. Prove a fix by mutation — remove the fix, watch the test go red, restore it, watch it go green.
 - A test-runner adapter (`loom/src/testrun/adapters/`) is pinned by output captured from a real run under `loom/src/testrun/fixtures/<adapter>/`; a fixture written from the runner's documentation instead says so in a `PROVENANCE.md` next to it. Quote every `{test}` and `{file}` you put into an adapter command through `loom/src/testrun/command.rs`. `loom project detect` prints the runner loom would pick for a checkout.
