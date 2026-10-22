@@ -179,11 +179,16 @@ fn missing_executable_identity_and_inherited_environment_are_ineligible() {
     assert!(ExecutionIdentity::from_prepared(&dynamic, CommandConfinement::Confined).is_none());
 }
 
+/// A deleted tracked file is content like any other: the tree without it
+/// fingerprints apart from the tree with it.
 #[test]
-fn deleted_tracked_input_is_ineligible() {
+#[serial]
+fn deleted_tracked_input_changes_fingerprint() {
     let repo = init_repo();
+    let present = fingerprint(repo.path()).unwrap();
     std::fs::remove_file(repo.path().join("file.txt")).unwrap();
-    assert!(fingerprint(repo.path()).is_none());
+    let deleted = fingerprint(repo.path()).unwrap();
+    assert_ne!(deleted, present);
 }
 
 #[cfg(unix)]

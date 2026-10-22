@@ -1,26 +1,27 @@
 //! Reusable-input fingerprints for acceptance cache entries.
 
+use sha2::digest::Output;
 use sha2::{Digest, Sha256};
 use std::fs::{File, Metadata};
 use std::io::Read;
 use std::os::unix::fs::OpenOptionsExt;
-use std::path::{Component, Path, PathBuf};
+use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use super::cache_executable;
 use super::cache_git_state::hash_git_state;
 use super::confine::{GitDirs, PreparedCommand};
-use crate::git::worktree::WorktreeGit;
 use crate::models::stage::CommandConfinement;
 use crate::verify::review::fingerprint::checkout_git;
 
+#[path = "cache_manifest.rs"]
+mod manifest;
+
 const HASH_BUDGET_BYTES: u64 = 64 * 1024 * 1024;
-const MAX_GIT_CONTEXT_BYTES: usize = 8 * 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct InputFingerprint {
     pub(super) digest: String,
-    pub(super) tree_head: String,
 }
 
 /// Stable inputs taken from the exact prepared command that will be spawned.
@@ -73,23 +74,11 @@ pub(super) fn capture_with_budget(
     if !acceptance_dir.starts_with(&repo_root) {
         return None;
     }
-    let head = String::from_utf8(git_bytes(&git, &["rev-parse", "HEAD"])?).ok()?;
-    let head = head.trim().to_string();
-    let status = git_bytes(
-        &git,
-        &["status", "--porcelain=v2", "--untracked-files=all", "-z"],
-    )?;
-    let tracked = git_bytes(&git, &["ls-files", "-s", "-z"])?;
-    if !tracked_entries_are_regular(&tracked) {
-        return None;
-    }
 
     let mut hasher = Sha256::new();
-    hash_field(&mut hasher, b"acceptance-cache-input-v4");
+    hash_field(&mut hasher, b"acceptance-cache-input-v5");
     hash_field(&mut hasher, acceptance_dir.as_os_str().as_encoded_bytes());
     hash_field(&mut hasher, repo_root.as_os_str().as_encoded_bytes());
-    hash_field(&mut hasher, head.as_bytes());
-    hash_field(&mut hasher, &status);
     hash_field(&mut hasher, identity.environment_digest.as_bytes());
     hash_field(&mut hasher, identity.containment_policy.as_bytes());
     let mut remaining = hash_budget;
@@ -97,82 +86,11 @@ pub(super) fn capture_with_budget(
         hash_field(&mut hasher, executable.as_os_str().as_encoded_bytes());
         hash_executable(executable, &mut remaining, &mut hasher)?;
     }
-    for relative in status_paths(&status)? {
-        hash_repository_path(&repo_root, &relative, &mut remaining, &mut hasher)?;
-    }
-    // After `git status`, which may rewrite the index it refreshes.
-    hash_git_state(identity.git.as_ref(), &mut remaining, &mut hasher)?;
+    manifest::hash_manifest(&git, &repo_root, &mut remaining, &mut hasher)?;
+    hash_git_state(identity.git.as_ref(), &mut hasher)?;
     Some(InputFingerprint {
         digest: hex::encode(hasher.finalize()),
-        tree_head: head,
     })
-}
-
-fn git_bytes(git: &WorktreeGit, args: &[&str]) -> Option<Vec<u8>> {
-    let output = git.run(args).ok()?;
-    if !output.status.success() || output.stdout.len() > MAX_GIT_CONTEXT_BYTES {
-        return None;
-    }
-    Some(output.stdout)
-}
-
-fn tracked_entries_are_regular(raw: &[u8]) -> bool {
-    raw.split(|byte| *byte == 0)
-        .filter(|entry| !entry.is_empty())
-        .all(|entry| entry.starts_with(b"100644 ") || entry.starts_with(b"100755 "))
-}
-
-fn status_paths(raw: &[u8]) -> Option<Vec<PathBuf>> {
-    let mut tokens = raw.split(|byte| *byte == 0).filter(|item| !item.is_empty());
-    let mut paths = Vec::new();
-    while let Some(token) = tokens.next() {
-        let (fields, rename) = match token.first().copied() {
-            Some(b'1') => (8, false),
-            Some(b'2') => (9, true),
-            Some(b'?') => (1, false),
-            _ => return None,
-        };
-        let path = skip_fields(token, fields)?;
-        let path = PathBuf::from(std::str::from_utf8(path).ok()?);
-        if !safe_relative_path(&path) {
-            return None;
-        }
-        paths.push(path);
-        if rename {
-            tokens.next()?;
-        }
-    }
-    Some(paths)
-}
-
-fn skip_fields(mut value: &[u8], count: usize) -> Option<&[u8]> {
-    for _ in 0..count {
-        let index = value.iter().position(|byte| *byte == b' ')?;
-        value = &value[index + 1..];
-    }
-    Some(value)
-}
-
-fn safe_relative_path(path: &Path) -> bool {
-    !path.as_os_str().is_empty()
-        && path
-            .components()
-            .all(|component| matches!(component, Component::Normal(_) | Component::CurDir))
-}
-
-fn hash_repository_path(
-    repo_root: &Path,
-    relative: &Path,
-    remaining: &mut u64,
-    hasher: &mut Sha256,
-) -> Option<()> {
-    let path = repo_root.join(relative);
-    let metadata = path.symlink_metadata().ok()?;
-    if metadata.file_type().is_symlink() || !metadata.is_file() {
-        return None;
-    }
-    hash_field(hasher, relative.as_os_str().as_encoded_bytes());
-    hash_regular_file(&path, &metadata, remaining, hasher)
 }
 
 fn hash_executable(invoked_path: &Path, remaining: &mut u64, hasher: &mut Sha256) -> Option<()> {
@@ -182,18 +100,21 @@ fn hash_executable(invoked_path: &Path, remaining: &mut u64, hasher: &mut Sha256
         return None;
     }
     hash_field(hasher, canonical.as_os_str().as_encoded_bytes());
-    hash_regular_file(&canonical, &metadata, remaining, hasher)
+    let digest = digest_regular_file(&canonical, &metadata, remaining, Sha256::new())?;
+    hash_field(hasher, &digest);
+    Some(())
 }
 
-/// Hash the regular file at `path` whose `before` metadata the caller read,
-/// refusing it when it changed while being read. `O_NONBLOCK` keeps a FIFO
-/// swapped in since that check from blocking the open.
-pub(super) fn hash_regular_file(
+/// Feed the regular file at `path`, whose `before` metadata the caller read,
+/// to `file_hasher` within `remaining` bytes, refusing it when it changed
+/// while being read. `O_NONBLOCK` keeps a FIFO swapped in since that check
+/// from blocking the open.
+fn digest_regular_file<D: Digest>(
     path: &Path,
     before: &Metadata,
     remaining: &mut u64,
-    hasher: &mut Sha256,
-) -> Option<()> {
+    mut file_hasher: D,
+) -> Option<Output<D>> {
     if before.len() > *remaining {
         return None;
     }
@@ -203,7 +124,6 @@ pub(super) fn hash_regular_file(
         .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK)
         .open(path)
         .ok()?;
-    let mut file_hasher = Sha256::new();
     let mut bytes_read = 0_u64;
     let mut buffer = [0_u8; 64 * 1024];
     loop {
@@ -218,8 +138,7 @@ pub(super) fn hash_regular_file(
     if bytes_read != before.len() || !after.is_file() || !same_file_snapshot(before, &after) {
         return None;
     }
-    hash_field(hasher, &file_hasher.finalize());
-    Some(())
+    Some(file_hasher.finalize())
 }
 
 fn same_file_snapshot(before: &Metadata, after: &Metadata) -> bool {

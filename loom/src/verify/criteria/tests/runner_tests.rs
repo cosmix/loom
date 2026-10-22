@@ -347,3 +347,24 @@ fn bypass_policy_executes_every_time() {
     assert!(run(&fixture, &stage, &config).all_passed());
     assert_eq!(fixture.executions(), 2);
 }
+
+#[test]
+#[serial]
+fn refresh_policy_never_answers_from_the_cache_but_stores_its_pass() {
+    let fixture = Fixture::new(":");
+    let stage = simple_stage("sh scripts/probe.sh");
+    let cached = fixture.config(Duration::from_secs(2));
+    let refresh = fixture
+        .config(Duration::from_secs(2))
+        .with_cache_policy(CachePolicy::Refresh);
+
+    assert!(run(&fixture, &stage, &cached).all_passed());
+    let rerun = run(&fixture, &stage, &refresh);
+    std::fs::remove_dir_all(fixture.cache.path().join("acceptance-cache")).unwrap();
+    assert!(run(&fixture, &stage, &refresh).all_passed());
+    let hit = run(&fixture, &stage, &cached);
+
+    assert!(rerun.all_passed() && !rerun.results()[0].cached);
+    assert!(hit.results()[0].cached, "the refresh stored no pass");
+    assert_eq!(fixture.executions(), 3);
+}

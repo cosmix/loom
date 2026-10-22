@@ -6,8 +6,8 @@
 use serial_test::serial;
 
 use super::store;
-use super::tests_child::{confinement_unavailable, labels_and_verdicts, Fixture, STAGE};
-use super::{JobKind, JobState};
+use super::tests_child::{confinement_unavailable, git, labels_and_verdicts, Fixture, STAGE};
+use super::{JobKind, JobRecord, JobResult, JobState};
 use crate::models::stage::StageType;
 
 #[test]
@@ -38,12 +38,42 @@ fn a_complete_after_a_passing_check_reuses_every_cached_pass() {
         StageType::Standard,
     );
     assert!(fx.run(&fx.job(JobState::Running, false)).passed);
+    let completion = complete(&fx);
+
+    assert_every_acceptance_cached(&fx, &completion, &fx.run(&completion));
+}
+
+/// A completion runs on a commit whose content a check passed uncommitted:
+/// the pass cache keys on content, never on the commit or the index.
+#[test]
+#[serial]
+fn a_complete_on_the_commit_of_a_checked_dirty_tree_reuses_every_cached_pass() {
+    if confinement_unavailable(
+        "a_complete_on_the_commit_of_a_checked_dirty_tree_reuses_every_cached_pass",
+    ) {
+        return;
+    }
+    let fx = Fixture::new(
+        &["test -s notes.txt", "grep -q edited notes.txt"],
+        StageType::Standard,
+    );
+    std::fs::write(fx.worktree.join("notes.txt"), "edited\n").unwrap();
+    assert!(fx.run(&fx.job(JobState::Running, false)).passed);
+    git(&fx.worktree, &["add", "notes.txt"]);
+    git(&fx.worktree, &["commit", "-q", "-m", "checked content"]);
+    let completion = complete(&fx);
+
+    assert_every_acceptance_cached(&fx, &completion, &fx.run(&completion));
+}
+
+fn complete(fx: &Fixture) -> JobRecord {
     let mut completion = fx.job(JobState::Running, false);
     completion.kind = JobKind::Complete;
     store::save_current(&fx.work_dir, &completion).unwrap();
+    completion
+}
 
-    let result = fx.run(&completion);
-
+fn assert_every_acceptance_cached(fx: &Fixture, completion: &JobRecord, result: &JobResult) {
     let acceptance: Vec<_> = result
         .criteria
         .iter()

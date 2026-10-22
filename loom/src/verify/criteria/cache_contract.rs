@@ -12,7 +12,7 @@ use super::result::CriterionResult;
 use crate::models::stage::CommandConfinement;
 use crate::plan::schema::AcceptanceCriterion;
 
-pub(super) const CACHE_RECORD_VERSION: u32 = 3;
+pub(super) const CACHE_RECORD_VERSION: u32 = 4;
 pub(super) const DIAGNOSTIC_TAIL_BYTES: usize = 4 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -197,7 +197,6 @@ pub(super) struct CachedCriterionPass {
     pub(super) version: u32,
     pub(super) contract_digest: String,
     pub(super) input_context_digest: String,
-    pub(super) source_head: String,
     pub(super) original_duration_ms: u64,
     pub(super) actual_exit: i32,
     pub(super) verdict: AssertionVerdict,
@@ -227,7 +226,6 @@ impl CachedCriterionPass {
             version: CACHE_RECORD_VERSION,
             contract_digest,
             input_context_digest: fingerprint.digest.clone(),
-            source_head: fingerprint.tree_head.clone(),
             original_duration_ms: millis(original_duration),
             actual_exit,
             verdict,
@@ -247,7 +245,6 @@ impl CachedCriterionPass {
         self.version == CACHE_RECORD_VERSION
             && contract.digest().as_deref() == Some(self.contract_digest.as_str())
             && self.input_context_digest == fingerprint.digest
-            && self.source_head == fingerprint.tree_head
             && self.actual_exit == contract.expected_exit
             && self.stdout_tail.len() <= DIAGNOSTIC_TAIL_BYTES
             && self.stderr_tail.len() <= DIAGNOSTIC_TAIL_BYTES

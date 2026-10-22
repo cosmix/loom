@@ -149,16 +149,18 @@ fn acceptance_config(
             progress.acceptance(index, result, &setup);
         }))
     };
-    let mut config = CriteriaConfig::default()
+    // `--no-cache` reads nothing but stores what it re-proves.
+    let cache = if no_cache {
+        CachePolicy::Refresh
+    } else {
+        CachePolicy::Use
+    };
+    CriteriaConfig::default()
         .with_plan_confinement(plan_confinement(work_dir))
         .with_tree_root(tree.paths.worktree_root.as_deref())
-        .with_observer(observer);
-    if !no_cache {
-        config = config
-            .with_cache_dir(work_dir)
-            .with_cache_policy(CachePolicy::Use);
-    }
-    config
+        .with_observer(observer)
+        .with_cache_dir(work_dir)
+        .with_cache_policy(cache)
 }
 
 fn run_configured(stage: &Stage, tree: &JobTree, config: &CriteriaConfig) -> Result<()> {

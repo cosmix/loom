@@ -35,7 +35,6 @@ fn contract(
 fn fingerprint() -> InputFingerprint {
     InputFingerprint {
         digest: "input-digest".to_string(),
-        tree_head: "source-head".to_string(),
     }
 }
 

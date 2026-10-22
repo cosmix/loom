@@ -87,7 +87,6 @@ fn cached_pass_certifies_zero_test_guard() {
     );
     let fingerprint = InputFingerprint {
         digest: "input".to_string(),
-        tree_head: "head".to_string(),
     };
     let record = |guard: bool, tests: Option<u64>| {
         let verdict = contract(guard).verdict_with_tests(&result, tests);

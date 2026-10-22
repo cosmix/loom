@@ -39,7 +39,6 @@ fn passing_result() -> CriterionResult {
 fn input_fingerprint(digest: &str) -> InputFingerprint {
     InputFingerprint {
         digest: digest.to_string(),
-        tree_head: "head".to_string(),
     }
 }
 

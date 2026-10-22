@@ -28,7 +28,7 @@ pub(super) fn confinement_unavailable(test_name: &str) -> bool {
 }
 
 /// Run git in `dir` without the user's or the system's configuration.
-fn git(dir: &Path, args: &[&str]) -> String {
+pub(super) fn git(dir: &Path, args: &[&str]) -> String {
     let output = Command::new("git")
         .args(args)
         .current_dir(dir)
@@ -51,7 +51,7 @@ pub(super) struct Fixture {
     _dir: TempDir,
     repo: PathBuf,
     pub(super) work_dir: PathBuf,
-    worktree: PathBuf,
+    pub(super) worktree: PathBuf,
     stage_type: StageType,
 }
 

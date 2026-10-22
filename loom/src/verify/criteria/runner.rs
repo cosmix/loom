@@ -4,7 +4,7 @@ use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
-use super::cache::{self, CachePolicy};
+use super::cache;
 use super::cache_contract::{AssertionVerdict, CriterionContract};
 use super::cache_fingerprint::{self, ExecutionIdentity, InputFingerprint};
 use super::config::{CriteriaConfig, DEFAULT_CHECK_TIMEOUT};
@@ -196,7 +196,8 @@ fn run_with_cache(
     let Some(before) = cache_fingerprint::capture(acceptance_dir, &identity) else {
         return execute(prepared, timeout, started, None);
     };
-    if let Some(record) = cache::lookup_pass(work_dir, contract, &before) {
+    let lookup = || cache::lookup_pass(work_dir, contract, &before);
+    if let Some(record) = config.cache.reads().then(lookup).flatten() {
         let result = CriterionResult::cached_verdict(
             spec.to_string(),
             Some(record.actual_exit),
@@ -221,10 +222,8 @@ fn run_with_cache(
 }
 
 fn enabled_cache_dir(config: &CriteriaConfig) -> Option<&Path> {
-    config
-        .cache_dir
-        .as_deref()
-        .filter(|_| config.cache == CachePolicy::Use)
+    let dir = config.cache_dir.as_deref()?;
+    config.cache.writes().then_some(dir)
 }
 
 fn execute(

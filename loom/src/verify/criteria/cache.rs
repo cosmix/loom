@@ -21,9 +21,26 @@ const MAX_CACHE_RECORD_BYTES: u64 = 32 * 1024;
 /// Whether the acceptance runner may consult and update the pass cache.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum CachePolicy {
+    /// Answer from a certified pass, and store each verified new one.
     #[default]
     Use,
+    /// Run every criterion, still storing verified passes (`--no-cache`):
+    /// the run re-proves what it stores, so a later run may reuse it.
+    Refresh,
+    /// Neither read nor store.
     Bypass,
+}
+
+impl CachePolicy {
+    /// Whether a run may answer from a stored pass.
+    pub(super) fn reads(self) -> bool {
+        self == CachePolicy::Use
+    }
+
+    /// Whether a run may store the passes it verified.
+    pub(super) fn writes(self) -> bool {
+        self != CachePolicy::Bypass
+    }
 }
 
 impl CachePolicy {
@@ -49,9 +66,11 @@ pub(super) fn is_cacheable(command: &str, acceptance_dir: &Path) -> bool {
     if command.contains('$') {
         return false;
     }
-    // A confined command can read every ref, `packed-refs` and `config`, but the
-    // fingerprint holds only HEAD's state (`cache_git_state`). Residual: a script
-    // reading refs other than HEAD's can replay a stale pass.
+    // A confined command can read every ref, the index and `config`, but the
+    // fingerprint holds the tree's content and HEAD's text alone
+    // (`cache_git_state`): commit identity, refs and staging are no inputs.
+    // Residual: a script that runs git, which these words cannot see, can
+    // replay a pass across commits of the same content.
     if runs_git(command) {
         return false;
     }

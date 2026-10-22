@@ -1,5 +1,6 @@
-//! The pass cache fingerprints the Git state a confined command reads in a
-//! linked worktree, so a script running git stays cacheable until it changes.
+//! The pass cache fingerprints the branch `HEAD` names in a linked worktree,
+//! beside the tree's content, so a script running git stays cacheable until
+//! the branch changes; commits and index rewrites are no input.
 
 use std::path::{Path, PathBuf};
 use std::time::Duration;
@@ -39,22 +40,29 @@ fn identity(tree: &Path) -> ExecutionIdentity {
     ExecutionIdentity::from_prepared(&prepared, CommandConfinement::Confined).unwrap()
 }
 
-// Each change keeps the commit and `git status` the fingerprint already held.
+// Each change keeps the tree's content.
 #[test]
 #[serial]
-fn head_or_index_changes_alone_change_a_linked_worktree_fingerprint() {
+fn only_the_branch_head_names_changes_a_linked_worktree_fingerprint() {
     let (_repo, tree) = linked_worktree();
     let identity = identity(&tree);
     let clean = capture(&tree, &identity).unwrap();
     assert_eq!(capture(&tree, &identity).unwrap(), clean);
 
-    git(&tree, &["checkout", "-q", "-b", "renamed"]);
-    let renamed = capture(&tree, &identity).unwrap();
-    assert_ne!(renamed, clean, "HEAD names another branch");
+    std::fs::write(tree.join("README.md"), "readme\n").unwrap();
+    git(&tree, &["add", "README.md"]);
+    git(&tree, &["update-index", "--really-refresh"]);
+    assert_eq!(
+        capture(&tree, &identity).unwrap(),
+        clean,
+        "an index rewrite"
+    );
 
-    git(&tree, &["update-index", "--assume-unchanged", "README.md"]);
-    let flagged = capture(&tree, &identity).unwrap();
-    assert_ne!(flagged, renamed, "the index changed");
+    git(&tree, &["commit", "-q", "--allow-empty", "-m", "moved"]);
+    assert_eq!(capture(&tree, &identity).unwrap(), clean, "a new commit");
+
+    git(&tree, &["checkout", "-q", "-b", "renamed"]);
+    assert_ne!(capture(&tree, &identity).unwrap(), clean, "another branch");
 }
 
 #[test]

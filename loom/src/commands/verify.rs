@@ -24,8 +24,9 @@ mod session_relay;
 /// `loom check`'s run options.
 #[derive(Debug, Clone, clap::Args)]
 pub struct CheckArgs {
-    /// Skip the acceptance-criterion pass cache: run every criterion for
-    /// real regardless of whether an identical tree already passed it.
+    /// Skip the acceptance-criterion pass cache lookup: run every criterion
+    /// for real even if an identical tree already passed it. Passes are
+    /// still stored, so a later `loom stage complete` can reuse them.
     #[arg(long = "no-cache")]
     pub no_cache: bool,
 
