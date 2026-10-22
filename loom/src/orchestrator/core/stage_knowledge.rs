@@ -55,14 +55,13 @@ impl Orchestrator {
         signal: &Path,
     ) -> Option<Session> {
         if self.config.manual_mode {
-            println!(
-                "Manual mode: Session setup for knowledge stage '{}'",
-                stage.id
-            );
-            println!("  Directory: {}", self.config.repo_root.display());
-            println!("  Signal: {}", signal.display());
-            println!("  To start: cd {} && claude \"Read the signal file at {} and execute the assigned stage work.\"",
-                self.config.repo_root.display(), signal.display());
+            for line in super::manual_start::manual_knowledge_start_lines(
+                &stage.id,
+                &self.config.repo_root,
+                signal,
+            ) {
+                println!("{line}");
+            }
             return Some(session);
         }
         let original_id = session.id.clone();
