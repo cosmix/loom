@@ -12,9 +12,9 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 68 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 187 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 146 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 150 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 218 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 232 |
 
 ## Tier 2 — Topics
 
@@ -37,7 +37,7 @@
 | [daemon-launch](architecture/daemon-launch.md) | Re-exec launch, readiness | 65 |
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) | Relayed signed commits | 151 |
 | [directory-structure](architecture/directory-structure.md) | Module tree, state layout | 50 |
-| [execution-containment](architecture/execution-containment.md) | Command containment, limits | 362 |
+| [execution-containment](architecture/execution-containment.md) | Command containment, limits | 389 |
 | [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 307 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Digest phase, receipts | 86 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | fs/knowledge, INDEX.md, checks | 263 |
@@ -49,7 +49,7 @@
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) | Plan fields v1/v2, checks, lints | 257 |
 | [quota-poller](architecture/quota-poller.md) | Usage-quota polling and rendering | 35 |
 | [remote-control](architecture/remote-control.md) | Capability, preflight, naming | 81 |
-| [security-and-isolation](architecture/security-and-isolation.md) | 4-layer worktree defense | 175 |
+| [security-and-isolation](architecture/security-and-isolation.md) | 4-layer worktree defense | 186 |
 | [signal-generation](architecture/signal-generation.md) | Signal assembly, cache, prefixes | 240 |
 | [skill-catalog](architecture/skill-catalog.md) | Skill roots, catalog | 154 |
 | [source-graph](architecture/source-graph.md) | Source graph contract, limits | 368 |
@@ -74,7 +74,7 @@
 | --- | --- | --- |
 | [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch, plan pipeline | 191 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) | Context retrieval, source graph | 79 |
-| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs, handoff, sandbox | 126 |
+| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs, handoff, sandbox | 132 |
 | [hooks](entry-points/hooks.md) | Hook scripts, events, matching | 150 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Orchestrator, daemon, signals | 247 |
 | [remote-control](entry-points/remote-control.md) | Remote-control detection call sites | 99 |
@@ -123,6 +123,8 @@
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) | Runner-env blocks, gate fails | 196 |
 | [completion-runtime](mistakes/completion-runtime.md) | Cargo churn, stall kills | 56 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread | 283 |
+| [completion-runtime](mistakes/completion-runtime.md) | Cargo churn, stall kills | 64 |
+| [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread | 276 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes, save races | 46 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork after threads | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) | Two daemons shared .loom/work | 141 |
@@ -143,7 +145,7 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 323 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard edges | 83 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 312 |
-| [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox paths, permission sync | 367 |
+| [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox paths, permission sync | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | hooks/ dir is sandbox-protected | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers vs work state | 298 |
 | [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Sandbox tool failures | 389 |
@@ -164,7 +166,7 @@
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Tests that pass with the bug | 392 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux spawn failures, cleanup | 146 |
-| [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server gotchas | 52 |
+| [typed-config-values-process](mistakes/typed-config-values-process.md) | Brief, dev-server gotchas | 76 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Producers of a rendered field | 251 |
 | [verification-harness](mistakes/verification-harness.md) | Suspect the harness | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | Wave, gate, proof misses in v2 | 386 |
@@ -176,7 +178,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Enforcement classes, hard-stop matrix | 336 |
+| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Enforcement classes, hard-stop matrix | 379 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Knowledge followups | 85 |
 | [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Oversized units, hooks | 293 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat starvation | 49 |
@@ -185,7 +187,7 @@
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry edge cases | 134 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Commit, launch, stall gaps | 210 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | tmux, orphan adoption edge cases | 150 |
-| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Canary, creds, env, caches | 399 |
+| [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Canary, creds, env, caches | 384 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Language limits, open decisions | 79 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Unimplemented reviewer suggestions | 383 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package caches | 17 |

@@ -50,3 +50,27 @@ markdownlint fixer, leaving an unstaged edit to the plan file after every commit
 **Prevention:** a const array whose optional field sits on only some entries takes an explicit type annotation, not `as const satisfies`. Run the typecheck before reporting a TSX unit done.
 
 **Fix:** `MIX` is annotated.
+
+## `rustfmt` Reformats More Than the File It Was Given
+
+**What happened:** a worker ran `rustfmt --edition 2024` on `sandbox/settings/tests.rs` in the 2021-edition crate; it reflowed `assert!` chains and reordered imports, growing the file from 1565 to 1571 lines against a ledger that pinned 1565. `rustfmt` on `launch.rs`, `runner.rs` or `config_worktree.rs` also rewrote their out-of-line `tests_*.rs` children.
+
+**Why:** subagents cannot run `cargo fmt` (a hook blocks it) and guessed the edition; `rustfmt` follows `mod` declarations into child files.
+
+**Prevention:** worker briefs say `rustfmt --edition 2021` (`loom/Cargo.toml:4`) or leave formatting to the orchestrator's `cargo fmt --all`; check one file with `rustfmt --check`, which reports instead of rewriting its children.
+
+## Filtering `loom check` Output Hid the Relay Line
+
+**What happened:** the orchestrator piped `loom check` through `rg -v` to trim its boilerplate. The filter removed the `LOOM_RELAY_V1` line, and the next status poll said `refused`: the request never reached the daemon.
+
+**Why:** the relay hook recognises a request only from that stdout line.
+
+**Prevention:** never filter or redirect a `loom` command's stdout (CLAUDE.md rule 14); read a long result from the command's own log.
+
+## A Reviewer With Read, Glob and Grep Cannot Read the Scratch Directory
+
+**What happened:** the worktree file guard blocks the Read tool on `$LOOM_SCRATCH_DIR` (`/run/user/<uid>/loom/scratch/<session>`), so a read-only reviewer could not read a diff saved there; all three integration-verify reviewers fell back to reading the files.
+
+**Why:** the guard confines file tools to the worktree, and the scratch directory lies outside it. The orchestrator's own Read of a harness tool-result or temp file is blocked the same way.
+
+**Prevention:** quote `file:line` ranges in reviewer briefs, or print a scratch log through Bash; do not save a diff for a file-tool-only agent to read.

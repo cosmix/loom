@@ -4,14 +4,9 @@
 
 ## Sandbox Denial Has No End-to-End CI Canary
 
-The generated sandbox policy is covered by unit and flow tests, but nothing proves denial holds
-against a live Claude Code runtime: CI has no credentialed Claude Code sandbox, so Bash,
-interpreter, build-script, symlink and file-tool denial cannot be exercised end to end there.
-That verification is manual release validation. The srt harness that stands in for it outside the
-sandbox lacks Claude Code's linked-worktree grant of the git common directory and probes no
-`denyRead` path ([Agent Rule-Bending Hardening](agent-rule-bending-hardening.md), G3).
-No in-session canary exists; a withdrawn design for one is stage `sandbox-canary` in
-the deleted PLAN-sandbox-escape-hardening, recoverable with `git show e6f00616^:` plus its `doc/plans` path.
+CI proves the emitted capsule's denies against bubblewrap, not against a live Claude Code runtime. The probe `tests_capsule_denies::bwrap` (`orchestrator/terminal/native/tests_capsule_bwrap.rs`) translates the capsule's `denyWrite` and `denyRead` lists into bubblewrap binds the way Claude Code's Linux sandbox applies them and runs shell probes inside, each refusal paired with a matched control that succeeds. One test covers the sibling administrative directories (refused) against the session's own (writable) for Stage, Merge and Knowledge capsules; the other covers the credential files (refused) against an unlisted file (readable) for a Stage capsule with and without the codex lane. CI runs it in its own step (`.github/workflows/ci.yml`, after the install step that lifts `kernel.apparmor_restrict_unprivileged_userns`) with `LOOM_TEST_REQUIRE_SANDBOX_FREE=1`, so a runner that cannot create a user namespace fails the step; elsewhere the probe skips when bubblewrap cannot start (`process/sandbox_probe.rs`).
+
+No CI job reaches Bash, interpreter, build-script, symlink or file-tool denial under Claude Code itself: CI has no credentialed Claude Code sandbox, so that verification is the manual release checklist `doc/sandbox-release-checklist.md` (fifteen rows, run before a release that touches the capsule and after a Claude Code upgrade). The srt harness that stands in for it outside the sandbox emulates Claude Code's linked-worktree grant and its denies (`tests_confinement_srt.rs`) and skips where `srt` is not on `PATH`, so its reordered settings are unexercised on such a host ([Agent Rule-Bending Hardening](agent-rule-bending-hardening.md), G3). No in-session canary exists; a withdrawn design for one is stage `sandbox-canary` in the deleted PLAN-sandbox-escape-hardening, recoverable with `git show e6f00616^:` plus its `doc/plans` path.
 
 ## ReDoS Potential in Plan Pattern Regex
 
@@ -97,7 +92,7 @@ protection.**
 
 ## A Check-Then-Use Window Around the `config.worktree` Check
 
-`WorktreeGit::run` (`git/worktree/pinned.rs`) calls `check_worktree_config` before each git command, for a worktree created after an agent's session spawned (the capsule's `config.worktree` deny covers only worktrees that existed when it was built). An agent with write access to that worktree's admin directory can rewrite `config.worktree` between the check and the command it guards. Closing it needs the file unwritable to the agent for the whole command, which the grant of the git common directory prevents (G2 in [Agent Rule-Bending Hardening](agent-rule-bending-hardening.md)).
+`WorktreeGit::run` (`git/worktree/pinned.rs`) calls `check_worktree_config` before each git command, for a worktree created after an agent's session spawned (the capsule's administrative-directory denies cover only worktrees that were registered when it was built). An agent with write access to that worktree's admin directory can rewrite `config.worktree` between the check and the command it guards. Closing it needs the file unwritable to the agent for the whole command, which the grant of the git common directory prevents (G2 in [Agent Rule-Bending Hardening](agent-rule-bending-hardening.md)).
 
 ## Accepted Gaps From the State-Confinement Work
 
@@ -150,8 +145,11 @@ will not remove. `generated_settings_carry_no_read_deny_rules`
 
 The boundary those rules described is kept by other layers. `sandbox.filesystem.denyRead` is an OS
 list, not a permission rule: it triggers neither check and keeps Bash out of the credential
-directories, both tokens and the completion attestation key (`policy::MANDATORY_DENY_READ` carries
-all five credential paths, so a plan's `deny_read` cannot drop them). `loom-hooks/credential-guard.sh`
+directories, the credential files, both tokens and the completion attestation key
+(`policy::mandatory_deny_read(codex_licensed)` carries the five credential paths, the nine
+credential files and, unless the stage licenses the codex lane, `~/.codex/auth.json`, so a plan's
+`deny_read` cannot drop them; the lists are under "Credential Reads: Denied Files, Plain Paths and
+What Stays Readable"). `loom-hooks/credential-guard.sh`
 is a PreToolUse guard on Read, Glob, Grep, Edit, MultiEdit, Write and NotebookEdit. Its first rule
 blocks `admin.token`, `user.token` and `completion-attestation.key` under any state root
 unconditionally. Its second rule, which applies a `denyRead` list to the file tools
@@ -187,45 +185,7 @@ symlinked `doc/loom/knowledge` or `.loom` directory is still followed and writte
 
 ## A Stage Agent's Bash Allow-List Reaches Outside the Worktree
 
-A stage agent's Bash is confined by the bubblewrap sandbox (the file-tool guard `worktree-file-guard.sh` does not see Bash), but
-the allow-list still reaches beyond the worktree. The harness adds the whole git common directory: `HEAD`, `refs/heads/main`,
-`packed-refs`, `objects`, `info` and other worktrees' metadata are writable. Under it loom denies only `.git/hooks`, `.git/config`
-and the `config.worktree` of every worktree registered at spawn (`worktree_admin_dirs` in
-`sandbox/control_surfaces/session_denies.rs`), so a sibling worktree's administrative directory stays writable apart from that
-one file. `package_caches.rs` grants the operator's cargo, bun and npm caches, so a tampered
-`~/.cargo/registry/src` crate would run on the host at the next build. `denyRead` covers only five credential paths, so
-`~/.config/gh/hosts.yml`, `~/.netrc` and `~/.npmrc` are readable. The gap is open; metaplan section 7
-(the untracked token-optimization metaplan) plans the credential-file and sibling-administrative-directory denies. The
-withdrawn PLAN-sandbox-escape-hardening (see above for recovery) holds the
-measurements (Claude Code 2.1.286 adds the git common dir itself; `allowWrite`/`denyWrite` globs are skipped on Linux; a deny
-on an absent path shows the host an empty placeholder file; a deny cannot be reopened by a nested allow) and a design, D1-D7.
-
-## Credential Reads Are Confined to Five Home Paths
-
-The OS `denyRead` list is `fs/permissions/state_root.rs::CREDENTIAL_DENY_READ_PATHS` (`~/.ssh/**`,
-`~/.aws/**`, `~/.config/gcloud/**`, `~/.gnupg/**`, `~/.claude/.credentials.json`), the plan's own
-`deny_read`, and loom's state tokens and attestation key
-(`sandbox/settings/policy.rs::deny_read_patterns`, `add_resolved_state_root_rules`). From a live
-stage session `~/.config/gh/hosts.yml` (a GitHub token), `~/.netrc` and `~/.npmrc` read fine.
-Unlisted and therefore readable wherever they exist: `~/.git-credentials`,
-`~/.docker/config.json`, `~/.kube/`, `~/.pypirc`, `~/.cargo/credentials.toml`, `~/.claude.json`,
-shell histories, browser profiles, password-manager stores, and any credential location an
-environment variable relocates (`DOCKER_CONFIG`, `KUBECONFIG`, `GH_CONFIG_DIR`, ...). A session the
-codex lane is not licensed for can read `~/.codex/auth.json` too. The network filter narrows
-exfiltration to the plan's allowed domains; it does not remove it (a registry publish to an
-allowed domain is one channel).
-
-How Claude Code applies a `denyRead` entry on Linux: a file is bound from `/dev/null`, a directory
-is covered by a tmpfs (with `allowRead` and `allowWrite` paths re-mounted inside it), an absent
-path mounts nothing, and a glob is expanded into one mount per match (a warning above 256). A plain
-path costs one mount. bubblewrap mounts every non-dev bind `nodev`, so opening a read-denied file
-fails with EACCES (`Permission denied`); it does not read empty (measured with bubblewrap 0.11.1,
-also nested in a host-job-style `bwrap --unshare-all`; Claude Code 2.1.306 binds with
-`--ro-bind /dev/null <p>`). `npm config get`, `bun install`, `cargo build --offline` and
-`git credential-store get` still succeed with the credential files bound this way.
-
-The list is unchanged and the gap is open: no merged change closes it (the token-optimization
-programme's sandbox route-closure plan targets it).
+A stage agent's Bash is confined by the bubblewrap sandbox (the file-tool guard `worktree-file-guard.sh` does not see Bash), but the allow-list still reaches beyond the worktree. The harness adds the whole git common directory, so `HEAD`, `refs/heads/main`, `packed-refs`, `objects` and `info` are writable. Under it the capsule denies `.git/hooks`, `.git/config`, every sibling worktree's administrative directory `<common>/worktrees/<name>` whole, and the session's own `config.worktree` (`partition_admin_dirs` in `git/worktree/config_worktree.rs`, applied by `deny_worktree_admin_dirs` in `sandbox/control_surfaces/session_denies.rs`; [Where a Session's Write Grants Come From](../architecture/security-and-isolation.md#where-a-sessions-write-grants-come-from)). Refs and the object store stay writable: ref denies are unmeasured now that commits are daemon-owned, and sessions still write the object store (G2 in [Agent Rule-Bending Hardening](agent-rule-bending-hardening.md)). `package_caches.rs` grants the operator's cargo, bun and npm caches, so a tampered `~/.cargo/registry/src` crate would run on the host at the next build. The credential reads that stay open are under "Credential Reads: Denied Files, Plain Paths and What Stays Readable". The withdrawn PLAN-sandbox-escape-hardening (recovery above) holds the measurements (Claude Code 2.1.286 adds the git common dir itself; `allowWrite`/`denyWrite` globs are skipped on Linux; a deny on an absent path shows the host an empty placeholder file; a deny cannot be reopened by a nested allow) and a design, D1-D7. The residuals of the sibling-directory denies are under "Residuals of the Sibling Administrative Directory Denies".
 
 ## Sibling Worktrees and the Main Checkout Are Readable From Bash
 
@@ -235,9 +195,14 @@ Glob and Grep). From Bash a stage reads every sibling worktree under `R/.worktre
 main checkout, untracked operator files such as `R/.env` included. `R/.git/config` stays readable
 whatever loom does, because in-session git reads it; remote URLs there can carry tokens.
 
-Sibling-worktree reads are open. Reads of the main checkout must stay open for in-session loom,
-which resolves its retrieval config, context store and knowledge through `main_project_root`
-(`context/retrieve.rs`, `context/store.rs`).
+Sibling-worktree reads are open, and the optional tail that would close them was not built. The
+gain is small, because the main checkout stays readable by design: in-session loom resolves its
+retrieval config, context store and knowledge through `main_project_root` (`context/retrieve.rs`,
+`context/store.rs`). The cost of a wrong re-allow is high: a `deny_read` of `R/.worktrees` with a
+mistaken re-allow leaves every worktree session unable to read its own tree, and no gate in this
+repository runs a live Claude Code sandbox to catch it. The measurement a later plan needs first is
+in `doc/sandbox-release-checklist.md` (section "Measurement for a later plan"; row 14 records the
+open listing).
 
 ## The Codex Lane Grants All of `~/.codex`
 
@@ -262,18 +227,22 @@ The grant is unchanged and the gap is open: no plan addresses it.
 
 The OS sandbox confines only what Claude Code wraps. In Claude Code 2.1.286 the binary calls `wrapWithSandbox`/`wrapWithSandboxArgv` for the Bash tool, for hooks in its "locked" (remote-execution) mode, and for one internal git invocation. Every other tool runs in, or is spawned by, the unsandboxed Claude Code process. (Verified from the binary's strings, 2026-10-01.)
 
+**Denied in every capsule.** `LSP`, `RemoteTrigger`, `CronCreate` and `PushNotification` are bare tool names in the capsule's `permissions.deny` (`SESSION_TOOL_DENIES` in `orchestrator/terminal/native/session_settings/contents.rs`, assembled by `capsule_deny_rules`), as is `Workflow` unless the session is the Stage session of an `ultracode: true` stage (`launch.rs::workflow_licensed`, the one predicate the prompt keyword and the capsule exception both read; a blanket deny would break every ultracode stage, see [the mistake](../mistakes/sandbox-and-settings.md#a-metaplan-denied-the-workflow-tool-that-ultracode-stages-run-on)). `--disallowedTools` is not used: it is variadic and would consume the positional prompt that follows the capsule flags (`build_claude_command`). No `Read(` entry is emitted (see the `Read(...)` section above). The live check is release checklist rows 11 and 12.
+
+**Still allowed.**
+
 - **MCP servers: closed.** Capsule sessions get `--strict-mcp-config` (`orchestrator/terminal/native/capsule.rs`, emitted in `orchestrator/terminal/native/mod.rs`). A `claude -p` probe with loom's flags (`--strict-mcp-config --setting-sources user,project`) reported `mcp_servers: []`: plugin MCP servers such as Playwright and the claude.ai connectors are not loaded. (Verified 2026-10-01.)
-- **Plugins: loaded.** `--setting-sources user,project` keeps the user scope's `enabledPlugins`; the same probe loaded 13 plugins, five of them LSP plugins (rust-analyzer-lsp, typescript-lsp, gopls-lsp, pyright-lsp, clangd-lsp), and `LSP` is in the session's tool list. Plugin LSP servers are started by the Claude Code process, not through `wrapWithSandbox`. rust-analyzer runs the build scripts and proc macros of the workspace it indexes, and tsserver loads language-service plugins named in `tsconfig.json`, so a stage that writes a `build.rs` or a tsconfig plugin and then calls the LSP tool can plausibly run that code on the host. Unverified end to end.
-- **Cross-session messaging.** `SendMessage` and `ListAgents` are in the tool list and the session advertises a messaging socket under `/run/user/<uid>/cc-socks/`. They run in the Claude Code process, so the seccomp `AF_UNIX` block that confines Bash does not apply. Unverified whether a stage session can address the operator's interactive session, which runs unsandboxed.
-- **`WebFetch` and `WebSearch`** run in the Claude Code process; the sandbox proxy's `allowedDomains` and `strictAllowlist` filter sandboxed Bash only. Permission rules and the auto-mode classifier govern them. Unverified.
-- **Other tools.** `RemoteTrigger`, `CronCreate`, `Workflow` and `PushNotification` are also in the tool list; `RemoteTrigger` starts work off the machine.
+- **Plugins stay loaded.** `--setting-sources user,project` keeps the user scope's `enabledPlugins`; the same probe loaded 13 plugins, five of them LSP plugins. The `LSP` tool that would start their servers is denied, which closes the route that could run a workspace's `build.rs`, proc macros or a tsconfig language-service plugin on the host; the plugins themselves are not disabled.
+- **Cross-session messaging.** `SendMessage` and `ListAgents` stay, because agent teams need them (`orchestrator/terminal/native/wrapper.rs`). The session advertises a messaging socket under `/run/user/<uid>/cc-socks/`; they run in the Claude Code process, so the seccomp `AF_UNIX` block that confines Bash does not apply. Unverified whether a stage session can address the operator's interactive session, which runs unsandboxed.
+- **`WebFetch` and `WebSearch`** run in the Claude Code process; the sandbox proxy's `allowedDomains` and `strictAllowlist` filter sandboxed Bash only. Permission rules and the auto-mode classifier govern them, and the engineer agents list them. Unverified.
+- **Unmeasured routes.** `Monitor`, `AppifactRepl`, the self-hosted-runner tools, `EnterWorktree` and `ExitWorktree` are allowed and have not been measured (checklist row 15 records which are offered and whether a `Monitor` command runs under the Bash sandbox; a success is an open route, recorded here).
 - **File tools** are confined by hooks only (`worktree-file-guard.sh`, `credential-guard.sh`), covered above.
 
-Fix direction (none chosen): per-session tool denies in the capsule (`--disallowedTools`, or tool-name entries under `permissions.deny`, never a `Read(` entry, see the section above), disabling LSP plugins in capsules, and an in-session canary that exercises each route.
+An in-session canary that exercises each route does not exist; the manual checklist is the only live check.
 
 ## A File Deny Stops Protecting a Live Session Once the Host Replaces the File
 
-Measured with bwrap 0.11.1, git 2.53.0, Linux 7.1.5. A read-only bind of a single file (`--ro-bind f f`, how a file `denyWrite` is enforced) refuses writes and renames inside the sandbox while the host leaves the file alone. Once a host process replaces the file by rename (`echo new > f.tmp && mv f.tmp f`, which is how git writes refs, `config`, `config.worktree` and `packed-refs`: `open(<ref>.lock, O_EXCL)`, then `rename`), the running sandbox resolves the path to the new file and can write it, and the write lands on the host. So every per-file deny (loom's `.git/config` and per-worktree `config.worktree` denies in `sandbox/control_surfaces/session_denies.rs`, and Claude Code's own `config`/`config.worktree`/`commondir` denies) protects a session only until the host first rewrites that file during the session.
+Measured with bwrap 0.11.1, git 2.53.0, Linux 7.1.5. A read-only bind of a single file (`--ro-bind f f`, how a file `denyWrite` is enforced) refuses writes and renames inside the sandbox while the host leaves the file alone. Once a host process replaces the file by rename (`echo new > f.tmp && mv f.tmp f`, which is how git writes refs, `config`, `config.worktree` and `packed-refs`: `open(<ref>.lock, O_EXCL)`, then `rename`), the running sandbox resolves the path to the new file and can write it, and the write lands on the host. So every per-file deny (loom's `.git/config` and the session's own `config.worktree` deny in `sandbox/control_surfaces/session_denies.rs`, and Claude Code's own `config`/`config.worktree`/`commondir` denies) protects a session only until the host first rewrites that file during the session. The sibling administrative directories are denied as directories, which holds against that (rows E2 and E3 below).
 
 | Host action during the session | Bind | Sandbox write |
 | --- | --- | --- |
@@ -297,7 +266,7 @@ A git hook is therefore no gate against a sandboxed session, which can skip it. 
 
 ## Session-Planted Replace Refs and Grafts Change What Loom's Git Sees
 
-A session can write `<common>/refs/replace/*`, `<common>/info/grafts`, `<common>/objects/info/commit-graph` and `<common>/shallow`: the capsule denies only `.git/hooks`, `.git/config` and each `config.worktree` in the common dir (`loom/src/sandbox/control_surfaces/session_denies.rs`). Git honors all of them in every `diff`, `merge-base` and ancestry test unless told otherwise.
+A session can write `<common>/refs/replace/*`, `<common>/info/grafts`, `<common>/objects/info/commit-graph` and `<common>/shallow`: the capsule denies only `.git/hooks`, `.git/config`, every sibling worktree's administrative directory (whole) and the session's own `config.worktree` in the common dir (`loom/src/sandbox/control_surfaces/session_denies.rs`). Git honors all of them in every `diff`, `merge-base` and ancestry test unless told otherwise.
 
 Measured on git 2.53:
 
@@ -397,3 +366,19 @@ The unfiltered `cargo test --all-targets` fails 26 loom tests in a Claude Code s
 - Confined criteria cannot start in a worker's sandboxed shell, because bwrap has no user namespaces there. Runner and child tests that run real commands fail or skip in that shell. A unit test of selection logic sets `stage.sandbox.command_confinement = Some(Inherit)`. `check_criterion_runs_only_named_criteria` (`loom/tests/gate_dedup_contracts.rs:61`) needs `LOOM_TEST_ROOT` outside `/tmp` and working confinement.
 
 Revisit when `scratch_roots` keeps the tree root or the guard stops keying on the TMPDIR name.
+
+## Credential Reads: Denied Files, Plain Paths and What Stays Readable
+
+Every capsule's OS `denyRead` list is `sandbox/settings/policy.rs::mandatory_deny_read(codex_licensed)`, which a plan's own `deny_read` cannot shorten, plus loom's state tokens and attestation key (`deny_read_patterns`, `add_resolved_state_root_rules`). It has three parts, all in `fs/permissions/state_root.rs`:
+
+- `CREDENTIAL_DENY_READ_PATHS`: `~/.ssh/**`, `~/.aws/**`, `~/.config/gcloud/**`, `~/.gnupg/**`, `~/.claude/.credentials.json`. `models::stage::sandbox_config::default_deny_read` supplies the same list to a plan, and `deny_read_patterns` dedupes.
+- `CREDENTIAL_FILE_DENY_READ_PATHS`: `~/.config/gh/hosts.yml`, `~/.netrc`, `~/.npmrc`, `~/.git-credentials`, `~/.docker/config.json`, `~/.kube/config`, `~/.pypirc`, `~/.cargo/credentials.toml`, `~/.cargo/credentials`. Plain paths, not globs: a glob expands to one mount per match, and a plain path costs one. Kept apart from the first list so that an operator-written `Read(...)` rule for one of these files is never mistaken for a loom-written mirror.
+- `CODEX_AUTH_DENY_READ_PATH` (`~/.codex/auth.json`), denied in every capsule whose stage does not license the codex lane; a licensed stage keeps reading and refreshing the file in place.
+
+How Claude Code applies a `denyRead` entry on Linux: a file is bound from `/dev/null`, a directory is covered by a tmpfs (with `allowRead` and `allowWrite` paths re-mounted inside it), an absent path mounts nothing, and a glob is expanded into one mount per match (a warning above 256). bubblewrap mounts every non-dev bind `nodev`, so opening a read-denied file fails with EACCES (`Permission denied`); it does not read empty (measured with bubblewrap 0.11.1, also nested in a host-job-style `bwrap --unshare-all`; Claude Code 2.1.306 binds with `--ro-bind /dev/null <p>`). `npm config get`, `bun install`, `cargo build --offline` and `git credential-store get` still succeed with the credential files bound this way; the bubblewrap probe asserts a non-zero `cat` status and 0 bytes per file, with an unlisted file as the readable control ([the failed probe that assumed an empty read](../mistakes/sandbox-tooling-and-network.md)).
+
+**Still readable.** A listed file that is absent when the session spawns mounts nothing, so a session can create it and read back only what it wrote. Unlisted and therefore readable wherever they exist: `~/.docker/` and `~/.kube/` files other than the two listed, `~/.claude.json`, shell histories, browser profiles, password-manager stores, and any credential location an environment variable relocates (`DOCKER_CONFIG`, `KUBECONFIG`, `GH_CONFIG_DIR`, ...). A session of a codex-licensed stage can read `~/.codex/auth.json`. The network filter narrows exfiltration to the plan's allowed domains; it does not remove it (a registry publish to an allowed domain is one channel). The file tools of a checkout-rooted session (knowledge, adjudication, base-conflict) are still unchecked against the credential list: `credential-guard.sh` rule (b) reads only an operator-authored `settings.local.json` (see the `Read(...)` section above), and `worktree-file-guard.sh` confines only worktree sessions. Release checklist rows 1, 3 and 10 are the live checks.
+
+## Residuals of the Sibling Administrative Directory Denies
+
+`partition_admin_dirs` denies every sibling worktree administrative directory whole and the session's own `config.worktree`. The open residuals (only registry entries denied, worktrees registered after spawn, symlinked entries, a rewritten `gitdir`, an unclaimed worktree directory refusing the judge and the merge resolver, `target_is_worktree` matching any `.worktrees` component) and the other open items of the route-closure work (ref denies, `loom knowledge bootstrap` without a capsule, unquoted manual-mode paths, the `CONTRIBUTING.md` checklist paths) are in [Agent Rule-Bending Hardening](agent-rule-bending-hardening.md#sibling-directory-denies-residuals).

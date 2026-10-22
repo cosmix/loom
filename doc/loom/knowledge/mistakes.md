@@ -144,3 +144,7 @@ A missing subagent report is not a missing result; codex worker briefing gotchas
 **Prevention:** a check that accepts a plan must run the same code every later consumer runs on it. Verify and the run preflight share one discovery (`plan/inputs.rs`); a new run-time check on plan inputs goes there, never into `commands/run/` alone.
 
 **Fix:** the extractor cuts each token at its first backtick (test `markdown_after_a_code_span_is_not_part_of_the_path`). `plan/inputs.rs` collects invalid references (bad glob, parent traversal, symlink) with the token and its source file instead of aborting; `loom run` lists them with uncommitted inputs, and `loom plan verify` reports invalid and missing inputs as errors and uncommitted ones as a note (`commands/plan/verify/inputs.rs`).
+
+## Sandbox Route Closure
+
+A metaplan that denied the `Workflow` tool every ultracode stage runs on, a sibling-directory deny nested above a `config.worktree` deny that aborts bubblewrap, a probe control the Knowledge capsule does not grant, and metaplan reasons that went stale against the tree: [Sandbox Paths and Settings](mistakes/sandbox-and-settings.md). A `rustfmt` edition and recursion, a filtered `loom check` that hid the relay line, and the scratch directory a read-only reviewer cannot read: [Brief and Dev-Server Gotchas](mistakes/typed-config-values-process.md). An integration-verify suite criterion with no extended timeout: [Cargo Churn and Stall Kills](mistakes/completion-runtime.md).
