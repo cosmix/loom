@@ -25,7 +25,7 @@ export function ModelHistoryChart({
     <figure className="min-w-0" aria-label="Model token rate history">
       <figcaption className="flex items-baseline justify-between gap-2 text-xs text-muted-foreground">
         <span>Fresh / min</span>
-        <span>Last 30 min · 30 s bars</span>
+        <span>Last 30 min · 5 min average</span>
       </figcaption>
       <ModelPlot bars={bars} colors={colors} max={chartCeiling(peak)} ready={ready} />
     </figure>

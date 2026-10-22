@@ -6,6 +6,9 @@ import { modelHistoryBars } from "@/lib/model-history";
 
 type Agent = Pick<AgentFlow, "model" | "series">;
 
+/// The newest window at `observed_at` 7 s into its bucket: nine whole buckets plus 8 s.
+const NEWEST_SPAN = 9 * 30 + 7 + 1;
+
 /// A one-stage flow whose agents carry `series`; the stage series is their per-bucket sum.
 function flowOf(agents: Agent[], bucketSecs = 30): TokenFlow {
   const flow = snapshotSchema.parse(fixture).status.tokens!;
@@ -23,39 +26,63 @@ function flowOf(agents: Agent[], bucketSecs = 30): TokenFlow {
 }
 
 describe("modelHistoryBars", () => {
-  it("sums to the stage series per bucket, scaled to per minute", () => {
-    const flow = flowOf([
-      { model: "a", series: [10, 0, 30, 5] },
-      { model: "b", series: [2, 4, 0, 5] },
-    ]);
-    const bars = modelHistoryBars(flow);
+  it("draws each bar as the five-minute rate ending at it, per model", () => {
+    const bars = modelHistoryBars(
+      flowOf([
+        { model: "a", series: [10, 0, 30, 5] },
+        { model: "b", series: [2, 4, 0, 5] },
+      ]),
+    );
     expect(bars).toHaveLength(60);
-    const stage = flow.stages[0]!;
-    bars.slice(-4).forEach((bar, i) => {
-      const total = Object.values(bar.rates).reduce((sum, rate) => sum + rate, 0);
-      expect(total).toBeCloseTo((stage.series[i]! * 60) / 30);
-    });
-    expect(bars.at(-4)?.rates).toEqual({ a: 20, b: 4 });
-    expect(bars.at(-3)?.rates).toEqual({ b: 8 });
+    expect(bars[56]?.rates.a).toBeCloseTo((10 * 60) / 300);
+    expect(bars[56]?.rates.b).toBeCloseTo((2 * 60) / 300);
+    expect(bars[57]?.rates.a).toBeCloseTo((10 * 60) / 300);
+    expect(bars[58]?.rates.a).toBeCloseTo((40 * 60) / 300);
+    expect(bars[58]?.rates.b).toBeCloseTo((6 * 60) / 300);
     expect(bars.slice(0, 56).every((bar) => Object.keys(bar.rates).length === 0)).toBe(true);
+  });
+
+  it("ends the newest window at observed_at, as the backend rate does", () => {
+    const bars = modelHistoryBars(
+      flowOf([
+        { model: "a", series: [10, 0, 30, 5] },
+        { model: "b", series: [2, 4, 0, 5] },
+      ]),
+    );
+    expect(bars[59]?.rates.a).toBeCloseTo((45 * 60) / NEWEST_SPAN);
+    expect(bars[59]?.rates.b).toBeCloseTo((11 * 60) / NEWEST_SPAN);
+  });
+
+  it("feeds the oldest bar from buckets before it and drops a bucket ten bars on", () => {
+    const series = [300, ...Array<number>(68).fill(0)];
+    const bars = modelHistoryBars(flowOf([{ model: "a", series }]));
+    expect(bars[0]?.rates.a).toBeCloseTo(60);
+    expect(bars[1]?.rates.a).toBeUndefined();
+  });
+
+  it("does not spike on one busy bucket", () => {
+    const bars = modelHistoryBars(
+      flowOf([{ model: "a", series: [0, 50000, ...Array(10).fill(0)] }]),
+    );
+    const peak = Math.max(...bars.map((bar) => bar.rates.a ?? 0));
+    expect(peak).toBeCloseTo((50000 * 60) / 300);
   });
 
   it("left-pads a short series so its last value lands in the newest bar", () => {
     const bars = modelHistoryBars(flowOf([{ model: "a", series: [3] }]));
-    expect(bars[59]?.rates.a).toBe(6);
+    expect(bars[59]?.rates.a).toBeCloseTo((3 * 60) / NEWEST_SPAN);
     expect(bars[58]?.rates.a).toBeUndefined();
   });
 
   it("falls back to 30 s buckets when bucket_secs is not positive", () => {
     const bars = modelHistoryBars(flowOf([{ model: "a", series: [10] }], 0));
-    expect(bars[59]?.rates.a).toBe(20);
+    expect(bars[59]?.rates.a).toBeCloseTo((10 * 60) / NEWEST_SPAN);
     expect(bars[59]!.at - bars[58]!.at).toBe(30);
   });
 
   it("books a null model under unknown and stamps bars by bucket start", () => {
-    const flow = flowOf([{ model: null, series: [1] }]);
-    const bars = modelHistoryBars(flow);
-    expect(bars[59]?.rates).toEqual({ unknown: 2 });
+    const bars = modelHistoryBars(flowOf([{ model: null, series: [1] }]));
+    expect(Object.keys(bars[59]!.rates)).toEqual(["unknown"]);
     expect(bars[59]?.at).toBe(1000 * 30);
     expect(bars[0]?.at).toBe(941 * 30);
   });
