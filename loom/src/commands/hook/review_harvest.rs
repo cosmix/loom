@@ -16,9 +16,20 @@
 //! and no findings. The delegate always exits 0; a failure or a malformed
 //! report is one line on stderr.
 //!
-//! Suggestions are journaled before the round is written, so if `write_round`
-//! then fails (a racing duplicate harvest took the same round number, say),
-//! those entries stay pending in the journal with no round naming them.
+//! One round is recorded per reviewer agent per reviewed state. A reviewer's
+//! SubagentStop can fire twice (the lifecycle journal shows two stops for one
+//! agent id seconds apart, the second with a longer transcript), so a harvest
+//! first looks for a recorded round with the same agent id, change fingerprint
+//! and parsed review: the same findings (their ids aside), `resolved` and
+//! `unresolved`, or both malformed. Finding one, it writes and journals
+//! nothing. Suggestions are not stored in the round and are not compared. The
+//! check, the round number and the write share the store's review lock, so two
+//! concurrent harvests of one report record it once. A different report, or
+//! the same agent at another fingerprint, is a new round.
+//!
+//! Suggestions are journaled before the round is written, because the round
+//! is immutable and may only name entries that exist. If `write_round` then
+//! fails, those entries stay pending in the journal with no round naming them.
 
 use std::io::{self, Read};
 use std::path::{Path, PathBuf};
@@ -37,7 +48,9 @@ use crate::models::stage::Stage;
 use crate::validation::validate_id;
 use crate::verify::review::fingerprint::{self, ChangeFingerprint};
 use crate::verify::review::report::{single_line, ParsedReview, Suggestion};
-use crate::verify::review::store::{self, RecordedFinding, ReviewRound, RECORD_VERSION};
+use crate::verify::review::store::{
+    self, RecordedFinding, ReviewRound, RoundDecision, RECORD_VERSION,
+};
 use crate::verify::transitions::load_stage;
 
 const MAX_INPUT_BYTES: u64 = 64 * 1024;
@@ -70,6 +83,9 @@ pub(crate) enum Harvest {
         unjournaled: Option<String>,
         discrepancy: Option<String>,
     },
+    /// Round `round` already records this agent's report at this fingerprint:
+    /// nothing is written or journaled.
+    Duplicate { round: u32 },
 }
 
 /// `loom hook review-harvest`: reads the stop event on stdin, `LOOM_WORK_DIR`
@@ -102,6 +118,9 @@ pub fn review_harvest() -> Result<()> {
                 );
             }
         }
+        Ok(Harvest::Duplicate { round }) => eprintln!(
+            "loom hook review-harvest: this report is already recorded as review round {round}"
+        ),
         Ok(Harvest::Skipped) => {}
         Err(error) => eprintln!(
             "loom hook review-harvest: {}",
@@ -122,19 +141,58 @@ pub(crate) fn harvest(work_dir: &Path, input: &HarvestInput) -> Result<Harvest> 
     let worktree = stage_worktree(work_dir, &stage)?;
     let target = crate::fs::resolve_target_branch_from_config(work_dir, &worktree)?;
     let current = fingerprint::compute(&worktree, &target)?;
-    let number = store::next_round(work_dir, &stage.id)?;
-    let (mut round, suggestions) = build_round(number, &input.agent_id, current, parsed)?;
-    // Journal first: the round is immutable once written, so it may only name
-    // the suggestion entries that exist.
-    let (journaled, unjournaled) = journal_suggestions(work_dir, &stage.id, &suggestions);
-    round.suggestion_memory_ids = journaled;
-    store::write_round(work_dir, &stage.id, &round)?;
-    Ok(Harvest::Recorded {
-        round: number,
-        malformed: round.malformed,
-        unjournaled,
-        discrepancy,
+    let mut unjournaled = None;
+    let decision = store::record_round(work_dir, &stage.id, |number, recorded| {
+        let repeats = |round: &&ReviewRound| {
+            records_same_review(round, &input.agent_id, &current.value, &parsed)
+        };
+        if let Some(existing) = recorded.iter().find(repeats) {
+            return Ok(RoundDecision::Duplicate(existing.round));
+        }
+        let (mut round, suggestions) = build_round(number, &input.agent_id, current, parsed)?;
+        // Journal first: the round is immutable once written, so it may only
+        // name the suggestion entries that exist.
+        let (journaled, missing) = journal_suggestions(work_dir, &stage.id, &suggestions);
+        round.suggestion_memory_ids = journaled;
+        unjournaled = missing;
+        Ok(RoundDecision::Record(Box::new(round)))
+    })?;
+    Ok(match decision {
+        RoundDecision::Duplicate(round) => Harvest::Duplicate { round },
+        RoundDecision::Record(round) => Harvest::Recorded {
+            round: round.round,
+            malformed: round.malformed,
+            unjournaled,
+            discrepancy,
+        },
     })
+}
+
+/// Whether `round` already records `agent_id`'s `parsed` report at
+/// `fingerprint`: ids, timestamps and round numbers are not compared, and two
+/// malformed reports match whatever their reasons.
+fn records_same_review(
+    round: &ReviewRound,
+    agent_id: &str,
+    fingerprint: &str,
+    parsed: &Result<ParsedReview, String>,
+) -> bool {
+    if round.agent_id != agent_id || round.fingerprint != fingerprint {
+        return false;
+    }
+    match parsed {
+        Err(_) => round.malformed.is_some(),
+        Ok(review) => {
+            round.malformed.is_none()
+                && round.resolved == review.resolved
+                && round.unresolved == review.unresolved
+                && round
+                    .findings
+                    .iter()
+                    .map(|recorded| &recorded.finding)
+                    .eq(&review.findings)
+        }
+    }
 }
 
 /// Append `entries` to the stage's journal in order, stopping at the first

@@ -160,19 +160,53 @@ pub fn next_round(work_dir: &Path, stage_id: &str) -> Result<u32> {
 /// harvested review is never replaced.
 pub fn write_round(work_dir: &Path, stage_id: &str, round: &ReviewRound) -> Result<()> {
     let root = canonical_work_dir(work_dir, stage_id)?;
-    validate_round(round)?;
     let dir = stage_dir(&root, stage_id);
-    let json = serde_json::to_string_pretty(round)?;
+    locked_dir_update(&dir, || write_round_locked(&dir, stage_id, round))
+}
+
+/// What a [`record_round`] callback decides about the rounds already recorded,
+/// and what `record_round` then reports it did.
+#[derive(Debug)]
+pub enum RoundDecision {
+    /// A recorded round already holds this review; nothing is written.
+    Duplicate(u32),
+    /// Write this round; `record_round` returns it once it is written.
+    Record(Box<ReviewRound>),
+}
+
+/// Record the stage's next round, holding the lock [`write_round`] takes from
+/// the numbering to the write, so two concurrent harvests cannot both record
+/// one review. `decide` gets the next free number and the recorded rounds and
+/// either builds the round or names the recorded one it repeats.
+pub fn record_round<F>(work_dir: &Path, stage_id: &str, decide: F) -> Result<RoundDecision>
+where
+    F: FnOnce(u32, &[ReviewRound]) -> Result<RoundDecision>,
+{
+    let root = canonical_work_dir(work_dir, stage_id)?;
+    let dir = stage_dir(&root, stage_id);
     locked_dir_update(&dir, || {
-        let path = dir.join(round_file(round.round));
-        if path.symlink_metadata().is_ok() {
-            bail!(
-                "review round {} of stage '{stage_id}' is already recorded",
-                round.round
-            );
+        let decision = decide(
+            next_round(work_dir, stage_id)?,
+            &load_rounds(work_dir, stage_id)?,
+        )?;
+        if let RoundDecision::Record(round) = &decision {
+            write_round_locked(&dir, stage_id, round)?;
         }
-        atomic_write_locked(&path, &json)
+        Ok(decision)
     })
+}
+
+fn write_round_locked(dir: &Path, stage_id: &str, round: &ReviewRound) -> Result<()> {
+    validate_round(round)?;
+    let json = serde_json::to_string_pretty(round)?;
+    let path = dir.join(round_file(round.round));
+    if path.symlink_metadata().is_ok() {
+        bail!(
+            "review round {} of stage '{stage_id}' is already recorded",
+            round.round
+        );
+    }
+    atomic_write_locked(&path, &json)
 }
 
 /// Every recorded round of the stage, sorted by round number.

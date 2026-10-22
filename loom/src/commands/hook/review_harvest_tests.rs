@@ -30,6 +30,9 @@ const REVIEW_ALT: &str = "A different finding.\n\n```loom-review\n\
 /// this length forces `read_tail`'s window to start inside it.
 const PADDING_BYTES: usize = 5 * 1024 * 1024;
 
+#[path = "review_harvest_dedupe_tests.rs"]
+mod dedupe;
+
 struct Fixture {
     _temp: TempDir,
     work_dir: PathBuf,
