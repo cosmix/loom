@@ -209,7 +209,7 @@ fn registered_admin_dir(common_dir: &Path, work_tree: &Path) -> Result<PathBuf> 
 
 /// Whether the administrative directory `admin`'s `gitdir` file names
 /// `<work_tree>/.git`.
-fn names_work_tree(admin: &Path, work_tree: &Path) -> bool {
+pub(super) fn names_work_tree(admin: &Path, work_tree: &Path) -> bool {
     let Ok(dot_git) = recorded_path(admin, "gitdir") else {
         return false;
     };

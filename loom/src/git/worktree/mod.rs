@@ -31,7 +31,7 @@ pub use checks::{
     check_git_available, check_worktree_support, get_worktree_path, stage_worktree_path,
     worktree_exists,
 };
-pub use config_worktree::worktree_admin_dirs;
+pub use config_worktree::{partition_admin_dirs, worktree_admin_dirs, AdminDirs};
 pub use discovery::{
     extract_stage_id_from_path, extract_worktree_stage_id, find_worktree_by_prefix,
 };

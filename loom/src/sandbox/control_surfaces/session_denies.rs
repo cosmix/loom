@@ -14,7 +14,7 @@ use std::path::{Path, PathBuf};
 
 use super::{home_surfaces, push_unique, surface_path, GLOB_CHARS};
 use crate::codex::CODEX_PLUGIN_DATA_GRANT;
-use crate::git::worktree::worktree_admin_dirs;
+use crate::git::worktree::partition_admin_dirs;
 
 /// `~/.claude/plugins`, relative to the home directory.
 const PLUGINS_DIR: &str = ".claude/plugins";
@@ -53,11 +53,11 @@ pub(crate) struct SessionDenies {
 }
 
 /// The capsule's write denies: the state root (`.loom`, and `.work` on the
-/// legacy layout), every section 11 control surface, the `config.worktree` of
-/// every worktree that exists now (a later one is covered by the daemon's own
-/// check, `git::worktree::WorktreeGit::run`), and by location the
-/// worktree's own `.loom` and `.claude`, or from the checkout its
-/// `.worktrees` and `.claude`.
+/// legacy layout), every section 11 control surface, the git administrative
+/// directories of the worktrees that exist now
+/// ([`deny_worktree_admin_dirs`]), and by location the worktree's own
+/// `.loom` and `.claude`, or from the checkout its `.worktrees` and
+/// `.claude`.
 ///
 /// An `executable_dirs` entry that is an ancestor of, or equal to, the
 /// repository root, the stage worktree, or any other session-writable root
@@ -83,11 +83,7 @@ pub(crate) fn session_denies(inputs: &DenyInputs<'_>) -> Result<SessionDenies> {
     }
     denies.absolute(&repo.join(".git").join("hooks"), true)?;
     denies.absolute(&repo.join(".git").join("config"), false)?;
-    // With `extensions.worktreeConfig` git reads each worktree's
-    // `config.worktree`, which could name a command the daemon's git runs.
-    for admin in worktree_admin_dirs(repo)? {
-        denies.absolute(&admin.join("config.worktree"), false)?;
-    }
+    deny_worktree_admin_dirs(&mut denies, repo, inputs.worktree)?;
     for dir in inputs.executable_dirs {
         if is_ancestor_of_writable_root(dir, repo, inputs.worktree, inputs.writable_roots) {
             continue;
@@ -110,6 +106,33 @@ pub(crate) fn session_denies(inputs: &DenyInputs<'_>) -> Result<SessionDenies> {
         }
     }
     Ok(denies)
+}
+
+/// Deny the administrative directories `<common dir>/worktrees/<name>` by
+/// their relation to the session at `worktree` ([`partition_admin_dirs`]).
+///
+/// The session's own directory stays writable, since `git add` writes its
+/// `index`, except its `config.worktree`: with `extensions.worktreeConfig`
+/// git reads that file, and it could name a command the daemon's pinned git
+/// runs. Every other directory is denied whole, so no session writes another
+/// stage's `HEAD`, `index`, `gitdir`, `logs/` or `config.worktree`. Nothing
+/// is denied beneath a directory denied here: bubblewrap cannot create a
+/// mount point inside a read-only bind, and a sibling directory vanishes
+/// when its stage merges. The common directory, `refs/` and the object
+/// store stay writable.
+fn deny_worktree_admin_dirs(
+    denies: &mut SessionDenies,
+    repo: &Path,
+    worktree: Option<&Path>,
+) -> Result<()> {
+    let admin = partition_admin_dirs(repo, worktree)?;
+    if let Some(own) = &admin.own {
+        denies.absolute(&own.join("config.worktree"), false)?;
+    }
+    for sibling in &admin.siblings {
+        denies.absolute(sibling, true)?;
+    }
+    Ok(())
 }
 
 impl SessionDenies {
@@ -242,3 +265,7 @@ fn list_dir(dir: &Path) -> Result<Vec<DirEntry>> {
 #[cfg(test)]
 #[path = "tests_session_denies.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "tests_admin_dir_denies.rs"]
+mod tests_admin_dir_denies;

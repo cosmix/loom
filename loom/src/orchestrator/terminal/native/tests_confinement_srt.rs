@@ -143,11 +143,13 @@ fn srt_settings(capsule: &Value, cwd: &Path, home: &Path) -> Value {
     };
     let mut allow_write = vec![cwd.display().to_string()];
     allow_write.extend(list("allowWrite"));
-    let mut deny_write = list("denyWrite");
+    let mut deny_write = Vec::new();
     if let Some(common) = linked_worktree_common_dir(cwd) {
         allow_write.push(common.display().to_string());
+        // Claude Code pushes its built-in git denies before the settings' denyWrite.
         deny_write.extend(claude_code_git_denies(&common));
     }
+    deny_write.extend(list("denyWrite"));
     srt_document(list("denyRead"), allow_write, deny_write)
 }
 
