@@ -167,6 +167,12 @@ fn escape_body(content: &str) -> String {
         .join("\n")
 }
 
+/// `value` on one line: the parser keeps only the rest of a metadata line, and
+/// a line break in it could end the entry or start another.
+fn one_line(value: &str) -> String {
+    value.replace(['\r', '\n'], " ")
+}
+
 /// Format a memory entry for markdown output.
 pub fn format_entry(entry: &MemoryEntry) -> String {
     let mut output = format!(
@@ -174,7 +180,7 @@ pub fn format_entry(entry: &MemoryEntry) -> String {
         entry.entry_type.emoji(),
         entry.entry_type.display_name(),
         entry.timestamp.format("%Y-%m-%d %H:%M:%S"),
-        entry.id,
+        one_line(&entry.id),
         escape_body(&entry.content)
     );
     let has_metadata = entry.context.is_some()
@@ -183,11 +189,7 @@ pub fn format_entry(entry: &MemoryEntry) -> String {
         || entry.receipt.is_some();
 
     if let Some(context) = &entry.context {
-        // One line: the parser keeps only the rest of the `*Context:*` line.
-        output.push_str(&format!(
-            "*Context:* {}\n",
-            context.replace(['\r', '\n'], " ")
-        ));
+        output.push_str(&format!("*Context:* {}\n", one_line(context)));
     }
     if !entry.evidence.is_empty() {
         let evidence = entry
@@ -199,13 +201,15 @@ pub fn format_entry(entry: &MemoryEntry) -> String {
         output.push_str(&format!("*Evidence:* {evidence}\n"));
     }
     if let Some(session) = &entry.session {
-        output.push_str(&format!("*Session:* {session}\n"));
+        output.push_str(&format!("*Session:* {}\n", one_line(session)));
     }
     if let Some(receipt) = &entry.receipt {
         let target = receipt.target.as_deref().unwrap_or("-");
         output.push_str(&format!(
             "*Receipt:* event={} outcome={} target={}\n",
-            receipt.event_id, receipt.outcome, target
+            one_line(&receipt.event_id),
+            receipt.outcome,
+            one_line(target)
         ));
     }
     if has_metadata {

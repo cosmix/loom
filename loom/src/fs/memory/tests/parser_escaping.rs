@@ -1,5 +1,6 @@
 use crate::fs::memory::{
-    append_entry, memory_file_path, read_journal, MemoryEntry, MemoryEntryType,
+    append_entry, memory_file_path, read_journal, MemoryEntry, MemoryEntryType, Receipt,
+    ReceiptOutcome,
 };
 use chrono::{TimeZone, Utc};
 use tempfile::TempDir;
@@ -98,4 +99,64 @@ fn a_two_line_context_keeps_its_second_line() {
         journal.entries[0].context.as_deref(),
         Some("first reason second reason")
     );
+}
+
+#[test]
+fn a_session_or_receipt_target_cannot_end_or_forge_an_entry() {
+    let temp = TempDir::new().unwrap();
+    let payload = |head: &str| format!("{head}\r\n---\n\n{FORGED_HEADING}\n\nforged");
+    let mut noted = entry(MemoryEntryType::Note, "plain body");
+    noted.session = Some(payload("s1"));
+    let receipt = Receipt {
+        event_id: "1".repeat(32),
+        outcome: ReceiptOutcome::Promoted,
+        target: Some(payload("architecture/a.md")),
+    };
+    let mut settled = MemoryEntry::receipt(receipt, "settled".to_string());
+    settled.timestamp = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+    append_entry(temp.path(), STAGE, &noted).unwrap();
+    append_entry(temp.path(), STAGE, &settled).unwrap();
+
+    let entries = read_journal(temp.path(), STAGE).unwrap().entries;
+    assert_eq!(entries.len(), 2);
+    assert!(entries
+        .iter()
+        .all(|entry| entry.id != "0123456789abcdef0123456789abcdef"));
+    // The reader trims both values; neither payload has outer whitespace.
+    let flat = |value: String| value.replace(['\r', '\n'], " ");
+    assert_eq!(entries[0].session, Some(flat(payload("s1"))));
+    let target = entries[1].receipt.as_ref().unwrap().target.clone();
+    assert_eq!(target, Some(flat(payload("architecture/a.md"))));
+}
+
+#[test]
+fn an_entry_id_or_receipt_event_id_cannot_forge_an_entry() {
+    let temp = TempDir::new().unwrap();
+    let payload = format!("x\n---\n\n{FORGED_HEADING}\n\nforged");
+    let first = entry(MemoryEntryType::Note, "first");
+    let mut hostile_id = entry(MemoryEntryType::Note, "plain body");
+    hostile_id.id = payload.clone();
+    let receipt = Receipt {
+        event_id: payload.clone(),
+        outcome: ReceiptOutcome::Promoted,
+        target: None,
+    };
+    let mut hostile_event = MemoryEntry::receipt(receipt, "settled".to_string());
+    hostile_event.timestamp = Utc.with_ymd_and_hms(2026, 1, 2, 3, 4, 5).unwrap();
+    let last = entry(MemoryEntryType::Decision, "last");
+    for written in [&first, &hostile_id, &hostile_event, &last] {
+        append_entry(temp.path(), STAGE, written).unwrap();
+    }
+
+    let entries = read_journal(temp.path(), STAGE).unwrap().entries;
+    assert!(entries
+        .iter()
+        .all(|entry| entry.id != "0123456789abcdef0123456789abcdef"));
+    assert!(entries
+        .iter()
+        .all(|entry| !entry.content.contains("forged")));
+    // Entries whose flattened heading or receipt line no longer parses are dropped;
+    // only the neighbours' integrity is asserted, not the count.
+    assert_eq!(entries.first(), Some(&first));
+    assert_eq!(entries.last(), Some(&last));
 }
