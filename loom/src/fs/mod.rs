@@ -13,6 +13,7 @@ pub mod safe_fs;
 pub mod safe_read;
 pub mod safe_write;
 pub mod session_files;
+pub mod stage_events;
 pub mod stage_files;
 pub mod stage_loading;
 pub mod stage_request;

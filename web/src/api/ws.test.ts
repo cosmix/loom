@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import fixtureJson from "@/api/fixtures/snapshot.json";
 import { snapshotSchema } from "@/api/schema";
 import { connectStatusSocket, type SocketDeps } from "@/api/ws";
-import { activityLogAtom, connectionAtom, snapshotAtom } from "@/state/atoms";
+import { connectionAtom, snapshotAtom } from "@/state/atoms";
 
 const fixture = snapshotSchema.parse(fixtureJson);
 
@@ -140,7 +140,6 @@ describe("status socket", () => {
     socket.receive(JSON.stringify(next));
 
     expect(store.get(snapshotAtom)?.status.plan_name).toBe("Web Dashboard Fixture");
-    expect(store.get(activityLogAtom).map((entry) => entry.message)).toEqual(["server completed"]);
     dispose();
   });
 

@@ -129,7 +129,9 @@ fn the_stages_own_session_crashing_still_moves_the_stage() {
     );
 }
 
-/// Recursively list every regular file under `dir`, relative to `dir`.
+/// Recursively list every regular file under `dir`, relative to `dir`,
+/// except the stage-event log: a crash moves the stage out of Executing, and
+/// recording that status change is expected, not a marker.
 fn files_under(dir: &Path) -> std::collections::BTreeSet<std::path::PathBuf> {
     let mut found = std::collections::BTreeSet::new();
     fn walk(base: &Path, dir: &Path, found: &mut std::collections::BTreeSet<std::path::PathBuf>) {
@@ -140,7 +142,7 @@ fn files_under(dir: &Path) -> std::collections::BTreeSet<std::path::PathBuf> {
             let path = entry.path();
             if path.is_dir() {
                 walk(base, &path, found);
-            } else {
+            } else if path.file_name() != Some(std::ffi::OsStr::new("stage-events.jsonl")) {
                 found.insert(path.strip_prefix(base).unwrap().to_path_buf());
             }
         }

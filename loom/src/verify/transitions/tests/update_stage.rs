@@ -194,3 +194,49 @@ fn concurrent_field_updates_preserve_each_others_delta() {
     assert_eq!(stage.dispute_count, 7);
     assert_eq!(stage.close_reason.as_deref(), Some("independent writer"));
 }
+
+#[test]
+fn status_change_appends_one_event_and_unchanged_status_none() {
+    use crate::fs::stage_events::read_recent;
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path();
+    seed_stage(work_dir, "ev1");
+
+    update_stage("ev1", work_dir, |stage| {
+        stage.dispute_count += 1;
+        Ok(())
+    })
+    .unwrap();
+    assert!(read_recent(work_dir, 10).is_empty());
+
+    update_stage("ev1", work_dir, |stage| {
+        stage.status = StageStatus::NeedsHandoff;
+        stage.session = Some("sess-1".into());
+        Ok(())
+    })
+    .unwrap();
+    let events = read_recent(work_dir, 10);
+    assert_eq!(events.len(), 1);
+    assert_eq!(events[0].stage_id, "ev1");
+    assert_eq!(events[0].from, StageStatus::Executing);
+    assert_eq!(events[0].to, StageStatus::NeedsHandoff);
+    assert_eq!(events[0].session.as_deref(), Some("sess-1"));
+    assert_eq!(events[0].reason, None);
+}
+
+#[test]
+fn blocked_transition_event_carries_close_reason() {
+    use crate::fs::stage_events::read_recent;
+    let temp = tempfile::tempdir().unwrap();
+    let work_dir = temp.path();
+    seed_stage(work_dir, "ev2");
+
+    update_stage("ev2", work_dir, |stage| {
+        stage.status = StageStatus::Blocked;
+        stage.close_reason = Some("criteria failed".into());
+        Ok(())
+    })
+    .unwrap();
+    let events = read_recent(work_dir, 10);
+    assert_eq!(events[0].reason.as_deref(), Some("criteria failed"));
+}

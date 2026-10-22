@@ -103,6 +103,10 @@ pub struct StatusData {
     /// `flow.json` exists.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub tokens: Option<crate::tokens::TokenFlow>,
+    /// The most recent stage status changes, oldest first, from the durable
+    /// event log.
+    #[serde(default)]
+    pub activity: Vec<crate::fs::stage_events::StageEvent>,
 }
 
 /// Stage display data

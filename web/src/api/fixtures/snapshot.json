@@ -624,7 +624,25 @@
         }
       ],
       "unreadable_lines": 0
-    }
+    },
+    "activity": [
+      {
+        "at": "2026-09-04T11:50:00Z",
+        "stage_id": "server",
+        "from": "executing",
+        "to": "needs-adjudication",
+        "session": "session-server-1",
+        "reason": null
+      },
+      {
+        "at": "2026-09-04T11:58:00Z",
+        "stage_id": "server",
+        "from": "needs-adjudication",
+        "to": "queued",
+        "session": null,
+        "reason": null
+      }
+    ]
   },
   "attention": [
     {

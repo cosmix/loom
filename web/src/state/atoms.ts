@@ -1,6 +1,6 @@
 import { atom } from "jotai/vanilla";
 
-import type { Alert, Attention, Snapshot, StageStatus, StageSummary } from "@/api/schema";
+import type { Alert, Attention, Snapshot, StageSummary } from "@/api/schema";
 import { orderStages, type OrderedStage } from "@/lib/levels";
 
 export type ConnectionPhase = "connecting" | "live" | "reconnecting" | "offline" | "error";
@@ -18,19 +18,11 @@ export interface ConnectionState {
   message?: string;
 }
 
-export interface ActivityEntry {
-  at: number;
-  stageId: string;
-  status: StageStatus;
-  message: string;
-}
-
 export const snapshotAtom = atom<Snapshot | null>(null);
 export const connectionAtom = atom<ConnectionState>({
   phase: "connecting",
   since: Date.now(),
 });
-export const activityLogAtom = atom<ActivityEntry[]>([]);
 export const orderedStagesAtom = atom<OrderedStage[]>((get) => {
   const snapshot = get(snapshotAtom);
   return snapshot ? orderStages(snapshot.status.stages) : [];

@@ -241,6 +241,14 @@ export const tokenFlowSchema = z
     unreadable_lines: z.number().int().nonnegative(),
   })
   .strict();
+export const stageEventSchema = z.object({
+  at: z.string(),
+  stage_id: z.string(),
+  from: stageStatusSchema,
+  to: stageStatusSchema,
+  session: z.string().nullable(),
+  reason: z.string().nullable(),
+});
 export const statusDataSchema = z.object({
   stages: z.array(stageSummarySchema),
   merge: mergeSummarySchema,
@@ -248,6 +256,7 @@ export const statusDataSchema = z.object({
   plan_name: z.string().nullable(),
   quota: quotaSnapshotSchema,
   tokens: tokenFlowSchema.optional(),
+  activity: z.array(stageEventSchema),
 });
 export const alternativeSchema = z.object({
   when: z.string(),

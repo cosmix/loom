@@ -292,6 +292,7 @@ mod tests {
                 codex: None,
             },
             tokens: None,
+            activity: Vec::new(),
         }
     }
 

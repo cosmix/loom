@@ -1,8 +1,4 @@
 import type { Snapshot, StageStatus } from "@/api/schema";
-import { orderStages } from "@/lib/levels";
-import type { ActivityEntry } from "@/state/atoms";
-
-export const MAX_ACTIVITY_ENTRIES = 20;
 
 function transitionMessage(
   id: string,
@@ -41,38 +37,30 @@ export function statusesById(snapshot: Snapshot | null): Map<string, StageStatus
   return statuses;
 }
 
-/**
- * Append meaningful stage transitions while retaining the newest twenty
- * entries. The first frame is a baseline, not a burst of transitions: the
- * wire carries no timestamps for what happened before the page opened, so
- * stamping every stage with the load time would show the same wrong age on
- * every row. Only changes the page itself observes are logged.
- */
-export function appendTransitions(
-  log: readonly ActivityEntry[],
-  previous: Snapshot | null,
-  next: Snapshot,
-  now: number,
-): ActivityEntry[] {
-  if (previous === null) {
-    return [...log];
-  }
-  const entries = [...log];
-  const previousStatuses = statusesById(previous);
+export interface ActivityEntry {
+  at: number;
+  stageId: string;
+  status: StageStatus;
+  message: string;
+}
 
-  // Order like the TUI (level, then id) so simultaneous transitions log in a
-  // stable sequence instead of raw, filesystem-dependent wire order.
-  // orderStages already dedupes by id (keeping the first), which is why the
-  // dedupe set that used to live here was removed.
-  for (const { stage } of orderStages(next.status.stages)) {
-    const previousStatus = previousStatuses.get(stage.id);
-    if (previousStatus === stage.status) {
-      continue;
-    }
-    const message = transitionMessage(stage.id, stage.status, previousStatus);
+/**
+ * The server's recorded stage transitions as panel entries, newest first.
+ * The log is durable, so a freshly loaded page shows what happened before it
+ * connected; statuses without a message stay out of the panel.
+ */
+export function activityEntries(snapshot: Snapshot | null): ActivityEntry[] {
+  const entries: ActivityEntry[] = [];
+  for (const event of snapshot?.status.activity ?? []) {
+    const message = transitionMessage(event.stage_id, event.to, event.from);
     if (message) {
-      entries.push({ at: now, stageId: stage.id, status: stage.status, message });
+      entries.push({
+        at: Date.parse(event.at),
+        stageId: event.stage_id,
+        status: event.to,
+        message,
+      });
     }
   }
-  return entries.slice(-MAX_ACTIVITY_ENTRIES);
+  return entries.reverse();
 }

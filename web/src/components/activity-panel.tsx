@@ -1,5 +1,6 @@
 import { useAtomValue } from "jotai/react";
 import { ActivityIcon } from "lucide-react";
+import { useMemo } from "react";
 import { Link } from "react-router";
 
 import { EmptyState } from "@/aurora-ui/feedback/EmptyState";
@@ -7,15 +8,16 @@ import { EmptyState } from "@/aurora-ui/feedback/EmptyState";
 import { useNow } from "@/components/hooks/use-now";
 import { stageHref } from "@/components/stage-href";
 import { StateGlyph } from "@/components/state-badge";
+import { activityEntries } from "@/lib/activity";
 import { formatElapsed } from "@/lib/format";
-import { activityLogAtom } from "@/state/atoms";
+import { snapshotAtom } from "@/state/atoms";
 
-/// The stage transitions this page has seen, newest first, each with its
-/// glyph and age. The first frame is a baseline, so the list starts empty.
+/// The stage transitions the server has recorded, newest first, each with its
+/// glyph and age. History survives page loads and feed outages.
 export function ActivityPanel({ wide = false }: { wide?: boolean }) {
-  const log = useAtomValue(activityLogAtom);
+  const snapshot = useAtomValue(snapshotAtom);
   const now = useNow();
-  const newestFirst = log.toReversed();
+  const newestFirst = useMemo(() => activityEntries(snapshot), [snapshot]);
 
   return (
     <section aria-labelledby="activity-title" className="flex flex-col gap-3">
@@ -33,15 +35,15 @@ export function ActivityPanel({ wide = false }: { wide?: boolean }) {
                 No activity yet
               </p>
               <p className="mt-0.5 text-sm text-muted-foreground">
-                Stage transitions appear here as the daemon reports them.
+                Stage transitions appear here as the daemon records them.
               </p>
             </div>
           </div>
         ) : (
           <EmptyState
             icon={ActivityIcon}
-            title="Nothing has changed since this page opened"
-            description="Stage transitions land here as the daemon reports them."
+            title="No stage transitions yet"
+            description="Stage transitions land here as the daemon records them."
             tone="muted"
             size="sm"
           />

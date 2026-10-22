@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import fixtureJson from "@/api/fixtures/snapshot.json";
 import { snapshotSchema } from "@/api/schema";
 import { applySnapshot } from "@/state/apply";
-import { activityLogAtom, snapshotAtom } from "@/state/atoms";
+import { snapshotAtom } from "@/state/atoms";
 import { notificationsEnabledAtom } from "@/state/notifications";
 
 const fixture = snapshotSchema.parse(fixtureJson);
@@ -36,7 +36,10 @@ function installNotifications(): typeof TestNotification {
   });
   vi.stubGlobal("Notification", TestNotification);
   vi.stubGlobal("focus", vi.fn());
-  Object.defineProperty(window, "isSecureContext", { configurable: true, value: true });
+  Object.defineProperty(window, "isSecureContext", {
+    configurable: true,
+    value: true,
+  });
   return TestNotification;
 }
 
@@ -61,10 +64,9 @@ afterEach(() => {
 });
 
 describe("applySnapshot", () => {
-  it("ignores a frame older than the stored snapshot and logs no transitions for it", () => {
+  it("ignores a frame older than the stored snapshot", () => {
     const store = createStore();
-    applySnapshot(store, fixture, 100);
-    const loggedAfterFirst = store.get(activityLogAtom);
+    applySnapshot(store, fixture);
 
     const stale = {
       ...fixture,
@@ -77,10 +79,9 @@ describe("applySnapshot", () => {
       },
     };
 
-    applySnapshot(store, stale, 200);
+    applySnapshot(store, stale);
 
     expect(store.get(snapshotAtom)).toBe(fixture);
-    expect(store.get(activityLogAtom)).toBe(loggedAfterFirst);
   });
 
   it("delivers new attention from a later snapshot", () => {

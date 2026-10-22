@@ -8,8 +8,9 @@ use std::fs;
 use std::path::Path;
 
 use crate::fs::locking::{atomic_write_locked, locked_dir_update, locked_read};
+use crate::fs::stage_events::{append_event, StageEvent};
 use crate::fs::stage_files::{find_stage_file, stage_file_path};
-use crate::models::stage::Stage;
+use crate::models::stage::{Stage, StageStatus};
 use crate::plan::graph::levels::compute_all_levels;
 
 use super::serialization::{parse_stage_from_markdown, serialize_stage_to_markdown};
@@ -164,10 +165,33 @@ where
         );
     }
 
+    let before = stage.status.clone();
     modify(&mut stage)?;
     let new_content = serialize_stage_to_markdown(&stage)?;
     atomic_write_locked(stage_path, &new_content)?;
+    if stage.status != before {
+        record_status_change(stage_path, &stage, before);
+    }
     Ok(stage)
+}
+
+/// Append the status change to the durable event log. The stage write already
+/// succeeded, so a failed append is logged and never fails the update.
+fn record_status_change(stage_path: &Path, stage: &Stage, from: StageStatus) {
+    // Stage files live in `<work_dir>/stages/`.
+    let Some(work_dir) = stage_path.parent().and_then(Path::parent) else {
+        return;
+    };
+    let event = StageEvent::new(
+        &stage.id,
+        from,
+        stage.status.clone(),
+        stage.session.clone(),
+        stage.close_reason.as_deref(),
+    );
+    if let Err(err) = append_event(work_dir, &event) {
+        tracing::warn!(stage = %stage.id, "failed to record stage event: {err:#}");
+    }
 }
 
 /// Compute the topological depth for a single stage based on its dependencies

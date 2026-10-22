@@ -334,6 +334,10 @@ pub fn collect_status_data(work_dir: &WorkDir) -> Result<StatusData> {
         plan_name,
         quota: crate::quota::read_snapshot(work_dir.root()),
         tokens: fresh_flow(work_dir),
+        activity: crate::fs::stage_events::read_recent(
+            work_dir.root(),
+            crate::fs::stage_events::RECENT_LIMIT,
+        ),
     })
 }
 
