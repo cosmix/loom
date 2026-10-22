@@ -221,7 +221,7 @@ The evidence that feeds it is produced by `--run-evidence` ([Live Paired Trials]
 `loom/src/verify/criteria/cache_contract.rs` defines `CriterionContract`, a lossless description
 of everything that changes a verdict (command, simple or extended kind, expected exit, output
 predicates, empty-stderr flag, timeout, confinement, input fingerprint). Only a certified, fully
-evaluated pass is stored (`CACHE_RECORD_VERSION` 2, 4 KiB diagnostic tails); unknown eligibility
+evaluated pass is stored (`CACHE_RECORD_VERSION` 4, 4 KiB diagnostic tails); unknown eligibility
 misses. The key hashes `PATH` and the resolved executable identity, so any test that asserts a hit,
 a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
 

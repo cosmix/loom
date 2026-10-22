@@ -121,7 +121,7 @@
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 110 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) | Broker fallback, dup naming | 225 |
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) | Runner-env blocks, gate fails | 196 |
-| [completion-runtime](mistakes/completion-runtime.md) | Cargo churn, stall kills | 49 |
+| [completion-runtime](mistakes/completion-runtime.md) | Cargo churn, stall kills | 56 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread | 269 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes, save races | 46 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork after threads | 38 |
@@ -183,7 +183,7 @@
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 window never named | 49 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps | 115 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge/retry edge cases | 134 |
-| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Commit, launch, stall gaps | 213 |
+| [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Commit, launch, stall gaps | 210 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | tmux, orphan adoption edge cases | 150 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Canary, creds, env, caches | 399 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Language limits, open decisions | 79 |
@@ -191,5 +191,5 @@
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Shared package caches | 17 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) | Token follow-ups | 348 |
 | [typed-config-values](concerns/typed-config-values.md) | Config read-path gaps | 27 |
-| [verification-v2-followups](concerns/verification-v2-followups.md) | v2 adapters, parsers, known gaps | 177 |
+| [verification-v2-followups](concerns/verification-v2-followups.md) | v2 adapters, parsers, known gaps | 171 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Latent issues in status/web | 103 |

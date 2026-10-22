@@ -139,12 +139,6 @@ Open after host jobs moved the run out of the session: `loom check` and `loom st
 - **Accept re-freezes only the disputed contract's files.** `orchestrator/adjudication/apply_contract.rs` `accept()` collects the contract's file, the recorded file for that contract and the refrozen contracts. Any other file in the freeze record, such as a harness-glob file the disputed diff touched (`tests/host_verification_contracts/support.rs` in the host-verification stage), keeps its old hash. `loom stage complete` then fails with `frozen file ... changed after the freeze` (`verify/contracts/completion.rs`) while every criterion is green. Fix direction: re-freeze every frozen file the disputed diff touched, or every harness-glob file, on accept.
 - **Recovery signals groups of dead children.** `host_verify/signals.rs::kill_led_groups` runs for `Interrupted` records whose child is long gone (the daemon was down for hours, or the host rebooted). The leader check cannot tell a recycled pid that leads its own group from the old criterion leader, so the SIGKILL can reach an unrelated service group. Gating the call on a live `verify-host` child breaks `recovery_interrupts_running_jobs_and_leaves_queued_ones_alone` (`host_verify/tests_runner_recovery.rs`), which asserts that a led group is killed while the record's pid is a stranger. Revisit: record a start time or command line per group, then rewrite that test.
 
-## Acceptance Cache Key Pins the Commit
-
-The acceptance cache key (`verify/criteria/cache_fingerprint.rs:76-92`) hashes the HEAD commit id and `git status`, and `CachedCriterionPass::certifies` compares `source_head` (`verify/criteria/cache_contract.rs:250`). A commit of the checked tree therefore invalidates every cached pass, and `loom stage complete` re-runs the suite, although the doctrine orders check, commit, complete. Reuse happens today only when `loom check` runs on a tree that is already committed.
-
-Follow-up: key the fingerprint on content (HEAD's tree hash plus the hashes of the dirty paths), so a commit of exactly the checked content keeps the passes. Pin it with a test: run `loom check` on a dirty tree, commit it, and expect completion to report every criterion cached.
-
 ## Gate-Dedup and Integration-Verify Review Suggestions
 
 Reviewer suggestions from the gate-dedup and integration-verify rounds that were not implemented. Each is open unless marked otherwise. Locations are at the review's tree.

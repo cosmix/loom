@@ -47,3 +47,10 @@ Three things hid the cause:
 **Prevention:** persistent state that the in-session runner reads is reset to an allowlist on every use, through descriptor-relative operations that never follow links, and a test seeds the hostile entries.
 
 **Fix:** `verify/criteria/confine_linked_home.rs::populate`. Writes made after populate survive until the next populate; closing that window needs a home the agent cannot write.
+
+## The Acceptance Cache Keyed on Git Metadata, So Every Completion After a Commit Re-Ran the Gate (2026-10-22)
+
+**What happened:** `loom check` passed all 24 criteria of dependency-findings on an uncommitted tree; the agent committed exactly that content in 6 commits, and the completion host job re-ran all 24 (589 s of a 12.6-minute job). integration-verify repeated it. Rebuilding the fingerprint from the commit diffs reproduced the checked tree digest exactly: the content was identical and the key still differed.
+**Why:** the input fingerprint hashed git metadata alongside content: the HEAD commit id (also compared as `source_head`), raw `git status` bytes, the branch ref oid and the raw index file bytes. A commit changes all four; any index rewrite, including the fingerprint's own `git status`, changed the last. Separately, `--no-cache` deleted the cache dir, so a refresh run stored nothing, and `env -u GIT_*` made the full `cargo test` criterion uncacheable.
+**Prevention:** a verdict cache keys on what a criterion can read (file bytes, modes, environment, executables), never on bookkeeping that changes without the bytes changing. Pin it with a test that checks a dirty tree, commits the same content, and expects completion to hit every criterion.
+**Fix:** the fingerprint is a content manifest (`verify/criteria/cache_manifest.rs`) plus the branch name; commit identity, refs and staging are not inputs (decision recorded in [execution-containment](../architecture/execution-containment.md)). `--no-cache` maps to `CachePolicy::Refresh` (no lookup, still stores), and `cache_executable.rs` resolves `env` that only unsets or sets variables.

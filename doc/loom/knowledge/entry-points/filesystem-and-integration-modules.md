@@ -80,7 +80,7 @@ The state root is `<repo>/.loom/work`. A workspace created before the move keeps
 
 Two more subdirectories, resolved by their own modules rather than a `WorkDir` helper:
 
-- `acceptance-cache/` — cached acceptance passes, `<sha256>.json`, keyed by criterion text and tree digest (`verify/criteria/cache.rs`)
+- `acceptance-cache/` — cached acceptance passes, `<sha256>.json`, keyed by the criterion's contract digest plus the input fingerprint (content manifest and branch name, environment, executables, containment; `verify/criteria/cache.rs`)
 - `capsules/` — per-session generated Claude Code settings files (`<session-id>.settings.json`) for judge sessions, written at spawn and removed on close (`terminal/native/session_settings.rs`)
 
 ## Sandbox Settings — ANTHROPIC_API_KEY

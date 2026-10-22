@@ -204,10 +204,7 @@ Each recurred after its lesson was recorded, so a check beats another paragraph:
   `git/stage_commit/tests_paths.rs`, `inbox_drain/commit_tests_signing.rs` and
   `merge_handler/landing_signing_tests.rs`. Proposal: make the check follow `#[path]` declarations.
 - **Stage wall clock.** The platform-portability stage ran 75+ minutes. One oversized worker brief (hooks, 18
-  files, 31 minutes against 2 to 14 for the others) set the wave time, and the completion re-run of every
-  criterion (about 440 s) repeats the in-session passes because the acceptance cache keys on HEAD plus
-  `git status` (`verify/criteria/cache.rs`) and the commit invalidates them. Candidate fixes: key the cache on
-  tree content so a commit of an already-verified tree reuses its passes, and have the plan-writer balance
-  worker briefs so none exceeds about twice the median.
+  files, 31 minutes against 2 to 14 for the others) set the wave time. Candidate fix: have the plan-writer
+  balance worker briefs so none exceeds about twice the median.
 - **A load-sensitive timing bound.** `commands::status::web::terminal::tests_pty::pty_child_shutdown_reaps_the_child`
   failed once during the completion run on its `started.elapsed() < 1s` bound while passing 15 of 15 alone.
