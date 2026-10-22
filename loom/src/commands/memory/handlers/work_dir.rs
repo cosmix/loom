@@ -71,9 +71,9 @@ pub(super) fn get_or_create_work_dir() -> Result<std::path::PathBuf> {
 /// Returns `None` instead of erroring when no workspace exists, so these
 /// commands degrade gracefully rather than failing. This matters because
 /// `loom memory list` is the first step of the post-compaction recovery flow
-/// (see CLAUDE.md Rule 3b) - a hard failure there would derail recovery
-/// before it starts. Unlike `get_or_create_work_dir`, this never creates
-/// anything.
+/// (the SessionStart hook's re-anchor message names it) - a hard failure there
+/// would derail recovery before it starts. Unlike `get_or_create_work_dir`,
+/// this never creates anything.
 pub(super) fn readonly_work_dir() -> Option<std::path::PathBuf> {
     work_dir_path().ok()
 }

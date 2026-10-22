@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
 # grep filtering another command's piped stdout, with no file operand of its
-# own, is not the anti-pattern Rule 8 targets - Rule 14 tells agents to pipe
-# verbose output through exactly this kind of filter. A real grep still warns
-# when it reads a file directly, even if piped onward, or when it is chained
-# with `||` rather than a data pipe.
+# own, is not the anti-pattern Rule 8 targets. A real grep still warns when it
+# reads a file directly, even if piped onward, or when it is chained with `||`
+# rather than a data pipe.
 set -euo pipefail
 # See prefer-modern-tools-grep.sh for why the live stage vars must be unset.
 unset LOOM_WORK_DIR LOOM_SESSION_ID LOOM_STAGE_ID LOOM_SESSION_TYPE

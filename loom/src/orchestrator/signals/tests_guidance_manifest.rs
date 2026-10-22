@@ -165,7 +165,7 @@ const RELOCATIONS: &[Relocation] = &[
         item: "R3 failed criteria are re-checked one by one",
         frozen: None,
         home: PREFIX_HOME,
-        needle: r#"--criterion"#,
+        needle: r#"--criterion <n>"#,
     },
 ];
 

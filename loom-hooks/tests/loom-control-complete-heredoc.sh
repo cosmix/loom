@@ -243,6 +243,9 @@ loom stage complete build-api
 EOF
 CASE
 expect_refused "a here-string mistaken for an opener"
+# The `[^<]` guard in the unquoted-heredoc check keeps a here-string from being
+# reported as an unquoted heredoc; it is refused as an ordinary non-pinned command.
+[[ "$PRE_OUTPUT" != *'quote the delimiter'* ]] || fail "here-string reported as an unquoted heredoc: $PRE_OUTPUT"
 
 read_cmd <<'CASE' || true
 # <<'EOF'

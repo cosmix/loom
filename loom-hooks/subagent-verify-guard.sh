@@ -208,8 +208,8 @@ is_redirect_op() {
 # tok_kind <token> - sets TOK_KIND to sep | redirop | redir | word.
 #
 # A redirection is NEVER a positional argument. `cargo test 2>&1 | tail -50` is
-# a FULL-SUITE run, and CLAUDE.md rule 14 (pipe tests through tail) makes it the
-# likeliest invocation here; reading `2>&1` as a filter would wave it through.
+# a FULL-SUITE run, and piping a test run through tail is a common way to write
+# it; reading `2>&1` as a filter would wave it through.
 TOK_KIND=""
 tok_kind() {
 	case "$1" in
