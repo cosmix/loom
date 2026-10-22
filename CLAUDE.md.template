@@ -93,7 +93,7 @@ Commits follow Conventional Commits: `type(scope): description`, type `feat` `fi
 
 ### 5. SUBAGENT RESTRICTIONS
 
-Subagents write code and report; the main agent owns fixes and all git operations (hard stop 3). A subagent runs at most one narrowly scoped check, once. A standard stage's gate is the main agent's single `loom check`, never re-run; integration-verify keeps its own. `loom-hooks/spawn-guard.sh` prepends the subagent preamble, `loom-hooks/_subagent-preamble.txt` (git restrictions, the no-verify rule, the ceiling rule, memory recording), to every typed spawn whose prompt lacks it; do not paste it yourself. Codex subagents get their own rules from `loom-hooks/codex-forward.sh`.
+Subagents write code and report; the main agent owns fixes and all git operations (hard stop 3). A subagent runs at most one narrowly scoped check, once. A standard stage's gate is the main agent's single `loom check`; a fix round re-checks only the failed criteria with `--criterion <n>`; integration-verify keeps its own. `loom-hooks/spawn-guard.sh` prepends the subagent preamble, `loom-hooks/_subagent-preamble.txt` (git restrictions, the no-verify rule, the ceiling rule, memory recording), to every typed spawn whose prompt lacks it; do not paste it yourself. Codex subagents get their own rules from `loom-hooks/codex-forward.sh`.
 
 ### 6. SUBAGENTS
 
