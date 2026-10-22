@@ -13,6 +13,7 @@ use crate::host_verify::JobKind;
 use crate::models::session::{Session, SessionType};
 use crate::models::stage::{Stage, StageType};
 use crate::relay::HostJobRequest;
+use crate::verify::criteria::CriteriaConfig;
 use crate::verify::transitions::load_stage;
 
 use super::apply::{is_live_judge, require_owner};
@@ -94,6 +95,16 @@ pub(super) fn validate_ids(request: &HostJobRequest) -> Result<(), String> {
 
 fn validate(host: &dyn InboxHost, stage: &Stage, request: &HostJobRequest) -> Result<(), String> {
     validate_ids(request)?;
+    // The host job would fail on an out-of-range selection, which a session
+    // reads as a failing criterion; refuse it here as a bad request instead.
+    let only = request
+        .criteria
+        .as_ref()
+        .map(|c| c.iter().copied().collect());
+    CriteriaConfig::default()
+        .with_only(only)
+        .check_selection(stage)
+        .map_err(|error| format!("{error:#}"))?;
     let head = checkout_head(host, stage)?;
     if head != request.head {
         return Err(format!(
@@ -287,6 +298,20 @@ mod tests {
         let payload = json!({"head": head, "tree_digest": "xyz", "no_cache": false});
         let bad_digest = refused(settle(&fx, &record, AgentRole::Main, payload, true));
         assert!(bad_digest.contains("tree_digest must be"), "{bad_digest}");
+    }
+
+    #[test]
+    fn a_criterion_past_the_stage_list_is_refused_and_queues_nothing() {
+        let fx = fixture();
+        let head = repository(&fx);
+        let record = fx.record(SessionType::Stage, SessionStatus::Running);
+        fx.stage(StageStatus::Executing, Some(&record.id));
+        // The fixture stage has one acceptance criterion, so index 1 is past it.
+        let mut payload = request(&head);
+        payload["criteria"] = json!([1]);
+        let reason = refused(settle(&fx, &record, AgentRole::Main, payload, true));
+        assert!(reason.contains("out of range"), "{reason}");
+        assert!(!queued_check(&fx));
     }
 
     #[test]

@@ -146,7 +146,7 @@ impl CriteriaConfig {
 
     /// Refuse a selection that runs nothing or names an index past the
     /// stage's list: either would report a pass for criteria that never ran.
-    pub(super) fn check_selection(&self, stage: &Stage) -> Result<()> {
+    pub(crate) fn check_selection(&self, stage: &Stage) -> Result<()> {
         let Some(only) = &self.only else {
             return Ok(());
         };
