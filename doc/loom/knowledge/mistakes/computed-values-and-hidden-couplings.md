@@ -274,3 +274,10 @@ every line-count rule ([Skill Catalog](../architecture/skill-catalog.md#why-most
 **Why:** `observed_at` is when the tracker read the transcripts, while every other series buckets by the line timestamp (`flow_build.rs` `series`). Differencing a cumulative counter by observation time measures read activity.
 **Prevention:** A time series in the UI comes from the backend buckets the other charts use. When a breakdown is missing, sum existing per-agent series or add a backend series; never reconstruct one from cumulative totals in the client.
 **Fix:** `modelHistoryBars(flow)` sums each agent's `series` under its model, per bucket, times 60 / `bucket_secs`, so the stack equals the stage chart.
+
+## Web by-model bars drew single-bucket rates under a five-minute headline
+
+**What happened:** After the bars moved to per-agent series, each bar was one 30 s bucket times two, while the headline, the legend and the stage chips are five-minute averages. A subagent's opening cache write (53k tokens in one bucket) drew a 107k/min bar beside a 35k/min headline, and a busy bucket reached 266k/min, so the chart read as wrong.
+**Why:** The bar unit "fresh / min" was scaled from a 30 s window; the other rates on the same panel use the backend's ten-bucket `RATE_BUCKETS` window.
+**Prevention:** A chart labelled with a rate uses the window of the headline it sits beside, so its newest point equals that headline; a per-bucket chart is labelled per bucket.
+**Fix:** `modelHistoryBars` takes `rollingRate` over each agent's series with a ten-bucket window, padded by nine buckets so the oldest bar has a full window, and scales the newest bar to the backend span (`observed_at` minus the oldest bucket start, plus 1 s); on a live flow the newest bar read 32,375/min against a legend sum of 32,371/min.
