@@ -148,6 +148,27 @@ impl FakeHome {
         index[key] = json!(skills);
         fs::write(&index_path, index.to_string()).expect("rewrite index");
     }
+
+    /// Replace the hand-written index with the one the real indexer builds after
+    /// the repository's own `skills/<name>/SKILL.md` is copied into the fake
+    /// catalog, so a test sees that skill's real triggers.
+    pub fn index_real_skill(&self, name: &str) {
+        let source = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../skills")
+            .join(name)
+            .join("SKILL.md");
+        let target = self
+            .home
+            .path()
+            .join(".claude/loom-skill-catalog")
+            .join(name)
+            .join("SKILL.md");
+        fs::create_dir_all(target.parent().expect("SKILL.md path has a parent"))
+            .expect("create catalog skill dir");
+        fs::copy(&source, &target).expect("copy real SKILL.md into fake catalog");
+        loom::commands::skill_index::execute_in_agent_dir(&self.home.path().join(".claude"), false)
+            .expect("rebuild skill index from real SKILL.md");
+    }
 }
 
 fn python3_available() -> bool {

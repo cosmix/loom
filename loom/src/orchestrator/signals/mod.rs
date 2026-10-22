@@ -52,6 +52,9 @@ mod tests_doctrine_v2;
 #[cfg(test)]
 #[path = "tests_doctrine_waiting.rs"]
 mod tests_doctrine_waiting;
+#[cfg(test)]
+#[path = "tests_guidance_manifest.rs"]
+mod tests_guidance_manifest;
 
 // Re-export public types
 pub use cache::SignalMetrics;

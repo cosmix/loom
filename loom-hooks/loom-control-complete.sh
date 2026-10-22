@@ -218,7 +218,8 @@ is_completion_command() {
 }
 
 completion_rejection_reason() {
-	local trusted=$1
+	local trusted=$1 heredoc_re='(^|[^<])<<-?[[:space:]]*[A-Za-z_]'
+	[[ ! "$COMMAND" =~ $heredoc_re ]] || { printf '%s' "an unquoted heredoc delimiter expands \$(...) in its body; quote the delimiter: <<'EOF'"; return; }
 	[[ "$ATTEMPT_TOKENIZE_FAILED" == false ]] || { printf 'the command could not be tokenized safely'; return; }
 	[[ "$ATTEMPT_SHELL" == false ]] || { printf 'a shell -c wrapper is not allowed'; return; }
 	[[ "$ATTEMPT_ENV" == false ]] || { printf 'an env wrapper is not allowed'; return; }

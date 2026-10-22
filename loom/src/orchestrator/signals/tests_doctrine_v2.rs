@@ -9,7 +9,7 @@
 //!   contracts reference.
 //!
 //! - BLOCK-F (when the stage cannot finish): the standard, integration-verify
-//!   and knowledge-distill stable prefixes and `skills/loom-orchestration/SKILL.md`.
+//!   and knowledge-distill stable prefixes.
 //!
 //! BLOCK-E is defined here rather than in `tests_doctrine_blocks.rs`, as BLOCK-C
 //! is in `tests_doctrine_waiting.rs`: that file is a private child of
@@ -33,8 +33,9 @@ const SKILLS_DIR: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/../skills");
 /// section of a stage signal and the orchestration skill carry it byte for byte.
 const BLOCK_E: &str = "**Review order (plan v2):** run `loom check` once beside the final review round; fix every finding and failed criterion, re-check the failed criteria with `loom check <stage-id> --criterion <n>` and re-review the changed files, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.";
 
-/// BLOCK-F - when the stage cannot finish, verbatim. Every stable prefix and the
-/// orchestration skill carry it byte for byte.
+/// BLOCK-F - when the stage cannot finish, verbatim. The standard,
+/// integration-verify and knowledge-distill stable prefixes carry it byte for
+/// byte; the orchestration skill, which those sessions load, does not repeat it.
 const BLOCK_F: &str = "**When the stage cannot finish.** Fix what the stage can fix. A wrong criterion, wiring check, contract, review finding or test-integrity event gets a dispute: `loom stage dispute-criteria` (`--field` for wiring, wiring-tests, impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session; the daemon starts a fresh one with the verdict. Never revert, weaken or postpone correct work to avoid a dispute. A criterion failing only because of where completion runs (no network, unreadable git metadata, timeout, sandbox denial) is disputed, never blocked: one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing names every such criterion. `loom stage block <stage-id> \"<what is needed and why>\"` is for a credential, a host install or a decision only a person can make; loom refuses it while the latest `loom stage complete` shows a failing criterion. Commit before filing either. Never end a turn asking the operator to act while the stage is executing.";
 
 /// The body of the `## <heading>` section of `markdown`: everything after the
@@ -92,10 +93,6 @@ fn block_f_agrees_across_every_surface() {
         (
             "the knowledge-distill stable prefix",
             super::cache::generate_knowledge_distill_stable_prefix(),
-        ),
-        (
-            "skills/loom-orchestration/SKILL.md",
-            ORCHESTRATION_SKILL.to_string(),
         ),
     ] {
         assert!(

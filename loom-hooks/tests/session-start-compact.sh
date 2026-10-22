@@ -44,6 +44,12 @@ if ! echo "$OUTPUT" | jq -r '.hookSpecificOutput.additionalContext' | grep -qF "
     exit 1
 fi
 
+# Assert recovery points at the handoffs directory
+if ! echo "$OUTPUT" | jq -r '.hookSpecificOutput.additionalContext' | grep -qF "/handoffs/"; then
+    echo "FAIL: '/handoffs/' not found in additionalContext"
+    exit 1
+fi
+
 # Assert the key phrase is present
 if ! echo "$OUTPUT" | jq -r '.hookSpecificOutput.additionalContext' | grep -q "Understand before acting"; then
     echo "FAIL: 'Understand before acting' not found in additionalContext"

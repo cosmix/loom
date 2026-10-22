@@ -2,20 +2,23 @@
 name: loom-golang
 description: "Go language expertise for idiomatic, production-quality code. Not for: an LLM's context window or a stage's context budget."
 triggers:
-  - go
   - golang
   - goroutine
-  - channel
-  - interface
-  - struct
-  - pointer
-  - slice
-  - map
-  - defer
+  - in go
+  - go code
+  - go package
+  - go module
+  - go channel
+  - go interface
+  - go struct
+  - go pointer
+  - go slice
+  - go map
+  - go defer
   - go context
   - error
   - gin
-  - echo
+  - echo framework
   - fiber
   - cobra
   - viper
@@ -26,7 +29,7 @@ triggers:
   - effective go
   - errgroup
   - sync
-  - mutex
+  - go mutex
   - waitgroup
   - race detector
 ---

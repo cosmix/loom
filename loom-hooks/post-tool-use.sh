@@ -308,6 +308,78 @@ if [[ "$TOOL_NAME" == "Write" || "$TOOL_NAME" == "Edit" || "$TOOL_NAME" == "Mult
 	fi
 fi
 
+# === MAIN-SESSION SIZE ADVISORY ===
+# A stage's main session that changes more than 20 lines or more than 2 files
+# itself gets one advisory (CLAUDE.md Rule 7, hard stop 6). It never blocks.
+# Tally: one "edit" row per Write/Edit/MultiEdit/NotebookEdit call by the main
+# agent (not a subagent) on a file inside the worktree and outside .loom/.
+# Changed lines per call: an Edit counts the larger side of its replacement,
+# MultiEdit sums its edits, Write counts its whole content, NotebookEdit its
+# new source. Once the "warned" row exists the ledger stops growing, because
+# the ledger keeps only its newest rows and would otherwise rotate it away.
+readonly LOOM_MAIN_EDIT_MAX_LINES=20
+readonly LOOM_MAIN_EDIT_MAX_FILES=2
+readonly LOOM_MAIN_EDIT_LINES_JQ='
+	def n: if type == "string" and length > 0 then (split("\n") | length) else 0 end;
+	def pair: [(.old_string | n), (.new_string | n)] | max;
+	if (.edits | type) == "array" then ([.edits[] | pair] | add // 0)
+	elif has("content") then (.content | n)
+	elif has("new_source") then (.new_source | n)
+	else pair end'
+
+_loom_main_edit_tally() {
+	case "$TOOL_NAME" in
+	Write | Edit | MultiEdit | NotebookEdit) ;;
+	*) return 0 ;;
+	esac
+	command -v jq &>/dev/null || return 0
+	[[ "${LOOM_SESSION_TYPE:-}" == "stage" && "$IS_SUBAGENT" == "0" ]] || return 0
+	[[ -n "${LOOM_WORKTREE_PATH:-}" ]] || return 0
+	[[ -z "$(printf '%s' "$INPUT_JSON" | jq -r '.agent_id // empty' 2>/dev/null || true)" ]] || return 0
+
+	local path wt="${LOOM_WORKTREE_PATH%/}"
+	path=$(printf '%s' "$TOOL_INPUT" | jq -r '.file_path // .notebook_path // empty' 2>/dev/null || true)
+	case "$path" in
+	"$wt"/.loom/*) return 0 ;;
+	"$wt"/*) ;;
+	*) return 0 ;;
+	esac
+
+	local ledger lines
+	ledger=$(_loom_ledger_file "mainedits" "main" "$LOOM_SESSION_ID")
+	[[ "$(_loom_polls_count "$ledger" "warned")" == "0" ]] || return 0
+	lines=$(printf '%s' "$TOOL_INPUT" | jq -r "$LOOM_MAIN_EDIT_LINES_JQ" 2>/dev/null || true)
+	[[ "$lines" =~ ^[0-9]+$ ]] || return 0
+	_loom_ledger_append "$ledger" "edit" "$path" "$lines"
+	return 0
+}
+
+_loom_main_edit_advisory() {
+	local ledger
+	ledger=$(_loom_ledger_file "mainedits" "main" "$LOOM_SESSION_ID")
+	[[ -r "$ledger" ]] || return 0
+	[[ "$(_loom_polls_count "$ledger" "warned")" == "0" ]] || return 0
+
+	local kind path lines _stamp total=0 files=0 seen=$'\n'
+	local digits_re='^[0-9]+$'
+	while IFS=$'\t' read -r kind path lines _stamp; do
+		[[ "$kind" == "edit" ]] || continue
+		[[ "$lines" =~ $digits_re ]] || continue
+		total=$((total + lines))
+		if [[ "$seen" != *$'\n'"$path"$'\n'* ]]; then
+			seen="${seen}${path}"$'\n'
+			files=$((files + 1))
+		fi
+	done <"$ledger"
+
+	if ((total > LOOM_MAIN_EDIT_MAX_LINES || files > LOOM_MAIN_EDIT_MAX_FILES)); then
+		_loom_ledger_append "$ledger" "warned"
+		local message="LOOM_HOOK_WARN: this main session has itself changed ${total} lines across ${files} file(s). Past ${LOOM_MAIN_EDIT_MAX_LINES} changed lines or ${LOOM_MAIN_EDIT_MAX_FILES} files the main agent delegates (CLAUDE.md Rule 7, hard stop 6), unless the stage signal says the stage runs single-agent. Advisory only; nothing was blocked."
+		jq -nc --arg message "$message" '{hookSpecificOutput: {hookEventName: "PostToolUse", additionalContext: $message}}'
+	fi
+	return 0
+}
+
 # The large-output notice runs after the heartbeat and before the ceiling
 # checks, and never exits - it must not disturb either.
 _loom_bash_output_notice
@@ -319,5 +391,9 @@ if [[ "$IS_SUBAGENT" == "1" ]]; then
 else
 	_loom_ctx_check_main_ceiling "$RESIDENT_TOKENS"
 fi
+
+# After the ceiling checks, which exit 2 and would discard this stdout JSON.
+_loom_main_edit_tally
+_loom_main_edit_advisory
 
 exit 0

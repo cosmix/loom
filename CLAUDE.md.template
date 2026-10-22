@@ -68,11 +68,11 @@ No incomplete markers, stubs, `pass` bodies, empty functions, or pseudocode. Wri
 
 ### 3. CONTEXT CEILING = HANDOFF
 
-The trigger is a `CONTEXT CEILING REACHED` line from the PostToolUse hook in your own tool output; never estimate the ceiling yourself. On it, finish the unit in progress, run `loom handoff --stage <id> --session <id> --trigger ceiling`, and stop, committing nothing unverified (Rule 4). The hook's line carries the rest.
+The trigger is the PostToolUse hook's `CONTEXT CEILING REACHED` line in your own tool output, which names the handoff command; never estimate the ceiling yourself.
 
 ### 3b. POST-COMPACTION RECOVERY
 
-After compaction or context loss: `loom memory list --stage <stage-id>`, then your stage's latest handoff in `.loom/work/handoffs/`; resume from there.
+After compaction or a resumed session, follow the SessionStart hook's re-anchor message.
 
 ### 4. COMMIT AND COMPLETE (HOOK-ENFORCED)
 
@@ -191,7 +191,7 @@ Minimizing tokens is required, met by choosing what to read, not by doing less w
 - Read ranges, not files (Read's offset/limit); whole files only when using all of it.
 - Independent reads, greps, commands go in ONE message.
 - Never re-read what's already in context, or from adjacent curiosity.
-- Don't narrate between tool calls; explain decisions, not standard operations (Rule 19). Prefer Edit over Write. Pipe verbose output: tests through `tail -50` or `rg -B 2 -A 5 'FAIL|ERROR'`, builds to a file, linters through `head -30`. Skip agents for simple tasks. `.claudeignore` generated files, artifacts, lock files.
+- Don't narrate between tool calls; explain decisions, not standard operations (Rule 19). Prefer Edit over Write. Log verbose output, then read its failures: `<cmd> > "${LOOM_SCRATCH_DIR:-${TMPDIR:-/tmp}}/<step>.log" 2>&1; echo "exit=$?"`, `rg -n -m 20 -M 300 '<failure pattern>' <log> | head -c 6000`; piping `<cmd>` itself hides its exit code. Never redirect `loom` commands. Skip agents for simple tasks. `.claudeignore` generated files, artifacts, lock files.
 
 Reading the wrong thing is the waste; reading too little and guessing is a defect (Discipline A).
 

@@ -1,6 +1,7 @@
 //! Size ceilings on the agent-facing text surfaces loom controls.
 //!
-//! `CLAUDE.md.template`, `generate_stable_prefix()`, the standard signal's
+//! `CLAUDE.md.template`, `skills/loom-orchestration/SKILL.md`,
+//! `generate_stable_prefix()`, the standard signal's
 //! stable+semi-stable boilerplate floor, and `extract_plan_overview`'s
 //! truncation cap were all cut down together (see the sibling doctrine test
 //! files for what was cut and why). None of that trimming is enforced by the
@@ -19,23 +20,12 @@ use super::generate::{
     extract_plan_overview, extract_plan_overview_from, generate_signal_with_metrics,
 };
 
-/// `CLAUDE.md.template` is pasted into every subagent's context on every
-/// spawn, across every stage, in every plan.
-///
-/// Raised alongside the subagent context-ceiling doctrine (BLOCK-D, Rule 3
-/// and hard stop 4's ceiling-raise wording): the prior ceiling (26,624) left
-/// only ~26 bytes of headroom, too little for the addition. Raised again
-/// alongside the memory-events doctrine (receipts, `--evidence`): the prior
-/// ceiling (28,672) left only ~18 bytes of headroom by the time that change
-/// landed. Raised a third time (30,720) alongside the corrections doctrine
-/// (Discipline F's steering and repeat-mistake escalation, Rule 12's
-/// outside-stage write steps). Lowered to 20,480 when the orchestrator-only
-/// rules (Rule 5's preamble fence, Rule 6, Rule 7's playbook, the
-/// orchestration reference) moved to `skills/loom-orchestration/SKILL.md` and
-/// `loom-hooks/_subagent-preamble.txt`: they cost every session, most of them
-/// subagents that never spawn anything. Actual size is about 19,900 bytes.
-/// Trim future doctrine additions rather than spending down that buffer.
-const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 20_480;
+/// `CLAUDE.md.template` is pasted into every session's context on every spawn,
+/// across every stage, in every plan. Rules 3 and 3b live in the hooks that
+/// print them (`tests_guidance_manifest.rs` lists every relocation). The
+/// ceiling equals the actual size, so any addition fails here: trim the
+/// template or move the text to its home instead of raising the ceiling.
+const CLAUDE_MD_TEMPLATE_MAX_BYTES: usize = 20_138;
 
 /// The KV-cache-stable prefix pasted into the first message of every fresh
 /// session spawned for a standard stage.
@@ -76,7 +66,13 @@ const STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES: usize = 10_240;
 /// stage, so it is paid on every fresh session spawned for it.
 const PLAN_OVERVIEW_MAX_BYTES: usize = 4_096;
 
+/// Every stage main session loads `skills/loom-orchestration/SKILL.md`, so its
+/// bytes are paid on every later request of that session. The ceiling equals
+/// the actual size, so any addition fails here.
+const ORCHESTRATION_SKILL_MAX_BYTES: usize = 20_462;
+
 const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
+const ORCHESTRATION_SKILL: &str = include_str!("../../../../skills/loom-orchestration/SKILL.md");
 
 #[test]
 fn claude_md_template_stays_under_its_size_ceiling() {
@@ -87,6 +83,18 @@ fn claude_md_template_stays_under_its_size_ceiling() {
          This file is pasted into every subagent's context on every spawn across every stage in \
          every plan, so a doctrine paragraph re-added here is a cost paid forever, not once. \
          Trim the regrowth instead of raising the ceiling."
+    );
+}
+
+#[test]
+fn orchestration_skill_stays_under_its_size_ceiling() {
+    let actual = ORCHESTRATION_SKILL.len();
+    assert!(
+        actual <= ORCHESTRATION_SKILL_MAX_BYTES,
+        "skills/loom-orchestration/SKILL.md regrew to {actual} bytes (ceiling \
+         {ORCHESTRATION_SKILL_MAX_BYTES}). Every stage main session loads it, so its bytes are \
+         paid on every later request of that session. Trim the regrowth instead of raising the \
+         ceiling."
     );
 }
 

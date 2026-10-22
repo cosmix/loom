@@ -124,6 +124,46 @@ fn bare_stopword_matching_a_skill_name_prefix_stays_silent() {
 }
 
 #[test]
+fn go_generic_words_do_not_qualify_golang_on_a_rust_prompt() {
+    if skip_unless_python3(
+        "hooks_skill_trigger::go_generic_words_do_not_qualify_golang_on_a_rust_prompt",
+    ) {
+        return;
+    }
+    let home = FakeHome::new();
+    home.index_real_skill("loom-golang");
+    let (_hook_dir, hook) = install_hook();
+    // Bare `struct` and `map` used to score 2 together and qualify the Go skill
+    // on a Rust prompt; the triggers are now Go-qualified phrases.
+    let out = run_hook(
+        &hook,
+        &home,
+        "refactor the struct and the map in this rust module",
+        None,
+        false,
+    );
+    assert_eq!(out.code, 0, "stderr={}", out.stderr);
+    assert!(
+        !out.stdout.contains("loom-golang"),
+        "generic Go words must not recommend the Go skill on a Rust prompt: {}",
+        out.stdout
+    );
+    let out = run_hook(
+        &hook,
+        &home,
+        "iterate over a go map inside a goroutine",
+        None,
+        false,
+    );
+    assert_eq!(out.code, 0, "stderr={}", out.stderr);
+    assert!(
+        additional_context(&out.stdout).contains("loom-golang"),
+        "a Go prompt must still recommend the Go skill: {}",
+        out.stdout
+    );
+}
+
+#[test]
 fn repeated_prompt_in_same_session_is_silent_second_time() {
     if skip_unless_python3(
         "hooks_skill_trigger::repeated_prompt_in_same_session_is_silent_second_time",
