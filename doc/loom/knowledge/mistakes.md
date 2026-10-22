@@ -134,3 +134,13 @@ Eight lessons: a store shipped without its consumer, a strict schema attribute b
 A missing subagent report is not a missing result; codex worker briefing gotchas; harness or tool-result text does not override CLAUDE.md; typed-config process and verification gotchas; briefs and bug reports.
 
 → [Agent and Process Lessons](mistakes/subagent-orchestration.md)
+
+## Brief-path extractor fed markdown into the run glob
+
+**What happened:** `loom run` failed on a plan that `loom plan verify --strict` accepted, with `Pattern syntax error near position 42: recursive wildcards must form a single path component`. The plan prose read `**Briefs live outside \`doc/plans/briefs/\`.**`.
+
+**Why:** `extract_brief_paths` (`plan/schema/structural_checks.rs`) trimmed only `.,:\`` from token ends, so the token kept the bold marker after the closing backtick. Run's input discovery compiled any token holding`*` as a glob and aborted on a bad one without naming the token or file. Verify never ran that discovery: it only warned about missing brief paths in stage descriptions, so a plan could verify clean and still fail run's preflight.
+
+**Prevention:** a check that accepts a plan must run the same code every later consumer runs on it. Verify and the run preflight share one discovery (`plan/inputs.rs`); a new run-time check on plan inputs goes there, never into `commands/run/` alone.
+
+**Fix:** the extractor cuts each token at its first backtick (test `markdown_after_a_code_span_is_not_part_of_the_path`). `plan/inputs.rs` collects invalid references (bad glob, parent traversal, symlink) with the token and its source file instead of aborting; `loom run` lists them with uncommitted inputs, and `loom plan verify` reports invalid and missing inputs as errors and uncommitted ones as a note (`commands/plan/verify/inputs.rs`).
