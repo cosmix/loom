@@ -49,9 +49,10 @@ pub struct StageQuery {
     pub required_representation: RequiredRepresentation,
     /// Chunk ids referenced by stages this query's stage depends on.
     pub stage_dependency_ids: Vec<String>,
-    /// Project-relative paths owned by the stages this query depends on.
-    ///
-    /// Only the stage spawn brief fills this; the hook and CLI leave it empty.
+    /// Project-relative paths the stages this query depends on changed: the
+    /// stage signal and the worker-brief hook fill them from
+    /// `StageQuery::dependency_paths` (the hook adds the paths its worker
+    /// prompt names); the CLI leaves them empty.
     /// `rank_source` boosts nodes whose file is named here (A.23).
     pub dependency_paths: Vec<String>,
     /// Channels to rank. Use `Channel::all().to_vec()` unless narrowing.
