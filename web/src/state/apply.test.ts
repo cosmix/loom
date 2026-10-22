@@ -84,6 +84,16 @@ describe("applySnapshot", () => {
     expect(store.get(snapshotAtom)).toBe(fixture);
   });
 
+  it("ignores a repeat of the stored frame", () => {
+    const store = createStore();
+    applySnapshot(store, fixture);
+    const stored = store.get(snapshotAtom);
+
+    applySnapshot(store, structuredClone(fixture));
+
+    expect(store.get(snapshotAtom)).toBe(stored);
+  });
+
   it("delivers new attention from a later snapshot", () => {
     const notifications = installNotifications();
     const store = createStore();

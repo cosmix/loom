@@ -9,8 +9,16 @@ export interface SocketDeps {
   location?: { protocol: string; host: string };
   setTimeout?: typeof setTimeout;
   clearTimeout?: typeof clearTimeout;
+  setInterval?: typeof setInterval;
+  clearInterval?: typeof clearInterval;
+  now?: () => number;
 }
 
+// The server resends the last frame every 10s of silence (loom ws.rs
+// KEEPALIVE), so 30s without any message means the socket is dead even though
+// no close event fired (a half-open TCP connection never fires one).
+const WATCHDOG_CHECK_MS = 5000;
+const STALE_AFTER_MS = 30000;
 const BACKOFF_MS = [1000, 2000, 4000, 8000, 10000] as const;
 // Not a timer: a cumulative-delay floor. By the 5th consecutive reconnect
 // failure the outage has already burned through the first four backoff
@@ -34,6 +42,11 @@ class StatusSocketConnection {
   private readonly request: typeof fetch;
   private readonly schedule: typeof setTimeout;
   private readonly cancel: typeof clearTimeout;
+  private watchdog: ReturnType<typeof setInterval> | undefined;
+  private lastMessageAt = 0;
+  private readonly every: typeof setInterval;
+  private readonly stopEvery: typeof clearInterval;
+  private readonly now: () => number;
   private readonly Socket: typeof WebSocket;
   private readonly url: string;
   private readonly store: Store;
@@ -48,6 +61,9 @@ class StatusSocketConnection {
     this.request = deps.fetch ?? globalThis.fetch.bind(globalThis);
     this.schedule = deps.setTimeout ?? globalThis.setTimeout.bind(globalThis);
     this.cancel = deps.clearTimeout ?? globalThis.clearTimeout.bind(globalThis);
+    this.every = deps.setInterval ?? globalThis.setInterval.bind(globalThis);
+    this.stopEvery = deps.clearInterval ?? globalThis.clearInterval.bind(globalThis);
+    this.now = deps.now ?? Date.now;
     const location = deps.location ?? globalThis.location;
     const scheme = location.protocol === "https:" ? "wss" : "ws";
     const host = location.host;
@@ -57,6 +73,9 @@ class StatusSocketConnection {
   start(): void {
     this.setConnection("connecting");
     this.openSocket();
+    this.watchdog = this.every(() => this.checkLiveness(), WATCHDOG_CHECK_MS);
+    // Background tabs throttle timers, so also check as soon as the tab is shown.
+    globalThis.document?.addEventListener("visibilitychange", this.onVisibility);
     const generation = this.generation;
     void this.request("/api/status", { cache: "no-store" })
       .then((response) => response.json())
@@ -78,7 +97,29 @@ class StatusSocketConnection {
     if (this.reconnectTimer !== undefined) {
       this.cancel(this.reconnectTimer);
     }
+    if (this.watchdog !== undefined) {
+      this.stopEvery(this.watchdog);
+      this.watchdog = undefined;
+    }
+    globalThis.document?.removeEventListener("visibilitychange", this.onVisibility);
     this.socket?.close();
+  }
+
+  private readonly onVisibility = (): void => {
+    if (globalThis.document.visibilityState === "visible") {
+      this.checkLiveness();
+    }
+  };
+
+  private checkLiveness(): void {
+    if (this.stopped || this.socket === undefined) return;
+    const phase = this.store.get(connectionAtom).phase;
+    if (
+      (phase === "live" || phase === "error") &&
+      this.now() - this.lastMessageAt > STALE_AFTER_MS
+    ) {
+      this.reconnect("no data for 30s");
+    }
   }
 
   private setConnection(phase: ConnectionPhase, message?: string): void {
@@ -102,10 +143,13 @@ class StatusSocketConnection {
     socket.onopen = () => {
       if (this.stopped || this.socket !== socket) return;
       this.attempts = 0;
+      this.lastMessageAt = this.now();
       this.setConnection("live");
     };
     socket.onmessage = (event) => {
       if (this.stopped || this.socket !== socket) return;
+      // Before parsing: even a bad frame proves the connection is alive.
+      this.lastMessageAt = this.now();
       this.receiveMessage(event.data);
     };
     socket.onclose = (event) => {

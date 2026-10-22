@@ -3,7 +3,8 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::atomic::AtomicBool;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
@@ -17,6 +18,7 @@ use crate::commands::status::web::broadcast::Broadcaster;
 use crate::commands::status::web::http;
 use crate::commands::status::web::limits::MAX_CONNECTIONS;
 use crate::commands::status::web::model::{DaemonState, SnapshotSource, WebSnapshot};
+use crate::commands::status::web::ws::handle_with_keepalive;
 use crate::fs::work_dir::WorkDir;
 use crate::models::stage::Stage;
 use crate::verify::transitions::create_stage;
@@ -357,4 +359,32 @@ fn a_connection_past_the_cap_is_answered_503() {
         body(&response).contains("connection limit reached"),
         "{response}"
     );
+}
+
+/// A quiet feed must still produce traffic: the last frame is resent after the
+/// keepalive interval so a client can tell silence from a half-open socket.
+#[test]
+fn websocket_resends_the_last_frame_after_the_keepalive() {
+    if skip_without_loopback("websocket_resends_the_last_frame_after_the_keepalive") {
+        return;
+    }
+    let listener = TcpListener::bind("127.0.0.1:0").expect("bind listener");
+    let port = listener.local_addr().expect("listener address").port();
+    let (tx, rx) = mpsc::channel::<Arc<String>>();
+    let running = Arc::new(AtomicBool::new(true));
+    let flag = running.clone();
+    let server = thread::spawn(move || {
+        let (stream, _) = listener.accept().expect("accept client");
+        handle_with_keepalive(stream, rx, &flag, Duration::from_millis(300));
+    });
+    let mut socket = connect_websocket(port);
+    tx.send(Arc::new("{\"frame\":1}".to_owned()))
+        .expect("publish");
+    let first = socket.read().expect("first frame");
+    let again = socket.read().expect("keepalive frame");
+    assert_eq!(first.to_text().expect("text"), "{\"frame\":1}");
+    assert_eq!(again.to_text().expect("text"), "{\"frame\":1}");
+    running.store(false, Ordering::SeqCst);
+    let _ = socket.close(None);
+    server.join().expect("server thread");
 }

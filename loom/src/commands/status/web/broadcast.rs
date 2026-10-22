@@ -319,6 +319,8 @@ pub(super) fn republish_with_notice(broadcaster: &Broadcaster, notice: &str) -> 
         return false;
     };
     snapshot.notice = Some(notice.to_owned());
+    // Restamped: the browser skips a frame no newer than the one it holds.
+    snapshot.generated_at = Utc::now();
     match serde_json::to_string(&snapshot) {
         Ok(json) => {
             broadcaster.publish(json);
