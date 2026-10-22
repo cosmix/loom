@@ -410,21 +410,20 @@ fn test_structural_warning_strict() {
 }
 
 #[test]
-fn test_missing_brief_path_warns() {
+fn test_missing_brief_path_is_an_error() {
     let temp = TempDir::new().unwrap();
-    // `validate_structural_preflight` only runs its repo_root-gated checks
-    // when `find_repo_root` finds a `.git` marker walking up from the plan.
+    // Input discovery only runs when `find_repo_root` finds a `.git` marker
+    // walking up from the plan.
     fs::create_dir(temp.path().join(".git")).unwrap();
     let plan = write_plan(temp.path(), "PLAN-brief.md", missing_brief_path_plan());
     let out = run_verify(&plan, &[]);
     assert!(
-        out.status.success(),
-        "expected exit 0 (advisory warning), stderr: {}",
-        String::from_utf8_lossy(&out.stderr)
+        !out.status.success(),
+        "a missing input makes loom run refuse, so verify must fail"
     );
     let stdout = String::from_utf8_lossy(&out.stdout);
     assert!(
-        stdout.contains("doc/plans/briefs/nonexistent.md"),
+        stdout.contains("doc/plans/briefs/nonexistent.md (referenced in"),
         "stdout: {stdout}"
     );
 }

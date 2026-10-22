@@ -5,7 +5,6 @@
 //! severity as its other checks, never hard errors.
 
 use std::collections::{HashMap, HashSet, VecDeque};
-use std::path::Path;
 
 use super::types::StageDefinition;
 
@@ -13,42 +12,6 @@ pub(super) mod declared_skills;
 pub(super) mod worker_table;
 #[cfg(test)]
 mod worker_table_tests;
-
-/// Warn when a stage's `description` references a design brief under
-/// `doc/plans/briefs/` that does not exist in the repo.
-///
-/// Only fires when a `doc/plans/briefs/...` token is actually present in the
-/// description text - most stages have no such reference and get no
-/// warning. No-op when `repo_root` is `None` (nothing to resolve against).
-pub(super) fn check_missing_brief_paths(
-    stages: &[StageDefinition],
-    repo_root: Option<&Path>,
-) -> Vec<String> {
-    let mut warnings = Vec::new();
-    let Some(root) = repo_root else {
-        return warnings;
-    };
-
-    for stage in stages {
-        let Some(description) = &stage.description else {
-            continue;
-        };
-        for brief_path in extract_brief_paths(description) {
-            let resolved = root.join(&brief_path);
-            if !resolved.exists() {
-                warnings.push(format!(
-                    "Stage '{}': description references '{}' under doc/plans/briefs/, \
-                     which does not exist at {}",
-                    stage.id,
-                    brief_path,
-                    resolved.display()
-                ));
-            }
-        }
-    }
-
-    warnings
-}
 
 /// Warn once per stage without a `summary` (absent or blank).
 ///
@@ -84,7 +47,9 @@ pub(crate) fn extract_brief_paths(text: &str) -> Vec<String> {
     }) {
         let trimmed = token.trim_matches(|c: char| matches!(c, '.' | ',' | ':' | '`'));
         if let Some(idx) = trimmed.find(PREFIX) {
-            let path = trimmed[idx..].split('#').next().unwrap_or_default();
+            // A backtick closes a code span, so markdown after it (`dir/`.** in
+            // bold) is not part of the path and must not reach the glob expander.
+            let path = trimmed[idx..].split(['#', '`']).next().unwrap_or_default();
             if path.len() > PREFIX.len() && !path.contains(['<', '>']) {
                 paths.push(path.to_string());
             }
@@ -282,26 +247,6 @@ mod tests {
     }
 
     #[test]
-    fn missing_brief_path_warns_when_repo_root_present() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let stages = vec![stage(
-            "a",
-            &[],
-            &[],
-            Some("See `doc/plans/briefs/nonexistent.md` for design context."),
-        )];
-        let warnings = check_missing_brief_paths(&stages, Some(dir.path()));
-        assert_eq!(warnings.len(), 1, "{warnings:?}");
-        assert!(warnings[0].contains("doc/plans/briefs/nonexistent.md"));
-    }
-
-    #[test]
-    fn description_without_brief_reference_is_silent() {
-        let stages = vec![stage("a", &[], &[], Some("Implement the thing."))];
-        assert!(check_missing_brief_paths(&stages, Some(Path::new("/tmp"))).is_empty());
-    }
-
-    #[test]
     fn placeholder_brief_paths_are_not_references() {
         let text = "under `doc/plans/briefs/v2/<stage-id>/` and \
                     (`doc/plans/briefs/v2/fixtures/<adapter>/`, see doc/plans/briefs/v2/NOTES.md)";
@@ -312,14 +257,9 @@ mod tests {
     }
 
     #[test]
-    fn no_repo_root_is_silent() {
-        let stages = vec![stage(
-            "a",
-            &[],
-            &[],
-            Some("doc/plans/briefs/nonexistent.md"),
-        )];
-        assert!(check_missing_brief_paths(&stages, None).is_empty());
+    fn markdown_after_a_code_span_is_not_part_of_the_path() {
+        let text = "**Briefs live outside `doc/plans/briefs/`.** See `doc/plans/briefs/v2/a.md`.**";
+        assert_eq!(extract_brief_paths(text), vec!["doc/plans/briefs/v2/a.md"]);
     }
 
     #[test]

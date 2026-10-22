@@ -7,13 +7,13 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 
 use crate::commands::graph::colors::stage_color;
-use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::parser::{extract_plan_name, extract_yaml_metadata};
 use crate::plan::schema::{
-    base_tree, check_knowledge_recommendations, check_sandbox_recommendations, detect_stage_type,
-    split_lint_findings, v2_lints, validate_structural_preflight, LoomMetadata, StageDefinition,
-    StageType, ValidationError,
+    base_tree, detect_stage_type, LoomMetadata, StageDefinition, StageType, ValidationError,
 };
+
+mod checks;
+mod inputs;
 
 const MAX_FILE_BYTES: u64 = 1_048_576; // 1 MiB
 
@@ -27,9 +27,9 @@ struct JsonPlan {
 }
 
 #[derive(Serialize)]
-struct JsonError {
+pub(super) struct JsonError {
     stage_id: Option<String>,
-    message: String,
+    pub(super) message: String,
 }
 
 impl From<ValidationError> for JsonError {
@@ -170,48 +170,6 @@ fn early_failure(json: bool, source: String, message: String) -> Result<()> {
         std::process::exit(1);
     }
     bail!("{message}")
-}
-
-/// Sandbox policy hard errors: run the SAME merge + validation that
-/// `loom init` and stage spawn use (crate::sandbox::merge_config /
-/// validate_config / validate_emittable), so a plan `loom init` would refuse
-/// is not reported clean here. These are errors, not warnings — init already
-/// rejects these plans outright.
-fn sandbox_policy_errors(metadata: &LoomMetadata) -> Vec<JsonError> {
-    use crate::plan::schema::stage_host_path_errors;
-    let mut errors = Vec::new();
-    for stage in &metadata.loom.stages {
-        let merged = crate::sandbox::merge_config(
-            &metadata.loom.sandbox,
-            &stage.sandbox,
-            detect_stage_type(stage),
-            &stage.implementers,
-        );
-        let mut messages = stage_host_path_errors(stage, &merged.filesystem.allow_write);
-        if let Err(e) = crate::sandbox::validate_config(&merged) {
-            messages.push(e.to_string());
-        }
-        if let Err(e) = crate::sandbox::validate_emittable(&merged) {
-            messages.push(e.to_string());
-        }
-        errors.extend(messages.into_iter().map(|message| JsonError {
-            stage_id: Some(stage.id.clone()),
-            message,
-        }));
-    }
-    errors
-}
-
-/// DAG cycle detection, then the stages grouped by execution level.
-fn dag_levels(stages: &[StageDefinition]) -> Result<Vec<Vec<JsonStageLevel>>, JsonError> {
-    if let Err(e) = crate::plan::graph::ExecutionGraph::build(stages.to_vec()) {
-        return Err(JsonError {
-            stage_id: None,
-            message: e.to_string(),
-        });
-    }
-    let levels_map = compute_all_levels(stages, |s| s.id.as_str(), |s| &s.dependencies);
-    Ok(build_levels_output(stages, &levels_map))
 }
 
 // ── Human output ──────────────────────────────────────────────────────────
@@ -392,27 +350,18 @@ pub fn execute(path: &Path, strict: bool, json: bool, no_color: bool) -> Result<
     match crate::plan::schema::validate(&loom_metadata) {
         Err(errs) => hard_errors.extend(errs.into_iter().map(JsonError::from)),
         Ok(()) => {
-            hard_errors.extend(sandbox_policy_errors(&loom_metadata));
-            let context = v2_lints::LintContext {
-                metadata: &loom_metadata,
-                repo_root: repo_root.as_deref(),
-            };
-            let lints = v2_lints::run(&context, &mut notes);
-            let (lint_errs, lint_warns) = split_lint_findings(loom_metadata.loom.version, lints);
-            hard_errors.extend(lint_errs.into_iter().map(JsonError::from));
-            // Soft checks (only when schema validation passes)
-            soft_warnings = JsonWarnings {
-                structural: validate_structural_preflight(stages, repo_root.as_deref()),
-                knowledge: check_knowledge_recommendations(stages, repo_root.as_deref()),
-                sandbox: check_sandbox_recommendations(&loom_metadata),
-                baseline: Vec::new(),
-            };
-            soft_warnings.structural.extend(lint_warns);
-            match dag_levels(stages) {
-                Ok(by_level) => levels = by_level,
-                Err(error) => hard_errors.push(error),
-            }
+            (soft_warnings, levels) = checks::soft_checks(
+                &loom_metadata,
+                repo_root.as_deref(),
+                &mut hard_errors,
+                &mut notes,
+            );
         }
+    }
+    if let Some(root) = repo_root.as_deref() {
+        let (errors, input_notes) = inputs::input_findings(root, &std::path::absolute(path)?);
+        hard_errors.extend(errors);
+        notes.extend(input_notes);
     }
 
     // Base-tree evaluation runs whether or not the schema validates, so one

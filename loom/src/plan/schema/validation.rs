@@ -4,9 +4,9 @@ use crate::models::constants::MIN_CONTEXT_CEILING_TOKENS;
 use crate::validation::validate_id;
 
 use super::detect::detect_stage_type;
+use super::structural_checks::check_file_ownership;
 use super::structural_checks::declared_skills::check_declared_skills;
 use super::structural_checks::worker_table::check_worker_granularity;
-use super::structural_checks::{check_file_ownership, check_missing_brief_paths};
 use super::types::{
     FilesystemConfig, Implementer, LoomConfig, LoomMetadata, NetworkConfig, SandboxConfig,
     StageSandboxConfig, TruthCheck, ValidationError,
@@ -875,7 +875,6 @@ pub fn validate_structural_preflight(
     // This is the DAG-wide check; per-stage coherence is subsumed here to avoid
     // duplicate warnings.
     warnings.extend(check_cross_stage_wiring_coverage(stages));
-    warnings.extend(check_missing_brief_paths(stages, repo_root));
     warnings.extend(check_file_ownership(stages));
     warnings.extend(check_worker_granularity(stages));
     warnings.extend(check_declared_skills(stages).warnings);

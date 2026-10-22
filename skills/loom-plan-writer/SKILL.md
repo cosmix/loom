@@ -94,7 +94,7 @@ Skipping exploration causes duplicate code, poor reuse, AND the #1 failure above
 
 ### After writing: validate, self-review, STOP
 
-1. **Run `loom plan verify --strict doc/plans/PLAN-<name>.md`** — parses YAML, validates structure (bookends, dependencies, required fields, declared `skills:`), lints every criterion (Section 6), checks sandbox, builds the DAG. `--strict` fails on warnings too. READ-ONLY (does not create `.loom/work/`). Fix and re-run until it passes. Structural validity does NOT mean the claims are true.
+1. **Run `loom plan verify --strict doc/plans/PLAN-<name>.md`** — parses YAML, validates structure (bookends, dependencies, required fields, declared `skills:`), lints every criterion (Section 6), checks sandbox, builds the DAG, and checks every brief/input reference the run preflight follows (invalid or missing ones are errors; uncommitted ones are a note). `--strict` fails on warnings too. READ-ONLY (does not create `.loom/work/`). Fix and re-run until it passes. Structural validity does NOT mean the claims are true.
 2. **Content self-review:**
    - **Self-consistency sweep** — after any edit, `rg` the CLAIM (status code, field, path, decision) across the WHOLE file and reconcile prose ↔ YAML. If they can still diverge, declare one authoritative ("YAML is authoritative where they differ").
    - **Every reassuring adjective is an unverified claim.** For each "unchanged / identical / backward-compatible / safe", name the `file:line` that GUARANTEES it AND the test that PROVES it.

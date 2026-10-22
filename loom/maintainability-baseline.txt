@@ -9,7 +9,7 @@
 
 file src/commands/graph/tests.rs 425
 file src/commands/init/tests.rs 448
-file src/commands/plan/verify.rs 555
+file src/commands/plan/verify.rs 504
 file src/fs/permissions/settings.rs 411
 file src/fs/safe_fs.rs 1019
 file src/fs/work_dir.rs 429
@@ -27,7 +27,7 @@ file src/orchestrator/terminal/emulator.rs 611
 file src/orchestrator/terminal/native/pid_tracking.rs 452
 file src/plan/parser/extraction.rs 410
 file src/plan/schema/tests/validation_tests.rs 826
-file src/plan/schema/validation.rs 1190
+file src/plan/schema/validation.rs 1189
 file src/plan/tests/amendment.rs 605
 file src/sandbox/config.rs 822
 file src/sandbox/settings.rs 438
@@ -38,7 +38,7 @@ file tests/adjudication_e2e.rs 525
 file tests/e2e/tmux_backend.rs 437
 file tests/failure_resume.rs 468
 file tests/integration/merge_conflict_recovery.rs 414
-file tests/integration/plan_verify.rs 1028
+file tests/integration/plan_verify.rs 1027
 
 function src/cli/dispatch.rs dispatch 69
 function src/commands/clean/mod.rs print_summary 52
@@ -54,7 +54,7 @@ function src/commands/init/tests.rs test_cleanup_orphaned_sessions_reaps_live_on
 function src/commands/init/tests.rs test_create_stage_from_definition_no_dependencies 62
 function src/commands/knowledge/tests.rs test_knowledge_update_in_worktree_writes_to_worktree 74
 function src/commands/knowledge/tests.rs test_parse_file_type 70
-function src/commands/plan/verify.rs execute 133
+function src/commands/plan/verify.rs execute 124
 function src/commands/plan/verify.rs print_human 98
 function src/commands/repair.rs execute 99
 function src/commands/repair/tests.rs repair_fixes_a_stale_knowledge_directory_deny_in_a_worktree 62
@@ -129,7 +129,7 @@ function src/plan/parser/mod.rs test_parse_plan_with_all_fields 74
 function src/plan/schema/tests/security_policy_tests.rs rejects_misspelled_nested_sandbox_fields 58
 function src/plan/schema/validation.rs check_cross_stage_wiring_coverage 66
 function src/plan/schema/validation.rs validate 357
-function src/plan/schema/validation.rs validate_structural_preflight 223
+function src/plan/schema/validation.rs validate_structural_preflight 222
 function src/sandbox/settings.rs generate_settings_json 106
 function src/sandbox/settings/policy.rs filesystem_settings 52
 function src/sandbox/settings/tests.rs every_stage_type_can_write_the_knowledge_directory 56

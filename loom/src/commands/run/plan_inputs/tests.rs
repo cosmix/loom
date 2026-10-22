@@ -321,3 +321,25 @@ fn rename_commit_writes_no_ledger_line_without_a_record() {
 
     assert!(!work.root().join(LEDGER_FILE).exists());
 }
+
+#[test]
+fn lists_invalid_references_with_uncommitted_inputs_in_one_error() {
+    let (temp, work) = fixture();
+    let root = temp.path();
+    write(
+        root,
+        PLAN,
+        &format!("Read `{BRIEF}` and doc/plans/briefs/x**.md."),
+    );
+    let error = require_committed_plan(&work).unwrap_err().to_string();
+    assert!(error.contains(&format!("{PLAN}: not committed")), "{error}");
+    assert!(
+        error.contains(&format!(
+            "doc/plans/briefs/x**.md (referenced in {PLAN}): not a valid path or glob"
+        )),
+        "{error}"
+    );
+    commit_inputs(root);
+    let error = require_committed_plan(&work).unwrap_err().to_string();
+    assert!(error.contains("doc/plans/briefs/x**.md"), "{error}");
+}

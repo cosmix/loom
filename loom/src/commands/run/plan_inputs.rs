@@ -1,6 +1,8 @@
 //! Require execution inputs in the base branch before creating stage worktrees.
+//!
+//! Input discovery and the per-file commit check live in `crate::plan::inputs`,
+//! shared with `loom plan verify`.
 
-mod discovery;
 #[cfg(test)]
 mod tests;
 
@@ -9,6 +11,7 @@ use std::path::Path;
 
 use crate::fs::{plan_lifecycle, work_dir::WorkDir};
 use crate::git::runner::{run_git, run_git_checked};
+use crate::plan::inputs::{collect_inputs, uncommitted_reason};
 
 /// Unrelated scratch files are allowed, but every plan input must be committed.
 pub(super) fn require_committed_plan(work_dir: &WorkDir) -> Result<()> {
@@ -26,10 +29,14 @@ pub(super) fn require_committed_plan(work_dir: &WorkDir) -> Result<()> {
     }
     let plan = crate::fs::resolve_source_path(work_dir.root())?
         .context("No active plan; run loom init <plan-path> first")?;
-    let inputs = discovery::collect_inputs(root, &plan)?;
-    let mut problems = Vec::new();
-    for path in inputs {
-        if let Some(reason) = uncommitted_reason(root, &path)? {
+    let inputs = collect_inputs(root, &plan)?;
+    let mut problems: Vec<String> = inputs
+        .invalid
+        .iter()
+        .map(|reference| format!("  {reference}"))
+        .collect();
+    for path in inputs.files.keys() {
+        if let Some(reason) = uncommitted_reason(root, path)? {
             problems.push(format!("  {}: {reason}", path.display()));
         }
     }
@@ -37,43 +44,12 @@ pub(super) fn require_committed_plan(work_dir: &WorkDir) -> Result<()> {
         bail!(
             "Cannot start loom run: the active plan and its briefs must be committed on \
              '{base}'.\n{}\nStage worktrees only receive committed files. Restore missing \
-             inputs and commit the listed paths, then run loom run again. \
+             inputs, fix invalid references and commit the listed paths, then run loom run again. \
              Copying inputs into a stage worktree can block its merge or cleanup.",
             problems.join("\n")
         );
     }
     Ok(())
-}
-
-fn uncommitted_reason(root: &Path, path: &Path) -> Result<Option<&'static str>> {
-    if !root.join(path).is_file() {
-        return Ok(Some("missing file"));
-    }
-    let path = path.to_str().context("Plan input path is not UTF-8")?;
-    let literal = format!(":(literal){path}");
-    let committed = run_git_checked(&["ls-tree", "HEAD", "--", &literal], root)?;
-    if committed.is_empty() {
-        return Ok(Some("not committed (untracked, ignored, or staged only)"));
-    }
-    let status = run_git_checked(
-        &[
-            "status",
-            "--porcelain=v1",
-            "--untracked-files=all",
-            "--",
-            &literal,
-        ],
-        root,
-    )?;
-    if !status.is_empty() {
-        return Ok(Some("uncommitted changes"));
-    }
-    // `assume-unchanged` and `skip-worktree` can hide edits from git status.
-    let actual = run_git_checked(&["hash-object", "--path", path, "--", path], root)?;
-    if committed.split_whitespace().nth(2) != Some(actual.as_str()) {
-        return Ok(Some("working copy differs from the committed file"));
-    }
-    Ok(None)
 }
 
 /// Commit Loom's own rename so the active filename exists in every new worktree.
