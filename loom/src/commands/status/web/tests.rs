@@ -23,6 +23,8 @@ mod config_api;
 mod embedded;
 #[path = "tests/errors.rs"]
 mod errors;
+#[path = "tests/notice.rs"]
+mod notice;
 #[path = "tests/ports.rs"]
 mod ports;
 #[path = "tests/pure.rs"]

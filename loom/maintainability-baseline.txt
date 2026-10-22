@@ -75,7 +75,7 @@ function src/commands/verify.rs execute 63
 function src/completions/dynamic/mod.rs complete_after_subcommand 56
 function src/completions/install.rs install 52
 function src/context/refresh/tests_source_graph/enumeration.rs an_unreadable_file_survives_as_a_reported_lexical_only_entry 62
-function src/daemon/server/broadcast.rs run_status_broadcaster 80
+function src/daemon/server/broadcast.rs run_status_broadcaster 79
 function src/daemon/server/lifecycle.rs run_server 126
 function src/daemon/server/status.rs collect_completion_summary 97
 function src/daemon/server/tests.rs test_collect_status_with_stages 77

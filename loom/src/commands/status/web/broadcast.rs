@@ -290,11 +290,42 @@ pub(super) fn poll_files_once(
     notice: Option<&str>,
     terminals: bool,
 ) -> Result<()> {
-    let data = collect_status_data(work_dir)?;
+    let data = match collect_status_data(work_dir) {
+        Ok(data) => data,
+        Err(error) => {
+            // Collection fails for the same reason the daemon lane degraded, so
+            // returning here would leave the browser frozen with no explanation.
+            let reason = notice.map_or_else(|| format!("{error:#}"), str::to_owned);
+            if republish_with_notice(broadcaster, &reason) {
+                return Ok(());
+            }
+            return Err(error);
+        }
+    };
     let mut snapshot = collect_snapshot(work_path, data, SnapshotSource::Files, terminals);
     snapshot.notice = notice.map(str::to_owned);
     broadcaster.publish(serde_json::to_string(&snapshot).context("serialize file snapshot")?);
     Ok(())
+}
+
+/// Publish the latest frame again with `notice` set, so the browser shows the
+/// failure above the rows it last received. Returns false when there is no
+/// frame to carry the notice (nothing was published yet, or it is unparseable).
+pub(super) fn republish_with_notice(broadcaster: &Broadcaster, notice: &str) -> bool {
+    let Some(latest) = broadcaster.latest() else {
+        return false;
+    };
+    let Ok(mut snapshot) = serde_json::from_str::<WebSnapshot>(&latest) else {
+        return false;
+    };
+    snapshot.notice = Some(notice.to_owned());
+    match serde_json::to_string(&snapshot) {
+        Ok(json) => {
+            broadcaster.publish(json);
+            true
+        }
+        Err(_) => false,
+    }
 }
 
 fn body_without_timestamp(json: &str) -> String {

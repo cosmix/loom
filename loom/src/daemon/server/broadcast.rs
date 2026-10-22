@@ -151,15 +151,16 @@ pub fn spawn_quota_poller(server: &DaemonServer) -> JoinHandle<()> {
 
 /// What the broadcaster loop remembers between ticks.
 ///
-/// Both fields are one-shot latches rather than counters: the completion
-/// summary is sent once, and the oversized-payload line is logged once per
-/// entry into the condition. Without the second latch a payload that stays over
-/// the frame limit writes one line per second into `orchestrator.log`, which
-/// only rotates when the daemon restarts.
+/// The fields are one-shot latches rather than counters: the completion
+/// summary is sent once, and the oversized-payload and collection-failure lines
+/// are logged once per entry into the condition. Without the latches a
+/// condition that persists writes one line per second into `orchestrator.log`,
+/// which only rotates when the daemon restarts.
 #[derive(Default)]
 struct BroadcastState {
     completion_sent: bool,
     oversized_logged: bool,
+    collect_failure_logged: bool,
 }
 
 /// Run the status broadcaster loop (static method for thread).
@@ -198,7 +199,8 @@ fn run_status_broadcaster(
             None
         };
 
-        let status_response = collect_status(work_dir).ok();
+        let status_response =
+            status_or_failure_notice(collect_status(work_dir), &mut state.collect_failure_logged);
 
         // Single lock acquisition for all broadcasts
         let subscriber_count = {
@@ -214,9 +216,7 @@ fn run_status_broadcaster(
                 }
 
                 // Send regular status update
-                if let Some(ref response) = status_response {
-                    broadcast_retaining_live(&mut subs, response, &mut state.oversized_logged);
-                }
+                broadcast_retaining_live(&mut subs, &status_response, &mut state.oversized_logged);
 
                 subs.len()
             }
@@ -240,6 +240,30 @@ fn run_status_broadcaster(
                 "Orchestration complete (final) - notified {} subscriber(s)",
                 subs.len()
             );
+        }
+    }
+}
+
+/// The response to broadcast for one status collection.
+///
+/// A failed collection is sent as a [`Response::Error`] instead of being
+/// dropped: subscribers otherwise freeze on their last frame while the
+/// dashboard header, which reads `orchestrator.tick`, reports a healthy daemon.
+/// The failure is logged on entry into the condition only; `failure_logged`
+/// resets once a collection succeeds.
+fn status_or_failure_notice(collected: Result<Response>, failure_logged: &mut bool) -> Response {
+    match collected {
+        Ok(response) => {
+            *failure_logged = false;
+            response
+        }
+        Err(error) => {
+            let message = format!("Status collection failed: {error:#}");
+            if !*failure_logged {
+                eprintln!("{message}");
+                *failure_logged = true;
+            }
+            Response::Error { message }
         }
     }
 }

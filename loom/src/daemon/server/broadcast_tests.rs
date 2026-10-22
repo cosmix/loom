@@ -177,3 +177,27 @@ fn a_subscriber_that_reads_nothing_still_receives_the_next_tick() {
     let mut trailing = [0u8; 1];
     assert!(reader.read(&mut trailing).is_err());
 }
+
+#[test]
+fn a_failed_collection_becomes_an_error_notice_logged_once_per_entry() {
+    let mut logged = false;
+
+    let first = status_or_failure_notice(Err(anyhow::anyhow!("bad stage file")), &mut logged);
+    assert!(logged);
+    match first {
+        Response::Error { message } => {
+            assert_eq!(message, "Status collection failed: bad stage file");
+        }
+        other => panic!("expected an error notice, got {other:?}"),
+    }
+
+    // Still failing: the notice is sent again, the latch stays set.
+    let again = status_or_failure_notice(Err(anyhow::anyhow!("bad stage file")), &mut logged);
+    assert!(matches!(again, Response::Error { .. }));
+    assert!(logged);
+
+    // Recovery passes the response through and re-arms the latch.
+    let recovered = status_or_failure_notice(Ok(small_response()), &mut logged);
+    assert!(matches!(recovered, Response::LogLine { .. }));
+    assert!(!logged);
+}
