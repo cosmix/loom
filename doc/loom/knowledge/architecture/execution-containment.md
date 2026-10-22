@@ -175,6 +175,33 @@ repository), these sandbox rules decide what loom's capsule can and cannot expre
   `config.worktree`, `commondir`, `objects/info/alternates`, `objects/info/http-alternates` and
   each `worktrees/*/{config.worktree,commondir}`. No setting turns the grant off. A session whose
   `.git` is a directory gets `.git/hooks` and `.git/config` denied instead.
+- **The `config.worktree` create and the deny order** (read from the 2.1.302 bundle, re-read on
+  2.1.306 and 2.1.308, whose create loop and built-in deny list are identical; never observed
+  live). Claude Code creates an empty `config.worktree` with an exclusive create in the common
+  directory and in every `worktrees/<name>/` entry, then denies it and that entry's `commondir`.
+  An absent `config.worktree.lock` goes to a scrub list, not a bind. These built-in denies are
+  pushed before the settings sources' `denyWrite` entries, so the srt emulation in
+  `tests_confinement_srt.rs` (`srt_settings`) lists its emulated Claude Code git denies first, in
+  that order.
+- **What 2.1.306 and later add.** A read-denied file is bound with `--ro-bind /dev/null <p>`; an
+  existing deny path that lies under an already read-only denied directory is skipped; a
+  read-deny placeholder that would need a mount point under a read-only deny draws a warning; the
+  `config.worktree` create is deferred only in remote mode and also runs through symlinked
+  registry entries; and an absent deny path gets a placeholder mounted on later commands. The
+  no-nesting rule below stays, because these guards cover only the cases Claude Code predicts.
+- **bubblewrap refuses a mount point beneath a read-only bind** (measured with 0.11.1):
+  `bwrap --bind / / --dev /dev --ro-bind D D --ro-bind /dev/null D/absent true` exits 1 with
+  `Can't create file at D/absent: Read-only file system`. The reverse order (absent file first,
+  then `D`) runs and leaves a 0-byte file on the host; a bind over a file that already exists in
+  `D` runs in either order, and `--tmpfs` on an absent path beneath a read-only bind aborts the
+  same way. Loom therefore never emits a `denyWrite` entry beneath another `denyWrite` directory
+  it emits: a sibling administrative directory is denied whole and carries no separate
+  `config.worktree` deny, and the own directory carries only that one (see [Loom's `config.worktree`
+  Deny and Check](security-and-isolation.md#looms-configworktree-deny-and-check)).
+- **A `/dev/null` bind does not read empty.** bubblewrap mounts every non-dev bind `nodev`, so a
+  file bound with `--ro-bind /dev/null <p>` fails to open with EACCES (`Permission denied`); it
+  does not read as 0 bytes. Only `--dev-bind` reads empty, and that is not what Claude Code uses.
+  Measured on 2026-10-21, also nested inside a host-job-style `bwrap --unshare-all ... --remount-ro /`.
 - **Bind order.** Every `allowWrite` entry is bound first and every `denyWrite` entry after, so a
   deny always wins and an allow nested inside a deny never reopens it. `allowRead` reopens a path
   inside a `denyRead` directory; nothing reopens a write deny.
@@ -194,7 +221,7 @@ repository), these sandbox rules decide what loom's capsule can and cannot expre
 
 What this exposes, and why no deny-list can narrow it, is in
 [Agent Rule-Bending Hardening](../concerns/agent-rule-bending-hardening.md), G2.
-Loom's own `config.worktree` deny and check: [Loom's `config.worktree` Deny and Check](security-and-isolation.md#looms-configworktree-deny-and-check).
+Loom's own administrative-directory denies and `config.worktree` check: [Loom's `config.worktree` Deny and Check](security-and-isolation.md#looms-configworktree-deny-and-check).
 
 ## In-Tree `allow_write` Entries Are Not Emitted
 

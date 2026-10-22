@@ -202,12 +202,22 @@ dispute covers loom's own gates, a deliberate block is never retried; proposed: 
 
 ## Sandbox Denial Is Unproven End to End
 
-Nothing proves sandbox denial holds against a live Claude Code runtime, and the srt stand-in misses
-the git-dir grant and every read deny. Also: credential reads confined to five home paths, sibling
-worktrees readable from Bash, the codex lane's whole `~/.codex` grant, an inert credential-guard
-rule, three stage-env allowlists (sessions get no proxy, CA or `CLAUDE_CONFIG_DIR` names), and the `Read(...)` deny-rule ban, among others.
-"Tool Routes That Run Outside the Bash Sandbox" lists the tools (LSP plugins, cross-session
-messaging, `WebFetch`, `RemoteTrigger`) the OS sandbox does not wrap.
+The capsule's denies are proven on the emitted capsule and, in CI, under bubblewrap (sibling
+administrative directories, credential files); nothing in CI proves them against a live Claude Code
+runtime, and the srt stand-in misses the git-dir grant. The manual release checklist
+(`doc/sandbox-release-checklist.md`) is the only live check. Open: credential files outside the nine
+listed (and a checkout-rooted session's file tools, which no hook checks against them), sibling
+worktrees and the main checkout readable from Bash, refs and objects writable (ref denies
+unmeasured), the residuals of the sibling-directory denies (unregistered or later-registered
+worktrees, a rewritten `gitdir`), tools still allowed and unmeasured (`Monitor`, `EnterWorktree`,
+`ExitWorktree` and others), unconfined `loom knowledge bootstrap`, the codex lane's whole `~/.codex`
+grant, an inert credential-guard rule, three stage-env allowlists (sessions get no proxy, CA or
+`CLAUDE_CONFIG_DIR` names), and the `Read(...)` deny-rule ban, among others.
+"Tool Routes That Run Outside the Bash Sandbox" lists what the capsule denies (`LSP`,
+`RemoteTrigger`, `CronCreate`, `PushNotification`, and `Workflow` except in an ultracode Stage
+session) and what stays allowed (`WebFetch`, `WebSearch`, `SendMessage`, `ListAgents`, plugins).
+The sibling-directory residuals, the other open route-closure items and the unimplemented reviewer
+suggestions are in [Agent Rule-Bending Hardening](concerns/agent-rule-bending-hardening.md#sibling-directory-denies-residuals).
 
 → [Sandbox and Confinement Gaps](concerns/sandbox-and-confinement-gaps.md)
 
@@ -216,3 +226,7 @@ messaging, `WebFetch`, `RemoteTrigger`) the OS sandbox does not wrap.
 The plan 4 harness printed a stop-rule FAIL on all three recorded pairs (guard-core to guard-integration gains -444 and -2,221 tokens against a 12,190 cost); the operator overrode it and the verdict is printed, not asserted. Also open: spool id validation, render and path-normalization cost bounds, evidence-matching edges, test gaps, and the finalization-guard heredoc scan.
 
 → [Dependency Findings Follow-Ups](concerns/token-accounting-and-proof-defects.md#dependency-findings-follow-ups)
+
+## Reviewer Rounds Are Recorded Twice
+
+A `loom-code-reviewer` that delivers its `loom-review` block through `SubagentHandback` and again in its final message records two review rounds with duplicate finding ids; the sandbox route-closure stages hit it in route-closure (rounds 4 and 5) and integration-verify, after earlier hits in [Review Rounds Recorded Twice](mistakes/subagent-orchestration.md). Each duplicate id then needs its own `resolved` listing. Proposal: the round recorder keeps one round per reviewer agent id (the later delivery replaces the earlier one when the blocks are equal), instead of every brief having to name a single delivery channel.

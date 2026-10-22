@@ -329,7 +329,7 @@ Review rounds are counted per reviewer and per stage. A gate runs once per tree,
 
 **Fix:** not recorded in the memory whether the hook now records one round per reviewer agent id. Check `loom stage review status <stage-id>` after the next stage that runs several reviewers.
 
-**Recurred (2026-10-22):** a `loom-code-reviewer` that both called `SubagentHandback` and ended its final message with the same `loom-review` block recorded two rounds with duplicate findings again (rounds 4/5 and 6/7: F-4-*= F-5-_, F-6-_ = F-7-*); each duplicate id needed its own `resolved` listing in the next round. A reviewer brief names ONE delivery channel for the review block.
+**Recurred (2026-10-22):** a `loom-code-reviewer` that both called `SubagentHandback` and ended its final message with the same `loom-review` block recorded two rounds with duplicate findings again (rounds 4/5 and 6/7: `F-4-*` = `F-5-*`, `F-6-*` = `F-7-*`); each duplicate id needed its own `resolved` listing in the next round. A reviewer brief names ONE delivery channel for the review block. The sandbox route-closure stage and its integration-verify stage recorded the same pair again (rounds 4/5 in route-closure), so the recurrence is systemic: the proposal for a recorder-side fix is in [Reviewer Rounds Are Recorded Twice](../concerns.md).
 
 ## Gate Rounds Repeated the Criteria Completion Runs (2026-10-21)
 

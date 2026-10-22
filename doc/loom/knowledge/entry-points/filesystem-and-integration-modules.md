@@ -7,7 +7,7 @@
 ## Git Operations
 
 - `git/worktree/operations.rs` - Create/remove worktrees at `.worktrees/{stage-id}/`
-- `git/worktree/config_worktree.rs` - `worktree_admin_dirs` (admin dirs whose `config.worktree` the capsule denies), `check_worktree_config` (pinned git refuses unexpected `config.worktree` keys)
+- `git/worktree/config_worktree.rs` - `worktree_admin_dirs` (the real directories under `<common>/worktrees`, listed at spawn), `partition_admin_dirs` / `AdminDirs` (split them into the session's `own` entry and its `siblings`; an unclaimed or doubly claimed worktree is an error, so the spawn is refused), `check_worktree_config` (pinned git refuses unexpected `config.worktree` keys)
 - `git/worktree/base.rs` - Base branch resolution for dependencies
 - `git/worktree/settings.rs` - Worktree symlinks (.loom/work, .claude/CLAUDE.md, CLAUDE.md)
 - `git/merge/mod.rs` - `merge_stage`: `merge-tree` + `commit-tree`, never git in the operator's checkout; `MergeResult`, `MergeBlock`
@@ -39,7 +39,13 @@
 ## Sandbox
 
 - `sandbox/config.rs` - MergedSandboxConfig, merge_config(), expand_paths()
-- `sandbox/settings.rs` - generate_settings_json(), build_settings() (builds the settings document and writes nothing; the per-session capsule file is written by `write_session_capsule` in `orchestrator/terminal/native/session_settings.rs`, contents from `capsule_settings`)
+- `sandbox/settings.rs` - generate_settings_json(), build_settings() (builds the settings document and writes nothing; the per-session capsule file is written by `write_session_capsule` in `orchestrator/terminal/native/session_settings.rs`, contents from `capsule_settings`); `target_is_worktree` decides whether a capsule is worktree-rooted
+- `sandbox/settings/policy.rs` - `mandatory_deny_read(codex_licensed)`: the read denies every capsule carries (credential directories, nine credential files, the codex credential unless the stage licenses the lane)
+- `sandbox/control_surfaces/session_denies.rs` - `session_denies`: the capsule's write denies, including the whole-directory sibling administrative denies (`deny_worktree_admin_dirs`)
+- `orchestrator/terminal/native/session_settings/contents.rs` - `capsule_deny_rules`: the Edit rules plus the tool-route denies (`SESSION_TOOL_DENIES`, and `Workflow` unless `workflow_licensed`)
+- `orchestrator/terminal/native/tests_capsule_bwrap.rs` - the bubblewrap probe of the emitted capsule (`tests_capsule_denies::bwrap`); `process/sandbox_probe.rs` holds its skip helpers
+- `orchestrator/core/manual_start.rs` - the pure builders for the `To start:` command lines `loom run --manual` prints, each followed by a `Confinement: none.` notice
+- `doc/sandbox-release-checklist.md` - the fifteen-row manual canary a person runs against a live Claude Code session before a release that touches the capsule
 
 ## Remote Control Module
 

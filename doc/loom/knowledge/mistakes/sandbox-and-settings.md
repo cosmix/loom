@@ -365,3 +365,27 @@ commands (e.g. `loom map`'s overlay). See `concerns/sandbox-and-confinement-gaps
 **Why:** the codex lane runs `codex exec` inside the sandboxed Bash call, so Codex's own writes to its home pass through the session denies; Codex writes `skills/.system/` (bundled system skills) and `rules/default.rules` (exec-policy approvals). Claude Code's own process is not sandboxed, so `.claude` denies only bind the session's Bash and Edit tool.
 **Prevention:** a control-surface deny names only files loom installs or that inject instructions (hooks, the Codex hooks file and config, the AGENTS/CLAUDE instruction files, `prompts/**`, `loom-skill-catalog/**`, and one entry per loom-installed skill dir from the asset table), never a whole client directory. Before adding a deny under a client root, check what the client writes there at runtime.
 **Fix:** the `.codex` home surfaces deny per-skill dirs from `codex_skill_dir_names()` (`codex_skill_surfaces` in `loom/src/sandbox/control_surfaces.rs`); tests assert `skills/.system`, `rules`, `sessions`, `log`, `history.jsonl` and the auth file stay writable. Relocated roots no longer exist.
+
+## A Metaplan Denied the Workflow Tool That Ultracode Stages Run On
+
+**What happened:** metaplan section 7 specified `Workflow` among the tool names to deny in every capsule. The tree licenses it for `ultracode: true` stages: `launch.rs::initial_prompt` puts the keyword "ultracode" in the Stage session's prompt, and `orchestrator/signals/format/sections.rs` tells that session to use the tool. The stage brief caught the conflict before any code shipped.
+
+**Why:** the gap list the metaplan drew on says only that `RemoteTrigger`, `CronCreate`, `Workflow` and `PushNotification` run outside the Bash sandbox, not which a shipped feature depends on.
+
+**Prevention:** before denying a tool, `rg -n -w <Tool> loom/src` plus the agents and skills. A deny a feature needs takes a licence predicate the feature's own switch also reads: `launch.rs::workflow_licensed` feeds both the prompt keyword and `capsule_deny_rules`. Release checklist rows 11 and 12 check both sides live.
+
+## A Deny Beneath a Denied Directory Aborts Bubblewrap, and a Probe Control Must Fit Every Row
+
+**What happened:** the plan denied each sibling worktree administrative directory whole and kept the per-worktree `config.worktree` deny beneath it. With bubblewrap 0.11.1 a mount point beneath a read-only bind makes `bwrap` exit 1 (`Can't create file at D/absent: Read-only file system`), so every such spawn would have failed. The bubblewrap probe then asserted a worktree write succeeds for every row, but the checkout-rooted Knowledge capsule denies `.worktrees`, so the host run failed (`tree` rc=1).
+
+**Why:** the old per-file loop never nested anything, and no test ran the emitted capsule under bubblewrap. The brief named the worktree control for Stage and Merge rows only; the worker applied it to all rows and could not run `bwrap` in its shell.
+
+**Prevention:** never emit a `denyWrite` entry beneath another `denyWrite` directory it emits ([Execution Containment](../architecture/execution-containment.md#claude-code-grants-a-linked-worktree-its-whole-git-common-directory)); keep `tests_capsule_denies::bwrap` in CI when a capsule deny changes shape. Pick a probe's control from a path every row's capsule grants (the object store) and assert the row-specific expectation separately. **Fix:** `deny_worktree_admin_dirs` denies siblings whole and gives only the own directory a `config.worktree` deny; `sibling_admin_dirs_refuse_writes_and_the_own_dir_takes_them` uses `objects` as the shared control.
+
+## Metaplan Reasons Went Stale Against the Tree
+
+**What happened:** four metaplan statements were wrong when the stage ran: ref denies stay out "while stages commit in-session" (commits are daemon-owned), `MANDATORY_DENY_READ` can take a second const (it is a const alias over one array that cannot hold a conditional entry), the plan-writer and agent definitions contain LSP text to change (`rg -n -w LSP` finds none there), and Claude Code is 2.1.306 (installed: 2.1.308, with an identical create loop and built-in deny list).
+
+**Why:** the metaplan is untracked prose written at an earlier commit; each claim was a reading of code that later changed.
+
+**Prevention:** a stage keeps a "Deviations from the metaplan (the tree wins)" list and re-verifies each code-grounded claim at run time. The ref-denies reason that survives is "nobody measured a `refs/` deny under the current grant" ([Agent Rule-Bending Hardening](../concerns/agent-rule-bending-hardening.md), G2). **Fix:** `mandatory_deny_read(codex_licensed)` replaced the alias.
