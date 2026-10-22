@@ -4,6 +4,71 @@
 # Get the repo root (where .git is)
 REPO_ROOT="$(git rev-parse --show-toplevel)"
 
+# git push opens the connection to the remote and reads its ref advertisement
+# before it runs this hook, then holds that connection idle while the checks
+# run. The checks take long enough for the remote to close it; git then writes
+# to a closed pipe after the hook returns 0 and exits 141 without a message,
+# and nothing is pushed. A hook cannot reopen git's connection, so a commit
+# that passed is recorded and the same push run again skips the checks.
+# scripts/push.sh runs the checks before any connection exists.
+#
+# Stdin carries one line per ref being updated:
+#   <local ref> <local sha> <remote ref> <remote sha>
+# Git omits refs that are already up to date. Deletions (all-zero local sha)
+# need no checks.
+PUSHES=""
+while read -r _lref LSHA RREF _rsha; do
+    case "$LSHA" in
+        *[!0]*) PUSHES="$PUSHES$LSHA $RREF
+" ;;
+    esac
+done
+# Keep cargo and the tests off git's pipe.
+exec </dev/null
+
+if [ -z "$PUSHES" ]; then
+    echo "pre-push: nothing to push; skipping checks."
+    exit 0
+fi
+
+# One full commit sha per line, shared by every worktree of the repository.
+VERIFIED_FILE="$(git rev-parse --path-format=absolute --git-common-dir)/loom-pre-push-verified"
+
+# A tag push never skips: the commit a release tag points at builds the bare
+# release version, not "-dev", and the tag push's hook is the first suite run
+# against that build (CONTRIBUTING.md, release section). Only branch pushes of
+# recorded commits skip.
+ALL_VERIFIED=1
+SKIPPED=""
+while read -r LSHA RREF; do
+    [ -n "$LSHA" ] || continue
+    case "$RREF" in
+        refs/heads/*) ;;
+        *) ALL_VERIFIED=0; break ;;
+    esac
+    if ! git rev-parse --verify -q "$LSHA^{commit}" >/dev/null 2>&1 \
+        || ! grep -qx "$LSHA" "$VERIFIED_FILE" 2>/dev/null; then
+        ALL_VERIFIED=0
+        break
+    fi
+    SKIPPED="$SKIPPED $(git rev-parse --short "$LSHA")"
+done <<EOF
+$PUSHES
+EOF
+if [ "$ALL_VERIFIED" -eq 1 ]; then
+    echo "pre-push:$SKIPPED already passed these checks; skipping."
+    exit 0
+fi
+
+# The checks verify the working tree, so HEAD may be recorded only when the
+# tracked tree is clean for the whole run.
+HEAD_BEFORE="$(git rev-parse HEAD)"
+if [ -z "$(git status --porcelain --untracked-files=no)" ]; then
+    TREE_CLEAN_BEFORE=1
+else
+    TREE_CLEAN_BEFORE=0
+fi
+
 # Run checks in the loom directory
 cd "$REPO_ROOT/loom" || exit 1
 
@@ -146,3 +211,23 @@ if ! "$REPO_ROOT/scripts/flake-check.sh"; then
 fi
 
 echo "All pre-push checks passed."
+
+# Record HEAD only when the checks saw exactly HEAD: clean tracked tree before
+# and after, same commit. Keep the last 50 entries.
+HEAD_SHORT="$(git rev-parse --short "$HEAD_BEFORE")"
+if [ "$TREE_CLEAN_BEFORE" -eq 1 ] \
+    && [ -z "$(git status --porcelain --untracked-files=no)" ] \
+    && [ "$(git rev-parse HEAD)" = "$HEAD_BEFORE" ]; then
+    VERIFIED_TMP="$VERIFIED_FILE.$$"
+    { cat "$VERIFIED_FILE" 2>/dev/null; echo "$HEAD_BEFORE"; } | tail -n 50 > "$VERIFIED_TMP"
+    mv "$VERIFIED_TMP" "$VERIFIED_FILE"
+    echo "If git prints no \"To <remote>\" line below, the remote closed the connection during the checks and nothing was pushed."
+    echo "Run the same push again: $HEAD_SHORT is recorded as verified, so the checks are skipped."
+else
+    if [ "$TREE_CLEAN_BEFORE" -eq 0 ] || [ -n "$(git status --porcelain --untracked-files=no)" ]; then
+        WHY="tracked changes present"
+    else
+        WHY="HEAD moved"
+    fi
+    echo "Result not recorded ($WHY). If the remote closed the connection during the checks, run scripts/push.sh or git push --no-verify."
+fi
