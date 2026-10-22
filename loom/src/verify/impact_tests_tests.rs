@@ -47,6 +47,7 @@ impl ProbeRunner for Recorder {
             stderr: String::new(),
             exit_code: Some(0),
             timed_out: false,
+            cached: None,
         })
     }
 }
@@ -62,6 +63,7 @@ impl ProbeRunner for NotFound {
             stderr: String::new(),
             exit_code: Some(127),
             timed_out: false,
+            cached: None,
         })
     }
 }

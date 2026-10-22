@@ -19,7 +19,7 @@ use crate::plan::schema::ContractSpec;
 use crate::relay::sha256_hex;
 use crate::testrun::{classify, RunOutcome, RunOutput, TestRunnerAdapter};
 use crate::verify::criteria::{
-    plan_confinement, CriteriaConfig, CriteriaProbe, ProbeRun, ProbeRunner,
+    plan_confinement, CachedRun, CriteriaConfig, CriteriaProbe, ProbeRun, ProbeRunner,
 };
 
 /// Fail unless every frozen file is unchanged and every contract passes.
@@ -136,6 +136,9 @@ fn judge(
     if run.timed_out {
         return Some(format!("contract '{id}' timed out running `{command}`"));
     }
+    if let Some(cached) = &run.cached {
+        return judge_cached(contract, adapter, command, run.exit_code, cached);
+    }
     let output = RunOutput {
         stdout: &run.stdout,
         stderr: &run.stderr,
@@ -153,6 +156,28 @@ fn judge(
             contract.test
         )),
         Some(RunOutcome::Unparsed) | None => judge_exit_code(id, adapter, command, run.exit_code),
+    }
+}
+
+/// A certified cache hit already proved the exit code and, under the
+/// zero-test guard, the count of tests run. Its output is a tail that may hold
+/// only the trailing `running 0 tests` blocks of other test binaries, so the
+/// recorded count decides instead of a re-parse.
+fn judge_cached(
+    contract: &ContractSpec,
+    adapter: Option<&dyn TestRunnerAdapter>,
+    command: &str,
+    exit_code: Option<i32>,
+    cached: &CachedRun,
+) -> Option<String> {
+    let id = &contract.id;
+    match cached.tests_executed {
+        Some(0) => Some(format!(
+            "contract '{id}': contract test not selected; `{command}` ran no test named '{}'",
+            contract.test
+        )),
+        Some(_) if exit_code == Some(0) => None,
+        _ => judge_exit_code(id, adapter, command, exit_code),
     }
 }
 

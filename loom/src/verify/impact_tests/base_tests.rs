@@ -23,6 +23,7 @@ fn cargo_run(failed: u32) -> ProbeRun {
         stderr: String::new(),
         exit_code: Some(if failed == 0 { 0 } else { 101 }),
         timed_out: false,
+        cached: None,
     }
 }
 
@@ -178,6 +179,7 @@ fn a_selection_that_does_not_build_at_the_base_either_stays_a_failure() {
                 .to_string(),
             exit_code: Some(101),
             timed_out: false,
+            cached: None,
         })
     });
     let mut broken = failed(0);

@@ -19,6 +19,10 @@ pub struct CriterionResult {
     /// real execution — see `super::cache`. Always `false` for results
     /// built via [`Self::new`]; the internal cache-hit constructor sets it.
     pub cached: bool,
+    /// On a cache hit, the tests the original run executed as the zero-test
+    /// guard counted them. A hit keeps only an output tail, too short to
+    /// re-count from; `None` on a real execution.
+    pub cached_tests_executed: Option<u64>,
 }
 
 impl CriterionResult {
@@ -42,6 +46,7 @@ impl CriterionResult {
             timed_out,
             output_complete: true,
             cached: false,
+            cached_tests_executed: None,
         }
     }
 
@@ -50,6 +55,7 @@ impl CriterionResult {
         exit_code: Option<i32>,
         stdout: String,
         stderr: String,
+        tests_executed: Option<u64>,
         duration: Duration,
     ) -> Self {
         Self {
@@ -62,6 +68,7 @@ impl CriterionResult {
             timed_out: false,
             output_complete: true,
             cached: true,
+            cached_tests_executed: tests_executed,
         }
     }
 

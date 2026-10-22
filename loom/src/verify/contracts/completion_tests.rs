@@ -26,6 +26,7 @@ impl ProbeRunner for Replay {
             stderr: String::new(),
             exit_code: Some(0),
             timed_out: false,
+            cached: None,
         })
     }
 }
@@ -126,6 +127,31 @@ fn completion_fails_when_contract_not_selected() {
 
     assert!(error.contains("not selected"), "{error}");
     assert!(error.contains("rejects-x"), "{error}");
+}
+
+/// A certified cache hit whose kept tail holds only `running 0 tests` blocks.
+struct CachedTail(Option<u64>);
+
+impl ProbeRunner for CachedTail {
+    fn run(&self, command: &str, package_dir: &Path) -> Result<ProbeRun> {
+        let mut run = Replay(NO_MATCH).run(command, package_dir)?;
+        run.cached = Some(CachedRun {
+            tests_executed: self.0,
+        });
+        Ok(run)
+    }
+}
+
+#[test]
+fn a_cache_hit_is_judged_by_its_recorded_test_count_not_its_tail() {
+    let fx = fixture();
+
+    run_check(&fx, &CachedTail(Some(1))).unwrap();
+    let error = run_check(&fx, &CachedTail(Some(0)))
+        .unwrap_err()
+        .to_string();
+
+    assert!(error.contains("not selected"), "{error}");
 }
 
 #[test]

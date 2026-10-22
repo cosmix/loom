@@ -274,6 +274,7 @@ fn cached_result_reports_current_lookup_duration() {
         Some(7),
         "diagnostic".to_string(),
         String::new(),
+        None,
         lookup,
     );
 

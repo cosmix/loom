@@ -202,6 +202,7 @@ fn run_with_cache(
             Some(record.actual_exit),
             record.stdout_tail,
             record.stderr_tail,
+            record.verdict.tests_executed,
             started.elapsed(),
         );
         return Ok(RunOutcome {

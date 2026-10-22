@@ -14,6 +14,15 @@ pub(in crate::verify) struct ProbeRun {
     pub(in crate::verify) stderr: String,
     pub(in crate::verify) exit_code: Option<i32>,
     pub(in crate::verify) timed_out: bool,
+    /// Set when the run is a certified cache hit: `stdout` and `stderr` are
+    /// then tails of the original run, too short to re-parse.
+    pub(in crate::verify) cached: Option<CachedRun>,
+}
+
+/// What a certified cache hit kept of the original run's test counts.
+pub(in crate::verify) struct CachedRun {
+    /// Tests the original run executed, as the zero-test guard counted them.
+    pub(in crate::verify) tests_executed: Option<u64>,
 }
 
 /// Runs a command with `package_dir` as its cwd.
@@ -44,6 +53,9 @@ impl ProbeRunner for CriteriaProbe<'_> {
             stderr: run.stderr.clone(),
             exit_code: run.exit_code,
             timed_out: run.timed_out,
+            cached: run.cached.then_some(CachedRun {
+                tests_executed: run.cached_tests_executed,
+            }),
         })
     }
 }
