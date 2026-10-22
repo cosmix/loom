@@ -10,7 +10,9 @@ REPO_ROOT="$(git rev-parse --show-toplevel)"
 # to a closed pipe after the hook returns 0 and exits 141 without a message,
 # and nothing is pushed. A hook cannot reopen git's connection, so a commit
 # that passed is recorded and the same push run again skips the checks.
-# scripts/push.sh runs the checks before any connection exists.
+# scripts/push.sh runs the checks before any connection exists, against the
+# commit in a separate check worktree (LOOM_PUSH_CHECK=1), so uncommitted
+# files in the operator's checkout do not matter.
 #
 # Stdin carries one line per ref being updated:
 #   <local ref> <local sha> <remote ref> <remote sha>
@@ -136,8 +138,14 @@ if [ -n "$MD_FILES" ]; then
         grep -v '^Finding:' "$MD_LOG"
         if [ -n "$MD_FIXED" ]; then
             echo ""
-            echo "Auto-fixed separately (uncommitted, commit these too):"
-            echo "$MD_FIXED" | sed 's/^/  /'
+            if [ -n "$LOOM_PUSH_CHECK" ]; then
+                echo "The commit also carries markdown that --fix changes:"
+                echo "$MD_FIXED" | sed 's/^/  /'
+                echo "Run 'bunx markdownlint-cli2 --fix <files>' in your checkout and commit the result."
+            else
+                echo "Auto-fixed separately (uncommitted, commit these too):"
+                echo "$MD_FIXED" | sed 's/^/  /'
+            fi
         fi
         echo ""
         echo "Fix the errors above, commit, then push again."
@@ -147,11 +155,19 @@ if [ -n "$MD_FILES" ]; then
 
     if [ -n "$MD_FIXED" ]; then
         echo ""
-        echo "Markdown lint auto-fixed these files in the working tree:"
-        echo "$MD_FIXED" | sed 's/^/  /'
-        echo ""
-        echo "The commits you are pushing still carry the unfixed markdown."
-        echo "Review the fixes, commit them, then push again."
+        if [ -n "$LOOM_PUSH_CHECK" ]; then
+            echo "The commit carries markdown that --fix changes:"
+            echo "$MD_FIXED" | sed 's/^/  /'
+            echo ""
+            echo "Run 'bunx markdownlint-cli2 --fix <files>' in your checkout, commit the result,"
+            echo "then push again."
+        else
+            echo "Markdown lint auto-fixed these files in the working tree:"
+            echo "$MD_FIXED" | sed 's/^/  /'
+            echo ""
+            echo "The commits you are pushing still carry the unfixed markdown."
+            echo "Review the fixes, commit them, then push again."
+        fi
         echo ""
         exit 1
     fi
@@ -221,13 +237,23 @@ if [ "$TREE_CLEAN_BEFORE" -eq 1 ] \
     VERIFIED_TMP="$VERIFIED_FILE.$$"
     { cat "$VERIFIED_FILE" 2>/dev/null; echo "$HEAD_BEFORE"; } | tail -n 50 > "$VERIFIED_TMP"
     mv "$VERIFIED_TMP" "$VERIFIED_FILE"
-    echo "If git prints no \"To <remote>\" line below, the remote closed the connection during the checks and nothing was pushed."
-    echo "Run the same push again: $HEAD_SHORT is recorded as verified, so the checks are skipped."
+    if [ -z "$LOOM_PUSH_CHECK" ]; then
+        echo "If git prints no \"To <remote>\" line below, the remote closed the connection during the checks and nothing was pushed."
+        echo "Run the same push again: $HEAD_SHORT is recorded as verified, so the checks are skipped."
+    else
+        echo "$HEAD_SHORT recorded as verified."
+    fi
 else
     if [ "$TREE_CLEAN_BEFORE" -eq 0 ] || [ -n "$(git status --porcelain --untracked-files=no)" ]; then
         WHY="tracked changes present"
     else
         WHY="HEAD moved"
     fi
-    echo "Result not recorded ($WHY). If the remote closed the connection during the checks, run scripts/push.sh or git push --no-verify."
+    if [ -n "$LOOM_PUSH_CHECK" ]; then
+        echo "Result not recorded ($WHY in the check worktree $REPO_ROOT; the checks changed it)."
+    elif [ "$WHY" = "tracked changes present" ]; then
+        echo "Result not recorded ($WHY). scripts/push.sh checks the commit in a separate worktree, so it works with uncommitted changes."
+    else
+        echo "Result not recorded ($WHY). If the remote closed the connection during the checks, run scripts/push.sh or git push --no-verify."
+    fi
 fi
