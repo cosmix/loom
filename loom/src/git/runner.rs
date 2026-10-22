@@ -63,9 +63,11 @@ const NO_GRAFT_FILE: &str = "/dev/null/loom-no-grafts";
 /// The git command every runner call executes: English output, and replace
 /// refs and grafts ignored. A stage session can write
 /// `<common git dir>/refs/replace/*` and `<common git dir>/info/grafts` (its
-/// capsule denies only `.git/hooks`, `.git/config` and `config.worktree`), and
-/// git honors both in `diff`, `merge-base` and every ancestry test; loom uses
-/// neither. A caller's `env` is applied last, so it still wins.
+/// capsule denies `<common git dir>/hooks`, `<common git dir>/config`, every
+/// sibling's `<common git dir>/worktrees/<name>` and the session's own
+/// `config.worktree`; `refs/` and `info/` stay writable), and git honors both
+/// in `diff`, `merge-base` and every ancestry test; loom uses neither. A
+/// caller's `env` is applied last, so it still wins.
 fn git_command(
     program: &str,
     exec_args: &[&str],

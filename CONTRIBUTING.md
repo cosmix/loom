@@ -189,12 +189,12 @@ CI (`.github/workflows/ci.yml`) runs when a push to `main` or a pull request tou
 
 Maintainers cut a release by pushing a `v*.*.*` tag. `.github/workflows/release.yml` builds the Linux x86_64 and macOS ARM64 binaries, runs tests and flake checks, verifies `loom -v` against the tag without its leading `v`, signs each binary, generates `SHA256SUMS.txt`, and publishes the release. Do not sign or upload assets by hand.
 
-A release that changes the session capsule (`loom/src/orchestrator/terminal/native/session_settings/`, `loom/src/sandbox/`) first passes the [sandbox release checklist](doc/sandbox-release-checklist.md): CI has no credentialed Claude Code runtime, so those denies are checked by hand against a live session.
-
 ```bash
 git tag -a vX.Y.Z -m "loom X.Y.Z"
 git push origin vX.Y.Z
 ```
+
+A release that changes the session capsule (`loom/src/orchestrator/terminal/native/session_settings/`, `loom/src/sandbox/`, `loom/src/fs/permissions/state_root.rs`, `loom/src/git/worktree/config_worktree.rs`, `loom/src/orchestrator/terminal/native/launch.rs`) first passes the [sandbox release checklist](doc/sandbox-release-checklist.md): CI has no credentialed Claude Code runtime, so those denies are checked by hand against a live session.
 
 `loom/Cargo.toml`'s version is a placeholder. `loom/build.rs` derives the binary version from the tag, using `loom/src/version/derive.rs`; never bump the manifest version. To exercise build, signing, and signature verification without publishing, dispatch the Release workflow with `dry_run: true` (or `gh workflow run release.yml -f dry_run=true`). Release creation requires a tag ref.
 

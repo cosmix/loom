@@ -4,7 +4,7 @@ CI has no credentialed Claude Code runtime. The capsule's denies are proven by u
 
 ## When to run it
 
-Before tagging a release that changes `loom/src/orchestrator/terminal/native/session_settings/`, `loom/src/sandbox/`, `loom/src/fs/permissions/state_root.rs` or `loom/src/git/worktree/config_worktree.rs`, and after a Claude Code upgrade.
+Before tagging a release that changes `loom/src/orchestrator/terminal/native/session_settings/`, `loom/src/sandbox/`, `loom/src/fs/permissions/state_root.rs`, `loom/src/git/worktree/config_worktree.rs` or `loom/src/orchestrator/terminal/native/launch.rs`, and after a Claude Code upgrade.
 
 ## Scope
 
