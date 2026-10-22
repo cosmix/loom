@@ -170,6 +170,7 @@ $(loom stage complete build-api)
 EOF
 CASE
 expect_refused "an unquoted delimiter whose body expands a command"
+[[ "$PRE_OUTPUT" == *'quote the delimiter'* ]] || fail "unquoted heredoc reason: $PRE_OUTPUT"
 
 read_cmd <<'CASE' || true
 cat <<'EOF'
