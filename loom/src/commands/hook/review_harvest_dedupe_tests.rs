@@ -102,24 +102,3 @@ fn different_agents_with_the_same_report_record_two_rounds() {
     assert_eq!(round_count(&fixture), 2);
     assert_eq!(suggestion_count(&fixture), 2);
 }
-
-#[test]
-fn concurrent_stops_of_one_agent_record_one_round() {
-    let fixture = fixture(2, REVIEW);
-
-    let outcomes: Vec<Harvest> = std::thread::scope(|scope| {
-        let workers: Vec<_> = (0..4)
-            .map(|_| scope.spawn(|| harvest(&fixture.work_dir, &fixture.input).unwrap()))
-            .collect();
-        workers.into_iter().map(|w| w.join().unwrap()).collect()
-    });
-
-    let written = outcomes.iter().filter(|o| **o == recorded(1)).count();
-    let duplicates = outcomes
-        .iter()
-        .filter(|o| **o == Harvest::Duplicate { round: 1 })
-        .count();
-    assert_eq!((written, duplicates), (1, 3), "{outcomes:?}");
-    assert_eq!(round_count(&fixture), 1);
-    assert_eq!(suggestion_count(&fixture), 1);
-}

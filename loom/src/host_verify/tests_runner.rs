@@ -295,10 +295,19 @@ fn a_failed_start_pass_still_returns_the_records_already_settled() {
     let job = queue(&work, STAGE, Utc::now());
     tick_until(&mut runner, &work, STAGE, running);
     cancel(&work, STAGE, "operator stop").unwrap();
-    // Traversable but not listable: `start_queued` fails listing the stages,
-    // while the cancelled record is still readable.
+    // Traversable but not listable: `start_queued` fails listing the stages.
+    // The cancelled record stays readable only where the store opens a path
+    // in one kernel lookup (Linux `openat2`), which needs search permission
+    // alone. The portable openat walk (macOS, or Linux without `openat2`)
+    // opens each directory `O_RDONLY`, which needs read permission, so there
+    // `check_held` cannot read the record either and the two passes cannot be
+    // told apart by permissions.
     let verification = work.join("verification");
     std::fs::set_permissions(&verification, std::fs::Permissions::from_mode(0o111)).unwrap();
+    if load_current(&work, STAGE).is_err() {
+        std::fs::set_permissions(&verification, std::fs::Permissions::from_mode(0o755)).unwrap();
+        return;
+    }
 
     // Every tick runs the failing start pass; under load the cancelled child
     // can take more than one tick to be reaped, so tick until it is returned.

@@ -387,3 +387,7 @@ pub(in crate::verify) fn check_version(version: u32, record: &str) -> Result<()>
 pub(in crate::verify) fn stage_dir(work_dir: &Path, stage_id: &str) -> PathBuf {
     work_dir.join(REVIEWS_DIR).join(stage_id)
 }
+
+#[cfg(test)]
+#[path = "store_tests.rs"]
+mod tests;
