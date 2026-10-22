@@ -175,8 +175,15 @@ assert_normal_flow() {
 	if ! grep -F -x -e 'cargo test --quiet --test maintainability' "$cargo_log" >/dev/null; then
 		fail "$fixture_name" 'maintainability test was not invoked' "$output"
 	fi
-	if [ ! -s "$bunx_log" ]; then
-		fail "$fixture_name" 'bunx was not invoked for tracked Markdown' "$output"
+}
+
+assert_markdown_linted() {
+	local fixture_name=$1
+	local path=$2
+	local output=$3
+
+	if ! grep -F -x -e "bunx markdownlint-cli2 --fix $path" "$bunx_log" >/dev/null; then
+		fail "$fixture_name" "bunx was not invoked for staged $path" "$output"
 	fi
 }
 
@@ -223,10 +230,12 @@ run_fully_staged_case() {
 
 	prepare_case "$fixture_name" "$path"
 	printf 'fn fixture() { 1; }\n' >"$case_repo/$path"
-	git -C "$case_repo" add -- "$path"
+	printf '# Staged fixture\n' >"$case_repo/README.md"
+	git -C "$case_repo" add -- "$path" README.md
 	run_hook "$case_repo" "$out"
 	assert_zero_status "$fixture_name" "$out"
 	assert_normal_flow "$fixture_name" "$out"
+	assert_markdown_linted "$fixture_name" README.md "$out"
 }
 
 run_unstaged_only_case() {
@@ -245,6 +254,9 @@ run_unstaged_only_case() {
 	run_hook "$case_repo" "$out"
 	assert_zero_status "$fixture_name" "$out"
 	assert_normal_flow "$fixture_name" "$out"
+	if [ -s "$bunx_log" ]; then
+		fail "$fixture_name" "bunx linted Markdown that was only unstaged" "$out"
+	fi
 	if grep -F -x -e "$sibling_path" "$out" >/dev/null; then
 		fail "$fixture_name" "$sibling_path was reported despite being only unstaged" "$out"
 	fi

@@ -2,7 +2,6 @@
 //! confined command for one tree must see one Cargo home. On Linux it is the
 //! host's own path, which keeps a target directory warmed outside the boundary warm.
 use super::NetworkAccess;
-use std::ffi::OsStr;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
@@ -83,7 +82,7 @@ printf CARGO_HOME_PASSED"#;
     let original = confined_shell(&tree, &cargo, line);
     let (mut wrapped, scratch, _) = super::wrap(&original, None, NetworkAccess::Denied).unwrap();
     assert_eq!(effective_cargo_home(&wrapped), cargo);
-    let args: Vec<&OsStr> = wrapped.get_args().collect();
+    let args: Vec<&std::ffi::OsStr> = wrapped.get_args().collect();
     let mount = args
         .windows(3)
         .position(|w| w[0] == "--bind" && w[2] == cargo.as_os_str())
