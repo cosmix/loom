@@ -83,6 +83,10 @@ fn judge(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Ru
     if run.exit_code == Some(127) {
         return Run::Inconclusive(format!("`{command}` could not start (exit 127)"));
     }
+    // A certified cache hit keeps only output tails; its recorded count decides.
+    if let Some(verdict) = judge_cached(&command, adapter, run) {
+        return verdict;
+    }
     let output = RunOutput {
         stdout: &run.stdout,
         stderr: &run.stderr,
@@ -100,9 +104,7 @@ fn judge(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Ru
             return Run::Inconclusive(format!("`{command}` selected no test"));
         }
         RunOutcome::Unparsed if run.exit_code == Some(0) => {
-            let runner = adapter.name();
-            let note =
-                format!("`{command}` passed on its exit code alone ({runner} output not parsed)");
+            let note = exit_code_note(&command, adapter);
             return Run::Passed {
                 command,
                 note: Some(note),
@@ -121,6 +123,30 @@ fn judge(command: String, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Ru
         kind,
         output: output_tail(run),
     })
+}
+
+/// The verdict a certified cache hit's recorded count gives; `None` leaves the
+/// run to the parse path.
+fn judge_cached(command: &str, adapter: &dyn TestRunnerAdapter, run: &ProbeRun) -> Option<Run> {
+    let cached = run.cached.as_ref()?;
+    match (cached.tests_executed, run.exit_code) {
+        (Some(0), _) => Some(Run::Inconclusive(format!("`{command}` selected no test"))),
+        (Some(_), Some(0)) => Some(Run::Passed {
+            command: command.to_string(),
+            note: None,
+        }),
+        (None, Some(0)) => Some(Run::Passed {
+            command: command.to_string(),
+            note: Some(exit_code_note(command, adapter)),
+        }),
+        _ => None,
+    }
+}
+
+/// The note a pass on its exit code alone carries when no output was parsed.
+fn exit_code_note(command: &str, adapter: &dyn TestRunnerAdapter) -> String {
+    let runner = adapter.name();
+    format!("`{command}` passed on its exit code alone ({runner} output not parsed)")
 }
 
 /// A selection that failed in the worktree, with what re-running it needs.

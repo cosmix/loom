@@ -3,7 +3,7 @@
 use super::*;
 use crate::models::stage::Stage;
 use crate::testrun::registry;
-use crate::verify::criteria::{CriteriaConfig, CriteriaProbe};
+use crate::verify::criteria::{CachedRun, CriteriaConfig, CriteriaProbe};
 use anyhow::Result;
 use tempfile::TempDir;
 
@@ -150,4 +150,34 @@ fn a_uv_package_without_a_venv_is_a_note() {
     std::fs::create_dir(root.path().join(".venv")).unwrap();
     let notes = notes_after_run();
     assert!(notes[0].contains("could not be run"), "{notes:?}");
+}
+
+/// The kept tail of a certified cache hit: only trailing `running 0 tests`
+/// blocks of other test binaries, with the exit code of a passing run.
+fn cached_zero_test_tail(tests_executed: Option<u64>) -> ProbeRun {
+    const ZERO_TEST_BLOCK: &str = "running 0 tests\n\n\
+        test result: ok. 0 passed; 0 failed; 0 ignored; 0 measured; 0 filtered out; finished in 0.00s\n\n";
+    ProbeRun {
+        stdout: ZERO_TEST_BLOCK.repeat(2),
+        stderr: String::new(),
+        exit_code: Some(0),
+        timed_out: false,
+        cached: Some(CachedRun { tests_executed }),
+    }
+}
+
+#[test]
+fn a_cached_pass_is_judged_by_its_recorded_count() {
+    let run = cached_zero_test_tail(Some(3));
+    let verdict = judge("cargo test x".to_string(), cargo(), &run);
+    assert!(matches!(verdict, Run::Passed { note: None, .. }));
+}
+
+#[test]
+fn a_cached_run_that_selected_nothing_stays_inconclusive() {
+    let run = cached_zero_test_tail(Some(0));
+    let Run::Inconclusive(why) = judge("cargo test x".to_string(), cargo(), &run) else {
+        panic!("a cached run that selected no test must be inconclusive");
+    };
+    assert!(why.contains("selected no test"), "{why}");
 }
