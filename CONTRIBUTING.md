@@ -189,6 +189,8 @@ CI (`.github/workflows/ci.yml`) runs when a push to `main` or a pull request tou
 
 Maintainers cut a release by pushing a `v*.*.*` tag. `.github/workflows/release.yml` builds the Linux x86_64 and macOS ARM64 binaries, runs tests and flake checks, verifies `loom -v` against the tag without its leading `v`, signs each binary, generates `SHA256SUMS.txt`, and publishes the release. Do not sign or upload assets by hand.
 
+A release that changes the session capsule (`loom/src/orchestrator/terminal/native/session_settings/`, `loom/src/sandbox/`) first passes the [sandbox release checklist](doc/sandbox-release-checklist.md): CI has no credentialed Claude Code runtime, so those denies are checked by hand against a live session.
+
 ```bash
 git tag -a vX.Y.Z -m "loom X.Y.Z"
 git push origin vX.Y.Z
