@@ -254,12 +254,12 @@ impl Stage {
         self.try_transition(StageStatus::WaitingForInput)
     }
 
-    /// Mark the stage as blocked with validation.
-    ///
-    /// # Returns
-    /// `Ok(())` if the transition succeeded, `Err` if invalid
+    /// Mark the stage as blocked, banking the running attempt into `execution_secs`
+    /// (the next `begin_attempt` would discard it). `Err` if the transition is invalid.
     pub fn try_mark_blocked(&mut self) -> Result<()> {
-        self.try_transition(StageStatus::Blocked)
+        self.try_transition(StageStatus::Blocked)?;
+        self.accumulate_attempt_time(Utc::now());
+        Ok(())
     }
 
     /// Mark the stage as skipped with validation.

@@ -2,7 +2,7 @@
 
 use chrono::{Duration, Utc};
 
-use crate::models::stage::Stage;
+use crate::models::stage::{Stage, StageStatus};
 
 #[test]
 fn test_begin_attempt_initializes_execution_secs() {
@@ -70,4 +70,33 @@ fn test_accumulate_attempt_time_noop_without_started() {
     stage.accumulate_attempt_time(Utc::now());
 
     assert_eq!(stage.execution_secs, Some(100)); // Unchanged
+}
+
+#[test]
+fn test_try_mark_blocked_banks_running_attempt() {
+    let mut stage = Stage {
+        status: StageStatus::Executing,
+        execution_secs: Some(10),
+        attempt_started_at: Some(Utc::now() - Duration::seconds(3600)),
+        ..Stage::default()
+    };
+
+    stage.try_mark_blocked().unwrap();
+
+    assert!(stage.execution_secs.unwrap() >= 3609);
+    assert!(stage.attempt_started_at.is_none());
+}
+
+#[test]
+fn test_try_mark_blocked_after_banking_adds_nothing() {
+    let mut stage = Stage {
+        status: StageStatus::Executing,
+        execution_secs: Some(120),
+        attempt_started_at: None,
+        ..Stage::default()
+    };
+
+    stage.try_mark_blocked().unwrap();
+
+    assert_eq!(stage.execution_secs, Some(120));
 }
