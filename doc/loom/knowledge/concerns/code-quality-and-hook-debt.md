@@ -184,7 +184,7 @@ Reviewer suggestions the plan left unimplemented:
 - `fs/plan_lifecycle.rs::archive_run_state_before_done` repeats `archive_state_dir`'s two-line plan-id lookup because it already holds a `WorkDir` and an explicit main root; take a plan-id helper from `fs/memory/archive.rs` if a third caller appears. `archive_state_dir` has no direct test for its derived plan id and main root: the clean and init tests only check that an archive appears, so an archive named `default-<ts>` would pass them.
 - `v2_lints/bookends.rs` imports `StageDefinition` and `StageType` on separate lines from `crate::plan::schema`; one `use crate::plan::schema::{StageDefinition, StageType};` matches the test file.
 
-# Execution Graph And Forward Guard Gaps
+## Execution Graph And Forward Guard Gaps
 
 > mark_queued status skip; macOS forward-guard branches unrun
 

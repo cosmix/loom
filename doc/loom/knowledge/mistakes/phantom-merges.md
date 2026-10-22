@@ -307,7 +307,7 @@ failure parks the stage for the operator
 
 Each records it under the stage lock with `validate_locked`. `--force-complete` refuses a missing, zero-commit or unconfirmed branch: an unconfirmed branch is one whose ahead-count probe failed, and the refusal matters because its `MergeGate::Bypass` skips the zero-commit guard. No daemon path derives a commit. A stage with no recorded commit is parked with "no completion commit is recorded", which names `human-review --force-complete` as the remedy.
 
-# Doctrine Acceptance Stage Fragmentation
+## Doctrine Acceptance Stage Fragmentation
 
 > Plan stages split by compile order instead of merge order
 

@@ -171,7 +171,7 @@ and tells it to re-run each disputed selection in the worktree, and the base in 
 (`orchestrator/adjudication/prompt/impact.rs`). An accepted forgery excuses only the exact failure it claims. A failing
 run replaces the record; a passing run leaves it, and the adjudicator's re-run judges any stale failure again.
 
-# Host Verification Jobs
+## Host Verification Jobs
 
 > Daemon-run host jobs for completion, checks and freezes: state, child, apply
 

@@ -241,7 +241,7 @@ Anchors are `path:line` at merge time; locate by symbol (`loom map --find-all`).
   that runs one loom command); the tickets were recovered on the next single call, which duplicated one entry. A `while`
   loop over a single command form works.
 
-# Host Verification Review Suggestions
+## Host Verification Review Suggestions
 
 > Host-verification review suggestions: open and fixed defects by file:line
 

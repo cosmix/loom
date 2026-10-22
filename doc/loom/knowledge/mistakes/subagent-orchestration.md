@@ -283,7 +283,7 @@ if the operator agrees.
 
 **Fix:** `git restore --staged <path>`.
 
-# Agent and Process Lessons
+## Agent and Process Lessons
 
 > Subagent reports, codex briefing, harness text, config process, brief hygiene
 
@@ -313,7 +313,7 @@ A report quoted from a stage session is a defect report against loom's source: d
 
 → [Briefs and Bug Reports](briefs-and-bug-reports.md)
 
-# Gate and Review Rounds
+## Gate and Review Rounds
 
 Review rounds are counted per reviewer and per stage. A gate runs once per tree, and only for what completion does not run.
 

@@ -187,7 +187,7 @@ places at three different strengths (`commands/status/data/execution_models.rs:3
 explicitly — a charset check alone is not a path-component allowlist, whatever language it's written
 in. For concerns.md: the four copies are a shared-helper candidate.
 
-# Design and Boundary Lessons
+## Design and Boundary Lessons
 
 > Unwired stores, schema and address mismatches, visibility, boundary audits
 

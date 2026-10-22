@@ -50,7 +50,7 @@ and `loom/eval/retrieval-cases.yaml`. Its only natural-language case asks about 
 configuration, so `loom knowledge eval` does not measure this gap. A first step is adding a
 lifecycle case so the gap is measured before the threshold is tuned.
 
-# Pressure And Bootstrap Gaps
+## Pressure And Bootstrap Gaps
 
 > loom pressure install/smoke gaps, bootstrap follow-ups
 

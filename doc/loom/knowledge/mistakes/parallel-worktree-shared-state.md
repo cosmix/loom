@@ -257,7 +257,7 @@ paths for a contract freeze or a review fingerprint, and to the daemon's special
 **Prevention:** build the commit list as an allowlist of the files your own change touched (your diff plus the implementers' reports), and compare `git diff --cached --name-only` against it before committing. For `INDEX.md`, stage HEAD's version with only your topics' rows changed, built right before the commit. The pre-commit hook (`loom/.githooks/pre-commit`) refuses a path with both staged and unstaged changes, so a shared file is committed by writing your-hunks-only content, committing, then restoring the other hunks.
 **Fix:** `git reset --soft HEAD~1`, unstage the foreign paths, recommit; amend the knowledge commit with a rebuilt `INDEX.md`.
 
-# Runtime and Daemon Incident History
+## Runtime and Daemon Incident History
 
 > Merge cleanup, daemon singleton, broker, waiting-state incidents
 

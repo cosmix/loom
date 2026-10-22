@@ -176,3 +176,10 @@ existing tests, not from a list of what "should" fail (an absent result decodes 
 the caller already returns `Ok`); route one integration-fix worker after a parallel wave; tell fix
 workers the orchestrator reports tree state and that `cargo fmt` over the crate may reformat a
 sibling's files.
+
+## Scope `git diff --check` to Changed Paths
+
+**What happened:** a verification command ran `git diff --check` without paths and triggered the repository hook warning.
+**Why:** the check was combined with other review commands instead of using the required path-scoped form.
+**Prevention:** run `git diff --stat` first, then invoke `git diff --check -- <changed paths>`.
+**Fix:** use the path-scoped check for every documentation edit.
