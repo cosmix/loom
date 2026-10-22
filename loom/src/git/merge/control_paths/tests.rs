@@ -116,6 +116,19 @@ fn an_ordinary_branch_has_no_violation() {
 }
 
 #[test]
+fn a_file_named_like_the_branch_ref_does_not_make_the_diff_ambiguous() {
+    let repo = init_repo();
+    let root = repo.path();
+    branch_adding(root, "s1", &["src/ok.rs"]);
+    // The file shares the branch ref's path, which git refuses as ambiguous
+    // unless the revisions end with `--`.
+    std::fs::create_dir_all(root.join("refs/heads/loom")).unwrap();
+    std::fs::write(root.join("refs/heads/loom/s1"), "x").unwrap();
+
+    assert_eq!(violation(root, "s1"), None);
+}
+
+#[test]
 fn a_gitlink_change_is_listed_even_when_gitmodules_ignores_it() {
     let repo = init_repo();
     let root = repo.path();

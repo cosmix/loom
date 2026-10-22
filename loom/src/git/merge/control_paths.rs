@@ -92,7 +92,8 @@ fn violation_reason(repo_root: &Path, changed: &[String], label: &str) -> Option
 /// NUL-separated and git never C-quotes it. Read untrimmed, so a path's own
 /// leading or trailing whitespace survives. Gitlink changes are always listed:
 /// `--ignore-submodules=none` overrides an `ignore` setting in the checkout's
-/// `.gitmodules`, which a merged branch can set.
+/// `.gitmodules`, which a merged branch can set. The trailing `--` keeps a
+/// file named like a revision from making git refuse the call as ambiguous.
 pub(crate) fn changed_paths(repo_root: &Path, base: &str, branch_rev: &str) -> Result<Vec<String>> {
     let args = [
         "diff",
@@ -102,6 +103,7 @@ pub(crate) fn changed_paths(repo_root: &Path, base: &str, branch_rev: &str) -> R
         "--ignore-submodules=none",
         base,
         branch_rev,
+        "--",
     ];
     let output = run_git(&args, repo_root)?;
     if !output.status.success() {

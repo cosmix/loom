@@ -11,10 +11,9 @@ fn stage_query_inputs_is_a_short_one_line_label() {
     );
 }
 
-/// The spawn brief is the ONLY producer of `dependency_paths`, so a
-/// dependency's declared `files` and `artifacts` reaching the ranker is the
-/// whole of A.23's input side. Duplicates collapse and order is stable,
-/// because a query that varies run to run cannot be reproduced.
+/// A dependency with no accepted merge falls back to its declared `files` and
+/// `artifacts` as the paths A.23 boosts. Duplicates collapse and order is
+/// stable, because a query that varies run to run cannot be reproduced.
 #[test]
 fn dependency_file_and_artifact_paths_reach_the_query() {
     let temp = tempfile::TempDir::new().unwrap();
