@@ -250,6 +250,58 @@ fn test_mark_queued_accepts_completed_and_merged_dependency() {
     assert_eq!(ready[0].id, "dependent");
 }
 
+/// `dep` Completed + merged; `dependent` forced to `status`.
+fn graph_with_satisfied_dependency(status: StageStatus) -> ExecutionGraph {
+    let stages = vec![
+        make_stage("dep", vec![], None),
+        make_stage("dependent", vec!["dep"], None),
+    ];
+    let mut graph = ExecutionGraph::build(stages).unwrap();
+    graph.mark_completed("dep").unwrap();
+    graph.mark_merged("dep").unwrap();
+    graph.force_status("dependent", status).unwrap();
+    graph
+}
+
+#[test]
+fn test_mark_queued_refuses_a_node_that_is_already_finished() {
+    // Regression: only the dependencies were checked, so a stale in-memory
+    // graph dragged a Completed node back to Queued.
+    for finished in [StageStatus::Completed, StageStatus::Skipped] {
+        let mut graph = graph_with_satisfied_dependency(finished.clone());
+
+        let err = graph.mark_queued("dependent").unwrap_err().to_string();
+
+        assert!(err.contains(&format!("stage is {finished:?}")), "{err}");
+        assert_eq!(graph.get_node("dependent").unwrap().status, finished);
+    }
+}
+
+#[test]
+fn test_mark_queued_queues_every_status_a_caller_resets_from() {
+    // WaitingForDeps: normal promotion. Queued: idempotent. Executing: handoff
+    // and stall recovery re-queue a node the graph never moved to NeedsHandoff.
+    // The rest: retry and review approval.
+    for status in [
+        StageStatus::WaitingForDeps,
+        StageStatus::Queued,
+        StageStatus::Executing,
+        StageStatus::Blocked,
+        StageStatus::NeedsHandoff,
+        StageStatus::MergeBlocked,
+        StageStatus::CompletedWithFailures,
+        StageStatus::NeedsHumanReview,
+        StageStatus::NeedsAdjudication,
+    ] {
+        let mut graph = graph_with_satisfied_dependency(status.clone());
+
+        let queued = graph.mark_queued("dependent");
+        assert!(queued.is_ok(), "{status:?}: {queued:?}");
+        let node = graph.get_node("dependent").unwrap();
+        assert_eq!(node.status, StageStatus::Queued, "from {status:?}");
+    }
+}
+
 #[test]
 fn ready_stages_have_stable_depth_then_id_order() {
     let stages = vec![

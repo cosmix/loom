@@ -184,15 +184,27 @@ impl ExecutionGraph {
     /// `ready_stages()` every tick, and `resolve_base_branch` refused it every
     /// tick as a scheduling error — a stage stuck in `Queued` forever with no
     /// state change to explain it.
+    ///
+    /// The node's own status must also allow re-queueing: a stale in-memory
+    /// graph (a daemon holding an old plan after `.loom/work/` was
+    /// re-initialised) must not drag a `Completed` or `Skipped` node back to
+    /// `Queued`. Legitimate sources are the statuses with a transition to
+    /// `Queued` (including `Queued` itself, an idempotent no-op) and
+    /// `Executing`: the handoff and stall recovery paths re-queue a node the
+    /// graph never moved to `NeedsHandoff`.
     pub fn mark_queued(&mut self, stage_id: &str) -> Result<()> {
-        // First check dependencies
-        let deps = {
+        // First check the node's own status, then its dependencies
+        let (status, deps) = {
             let node = self
                 .nodes
                 .get(stage_id)
                 .ok_or_else(|| anyhow::anyhow!("Stage not found: {stage_id}"))?;
-            node.dependencies.clone()
+            (node.status.clone(), node.dependencies.clone())
         };
+
+        if status != StageStatus::Executing && !status.can_transition_to(&StageStatus::Queued) {
+            bail!("Cannot mark '{stage_id}' as ready: stage is {status:?}");
+        }
 
         // Verify all dependencies are completed and merged
         for dep in &deps {
