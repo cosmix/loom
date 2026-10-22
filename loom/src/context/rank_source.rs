@@ -32,7 +32,7 @@ mod paths;
 mod routing;
 
 pub use expand::MAX_EXPANDED_TOKENS;
-pub use paths::normalize_dependency_path;
+pub use paths::{join_working_dir, normalize_dependency_path};
 
 use crate::context::config::RetrievalConfig;
 use crate::context::graph_store::ResolvedGraph;
