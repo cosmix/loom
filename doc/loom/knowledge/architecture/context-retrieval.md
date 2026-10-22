@@ -56,16 +56,16 @@ exact-rung machinery.** `context/rank_source.rs`:
   builds a source document from `node.scope` at `WEIGHT_SYMBOLS` plus
   `node.signature` at `WEIGHT_BODY`).
 - A source node in a file a dependency stage names earns `StageDependency`
-  (`BOOST_STAGE_DEPENDENCY = 30.0`), matched on exact normalized paths — a
-  prefix match would hand the boost to an entire tree
-  (`paths::names_dependency_path`). The producer,
-  `StageQuery::dependency_paths` (`orchestrator/signals/retrieval.rs`), passes each
-  dependency's declared `files` and `artifacts` through `normalize_dependency_path`
-  unchanged: they are relative to the dependency's `working_dir` and may be globs,
-  while node paths are repository-relative. A glob matches nothing, and a declared
-  path matches only when the dependency's `working_dir` is `.`, so in this
-  repository, whose code stages declare paths relative to `working_dir: loom`, the
-  rung never fires.
+  (`BOOST_STAGE_DEPENDENCY = 30.0`), matched on exact normalized paths — a prefix
+  match would hand the boost to an entire tree (`paths::names_dependency_path`). The
+  producer, `StageQuery::dependency_paths` (`orchestrator/signals/retrieval.rs`),
+  boosts each dependency's accepted change from git (`dependency_changes`): the merge
+  on the target whose second parent is the dependency's recorded commit, diffed from
+  the `merge-base` of the merge's first parent and that commit
+  (`git/merge/control_paths.rs::accepted_change_base`). The fallback is the declared
+  files joined to the dependency's `working_dir` (`paths::join_working_dir`), globs
+  skipped: a Knowledge stage, no commit, `merge_assumed` with no merge, or a base
+  equal to the commit.
 - A node whose path or scope follows a test convention has its FINAL score
   (rungs plus lexical) multiplied by `config.test_path_factor` (default
   `0.4`) — ordering pressure so implementation outranks the tests that

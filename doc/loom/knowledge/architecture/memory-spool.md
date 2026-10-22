@@ -2,7 +2,9 @@
 sources:
 - loom/src/fs/memory/types.rs
 - loom/src/fs/memory/spool.rs
-verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
+- loom/src/fs/memory/parser.rs
+- loom/src/orchestrator/signals/generate/findings.rs
+verified: 4458f15d4ed3e0fb69cc87bdbdf1381fc937473e
 ---
 # Memory Spool and Drain
 
@@ -29,7 +31,7 @@ gets a say. See the mistakes entry for the full diagnosis.
 
 The sandbox filter is path-based, not binary-based: allowing writes to `.loom/work/memory` grants them to every process in the session. Exempting the loom executable from confinement also exposes shell commands reachable through loom, so it is broader than a memory append capability.
 
-Memory can enter prompts across stages through the wiring checklist for `IntegrationVerify` and `KnowledgeDistill` (`orchestrator/signals/generate.rs`, `generate/enrichment.rs`). Ordinary stages receive their own journal plus dependency outputs and artifacts separately (`generate/context.rs:65-68`). The claim that every dependency journal is embedded in every downstream stage is incorrect. A writable shared memory directory nevertheless remains a cross-stage prompt-injection channel; attribution and writes belong to the trusted drain.
+Memory can enter prompts across stages through one fenced `Dependency Findings` section (`orchestrator/signals/generate/findings.rs`, capped at 1,600 bytes). A stage's signal carries the relevant, unsettled entries of its direct, Completed, non-Knowledge dependencies; `IntegrationVerify` gets every non-excluded entry and `KnowledgeDistill` gets none. Each entry renders as one line through `single_line`. Ordinary stages also receive their own journal plus dependency outputs and artifacts separately (`generate/context.rs:65-68`). The claim that every dependency journal is embedded in every downstream stage is incorrect. A writable shared memory directory nevertheless remains a cross-stage prompt-injection channel; attribution and writes belong to the trusted drain.
 
 ## The Design
 
@@ -153,6 +155,17 @@ re-mints it.
   undrained spool, or the command fails with "Unknown memory event id". A journal
   entry is dropped on parse when it is typed `Receipt` without a receipt payload, or
   carries a payload without being a `Receipt` (`EntryBuilder::build`).
+- **Journal escaping** (`fs/memory/parser.rs`). `format_entry` prefixes a body line
+  starting with a backslash, `---`, `#`, `<!--` or `*` with one backslash
+  (`escape_body`), so a body cannot end the entry or start a metadata line. The
+  context, id, session and receipt event id and target are written on one line, line
+  breaks turned into spaces (`one_line`). `parse_entry_line` strips one backslash from
+  a content line. Existing journals hold no escapes, so a stored body line that
+  already starts with a backslash reads back with one fewer. The round trip is not
+  exact for CRLF (read back as LF) or leading and trailing whitespace (trimmed).
+  `validate_spooled_entry` (`fs/memory/spool.rs`) still checks only content, context
+  and evidence, not the id, session or receipt payload (see `concerns.md`, "Dependency
+  Findings Follow-Ups").
 
 ## Pending Events and the Run Archive
 

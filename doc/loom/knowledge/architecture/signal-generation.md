@@ -141,7 +141,7 @@ The semi-stable section carries no delegation guidance of its own.
 
 ### Dynamic Section (`format/sections.rs::format_dynamic_section`)
 
-Per-session content: Target (session, stage and plan ids, working_dir, execution path), Worktree Isolation, Plan Overview, the cross-stage summary and the wiring checklist (IntegrationVerify and KnowledgeDistill only), Assignment, Dependencies Status and Dependency Outputs, the previous session's handoff (structured, prose, or a pointer to `.loom/work/handoffs/<file>.md`), Acceptance Criteria, Goal-Backward Verification (artifacts, wiring, wiring_tests, dead_code; `format/sections/goal_backward_section.rs`) and Files to Modify.
+Per-session content: Target (session, stage and plan ids, working_dir, execution path), Worktree Isolation, Plan Overview, the cross-stage summary (IntegrationVerify and KnowledgeDistill only), the Dependency Findings section (every stage with eligible direct dependencies, KnowledgeDistill excluded), Assignment, Dependencies Status and Dependency Outputs, the previous session's handoff (structured, prose, or a pointer to `.loom/work/handoffs/<file>.md`), Acceptance Criteria, Goal-Backward Verification (artifacts, wiring, wiring_tests, dead_code; `format/sections/goal_backward_section.rs`) and Files to Modify.
 
 ### Recitation Section (`format/sections.rs::format_recitation_section`)
 
@@ -164,7 +164,7 @@ pub struct EmbeddedContext {
     pub context_tokens: Option<u32>,          // absolute resident tokens read from the heartbeat
     pub sandbox_summary: Option<SandboxSummary>,
     pub cross_stage_summary: Option<String>,  // IV/KnowledgeDistill only
-    pub wiring_checklist: Option<String>,     // IV/KnowledgeDistill only
+    pub dependency_findings: Option<String>,  // relevant findings of the accepted direct dependencies
     pub ultracode: bool,
     pub implementers: Implementers,           // Licensed lanes, in preference order
     pub codex_available: bool,                // codex CLI + plugin installed; resolved once at build time
@@ -226,3 +226,15 @@ plans locate it by path (`test -f tests/signal_replay.rs` from `loom/`); a grep 
   `asset_paths()` sorts `PathBuf`s component-wise; a skill `loom-md` beside `loom-md-tables`
   would fail the self-check (see
   [concerns](../concerns/token-accounting-and-proof-defects.md#unimplemented-reviewer-suggestions-from-the-usage-evidence-plan)).
+
+## Dependency Findings Section
+
+`build_dependency_findings` (`orchestrator/signals/generate/findings.rs`) fills `EmbeddedContext.dependency_findings`. `build_signal_context` calls it after retrieval, because relevance reads the stage's pack; it calls `signals/retrieval.rs::dependency_changes` itself, repeating the git calls `retrieve_stage_pack` made, since sharing them would cost a signature change. `generate_recovery_signal` calls the same function, so a stage resumed by `loom stage retry` keeps its findings. The section parses back under the heading `Dependency Findings` (`parse.rs::EXPECTED_SECTIONS`).
+
+- **Who gets what.** Every stage with an accepted (Completed, with a commit) non-Knowledge direct dependency. `KnowledgeDistill` gets none (its prefix reads every journal). `IntegrationVerify` takes every non-excluded entry; on a v2 plan it also drops suggestions, which its Reviewer Suggestions list carries.
+- **Relevance.** Any other recipient keeps an entry when it names the recipient's stage id, or names a path the recipient declares (`files` and `artifacts` joined to `working_dir`, as globs with a literal separator, plus the paths of its brief). Evidence items and slashed tokens in the content are read both repository-relative and against the producer's `working_dir`; a trailing `:<line>` or `:<line>-<line>` is stripped; an absolute path under `.worktrees/<stage-id>/` is rewritten to its repository-relative form.
+- **Excluded.** Receipts, changes and `mutation:` notes never reach a successor. A settled entry (one with a receipt) does not either, except a decision, which still constrains the code.
+- **Order.** Rank 0 names the recipient; rank 1 is a note starting `mistake:`, `gotcha:`, `found:` or `found/gotcha:` (ASCII case-insensitive, after `trim_start`; the list is local because `commands/memory/handlers/prefix.rs::NotePrefix` is `pub(super)` there); rank 2 a decision with a rationale; rank 3 the rest. Ties break on dependency position, timestamp, then id.
+- **Render.** One fenced block, heading through closing fence at most `MAX_DEPENDENCY_FINDINGS_BYTES` = 1,600 bytes. Each dependency gets a headline (`<id> accepted at <commit8>: <shown> of <total> entries | git diff --stat <base8> <commit8> | loom memory list --stage <id>`), then lines `- [<type> <id8>] <claim> | why: <rationale> | <evidence>`, every field through `single_line`, cut at 200 characters for the claim and 100 for the rest. A footer counts what was skipped. The reference-data sentence is `format::REFERENCE_DATA_SENTENCE`.
+- **Offline harness.** `orchestrator/signals/tests_dependency_harness.rs` replays recorded worker transcripts (`loom/tests/fixtures/dependency_findings/`) and compares the old and new retrieval arms, by first-arrival and replay-weighted gain, against the section's cost. A covered file counts as reached only through the boost when every matching source item in its pack carries `SelectionReason::StageDependency`. The guard-core harness prints its PASS or FAIL verdict instead of asserting it; see [Dependency Findings Follow-Ups](../concerns/token-accounting-and-proof-defects.md#dependency-findings-follow-ups).
+- **Tests.** `MAX_DEPENDENCY_FINDINGS_BYTES` is re-exported from `generate.rs` under `#[cfg(test)]` on its own line, since its only users outside `findings.rs` are tests. `findings_render_tests` is declared inside `findings_tests.rs` to keep `findings.rs` under the 400-line limit. The contract tests in `tests/dependency_findings_contracts.rs` measure the cap from the heading line to the first line equal to the opening fence minus `text`, joined by newlines with no trailing newline.

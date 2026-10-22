@@ -346,3 +346,13 @@ Review rounds are counted per reviewer and per stage. A gate runs once per tree,
 **Prevention:** before any verifier round, run `cargo clippy --all-targets -- -D warnings`, `cargo fmt --check` and `cargo test --test maintainability` yourself. Spend a full gate round only on a tree expected to pass. Size tiers and territories to the stage's real difficulty. Tell the user early when wall-clock is getting long.
 
 **Fix:** not recorded in the memory beyond the prevention rules.
+
+## Editing the Worktree While `loom check` Ran Failed the Job
+
+**What happened:** integration-verify spawned a test-writing subagent while `loom check --criterion 0 1 3 4 5` ran on a fixed commit. The host job runs in the stage worktree, so the edit failed it with "worktree changed during the run", and a follow-up `loom check` call queued another job on the dirty tree.
+
+**Why:** the session assumed the daemon checks a snapshot of `HEAD`.
+
+**Prevention:** never edit the worktree, or spawn a subagent that edits it, while a `loom check` job runs; wait for its terminal state first.
+
+**Fix:** wait for the job, finish the edit, then re-check the failed criteria.

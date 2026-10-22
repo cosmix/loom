@@ -239,3 +239,13 @@ quoted inside it) instead of erroring. Check the body for a `"` followed by N `#
 a raw-string delimiter.
 
 → [Testing & Lint](testing-and-lint.md)
+
+## The Journal Formatter Escaped the Body but Wrote Metadata Lines Raw
+
+**What happened:** `format_entry` (`fs/memory/parser.rs`) escaped body lines and flattened the context, but wrote `*Session:*` and the receipt target raw. A newline in `loom memory resolve --target` (unvalidated, `commands/memory/handlers/resolve.rs`) or in `LOOM_SESSION_ID` forged a whole journal entry carrying another entry's id, and `read_staged_entries`' first-seen-id rule (`fs/memory/staged.rs`) let it shadow a dependency's real Decision.
+
+**Why:** the escaping covered the field the first review named, not every field the formatter writes. The spool boundary has the same gap: `validate_spooled_entry` (`fs/memory/spool.rs`) checks only content, context and evidence, so a spooled or relayed entry can carry any id or receipt event id, including another stage's.
+
+**Prevention:** when a text format gains escaping, list every field the writer emits and escape or flatten each one; test with a line break and a heading in every field. Validate identifiers (32 hex characters) where the entry crosses the trust boundary, not only where it is written.
+
+**Fix:** `format_entry` flattens the id, session, receipt event id and target through `one_line`. Rejecting a non-32-hex id or event id at the spool boundary is open: [Dependency Findings Follow-Ups](../concerns/token-accounting-and-proof-defects.md#dependency-findings-follow-ups).
