@@ -115,7 +115,7 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock | 200 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | A .git dir is no proof | 156 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Bug reports; brief flags | 315 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, audit, install.sh | 322 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, audit, install.sh | 332 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented itself | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader fixed by banning reads | 102 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 110 |
@@ -141,7 +141,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races | 331 |
 | [phantom-merges](mistakes/phantom-merges.md) | merged=true without proof | 337 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 323 |
-| [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard edges | 83 |
+| [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard edges | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 312 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox paths, permission sync | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | hooks/ dir is sandbox-protected | 37 |

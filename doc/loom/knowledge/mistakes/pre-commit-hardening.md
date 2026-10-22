@@ -81,3 +81,13 @@ newline-enumeration mutant actually fail.
 **Prevention:** run an autofixer only on the staged paths and mirror the gate's exclusions, because `markdownlint-cli2` does not apply `.markdownlintignore` to paths named on its command line.
 
 **Fix:** the hook lints only the staged markdown (`loom/.githooks/pre-commit:59-72`).
+
+## The Staged-Markdown Narrowing Left the Regression Script Asserting the Old Behavior (2026-10-22)
+
+**What happened:** 19fd93b6 narrowed the pre-commit Markdown autofix to staged files, but `scripts/test-pre-commit-partial-staging.sh` still required `bunx` to run in its `fully-staged` case, which stages only a `.rs` file. CI failed on both Linux and macOS hook jobs.
+
+**Why:** The hook change was verified by hand, not by the regression script that pins the hook's flow.
+
+**Prevention:** Any edit to `loom/.githooks/pre-commit` runs `./scripts/test-pre-commit-partial-staging.sh` before commit.
+
+**Fix:** `fully-staged` now stages a README.md change and asserts `bunx` linted it by name; `unstaged-only` asserts `bunx` did not run for the unstaged README.

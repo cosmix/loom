@@ -320,3 +320,13 @@ The sweep follow-ups on executable startup, cache coverage, hook-path navigation
 **Prevention:** a hook cannot reopen git's connection, so a long pre-push hook must make the rerun cheap. A reflog entry only shows a ref changed, not which push changed it; confirm a hooked push from its own output (`To <url>` plus a ref line, or exit status 0).
 
 **Fix:** the hook exits at once when its stdin lists no refs to update. After a full pass on a clean tracked tree it records HEAD in `<git-common-dir>/loom-pre-push-verified` and says so, so rerunning the same push skips the checks; a push touching any non-branch ref (a tag) always runs them. `scripts/push.sh` runs the hook against HEAD before connecting, then `git push`es on a fresh connection.
+
+## A Module-Level Import Used Only by a Linux-Gated Test Broke the macOS Build (2026-10-22)
+
+**What happened:** `verify/criteria/confine_cargo_home_tests.rs` imported `std::ffi::OsStr` at module level, but its only user was the `#[cfg(target_os = "linux")]` test. Linux built clean; the macOS Lint, Test and Flake-check jobs failed with `unused import` under `-Dwarnings`.
+
+**Why:** Local clippy runs on Linux only, and no darwin target is installed, so the cfg-dependent dead import was invisible before push.
+
+**Prevention:** A name used only inside a `#[cfg(...)]`-gated item is imported inside that item or written fully qualified, never at module level.
+
+**Fix:** Dropped the import; the Linux test spells `std::ffi::OsStr` inline.
