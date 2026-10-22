@@ -363,6 +363,6 @@ completion at the agent's next Read, from a transcript offset recorded at prepar
 
 ## Signal Caps and the IV Gate
 
-`loom/src/orchestrator/signals/tests_size.rs` pins `CLAUDE_MD_TEMPLATE_MAX_BYTES` at 20,480, `STABLE_PREFIX_MAX_BYTES` at 8,192, `STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` at 10,240 and `PLAN_OVERVIEW_MAX_BYTES` at 4,096. The overview cap mirrors `MAX_PLAN_OVERVIEW_BYTES` in `orchestrator/signals/generate/context.rs:98`. Trim doctrine before raising a cap.
+`loom/src/orchestrator/signals/tests_size.rs` pins `CLAUDE_MD_TEMPLATE_MAX_BYTES` at 20,138 (the template's measured size), `ORCHESTRATION_SKILL_MAX_BYTES` at 20,530 (`skills/loom-orchestration/SKILL.md`, loaded by every stage main session), `STABLE_PREFIX_MAX_BYTES` at 8,192, `STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` at 10,240 and `PLAN_OVERVIEW_MAX_BYTES` at 4,096. The overview cap mirrors `MAX_PLAN_OVERVIEW_BYTES` in `orchestrator/signals/generate/context.rs:98`. Trim doctrine before raising a cap.
 
 The IV stable prefix (`INTEGRATION_VERIFY_OVERRIDE`, `orchestrator/signals/cache.rs`) has the orchestrator run `loom check integration-verify` once; that check carries the complete suite. Reviewers run only targeted discriminating checks, which never substitute for that gate. After a review fix the orchestrator re-evaluates invalidated checks, and only the repaired criteria cache decides reuse.

@@ -1,6 +1,6 @@
 # Agent Rule-Bending Hardening
 
-> Bendable checks backlog
+> Enforcement classes, hard-stop matrix
 
 ## Why This Entry Exists
 
@@ -72,6 +72,19 @@ process ancestry and file ownership supply the proof.
 If the agent controls a value, the worst it may buy is a wrong route or a worse error message,
 never a capability. Every new `LOOM_*` consumer should be answerable against that question *at its
 call site*, without reading three modules to find out which class it is in.
+
+**Hard stops mapped to their enforcement.** Each row of `CLAUDE.md.template`'s hard-stop list, with what holds it, the class above and the test that pins it. "none" marks a gap.
+
+| Hard stop | Enforced by | Class | Pinning test |
+| --- | --- | --- | --- |
+| 1 PLANS | `loom-hooks/plans-path-guard.sh` denies a plan file outside `doc/plans/` | 2 | `loom-hooks/tests/plans-path-guard-allows-doc-plans.sh`, `plans-path-guard-blocks-claude-plans.sh`, `plans-path-guard-blocks-project-plans.sh`, `plans-path-guard-multiedit.sh` |
+| 2 MEMORY | `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` in the stage wrapper (`loom/src/orchestrator/terminal/native/wrapper.rs:364`) and the capsule's `.claude/projects/**` deny (`HOME_SURFACES` in `loom/src/sandbox/control_surfaces.rs`) | 3 | none found for the env line or the deny |
+| 3 GIT | `loom-hooks/commit-filter.sh` (blocks `git commit` and a subagent's stage completion), `loom-hooks/git-add-guard.sh` (blanket staging) and the PreToolUse pin in `loom-hooks/loom-control-complete.sh` (class 2); the daemon completes a stage only from its own host job and refuses a completion request from a subagent (`is_control` in `loom/src/relay/kind.rs`, `loom/src/host_verify/apply.rs`) (class 3) | 2 and 3 | `loom/tests/integration/hooks_commit_filter.rs` (`blocks_git_commit_in_a_stage_session`), `loom-hooks/tests/git-add-guard-quoting.sh`, `loom-hooks/tests/loom-control-complete-heredoc.sh`, `loom/tests/daemon_completion_contracts.rs` (`subagents_cannot_relay_completion`) |
+| 4 CONTEXT | the `CONTEXT CEILING REACHED` report in `loom-hooks/post-tool-use.sh` (class 2); the daemon backstop in `loom/src/orchestrator/monitor/ceiling.rs`, which writes the handoff a session in the Red band is owed (class 3) | 2 and 3 | `loom-hooks/tests/post-tool-use-ceiling-hard-block.sh`, `post-tool-use-ceiling-warn-once.sh`, `post-tool-use-ceiling-resolution.sh`; `loom/src/orchestrator/monitor/tests/ceilings.rs` |
+| 5 BRANCHES | none: no hook matches `git checkout -b`, `git switch -c` or `git branch <name>` | none | none |
+| 6 DELEGATION | `_loom_main_edit_advisory` in `loom-hooks/post-tool-use.sh`: one advisory per session past 20 changed lines or 2 files; advisory only, it never denies | 2 | `loom/tests/guidance_gate_contracts.rs` (`main_session_edit_advisory_fires_once_past_the_limit`), `loom-hooks/tests/post-tool-use-main-edit-advisory.sh` |
+
+Stop 5 has no mechanical check, stop 6 only an advisory, and stop 2 has no pinning test.
 
 ## Gaps Found
 
@@ -264,7 +277,7 @@ environment scrubbing only.
 
 ## Stage Agents Stop and Report Instead of Disputing or Blocking
 
-The doctrine is BLOCK-F (`orchestrator/signals/helpers.rs::STAGE_EXIT_RULES`, byte-identical in `skills/loom-orchestration/SKILL.md`, pinned by `tests_doctrine_v2.rs`): a wrong criterion, wiring check, contract, review finding or test-integrity event gets a dispute, whose filing ends the session by design; a need only a person can meet gets `loom stage block <stage-id> "<reason>"`. A stage agent's block retires the stage's live session and shows the reason in `loom status` (`orchestrator/core/event_handler/blocked.rs`). `loom plan verify` checks the plan's environment (provision entries, registry domains, JS packages without provision, pre-commit hook network needs; see [plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md)). Open gaps:
+The doctrine is BLOCK-F (`orchestrator/signals/helpers.rs::STAGE_EXIT_RULES`, byte-identical across the standard, integration-verify and knowledge-distill stable prefixes, pinned by `tests_doctrine_v2.rs`): a wrong criterion, wiring check, contract, review finding or test-integrity event gets a dispute, whose filing ends the session by design; a need only a person can meet gets `loom stage block <stage-id> "<reason>"`. A stage agent's block retires the stage's live session and shows the reason in `loom status` (`orchestrator/core/event_handler/blocked.rs`). `loom plan verify` checks the plan's environment (provision entries, registry domains, JS packages without provision, pre-commit hook network needs; see [plan-lifecycle-and-fields](../architecture/plan-lifecycle-and-fields.md)). Open gaps:
 
 - **Subagents are told by text only.** `loom-hooks/commit-filter.sh` blocks a subagent's `loom stage complete` and git commands mechanically, but `loom stage block` and `dispute-*` rely on the `_subagent-preamble.txt` line. A subagent block now retires the main session, so the hook branch should refuse them too. `agents/loom-software-engineer.md` and the coordinator preamble in `skills/loom-orchestration/SKILL.md` do not repeat the report-instead-of-file rule, so an untyped spawn that pastes only BLOCK-A never receives it.
 - **BLOCK-F and commit timing disagree.** BLOCK-F says to commit before filing; `append_commit_timing_rules` in the same signal prefix says commit only as the final step. The commit-timing text needs an exception for a dispute or block.

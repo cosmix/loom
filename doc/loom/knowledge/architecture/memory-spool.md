@@ -106,7 +106,7 @@ failure must never wedge a merge.
 bytes) and concurrent subagents would interleave bytes on a line.
 
 **Reads merge the spool.** `loom memory list --stage <id>` is step one of
-post-compaction recovery (CLAUDE.md Rule 3b), so `query`/`list`/`show` merge undrained entries,
+post-compaction recovery (the SessionStart re-anchor message in `loom-hooks/session-start.sh`, which `CLAUDE.md.template` Rule 3b defers to), so `query`/`list`/`show` merge undrained entries,
 and the aggregate `list`/`show` additionally surface a stage whose only entries
 are still pending — both enumerate journal *files*, which such a stage does not
 yet have. Daemon-side readers stay on the pure `read_journal`; they run after

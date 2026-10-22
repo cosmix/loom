@@ -68,6 +68,8 @@ that adds a `Stage` field needs either that decision or a field-grouping refacto
 **Recurred (2026-09-26, outside a stage):** a doctrine brief asked for a changed exit-5 message in `subagents/wait/identity.rs` (396 lines) without naming the 400-line limit; the worker added a 10-line helper and the file failed `tests/maintainability.rs` at 406. The orchestrator replaced the helper with a message-suffix const. Every brief that edits a file within 20 lines of 400 names its current length and the limit.
 **Recurred (2026-09-30, outside a stage):** five bug-fix briefs named the 400/50 limits but not the ratchet. The workers grew six baselined entries by 1-7 lines (`#[serial]` attributes in `repair/tests.rs`, a longer `try_approve_review` doc, one line each in `DaemonServer::start` and `start_stage`). Before writing a brief, grep `loom/maintainability-baseline.txt` for every file the brief lets the worker touch, and list the matches with their current values.
 
+**Recurred (2026-10-22, integration-verify):** a brief told a haiku worker to add a second negative case inside the existing test `go_generic_words_do_not_qualify_golang_on_a_rust_prompt`; the function grew to 53 lines and `tests/maintainability.rs` (`repository_maintainability_debt_does_not_grow_or_go_stale`, 50-line function cap) failed the next gate, because the brief named the edit site but not the cap and the worker's targeted check does not run that test. A brief that adds to an existing function states the 50-line cap and asks for a new `#[test]` when the addition is a separate case.
+
 ## Read the Criterion Direction From the Plan, Not From the Signal (2026-09-19)
 
 **What happened:** spawn prompts told two workers that the plan-writer `rg -qF '## '` and agents
@@ -183,3 +185,11 @@ sibling's files.
 **Why:** the check was combined with other review commands instead of using the required path-scoped form.
 **Prevention:** run `git diff --stat` first, then invoke `git diff --check -- <changed paths>`.
 **Fix:** use the path-scoped check for every documentation edit.
+
+## A Brief's Test Filter Must Name the Test It Runs (2026-10-22)
+
+**What happened:** an integration-verify brief gave a worker the `cargo test` filter `go_word`, which matches only `every_removed_go_word_*`; the test it meant, `go_generic_words_do_not_qualify_golang_on_a_rust_prompt` in `loom/tests/integration/hooks_skill_trigger_evidence.rs`, needs the filter `rust_prompt`. The same test already passed without the planned trigger change, because `skills/loom-golang/SKILL.md` triggers were Go-qualified at the stage base.
+
+**Why:** the filter was typed from memory, and a filter that matches a different test still exits 0.
+
+**Prevention:** a brief quotes the full test name or checks the filter with `cargo test <filter> -- --list` first; a green run that never named the target test proves nothing. Before briefing a fix, confirm the failing behavior exists at the base.

@@ -38,7 +38,7 @@
 | [daemon-owned-commits](architecture/daemon-owned-commits.md) | Relayed signed commits | 151 |
 | [directory-structure](architecture/directory-structure.md) | Module tree, state layout | 50 |
 | [execution-containment](architecture/execution-containment.md) | Command containment, limits | 362 |
-| [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 294 |
+| [hook-system](architecture/hook-system.md) | Hook embedding, SessionStart | 307 |
 | [knowledge-bootstrap](architecture/knowledge-bootstrap.md) | Digest phase, receipts | 86 |
 | [knowledge-hierarchy](architecture/knowledge-hierarchy.md) | fs/knowledge, INDEX.md, checks | 263 |
 | [memory-spool](architecture/memory-spool.md) | Read before touching loom memory | 196 |
@@ -75,7 +75,7 @@
 | [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch, plan pipeline | 191 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) | Context retrieval, source graph | 79 |
 | [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Git, fs, handoff, sandbox | 126 |
-| [hooks](entry-points/hooks.md) | Hook scripts, events, matching | 147 |
+| [hooks](entry-points/hooks.md) | Hook scripts, events, matching | 150 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Orchestrator, daemon, signals | 247 |
 | [remote-control](entry-points/remote-control.md) | Remote-control detection call sites | 99 |
 
@@ -84,7 +84,7 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [cli-process-and-conventions](patterns/cli-process-and-conventions.md) | CLI registration, TUI, errors | 238 |
-| [doctrine-cross-surface](patterns/doctrine-cross-surface.md) | Pinning multi-surface guidance | 138 |
+| [doctrine-cross-surface](patterns/doctrine-cross-surface.md) | Pinning multi-surface guidance | 140 |
 | [hook-content-stripping](patterns/hook-content-stripping.md) | How hooks read a Bash command | 160 |
 | [merge-and-recovery](patterns/merge-and-recovery.md) | Progressive merge, recovery | 113 |
 | [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Signal gen, IPC, poll loop, spool | 118 |
@@ -92,7 +92,7 @@
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Hooks, validation, sandbox config | 139 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) | Stage agent to daemon | 191 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage states, locked writes | 201 |
-| [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out, coordinators, teams | 98 |
+| [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out, coordinators, teams | 99 |
 
 ### conventions
 
@@ -114,7 +114,7 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock | 200 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | A .git dir is no proof | 156 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Bug reports; brief flags | 185 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Bug reports; brief flags | 195 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, audit, install.sh | 302 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented itself | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader fixed by banning reads | 102 |
@@ -134,13 +134,13 @@
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why distill cannot write | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Ledger TUI rendering bugs | 83 |
 | [live-state-pollution](mistakes/live-state-pollution.md) | Tests wrote live state and HOME | 117 |
-| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay tickets leaked | 34 |
+| [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay tickets leaked | 36 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | A cleanup-boundary bug and its fix | 171 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Operator checkout git | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) | Resolver kept stage write denies | 15 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree state races | 331 |
 | [phantom-merges](mistakes/phantom-merges.md) | merged=true without proof | 337 |
-| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 313 |
+| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 323 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard edges | 83 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 312 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox paths, permission sync | 367 |
@@ -158,7 +158,7 @@
 | [store-without-consumer](mistakes/store-without-consumer.md) | Store written, never read | 104 |
 | [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, wave sizing, ownership | 376 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Subagent liveness; watch traps | 377 |
-| [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 358 |
+| [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 362 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY | 322 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) | Sweep: startup, cache, fixtures | 137 |
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint/test discipline | 398 |
@@ -176,9 +176,9 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Bendable checks backlog | 323 |
+| [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Enforcement classes, hard-stop matrix | 336 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Knowledge followups | 85 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Oversized units, hooks | 262 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Oversized units, hooks | 293 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat starvation | 49 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 window never named | 49 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | Knowledge CLI gaps | 115 |

@@ -127,12 +127,15 @@ A hook that Claude Code itself invokes (a `PreToolUse` guard, a global `UserProm
   [hooks-shell-portability](../mistakes/hooks-shell-portability.md)). The literal `PREAMBLE_LINE` is mirrored by
   a const in `loom/tests/integration/hooks_spawn_guard.rs:16`. The file stays under 400 lines because its own
   comments were condensed and stdin is read through `loom_run_bounded`, not because a sourced library was split off.
-- **`worktree-file-guard.sh::edit_advisory` warns a stage's main agent, never denies.** On a code path (not under
-  `doc/`, not `*.md`, not a `.kb_tmp_*` or `.distill-body-*` scratch file) it warns once per path when one call
-  writes more than 20 lines or the path is the third or later distinct file edited this session, tracked in an
-  `edits` ledger. It returns early for subagents (`agent_id`/`agent_type` in the payload, or `loom_is_subagent`).
-  It enforces the small-change test of BLOCK-B point 1. A distiller that stages long bodies in files inside the
-  worktree names them `.distill-body-*` to stay out of it.
+- **`post-tool-use.sh::_loom_main_edit_advisory` warns a stage's main session once, never denies.** PostToolUse, so it runs
+  after the edit and after the ceiling checks (which exit 2 and would discard its stdout). It tallies one `edit` row
+  per Write/Edit/MultiEdit/NotebookEdit call in the per-session `mainedits` ledger and, when the cumulative changed
+  lines pass 20 or the distinct files pass 2, appends a `warned` row and prints one `additionalContext` JSON object on
+  stdout. Exempt: `.loom/`, `doc/`, `*.md`, `.kb_tmp_*`, `.distill-body-*` and any path containing `/../`. It returns
+  early outside `LOOM_SESSION_TYPE=stage`, for subagents and for paths outside `LOOM_WORKTREE_PATH`. It enforces the
+  small-change test of BLOCK-B point 1; contract: `loom/tests/guidance_gate_contracts.rs`
+  (`main_session_edit_advisory_fires_once_past_the_limit`) and `loom-hooks/tests/post-tool-use-main-edit-advisory.sh`.
+  A distiller that stages long bodies in files inside the worktree names them `.distill-body-*` to stay out of it.
 - **`skill-trigger.sh` (Python despite the name) qualifies on keywords only.** A detected repository type adds one
   point as a tie-breaker and never qualifies a skill alone; the gate reads `keyword_scores`, captured before the
   repo tie-breaker, rather than a separate evidence function. A prompt that `is_machine_generated` (leading `<`, or

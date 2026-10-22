@@ -88,6 +88,19 @@ read and no shell TOML/YAML grammar to drift from Rust. Missing, failed, malform
 command output uses the shell fallback constants; a valid main zero is instead Rust's explicit
 disabled sentinel for a stage record it could not verify.
 
+### PostToolUse main-session size advisory
+
+`_loom_main_edit_advisory` in `loom-hooks/post-tool-use.sh` is the single owner of the small-change limit
+(20 changed lines, 2 files; BLOCK-B point 1). It acts only when `LOOM_SESSION_TYPE=stage`, the caller is the
+main agent (never a subagent) and the edited path lies inside `LOOM_WORKTREE_PATH`. Each Write/Edit/MultiEdit/
+NotebookEdit call appends an `edit` row (path, changed lines) to the `mainedits` ledger of the session; past the
+limit it appends a `warned` row and prints one `additionalContext` JSON object on stdout, so the model sees it, and
+the ledger stops growing. It never denies and exits 0. It runs after the ceiling checks, whose exit 2 would discard
+its stdout. Exempt paths: `.loom/`, `doc/`, `*.md`, `.kb_tmp_*`, `.distill-body-*` and any path containing `/../`.
+Pinned by `loom-hooks/tests/post-tool-use-main-edit-advisory.sh` and
+`loom/tests/guidance_gate_contracts.rs`; the review-time hardening candidates are in
+[code-quality-and-hook-debt.md](../concerns/code-quality-and-hook-debt.md).
+
 ## Subagent Isolation
 
 Three-layer defense: documentation (the subagent preamble `spawn-guard.sh` prepends to every typed spawn; CLAUDE.md Rule 5), signal injection (cache.rs prefix), and hook enforcement — which is now **two** hooks, not one:

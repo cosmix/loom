@@ -311,3 +311,13 @@ change bumps the plan `version` (conventions/plan-yaml-and-hooks).
 **Prevention:** measure rendered guidance against existing byte ceilings; replace redundant words instead of raising the budget.
 
 **Fix:** compress the review block while retaining its six dimensions, evidence requirement and verification contract, then rerun the failing signal tests.
+
+## A Wiring Entry for a `#[cfg(test)]` Module Declaration Can Never Pass (2026-10-22)
+
+**What happened:** the guidance-and-gate-output plan listed a wiring entry whose pattern was `mod tests_guidance_manifest;` in `signals/mod.rs`. `loom check` treats the `mod` line as the definition and a `#[cfg(test)]` module has no other consumer, so goal-backward wiring could never find a use. The stage disputed it with `--field wiring`.
+
+**Why:** the entry was written as if a test module were wired like production code.
+
+**Prevention:** a plan that adds a test-only module declares no wiring entry for it; the test run in the acceptance criteria proves the module compiles and runs. See also [Goal-Backward Wiring Checks Pin a PATTERN to a PATH](#goal-backward-wiring-checks-pin-a-pattern-to-a-path).
+
+**Fix:** dispute the entry (`loom stage dispute-criteria --field wiring`) rather than add a consumer to satisfy it.

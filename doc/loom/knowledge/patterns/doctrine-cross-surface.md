@@ -18,7 +18,7 @@ surface lists below are the ones the tests assert.
 | `BLOCK_C` | Subagent one-background-watch / bounded-wait doctrine ("Checking on subagents...") | `orchestrator/signals/tests_doctrine_waiting.rs:33` | `skills/loom-orchestration/SKILL.md` ONLY, and absent from every stable prefix (`block_c_lives_in_the_orchestration_skill`, `block_c_absent_from_every_stable_prefix`, `block_c_pins_the_owned_wait_contract`) |
 | `BLOCK_D` | Subagent context-ceiling rule ("CONTEXT CEILING - HOOK-REPORTED ONLY") | `orchestrator/signals/tests_doctrine_blocks.rs:82` | standard and integration-verify stable prefixes and `loom-hooks/_subagent-preamble.txt` (`block_d_agrees_across_every_surface`) |
 | `BLOCK_E` | Plan-v2 review order ("**Review order (plan v2):** fix every finding, run the full gate, then run the final review round, then complete...") | `orchestrator/signals/tests_doctrine_v2.rs:34` | the `## Review Gate` section a v2 stage signal renders (`v2_section.rs::append_v2_section`) and `skills/loom-orchestration/SKILL.md` (`block_e_agrees_across_every_surface`) |
-| `BLOCK_F` | Stage exits ("**When the stage cannot finish.**": disputes, `loom stage block`, commit before filing) | `orchestrator/signals/tests_doctrine_v2.rs:38` | standard, integration-verify and knowledge-distill stable prefixes and `skills/loom-orchestration/SKILL.md` (`block_f_agrees_across_every_surface`) |
+| `BLOCK_F` | Stage exits ("**When the stage cannot finish.**": disputes, `loom stage block`, commit before filing) | `orchestrator/signals/tests_doctrine_v2.rs:38` | standard, integration-verify and knowledge-distill stable prefixes only; the orchestration skill carries no copy (`block_f_agrees_across_every_surface`) |
 
 `BLOCK_D` exists because a subagent that never sees the PostToolUse hook's literal `SUBAGENT CEILING
 REACHED` line has no falsifiable way to know it has NOT reached its ceiling, and confabulates one
@@ -31,7 +31,9 @@ and `tests_doctrine_waiting.rs`, and the skill also into `tests_doctrine_v2.rs` 
 `tests_doctrine_prefixes.rs` separately pins the stable-prefix generators' byte ceilings — see
 [signal-generation.md](../architecture/signal-generation.md)), so moving either file is a COMPILE
 error and a change to either is checked against every block in one pass.
-`tests_size.rs` caps the template at `CLAUDE_MD_TEMPLATE_MAX_BYTES` 20,480.
+`tests_size.rs` caps the template at `CLAUDE_MD_TEMPLATE_MAX_BYTES` (20,138, the measured size) and the skill at its own `ORCHESTRATION_SKILL_MAX_BYTES` (20,530).
+
+`tests_guidance_manifest.rs` is the relocation manifest for text moved out of the template or the skill. It lists each relocated item with its new home and a literal needle (`RELOCATIONS`, homes loaded with `include_str!` or the stable-prefix generator) and freezes the template's `###` headings and rule bullets (`FROZEN_LINES`): every frozen line stays in the template or appears in the manifest, so deleting guidance fails a test instead of passing silently. Move or reword a relocated item and the manifest needle changes with it. A needle must occur only in its home, or the test passes after the home loses the text.
 
 The failure mode is drift, and it is invisible to ordinary acceptance criteria: greping each
 surface for an anchor phrase proves only that a substring exists on each, never that the

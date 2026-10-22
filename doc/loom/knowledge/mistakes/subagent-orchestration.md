@@ -283,6 +283,8 @@ if the operator agrees.
 
 **Fix:** `git restore --staged <path>`.
 
+**Recurred (2026-10-22, knowledge-distill plan, integration-verify):** the hooks fix engineer ran `git rm --cached` on a deleted test file, then undid it with `git restore --staged`. The brief had said only "delete the file". A brief that deletes a file says: delete it from the worktree only (`rm`); the orchestrator stages it. A second occurrence in two days makes this a hook candidate: see [code-quality-and-hook-debt.md](../concerns/code-quality-and-hook-debt.md).
+
 ## Agent and Process Lessons
 
 > Subagent reports, codex briefing, harness text, config process, brief hygiene
@@ -326,6 +328,8 @@ Review rounds are counted per reviewer and per stage. A gate runs once per tree,
 **Prevention:** count one review round per reviewer agent id, and list every duplicate finding id as resolved too. After the fixes, run exactly one targeted re-review that lists each open finding as resolved, and dispute anything new instead of starting a third round. Do not re-review a small fix made mid-stage. Run the final round once the tree is final, after any dispute verdict that edits files.
 
 **Fix:** not recorded in the memory whether the hook now records one round per reviewer agent id. Check `loom stage review status <stage-id>` after the next stage that runs several reviewers.
+
+**Recurred (2026-10-22):** a `loom-code-reviewer` that both called `SubagentHandback` and ended its final message with the same `loom-review` block recorded two rounds with duplicate findings again (rounds 4/5 and 6/7: F-4-*= F-5-_, F-6-_ = F-7-*); each duplicate id needed its own `resolved` listing in the next round. A reviewer brief names ONE delivery channel for the review block.
 
 ## Gate Rounds Repeated the Criteria Completion Runs (2026-10-21)
 
