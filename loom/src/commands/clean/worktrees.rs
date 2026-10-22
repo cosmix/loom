@@ -10,7 +10,9 @@ use std::fs;
 use std::io::{IsTerminal, Write};
 use std::path::Path;
 
-use crate::git::branch::{commits_ahead_of, list_loom_branches, resolve_target_branch};
+use crate::git::branch::{
+    branch_name_for_stage, commits_ahead_of, list_loom_branches, resolve_target_branch,
+};
 use crate::git::cleanup::{
     cleanup_all_base_branches, cleanup_multiple_stages, prune_worktrees, CleanupConfig,
 };
@@ -200,7 +202,7 @@ pub(super) fn clean_worktrees(repo_root: &Path) -> Result<(usize, usize)> {
             println!(
                 "  {} Deleted branch: {}",
                 "✓".green().bold(),
-                format!("loom/{stage_id}").dimmed()
+                branch_name_for_stage(&stage_id).dimmed()
             );
             branches_removed += 1;
         }

@@ -374,7 +374,7 @@ mod tests {
     }
 
     fn create_conflict_in_main(repo_root: &Path, stage_id: &str) {
-        let branch = format!("loom/{stage_id}");
+        let branch = branch_name_for_stage(stage_id);
         run_git(&["checkout", "-b", &branch], repo_root);
         std::fs::write(repo_root.join("file.txt"), "branch\n").unwrap();
         run_git(&["add", "file.txt"], repo_root);
