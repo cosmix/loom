@@ -69,7 +69,7 @@ const PLAN_OVERVIEW_MAX_BYTES: usize = 4_096;
 /// Every stage main session loads `skills/loom-orchestration/SKILL.md`, so its
 /// bytes are paid on every later request of that session. The ceiling equals
 /// the actual size, so any addition fails here.
-const ORCHESTRATION_SKILL_MAX_BYTES: usize = 20_462;
+const ORCHESTRATION_SKILL_MAX_BYTES: usize = 20_530;
 
 const CLAUDE_MD_TEMPLATE: &str = include_str!("../../../../CLAUDE.md.template");
 const ORCHESTRATION_SKILL: &str = include_str!("../../../../skills/loom-orchestration/SKILL.md");

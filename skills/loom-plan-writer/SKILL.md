@@ -31,7 +31,7 @@ triggers:
 
 A loom plan is a DAG of stages loom runs in isolated git worktrees, parallel first through subagents within a stage, second through concurrent stages. It is only as good as its CLAIMS about the code are TRUE and its verification PROVES them.
 
-Where other doctrine already governs something, this skill points at it: subagent shapes, preambles and waiting live in the `loom-orchestration` skill (`## Rule 5 — Subagent preamble`, `## Rule 6 — Subagents`, `## Rule 7 — Model allocation`); memory routing and branch discipline in CLAUDE.md Rules 12, 18 and 9b.
+Where other doctrine already governs something, this skill points at it: subagent shapes, preambles and waiting live in the `loom-orchestration` skill (`## Rule 6 — Subagents`, `## Rule 7 — Model allocation`; the subagent preamble itself is `loom-hooks/_subagent-preamble.txt`, CLAUDE.md Rule 5); memory routing and branch discipline in CLAUDE.md Rules 12, 18 and 9b.
 
 **Two rules dominate everything below:**
 

@@ -38,8 +38,9 @@ blocks, and spawn per Rule 6; with no signal, ask the user.
 ## Rule 4 — Commit and complete
 
 The commit is legitimate only once all three hold: (1) every subagent, coordinator, team, and
-Workflow returned and was absorbed; (2) the gate is green on the complete tree (in a standard stage,
-your `loom check <stage-id>`); (3) the mini
+Workflow returned and was absorbed (an abandoned subagent counts as returned only if you recorded
+why); (2) the gate is green on the complete tree (in a standard stage, your
+`loom check <stage-id>`); (3) the mini
 adversarial code review returned, every finding fixed, gate green again. In a plan version 2 stage
 `loom stage complete` enforces condition (3): it fails until a recorded review round matches the
 worktree and no finding is open. A handoff is no reason
