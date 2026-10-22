@@ -42,6 +42,8 @@ fn register_worktrees(repo: &Path) {
             "user.email=t@t",
             "-c",
             "user.name=t",
+            "-c",
+            "commit.gpgsign=false",
             "commit",
             "-q",
             "--allow-empty",
@@ -131,6 +133,57 @@ fn every_session_kind_denies_the_admin_dirs_it_does_not_own() {
             assert_eq!(deny_write.contains(config), own, "{at}");
             assert_eq!(rules.contains(&format!("Edit(/{config})")), own, "{at}");
         }
+    }
+}
+
+/// A worktree-rooted session's own administrative directory must be known to
+/// leave it writable, so the spawn is refused when no registry entry names its
+/// directory (`.worktrees/ghost` exists on disk beside registered worktrees) or
+/// two entries name it. The Adjudication row is a judge inside `.worktrees`.
+#[test]
+fn a_worktree_rooted_capsule_refuses_an_unclaimed_or_doubly_claimed_worktree() {
+    let checkout = checkout();
+    let sandbox = sandbox_with(vec![]);
+    register_worktrees(&checkout.repo);
+    let registry = checkout.repo.join(".git").join("worktrees");
+    let ghost = checkout.repo.join(".worktrees").join("ghost");
+    std::fs::create_dir_all(&ghost).unwrap();
+    let kinds = [
+        SessionType::Stage,
+        SessionType::Contract,
+        SessionType::Merge,
+        SessionType::Adjudication,
+    ];
+    let refusal = |kind: SessionType, cwd: &Path| {
+        let hooks = Some(checkout.hooks_dir.as_path());
+        let result = write_capsule(&checkout, "session-rf1", kind, cwd, &sandbox, hooks);
+        format!("{:#}", result.expect_err("the spawn must be refused"))
+    };
+
+    for kind in kinds {
+        let message = refusal(kind, &ghost);
+        assert!(
+            message.contains("is not a registered worktree"),
+            "{kind}: {message}"
+        );
+        assert!(
+            message.contains(ghost.to_str().unwrap()),
+            "{kind}: {message}"
+        );
+    }
+
+    let claim = std::fs::read(registry.join("s1").join("gitdir")).unwrap();
+    std::fs::write(registry.join("s2").join("gitdir"), claim).unwrap();
+    for kind in kinds {
+        let message = refusal(kind, &checkout.worktree);
+        assert!(
+            message.contains("more than one worktree"),
+            "{kind}: {message}"
+        );
+        assert!(
+            message.contains(checkout.worktree.to_str().unwrap()),
+            "{kind}: {message}"
+        );
     }
 }
 

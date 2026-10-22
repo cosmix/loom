@@ -11,20 +11,13 @@ use crate::fs::permissions::install_loom_hooks_to;
 use crate::fs::work_dir::{write_plan_sandbox, write_remote_control_config};
 use crate::orchestrator::terminal::native::capsule::CapsuleSupport;
 use crate::orchestrator::terminal::native::session_settings_path;
+use crate::orchestrator::terminal::native::tests_session_settings::ALL_KINDS;
 use crate::plan::schema::{FilesystemConfig, SandboxConfig};
 use crate::remote_control::{RemoteControlConfig, RemoteControlMode};
 use crate::sandbox::preflight::{HostFacts, SandboxPreflightRefusal};
 use serde_json::Value;
 use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
-
-const ALL_KINDS: [SessionType; 5] = [
-    SessionType::Stage,
-    SessionType::Knowledge,
-    SessionType::Merge,
-    SessionType::BaseConflict,
-    SessionType::Adjudication,
-];
 
 fn current_uid() -> u32 {
     // SAFETY: `getuid` has no preconditions and cannot fail.
@@ -165,6 +158,25 @@ fn an_ultracode_stage_session_launches_with_the_workflow_tool_and_no_other_kind_
     assert!(!denies_workflow(SessionType::Stage, true));
     assert!(denies_workflow(SessionType::Contract, true));
     assert!(denies_workflow(SessionType::Stage, false));
+}
+
+/// The prompt keyword and the capsule's Workflow exception read one predicate:
+/// of an `ultracode` stage's sessions, only the Stage one is prompted for it.
+#[test]
+fn the_ultracode_prompt_keyword_appears_exactly_when_the_capsule_omits_the_workflow_deny() {
+    let fixture = fixture();
+    let stage = Stage {
+        ultracode: true,
+        ..Stage::default()
+    };
+    for kind in ALL_KINDS.into_iter().chain([SessionType::Contract]) {
+        let (session, script) = try_launch_stage(&fixture, kind, &stage).unwrap();
+        let rules = capsule_of(&fixture, &session)["permissions"]["deny"].to_string();
+        let denied = rules.contains("\"Workflow\"");
+        assert_eq!(denied, kind != SessionType::Stage, "{kind}: {rules}");
+        let prompted = script.contains("licensed for ultracode");
+        assert_eq!(prompted, !denied, "{kind}: {script}");
+    }
 }
 
 #[test]

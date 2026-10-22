@@ -84,6 +84,18 @@ mod tests {
         ] {
             assert!(start.contains(needle), "{needle}");
         }
+        assert_eq!(
+            lines,
+            [
+                "Manual mode: Session setup for stage 's1'",
+                "  Worktree: /nope/wt",
+                "  Signal: /nope/sig.md",
+                "  To start: cd /nope/wt && LOOM_STAGE_ID=s1 LOOM_SESSION_ID=sess-1 \
+                 LOOM_WORK_DIR=/nope/work claude \"Read the signal file at /nope/sig.md \
+                 and execute the assigned stage work.\"",
+                CONFINEMENT_NOTICE,
+            ]
+        );
     }
 
     #[test]
@@ -94,6 +106,17 @@ mod tests {
         let (start, next) = line_after_start(&lines);
         assert_eq!(next, CONFINEMENT_NOTICE);
         assert!(start.contains("cd /nope/repo && claude \"Read the signal file at"));
+        assert_eq!(
+            lines,
+            [
+                "Manual mode: Session setup for knowledge stage 'k1'",
+                "  Directory: /nope/repo",
+                "  Signal: /nope/sig.md",
+                "  To start: cd /nope/repo && claude \"Read the signal file at /nope/sig.md \
+                 and execute the assigned stage work.\"",
+                CONFINEMENT_NOTICE,
+            ]
+        );
     }
 
     #[test]

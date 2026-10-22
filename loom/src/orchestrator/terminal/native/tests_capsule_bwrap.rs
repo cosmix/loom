@@ -264,7 +264,8 @@ fn credential_files_refuse_reads_and_an_unlisted_file_does_not() {
     let (paths, control) = plant_credentials(&checkout.home);
     let script = read_script(&paths, &control);
 
-    let lines = stage_reads(&checkout, vec![Implementer::Claude], &script, test);
+    let claude_only = format!("{test} claude");
+    let lines = stage_reads(&checkout, vec![Implementer::Claude], &script, &claude_only);
     for (index, path) in paths.iter().enumerate() {
         let name = format!("c{index}");
         assert_ne!(
@@ -283,11 +284,12 @@ fn credential_files_refuse_reads_and_an_unlisted_file_does_not() {
     assert_eq!(field(&lines, "control", "rc"), 0, "{lines:?}");
     assert_eq!(field(&lines, "control", "bytes"), 6, "{lines:?}");
 
+    let with_codex = format!("{test} claude+codex");
     let lines = stage_reads(
         &checkout,
         vec![Implementer::Claude, Implementer::Codex],
         &script,
-        test,
+        &with_codex,
     );
     let codex = format!("c{}", paths.len() - 1);
     assert_eq!(field(&lines, &codex, "rc"), 0, "{lines:?}");
