@@ -1,11 +1,17 @@
 mod context;
 mod enrichment;
+mod findings;
 
 pub(super) use context::build_embedded_context_for_stage;
 pub use context::build_embedded_context_with_stage;
 #[cfg(test)]
 pub(super) use context::{extract_plan_overview, extract_plan_overview_from};
-use enrichment::{build_cross_stage_summary, build_wiring_checklist, wants_stage_enrichment};
+use enrichment::{build_cross_stage_summary, wants_stage_enrichment};
+pub(super) use findings::{build_dependency_findings, DEPENDENCY_FINDINGS_HEADING};
+// Read only by tests (this crate's and the dependency harness), so the lib
+// build would flag an unconditional re-export as unused.
+#[cfg(test)]
+pub(super) use findings::MAX_DEPENDENCY_FINDINGS_BYTES;
 
 use anyhow::Result;
 use std::path::{Path, PathBuf};
@@ -230,10 +236,14 @@ fn build_signal_context(
 
     if wants_stage_enrichment(stage) {
         embedded_context.cross_stage_summary = build_cross_stage_summary(work_dir, stage);
-        embedded_context.wiring_checklist = build_wiring_checklist(work_dir, stage);
     }
 
     embedded_context.context_pack = super::helpers::retrieve_stage_pack(work_dir, stage);
+    // After retrieval: relevance reads the brief's paths. Every stage type; the
+    // selector decides. Rebuilt from the journals at every generation, so a
+    // continuation picks up entries relayed after the first signal.
+    embedded_context.dependency_findings =
+        build_dependency_findings(work_dir, stage, embedded_context.context_pack.as_ref());
     embedded_context.knowledge_tree_empty = super::helpers::knowledge_tree_is_empty(work_dir);
     embedded_context
 }
@@ -354,3 +364,7 @@ mod feedback_tests;
 #[cfg(test)]
 #[path = "generate_missing_allow_write_tests.rs"]
 mod missing_allow_write_tests;
+
+#[cfg(test)]
+#[path = "generate_dependency_findings_tests.rs"]
+mod dependency_findings_tests;

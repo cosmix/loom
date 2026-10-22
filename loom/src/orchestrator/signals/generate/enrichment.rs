@@ -1,6 +1,5 @@
 use crate::models::stage::{Stage, StageType};
 use crate::verify::transitions::load_stage;
-use std::fs;
 use std::path::Path;
 
 /// True when `stage` is an enrichment target: integration-verify or
@@ -82,47 +81,6 @@ fn format_stage_status(status: &crate::models::stage::StageStatus) -> &'static s
     }
 }
 
-/// Build a wiring checklist for integration-verify by extracting wiring-related
-/// notes from completed dependency stages' memory entries.
-pub(super) fn build_wiring_checklist(work_dir: &Path, stage: &Stage) -> Option<String> {
-    if !wants_stage_enrichment(stage) {
-        return None;
-    }
-
-    let mut checklist = String::from("## Downstream Wiring Checklist\n\n");
-    let mut has_items = false;
-
-    for dep_id in &stage.dependencies {
-        let memory_path = work_dir.join("memory").join(format!("{dep_id}.md"));
-
-        let content = match fs::read_to_string(&memory_path) {
-            Ok(c) => c,
-            Err(_) => continue,
-        };
-
-        let stage_name = load_stage(dep_id, work_dir)
-            .map(|s| s.name)
-            .unwrap_or_else(|_| dep_id.clone());
-
-        let stage_items = wiring_items(&content);
-
-        if !stage_items.is_empty() {
-            has_items = true;
-            checklist.push_str(&format!("From stage '{stage_name}':\n"));
-            for item in stage_items {
-                checklist.push_str(&format!("- [ ] {item}\n"));
-            }
-            checklist.push('\n');
-        }
-    }
-
-    if !has_items {
-        return None;
-    }
-
-    Some(checklist)
-}
-
 fn append_file_concerns(
     summary: &mut String,
     all_files: &std::collections::HashMap<String, Vec<String>>,
@@ -152,29 +110,4 @@ fn append_file_concerns(
         }
         summary.push('\n');
     }
-}
-
-fn wiring_items(content: &str) -> Vec<String> {
-    // Keywords indicating wiring-relevant notes
-    let wiring_keywords = [
-        "needs", "wire", "wiring", "register", "mount", "import", "add to", "connect",
-    ];
-    let mut stage_items: Vec<String> = Vec::new();
-
-    for line in content.lines() {
-        let lower = line.to_lowercase();
-        if wiring_keywords.iter().any(|kw| lower.contains(kw)) {
-            // Strip common markdown prefixes for cleaner display
-            let stripped = line
-                .trim_start_matches('-')
-                .trim_start_matches('*')
-                .trim_start_matches('#')
-                .trim();
-            if !stripped.is_empty() {
-                stage_items.push(stripped.to_string());
-            }
-        }
-    }
-
-    stage_items
 }

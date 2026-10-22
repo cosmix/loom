@@ -407,9 +407,9 @@ pub(super) fn format_dynamic_section(
         content.push_str("\n\n");
     }
 
-    // Wiring checklist from stage memories
-    if let Some(checklist) = &embedded_context.wiring_checklist {
-        content.push_str(checklist);
+    // Relevant findings of the accepted direct dependencies (generate/findings.rs)
+    if let Some(findings) = &embedded_context.dependency_findings {
+        content.push_str(findings);
         content.push_str("\n\n");
     }
 
