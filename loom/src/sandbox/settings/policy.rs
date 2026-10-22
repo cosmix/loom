@@ -1,16 +1,27 @@
 //! Security policy helpers for Claude settings generation.
 
 use crate::codex::{CODEX_SANDBOX_DOMAINS, CODEX_SANDBOX_WRITE_PATHS};
-use crate::fs::permissions::state_root::CREDENTIAL_DENY_READ_PATHS;
+use crate::fs::permissions::state_root::{
+    CODEX_AUTH_DENY_READ_PATH, CREDENTIAL_DENY_READ_PATHS, CREDENTIAL_FILE_DENY_READ_PATHS,
+};
 use crate::sandbox::{MergedSandboxConfig, PACKAGE_MANAGER_CACHE_WRITE_PATHS};
 use anyhow::{bail, Result};
 use serde_json::{json, Value};
 use std::collections::HashSet;
 
-/// Credential paths that must be denied even when an older plan omitted them.
-/// The same list `models::stage::types::default_deny_read` supplies, so a plan
-/// carrying the defaults adds nothing here — `deny_read_patterns` dedupes.
-const MANDATORY_DENY_READ: &[&str] = &CREDENTIAL_DENY_READ_PATHS;
+/// Read denies every capsule carries whatever its plan lists: the credential
+/// directories, the credential files, and the codex credential unless the stage
+/// licenses the codex lane. `models::stage::sandbox_config::default_deny_read`
+/// supplies the first two lists too, so a plan carrying the defaults adds
+/// nothing here: `deny_read_patterns` dedupes.
+pub(super) fn mandatory_deny_read(codex_licensed: bool) -> Vec<&'static str> {
+    let codex_auth = (!codex_licensed).then_some(CODEX_AUTH_DENY_READ_PATH);
+    CREDENTIAL_DENY_READ_PATHS
+        .into_iter()
+        .chain(CREDENTIAL_FILE_DENY_READ_PATHS)
+        .chain(codex_auth)
+        .collect()
+}
 
 /// Reject policy that cannot be represented without a sandbox escape.
 pub(crate) fn validate_emittable(config: &MergedSandboxConfig) -> Result<()> {
@@ -41,7 +52,7 @@ pub(super) fn deny_read_patterns(config: &MergedSandboxConfig) -> Vec<String> {
         .deny_read
         .iter()
         .map(String::as_str)
-        .chain(MANDATORY_DENY_READ.iter().copied())
+        .chain(mandatory_deny_read(config.implementers.includes_codex()))
         .map(str::trim)
         .filter(|path| !path.is_empty() && !path.contains("../"))
         .filter(|path| seen.insert((*path).to_string()))

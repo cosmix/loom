@@ -83,6 +83,7 @@ fn try_build(
         python3: None,
         python_hooks: &[],
         hidden_sockets: &[],
+        workflow_licensed: false,
     })
 }
 

@@ -381,18 +381,13 @@ fn print_manual_start(
     signal_path: &Path,
     work_dir: &Path,
 ) {
-    println!("Manual mode: Session setup for stage '{stage_id}'");
-    println!("  Worktree: {}", worktree.path.display());
-    println!("  Signal: {}", signal_path.display());
-    let absolute_work_dir = work_dir
-        .canonicalize()
-        .unwrap_or_else(|_| work_dir.to_path_buf());
-    println!(
-        "  To start: cd {} && LOOM_STAGE_ID={} LOOM_SESSION_ID={} LOOM_WORK_DIR={} claude \"Read the signal file at {} and execute the assigned stage work.\"",
-        worktree.path.display(),
+    for line in super::manual_start::manual_stage_start_lines(
         stage_id,
-        session.id,
-        absolute_work_dir.display(),
-        signal_path.display()
-    );
+        &worktree.path,
+        &session.id,
+        signal_path,
+        work_dir,
+    ) {
+        println!("{line}");
+    }
 }

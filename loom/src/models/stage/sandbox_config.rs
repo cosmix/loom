@@ -70,7 +70,10 @@ pub struct StageSandboxConfig {
 #[serde(deny_unknown_fields)]
 pub struct FilesystemConfig {
     /// Paths that agents cannot read (glob patterns)
-    /// Default: ~/.ssh/**, ~/.aws/**, ~/.config/gcloud/**, ~/.gnupg/**
+    /// Default: ~/.ssh/**, ~/.aws/**, ~/.config/gcloud/**, ~/.gnupg/**,
+    /// ~/.claude/.credentials.json, the credential files listed in
+    /// `state_root::CREDENTIAL_FILE_DENY_READ_PATHS`, and the state-root secrets.
+    /// The codex credential is not a default: it depends on the stage's lanes.
     #[serde(default = "default_deny_read")]
     pub deny_read: Vec<String>,
 
@@ -153,10 +156,12 @@ where
 }
 
 fn default_deny_read() -> Vec<String> {
-    // Credential paths come from `state_root::CREDENTIAL_DENY_READ_PATHS`.
+    // Credential paths come from `state_root::CREDENTIAL_DENY_READ_PATHS` and
+    // `CREDENTIAL_FILE_DENY_READ_PATHS`.
     let mut paths: Vec<String> = crate::fs::permissions::state_root::CREDENTIAL_DENY_READ_PATHS
-        .iter()
-        .map(|path| (*path).to_string())
+        .into_iter()
+        .chain(crate::fs::permissions::state_root::CREDENTIAL_FILE_DENY_READ_PATHS)
+        .map(str::to_string)
         .collect();
     // State-root secrets reach only the OS denyRead list; the native file tools are
     // covered by credential-guard.sh. Include both layouts from either working directory.

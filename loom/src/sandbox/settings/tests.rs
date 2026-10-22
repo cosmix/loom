@@ -1,5 +1,5 @@
+use super::policy::mandatory_deny_read;
 use super::*;
-use crate::fs::permissions::state_root::CREDENTIAL_DENY_READ_PATHS;
 use crate::models::stage::{Implementer, Implementers};
 use crate::plan::schema::{
     CommandConfinement, FilesystemConfig, LinuxConfig, NetworkConfig, SandboxConfig,
@@ -433,7 +433,7 @@ fn test_generate_settings_keeps_mandatory_credential_deny_when_empty() {
     let json = generate_settings_json(&config);
     assert_eq!(
         json["sandbox"]["filesystem"]["denyRead"],
-        json!(CREDENTIAL_DENY_READ_PATHS)
+        json!(mandatory_deny_read(false))
     );
     assert!(
         !has_read_deny(&json),

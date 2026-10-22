@@ -1,5 +1,5 @@
-//! `config.worktree` guards: the admin directory listing, and the refusal of a
-//! pinned run under a file git would act on.
+//! `config.worktree` guards: the admin directory listing and its split by
+//! session, and the refusal of a pinned run under a file git would act on.
 
 use super::*;
 use crate::git::worktree::WorktreeGit;
@@ -66,6 +66,87 @@ fn every_admin_directory_is_listed_and_symlinks_are_not() {
 fn a_directory_without_git_has_no_admin_directories() {
     let tmp = TempDir::new().unwrap();
     assert!(worktree_admin_dirs(tmp.path()).unwrap().is_empty());
+}
+
+/// [`repository`] plus the registered worktree `.worktrees/s2`, and the
+/// canonical `<common dir>/worktrees`.
+fn two_worktrees() -> (TempDir, PathBuf, PathBuf) {
+    let (tmp, repo, _worktree) = repository();
+    git(
+        &repo,
+        &["worktree", "add", "-q", "-b", "loom/s2", ".worktrees/s2"],
+    );
+    let registry = repo.join(".git").canonicalize().unwrap().join("worktrees");
+    (tmp, repo, registry)
+}
+
+#[test]
+fn the_session_worktree_is_its_own_and_every_other_is_a_sibling() {
+    let (_tmp, repo, registry) = two_worktrees();
+
+    let stage = partition_admin_dirs(&repo, Some(&repo.join(".worktrees/s1"))).unwrap();
+    let checkout = partition_admin_dirs(&repo, None).unwrap();
+
+    assert_eq!(stage.own, Some(registry.join("s1")));
+    assert_eq!(stage.siblings, vec![registry.join("s2")]);
+    assert_eq!(checkout.own, None);
+    assert_eq!(
+        checkout.siblings,
+        vec![registry.join("s1"), registry.join("s2")]
+    );
+}
+
+#[test]
+fn the_own_directory_is_found_through_a_symlinked_path() {
+    let (tmp, repo, registry) = two_worktrees();
+    let links = TempDir::new().unwrap();
+    let alias = links.path().join("alias");
+    std::os::unix::fs::symlink(tmp.path(), &alias).unwrap();
+
+    let dirs = partition_admin_dirs(&repo, Some(&alias.join("repo/.worktrees/s1"))).unwrap();
+
+    assert_eq!(dirs.own, Some(registry.join("s1")));
+    assert_eq!(dirs.siblings, vec![registry.join("s2")]);
+}
+
+#[test]
+fn an_unregistered_worktree_beside_registered_ones_is_refused() {
+    let (_tmp, repo, _registry) = two_worktrees();
+    let ghost = repo.join(".worktrees/ghost");
+    std::fs::create_dir_all(&ghost).unwrap();
+
+    let error = partition_admin_dirs(&repo, Some(&ghost)).unwrap_err();
+
+    let message = format!("{error:#}");
+    assert!(
+        message.contains("is not a registered worktree"),
+        "{message}"
+    );
+    assert!(message.contains("ghost"), "{message}");
+}
+
+#[test]
+fn two_directories_claiming_one_worktree_are_refused() {
+    let (_tmp, repo, registry) = two_worktrees();
+    let claim = std::fs::read(registry.join("s1/gitdir")).unwrap();
+    std::fs::write(registry.join("s2/gitdir"), claim).unwrap();
+
+    let error = partition_admin_dirs(&repo, Some(&repo.join(".worktrees/s1"))).unwrap_err();
+
+    assert!(
+        format!("{error:#}").contains("more than one worktree"),
+        "{error:#}"
+    );
+}
+
+#[test]
+fn a_repository_without_worktrees_partitions_to_nothing() {
+    let tmp = TempDir::new().unwrap();
+    let absent = tmp.path().join(".worktrees/s1");
+
+    let dirs = partition_admin_dirs(tmp.path(), Some(&absent)).unwrap();
+
+    assert_eq!(dirs, AdminDirs::default());
 }
 
 #[test]

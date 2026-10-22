@@ -6,10 +6,10 @@
 //! agent can put `filter.<name>.clean` (or `core.fsmonitor`, `core.pager`,
 //! `include.path`) there and have git run a command the next time the daemon
 //! runs it in that worktree. Two layers close this: the session capsule denies
-//! writes to every existing `config.worktree` ([`worktree_admin_dirs`] lists
-//! the directories), and a pinned [`super::WorktreeGit`] refuses to run git
-//! while the file holds a key outside [`GIT_WRITTEN_KEYS`]
-//! ([`check_worktree_config`]).
+//! writes to its own worktree's `config.worktree` and to every other
+//! administrative directory whole ([`partition_admin_dirs`] splits them), and
+//! a pinned [`super::WorktreeGit`] refuses to run git while the file holds a
+//! key outside [`GIT_WRITTEN_KEYS`] ([`check_worktree_config`]).
 
 use anyhow::{bail, ensure, Context, Result};
 use std::path::{Path, PathBuf};
@@ -50,6 +50,71 @@ pub fn worktree_admin_dirs(repo_root: &Path) -> Result<Vec<PathBuf>> {
     }
     dirs.sort();
     Ok(dirs)
+}
+
+/// The administrative directories of `repo_root`'s worktrees, split by the
+/// session that runs at `worktree`.
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub struct AdminDirs {
+    /// The directory whose `gitdir` records `<worktree>/.git`; `None` for a
+    /// session in the checkout.
+    pub own: Option<PathBuf>,
+    /// Every other administrative directory present now.
+    pub siblings: Vec<PathBuf>,
+}
+
+/// Split [`worktree_admin_dirs`] into the one registered for `worktree` and
+/// the rest; with `worktree` `None` (a session in the checkout) every
+/// directory is a sibling. With no administrative directory at all,
+/// `worktree` is never touched, so it need not exist.
+///
+/// A `worktree` that no directory names, or that two directories name, is an
+/// error: the capsule cannot tell which directory is the session's own, so
+/// the spawn is refused. That fails closed for a directory on disk that no
+/// registry entry claims, the adjudication judge (`judge_cwd`) and the merge
+/// resolver (`merge_resolver_worktree` in `orchestrator/terminal/backend.rs`)
+/// included, since both check only `is_dir()`.
+///
+/// The listing is taken at spawn. A worktree registered later is covered
+/// only for its `config.worktree` content (`WorktreeGit::run`'s
+/// `check_worktree_config`); its `HEAD`, `index`, `gitdir` and `logs/` stay
+/// writable to a session spawned before it.
+pub fn partition_admin_dirs(repo_root: &Path, worktree: Option<&Path>) -> Result<AdminDirs> {
+    let dirs = worktree_admin_dirs(repo_root)?;
+    if dirs.is_empty() {
+        return Ok(AdminDirs::default());
+    }
+    let Some(worktree) = worktree else {
+        return Ok(AdminDirs {
+            own: None,
+            siblings: dirs,
+        });
+    };
+    // Every listed directory is an entry of `<common dir>/worktrees`.
+    let registry = dirs[0].parent().map(Path::to_path_buf).unwrap_or_default();
+    let canonical = worktree
+        .canonicalize()
+        .with_context(|| format!("cannot resolve the worktree {}", worktree.display()))?;
+    let (owned, siblings): (Vec<PathBuf>, Vec<PathBuf>) = dirs
+        .into_iter()
+        .partition(|dir| super::pinned::names_work_tree(dir, &canonical));
+    ensure!(
+        owned.len() < 2,
+        "more than one worktree registered in {} names {}",
+        registry.display(),
+        worktree.display()
+    );
+    let own = owned.into_iter().next().with_context(|| {
+        format!(
+            "{} is not a registered worktree: no directory in {} names it",
+            worktree.display(),
+            registry.display()
+        )
+    })?;
+    Ok(AdminDirs {
+        own: Some(own),
+        siblings,
+    })
 }
 
 /// Refuse, unless git ignores or only git wrote `<admin>/config.worktree`.

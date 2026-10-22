@@ -20,6 +20,7 @@ mod host_jobs;
 mod inbox_drain;
 mod judge_close;
 mod lifecycle_snapshot;
+mod manual_start;
 mod merge_handler;
 #[cfg(test)]
 #[path = "merge_lifecycle_e2e_tests.rs"]

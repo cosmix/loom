@@ -1,5 +1,5 @@
-//! The state-directory and `config.worktree` denies of every session kind's
-//! capsule, in both layers (`sandbox.filesystem.denyWrite` for Bash,
+//! The state-directory and git administrative directory denies of every
+//! session kind's capsule, in both layers (`sandbox.filesystem.denyWrite` for Bash,
 //! `permissions.deny` for the native file tools).
 
 use super::*;
@@ -12,8 +12,10 @@ use crate::orchestrator::terminal::native::tests_session_settings::{
 const DENY_WRITE: &str = "/sandbox/filesystem/denyWrite";
 const DENY_RULES: &str = "/permissions/deny";
 
-/// Every session kind with the directory it runs in: merge resolvers run in
-/// the stage worktree, knowledge and adjudication sessions in the checkout.
+/// Every session kind with the directory it runs in: stage, contract and
+/// merge sessions in the stage worktree, knowledge and base-conflict sessions
+/// in the checkout. The adjudication row is a judge whose stage worktree is
+/// gone, which falls back to the checkout (`judge_cwd`).
 fn kinds_with_cwd(repo: &Path, worktree: &Path) -> [(SessionType, PathBuf); 6] {
     [
         (SessionType::Stage, worktree.to_path_buf()),
@@ -90,12 +92,21 @@ fn every_session_kind_denies_writes_to_the_state_directory() {
     }
 }
 
+/// A session in `s1` (Stage, Contract, Merge, and a judge whose stage
+/// worktree exists) keeps `s1` writable but its `config.worktree` and denies
+/// `s2` whole; a session in the checkout denies both whole. The Merge row is
+/// the proof that the resolver keeps its own directory.
 #[test]
-fn every_session_kind_denies_every_worktrees_config_worktree() {
+fn every_session_kind_denies_the_admin_dirs_it_does_not_own() {
     let checkout = checkout();
     let sandbox = sandbox_with(vec![]);
     register_worktrees(&checkout.repo);
-    for (kind, cwd) in kinds_with_cwd(&checkout.repo, &checkout.worktree) {
+    let registry = checkout.repo.join(".git").join("worktrees");
+    let judge_in_worktree = (SessionType::Adjudication, checkout.worktree.clone());
+    let rows = kinds_with_cwd(&checkout.repo, &checkout.worktree)
+        .into_iter()
+        .chain([judge_in_worktree]);
+    for (kind, cwd) in rows {
         let path = write_capsule(
             &checkout,
             "session-cw1",
@@ -106,22 +117,23 @@ fn every_session_kind_denies_every_worktrees_config_worktree() {
         )
         .unwrap();
         let capsule = read_capsule(&path);
+        let deny_write = strings(&capsule, DENY_WRITE);
+        let rules = strings(&capsule, DENY_RULES);
 
         for name in ["s1", "s2"] {
-            let file = checkout
-                .repo
-                .join(".git/worktrees")
-                .join(name)
-                .join("config.worktree");
-            let file = file.to_str().unwrap();
-            assert!(
-                strings(&capsule, DENY_WRITE).contains(file),
-                "{kind}: {capsule}"
-            );
-            assert!(
-                strings(&capsule, DENY_RULES).contains(&format!("Edit(/{file})")),
-                "{kind}: {capsule}"
-            );
+            let own = cwd == checkout.worktree && name == "s1";
+            let dir = registry.join(name);
+            let config = dir.join("config.worktree");
+            let (dir, config) = (dir.to_str().unwrap(), config.to_str().unwrap());
+            let at = format!("{kind} in {}, {name}: {capsule}", cwd.display());
+            assert_eq!(deny_write.contains(dir), !own, "{at}");
+            assert_eq!(rules.contains(&format!("Edit(/{dir}/**)")), !own, "{at}");
+            assert_eq!(deny_write.contains(config), own, "{at}");
+            assert_eq!(rules.contains(&format!("Edit(/{config})")), own, "{at}");
         }
     }
 }
+
+#[cfg(target_os = "linux")]
+#[path = "tests_capsule_bwrap.rs"]
+mod bwrap;

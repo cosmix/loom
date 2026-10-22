@@ -128,6 +128,12 @@ jobs:
         env:
           LOOM_E2E_REQUIRE_TMUX: "1"
 
+      - name: Run the bubblewrap capsule probe
+        working-directory: loom
+        run: cargo test --lib tests_capsule_denies::bwrap::
+        env:
+          LOOM_TEST_REQUIRE_SANDBOX_FREE: "1"
+
       - name: Build the loom binary
         if: ${{ !cancelled() }}
         working-directory: loom

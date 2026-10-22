@@ -1063,10 +1063,8 @@ loom:
       deny_read:
         - "~/.ssh/**"
         - "~/.aws/**"
-        - "../../**"
-        - "../.worktrees/**"
       deny_write:
-        - "../../**"
+        - "vendor/**"
       allow_write:
         - "src/**"
     network:
@@ -1076,7 +1074,7 @@ loom:
       allow_unix_sockets: []
 ```
 
-Note: every stage's sandbox grants writes to `doc/loom/knowledge/**`, because the knowledge CLI runs inside it (`sandbox/config.rs`, `apply_knowledge_write_grant`); a `deny_write` entry for that path is ignored and `loom plan verify` warns about it, and in a worktree `worktree-file-guard.sh` blocks Write and Edit on knowledge files, so knowledge changes go through `loom knowledge ...` commands. Plan-configured `excluded_commands` are rejected because broad executable exemptions bypass the host sandbox. When sandboxing is enabled, generated settings use host `denyRead` rules for sensitive paths and `failIfUnavailable: true`; failure to write those settings blocks session spawn. Unit tests pin the generated policy and blocked-spawn behavior. A credentialed Claude host-runtime canary across Bash, interpreters, build scripts, symlinks, and file tools remains a manual release check.
+Note: every stage's sandbox grants writes to `doc/loom/knowledge/**`, because the knowledge CLI runs inside it (`sandbox/config.rs`, `apply_knowledge_write_grant`); a `deny_write` entry for that path is ignored and `loom plan verify` warns about it, and in a worktree `worktree-file-guard.sh` blocks Write and Edit on knowledge files, so knowledge changes go through `loom knowledge ...` commands. Plan-configured `excluded_commands` are rejected because broad executable exemptions bypass the host sandbox. When sandboxing is enabled, generated settings use host `denyRead` rules for sensitive paths and `failIfUnavailable: true`; failure to write those settings blocks session spawn. Unit tests pin the generated policy and blocked-spawn behavior. Every session capsule also read-denies, for Bash and every command it starts, the common credential files (`~/.netrc`, `~/.npmrc`, `~/.git-credentials`, `~/.pypirc`, and the gh, docker, kube and cargo token files), and `~/.codex/auth.json` unless the stage licenses the codex lane; such a file fails to open. The file tools are outside that list: in a worktree `worktree-file-guard.sh` refuses paths outside it, and a checkout-rooted session's file tools are not checked against these files. The capsule also denies the tools that run outside the Bash sandbox: LSP, RemoteTrigger, CronCreate, PushNotification, and Workflow everywhere except the stage session of an `ultracode` stage. `deny_read` and `deny_write` entries holding `../` never reach the OS sandbox. A credentialed check of these denies against a live Claude Code session is the manual [sandbox release checklist](doc/sandbox-release-checklist.md).
 
 ### Command Confinement
 
@@ -1105,7 +1103,7 @@ Plans are trusted artifacts, but trusted is not privileged: under `confined`, a 
 
 ### Session State Confinement
 
-Every spawned session — stage, merge, base-conflict, adjudication — launches from a settings capsule that denies writes to `.loom/`, `.claude/`, `.worktrees/`, the hooks directories, and git hooks and config, regardless of the filesystem rules above.
+Every spawned session — stage, merge, base-conflict, adjudication — launches from a settings capsule that denies writes to `.loom/`, `.claude/`, `.worktrees/`, the hooks directories, git hooks and config, and the git administrative directories of other stage worktrees, regardless of the filesystem rules above.
 
 A handful of commands still need to reach that state from inside a sandboxed session: `loom memory ...`, `loom check`, `loom stage complete`, `loom stage contracts freeze`, `loom stage block`, `loom stage dispute-criteria`, `loom stage commit`, `loom handoff`, `loom stage merge --resolved`, and `loom worktree remove`. Each writes a one-shot ticket instead, picked up by a `PostToolUse` relay hook and applied by the daemon at most once through a per-session ledger. `loom request status <id>` reports whether the daemon has applied a given ticket yet.
 

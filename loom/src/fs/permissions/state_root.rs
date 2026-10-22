@@ -46,7 +46,7 @@ pub(crate) const STATE_ROOT_SECRET_FILES: [&str; 3] = [
 /// `permissions.deny` as a `Read(...)` rule - see the module docs - so this
 /// is also the list [`is_loom_written_read_deny`] uses to recognise the
 /// mirrors older loom versions did write. Named once here so
-/// `models::stage::types::default_deny_read`, `sandbox::settings::policy`'s
+/// `models::stage::sandbox_config::default_deny_read`, `sandbox::settings::policy`'s
 /// mandatory list, and that recogniser cannot drift apart.
 pub(crate) const CREDENTIAL_DENY_READ_PATHS: [&str; 5] = [
     "~/.ssh/**",
@@ -55,6 +55,30 @@ pub(crate) const CREDENTIAL_DENY_READ_PATHS: [&str; 5] = [
     "~/.gnupg/**",
     "~/.claude/.credentials.json",
 ];
+
+/// Credential files whatever the plan lists: the gh token, netrc logins, npm
+/// and PyPI tokens, git credential-store logins, docker registry auths, the
+/// kube client config, and cargo registry tokens in both spellings. Entries are
+/// plain paths, not globs: a `denyRead` glob expands to one mount per match,
+/// while a plain path that does not exist mounts nothing. Kept apart from
+/// [`CREDENTIAL_DENY_READ_PATHS`] so that a `Read(...)` rule an operator wrote
+/// for one of these files is never mistaken for a loom-written mirror.
+pub(crate) const CREDENTIAL_FILE_DENY_READ_PATHS: [&str; 9] = [
+    "~/.config/gh/hosts.yml",
+    "~/.netrc",
+    "~/.npmrc",
+    "~/.git-credentials",
+    "~/.docker/config.json",
+    "~/.kube/config",
+    "~/.pypirc",
+    "~/.cargo/credentials.toml",
+    "~/.cargo/credentials",
+];
+
+/// The codex lane's credential. Denied in every capsule whose stage does not
+/// license the codex lane; a licensed stage keeps reading and refreshing the
+/// file in place.
+pub(crate) const CODEX_AUTH_DENY_READ_PATH: &str = "~/.codex/auth.json";
 
 /// State-root layout a project's `config.toml` was found under: the current
 /// nested spelling, and the legacy workspace one a project keeps forever once
@@ -233,6 +257,20 @@ mod tests {
             assert!(
                 !is_loom_written_read_deny(entry),
                 "{entry} must not be claimed as loom's"
+            );
+        }
+    }
+
+    #[test]
+    fn the_credential_files_are_never_claimed_as_loom_written() {
+        for path in CREDENTIAL_FILE_DENY_READ_PATHS
+            .into_iter()
+            .chain([CODEX_AUTH_DENY_READ_PATH])
+        {
+            let entry = format!("Read({path})");
+            assert!(
+                !is_loom_written_read_deny(&entry),
+                "{entry} predates no loom version, so it is the operator's"
             );
         }
     }

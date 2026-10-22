@@ -32,7 +32,64 @@ fn config() -> MergedSandboxConfig {
 #[test]
 fn adds_mandatory_credentials_and_filters_parent_traversal() {
     let paths = deny_read_patterns(&config());
-    assert_eq!(paths, CREDENTIAL_DENY_READ_PATHS.to_vec());
+    assert_eq!(
+        paths,
+        [
+            "~/.ssh/**",
+            "~/.aws/**",
+            "~/.config/gcloud/**",
+            "~/.gnupg/**",
+            "~/.claude/.credentials.json",
+            "~/.config/gh/hosts.yml",
+            "~/.netrc",
+            "~/.npmrc",
+            "~/.git-credentials",
+            "~/.docker/config.json",
+            "~/.kube/config",
+            "~/.pypirc",
+            "~/.cargo/credentials.toml",
+            "~/.cargo/credentials",
+            "~/.codex/auth.json",
+        ]
+    );
+}
+
+#[test]
+fn a_codex_licensed_stage_keeps_reading_its_auth_file() {
+    let mut config = config();
+    config.implementers = Implementers::new(vec![Implementer::Claude, Implementer::Codex]);
+    let paths = deny_read_patterns(&config);
+    for credential in [
+        "~/.config/gh/hosts.yml",
+        "~/.netrc",
+        "~/.npmrc",
+        "~/.git-credentials",
+        "~/.docker/config.json",
+        "~/.kube/config",
+        "~/.pypirc",
+        "~/.cargo/credentials.toml",
+        "~/.cargo/credentials",
+    ] {
+        assert!(
+            paths.iter().any(|path| path == credential),
+            "{credential} must stay denied: {paths:?}"
+        );
+    }
+    assert!(
+        !paths.iter().any(|path| path == "~/.codex/auth.json"),
+        "a codex-licensed stage must read its own auth file: {paths:?}"
+    );
+}
+
+#[test]
+fn every_credential_file_entry_is_a_plain_home_path() {
+    for path in CREDENTIAL_FILE_DENY_READ_PATHS {
+        assert!(path.starts_with("~/"), "{path} must be home-relative");
+        assert!(
+            !path.contains(['*', '?', '[', ']', '{']),
+            "{path} must be a plain path, not a glob"
+        );
+    }
 }
 
 #[test]

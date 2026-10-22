@@ -23,6 +23,17 @@ use crate::sandbox::{MergedSandboxConfig, SettingsTarget};
 const RELAY_SCRIPT: &str = "loom-relay.sh";
 /// The completion pin hook (PreToolUse); only the kinds that complete through it keep it.
 const CONTROL_COMPLETE_SCRIPT: &str = "loom-control-complete.sh";
+/// Tools that run in the Claude Code process, not under the Bash sandbox: the
+/// LSP plugins' servers index the worktree and can run its build scripts and
+/// proc macros; RemoteTrigger starts work off the machine; CronCreate and
+/// PushNotification act outside the session. They are bare tool names in
+/// `permissions.deny` because `--disallowedTools` is variadic and would
+/// consume the positional prompt (`build_claude_command`). `SendMessage`,
+/// `ListAgents`, `WebFetch` and `WebSearch` stay allowed (agent teams; the
+/// engineer agents list the web tools). `Workflow` is denied unless
+/// [`CapsuleInputs::workflow_licensed`].
+const SESSION_TOOL_DENIES: [&str; 4] = ["LSP", "RemoteTrigger", "CronCreate", "PushNotification"];
+const WORKFLOW_TOOL: &str = "Workflow";
 
 /// Everything [`capsule_settings`] reads.
 pub(super) struct CapsuleInputs<'a> {
@@ -56,13 +67,28 @@ pub(super) struct CapsuleInputs<'a> {
     /// The host's Unix sockets to hide, when the stage is granted every Unix
     /// socket (the `sandbox::host_sockets` scan); empty otherwise.
     pub hidden_sockets: &'a [String],
+    /// Whether the session may use the Workflow tool: true only for the Stage
+    /// session of an `ultracode: true` stage (`launch::workflow_licensed`).
+    pub workflow_licensed: bool,
+}
+
+/// The `permissions.deny` entries: the Edit rules, then the tool-route denies.
+fn capsule_deny_rules(inputs: &CapsuleInputs<'_>) -> Vec<String> {
+    let mut rules = inputs.denies.edit.clone();
+    rules.extend(SESSION_TOOL_DENIES.iter().map(|tool| (*tool).to_owned()));
+    if !inputs.workflow_licensed {
+        rules.push(WORKFLOW_TOOL.to_owned());
+    }
+    rules
 }
 
 /// The capsule document: what `sandbox::build_settings` builds from the
 /// stage's config for the session's location (`defaultMode` and
 /// `worktree.bgIsolation` included, the checkout's deny rules carried, and
 /// with the codex lane its plugin keys), then the plans read, the scratch
-/// grant, the approved list, the session's write denies, the hidden terminal
+/// grant, the approved list, the session's write denies and tool-route denies
+/// (`LSP`, `RemoteTrigger`, `CronCreate`, `PushNotification`, and `Workflow`
+/// unless licensed), the hidden terminal
 /// histories, the hidden host sockets and the kind's hooks.
 /// With the codex lane it also allows the home-expanded forwarding wrapper
 /// path, which must not be committed in the project's `settings.json`.
@@ -94,7 +120,11 @@ pub(super) fn capsule_settings(inputs: &CapsuleInputs<'_>) -> Result<Value> {
     let denies = inputs.denies;
     let deny_write = ["sandbox", "filesystem", "denyWrite"];
     extend_strings(&mut settings, &deny_write, &denies.deny_write);
-    extend_strings(&mut settings, &["permissions", "deny"], &denies.edit);
+    extend_strings(
+        &mut settings,
+        &["permissions", "deny"],
+        &capsule_deny_rules(inputs),
+    );
     let deny_read = ["sandbox", "filesystem", "denyRead"];
     extend_strings(
         &mut settings,

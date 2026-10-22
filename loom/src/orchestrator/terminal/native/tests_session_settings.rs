@@ -171,11 +171,11 @@ pub(super) struct Checkout {
     _temp: TempDir,
     pub(super) repo: PathBuf,
     pub(super) worktree: PathBuf,
-    work_dir: PathBuf,
+    pub(super) work_dir: PathBuf,
     pub(super) hooks_dir: PathBuf,
     pub(super) home: PathBuf,
-    scratch_root: PathBuf,
-    tmp_root: PathBuf,
+    pub(super) scratch_root: PathBuf,
+    pub(super) tmp_root: PathBuf,
 }
 
 pub(super) fn checkout() -> Checkout {
@@ -231,6 +231,7 @@ pub(super) fn write_capsule(
         python3: None,
         python_hooks: &[],
         socket_scan_root: &checkout.tmp_root,
+        workflow_licensed: false,
     })
 }
 
