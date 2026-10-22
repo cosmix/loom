@@ -391,3 +391,10 @@ the spawn fails; the other candidates stay as listed.
 **Why:** Explanatory visuals were implemented independently of the components they described.
 **Prevention:** Use production components with isolated sample state, local interaction handlers, and utility copy. Inspect the real UI before composing examples.
 **Fix:** Render StageNode, React Flow controls, ModeKey, ContextMeter, NodeTokens, TokenFlowPanel, and QuotaMeters in the help guide.
+
+## A Half-Open Status Socket Froze the Dashboard With a Live Badge (2026-10-22)
+
+**What happened:** a dashboard tab viewed over the LAN (`loom status --web --host 0.0.0.0`, through a router) kept a stage on `writing contract tests`/executing after it was blocked and later merged, with no terminal and the connection badge on `live`; a reload showed the truth. The server was publishing correct frames and held no connection for that tab: the socket was dead on the server and still open in the browser.
+**Why:** the status socket had no liveness check on either side. The server writes only when `Broadcaster::publish` sees a changed frame, so silence is normal; the client reacted only to `onclose`/`onerror`, which a half-open TCP connection (sleeping device, dropped NAT mapping) never fires. The rule in "A push-fed page read liveness out of the payload" (trust the socket) assumes the socket reports its own death; it does not.
+**Prevention:** a push feed whose server suppresses unchanged frames needs an application-level heartbeat the client can observe (browser JS cannot see protocol pings), and the client must treat a missed heartbeat as an outage.
+**Fix:** `commands/status/web/ws.rs` resends the socket's last frame after 10 s of silence; `web/src/api/ws.ts` reconnects after 30 s without any message (checked every 5 s and on `visibilitychange`), and `applySnapshot` skips a frame whose `generated_at` is not newer, so a keepalive does not re-render. A frame republished with a notice is restamped for the same reason.
