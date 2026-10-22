@@ -54,14 +54,20 @@ fn classify(command: &str) -> Option<Run> {
     }
     let stripped = strip_prefixes(&argv);
     let (options, _) = split_double_dash(&stripped);
-    let package_scoped =
-        adapter.language() == "rust" && (has_flag(options, "-p") || has_flag(options, "--package"));
+    let package_scoped = adapter.language() == "rust" && scopes_package(options);
     let full = adapter.is_full_run(&without_skips(&argv)) && !package_scoped;
     Some(Run {
         adapter,
         argv,
         full,
     })
+}
+
+/// Whether cargo's `options` scope the run to a package: `-p foo`, `-pfoo`,
+/// `-p=foo` or `--package foo`.
+fn scopes_package(options: &[String]) -> bool {
+    let attached = |word: &String| word.starts_with("-p") && !word.starts_with("--");
+    has_flag(options, "--package") || options.iter().any(attached)
 }
 
 /// `argv` without `--skip <name>` pairs: excluding a handful of tests still
@@ -146,10 +152,82 @@ fn build_config(argv: &[String]) -> Vec<String> {
     found
 }
 
+/// Cargo flags that build targets a plain `cargo test` leaves out.
+const UNBUILT_TARGET_FLAGS: &[&str] = &["--bench", "--benches", "--example", "--examples"];
+
+/// The words of `argv` ahead of a bare `--`, runner prefixes stripped: the
+/// run's own command and options, not the test binary's.
+fn run_words(argv: &[String]) -> Vec<String> {
+    let stripped = strip_prefixes(argv);
+    split_double_dash(&stripped).0.to_vec()
+}
+
+/// The stripped `argv` with `extra` added to the run's own options, ahead of
+/// a bare `--`.
+fn with_options(argv: &[String], extra: &[&str]) -> Vec<String> {
+    let mut words = strip_prefixes(argv);
+    let at = words.iter().position(|w| w == "--").unwrap_or(words.len());
+    let tail = words.split_off(at);
+    words.extend(extra.iter().map(|word| word.to_string()));
+    words.extend(tail);
+    words
+}
+
+/// A filtered cargo run that names benches or examples is covered only by a
+/// full run that builds them: `--all-targets` or the same flag.
+fn unbuilt_targets_covered(full: &Run, filtered: &Run) -> bool {
+    if filtered.adapter.language() != "rust" {
+        return true;
+    }
+    let (full_words, words) = (run_words(&full.argv), run_words(&filtered.argv));
+    let built = has_flag(&full_words, "--all-targets");
+    UNBUILT_TARGET_FLAGS
+        .iter()
+        .filter(|flag| has_flag(&words, flag))
+        .all(|flag| built || has_flag(&full_words, flag))
+}
+
+/// Whether `filtered` carries an option that configures the run differently
+/// from `full` (`go test -tags integration`, `-race`, `pytest -c other.ini`,
+/// `vitest --config e2e.ts`), so it proves what the full run does not. The
+/// flags in [`BUILD_CONFIG_FLAGS`] are compared by `build_config` instead.
+/// An option the full run lacks is the adapter's own selection flag (`-run`,
+/// `-k`, `--lib`) when adding it makes the full run a filtered one; otherwise
+/// it configures. An option both runs carry differs when the word after it in
+/// `filtered` (`-tags b`) is a value the full run does not carry; a word that
+/// makes the full run filtered once added after the option is an operand
+/// (`./pkg`), not a value.
+fn configures_differently(full: &Run, filtered: &Run) -> bool {
+    let full_words = run_words(&full.argv);
+    let words = run_words(&filtered.argv);
+    words.iter().enumerate().any(|(i, word)| {
+        let name = word.split_once('=').map_or(word.as_str(), |(name, _)| name);
+        if !word.starts_with('-') || BUILD_CONFIG_FLAGS.contains(&name) {
+            return false;
+        }
+        if !full_words.contains(word) {
+            return full
+                .adapter
+                .is_full_run(&with_options(&full.argv, &[word.as_str()]));
+        }
+        let Some(next) = words.get(i + 1).filter(|next| !next.starts_with('-')) else {
+            return false;
+        };
+        let carried = full_words
+            .windows(2)
+            .any(|pair| pair[0] == *word && pair[1] == *next);
+        let probe = with_options(&full.argv, &[word.as_str(), next.as_str()]);
+        !carried && full.adapter.is_full_run(&probe)
+    })
+}
+
 /// Whether the full run `full` executes every test the filtered run `filtered`
 /// selects, so the filtered criterion adds nothing. A full run that uses
-/// `--skip` omits tests the filtered run may select, and a run built with
-/// different features, profile or target compiles different code.
+/// `--skip` omits tests the filtered run may select, and a run built or
+/// configured differently (features, profile, target, tags, config file, race
+/// detector) compiles or runs different code. A missed warning costs less
+/// than advice to drop a criterion that adds coverage, so a doubtful
+/// difference counts.
 fn subsumes(full: &Run, filtered: &Run) -> bool {
     if full.adapter.name() != filtered.adapter.name() || filtered.full {
         return false;
@@ -163,6 +241,8 @@ fn subsumes(full: &Run, filtered: &Run) -> bool {
     }
     environment(&full.argv) == environment(&filtered.argv)
         && build_config(&full.argv) == build_config(&filtered.argv)
+        && unbuilt_targets_covered(full, filtered)
+        && !configures_differently(full, filtered)
 }
 
 /// Warn when a stage's acceptance runs the whole test suite outside the

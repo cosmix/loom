@@ -186,3 +186,59 @@ fn test_preflight_no_warning_for_filtered_run_on_standard_stage() {
         .iter()
         .all(|w| !w.contains("runs the whole test suite")));
 }
+
+const INTEGRATION_VERIFY: Option<StageType> = Some(StageType::IntegrationVerify);
+
+/// A filtered run that configures the run differently, or builds targets the
+/// full run leaves out, covers what the full run does not.
+#[test]
+fn test_configuration_a_full_run_lacks_defeats_subsumption() {
+    let cases = [
+        (
+            "go test ./...",
+            "go test -tags integration ./internal/db/...",
+        ),
+        ("go test ./...", "go test -race ./pkg"),
+        ("go test -tags a ./...", "go test -tags b ./pkg"),
+        (
+            "uv run pytest",
+            "uv run pytest -c other.ini tests/test_a.py",
+        ),
+        (
+            "bunx vitest run",
+            "bunx vitest run --config e2e.ts tests/e2e",
+        ),
+        ("cargo test", "cargo test --benches"),
+        ("cargo test", "cargo test --example demo"),
+    ];
+    for (full, filtered) in cases {
+        let warnings = subsumed_warnings(INTEGRATION_VERIFY, &[full, filtered]);
+        assert!(warnings.is_empty(), "{full} + {filtered}: {warnings:?}");
+    }
+}
+
+/// Selection flags and operands filter without configuring: the full run
+/// already executes what they select.
+#[test]
+fn test_selection_flags_and_operands_stay_subsumed() {
+    let cases = [
+        ("go test ./...", "go test -run TestX ./..."),
+        ("uv run pytest", "uv run pytest -k foo"),
+        ("go test -race ./...", "go test -race ./pkg"),
+        ("go test -tags a ./...", "go test -tags a ./pkg"),
+        ("cargo test --all-targets", "cargo test --benches"),
+        ("cargo test --all-targets", "cargo test --example demo"),
+        ("cargo test --all-targets", "cargo test --all-targets foo::"),
+    ];
+    for (full, filtered) in cases {
+        let warnings = subsumed_warnings(INTEGRATION_VERIFY, &[full, filtered]);
+        assert_eq!(warnings.len(), 1, "{full} + {filtered}: {warnings:?}");
+    }
+}
+
+#[test]
+fn test_attached_package_scoping_is_not_a_full_suite_run() {
+    for command in ["cargo test -pfoo", "cargo test -p foo", "cargo test -p=foo"] {
+        assert!(!is_full_suite_run(command), "{command} scopes a package");
+    }
+}
