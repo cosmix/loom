@@ -76,6 +76,9 @@ pub(super) struct CapsuleRequest<'a> {
     /// Where host sockets are looked for when the stage is granted every
     /// Unix socket: `sandbox::HOST_TMP_ROOT` on a real host.
     pub socket_scan_root: &'a Path,
+    /// Whether the session may use the Workflow tool: true only for the Stage
+    /// session of an `ultracode: true` stage (`launch::workflow_licensed`).
+    pub workflow_licensed: bool,
 }
 
 /// Build and write the session's capsule, returning its absolute path.
@@ -117,6 +120,7 @@ pub(super) fn write_session_capsule(request: &CapsuleRequest<'_>) -> Result<Stri
         python3: request.python3,
         python_hooks: request.python_hooks,
         hidden_sockets: &hidden_sockets,
+        workflow_licensed: request.workflow_licensed,
     })?;
     let path = write_capsule_file(request.work_dir, request.session_id, &settings)?;
     path.to_str().map(str::to_owned).with_context(|| {
@@ -296,6 +300,9 @@ mod tests_capsule_denies;
 #[cfg(test)]
 #[path = "tests_capsule_interpreters.rs"]
 mod tests_capsule_interpreters;
+#[cfg(test)]
+#[path = "tests_capsule_routes.rs"]
+mod tests_capsule_routes;
 #[cfg(test)]
 #[path = "tests_capsule_unresolved_root.rs"]
 mod tests_capsule_unresolved_root;

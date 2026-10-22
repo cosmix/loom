@@ -126,6 +126,13 @@ fn model_and_effort(kind: SessionType, stage: &Stage, work_dir: &Path) -> (Strin
     }
 }
 
+/// Whether the session may use the Workflow tool. The one predicate both the
+/// prompt keyword ([`initial_prompt`]) and the capsule's Workflow exception
+/// read, so they cannot disagree.
+fn workflow_licensed(kind: SessionType, stage: &Stage) -> bool {
+    kind == SessionType::Stage && stage.ultracode
+}
+
 /// The kind-specific initial prompt, pointing the session at its signal file.
 fn initial_prompt(kind: SessionType, stage: &Stage, signal_path: &Path) -> String {
     let signal_path_str = signal_path.to_string_lossy();
@@ -133,7 +140,7 @@ fn initial_prompt(kind: SessionType, stage: &Stage, signal_path: &Path) -> Strin
         SessionType::Stage => {
             // The literal keyword "ultracode" in the prompt is what licenses
             // Claude Code's Workflow tool for the session.
-            let ultracode_suffix = if stage.ultracode {
+            let ultracode_suffix = if workflow_licensed(kind, stage) {
                 " This stage is licensed for ultracode workflow orchestration."
             } else {
                 ""
@@ -262,10 +269,12 @@ pub(crate) fn prepare_session_launch(
 }
 
 /// The session's settings capsule, written from the host's resolved facts.
+#[allow(clippy::too_many_arguments)]
 fn write_capsule(
     host: &LaunchHost,
     work_dir: &Path,
     kind: SessionType,
+    stage: &Stage,
     session_id: &str,
     sandbox: &MergedSandboxConfig,
     cwd: &Path,
@@ -285,6 +294,7 @@ fn write_capsule(
         python3: host.facts.python3.as_deref(),
         python_hooks: &host.facts.python_hooks,
         socket_scan_root: Path::new(crate::sandbox::HOST_TMP_ROOT),
+        workflow_licensed: workflow_licensed(kind, stage),
     })
 }
 
@@ -325,6 +335,7 @@ fn prepare_session_launch_with(
         host,
         work_dir,
         kind,
+        stage,
         &session.id,
         &sandbox,
         cwd,

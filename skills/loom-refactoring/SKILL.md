@@ -87,7 +87,7 @@ Refactoring is not "make it nicer" — identify a specific smell and apply its c
 6. Final gate       → full suite + lint + build green; diff is behavior-neutral
 ```
 
-Prefer tool-driven moves when available: LSP/IDE "rename symbol" and "extract function" are behavior-preserving by construction and update all references — safer than `rg`+Edit. Use `rg` first to size the blast radius of any rename.
+Prefer tool-driven moves when available: LSP/IDE "rename symbol" and "extract function" are behavior-preserving by construction and update all references — safer than `rg`+Edit. Use `rg` first to size the blast radius of any rename. Loom stage sessions deny the LSP tool, so in a stage use `rg` to find every reference and Edit each one.
 
 ## Characterization tests (before touching legacy)
 

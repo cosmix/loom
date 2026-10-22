@@ -277,6 +277,7 @@ const SHARED_DENY_WRITE: &str = "{R}/.loom {R}/.git/hooks {R}/.git/config {H} \
     ~/.claude/projects ~/.claude/agents ~/.claude/skills ~/.claude/commands \
     ~/.claude/loom-skill-catalog ~/.claude/plugins ~/.codex/hooks ~/.codex/hooks.json \
     ~/.codex/config.toml ~/.codex/AGENTS.md ~/.codex/loom-skill-catalog ~/.codex/prompts";
+const TOOL_DENIES: &str = "LSP RemoteTrigger CronCreate PushNotification Workflow";
 const SHARED_EDIT_DENIES: &str = "Edit(/{R}/.loom/**) Edit(.loom/**) \
     Edit(/{R}/.git/hooks/**) Edit(/{R}/.git/config) Edit(/{H}/**) Edit(~/.claude/hooks/**) \
     Edit(~/.claude/settings.json) Edit(~/.claude/CLAUDE.md) Edit(~/.claude.json) \
@@ -341,7 +342,7 @@ fn every_kind_gets_exactly_the_section_10_write_denies_for_its_location() {
             let [skill_writes, skill_edits] = codex_skill_denies();
             let mut deny_write = expand(&[SHARED_DENY_WRITE, own_deny_write], &checkout);
             deny_write.extend(skill_writes);
-            let mut edit = expand(&[SHARED_EDIT_DENIES, own_edit], &checkout);
+            let mut edit = expand(&[SHARED_EDIT_DENIES, own_edit, TOOL_DENIES], &checkout);
             edit.extend(skill_edits);
             let label = format!("{kind} in {}", cwd.display());
             let written = strings(&capsule, "/sandbox/filesystem/denyWrite");

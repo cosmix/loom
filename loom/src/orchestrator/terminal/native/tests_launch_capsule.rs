@@ -101,6 +101,15 @@ fn try_launch(fixture: &Fixture, kind: SessionType) -> Result<(Session, String)>
         name: "Stage One".to_string(),
         ..Stage::default()
     };
+    try_launch_stage(fixture, kind, &stage)
+}
+
+/// [`try_launch`] for a caller-built `stage`.
+fn try_launch_stage(
+    fixture: &Fixture,
+    kind: SessionType,
+    stage: &Stage,
+) -> Result<(Session, String)> {
     let cwd = if kind == SessionType::Stage {
         fixture.repo.join(".worktrees").join("stage-1")
     } else {
@@ -118,7 +127,7 @@ fn try_launch(fixture: &Fixture, kind: SessionType) -> Result<(Session, String)>
         &fixture.host,
         &fixture.work_dir,
         kind,
-        &stage,
+        stage,
         session,
         &signal,
         &cwd,
@@ -134,6 +143,28 @@ fn launch(fixture: &Fixture, kind: SessionType) -> (Session, String) {
 fn capsule_of(fixture: &Fixture, session: &Session) -> Value {
     let path = session_settings_path(&fixture.work_dir, &session.id);
     serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap()
+}
+
+#[test]
+fn an_ultracode_stage_session_launches_with_the_workflow_tool_and_no_other_kind_does() {
+    let fixture = fixture();
+    let stage = |ultracode| Stage {
+        id: "stage-1".to_string(),
+        name: "Stage One".to_string(),
+        ultracode,
+        ..Stage::default()
+    };
+    let denies_workflow = |kind, ultracode| {
+        let (session, _) = try_launch_stage(&fixture, kind, &stage(ultracode)).unwrap();
+        let deny = capsule_of(&fixture, &session)["permissions"]["deny"].clone();
+        deny.as_array()
+            .unwrap()
+            .iter()
+            .any(|rule| rule == "Workflow")
+    };
+    assert!(!denies_workflow(SessionType::Stage, true));
+    assert!(denies_workflow(SessionType::Contract, true));
+    assert!(denies_workflow(SessionType::Stage, false));
 }
 
 #[test]
