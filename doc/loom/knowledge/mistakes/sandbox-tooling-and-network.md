@@ -377,3 +377,13 @@ unprivileged user namespace `bwrap` creates. With both steps the confined tests 
 **Prevention:** Before writing an assertion about a deny, measure its observable result (exit status and stderr, not only the bind) in a shell where bubblewrap starts, and pair the denied read with a readable control file.
 
 **Fix:** The probe asserts a non-zero `cat` exit status and 0 bytes per credential file, with an unlisted file reading its 6 bytes as the control, and keeps `--ro-bind` (never `--dev-bind`, which reads empty and is not what Claude Code does).
+
+## Vitest needs an explicit writable temporary directory
+
+**What happened**: Frontend tests failed before collection because the sandbox could not create the Vite client cache under /tmp. I repeated the command without preserving the temporary-directory override.
+
+**Why**: The test runner inherits its temp location independently from the workspace write allowance.
+
+**Prevention**: Run these tests with TMPDIR pointing to the existing output/playwright/tmp workspace directory.
+
+**Fix**: Repeat collection with that explicit TMPDIR; distinguish this setup failure from test failures.
