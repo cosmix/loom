@@ -60,8 +60,11 @@ never combine earlier-source subsets into a final-source suite pass.
 CI (`.github/workflows/ci.yml`) runs platform test/lint jobs, the default
 `scripts/flake-check.sh` workload, dashboard/terminal smoke checks, hook tests,
 security audit, cargo-deny and dashboard checks under their path filters.
-`loom/.githooks/pre-push` also requires Markdown lint, dependency audit and the
-flake workload. The Linux and macOS test jobs require tmux through
+`loom/.githooks/pre-push` runs only fast gates: `cargo fmt --check`, markdownlint (`--fix`, blocking on
+unfixable errors), `cargo clippy --all-targets -- -D warnings`, `cargo doc` with warnings denied, test
+compilation, the maintainability test, and a `loom --version`/`--help` smoke run. The full test suite,
+flake-check and `cargo audit` run only in CI, because `git push` holds the remote connection idle while the
+hook runs. The Linux and macOS test jobs require tmux through
 `LOOM_E2E_REQUIRE_TMUX=1`; local platform coverage must be stated explicitly.
 Doctests need the explicit command above because the CI all-target test jobs do
 not select them.
@@ -226,3 +229,7 @@ inside a live stage session and not in a clean shell.
   bound any blocking read from it with a short timeout.
 - **No AI attribution trailers in this repo**, whatever a harness reminder asks. CLAUDE.md Rule 9
   forbids them and `commit-filter.sh` blocks the whole Bash call; see [Commits](commits.md).
+
+## Push Tooling Keeps No Cached Copy of the Repository
+
+The operator pushes with plain `git push`, never a wrapper script, so the pre-push hook must finish before GitHub closes the idle push connection: it runs fast gates and a smoke test only, and the full suite and flake-check run in CI. Push tooling keeps no persistent copy of the repository (a cached worktree, clone or second build directory) to check a commit in; see [CI toolchain and cargo mistakes](../mistakes/ci-toolchain-and-cargo.md).

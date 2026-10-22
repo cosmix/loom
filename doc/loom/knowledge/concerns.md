@@ -75,7 +75,7 @@ Four issues reviewed and deliberately left unchanged in `loom/src/commands/statu
 
 `loom/.githooks/pre-commit:72` runs `markdownlint-cli2 --fix` and ignores its exit status (it warns only when `bunx`
 cannot run), so an error `--fix` cannot repair, such as a table row missing a cell (MD055/MD056), commits silently;
-`pre-push:113` blocks it. Lint new markdown with `bunx markdownlint-cli2 <files>` before committing.
+`pre-push:78` blocks it. Lint new markdown with `bunx markdownlint-cli2 <files>` before committing.
 
 ## Source Graph Limits and Review Backlog
 

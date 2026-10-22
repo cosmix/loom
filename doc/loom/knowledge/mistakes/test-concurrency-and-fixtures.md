@@ -320,3 +320,13 @@ expects to expire stays short. Reproduce a timing failure by looping the test un
 **Why:** libtest runs every test of a binary in one process, and the hook changed a shared cache.
 
 **Prevention:** a test hook that changes a process-wide cache must be scoped to the calling test thread or restored. The fix uses a `cfg(test)` thread-local `FORCE_PORTABLE`, checked first in `try_openat2` (`loom/src/fs/safe_fs.rs:118`), which leaves the 1019-line baseline pin unchanged.
+
+## Two New Tests Failed Only on macOS CI: a Linux-Only Permission Trick and a Threaded Daemon-Lock Probe (2026-10-22)
+
+**What happened:** CI run 39821696770's `Test (macos)` failed two lib tests that pass on Linux. `host_verify::tests_runner::a_failed_start_pass_still_returns_the_records_already_settled` chmods `verification/` to `0o111` so listing fails while the cancelled record stays readable; on macOS every read failed too, `tick` logged it and returned `Ok(vec![])`, and the test timed out. `review_harvest`'s four-thread `concurrent_stops_of_one_agent_record_one_round` failed with `no loom daemon answered ... this process cannot prove that none runs`.
+
+**Why:** `safe_fs::open_safely` resolves a path in one `openat2` call on Linux, which needs only search permission on intermediate directories; on macOS (`try_openat2` returns `None`, `loom/src/fs/safe_fs.rs:158-161`) the fallback opens each component with `O_DIRECTORY|O_RDONLY`, which needs read permission. `fingerprint::compute` with no daemon proves absence through `DaemonServer::proven_stopped` → `inspect_lock` (`loom/src/fs/daemon_state.rs:23-52`), a fresh `flock(LOCK_EX|LOCK_NB)` on `orchestrator.lock`; flock is per open file description, so concurrent threads see each other's probe as a held lock.
+
+**Prevention:** a test that injects failure through directory permissions must check the platform's lookup rules (`openat2` versus a component walk) and skip where the injection cannot isolate the one failure. A concurrency test exercises the lock it proves (`store::record_round`) directly, never through a path that also probes the daemon lock.
+
+**Fix:** the host-verify test returns early when the record is unreadable after the chmod; the concurrency proof moved to `verify/review/store_tests.rs::concurrent_recorders_of_one_review_write_one_round` (four threads on a barrier, a 20 ms decide delay).

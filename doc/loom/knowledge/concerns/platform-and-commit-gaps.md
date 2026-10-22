@@ -59,7 +59,7 @@ cover. In-crate tests cover the pieces: `launch/tests.rs` drives `await_ready` a
 children, `lifecycle/tests.rs` runs `run_server` with a pre-set shutdown flag, and
 `commands/run/daemon_child.rs` tests the refusals. Tests that bind a socket guard with
 `process::sandbox_probe::skip_unless(unix_socket_bindable)`, which skips inside a stage sandbox and
-runs on the host (pre-push) and in CI.
+runs on the host (a local `cargo test`) and in CI.
 
 - `.github/workflows/ci.yml` never sets `LOOM_TEST_REQUIRE_SANDBOX_FREE=1`, so `relay_commit_e2e` (skipped on missing
   `jq`/`bash`/`git`) and the `AF_UNIX`-gated tests can skip silently in CI; set it in the cargo test job.
