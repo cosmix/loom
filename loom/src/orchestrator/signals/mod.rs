@@ -24,6 +24,9 @@ mod tests;
 // filters to exactly this module's tests (nesting under `tests` would make the
 // path `signals::tests::tests_size`, which that filter would not match).
 #[cfg(test)]
+#[path = "tests_dependency_harness.rs"]
+mod tests_dependency_harness;
+#[cfg(test)]
 #[path = "tests_size.rs"]
 mod tests_size;
 
