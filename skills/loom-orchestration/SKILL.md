@@ -26,24 +26,14 @@ triggers:
 
 # Loom Orchestration
 
-The rules a session needs when it spawns subagents or runs a loom stage as its main agent.
-`~/.claude/CLAUDE.md` keeps a short statement of each; the full text is here, filed under the
-CLAUDE.md rule number it belongs to. A single-agent session does not need this skill.
+The rules a session needs when it spawns subagents or runs a loom stage as its main agent, beyond what
+`~/.claude/CLAUDE.md` and the stage signal already carry, filed under the CLAUDE.md rule number they
+belong to. A single-agent session does not need this skill.
 
 ## Session start
 
 Read your Knowledge Brief, find your session ID in `.loom/work/signals/`, scan for `EXECUTION PLAN`
 blocks, and spawn per Rule 6; with no signal, ask the user.
-
-## Rule 1 — Plans and stage execution
-
-**Loom plans:** create one only on explicit request for loom orchestration ("use loom", "loom
-run", "create a loom plan") or `/loom-plan-writer`, always authored via `/loom-plan-writer`,
-canonical for every plan mechanic via `loom plan verify`. Never write loom YAML from memory.
-
-**Executing a stage:** your signal file carries the stage's tasks and completion checklist (memory
-recording, wiring verification, mini adversarial code review, commit steps); it is binding, and you
-work it to completion.
 
 ## Rule 4 — Commit and complete
 
@@ -58,45 +48,6 @@ to commit unverified work — record uncommitted files there instead.
 Commit with `git add <specific-files>` then `loom stage commit <stage-id> -m "type(scope):
 description"`, and wait for it with `loom request status <id> --wait 90`; never run `git commit`.
 
-**Complete ONLY a settled stage; completion is the session's LAST act.** All three conditions still
-hold (an abandoned subagent counts as returned only if you recorded why), every defect fixed and
-re-verified, `git status` clean. The stop hook only WARNS; confirming completion succeeded is your
-job. Completion asks the daemon to verify the committed tree in a host job: read the first line,
-`Host job: <state>`, never the exit code alone. `requested` or `pending` (exit 0) is not a result:
-run the same command again in your next Bash call. `completed` (exit 0): the daemon completed the
-stage; STOP, since post-completion work is LOST WORK. `failed` or `rejected` (exit 1): a criterion
-or check failed, or the daemon refused to complete; `refused` (exit 1): the request was refused or
-the tree is not committed. Fix, commit, run again. `stopped` (exit 4): the run was cancelled or
-interrupted; run again. Do nothing else while it waits.
-
-**The gate in a standard stage.** Once every implementer has returned, format the tree
-(`cargo fmt --all` or the project's formatter), then run `loom check <stage-id>` once, plus the
-steps the plan lists outside acceptance, while the final review round runs. `loom check` is the
-host runner that completes the stage, with the same `Host job:` first line and states (`passed` for
-`completed`); it prints a per-criterion summary and writes full logs to files. Run no test, build or
-lint command yourself. A fix round runs `loom check <stage-id> --criterion <n>` (0-based,
-repeatable) for each failed criterion plus the lint and format criteria. A criterion that fails
-only because of the confined runner (no network, timeout, git metadata) is disputed before
-completing. Do not repeat the check's run yourself. The final review round also judges the diff
-against each criterion's intent; a re-review covers the changed files and open findings only. An
-integration-verify stage keeps its own gate, as its signal directs.
-
-Group commits logically: 5 files across 3 concerns = 3 commits, not 1 or 5.
-
-## Rule 5 — Subagent preamble
-
-Subagents write code and report; the main agent owns fixes, the commit, and all git operations
-(hard stop 3), and a standard stage's gate is your single `loom check` (Rule 4). Every typed Claude
-spawn opens with the preamble in `loom-hooks/_subagent-preamble.txt` (installed beside
-`spawn-guard.sh`). The spawn guard prepends that file to any typed spawn whose prompt lacks its
-first line, so you do not paste it; a prompt that already opens with that line, such as a
-coordinator's (below), is left alone. The file carries the git restrictions, the
-no-verify rule (BLOCK-A, with an exception for integration-verify), the
-context-ceiling rule (BLOCK-D), memory recording, and the auto-memory prohibition.
-
-Claude subagents only; `loom-hooks/codex-forward.sh` prepends codex's own rules to forwarded
-prompts (Rule 7).
-
 ## Rule 6 — Subagents
 
 | Shape | When | Cost | Who commits | Which preamble |
@@ -106,13 +57,8 @@ prompts (Rule 7).
 | **Agent teams** | Wide, exploratory work needing inter-agent messaging or dynamic task discovery; NOT for concrete assignments with clear file ownership | ~7x whole-job | Team lead, who alone runs `loom stage complete` and `loom memory` | Rule 5 |
 
 Team lead: TeamCreate → TaskCreate → spawn → monitor (TaskList) → shutdown, gate (Rule 4), complete;
-delegate, keep context <40%, shut down ALL teammates.
-
-**GROUP TASKS: small tasks go to ONE subagent, never one per task or file.** Every extra subagent
-costs twice — the orienting tokens spent before it writes anything, and the disjoint file set it
-forces. Four files with a one-line edit each is still ONE subagent. Split only when a territory is a
-separate job, or one assignment would exceed a subagent's context. The ≤~6 threshold counts
-subagents after grouping, never raw tasks.
+delegate, keep context <40%, shut down ALL teammates. The ≤~6 threshold counts subagents after
+grouping, never raw tasks.
 
 Two subagents writing one file = lost work; if unavoidable, serialize in one subagent or split
 stages. Every prompt carries a file-ownership table:
@@ -135,8 +81,6 @@ than 200 lines whole that a sibling already requested whole and unchanged, the r
 latest row per path carries the current count. Before the next round of briefs, read it: a file
 several subagents each read whole belongs in the brief as quoted `file:line` ranges.
 
-**Outside a loom stage, `loom subagents watch` is unavailable:** it needs `LOOM_STAGE_ID`, `LOOM_SESSION_ID`, and `LOOM_WORK_DIR`, and exits 5 without them. Wait for each Agent-tool subagent's own completion notification instead, and never poll with `list` or `harvest`.
-
 **Checking on subagents: use one owned `loom subagents` wait, never a hand-rolled poll loop.** Spawn every worker first and capture each worker ID: the Claude agent ID from the spawn result, or the Codex unit ID you assigned with `--unit-id`. Then run ONE `loom subagents watch --worker claude:<agent-id> --worker codex:<unit-id> --timeout 3600` through the Bash tool's `run_in_background`, with one `--worker` for every worker. It binds those workers once, holds one lease for the parent session, prints one initial record and one terminal record, then exits. Treat its exit distinctly:
 
 1. **Exit 0** — every bound worker has fresh, correlated success evidence.
@@ -147,16 +91,6 @@ several subagents each read whole belongs in the brief as quoted `file:line` ran
 6. **Exit 6** — a bound worker is hung: no transcript growth past the stall budget (`--stall-secs`, default the stage's `subagent_timeout_secs`, else 600 s) for a Claude worker, or a codex job whose process is gone or whose log stopped growing. `TaskStop` the Claude worker, confirm it stopped, then RE-DELEGATE the remainder in a smaller brief.
 
 Harvest each worker's terminal report exactly once. Never re-arm the watch and never poll with `loom subagents list`, `loom subagents harvest`, `git status`, `wc`, or `ls`; `list` and `harvest` remain one-shot diagnostics. Only exact authoritative terminal evidence permits completion. Exit 6 is the channel that reports a worker idle past the stage's `subagent_timeout_secs` budget with no transcript growth — the only positive evidence of death. `TaskStop` it, confirm it stopped, then RE-DELEGATE the remainder to a fresh subagent. Never absorb the work into yourself — the orchestrator decomposes, delegates, owns the gate, and commits; it does not implement (hard stop 6). Re-read the tree before writing the new brief: a stale brief is worse than no brief. Never complete the stage while any subagent is still out (Rule 4).
-
-**Subagents are ONE-SHOT.** Brief completely, wait, harvest, let it end. Never message a finished
-subagent. A follow-up, or continuation after a ceiling, is a FRESH spawn of the same type, briefed
-with the prior report and remaining items. Messaging one still `tool-wait`/`generating` differs,
-and is rare.
-
-**Never pass `name` to a subagent spawn** (agent teams, which name teammates deliberately, are the
-exception). A named spawn becomes a teammate with id `<name>@session-<uuid8>` that goes idle
-instead of stopping, so `loom subagents watch` cannot bind it and a named `loom-code-reviewer`
-records no review round.
 
 **2-level cap:** main agent → coordinators → workers. Spawn coordinators as `general-purpose` with
 an explicit `model` override — the engineer agent types carry no Task tool and run as leaves, so
@@ -204,8 +138,6 @@ WORKER RESTRICTIONS - YOU ARE A LEAF AGENT:
 ```
 
 ## Rule 7 — Model allocation
-
-Fable-tier work has no pinned agent type; pass the model override explicitly at spawn.
 
 1. DELEGATION IS A COST DECISION: TOKENS TIMES MODEL TIER (hard stop 6). A
    stage's main agent decomposes the work, briefs subagents, owns the gate and
@@ -301,8 +233,6 @@ the worktree. A contract that is itself wrong is disputed, never edited:
    to `NeedsHumanReview`.
 
 **Review order (plan v2):** run `loom check` once beside the final review round; fix every finding and failed criterion, re-check the failed criteria with `loom check <stage-id> --criterion <n>` and re-review the changed files, then complete. Edit nothing after the final review round: any edit, formatting included, changes the change fingerprint and needs another round. A commit does not change it.
-
-**When the stage cannot finish.** Fix what the stage can fix. A wrong criterion, wiring check, contract, review finding or test-integrity event gets a dispute: `loom stage dispute-criteria` (`--field` for wiring, wiring-tests, impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session; the daemon starts a fresh one with the verdict. Never revert, weaken or postpone correct work to avoid a dispute. A criterion failing only because of where completion runs (no network, unreadable git metadata, timeout, sandbox denial) is disputed, never blocked: one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing names every such criterion. `loom stage block <stage-id> "<what is needed and why>"` is for a credential, a host install or a decision only a person can make; loom refuses it while the latest `loom stage complete` shows a failing criterion. Commit before filing either. Never end a turn asking the operator to act while the stage is executing.
 
 **Test integrity** (standard and integration-verify stages). Completion compares the stage's test
 files with the base. Fewer test declarations or assertions in a language, assertion lines removed

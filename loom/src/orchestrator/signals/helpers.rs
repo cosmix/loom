@@ -216,8 +216,8 @@ pub(super) fn append_settled_completion_rules(content: &mut String) {
 }
 
 /// BLOCK-F: when a stage cannot finish, the main agent disputes a wrong check
-/// or blocks the stage on a need only a person can meet. Byte-identical in the
-/// orchestration skill (`tests_doctrine_v2.rs` pins every copy).
+/// or blocks the stage on a need only a person can meet. `tests_doctrine_v2.rs`
+/// pins every prefix copy.
 const STAGE_EXIT_RULES: &str = "**When the stage cannot finish.** Fix what the stage can fix. A wrong criterion, wiring check, contract, review finding or test-integrity event gets a dispute: `loom stage dispute-criteria` (`--field` for wiring, wiring-tests, impact-tests entries), `dispute-contract`, `dispute-findings` or `dispute-integrity`. Filing ends this session; the daemon starts a fresh one with the verdict. Never revert, weaken or postpone correct work to avoid a dispute. A criterion failing only because of where completion runs (no network, unreadable git metadata, timeout, sandbox denial) is disputed, never blocked: one `loom stage dispute-criteria <stage-id> --criterion-index <n> [--criterion-index <n> ...]` filing names every such criterion. `loom stage block <stage-id> \"<what is needed and why>\"` is for a credential, a host install or a decision only a person can make; loom refuses it while the latest `loom stage complete` shows a failing criterion. Commit before filing either. Never end a turn asking the operator to act while the stage is executing.";
 
 /// Append completion rules shared between standard and integration-verify prefixes

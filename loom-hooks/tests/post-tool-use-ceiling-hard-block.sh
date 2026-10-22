@@ -42,6 +42,10 @@ if [[ "$STDERR_OUT" != *"CONTEXT CEILING REACHED"* ]]; then
 	echo "FAIL: first call - expected 'CONTEXT CEILING REACHED' on stderr, got: $STDERR_OUT"
 	exit 1
 fi
+if [[ "$STDERR_OUT" != *"--trigger ceiling"* ]]; then
+	echo "FAIL: first call - expected the handoff command '--trigger ceiling' on stderr, got: $STDERR_OUT"
+	exit 1
+fi
 if [[ "$STDERR_OUT" != *"1000 >= 1000"* ]]; then
 	echo "FAIL: first call - expected the resident/ceiling numbers '1000 >= 1000' on stderr, got: $STDERR_OUT"
 	exit 1
