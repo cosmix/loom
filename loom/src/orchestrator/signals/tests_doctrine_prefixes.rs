@@ -241,6 +241,32 @@ fn integration_verify_prefix_assigns_one_canonical_gate_owner() {
     );
 }
 
+/// The subagent preamble reaches every typed spawn, integration-verify
+/// reviewers included: it must send them to targeted checks and leave the one
+/// `loom check integration-verify` run to the orchestrator, as the prefix does.
+#[test]
+fn subagent_preamble_limits_iv_reviewers_to_targeted_checks() {
+    use crate::fs::permissions::constants::HOOK_SUBAGENT_PREAMBLE;
+
+    for needle in [
+        "- EXCEPTION - integration-verify stages: the orchestrator runs loom check",
+        "reviewers run only targeted checks, never",
+    ] {
+        assert!(
+            HOOK_SUBAGENT_PREAMBLE.contains(needle),
+            "the subagent preamble lost: {needle}"
+        );
+    }
+    assert!(
+        !HOOK_SUBAGENT_PREAMBLE.contains("if you were spawned to review or"),
+        "the preamble must not tell integration-verify reviewers to run the full suite"
+    );
+    assert!(
+        generate_integration_verify_stable_prefix().contains("loom check integration-verify"),
+        "the integration-verify prefix must name the orchestrator's one gate run"
+    );
+}
+
 /// Step 1 of the distillation workflow must tell the agent to work the
 /// grouped pending list (`loom memory pending --group`) before it reaches
 /// step 2's loose `loom memory show --all` review, per the memory-grouping

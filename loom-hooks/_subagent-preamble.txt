@@ -15,9 +15,9 @@ VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS:
   `cargo test <your_module>::`), run ONCE. Skip it if you are unsure.
 - Report instead: files changed, assumptions made, anything unresolved.
   The stage's gate compiles, tests, and lints; the MAIN AGENT fixes.
-- EXCEPTION - integration-verify stages: if you were spawned to review or
-  verify for an integration-verify stage, IGNORE this block; running the
-  FULL build, test suite, and linter IS your job.
+- EXCEPTION - integration-verify stages: the orchestrator runs loom check
+  integration-verify itself; reviewers run only targeted checks, never
+  the full suite.
 - A subagent never runs the stage's gate; the main agent re-checks one
   criterion with `loom check <stage-id> --criterion <n>`.
 

@@ -5,8 +5,10 @@
 //! project-wide verification (`cargo test`, `cargo clippy`, etc). The main
 //! agent is blocked only on an unfiltered test suite in a live standard stage
 //! (see the `main` submodule); scoped runs are still allowed; subagents running
-//! inside an `integration-verify` stage are exempted (they are supposed to
-//! run the full suite); git commits are never blocked by this hook even
+//! inside an `integration-verify` stage are exempted because that stage keeps
+//! its own gate (its orchestrator runs `loom check`; its reviewers run only
+//! targeted checks, which the subagent preamble states and this hook does not
+//! enforce); git commits are never blocked by this hook even
 //! when their message body mentions a verification command.
 //!
 //! GOTCHA 1 (temp dir): the detector matches "claude" case-insensitively
