@@ -51,10 +51,6 @@ Found during the plan's stages and integration-verify, verified against the tree
   per run, so a concurrent non-serial test
   that spawns a confined command could fingerprint the mutated value. Not observed failing; pass the
   allowlisted env explicitly in those fixtures.
-- **IV fence wording.** the EXCEPTION line of `loom-hooks/_subagent-preamble.txt` (`:16`) still tells every IV review or
-  verify subagent to run the full build, suite and linter, while the IV stable prefix assigns one
-  canonical verifier (`orchestrator/signals/cache.rs:112-123`). The fence is byte-pinned by
-  `tests_doctrine.rs`; a stage that owns the template must align both.
 - **Deliberate fail-open choices.** `codex-forward-guard.sh`'s one-forward limit allows a call when
   the forwarder transcript is missing or unreadable (the harness may not have written it yet when
   PreToolUse fires); worker-bound brief records are never reset by compaction. Both stay until

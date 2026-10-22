@@ -154,4 +154,15 @@ stage-strip label reads `... · contract phase`, and the stage dialog's session-
 
 The file is passed to the runner relative to that directory. The daemon records each contract's normalized `file` (relative to `working_dir`) and resolved `cwd` in `FrozenContract`. `store::recorded_cwd` trusts an entry only for the file it was recorded with: the entry with the contract's id and file, else any entry with its file (a renamed id keeps its cwd, so markers the agent plants cannot move it), else an entry with its id and no `file`. A contract re-pointed to another file gets no recorded cwd and falls to rules 3-4; so does an entry without `cwd`.
 
-An accepted contract dispute (`apply_contract.rs::refrozen_contracts`) re-freezes the disputed contract and every contract whose id and file the record does not hold together with a `cwd` (inserted, renamed, re-pointed, or an entry lacking `file`/`cwd`), resolving each with `store::recorded_cwd`. The files of all of them, plus the disputed contract's file before the amendment (taken from the stage and from its record entry), are re-hashed. The choice reads only the record, which `store::refreeze` rewrites last and atomically, so a retry after a partial failure makes the same choice. `store::refreeze` updates `adapter`, `file` and `cwd` on an existing entry, keeping its outcome, and adds a contract the record lacks with outcome `REFROZEN_OUTCOME` (`refrozen`), because it was never run at freeze. Entries for ids the amendment removed stay in the record. See mistakes/verification-v2-delivery.md, "Contracts in a Sub-Workspace Ran Under the Root's Runner Config".
+An accepted contract dispute re-freezes the whole frozen set, including the disputed contract; its `cwd` values still come from `store::recorded_cwd` as above. See [Accepted Dispute Re-Freeze](#accepted-dispute-re-freeze). See mistakes/verification-v2-delivery.md, "Contracts in a Sub-Workspace Ran Under the Root's Runner Config".
+
+## Accepted Dispute Re-Freeze
+
+An accepted `dispute-contract` (`orchestrator/adjudication/apply_contract.rs`) re-freezes the stage's whole frozen set, including the disputed contract:
+
+- the files read by `verify/contracts/frozen_set.rs::read_frozen_set` are the amended contract files, the harness files re-expanded from `stage.harness` (`verify/contracts/changes.rs::harness_files`), every path the record lists, and the disputed contract's file before the amendment;
+- `store::refreeze_set` (`verify/contracts/store.rs`) replaces the record's `files` with exactly that set, upserts each contract the accept names with its adapter, file and `cwd` (`store::recorded_cwd`), and adds a contract the record lacks with outcome `REFROZEN_OUTCOME` (`refrozen`), because it never ran at freeze;
+- `freeze.json` is rewritten before the dropped copies are removed, so the record never names a copy that is not on disk. A failed removal leaves an orphan copy that no record names; restore and completion read only the copies the record names, so the orphan is harmless;
+- the stage must already be frozen; `refreeze_set` is called by the accept only.
+
+The adjudicator's accept notice lists the re-frozen paths; see the cap suggestion in [Gate-Dedup and Integration-Verify Review Suggestions](../concerns/verification-v2-followups.md#gate-dedup-and-integration-verify-review-suggestions).

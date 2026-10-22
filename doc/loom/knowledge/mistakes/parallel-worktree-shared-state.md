@@ -321,3 +321,11 @@ One question catches the class: **was this path resolved through `main_project_r
 `.loom/work` symlink?** If so it is shared with every sibling stage and the main repo.
 
 → [Parallel Worktree Shared State](parallel-worktree-shared-state.md)
+
+## A Fix Was Rebuilt on a Branch Whose Upstream Already Carried It
+
+**What happened:** integration-verify started to reimplement the contract cached-stdout-tail fix that the operator had already committed on token-optimization (5753d07a). This worktree branched before that commit. The worker was told to drop its work, and its edits were restored from git.
+
+**Why:** the stage read the memory of an earlier stage and the tree, not the newer commits on the target branch.
+
+**Prevention:** before fixing a defect an earlier stage recorded, run `git log <stage-base>..<target-branch>` for an upstream fix.

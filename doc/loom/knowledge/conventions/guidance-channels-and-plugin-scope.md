@@ -48,38 +48,6 @@ Two obligations come with choosing the hook channel:
 Corollary for exceptions: an exception must live in **every block that gets copied into a
 subagent prompt**, not only in the prose that explains the rule.
 
-## Implementers Do Not Verify; the Gate Runs in a Verifier
-
-Implementers do not verify. A subagent may run **at most one narrowly-scoped check** relevant to
-the files it just changed; project-wide builds, full test suites, and repo-wide lint or
-typecheck runs belong to the stage's gate.
-
-Enforced by `loom-hooks/subagent-verify-guard.sh` (PreToolUse:Bash), stated in the subagent preamble
-`loom-hooks/_subagent-preamble.txt` (which `loom-hooks/spawn-guard.sh` prepends to every typed spawn;
-`CLAUDE.md.template` Rule 5 says not to paste it), and injected into stage signals by
-`orchestrator/signals/cache.rs` (standard and integration-verify prefixes). The four copies are pinned
-byte-for-byte as `BLOCK_A` by `tests_doctrine.rs::block_a_agrees_across_every_surface`.
-
-**Who runs the gate.** In a standard stage the gate (build, tests, lint, format, acceptance) runs in
-a fresh `loom-verifier` subagent each round (`agents/loom-verifier.md`: opus, effort xhigh, writes
-nothing); the standard stable prefix opens its completion list with `VERIFIER_GATE`
-(`orchestrator/signals/cache/blocks.rs`). The orchestrator delegates fixes, commits, and runs
-`loom stage complete`. An integration-verify stage follows `INTEGRATION_VERIFY_OVERRIDE`
-(`orchestrator/signals/cache.rs`): its orchestrator assigns ONE canonical verifier to run the complete
-suite per immutable tree, environment and criterion contract; other reviewers inspect independently
-and run only targeted discriminating checks, which never substitute for the canonical gate.
-
-**Two hook carve-outs** in `subagent-verify-guard.sh`:
-
-- exact payload `.agent_type == "loom-verifier"` (set by Claude Code, not by the caller), checked first;
-- integration-verify subagents, resolved from the stage file. It **fails safe**: more than one glob
-  match, a non-integration-verify stage type, or a missing file all mean "no relaxation".
-
-The subagent preamble carries an EXCEPTION bullet for each, outside BLOCK-A. The integration-verify
-one still tells every IV review or verify subagent to run the full build, suite and linter, which
-does not match the one-canonical-verifier wording; see the open follow-ups in
-[Token Accounting Follow-Ups](../concerns/token-accounting-and-proof-defects.md).
-
 ## Claude Code Plugin Scope in Loom Repos
 
 Enable Claude Code plugins at **user or project scope**: `claude plugin install codex@openai-codex --scope user`.
@@ -158,3 +126,13 @@ A Claude Code plugin is the native way to load assets from an arbitrary director
 - Claude Code also auto-loads a plugin folder at `~/.claude/skills/<name>/` as `<name>@skills-dir` (used by `loom-ui`); that location is still inside `~/.claude`.
 
 What a plugin would cost: every exact match on a bare agent or skill name changes, including `REVIEWER_AGENT_TYPE` in `loom/src/verify/review/gate.rs` and `loom-hooks/subagent-stop.sh`, the `loom-codex-forwarder` checks in `loom-hooks/codex-forward-guard.sh`, signal doctrine (`Skill(skill="loom-orchestration")`, spawn-by-type lines in `orchestrator/signals/`), `CLAUDE.md.template`, the skills, and usage accounting's agent-type sections. The global rules need the separate channel above. A launch-level test must prove a loom-spawned session lists the namespaced agents and records a review round from one.
+
+## Implementers Do Not Verify; the Gate Is loom check
+
+Implementers do not verify. A subagent may run **at most one narrowly-scoped check** relevant to the files it just changed; project-wide builds, full test suites, and repo-wide lint or typecheck runs belong to the stage's gate.
+
+Enforced by `loom-hooks/subagent-verify-guard.sh` (PreToolUse:Bash), stated in the subagent preamble `loom-hooks/_subagent-preamble.txt` (which `loom-hooks/spawn-guard.sh` prepends to every typed spawn; `CLAUDE.md.template` Rule 5 says not to paste it), and injected into stage signals by `orchestrator/signals/cache.rs` (standard and integration-verify prefixes). The `BLOCK_A` copies are pinned byte-for-byte across the two prefixes, the preamble and the guard by `tests_doctrine.rs::block_a_agrees_across_every_surface`.
+
+**Who runs the gate.** No verifier subagent exists. In a standard stage the orchestrator runs `loom check <stage-id>` once after the implementers return; `ORCHESTRATOR_GATE` (`orchestrator/signals/cache/blocks.rs`) opens the completion list with that rule. A fix round runs `loom check <stage-id> --criterion <n>`. The loom-code-reviewer round judges the diff against each criterion's intent. The orchestrator delegates fixes, commits, and runs `loom stage complete`. An integration-verify stage follows `INTEGRATION_VERIFY_OVERRIDE` (`orchestrator/signals/cache.rs`): the orchestrator runs `loom check integration-verify` once, which carries the complete suite; reviewers run only targeted discriminating checks, which never substitute for that gate.
+
+**One hook carve-out:** `subagent-verify-guard.sh` lets integration-verify subagents through, resolved from the stage file. It **fails safe**: more than one glob match, a non-integration-verify stage type, or a missing file all mean "no relaxation". The subagent preamble carries the matching EXCEPTION bullet outside BLOCK-A, which tells integration-verify subagents that the orchestrator runs `loom check integration-verify` itself and that reviewers run only targeted checks (`loom-hooks/_subagent-preamble.txt:18-20`).
