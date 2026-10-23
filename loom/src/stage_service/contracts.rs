@@ -16,8 +16,9 @@
 //! 1. the caller is still the stage's running contract session, and the stage
 //!    still takes a freeze;
 //! 2. one red report per contract, each naming a known adapter if any;
-//! 3. every path changed since the stage base is a contract file or matches a
-//!    `harness` glob (D8 step 1, re-run with read-only git in the stage
+//! 3. every path changed since the stage base is a contract file, matches a
+//!    `harness` glob or is a scaffold edit the strict diff accepts
+//!    (`collection::freeze_scaffold`; D8 step 1, re-run with read-only git in the stage
 //!    worktree, pinned to the stage's registered git directory so the
 //!    worktree's `.git` file cannot choose git's configuration), and the
 //!    worktree holds no FIFO, socket or device node
@@ -60,7 +61,8 @@ use crate::verify::contracts::store::{
     self, FreezeRecord, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION,
 };
 use crate::verify::contracts::{
-    changes, is_contract_or_harness, normalize, resolve_adapter, site::stage_site, RED_OUTCOMES,
+    changes, collection::freeze_scaffold, is_contract_or_harness, normalize, resolve_adapter,
+    site::stage_site, RED_OUTCOMES,
 };
 use crate::verify::transitions::{load_stage, update_stage};
 
@@ -312,15 +314,32 @@ fn check_changes(site: &Site, stage: &Stage, base: &str) -> Result<()> {
             special.join(", ")
         );
     }
+    let scaffold = freeze_scaffold(
+        &site.git,
+        &site.worktree_root,
+        &site.working_dir,
+        base,
+        &stage.contracts,
+    )?;
     let changed = changes::changed_paths(&site.git, &site.working_dir, base)?;
     let outside: Vec<String> = changed
         .into_iter()
-        .filter(|path| !is_contract_or_harness(path, &stage.contracts, &stage.harness))
+        .filter(|path| {
+            !is_contract_or_harness(path, &stage.contracts, &stage.harness)
+                && !scaffold.paths.contains(path)
+        })
         .collect();
     if !outside.is_empty() {
         bail!(
-            "the contract session may change only contract and harness files; also changed: {}",
+            "the contract session may change only contract files, harness files and the \
+             scaffold edits; also changed: {}",
             outside.join(", ")
+        );
+    }
+    if !scaffold.problems.is_empty() {
+        bail!(
+            "the contract session's scaffold is not accepted: {}",
+            scaffold.problems.join("; ")
         );
     }
     Ok(())

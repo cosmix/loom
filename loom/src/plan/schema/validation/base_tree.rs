@@ -171,13 +171,27 @@ fn build_regex(pattern: &str, args: &SearchArgs) -> Option<Regex> {
 }
 
 /// Read access to HEAD, preferring the checkout for files it has not changed.
-struct HeadTree<'a> {
+pub(crate) struct HeadTree<'a> {
     root: &'a Path,
     /// Paths whose checkout differs from HEAD; `None` when git cannot say.
     changed: OnceCell<Option<HashSet<String>>>,
 }
 
-impl HeadTree<'_> {
+impl<'a> HeadTree<'a> {
+    /// HEAD of the repository at `root`; `None` when HEAD is no commit.
+    pub(crate) fn new(root: &'a Path) -> Option<Self> {
+        let root = if root.as_os_str().is_empty() {
+            Path::new(".")
+        } else {
+            root
+        };
+        let resolves = run_git_bool(&["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], root);
+        resolves.then(|| HeadTree {
+            root,
+            changed: OnceCell::new(),
+        })
+    }
+
     /// Push the warnings `search` earns against HEAD.
     fn evaluate(&self, working_dir: &str, search: &Search, label: &str, out: &mut Vec<String>) {
         let mut files = Vec::new();
@@ -226,7 +240,7 @@ impl HeadTree<'_> {
 
     /// Tracked regular files at or below `path` at HEAD; symlinks and
     /// submodules are left out. `None` when git fails.
-    fn files(&self, path: &str) -> Option<Vec<String>> {
+    pub(crate) fn files(&self, path: &str) -> Option<Vec<String>> {
         let spec = if path.is_empty() { "." } else { path };
         let args = ["ls-tree", "-r", "-z", "HEAD", "--", spec];
         let listing = run_git_checked(&args, self.root).ok()?;
@@ -240,7 +254,7 @@ impl HeadTree<'_> {
     }
 
     /// The content of `path` at HEAD.
-    fn content(&self, path: &str) -> Option<Vec<u8>> {
+    pub(crate) fn content(&self, path: &str) -> Option<Vec<u8>> {
         let changed = self.changed.get_or_init(|| changed_paths(self.root));
         let unchanged = changed.as_ref().is_some_and(|set| !set.contains(path));
         if unchanged {

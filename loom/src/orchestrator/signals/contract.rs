@@ -14,6 +14,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::Result;
 
+use crate::git::worktree::WorktreeGit;
 use crate::language::DetectedLanguage;
 use crate::models::session::Session;
 use crate::models::stage::Stage;
@@ -21,6 +22,8 @@ use crate::models::worktree::Worktree;
 use crate::plan::schema::ContractSpec;
 use crate::skills::{skill_invocation, SkillIndex};
 use crate::testrun::{languages, TestRunnerAdapter};
+use crate::verify::contracts::changes::stage_base;
+use crate::verify::contracts::collection::{stage_scaffold, ScaffoldEdit, ScaffoldModule};
 use crate::verify::contracts::resolve_adapter;
 use crate::verify::contracts::run_dir::{resolve_run, ContractRun};
 
@@ -90,8 +93,15 @@ pub fn generate_contract_signal(
             ResolvedContract { spec, adapter, run }
         })
         .collect();
-    let content =
-        format_contract_signal(session, stage, &stage_root, &contracts, &embedded_context);
+    let scaffold = scaffold_for(stage, work_dir, &worktree.path, &stage_root, &contracts);
+    let content = format_contract_signal(
+        session,
+        stage,
+        &stage_root,
+        &contracts,
+        &scaffold,
+        &embedded_context,
+    );
 
     // Record before writing, as every stage signal path does: a session that
     // was briefed must never read back as having received nothing.
@@ -119,6 +129,7 @@ fn format_contract_signal(
     stage: &Stage,
     stage_root: &Path,
     contracts: &[ResolvedContract<'_>],
+    scaffold: &Result<Vec<ScaffoldEdit>, String>,
     embedded_context: &EmbeddedContext,
 ) -> String {
     let mut content = format!("# Contract Signal: {}\n\n", session.id);
@@ -140,6 +151,7 @@ fn format_contract_signal(
     append_stage_context(&mut content, stage);
     append_contracts(&mut content, contracts);
     append_harness(&mut content, &stage.harness);
+    append_scaffold(&mut content, scaffold);
     append_skills(
         &mut content,
         contracts,
@@ -215,6 +227,84 @@ fn append_harness(content: &mut String, harness: &[String]) {
     content.push('\n');
 }
 
+/// The scaffold edits the contracts' collection needs, derived over the
+/// stage base and never over the worktree, which already holds the writer's
+/// edits. `Err` is the sentence the signal prints in the section's place.
+fn scaffold_for(
+    stage: &Stage,
+    work_dir: &Path,
+    worktree_root: &Path,
+    stage_root: &Path,
+    contracts: &[ResolvedContract<'_>],
+) -> Result<Vec<ScaffoldEdit>, String> {
+    let has_rust = contracts
+        .iter()
+        .any(|contract| contract.adapter.is_some_and(|a| a.language() == "rust"));
+    if !has_rust {
+        return Ok(Vec::new());
+    }
+    let unknown = |error: String| {
+        format!("Scaffold unknown: {error}; the freeze refuses until the stage base resolves.")
+    };
+    let repo = WorktreeGit::pinned_in_project_of(work_dir, worktree_root)
+        .map_err(|error| unknown(format!("{error:#}")))?;
+    let base = stage_base(&repo, work_dir).map_err(|error| unknown(format!("{error:#}")))?;
+    stage_scaffold(&repo, worktree_root, stage_root, &base, &stage.contracts).map_err(|error| {
+        format!("Scaffold derivation failed: {error}\n\nThe freeze will refuse this stage's contracts until that is fixed.")
+    })
+}
+
+fn append_scaffold(content: &mut String, scaffold: &Result<Vec<ScaffoldEdit>, String>) {
+    content.push_str("## Scaffold\n\n");
+    let edits = match scaffold {
+        Ok(edits) if !edits.is_empty() => edits,
+        Ok(_) => {
+            content.push_str("No scaffold edits: every contract file is already collected.\n\n");
+            return;
+        }
+        Err(message) => {
+            content.push_str(message);
+            content.push_str("\n\n");
+            return;
+        }
+    };
+    content
+        .push_str("A contract file is compiled only when a chain of `mod` items reaches it:\n\n");
+    for edit in edits {
+        content.push_str(&scaffold_bullet(edit));
+    }
+    content.push_str(
+        "\nThese edits are not frozen; the implementer extends them. Add nothing else to \
+         these files, and no `#![cfg(...)]` or `#[path]`.\n\n",
+    );
+}
+
+fn scaffold_bullet(edit: &ScaffoldEdit) -> String {
+    match edit {
+        ScaffoldEdit::Declare { path, module } => {
+            format!("- In `{path}`, add {}.\n", declaration(module))
+        }
+        ScaffoldEdit::CreateRoot { paths, modules } => {
+            let paths: Vec<String> = paths.iter().map(|path| format!("`{path}`")).collect();
+            let held: Vec<String> = modules.iter().map(declaration).collect();
+            format!(
+                "- Create {} holding only {}.\n",
+                paths.join(" or "),
+                held.join(", ")
+            )
+        }
+    }
+}
+
+/// One module declaration as the signal asks for it.
+fn declaration(module: &ScaffoldModule) -> String {
+    if module.test_only {
+        format!("`#[cfg(test)]` and `mod {};`", module.name)
+    } else {
+        format!("`mod {};`", module.name)
+    }
+}
+
 fn append_skills(
     content: &mut String,
     contracts: &[ResolvedContract<'_>],
@@ -240,7 +330,8 @@ fn append_rules(content: &mut String, stage_id: &str) {
     content.push_str("## Your Job\n\n");
     content.push_str(
         "1. Write each contract test above in its file. You may also write files matching \
-         the harness globs. Implement nothing: no production code, no fixes, no refactors.\n\
+         the harness globs and make the scaffold edits listed above. Implement nothing: no \
+         production code, no fixes, no refactors.\n\
          2. Each test sets up its scenario and must fail on the wrong implementation its \
          Rejects column names.\n\
          3. Every contract test must fail now, before the implementation exists. A compile \
@@ -256,7 +347,7 @@ fn append_rules(content: &mut String, stage_id: &str) {
     );
     content.push_str(&format!(
         "7. Finish with `loom stage contracts freeze {stage_id}`. It checks that you changed \
-         only contract and harness files, then asks the daemon to run every contract on the \
+         only contract files, harness files and the scaffold edits, then asks the daemon to run every contract on the \
          host and freeze them. If it refuses, fix what it names and run it again.\n\
          8. After the freeze request, stop. The daemon freezes the contracts and starts \
          the implementation session, or parks the stage with the refusal.\n\n"

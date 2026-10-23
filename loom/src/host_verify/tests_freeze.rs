@@ -24,7 +24,7 @@ use crate::stage_service::contracts::freeze_with_reports;
 use crate::stage_service::{handle_freeze_contracts, Response};
 use crate::verify::contracts::store::load_freeze;
 use crate::verify::contracts::test_support::{
-    contract_stage, contract_worktree, red_reports, write_test_freeze, CONTRACT_FILE,
+    contract_stage, red_reports, shell_contract_worktree, write_test_freeze, CONTRACT_FILE,
 };
 use crate::verify::transitions::{load_stage, save_stage, update_stage};
 
@@ -53,7 +53,7 @@ impl Fixture {
     fn new(command: &str) -> Self {
         let tmp = TempDir::new().unwrap();
         let repo = tmp.path().canonicalize().unwrap().join("repo");
-        let worktree = contract_worktree(&repo, STAGE);
+        let worktree = shell_contract_worktree(&repo, STAGE);
         std::fs::write(worktree.join(HARNESS), "harness\n").unwrap();
         let workspace = WorkDir::new(&repo).unwrap();
         workspace.adopt_existing().unwrap();
