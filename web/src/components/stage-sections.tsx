@@ -1,9 +1,23 @@
 import { cn } from "cn";
+import {
+  CircleCheck,
+  Fingerprint,
+  Gauge,
+  GitMerge,
+  ListChecks,
+  MessageSquareText,
+  RotateCcw,
+  Scale,
+  SquareTerminal,
+  StickyNote,
+  Timer,
+} from "lucide-react";
 
 import type { StageSummary } from "@/api/schema";
 import { HazardPanel } from "@/aurora-ui/feedback/HazardPanel";
 import { ContextMeter } from "@/components/context-meter";
 import {
+  LedgerCard,
   present,
   row,
   Rows,
@@ -242,15 +256,15 @@ function noteRows(stage: StageSummary) {
 /// Every section that has something to say about this stage.
 export function stageSections(stage: StageSummary, level: number | null): SectionSpec[] {
   return [
-    { title: "identity", rows: identityRows(stage, level) },
-    { title: "timing", rows: timingRows(stage) },
-    { title: "stage orchestrator context", rows: contextRows(stage) },
-    { title: "session", rows: sessionRows(stage) },
-    { title: "completion", rows: completionRows(stage) },
-    { title: "retries", rows: retryRows(stage) },
-    { title: "adjudication", rows: adjudicationRows(stage) },
-    { title: "merge", rows: mergeRows(stage) },
-    { title: "notes", rows: noteRows(stage) },
+    { title: "identity", icon: Fingerprint, rows: identityRows(stage, level) },
+    { title: "timing", icon: Timer, rows: timingRows(stage) },
+    { title: "stage orchestrator context", icon: Gauge, rows: contextRows(stage) },
+    { title: "session", icon: SquareTerminal, rows: sessionRows(stage) },
+    { title: "completion", icon: CircleCheck, rows: completionRows(stage) },
+    { title: "retries", icon: RotateCcw, rows: retryRows(stage) },
+    { title: "adjudication", icon: Scale, rows: adjudicationRows(stage) },
+    { title: "merge", icon: GitMerge, rows: mergeRows(stage) },
+    { title: "notes", icon: StickyNote, rows: noteRows(stage) },
   ].filter((section) => section.rows.length > 0);
 }
 
@@ -278,9 +292,18 @@ export function StageSectionGrid({
           <AcceptanceList criteria={stage.acceptance} />
         </div>
       )}
-      {stageSections(stage, level).map((section) => (
-        <Section key={section.title} {...section} />
-      ))}
+      {/* Columns, not grid rows: a short card does not leave a gap beside a
+          tall one. */}
+      <div
+        className={cn(
+          "stage-section-flow md:col-span-2 md:columns-2",
+          wide && "xl:col-span-3 xl:columns-3",
+        )}
+      >
+        {stageSections(stage, level).map((section) => (
+          <Section key={section.title} {...section} />
+        ))}
+      </div>
       <div className={cn("empty:hidden md:col-span-2", wide && "xl:col-span-3")}>
         <StageTokens stageId={stage.id} />
       </div>
@@ -297,17 +320,16 @@ export function StageSectionGrid({
 /// The scroll box takes focus so a keyboard can scroll it.
 function ReviewNotes({ notes }: { notes: string }) {
   return (
-    <section className="flex flex-col gap-2.5 rounded-lg border border-hairline bg-card p-4">
-      <h2 className="eyebrow">review notes</h2>
+    <LedgerCard title="review notes" icon={MessageSquareText}>
       <div
         tabIndex={0}
         role="region"
         aria-label="review notes text"
-        className="max-h-64 overflow-y-auto text-sm break-words whitespace-pre-wrap"
+        className="max-h-64 overflow-y-auto px-4 py-3 text-sm leading-relaxed break-words whitespace-pre-wrap"
       >
         {notes}
       </div>
-    </section>
+    </LedgerCard>
   );
 }
 
@@ -315,23 +337,22 @@ function ReviewNotes({ notes }: { notes: string }) {
 /// `loom stage amend --index` takes. Untrusted text: text nodes only.
 function AcceptanceList({ criteria }: { criteria: string[] }) {
   return (
-    <section
-      aria-label="acceptance criteria"
-      className="flex flex-col gap-2.5 rounded-lg border border-hairline bg-card p-4"
+    <LedgerCard
+      title="acceptance"
+      label="acceptance criteria"
+      icon={ListChecks}
+      aside={<span className="ledger-count">{criteria.length}</span>}
     >
-      <h2 className="eyebrow">acceptance</h2>
-      <p className="text-xs text-muted-foreground">{HINT.acceptance}</p>
-      <ol className="flex flex-col gap-1.5 text-sm">
+      <p className="px-4 pt-3 text-xs text-muted-foreground">{HINT.acceptance}</p>
+      <ol className="flex flex-col px-4 py-2 text-sm">
         {criteria.map((criterion, index) => (
-          <li key={index} className="flex gap-3" data-index={index}>
-            <span className="w-6 shrink-0 text-right font-mono text-xs text-muted-foreground">
-              {index}
-            </span>
-            <code className="min-w-0 text-xs wrap-anywhere">{criterion}</code>
+          <li key={index} className="acceptance-item" data-index={index}>
+            <span className="acceptance-index">{index}</span>
+            <code className="min-w-0 text-xs leading-relaxed wrap-anywhere">{criterion}</code>
           </li>
         ))}
       </ol>
-    </section>
+    </LedgerCard>
   );
 }
 

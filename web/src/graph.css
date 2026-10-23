@@ -103,29 +103,181 @@
       var(--popover)
     );
   }
-  .thread-chip {
-    display: inline-flex;
-    height: 22px;
-    align-items: center;
-    gap: 5px;
+  .stage-id-chip {
     border-radius: 6px;
+    background: color-mix(in oklch, var(--foreground) 6%, transparent);
+    padding: 2px 7px;
+    font-family: var(--font-mono);
+    font-size: 12px;
+    color: var(--muted-foreground);
+  }
+  .stage-summary {
+    color: color-mix(in oklch, var(--foreground) 74%, var(--muted-foreground));
+  }
+  .stage-state-strip {
+    width: fit-content;
+    max-width: 100%;
+    border-radius: 10px;
+    background: color-mix(in oklch, var(--card) 70%, transparent);
+    padding: 5px 12px;
+    box-shadow: 0 0 0 1px var(--hairline);
+  }
+
+  /* A stage section: an icon and title in a header strip over a ruled list. */
+  .ledger-card {
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 12px;
     background: var(--card);
-    padding: 0 8px;
+    box-shadow:
+      0 0 0 1px var(--hairline),
+      0 1px 2px color-mix(in oklch, var(--foreground) 5%, transparent);
+  }
+  .ledger-head {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border-bottom: 1px solid var(--hairline);
+    background: color-mix(in oklch, var(--muted) 45%, var(--card));
+    padding: 8px 14px;
+  }
+  .ledger-icon {
+    display: inline-flex;
+    width: 20px;
+    height: 20px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background: var(--muted);
+    color: var(--muted-foreground);
+  }
+  .ledger-count {
+    border-radius: 999px;
+    background: var(--muted);
+    padding: 0 6px;
+    font-size: 11px;
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+    color: var(--muted-foreground);
+  }
+  .ledger-row {
+    display: grid;
+    grid-template-columns: minmax(7.5rem, 40%) minmax(0, 1fr);
+    align-items: baseline;
+    gap: 16px;
+    border-top: 1px solid color-mix(in oklch, var(--hairline) 70%, transparent);
+    padding: 7px 0;
+  }
+  .ledger-row:first-child {
+    border-top: 0;
+  }
+  /* Masonry columns: each card keeps whole and the column gap doubles as the
+   * vertical gap. */
+  .stage-section-flow {
+    column-gap: 16px;
+  }
+  .stage-section-flow > .ledger-card {
+    margin-bottom: 16px;
+  }
+  .stage-section-flow > .ledger-card:last-child {
+    margin-bottom: 0;
+  }
+  .acceptance-item {
+    display: flex;
+    gap: 12px;
+    border-top: 1px solid color-mix(in oklch, var(--hairline) 70%, transparent);
+    padding: 7px 0;
+  }
+  .acceptance-item:first-child {
+    border-top: 0;
+  }
+  .acceptance-index {
+    display: inline-flex;
+    height: 20px;
+    min-width: 22px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+    background: var(--muted);
     font-family: var(--font-mono);
     font-size: 11px;
+    color: var(--muted-foreground);
+  }
+
+  /* The thread: what this stage waits on and what waits on it, side by side
+   * as two ledgers; one alone spans the width, and they stack when narrow. */
+  .thread-panels {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(100%, 280px), 1fr));
+    gap: 16px;
+  }
+  .thread-row {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto auto;
+    align-items: center;
+    gap: 12px;
+    min-height: 48px;
+    border-top: 1px solid var(--hairline);
+    padding: 6px 14px;
+    text-align: left;
+    /* The dialog head carries the stage's tone class; rows are neutral. */
     color: var(--foreground);
-    box-shadow: 0 0 0 1px var(--hairline);
+    transition: background-color 150ms ease;
+  }
+  .thread-empty {
+    display: flex;
+    min-height: 48px;
+    align-items: center;
+    gap: 12px;
+    padding: 6px 14px;
+    color: var(--foreground);
+  }
+  .thread-empty-icon {
+    display: inline-flex;
+    width: 30px;
+    height: 30px;
+    flex-shrink: 0;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: color-mix(in oklch, var(--tone-completed) 12%, var(--card));
+    color: var(--tone-completed);
+    box-shadow: 0 0 0 4px color-mix(in oklch, var(--tone-completed) 5%, transparent);
+  }
+  .thread-panels > :last-child .thread-empty-icon {
+    background: color-mix(in oklch, var(--primary) 16%, var(--card));
+    color: color-mix(in oklch, var(--primary) 70%, var(--foreground));
+    box-shadow: 0 0 0 4px color-mix(in oklch, var(--primary) 7%, transparent);
+  }
+  .ledger-head + .thread-row {
+    border-top: 0;
+  }
+  .thread-row-go {
+    width: 14px;
+    height: 14px;
+    color: var(--muted-foreground);
+    opacity: 0.6;
     transition:
-      box-shadow 150ms ease,
-      background-color 150ms ease;
+      translate 150ms ease,
+      opacity 150ms ease;
   }
-  .thread-chip:hover:enabled,
-  .thread-chip:focus-visible {
+  .thread-row:hover:enabled,
+  .thread-row:focus-visible {
     outline: none;
-    background: var(--muted);
-    box-shadow: 0 0 0 1.5px var(--ring);
+    background: color-mix(in oklch, var(--muted) 60%, var(--card));
   }
-  .thread-chip:disabled {
+  .thread-row:focus-visible {
+    box-shadow: inset 0 0 0 1.5px var(--ring);
+  }
+  .thread-row:hover:enabled .thread-row-go,
+  .thread-row:focus-visible .thread-row-go {
+    opacity: 1;
+    translate: 2px 0;
+  }
+  .thread-row:disabled {
     color: var(--muted-foreground);
   }
 }

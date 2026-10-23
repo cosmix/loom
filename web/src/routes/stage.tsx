@@ -1,12 +1,13 @@
 import { useAtomValue } from "jotai/react";
 import { ArrowLeftIcon, SearchXIcon } from "lucide-react";
-import { Link, useParams } from "react-router";
+import { Link, useNavigate, useParams } from "react-router";
 
 import { EmptyState } from "@/aurora-ui/feedback/EmptyState";
 
 import { OperatorGuidance } from "@/components/attention-panel";
 import { CopyCommand } from "@/components/copy-command";
-import { StageHeading } from "@/components/stage-heading";
+import { StageHeading, ThreadRows } from "@/components/stage-heading";
+import { stageHref } from "@/components/stage-href";
 import { StageSectionGrid } from "@/components/stage-sections";
 import { TerminalMark, terminalGate, terminalHistory } from "@/components/terminal/terminal-glyph";
 import { terminalHref } from "@/components/terminal/terminal-view";
@@ -21,6 +22,7 @@ export function StagePage() {
   const snapshot = useAtomValue(snapshotAtom);
   const ordered = useAtomValue(orderedStagesAtom);
   const attention = useAtomValue(attentionAtom).find((entry) => entry.id === stageId);
+  const navigate = useNavigate();
 
   if (snapshot === null) return <StageSkeleton />;
   const stage = selectStage(snapshot, stageId);
@@ -65,6 +67,7 @@ export function StagePage() {
           )}
         </div>
       </div>
+      <ThreadRows stage={stage} pick={(id) => void navigate(stageHref(id))} />
       {attention && <OperatorGuidance entry={attention} />}
       <StageSectionGrid stage={stage} level={level} wide />
     </article>

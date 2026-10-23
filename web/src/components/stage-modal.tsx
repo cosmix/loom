@@ -13,6 +13,7 @@ import { StateLine, ThreadRows } from "@/components/stage-heading";
 import { stageHref } from "@/components/stage-href";
 import { StageSectionGrid } from "@/components/stage-sections";
 import { toneClass } from "@/components/state-badge";
+import { useScrollGutter } from "@/components/use-scroll-gutter";
 import { HistoryView } from "@/components/terminal/history-view";
 import { TerminalMark, terminalGate, terminalHistory } from "@/components/terminal/terminal-glyph";
 import {
@@ -252,6 +253,7 @@ function Body({
   const ordered = useAtomValue(orderedStagesAtom);
   const attention = useAtomValue(attentionAtom).find((entry) => entry.id === stage.id);
   const level = ordered.find((entry) => entry.stage.id === stage.id)?.level ?? null;
+  const scroller = useScrollGutter<HTMLDivElement>();
 
   return (
     <>
@@ -267,7 +269,10 @@ function Body({
           />
         }
       />
-      <div className="max-h-[62dvh] overflow-y-auto p-5">
+      <div
+        ref={scroller}
+        className="max-h-[62dvh] overflow-y-auto p-5 pr-[max(0px,calc(1.25rem-var(--gutter,0px)))]"
+      >
         <div className="flex flex-col gap-4">
           {attention && <OperatorGuidance entry={attention} />}
           <StageSectionGrid stage={stage} level={level} />
@@ -294,22 +299,24 @@ function BodyHead({ stage, terminalButton }: { stage: StageSummary; terminalButt
   const open = useOpenStage();
   return (
     <DialogHeader
-      className={cn("stage-modal-head gap-2 p-5 pr-12", toneClass(stateMeta(stage.status).tone))}
+      className={cn("stage-modal-head gap-2 p-5", toneClass(stateMeta(stage.status).tone))}
     >
-      <div className="flex items-center gap-x-3 gap-y-1">
-        <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-          <DialogTitle className="text-xl font-semibold tracking-tight text-foreground">
+      {/* Only the title row clears the dialog's close button, so everything
+          below keeps the body's right edge. */}
+      <div className="flex items-start gap-x-3 gap-y-1 pr-7">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1.5">
+          <DialogTitle className="text-xl leading-tight font-semibold tracking-tight text-balance text-foreground">
             {stage.name}
           </DialogTitle>
-          <span className="font-mono text-sm text-muted-foreground">{stage.id}</span>
+          <span className="stage-id-chip">{stage.id}</span>
         </div>
         {terminalButton}
       </div>
       <StageSummaryText summary={stage.summary} />
       <DialogDescription asChild>
-        <StateLine stage={stage} className="text-foreground" />
+        <StateLine stage={stage} className="stage-state-strip text-foreground" />
       </DialogDescription>
-      <ThreadRows stage={stage} pick={open} className="mt-1" />
+      <ThreadRows stage={stage} pick={open} className="mt-2" />
     </DialogHeader>
   );
 }

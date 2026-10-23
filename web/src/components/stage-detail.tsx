@@ -1,5 +1,6 @@
 import { cn } from "cn";
-import { Fragment, type ReactNode } from "react";
+import type { LucideIcon } from "lucide-react";
+import type { ReactNode } from "react";
 
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { formatElapsed } from "@/lib/format";
@@ -14,6 +15,7 @@ export interface Row {
 
 export interface SectionSpec {
   title: string;
+  icon: LucideIcon;
   rows: Row[];
 }
 
@@ -33,31 +35,58 @@ export function present(rows: (Row | null)[]): Row[] {
 }
 
 /// A titled group of rows on the stage page and in the stage dialog.
-export function Section({ title, rows }: SectionSpec) {
+export function Section({ title, icon, rows }: SectionSpec) {
   return (
-    <section
-      aria-label={title}
-      className="flex flex-col gap-2 rounded-lg border border-hairline bg-card p-4"
-    >
-      <h2 className="eyebrow">{title}</h2>
-      <Rows rows={rows} />
+    <LedgerCard title={title} icon={icon} className="break-inside-avoid">
+      <Rows rows={rows} className="px-4 py-1" />
+    </LedgerCard>
+  );
+}
+
+/// The card every stage section sits in: an icon and title in a header
+/// strip over the body. `aside` sits at the strip's right end.
+export function LedgerCard({
+  title,
+  icon: Icon,
+  aside,
+  label = title,
+  className,
+  children,
+}: {
+  title: string;
+  icon: LucideIcon;
+  aside?: ReactNode;
+  label?: string;
+  className?: string;
+  children: ReactNode;
+}) {
+  return (
+    <section aria-label={label} className={cn("ledger-card", className)}>
+      <header className="ledger-head">
+        <span className="ledger-icon">
+          <Icon aria-hidden="true" className="size-3" />
+        </span>
+        <h2 className="eyebrow">{title}</h2>
+        {aside}
+      </header>
+      {children}
     </section>
   );
 }
 
-/// The label/value grid on its own, for a section that brings its own frame.
-export function Rows({ rows }: { rows: Row[] }) {
+/// The label/value list on its own, for a section that brings its own frame.
+export function Rows({ rows, className }: { rows: Row[]; className?: string }) {
   return (
-    <dl className="grid grid-cols-[minmax(7rem,auto)_1fr] gap-x-4 gap-y-1.5 text-sm">
+    <dl className={cn("ledger-rows text-sm", className)}>
       {rows.map((entry) => (
-        <Fragment key={entry.label}>
+        <div key={entry.label} className="ledger-row">
           <dt>
             <Hint label={entry.label} hint={entry.hint} />
           </dt>
           <dd className={cn("min-w-0 break-words", entry.mono && "font-mono text-xs")}>
             {entry.value}
           </dd>
-        </Fragment>
+        </div>
       ))}
     </dl>
   );
@@ -69,7 +98,7 @@ function Hint({ label, hint }: { label: string; hint: string }) {
       <TooltipTrigger asChild>
         <span
           tabIndex={0}
-          className="cursor-help text-muted-foreground underline decoration-muted-foreground/40 decoration-dotted underline-offset-4"
+          className="cursor-help text-muted-foreground underline decoration-transparent decoration-dotted underline-offset-4 transition-colors hover:decoration-muted-foreground/60 focus-visible:decoration-muted-foreground/60"
         >
           {label}
         </span>
@@ -93,7 +122,7 @@ export function StageSummaryText({ summary }: { summary: string | null }) {
       tabIndex={0}
       role="region"
       aria-label="stage summary"
-      className="max-h-24 overflow-y-auto text-sm whitespace-pre-line text-muted-foreground"
+      className="stage-summary max-h-24 max-w-[78ch] overflow-y-auto text-[13.5px] leading-relaxed whitespace-pre-line"
     >
       {summary}
     </p>
