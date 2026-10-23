@@ -1,6 +1,6 @@
 # Doctrine Cross Surface
 
-> Pinning multi-surface guidance
+> Pinning multi-surface text
 
 ## Doctrine Block Cross-Surface Pinning
 

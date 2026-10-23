@@ -1,6 +1,6 @@
 # Remote Control
 
-> Remote Control detect and resolve
+> Remote Control detection
 
 ## Remote Control Capability/Preflight/Resolve Pattern
 

@@ -1,6 +1,6 @@
 # Web Dashboard
 
-> status --web server, SPA, streams
+> status --web server, SPA
 
 ## Server
 

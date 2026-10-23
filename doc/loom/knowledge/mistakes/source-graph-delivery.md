@@ -1,6 +1,6 @@
 # Source Graph Delivery
 
-> Resolver, cache, wiring, eval
+> Resolver, cache, wiring
 
 Mistakes made while building the evidence-classed, dialect-aware source graph (resolver, resolved view, retrieval
 routing, edge-quality evaluator). Current behaviour is in [Source Graph](../architecture/source-graph.md),

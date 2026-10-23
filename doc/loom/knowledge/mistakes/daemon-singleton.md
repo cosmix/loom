@@ -1,6 +1,6 @@
 # Daemon Singleton Incident
 
-> Two daemons shared .loom/work
+> Two daemons, one work dir
 
 ## Resolution
 

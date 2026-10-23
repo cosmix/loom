@@ -1,6 +1,6 @@
 # Shell Command Matchers
 
-> Matcher separators, lookups
+> Matcher separators
 
 ## Token-Based Shell Matchers: Separators That Never Become Tokens (SYSTEMIC, 2026-07-28)
 

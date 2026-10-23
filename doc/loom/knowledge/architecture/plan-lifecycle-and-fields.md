@@ -3,7 +3,7 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Plan Lifecycle And Fields
 
-> Plan fields v1/v2, checks, lints
+> Plan fields, checks, lints
 
 ## Adding New Plan Fields Checklist
 

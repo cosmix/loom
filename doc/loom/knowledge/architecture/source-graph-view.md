@@ -1,6 +1,6 @@
 # Source Graph View
 
-> Resolved view, relink equals cold
+> Resolved view, relink
 
 `context/view/` (`mod.rs`, `identity.rs`, `build.rs`, `incremental.rs`, `deps.rs`, `store.rs`) holds a
 persisted, versioned resolved graph and the incremental relink that keeps it cheap. Nothing outside

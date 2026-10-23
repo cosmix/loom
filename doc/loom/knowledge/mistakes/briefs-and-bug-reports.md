@@ -1,6 +1,6 @@
 # Briefs And Bug Reports
 
-> Bug reports; brief flags
+> Bug reports, brief flags
 
 ## A Bug Report From a Loom Stage Is About Loom the Product, Not About a Project on This Machine (2026-09-18)
 

@@ -1,6 +1,6 @@
 # Completion Runner Blocks
 
-> Runner-env blocks, gate fails
+> Runner-env blocks
 
 ## Criteria the Confined Runner Cannot Run Ended in a Manual Block (2026-10-20)
 

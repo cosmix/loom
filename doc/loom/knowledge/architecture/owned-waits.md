@@ -13,7 +13,7 @@ verified: ace1efbd8fd861fc0efcb26e8d49c2ef29876c67
 ---
 # Owned Waits
 
-> Worker-set waits, lease, boot ID
+> Worker-set waits, lease
 
 ## Never Pipe a Background `loom subagents watch`/`wait` Through `tail`
 

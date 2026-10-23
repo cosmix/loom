@@ -1,6 +1,6 @@
 # Remote Control
 
-> Remote-control detection call sites
+> Remote-control call sites
 
 ## Remote Control & Permission Mode Integration Points
 

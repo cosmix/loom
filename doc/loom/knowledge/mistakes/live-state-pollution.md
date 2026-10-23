@@ -1,6 +1,6 @@
 # Live State Pollution
 
-> Tests wrote live state and HOME
+> Tests wrote live state
 
 ## A Stage's Test Run Rewrote the Live State Directory (2026-09-13)
 

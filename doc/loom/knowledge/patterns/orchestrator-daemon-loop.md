@@ -2,7 +2,7 @@
 ---
 # Orchestrator Daemon Loop
 
-> Signal gen, IPC, poll loop, spool
+> Signals, IPC, poll loop
 
 ## Signal Generation Pattern
 

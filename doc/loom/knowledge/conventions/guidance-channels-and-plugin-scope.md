@@ -2,7 +2,7 @@
 ---
 # Guidance Channels And Plugin Scope
 
-> Guidance channels, plugin scope
+> Guidance, plugin scope
 
 ## Vendored Agent Assets Live at Repo Root
 

@@ -1,6 +1,6 @@
 # Contract Phase Human Blocking
 
-> Contract freeze refusal waited on the operator
+> Refusal waited on operator
 
 ## A Contract Freeze Refusal Waited on the Operator
 

@@ -2,7 +2,7 @@
 ---
 # Orchestrator Daemon And Sessions
 
-> Orchestrator, daemon, signals
+> Orchestrator, daemon
 
 ## Orchestrator Core
 

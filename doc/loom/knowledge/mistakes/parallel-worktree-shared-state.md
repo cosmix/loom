@@ -1,6 +1,6 @@
 # Parallel Worktree Shared State
 
-> Cross-worktree state races
+> Cross-worktree races
 
 ## The One Question That Catches This Whole Class
 

@@ -1,6 +1,6 @@
 # Verification V2 Followups
 
-> v2 adapters, parsers, known gaps
+> v2 adapters, known gaps
 
 ## Nine Adapters Have Fixtures From Documented Formats, Not Captured Runs
 

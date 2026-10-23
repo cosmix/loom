@@ -1,6 +1,6 @@
 # Quota Poller
 
-> Usage-quota polling and rendering
+> Quota polling, rendering
 
 ## Sources
 

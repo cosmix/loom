@@ -1,6 +1,6 @@
 # Verification V2 Gates
 
-> v2 completion gates, order, owners
+> v2 gates, order, owners
 
 ## Verification v2 Gates: Order, Owners, and What Each Gate Reads
 
@@ -234,5 +234,5 @@ Records live under `<state root>/verification/<stage>/` (`host_verify/store.rs`)
 - Failing `complete`: a failure checkpoint and attempt evidence come from the failed result.
 - Cancelled or interrupted `complete`: nothing is written. A checkpoint would replace the latest attempt a block reads and spend the session's evidence.
 - `check`: changes no stage state.
-- `freeze`: `freeze::apply_freeze_result` freezes the contracts only while the binding holds, and parks the stage otherwise.
+- `freeze`: `freeze::apply_freeze_result` freezes the contracts only while the binding holds; otherwise it records the refusal in `contracts/<stage>/refused.json` for the `dispute_refused_freezes` tick step to file as a freeze-refusal dispute (see [Refused Freezes Are Disputed](contract-phase.md#refused-freezes-are-disputed)). An interrupted or daemon-stopped run, or unreadable reports or binding, records a first problem starting `infrastructure:`.
 - An application that fails with an I/O or state error is retried at each later tick, up to `MAX_APPLY_ATTEMPTS` (`orchestrator/core/host_jobs.rs`). The last failure writes the marker as `apply failed: <error>`, so it is never retried again.

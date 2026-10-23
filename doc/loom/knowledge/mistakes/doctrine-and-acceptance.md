@@ -6,7 +6,7 @@ verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 ---
 # Doctrine And Acceptance
 
-> Doctrine drift, acceptance
+> Doctrine drift
 
 ## An Acceptance Criterion That Greps One Phrase Proves Presence, Never Agreement (2026-07-28)
 
@@ -388,4 +388,4 @@ put the doc edits in the implementation brief.
 
 **Prevention:** For the Brig proposal, compare Linux with Apple Silicon macOS; do not treat Intel Mac support as an adoption requirement.
 
-**Fix:** Scope `doc/PROPOSAL-brig-support.md` and its platform evaluation to Linux and Apple Silicon macOS.
+**Fix:** Scope the brig-support proposal and its platform evaluation to Linux and Apple Silicon macOS.
