@@ -7,7 +7,7 @@
 //!
 //! This module provides exactly that, subject to a tight contract:
 //!
-//! - **Scope:** only `acceptance`, `wiring`, `wiring_tests` and `contracts`
+//! - **Scope:** only `acceptance`, `wiring`, `wiring_tests`, `contracts` and `harness`
 //!   arrays on a single stage are mutable. Everything else (stage IDs, dependencies,
 //!   working_dir, plan structure) is off-limits.
 //! - **Versioned + atomic:** under an `flock` on
@@ -21,7 +21,7 @@
 //! - **Validated:** the proposed value is deserialized into the **real**
 //!   [`AcceptanceCriterion`] / [`WiringCheck`] / [`WiringTest`] types before
 //!   anything is written, so a malformed patch fails fast.
-//! - **Capped:** a per-stage absolute amendment cap (default 3, override via
+//! - **Capped:** a per-stage absolute amendment cap (default 10, override via
 //!   `loom.adjudication.max_amendments_per_stage`) bounds runaway adjudication.
 //!
 //! Recovery semantics (called from orchestrator startup via
@@ -68,6 +68,8 @@ pub enum AmendmentField {
     WiringTests,
     /// Mutate the `contracts` array (a v2 stage's behavioural contracts).
     Contracts,
+    /// Mutate the `harness` array (glob strings naming harness files).
+    Harness,
 }
 
 fn field_from_name(name: &str) -> Option<AmendmentField> {
@@ -221,6 +223,8 @@ pub(super) enum ParsedAmendmentValue {
     Wiring(WiringCheck),
     WiringTest(WiringTest),
     Contract(ContractSpec),
+    /// A harness glob, taken verbatim (never parsed as YAML).
+    Harness(String),
     None,
 }
 

@@ -19,6 +19,8 @@ pub enum AmendField {
     WiringTests,
     /// Mutate the `contracts` array.
     Contracts,
+    /// Mutate the `harness` array.
+    Harness,
 }
 
 /// What to do at `--index` within the field targeted by `loom stage amend`.
@@ -43,6 +45,7 @@ impl AmendField {
             AmendField::Wiring => AmendmentField::Wiring,
             AmendField::WiringTests => AmendmentField::WiringTests,
             AmendField::Contracts => AmendmentField::Contracts,
+            AmendField::Harness => AmendmentField::Harness,
         }
     }
 }
@@ -59,5 +62,39 @@ impl AmendOp {
             (AmendOp::Insert, None) => bail!("--value is required for --op insert"),
             (AmendOp::Delete, Some(_)) => bail!("--value is not accepted with --op delete"),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::cli::types::{Cli, Commands};
+    use crate::cli::types_stage::StageCommands;
+    use clap::Parser;
+
+    #[test]
+    fn harness_field_parses_to_the_plan_field() {
+        let argv = [
+            "loom",
+            "stage",
+            "amend",
+            "s1",
+            "--field",
+            "harness",
+            "--op",
+            "insert",
+            "--index",
+            "0",
+            "--value",
+            "tests/fixtures/**",
+        ];
+        let cli = Cli::try_parse_from(argv).unwrap();
+        let Commands::Stage {
+            command: StageCommands::Amend { field, .. },
+        } = cli.command
+        else {
+            panic!("amend parsed as another command");
+        };
+        assert_eq!(field.to_field(), AmendmentField::Harness);
     }
 }

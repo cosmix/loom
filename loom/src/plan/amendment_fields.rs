@@ -1,7 +1,7 @@
 //! Field-dispatch helpers for [`super::amendment`].
 //!
 //! These functions translate an [`AmendmentField`] into the concrete
-//! `acceptance` / `wiring` / `wiring_tests` / `contracts` array on a
+//! `acceptance` / `wiring` / `wiring_tests` / `contracts` / `harness` array on a
 //! [`StageDefinition`] or runtime [`Stage`], apply an [`AmendmentPatch`] to
 //! that array, and synchronize the amended runtime field.
 
@@ -19,6 +19,7 @@ pub(super) fn current_field_len(stage: &StageDefinition, field: AmendmentField) 
         AmendmentField::Wiring => stage.wiring.len(),
         AmendmentField::WiringTests => stage.wiring_tests.len(),
         AmendmentField::Contracts => stage.contracts.len(),
+        AmendmentField::Harness => stage.harness.len(),
     }
 }
 
@@ -43,6 +44,14 @@ pub(super) fn parse_amendment_value(request: &AmendmentRequest) -> Result<Parsed
         }
         AmendmentField::Contracts => {
             ParsedAmendmentValue::Contract(parse_yaml(value, "ContractSpec", stage)?)
+        }
+        // A glob is not YAML: `**/x.json` reads as an alias and `a #1` loses its tail.
+        AmendmentField::Harness => {
+            let glob = value.trim();
+            if glob.is_empty() {
+                bail!("Empty harness value in amendment for stage '{stage}'");
+            }
+            ParsedAmendmentValue::Harness(glob.to_string())
         }
     })
 }
@@ -88,6 +97,14 @@ pub(super) fn apply_patch_to_stage_def(
             patch,
             match value {
                 ParsedAmendmentValue::Contract(v) => Some(v.clone()),
+                _ => None,
+            },
+        ),
+        AmendmentField::Harness => apply_patch_vec(
+            &mut stage.harness,
+            patch,
+            match value {
+                ParsedAmendmentValue::Harness(v) => Some(v.clone()),
                 _ => None,
             },
         ),
@@ -145,6 +162,7 @@ pub(super) fn stage_field_matches(
             a == b
         }
         AmendmentField::Contracts => stage.contracts == def.contracts,
+        AmendmentField::Harness => stage.harness == def.harness,
     }
 }
 
@@ -168,6 +186,9 @@ pub(super) fn sync_stage_from_definition(
         }
         AmendmentField::Contracts => {
             stage.contracts = def.contracts.clone();
+        }
+        AmendmentField::Harness => {
+            stage.harness = def.harness.clone();
         }
     }
 }
