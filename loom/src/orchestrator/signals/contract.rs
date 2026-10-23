@@ -282,10 +282,12 @@ fn append_scaffold(content: &mut String, scaffold: &Result<Vec<ScaffoldEdit>, St
             return;
         }
     };
-    content
-        .push_str("A contract file is compiled only when a chain of `mod` items reaches it:\n\n");
+    content.push_str(
+        "A contract file is compiled only when a chain of `mod` items reaches it. Make these \
+         edits:\n\n",
+    );
     for edit in edits {
-        content.push_str(&scaffold_bullet(edit));
+        content.push_str(&format!("- {}\n", scaffold_line(edit)));
     }
     content.push_str(
         "\nThese edits are not frozen; the implementer extends them. Add nothing else to \
@@ -293,16 +295,18 @@ fn append_scaffold(content: &mut String, scaffold: &Result<Vec<ScaffoldEdit>, St
     );
 }
 
-fn scaffold_bullet(edit: &ScaffoldEdit) -> String {
+/// One scaffold edit as a phrase: the one wording the contract signal, the
+/// adjudication briefing and the next writer's notice all show.
+pub(crate) fn scaffold_line(edit: &ScaffoldEdit) -> String {
     match edit {
         ScaffoldEdit::Declare { path, module } => {
-            format!("- In `{path}`, add {}.\n", declaration(module))
+            format!("in `{path}`, {}", declaration(module))
         }
         ScaffoldEdit::CreateRoot { paths, modules } => {
             let paths: Vec<String> = paths.iter().map(|path| format!("`{path}`")).collect();
             let held: Vec<String> = modules.iter().map(declaration).collect();
             format!(
-                "- Create {} holding only {}.\n",
+                "a new {} holding only {}",
                 paths.join(" or "),
                 held.join(", ")
             )
@@ -310,10 +314,10 @@ fn scaffold_bullet(edit: &ScaffoldEdit) -> String {
     }
 }
 
-/// One module declaration as the signal asks for it.
+/// One module declaration as the scaffold asks for it.
 fn declaration(module: &ScaffoldModule) -> String {
     if module.test_only {
-        format!("`#[cfg(test)]` and `mod {};`", module.name)
+        format!("`#[cfg(test)] mod {};`", module.name)
     } else {
         format!("`mod {};`", module.name)
     }

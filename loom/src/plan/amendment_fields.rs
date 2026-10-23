@@ -111,7 +111,10 @@ pub(super) fn apply_patch_to_stage_def(
     }
 }
 
-pub(super) fn apply_patch_vec<T: Clone>(
+/// `patch` applied to `vec`; the verdict replay of a refused freeze
+/// (`orchestrator::adjudication::verdict_freeze_refusal`) shares it, so its
+/// indices mean what the apply's mean.
+pub(crate) fn apply_patch_vec<T: Clone>(
     vec: &mut Vec<T>,
     patch: &AmendmentPatch,
     new_value: Option<T>,

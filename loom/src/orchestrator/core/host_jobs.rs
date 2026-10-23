@@ -93,7 +93,7 @@ impl Orchestrator {
 
     /// Log what `recover_after_restart` changed at startup, then apply every
     /// job it interrupted and every terminal job left unapplied, so a freeze
-    /// interrupted by the restart parks its stage instead of stranding a
+    /// interrupted by the restart records its refusal instead of stranding a
     /// writer that has already ended its turn.
     pub(super) fn report_host_job_recovery(&self, recovered: Result<Vec<JobRecord>>) {
         let work_dir = &self.config.work_dir;

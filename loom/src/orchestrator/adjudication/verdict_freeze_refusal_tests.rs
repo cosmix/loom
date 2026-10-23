@@ -168,6 +168,37 @@ fn an_acceptance_entry_only_replaces_a_format_check_with_one() {
     );
 }
 
+/// An output expectation changes what the format-check gate accepts: with
+/// `exit_code: 1` a formatted tree would fail it and an unformatted one pass.
+#[test]
+fn an_acceptance_replacement_may_not_expect_any_output() {
+    let fx = fixture();
+    for expectation in [
+        "exit_code: 1",
+        "stdout_contains: [\"ok\"]",
+        "stdout_not_contains: [\"Diff in\"]",
+        "stderr_empty: true",
+    ] {
+        let value = format!("command: cargo fmt --check\n{expectation}\n");
+        let replace = json!([{"field": "acceptance", "op": "replace", "index": 1, "value": value}]);
+        refused(&fx, accepting(replace), "sets an output expectation");
+    }
+}
+
+#[test]
+fn an_acceptance_replacement_may_be_plain_or_carry_only_a_timeout() {
+    let fx = fixture();
+    for value in [
+        "cargo fmt --all -- --check",
+        "command: cargo fmt --check\ntimeout_secs: 120\n",
+        "command: cargo fmt --check\nexit_code: 0\n",
+    ] {
+        let replace = json!([{"field": "acceptance", "op": "replace", "index": 1, "value": value}]);
+        let verdict = check(&fx.work, &fx.stage, &accepting(replace));
+        assert!(verdict.is_ok(), "{value}: {verdict:?}");
+    }
+}
+
 #[test]
 fn a_harness_glob_over_production_source_is_refused() {
     let glob = json!([{"field": "harness", "op": "insert", "index": 0, "value": "src/**"}]);

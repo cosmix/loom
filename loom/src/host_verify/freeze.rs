@@ -37,7 +37,7 @@ use crate::relay::sha256_hex;
 use crate::stage_service::contracts::{freeze_with_reports, locate, read_files, Site};
 use crate::stage_service::Response;
 use crate::verify::contracts::refusal::{
-    problem_lines, record_daemon_refusal, RefusalSource, INFRASTRUCTURE_PREFIX,
+    problem_lines, record_daemon_refusal, run_output_line, RefusalSource, INFRASTRUCTURE_PREFIX,
 };
 use crate::verify::contracts::store::load_freeze;
 use crate::verify::criteria::{plan_confinement, resolve_confinement};
@@ -277,7 +277,9 @@ pub fn apply_freeze_result(work_dir: &Path, record: &JobRecord) -> Result<Applie
         JobState::Passed => apply_passed(work_dir, record),
         JobState::Failed => refuse(work_dir, record, &failure_message(work_dir, record)),
         JobState::Interrupted => {
-            refuse_infrastructure(work_dir, record, &failure_message(work_dir, record))
+            let failure = failure_message(work_dir, record);
+            let message = format!("the contract run was interrupted\n{failure}");
+            refuse_infrastructure(work_dir, record, &message)
         }
         // The shutdown's cancel leaves no successor job, so no one else would
         // act on the writer's ended turn: refuse like an interrupted run.
@@ -313,8 +315,9 @@ fn apply_passed(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
             return refuse(work_dir, record, &message);
         }
         Err(error) => {
-            let message =
-                format!("the stage cannot be checked against its contract run: {error:#}");
+            // The error can name worktree files and quote git: one quoted line.
+            let why = run_output_line(&format!("{error:#}"));
+            let message = format!("the stage cannot be checked against its contract run\n{why}");
             return refuse_infrastructure(work_dir, record, &message);
         }
     }

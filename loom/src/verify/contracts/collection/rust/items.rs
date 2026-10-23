@@ -8,8 +8,33 @@
 pub(super) struct Attribute {
     /// The attribute as written.
     pub text: String,
-    /// Its path (`cfg`, `path`, `rustfmt::skip`), whitespace removed.
-    pub path: String,
+    /// Its path (`cfg`, `path`, `rustfmt::skip`), whitespace removed and the
+    /// `r#` of each segment stripped, as rustc resolves it. `None` when it
+    /// cannot be read (a comment inside the path, `$crate` or a leading `::`,
+    /// a shebang that rustc may read as an attribute): callers refuse it.
+    pub path: Option<String>,
+}
+
+impl Attribute {
+    /// The text with whitespace removed and the `r#` of every raw identifier
+    /// stripped, for comparing with a plain spelling such as `#[cfg(test)]`.
+    /// A comment stays in, so a spelling holding one never compares equal.
+    pub fn normalised(&self) -> String {
+        let compact: String = self.text.split_whitespace().collect();
+        let mut normalised = String::with_capacity(compact.len());
+        let mut rest = compact.as_str();
+        while let Some(next) = rest.chars().next() {
+            let in_word = normalised.chars().next_back().is_some_and(is_word);
+            match rest.strip_prefix("r#") {
+                Some(after) if !in_word && after.starts_with(is_word) => rest = after,
+                _ => {
+                    normalised.push(next);
+                    rest = &rest[next.len_utf8()..];
+                }
+            }
+        }
+        normalised
+    }
 }
 
 /// One top-level `mod` item.
@@ -54,6 +79,13 @@ pub(super) fn parse(source: &str) -> Result<ParsedFile, String> {
         match node.kind() {
             "mod_item" => parsed.mods.push(mod_item(node, source)),
             "inner_attribute_item" => parsed.inner_attributes.push(attribute(node, source)),
+            // tree-sitter lexes `#!/**/[..]` and `#! [..]` at the start of a
+            // file as a shebang, where rustc reads an inner attribute; no
+            // chain file needs a shebang, so it stands as an unreadable one.
+            "shebang" => parsed.inner_attributes.push(Attribute {
+                text: text(node, source).trim_end().to_string(),
+                path: None,
+            }),
             _ => {}
         }
     }
@@ -99,18 +131,54 @@ fn outer_attributes(node: tree_sitter::Node<'_>, source: &str) -> Vec<Attribute>
 }
 
 /// An `attribute_item` or `inner_attribute_item`: its text and the path of
-/// the `attribute` inside it (the first named child, before any arguments).
+/// the `attribute` inside it. A comment is an extra that tree-sitter places
+/// as a named child before the `attribute` or before its path, so both are
+/// found by kind, never by position.
 #[cfg(feature = "source-graph")]
 fn attribute(item: tree_sitter::Node<'_>, source: &str) -> Attribute {
-    let path = item
-        .named_child(0)
-        .and_then(|attribute| attribute.named_child(0))
-        .map(|path| text(path, source))
-        .unwrap_or_default();
+    let path = first_named(item, |child| child.kind() == "attribute")
+        .and_then(|attribute| first_named(attribute, |child| !is_comment(child)))
+        .and_then(|path| normalised_path(&text(path, source)));
     Attribute {
         text: text(item, source),
-        path: path.split_whitespace().collect(),
+        path,
     }
+}
+
+/// The first named child of `node` that `wanted` accepts.
+#[cfg(feature = "source-graph")]
+fn first_named<'tree>(
+    node: tree_sitter::Node<'tree>,
+    wanted: impl Fn(&tree_sitter::Node<'tree>) -> bool,
+) -> Option<tree_sitter::Node<'tree>> {
+    let mut cursor = node.walk();
+    let found = node.named_children(&mut cursor).find(wanted);
+    found
+}
+
+#[cfg(feature = "source-graph")]
+fn is_comment(node: &tree_sitter::Node<'_>) -> bool {
+    matches!(node.kind(), "line_comment" | "block_comment")
+}
+
+/// `raw` as a path of identifiers joined by `::`, whitespace removed and each
+/// segment's `r#` stripped; `None` when a segment is anything else (empty,
+/// a comment, `$crate`).
+#[cfg(feature = "source-graph")]
+fn normalised_path(raw: &str) -> Option<String> {
+    let compact: String = raw.split_whitespace().collect();
+    let segments: Vec<&str> = compact
+        .split("::")
+        .map(|segment| segment.strip_prefix("r#").unwrap_or(segment))
+        .collect();
+    segments
+        .iter()
+        .all(|segment| !segment.is_empty() && segment.chars().all(is_word))
+        .then(|| segments.join("::"))
+}
+
+fn is_word(character: char) -> bool {
+    character == '_' || character.is_alphanumeric()
 }
 
 #[cfg(feature = "source-graph")]

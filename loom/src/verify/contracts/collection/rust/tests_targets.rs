@@ -1,3 +1,5 @@
+#[cfg(feature = "source-graph")]
+use super::super::chain_problems;
 use super::super::tree;
 use super::{package_of, run_dir_problems, test_roots, Kind, Root};
 
@@ -26,6 +28,60 @@ fn manifest(extra: &str) -> String {
 fn default_lib_is_a_test_root() {
     let found = roots(&[("Cargo.toml", PACKAGE), ("src/lib.rs", "")], "src/a.rs");
     assert_eq!(found, vec![root("src/lib.rs", Kind::Lib, None)]);
+}
+
+#[test]
+fn lib_path_replaces_the_default_lib_root() {
+    let cargo = manifest("\n[lib]\npath = \"src/other.rs\"\n");
+    let files = [
+        ("Cargo.toml", cargo.as_str()),
+        ("src/lib.rs", ""),
+        ("src/other.rs", ""),
+    ];
+    assert_eq!(
+        roots(&files, "src/a.rs"),
+        vec![root("src/other.rs", Kind::Lib, None)]
+    );
+}
+
+#[test]
+fn autolib_false_leaves_no_implicit_lib_root() {
+    let cargo = manifest("autolib = false\n");
+    let files = [("Cargo.toml", cargo.as_str()), ("src/lib.rs", "")];
+    assert_eq!(roots(&files, "src/a.rs"), Vec::<Root>::new());
+}
+
+/// The chain check follows `[lib] path`: the default `src/lib.rs` is not
+/// compiled, so a declaration there reaches nothing.
+#[cfg(feature = "source-graph")]
+#[test]
+fn the_chain_starts_at_the_lib_path() {
+    let cargo = manifest("\n[lib]\npath = \"src/other.rs\"\n");
+    let chain = |lib: &str, other: &str| {
+        let files = [
+            ("Cargo.toml", cargo.as_str()),
+            ("src/lib.rs", lib),
+            ("src/other.rs", other),
+            ("src/a.rs", ""),
+        ];
+        chain_problems(&tree(&files), "src/a.rs", "a::rejects_x")
+    };
+    assert!(!chain("mod a;\n", "").is_empty());
+    assert_eq!(chain("", "mod a;\n"), Vec::<String>::new());
+}
+
+#[cfg(feature = "source-graph")]
+#[test]
+fn autolib_false_leaves_the_chain_no_target() {
+    let cargo = manifest("autolib = false\n");
+    let files = [
+        ("Cargo.toml", cargo.as_str()),
+        ("src/lib.rs", "mod a;\n"),
+        ("src/a.rs", ""),
+    ];
+    let problems = chain_problems(&tree(&files), "src/a.rs", "a::rejects_x");
+    assert_eq!(problems.len(), 1, "{problems:?}");
+    assert!(problems[0].contains("no test target"), "{problems:?}");
 }
 
 #[test]

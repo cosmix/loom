@@ -37,6 +37,12 @@ pub(super) fn settle(
             )))
         }
         Ok(Response::Error { message }) => {
+            // The drain never retries a request (delivery is at most once,
+            // see the `inbox_drain` module doc), so a record that cannot be
+            // written leaves this refusal unfiled: the request settles refused
+            // with the write error, the writer sees a failure rather than a
+            // refusal to dispute, and freezes again or is respawned by hung
+            // detection.
             match record_refused_freeze(work_dir, stage_id, session_id, &message) {
                 Ok(()) => Settle::Refused(message),
                 Err(error) => failed(error.context(format!("freeze refused: {message}"))),

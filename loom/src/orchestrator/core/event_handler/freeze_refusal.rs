@@ -42,7 +42,9 @@ use crate::verify::contracts::refusal::{
 };
 use crate::verify::contracts::store::load_freeze;
 
-use super::super::{clear_status_line, persistence::Persistence, Orchestrator};
+use super::super::{
+    clear_status_line, orchestrator::unretired_detail, persistence::Persistence, Orchestrator,
+};
 
 /// How long a writer's own refusal, and the writer, must be quiet before loom
 /// files it: the writer may fix the problems and freeze again in the same turn.
@@ -132,17 +134,17 @@ impl Orchestrator {
     /// else the writer's own once it has gone quiet, recorded first so the
     /// filing below has one record to file and take.
     fn standing_refusal(
-        &self,
+        &mut self,
         stage: &Stage,
         session_id: &str,
         scratch_root: Option<&Path>,
         now: SystemTime,
     ) -> Result<Option<DaemonRefusal>> {
-        let work_dir = &self.config.work_dir;
+        let work_dir = self.config.work_dir.clone();
         match self.daemon_record(&stage.id)? {
             Some(record) if record.session_id == session_id => return Ok(Some(record)),
             Some(stale) => {
-                take_daemon_refusal(work_dir, &stage.id)?;
+                take_daemon_refusal(&work_dir, &stage.id)?;
                 tracing::info!(
                     stage_id = %stage.id,
                     session_id = %stale.session_id,
@@ -161,13 +163,13 @@ impl Orchestrator {
             return Ok(None);
         }
         record_daemon_refusal(
-            work_dir,
+            &work_dir,
             &stage.id,
             session_id,
             &problems,
             RefusalSource::Writer,
         )?;
-        daemon_refusal(work_dir, &stage.id)
+        daemon_refusal(&work_dir, &stage.id)
     }
 
     /// The daemon's record for `stage_id`. Only the daemon writes it, so one
@@ -192,7 +194,7 @@ impl Orchestrator {
     /// session, or none, counts as old) are [`REFUSAL_QUIET_SECS`] old and it
     /// runs no subagent. A child journal that cannot be read waits.
     fn writer_is_quiet(
-        &self,
+        &mut self,
         stage_id: &str,
         session_id: &str,
         written: SystemTime,
@@ -210,15 +212,33 @@ impl Orchestrator {
         let children = replay(work_dir)
             .map(|index| index.session_child_disposition(stage_id, session_id))
             .unwrap_or_else(|error| ChildDisposition::Unknown(format!("{error:#}")));
-        if let ChildDisposition::Unknown(reason) = &children {
-            tracing::debug!(
+        self.note_child_disposition(stage_id, session_id, &children);
+        children == ChildDisposition::NoChildren
+    }
+
+    /// Say once per writer, until its children are known again, that their
+    /// ownership is uncertain and its refusal waits: a tick loop would repeat
+    /// it every tick.
+    fn note_child_disposition(
+        &mut self,
+        stage_id: &str,
+        session_id: &str,
+        children: &ChildDisposition,
+    ) {
+        let key = format!("freeze-refusal-children:{stage_id}:{session_id}");
+        let ChildDisposition::Unknown(reason) = children else {
+            self.spool_drain_error_logged.remove(&key);
+            return;
+        };
+        if self.spool_drain_error_logged.insert(key) {
+            clear_status_line();
+            tracing::warn!(
                 stage_id,
                 session_id,
                 %reason,
                 "Child ownership is uncertain; the refusal waits"
             );
         }
-        children == ChildDisposition::NoChildren
     }
 
     /// File `refusal` as the stage's next freeze-refusal dispute, or, with
@@ -244,20 +264,26 @@ impl Orchestrator {
     /// The writer's refusals have spent the budget: retire it, then send the
     /// stage to a human, naming any survivor of the retirement.
     fn escalate_refused_freezes(&mut self, stage_id: &str, problems: &[String]) -> Result<()> {
-        let unretired = match self.retire_stage_agents(stage_id, StageStatus::Executing) {
-            Ok(survivors) if survivors.is_empty() => None,
-            Ok(survivors) => Some(format!(
-                "session(s) {} survived the retirement kill",
-                survivors.join(", ")
-            )),
-            Err(error) => Some(format!("its agents could not be retired: {error:#}")),
-        };
-        escalate_freeze_refusal(
+        let unretired =
+            unretired_detail(self.retire_stage_agents(stage_id, StageStatus::Executing));
+        let escalated = escalate_freeze_refusal(
             &self.config.work_dir,
             stage_id,
             problems,
             unretired.as_deref(),
-        )?;
+        );
+        if let Err(error) = &escalated {
+            // A retirement that took every agent down released the stage's
+            // session, so no later tick finds a writer to retry for: the
+            // caller's "retrying every tick" is then untrue.
+            tracing::warn!(
+                stage_id,
+                retired = unretired.is_none(),
+                error = %format!("{error:#}"),
+                "Could not hand a stage with a spent freeze-refusal budget to a human"
+            );
+        }
+        escalated?;
         take_daemon_refusal(&self.config.work_dir, stage_id)?;
         clear_status_line();
         eprintln!(

@@ -191,13 +191,13 @@ fn the_signal_lists_the_scaffold_a_new_module_needs() {
 
     assert!(content.contains("## Scaffold"), "{content}");
     assert!(
-        content.contains("- In `src/lib.rs`, add `mod device_lock;`."),
+        content.contains("- in `src/lib.rs`, `mod device_lock;`\n"),
         "{content}"
     );
     assert!(
         content.contains(
-            "- Create `src/device_lock/mod.rs` or `src/device_lock.rs` holding only \
-             `#[cfg(test)]` and `mod contract_tests;`."
+            "- a new `src/device_lock/mod.rs` or `src/device_lock.rs` holding only \
+             `#[cfg(test)] mod contract_tests;`\n"
         ),
         "{content}"
     );

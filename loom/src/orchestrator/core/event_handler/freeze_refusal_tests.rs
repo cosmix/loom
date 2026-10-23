@@ -8,12 +8,13 @@ use std::time::{Duration, SystemTime};
 use serial_test::serial;
 use tempfile::TempDir;
 
-use super::super::tests::{handoff_work_dir, orchestrator_for, write_pid_file};
+use super::super::tests::{handoff_work_dir, orchestrator_for, spawn_orphan_process};
 use super::*;
 use crate::fs::session_files::save_session;
 use crate::models::session::{Session, SessionBackendKind, SessionStatus};
 use crate::orchestrator::coherence::live_worker_sessions;
 use crate::orchestrator::monitor::heartbeat::{write_heartbeat, Heartbeat};
+use crate::orchestrator::terminal::native::write_test_pid_identity;
 use crate::relay::ensure_dir_0700;
 use crate::subagent_lifecycle::model::{
     CodexEvidence, CodexEvidenceKind, CodexEvidenceOutcome, CodexExecution, LifecycleProducer,
@@ -207,6 +208,37 @@ fn a_local_refusal_waits_while_the_writer_runs_a_subagent() {
     fx.assert_nothing_filed();
 }
 
+/// A local refusal whose writer's children cannot be told is not filed, and
+/// the uncertainty is said once, not every tick; it is filed once they can.
+#[test]
+#[serial]
+fn a_local_refusal_waits_while_the_writers_children_are_unknown() {
+    let mut fx = fixture();
+    fx.refuse_locally();
+    // A complete line that is no lifecycle record corrupts the stage's journal.
+    let journal = fx
+        .work
+        .join("subagents")
+        .join(STAGE)
+        .join("lifecycle.jsonl");
+    std::fs::create_dir_all(journal.parent().unwrap()).unwrap();
+    std::fs::write(&journal, "not a lifecycle record\n").unwrap();
+    let key = format!("freeze-refusal-children:{STAGE}:{}", fx.writer.id);
+
+    fx.tick_after_quiet();
+    fx.tick_after_quiet();
+
+    fx.assert_nothing_filed();
+    assert_eq!(daemon_refusal(&fx.work, STAGE).unwrap(), None);
+    assert!(fx.orchestrator.spool_drain_error_logged.contains(&key));
+
+    std::fs::remove_file(&journal).unwrap();
+    fx.tick_after_quiet();
+
+    fx.assert_filed_once();
+    assert!(!fx.orchestrator.spool_drain_error_logged.contains(&key));
+}
+
 #[test]
 #[serial]
 fn the_fourth_refusal_retires_the_writer_and_escalates() {
@@ -216,14 +248,26 @@ fn the_fourth_refusal_retires_the_writer_and_escalates() {
         Ok(())
     })
     .unwrap();
-    // A start time no process could have: the retirement probes the writer dead.
-    write_pid_file(&fx.work, &fx.writer, Some(u64::MAX));
+    // A real process the retirement has to kill, so the writer is live before
+    // the tick and only the retirement can take it down.
+    let writer_pid = spawn_orphan_process();
+    write_test_pid_identity(&fx.work, &fx.writer, writer_pid).unwrap();
+    let live = live_worker_sessions(&fx.work, &fx.stage()).unwrap();
+    assert_eq!(live.len(), 1, "the writer is live before the tick");
     fx.record(&fx.writer.id);
 
     fx.tick();
 
     let stage = fx.stage();
     assert_eq!(stage.status, StageStatus::NeedsHumanReview);
+    assert_eq!(
+        stage.session, None,
+        "the retirement released the writer's session"
+    );
+    assert!(
+        !crate::process::is_process_alive(writer_pid),
+        "the retirement killed the writer"
+    );
     let reason = stage.review_reason.clone().unwrap_or_default();
     assert!(reason.contains("loom stage human-review"), "{reason}");
     assert!(

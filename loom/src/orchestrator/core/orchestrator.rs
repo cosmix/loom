@@ -332,14 +332,7 @@ impl Orchestrator {
     /// a retirement that fails, is named in the review reason instead, and
     /// `loom stage human-review --approve` refuses while it is live.
     fn escalate_dispute(&mut self, escalation: Escalation) {
-        let unretired = match self.retire_disputing_agents(&escalation.stage_id) {
-            Ok(survivors) if survivors.is_empty() => None,
-            Ok(survivors) => Some(format!(
-                "session(s) {} survived the retirement kill",
-                survivors.join(", ")
-            )),
-            Err(error) => Some(format!("its agents could not be retired: {error:#}")),
-        };
+        let unretired = unretired_detail(self.retire_disputing_agents(&escalation.stage_id));
         let escalation = match unretired {
             Some(detail) => {
                 clear_status_line();
@@ -352,6 +345,20 @@ impl Orchestrator {
             None => escalation,
         };
         escalation.write(&self.config.work_dir);
+    }
+}
+
+/// What a stage's review reason says of a retirement that left agents behind,
+/// or `None` when `retired` took every agent down. `retired` is the result of
+/// `retire_stage_agents`: the ids of the survivors, or why it failed.
+pub(super) fn unretired_detail(retired: Result<Vec<String>>) -> Option<String> {
+    match retired {
+        Ok(survivors) if survivors.is_empty() => None,
+        Ok(survivors) => Some(format!(
+            "session(s) {} survived the retirement kill",
+            survivors.join(", ")
+        )),
+        Err(error) => Some(format!("its agents could not be retired: {error:#}")),
     }
 }
 

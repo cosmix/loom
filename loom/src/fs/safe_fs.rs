@@ -220,8 +220,11 @@ fn portable_open_walk(
         let fd = openat_retrying_create_race(cur, &c, flags, mode);
         if fd < 0 {
             let err = io::Error::last_os_error();
-            let path = String::from_utf8_lossy(comp).into_owned();
-            return Err(err).with_context(|| format!("safe_fs: openat failed on '{}'", path));
+            // A newline in a name would split this message, and refusal problems are
+            // split on newlines. Escaped with std because `fs` must not depend on
+            // `verify`, which owns the richer `escaped`; the mkdirat messages do the same.
+            return Err(err)
+                .with_context(|| format!("safe_fs: openat failed on '{}'", comp.escape_ascii()));
         }
         // Drop any previous intermediate fd we owned.
         if last {
@@ -296,10 +299,7 @@ pub fn safe_create_dir_all_in_workdir(
             let raw = err.raw_os_error().unwrap_or(0);
             if raw != libc::EEXIST {
                 return Err(err).with_context(|| {
-                    format!(
-                        "safe_fs: mkdirat failed on '{}'",
-                        String::from_utf8_lossy(comp)
-                    )
+                    format!("safe_fs: mkdirat failed on '{}'", comp.escape_ascii())
                 });
             }
         }
@@ -313,7 +313,7 @@ pub fn safe_create_dir_all_in_workdir(
             return Err(io::Error::last_os_error()).with_context(|| {
                 format!(
                     "safe_fs: openat after mkdir failed on '{}'",
-                    String::from_utf8_lossy(comp)
+                    comp.escape_ascii()
                 )
             });
         }

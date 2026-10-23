@@ -107,13 +107,16 @@ fn relay_verdict(
     let raw = std::fs::read_to_string(&draft)
         .with_context(|| format!("Failed to read verdict file: {}", draft.display()))?;
     // The dispute's kind is in the state directory, which this session cannot
-    // read, so the notice names what each kind does with the verdict.
+    // read, so the notice names what each kind does with the verdict. Only a
+    // needs-more-evidence draft can escalate (`parse_and_validate`), so its
+    // missing question is all this asks for; a reject or accept without its
+    // grounding is coerced or refused when recorded, with the defect named.
     if let verdict::ValidationOutcome::Escalate { reason } = verdict::parse_and_validate(&raw) {
         writeln!(
             sink.stderr(),
-            "This verdict cannot be acted on as written ({reason}). Once relayed, the \
-             orchestrator escalates stage '{stage_id}' to NeedsHumanReview instead of \
-             recording it; a freeze-refusal dispute refuses it instead, so write at least \
+            "This needs-more-evidence verdict cannot be acted on as written ({reason}). Once \
+             relayed, the orchestrator escalates stage '{stage_id}' to NeedsHumanReview instead \
+             of recording it; a freeze-refusal dispute refuses it instead, so write at least \
              one question and run this command again."
         )
         .context("failed to write the verdict notice")?;
@@ -327,6 +330,35 @@ mod tests {
         assert!(
             notice.contains("a freeze-refusal dispute refuses it"),
             "{notice}"
+        );
+        assert!(
+            notice.contains("needs-more-evidence verdict") && notice.contains("one question"),
+            "{notice}"
+        );
+    }
+
+    #[test]
+    fn a_reject_without_grounding_is_not_told_to_write_a_question() {
+        let judge = judge("adjudication");
+        let draft = write_draft(&judge, r#"{"verdict":"reject"}"#);
+        let mut sink = BufferSink::default();
+
+        relay_verdict(
+            &judge.context,
+            "s1",
+            1,
+            &draft,
+            &judge.project,
+            uid(),
+            &mut sink,
+        )
+        .unwrap();
+
+        assert_eq!(tickets(&judge).len(), 1);
+        let stderr = String::from_utf8(sink.err).unwrap();
+        assert!(
+            !stderr.contains("cannot be acted on as written"),
+            "{stderr}"
         );
     }
 }

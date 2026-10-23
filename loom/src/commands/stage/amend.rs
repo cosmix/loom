@@ -20,7 +20,8 @@ use crate::plan::{apply_amendment, AmendmentField, AmendmentPatch, AmendmentRequ
 
 const DEFAULT_REASON: &str = "operator amendment via loom stage amend";
 
-/// `loom stage amend` — repair a stage's `acceptance` or `wiring` array.
+/// `loom stage amend` — repair one of a stage's `acceptance`, `wiring`,
+/// `wiring_tests`, `contracts` or `harness` arrays.
 ///
 /// `field`/`patch` are already-validated domain types built by the caller
 /// from the CLI's `--field`/`--op`/`--index`/`--value` flags; this function
