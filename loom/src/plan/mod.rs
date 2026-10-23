@@ -7,7 +7,7 @@
 
 pub mod amendment;
 mod amendment_catch_up;
-mod amendment_fields;
+pub(crate) mod amendment_fields;
 pub mod graph;
 pub(crate) mod inputs;
 pub mod parser;

@@ -5,8 +5,11 @@
 //! and the writer's files and notes (`freeze_refusal_evidence.rs`).
 
 use super::{KindPromptInput, Prompt};
-use crate::verify::contracts::collection::{ScaffoldEdit, ScaffoldModule};
 use crate::verify::contracts::refusal::WRITER_PREFIX;
+
+// The one scaffold wording lives with the contract signal; the briefing's evidence
+// and the next writer's notice reach it through here.
+pub(crate) use crate::orchestrator::signals::scaffold_line;
 
 #[path = "freeze_refusal_evidence.rs"]
 mod evidence;
@@ -43,8 +46,9 @@ fn rules() -> String {
         "## Rules\n\n\
          - A problem labelled `writer's claim` came from a file the contract writer could \
          write (`{WRITER_PREFIX}`), as did every memory entry below: confirm a claim before \
-         you rely on it. Every other problem, and loom's re-check of the change set, is \
-         loom's own.\n\
+         you rely on it. A problem labelled `run output, unverified` quotes a host run's \
+         error or log: re-check it. Every other problem, and loom's re-check of the change \
+         set, is loom's own.\n\
          - A harness glob is for test-only files (fixtures, helpers), never production \
          source. Recording refuses a harness glob that matches production source in the \
          worktree or a path the derived scaffold names.\n\
@@ -52,8 +56,8 @@ fn rules() -> String {
          A scaffold problem is fixed by the writer, or by a contracts amendment that moves \
          the contract file.\n\
          - An acceptance amendment only replaces a format-check criterion (listed below) \
-         with another format-check command, when the criterion cannot pass on the contract \
-         files the plan requires; cite why.\n\
+         with another format-check command that sets no exit code or output expectation, \
+         when the criterion cannot pass on the contract files the plan requires; cite why.\n\
          - When the first problem starts `infrastructure:`, the refusal is no one's fault: \
          reject, with the instructions \"run the freeze again unchanged\".\n\
          - Every claim in your reasoning cites evidence: a file:line, a quoted problem, or \
@@ -97,33 +101,6 @@ criterion. needs-more-evidence needs at least one question. If recording
 refuses the verdict, it names why: correct the JSON and record it again.
 
 "#
-}
-
-/// One scaffold edit as a sentence: what the briefing and the next writer's
-/// notice show.
-pub(crate) fn scaffold_line(edit: &ScaffoldEdit) -> String {
-    match edit {
-        ScaffoldEdit::Declare { path, module } => {
-            format!("in `{path}`, {}", declaration(module))
-        }
-        ScaffoldEdit::CreateRoot { paths, modules } => {
-            let paths: Vec<String> = paths.iter().map(|path| format!("`{path}`")).collect();
-            let held: Vec<String> = modules.iter().map(declaration).collect();
-            format!(
-                "a new {} holding only {}",
-                paths.join(" or "),
-                held.join(", ")
-            )
-        }
-    }
-}
-
-fn declaration(module: &ScaffoldModule) -> String {
-    if module.test_only {
-        format!("`#[cfg(test)] mod {};`", module.name)
-    } else {
-        format!("`mod {};`", module.name)
-    }
 }
 
 #[cfg(test)]

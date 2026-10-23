@@ -83,6 +83,7 @@ pub use format::{
 pub use adjudication::generate_adjudication_signal;
 pub(crate) use cache::stable_prefix_for;
 pub use contract::generate_contract_signal;
+pub(crate) use contract::scaffold_line;
 pub(crate) use format::format_knowledge_brief;
 pub use generate::{
     build_embedded_context_with_stage, generate_signal, generate_signal_with_metrics,

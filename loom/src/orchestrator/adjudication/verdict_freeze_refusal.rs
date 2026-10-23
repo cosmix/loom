@@ -9,7 +9,9 @@
 //!   copy of the stage's fields, so each index is read against the field as
 //!   the earlier entries left it, as the apply reads it;
 //! - an `acceptance` entry only replaces a format-check criterion with
-//!   another format check;
+//!   another format check that sets no output expectation (`exit_code`,
+//!   `stdout_contains`, `stdout_not_contains`, `stderr_empty`), since one
+//!   would change what the gate accepts;
 //! - a harness glob matches no production source among the worktree's files
 //!   and no path the derived scaffold names (loom derives the scaffold; a
 //!   harness holds test-only files);
@@ -28,6 +30,7 @@ use std::path::Path;
 use crate::models::dispute::{DisputeVerdict, PlanPatch};
 use crate::models::stage::{AcceptanceCriterion, Stage};
 use crate::plan::amendment::{AmendmentField, AmendmentPatch};
+use crate::plan::amendment_fields::apply_patch_vec;
 use crate::plan::schema::ContractSpec;
 use crate::stage_service::contracts::Site;
 use crate::verify::contracts::changes::{harness_files, stage_base};
@@ -231,12 +234,12 @@ impl Replay {
         match entry.field {
             AmendmentField::Contracts => {
                 let value = parsed::<ContractSpec>(&entry.patch, "contract spec")?;
-                splice(&mut self.contracts, &entry.patch, value)
+                replay_patch(&mut self.contracts, &entry.patch, value)
             }
             AmendmentField::Harness => {
                 let value = glob(&entry.patch)?;
                 self.added_globs.extend(value.clone());
-                splice(&mut self.harness, &entry.patch, value)
+                replay_patch(&mut self.harness, &entry.patch, value)
             }
             AmendmentField::Acceptance => {
                 self.replace_format_check(&entry.patch, &site.working_dir)
@@ -269,6 +272,14 @@ impl Replay {
                 replacement.command()
             ));
         }
+        if expects_output(&replacement) {
+            return Err(format!(
+                "the replacement `{}` sets an output expectation (exit_code, stdout_contains, \
+                 stdout_not_contains or stderr_empty), which changes what the gate accepts; a \
+                 format check passes on exit status 0 alone",
+                replacement.command()
+            ));
+        }
         self.acceptance[*index] = replacement;
         Ok(())
     }
@@ -298,6 +309,18 @@ impl Replay {
         }
         Ok(())
     }
+}
+
+/// Whether an extended criterion judges more than the command's exit status 0:
+/// only `command` and `timeout_secs` leave the format-check gate as it was.
+fn expects_output(criterion: &AcceptanceCriterion) -> bool {
+    let AcceptanceCriterion::Extended(check) = criterion else {
+        return false;
+    };
+    !check.stdout_contains.is_empty()
+        || !check.stdout_not_contains.is_empty()
+        || check.stderr_empty.is_some()
+        || check.exit_code.is_some_and(|code| code != 0)
 }
 
 /// Every path the scaffold of `contracts` names, both alternatives of a new
@@ -354,22 +377,15 @@ fn glob(patch: &AmendmentPatch) -> Result<Option<String>, String> {
     }
 }
 
-/// `patch` applied to `list` as `apply_amendment` applies it.
-fn splice<T>(list: &mut Vec<T>, patch: &AmendmentPatch, value: Option<T>) -> Result<(), String> {
+/// `apply_patch_vec` fails here only on an index: `parsed` and `glob` give
+/// every replace and insert a value.
+fn replay_patch<T: Clone>(
+    list: &mut Vec<T>,
+    patch: &AmendmentPatch,
+    value: Option<T>,
+) -> Result<(), String> {
     let len = list.len();
-    match (patch, value) {
-        (AmendmentPatch::Replace { index, .. }, Some(value)) if *index < len => {
-            list[*index] = value
-        }
-        (AmendmentPatch::Insert { index, .. }, Some(value)) if *index <= len => {
-            list.insert(*index, value)
-        }
-        (AmendmentPatch::Delete { index }, _) if *index < len => {
-            list.remove(*index);
-        }
-        _ => return Err(out_of_range(patch.index(), len)),
-    }
-    Ok(())
+    apply_patch_vec(list, patch, value).map_err(|_| out_of_range(patch.index(), len))
 }
 
 fn out_of_range(index: usize, len: usize) -> String {

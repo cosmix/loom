@@ -14,8 +14,11 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::dispute::{Citation, DisputeKind, DisputeVerdict, PlanPatch};
 use crate::models::stage::{AcceptanceCriterion, Stage, StageStatus};
 use crate::plan::amendment::{apply_amendment, AmendmentField, AmendmentPatch, AmendmentRequest};
+use crate::plan::schema::ContractSpec;
 use crate::verify::contracts::store::load_freeze;
 use crate::verify::contracts::test_support::{contract, contract_worktree};
+#[cfg(feature = "source-graph")]
+use crate::verify::contracts::test_support::{liquidmon_contract, LIQUIDMON_FILE};
 use crate::verify::transitions::load_stage;
 
 /// A v2 plan whose stage `s1` holds one contract, one harness glob and a
@@ -57,6 +60,11 @@ struct Fixture {
 /// The stage under adjudication of a refused freeze, its worktree holding the
 /// unfrozen contract file, and `plan` named in the state directory's config.
 fn fixture(plan: &str) -> Fixture {
+    fixture_with(plan, vec![contract()])
+}
+
+/// [`fixture`] for a stage holding `contracts`, which `plan` must list too.
+fn fixture_with(plan: &str, contracts: Vec<ContractSpec>) -> Fixture {
     let tmp = TempDir::new().unwrap();
     let repo = tmp.path().join("repo");
     contract_worktree(&repo, "s1");
@@ -80,7 +88,7 @@ fn fixture(plan: &str) -> Fixture {
             worktree: Some("s1".to_string()),
             working_dir: Some(".".to_string()),
             harness: vec!["tests/support/**".to_string()],
-            contracts: vec![contract()],
+            contracts,
             acceptance: vec![
                 AcceptanceCriterion::Simple("cargo test".to_string()),
                 AcceptanceCriterion::Simple("cargo fmt --check".to_string()),
@@ -191,6 +199,62 @@ fn an_accepted_contracts_patch_names_the_old_file_to_delete() {
     );
     assert!(notice.contains("### Old contract files"), "{notice}");
     assert!(notice.contains("`tests/x_contract.rs`"), "{notice}");
+}
+
+/// The old contract sat in a module the base does not declare: the notice
+/// also lists the scaffold only that contract needed.
+#[cfg(feature = "source-graph")]
+#[test]
+fn an_accepted_contracts_patch_names_the_old_scaffold_to_delete() {
+    let plan = PLAN
+        .replace("tests/x_contract.rs", LIQUIDMON_FILE)
+        .replace("tests::rejects_x", &liquidmon_contract().test);
+    let fx = fixture_with(&plan, vec![liquidmon_contract()]);
+    let spec = "id: rejects-x\nfile: tests/y_contract.rs\ntest: tests::rejects_x\n\
+                runner: cargo-test\nscenario: x arrives\nrejects: accepting x\n";
+
+    accept(
+        &fx,
+        json!([{"field": "contracts", "op": "replace", "index": 0, "value": spec}]),
+    );
+
+    assert_requeued_for_a_writer(&fx);
+    let notice = notice(&fx);
+    assert!(
+        notice.contains("`src/device_lock/contract_tests.rs`"),
+        "{notice}"
+    );
+    assert!(notice.contains("Their scaffold:"), "{notice}");
+    assert!(
+        notice.contains("- in `src/lib.rs`, `mod device_lock;`"),
+        "{notice}"
+    );
+    assert!(
+        notice.contains("a new `src/device_lock/mod.rs`"),
+        "{notice}"
+    );
+    assert!(
+        notice.contains("`#[cfg(test)] mod contract_tests;`"),
+        "{notice}"
+    );
+}
+
+#[test]
+fn an_unreadable_old_scaffold_is_said_to_be_unknown() {
+    let fx = fixture(PLAN);
+    let mut stage = load_stage("s1", &fx.work).unwrap();
+    let before = stage.contracts.clone();
+    stage.contracts[0].file = "tests/y_contract.rs".to_string();
+    stage.worktree = Some("gone".to_string());
+
+    let section = super::old_files_section(&fx.work, &stage, &before);
+
+    assert!(section.contains("- `tests/x_contract.rs`"), "{section}");
+    assert!(
+        section.contains("(their scaffold is unknown: "),
+        "{section}"
+    );
+    assert!(!section.contains("Their scaffold:"), "{section}");
 }
 
 #[test]
