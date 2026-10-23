@@ -148,3 +148,7 @@ A missing subagent report is not a missing result; codex worker briefing gotchas
 ## Sandbox Route Closure
 
 A metaplan that denied the `Workflow` tool every ultracode stage runs on, a sibling-directory deny nested above a `config.worktree` deny that aborts bubblewrap, a probe control the Knowledge capsule does not grant, and metaplan reasons that went stale against the tree: [Sandbox Paths and Settings](mistakes/sandbox-and-settings.md). A `rustfmt` edition and recursion, a filtered `loom check` that hid the relay line, and the scratch directory a read-only reviewer cannot read: [Brief and Dev-Server Gotchas](mistakes/typed-config-values-process.md). An integration-verify suite criterion with no extended timeout: [Cargo Churn and Stall Kills](mistakes/completion-runtime.md).
+
+- [contract-phase-human-blocking](mistakes/contract-phase-human-blocking.md): a plan defect in the contract phase parked the stage on the operator. Rule: no stage waits on a human for something loom or an agent can resolve; a human is reached only after the automatic budgets run out.
+
+- [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md): direct-mode codex forwards (Linux nested-bubblewrap fallback) leave no companion job, so reconcile, lifecycle and the status model display all miss them.

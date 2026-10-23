@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 68 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 187 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 150 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 154 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 220 |
 
@@ -116,6 +116,7 @@
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | A .git dir is no proof | 156 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Bug reports; brief flags | 315 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, audit, install.sh | 342 |
+| [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) | Direct codex forwards unseen by reconcile and status | 13 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented itself | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader fixed by banning reads | 102 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex brief pitfalls | 110 |
@@ -124,6 +125,7 @@
 | [completion-runtime](mistakes/completion-runtime.md) | Cargo churn, stall kills | 64 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Computed values unread | 283 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locked-handle writes, save races | 46 |
+| [contract-phase-human-blocking](mistakes/contract-phase-human-blocking.md) | Contract freeze refusal waited on the operator | 11 |
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork after threads | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) | Two daemons shared .loom/work | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | No process may outlive its test | 55 |
