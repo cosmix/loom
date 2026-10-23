@@ -10,9 +10,12 @@
 //! stage completes, [`run_dir`] resolves where and how a contract runs. The
 //! helpers here are what the freeze CLI, the daemon's freeze handler and the
 //! completion check share, so the three agree on which adapter runs a contract
-//! and which paths a contract session may touch.
+//! and which paths a contract session may touch. [`collection`] derives the
+//! scaffold that puts a contract file into a test target and proves the
+//! frozen file is the one compiled under the contract's test name.
 
 pub mod changes;
+pub mod collection;
 pub mod completion;
 pub mod format_gate;
 pub mod frozen_set;
