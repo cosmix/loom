@@ -1,6 +1,6 @@
 # Execution Containment
 
-> Command containment, limits
+> Command containment
 
 ## Read This First: What "Containment" Means In Loom
 

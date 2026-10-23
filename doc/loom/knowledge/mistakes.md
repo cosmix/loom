@@ -152,3 +152,7 @@ A metaplan that denied the `Workflow` tool every ultracode stage runs on, a sibl
 - [contract-phase-human-blocking](mistakes/contract-phase-human-blocking.md): a plan defect in the contract phase parked the stage on the operator. Rule: no stage waits on a human for something loom or an agent can resolve; a human is reached only after the automatic budgets run out.
 
 - [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md): direct-mode codex forwards (Linux nested-bubblewrap fallback) leave no companion job, so reconcile, lifecycle and the status model display all miss them.
+
+## Contract Autonomy Delivery
+
+A chain check that read attributes by position and refused by deny-list (a `cfg` bypass), recording-time verdict validation that skipped the apply's per-patch order, escaping names where only refusal fails closed, worker checks that missed shared-fixture consumers and the maintainability test, and a package-free fixture base: [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md).

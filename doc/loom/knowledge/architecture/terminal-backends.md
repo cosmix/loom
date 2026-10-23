@@ -1,6 +1,6 @@
 # Terminal Backends
 
-> Native and tmux session backends
+> Native and tmux backends
 
 ## Two Lanes Behind One Dispatcher
 

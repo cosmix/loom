@@ -1,6 +1,6 @@
 # Architecture
 
-> Components, data flow, dependencies
+> Components, data flow, modules
 >
 > **Related files:** [patterns.md](patterns.md) for design patterns, [entry-points.md](entry-points.md) for code navigation, [conventions.md](conventions.md) for coding standards.
 
@@ -241,7 +241,7 @@ Typed value read-path replacing the old stringly `UserConfig::value_of`. See [Ty
 
 `loom.version: 2` turns on contracts (tests written and frozen by a separate `Contract` session before the
 implementer starts), the zero-test guard, wiring v2 and `reachable`, test integrity, impact-selected tests, and a
-recorded review gate, all read from `stage.plan_version == 2`. Disputes gain three kinds (findings, contract,
-integrity). Detail: [contract-phase](architecture/contract-phase.md), [verification-v2-gates](architecture/verification-v2-gates.md),
+recorded review gate, all read from `stage.plan_version == 2`. Disputes gain five kinds (findings, contract,
+integrity, impact tests, and the loom-filed freeze refusal). Rust contracts are proven compiled under their test name by the scaffold and chain check ([contract-collection](architecture/contract-collection.md)); a refused freeze goes to adjudication, never to the operator. Detail: [contract-phase](architecture/contract-phase.md), [verification-v2-gates](architecture/verification-v2-gates.md),
 [test-runner-adapters](architecture/test-runner-adapters.md), [plan fields and lints, provision, freeze formatter gate](architecture/plan-lifecycle-and-fields.md),
 [adjudication-lifecycle](architecture/adjudication-lifecycle.md).

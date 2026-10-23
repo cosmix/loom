@@ -1,6 +1,6 @@
 # Testing And Lint
 
-> Lint/test discipline
+> Lint, test discipline
 
 ## Test Code: Struct Init Without Default
 

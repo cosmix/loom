@@ -8,7 +8,7 @@ verified: 4458f15d4ed3e0fb69cc87bdbdf1381fc937473e
 ---
 # Memory Spool and Drain
 
-> Read before touching loom memory
+> Memory spool and relay
 
 ## The Problem It Solves
 

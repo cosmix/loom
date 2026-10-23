@@ -2,7 +2,7 @@
 ---
 # Git And Build Workflow
 
-> Git, cargo, CI paths, size ledger
+> Git, cargo, CI, ledger
 
 ## Git Operations
 

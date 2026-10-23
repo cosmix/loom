@@ -1,6 +1,6 @@
 # Agent Rule-Bending Hardening
 
-> Enforcement classes, hard-stop matrix
+> Enforcement classes
 
 ## Why This Entry Exists
 

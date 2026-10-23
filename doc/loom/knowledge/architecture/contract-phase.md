@@ -1,6 +1,6 @@
 # Contract Phase
 
-> Contract session, freeze, handover
+> Contract session, freeze
 
 ## Contract Phase: A Second Writer Session Before the Implementer
 
@@ -11,31 +11,40 @@ The stage stays `Executing` across both sessions: no new `StageStatus`, no new e
 `spawn_contract_session` takes the `Session` by value, like `spawn_session`.
 
 **The contract writer** gets a contract signal (`orchestrator/signals/contract.rs`): the contracts table,
-`harness`, the knowledge brief and the language skills. It writes only contract and harness files, every
-contract test must fail now, and it ends with `loom stage contracts freeze <stage-id>`. It must not commit
-or complete the stage; `commit-guard.sh` gives it a contract-specific reminder.
+`harness`, the scaffold edits it may make (`scaffold_line`, the one description shared with the
+freeze-refusal briefing), the knowledge brief and the language skills. It writes contract files, harness
+files and the scaffold, every contract test must fail now, and it ends with
+`loom stage contracts freeze <stage-id>`. It must not commit or complete the stage; `commit-guard.sh` gives it
+a contract-specific reminder and calls no loom command for a contract session.
 
-**Freeze** (`commands/stage/contracts/freeze.rs`, runs in the agent's sandbox):
+**Freeze** has two halves. The CLI pre-check (`commands/stage/contracts/freeze.rs::check_changes`, runs in the
+agent's sandbox):
 
-1. changed paths versus the stage base must each be a contract `file` or match a `harness` glob. It reuses
-   `verify::contracts::changes::{stage_base, changed_paths}` (merge base with the configured target,
-   `status -uall`), so the CLI and the daemon re-check agree by construction. `git status --porcelain`
-   names an untracked directory as `dir/`, so a path-by-path check must expand it;
-2. each contract file exists;
-3. each contract runs through its adapter's `single_test_command` (or, with no adapter, its own `test`
-   string via `verify::contracts::contract_command`) at the stage's resolved confinement. `Failed` and
-   `BuildFailed` pass the freeze; `Passed` and `NotSelected` are errors; `Unparsed` needs a non-zero exit;
-4. `Request::FreezeContracts` goes over the dispute-criteria transport (socket, relay, spool).
+1. every changed path versus the stage base (`verify::contracts::changes::{stage_base, changed_paths}`: merge
+   base with the configured target, `status -uall`, so the CLI and the daemon agree by construction) is a
+   contract `file`, matches a `harness` glob, or is a scaffold edit, and the scaffold and the module chains are
+   sound (`collection::freeze_scaffold`: the strict scaffold diff, then, once the diff is clean, the chain
+   check of every Rust contract and the run directory of every one that sets `cwd`; see
+   [contract-collection](contract-collection.md)). `git status --porcelain` names an untracked directory as
+   `dir/`, so a path-by-path check must expand it. A worktree path that is not UTF-8 or holds a control
+   character is refused at the listing (`changes::listed_name`), never escaped: an escaped name read back as a
+   path can name a different file, so only refusal fails closed;
+2. each contract file exists.
 
-**Daemon handler** (`daemon/server/contracts.rs`) requires the caller to be the stage's current Contract
-session, re-checks step 1 and file existence, hashes every contract and harness-matched file, copies them to
-`.loom/work/contracts/<stage>/files/`, and writes `freeze.json`. It trusts the CLI's red-run outcomes and does
-not re-run agent-written tests: that would execute untrusted code outside the sandbox, and completion
-re-runs every frozen contract. Every refusal returns `Response::Error`; only a failed freeze write returns
-`Err`, because `fs/stage_request/apply.rs` retries an `Err` each tick without truncating the spool and a
-permanent refusal would wedge it. The freeze copies and hashes EVERY existing file a harness glob matches,
-tracked or not, so a glob over a production file freezes it for the implementer and `src/**/*.rs` freezes the
-crate (cap 500 files, 64 MiB). Harness globs belong on test-only files.
+`Request::FreezeContracts` then goes over the dispute-criteria transport (socket, relay, spool). The daemon
+(`stage_service::handle_freeze_contracts`) admits only the stage's running Contract session and queues a
+`Freeze` host job for the HEAD and tree digest the writer saw. The job (`host_verify/freeze.rs`) re-checks
+the changes with git pinned to the stage's registered git directory, runs every contract through its
+adapter's `single_test_command` (or, with no adapter, its own `test` string via
+`verify::contracts::contract_command`) at the stage's resolved confinement, runs the format gate, and checks
+its binding (HEAD, tree digest, file hashes, contract definitions) again. `Failed` and `BuildFailed` pass the
+freeze; `Passed` and `NotSelected` are errors; `Unparsed` needs a non-zero exit. Applying the job
+(`freeze::apply_freeze_result`, `stage_service::freeze_with_reports`) re-checks the changes, hashes every
+contract and harness-matched file, requires them to equal what the run hashed, copies them to
+`.loom/work/contracts/<stage>/files/`, and writes `freeze.json`. The freeze copies and hashes EVERY existing
+file a harness glob matches, tracked or not, so a glob over a production file freezes it for the implementer
+and `src/**/*.rs` freezes the crate (cap 500 files, 64 MiB). Harness globs belong on test-only files. A
+refusal at either half goes to adjudication ([Refused Freezes Are Disputed](#refused-freezes-are-disputed)).
 
 **Handover.** `Detection::detect_session_changes` (`orchestrator/monitor/detection.rs`, `contract_phase_event`)
 raises `ContractPhaseFinished` when an `Executing` stage's Contract session has a `freeze.json`, and
@@ -52,10 +61,14 @@ Contract session with no PID identity is released (record marked, signal dropped
 not taken down.
 
 **Completion** (`verify/contracts/completion.rs`) requires `freeze.json`, every frozen file's sha256 unchanged,
-and each contract `Passed` through the criteria runner (certified cache reused); `NotSelected` fails. A
-contract without an adapter passes on exit 0 with a warning. `loom stage contracts show` prints the record;
-`loom stage contracts restore <stage> [--contract <id>]` copies frozen content back. `stage.resolved_base` is
-not what freeze diffs against.
+the chain check of every Rust contract against the implementer's tree (`collection_problems`: `chain_problems`
+plus `run_dir_problems` for the directory the contract runs from, so a scaffold the implementer rewrote after
+the freeze cannot compile the frozen file out), and each contract `Passed` through the criteria runner
+(certified cache reused); `NotSelected` fails. Whether a contract is Rust follows the adapter recorded at
+freeze (`is_rust`); `run_contract` still re-detects the adapter on the implementer's worktree to resolve the
+run and judge it. A contract without an adapter passes on exit 0 with a warning. `loom stage contracts show`
+prints the record; `loom stage contracts restore <stage> [--contract <id>]` copies frozen content back.
+`stage.resolved_base` is not what freeze diffs against.
 
 **Session-kind filters.** A second worker kind breaks every filter keyed on `SessionType::Stage`. Six sites
 missed it: `orchestrator/coherence.rs` (`worker_session_type`, now `is_worker_session_type` and
@@ -106,26 +119,6 @@ never enumerates outside the worktree. Non-UTF-8 names reach the refusal `\xNN`-
 (`fs/safe_read.rs`) opens `O_NONBLOCK`, so a FIFO planted as a contract file cannot hang the
 daemon's own read of it.
 
-## A Refused Freeze Parks the Stage
-
-`verify::contracts::refusal` tracks a contract writer's latest freeze attempt. In
-relay mode — the writer's sandbox cannot reach the daemon socket directly — a refusal is left at
-`$LOOM_SCRATCH_DIR/contract-freeze-refused.txt` and cleared on the next attempt that reaches the
-daemon, so the file always reflects the latest attempt. `loom-hooks/commit-guard.sh`'s Stop hook
-sees the file when the writer's session stops and runs `loom stage waiting <id>`
-(`park_contract_stage`). A relayed freeze the daemon itself refuses parks the same way straight
-from the inbox drain (`orchestrator/core/inbox_drain/freeze.rs::park_refused_freeze` →
-`refusal::park_refused_relay`), without waiting for the writer to stop — the relay already told
-it to end its turn. Either path moves the stage `Executing` → `WaitingForInput` with
-`review_reason = "contract freeze refused; fix and freeze again: <problems>"`, the reason `loom
-status` shows as NEEDS INPUT.
-
-Resume paths: the writer runs a tool (the monitor moves a waiting stage back to `Executing` on
-its session's next tool call), `loom stage resume <id>`, or a later freeze the daemon accepts
-(`stage_service/contracts.rs::end_refusal_wait`). `loom stage retry` still refuses a stage in
-`WaitingForInput`. A writer that stops before ever attempting a freeze leaves no refusal file, so
-nothing is parked.
-
 ## Visible Everywhere `loom status` Renders
 
 Contract phase = `StageStatus::Executing` + `SessionType::Contract` on a `StageType::Standard`
@@ -166,3 +159,68 @@ An accepted `dispute-contract` (`orchestrator/adjudication/apply_contract.rs`) r
 - the stage must already be frozen; `refreeze_set` is called by the accept only.
 
 The adjudicator's accept notice lists the re-frozen paths; see the cap suggestion in [Gate-Dedup and Integration-Verify Review Suggestions](../concerns/verification-v2-followups.md#gate-dedup-and-integration-verify-review-suggestions).
+
+## Refused Freezes Are Disputed
+
+A refused freeze never waits for the operator. loom files it as a `freeze-refusal` dispute
+(`DisputeKind::FreezeRefusal`), an adjudicator decides it, and a fresh contract writer starts with the verdict
+(see [mistakes/contract-phase-human-blocking.md](../mistakes/contract-phase-human-blocking.md)).
+
+**Where a refusal is kept.** `verify::contracts::refusal` holds both sources.
+
+- The CLI pre-check in the writer's sandbox cannot write the state directory, so it leaves its problems at
+  `$LOOM_SCRATCH_DIR/contract-freeze-refused.txt` (`REFUSAL_FILE`, mirrored by `commit-guard.sh`) and clears the
+  file when an attempt reaches the daemon, so it always stands for the latest attempt. The file is the agent's
+  text: read bounded, never through a symlink, filed with the `writer-reported:` prefix (`WRITER_PREFIX`).
+- A refusal the daemon makes (a relayed admission in `orchestrator/core/inbox_drain/freeze.rs`, a host Freeze
+  job in `host_verify/freeze.rs`) is written to `.loom/work/contracts/<stage>/refused.json`
+  `{session_id, problems, at, source, declined}`, a file only the daemon writes. Interrupted or daemon-stopped
+  host runs and unreadable reports or bindings carry a first problem `infrastructure:`
+  (`INFRASTRUCTURE_PREFIX`); host error, job detail and log text is one `run-output:` problem
+  (`run_output_line`), escaped to a single line and rendered `[run output, unverified]` in a fence so a writer
+  cannot forge `[loom]` labels. The inbox drain never retries (delivery is at most once): a failed
+  `refused.json` write settles the request refused, the writer sees a failure and freezes again, and hung
+  detection is the backstop. A Freeze job that exhausts `MAX_APPLY_ATTEMPTS` records no refusal at all (see
+  [concerns/source-graph-review-backlog.md](../concerns/source-graph-review-backlog.md#give-up-leaves-freeze-refusals-unfiled)).
+
+**The one filer.** `Orchestrator::dispute_refused_freezes` (`orchestrator/core/event_handler/freeze_refusal.rs`)
+runs in `run_tick` before `hand_off_frozen_contract_phases`, manual mode included, for each `Executing` v2
+standard stage with contracts, nothing frozen and a current Contract session. It files a daemon record at once
+when it names the current writer (stale otherwise: dropped), and the writer's own file once the file and the
+session heartbeat are `REFUSAL_QUIET_SECS = 300` old and the session runs no subagent, since the writer may
+still fix and retry in the same turn. Filing goes through `stage_service::file_freeze_refusal`
+(`dispute_kinds.rs`); the transport entries refuse a freeze refusal outright, `DisputeKind::filed_by` admits
+only a Contract session, and a stage with no current session admits every kind but this one. The receipt key is
+`freeze-refusal-<first 32 hex of sha256(request key)>` because `validate_id` rejects `:`, `+` and `.`, and a
+retried filing reuses one request file. A filed refusal's record is removed; a record the admission declined is
+marked (`declined`) and never filed again. A fresh writer has a new session id, so neither source re-files for
+it.
+
+**Budget.** `tally.freeze_refusal_disputes` against `MAX_DISPUTES_PER_KIND = 3`. An exhausted budget makes
+`file_dispute_inner` decline (`FreezeRefusalFiling::Declined`) instead of escalating, because
+`escalate_exhausted` would write `NeedsHumanReview` while the writer still lives; the tick step retires the
+writer, then calls `escalate_freeze_refusal` (the 4th refusal), and a failed escalation after retirement is
+logged with the stage id. Approving the escalated stage in human review resets the respawn budget (`commands/stage/human_review.rs::handle_approve`) but not this tally.
+
+**The verdict** is checked when recorded (`orchestrator/adjudication/verdict_freeze_refusal.rs`,
+`RecordContext {work_dir, stage}`; the worktree is located only for an accept). Accept needs
+`plan_patch.patches` on `contracts`, `harness` or `acceptance`, replayed in array order over a copy of the
+stage's fields so each index reads as the apply reads it; an `acceptance` entry may only replace a format-check
+criterion with another that sets no output expectation; a harness glob may match no production source and no
+path the derived scaffold names; the entries replayed over the plan's own stage definition must leave a plan
+`schema::validate` accepts after EACH entry (`plan::apply_amendment` validates per patch and never lints),
+and the final plan adds no blocking `plan verify` lint compared with the unpatched one
+(`verdict_freeze_plan.rs`). Reject needs `instructions` for the next writer. Needs-more-evidence needs a
+question; the writer answers in `loom memory note` and freezes again, and a refusal of that freeze is a new
+filing, so the budget bounds the exchange. The briefing (`prompt/freeze_refusal.rs`,
+`freeze_refusal_evidence.rs`) re-derives the change-set check from `changes::special_files`,
+`collection::freeze_scaffold` and `changes::changed_paths` so the judge sees every changed path classified.
+
+**Apply** (`orchestrator/adjudication/apply_freeze_refusal.rs`): the writer is retired first. Each accepted
+patch is one amendment applied in order with dispute id `<dispute>.<k>`, so a retried apply skips what an
+earlier attempt applied; at the per-stage amendment cap (default 10, `plan/amendment.rs`) `amend_plan`
+escalates and nothing more applies. A `harness` patch value is a bare glob, never YAML (`**/x.json` reads as an
+alias, `a #1` loses its tail); every other field takes a YAML body. Every verdict re-queues the stage, held
+while a sibling dispute is unanswered, for a fresh writer on the same worktree: no freeze exists, so the
+contract phase starts again and the signal carries the notice (`disputes/<stage>/feedback.md`). No freeze
+record is read or written.

@@ -1,6 +1,6 @@
 # Target Guard
 
-> Accepted-tip record, hook, holds
+> Accepted tip, hook, holds
 
 ## Target Guard
 

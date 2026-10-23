@@ -1,6 +1,6 @@
 # Merge Resolver Sandbox
 
-> Resolver kept stage write denies
+> Resolver kept write denies
 
 ## A Merge Resolver Inherited the Stage's Write Denies and Gave Up Silently (2026-10-14)
 

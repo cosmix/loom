@@ -158,6 +158,8 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 | `loom/src/commands/stage/contracts/` | `loom stage contracts freeze\|show\|restore` |
 | `loom/src/orchestrator/core/event_handler/contract_phase.rs`, `core/contract_budget.rs`, `core/stage_spawn.rs` | contract-to-implementer handover, respawn budget, shared spawn tail |
 | `loom/src/verify/contracts/`, `verify/integrity/`, `verify/review/`, `verify/impact_tests.rs` | the v2 gates and their stores under `.loom/work/{contracts,reviews}/<stage>/` |
+| `loom/src/verify/contracts/collection/` (`rust/{targets,chain,items,scaffold}.rs`), `verify/contracts/refusal.rs` | contract scaffold, chain check and the refused-freeze records ([contract-collection](../architecture/contract-collection.md), [Refused Freezes Are Disputed](../architecture/contract-phase.md#refused-freezes-are-disputed)) |
+| `loom/src/orchestrator/core/event_handler/freeze_refusal.rs`, `orchestrator/adjudication/verdict_freeze_refusal.rs`, `orchestrator/adjudication/apply_freeze_refusal.rs` | the one filer of `freeze-refusal` disputes, and their verdict check and apply |
 | `loom/src/verify/goal_backward/{wiring_v2,definition_sites,reachable}.rs`, `context/worktree_graph.rs` | glob and literal wiring, definition-site exclusion, reachability |
 | `loom/src/testrun/` | 23 test-runner adapters, language profiles, shell quoting, zero-test recognition |
 | `loom/src/commands/project.rs`, `skills/project/{markers,runners,probe}.rs` | `loom project detect`, kind and runner detection |

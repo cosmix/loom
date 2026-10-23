@@ -1,6 +1,6 @@
 # Codex Plugin
 
-> Codex plugin install, forwarding
+> Codex plugin, forwarding
 
 ## Install and identity
 
@@ -362,3 +362,30 @@ at all. `codex-forward-guard.sh` is now registered for `SendMessage` too
 Stage evidence (`loom_stage_evidence` in `loom-hooks/_codex_forward.sh`, memoized, cheapest first) is the OR of three signals a stage agent cannot shed: E1, the hook's own `LOOM_STAGE_ID`/`LOOM_SESSION_ID`/`LOOM_WORK_DIR` (for an in-process subagent the hook is run by the stage's own `claude` process, whose environment the agent cannot alter); E2, any ancestor's INITIAL environment carrying one of those names (`/proc/<pid>/environ` on Linux, `/bin/ps eww` on macOS, depth 12), which catches a nested `env -i claude`; E3, the hook process being confined (`/proc/1/comm == bwrap` on Linux; a refused nested `/usr/bin/sandbox-exec` on macOS). A sandbox profile is inherited and cannot be dropped, which is what covers macOS, where a double-forked process reparents to launchd and leaves the ancestry E2 walks. The payload cwd, the sentinel, the transcript and anything under the worktree are agent-controlled and are never evidence.
 
 Rules for this code: every probe binary by absolute path (a nested session controls PATH); NO environment-variable test seam of any kind, because a seam that can hide evidence is the bypass; tests build real ancestry and a real `bwrap` (`loom-hooks/tests/codex-forward-guard-stage-evidence.sh`), and self-skip their no-evidence cases when run inside a stage. Known limits: a nested `claude` whose launcher controls its environment can also point it at a config directory with no hooks, or set `BASH_ENV`, so that case is the sandbox policy's job and no hook can close it; a plain session run inside the user's own bubblewrap or Seatbelt wrapper counts as confined and is still blocked (fail closed). The macOS branches were reviewed and not executed when written; verify on a Mac before relying on them.
+
+## Lifecycle Reconcile Reads Forward Receipts First
+
+A forward has two backends (`ForwardBackend`): `companion` (a codex-companion job under the plugin-data
+state root) and `direct` (`codex exec` run by the wrapper, chosen when the stage sandbox refuses a nested
+bubblewrap, which is the Linux stage sandbox). A direct forward leaves no companion job, so the forward
+receipt (`subagents/<stage>/forward-receipts.jsonl`, written by the receipt hook at PostToolUse after the run
+ends) is its only evidence. `codex_lifecycle::reconcile_codex_jobs` therefore routes EVERY authorization
+through its receipt first (`codex_lifecycle/direct.rs::receipt_outcome`, matched by exact receipt id):
+
+- a direct receipt records a `CodexExecution::Direct` row with producer `codex_direct` (state from the
+  receipt: `running`, `succeeded`, `failed` with its exit code, `canceled` and `timed_out` both Cancelled);
+- a companion receipt, or no receipt, falls through to `locate_job`;
+- an authorization with neither a receipt nor a job stays Active for `RECEIPT_WINDOW_SECS = 600` after
+  `authorized_at` (the wrapper's 540 s unit deadline plus the receipt write), then is Unknown;
+- a damaged receipt journal (truncated or malformed rows), a receipt that disagrees with its authorization,
+  or a `queued`/`unknown` direct receipt is Unknown and records nothing, companion rows included.
+
+A direct record's `turn_id` is optional (`subagent_lifecycle/codex_evidence.rs`); a companion record's is
+exact. `loom subagents watch` binds a stage's codex children the same way (`wait/codex_binding.rs::receipt_matches`
+maps a receipt to `CodexExecution::Companion` or `Direct`), and `loom status` reads the resulting lifecycle
+through `has_correlated_lifecycle` ([Execution-Model Ledgers](status-data-model.md#execution-model-ledgers)).
+See [mistakes/codex-direct-mode-invisible.md](../mistakes/codex-direct-mode-invisible.md).
+Known gaps: token discovery (`codex_lifecycle/token_threads.rs::authorized_threads`) still finds threads only
+through companion jobs, and inside the receipt window a `locate_job` error (ambiguous job, binding mismatch)
+reports Active until the window ends, because `jobs.rs` has no typed error to tell it from absence; both are
+in [concerns/contract-autonomy-followups.md](../concerns/contract-autonomy-followups.md#codex-direct-mode-follow-ups).

@@ -1,6 +1,6 @@
 # Source Graph Review Backlog
 
-> Unimplemented reviewer suggestions
+> Reviewer suggestions
 
 Reviewer suggestions from the source-graph plan that no stage implemented. Each is a small local change or a
 test to add; none blocks the contract. Larger limits are in [Known Gaps](source-graph-known-gaps.md).
@@ -318,10 +318,6 @@ Anchors are `path:line` at merge time; locate by symbol (`loom map --find-all`).
 
 - `loom/src/host_verify/runner.rs:35` derives from `crate::verify::DEFAULT_COMMAND_TIMEOUT`. Fixed in tree.
 
-## Give-Up Leaves Freeze Jobs Unparked
-
-- `loom/src/orchestrator/core/host_jobs.rs:212` `give_up` marks the job `apply failed`. For a Freeze job no park or freeze results, and its writer has ended its turn; `park_refused_relay` is not called from `host_jobs.rs`. Open.
-
 ## Spooled Legacy Reports Refusal Has A Test
 
 - `loom/src/fs/stage_request/tests/apply.rs:169` documents the test that refuses a spooled freeze carrying session-made `reports`. Fixed in tree.
@@ -381,3 +377,7 @@ Anchors are `path:line` at merge time; locate by symbol (`loom map --find-all`).
 ## orchestrator.sock Reachable In Knowledge Criteria
 
 - `loom/src/verify/criteria/confine_protected.rs:76-88`: `orchestrator.sock` stays connectable inside a knowledge criterion under `--unshare-all`; the daemon peer-identity gate refuses the caller once `user.token` is masked. Hardening only. Open.
+
+## Give-Up Leaves Freeze Refusals Unfiled
+
+- `loom/src/orchestrator/core/host_jobs.rs:212` `give_up` marks a Freeze job `apply failed: <error>` after `MAX_APPLY_ATTEMPTS` failed applications. That refusal is never recorded in `contracts/<stage>/refused.json`, so nothing files it and the idle contract writer is left to hung detection. Open.

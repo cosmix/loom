@@ -110,7 +110,7 @@ before writing a new one.
 ## Verification v2 Patterns
 
 - **Freeze what an agent authored, re-run it later.** Contract tests are hashed and copied at freeze; completion checks
-  the hashes and re-runs each through the certified criteria cache. The daemon never executes agent-written tests.
+  the hashes and re-runs each through the certified criteria cache. The freeze runs them in a confined host-job child (`host_verify/freeze.rs`) and the daemon process itself never executes them.
   Detail: [contract-phase](architecture/contract-phase.md).
 - **Level-triggered monitor events that carry the session id.** `ContractPhaseFinished` and `ContractSessionEnded` are
   re-raised each tick while the stage still names that session, so a failed handler retries and a stale event cannot

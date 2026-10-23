@@ -8,7 +8,7 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 # Signal Generation
 
-> Signal assembly, cache, prefixes
+> Signal assembly, cache
 
 ## Signal Generation Pipeline (orchestrator/signals/) [DETAILED]
 

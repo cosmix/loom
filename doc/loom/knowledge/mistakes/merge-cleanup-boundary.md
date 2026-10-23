@@ -1,6 +1,6 @@
 # Merge Cleanup Boundary
 
-> A cleanup-boundary bug and its fix
+> Cleanup-boundary bug
 
 ## What Happened
 

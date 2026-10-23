@@ -1,6 +1,6 @@
 # Core Abstractions
 
-> ExecutionGraph, Stage, Session
+> Graph, Stage, Session
 
 ## Core Abstractions
 

@@ -1,6 +1,6 @@
 # Concerns & Technical Debt
 
-> Tech debt and open issues
+> Debt, warnings, open issues
 > Every section here must be an OPEN concern. When one is resolved, DELETE it — do not strike the
 > heading and leave the body, which is how eleven dead entries accumulated before 2026-08-26. Git
 > history keeps the record and [mistakes.md](mistakes.md) keeps the lesson. If a resolved concern
@@ -177,7 +177,7 @@ Accepted limitations and test-coverage gaps in the typed config read-path (TUI c
 
 Nine of the 23 test-runner adapters (cargo-nextest, gradle, maven, sbt, rspec, phpunit, pest, swift-test, mix-test) have
 fixtures written from documented output, not captured runs, so their parsers are unproven. Adapter gaps, contract-phase
-gaps, duplicated helpers, provision and environment-lint gaps, gate and dispute backlog: [verification-v2-followups](concerns/verification-v2-followups.md).
+gaps, duplicated helpers, provision and environment-lint gaps, gate and dispute backlog: [verification-v2-followups](concerns/verification-v2-followups.md). Contract chain-check blind spots, freeze-refusal filing, verdict and briefing gaps, test gaps and the relayed-command background hook proposal: [contract-autonomy-followups](concerns/contract-autonomy-followups.md).
 
 ## Merge Path and Recovery Gaps
 

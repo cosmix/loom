@@ -1,6 +1,6 @@
 # Verification V2 Delivery
 
-> Wave, gate, proof misses in v2
+> Wave, gate, proof misses
 
 ## A Wave Brief Left Shared Files Unowned, and Mid-Run Approval Never Arrived (2026-09-24)
 

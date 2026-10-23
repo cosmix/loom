@@ -2,7 +2,7 @@
 ---
 # Hooks Shell Portability
 
-> Hook portability, delegate bounds
+> Hook portability
 
 ## gawk vs POSIX awk (2026-03-31)
 

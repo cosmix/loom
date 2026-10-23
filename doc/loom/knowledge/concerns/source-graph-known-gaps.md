@@ -1,6 +1,6 @@
 # Source Graph Known Gaps
 
-> Language limits, open decisions
+> Language limits, decisions
 
 What the source graph cannot see, by design or by deferral. Each gap is a place where the honesty
 contract ([Source Graph](../architecture/source-graph.md#the-honesty-contract)) makes the graph say

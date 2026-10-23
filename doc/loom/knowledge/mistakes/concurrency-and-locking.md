@@ -2,7 +2,7 @@
 ---
 # Concurrency And Locking
 
-> Locked-handle writes, save races
+> Locked writes, save races
 
 ## File Locking: Writing to Locked Handles
 
