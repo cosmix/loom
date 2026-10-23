@@ -36,9 +36,9 @@ Full detail: [terminal-backends.md](architecture/terminal-backends.md).
 | Path                                          | What it owns                                                                                                            |
 | --------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------- |
 | `verify/criteria/confine.rs`                  | `spawn_confined` (the single leaf primitive for every plan-authored command), `resolve_confinement`, `plan_confinement` |
-| `process/environment.rs`                      | `STAGE_HOST_ENV_ALLOWLIST`, `apply_stage_environment`                                                                   |
+| `process/environment.rs`                      | `AGENT_SESSION_ENV_NAMES`, `STAGE_HOST_ENV_ALLOWLIST`, `apply_stage_environment`                                                                   |
 | `models/stage/sandbox_config.rs:17`                   | `CommandConfinement`; `:100` `NetworkConfig`                                                                            |
-| `orchestrator/terminal/native/wrapper.rs:181` | a SECOND, diverging copy of the env allowlist                                                                           |
+| `orchestrator/terminal/native/wrapper/script_text.rs:26` | renders the shared `process::AGENT_SESSION_ENV_NAMES` allowlist                                                                           |
 
 Start from `architecture/execution-containment.md` — it states precisely what these do and
 do not guarantee, which is narrower than the word "containment" suggests.

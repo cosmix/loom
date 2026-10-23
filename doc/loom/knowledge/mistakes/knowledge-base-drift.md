@@ -227,3 +227,23 @@ change makes a section the eval expects out of date, re-judge that case against 
 **Fix:** the delivery-records case expects the `context-retrieval-state.md` id; the sandbox case
 expects the two `architecture/security-and-isolation.md` sections and counts `sandbox_settings`
 and the contradictory-path-rules lesson as relevant. Eval passes at hit@5 1.00, p@5 0.45.
+
+## Preserve unaffected text during section replacement
+
+**What happened:** Correcting the Session Backend Dispatch Details section also removed its valid fixed-test-backend note and topic link.
+
+**Why:** The replacement kept only the prefix before the stale caller inventory and discarded the section suffix.
+
+**Prevention:** Replace only the stale paragraph, or explicitly preserve and review the unaffected suffix before a whole-section CLI write.
+
+**Fix:** Restore the test-backend note and Terminal Backends link through `loom knowledge replace-section`.
+
+## Validate proposal source links against the tree
+
+**What happened:** A draft Brig proposal linked takedown code under `orchestrator/core/` although the file is under `orchestrator/core/event_handler/`; two upstream citations used headings from a different documentation rendering instead of the pinned source.
+
+**Why:** Shortened research references became Markdown targets without checking full file paths and heading anchors.
+
+**Prevention:** Preserve full source paths in research notes and validate every local target and pinned-source heading before delivery.
+
+**Fix:** Correct the report paths and anchors; check local files and upstream source snapshots.

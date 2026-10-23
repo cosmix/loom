@@ -5,6 +5,29 @@ All notable changes to loom are documented in this file.
 The format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres
 to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.3.x] - 2026-10-22
+
+### Added
+
+- **Host verification jobs** — `loom check`, `loom stage complete` and `loom stage contracts freeze` run inside a session relay a request to the daemon, which runs the criteria in a host job and applies the result itself; the command's first line is `Host job: <state>` (`requested` and `pending` exit 0 and mean run it again, `completed` exits 0, `failed`, `rejected` and `refused` exit 1, `stopped` exits 4). Under `command_confinement: confined` each plan-authored command runs inside bubblewrap (`--unshare-all`) on Linux or `sandbox-exec` on macOS, where only the working tree and a private scratch directory are writable and verification commands get no network; `provision` entries always run in such a boundary, with network.
+- **Criterion subsets** — `loom check <stage-id> --criterion <n>` (0-based, repeatable) re-runs only the named acceptance criteria plus the lint and format criteria, and a subset pass never stands in for a full check at completion.
+- **Several criteria per dispute** — `loom stage dispute-criteria --criterion-index` repeats or takes several values, so one filing names every failing entry, and `loom stage block` is refused while the latest `loom stage complete` shows a failing criterion. `loom status` and the web dashboard list a blocked stage's failing criteria with filled `loom stage amend` commands and its dispute history.
+- **Run evidence** — `loom usage --run-evidence <declaration.json> --project <dir> --since <rfc3339> --until <rfc3339>` measures one run's tokens, retries, fixes, critical path and open review findings as RunEvidence for `loom usage --compare`, whose artifacts may declare `"token_rule": "net-total"` and `"latency_tolerance_ms"`. `loom usage --project` also reads the transcripts of removed stage worktrees and reports each provider as `measured` or `partial` with reasons.
+- **Stage transition log** — every stage status change is appended to `.loom/work/stage-events.jsonl`, and the web dashboard's activity panel shows the last 50 with their real timestamps, including changes made while no page was open.
+- **Dashboard help and token views** — the web dashboard replaces its legend with an illustrated help guide that annotates real components with numbered pins, the Token flow panel gains by-model token bars, and the quota footer is laid out as a grid of meters.
+- **Plan lints for stage shape and test runs** — in a `version: 2` plan `loom plan verify` rejects a plan without exactly one `knowledge-distill` stage, a distill stage another stage depends on, a stage that is not an ancestor of the distill stage, and a `standard` stage that is not an ancestor of an `integration-verify` stage (version-1 plans get warnings); it flags whole-suite runs of any recognised test runner and filtered runs a full run already covers, and warns about a missing knowledge-bootstrap stage only when the knowledge tree is missing or holds only the scaffold. A stage `model` other than `haiku`, `sonnet`, `opus` or `fable` fails when the plan is parsed.
+- **Main-agent guards** — `subagent-verify-guard.sh` also blocks the main agent of a live `standard` stage from an unfiltered test suite of any runner (build, clippy, fmt and lint stay allowed), and the PostToolUse hook warns a stage main session once when it edits past the delegation size limit. Stage signals carry a Dependency Findings section in place of the wiring checklist.
+
+### Changed
+
+- **The gate is one `loom check`** — the `loom-verifier` subagent is gone: a `standard` stage's orchestrator runs `loom check <stage-id>` once on the formatted tree beside the final review round, and a fix round re-runs only the failed criteria with `--criterion`.
+- **Session capsule hardening** — every spawned session's capsule read-denies credential files whatever the plan lists (`~/.config/gh/hosts.yml`, `~/.netrc`, `~/.npmrc`, `~/.git-credentials`, `~/.docker/config.json`, `~/.kube/config`, `~/.pypirc`, cargo credentials) and `~/.codex/auth.json` unless the stage licenses the codex lane, denies the `LSP`, `RemoteTrigger`, `CronCreate` and `PushNotification` tools and `Workflow` outside `ultracode: true` stages, and write-denies the git administrative directories of other stage worktrees.
+- **Force completion records the branch tip** — `loom stage human-review --force-complete`, `loom stage complete --no-verify` and `loom stage complete --force-unsafe` record the committed tip of `loom/<stage-id>` as the completion commit (the first two refuse a zero-commit branch); without `--assume-merged`, dependents start only once that commit lands.
+
+### Removed
+
+- **Custom asset roots** — `LOOM_CLAUDECODE_INSTALL_DIR`, `LOOM_CODEX_INSTALL_DIR` and `loom install-assets --claude-dir|--codex-dir` are gone and `~/.config/loom/install-roots.toml` is ignored; loom installs and reads its assets only at `~/.claude` and `~/.codex`. Hook entries in a repository's `.claude/settings.json` that point at an old custom root are not removed by `loom init` or `loom repair`.
+
 ## [1.2.x] - 2026-10-15
 
 ### Added

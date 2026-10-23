@@ -108,13 +108,13 @@ daemon's own read of it.
 
 ## A Refused Freeze Parks the Stage
 
-`verify::contracts::refusal` (new module) tracks a contract writer's latest freeze attempt. In
+`verify::contracts::refusal` tracks a contract writer's latest freeze attempt. In
 relay mode — the writer's sandbox cannot reach the daemon socket directly — a refusal is left at
 `$LOOM_SCRATCH_DIR/contract-freeze-refused.txt` and cleared on the next attempt that reaches the
 daemon, so the file always reflects the latest attempt. `loom-hooks/commit-guard.sh`'s Stop hook
 sees the file when the writer's session stops and runs `loom stage waiting <id>`
 (`park_contract_stage`). A relayed freeze the daemon itself refuses parks the same way straight
-from the inbox drain (`orchestrator/core/inbox_drain/apply.rs::park_refused_freeze` →
+from the inbox drain (`orchestrator/core/inbox_drain/freeze.rs::park_refused_freeze` →
 `refusal::park_refused_relay`), without waiting for the writer to stop — the relay already told
 it to end its turn. Either path moves the stage `Executing` → `WaitingForInput` with
 `review_reason = "contract freeze refused; fix and freeze again: <problems>"`, the reason `loom
@@ -122,7 +122,7 @@ status` shows as NEEDS INPUT.
 
 Resume paths: the writer runs a tool (the monitor moves a waiting stage back to `Executing` on
 its session's next tool call), `loom stage resume <id>`, or a later freeze the daemon accepts
-(`daemon/server/contracts.rs::end_refusal_wait`). `loom stage retry` still refuses a stage in
+(`stage_service/contracts.rs::end_refusal_wait`). `loom stage retry` still refuses a stage in
 `WaitingForInput`. A writer that stops before ever attempting a freeze leaves no refusal file, so
 nothing is parked.
 

@@ -59,7 +59,7 @@
 | [source-graph-view](architecture/source-graph-view.md) | Resolved view, relink equals cold | 76 |
 | [status-data-model](architecture/status-data-model.md) | Source of each status field | 237 |
 | [target-guard](architecture/target-guard.md) | Accepted-tip record, hook, holds | 127 |
-| [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends | 293 |
+| [terminal-backends](architecture/terminal-backends.md) | Native and tmux session backends | 283 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) | Adapters, profiles, quoting | 57 |
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger, compare, cache | 368 |
 | [token-flow-sources](architecture/token-flow-sources.md) | Token flow sources | 75 |
@@ -87,7 +87,7 @@
 | [doctrine-cross-surface](patterns/doctrine-cross-surface.md) | Pinning multi-surface guidance | 140 |
 | [hook-content-stripping](patterns/hook-content-stripping.md) | How hooks read a Bash command | 160 |
 | [merge-and-recovery](patterns/merge-and-recovery.md) | Progressive merge, recovery | 113 |
-| [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Signal gen, IPC, poll loop, spool | 118 |
+| [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Signal gen, IPC, poll loop, spool | 116 |
 | [remote-control](patterns/remote-control.md) | Remote Control detect and resolve | 51 |
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Hooks, validation, sandbox config | 139 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) | Stage agent to daemon | 191 |
@@ -105,7 +105,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, cargo, CI paths, size ledger | 235 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, plugin scope | 138 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] precedence, value types | 103 |
-| [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML, hook I/O, skills | 173 |
+| [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML, hook I/O, skills | 177 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard type and CSS gotchas | 47 |
 
 ### mistakes
@@ -129,9 +129,9 @@
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork after threads | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) | Two daemons shared .loom/work | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | No process may outlive its test | 55 |
-| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine drift, acceptance | 381 |
+| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine drift, acceptance | 391 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | Hook portability, delegate bounds | 344 |
-| [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How knowledge goes stale | 229 |
+| [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How knowledge goes stale | 250 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants live in constructor | 206 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why distill cannot write | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Ledger TUI rendering bugs | 83 |

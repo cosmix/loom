@@ -379,3 +379,13 @@ put the doc edits in the implementation brief.
 **Prevention:** while a plan runs against a branch, never amend, rebase or reset commits on it. Add a new commit instead. Check `loom target status` before rewriting anything on the target.
 
 **Fix:** reviewed the move (only docs commits) and ran `loom target accept --to <tip>`.
+
+## Brig feasibility research platform scope
+
+**What happened:** The Brig feasibility research initially emphasized Intel Mac support. The operator specified that Intel Macs are outside the intended scope.
+
+**Why:** Broad macOS compatibility was interpreted to include hardware the operator does not target.
+
+**Prevention:** For the Brig proposal, compare Linux with Apple Silicon macOS; do not treat Intel Mac support as an adoption requirement.
+
+**Fix:** Scope `doc/PROPOSAL-brig-support.md` and its platform evaluation to Linux and Apple Silicon macOS.

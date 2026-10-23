@@ -55,7 +55,7 @@ cannot be verified. For tests, `LivenessService::fixed_for_tests(bool)` avoids c
 ## Session Backend Dispatch Details
 
 The orchestrator holds
-`Arc<SessionBackend>` (`orchestrator/core/orchestrator.rs:91`, constructed at `:148` via
+`Arc<SessionBackend>` (`orchestrator/core/orchestrator.rs`, constructed at `:194` via
 `SessionBackend::from_config`), and shares that same `Arc` with the `LivenessService`
 (`orchestrator/liveness.rs:17,32`):
 
@@ -73,9 +73,7 @@ let liveness = LivenessService::new(Arc::clone(&backend));
 - **Kill and liveness** dispatch on `session.backend` — the lane that _spawned_ it — never on the
   currently-configured backend, so sessions survive a config change or a daemon restart.
 
-Every spawn site uses the shared handle; the other `SessionBackend::from_config` callers are
-`orchestrator/continuation/mod.rs:89`, `commands/sessions.rs:130`, `commands/stage/state.rs:57`,
-`commands/stage/merge_resolver.rs:72` and `commands/stage/skip_retry.rs:254`.
+Every spawn site uses the shared handle. Other constructors serve session registry probes and operator session/state/merge/retry/loop-recovery commands (`orchestrator/session_registry.rs`, `commands/sessions.rs`, `commands/stage/state.rs`, `commands/stage/state/loop_recovery/mod.rs`, `commands/stage/merge_resolver.rs`, `commands/stage/skip_retry.rs`). `orchestrator/continuation/mod.rs::continue_session` does not construct a backend: `auto_spawn=true` is refused because the daemon owns session spawning.
 
 `LivenessService::fixed_for_tests(bool)` still returns a fixed value without constructing a backend.
 

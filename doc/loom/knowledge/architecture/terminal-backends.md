@@ -12,19 +12,9 @@ call goes through. It wraps two concrete lanes:
 | `Native` (default) | `NativeBackend` (`terminal/native/`) | a host terminal emulator window         |
 | `Tmux` (opt-in)    | `TmuxBackend` (`terminal/tmux/`)     | a detached tmux server, no GUI required |
 
-`SessionBackend::from_config(work_dir)` **always succeeds** as long as the config parses — it does not
-construct either lane eagerly. That matters: `NativeBackend::new` runs `detect_terminal()` subprocess
-probes and _fails_ on a headless box, which is exactly where the tmux lane is wanted. Each native
-detection/process-discovery probe has a two-second deadline, so terminal discovery cannot stall the
-single scheduler loop.
+`SessionBackend::from_config(work_dir)` constructs `NativeBackend::new` eagerly when Native is configured (`orchestrator/terminal/backend.rs:63-69`), so valid configuration alone does not guarantee success: terminal detection can fail on a headless host. Tmux configuration constructs no native backend at startup. Each native detection/process-discovery probe has a two-second deadline.
 
-The native lane is therefore built lazily and memoized in a `OnceLock<Result<NativeBackend, String>>`
-— **including the failure**. `OnceLock` (not `RefCell`/`Mutex`) because the orchestrator holds
-`SessionBackend` behind an `Arc` and the monitor thread calls it via `&self`, so it must stay
-`Send + Sync`. The error is stored as `String` because `anyhow::Error` is not `Clone` and callers only
-render it as text. Terminal availability is fixed for the life of the daemon, so memoizing the failure
-is free — before this, a post-fallback `is_session_alive` re-ran `detect_terminal()` once per session
-per 5s monitor tick.
+When Tmux is configured but a persisted session belongs to Native, `native_lane` constructs the native backend lazily and memoizes success or failure in `OnceLock<Result<NativeBackend, String>>` (`backend.rs:110-120`). The configured Native lane uses the eagerly constructed backend. `OnceLock` keeps the dispatcher `Send + Sync` for monitor access through `Arc`; storing errors as strings permits repeated reporting without rerunning terminal probes.
 
 ## Configuration and Lane Resolution
 

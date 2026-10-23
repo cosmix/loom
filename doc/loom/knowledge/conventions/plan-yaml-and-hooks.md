@@ -171,3 +171,7 @@ are unaffected.
 ## A Substantial Plan-Structure Change Bumps `version`
 
 `loom.version` is checked in `plan/schema/validation.rs` (only 1 is accepted today). Operator rule: a substantial change to the structure of a loom plan (new verification sections, changed stage shape) ships as the next plan version, v2, with the version check, the plan-writer skill template and the parser changed together. Additive optional fields that leave every existing plan's meaning unchanged follow the `#[serde(default)]` convention above and do not need a bump.
+
+## Acceptance Lines Run Under sh -c
+
+A plan acceptance string runs as `sh -c <line>` (`loom/src/verify/criteria/confine.rs:41`). On Linux `/bin/sh` is dash, so a bash script (`#!/usr/bin/env bash`, `[[`, `pipefail`, every `loom-hooks/tests/*.sh`) run as `sh <script>` exits 127 or takes a false branch. Invoke such a script with `bash`, and for hook changes run the suite the way CI does: `bash loom-hooks/tests/run-all.sh` (it scrubs the session's `LOOM_*` variables), `LOOM_HOOK_TEST_BSD=1 bash loom-hooks/tests/run-all.sh`, and `bash scripts/check-hook-syntax.sh`. A plan-level `!` negation works under dash.
