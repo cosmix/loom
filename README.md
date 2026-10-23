@@ -820,7 +820,7 @@ into `.loom/work/config.toml`'s `[context]` section at `loom init`.
 | Field | On | Notes |
 | ----- | -- | ----- |
 | `contracts` | stage | Tests written and frozen before implementation: `id`, `file`, `test`, optional `runner`, `scenario`, and `rejects` (the plausible wrong implementation the test must fail on). Every `standard` stage of a v2 plan needs at least one; `knowledge`, `knowledge-distill` and `integration-verify` stages take none |
-| `harness` | stage | Globs of extra test-only files the contract writer may edit. Every matched file is frozen with the contracts, so do not glob production files |
+| `harness` | stage | Globs of extra test-only files the contract writer may edit. Every matched file is frozen with the contracts, so do not glob production files. Module declarations a Rust contract needs are derived by loom (scaffold) and are not frozen. |
 | `reachable` | stage | `symbol`, `from`, `description`, optional `min_confidence`: the new unit must be reachable from an entry point in the source graph |
 | `literal: true`, glob `source` | `wiring` entry | Match the pattern as literal text; let `source` be a glob (`*`, `?`, `[`). A pattern that matches only a definition of a name defined in that file is rejected, so point it at a consumer |
 | `ratchet_files` | plan | Exact paths of baseline or ledger files a stage could loosen; any change to one raises a test-integrity event |
