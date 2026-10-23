@@ -106,7 +106,7 @@
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance channels, plugin scope | 138 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] precedence, value types | 103 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML, hook I/O, skills | 177 |
-| [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard type and CSS gotchas | 47 |
+| [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard type and CSS gotchas | 51 |
 
 ### mistakes
 
@@ -131,7 +131,7 @@
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | No process may outlive its test | 55 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine drift, acceptance | 391 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | Hook portability, delegate bounds | 344 |
-| [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How knowledge goes stale | 250 |
+| [knowledge-base-drift](mistakes/knowledge-base-drift.md) | How knowledge goes stale | 249 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | Invariants live in constructor | 206 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Why distill cannot write | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Ledger TUI rendering bugs | 83 |

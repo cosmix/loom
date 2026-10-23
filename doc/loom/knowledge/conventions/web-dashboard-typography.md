@@ -45,3 +45,7 @@ Token and quota illustrations use the production ContextMeter, token-flow compon
 ## Help graph is static and terminal control is complete
 
 The help dependency graph is a static illustration: no animation, panning, zooming, or navigation. Terminal help may offer the production mode switch only when it also renders the production control-mode well background and striped perimeter. Commit the help source and task memory separately from the rebuilt embedded bundle.
+
+## Stage thread chips use horizontal space and no accent spines
+
+The stage dialog and stage page show "depends on" and "feeds" as two side-by-side ledger cards (`ThreadRows` in `web/src/components/stage-heading.tsx`, styles in `web/src/graph.css`), spanning the full content width so their edges meet the section cards below. When either side has a stage, both cards render and the empty one shows a Lucide icon with a short explanation. State is carried by the glyph and a toned label, never a coloured left border or inset spine: the operator rejected a vertical rail with left-spine chips as wasting width. The dialog body publishes its scrollbar width as `--gutter` (`use-scroll-gutter.ts`) so scrolled content keeps the header's right edge.
