@@ -200,6 +200,89 @@ fn accepted_freeze_with_scaffold_records_only_contract_and_harness() {
     assert_eq!(paths, [LIQUIDMON_FILE]);
 }
 
+/// The daemon re-runs the strict scaffold diff: a function in the created
+/// module root passes the paths check (the root is a scaffold path) and is
+/// refused as a scaffold problem.
+#[cfg(feature = "source-graph")]
+#[test]
+fn freeze_handler_refuses_a_scaffold_edit_beyond_the_declaration() {
+    let fx = fixture();
+    update_stage(STAGE, &fx.work_dir, |stage| {
+        stage.contracts = vec![liquidmon_contract()];
+        Ok(())
+    })
+    .unwrap();
+    write_liquidmon(&fx.worktree);
+    let root = fx.worktree.join("src/device_lock/mod.rs");
+    std::fs::write(
+        root,
+        "#[cfg(test)]\nmod contract_tests;\npub fn leak() {}\n",
+    )
+    .unwrap();
+
+    let message = refusal(freeze(&fx, &red_reports()));
+
+    assert!(message.contains("scaffold is not accepted"), "{message}");
+    assert!(message.contains("src/device_lock/mod.rs"), "{message}");
+    assert!(message.contains("pub fn leak() {}"), "{message}");
+    assert!(!message.contains("also changed"), "{message}");
+    assert!(load_freeze(&fx.work_dir, STAGE).unwrap().is_none());
+}
+
+/// The base already declares `mod device_lock;`, so the scaffold is only the
+/// new module root, which the diff accepts. The harness covers `src/lib.rs`
+/// and its inner `#![cfg(not(test))]` (outside every scaffold edit) is the
+/// chain check's alone to refuse.
+#[cfg(feature = "source-graph")]
+#[test]
+fn freeze_handler_refuses_a_chain_the_diff_accepts_but_the_chain_check_refuses() {
+    let fx = fixture();
+    commit_base_lib(&fx.worktree, "mod device_lock;\n");
+    update_stage(STAGE, &fx.work_dir, |stage| {
+        stage.contracts = vec![liquidmon_contract()];
+        stage.harness = vec!["src/lib.rs".to_string()];
+        Ok(())
+    })
+    .unwrap();
+    write_liquidmon(&fx.worktree);
+    let lib = fx.worktree.join("src/lib.rs");
+    std::fs::write(lib, "#![cfg(not(test))]\nmod device_lock;\n").unwrap();
+
+    let message = refusal(freeze(&fx, &red_reports()));
+
+    assert!(message.contains("scaffold is not accepted"), "{message}");
+    assert!(message.contains("#![cfg(not(test))]"), "{message}");
+    assert!(message.contains("contract 'rejects-x'"), "{message}");
+    assert!(!message.contains("also changed"), "{message}");
+    assert!(load_freeze(&fx.work_dir, STAGE).unwrap().is_none());
+}
+
+/// Fork the stage from a commit whose `src/lib.rs` is `content`: commit it on
+/// the stage branch and move `main` (the stage base) there.
+#[cfg(feature = "source-graph")]
+fn commit_base_lib(worktree: &Path, content: &str) {
+    std::fs::write(worktree.join("src/lib.rs"), content).unwrap();
+    for args in [
+        vec!["add", "src/lib.rs"],
+        vec!["commit", "-q", "-m", "lib"],
+        vec!["update-ref", "refs/heads/main", "HEAD"],
+    ] {
+        let mut git = vec![
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+        ];
+        git.extend(args);
+        let output = crate::git::runner::run_git(&git, worktree).unwrap();
+        assert!(output.status.success(), "git {git:?}: {output:?}");
+    }
+}
+
 /// Git lists no FIFO, so only the walk can see one planted where the
 /// implementer will write; once it is gone the freeze is taken.
 #[test]

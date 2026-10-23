@@ -231,7 +231,9 @@ fn declares(source: FileSource<'_>, path: &str, module: &str) -> Result<bool, Ve
     }
 }
 
-/// A chain file must parse, and no inner attribute may cfg it out.
+/// A chain file must parse, and no inner attribute may cfg it out: of the
+/// cfg attributes only `#![cfg(test)]` passes, and an inner attribute whose
+/// path cannot be read is refused rather than guessed at.
 fn file_problems(path: &str, parsed: &ParsedFile) -> Vec<String> {
     let mut problems = Vec::new();
     if parsed.has_error {
@@ -240,14 +242,20 @@ fn file_problems(path: &str, parsed: &ParsedFile) -> Vec<String> {
         ));
     }
     for attribute in &parsed.inner_attributes {
-        let compact: String = attribute.text.split_whitespace().collect();
-        let name = attribute.path.rsplit("::").next().unwrap_or_default();
-        if compact != "#![cfg(test)]" && name.starts_with("cfg") {
-            problems.push(format!(
-                "{path} starts with {}: a module on a contract's chain must not be cfg'd out",
-                quote(&attribute.text)
-            ));
-        }
+        let rule = match attribute.path.as_deref() {
+            None => "loom cannot read its path, and a module on a contract's chain must not be cfg'd out",
+            Some(name)
+                if name.rsplit("::").next().unwrap_or_default().starts_with("cfg")
+                    && attribute.normalised() != "#![cfg(test)]" =>
+            {
+                "a module on a contract's chain must not be cfg'd out"
+            }
+            Some(_) => continue,
+        };
+        problems.push(format!(
+            "{path} starts with {}: {rule}",
+            quote(&attribute.text)
+        ));
     }
     problems
 }
@@ -271,16 +279,16 @@ fn item_problems(path: &str, item: &ModItem) -> Vec<String> {
 }
 
 fn attribute_problem(path: &str, module: &str, attribute: &Attribute) -> Option<String> {
-    let compact: String = attribute.text.split_whitespace().collect();
-    if compact == "#[cfg(test)]" {
+    if attribute.normalised() == "#[cfg(test)]" {
         return None;
     }
-    let rule = match attribute.path.as_str() {
-        "allow" | "expect" => return None,
-        "path" => "a contract module must be declared without #[path]",
-        "cfg_attr" => "a module on a contract's chain must not carry #[cfg_attr(..)]",
-        "cfg" => "a module on a contract's chain may be cfg'd only as #[cfg(test)]",
-        _ => "a module on a contract's chain may carry only #[cfg(test)], #[allow(..)], #[expect(..)] and doc comments",
+    let rule = match attribute.path.as_deref() {
+        Some("allow" | "expect") => return None,
+        Some("path") => "a contract module must be declared without #[path]",
+        Some("cfg_attr") => "a module on a contract's chain must not carry #[cfg_attr(..)]",
+        Some("cfg") => "a module on a contract's chain may be cfg'd only as #[cfg(test)]",
+        Some(_) => "a module on a contract's chain may carry only #[cfg(test)], #[allow(..)], #[expect(..)] and doc comments",
+        None => "loom cannot read its path, and a module on a contract's chain may carry only #[cfg(test)], #[allow(..)], #[expect(..)] and doc comments",
     };
     Some(format!(
         "{path} declares {module} with {}: {rule}",

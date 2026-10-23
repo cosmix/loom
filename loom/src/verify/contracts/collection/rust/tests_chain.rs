@@ -289,3 +289,70 @@ fn a_directory_test_root_reaches_its_own_modules() {
     };
     assert_eq!(derive_scaffold(&base, &[(file, test)]), Ok(vec![declare]));
 }
+
+/// Spellings rustc reads as an inner cfg that a positional or literal read
+/// misses: a raw identifier, or a comment before the path (tree-sitter lexes
+/// `#!/**/[..]` at the start of a file as a shebang).
+const EVASIVE_INNER: [&str; 4] = [
+    "#![r#cfg(not(test))]",
+    "#!/**/[cfg(not(test))]",
+    "#![/**/cfg(not(test))]",
+    "#![/**/cfg_attr(test, allow(unused))]",
+];
+
+#[test]
+fn an_evasive_inner_cfg_in_the_crate_root_is_refused() {
+    for attribute in EVASIVE_INNER {
+        let lib = format!("{attribute}\nmod device_lock;\n");
+        let problems = lib_chain(&lib, "#[cfg(test)]\nmod contract_tests;\n");
+        assert_names(&problems, &format!("src/lib.rs starts with {attribute}"));
+    }
+}
+
+#[test]
+fn an_evasive_inner_cfg_in_a_module_root_is_refused() {
+    for attribute in EVASIVE_INNER {
+        let module_root = format!("{attribute}\n#[cfg(test)]\nmod contract_tests;\n");
+        let problems = lib_chain("mod device_lock;\n", &module_root);
+        assert_names(
+            &problems,
+            &format!("src/device_lock/mod.rs starts with {attribute}"),
+        );
+    }
+}
+
+#[test]
+fn an_inner_allow_in_the_crate_root_is_accepted() {
+    let problems = lib_chain(
+        "#![allow(dead_code)]\nmod device_lock;\n",
+        "#[cfg(test)]\nmod contract_tests;\n",
+    );
+    assert!(problems.is_empty(), "{problems:?}");
+}
+
+#[test]
+fn an_evasive_cfg_link_is_refused_as_a_cfg() {
+    for attribute in ["#[r#cfg(not(test))]", "#[/**/cfg(not(test))]"] {
+        let module_root = format!("{attribute}\nmod contract_tests;\n");
+        assert_names(
+            &lib_chain("mod device_lock;\n", &module_root),
+            &format!("declares contract_tests with {attribute}: a module on a contract's chain may be cfg'd only as #[cfg(test)]"),
+        );
+    }
+}
+
+#[test]
+fn any_other_attribute_on_a_link_is_refused() {
+    for attribute in [
+        "#[macro_use]",
+        "#[rustfmt::skip]",
+        "#[doc(hidden)]",
+        "#[my_attr]",
+    ] {
+        let module_root = format!("{attribute}\n#[cfg(test)]\nmod contract_tests;\n");
+        assert_names(
+            &lib_chain("mod device_lock;\n", &module_root),
+            &format!("declares contract_tests with {attribute}: a module on a contract's chain may carry only"),
+        );
+    }
+}
