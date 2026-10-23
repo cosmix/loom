@@ -296,8 +296,10 @@ pub enum StageCommands {
         #[arg(long)]
         index: usize,
 
-        /// YAML body for the new element. Required for replace/insert,
-        /// rejected for delete.
+        /// The new element: a YAML body for every field except `harness`,
+        /// which takes a plain glob verbatim (trimmed, never parsed as YAML,
+        /// so do not quote it). Required for replace/insert, rejected for
+        /// delete.
         #[arg(long)]
         value: Option<String>,
 

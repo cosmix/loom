@@ -46,7 +46,7 @@ pub enum Applied {
     Recorded,
     /// The contracts were frozen; `files` is the number the freeze recorded.
     FreezeAccepted { files: usize },
-    /// The contract run was refused and its stage parked.
+    /// The contract run was refused: the refusal is recorded, the stage stays Executing.
     FreezeRefused(String),
     /// Nothing was applied, for the reason given.
     Ignored(String),

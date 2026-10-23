@@ -27,7 +27,7 @@ pub use super::signals::recover_after_restart;
 /// Jobs the daemon runs at once.
 const DEFAULT_SLOTS: usize = 2;
 /// The detail of a job the graceful shutdown cancelled. Unlike a superseding
-/// cancel, no successor job exists, so a freeze job carrying it is parked.
+/// cancel, no successor job exists, so a freeze job carrying it is recorded as refused.
 pub(crate) const DAEMON_STOPPED: &str = "daemon stopped";
 /// `child.log` past this size ends the job.
 const CHILD_LOG_MAX_BYTES: u64 = 4 * 1024 * 1024;

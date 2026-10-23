@@ -6,6 +6,7 @@
 //! | `freeze.json` | the daemon's freeze handler; rewritten only by an accepted contract dispute |
 //! | `files/<path>` | the same handler, before `freeze.json` |
 //! | `attempts` | the daemon, when it hands out a contract session; reset by `loom stage retry` and `loom stage human-review --approve` |
+//! | `refused.json` | the daemon: `record_daemon_refusal` on a refused freeze, `mark_declined` when filing is declined. Fields: `session_id`, `problems`, `at`, `source` (`daemon` or `writer`), `declined` (`null`, or the reason filing was declined). `take_daemon_refusal` removes it once filed, escalated or stale |
 //!
 //! `freeze.json` is written last and atomically: its presence is what ends the
 //! contract phase, so it must never describe copies that are not on disk yet.
