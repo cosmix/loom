@@ -14,6 +14,7 @@ pub use dispute::handle_dispute_criteria;
 pub(crate) use dispute::handle_dispute_criteria_identified;
 pub(crate) use dispute_kinds::handle_file_dispute;
 pub(crate) use dispute_kinds::handle_file_dispute_identified;
+pub(crate) use dispute_kinds::{escalate_freeze_refusal, file_freeze_refusal, FreezeRefusalFiling};
 use serde::{Deserialize, Serialize};
 pub use types::{QueuedRequest, StageRequest};
 pub const MAX_REQUEST_BYTES: usize = 64 * 1024;

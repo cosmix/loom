@@ -7,9 +7,9 @@
 //! Each kind of dispute has its own builder: `criterion` (a disputed
 //! acceptance criterion), `criterion_entry` (a disputed wiring check or wiring
 //! test), `findings` (review findings), `contract` (a frozen contract),
-//! `integrity` (test-integrity events) and `impact` (failing impact-selected
-//! tests). [`build`] routes by the request's kind and, for a criterion
-//! dispute, its field.
+//! `integrity` (test-integrity events), `impact` (failing impact-selected
+//! tests) and `freeze_refusal` (a contract freeze loom refused). [`build`]
+//! routes by the request's kind and, for a criterion dispute, its field.
 //!
 //! The whole thing is hard-capped to roughly 100 KiB (see `truncate`), with
 //! the instructions never trimmed. `signals/adjudication.rs` wraps the result
@@ -21,6 +21,7 @@ mod criterion_entry;
 mod diff;
 mod execution_site;
 mod findings;
+mod freeze_refusal;
 mod impact;
 mod integrity;
 mod sources;
@@ -32,6 +33,7 @@ use crate::models::dispute::{CriterionField, DisputeKind, DisputeRequest};
 use crate::models::stage::Stage;
 
 pub use execution_site::ExecutionSite;
+pub(super) use freeze_refusal::scaffold_line;
 
 /// Total briefing byte budget. The session's context window is far larger;
 /// this cap exists so we never accidentally ship hundreds of KB of diff into
@@ -152,6 +154,7 @@ pub fn build(plan_path: &Path, stage: &Stage, dispute: &DisputeRequest, work_dir
         DisputeKind::Contract { .. } => contract::build(&input),
         DisputeKind::Integrity { .. } => integrity::build(&input),
         DisputeKind::ImpactTests { .. } => impact::build(&input),
+        DisputeKind::FreezeRefusal { .. } => freeze_refusal::build(&input),
     };
     truncate::truncate_to_budget(&mut prompt);
     prompt

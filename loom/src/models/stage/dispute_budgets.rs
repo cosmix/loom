@@ -27,8 +27,8 @@ pub struct DisputeTally {
     /// Number of accepted plan amendments applied for this stage.
     #[serde(default)]
     pub amendments_applied: u32,
-    /// Plan v2 findings, contract, integrity and impact-test disputes filed,
-    /// each capped by `dispute_budgets`.
+    /// Plan v2 findings, contract, integrity, impact-test and freeze-refusal
+    /// disputes filed, each capped by `dispute_budgets`.
     #[serde(default)]
     pub finding_disputes: u32,
     #[serde(default)]
@@ -37,6 +37,8 @@ pub struct DisputeTally {
     pub integrity_disputes: u32,
     #[serde(default)]
     pub impact_disputes: u32,
+    #[serde(default)]
+    pub freeze_refusal_disputes: u32,
 }
 
 impl Stage {
@@ -60,6 +62,7 @@ pub fn filed(stage: &Stage, kind: &DisputeKind) -> u32 {
         DisputeKind::Contract { .. } => stage.tally.contract_disputes,
         DisputeKind::Integrity { .. } => stage.tally.integrity_disputes,
         DisputeKind::ImpactTests { .. } => stage.tally.impact_disputes,
+        DisputeKind::FreezeRefusal { .. } => stage.tally.freeze_refusal_disputes,
     }
 }
 
@@ -77,6 +80,7 @@ pub fn spend(stage: &mut Stage, kind: &DisputeKind) {
         DisputeKind::Contract { .. } => &mut stage.tally.contract_disputes,
         DisputeKind::Integrity { .. } => &mut stage.tally.integrity_disputes,
         DisputeKind::ImpactTests { .. } => &mut stage.tally.impact_disputes,
+        DisputeKind::FreezeRefusal { .. } => &mut stage.tally.freeze_refusal_disputes,
     };
     *counter = counter.saturating_add(1);
 }
@@ -108,6 +112,18 @@ mod tests {
             (stage.tally.finding_disputes, stage.tally.integrity_disputes),
             (0, 0)
         );
+    }
+
+    #[test]
+    fn a_freeze_refusal_spends_its_own_counter() {
+        let mut stage = Stage::default();
+        let refusal = DisputeKind::FreezeRefusal {
+            problems: vec!["x".to_string()],
+        };
+        spend(&mut stage, &refusal);
+        assert_eq!(filed(&stage, &refusal), 1);
+        assert_eq!(stage.tally.freeze_refusal_disputes, 1);
+        assert_eq!((stage.dispute_count, stage.tally.contract_disputes), (0, 0));
     }
 
     #[test]

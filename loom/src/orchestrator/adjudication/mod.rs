@@ -33,6 +33,7 @@
 mod apply;
 mod apply_accept;
 mod apply_contract;
+mod apply_freeze_refusal;
 mod apply_impact;
 mod apply_kinds;
 mod closed_disputes;
@@ -45,6 +46,7 @@ mod requeue;
 mod scan;
 pub mod session;
 pub mod verdict;
+mod verdict_freeze_refusal;
 mod verdict_kinds;
 
 #[cfg(test)]
@@ -62,7 +64,7 @@ mod tests_criterion_field;
 #[cfg(test)]
 mod tests_verdicts;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
 
 use crate::models::dispute::{dispute_dir, request_file, verdict_file};
@@ -310,6 +312,19 @@ fn record_apply_failure(work_dir: &Path, stage_id: &str, dispute_id: u32) -> u32
         );
     }
     next
+}
+
+/// The stage's worktree, located the way the freeze handler
+/// (`stage_service/contracts.rs`) locates it: git pinned to its registered
+/// git directory, since the daemon reads a worktree the disputing agent wrote.
+fn locate_stage_site(
+    work_dir: &Path,
+    stage: &crate::models::stage::Stage,
+) -> Result<crate::stage_service::contracts::Site> {
+    let work_dir = work_dir
+        .canonicalize()
+        .with_context(|| format!("failed to resolve {}", work_dir.display()))?;
+    crate::stage_service::contracts::locate(&work_dir, stage)
 }
 
 fn resolve_plan_path(work_dir: &Path) -> Option<PathBuf> {

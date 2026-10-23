@@ -59,6 +59,40 @@ fn a_canonical_patches_list_and_a_single_patch_are_both_read() {
 }
 
 #[test]
+fn a_freeze_refusal_patch_lists_the_field_of_each_entry() {
+    let temp = TempDir::new().unwrap();
+    record(
+        temp.path(),
+        1,
+        "kind: freeze-refusal\nproblems: [x]",
+        Some(
+            "verdict:\n  verdict: accept\n  plan_patch:\n    patches:\n    \
+             - {field: harness, op: insert, index: 0, value: 'tests/fixtures/**'}\n    \
+             - {field: harness, op: delete, index: 2}\n    \
+             - {field: acceptance, op: replace, index: 1, value: 'cargo fmt --check'}",
+        ),
+    );
+
+    let lines = read_disputes(temp.path());
+
+    assert_eq!(lines[0].kind, "freeze-refusal");
+    assert_eq!(lines[0].field.as_deref(), Some("harness, acceptance"));
+    let ops: Vec<(&str, Option<u64>)> = lines[0]
+        .ops
+        .iter()
+        .map(|op| (op.op.as_str(), op.index))
+        .collect();
+    assert_eq!(
+        ops,
+        [
+            ("insert", Some(0)),
+            ("delete", Some(2)),
+            ("replace", Some(1))
+        ]
+    );
+}
+
+#[test]
 fn an_empty_patch_leaves_a_ruling_without_edits() {
     let temp = TempDir::new().unwrap();
     record(

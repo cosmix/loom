@@ -71,12 +71,13 @@ fn accept_notice(
     )
 }
 
-fn field_name(field: AmendmentField) -> &'static str {
+pub(super) fn field_name(field: AmendmentField) -> &'static str {
     match field {
         AmendmentField::Acceptance => "acceptance",
         AmendmentField::Wiring => "wiring",
         AmendmentField::WiringTests => "wiring-tests",
         AmendmentField::Contracts => "contracts",
+        AmendmentField::Harness => "harness",
     }
 }
 

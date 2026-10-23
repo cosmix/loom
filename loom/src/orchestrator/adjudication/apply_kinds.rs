@@ -20,6 +20,9 @@
 //! * impact-tests `accept`: records each failure in `reviews/<stage>/impact.json`
 //!   as the dispute's evidence showed it; `reject`: feedback that the failures
 //!   stand (`apply_impact.rs`).
+//! * freeze-refusal: every verdict hands a fresh contract writer its notice;
+//!   `accept` amends contracts, harness or a format-check criterion first
+//!   (`apply_freeze_refusal.rs`).
 
 use anyhow::{bail, Context, Result};
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -39,7 +42,7 @@ use crate::verify::transitions::list_all_stages;
 use super::apply::{apply_needs_more_evidence, apply_reject};
 use super::apply_accept::apply_accept;
 use super::requeue::requeue_or_hold_for_remaining_disputes;
-use super::{apply_contract, apply_impact, feedback, read_request};
+use super::{apply_contract, apply_freeze_refusal, apply_impact, feedback, read_request};
 
 /// Apply `record` to `stage` by the kind of the dispute it answers.
 pub(super) fn apply_by_kind(
@@ -50,7 +53,12 @@ pub(super) fn apply_by_kind(
     let dispute = record.id;
     match &record.verdict {
         DisputeVerdict::NeedsMoreEvidence { questions } => {
-            apply_needs_more_evidence(work_dir, stage, questions)
+            match dispute_kind(work_dir, stage, dispute) {
+                Some(DisputeKind::FreezeRefusal { .. }) => {
+                    apply_freeze_refusal::needs_more_evidence(work_dir, stage, questions)
+                }
+                _ => apply_needs_more_evidence(work_dir, stage, questions),
+            }
         }
         DisputeVerdict::Rulings { rulings } => apply_rulings(work_dir, stage, dispute, rulings),
         DisputeVerdict::Accept {
@@ -70,6 +78,9 @@ pub(super) fn apply_by_kind(
             Some(DisputeKind::ImpactTests { test_ids, evidence }) => {
                 let body = apply_impact::accept(work_dir, stage, dispute, &test_ids, &evidence)?;
                 notify_and_requeue(work_dir, stage, &body)
+            }
+            Some(DisputeKind::FreezeRefusal { .. }) => {
+                apply_freeze_refusal::accept(work_dir, stage, dispute, plan_patch, reasoning)
             }
             _ => apply_accept(work_dir, stage, plan_patch, dispute, reasoning),
         },
@@ -99,6 +110,10 @@ fn apply_rejection(
         }
         Some(DisputeKind::ImpactTests { test_ids, .. }) => {
             let body = apply_impact::reject_notice(&test_ids, reasoning);
+            notify_and_requeue(work_dir, stage, &body)
+        }
+        Some(DisputeKind::FreezeRefusal { .. }) => {
+            let body = apply_freeze_refusal::reject_notice(&stage.id, reasoning);
             notify_and_requeue(work_dir, stage, &body)
         }
         _ => apply_reject(work_dir, stage, dispute, reasoning, citations),

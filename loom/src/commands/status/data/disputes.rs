@@ -43,7 +43,8 @@ pub struct DisputeLine {
     pub kind: String,
     /// The ruling (`accept`, `reject`, ...); `None` while no verdict is filed.
     pub verdict: Option<String>,
-    /// The plan field the verdict patched.
+    /// The plan field the verdict patched; each distinct one, comma-separated,
+    /// when its entries name their own.
     pub field: Option<String>,
     /// The edits the verdict made to that field.
     pub ops: Vec<DisputeOp>,
@@ -84,9 +85,24 @@ fn read_dispute(dir: &Path, id: u32) -> DisputeLine {
         id,
         kind: text(request.get("kind")).unwrap_or_else(|| "dispute".to_owned()),
         verdict: text(ruling.and_then(|ruling| ruling.get("verdict"))),
-        field: text(patch.and_then(|patch| patch.get("field"))),
+        field: patch.and_then(patch_field),
         ops: patch.map(patch_ops).unwrap_or_default(),
     }
+}
+
+/// The field a patch amends. A freeze-refusal patch names one per entry, so
+/// it lists each distinct field in entry order: `harness, acceptance`.
+fn patch_field(plan_patch: &Value) -> Option<String> {
+    if let Some(field) = text(plan_patch.get("field")) {
+        return Some(field);
+    }
+    let mut fields: Vec<String> = Vec::new();
+    for entry in plan_patch.get("patches").and_then(Value::as_array)? {
+        if let Some(field) = text(entry.get("field")).filter(|field| !fields.contains(field)) {
+            fields.push(field);
+        }
+    }
+    (!fields.is_empty()).then(|| fields.join(", "))
 }
 
 /// The canonical form is a `patches` list; a single `patch` object is read too.

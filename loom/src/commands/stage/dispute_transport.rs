@@ -183,6 +183,13 @@ impl Dispute {
                 "The impact-test failures stand",
                 "stage dispute-criteria",
             ),
+            // Loom files this kind itself; no command sends it, and the
+            // daemon refuses it from every transport.
+            DisputeKind::FreezeRefusal { .. } => (
+                "the refused contract freeze".to_string(),
+                "The refused freeze is with the adjudicator; this session's turn is over.",
+                "stage contracts freeze",
+            ),
         }
     }
 }

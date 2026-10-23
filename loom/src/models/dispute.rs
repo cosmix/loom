@@ -11,6 +11,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::path::PathBuf;
 
+use crate::models::session::SessionType;
 use crate::plan::amendment::AmendmentField;
 use crate::verify::impact_tests::ImpactFailure;
 use crate::verify::integrity::IntegrityEvent;
@@ -110,6 +111,10 @@ pub enum DisputeKind {
         #[serde(default)]
         evidence: Vec<ImpactSnapshot>,
     },
+    /// A contract freeze loom refused, filed by loom for the stage's contract
+    /// writer and never by an agent. One refusal problem per entry; one the
+    /// writer's own refusal file reported starts `writer-reported: `.
+    FreezeRefusal { problems: Vec<String> },
 }
 
 impl DisputeKind {
@@ -129,6 +134,18 @@ impl DisputeKind {
             DisputeKind::Contract { .. } => "contract",
             DisputeKind::Integrity { .. } => "integrity",
             DisputeKind::ImpactTests { .. } => "impact-tests",
+            DisputeKind::FreezeRefusal { .. } => "freeze-refusal",
+        }
+    }
+
+    /// Whether the stage's current session, of type `session`, may file this
+    /// kind: a freeze refusal only for a contract writer, every other kind
+    /// for any session but one (a Knowledge session relays criterion
+    /// disputes; a contract writer disputes nothing it froze itself).
+    pub fn filed_by(&self, session: SessionType) -> bool {
+        match self {
+            DisputeKind::FreezeRefusal { .. } => session == SessionType::Contract,
+            _ => session != SessionType::Contract,
         }
     }
 }
