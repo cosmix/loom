@@ -7,6 +7,8 @@ mod output;
 mod stall;
 
 #[cfg(test)]
+mod direct_tests;
+#[cfg(test)]
 mod engine_tests;
 #[cfg(test)]
 mod lease_boot_tests;
