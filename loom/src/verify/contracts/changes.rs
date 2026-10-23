@@ -65,7 +65,9 @@ pub fn diff_from_base(repo: &WorktreeGit, work_dir: &Path, pathspec: &str) -> Re
 
 /// Every path changed since `base`: committed on the branch, changed in the
 /// working tree or index, or untracked and not ignored. Worktree scaffolding
-/// and untracked sandbox artifacts ([`is_tool_artifact`]) are left out.
+/// and untracked sandbox artifacts ([`is_tool_artifact`]) are left out. A
+/// changed name that cannot be shown as text fails the call (`listed_name`),
+/// unless it lies under worktree scaffolding, which is dropped first.
 pub fn changed_paths(repo: &WorktreeGit, working_dir: &Path, base: &str) -> Result<Vec<String>> {
     let worktree_root = repo.work_tree();
     let prefix = working_dir_prefix(worktree_root, working_dir)?;
@@ -74,8 +76,12 @@ pub fn changed_paths(repo: &WorktreeGit, working_dir: &Path, base: &str) -> Resu
         repo,
         &["status", "--porcelain", "-z", "-uall", "--no-renames"],
     )?;
-    let mut paths: BTreeSet<String> = nul_separated(&committed).collect();
-    paths.extend(status_paths(worktree_root, &status));
+    let mut paths = nul_separated(&committed)
+        .filter_map(listed_unless_scaffold)
+        .collect::<Result<BTreeSet<String>>>()?;
+    for path in status_paths(worktree_root, &status) {
+        paths.insert(path?);
+    }
     Ok(relative_to(&prefix, paths))
 }
 
@@ -105,11 +111,14 @@ pub(in crate::verify) fn changed_names(
 fn status_paths<'a>(
     worktree_root: &'a Path,
     status: &'a [u8],
-) -> impl Iterator<Item = String> + 'a {
+) -> impl Iterator<Item = Result<String>> + 'a {
     nul_separated(status).filter_map(move |entry| {
-        let path = entry.get(3..)?;
-        let placeholder = entry.starts_with("??") && is_tool_artifact(worktree_root, path);
-        (!placeholder).then(|| path.to_string())
+        let path = entry.get(3..).and_then(listed_unless_scaffold)?;
+        let placeholder = entry.starts_with(b"??")
+            && path
+                .as_ref()
+                .is_ok_and(|path| is_tool_artifact(worktree_root, path));
+        (!placeholder).then_some(path)
     })
 }
 
@@ -163,7 +172,9 @@ fn ignored_paths(repo: &WorktreeGit) -> Result<BTreeSet<PathBuf>> {
 
 /// Tracked and untracked (not ignored) files under the working directory that
 /// match a `harness` glob. Only the working directory is listed, so a glob
-/// such as `**/*.rs` never reaches a file beside or above it.
+/// such as `**/*.rs` never reaches a file beside or above it. A match whose
+/// name cannot be shown as text fails the call (`listed_name`); a file the
+/// globs do not match is no harness file, whatever its name.
 pub fn harness_files(
     repo: &WorktreeGit,
     working_dir: &Path,
@@ -185,11 +196,20 @@ pub fn harness_files(
         args.extend(["--", scope.as_str()]);
     }
     let listed = git(repo, &args)?;
-    let paths: BTreeSet<String> = nul_separated(&listed).collect();
-    Ok(relative_to(&prefix, paths)
-        .into_iter()
-        .filter(|path| store::validate_relative(path).is_ok() && harness_matches(path, harness))
-        .collect())
+    let mut matches = BTreeSet::new();
+    for entry in nul_separated(&listed) {
+        let shown = String::from_utf8_lossy(entry);
+        let path = from_working_dir(&prefix, &shown);
+        if is_worktree_scaffold_path(&shown)
+            || store::validate_relative(&path).is_err()
+            || !harness_matches(&path, harness)
+        {
+            continue;
+        }
+        listed_name(entry)?;
+        matches.insert(path);
+    }
+    Ok(matches.into_iter().collect())
 }
 
 /// `git <args>` through `repo`, read-only (`READ_ONLY`), its stdout on
@@ -208,11 +228,37 @@ pub(in crate::verify) fn git(repo: &WorktreeGit, args: &[&str]) -> Result<Vec<u8
     Ok(output.stdout)
 }
 
-fn nul_separated(bytes: &[u8]) -> impl Iterator<Item = String> + '_ {
+fn nul_separated(bytes: &[u8]) -> impl Iterator<Item = &[u8]> {
     bytes
         .split(|byte| *byte == 0)
         .filter(|entry| !entry.is_empty())
-        .map(|entry| String::from_utf8_lossy(entry).into_owned())
+}
+
+/// A name git listed, as text. A name that is not UTF-8 or holds a control
+/// character is refused, and the refusal shows it escaped ([`escaped`]):
+/// lossy or escaped text would name another file to everything that reads
+/// or hashes the path, and the raw name would break a refusal message into
+/// lines that read as loom's own problems.
+fn listed_name(entry: &[u8]) -> Result<String> {
+    match std::str::from_utf8(entry) {
+        Ok(name) if !name.chars().any(char::is_control) => Ok(name.to_string()),
+        _ => bail!(
+            "the worktree holds '{}', a file name loom cannot show as text (not UTF-8, or a \
+             control character such as a newline in it): rename or remove the file",
+            escaped(entry)
+        ),
+    }
+}
+
+/// [`listed_name`] of `entry`, or `None` for a worktree scaffold path: loom's
+/// own scaffolding is never a change, so an odd name under it cannot refuse a
+/// freeze. The scaffold test reads the lossy text, which keeps every scaffold
+/// prefix intact.
+fn listed_unless_scaffold(entry: &[u8]) -> Option<Result<String>> {
+    if is_worktree_scaffold_path(&String::from_utf8_lossy(entry)) {
+        return None;
+    }
+    Some(listed_name(entry))
 }
 
 /// The working directory's components beneath the worktree root.
@@ -256,130 +302,5 @@ fn from_working_dir(prefix: &[String], path: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::git::runner::run_git;
-    use crate::verify::contracts::test_support::{contract_worktree, pinned};
-
-    fn set(paths: &[&str]) -> BTreeSet<String> {
-        paths.iter().map(|path| path.to_string()).collect()
-    }
-
-    #[test]
-    fn paths_are_expressed_relative_to_the_working_directory() {
-        let prefix = vec!["loom".to_string()];
-        let paths = set(&[
-            "loom/tests/a.rs",
-            "doc/x.md",
-            "loom",
-            ".claude/settings.json",
-        ]);
-        assert_eq!(
-            relative_to(&prefix, paths),
-            vec!["../doc/x.md", "../loom", "tests/a.rs"]
-        );
-    }
-
-    #[test]
-    fn at_the_worktree_root_paths_are_unchanged() {
-        assert_eq!(
-            relative_to(&[], set(&["src/lib.rs", ".loom/work/x"])),
-            vec!["src/lib.rs"]
-        );
-    }
-
-    #[test]
-    fn harness_files_stay_inside_the_working_directory() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let root = tmp.path();
-        assert!(run_git(&["init", "-q"], root).unwrap().status.success());
-        for file in ["loom/src/inside.rs", "other/outside.rs"] {
-            let path = root.join(file);
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, "").unwrap();
-        }
-
-        let repo = WorktreeGit::discovered(root);
-        let files = harness_files(&repo, &root.join("loom"), &["**/*.rs".to_string()]).unwrap();
-
-        assert_eq!(files, vec!["src/inside.rs"]);
-    }
-
-    /// The sandbox's placeholders at worktree-root dotfiles are not changes
-    /// the contract phase made; the same name tracked and modified, content
-    /// at a listed name, and a FIFO a session made are.
-    #[test]
-    fn untracked_sandbox_artifacts_are_not_changes() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let root = tmp.path();
-        std::fs::write(root.join(".bashrc"), b"").unwrap();
-        std::fs::write(root.join(".gitconfig"), b"").unwrap();
-        std::fs::write(root.join(".mcp.json"), b"{}").unwrap();
-        nix::unistd::mkfifo(&root.join("pipe"), nix::sys::stat::Mode::S_IRWXU).unwrap();
-        let status = b"?? .bashrc\0?? .mcp.json\0?? pipe\0 M .gitconfig\0";
-
-        let listed: Vec<String> = status_paths(root, status).collect();
-
-        assert_eq!(listed, vec![".mcp.json", "pipe", ".gitconfig"]);
-    }
-
-    /// Git lists no FIFO, so the walk finds it; one inside an ignored
-    /// directory or `.git` is not looked for, and a symlink is not followed.
-    #[test]
-    fn special_files_are_found_outside_ignored_directories() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let worktree = contract_worktree(&tmp.path().join("repo"), "s1");
-        for dir in ["loom/src", "target", "other/.git"] {
-            std::fs::create_dir_all(worktree.join(dir)).unwrap();
-        }
-        std::fs::write(worktree.join(".gitignore"), "target/\n").unwrap();
-        for fifo in [
-            "loom/src/lib.rs",
-            "other/pipe",
-            "other/.git/pipe",
-            "target/pipe",
-        ] {
-            nix::unistd::mkfifo(&worktree.join(fifo), nix::sys::stat::Mode::S_IRWXU).unwrap();
-        }
-        std::os::unix::fs::symlink("/dev", worktree.join("devices")).unwrap();
-
-        let found = special_files(&pinned(&worktree), &worktree.join("loom")).unwrap();
-
-        assert_eq!(found, vec!["src/lib.rs", "../other/pipe"]);
-    }
-
-    /// A symlink to a directory outside the worktree, where a session may
-    /// swap one in for a directory, is not listed: the FIFOs behind it are
-    /// not named.
-    #[test]
-    fn special_files_behind_a_symlinked_directory_are_not_named() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let worktree = contract_worktree(&tmp.path().join("repo"), "s1");
-        let outside = tmp.path().join("outside");
-        std::fs::create_dir_all(outside.join("nested")).unwrap();
-        for fifo in ["pipe", "nested/pipe"] {
-            nix::unistd::mkfifo(&outside.join(fifo), nix::sys::stat::Mode::S_IRWXU).unwrap();
-        }
-        std::os::unix::fs::symlink(&outside, worktree.join("swapped")).unwrap();
-
-        assert!(special_files(&pinned(&worktree), &worktree)
-            .unwrap()
-            .is_empty());
-    }
-
-    /// Names that are not UTF-8 are reported with byte escapes, not mangled.
-    #[cfg(target_os = "linux")]
-    #[test]
-    fn special_files_with_non_utf8_names_are_named_losslessly() {
-        let tmp = tempfile::TempDir::new().unwrap();
-        let worktree = contract_worktree(&tmp.path().join("repo"), "s1");
-        let dir = worktree.join("loom").join(OsStr::from_bytes(b"d\xfe"));
-        std::fs::create_dir_all(&dir).unwrap();
-        let fifo = dir.join(OsStr::from_bytes(b"p\xff"));
-        nix::unistd::mkfifo(&fifo, nix::sys::stat::Mode::S_IRWXU).unwrap();
-
-        let found = special_files(&pinned(&worktree), &worktree.join("loom")).unwrap();
-
-        assert_eq!(found, vec!["d\\xfe/p\\xff"]);
-    }
-}
+#[path = "changes_tests.rs"]
+mod tests;

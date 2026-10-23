@@ -32,6 +32,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
 
+use super::special_walk::escaped;
 use super::store::{canonical_work_dir, load_freeze};
 use crate::fs::locking::{atomic_write_locked, locked_dir_update};
 use crate::fs::safe_read::{is_not_found, open_regular_no_follow, read_bounded};
@@ -56,6 +57,12 @@ pub const WRITER_PREFIX: &str = "writer-reported: ";
 /// run was interrupted or stopped, or its reports or binding could not be
 /// read. The adjudication prompt tells the judge to have the freeze rerun.
 pub const INFRASTRUCTURE_PREFIX: &str = "infrastructure: ";
+
+/// Starts a problem of a daemon refusal that quotes text loom did not write:
+/// a host run's error or detail, which can carry the child's log, the
+/// contract run's output or a git error naming worktree files. The adjudication
+/// prompt quotes it as unverified run output.
+pub const RUN_OUTPUT_PREFIX: &str = "run-output: ";
 
 /// `.loom/work/contracts/<stage>/refused.json`. The directory is the one
 /// `store` keeps the freeze record in.
@@ -130,6 +137,13 @@ pub fn problem_lines(text: &str) -> Vec<String> {
         .filter(|line| !line.is_empty())
         .map(str::to_string)
         .collect()
+}
+
+/// `text` as one [`RUN_OUTPUT_PREFIX`] problem line: its newlines and other
+/// control characters escaped (`escaped`), so [`problem_lines`] keeps it whole
+/// and no line of it stands as a problem of its own.
+pub fn run_output_line(text: &str) -> String {
+    format!("{RUN_OUTPUT_PREFIX}{}", escaped(text.trim().as_bytes()))
 }
 
 /// Where a stage's contract writer stands when something asks the stage to
