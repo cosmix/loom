@@ -20,15 +20,19 @@
 //! Which verdicts a dispute takes depends on its kind: the rules above are
 //! those of a criterion dispute, whose accept must also amend a list the
 //! disputed one admits (see `admits`); `verdict_kinds` holds the findings,
-//! contract and integrity rules, built from the same parts.
+//! contract and integrity rules, built from the same parts. A freeze-refusal
+//! verdict is checked against its stage and worktree instead, and refused
+//! rather than coerced (`parse_and_validate_in`, `verdict_freeze_refusal`).
 
 use serde::Deserialize;
 use serde_json::Value;
+use std::path::Path;
 
 use crate::models::dispute::{Citation, CriterionField, DisputeKind, DisputeVerdict, PlanPatch};
+use crate::models::stage::Stage;
 use crate::plan::amendment::AmendmentField;
 
-use super::{plan_patch, verdict_kinds};
+use super::{plan_patch, verdict_freeze_refusal, verdict_kinds};
 
 /// Result of parsing + validating raw JSON from the model.
 ///
@@ -62,6 +66,31 @@ pub fn parse_and_validate_for(raw: &str, kind: &DisputeKind) -> ValidationOutcom
         (Ok(json), _) => verdict_kinds::classify_for_kind(&json, kind),
         (Err(coerced), _) => coerced,
     }
+}
+
+/// What a verdict is recorded against: the state directory and the disputed
+/// stage, as `record.rs` loaded it.
+pub(crate) struct RecordContext<'a> {
+    pub work_dir: &'a Path,
+    pub stage: &'a Stage,
+}
+
+/// [`parse_and_validate_for`] at recording, where the stage and its worktree
+/// are at hand. A freeze-refusal verdict is checked against both, and every
+/// defect is an `Err` naming it for the judge to correct: coerced to
+/// needs-more-evidence, it would reach the contract writer and cost it a
+/// filing. Every other kind keeps its self-correcting rules.
+pub(crate) fn parse_and_validate_in(
+    raw: &str,
+    kind: &DisputeKind,
+    context: &RecordContext<'_>,
+) -> Result<ValidationOutcome, String> {
+    if !matches!(kind, DisputeKind::FreezeRefusal { .. }) {
+        return Ok(parse_and_validate_for(raw, kind));
+    }
+    let json = parse_json_lenient(raw)
+        .map_err(|e| format!("the verdict is not valid JSON: {e}; write a single JSON object"))?;
+    verdict_freeze_refusal::validate(&json, context).map(ValidationOutcome::Verdict)
 }
 
 /// The JSON in `raw`, or the question asking for it again.
@@ -171,19 +200,27 @@ pub(super) fn grounding(
     json: &Value,
     verdict: &str,
 ) -> Result<(String, Vec<Citation>), ValidationOutcome> {
+    grounding_text(json, verdict).map_err(needs_more_evidence)
+}
+
+/// [`grounding`], its defect as the message alone.
+pub(super) fn grounding_text(
+    json: &Value,
+    verdict: &str,
+) -> Result<(String, Vec<Citation>), String> {
     let reasoning = match json.get("reasoning").and_then(|v| v.as_str()) {
         Some(s) if !s.trim().is_empty() => s.to_string(),
         _ => {
-            return Err(needs_more_evidence(format!(
+            return Err(format!(
                 "{verdict} verdict missing non-empty 'reasoning' string."
-            )));
+            ))
         }
     };
-    let citations = parse_citations(json.get("citations")).map_err(needs_more_evidence)?;
+    let citations = parse_citations(json.get("citations"))?;
     if citations.is_empty() {
-        return Err(needs_more_evidence(format!(
+        return Err(format!(
             "{verdict} verdict must include at least one citation grounding the decision."
-        )));
+        ));
     }
     Ok((reasoning, citations))
 }

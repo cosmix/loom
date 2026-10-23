@@ -79,9 +79,9 @@ fn resumes_a_stage_whose_session_progressed_after_the_wait_began() {
     );
 }
 
-/// A contract writer parked on a refused freeze continues once the operator
-/// types into its session and it runs a tool; the refusal stops being the
-/// stage's reason.
+/// A stage waiting on input whose review reason still names a refused freeze
+/// resumes once the operator types into its session and it runs a tool; the
+/// refusal stops being the stage's reason.
 #[test]
 fn resuming_a_parked_contract_writer_clears_its_refusal_reason() {
     let temp = tempfile::tempdir().unwrap();

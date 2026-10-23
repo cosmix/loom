@@ -78,6 +78,21 @@ fn a_findings_request_round_trips_with_its_evidence() {
 }
 
 #[test]
+fn a_freeze_refusal_request_round_trips_under_its_kebab_tag() {
+    let req = request(DisputeKind::FreezeRefusal {
+        problems: ids(&[
+            "writer-reported: tests/x.rs is missing",
+            "src/main.rs changed",
+        ]),
+    });
+    let y = crate::yaml::to_string(&req).unwrap();
+    assert!(y.contains("kind: freeze-refusal"), "{y}");
+    let back: DisputeRequest = crate::yaml::from_str(&y).unwrap();
+    assert_eq!(req, back);
+    assert_eq!(back.kind.name(), "freeze-refusal");
+}
+
+#[test]
 fn an_integrity_request_round_trips_with_its_evidence() {
     let event = IntegrityEvent {
         id: "TI-assert-rust".to_string(),

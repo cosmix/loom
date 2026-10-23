@@ -13,7 +13,6 @@ use tempfile::TempDir;
 
 use super::apply::Applied;
 use super::freeze::{apply_freeze_result, run_freeze_job};
-use super::runner::DAEMON_STOPPED;
 use super::{digest, new_job_id, store, JobKind, JobRecord, JobResult, JobState};
 use crate::fs::session_files::save_session;
 use crate::fs::work_dir::WorkDir;
@@ -22,16 +21,17 @@ use crate::models::stage::StageStatus;
 use crate::process::sandbox_probe::{confined_commands_runnable, skip_unless};
 use crate::stage_service::contracts::freeze_with_reports;
 use crate::stage_service::{handle_freeze_contracts, Response};
+use crate::verify::contracts::refusal::daemon_refusal;
 use crate::verify::contracts::store::load_freeze;
 use crate::verify::contracts::test_support::{
     contract_stage, red_reports, shell_contract_worktree, write_test_freeze, CONTRACT_FILE,
 };
-use crate::verify::transitions::{load_stage, save_stage, update_stage};
+use crate::verify::transitions::{load_stage, save_stage};
 
-const STAGE: &str = "s1";
-const HARNESS: &str = "harness.txt";
+pub(super) const STAGE: &str = "s1";
+pub(super) const HARNESS: &str = "harness.txt";
 
-fn confinement_unavailable(test_name: &str) -> bool {
+pub(super) fn confinement_unavailable(test_name: &str) -> bool {
     skip_unless(
         confined_commands_runnable(),
         test_name,
@@ -42,15 +42,15 @@ fn confinement_unavailable(test_name: &str) -> bool {
 /// The stage worktree holding the contract file and a harness file, the
 /// stage's running contract session, and one contract whose test is the
 /// shell `command`.
-struct Fixture {
+pub(super) struct Fixture {
     _tmp: TempDir,
-    work_dir: PathBuf,
-    worktree: PathBuf,
-    session_id: String,
+    pub(super) work_dir: PathBuf,
+    pub(super) worktree: PathBuf,
+    pub(super) session_id: String,
 }
 
 impl Fixture {
-    fn new(command: &str) -> Self {
+    pub(super) fn new(command: &str) -> Self {
         let tmp = TempDir::new().unwrap();
         let repo = tmp.path().canonicalize().unwrap().join("repo");
         let worktree = shell_contract_worktree(&repo, STAGE);
@@ -77,7 +77,7 @@ impl Fixture {
     }
 
     /// A current freeze job in `state` for the worktree as it stands now.
-    fn job(&self, state: JobState) -> JobRecord {
+    pub(super) fn job(&self, state: JobState) -> JobRecord {
         let record = JobRecord {
             id: new_job_id(),
             stage_id: STAGE.to_string(),
@@ -100,7 +100,7 @@ impl Fixture {
     }
 
     /// Run `record` and end it as the runner would from its result.
-    fn run(&self, mut record: JobRecord) -> (JobRecord, JobResult) {
+    pub(super) fn run(&self, mut record: JobRecord) -> (JobRecord, JobResult) {
         let result = run_freeze_job(&self.work_dir, &record).unwrap();
         record.state = if result.passed {
             JobState::Passed
@@ -112,19 +112,19 @@ impl Fixture {
         (record, result)
     }
 
-    fn apply(&self, record: &JobRecord) -> Applied {
+    pub(super) fn apply(&self, record: &JobRecord) -> Applied {
         apply_freeze_result(&self.work_dir, record).unwrap()
     }
 
-    fn status(&self) -> StageStatus {
+    pub(super) fn status(&self) -> StageStatus {
         load_stage(STAGE, &self.work_dir).unwrap().status
     }
 
-    fn frozen(&self) -> bool {
+    pub(super) fn frozen(&self) -> bool {
         load_freeze(&self.work_dir, STAGE).unwrap().is_some()
     }
 
-    fn git(&self, args: &[&str]) {
+    pub(super) fn git(&self, args: &[&str]) {
         let output = Command::new("git")
             .args(["-c", "user.name=t", "-c", "user.email=t@t"])
             .args([
@@ -141,33 +141,23 @@ impl Fixture {
     }
 
     /// A passing run, not yet applied.
-    fn passed_run(&self) -> JobRecord {
+    pub(super) fn passed_run(&self) -> JobRecord {
         let (record, result) = self.run(self.job(JobState::Running));
         assert!(result.passed, "{result:?}");
         record
     }
 }
 
-fn verdicts(result: &JobResult) -> Vec<(&str, bool)> {
+pub(super) fn verdicts(result: &JobResult) -> Vec<(&str, bool)> {
     let outcomes = result.criteria.iter();
     outcomes.map(|o| (o.label.as_str(), o.passed)).collect()
 }
 
-fn refused_with(applied: Applied) -> String {
+pub(super) fn refused_with(applied: Applied) -> String {
     match applied {
         Applied::FreezeRefused(message) => message,
         other => panic!("expected a refused freeze, got {other:?}"),
     }
-}
-
-fn assert_parked(fx: &Fixture, applied: Applied, naming: &str) {
-    let message = refused_with(applied);
-    assert!(message.contains(naming), "{message}");
-    assert_eq!(fx.status(), StageStatus::WaitingForInput);
-    let stage = load_stage(STAGE, &fx.work_dir).unwrap();
-    let reason = stage.review_reason.unwrap_or_default();
-    assert!(reason.contains(naming), "{reason}");
-    assert!(!fx.frozen());
 }
 
 #[test]
@@ -189,19 +179,6 @@ fn red_contracts_pass_and_are_frozen() {
         "{applied:?}"
     );
     assert!(fx.frozen());
-}
-
-#[test]
-#[serial]
-fn a_green_contract_fails_and_parks_the_stage_naming_it() {
-    if confinement_unavailable("a_green_contract_fails_and_parks_the_stage_naming_it") {
-        return;
-    }
-    let fx = Fixture::new("true");
-    let (record, result) = fx.run(fx.job(JobState::Running));
-    assert_eq!(record.state, JobState::Failed);
-    assert_eq!(verdicts(&result)[0], ("contract:rejects-x", false));
-    assert_parked(&fx, fx.apply(&record), "rejects-x");
 }
 
 #[test]
@@ -228,48 +205,6 @@ fn a_contract_that_edits_a_harness_file_while_it_runs_is_an_error() {
     assert!(error.contains("worktree changed during the run"), "{error}");
     assert!(error.contains(HARNESS), "{error}");
     assert_eq!(record.state, JobState::Failed);
-}
-
-#[test]
-#[serial]
-fn contract_files_changed_after_a_passing_run_park_at_apply() {
-    if confinement_unavailable("contract_files_changed_after_a_passing_run_park_at_apply") {
-        return;
-    }
-    let fx = Fixture::new("exit 1");
-    let record = fx.passed_run();
-    std::fs::write(fx.worktree.join(CONTRACT_FILE), "#[test]\nfn y() {}\n").unwrap();
-    assert_parked(&fx, fx.apply(&record), CONTRACT_FILE);
-}
-
-#[test]
-#[serial]
-fn a_commit_after_a_passing_run_parks_at_apply() {
-    if confinement_unavailable("a_commit_after_a_passing_run_parks_at_apply") {
-        return;
-    }
-    let fx = Fixture::new("exit 1");
-    fx.git(&["add", "-A"]);
-    fx.git(&["commit", "-q", "-m", "contracts"]);
-    let record = fx.passed_run();
-    fx.git(&["commit", "-q", "--allow-empty", "-m", "later"]);
-    assert_parked(&fx, fx.apply(&record), "HEAD moved");
-}
-
-#[test]
-#[serial]
-fn a_contract_command_amended_after_a_passing_run_parks_at_apply() {
-    if confinement_unavailable("a_contract_command_amended_after_a_passing_run_parks_at_apply") {
-        return;
-    }
-    let fx = Fixture::new("exit 1");
-    let record = fx.passed_run();
-    update_stage(STAGE, &fx.work_dir, |stage| {
-        stage.contracts[0].test = "exit 2".to_string();
-        Ok(())
-    })
-    .unwrap();
-    assert_parked(&fx, fx.apply(&record), "contract definitions changed");
 }
 
 #[test]
@@ -301,7 +236,7 @@ fn files_that_differ_from_the_verified_hashes_are_not_frozen() {
 
 #[test]
 #[serial]
-fn a_superseded_job_is_ignored_and_parks_nothing() {
+fn a_superseded_job_is_ignored_and_records_nothing() {
     let fx = Fixture::new("exit 1");
     let mut record = fx.job(JobState::Cancelled);
     record.detail = Some("superseded by abc".to_string());
@@ -311,21 +246,12 @@ fn a_superseded_job_is_ignored_and_parks_nothing() {
         "{applied:?}"
     );
     assert_eq!(fx.status(), StageStatus::Executing);
+    assert_eq!(daemon_refusal(&fx.work_dir, STAGE).unwrap(), None);
 }
 
 #[test]
 #[serial]
-fn a_job_cancelled_by_the_daemon_shutdown_parks_the_stage() {
-    let fx = Fixture::new("exit 1");
-    let mut record = fx.job(JobState::Cancelled);
-    record.detail = Some(DAEMON_STOPPED.to_string());
-    let applied = fx.apply(&record);
-    assert_parked(&fx, applied, "the daemon stopped during the contract run");
-}
-
-#[test]
-#[serial]
-fn a_frozen_stage_is_ignored_and_never_parked() {
+fn a_frozen_stage_is_ignored_and_records_nothing() {
     let fx = Fixture::new("exit 1");
     write_test_freeze(&fx.work_dir, STAGE, &fx.session_id);
     let mut record = fx.job(JobState::Failed);
@@ -336,6 +262,7 @@ fn a_frozen_stage_is_ignored_and_never_parked() {
         "{applied:?}"
     );
     assert_eq!(fx.status(), StageStatus::Executing);
+    assert_eq!(daemon_refusal(&fx.work_dir, STAGE).unwrap(), None);
 }
 
 #[test]

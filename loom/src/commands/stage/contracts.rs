@@ -32,8 +32,8 @@ use super::acceptance_runner::resolve_stage_execution_paths;
 
 /// What every accepted request prints: the daemon does the rest.
 const RUN_REQUESTED: &str = "Contract run requested. End your turn now: the daemon runs the \
-     contracts on the host, then freezes them and starts the implementation session, or parks \
-     the stage with the refusal.";
+     contracts on the host, then freezes them and starts the implementation session, or sends \
+     the refusal to an adjudicator, whose verdict a fresh contract writer starts with.";
 
 /// A stage and the places its contract files live.
 pub(crate) struct ContractSite {

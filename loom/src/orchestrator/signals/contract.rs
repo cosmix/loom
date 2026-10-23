@@ -94,6 +94,12 @@ pub fn generate_contract_signal(
         })
         .collect();
     let scaffold = scaffold_for(stage, work_dir, &worktree.path, &stage_root, &contracts);
+    // No `has_disputes` gate (unlike the stage signal): the notice here comes
+    // from a refused freeze, which the old dispute tallies do not count, and
+    // only the adjudication apply clears it.
+    let feedback = crate::orchestrator::adjudication::feedback::read_feedback(work_dir, &stage.id)
+        .ok()
+        .flatten();
     let content = format_contract_signal(
         session,
         stage,
@@ -101,6 +107,7 @@ pub fn generate_contract_signal(
         &contracts,
         &scaffold,
         &embedded_context,
+        feedback.as_deref(),
     );
 
     // Record before writing, as every stage signal path does: a session that
@@ -131,6 +138,7 @@ fn format_contract_signal(
     contracts: &[ResolvedContract<'_>],
     scaffold: &Result<Vec<ScaffoldEdit>, String>,
     embedded_context: &EmbeddedContext,
+    feedback: Option<&str>,
 ) -> String {
     let mut content = format!("# Contract Signal: {}\n\n", session.id);
     content.push_str("## Target\n\n");
@@ -157,6 +165,12 @@ fn format_contract_signal(
         contracts,
         &embedded_context.skill_recommendations,
     );
+    if let Some(text) = feedback {
+        content.push_str("## Adjudicator Feedback (from the refused freeze)\n\n");
+        content.push_str(text);
+        super::helpers::ensure_trailing_newline(&mut content);
+        content.push('\n');
+    }
     append_rules(&mut content, &stage.id);
     content
 }
@@ -346,11 +360,23 @@ fn append_rules(content: &mut String, stage_id: &str) {
          and a frozen file cannot change afterwards.\n",
     );
     content.push_str(&format!(
-        "7. Finish with `loom stage contracts freeze {stage_id}`. It checks that you changed \
-         only contract files, harness files and the scaffold edits, then asks the daemon to run every contract on the \
-         host and freeze them. If it refuses, fix what it names and run it again.\n\
-         8. After the freeze request, stop. The daemon freezes the contracts and starts \
-         the implementation session, or parks the stage with the refusal.\n\n"
+        "7. Finish with `loom stage contracts freeze {stage_id}`, then stop. If it refuses, \
+         fix what it names and run it again. If you believe the stage's contract setup (its \
+         contracts or harness) or a format criterion makes the freeze impossible, record why \
+         with `loom memory note \"freeze-dispute: <evidence>\"`, run the freeze anyway, and \
+         stop: every refused freeze goes to an adjudicator, who reads your note and decides. \
+         The freeze checks that you changed only contract files, harness files and the \
+         scaffold edits, then asks the daemon to run every contract on the host and freeze \
+         them.\n\
+         8. If the Adjudicator Feedback section asks questions, answer each with `loom memory \
+         note \"freeze-dispute: answer <n>: <evidence>\"`, then run the freeze and stop; \
+         that is your follow-up. Do not commit.\n\
+         9. You cannot change the plan, and neither can the operator's answer to a question: \
+         do not ask the operator to amend contracts, harness or criteria, or to run commands \
+         for you. A refused freeze reaches the adjudicator on its own. Ask the operator only \
+         what only a person can decide.\n\
+         10. If the work needs something only a person can provide (a credential, a host \
+         install), run `loom stage block {stage_id} \"<what and why>\"`.\n\n"
     ));
     content.push_str("- Stay inside this worktree.\n");
     content.push_str(CONTEXT_CEILING_HANDOFF);

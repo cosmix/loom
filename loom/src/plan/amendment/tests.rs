@@ -2,6 +2,10 @@
 //! exercise the full `apply_amendment` flow live under
 //! `plan::tests::amendment`.
 use super::*;
+use crate::models::stage::Stage;
+use crate::plan::amendment_fields::{
+    apply_patch_to_stage_def, current_field_len, parse_amendment_value, sync_stage_from_definition,
+};
 use crate::plan::schema::StageDefinition;
 
 #[test]
@@ -105,4 +109,117 @@ fn apply_patch_vec_delete_shifts() {
     let p = AmendmentPatch::Delete { index: 1 };
     crate::plan::amendment_fields::apply_patch_vec::<i32>(&mut v, &p, None).unwrap();
     assert_eq!(v, vec![1, 3]);
+}
+
+fn harness_request(patch: AmendmentPatch) -> AmendmentRequest {
+    AmendmentRequest {
+        stage_id: "s".to_string(),
+        field: AmendmentField::Harness,
+        patch,
+        reason: None,
+        dispute_id: None,
+    }
+}
+
+/// Parse, apply to the definition, then copy to a stage: the path `apply_amendment` takes.
+fn amend_harness(def: &mut StageDefinition, patch: AmendmentPatch) -> Result<Stage> {
+    let request = harness_request(patch);
+    let value = parse_amendment_value(&request)?;
+    apply_patch_to_stage_def(def, AmendmentField::Harness, &request.patch, &value)?;
+    let mut stage = Stage::new("S".to_string(), None);
+    sync_stage_from_definition(&mut stage, def, AmendmentField::Harness);
+    Ok(stage)
+}
+
+#[test]
+fn harness_insert_replace_delete_reach_the_stage_record() {
+    let mut def = StageDefinition::default();
+    let insert = |index, value: &str| AmendmentPatch::Insert {
+        index,
+        value: value.to_string(),
+    };
+    amend_harness(&mut def, insert(0, "tests/a")).unwrap();
+    let stage = amend_harness(&mut def, insert(1, "tests/b")).unwrap();
+    assert_eq!(stage.harness, vec!["tests/a", "tests/b"]);
+    assert_eq!(current_field_len(&def, AmendmentField::Harness), 2);
+
+    let replace = AmendmentPatch::Replace {
+        index: 0,
+        value: "tests/c".to_string(),
+    };
+    let stage = amend_harness(&mut def, replace).unwrap();
+    assert_eq!(stage.harness, vec!["tests/c", "tests/b"]);
+    assert_eq!(def.harness, stage.harness);
+
+    let stage = amend_harness(&mut def, AmendmentPatch::Delete { index: 1 }).unwrap();
+    assert_eq!(stage.harness, vec!["tests/c"]);
+}
+
+#[test]
+fn harness_globs_round_trip_verbatim() {
+    for glob in ["**/fixtures/*.json", "tests/x #1"] {
+        let mut def = StageDefinition::default();
+        let patch = AmendmentPatch::Insert {
+            index: 0,
+            value: format!("  {glob}  "),
+        };
+        let stage = amend_harness(&mut def, patch).unwrap();
+        assert_eq!(stage.harness, vec![glob.to_string()]);
+    }
+}
+
+#[test]
+fn harness_empty_value_is_refused() {
+    let mut def = StageDefinition::default();
+    let patch = AmendmentPatch::Insert {
+        index: 0,
+        value: "   ".to_string(),
+    };
+    assert!(amend_harness(&mut def, patch).is_err());
+    assert!(def.harness.is_empty());
+}
+
+#[test]
+fn harness_parent_dir_component_fails_plan_validation() {
+    let mut def = StageDefinition {
+        id: "s".to_string(),
+        name: "S".to_string(),
+        working_dir: ".".to_string(),
+        ..Default::default()
+    };
+    let patch = AmendmentPatch::Insert {
+        index: 0,
+        value: "../outside/**".to_string(),
+    };
+    amend_harness(&mut def, patch).unwrap();
+    let metadata = LoomMetadata {
+        loom: crate::plan::schema::LoomConfig {
+            version: 2,
+            stages: vec![def],
+            ..Default::default()
+        },
+    };
+    let errors = crate::plan::schema::validate(&metadata).expect_err("`..` must be refused");
+    assert!(
+        errors.iter().any(|e| e.message.contains("harness entry")),
+        "got {errors:?}"
+    );
+}
+
+#[test]
+fn harness_audit_row_reads_back() {
+    let row = AuditRow {
+        version: 1,
+        stage_id: "s".to_string(),
+        field: AmendmentField::Harness,
+        patch_op: "insert",
+        index: 0,
+        applied_at: Utc::now(),
+        dispute_id: None,
+        reason: None,
+    };
+    let line = row.to_markdown_row();
+    let cells: Vec<&str> = line.split('|').map(|s| s.trim()).collect();
+    assert_eq!(cells[3], "harness");
+    assert_eq!(field_from_name(cells[3]), Some(AmendmentField::Harness));
 }

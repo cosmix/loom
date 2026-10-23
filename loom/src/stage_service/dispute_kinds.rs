@@ -1,25 +1,32 @@
 //! Server-side handler for `Request::FileDispute` (DESIGN D15): a plan v2
 //! stage disputes review findings, a frozen contract, test-integrity events
-//! or failing impact-selected tests.
+//! or failing impact-selected tests; and loom's own filing of a refused
+//! contract freeze ([`file_freeze_refusal`]).
 //!
 //! It files under the same per-stage lock, id allocation and create-new
 //! `request.md` as `handle_dispute_criteria` (`dispute_store.rs`), after checks
 //! of its own:
 //!
 //! 1. the stage is a plan v2 stage: a v1 stage disputes only its criteria;
-//! 2. every id names something loom itself recorded or derives now: an open
+//! 2. the stage's current session may file the kind (`DisputeKind::filed_by`):
+//!    the session record `stage.session` names is the filer, because every
+//!    transport admits only the stage's owner. A stage with no current session
+//!    (an operator's filing) admits every kind but a freeze refusal;
+//! 3. every id names something loom itself recorded or derives now: an open
 //!    finding (own or carried), a frozen contract, a current test-integrity
 //!    event, or an impact-test failure in the stage's observed record
 //!    (`reviews/<stage>/impact-observed.json`, which only loom's gate run
 //!    writes, `verify::impact_tests::observed`). The evidence `request.md`
-//!    records is the daemon's own copy of those ids, never the client's;
-//! 3. the kind's budget (`models::stage::dispute_budgets`); an exhausted one
+//!    records is the daemon's own copy of those ids, never the client's. A
+//!    freeze refusal names an unfrozen contract phase instead;
+//! 4. the kind's budget (`models::stage::dispute_budgets`); an exhausted one
 //!    escalates the stage to NeedsHumanReview and files nothing.
 //!
 //! The reason is the agent's own text, kept to `DISPUTE_REASON_MAX_BYTES`.
 //!
 //! A refusal is a `Response::Error`, never an `Err`: the spool drain retries
-//! an `Err` on every tick, and a dispute refused once is refused forever.
+//! an `Err` on every tick, and a dispute refused once is refused forever. The
+//! transport entries refuse a freeze refusal outright: loom alone files one.
 
 use anyhow::{bail, Context, Result};
 use std::path::Path;
@@ -27,16 +34,33 @@ use std::path::Path;
 use super::dispute::transition_refusal;
 use super::dispute_store::{escalate_to_human_review, lock_stage_disputes};
 use super::Response;
+use crate::context::untrusted::inline_safe;
+use crate::fs::session_files::load_session_exact;
 use crate::models::dispute::{
     select_events, select_findings, select_impact, truncate_to_byte_limit, DisputeKind,
     DISPUTE_REASON_MAX_BYTES,
 };
 use crate::models::stage::dispute_budgets::{self, MAX_DISPUTES_PER_KIND};
-use crate::models::stage::{Stage, StageType};
+use crate::models::stage::{Stage, StageStatus, StageType};
 use crate::verify::contracts::store::load_freeze;
 use crate::verify::impact_tests::{check_failure_id, load_observed};
 use crate::verify::review::store::open_findings;
 use crate::verify::transitions::{load_stage, update_stage};
+
+/// The refusal every transport answers a freeze refusal with.
+const LOOM_ONLY: &str = "freeze-refusal disputes are filed by loom only";
+
+/// Most problems, and most bytes of each, a freeze-refusal dispute keeps.
+const MAX_REFUSAL_PROBLEMS: usize = 32;
+const MAX_PROBLEM_BYTES: usize = 1024;
+
+/// What [`file_freeze_refusal`] did: filed the dispute, or declined it with
+/// the admission's reason. A declined refusal is never retried.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum FreezeRefusalFiling {
+    Filed(String),
+    Declined(String),
+}
 
 pub(crate) fn handle_file_dispute(
     work_dir: &Path,
@@ -49,6 +73,110 @@ pub(crate) fn handle_file_dispute(
 }
 
 pub(crate) fn handle_file_dispute_identified(
+    work_dir: &Path,
+    stage_id: &str,
+    kind: DisputeKind,
+    reason: String,
+    evidence_commit: Option<String>,
+    request_id: Option<&str>,
+) -> Result<Response> {
+    if matches!(kind, DisputeKind::FreezeRefusal { .. }) {
+        return Ok(refused(LOOM_ONLY.to_string()));
+    }
+    file_dispute_inner(
+        work_dir,
+        stage_id,
+        kind,
+        reason,
+        evidence_commit,
+        request_id,
+    )
+}
+
+/// File loom's own dispute over a refused contract freeze of `stage_id`.
+/// `request_key` names the refusal, so a retried filing reuses one
+/// `request.md`. `Err` only when the filing could not be read or written.
+pub(crate) fn file_freeze_refusal(
+    work_dir: &Path,
+    stage_id: &str,
+    problems: Vec<String>,
+    request_key: &str,
+) -> Result<FreezeRefusalFiling> {
+    let problems = normalized_problems(&problems);
+    let first = problems
+        .first()
+        .map_or("no problem was recorded", String::as_str);
+    let reason = format!("contract freeze refused: {first}");
+    let kind = DisputeKind::FreezeRefusal { problems };
+    let key = receipt_key(request_key);
+    Ok(
+        match file_dispute_inner(work_dir, stage_id, kind, reason, None, Some(&key))? {
+            Response::DisputeCreated { id } => {
+                FreezeRefusalFiling::Filed(format!("freeze-refusal dispute {id} filed"))
+            }
+            Response::Error { message } => FreezeRefusalFiling::Declined(message),
+            other => FreezeRefusalFiling::Declined(format!("unexpected filing outcome {other:?}")),
+        },
+    )
+}
+
+/// Send `stage_id` to a human once its refused freezes have spent the
+/// freeze-refusal budget. The caller has retired the writer already;
+/// `unretired` names a survivor of that retirement.
+pub(crate) fn escalate_freeze_refusal(
+    work_dir: &Path,
+    stage_id: &str,
+    problems: &[String],
+    unretired: Option<&str>,
+) -> Result<()> {
+    crate::validation::validate_id(stage_id)?;
+    let last = normalized_problems(problems).join("; ");
+    let mut reason = format!(
+        "contract freeze refused {} times; adjudication could not resolve it: {}. Decide \
+         with: loom stage human-review {stage_id}",
+        MAX_DISPUTES_PER_KIND + 1,
+        truncate_to_byte_limit(&last, DISPUTE_REASON_MAX_BYTES)
+    );
+    if let Some(detail) = unretired {
+        reason.push_str(&format!(
+            ". The contract writer was not retired ({}); 'loom stage reset {stage_id} \
+             --kill-session' takes it down",
+            inline_safe(detail)
+        ));
+    }
+    let locked = lock_stage_disputes(work_dir, stage_id)?;
+    escalate_to_human_review(stage_id, &locked.work_dir, |_| reason);
+    let status = load_stage(stage_id, &locked.work_dir)?.status;
+    if status != StageStatus::NeedsHumanReview {
+        bail!("stage '{stage_id}' is {status}; its refused freezes could not be escalated");
+    }
+    Ok(())
+}
+
+/// The refusal's problems as a dispute keeps them: one line each, empty ones
+/// dropped, flattened as untrusted text (a problem the writer reported is its
+/// own text), bounded in number and size.
+fn normalized_problems(problems: &[String]) -> Vec<String> {
+    problems
+        .iter()
+        .flat_map(|problem| problem.split('\n'))
+        .map(inline_safe)
+        .filter(|problem| !problem.is_empty())
+        .take(MAX_REFUSAL_PROBLEMS)
+        .map(|problem| truncate_to_byte_limit(&problem, MAX_PROBLEM_BYTES))
+        .collect()
+}
+
+/// The request receipt for `request_key`: a receipt key must be a plain id,
+/// and a refusal's key carries a timestamp, so it is named by its hash.
+fn receipt_key(request_key: &str) -> String {
+    let digest = crate::relay::sha256_hex(request_key.as_bytes());
+    format!("freeze-refusal-{}", &digest[..32])
+}
+
+/// Today's filing body, for every kind the transports admit and for loom's
+/// own freeze refusal.
+fn file_dispute_inner(
     work_dir: &Path,
     stage_id: &str,
     kind: DisputeKind,
@@ -71,7 +199,7 @@ pub(crate) fn handle_file_dispute_identified(
         Err(error) => return Ok(refused(format!("{error:#}"))),
     };
     if dispute_budgets::exhausted(&stage, &kind) {
-        return Ok(escalate_exhausted(&locked.work_dir, &stage, &kind));
+        return Ok(exhausted_response(&locked.work_dir, &stage, &kind));
     }
     if let Some(refusal) = transition_refusal(&stage, &reason) {
         return Ok(refusal);
@@ -95,6 +223,19 @@ pub(crate) fn handle_file_dispute_identified(
 
 fn refused(message: String) -> Response {
     Response::Error { message }
+}
+
+/// The refusal for a spent budget. A freeze refusal only refuses: escalating
+/// here would leave the contract writer alive, so the caller retires it, then
+/// calls `escalate_freeze_refusal`.
+fn exhausted_response(work_dir: &Path, stage: &Stage, kind: &DisputeKind) -> Response {
+    if matches!(kind, DisputeKind::FreezeRefusal { .. }) {
+        return refused(format!(
+            "the freeze-refusal budget of stage '{}' is spent; escalate it instead",
+            stage.id
+        ));
+    }
+    escalate_exhausted(work_dir, stage, kind)
 }
 
 /// Escalate to NeedsHumanReview and refuse, as the criterion path does when
@@ -123,9 +264,14 @@ fn confirm(work_dir: &Path, stage: &Stage, kind: DisputeKind) -> Result<DisputeK
             stage.id
         );
     }
+    check_filer(work_dir, stage, &kind)?;
     match kind {
         DisputeKind::Criterion { .. } => {
             bail!("a criterion is disputed with `loom stage dispute-criteria`")
+        }
+        DisputeKind::FreezeRefusal { problems } => {
+            check_unfrozen(work_dir, stage)?;
+            Ok(DisputeKind::FreezeRefusal { problems })
         }
         DisputeKind::Findings { finding_ids, .. } => {
             let open = open_findings(work_dir, &stage.id)?;
@@ -178,6 +324,53 @@ fn confirm_impact(work_dir: &Path, stage: &Stage, test_ids: Vec<String>) -> Resu
     Ok(DisputeKind::ImpactTests { test_ids, evidence })
 }
 
+/// Refuse a kind the stage's current session may not file. The session record
+/// `stage.session` names is the filer: the socket admits a dispute only from
+/// the stage's own Stage session, the relay never from a contract writer, and
+/// loom files a freeze refusal for the writer it refused. A stage with no
+/// current session, or whose session record is gone, admits every kind but a
+/// freeze refusal: that is an operator's filing.
+fn check_filer(work_dir: &Path, stage: &Stage, kind: &DisputeKind) -> Result<()> {
+    let session = match stage.session.as_deref() {
+        Some(session_id) => load_session_exact(work_dir, session_id)?,
+        None => None,
+    };
+    match session {
+        Some(session) if !kind.filed_by(session.session_type) => bail!(
+            "a {} dispute is not filed for stage '{}' while its {} session '{}' owns it",
+            kind.name(),
+            stage.id,
+            session.session_type,
+            session.id
+        ),
+        Some(_) => Ok(()),
+        None if matches!(kind, DisputeKind::FreezeRefusal { .. }) => bail!(
+            "stage '{}' has no contract writer whose freeze could be refused",
+            stage.id
+        ),
+        None => Ok(()),
+    }
+}
+
+/// A freeze refusal stands only while the contract phase is open: a standard
+/// stage with contracts, executing, its contracts not frozen yet.
+fn check_unfrozen(work_dir: &Path, stage: &Stage) -> Result<()> {
+    if stage.stage_type != StageType::Standard || stage.contracts.is_empty() {
+        bail!("stage '{}' has no contracts to freeze", stage.id);
+    }
+    if stage.status != StageStatus::Executing {
+        bail!(
+            "stage '{}' is {}, not executing its contract phase",
+            stage.id,
+            stage.status
+        );
+    }
+    if load_freeze(work_dir, &stage.id)?.is_some() {
+        bail!("the contracts of stage '{}' are already frozen", stage.id);
+    }
+    Ok(())
+}
+
 fn check_frozen(work_dir: &Path, stage_id: &str, contract_id: &str) -> Result<()> {
     let Some(record) = load_freeze(work_dir, stage_id)? else {
         bail!("the contracts of stage '{stage_id}' are not frozen");
@@ -199,3 +392,7 @@ mod tests;
 #[cfg(test)]
 #[path = "../daemon/server/dispute_impact_tests.rs"]
 mod impact_tests;
+
+#[cfg(test)]
+#[path = "../daemon/server/dispute_freeze_refusal_tests.rs"]
+mod freeze_refusal_tests;

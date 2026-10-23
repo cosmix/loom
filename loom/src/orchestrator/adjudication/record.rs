@@ -33,7 +33,7 @@ use anyhow::{bail, Context, Result};
 use std::path::Path;
 
 use crate::models::dispute::{dispute_dir, verdict_file, DisputeKind};
-use crate::models::stage::StageStatus;
+use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::{load_stage, update_stage};
 
 use super::{
@@ -76,11 +76,12 @@ pub fn record_verdict(
     verdict_path: &Path,
     session_id: Option<String>,
 ) -> Result<AdjudicateOutcome> {
-    let kind = ensure_recordable(work_dir, stage_id, dispute_id)?;
+    let (stage, kind) = ensure_recordable(work_dir, stage_id, dispute_id)?;
 
     let raw = std::fs::read_to_string(verdict_path)
         .with_context(|| format!("Failed to read verdict file: {}", verdict_path.display()))?;
-    record_validated(work_dir, stage_id, dispute_id, &kind, &raw, session_id)
+    let outcome = validated(work_dir, &stage, &kind, &raw)?;
+    record_outcome(work_dir, stage_id, dispute_id, outcome, session_id)
 }
 
 /// The guarded write for a verdict already read — the raw JSON a judge
@@ -93,21 +94,40 @@ pub fn record_verdict_text(
     raw: &str,
     session_id: Option<String>,
 ) -> Result<AdjudicateOutcome> {
-    let kind = ensure_recordable(work_dir, stage_id, dispute_id)?;
-    record_validated(work_dir, stage_id, dispute_id, &kind, raw, session_id)
+    let (stage, kind) = ensure_recordable(work_dir, stage_id, dispute_id)?;
+    let outcome = validated(work_dir, &stage, &kind, raw)?;
+    record_outcome(work_dir, stage_id, dispute_id, outcome, session_id)
 }
 
-/// Validate `raw` as the verdict on a dispute of `kind` and either persist it
-/// or escalate the stage.
-fn record_validated(
+/// `raw` validated as the verdict on a dispute of `kind` against `stage`. A
+/// verdict refused outright (a freeze refusal's, see
+/// `verdict::parse_and_validate_in`) is an `Err` the judge reads, and nothing
+/// is written.
+fn validated(
+    work_dir: &Path,
+    stage: &Stage,
+    kind: &DisputeKind,
+    raw: &str,
+) -> Result<verdict::ValidationOutcome> {
+    let context = verdict::RecordContext { work_dir, stage };
+    verdict::parse_and_validate_in(raw, kind, &context).map_err(|problem| {
+        anyhow::anyhow!(
+            "The verdict on stage '{}' was not recorded: {problem}. Correct the JSON and run \
+             `loom stage adjudicate` again.",
+            stage.id
+        )
+    })
+}
+
+/// Persist a validated verdict, or escalate the stage when it is degenerate.
+fn record_outcome(
     work_dir: &Path,
     stage_id: &str,
     dispute_id: u32,
-    kind: &DisputeKind,
-    raw: &str,
+    outcome: verdict::ValidationOutcome,
     session_id: Option<String>,
 ) -> Result<AdjudicateOutcome> {
-    match verdict::parse_and_validate_for(raw, kind) {
+    match outcome {
         verdict::ValidationOutcome::Verdict(v) => {
             let attempt = attempt_count(work_dir, stage_id, dispute_id).max(1);
             persist_verdict(
@@ -141,9 +161,13 @@ fn record_validated(
 }
 
 /// Guards 2-4: the stage is under adjudication, the dispute exists and is
-/// open, and no verdict has been recorded for it yet. Returns the dispute's
-/// kind, which decides the verdicts it takes.
-fn ensure_recordable(work_dir: &Path, stage_id: &str, dispute_id: u32) -> Result<DisputeKind> {
+/// open, and no verdict has been recorded for it yet. Returns the stage and
+/// the dispute's kind, which decide the verdicts it takes.
+fn ensure_recordable(
+    work_dir: &Path,
+    stage_id: &str,
+    dispute_id: u32,
+) -> Result<(Stage, DisputeKind)> {
     let stage = load_stage(stage_id, work_dir)
         .with_context(|| format!("Failed to load stage '{stage_id}'"))?;
     if stage.status != StageStatus::NeedsAdjudication {
@@ -169,7 +193,7 @@ fn ensure_recordable(work_dir: &Path, stage_id: &str, dispute_id: u32) -> Result
              it cannot be replaced."
         );
     }
-    Ok(request.kind)
+    Ok((stage, request.kind))
 }
 
 #[cfg(test)]

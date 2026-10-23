@@ -222,6 +222,7 @@ fn resync_after_amendment(work_dir: &Path, stage: &mut Stage) -> Result<()> {
     stage.wiring = reloaded.wiring;
     stage.wiring_tests = reloaded.wiring_tests;
     stage.contracts = reloaded.contracts;
+    stage.harness = reloaded.harness;
     // Derive amendments_applied from the audit log (the source of truth used
     // by the cap check). Bumping the in-memory field by +1 here would
     // double-count on a crash-mid-apply retry: apply_amendment is idempotent

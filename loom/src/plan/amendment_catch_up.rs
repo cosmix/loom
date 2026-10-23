@@ -113,6 +113,7 @@ fn stage_def_field_matches(
                 == crate::yaml::to_string(&snap.wiring_tests).unwrap_or_default()
         }
         AmendmentField::Contracts => live.contracts == snap.contracts,
+        AmendmentField::Harness => live.harness == snap.harness,
     }
 }
 
@@ -123,6 +124,7 @@ fn copy_field(dest: &mut StageDefinition, src: &StageDefinition, field: Amendmen
         AmendmentField::Wiring => dest.wiring = src.wiring.clone(),
         AmendmentField::WiringTests => dest.wiring_tests = src.wiring_tests.clone(),
         AmendmentField::Contracts => dest.contracts = src.contracts.clone(),
+        AmendmentField::Harness => dest.harness = src.harness.clone(),
     }
 }
 

@@ -32,6 +32,9 @@ pub(super) fn classify_for_kind(json: &Value, kind: &DisputeKind) -> ValidationO
         DisputeKind::Integrity { .. } => ("integrity", "accept|reject|needs-more-evidence"),
         DisputeKind::ImpactTests { .. } => ("impact-tests", "accept|reject|needs-more-evidence"),
         DisputeKind::Criterion { .. } => ("criterion", "accept|reject|needs-more-evidence"),
+        DisputeKind::FreezeRefusal { .. } => {
+            ("freeze-refusal", "accept|reject|needs-more-evidence")
+        }
     };
     let Some(tag) = verdict_tag(json) else {
         return needs_more_evidence(format!(
@@ -39,6 +42,11 @@ pub(super) fn classify_for_kind(json: &Value, kind: &DisputeKind) -> ValidationO
         ));
     };
     match (kind, tag.as_str()) {
+        // Its rules need the stage and its worktree: `verdict::parse_and_validate_in`.
+        (DisputeKind::FreezeRefusal { .. }, _) => needs_more_evidence(
+            "A freeze-refusal verdict is checked against its stage and worktree when \
+             `loom stage adjudicate` records it.",
+        ),
         (_, "needs-more-evidence" | "needs-evidence") => validate_needs_more(json),
         (DisputeKind::Findings { finding_ids, .. }, "rulings") => {
             validate_rulings(json, finding_ids)

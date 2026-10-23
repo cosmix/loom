@@ -28,6 +28,7 @@ use loom::models::stage::StageStatus;
 use loom::orchestrator::{Orchestrator, OrchestratorConfig};
 use loom::plan::schema::ContractSpec;
 use loom::process::sandbox_probe::{confined_commands_runnable, skip_unless};
+use loom::verify::contracts::refusal::daemon_refusal;
 use loom::verify::transitions::{load_stage, update_stage};
 use serial_test::serial;
 use tempfile::TempDir;
@@ -308,7 +309,18 @@ fn a_contract_that_never_ends_is_stopped_by_the_job_deadline() {
         assert_eq!(alive, Err(nix::errno::Errno::ESRCH), "group {pgid} lives");
     }
     let stage = load_stage(STAGE, &fx.work_dir).expect("load stage");
-    assert_eq!(stage.status, StageStatus::WaitingForInput);
-    let reason = stage.review_reason.unwrap_or_default();
-    assert!(reason.contains("deadline of"), "{reason}");
+    assert_eq!(
+        stage.status,
+        StageStatus::Executing,
+        "a refusal parks nothing"
+    );
+    let refusal = daemon_refusal(&fx.work_dir, STAGE)
+        .expect("read the refused-freeze record")
+        .expect("the refusal is recorded for adjudication");
+    assert_eq!(refusal.session_id, SESSION);
+    assert!(
+        refusal.problems.iter().any(|p| p.contains("deadline of")),
+        "{:?}",
+        refusal.problems
+    );
 }

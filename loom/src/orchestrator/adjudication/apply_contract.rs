@@ -10,13 +10,13 @@
 //! sends the stage to a human, except an amendment that hits the per-stage
 //! amendment cap, exactly as for a criterion dispute.
 
-use anyhow::{bail, Context, Result};
+use anyhow::{bail, Result};
 use std::path::Path;
 
 use crate::models::dispute::PlanPatch;
 use crate::models::stage::Stage;
 use crate::plan::amendment::{AmendmentField, AmendmentRequest};
-use crate::stage_service::contracts::{locate, Site};
+use crate::stage_service::contracts::Site;
 use crate::verify::contracts::changes::harness_files;
 use crate::verify::contracts::frozen_set::read_frozen_set;
 use crate::verify::contracts::run_dir::resolve_run;
@@ -61,7 +61,7 @@ pub(super) fn accept(
         );
     }
     recorded.extend(record.files.iter().map(|file| file.path.clone()));
-    let site = stage_site(work_dir, stage)?;
+    let site = super::locate_stage_site(work_dir, stage)?;
     let contracts = refrozen_contracts(stage, &record, contract_id, &site)?;
     let harness = harness_files(&site.git, &site.working_dir, &stage.harness)?;
     let files = read_frozen_set(&site.working_dir, &stage.contracts, &harness, &recorded)?;
@@ -182,13 +182,4 @@ fn recorded_file(record: &FreezeRecord, id: &str) -> Option<String> {
         .iter()
         .find(|entry| entry.id == id)
         .and_then(|entry| entry.file.clone())
-}
-
-/// The stage's worktree, located the way the freeze handler
-/// (`stage_service/contracts.rs`) locates it.
-fn stage_site(work_dir: &Path, stage: &Stage) -> Result<Site> {
-    let work_dir = work_dir
-        .canonicalize()
-        .with_context(|| format!("failed to resolve {}", work_dir.display()))?;
-    locate(&work_dir, stage)
 }

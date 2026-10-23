@@ -9,14 +9,16 @@ use chrono::Utc;
 use tempfile::TempDir;
 
 use super::super::{Orchestrator, OrchestratorConfig};
+use crate::fs::session_files::save_session;
 use crate::fs::work_dir::write_terminal_config;
 use crate::host_verify::runner::{HostJobRunner, RunnerConfig};
 use crate::host_verify::store::{load_current, load_job_file};
 use crate::host_verify::submit::{submit, Submission, SubmitRequest};
 use crate::host_verify::{JobKind, JobRecord, JobState};
-use crate::models::session::{SessionBackendKind, TerminalConfig};
+use crate::models::session::{Session, SessionBackendKind, SessionStatus, TerminalConfig};
 use crate::models::stage::{Stage, StageStatus};
 use crate::plan::ExecutionGraph;
+use crate::verify::contracts::refusal::daemon_refusal;
 
 const STAGE: &str = "stage-a";
 /// Writes a passing `result.json` for the job the runner named.
@@ -127,25 +129,35 @@ fn stopping_the_host_jobs_cancels_a_running_job_and_kills_its_child() {
     );
 }
 
-/// A freeze job that ends `Failed` parks stage-a for its session; with the
-/// stage directory read-only, every application of it fails. Returns the
-/// job's record once the tick that ended it has run.
+/// A freeze job that ends `Failed` records a refusal for stage-a's running
+/// contract writer `session-a`; with the stage's contracts directory
+/// read-only, every application of it fails. Returns the job's record once
+/// the tick that ended it has run.
 fn failing_freeze(work: &Path, orchestrator: &mut Orchestrator) -> JobRecord {
+    let mut writer = Session::new_contract(STAGE);
+    writer.id = "session-a".to_string();
+    writer.status = SessionStatus::Running;
+    save_session(&writer, work).unwrap();
     crate::verify::transitions::update_stage(STAGE, work, |stage| {
-        stage.session = Some("session-a".to_string());
+        stage.session = Some(writer.id.clone());
         Ok(())
     })
     .unwrap();
     orchestrator.set_host_job_runner(shell_runner(work, "exit 1"));
-    let stages = work.join("stages");
-    std::fs::set_permissions(&stages, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let contracts = contracts_dir(work);
+    std::fs::create_dir_all(&contracts).unwrap();
+    std::fs::set_permissions(&contracts, std::fs::Permissions::from_mode(0o555)).unwrap();
     queue(work, JobKind::Freeze);
     tick_until(orchestrator, work, |r| r.state.is_terminal())
 }
 
+fn contracts_dir(work: &Path) -> PathBuf {
+    work.join("contracts").join(STAGE)
+}
+
 fn set_writable(work: &Path) {
-    let stages = work.join("stages");
-    std::fs::set_permissions(&stages, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let contracts = contracts_dir(work);
+    std::fs::set_permissions(&contracts, std::fs::Permissions::from_mode(0o755)).unwrap();
 }
 
 fn marker(work: &Path, job: &JobRecord) -> Option<String> {
@@ -170,6 +182,7 @@ fn an_application_that_fails_twice_is_applied_on_the_third_tick() {
     let job = failing_freeze(&work, &mut orchestrator);
     orchestrator.tick_host_jobs();
     assert_eq!(marker(&work, &job), None, "two failures leave it unmarked");
+    assert_eq!(daemon_refusal(&work, STAGE).unwrap(), None);
 
     set_writable(&work);
     orchestrator.tick_host_jobs();
@@ -179,7 +192,15 @@ fn an_application_that_fails_twice_is_applied_on_the_third_tick() {
         "the third attempt applies it"
     );
     let stage = crate::verify::transitions::load_stage(STAGE, &work).unwrap();
-    assert_eq!(stage.status, StageStatus::WaitingForInput);
+    assert_eq!(
+        stage.status,
+        StageStatus::Executing,
+        "a refusal parks nothing"
+    );
+    let refusal = daemon_refusal(&work, STAGE)
+        .unwrap()
+        .expect("the refusal is recorded");
+    assert_eq!(refusal.session_id, "session-a");
 }
 
 #[test]
@@ -202,4 +223,5 @@ fn an_application_that_fails_ten_times_is_marked_failed() {
     orchestrator.tick_host_jobs();
     let stage = crate::verify::transitions::load_stage(STAGE, &work).unwrap();
     assert_eq!(stage.status, StageStatus::Executing, "never applied again");
+    assert_eq!(daemon_refusal(&work, STAGE).unwrap(), None);
 }

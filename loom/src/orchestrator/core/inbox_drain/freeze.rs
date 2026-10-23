@@ -7,14 +7,16 @@ use anyhow::Result;
 
 use crate::daemon::Response;
 use crate::host_verify::store::job_for_request;
-use crate::verify::contracts::refusal;
+use crate::models::stage::StageStatus;
+use crate::verify::contracts::refusal::{problem_lines, record_daemon_refusal, RefusalSource};
+use crate::verify::transitions::load_stage;
 
 use super::apply::failed;
 use super::Settle;
 
 /// Settle the daemon's answer to a relayed freeze. The daemon freezes the
-/// contracts, or parks the stage, when it applies the queued run's result. A
-/// refusal parks the stage at once.
+/// contracts, or records the refusal, when it applies the queued run's
+/// result. A refusal here is recorded at once.
 pub(super) fn settle(
     work_dir: &Path,
     stage_id: &str,
@@ -35,25 +37,41 @@ pub(super) fn settle(
             )))
         }
         Ok(Response::Error { message }) => {
-            park_refused_freeze(work_dir, stage_id, session_id, &message);
-            Settle::Refused(message)
+            match record_refused_freeze(work_dir, stage_id, session_id, &message) {
+                Ok(()) => Settle::Refused(message),
+                Err(error) => failed(error.context(format!("freeze refused: {message}"))),
+            }
         }
         Ok(other) => Settle::Refused(format!("unexpected daemon answer: {other:?}")),
         Err(error) => failed(error),
     }
 }
 
-/// A relayed freeze tells its writer to end the turn, so a refusal here would
-/// leave the stage `Executing` with no one at work: park it for the operator
-/// with the refusal as its reason (`verify::contracts::refusal`). The refusal
-/// is settled whether or not the park lands.
-fn park_refused_freeze(work_dir: &Path, stage_id: &str, session_id: &str, message: &str) {
-    if let Err(error) = refusal::park_refused_relay(work_dir, stage_id, session_id, message) {
-        tracing::warn!(
-            stage_id = %stage_id,
-            session_id = %session_id,
-            error = %format!("{error:#}"),
-            "Could not park the stage of a refused contract freeze for the operator"
-        );
+/// A relayed freeze tells its writer to end the turn, so the refusal goes to
+/// adjudication: record it for the `dispute_refused_freezes` tick step, which
+/// files it as a `freeze-refusal` dispute (`verify::contracts::refusal`).
+/// `require_owner` refused every non-owner before the freeze handler ran, so
+/// this refusal is the owner's; a stage that is not `Executing` (the handler's
+/// status refusal) has no contract phase to dispute and records nothing.
+fn record_refused_freeze(
+    work_dir: &Path,
+    stage_id: &str,
+    session_id: &str,
+    message: &str,
+) -> Result<()> {
+    if load_stage(stage_id, work_dir)?.status != StageStatus::Executing {
+        return Ok(());
     }
+    let problems = problem_lines(message);
+    record_daemon_refusal(
+        work_dir,
+        stage_id,
+        session_id,
+        &problems,
+        RefusalSource::Daemon,
+    )
 }
+
+#[cfg(test)]
+#[path = "freeze_tests.rs"]
+mod tests;

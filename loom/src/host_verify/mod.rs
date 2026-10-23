@@ -19,6 +19,7 @@ pub mod child;
 mod child_complete;
 pub mod digest;
 pub mod freeze;
+mod freeze_refuse;
 pub mod runner;
 mod signals;
 mod spawn;
@@ -49,6 +50,8 @@ mod tests_digest;
 mod tests_digest_pinned;
 #[cfg(test)]
 mod tests_freeze;
+#[cfg(test)]
+mod tests_freeze_refusal;
 #[cfg(test)]
 mod tests_runner;
 #[cfg(test)]

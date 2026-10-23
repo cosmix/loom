@@ -106,12 +106,15 @@ fn relay_verdict(
     require_scratch_draft(verdict_path, &draft)?;
     let raw = std::fs::read_to_string(&draft)
         .with_context(|| format!("Failed to read verdict file: {}", draft.display()))?;
+    // The dispute's kind is in the state directory, which this session cannot
+    // read, so the notice names what each kind does with the verdict.
     if let verdict::ValidationOutcome::Escalate { reason } = verdict::parse_and_validate(&raw) {
         writeln!(
             sink.stderr(),
             "This verdict cannot be acted on as written ({reason}). Once relayed, the \
              orchestrator escalates stage '{stage_id}' to NeedsHumanReview instead of \
-             recording it."
+             recording it; a freeze-refusal dispute refuses it instead, so write at least \
+             one question and run this command again."
         )
         .context("failed to write the verdict notice")?;
     }
@@ -319,8 +322,11 @@ mod tests {
         .unwrap();
 
         assert_eq!(tickets(&judge).len(), 1);
-        assert!(String::from_utf8(sink.err)
-            .unwrap()
-            .contains("NeedsHumanReview"));
+        let notice = String::from_utf8(sink.err).unwrap();
+        assert!(notice.contains("NeedsHumanReview"), "{notice}");
+        assert!(
+            notice.contains("a freeze-refusal dispute refuses it"),
+            "{notice}"
+        );
     }
 }

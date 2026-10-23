@@ -124,7 +124,46 @@ fn contract_rules_name_the_formatter_and_size_limits() {
     assert!(content.contains("`cargo fmt --all`"));
     assert!(content.contains("every test function under 50 lines and every file under 400"));
     assert!(content.contains("7. Finish with `loom stage contracts freeze s1`"));
-    assert!(content.contains("8. After the freeze request, stop"));
+    assert!(content.contains("then stop. If it refuses, fix what it names"));
+}
+
+#[test]
+fn contract_rules_route_disputes_through_memory_notes_not_commands() {
+    let mut content = String::new();
+    append_rules(&mut content, "s1");
+
+    assert!(content.contains("`loom memory note \"freeze-dispute: <evidence>\"`"));
+    assert!(content.contains("`loom memory note \"freeze-dispute: answer <n>: <evidence>\"`"));
+    assert!(content.contains("do not ask the operator to amend contracts, harness or criteria"));
+    assert!(content.contains("`loom stage block s1 "));
+    assert!(!content.contains("loom stage dispute"));
+}
+
+#[test]
+fn the_signal_carries_adjudicator_feedback_only_when_a_notice_exists() {
+    let temp = tempfile::tempdir().unwrap();
+    let work = temp.path().join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let worktree = Worktree::new("s1".to_string(), temp.path().to_path_buf(), "b".to_string());
+    let stage = stage();
+    assert_eq!(stage.tally.contract_disputes, 0);
+    let generate = || {
+        let session = Session::new_contract("s1");
+        let path = generate_contract_signal(&session, &stage, &worktree, &work, None, &[]).unwrap();
+        std::fs::read_to_string(path).unwrap()
+    };
+
+    let before = generate();
+    assert!(!before.contains("## Adjudicator Feedback"), "{before}");
+
+    crate::orchestrator::adjudication::feedback::write_notice(&work, "s1", "Move the fixture.\n")
+        .unwrap();
+    let after = generate();
+    let feedback = after
+        .find("## Adjudicator Feedback (from the refused freeze)")
+        .unwrap();
+    assert!(after.contains("Move the fixture."), "{after}");
+    assert!(feedback < after.find("## Your Job").unwrap(), "{after}");
 }
 
 /// The signal of a stage over a real repository whose base holds a package.

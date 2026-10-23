@@ -271,7 +271,7 @@ pub enum StageCommands {
         verdict_file: std::path::PathBuf,
     },
 
-    /// Amend a stage's acceptance, wiring, wiring_tests or contracts array in place
+    /// Amend a stage's acceptance, wiring, wiring_tests, contracts or harness array in place
     /// (operator repair).
     ///
     /// Routes through the audited plan-amendment path: writes a numbered

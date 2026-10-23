@@ -284,6 +284,25 @@ fn a_plan_version_1_stage_disputes_only_its_criteria() {
     );
 }
 
+/// The socket's handler, which the operator reaches with its token and an
+/// empty session id, refuses a freeze refusal on a stage that would take one.
+#[test]
+fn the_socket_handler_refuses_a_freeze_refusal() {
+    use super::freeze_refusal_tests::{contract_phase, freeze_refusal, request_path};
+    let (_tmp, work_dir) = contract_phase(crate::models::session::SessionType::Contract);
+    let stage_id = super::freeze_refusal_tests::FREEZE_STAGE;
+
+    let response =
+        crate::daemon::handle_file_dispute(&work_dir, stage_id, freeze_refusal(), "r".into(), None)
+            .unwrap();
+
+    let crate::daemon::Response::Error { message } = response else {
+        panic!("expected a refusal, got {response:?}");
+    };
+    assert!(message.contains("filed by loom only"), "{message}");
+    assert!(!request_path(&work_dir, 1).exists());
+}
+
 #[test]
 fn a_refused_file_dispute_writes_no_request() {
     let (_tmp, work_dir) = setup(2);

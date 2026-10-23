@@ -5,8 +5,8 @@
 //! keeps the freeze, [`frozen_set`] reads the files a freeze or an accepted
 //! contract dispute's re-freeze holds, [`changes`] reads what the contract
 //! session changed,
-//! [`refusal`] keeps a refused freeze until the writer stops and parks its
-//! stage for the operator, [`completion`] checks the frozen contracts when the
+//! [`refusal`] keeps a refused freeze until the daemon files it as a
+//! `freeze-refusal` dispute for an adjudicator, [`completion`] checks the frozen contracts when the
 //! stage completes, [`run_dir`] resolves where and how a contract runs. The
 //! helpers here are what the freeze CLI, the daemon's freeze handler and the
 //! completion check share, so the three agree on which adapter runs a contract
