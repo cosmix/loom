@@ -43,17 +43,8 @@ pub(crate) fn check_base_tree(
     let Some(root) = repo_root else {
         return skipped("no git repository contains the plan file");
     };
-    let root = if root.as_os_str().is_empty() {
-        Path::new(".")
-    } else {
-        root
-    };
-    if !run_git_bool(&["rev-parse", "--verify", "--quiet", "HEAD^{commit}"], root) {
+    let Some(tree) = HeadTree::new(root) else {
         return skipped("HEAD does not resolve to a commit");
-    }
-    let tree = HeadTree {
-        root,
-        changed: OnceCell::new(),
     };
     let mut report = BaseTreeReport::default();
     for stage in stages {

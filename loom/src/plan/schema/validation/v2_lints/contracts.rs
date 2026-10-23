@@ -55,6 +55,20 @@ fn join(prefix: &str, path: &str) -> String {
     }
 }
 
+/// The HEAD files under the stage's directory `prefix`, relative to it.
+fn files_under(listed: &[String], prefix: &str) -> Vec<String> {
+    listed
+        .iter()
+        .filter_map(|file| {
+            let relative = match prefix {
+                "" => file.as_str(),
+                _ => file.strip_prefix(prefix)?.strip_prefix('/')?,
+            };
+            Some(relative.to_string())
+        })
+        .collect()
+}
+
 /// Collection lints over HEAD, never the checkout: a harness glob that
 /// matches production source, and a Rust contract whose module chain the
 /// scaffold derivation rejects. A stage with `dependencies` may build the
@@ -66,22 +80,16 @@ fn check_collection(
     root: &Path,
     out: &mut Vec<LintFinding>,
 ) {
+    // Listing HEAD is a git call; a stage with nothing to lint skips it.
+    if stage.harness.is_empty() && stage.contracts.is_empty() {
+        return;
+    }
     let prefix = working_prefix(stage);
     let Some(listed) = tree.files("") else {
         return;
     };
     let head: HashSet<&str> = listed.iter().map(String::as_str).collect();
-    let under: Vec<String> = listed
-        .iter()
-        .filter_map(|file| {
-            let relative = match prefix.as_str() {
-                "" => file.as_str(),
-                _ => file.strip_prefix(&prefix)?.strip_prefix('/')?,
-            };
-            Some(relative.to_string())
-        })
-        .collect();
-    for path in harness_source_matches(&stage.harness, &under) {
+    for path in harness_source_matches(&stage.harness, &files_under(&listed, &prefix)) {
         let message = format!(
             "harness glob matches production source {path}; it is frozen for the implementer. \
              Harness is for test-only files; module declarations are derived as scaffold"
