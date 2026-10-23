@@ -198,3 +198,7 @@ impl Orchestrator {
         }
     }
 }
+
+#[cfg(test)]
+#[path = "run_tests.rs"]
+mod tests;
