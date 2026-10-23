@@ -2,6 +2,7 @@
 
 use super::*;
 use crate::models::stage::StageType;
+use crate::verify::contracts::test_support::{contract_worktree, liquidmon_contract};
 
 fn contract(id: &str, file: &str, test: &str, runner: &str) -> ContractSpec {
     ContractSpec {
@@ -124,4 +125,70 @@ fn contract_rules_name_the_formatter_and_size_limits() {
     assert!(content.contains("every test function under 50 lines and every file under 400"));
     assert!(content.contains("7. Finish with `loom stage contracts freeze s1`"));
     assert!(content.contains("8. After the freeze request, stop"));
+}
+
+/// The signal of a stage over a real repository whose base holds a package.
+fn signal_over_repo(contracts: Vec<ContractSpec>) -> String {
+    let temp = tempfile::tempdir().unwrap();
+    let repo = temp.path().join("repo");
+    let root = contract_worktree(&repo, "s1");
+    let workspace = crate::fs::work_dir::WorkDir::new(&repo).unwrap();
+    workspace.adopt_existing().unwrap();
+    let worktree = Worktree::new("s1".to_string(), root, "loom/s1".to_string());
+    let stage = Stage {
+        contracts,
+        harness: Vec::new(),
+        ..stage()
+    };
+    let session = Session::new_contract("s1");
+    let path =
+        generate_contract_signal(&session, &stage, &worktree, workspace.root(), None, &[]).unwrap();
+    std::fs::read_to_string(path).unwrap()
+}
+
+#[test]
+fn the_signal_lists_the_scaffold_a_new_module_needs() {
+    let content = signal_over_repo(vec![liquidmon_contract()]);
+
+    assert!(content.contains("## Scaffold"), "{content}");
+    assert!(
+        content.contains("- In `src/lib.rs`, add `mod device_lock;`."),
+        "{content}"
+    );
+    assert!(
+        content.contains(
+            "- Create `src/device_lock/mod.rs` or `src/device_lock.rs` holding only \
+             `#[cfg(test)]` and `mod contract_tests;`."
+        ),
+        "{content}"
+    );
+    assert!(content.contains("These edits are not frozen"), "{content}");
+}
+
+#[test]
+fn the_signal_says_when_no_scaffold_is_needed() {
+    let content = signal_over_repo(vec![crate::verify::contracts::test_support::contract()]);
+
+    assert!(
+        content.contains("No scaffold edits: every contract file is already collected."),
+        "{content}"
+    );
+}
+
+#[test]
+fn an_unresolvable_base_is_reported_not_derived_from_the_worktree() {
+    let temp = tempfile::tempdir().unwrap();
+    let work = temp.path().join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let worktree = Worktree::new("s1".to_string(), temp.path().to_path_buf(), "b".to_string());
+    let session = Session::new_contract("s1");
+
+    let path = generate_contract_signal(&session, &stage(), &worktree, &work, None, &[]).unwrap();
+
+    let content = std::fs::read_to_string(path).unwrap();
+    assert!(content.contains("Scaffold unknown:"), "{content}");
+    assert!(
+        content.contains("the freeze refuses until the stage base resolves"),
+        "{content}"
+    );
 }

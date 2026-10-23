@@ -7,17 +7,17 @@ use crate::verify::contracts::store::{
     write_freeze, FrozenContract, FrozenFile, FREEZE_RECORD_VERSION,
 };
 use crate::verify::contracts::test_support::{
-    contract, CONTRACT_CONTENT, CONTRACT_FILE, CONTRACT_ID,
+    contract, write_files, CONTRACT_CONTENT, CONTRACT_FILE, CONTRACT_ID, PACKAGE_MANIFEST,
 };
 use chrono::Utc;
 use std::cell::RefCell;
 use std::path::PathBuf;
 use tempfile::TempDir;
 
-const ONE_PASS: &str = include_str!("../../testrun/fixtures/cargo-test/one-pass.stdout");
+pub(super) const ONE_PASS: &str = include_str!("../../testrun/fixtures/cargo-test/one-pass.stdout");
 const NO_MATCH: &str = include_str!("../../testrun/fixtures/cargo-test/no-match.stdout");
 
-struct Replay(&'static str);
+pub(super) struct Replay(pub(super) &'static str);
 
 impl ProbeRunner for Replay {
     fn run(&self, _command: &str, _package_dir: &Path) -> Result<ProbeRun> {
@@ -42,11 +42,11 @@ impl ProbeRunner for Recording {
     }
 }
 
-struct Fixture {
+pub(super) struct Fixture {
     _tmp: TempDir,
     work_dir: PathBuf,
-    worktree: PathBuf,
-    stage: Stage,
+    pub(super) worktree: PathBuf,
+    pub(super) stage: Stage,
 }
 
 /// A frozen stage with one cargo-test contract whose file is still as frozen.
@@ -55,13 +55,17 @@ fn fixture() -> Fixture {
 }
 
 /// [`fixture`], its freeze record listing `frozen`.
-fn fixture_with(frozen: Vec<FrozenContract>) -> Fixture {
+pub(super) fn fixture_with(frozen: Vec<FrozenContract>) -> Fixture {
     let tmp = TempDir::new().unwrap();
     let work_dir = tmp.path().join("work");
     let worktree = tmp.path().join("worktree");
     std::fs::create_dir_all(&work_dir).unwrap();
     std::fs::create_dir_all(worktree.join("tests")).unwrap();
     std::fs::write(worktree.join(CONTRACT_FILE), CONTRACT_CONTENT).unwrap();
+    write_files(
+        &worktree,
+        &[("Cargo.toml", PACKAGE_MANIFEST), ("src/lib.rs", "")],
+    );
     let stage = Stage {
         id: "s1".to_string(),
         plan_version: 2,
@@ -90,7 +94,7 @@ fn fixture_with(frozen: Vec<FrozenContract>) -> Fixture {
     }
 }
 
-fn run_check(fx: &Fixture, runner: &dyn ProbeRunner) -> Result<()> {
+pub(super) fn run_check(fx: &Fixture, runner: &dyn ProbeRunner) -> Result<()> {
     check_with(&fx.stage, &fx.work_dir, &fx.worktree, &fx.worktree, runner)
 }
 
@@ -176,7 +180,7 @@ fn completion_fails_without_a_freeze() {
 }
 
 /// The contract as the freeze recorded it, run from `cwd`.
-fn frozen_at(cwd: &str) -> FrozenContract {
+pub(super) fn frozen_at(cwd: &str) -> FrozenContract {
     FrozenContract {
         id: CONTRACT_ID.to_string(),
         adapter: Some("cargo-test".to_string()),
@@ -188,10 +192,14 @@ fn frozen_at(cwd: &str) -> FrozenContract {
 }
 
 /// Plant a `Cargo.toml` beside the contract file, nearer than the root.
-fn plant_nearer_marker(fx: &Fixture) -> PathBuf {
-    std::fs::write(fx.worktree.join("tests/Cargo.toml"), "").unwrap();
+fn plant_nearer_marker(fx: &Fixture, manifest: &str) -> PathBuf {
+    std::fs::write(fx.worktree.join("tests/Cargo.toml"), manifest).unwrap();
     fx.worktree.join("tests").canonicalize().unwrap()
 }
+
+/// A package of its own at `tests/`, whose one test target is the contract.
+const TESTS_PACKAGE: &str = "[package]\nname = \"inner\"\nversion = \"0.1.0\"\n\
+     [[test]]\nname = \"x\"\npath = \"x_contract.rs\"\n";
 
 /// The directories `fx`'s contract check runs its probes from.
 fn run_dirs(fx: &Fixture) -> Vec<PathBuf> {
@@ -208,7 +216,7 @@ fn a_recorded_run_dir_beats_a_runner_config_planted_since() {
     };
     for frozen in [frozen_at("."), legacy] {
         let fx = fixture_with(vec![frozen]);
-        plant_nearer_marker(&fx);
+        plant_nearer_marker(&fx, "[workspace]\n");
 
         let root = fx.worktree.canonicalize().unwrap();
         assert_eq!(run_dirs(&fx), vec![root]);
@@ -230,7 +238,7 @@ fn a_run_dir_recorded_for_another_file_is_ignored() {
         file: Some("tests/other_contract.rs".to_string()),
         ..frozen_at(".")
     }]);
-    let nearer = plant_nearer_marker(&fx);
+    let nearer = plant_nearer_marker(&fx, TESTS_PACKAGE);
 
     assert_eq!(run_dirs(&fx), vec![nearer]);
 }
@@ -244,7 +252,7 @@ fn a_record_without_a_run_dir_falls_back_to_detection() {
     };
     for frozen in [Vec::new(), vec![legacy]] {
         let fx = fixture_with(frozen);
-        let nearer = plant_nearer_marker(&fx);
+        let nearer = plant_nearer_marker(&fx, TESTS_PACKAGE);
 
         assert_eq!(run_dirs(&fx), vec![nearer]);
     }
@@ -307,4 +315,85 @@ fn after_an_accepted_refreeze_no_frozen_file_is_changed() {
     let record = store::load_freeze(&fx.work_dir, "s1").unwrap().unwrap();
     let after = changed_frozen_files(&record, &fx.worktree, &fx.worktree).unwrap();
     assert!(after.is_empty(), "{after:?}");
+}
+
+/// `fx`'s one contract re-pointed at `file`/`test`, with `files` written.
+fn collect_fixture(file: &str, test: &str, files: &[(&str, &str)]) -> Fixture {
+    let mut fx = fixture();
+    write_files(&fx.worktree, files);
+    fx.stage.contracts[0].file = file.to_string();
+    fx.stage.contracts[0].test = test.to_string();
+    fx
+}
+
+fn assert_only_collection_fails(error: &str, named: &str) {
+    assert!(error.contains(named), "{error}");
+    assert!(!error.contains("fails:"), "{error}");
+    assert!(!error.contains("not selected"), "{error}");
+}
+
+#[test]
+fn a_path_redirected_contract_module_fails_though_the_run_passes() {
+    let fx = collect_fixture(
+        "src/contract_tests.rs",
+        "contract_tests::rejects_x",
+        &[
+            (
+                "src/lib.rs",
+                "#[path = \"elsewhere.rs\"]\nmod contract_tests;\n",
+            ),
+            ("src/contract_tests.rs", "#[test]\nfn rejects_x() {}\n"),
+        ],
+    );
+
+    let error = run_check(&fx, &Replay(ONE_PASS)).unwrap_err().to_string();
+
+    assert_only_collection_fails(&error, "#[path]");
+    assert!(error.contains("contract 'rejects-x': "), "{error}");
+}
+
+#[test]
+fn a_cfg_removed_module_root_fails_though_the_run_passes() {
+    let fx = collect_fixture(
+        "src/m/contract_tests.rs",
+        "m::contract_tests::rejects_x",
+        &[
+            ("src/lib.rs", "mod m;\n"),
+            ("src/m/mod.rs", "#![cfg(not(test))]\nmod contract_tests;\n"),
+            ("src/m/contract_tests.rs", "#[test]\nfn rejects_x() {}\n"),
+        ],
+    );
+
+    let error = run_check(&fx, &Replay(ONE_PASS)).unwrap_err().to_string();
+
+    assert_only_collection_fails(&error, "#![cfg");
+}
+
+#[test]
+fn a_workspace_root_run_dir_that_skips_the_package_fails() {
+    let mut fx = collect_fixture(
+        "a/tests/x.rs",
+        "x::rejects_x",
+        &[
+            (
+                "Cargo.toml",
+                "[workspace]\nmembers = [\"a\", \"b\"]\ndefault-members = [\"b\"]\n",
+            ),
+            (
+                "a/Cargo.toml",
+                "[package]\nname = \"a\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            ),
+            (
+                "b/Cargo.toml",
+                "[package]\nname = \"b\"\nversion = \"0.1.0\"\nedition = \"2021\"\n",
+            ),
+            ("a/tests/x.rs", "#[test]\nfn rejects_x() {}\n"),
+        ],
+    );
+    fx.stage.contracts[0].cwd = Some(".".to_string());
+
+    let error = run_check(&fx, &Replay(ONE_PASS)).unwrap_err().to_string();
+
+    assert!(error.contains("does not select package"), "{error}");
+    assert!(!error.contains("fails:"), "{error}");
 }

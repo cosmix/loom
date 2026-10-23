@@ -23,6 +23,7 @@ use crate::relay::emit::{mode, EnvSnapshot, RelayMode, RelaySink, StdSink};
 use crate::relay::RequestKind;
 use crate::testrun::{classify, RunOutcome, RunOutput, RunSummary, TestRunnerAdapter};
 use crate::verify::contracts::changes::{changed_paths, stage_base};
+use crate::verify::contracts::collection::{freeze_scaffold, ScaffoldCheck};
 use crate::verify::contracts::format_gate::format_problems;
 use crate::verify::contracts::run_dir::resolve_run;
 use crate::verify::contracts::{is_contract_or_harness, refusal, resolve_adapter};
@@ -43,17 +44,30 @@ pub(crate) struct FreezeInputs<'a> {
     pub harness: &'a [String],
     pub changed_paths: &'a [String],
     pub existing: &'a dyn Fn(&str) -> bool,
+    /// The scaffold edits the contracts' collection needs, and why the
+    /// worktree's version of them (or the contracts' module chains) is wrong.
+    pub scaffold: &'a ScaffoldCheck,
 }
 
-/// D8 steps 1 and 2: every changed path is a contract file or matches a
-/// `harness` glob, and every contract file exists.
+/// D8 steps 1 and 2: every changed path is a contract file, matches a
+/// `harness` glob or is a scaffold edit, the scaffold edits and module chains
+/// are sound, and every contract file exists.
 pub(crate) fn check_changes(inputs: &FreezeInputs<'_>) -> Result<(), Vec<String>> {
     let mut problems: Vec<String> = inputs
         .changed_paths
         .iter()
-        .filter(|path| !is_contract_or_harness(path.as_str(), inputs.contracts, inputs.harness))
-        .map(|path| format!("{path} is neither a contract file nor matched by a `harness` glob"))
+        .filter(|path| {
+            !is_contract_or_harness(path.as_str(), inputs.contracts, inputs.harness)
+                && !inputs.scaffold.paths.contains(path.as_str())
+        })
+        .map(|path| {
+            format!(
+                "{path} is neither a contract file, matched by a `harness` glob, \
+                 nor a scaffold edit"
+            )
+        })
         .collect();
+    problems.extend(inputs.scaffold.problems.iter().cloned());
     problems.extend(
         inputs
             .contracts
@@ -193,18 +207,26 @@ pub(crate) fn check_site_changes(site: &ContractSite, repo: &WorktreeGit) -> Res
     let base = stage_base(repo, &site.work_dir)?;
     let changed = changed_paths(repo, &site.working_dir, &base)?;
     let existing = |file: &str| site.working_dir.join(file).is_file();
+    let scaffold = freeze_scaffold(
+        repo,
+        &site.worktree_root,
+        &site.working_dir,
+        &base,
+        &stage.contracts,
+    )?;
     let inputs = FreezeInputs {
         contracts: &stage.contracts,
         harness: &stage.harness,
         changed_paths: &changed,
         existing: &existing,
+        scaffold: &scaffold,
     };
     refuse(
         &stage.id,
         check_changes(&inputs).err().unwrap_or_default(),
-        "The contract phase may change only contract files and files matching the stage's \
-         `harness` globs. Revert every other change (`git checkout -- <path>`, or delete the \
-         untracked file), then",
+        "The contract phase may change only contract files, files matching the stage's \
+         `harness` globs, and the scaffold edits the signal lists. Revert every other \
+         change (`git checkout -- <path>`, or delete the untracked file), then",
     )
 }
 

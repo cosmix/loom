@@ -1,3 +1,4 @@
+use super::codex_evidence::validate_codex_record;
 use super::model::{
     CodexEvidence, CodexEvidenceKind, CodexEvidenceOutcome, CodexExecution, LifecycleProducer,
     LifecycleRecord, LifecycleState, WorkerIdentity, WorkerOutcome, LIFECYCLE_VERSION,
@@ -214,6 +215,31 @@ fn unknown_version_remains_unknown() -> Result<()> {
         outcome,
         WorkerOutcome::Unknown("unknown lifecycle version 2".into())
     );
+    Ok(())
+}
+
+#[test]
+fn terminal_turn_id_is_optional_for_direct_records_only() -> Result<()> {
+    let fixture = Fixture::new("direct-turn")?;
+    let mut companion = codex_record(&fixture.root, "forwarder-a", "unit-a", "job-a", true)?;
+    let mut evidence = codex_evidence("unit-a", "job-a", true)?;
+    evidence.turn_id = None;
+    companion.evidence = serde_json::to_value(&evidence)?;
+    let mut direct = companion.clone();
+    if let WorkerIdentity::Codex { execution, .. } = &mut direct.identity {
+        *execution = CodexExecution::Direct {
+            thread_id: "thread-unit-a".into(),
+            tool_use_id: "toolu-a".into(),
+        };
+    }
+    (evidence.job_id, evidence.tool_use_id) = (None, Some("toolu-a".into()));
+    direct.producer = LifecycleProducer::CodexDirect;
+    direct.evidence = serde_json::to_value(&evidence)?;
+    set_codex_id(&mut companion)?;
+    set_codex_id(&mut direct)?;
+    validate_codex_record(&fixture.work, &direct)?;
+    let error = validate_codex_record(&fixture.work, &companion).err();
+    assert!(error.is_some_and(|error| error.to_string().contains("exact turn id")));
     Ok(())
 }
 

@@ -4,11 +4,12 @@ use std::path::{Path, PathBuf};
 use anyhow::{bail, ensure, Context, Result};
 
 use crate::codex_lifecycle::{
-    read_authorization_rows, read_lifecycle_records, CodexAuthorization, LedgerRow,
+    codex_worker_identity, read_authorization_rows, read_lifecycle_records,
+    receipt_matches_authorization, CodexAuthorization, LedgerRow,
 };
 use crate::models::forward_receipt::job_record::read_companion_job;
 use crate::models::forward_receipt::{
-    is_safe_id, load_receipts, receipts_path, ForwardBackend, ForwardReceipt, ForwardState,
+    is_safe_id, load_receipts, receipts_path, ForwardBackend, ForwardState,
 };
 use crate::subagent_lifecycle::{
     replay, CodexExecution, LifecycleRecord, WorkerIdentity, WorkerOutcome,
@@ -276,25 +277,6 @@ fn receipt_matches(
     Ok(())
 }
 
-fn receipt_matches_authorization(
-    receipt: &ForwardReceipt,
-    authorization: &CodexAuthorization,
-) -> bool {
-    receipt.identity.stage_id == authorization.stage_id
-        && receipt.identity.loom_session_id == authorization.loom_session_id
-        && receipt.identity.parent_session_id == authorization.parent_session_id
-        && receipt.identity.agent_id == authorization.forwarder_agent_id
-        && receipt.identity.tool_use_id == authorization.tool_use_id
-        && receipt
-            .model
-            .as_deref()
-            .is_none_or(|value| value == authorization.model)
-        && receipt
-            .effort
-            .as_deref()
-            .is_none_or(|value| value == authorization.effort)
-}
-
 fn push_match(
     matches: &mut Vec<WaitCodexExecution>,
     authorization: &CodexAuthorization,
@@ -303,7 +285,7 @@ fn push_match(
     path: PathBuf,
     label: &str,
 ) {
-    let identity = codex_identity(authorization, execution);
+    let identity = codex_worker_identity(authorization, execution);
     if matches
         .iter()
         .any(|candidate| candidate.identity == identity)
@@ -316,19 +298,6 @@ fn push_match(
         path,
         label: label.into(),
     });
-}
-
-fn codex_identity(authorization: &CodexAuthorization, execution: CodexExecution) -> WorkerIdentity {
-    WorkerIdentity::Codex {
-        stage_id: authorization.stage_id.clone(),
-        loom_session_id: authorization.loom_session_id.clone(),
-        parent_session_id: authorization.parent_session_id.clone(),
-        forwarder_agent_id: authorization.forwarder_agent_id.clone(),
-        unit_id: authorization.unit_id.clone(),
-        invocation_id: authorization.invocation_id.clone(),
-        workspace_root: authorization.workspace_root.clone(),
-        execution,
-    }
 }
 
 fn identity_matches(identity: &WorkerIdentity, authorization: &CodexAuthorization) -> bool {

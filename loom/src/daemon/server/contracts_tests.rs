@@ -7,8 +7,8 @@ use crate::fs::work_dir::WorkDir;
 use crate::models::session::{Session, SessionStatus};
 use crate::verify::contracts::store::{frozen_file_path, load_freeze};
 use crate::verify::contracts::test_support::{
-    contract_stage, contract_worktree, plant_foreign_git_dir, red_reports, CONTRACT_CONTENT,
-    CONTRACT_FILE,
+    contract_stage, contract_worktree, liquidmon_contract, plant_foreign_git_dir, red_reports,
+    write_liquidmon, CONTRACT_CONTENT, CONTRACT_FILE, LIQUIDMON_FILE,
 };
 use crate::verify::transitions::{save_stage, update_stage};
 use tempfile::TempDir;
@@ -173,6 +173,29 @@ fn freeze_handler_refuses_changes_outside_contracts_and_harness() {
 
     assert!(message.contains("src/lib.rs"), "{message}");
     assert!(load_freeze(&fx.work_dir, STAGE).unwrap().is_none());
+}
+
+/// The scaffold edits a contract in a new module needs are not frozen: only
+/// the contract file (and harness matches) are recorded.
+#[test]
+fn accepted_freeze_with_scaffold_records_only_contract_and_harness() {
+    let fx = fixture();
+    update_stage(STAGE, &fx.work_dir, |stage| {
+        stage.contracts = vec![liquidmon_contract()];
+        Ok(())
+    })
+    .unwrap();
+    write_liquidmon(&fx.worktree);
+
+    let response = freeze(&fx, &red_reports());
+
+    assert!(
+        matches!(response, Response::ContractsFrozen { files: 1 }),
+        "{response:?}"
+    );
+    let record = load_freeze(&fx.work_dir, STAGE).unwrap().unwrap();
+    let paths: Vec<&str> = record.files.iter().map(|f| f.path.as_str()).collect();
+    assert_eq!(paths, [LIQUIDMON_FILE]);
 }
 
 /// Git lists no FIFO, so only the walk can see one planted where the

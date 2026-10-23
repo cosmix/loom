@@ -10,14 +10,15 @@
 use anyhow::{bail, Context, Result};
 use std::path::Path;
 
-use super::resolve_adapter;
+use super::collection::rust::{chain_problems, run_dir_problems};
 use super::run_dir::resolve_run;
 use super::store::{self, FreezeRecord};
+use super::{normalize, resolve_adapter};
 use crate::fs::safe_read::{is_not_found, read_bounded};
 use crate::models::stage::Stage;
 use crate::plan::schema::ContractSpec;
 use crate::relay::sha256_hex;
-use crate::testrun::{classify, RunOutcome, RunOutput, TestRunnerAdapter};
+use crate::testrun::{classify, registry, RunOutcome, RunOutput, TestRunnerAdapter};
 use crate::verify::criteria::{
     plan_confinement, CachedRun, CriteriaConfig, CriteriaProbe, ProbeRun, ProbeRunner,
 };
@@ -53,10 +54,15 @@ fn check_with(
         );
     };
     let mut failures = changed_frozen_files(&record, acceptance_dir, worktree_root)?;
+    let place = Place {
+        record: &record,
+        acceptance_dir,
+        worktree_root,
+    };
     for contract in &stage.contracts {
         let recorded = store::recorded_cwd(&record, contract);
-        let failure = run_contract(contract, recorded, acceptance_dir, worktree_root, runner)?;
-        failures.extend(failure);
+        let found = run_contract(contract, recorded, &place, runner)?;
+        failures.extend(found);
     }
     if failures.is_empty() {
         return Ok(());
@@ -66,38 +72,107 @@ fn check_with(
          Each frozen contract file must keep its frozen content: restore it with \
          `loom stage contracts restore {id}` or dispute it with \
          `loom stage dispute-contract {id} --contract <id> --reason ...`. A failing contract \
-         needs an implementation that passes it.",
+         needs an implementation that passes it. A contract module must be declared by a \
+         plain `mod` item, and its chain files must not be cfg'd out.",
         failures.join("\n  - "),
         id = stage.id
     )
+}
+
+/// Where a contract runs: its stage's freeze record and directories.
+struct Place<'a> {
+    record: &'a FreezeRecord,
+    acceptance_dir: &'a Path,
+    worktree_root: &'a Path,
 }
 
 /// Run `contract` from its run directory (its plan `cwd`, else the one
 /// `recorded` for its file by the freeze, else resolved as the freeze
 /// resolves it) and say why it does not pass, if it
 /// does not. A contract that cannot be resolved is a failure of its own, so
-/// the check still runs and reports every other contract.
+/// the check still runs and reports every other contract. A Rust contract's
+/// collection (its module chain and run directory) is checked whether or not
+/// the run is cached, since a cached pass would otherwise hide a redirect.
 fn run_contract(
     contract: &ContractSpec,
     recorded: Option<&str>,
-    acceptance_dir: &Path,
-    worktree_root: &Path,
+    place: &Place<'_>,
     runner: &dyn ProbeRunner,
-) -> Result<Option<String>> {
-    let adapter = resolve_adapter(contract, acceptance_dir);
-    let resolved = match resolve_run(contract, adapter, worktree_root, acceptance_dir, recorded) {
+) -> Result<Vec<String>> {
+    let adapter = resolve_adapter(contract, place.acceptance_dir);
+    let resolved = match resolve_run(
+        contract,
+        adapter,
+        place.worktree_root,
+        place.acceptance_dir,
+        recorded,
+    ) {
         Ok(resolved) => resolved,
         Err(error) => {
-            return Ok(Some(format!(
+            return Ok(vec![format!(
                 "contract '{}' cannot be run: {error:#}",
                 contract.id
-            )))
+            )])
         }
     };
+    let mut failures = collection_problems(contract, place, &resolved.cwd)?;
     let run = runner
         .run(&resolved.command, &resolved.dir)
         .with_context(|| format!("failed to run contract '{}'", contract.id))?;
-    Ok(judge(contract, adapter, &resolved.command, &run))
+    failures.extend(judge(contract, adapter, &resolved.command, &run));
+    Ok(failures)
+}
+
+/// Whether `contract` runs through a Rust adapter: its `runner`, else the
+/// adapter the freeze recorded (none recorded: not Rust), never one
+/// re-detected from the implementer's tree. Only a contract the record does
+/// not list is detected.
+fn is_rust(contract: &ContractSpec, record: &FreezeRecord, acceptance_dir: &Path) -> bool {
+    let entry = record
+        .contracts
+        .iter()
+        .find(|entry| entry.id == contract.id);
+    let adapter = match (contract.runner.as_deref(), entry) {
+        (Some(name), _) => registry::by_name(name),
+        (None, Some(entry)) => entry.adapter.as_deref().and_then(registry::by_name),
+        (None, None) => resolve_adapter(contract, acceptance_dir),
+    };
+    adapter.is_some_and(|adapter| adapter.language() == "rust")
+}
+
+/// The chain and run-directory problems of a Rust contract, each as
+/// `contract '<id>': <problem>`; `run_cwd` is its run directory relative to
+/// the worktree root.
+fn collection_problems(
+    contract: &ContractSpec,
+    place: &Place<'_>,
+    run_cwd: &str,
+) -> Result<Vec<String>> {
+    if !is_rust(contract, place.record, place.acceptance_dir) {
+        return Ok(Vec::new());
+    }
+    let root = place.worktree_root.canonicalize()?;
+    let working = place.acceptance_dir.canonicalize()?;
+    let inside = working
+        .strip_prefix(&root)
+        .context("the acceptance directory is outside the worktree")?;
+    let source = |path: &str| {
+        let bytes = read_bounded(&root, Path::new(path), store::MAX_FROZEN_FILE_BYTES).ok()?;
+        String::from_utf8(bytes).ok()
+    };
+    let prefix = inside.to_string_lossy().replace('\\', "/");
+    let file = normalize(&contract.file);
+    let file = if prefix.is_empty() {
+        file
+    } else {
+        format!("{prefix}/{file}")
+    };
+    let mut problems = chain_problems(&source, &file, &contract.test);
+    problems.extend(run_dir_problems(&source, &file, run_cwd));
+    Ok(problems
+        .into_iter()
+        .map(|problem| format!("contract '{}': {problem}", contract.id))
+        .collect())
 }
 
 /// Frozen files whose content differs from the freeze, or that are gone.
@@ -204,3 +279,7 @@ fn judge_exit_code(
 #[cfg(test)]
 #[path = "completion_tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "completion_adapter_tests.rs"]
+mod adapter_tests;

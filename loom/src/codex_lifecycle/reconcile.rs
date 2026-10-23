@@ -1,20 +1,23 @@
 use std::collections::{BTreeMap, HashSet};
 use std::path::Path;
 
-use anyhow::{ensure, Result};
+use anyhow::{anyhow, ensure, Result};
+use chrono::{DateTime, Utc};
 
 use crate::models::forward_receipt::is_safe_id;
+use crate::models::forward_receipt::job_record::CompanionJob;
 use crate::models::session::Session;
 use crate::subagent_lifecycle::store::{append_locked, codex_event_id};
 use crate::subagent_lifecycle::{
-    replay, AppendOutcome, CodexEvidence, CodexEvidenceKind, CodexExecution, LifecycleProducer,
-    LifecycleRecord, LifecycleState, WorkerIdentity, WorkerOutcome, LIFECYCLE_VERSION,
+    replay, AppendOutcome, CodexEvidence, CodexEvidenceKind, CodexExecution, LifecycleRecord,
+    LifecycleState, WorkerIdentity, WorkerOutcome, LIFECYCLE_VERSION,
 };
 
 use super::authorization::CodexAuthorization;
+use super::direct::{self, DirectOutcome, StageReceipts};
 use super::jobs::{classify_job, locate_job, outcome, JobObservation};
 use super::ledger::{read_authorization_rows, read_lifecycle_records, LedgerRow};
-use super::{ReconcileEntry, ReconcileReport};
+use super::{codex_worker_identity, ReconcileEntry, ReconcileReport};
 
 const MAX_ACTIVE_STAGES: usize = 64;
 const MAX_ACTIVE_SESSIONS: usize = 256;
@@ -23,6 +26,17 @@ pub(super) fn reconcile_with_state_root(
     work_dir: &Path,
     active_sessions: &[Session],
     state_root: &Path,
+) -> Result<ReconcileReport> {
+    reconcile_at(work_dir, active_sessions, state_root, Utc::now())
+}
+
+/// `now` decides only whether an authorization with neither a forward receipt
+/// nor a companion job is still inside [`direct::RECEIPT_WINDOW_SECS`].
+pub(crate) fn reconcile_at(
+    work_dir: &Path,
+    active_sessions: &[Session],
+    state_root: &Path,
+    now: DateTime<Utc>,
 ) -> Result<ReconcileReport> {
     let active = active_stage_sessions(active_sessions);
     let mut report = ReconcileReport::default();
@@ -36,16 +50,18 @@ pub(super) fn reconcile_with_state_root(
             Err(error) => {
                 report
                     .entries
-                    .push(unknown_entry(&stage_id, None, error.to_string()));
+                    .push(ReconcileEntry::unknown(&stage_id, None, error.to_string()));
                 continue;
             }
         };
+        let receipts = StageReceipts::load(work_dir, &stage_id, now);
         reconcile_stage_rows(
             work_dir,
             state_root,
             &stage_id,
             &session_ids,
             rows,
+            &receipts,
             &mut report,
         );
     }
@@ -136,6 +152,7 @@ fn reconcile_stage_rows(
     stage_id: &str,
     session_ids: &HashSet<String>,
     rows: Vec<LedgerRow>,
+    receipts: &StageReceipts,
     report: &mut ReconcileReport,
 ) {
     for row in rows {
@@ -144,10 +161,10 @@ fn reconcile_stage_rows(
                 if authorization.stage_id == stage_id
                     && session_ids.contains(&authorization.loom_session_id) =>
             {
-                reconcile_one(work_dir, state_root, *authorization, report);
+                reconcile_one(work_dir, state_root, *authorization, receipts, report);
             }
             LedgerRow::Authorization(authorization) if authorization.stage_id != stage_id => {
-                report.entries.push(entry_for(
+                report.entries.push(ReconcileEntry::for_authorization(
                     &authorization,
                     WorkerOutcome::Unknown("authorization stage differs from ledger path".into()),
                     "authorization stage differs from ledger path".into(),
@@ -155,7 +172,9 @@ fn reconcile_stage_rows(
             }
             LedgerRow::Authorization(_) | LedgerRow::Legacy => {}
             LedgerRow::Invalid(detail) => {
-                report.entries.push(unknown_entry(stage_id, None, detail));
+                report
+                    .entries
+                    .push(ReconcileEntry::unknown(stage_id, None, detail));
             }
         }
     }
@@ -165,39 +184,27 @@ fn reconcile_one(
     work_dir: &Path,
     state_root: &Path,
     authorization: CodexAuthorization,
+    receipts: &StageReceipts,
     report: &mut ReconcileReport,
 ) {
-    let result = locate_job(&authorization, state_root).and_then(|job| {
-        let observation = classify_job(&job)?;
-        append_records(work_dir, &authorization, &job.id, &observation)
-            .map(|outcomes| (observation, outcomes))
+    let result = observe(state_root, &authorization, receipts).and_then(|observed| {
+        observed
+            .map(|(execution, observation)| {
+                append_records(work_dir, &authorization, execution, &observation)
+                    .map(|outcomes| (observation, outcomes))
+            })
+            .transpose()
     });
     match result {
-        Ok((observation, outcomes)) => {
-            let conflict = outcomes.contains(&AppendOutcome::Conflict);
-            report.appended += outcomes
-                .iter()
-                .filter(|value| **value == AppendOutcome::Appended)
-                .count();
-            report.duplicates += outcomes
-                .iter()
-                .filter(|value| **value == AppendOutcome::Duplicate)
-                .count();
-            let external = if conflict {
-                WorkerOutcome::Unknown("conflicting lifecycle event id".into())
-            } else {
-                observation_outcome(&observation)
-            };
-            report.entries.push(entry_for(
-                &authorization,
-                external,
-                format!(
-                    "authorization={:?}, observation={:?}",
-                    outcomes[0], outcomes[1]
-                ),
-            ));
+        Ok(Some((observation, outcomes))) => {
+            record_appends(report, &authorization, &observation, outcomes);
         }
-        Err(error) => report.entries.push(entry_for(
+        Ok(None) => report.entries.push(ReconcileEntry::for_authorization(
+            &authorization,
+            WorkerOutcome::Active,
+            direct::AWAITING_RECEIPT.into(),
+        )),
+        Err(error) => report.entries.push(ReconcileEntry::for_authorization(
             &authorization,
             WorkerOutcome::Unknown(error.to_string()),
             error.to_string(),
@@ -205,50 +212,90 @@ fn reconcile_one(
     }
 }
 
+/// The execution an authorization's evidence names and what it observed, or
+/// `None` while a row with no receipt and no companion job is in the window.
+fn observe(
+    state_root: &Path,
+    authorization: &CodexAuthorization,
+    receipts: &StageReceipts,
+) -> Result<Option<(CodexExecution, JobObservation)>> {
+    let routed = match receipts.receipts() {
+        Ok(load) => direct::receipt_outcome(authorization, load),
+        Err(detail) => DirectOutcome::Unknown(detail.to_owned()),
+    };
+    match routed {
+        DirectOutcome::Direct(execution, observation) => Ok(Some((execution, observation))),
+        DirectOutcome::Unknown(detail) => Err(anyhow!(detail)),
+        DirectOutcome::Companion => companion_observation(locate_job(authorization, state_root)?),
+        DirectOutcome::NoReceipt => match locate_job(authorization, state_root) {
+            Ok(job) => companion_observation(job),
+            Err(error) => {
+                direct::receipt_window(authorization, &error, receipts.now).map(|()| None)
+            }
+        },
+    }
+}
+
+fn companion_observation(job: CompanionJob) -> Result<Option<(CodexExecution, JobObservation)>> {
+    let observation = classify_job(&job)?;
+    Ok(Some((
+        CodexExecution::Companion { job_id: job.id },
+        observation,
+    )))
+}
+
+fn record_appends(
+    report: &mut ReconcileReport,
+    authorization: &CodexAuthorization,
+    observation: &JobObservation,
+    outcomes: [AppendOutcome; 2],
+) {
+    let conflict = outcomes.contains(&AppendOutcome::Conflict);
+    report.appended += outcomes
+        .iter()
+        .filter(|value| **value == AppendOutcome::Appended)
+        .count();
+    report.duplicates += outcomes
+        .iter()
+        .filter(|value| **value == AppendOutcome::Duplicate)
+        .count();
+    let external = if conflict {
+        WorkerOutcome::Unknown("conflicting lifecycle event id".into())
+    } else {
+        observation_outcome(observation)
+    };
+    report.entries.push(ReconcileEntry::for_authorization(
+        authorization,
+        external,
+        format!(
+            "authorization={:?}, observation={:?}",
+            outcomes[0], outcomes[1]
+        ),
+    ));
+}
+
 fn append_records(
     work_dir: &Path,
     authorization: &CodexAuthorization,
-    job_id: &str,
+    execution: CodexExecution,
     observation: &JobObservation,
 ) -> Result<[AppendOutcome; 2]> {
-    let identity = worker_identity(authorization, job_id);
-    let authorized = authorization_record(authorization, &identity, job_id)?;
-    let observed = observation_record(authorization, &identity, job_id, observation)?;
+    let identity = codex_worker_identity(authorization, execution);
+    let authorized = lifecycle_record(
+        &identity,
+        authorization.authorized_at,
+        LifecycleState::Running,
+        direct::base_evidence(authorization, &identity),
+    )?;
+    let observed = observation_record(authorization, &identity, observation)?;
     let authorization_outcome = append_locked(work_dir, &authorized)?;
     let observation_outcome = append_locked(work_dir, &observed)?;
     Ok([authorization_outcome, observation_outcome])
 }
 
-fn authorization_record(
-    authorization: &CodexAuthorization,
-    identity: &WorkerIdentity,
-    job_id: &str,
-) -> Result<LifecycleRecord> {
-    let evidence = CodexEvidence {
-        evidence_kind: CodexEvidenceKind::Authorization,
-        requested_model: authorization.model.clone(),
-        requested_effort: authorization.effort.clone(),
-        invocation_id: authorization.invocation_id.clone(),
-        job_id: Some(job_id.into()),
-        thread_id: None,
-        turn_id: None,
-        tool_use_id: None,
-        terminal_at: None,
-        outcome: crate::subagent_lifecycle::CodexEvidenceOutcome::Running,
-        detail: None,
-    };
-    lifecycle_record(
-        identity,
-        authorization.authorized_at,
-        LifecycleState::Running,
-        evidence,
-    )
-}
-
 fn observation_record(
     authorization: &CodexAuthorization,
     identity: &WorkerIdentity,
-    job_id: &str,
     observation: &JobObservation,
 ) -> Result<LifecycleRecord> {
     let observed_at = observation
@@ -256,30 +303,26 @@ fn observation_record(
         .unwrap_or(authorization.authorized_at);
     let evidence = CodexEvidence {
         evidence_kind: CodexEvidenceKind::Observation,
-        requested_model: authorization.model.clone(),
-        requested_effort: authorization.effort.clone(),
-        invocation_id: authorization.invocation_id.clone(),
-        job_id: Some(job_id.into()),
         thread_id: observation.thread_id.clone(),
         turn_id: observation.turn_id.clone(),
-        tool_use_id: None,
         terminal_at: observation.terminal_at,
         outcome: observation.outcome,
         detail: observation.detail.clone(),
+        ..direct::base_evidence(authorization, identity)
     };
     lifecycle_record(identity, observed_at, observation.state, evidence)
 }
 
 fn lifecycle_record(
     identity: &WorkerIdentity,
-    observed_at: chrono::DateTime<chrono::Utc>,
+    observed_at: DateTime<Utc>,
     state: LifecycleState,
     evidence: CodexEvidence,
 ) -> Result<LifecycleRecord> {
     let mut record = LifecycleRecord {
         version: LIFECYCLE_VERSION,
         event_id: String::new(),
-        producer: LifecycleProducer::CodexCompanion,
+        producer: direct::producer_of(identity),
         identity: identity.clone(),
         observed_at,
         state,
@@ -287,21 +330,6 @@ fn lifecycle_record(
     };
     record.event_id = codex_event_id(&record, &evidence)?;
     Ok(record)
-}
-
-fn worker_identity(authorization: &CodexAuthorization, job_id: &str) -> WorkerIdentity {
-    WorkerIdentity::Codex {
-        stage_id: authorization.stage_id.clone(),
-        loom_session_id: authorization.loom_session_id.clone(),
-        parent_session_id: authorization.parent_session_id.clone(),
-        forwarder_agent_id: authorization.forwarder_agent_id.clone(),
-        unit_id: authorization.unit_id.clone(),
-        invocation_id: authorization.invocation_id.clone(),
-        workspace_root: authorization.workspace_root.clone(),
-        execution: CodexExecution::Companion {
-            job_id: job_id.into(),
-        },
-    }
 }
 
 fn observation_outcome(observation: &JobObservation) -> WorkerOutcome {
@@ -326,32 +354,6 @@ fn observation_outcome(observation: &JobObservation) -> WorkerOutcome {
     }
 }
 
-fn entry_for(
-    authorization: &CodexAuthorization,
-    outcome: WorkerOutcome,
-    detail: String,
-) -> ReconcileEntry {
-    ReconcileEntry {
-        stage_id: authorization.stage_id.clone(),
-        loom_session_id: Some(authorization.loom_session_id.clone()),
-        unit_id: Some(authorization.unit_id.clone()),
-        invocation_id: Some(authorization.invocation_id.clone()),
-        outcome,
-        detail,
-    }
-}
-
-fn unknown_entry(stage_id: &str, session_id: Option<String>, detail: String) -> ReconcileEntry {
-    ReconcileEntry {
-        stage_id: stage_id.into(),
-        loom_session_id: session_id,
-        unit_id: None,
-        invocation_id: None,
-        outcome: WorkerOutcome::Unknown(detail.clone()),
-        detail,
-    }
-}
-
 fn correlated_identity(
     record: &LifecycleRecord,
     authorization: &CodexAuthorization,
@@ -364,13 +366,16 @@ fn correlated_identity(
         unit_id,
         invocation_id,
         workspace_root,
-        execution: CodexExecution::Companion { .. },
+        execution,
     } = &record.identity
     else {
         return None;
     };
     let evidence: CodexEvidence = serde_json::from_value(record.evidence.clone()).ok()?;
-    (record.producer == LifecycleProducer::CodexCompanion
+    let other_tool_use = matches!(execution, CodexExecution::Direct { tool_use_id, .. }
+        if tool_use_id != &authorization.tool_use_id);
+    (record.producer == direct::producer_of(&record.identity)
+        && !other_tool_use
         && record.state == LifecycleState::Running
         && record.observed_at == authorization.authorized_at
         && evidence.evidence_kind == CodexEvidenceKind::Authorization

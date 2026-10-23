@@ -32,6 +32,7 @@ mod paths;
 mod routing;
 
 pub use expand::MAX_EXPANDED_TOKENS;
+pub(crate) use paths::is_test_path;
 pub use paths::{join_working_dir, normalize_dependency_path};
 
 use crate::context::config::RetrievalConfig;

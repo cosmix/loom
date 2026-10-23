@@ -275,7 +275,7 @@ Every stage description MUST include the line **`Use parallel subagents and skil
 | `wiring` | Static integration point present (regex in a file) | `source` + `pattern` + `description` |
 | `wiring_tests` | Runtime integration: command output matches criteria | `name` + `command` + `success_criteria` |
 | `dead_code_check` | No orphaned code | `command` + `fail_patterns` + `ignore_patterns` (see `/loom-dead-code-check`) |
-| `contracts` (v2) | Behaviour: named tests, written and frozen before implementation, that fail on a named wrong implementation | `id` + `file` + `test` + `scenario` + `rejects` (+ optional `runner`, `cwd`; `harness` globs on the stage) |
+| `contracts` (v2) | Behaviour: named tests, written and frozen before implementation, that fail on a named wrong implementation | `id` + `file` + `test` + `scenario` + `rejects` (+ optional `runner`, `cwd`; `harness` globs on the stage); module declarations are derived as scaffold, never harnessed |
 | `reachable` (v2) | The new unit is reached from an entry point through the source graph | `symbol` + `from` + `description` |
 | `wiring` `literal` (v2) | `pattern` matched as plain text | `literal: true` |
 | glob `source` (v2) | `wiring` over every file a glob matches | `source: "src/**/*.rs"` |

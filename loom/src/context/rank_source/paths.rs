@@ -141,7 +141,7 @@ pub(super) fn apply_test_path_factor(
 /// tests beside the code they test. Rust's in-file `mod tests` has no path to
 /// inspect at all and is handled by the scope check in
 /// [`apply_test_path_factor`].
-fn is_test_path(path: &str) -> bool {
+pub(crate) fn is_test_path(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
     let mut segments = normalized.split('/').peekable();
     let mut file_name = "";

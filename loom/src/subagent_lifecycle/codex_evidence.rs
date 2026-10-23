@@ -171,11 +171,14 @@ fn validate_terminal_fields(record: &LifecycleRecord, evidence: &CodexEvidence) 
         evidence.terminal_at.is_some(),
         "terminal Codex evidence lacks timestamp"
     );
+    // A direct forward's only evidence is its forward receipt, which names no
+    // turn; a turn id it does carry must still be exact.
+    let turn_optional = record.producer == LifecycleProducer::CodexDirect;
     ensure!(
-        evidence
-            .turn_id
-            .as_deref()
-            .is_some_and(|value| validate_safe_id(value).is_ok()),
+        match evidence.turn_id.as_deref() {
+            Some(value) => validate_safe_id(value).is_ok(),
+            None => turn_optional,
+        },
         "terminal Codex evidence lacks exact turn id"
     );
     ensure!(

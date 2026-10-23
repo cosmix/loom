@@ -1,4 +1,5 @@
-//! Host-side reconciliation of authorized Codex companion jobs.
+//! Host-side reconciliation of authorized Codex forwards: companion jobs, and
+//! direct-mode forwards whose only evidence is the forward receipt.
 
 use std::path::Path;
 use std::time::{Duration, SystemTime};
@@ -6,9 +7,10 @@ use std::time::{Duration, SystemTime};
 use anyhow::Result;
 
 use crate::models::session::Session;
-use crate::subagent_lifecycle::WorkerOutcome;
+use crate::subagent_lifecycle::{CodexExecution, WorkerIdentity, WorkerOutcome};
 
 mod authorization;
+mod direct;
 mod jobs;
 mod ledger;
 mod progress;
@@ -16,6 +18,7 @@ mod reconcile;
 mod token_threads;
 
 pub use authorization::CodexAuthorization;
+pub(crate) use direct::receipt_matches_authorization;
 pub(crate) use ledger::{read_authorization_rows, read_lifecycle_records, LedgerRow};
 pub(crate) use token_threads::authorized_threads;
 
@@ -39,6 +42,49 @@ pub struct ReconcileEntry {
 impl ReconcileEntry {
     pub fn is_unknown(&self) -> bool {
         matches!(&self.outcome, WorkerOutcome::Unknown(_))
+    }
+
+    fn for_authorization(
+        authorization: &CodexAuthorization,
+        outcome: WorkerOutcome,
+        detail: String,
+    ) -> Self {
+        Self {
+            stage_id: authorization.stage_id.clone(),
+            loom_session_id: Some(authorization.loom_session_id.clone()),
+            unit_id: Some(authorization.unit_id.clone()),
+            invocation_id: Some(authorization.invocation_id.clone()),
+            outcome,
+            detail,
+        }
+    }
+
+    fn unknown(stage_id: &str, session_id: Option<String>, detail: String) -> Self {
+        Self {
+            stage_id: stage_id.into(),
+            loom_session_id: session_id,
+            unit_id: None,
+            invocation_id: None,
+            outcome: WorkerOutcome::Unknown(detail.clone()),
+            detail,
+        }
+    }
+}
+
+/// The lifecycle identity of one authorized forward run as `execution`.
+pub(crate) fn codex_worker_identity(
+    authorization: &CodexAuthorization,
+    execution: CodexExecution,
+) -> WorkerIdentity {
+    WorkerIdentity::Codex {
+        stage_id: authorization.stage_id.clone(),
+        loom_session_id: authorization.loom_session_id.clone(),
+        parent_session_id: authorization.parent_session_id.clone(),
+        forwarder_agent_id: authorization.forwarder_agent_id.clone(),
+        unit_id: authorization.unit_id.clone(),
+        invocation_id: authorization.invocation_id.clone(),
+        workspace_root: authorization.workspace_root.clone(),
+        execution,
     }
 }
 
@@ -108,6 +154,8 @@ pub(crate) fn has_correlated_lifecycle(work_dir: &Path, identity: &CodexAuthoriz
 
 #[cfg(test)]
 pub(crate) mod test_support;
+#[cfg(test)]
+pub(crate) use reconcile::reconcile_at;
 #[cfg(test)]
 pub(crate) use token_threads::threads_with_state_root;
 #[cfg(test)]

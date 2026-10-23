@@ -70,6 +70,8 @@ pub enum ForwardState {
     Running,
     Succeeded,
     Failed,
+    /// The direct lane's END marker spells this `cancelled`.
+    #[serde(alias = "cancelled")]
     Canceled,
     /// The forwarding wrapper cancelled a companion job that was still running
     /// at its own wall-clock cap and reported `exit_code: 124`. The companion's

@@ -27,6 +27,50 @@ pub(crate) fn contract() -> ContractSpec {
     }
 }
 
+/// The manifest of the one package [`contract_worktree`]'s base holds.
+pub(crate) const PACKAGE_MANIFEST: &str =
+    "[package]\nname = \"fx\"\nversion = \"0.1.0\"\nedition = \"2021\"\n";
+
+pub(crate) const LIQUIDMON_FILE: &str = "src/device_lock/contract_tests.rs";
+
+/// A contract inside a module the base does not declare yet: its file needs
+/// `mod device_lock;` in `src/lib.rs` and a new `src/device_lock/mod.rs`.
+pub(crate) fn liquidmon_contract() -> ContractSpec {
+    ContractSpec {
+        file: LIQUIDMON_FILE.to_string(),
+        test: "device_lock::contract_tests::rejects_x".to_string(),
+        ..contract()
+    }
+}
+
+/// Put the liquidmon shape in `worktree` (a [`contract_worktree`]): the
+/// contract file, the declaration in `src/lib.rs` and a declaration-only
+/// `src/device_lock/mod.rs`; the plain fixture contract file is removed.
+pub(crate) fn write_liquidmon(worktree: &Path) {
+    std::fs::remove_file(worktree.join(CONTRACT_FILE)).unwrap();
+    let contract = std::str::from_utf8(CONTRACT_CONTENT).unwrap();
+    write_files(
+        worktree,
+        &[
+            ("src/lib.rs", "mod device_lock;\n"),
+            (
+                "src/device_lock/mod.rs",
+                "#[cfg(test)]\nmod contract_tests;\n",
+            ),
+            (LIQUIDMON_FILE, contract),
+        ],
+    );
+}
+
+/// Write each `(path, content)` beneath `root`, creating its directories.
+pub(crate) fn write_files(root: &Path, files: &[(&str, &str)]) {
+    for (path, content) in files {
+        let path = root.join(path);
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, content).unwrap();
+    }
+}
+
 /// An executing v2 stage owned by `session_id`, with [`contract`], whose
 /// worktree is `.worktrees/<stage_id>`.
 pub(crate) fn contract_stage(stage_id: &str, session_id: &str) -> Stage {
@@ -68,15 +112,33 @@ pub(crate) fn write_test_freeze(work_dir: &Path, stage_id: &str, session_id: &st
 
 /// Make `repo_root` a repository on `main` with one commit, add the stage
 /// worktree on `loom/<stage_id>`, and write the contract file into it,
-/// untracked. The state directory `<repo_root>/.loom/work` is left holding
+/// untracked. The base is a Cargo package (`Cargo.toml` and an empty
+/// `src/lib.rs`), so the freeze's scaffold check finds the manifest that
+/// owns the contract file (`tests/x_contract.rs` is an integration-test
+/// root). The state directory `<repo_root>/.loom/work` is left holding
 /// the singleton lock of a daemon that has stopped, as one that made the
 /// worktree leaves it: no daemon runs, so a process other than the daemon may
 /// compute the worktree's change fingerprint. Returns the worktree root.
 pub(crate) fn contract_worktree(repo_root: &Path, stage_id: &str) -> PathBuf {
+    let base = [("Cargo.toml", PACKAGE_MANIFEST), ("src/lib.rs", "")];
+    worktree_over(repo_root, stage_id, &base)
+}
+
+/// [`contract_worktree`] over a base holding only `README.md`: no package
+/// owns the contract file, so a contract without `runner` detects no
+/// adapter and its `test` runs as a shell command.
+pub(crate) fn shell_contract_worktree(repo_root: &Path, stage_id: &str) -> PathBuf {
+    worktree_over(repo_root, stage_id, &[])
+}
+
+fn worktree_over(repo_root: &Path, stage_id: &str, base: &[(&str, &str)]) -> PathBuf {
     std::fs::create_dir_all(repo_root).unwrap();
     git(repo_root, &["init", "-q", "-b", "main"]);
     std::fs::write(repo_root.join("README.md"), "base\n").unwrap();
-    git(repo_root, &["add", "README.md"]);
+    write_files(repo_root, base);
+    let mut add = vec!["add", "README.md"];
+    add.extend(base.iter().map(|(path, _)| *path));
+    git(repo_root, &add);
     git(repo_root, &["commit", "-q", "-m", "base"]);
     let branch = format!("loom/{stage_id}");
     let relative = format!(".worktrees/{stage_id}");

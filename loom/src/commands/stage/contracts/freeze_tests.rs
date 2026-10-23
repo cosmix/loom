@@ -1,6 +1,9 @@
 use super::*;
 use crate::models::stage::{AcceptanceCriterion, Stage};
 use crate::testrun::registry;
+use crate::verify::contracts::test_support::{
+    contract_worktree, liquidmon_contract, pinned, write_liquidmon,
+};
 
 fn spec() -> ContractSpec {
     ContractSpec {
@@ -37,6 +40,10 @@ fn freeze_rejects_non_contract_changes() {
         harness: &harness,
         changed_paths: &changed,
         existing: &|_| true,
+        scaffold: &ScaffoldCheck {
+            paths: Default::default(),
+            problems: Vec::new(),
+        },
     };
 
     let problems = check_changes(&inputs).expect_err("src/lib.rs is not a contract file");
@@ -139,4 +146,125 @@ fn freeze_goes_on_when_the_contract_files_are_formatted() {
         site_checking_formatting_of("pub fn add(a: u32, b: u32) -> u32 {\n    a + b\n}\n");
 
     assert!(check_formatting(&site, CommandConfinement::Confined).is_ok());
+}
+
+/// A liquidmon-shaped stage over a real repository: `site` plus its git.
+struct Liquidmon {
+    _temp: tempfile::TempDir,
+    site: ContractSite,
+    repo: WorktreeGit,
+}
+
+fn liquidmon(base_lib: &str) -> Liquidmon {
+    let temp = tempfile::TempDir::new().unwrap();
+    let repo_root = temp.path().join("repo");
+    let worktree = contract_worktree(&repo_root, "s1");
+    if !base_lib.is_empty() {
+        commit_base_lib(&worktree, base_lib);
+    }
+    write_liquidmon(&worktree);
+    let workspace = crate::fs::work_dir::WorkDir::new(&repo_root).unwrap();
+    workspace.adopt_existing().unwrap();
+    let root = worktree.canonicalize().unwrap();
+    let stage = Stage {
+        id: "s1".to_string(),
+        contracts: vec![liquidmon_contract()],
+        ..Stage::default()
+    };
+    let site = ContractSite {
+        work_dir: workspace.root().to_path_buf(),
+        stage,
+        worktree_root: root.clone(),
+        working_dir: root,
+    };
+    let repo = pinned(&worktree);
+    Liquidmon {
+        _temp: temp,
+        site,
+        repo,
+    }
+}
+
+/// Fork the stage from a commit whose `src/lib.rs` is `content`: commit it
+/// on the stage branch and move `main` (the stage base) there.
+fn commit_base_lib(worktree: &std::path::Path, content: &str) {
+    std::fs::write(worktree.join("src/lib.rs"), content).unwrap();
+    for args in [
+        vec!["add", "src/lib.rs"],
+        vec!["commit", "-q", "-m", "lib"],
+        vec!["update-ref", "refs/heads/main", "HEAD"],
+    ] {
+        let mut git = vec![
+            "-c",
+            "user.name=t",
+            "-c",
+            "user.email=t@t",
+            "-c",
+            "commit.gpgsign=false",
+            "-c",
+            "core.hooksPath=/dev/null",
+        ];
+        git.extend(args);
+        let output = crate::git::runner::run_git(&git, worktree).unwrap();
+        assert!(output.status.success(), "git {git:?}: {output:?}");
+    }
+}
+
+fn refusal_of(fx: &Liquidmon) -> String {
+    let error = check_site_changes(&fx.site, &fx.repo).expect_err("refused");
+    format!("{error:#}")
+}
+
+#[test]
+fn liquidmon_scaffold_passes_freeze_check() {
+    let fx = liquidmon("");
+
+    check_site_changes(&fx.site, &fx.repo).unwrap();
+}
+
+#[test]
+fn a_function_in_the_created_module_root_is_refused() {
+    let fx = liquidmon("");
+    let root = fx.site.working_dir.join("src/device_lock/mod.rs");
+    std::fs::write(
+        root,
+        "#[cfg(test)]\nmod contract_tests;\npub fn leak() {}\n",
+    )
+    .unwrap();
+
+    let message = refusal_of(&fx);
+
+    assert!(message.contains("src/device_lock/mod.rs"), "{message}");
+    assert!(message.contains("pub fn leak() {}"), "{message}");
+}
+
+#[test]
+fn an_edit_beyond_the_declaration_is_refused() {
+    let fx = liquidmon("");
+    let lib = fx.site.working_dir.join("src/lib.rs");
+    std::fs::write(lib, "mod device_lock;\npub fn helper() {}\n").unwrap();
+
+    let message = refusal_of(&fx);
+
+    assert!(message.contains("src/lib.rs"), "{message}");
+    assert!(message.contains("pub fn helper() {}"), "{message}");
+}
+
+/// The base already declares `mod device_lock;` in `src/lib.rs`, so the
+/// scaffold is only the new module root, which the diff accepts. The
+/// writer's harness covers `src/lib.rs`, and its inner `#![cfg(not(test))]`
+/// (outside every scaffold edit) is the chain check's alone to refuse.
+#[test]
+fn a_chain_the_diff_accepts_but_the_chain_check_refuses_is_refused() {
+    let mut fx = liquidmon("mod device_lock;\n");
+    fx.site.stage.harness = vec!["src/lib.rs".to_string()];
+    let lib = fx.site.working_dir.join("src/lib.rs");
+    std::fs::write(lib, "#![cfg(not(test))]\nmod device_lock;\n").unwrap();
+
+    let message = refusal_of(&fx);
+
+    assert!(message.contains("#![cfg(not(test))]"), "{message}");
+    assert!(message.contains("contract 'rejects-x'"), "{message}");
+    assert!(!message.contains("nor a scaffold edit"), "{message}");
+    assert!(!message.contains("src/device_lock/mod.rs"), "{message}");
 }

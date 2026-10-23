@@ -1,18 +1,28 @@
 //! Test-runner lints (DESIGN D4, stage `contract-phase`): a contract naming a
 //! runner no adapter answers to, a contract whose runner cannot be detected,
-//! and a v2 integration-verify stage that never runs a whole test suite.
+//! and a v2 integration-verify stage that never runs a whole test suite; and,
+//! over HEAD of the repository, harness globs that match production source and
+//! Rust contracts whose module chain cannot be derived (the scaffold).
 
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
+use super::super::base_tree::HeadTree;
 use crate::plan::schema::{detect_stage_type, ContractSpec, StageDefinition, StageType};
 use crate::testrun::recognize::invocations;
 use crate::testrun::registry;
-use crate::verify::contracts::resolve_adapter;
+use crate::verify::contracts::collection::harness_source_matches;
+use crate::verify::contracts::collection::rust::derive_scaffold;
+use crate::verify::contracts::{normalize, resolve_adapter};
 
 use super::{LintContext, LintFinding};
 
 pub(super) fn check(ctx: &LintContext<'_>, out: &mut Vec<LintFinding>) {
+    let head = ctx.repo_root.and_then(HeadTree::new);
     for stage in &ctx.metadata.loom.stages {
+        if let (Some(tree), Some(root)) = (&head, ctx.repo_root) {
+            check_collection(stage, tree, root, out);
+        }
         for contract in &stage.contracts {
             match (&contract.runner, ctx.repo_root) {
                 (Some(runner), _) => check_known_runner(stage, contract, runner, out),
@@ -25,6 +35,77 @@ pub(super) fn check(ctx: &LintContext<'_>, out: &mut Vec<LintFinding>) {
         }
         if ctx.metadata.loom.version == 2 {
             check_full_test_run(stage, ctx.repo_root, out);
+        }
+    }
+}
+
+/// The stage's directory relative to the repository root, `""` for the root.
+fn working_prefix(stage: &StageDefinition) -> String {
+    match normalize(&stage.working_dir).trim_matches('/') {
+        "." => String::new(),
+        dir => dir.to_string(),
+    }
+}
+
+fn join(prefix: &str, path: &str) -> String {
+    if prefix.is_empty() {
+        path.to_string()
+    } else {
+        format!("{prefix}/{path}")
+    }
+}
+
+/// Collection lints over HEAD, never the checkout: a harness glob that
+/// matches production source, and a Rust contract whose module chain the
+/// scaffold derivation rejects. A stage with `dependencies` may build the
+/// package or module root the contract needs, so its derivation failure only
+/// warns.
+fn check_collection(
+    stage: &StageDefinition,
+    tree: &HeadTree<'_>,
+    root: &Path,
+    out: &mut Vec<LintFinding>,
+) {
+    let prefix = working_prefix(stage);
+    let Some(listed) = tree.files("") else {
+        return;
+    };
+    let head: HashSet<&str> = listed.iter().map(String::as_str).collect();
+    let under: Vec<String> = listed
+        .iter()
+        .filter_map(|file| {
+            let relative = match prefix.as_str() {
+                "" => file.as_str(),
+                _ => file.strip_prefix(&prefix)?.strip_prefix('/')?,
+            };
+            Some(relative.to_string())
+        })
+        .collect();
+    for path in harness_source_matches(&stage.harness, &under) {
+        let message = format!(
+            "harness glob matches production source {path}; it is frozen for the implementer. \
+             Harness is for test-only files; module declarations are derived as scaffold"
+        );
+        out.push(LintFinding::in_stage(stage, message, false));
+    }
+    let source = |path: &str| {
+        let bytes = head.contains(path).then(|| tree.content(path)).flatten()?;
+        String::from_utf8(bytes).ok()
+    };
+    let package_dir = root.join(&stage.working_dir);
+    for contract in &stage.contracts {
+        let adapter = match contract.runner.as_deref() {
+            Some(name) => registry::by_name(name),
+            None => resolve_adapter(contract, &package_dir),
+        };
+        if !adapter.is_some_and(|adapter| adapter.language() == "rust") {
+            continue;
+        }
+        let file = join(&prefix, &normalize(&contract.file));
+        if let Err(error) = derive_scaffold(&source, &[(file.as_str(), contract.test.as_str())]) {
+            let message = format!("contract {}: {error}", contract.id);
+            let blocking = stage.dependencies.is_empty();
+            out.push(LintFinding::in_stage(stage, message, blocking));
         }
     }
 }
@@ -114,3 +195,7 @@ fn adapter_names() -> String {
         .collect();
     names.join(", ")
 }
+
+#[cfg(test)]
+#[path = "contracts_tests.rs"]
+mod tests;

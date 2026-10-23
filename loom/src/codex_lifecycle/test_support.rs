@@ -5,6 +5,7 @@ use anyhow::{Context, Result};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
+use crate::models::forward_receipt::{ForwardIdentity, RECEIPTS_FILE_NAME};
 use crate::models::session::{Session, SessionStatus};
 use crate::subagent_lifecycle::{CodexExecution, WorkerIdentity};
 
@@ -20,8 +21,17 @@ pub(super) const EFFORT: &str = "xhigh";
 pub(crate) const INV_A: &str = "inv-0123456789abcdef0123456789abcdef";
 pub(super) const INV_B: &str = "inv-fedcba9876543210fedcba9876543210";
 
+/// A direct-mode forward captured from liquidmon on 2026-10-23, verbatim but
+/// for shortened paths; `workspace_root` is replaced by the fixture's.
+pub(crate) const LIQUIDMON_STAGE: &str = "fix-instance-lock";
+pub(crate) const LIQUIDMON_SESSION: &str = "session-04b928d3-1792774508";
+pub(crate) const LIQUIDMON_AUTHORIZATION: &str = r#"{"v":2,"ts":"2026-10-23T16:55:45.000Z","stage_id":"fix-instance-lock","session_id":"session-04b928d3-1792774508","parent_session_id":"cc32e257-3029-4638-9ca4-d5113f0e1247","forwarder_agent_id":"a1e1311ac1c59874b","tool_use_id":"toolu_01QYmUhYVRs82rXC1TawQ4oe","unit_id":"L1-device-lock","invocation_id":"inv-0f4dcc11d81ad6f26cb08d4b1a0c59ba","model":"gpt-5.6-terra","effort":"xhigh","workspace_root":"/repo/.worktrees/fix-instance-lock","companion_version":"1.0.6","companion_path":"/home/u/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts/codex-companion.mjs","state_root":"/home/u/.codex/plugin-data/state"}"#;
+pub(crate) const LIQUIDMON_RUNNING: &str = r#"{"schema":1,"receipt_id":"096464e5f3005de684f92df63d8bbdca0585c7cef4fc98b8365ada2b4c052e74","parent_session_id":"cc32e257-3029-4638-9ca4-d5113f0e1247","agent_id":"a1e1311ac1c59874b","tool_use_id":"toolu_01QYmUhYVRs82rXC1TawQ4oe","stage_id":"fix-instance-lock","loom_session_id":"session-04b928d3-1792774508","backend":"direct","backend_id":"01a169b0-a2fd-7793-9874-db0889fa035c","state":"running","observed_at":"2026-10-23T17:00:37.322417869Z","exit_code":null,"codex_thread_id":"01a169b0-a2fd-7793-9874-db0889fa035c","locator":null,"model":"gpt-5.6-terra","effort":"xhigh"}"#;
+pub(crate) const LIQUIDMON_SUCCEEDED: &str = r#"{"schema":1,"receipt_id":"096464e5f3005de684f92df63d8bbdca0585c7cef4fc98b8365ada2b4c052e74","parent_session_id":"cc32e257-3029-4638-9ca4-d5113f0e1247","agent_id":"a1e1311ac1c59874b","tool_use_id":"toolu_01QYmUhYVRs82rXC1TawQ4oe","stage_id":"fix-instance-lock","loom_session_id":"session-04b928d3-1792774508","backend":"direct","backend_id":"01a169b0-a2fd-7793-9874-db0889fa035c","state":"succeeded","observed_at":"2026-10-23T17:00:37.322417869Z","exit_code":0,"codex_thread_id":"01a169b0-a2fd-7793-9874-db0889fa035c","locator":null,"model":"gpt-5.6-terra","effort":"xhigh"}"#;
+
 pub(crate) struct Fixture {
     _temp: TempDir,
+    pub stage: String,
     pub work_dir: PathBuf,
     pub workspace: PathBuf,
     pub state_root: PathBuf,
@@ -31,6 +41,11 @@ pub(crate) struct Fixture {
 
 impl Fixture {
     pub fn new() -> Result<Self> {
+        Self::bound(STAGE, SESSION)
+    }
+
+    /// A fixture whose stage file binds `stage` to the running `session`.
+    pub fn bound(stage: &str, session_id: &str) -> Result<Self> {
         let temp = tempfile::tempdir()?;
         let root = fs::canonicalize(temp.path())?;
         let work_dir = root.join(".loom/work");
@@ -43,16 +58,17 @@ impl Fixture {
         fs::create_dir_all(companion.parent().context("companion parent")?)?;
         fs::write(&companion, "// companion fixture\n")?;
         fs::write(
-            work_dir.join("stages").join(format!("{STAGE}.md")),
-            format!("---\nid: {STAGE}\nsession: {SESSION}\n---\n"),
+            work_dir.join("stages").join(format!("{stage}.md")),
+            format!("---\nid: {stage}\nsession: {session_id}\n---\n"),
         )?;
         let mut session = Session::new();
-        session.id = SESSION.into();
-        session.stage_id = Some(STAGE.into());
+        session.id = session_id.into();
+        session.stage_id = Some(stage.into());
         session.worktree_path = Some(workspace.clone());
         session.status = SessionStatus::Running;
         Ok(Self {
             _temp: temp,
+            stage: stage.into(),
             work_dir,
             workspace,
             state_root,
@@ -86,24 +102,44 @@ impl Fixture {
     }
 
     pub fn write_authorizations(&self, rows: &[Value]) -> Result<()> {
-        let directory = self.work_dir.join("subagents").join(STAGE);
-        fs::create_dir_all(&directory)?;
         let mut text = String::new();
         for row in rows {
             text.push_str(&serde_json::to_string(row)?);
             text.push('\n');
         }
-        fs::write(directory.join("codex.jsonl"), text)?;
+        self.write_stage_file("codex.jsonl", &text)
+    }
+
+    /// Write raw forward receipt lines, each newline-terminated.
+    pub fn write_receipts<S: AsRef<str>>(&self, lines: &[S]) -> Result<()> {
+        let text: String = lines
+            .iter()
+            .map(|line| format!("{}\n", line.as_ref()))
+            .collect();
+        self.write_stage_file(RECEIPTS_FILE_NAME, &text)
+    }
+
+    pub fn stage_path(&self, name: &str) -> PathBuf {
+        self.work_dir.join("subagents").join(&self.stage).join(name)
+    }
+
+    fn write_stage_file(&self, name: &str, text: &str) -> Result<()> {
+        let path = self.stage_path(name);
+        fs::create_dir_all(path.parent().context("stage directory")?)?;
+        fs::write(path, text)?;
         Ok(())
+    }
+
+    /// The liquidmon authorization row bound to this fixture's workspace.
+    pub fn liquidmon_authorization_value(&self) -> Result<Value> {
+        let mut value: Value = serde_json::from_str(LIQUIDMON_AUTHORIZATION)?;
+        value["workspace_root"] = json!(&self.workspace);
+        Ok(value)
     }
 
     pub fn append_authorization_text(&self, text: &str) -> Result<()> {
         use std::io::Write;
-        let path = self
-            .work_dir
-            .join("subagents")
-            .join(STAGE)
-            .join("codex.jsonl");
+        let path = self.stage_path("codex.jsonl");
         let mut file = fs::OpenOptions::new().append(true).open(path)?;
         file.write_all(text.as_bytes())?;
         Ok(())
@@ -159,19 +195,38 @@ impl Fixture {
     }
 }
 
+/// The liquidmon direct forward's stage, session, and authorization row; no
+/// receipts are written.
+pub(crate) fn liquidmon_direct_fixture() -> Result<Fixture> {
+    let fixture = Fixture::bound(LIQUIDMON_STAGE, LIQUIDMON_SESSION)?;
+    fixture.write_authorizations(&[fixture.liquidmon_authorization_value()?])?;
+    Ok(fixture)
+}
+
+/// `base` receipt line after `edit`, with its receipt id recomputed from the
+/// edited identity fields so the line still decodes.
+pub(crate) fn receipt_line(base: &str, edit: impl FnOnce(&mut Value)) -> Result<String> {
+    let mut value: Value = serde_json::from_str(base)?;
+    edit(&mut value);
+    let field = |name: &str| value[name].as_str().unwrap_or_default().to_owned();
+    let identity = ForwardIdentity {
+        parent_session_id: field("parent_session_id"),
+        agent_id: field("agent_id"),
+        tool_use_id: field("tool_use_id"),
+        stage_id: field("stage_id"),
+        loom_session_id: field("loom_session_id"),
+    };
+    value["receipt_id"] = json!(identity.receipt_id());
+    Ok(serde_json::to_string(&value)?)
+}
+
 pub(super) fn identity(authorization: &CodexAuthorization, job_id: &str) -> WorkerIdentity {
-    WorkerIdentity::Codex {
-        stage_id: authorization.stage_id.clone(),
-        loom_session_id: authorization.loom_session_id.clone(),
-        parent_session_id: authorization.parent_session_id.clone(),
-        forwarder_agent_id: authorization.forwarder_agent_id.clone(),
-        unit_id: authorization.unit_id.clone(),
-        invocation_id: authorization.invocation_id.clone(),
-        workspace_root: authorization.workspace_root.clone(),
-        execution: CodexExecution::Companion {
+    super::codex_worker_identity(
+        authorization,
+        CodexExecution::Companion {
             job_id: job_id.into(),
         },
-    }
+    )
 }
 
 fn job_value(
