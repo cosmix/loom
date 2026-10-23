@@ -2,9 +2,9 @@
 # commit-guard.sh must give a contract session (LOOM_SESSION_TYPE=contract) the
 # contract reminder - freeze, do not commit, do not complete - instead of the
 # commit-and-complete checklist, and still exit 0. A stage session in the same
-# worktree keeps the checklist. A contract session that stops with a refused
-# freeze on record (in its scratch directory) parks its stage with
-# `loom stage waiting`; one with no refusal on record parks nothing.
+# worktree keeps the checklist. The hook calls no loom command for a contract
+# session, refused freeze on record (in its scratch directory) or not: the
+# daemon files a standing refusal for adjudication once the session is quiet.
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/../.." && pwd)
@@ -51,7 +51,7 @@ if ! OUTPUT=$(run_hook contract); then
 	exit 1
 fi
 if [[ -e "$CALLS" ]]; then
-	echo "FAIL: a writer with no refused freeze must not park its stage, loom got: $(cat "$CALLS")"
+	echo "FAIL: a writer with no refused freeze must not call loom, loom got: $(cat "$CALLS")"
 	exit 1
 fi
 for expected in \
@@ -73,7 +73,7 @@ fi
 ln -s "$TMP/elsewhere" "$REFUSAL"
 run_hook contract >/dev/null
 if [[ -e "$CALLS" ]]; then
-	echo "FAIL: a symlinked refusal must not park the stage, loom got: $(cat "$CALLS")"
+	echo "FAIL: a symlinked refusal must not call loom, loom got: $(cat "$CALLS")"
 	exit 1
 fi
 rm "$REFUSAL"
@@ -83,21 +83,26 @@ if ! OUTPUT=$(run_hook contract); then
 	echo "FAIL: the hook must exit 0 for a refused contract session, got: $OUTPUT"
 	exit 1
 fi
-if [[ "$(cat "$CALLS")" != "1 stage waiting $STAGE_ID" ]]; then
-	echo "FAIL: a writer stopping on a refused freeze must run 'loom stage waiting' as a hook, got: $(cat "$CALLS")"
+if [[ -e "$CALLS" ]]; then
+	echo "FAIL: a writer stopping on a refused freeze must not call loom, loom got: $(cat "$CALLS")"
 	exit 1
 fi
 for expected in \
-	"the latest freeze was refused" \
-	"waiting-for-input" \
-	"loom stage contracts freeze $STAGE_ID" \
-	"loom stage resume $STAGE_ID"; do
+	"the latest freeze was refused: fix what it names" \
+	"loom stage contracts freeze $STAGE_ID again, or stop" \
+	"quiet for 5 minutes with no subagent running" \
+	"refusal goes to an adjudicator and a fresh writer starts with"; do
 	if [[ "$OUTPUT" != *"$expected"* ]]; then
 		echo "FAIL: refused contract reminder is missing '$expected', got: $OUTPUT"
 		exit 1
 	fi
 done
-rm "$CALLS"
+for unexpected in "waiting-for-input" "loom stage resume"; do
+	if [[ "$OUTPUT" == *"$unexpected"* ]]; then
+		echo "FAIL: a refused freeze no longer waits for the operator, got: $OUTPUT"
+		exit 1
+	fi
+done
 
 OUTPUT=$(run_hook stage)
 if [[ "$OUTPUT" != *"COMPLETION CHECKLIST for stage '$STAGE_ID'"* ]]; then
@@ -109,7 +114,7 @@ if [[ "$OUTPUT" == *"CONTRACT REMINDER"* ]]; then
 	exit 1
 fi
 if [[ -e "$CALLS" ]]; then
-	echo "FAIL: a stage session must never park its stage on a contract refusal, loom got: $(cat "$CALLS")"
+	echo "FAIL: a stage session must never call loom over a contract refusal, loom got: $(cat "$CALLS")"
 	exit 1
 fi
 

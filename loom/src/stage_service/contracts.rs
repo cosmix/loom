@@ -4,12 +4,13 @@
 //! daemon runs the contracts itself. [`handle_freeze_contracts`] admits a
 //! request (the caller is the stage's running `Contract` session; the stage
 //! is a v2 `standard` stage with contracts and no freeze yet, executing or
-//! waiting for input, parked on the writer's refused freeze,
-//! `verify::contracts::refusal`) and queues a `Freeze` host job for the HEAD
-//! and tree the session saw. The job runs every contract on the host under
-//! loom's own confinement (`host_verify::freeze`); applying a passing job
-//! calls [`freeze_with_reports`] with the run's reports and the hashes of the
-//! files it verified.
+//! waiting on the writer's `AskUserQuestion`) and queues a `Freeze` host job
+//! for the HEAD and tree the session saw. A refusal is recorded and filed as
+//! a `freeze-refusal` dispute (`verify::contracts::refusal`); nothing parks
+//! the stage. The job runs every contract on the host under loom's own
+//! confinement (`host_verify::freeze`); applying a passing job calls
+//! [`freeze_with_reports`] with the run's reports and the hashes of the files
+//! it verified.
 //!
 //! Before it writes anything, [`freeze_with_reports`] checks, itself:
 //!
@@ -31,9 +32,9 @@
 //! Once the checks pass, it copies the contract and harness files under
 //! `.loom/work/contracts/<stage>/files/` and writes `freeze.json` last; its
 //! appearance is what ends the contract phase. A freeze is the writer at
-//! work, so a stage still waiting on an earlier refusal goes back to
+//! work, so a stage still waiting on the writer's question goes back to
 //! `Executing`, where the handover to the implementer looks for it. The
-//! operator's typing and the job's application can reach the stage in either
+//! operator's answer and the job's application can reach the stage in either
 //! order, so the freeze cannot rely on the monitor having resumed it first.
 //!
 //! A refusal is a `Response::Error`, never an `Err`: the spool drain retries
@@ -122,13 +123,13 @@ pub(crate) fn freeze_with_reports(
         Err(error) => return Ok(refused(format!("{error:#}"))),
     };
     store::write_freeze(&work_dir, &record, &files)?;
-    if let Err(error) = end_refusal_wait(&work_dir, stage_id, session_id) {
+    if let Err(error) = end_input_wait(&work_dir, stage_id, session_id) {
         // The freeze stands; only the resume is missing, and the operator
         // has `loom stage resume` for it.
         tracing::warn!(
             stage_id = %stage_id,
             error = %format!("{error:#}"),
-            "Froze the contracts, but the stage stays waiting for input"
+            "Froze the contracts, but the stage stays waiting for its writer's input"
         );
     }
     Ok(Response::ContractsFrozen { files: files.len() })
@@ -154,9 +155,9 @@ fn refused(message: String) -> Response {
     Response::Error { message }
 }
 
-/// Take a stage parked on its writer's refused freeze back to `Executing`
-/// once the same writer has frozen.
-fn end_refusal_wait(work_dir: &Path, stage_id: &str, session_id: &str) -> Result<()> {
+/// Take a stage waiting on its writer's `AskUserQuestion` input back to
+/// `Executing` once the same writer has frozen.
+fn end_input_wait(work_dir: &Path, stage_id: &str, session_id: &str) -> Result<()> {
     update_stage(stage_id, work_dir, |stage| {
         let parked = stage.status == StageStatus::WaitingForInput
             && stage.session.as_deref() == Some(session_id);

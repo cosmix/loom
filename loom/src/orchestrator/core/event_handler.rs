@@ -16,6 +16,7 @@ use super::Orchestrator;
 
 mod blocked;
 mod contract_phase;
+mod freeze_refusal;
 mod handoff_state;
 mod human_review;
 #[path = "loop_recovery/mod.rs"]

@@ -87,7 +87,8 @@ impl Orchestrator {
     }
 
     // Reconcile before sync on every tick; spools and inboxes drain even in manual mode,
-    // which also hands frozen contract phases on here: it polls no monitor.
+    // which also files refused contract freezes and hands frozen contract phases on
+    // here: it polls no monitor.
     fn run_tick(&mut self, printed_view_instructions: &mut bool) -> Result<usize> {
         tick::record(&self.config.work_dir, tick::Phase::Sync);
         self.check_target_guard();
@@ -109,6 +110,7 @@ impl Orchestrator {
         self.tick_host_jobs();
         self.sweep_merged_leftovers();
         tick::record(&self.config.work_dir, tick::Phase::Spawning);
+        self.dispute_refused_freezes();
         self.hand_off_frozen_contract_phases();
         let started = self
             .start_ready_stages()

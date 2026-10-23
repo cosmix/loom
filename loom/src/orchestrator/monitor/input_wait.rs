@@ -12,9 +12,9 @@
 //!
 //! This module detects exactly that condition — the stage's own session made
 //! useful progress *after* the transition into `WaitingForInput` — and moves
-//! it back to `Executing`. The same progress is how a contract writer parked
-//! on a refused freeze resumes once the operator types into its session
-//! (`verify::contracts::refusal`). A stage that flips to `WaitingForInput` and then
+//! it back to `Executing`. The same progress is how a contract writer that
+//! asked the operator a question resumes once it is answered
+//! (`verify::contracts::refusal::end_wait`). A stage that flips to `WaitingForInput` and then
 //! goes quiet (a real question) is left alone. Only progress from the MAIN
 //! agent counts: a background subagent keeps calling tools no matter what the
 //! main agent is doing, so its heartbeat says nothing about whether the main

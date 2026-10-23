@@ -1,5 +1,5 @@
-//! A refused freeze on record, the standing it gives the writer's stage, and
-//! the wait it parks that stage in.
+//! A refused freeze on record: the writer's scratch file, the standing it
+//! gives the writer's stage, and the daemon's `refused.json`.
 
 use std::path::PathBuf;
 
@@ -52,7 +52,7 @@ fn uid() -> u32 {
 
 fn standing_of(fx: &Fixture) -> Standing {
     let stage = load_stage(STAGE, &fx.work_dir).unwrap();
-    standing_in(&fx.work_dir, &stage, Some(fx.scratch_root.as_path()), uid())
+    standing(&fx.work_dir, &stage)
 }
 
 fn problems() -> Vec<String> {
@@ -63,14 +63,22 @@ fn problems() -> Vec<String> {
 }
 
 #[test]
-fn a_recorded_refusal_reads_back_until_cleared() {
+fn a_recorded_refusal_reads_back_with_its_time_until_cleared() {
     let fx = fixture(SessionType::Contract);
+    let before = SystemTime::now() - std::time::Duration::from_secs(5);
 
     record(&fx.scratch_dir, &problems()).unwrap();
-    assert_eq!(load(&fx.scratch_dir).unwrap(), Some(problems().join("\n")));
+    let (lines, modified) = local_refusal(&fx.scratch_root, &fx.session_id)
+        .unwrap()
+        .unwrap();
+    assert_eq!(lines, problems());
+    assert!(modified >= before, "{modified:?}");
 
     clear(&fx.scratch_dir).unwrap();
-    assert_eq!(load(&fx.scratch_dir).unwrap(), None);
+    assert_eq!(
+        local_refusal(&fx.scratch_root, &fx.session_id).unwrap(),
+        None
+    );
     clear(&fx.scratch_dir).unwrap();
 }
 
@@ -81,85 +89,145 @@ fn a_refusal_is_never_read_through_a_symlink() {
     std::fs::write(&outside, "planted").unwrap();
     std::os::unix::fs::symlink(&outside, fx.scratch_dir.join(REFUSAL_FILE)).unwrap();
 
-    assert!(load(&fx.scratch_dir).is_err());
-    assert_eq!(standing_of(&fx), Standing::Other);
+    assert!(local_refusal(&fx.scratch_root, &fx.session_id).is_err());
 }
 
 #[test]
-fn only_an_unfrozen_writer_with_a_refusal_on_record_stands_refused() {
+fn a_missing_scratch_directory_means_no_local_refusal() {
     let fx = fixture(SessionType::Contract);
-    assert_eq!(standing_of(&fx), Standing::Other);
+    std::fs::remove_dir(&fx.scratch_dir).unwrap();
 
+    assert_eq!(
+        local_refusal(&fx.scratch_root, &fx.session_id).unwrap(),
+        None
+    );
+}
+
+#[test]
+fn only_a_frozen_contract_writer_stands_frozen() {
+    let fx = fixture(SessionType::Contract);
     record(&fx.scratch_dir, &problems()).unwrap();
-    assert_eq!(standing_of(&fx), Standing::Refused(problems().join("\n")));
+    assert_eq!(standing_of(&fx), Standing::Other, "a refusal parks nothing");
 
     write_test_freeze(&fx.work_dir, STAGE, &fx.session_id);
     assert_eq!(standing_of(&fx), Standing::Frozen);
 }
 
 #[test]
-fn an_implementation_session_is_never_a_refused_writer() {
+fn an_implementation_session_is_never_a_frozen_writer() {
     let fx = fixture(SessionType::Stage);
-    record(&fx.scratch_dir, &problems()).unwrap();
+    write_test_freeze(&fx.work_dir, STAGE, &fx.session_id);
 
     assert_eq!(standing_of(&fx), Standing::Other);
 }
 
 #[test]
-fn a_parked_stage_waits_with_the_problems_until_its_wait_ends() {
+fn a_waiting_stage_ends_its_wait() {
     let mut stage = contract_stage(STAGE, "writer");
-
-    park(&mut stage, &problems().join("\n")).unwrap();
-
-    assert_eq!(stage.status, StageStatus::WaitingForInput);
-    let reason = stage.review_reason.clone().unwrap();
-    assert!(reason.starts_with("contract freeze refused"), "{reason}");
-    assert!(reason.contains(&format!("{}; {}", problems()[0], problems()[1])));
+    stage.try_mark_waiting_for_input().unwrap();
+    stage.review_reason = Some("asked a question".to_string());
 
     end_wait(&mut stage).unwrap();
-    assert_eq!(stage.status, StageStatus::Executing);
+
+    assert_eq!(stage.status, crate::models::stage::StageStatus::Executing);
     assert_eq!(stage.review_reason, None);
 }
 
 #[test]
-fn a_refused_relay_parks_only_the_executing_unfrozen_writer_stage() {
+fn a_daemon_refusal_is_recorded_replaced_declined_and_taken() {
     let fx = fixture(SessionType::Contract);
-    let refused = |session_id: &str| {
-        park_refused_relay(&fx.work_dir, STAGE, session_id, "too many files").unwrap()
-    };
+    assert_eq!(daemon_refusal(&fx.work_dir, STAGE).unwrap(), None);
 
-    assert!(!refused("another-session"));
-    assert!(refused(&fx.session_id));
-    let stage = load_stage(STAGE, &fx.work_dir).unwrap();
-    assert_eq!(stage.status, StageStatus::WaitingForInput);
-    assert!(stage.review_reason.unwrap().contains("too many files"));
+    record_daemon_refusal(
+        &fx.work_dir,
+        STAGE,
+        "old",
+        &problems(),
+        RefusalSource::Daemon,
+    )
+    .unwrap();
+    let latest = vec!["infrastructure: the daemon stopped".to_string()];
+    record_daemon_refusal(
+        &fx.work_dir,
+        STAGE,
+        &fx.session_id,
+        &latest,
+        RefusalSource::Writer,
+    )
+    .unwrap();
+    let recorded = daemon_refusal(&fx.work_dir, STAGE).unwrap().unwrap();
+    assert_eq!(recorded.session_id, fx.session_id, "the latest record wins");
+    assert_eq!(recorded.problems, latest);
+    assert_eq!(recorded.source, RefusalSource::Writer);
+    assert_eq!(recorded.declined, None);
 
-    assert!(
-        !refused(&fx.session_id),
-        "a waiting stage is not parked twice"
-    );
+    mark_declined(&fx.work_dir, STAGE, "not admitted").unwrap();
+    let declined = daemon_refusal(&fx.work_dir, STAGE).unwrap().unwrap();
+    assert_eq!(declined.declined.as_deref(), Some("not admitted"));
+    assert_eq!(declined.at, recorded.at);
+
+    take_daemon_refusal(&fx.work_dir, STAGE).unwrap();
+    assert_eq!(daemon_refusal(&fx.work_dir, STAGE).unwrap(), None);
+    take_daemon_refusal(&fx.work_dir, STAGE).unwrap();
+    mark_declined(&fx.work_dir, STAGE, "gone").unwrap();
+    assert_eq!(daemon_refusal(&fx.work_dir, STAGE).unwrap(), None);
 }
 
 #[test]
-fn a_refused_relay_leaves_a_frozen_stage_to_its_handover() {
+fn the_daemon_record_is_the_documented_json() {
     let fx = fixture(SessionType::Contract);
-    write_test_freeze(&fx.work_dir, STAGE, &fx.session_id);
+    record_daemon_refusal(
+        &fx.work_dir,
+        STAGE,
+        "w1",
+        &problems(),
+        RefusalSource::Daemon,
+    )
+    .unwrap();
 
-    assert!(!park_refused_relay(&fx.work_dir, STAGE, &fx.session_id, "already frozen").unwrap());
-    assert_eq!(
-        load_stage(STAGE, &fx.work_dir).unwrap().status,
-        StageStatus::Executing
-    );
+    let path = fx
+        .work_dir
+        .join("contracts")
+        .join(STAGE)
+        .join("refused.json");
+    let json: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+    assert_eq!(json["session_id"], "w1");
+    assert_eq!(json["source"], "daemon");
+    assert!(json["declined"].is_null());
+    assert_eq!(json["problems"][1], problems()[1]);
+    assert!(json["at"].is_string());
 }
 
 #[test]
-fn a_missing_scratch_directory_means_no_refusal() {
+fn a_failed_record_write_is_an_error() {
+    use std::os::unix::fs::PermissionsExt;
+    // SAFETY: `geteuid` has no preconditions.
+    if unsafe { libc::geteuid() } == 0 {
+        return;
+    }
     let fx = fixture(SessionType::Contract);
-    std::fs::remove_dir(&fx.scratch_dir).unwrap();
-    let stage = load_stage(STAGE, &fx.work_dir).unwrap();
+    let dir = fx.work_dir.join("contracts").join(STAGE);
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).unwrap();
 
+    let written = record_daemon_refusal(
+        &fx.work_dir,
+        STAGE,
+        "w1",
+        &problems(),
+        RefusalSource::Daemon,
+    );
+
+    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o755)).unwrap();
+    assert!(written.is_err());
+    assert_eq!(daemon_refusal(&fx.work_dir, STAGE).unwrap(), None);
+}
+
+#[test]
+fn problem_lines_drop_empty_lines_and_trim() {
     assert_eq!(
-        read_standing(&fx.work_dir, &stage, Some(fx.scratch_root.as_path()), uid()).unwrap(),
-        Standing::Other
+        problem_lines("  a \n\n b\n"),
+        vec!["a".to_string(), "b".to_string()]
     );
 }

@@ -141,14 +141,16 @@ fn freeze_handler_records_the_run_dir_holding_the_runner_config() {
     assert_eq!(file, Some("apps/web/src/a.contract.test.ts"));
 }
 
-/// The writer of a stage parked on its refused freeze was typed back into
-/// action and froze before the monitor saw it working: the freeze is taken,
-/// and the stage goes back to `Executing` for the handover.
+/// The writer of a stage waiting on its `AskUserQuestion` was answered and
+/// froze before the monitor saw it working: the freeze is taken, and the
+/// stage goes back to `Executing` for the handover.
 #[test]
-fn freeze_handler_takes_a_parked_stage_back_to_executing() {
+fn freeze_handler_takes_a_waiting_stage_back_to_executing() {
     let fx = fixture();
     update_stage(STAGE, &fx.work_dir, |stage| {
-        crate::verify::contracts::refusal::park(stage, "src/lib.rs is not a contract file")
+        stage.try_mark_waiting_for_input()?;
+        stage.review_reason = Some("which runner should the contract use?".to_string());
+        Ok(())
     })
     .unwrap();
 

@@ -280,23 +280,11 @@ contract_freeze_refused() {
 	[[ -n "${LOOM_SCRATCH_DIR:-}" && -f "$refusal" && ! -L "$refusal" ]]
 }
 
-# Park the stage of a writer that stopped on a refused freeze: nothing else
-# will act on it, so the stage goes to waiting-for-input with the problems as
-# its reason, where `loom status` shows the operator.
-# Args: $1 = stage ID
-# Returns: 0 if the stage was parked
-park_contract_stage() {
-	local stage_id="$1"
-	(
-		PATH="${LOOM_HOOK_PATH:-$PATH}"
-		LOOM_HOOK_CONTEXT=1 "${LOOM_BIN:-loom}" stage waiting "$stage_id" >/dev/null 2>&1
-	)
-}
-
 # Contract-phase reminder, printed in place of the commit-and-complete
-# checklist, then allow stop. A writer that stops before any freeze attempt
-# (waiting on background subagents, say) has no refusal on record and parks
-# nothing.
+# checklist, then allow stop. The hook calls no loom command for a contract
+# session: the Stop hook fires at every turn end, background subagents
+# running included, and the daemon files a standing refusal for adjudication
+# once the session is quiet.
 # Args: $1 = stage ID
 remind_contract_freeze() {
 	local stage_id="$1"
@@ -307,22 +295,17 @@ remind_contract_freeze() {
 	printf '%s\n' "================================================================" >&2
 	printf '%s\n' "Contract session for stage '$stage_id':" >&2
 	if contract_freeze_refused; then
-		if park_contract_stage "$stage_id"; then
-			printf '%s\n' "  - the latest freeze was refused, so the stage is now" >&2
-			printf '%s\n' "    waiting-for-input; loom status shows the problems" >&2
-		else
-			printf '%s\n' "  - the latest freeze was refused, and marking the stage" >&2
-			printf '%s\n' "    waiting-for-input failed: loom stage waiting $stage_id" >&2
-		fi
-		printf '%s\n' "  - fix them, then run: loom stage contracts freeze $stage_id" >&2
+		printf '%s\n' "  - the latest freeze was refused: fix what it names and run" >&2
+		printf '%s\n' "    loom stage contracts freeze $stage_id again, or stop; once this" >&2
+		printf '%s\n' "    session is quiet for 5 minutes with no subagent running, the" >&2
+		printf '%s\n' "    refusal goes to an adjudicator and a fresh writer starts with" >&2
+		printf '%s\n' "    the verdict" >&2
 	else
 		printf '%s\n' "  - finish with: loom stage contracts freeze $stage_id" >&2
 	fi
 	printf '%s\n' "  - do not commit" >&2
 	printf '%s\n' "  - do not complete the stage" >&2
 	printf '%s\n' "After the freeze request, stop; loom ends this session." >&2
-	printf '%s\n' "Stopping after a refused freeze leaves the stage waiting-for-input;" >&2
-	printf '%s\n' "typing into this session or 'loom stage resume $stage_id' continues it." >&2
 	printf '%s\n' "================================================================" >&2
 
 	exit 0

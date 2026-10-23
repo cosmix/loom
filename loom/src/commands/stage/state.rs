@@ -252,34 +252,37 @@ fn reset_and_cancel(
 
 /// Mark a stage as waiting for user input (called by hooks)
 ///
-/// A contract writer whose latest freeze was refused waits with the problems
-/// as its reason; one whose contracts are frozen is being handed over, which
+/// Every session waits the same way, a contract writer with a refused freeze
+/// on record included: the refusal goes to adjudication, never to the
+/// operator. A writer whose contracts are frozen is being handed over, which
 /// needs the stage `Executing`, so it is left there ([`refusal::standing`]).
 pub fn waiting(stage_id: String) -> Result<()> {
     let work_dir = crate::commands::common::work_dir_path()?;
+    match mark_waiting(&work_dir, &stage_id)? {
+        Some(why) => eprintln!("Note: Stage '{stage_id}' {why}. Skipping waiting transition."),
+        None => println!("Stage '{stage_id}' waiting for user input"),
+    }
+    Ok(())
+}
 
+/// Move `stage_id` to `WaitingForInput`. Returns why it was left as it is,
+/// if it was.
+fn mark_waiting(work_dir: &Path, stage_id: &str) -> Result<Option<String>> {
     let mut skipped = None;
-    update_stage(&stage_id, &work_dir, |stage| {
+    update_stage(stage_id, work_dir, |stage| {
         if stage.status != StageStatus::Executing {
             skipped = Some(format!("is {:?}, not executing", stage.status));
             return Ok(());
         }
-        match refusal::standing(&work_dir, stage) {
+        match refusal::standing(work_dir, stage) {
             Standing::Frozen => {
                 skipped = Some("froze its contracts and is being handed over".to_string());
                 Ok(())
             }
-            Standing::Refused(problems) => refusal::park(stage, &problems),
             Standing::Other => stage.try_mark_waiting_for_input(),
         }
     })?;
-    if let Some(why) = skipped {
-        eprintln!("Note: Stage '{stage_id}' {why}. Skipping waiting transition.");
-        return Ok(());
-    }
-
-    println!("Stage '{stage_id}' waiting for user input");
-    Ok(())
+    Ok(skipped)
 }
 
 /// Resume a stage from waiting for input state (called by hooks)
@@ -378,3 +381,7 @@ mod state_tests;
 #[cfg(test)]
 #[path = "state_host_job_tests.rs"]
 mod host_job_tests;
+
+#[cfg(test)]
+#[path = "state_waiting_tests.rs"]
+mod waiting_tests;

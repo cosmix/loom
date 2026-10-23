@@ -9,11 +9,12 @@
 //! A passing run leaves `contract-reports.json` in its job directory.
 //!
 //! Applying the job freezes the contracts from those reports only while the
-//! binding still holds, and parks the stage for the operator otherwise: the
-//! relayed request told the writer to end its turn, so no one else would act
-//! on a refusal. A cancelled job parks nothing (whoever cancelled it owns the
-//! stage's next state) unless the daemon's shutdown cancelled it, which leaves
-//! no successor. A stage already frozen is never parked.
+//! binding still holds, and otherwise records the refusal, which the tick
+//! step files as a `freeze-refusal` dispute: the relayed request told the
+//! writer to end its turn. A run interrupted or stopped by the daemon, or
+//! whose reports or binding cannot be read, is no one's fault, and its first
+//! problem says so (`INFRASTRUCTURE_PREFIX`). Any other cancel, and a stage
+//! already frozen, record nothing.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
@@ -22,6 +23,7 @@ use anyhow::{bail, Context, Result};
 use serde::{Deserialize, Serialize};
 
 use super::apply::Applied;
+use super::freeze_refuse::{failure_message, REFUSAL_MAX_BYTES};
 use super::runner::DAEMON_STOPPED;
 use super::{child, digest, store, CriterionOutcome, JobRecord, JobResult, JobState};
 use crate::commands::stage::contracts::freeze::{
@@ -34,15 +36,15 @@ use crate::models::stage::{CommandConfinement, Stage};
 use crate::relay::sha256_hex;
 use crate::stage_service::contracts::{freeze_with_reports, locate, read_files, Site};
 use crate::stage_service::Response;
-use crate::verify::contracts::refusal::park_refused_relay;
+use crate::verify::contracts::refusal::{
+    problem_lines, record_daemon_refusal, RefusalSource, INFRASTRUCTURE_PREFIX,
+};
 use crate::verify::contracts::store::load_freeze;
 use crate::verify::criteria::{plan_confinement, resolve_confinement};
 use crate::verify::transitions::load_stage;
 
 /// The job file a passing run leaves for its application.
 pub(crate) const REPORTS_FILE: &str = "contract-reports.json";
-/// Most bytes of the reason a failed run parks its stage with.
-const PARK_MAX_BYTES: usize = 4 * 1024;
 
 /// One file the run hashed.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -264,26 +266,25 @@ fn outcome(label: String, passed: bool, summary: &str) -> CriterionOutcome {
 }
 
 /// Apply a finished freeze job: freeze from a passing run whose binding
-/// still holds, park the stage for anything else that ran, and leave a
+/// still holds, record the refusal for anything else that ran, and leave a
 /// cancelled job or a frozen stage alone. `Err` is an I/O failure a later
-/// attempt may not hit.
+/// attempt may not hit, a refusal that could not be recorded included.
 pub fn apply_freeze_result(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
     if load_freeze(work_dir, &record.stage_id)?.is_some() {
         return Ok(Applied::Ignored("already frozen".to_string()));
     }
     match record.state {
         JobState::Passed => apply_passed(work_dir, record),
-        JobState::Failed | JobState::Interrupted => {
-            let message = failure_message(work_dir, record);
-            park(work_dir, record, &message)
+        JobState::Failed => refuse(work_dir, record, &failure_message(work_dir, record)),
+        JobState::Interrupted => {
+            refuse_infrastructure(work_dir, record, &failure_message(work_dir, record))
         }
         // The shutdown's cancel leaves no successor job, so no one else would
-        // act on the writer's ended turn: park like an interrupted run.
-        JobState::Cancelled if record.detail.as_deref() == Some(DAEMON_STOPPED) => park(
-            work_dir,
-            record,
-            "the daemon stopped during the contract run; rerun the freeze",
-        ),
+        // act on the writer's ended turn: refuse like an interrupted run.
+        JobState::Cancelled if record.detail.as_deref() == Some(DAEMON_STOPPED) => {
+            let message = "the daemon stopped during the contract run; rerun the freeze";
+            refuse_infrastructure(work_dir, record, message)
+        }
         JobState::Cancelled => Ok(Applied::Ignored(format!(
             "cancelled: {}",
             record.detail.as_deref().unwrap_or("no reason recorded")
@@ -299,7 +300,7 @@ fn apply_passed(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
         Ok(reports) => reports,
         Err(error) => {
             let message = format!("the contract run's reports cannot be read: {error:#}");
-            return park(work_dir, record, &message);
+            return refuse_infrastructure(work_dir, record, &message);
         }
     };
     let moved = load_stage(&record.stage_id, work_dir)
@@ -309,12 +310,12 @@ fn apply_passed(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
         Ok(None) => {}
         Ok(Some(change)) => {
             let message = format!("the stage changed after its contract run: {change}");
-            return park(work_dir, record, &message);
+            return refuse(work_dir, record, &message);
         }
         Err(error) => {
             let message =
                 format!("the stage cannot be checked against its contract run: {error:#}");
-            return park(work_dir, record, &message);
+            return refuse_infrastructure(work_dir, record, &message);
         }
     }
     let verified: Vec<(String, String)> = reports
@@ -331,8 +332,8 @@ fn apply_passed(work_dir: &Path, record: &JobRecord) -> Result<Applied> {
     )?;
     match response {
         Response::ContractsFrozen { files } => Ok(Applied::FreezeAccepted { files }),
-        Response::Error { message } => park(work_dir, record, &message),
-        other => park(
+        Response::Error { message } => refuse(work_dir, record, &message),
+        other => refuse(
             work_dir,
             record,
             &format!("unexpected freeze answer: {other:?}"),
@@ -346,40 +347,26 @@ fn load_reports(work_dir: &Path, record: &JobRecord) -> Result<ContractReports> 
     serde_json::from_slice(&bytes).with_context(|| format!("{REPORTS_FILE} is malformed"))
 }
 
-/// Each failing outcome's label and summary and the run's error, else the
-/// job's detail. A result that cannot be read counts as none, so the stage
-/// is still parked with the detail.
-fn failure_message(work_dir: &Path, record: &JobRecord) -> String {
-    let result =
-        store::load_result(work_dir, &record.stage_id, &record.id).unwrap_or_else(|error| {
-            tracing::warn!(
-                job = %record.id,
-                error = %format!("{error:#}"),
-                "cannot read a freeze job's result",
-            );
-            None
-        });
-    let mut lines: Vec<String> = result
-        .iter()
-        .flat_map(|result| &result.criteria)
-        .filter(|outcome| !outcome.passed)
-        .map(|outcome| format!("{}: {}", outcome.label, outcome.summary))
-        .collect();
-    lines.extend(result.and_then(|result| result.error));
-    if lines.is_empty() {
-        let detail = record
-            .detail
-            .as_deref()
-            .unwrap_or("the contract run failed");
-        lines.push(detail.to_string());
-    }
-    lines.join("\n")
+/// Record the refusal `message`, cut to 4 KiB, for the job's session: one
+/// problem per line. The tick step files it while that session is still the
+/// stage's contract writer, and drops it otherwise.
+fn refuse(work_dir: &Path, record: &JobRecord, message: &str) -> Result<Applied> {
+    let message = truncate_to_byte_limit(message, REFUSAL_MAX_BYTES);
+    record_daemon_refusal(
+        work_dir,
+        &record.stage_id,
+        &record.session_id,
+        &problem_lines(&message),
+        RefusalSource::Daemon,
+    )?;
+    Ok(Applied::FreezeRefused(message))
 }
 
-/// Park the stage with `message`, cut to 4 KiB, while it is still executing
-/// under the job's session with nothing frozen.
-fn park(work_dir: &Path, record: &JobRecord, message: &str) -> Result<Applied> {
-    let message = truncate_to_byte_limit(message, PARK_MAX_BYTES);
-    park_refused_relay(work_dir, &record.stage_id, &record.session_id, &message)?;
-    Ok(Applied::FreezeRefused(message))
+/// [`refuse`] a run that failed through no one's change.
+fn refuse_infrastructure(work_dir: &Path, record: &JobRecord, message: &str) -> Result<Applied> {
+    refuse(
+        work_dir,
+        record,
+        &format!("{INFRASTRUCTURE_PREFIX}{message}"),
+    )
 }
