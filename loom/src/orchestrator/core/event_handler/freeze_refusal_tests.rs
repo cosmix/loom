@@ -40,7 +40,10 @@ struct Fixture {
 
 fn fixture() -> Fixture {
     let temp = handoff_work_dir();
-    let work = temp.path().join(".loom").join("work");
+    // Lifecycle evidence rejects a symlinked work dir; macOS temp dirs sit
+    // under the `/var` -> `/private/var` symlink.
+    let root = std::fs::canonicalize(temp.path()).unwrap();
+    let work = root.join(".loom").join("work");
     let mut writer = Session::new_contract(STAGE);
     writer.status = SessionStatus::Running;
     writer.backend = SessionBackendKind::Tmux;
@@ -57,9 +60,9 @@ fn fixture() -> Fixture {
         ..Stage::default()
     };
     create_stage(&stage, &work).unwrap();
-    let mut orchestrator = orchestrator_for(&work, temp.path());
+    let mut orchestrator = orchestrator_for(&work, &root);
     orchestrator.graph.mark_executing(STAGE).unwrap();
-    let scratch_root = temp.path().join("scratch");
+    let scratch_root = root.join("scratch");
     // SAFETY: `getuid` has no preconditions and cannot fail.
     ensure_dir_0700(&scratch_root.join(&writer.id), unsafe { libc::getuid() }).unwrap();
     Fixture {
