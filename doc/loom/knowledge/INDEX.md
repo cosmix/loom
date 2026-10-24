@@ -116,7 +116,7 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Accepted-verdict deadlock | 200 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | A .git dir is no proof | 156 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Bug reports, brief flags | 315 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, audit, install.sh | 342 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift, audit, install.sh | 345 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) | Direct forwards unseen | 13 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Wrapper implemented itself | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Reader fixed by bans | 102 |

@@ -263,7 +263,10 @@ name, which APFS refuses. The web-terminal tests assumed Linux PTY buffering and
 **Prevention:**
 
 - A fixture canonicalizes its temp root once (`fs::canonicalize(temp.path())`) and builds every path
-  from it. A shell test canonicalizes its expectation with `pwd -P` when the hook does.
+  from it. A shell test canonicalizes its expectation with `pwd -P` when the hook does. Recurred
+  2026-10-24: the `freeze_refusal_tests.rs` fixture passed a raw tempdir work dir to a codex lifecycle
+  record, and `validate_current_binding` refused it on macOS only. Reproduce on Linux before pushing
+  any fixture that reaches subagent-lifecycle evidence: `ln -s "$(mktemp -d)" /path/link && TMPDIR=/path/link cargo test <filter>`.
 - Derive a platform-dependent path through the production function (`relay::scratch_root`), never a
   hard-coded layout.
 - A PTY test that needs backpressure puts the child in raw mode: a canonical-mode Darwin PTY never
