@@ -5,7 +5,7 @@
 //! that differ. Differences accumulate until a walk finds nothing new; that walk delivers them
 //! as one [`Batch`]. Summary writes the engine registered in [`OwnWrites`] are not reported.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
@@ -15,13 +15,11 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, Result};
 
 use crate::context::source_graph::body_hash;
-use crate::planning::discover::{read_doc_bytes, walk_doc, WalkEntry, WalkScope};
+use crate::planning::discover::{read_doc_bytes, walk_doc, WalkEntry, WalkScope, SUMMARIES};
 use crate::planning::sections::normalized_hash;
 
 use pending::Pending;
 
-/// The summary store; only paths under it are checked against [`OwnWrites`].
-const SUMMARIES: &str = "doc/loom/summaries";
 /// Prefix of the hash given to a file that could not be read.
 const UNREADABLE: &str = "unreadable:";
 /// Longest single sleep of the spawned loop, so a stop request is seen promptly.
@@ -137,14 +135,19 @@ impl Watcher {
             .clone()
     }
 
-    /// The shared slot behind [`Watcher::last_error`], to read it after [`Watcher::spawn`].
+    /// The shared slot behind [`Watcher::last_error`]. [`Watcher::spawn`] consumes the watcher
+    /// and its loop drops a failed walk, so a caller that spawns must clone this slot first and
+    /// check it periodically; it is the only report of a failed walk.
     pub fn error_slot(&self) -> Arc<Mutex<Option<String>>> {
         Arc::clone(&self.last_error)
     }
 
     /// Run [`Watcher::poll`] every `interval` on a thread named `loom-plan-watch` until `stop` is
-    /// set, handing every batch to `on_batch`. A failed walk is kept in the error slot and the
-    /// loop continues. Fails only when the thread cannot be created.
+    /// set, handing every batch to `on_batch`. A failed walk delivers no batch: its message is
+    /// left in the error slot, the loop continues, and the next successful walk clears the
+    /// message. Take [`Watcher::error_slot`] before calling this (it consumes the watcher) and
+    /// check it periodically, or failures go unseen. Fails only when the thread cannot be
+    /// created.
     pub fn spawn(
         mut self,
         interval: Duration,
@@ -318,14 +321,16 @@ fn pair_renames(
             renamed.push((from.clone(), to.clone()));
         }
     }
-    out.added
-        .retain(|rel| !renamed.iter().any(|(_, to)| to == rel));
-    out.removed
-        .retain(|rel| !renamed.iter().any(|(from, _)| from == rel));
+    let moved_to: HashSet<&PathBuf> = renamed.iter().map(|(_, to)| to).collect();
+    let moved_from: HashSet<&PathBuf> = renamed.iter().map(|(from, _)| from).collect();
+    out.added.retain(|rel| !moved_to.contains(rel));
+    out.removed.retain(|rel| !moved_from.contains(rel));
     out.renamed = renamed;
 }
 
 mod pending;
 
+#[cfg(test)]
+mod batch_tests;
 #[cfg(test)]
 mod tests;
