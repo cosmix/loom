@@ -15,7 +15,7 @@ PARENT_SESSION=parent-session
 COMPANION_DIR="$HOME_DIR/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts"
 LEDGER="$WORK_DIR/subagents/$STAGE_ID/codex.jsonl"
 STARTS="$WORK_DIR/subagents/$STAGE_ID/starts.jsonl"
-COMMAND="~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write"
+COMMAND="~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-6.1-terra --effort xhigh --write"
 mkdir -p "$COMPANION_DIR" "$WORKSPACE/.git" "$WORK_DIR/subagents/$STAGE_ID"
 printf '%s\n' '// pinned fixture' >"$COMPANION_DIR/codex-companion.mjs"
 
@@ -69,7 +69,7 @@ expect_allow() {
 		.v == 2 and .stage_id == "agent-stage" and .session_id == "loom-session" and
 		.parent_session_id == "parent-session" and .forwarder_agent_id == $agent_id and
 		.tool_use_id == $tool_use_id and .unit_id == $unit and .invocation_id == $invocation and
-		.model == "gpt-5.6-terra" and .effort == "xhigh"' >/dev/null
+		.model == "gpt-6.1-terra" and .effort == "xhigh"' >/dev/null
 }
 
 # Both authoritative forwarder types are restricted to the wrapper.

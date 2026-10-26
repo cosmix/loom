@@ -43,7 +43,7 @@ pub(super) const BLOCK_B: &str = r#"1. DELEGATION IS A COST DECISION: TOKENS TIM
    default downward: HAIKU (`model: haiku` on loom-software-engineer) for
    mechanical edits, boilerplate, scaffolding, and simple unit tests; codex
    gpt-6-luna for that same work only when the user or the plan asks for it;
-   codex gpt-5.6-terra or SONNET (loom-software-engineer) for common
+   codex gpt-6.1-terra or SONNET (loom-software-engineer) for common
    implementation and integration tests — most work belongs at this tier, and
    neither lane is the default; OPUS (loom-senior-software-engineer, effort
    high) for mainstream architecture and algorithm implementation, spawned

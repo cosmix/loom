@@ -128,7 +128,7 @@ fn stage_server() -> StageSummary {
         "opus",
         Some(SessionType::Stage),
         None,
-        &["sonnet", "gpt-5.6-terra"],
+        &["sonnet", "gpt-6.1-terra"],
         0,
         None,
         Some(SessionBackendKind::Native)

@@ -36,7 +36,7 @@ authorize() {
 		bash "$GUARD" >"$output"
 }
 
-BASE='~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write'
+BASE='~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-6.1-terra --effort xhigh --write'
 WITH_UNIT="$BASE --unit-id stable-unit"
 OUT1="$d/first.json"
 OUT2="$d/second.json"
@@ -70,7 +70,7 @@ printf '%s' "$first_row" | jq -e \
 	.stage_id == "my-stage" and .session_id == "session-abc" and
 	.parent_session_id == "parent-uuid" and .forwarder_agent_id == "forwarder-7" and
 	.tool_use_id == "tool-first" and .unit_id == "stable-unit" and
-	.invocation_id == $invocation and .model == "gpt-5.6-terra" and .effort == "xhigh" and
+	.invocation_id == $invocation and .model == "gpt-6.1-terra" and .effort == "xhigh" and
 	.workspace_root == $workspace and .companion_version == "1.0.6" and
 	.companion_path == $companion and .state_root == $state' >/dev/null
 

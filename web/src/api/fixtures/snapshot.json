@@ -68,7 +68,7 @@
         "model": "opus",
         "session_type": "stage",
         "incoherence": null,
-        "execution_models": ["sonnet", "gpt-5.6-terra"],
+        "execution_models": ["sonnet", "gpt-6.1-terra"],
         "dispute_count": 0,
         "judge_heartbeat_secs": null,
         "session_backend": "native"

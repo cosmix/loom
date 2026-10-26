@@ -10,7 +10,7 @@ const PARENT: &str = "parent-session";
 const AGENT: &str = "agent-one";
 const TOOL: &str = "tool-one";
 const COMMAND: &str =
-    "~/.claude/hooks/loom/codex-forward.sh task 'work' --model gpt-5.6-terra --effort xhigh --write";
+    "~/.claude/hooks/loom/codex-forward.sh task 'work' --model gpt-6.1-terra --effort xhigh --write";
 
 fn identity() -> TranscriptIdentity {
     TranscriptIdentity {

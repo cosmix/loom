@@ -31,7 +31,7 @@ run_hook() {
 }
 
 TRANSCRIPT="$d/parent/subagents/agent-forwarder.jsonl"
-FORWARD="/hooks/codex-forward.sh task 'work' --model gpt-5.6-terra --effort xhigh --write"
+FORWARD="/hooks/codex-forward.sh task 'work' --model gpt-6.1-terra --effort xhigh --write"
 FORWARDING="$(jq -nc --arg command "$FORWARD" --arg transcript "$TRANSCRIPT" \
 	'{tool_name:"Bash",tool_input:{command:$command},transcript_path:$transcript,tool_response:{stdout:"out"}}')"
 NO_TRANSCRIPT="$(jq -nc --arg command "$FORWARD" \

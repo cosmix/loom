@@ -15,7 +15,7 @@ FORWARDER=forwarder-7
 TOOL=tool-direct
 UNIT=unit-a
 INVOCATION=inv-0123456789abcdef0123456789abcdef
-MODEL=gpt-5.6-terra
+MODEL=gpt-6.1-terra
 EFFORT=xhigh
 AUTH_TS=2026-09-14T12:00:00.000Z
 TERMINAL_AT=2026-09-14T12:01:02.345Z
@@ -83,8 +83,8 @@ run_hook "$(payload "$ACK" false 0 "$PERSISTED")"
 
 EXPECTED="$d/expected.jsonl"
 cat >"$EXPECTED" <<'EOF'
-{"version":1,"event_id":"sha256:a795a3c76bbfffa7e3f029b578d369e304cb77543d0c482fa25b8f66f1f0d7d6","producer":"codex_direct","identity":{"kind":"codex","stage_id":"stage-one","loom_session_id":"session-one","parent_session_id":"parent-uuid","forwarder_agent_id":"forwarder-7","unit_id":"unit-a","invocation_id":"inv-0123456789abcdef0123456789abcdef","workspace_root":"/","execution":{"mode":"direct","thread_id":"thread-exact","tool_use_id":"tool-direct"}},"observed_at":"2026-09-14T12:00:00.000Z","state":"running","evidence":{"evidence_kind":"authorization","requested_model":"gpt-5.6-terra","requested_effort":"xhigh","invocation_id":"inv-0123456789abcdef0123456789abcdef","job_id":null,"thread_id":"thread-exact","turn_id":null,"tool_use_id":"tool-direct","terminal_at":null,"outcome":"running","detail":null}}
-{"version":1,"event_id":"sha256:107a4a28f53906bc9b0b4c478e0cf4ab9b0846b6f10a9ee2776c88b27c99ebc1","producer":"codex_direct","identity":{"kind":"codex","stage_id":"stage-one","loom_session_id":"session-one","parent_session_id":"parent-uuid","forwarder_agent_id":"forwarder-7","unit_id":"unit-a","invocation_id":"inv-0123456789abcdef0123456789abcdef","workspace_root":"/","execution":{"mode":"direct","thread_id":"thread-exact","tool_use_id":"tool-direct"}},"observed_at":"2026-09-14T12:01:02.345Z","state":"completed","evidence":{"evidence_kind":"observation","requested_model":"gpt-5.6-terra","requested_effort":"xhigh","invocation_id":"inv-0123456789abcdef0123456789abcdef","job_id":null,"thread_id":"thread-exact","turn_id":null,"tool_use_id":"tool-direct","terminal_at":"2026-09-14T12:01:02.345Z","outcome":"succeeded","detail":null}}
+{"version":1,"event_id":"sha256:a68754e0188b66ee235dbec88ff3866b2e06f1d30e6be1f9ce7a2ab72411b129","producer":"codex_direct","identity":{"kind":"codex","stage_id":"stage-one","loom_session_id":"session-one","parent_session_id":"parent-uuid","forwarder_agent_id":"forwarder-7","unit_id":"unit-a","invocation_id":"inv-0123456789abcdef0123456789abcdef","workspace_root":"/","execution":{"mode":"direct","thread_id":"thread-exact","tool_use_id":"tool-direct"}},"observed_at":"2026-09-14T12:00:00.000Z","state":"running","evidence":{"evidence_kind":"authorization","requested_model":"gpt-6.1-terra","requested_effort":"xhigh","invocation_id":"inv-0123456789abcdef0123456789abcdef","job_id":null,"thread_id":"thread-exact","turn_id":null,"tool_use_id":"tool-direct","terminal_at":null,"outcome":"running","detail":null}}
+{"version":1,"event_id":"sha256:88f5598189f9e54be2db3fba94fe1f1f3cfb19dd9ca1525e2bafb16e393c01ae","producer":"codex_direct","identity":{"kind":"codex","stage_id":"stage-one","loom_session_id":"session-one","parent_session_id":"parent-uuid","forwarder_agent_id":"forwarder-7","unit_id":"unit-a","invocation_id":"inv-0123456789abcdef0123456789abcdef","workspace_root":"/","execution":{"mode":"direct","thread_id":"thread-exact","tool_use_id":"tool-direct"}},"observed_at":"2026-09-14T12:01:02.345Z","state":"completed","evidence":{"evidence_kind":"observation","requested_model":"gpt-6.1-terra","requested_effort":"xhigh","invocation_id":"inv-0123456789abcdef0123456789abcdef","job_id":null,"thread_id":"thread-exact","turn_id":null,"tool_use_id":"tool-direct","terminal_at":"2026-09-14T12:01:02.345Z","outcome":"succeeded","detail":null}}
 EOF
 cmp "$EXPECTED" "$JOURNAL"
 

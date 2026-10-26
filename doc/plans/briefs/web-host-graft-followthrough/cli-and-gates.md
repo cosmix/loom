@@ -1,6 +1,6 @@
 # Shared CLI integration and maintainability
 
-Run after the web and memory workers have finished. Use GPT-5.6 Terra.
+Run after the web and memory workers have finished. Use GPT-6.1 Terra.
 Read their briefs and changed files directly: the published graph predates them.
 Do not run git, builds, tests, linters, or formatters; return the implementation
 and any unresolved issue to the orchestrator. Do not spawn workers.

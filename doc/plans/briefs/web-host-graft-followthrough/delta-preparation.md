@@ -3,7 +3,7 @@
 Implement an additive `loom memory prepare` command and make the terminal
 knowledge-distill workflow consume it. The goal is to deliver unresolved,
 source-bearing candidate groups without repeatedly printing every journal.
-Architecture/edge-case owner: GPT-6 Sol. Implementation: GPT-5.6 Terra.
+Architecture/edge-case owner: GPT-6 Sol. Implementation: GPT-6.1 Terra.
 Pure fixture and CLI boilerplate units may go to GPT-6 Luna with disjoint files.
 
 ## Current seams

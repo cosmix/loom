@@ -99,7 +99,7 @@ they cannot coordinate. Spawn workers BY AGENT TYPE — untyped ones inherit the
 Coordinators delegate too (hard stop 6), going opus only when territory integration needs
 judgment. Mix lanes under ONE ownership table. On a stage listing codex in `implementers`, a
 coordinator spawns `loom-codex-forwarder` BY AGENT TYPE (never the plugin's `codex:codex-rescue`
-directly), foreground only: gpt-5.6-terra for common implementation and integration tests.
+directly), foreground only: gpt-6.1-terra for common implementation and integration tests.
 Boilerplate, scaffolding, and simple unit tests go to haiku (`model: haiku` on
 loom-software-engineer); gpt-6-luna does that work only when the user or the plan asks for it.
 The lane is chosen per subagent,
@@ -163,7 +163,7 @@ WORKER RESTRICTIONS - YOU ARE A LEAF AGENT:
    default downward: HAIKU (`model: haiku` on loom-software-engineer) for
    mechanical edits, boilerplate, scaffolding, and simple unit tests; codex
    gpt-6-luna for that same work only when the user or the plan asks for it;
-   codex gpt-5.6-terra or SONNET (loom-software-engineer) for common
+   codex gpt-6.1-terra or SONNET (loom-software-engineer) for common
    implementation and integration tests — most work belongs at this tier, and
    neither lane is the default; OPUS (loom-senior-software-engineer, effort
    high) for mainstream architecture and algorithm implementation, spawned

@@ -114,7 +114,7 @@ fn unread_session_transcript_reads_partial() {
     assert!(has_reason(entry, "missed-session-transcripts"), "{entry}");
 }
 
-const FORWARD_COMMAND: &str = "~/.claude/hooks/loom/codex-forward.sh task 'work' --model gpt-5.6-terra --effort xhigh --write --unit-id unit-a --invocation-id inv-0123456789abcdef0123456789abcdef";
+const FORWARD_COMMAND: &str = "~/.claude/hooks/loom/codex-forward.sh task 'work' --model gpt-6.1-terra --effort xhigh --write --unit-id unit-a --invocation-id inv-0123456789abcdef0123456789abcdef";
 
 fn replay_payload() -> Value {
     let job = "task-replay-1";

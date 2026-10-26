@@ -56,7 +56,7 @@ assert_gone() {
 OUT="$d/wrapper.out"; ERR="$d/wrapper.err"
 HOME="$d/home" PATH="$BIN_DIR:$PATH" FAKE_CODEX_PID="$d/wrapper.pid" \
 	FAKE_CODEX_ARGV="$d/wrapper.argv" LOOM_STAGE_ID=stage-one LOOM_SESSION_ID=session-one \
-	bash "$WRAPPER" task 'direct prompt' --model gpt-5.6-terra --effort xhigh --write \
+	bash "$WRAPPER" task 'direct prompt' --model gpt-6.1-terra --effort xhigh --write \
 	--unit-id unit-a --invocation-id "$INVOCATION" >"$OUT" 2>"$ERR"
 [[ ! -s "$ERR" ]]
 sed -n '1p' "$OUT" | jq -Rer '
@@ -80,7 +80,7 @@ OUT="$d/failed.out"; ERR="$d/failed.err"; status=0
 HOME="$d/home" PATH="$BIN_DIR:$PATH" DIRECT_SCENARIO=failed \
 	FAKE_CODEX_PID="$d/failed.pid" FAKE_CODEX_ARGV="$d/failed.argv" \
 	LOOM_STAGE_ID=stage-one LOOM_SESSION_ID=session-one \
-	bash "$WRAPPER" task 'direct failure' --model gpt-5.6-terra --effort xhigh --write \
+	bash "$WRAPPER" task 'direct failure' --model gpt-6.1-terra --effort xhigh --write \
 	--unit-id unit-a --invocation-id "$INVOCATION" >"$OUT" 2>"$ERR" || status=$?
 [[ $status -eq 1 && ! -s "$ERR" ]]
 rg '^LOOM-CODEX-DIRECT-RESULT ' "$OUT" | jq -Rer '
@@ -157,7 +157,7 @@ if [[ "$(uname -s)" == Linux ]]; then
 		OUT="$d/bwrap-$status.out"; ERR="$d/bwrap-$status.err"
 		HOME="$d/home" PATH="$LINUX_BIN:$PATH" FAKE_CODEX_PID="$d/bwrap-$status.pid" \
 			FAKE_CODEX_ARGV="$d/bwrap-$status.argv" LOOM_STAGE_ID=stage-one LOOM_SESSION_ID=session-one \
-			bash "$WRAPPER" task 'bwrap probe' --model gpt-5.6-terra --effort xhigh --write \
+			bash "$WRAPPER" task 'bwrap probe' --model gpt-6.1-terra --effort xhigh --write \
 			--unit-id unit-a --invocation-id "$INVOCATION" >"$OUT" 2>"$ERR" || true
 		if [[ $status -eq 1 ]]; then
 			rg -qF 'LOOM-FORWARD-START {"v":1,"backend":"direct"' "$OUT"

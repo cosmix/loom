@@ -216,7 +216,7 @@ fn pressure_falls_through_key_by_key_not_section_by_section() {
     .expect("set the user claude model");
     crate::user_config::set(
         spec("pressure.codex_model").unwrap(),
-        ConfigValue::Text("gpt-5.6-terra".to_owned()),
+        ConfigValue::Text("gpt-6.1-terra".to_owned()),
     )
     .expect("set the user codex model");
     scratch.write_project("pressure", "claude_model", toml_edit::Value::from("sonnet"));
@@ -233,7 +233,7 @@ fn pressure_falls_through_key_by_key_not_section_by_section() {
     assert_eq!(codex.effective.source, Source::User);
     assert_eq!(
         codex.effective.value,
-        ConfigValue::Text("gpt-5.6-terra".to_owned())
+        ConfigValue::Text("gpt-6.1-terra".to_owned())
     );
 
     let project = read_pressure_config(&scratch.work());

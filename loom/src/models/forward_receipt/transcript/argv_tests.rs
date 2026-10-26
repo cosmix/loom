@@ -3,10 +3,10 @@ use std::path::Path;
 use super::*;
 
 const DEFAULT_HOOKS: &str = "/home/op/.claude/hooks/loom";
-const ARGS: &str = "task 'work' --model gpt-5.6-terra --effort xhigh --write";
+const ARGS: &str = "task 'work' --model gpt-6.1-terra --effort xhigh --write";
 
 fn accepted() -> Option<(String, String)> {
-    Some(("gpt-5.6-terra".to_owned(), "xhigh".to_owned()))
+    Some(("gpt-6.1-terra".to_owned(), "xhigh".to_owned()))
 }
 
 /// `program` followed by [`ARGS`], parsed against `hooks_dir`.
@@ -18,7 +18,7 @@ fn argv(program: &str, hooks_dir: &str) -> Option<(String, String)> {
 #[test]
 fn production_argv_with_quoted_metacharacters_is_accepted() {
     let command = r#"~/.claude/hooks/loom/codex-forward.sh task 'prompt containing '\'' and
-$ ( *' --model gpt-5.6-terra --effort xhigh --write"#;
+$ ( *' --model gpt-6.1-terra --effort xhigh --write"#;
 
     let parsed = exact_forward_argv_in(command, Some(Path::new(DEFAULT_HOOKS)));
     assert_eq!(parsed, accepted());
@@ -92,7 +92,7 @@ fn forwarding_argv_with_redirection_is_rejected() {
 
 #[test]
 fn forwarding_argv_with_double_quoted_variable_is_rejected() {
-    let command = "~/.claude/hooks/loom/codex-forward.sh task \"$var\" --model gpt-5.6-terra --effort xhigh --write";
+    let command = "~/.claude/hooks/loom/codex-forward.sh task \"$var\" --model gpt-6.1-terra --effort xhigh --write";
     let parsed = exact_forward_argv_in(command, Some(Path::new(DEFAULT_HOOKS)));
     assert_eq!(parsed, None);
 }

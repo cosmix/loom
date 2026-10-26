@@ -4,7 +4,7 @@ use anyhow::{bail, Context, Result};
 use std::path::{Path, PathBuf};
 
 /// Codex model for common implementation and integration tests (sonnet's peer tier).
-pub const CODEX_IMPLEMENTER_MODEL_TERRA: &str = "gpt-5.6-terra";
+pub const CODEX_IMPLEMENTER_MODEL_TERRA: &str = "gpt-6.1-terra";
 
 /// Codex model for boilerplate, scaffolding, and simple unit tests.
 pub const CODEX_IMPLEMENTER_MODEL_LUNA: &str = "gpt-6-luna";
@@ -22,7 +22,7 @@ pub const CODEX_MODELS: &[&str] = &[
     "gpt-6-astra",
     "gpt-6.1-sol",
     "gpt-6-sol",
-    "gpt-5.6-terra",
+    "gpt-6.1-terra",
     "gpt-6-luna",
 ];
 

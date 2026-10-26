@@ -108,7 +108,7 @@ mod tests {
         let config = PressureConfig::from_section_toml(
             "claude_model = \"sonnet\"\n\
              claude_effort = \"high\"\n\
-             codex_model = \"gpt-5.6-terra\"\n\
+             codex_model = \"gpt-6.1-terra\"\n\
              codex_effort = \"xhigh\"\n\
              address_model = \"opus\"\n\
              address_effort = \"medium\"\n",
@@ -116,7 +116,7 @@ mod tests {
         .unwrap();
         assert_eq!(config.claude_model(), Some("sonnet"));
         assert_eq!(config.claude_effort(), Some("high"));
-        assert_eq!(config.codex_model(), Some("gpt-5.6-terra"));
+        assert_eq!(config.codex_model(), Some("gpt-6.1-terra"));
         assert_eq!(config.codex_effort(), Some("xhigh"));
         assert_eq!(config.address_model(), Some("opus"));
         assert_eq!(config.address_effort(), Some("medium"));

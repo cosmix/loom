@@ -107,7 +107,7 @@ Three moving parts:
    (regenerated per stage), NOT the stable prefix — the stable prefix only forward-references it
    (`cache.rs`). The recovery path emits it too (`recovery_format.rs`), which was a real gap fixed
    by `d1530e0c`; without it a recovered or retried codex stage loses its whole doctrine block.
-   Model/effort are interpolated from `CODEX_IMPLEMENTER_MODEL_TERRA = "gpt-5.6-terra"`,
+   Model/effort are interpolated from `CODEX_IMPLEMENTER_MODEL_TERRA = "gpt-6.1-terra"`,
    `CODEX_IMPLEMENTER_MODEL_LUNA = "gpt-6-luna"`, and `CODEX_IMPLEMENTER_EFFORT = "xhigh"`
    (`loom/src/codex.rs`) rather than hardcoded, and `tests_doctrine.rs` asserts BLOCK-B contains
    all three — so changing `codex.rs` without updating the prose surfaces fails the build. Terra is
@@ -116,7 +116,7 @@ Three moving parts:
 4. **Settings carry-forward.** `PRESERVED_SETTINGS_KEYS` / `preserve_unowned_keys`
    (`loom/src/sandbox/settings.rs`) — see the scope section below.
 
-Do NOT confuse the two implementer-lane tiers — `gpt-5.6-terra` and `gpt-6-luna` (both
+Do NOT confuse the two implementer-lane tiers — `gpt-6.1-terra` and `gpt-6-luna` (both
 `codex.rs`) — with the `loom pressure` review model: `gpt-6.1-sol` by default
 (`DEFAULT_PRESSURE_CODEX_MODEL` in `codex.rs`), falling back to `gpt-6-sol` when the account
 lacks it. The forwarder lane never falls back. `CODEX_MODELS` in `codex.rs` lists every id.
@@ -337,7 +337,7 @@ hostnames or editing `~/.codex/config.toml` fixes nothing.
 
 **Detection rule.** Judge a forwarded run by the evidence trailer and the files, never by stderr: `exit:
 0` in the `--- LOOM-CODEX-EVIDENCE ---` trailer, a `session:` rollout newer than the spawn, and the
-task's files present and correct. Probed spawns (gpt-6-luna and gpt-5.6-terra, effort
+task's files present and correct. Probed spawns (gpt-6-luna and gpt-6.1-terra, effort
 xhigh) printed the pair throughout and wrote both files byte-exact.
 
 **Stdin.** The same runs printed `Reading additional input from stdin...`. `codex exec` treats an open
