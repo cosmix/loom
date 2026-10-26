@@ -147,6 +147,7 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 322 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard edges | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | What a rename leaves behind | 312 |
+| [release-feature-review](mistakes/release-feature-review.md) | Release summary omissions | 13 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox paths, perm sync | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | hooks/ dir is protected | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Sandboxed callers, work state | 299 |
