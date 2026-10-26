@@ -360,3 +360,10 @@ Review rounds are counted per reviewer and per stage. A gate runs once per tree,
 **Prevention:** never edit the worktree, or spawn a subagent that edits it, while a `loom check` job runs; wait for its terminal state first.
 
 **Fix:** wait for the job, finish the edit, then re-check the failed criteria.
+
+## Unrequested fallback kept during a codex model rename
+
+**What happened:** Asked to rename gpt-5.6-terra to gpt-6.1-terra, the agent re-added gpt-5.6-terra to `CODEX_MODELS` and the forwarding-hook allowlists as an older-terra fallback, copying the sol pair (gpt-6.1-sol and gpt-6-sol). The user did not want it.
+**Why:** The agent treated the sol fallback pair as a rule that every family keeps its previous version.
+**Prevention:** A model rename replaces the id. Keep the old id as a fallback only when the user asks for one, and ask before adding it.
+**Fix:** Removed gpt-5.6-terra from `loom/src/codex.rs` `CODEX_MODELS` and from the allowlists in `loom-hooks/codex-forward.sh`, `codex-forward-guard.sh` and `codex-forward-result.sh`.
