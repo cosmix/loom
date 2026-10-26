@@ -140,7 +140,7 @@ are detected from the files is for section 01 to settle.
   them in a few clicks.
 - Edits made outside the app (an editor, another Claude Code session, a `git pull`) show up in
   the app and in its summaries without any manual step.
-- Chat with a session feels like a chat app: streaming replies, readable tool activity, clear
+- Chat with a session feels like a chat app: replies that appear block by block as the session writes them, readable tool activity, clear
   indication when the session is working, waiting on the user, or needs a permission decision.
 
 ## Non-goals
@@ -151,7 +151,8 @@ are detected from the files is for section 01 to settle.
   hash check and summary rebuild as any other change made outside a session.
 - Replacing `loom status --web` for monitoring running stages. Step 7 hands off to `loom run` and
   the existing dashboard.
-- Multi-user real-time collaboration. One operator per `loom plan` server.
+- Multi-user co-authoring. Several people can read through one `loom plan` server; one of them
+  authors at a time.
 - Hosting outside the developer's machine. The access model stays the dashboard's.
 
 ## Anti-goals
@@ -238,17 +239,19 @@ Each becomes `doc/product/section_xx.md`. Order is a first proposal for discussi
 - **Spec location (03).** `doc/product/`.
 - **Approval (10).** Not recorded. Step 6 is the user reading; starting execution is their act.
 - **Server (02).** Its own process, default port 7272, well clear of the dashboard's 7373 and up.
-- **Command (02).** Bare `loom plan` starts the app; the existing `loom plan` subcommands
-  (`validate` and the rest) keep working unchanged. It opens the browser unless it runs headless
+- **Command (02).** Bare `loom plan` starts the app; the existing `loom plan` subcommand
+  (`verify`) keeps working unchanged. It opens the browser unless it runs headless
   (no display, for example over SSH on a VM), in which case it prints the URL.
 - **Rebuild budget (04).** Rebuilds after changes made outside the app run automatically up to a
   threshold of 5 summaries; above it the app shows how many summaries are stale and asks before
   starting the rebuild sessions.
 - **One authoring session per project (07, 08).** At most one session can edit a project's
-  documents at a time. Any further browser tab or `loom plan` instance on the same project is
-  read-only: it can read, expand and browse, and shows that another session holds authoring,
-  but cannot chat or save. Summary sessions run alongside the authoring session.
-- **Locked plans (01, 06, 11).** Plan files with the `IN_PROGRESS-` or `DONE-` prefix are
+  documents at a time. A project has one `loom plan` server; a second `loom plan` refuses to
+  start and prints the running server's URL. Several people can open that URL: the first
+  browser to chat holds authoring, and every other browser is read-only: it can read, expand
+  and browse, sees who else is connected and who holds authoring, but cannot chat or save.
+  Summary sessions run alongside the authoring session.
+- **Locked plans (01, 06, 11).** Plan files with the `IN_PROGRESS-`, `DONE-` or `RETIRED-` prefix are
   read-only in the app, in the editor and to sessions, with a notice saying why.
 - **Product-to-plan links (03, 05, 09).** Each plan names the product sections it implements in a
   plain line, `Implements: section_07` (several separated by commas), which the plan-writing

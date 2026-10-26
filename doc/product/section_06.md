@@ -1,0 +1,326 @@
+# 06 — File Mode
+
+Part of the [Loom Plan product vision](index.md).
+
+This section defines file mode: the navigation tree and what it groups, how Markdown and plan
+files render, the briefs and the knowledge base, viewing versus editing, the embedded editor and
+which paths it may save, save-time plan validation, diffs, search, and taking a selection into
+chat. Section 03 owns the document model this section displays (paths, kinds, parents, heading
+anchors, discovery); where this section names a kind or a parent, it uses 03's rules.
+
+## The model in one paragraph
+
+File mode is a reader first. The left pane is a tree of every document under `doc/` that
+section 03 discovers, grouped by kind; the reading column renders the selected file. Anyone
+connected can read, search, follow links, and open diffs. The browser holding authoring can also
+open the file in a CodeMirror editor and save it; the server writes the file only if it is still
+the version that was opened, validates plan files before writing, and from then on treats the
+save like any other change to the file (section 04). File mode never shows anything outside
+`doc/`, and never shows the summary store.
+
+## Layout and addresses
+
+The header's file-mode tab adds a tree pane, about 18rem wide, to the left of the reading
+column and the chat panel (vision, "The screen"). Below 900px the tree becomes a drawer opened
+from the top of the reading column. Every document has an address, `/files/<path relative to doc/>#<anchor>`, so the back button,
+reloads, links pasted into chat, and the presence list (section 02) all name a place in a
+document. (My call.)
+
+## The navigation tree
+
+The tree has four groups, in this order. Every entry shows the document's title (its first `#`
+heading, else its file name); the file name shows on hover.
+
+| Group     | Contents, in order                                                                                       |
+| --------- | -------------------------------------------------------------------------------------------------------- |
+| Product   | The vision; its listed sections in the vision's table order; unlisted sections by file name              |
+| Plans     | Each metaplan, its entries in heading order; then unlisted plans; then Archive                           |
+| Knowledge | `INDEX.md`; the tier-1 files; one folder per tier-2 category                                             |
+| Other     | Any other Markdown under `doc/` that section 03 discovers, by path                                       |
+
+**Gaps show in place.** A section the vision lists but whose file is missing, and a metaplan
+entry whose plan file does not exist, appear dimmed at their position with the word "missing".
+Opening one shows the checklist line for that gap and, to the authoring browser, its offer
+(section 01). (My call: the tree then doubles as the project checklist in document order.)
+
+**Plan entries** carry the plan's state from section 01 as a glyph and a word: written,
+running (`IN_PROGRESS-`), or done (`DONE-` or under `doc/plans/archive/`). A pressure-tested plan
+also shows the date of its last `## Pressure tests` line. A plan that fails validation shows an
+error count (see "Plan validation"). Running and done plans show a lock glyph.
+
+**Briefs sit under their plan.** A plan entry expands to its brief bundle, laid out as it is on
+disk: `common.md` first, then one folder per stage directory, each holding that stage's brief
+files by name. In this repository a bundle is `doc/plans/briefs/<slug>/`, for example
+`briefs/token-flow/` under `DONE-PLAN-token-flow.md`; section 03 owns the rule that ties a
+bundle to its plan. A bundle whose plan is not found is listed under Archive as an orphan
+bundle, so no brief is unreachable.
+
+**Archive** is collapsed by default and holds done plans no metaplan names, other files under
+`doc/plans/archive/` (such as `REVIEW-PLAN-*.md`), and orphan brief bundles.
+
+**Knowledge** follows the hierarchy described in `architecture/knowledge-hierarchy.md`:
+`INDEX.md` first, then the seven tier-1 files, then the tier-2 categories (architecture,
+entry-points, patterns, conventions, mistakes, concerns), each topic listed by slug with its
+INDEX blurb as a second line. The tree reads the blurbs from `INDEX.md` itself, the file loom
+regenerates on every knowledge write, so the app keeps no copy. Categories are collapsed by
+default; `mistakes` alone holds about sixty topics.
+
+**The open document's outline** expands under its tree entry: its `##` and `###` headings,
+nested, each a link to its anchor. The heading in view is marked as the reader scrolls.
+(My call: the reading column stays at reading width, so the outline goes in the tree rather
+than a third column.)
+
+**The tree updates live.** It is rebuilt from the same file watcher as the checklist
+(section 01, section 04). A file added, removed, or renamed appears, disappears, or moves without
+a reload. When a plan is renamed from `PLAN-` to `IN_PROGRESS-` or `DONE-` while it is open,
+the reading column follows it to the new path, since section 01 identifies a plan by its slug.
+
+## Rendering Markdown
+
+Markdown renders in the browser from the raw file text the server sends, as CommonMark with the
+GitHub extensions loom documents already use: tables, fenced code, task lists, strikethrough,
+autolinks. The parser goes in the planning app's entry bundle, not in the dashboard's. (My call:
+rendering on the server would need a Markdown crate loom does not have, and the browser needs
+the raw text anyway for the editor and diffs.)
+
+- **Raw HTML is never rendered.** HTML comments are dropped from the view (this hides the
+  `<!-- loom METADATA -->` markers); any other HTML shows as escaped text. Documents are written
+  by sessions and arrive by `git pull`; the reading column must not run what they contain.
+- **Headings** get the anchors section 03 defines. Hovering a heading shows a link control that
+  copies the heading's address.
+- **Tables** render in the dashboard's ledger style (`--ledger-rule`, `--ledger-head-rule` in
+  `web/src/index.css`). A table wider than the reading column scrolls sideways inside its own
+  box; the page never scrolls sideways.
+- **Code blocks** render in the monospace face on a muted ground, with the fence's language as
+  a small label and a copy control, and scroll sideways when long. There is no syntax colouring
+  in the reading view. (My call: colouring would pull a highlighter into the entry bundle for
+  text the reader mostly skims; the editor colours source when opened.) A `mermaid` block shows
+  its source as a code block; diagrams are not drawn. (My call: the plan view draws the stage
+  graph from the YAML instead, below.)
+- **Inline code** that is exactly the path of a document file mode can open (for example
+  `` `doc/plans/briefs/token-flow/common.md` ``, the form plans use) becomes a link to it.
+  (My call: plans and briefs name each other this way far more often than with Markdown links.)
+- **Links.** A relative link to a file under `doc/` opens it in file mode, at the anchor if the
+  link has one; a `#anchor` link scrolls within the document. A link to a document or anchor that
+  does not exist renders struck through with a "not found" hover. A link to a path outside
+  `doc/` renders as plain text with its target on hover, since file mode serves only `doc/`.
+  An `http(s)` link opens in a new tab with `rel="noopener noreferrer"`.
+
+## How plans render
+
+A plan file has three parts: prose, the metadata block between `<!-- loom METADATA -->` and
+`<!-- END loom METADATA -->` (a fenced `yaml` block; extraction in
+`loom/src/plan/parser/extraction.rs:53`), and, after the end marker, the `## Pressure tests`
+record (section 01). The plan view renders them as:
+
+1. **A plan header** above the prose: the state word, the lock notice if locked (below), the
+   `Implements:` line as links to the product sections it names (section 03), the last pressure
+   test's date beside the file's last change date (section 01), and the validation result as a
+   count of errors and warnings that expands into the list.
+2. **The prose**, rendered as Markdown.
+3. **A Stages panel** in place of the metadata block: the stage graph drawn with the dashboard's
+   graph layout (`web/src/lib/graph.ts`, React Flow and dagre) without live state, then one
+   row per stage with its id, name, type, summary, and dependencies. A row expands to show the
+   stage's description, acceptance criteria, and file lists as text. Clicking a node scrolls to
+   its row. (My call: a reviewer reads a plan's shape from its graph and summaries; the YAML is
+   the authoring form.)
+4. A **"Show YAML"** control on the Stages panel replaces it with the raw block as a code
+   block, so a reader can always see exactly what loom will parse.
+5. **The pressure-test record**, rendered as ordinary Markdown.
+
+When the metadata block is missing (a plan still being drafted, like
+`doc/plans/PLAN-loom-state-confinement.md` today) the panel says so in one line. When the YAML
+does not parse, the panel shows the parse error and the raw block. The Stages panel's data
+comes from the server's plan parse, the same one validation uses, so the panel and the
+validation result never disagree.
+
+## Viewing and editing
+
+**Who may edit.** Only the browser holding authoring (section 02) sees the Edit control. A
+browser that saves while nobody holds authoring takes authoring, as starting a chat would.
+(My call.) Read-only browsers, and every browser when `loom plan` runs in its read-only mode
+because `tmux` or `claude` is missing (section 02), see no Edit control and no save route
+accepts them.
+
+**What may be edited.** The server decides; the browser only hides controls. A path is editable
+when all of these hold:
+
+- it is a Markdown file under `doc/product/` or `doc/plans/`, or under the Other group;
+- it is not a running or done plan: no `IN_PROGRESS-` or `DONE-` prefix, not under
+  `doc/plans/archive/`;
+- it is not a brief of a running or done plan (My call: `loom run` reads briefs from the
+  committed tree, so an edit during a run reaches no stage and misleads a later reader about what
+  the stages were told);
+- it is not under `doc/loom/`: the knowledge base and the summary store are read-only in file
+  mode;
+- it is at most 1 MiB, the limit `loom plan verify` applies to plans
+  (`loom/src/commands/plan/verify.rs:18`).
+
+The knowledge base is read-only because loom's own tools keep it consistent: every write goes
+through `loom knowledge`, which regenerates `INDEX.md` and enforces the section rules, and a
+direct edit would skip both. Knowledge is changed from chat, where the session uses those tools.
+The vision says the knowledge base is browsed in file mode. Section 12 owns which
+paths sessions may write; this list governs the editor only.
+
+**Locked files** show a notice at the top of the view saying why, and no Edit control:
+
+- running plan: "This plan is running. `loom run` works from the committed copy.";
+- done plan or archive: "This plan is done. Record changes in a new plan.";
+- brief of a locked plan: the same notice, naming the plan;
+- knowledge: "The knowledge base changes through `loom knowledge`. Ask in chat."
+
+File mode never creates, renames, moves, or deletes a file. Those happen through a session.
+(My call.)
+
+## The editor
+
+The Edit control swaps the rendered view for the file's full source in CodeMirror 6, in the
+reading column, with line numbers. CodeMirror and its language modes load as a lazy chunk the
+first time any browser opens the editor or a diff, the way the dashboard loads xterm
+(`web/src/components/terminal/emulator.ts:134-161`), so a reader who never edits never
+downloads it. Every `.md` file opens in Markdown mode; fenced `yaml` blocks, which includes the
+plan metadata block, are highlighted as YAML inside it. The editor is themed from the dashboard's
+CSS tokens (`web/src/aurora-ui/shared/styles/tokens.css`, `web/src/index.css`) through CSS
+variables, so it follows the active theme and the `.dark` class without a second palette. There
+is no schema-aware completion (vision, Decisions).
+
+- **Save** is a button and Ctrl-S / Cmd-S. The request carries the path, the content hash of the
+  text the editor opened (section 04's hash), and the new text.
+- **Drafts.** Unsaved text is kept in the browser's local storage per path and opened hash,
+  so a reload or a crashed tab keeps it. Leaving the document with unsaved text asks first.
+  (My call.)
+- **Done** returns to the rendered view; with unsaved text it asks to save or discard.
+
+### What the server does on save
+
+1. Refuse unless the browser holds (or takes) authoring and the path is editable.
+2. Compare the file's current hash with the hash the editor opened. On a mismatch, refuse and
+   return the current text and hash (below).
+3. If the path is a plan file, validate the new text (next section). Errors stop the save
+   unless the user confirmed "Save with errors".
+4. Write the file atomically (a temporary file in the same directory, then rename).
+5. Nothing else. The file watcher sees the write like any outside change, so the checklist,
+   the tree, and the summaries follow through the same path (vision, Non-goals; section 04).
+
+### When the file changed underneath
+
+If the hashes differ, the editor opens a side-by-side merge view (`@codemirror/merge`): the
+file's newer text on the left, read-only, and the user's unsaved edit on the right, with
+controls to copy each changed chunk from left to right. The right side's base hash becomes the
+newer one, so the next save succeeds unless the file changes again. The same view is offered,
+without waiting for a save, as soon as the watcher reports that a file open in the editor
+changed, so the user sees a session's edit arrive while typing.
+
+## Plan validation
+
+Plans are checked by the same code `loom plan verify` runs, called in-process by the server:
+extract the metadata block, deserialize it, `plan::schema::validate`
+(`loom/src/plan/schema/validation.rs:273`), and, when that passes, the soft checks, the input
+checks, and base-tree evaluation (`loom/src/commands/plan/verify.rs:341-371`). Today that code
+reads the plan from disk and prints or exits; implementing this section splits it into a
+function over the proposed text and the plan's path that returns the result `--json` already
+serialises (errors; structural, knowledge, sandbox, and baseline warnings; notes; stage levels),
+with `execute` becoming a caller of it.
+
+**When it runs.** On every save of a plan file, against the proposed text, before writing; and
+whenever the watcher reports a change to a plan file, so the plan header and the tree show the
+current result for edits made anywhere. It runs on `PLAN-*.md` files only; locked plans are not
+re-validated.
+
+**What blocks.** Errors block the save, with a "Save with errors" confirmation that writes
+anyway; warnings never block, and `--strict` is not applied. The files are the truth and any
+other editor can write an invalid plan, so the app warns hard and does not forbid. `loom plan
+verify` and `loom init` still reject such a plan later. A
+plan with no metadata block yet is saved with a note, not an error, because drafting a plan's
+prose first is normal.
+
+**How errors show.** In the editor, a panel above the source lists errors, then warnings by
+bucket, then notes, as `loom plan verify` groups them. Each item links to a line where one is
+known:
+
+- a YAML parse error carries a line and column within the block; the editor adds the block's
+  starting line and marks that line in the gutter;
+- a validation error names a stage (`stage_id` in `loom/src/commands/plan/verify.rs:30-33`)
+  and no line; the editor marks the stage's `- id:` line;
+- any other item is listed without a mark.
+
+In the rendered view, the plan header shows the same list, each stage-specific item linking to
+that stage's row in the Stages panel.
+
+## Diffs
+
+A diff in file mode shows source text, never rendered Markdown, in `@codemirror/merge`:
+side by side on wide screens, inline (unified) below 900px. Diffs are read-only and every
+browser can open them. Three kinds exist:
+
+| Diff                | Before                                    | After               | Opened from                          |
+| ------------------- | ----------------------------------------- | ------------------- | ------------------------------------ |
+| What a turn changed | the file when the turn started            | the file at its end | the turn's file list (section 08)    |
+| Changed while open  | the version the reader had on screen      | the current file    | the "changed" note on the document   |
+| Uncommitted         | `HEAD`'s version (`git show HEAD:<path>`) | the current file    | a control in every document's header |
+
+**Turn diffs.** The server keeps the text of every file in file mode in memory (it reads them
+to hash them anyway, section 04). When a turn starts (section 07 defines turn boundaries), it
+pins the current text of every file; when the turn ends, each file the turn changed gets a diff
+from its pinned text to its text at the end. The diff covers the whole turn, including edits
+made by subagents and summary rebuilds the turn ran. A file the turn created diffs against
+nothing; a file it deleted shows its last text as removed. Turn diffs live for the server's
+lifetime and are lost on restart; the uncommitted diff still shows the work. (My call: keeping
+history in the project would be sidecar state, an anti-goal.)
+
+**Changed while open.** When an open document changes on disk and the reader has no unsaved
+edit, the view updates in place, keeps the heading in view where it was, and shows a short
+"changed just now" note linking to the diff.
+
+## Search
+
+One search box sits at the top of the tree. It does two things.
+
+**As you type, it filters the tree** by title and file name, in the browser.
+
+**On Enter, it searches text** across every document file mode shows, on the server, and lists
+results in the tree pane: document title, the heading path of the matching section, and a
+snippet with the terms marked. Opening a result opens the document at that heading's anchor
+with the terms marked in the text. Results are capped at 50. A scope switch limits the search
+to Product, Plans (briefs included), Knowledge, or all.
+
+The index reuses loom's retrieval code instead of a second engine: the heading chunker that
+cuts knowledge and `doc/` prose into sections (`loom/src/fs/knowledge/catalog/prose.rs`) and
+the BM25 scoring behind `loom knowledge context` (`loom/src/context/rank/corpus.rs:76`). Three
+things differ from `loom knowledge context`, so the server calls the library, not the command:
+
+- the index is built in memory and updated from the file watcher; it writes no cache, since
+  `loom plan` writes nothing in the project outside `doc/` (section 02);
+- done plans, `doc/plans/archive/`, and the knowledge tree are all indexed, though prose
+  indexing skips the first two today (`prose.rs:359-364`), because file mode shows them;
+- results are ranked by score alone, with no token budget and no demotion of prose against
+  curated knowledge (`loom/src/context/rank.rs:100`).
+
+A query in double quotes is matched literally, case-sensitively, so identifiers that the BM25
+tokenizer splits or drops, such as `IN_PROGRESS-` or `--strict`, can be found. (My call.)
+Search covers `doc/` only; source code search is left to the terminal and to the sessions.
+
+## Taking a passage into chat
+
+In the rendered view, the editor, or a diff, selecting text shows a small "Add to chat" control
+next to the selection. It attaches the passage to the next chat message as a reference made of:
+
+- the document's path and the anchor of the heading that contains the selection start;
+- the selected text, as the reader saw it (rendered text in the view, source in the editor);
+- the line range, when the selection is in the editor or a diff;
+- the stage id, when the selection is in a plan's Stages panel.
+
+Only the browser holding authoring, or a browser that can take it, sees the control. Section 08
+owns how attachments show in the chat and reach the session.
+
+## Out of scope for this section
+
+- Document kinds, the parent of a brief, heading anchor rules, and discovery: section 03.
+- Content hashing, the file watcher, and summary rebuilds after a save: section 04.
+- Overviews and summary-to-source expansion: section 05.
+- Turn boundaries and what counts as a session's change: section 07.
+- The chat panel, its per-turn file list, and attachment rendering: section 08.
+- Reverting or refining what a turn changed: section 10.
+- Pressure tests and runs started from the app: section 11.
+- Authentication, the save route's access checks, and which paths sessions may write:
+  section 12.

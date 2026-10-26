@@ -1,0 +1,341 @@
+# 04 — Summary Engine
+
+Part of the [Loom Plan product vision](index.md).
+
+This section defines how summaries are stored, how the engine knows which of them are out of
+date, who rebuilds them and on which model, the file watcher the rest of the app relies on, and
+how rebuild cost is measured and shown. What the reader sees of all this is section 05; how a
+session is started and owned is section 07.
+
+## The model in one paragraph
+
+Every summary is a Markdown file under `doc/loom/summaries/`, one sentence per line, each
+sentence ending in links to what it draws on. A front matter block at the top of the file is that
+summary's manifest entry: the content hashes of everything it cites, taken when it was written.
+The engine stores no other state. On start and on every change the watcher reports, it hashes
+the sources again and compares: a sentence whose cited sources still hash the same is current,
+any other sentence is out of date, and a summary with an out-of-date sentence or with uncited
+changes in its source is queued for rebuild. Agents write only the sentences and links; a loom
+command validates them and computes every hash, so no agent ever writes a hash.
+
+## The store
+
+```text
+doc/loom/summaries/
+  product.md                  product overview
+  engineering.md              engineering overview
+  product/section_01.md       one per product section, named after the section file
+  plans/<slug>.md             one per plan, named by the plan's slug
+```
+
+A summary's **id** is its path under `doc/loom/summaries/` without `.md`: `product`,
+`product/section_01`, `plans/delivery-truth`.
+
+Which documents get a summary:
+
+| Source                                                              | Summary               |
+| ------------------------------------------------------------------- | --------------------- |
+| `doc/product/section_<nn>.md`, listed or unlisted (section 01)      | `product/section_<nn>` |
+| A plan in `doc/plans/` in any state (`PLAN-`, `IN_PROGRESS-`, `DONE-`) | `plans/<slug>`        |
+| A plan under `doc/plans/archive/` that a metaplan names             | `plans/<slug>`        |
+| A plan under `doc/plans/archive/` that no metaplan names            | none                  |
+| The vision, metaplans, briefs, knowledge                            | none                  |
+
+Plan summaries are keyed by slug, so the `IN_PROGRESS-` and `DONE-` renames and a move into
+`archive/` keep the same summary. Archived plans that no metaplan names are left out because an
+older project can hold dozens of them (this repository has 89) and summarizing them would cost
+more than any reader gains; they stay readable in file mode. The vision and the
+metaplans have no document summary of their own: the overviews cite them directly (below).
+
+Each summary is its own file with its own manifest entry, so a git merge of two people's
+rebuilds conflicts only when both rebuilt the same summary (vision, Decisions). There is no
+shared index file. (My call: a single manifest file would put every rebuild's hash changes in
+one file and turn unrelated rebuilds into merge conflicts.)
+
+## The summary file
+
+A document summary, `doc/loom/summaries/product/section_01.md`:
+
+```markdown
+---
+kind: document
+of: doc/product/section_01.md
+file: sha256:9c1f…
+cites:
+  doc/product/section_01.md#the-model-in-one-paragraph: sha256:4a7e…
+  doc/product/section_01.md#detection-rules: sha256:e210…
+  doc/product/section_01.md#pressure-tests: sha256:07bd…
+---
+
+# 01 — Workflow Model and Project State
+
+The app keeps no workflow state and recomputes a checklist of expected documents from `doc/` on every change. [§](../../../product/section_01.md#the-model-in-one-paragraph)
+The current step is the earliest step with a gap, and no gap blocks later work. [§](../../../product/section_01.md#the-model-in-one-paragraph)
+A plan counts as pressure-tested once the `loom pressure` driver has appended a dated line to its `## Pressure tests` section. [§](../../../product/section_01.md#pressure-tests)
+```
+
+The product overview, `doc/loom/summaries/product.md`:
+
+```markdown
+---
+kind: overview
+of: product
+members:
+  product/section_01: sha256:51c0…
+  product/section_02: sha256:d93a…
+cites:
+  doc/product/index.md#vision: sha256:aa04…
+---
+
+# Product overview
+
+`loom plan` is a browser app that takes a project from an empty `doc/` to approved loom plans. [vision](../../product/index.md#vision)
+It derives the workflow step from the files alone and never blocks an out-of-order project. [01](product/section_01.md#s-3fa9c2d1) [01](product/section_01.md#s-77e0b412)
+```
+
+Rules for the body, enforced when the summary is sealed (below):
+
+- **One sentence per line.** Markdown joins consecutive lines into one paragraph, so the file
+  reads as prose in any viewer; a blank line starts a new paragraph. `#` and `##` headings may
+  group sentences and carry no links. Lists, tables, code blocks, and HTML are not allowed.
+- **Every sentence ends in one or more links**, plain Markdown links relative to the summary
+  file, so a reader on GitHub or in an editor can follow them. The app ignores the link text;
+  agents use a short label (`§`, a section number, a plan slug).
+- **A document summary cites only its own source**: heading sections of that file, by the
+  anchors section 03 defines. A link with no fragment cites the text before the first heading.
+- **An overview cites document-summary sentences and raw passages.** It links a document
+  summary's sentence by the sentence's id as fragment (`#s-3fa9c2d1`), and links heading
+  sections of the vision (product overview) or of the metaplans (engineering overview) directly,
+  since those documents have no summary. Every member document must be cited by at least one
+  overview sentence, so no section or plan drops out of the overview silently.
+- **Length.** A document summary holds at most 15 sentences, an overview at most 30. (My call:
+  the overview has to be readable in the few minutes the vision's reviewer goal allows.)
+
+A **sentence id** is `s-` plus the first 8 hex digits of the SHA-256 of the sentence's text with
+its links removed and its whitespace collapsed. The id is never written into the file; anyone can
+compute it. Two identical sentences in one summary are rejected. Because the id follows the
+text, a rebuild that keeps a sentence word for word keeps the overview links into it.
+
+### The front matter
+
+| Key       | In         | Value                                                                                       |
+| --------- | ---------- | ------------------------------------------------------------------------------------------- |
+| `kind`    | both       | `document` or `overview`                                                                    |
+| `of`      | both       | the source file's path (document), or `product` / `engineering` (overview)                  |
+| `file`    | document   | hash of the whole source file                                                               |
+| `cites`   | both       | `path#anchor` to the hash of that span, for every raw passage the body links                |
+| `members` | overview   | summary id to the hash of its ordered sentence ids, for every document summary in scope     |
+
+`members` hashes the ordered list of sentence ids, so rewriting a link or the front
+matter of a document summary does not make the overview out of date. Front matter carries no
+build time and no model; git history and the cost log (below) have both. (My call: every key
+here changes only when the content does, so a rebuild that changes nothing produces no diff.)
+
+## Hashing
+
+All hashes are `sha256:<hex>` from `body_hash` (`loom/src/context/source_graph/mod.rs:127`),
+the one hash definition the source graph and knowledge bootstrap already use.
+
+The unit is the **heading section**: the heading line and everything up to the next heading of
+the same or a shallower level, nested subsections included, ignoring `#` lines inside fenced
+code. This is the span `loom/src/fs/knowledge/splice.rs:162` (`section_end`) already computes for
+`loom knowledge replace-section`; the engine reuses that scan and extends it to level-1
+headings. Where section 03 defines anchors finer than headings (for example a plan stage), the
+engine hashes the span section 03 assigns to the anchor the same way. Before hashing, line
+endings become `\n` and trailing whitespace on each line is dropped, so an editor that rewrites
+line endings does not invalidate summaries. (My call.)
+
+The engine also hashes the whole source file, which is how it notices a change in a passage no
+sentence cites, and a new or removed section.
+
+## What "out of date" means
+
+The engine evaluates every summary from the files alone, and pushes the result to every open
+browser over the server's WebSocket. Each sentence has one state:
+
+| State   | A document-summary sentence                          | An overview sentence                                                              |
+| ------- | ---------------------------------------------------- | --------------------------------------------------------------------------------- |
+| current | every cited span hashes as recorded                  | every cited summary sentence exists and is current; every cited raw span matches   |
+| stale   | a cited span changed, or its anchor no longer exists | a cited summary sentence is gone or stale, or a cited raw span changed or is gone |
+
+Each summary has one state:
+
+| State      | When                                                                                                    |
+| ---------- | ------------------------------------------------------------------------------------------------------- |
+| current    | every sentence current, and the source's `file` hash (document) or every `members` hash (overview) matches |
+| incomplete | every sentence current, but the source changed outside the cited spans, or a member summary changed, was added, or was removed |
+| stale      | at least one sentence stale                                                                             |
+| rebuilding | claimed by a session (below); its last sentences stay readable with their states                        |
+| missing    | no file, a file that fails validation, or a file with git conflict markers                              |
+
+Incomplete and stale summaries both get rebuilt; the difference tells the reader whether
+anything already on screen is wrong. A stale sentence stays readable and marked until its
+replacement arrives (vision, Refinement); section 05 decides how each state looks.
+
+A summary whose file fails validation, including a hand edit that broke the rules or a merge
+that left conflict markers, counts as missing and is regenerated, which resolves the conflict
+(vision, Concurrent writes). A hand edit that passes validation is kept and judged by its hashes
+like any other.
+
+When a source file disappears and another appears with the same file hash (a plan's
+`IN_PROGRESS-` or `DONE-` rename, a move into `archive/`), the engine rewrites the paths in the
+affected front matter and links itself, with no agent and no rebuild. When a source is deleted,
+its document summary is deleted and the overview becomes incomplete. A new section or plan
+gets a missing summary, which queues it.
+
+## The watcher
+
+One watcher in the server reports changes under `doc/`, and sections 01, 05, 06, and this
+engine all consume its events. It polls: every second it walks `doc/`, compares each file's
+size, modification time, and inode with the last walk, and hashes only the files that differ.
+`doc/` holds hundreds of files at most, so a walk is cheap, and polling needs no new dependency
+and behaves the same on macOS, Linux, and network mounts. The dashboard already polls its state
+files the same way (`loom/src/commands/status/web/broadcast.rs:23`). (My call.)
+
+- **Batching.** Changes are held until a walk finds nothing new, then delivered as one batch of
+  added, changed, removed, and renamed (same hash, new path) files. A `git pull` that touches
+  thirty files arrives as one batch and one rebuild decision.
+- **Skipped entries.** Hidden files and directories and editor temporaries (`*~`, `*.swp`,
+  `.#*`) are ignored.
+- **The engine's own writes.** The engine remembers the hash of every summary it seals or
+  rewrites; a summary file that matches that hash is not reported as an outside change. Any
+  other change to a summary file (a pull, a hand edit) is re-evaluated as above.
+- **Start.** The first walk at server start is a batch like any other, so edits made while no
+  server ran are caught up by hashing (vision, principle 4).
+
+## Sealing a summary
+
+Agents never write into `doc/loom/summaries/` directly. They write the body of a summary to a
+draft file in the runtime directory and run:
+
+```text
+loom plan summary seal <summary-id>
+```
+
+`seal` reads `~/.loom/plan/<project-key>/drafts/<summary-id>.md`, checks every body rule above,
+resolves every link (anchors must exist, cited summary sentences must exist and be current),
+computes the hashes, takes the store lock, writes the summary file with its front matter by
+temp file and rename, releases the lock, and deletes the draft. A rule it rejects is printed with
+the offending line, and the agent fixes the draft and seals again. Sealing turns "every claim
+traces to its source" (vision, principle 3) into a mechanical check.
+
+The **store lock** is an exclusive OS lock on `~/.loom/plan/<project-key>/summaries.lock`, held
+only for the write, through `fs2` as the quota cache's shared lock does
+(`loom/src/quota/shared.rs:130`). One writer at a time therefore holds for the server, its
+sessions, and a `seal` run by hand from any terminal.
+
+The other subcommands sessions use:
+
+```text
+loom plan summary status [--json]      every summary's state, stale sentences, claims
+loom plan summary brief <summary-id>…  claims the summaries and prints the rebuild brief
+loom plan summary release <summary-id>… gives up claims without sealing
+```
+
+`brief` creates a **claim** file per summary under `~/.loom/plan/<project-key>/claims/`, naming
+the claiming session, and refuses summaries another live session has claimed. The server clears
+the claims of sessions that have ended. The brief lists, per summary, the source paths, the
+current summary text with each stale sentence marked, which sentences may stay word for word,
+the body rules, the draft path, and the `seal` command. Keeping current sentences word for word
+keeps their ids, so overview links into them survive. All of these work without a running
+server, since they need only the project root and the runtime directory. (My call; section 02
+owns the CLI surface, and these sit beside `loom plan verify`.)
+
+Overviews are sealed after the document summaries they cite, because `seal` refuses an overview
+that links a stale or missing sentence.
+
+## Who rebuilds what
+
+| Trigger                                          | Who                                                                    | Budget check |
+| ------------------------------------------------ | ---------------------------------------------------------------------- | ------------ |
+| A refinement turn edited documents               | a subagent of the authoring session, in the same turn                  | no           |
+| Outside edit, file-mode save, `git pull`, start  | a background summary session                                           | yes          |
+| The user presses rebuild on a summary or a batch | a background summary session                                           | no           |
+
+**Refinement.** The authoring skill (section 09) ends every turn that edited documents by running
+`loom plan summary status`, then spawning one subagent that runs `brief` for the summaries built
+on what the turn changed and the overviews that cite them, rewrites, and seals them. The turn is
+not over until the subagent returns; the chat names the summaries being rebuilt (vision, The
+screen). While an authoring turn runs, the scheduler starts no background session, and at the
+end of the turn whatever is still stale or incomplete goes to the background queue. (My call:
+this keeps the watcher, which sees the session's edits the moment they are written, from
+starting a background rebuild of the same summaries.)
+
+**Background.** After each watcher batch the engine collects the summaries the batch made stale,
+incomplete, or missing. Up to 5, it starts a rebuild at once; above 5 it asks first (vision,
+Rebuild budget). One background summary session runs per project at a time, as an interactive
+Claude Code session in tmux started through the session bridge (section 07), never `claude -p`.
+It works its batch leaves first: one subagent per document summary, each running `brief` and
+`seal` for its document, then the overviews itself. Summaries invalidated while it runs form the
+next batch. The server stops the session once every claim it held is sealed or released. A
+session that seals nothing for 10 minutes is stopped, its claims are released, and the
+summaries it held are shown as failed with the last `seal` error. (My call.)
+
+**Models.** Document summaries (one per product section, one per plan) are built on Haiku by
+default. Overviews (product and engineering) are built on Sonnet at high effort. Config keys
+override both, per level: `[plan] document_summary_model` and `document_summary_effort` for
+document summaries, `[plan] overview_model` and `overview_effort` for overviews. They resolve with loom's existing
+precedence (project `.loom/work/config.toml` when present, then `~/.loom/config.toml`, then the
+default; `doc/loom/knowledge/conventions/model-and-effort-config.md`). The brief prints the
+model and effort for each level, so the authoring session spawns its subagent on the same ones.
+Summarizing one document is small work for Haiku; the overviews join many documents and get the
+stronger model. Cost is an anti-goal concern.
+
+## Asking before a large rebuild
+
+Above the threshold, the app shows how many summaries are out of date, which ones, and an
+estimate of the cost (below), with two actions: rebuild them all, or not now. The question goes
+to every connected browser; only the browser holding authoring, or any browser while nobody holds
+it, can answer. (My call.) Declining leaves the summaries marked out of date with a rebuild
+action on each; the next batch counts only the summaries it newly invalidates, so one declined
+pull does not turn every later edit into a question.
+
+A first `loom plan` on a project with no summaries (twelve sections and eight plans mean 22
+summaries) asks the same question.
+
+## Cost
+
+Summary sessions run under the user's subscription, so cost is measured in tokens and shown
+against the subscription's quota.
+
+- **Measuring.** Every rebuild is a Claude Code transcript: the background session's own JSONL
+  and its subagents' `subagents/agent-<id>.jsonl` files, or the authoring session's summary
+  subagent. The engine reads them with the token tracker's parser
+  (`loom/src/tokens/claude_line.rs:21`) and its streamed-message merge
+  (`loom/src/provider_data/mod.rs:10`), so the counts match `loom status`. Which subagent of
+  the authoring session did the rebuild comes from the hook event of its `brief` call (section
+  07). Costs are per summary when one subagent built one summary, and per batch for the
+  overviews.
+- **Recording.** Each finished rebuild appends one line to
+  `~/.loom/plan/<project-key>/summary-cost.jsonl`: time, trigger, summary ids, model, and the
+  token vector (fresh input, cache writes, cache reads, output), unknown fields left absent,
+  never zero. The log is runtime state; nothing about cost is committed.
+- **Estimating.** The estimate shown before a large rebuild sums each summary's last recorded
+  cost, and for a summary with no record scales the median cost per source byte across the log,
+  taken per level since document summaries and overviews run on different models (or a fixed
+  starting figure while the log is empty). It is labelled an estimate.
+- **Showing.** Each chat turn lists the summaries it rebuilt with their tokens (section 08). A
+  summary panel shows the running rebuild, the cost of the last rebuild, and totals for today
+  and the last 7 days, next to the five-hour and weekly quota meters. `loom plan` polls quota
+  through the account-shared poller (`loom/src/quota/shared.rs:130`), which adds no requests
+  when a daemon already polls for the same account, and renders it with the dashboard's
+  `web/src/components/quota-meters.tsx`.
+
+## Without tmux or claude
+
+When `tmux` or the `claude` CLI is missing, `loom plan` runs read-only (section 02). The engine
+still watches, hashes, and marks every sentence's state, so concept mode shows exactly which
+committed sentences no longer match the documents; it starts no rebuilds and asks nothing. The
+summary panel says why and how to install the missing tool. A missing summary stays missing;
+section 05 says what concept mode shows in its place. `loom plan summary seal` still works from
+any terminal, so a session started by hand can rebuild summaries without the app.
+
+## Out of scope for this section
+
+- Document paths, kinds, heading anchors, and stage anchors in plans: section 03.
+- How sentences, marks, out-of-date states, and expansion look to the reader: section 05.
+- The file-mode editor's save path and its hash check: section 06.
+- Starting, owning, and stopping tmux sessions, transcript reading, and hook events: section 07.
+- How a turn's rebuilt summaries and their cost appear in chat: section 08.
+- The authoring and summary skills, and how they are injected: section 09.
+- Which runtime paths sessions may write (drafts, claims): section 12.
