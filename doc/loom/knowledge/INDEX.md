@@ -142,7 +142,7 @@
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | Cleanup-boundary bug | 171 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Operator checkout git | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) | Resolver kept write denies | 15 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree races | 331 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Cross-worktree races | 341 |
 | [phantom-merges](mistakes/phantom-merges.md) | merged=true without proof | 337 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Ledger exact-match, pins | 322 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Partial-staging guard edges | 93 |
@@ -163,7 +163,7 @@
 | [store-without-consumer](mistakes/store-without-consumer.md) | Store written, never read | 104 |
 | [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, waves, ownership | 376 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Liveness, watch traps | 377 |
-| [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 362 |
+| [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation, defect reports | 369 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests: fds, ETXTBSY | 332 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) | Sweep: startup, fixtures | 137 |
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint, test discipline | 398 |
