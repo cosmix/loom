@@ -130,7 +130,7 @@ fn join_lines(lines: &[&str], base: &str) -> String {
 /// whitespace. A bare `#`/`##`/... line with no text yields an empty string.
 /// `None` for a non-heading line, including `###Foo` (no space - not a valid
 /// ATX heading) and a run of 7+ hashes (past the ATX heading limit).
-fn atx_heading(line: &str) -> Option<(usize, &str)> {
+pub(crate) fn atx_heading(line: &str) -> Option<(usize, &str)> {
     let trimmed = line.trim_end();
     let hashes = trimmed.bytes().take_while(|&b| b == b'#').count();
     if !(1..=6).contains(&hashes) {
@@ -159,7 +159,7 @@ fn heading_level_of(line: &str, heading: &str) -> Option<usize> {
 /// Index of the first non-fenced line after `start` whose heading level is
 /// the same as or shallower than `level` (the end of the matched section), or
 /// `lines.len()` if none exists (the section runs to EOF).
-fn section_end(lines: &[&str], in_fence: &[bool], start: usize, level: usize) -> usize {
+pub(crate) fn section_end(lines: &[&str], in_fence: &[bool], start: usize, level: usize) -> usize {
     lines
         .iter()
         .enumerate()
@@ -217,7 +217,7 @@ fn append_new_section(base: String, heading: &str, content: &str) -> String {
 /// Per-line "is this line inside (or itself a delimiter of) a fenced code
 /// block" mask, so heading detection never mistakes a `#`-prefixed line
 /// inside a ` ``` ` or `~~~` fence for a real section heading.
-fn fence_mask(lines: &[&str]) -> Vec<bool> {
+pub(crate) fn fence_mask(lines: &[&str]) -> Vec<bool> {
     let mut mask = vec![false; lines.len()];
     let mut open: Option<(u8, usize)> = None;
 
