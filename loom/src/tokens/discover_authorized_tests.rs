@@ -29,7 +29,7 @@ fn job_and_rollout(
     job["threadId"] = json!(thread);
     fs::write(path, serde_json::to_vec(&job).unwrap()).unwrap();
     let context = json!({"type": "turn_context", "payload": {
-        "model": "gpt-5.6-terra", "effort": "xhigh"}});
+        "model": "gpt-6.1-terra", "effort": "xhigh"}});
     fs::write(
         root.join(format!("rollout-2026-09-04T12-00-00-{thread}.jsonl")),
         format!("{context}\n{}\n", codex_count(NOW, [fresh, 0, 0])),
@@ -108,7 +108,7 @@ fn authorized_jobs_without_receipts_or_claude_transcripts_reach_all_totals_once(
     assert_eq!(totals.stages[0].total.fresh(), 98_821);
     assert_eq!(totals.stages[0].agents.len(), 2);
     assert_eq!(totals.models.len(), 1);
-    assert_eq!(totals.models[0].model, "gpt-5.6-terra");
+    assert_eq!(totals.models[0].model, "gpt-6.1-terra");
     assert_eq!(totals.models[0].effort.as_deref(), Some("xhigh"));
     assert_eq!(totals.models[0].total.fresh(), 98_821);
     receipt(&fx, "thread-done");

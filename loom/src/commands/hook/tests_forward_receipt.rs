@@ -68,7 +68,7 @@ impl Fixture {
     /// The forward's PostToolUse payload; `result` is `tool_response`'s
     /// stdout plus any extra metadata, and `None` leaves `tool_response` out.
     fn payload(&self, tool_id: &str, result: Option<(String, Option<Value>)>) -> String {
-        let command = "~/.claude/hooks/loom/codex-forward.sh task 'do the work' --model gpt-5.6-terra --effort xhigh --write --unit-id unit-1 --invocation-id inv-0123456789abcdef0123456789abcdef";
+        let command = "~/.claude/hooks/loom/codex-forward.sh task 'do the work' --model gpt-6.1-terra --effort xhigh --write --unit-id unit-1 --invocation-id inv-0123456789abcdef0123456789abcdef";
         let mut payload = json!({"session_id":PARENT,"agent_id":self.agent,"tool_use_id":tool_id,
             "cwd":"/w","transcript_path":self.transcript,"hook_event_name":"PostToolUse",
             "tool_name":"Bash","tool_input":{"command":command}});

@@ -77,7 +77,7 @@ This session was classified as a loom stage by: $LOOM_STAGE_EVIDENCE" ;;
 		printf '%s\n' '⛔ BLOCKED: codex forwarding policy could not authorize this tool call.' '' \
 			"Reason: $reason$evidence_note" '' \
 			'The forwarding shim may make one direct Bash call of this form, the ~ unquoted:' \
-			"  ~/.claude/hooks/loom/codex-forward.sh task '<prompt>' --model gpt-5.6-terra --effort xhigh --write [--unit-id <unit>]"
+			"  ~/.claude/hooks/loom/codex-forward.sh task '<prompt>' --model gpt-6.1-terra --effort xhigh --write [--unit-id <unit>]"
 		if [[ -n "${HOME:-}" ]]; then
 			printf '%s\n' 'The wrapper path may instead be written out in full as' \
 				"  $HOME/.claude/hooks/loom/codex-forward.sh" \
@@ -113,7 +113,7 @@ is_exact_forward_command() {
 	loom_is_forward_wrapper "${PARSED_WORDS[0]}" "$PARSED_WORD0_PLAIN" || return 1
 	[[ "${PARSED_WORDS[1]}" == task && -n "${PARSED_WORDS[2]}" ]] || return 1
 	[[ "${PARSED_WORDS[3]}" == --model ]] || return 1
-	case "${PARSED_WORDS[4]}" in gpt-6-astra | gpt-6.1-sol | gpt-6-sol | gpt-5.6-terra | gpt-6-luna) ;; *) return 1 ;; esac
+	case "${PARSED_WORDS[4]}" in gpt-6-astra | gpt-6.1-sol | gpt-6-sol | gpt-6.1-terra | gpt-6-luna) ;; *) return 1 ;; esac
 	[[ "${PARSED_WORDS[5]}" == --effort ]] || return 1
 	case "${PARSED_WORDS[6]}" in low | medium | high | xhigh | max | ultra) ;; *) return 1 ;; esac
 	[[ "${PARSED_WORDS[7]}" == --write ]] || return 1

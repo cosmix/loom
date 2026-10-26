@@ -177,7 +177,7 @@ pub fn write_rollout(codex: &Path, thread: &str, ts: &str, output: u64) {
         "type": "token_usage_record",
         "payload": {
             "response_id": format!("response-{thread}"),
-            "model": "gpt-5.6-terra",
+            "model": "gpt-6.1-terra",
             "usage": {
                 "input_tokens": 100,
                 "cached_input_tokens": 40,
@@ -220,7 +220,7 @@ fn observation(
         exit_code,
         codex_thread_id: Some(thread.to_string()),
         locator: None,
-        model: Some("gpt-5.6-terra".to_string()),
+        model: Some("gpt-6.1-terra".to_string()),
         effort: Some("xhigh".to_string()),
     }
 }

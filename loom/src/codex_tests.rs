@@ -76,7 +76,7 @@ fn codex_model_candidates_older_sol_tries_newer_sol_next() {
 
 #[test]
 fn codex_model_candidates_single_member_families_never_mix_tiers() {
-    for model in ["gpt-6-astra", "gpt-5.6-terra", "gpt-6-luna"] {
+    for model in ["gpt-6-astra", "gpt-6.1-terra", "gpt-6-luna"] {
         assert_eq!(codex_model_candidates(model), [model]);
     }
 }
@@ -110,8 +110,8 @@ fn codex_model_candidates_version_compare_pads_missing_segments() {
 #[test]
 fn codex_model_candidates_parse_rejects_ids_outside_the_shape() {
     assert_eq!(
-        parse_codex_model("gpt-5.6-terra"),
-        Some((vec![5, 6], "terra"))
+        parse_codex_model("gpt-6.1-terra"),
+        Some((vec![6, 1], "terra"))
     );
     assert_eq!(parse_codex_model("gpt-sol"), None);
     assert_eq!(parse_codex_model("gpt-6-"), None);

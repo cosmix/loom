@@ -206,7 +206,7 @@ fn test_complete_codex_model_names_prefix() {
     assert!(results.contains(&"gpt-6-astra".to_string()));
     assert!(results.contains(&"gpt-6-sol".to_string()));
     assert!(results.contains(&"gpt-6-luna".to_string()));
-    assert!(!results.contains(&"gpt-5.6-terra".to_string()));
+    assert!(!results.contains(&"gpt-6.1-terra".to_string()));
     assert!(!results.contains(&"gpt-6.1-sol".to_string()));
 }
 

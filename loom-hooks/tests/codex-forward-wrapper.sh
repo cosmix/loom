@@ -113,7 +113,7 @@ run_companion() {
 		CAPTURE_LAUNCH="$CAPTURE_LAUNCH" CALLS="$CALLS" ENV_CALLS="$ENV_CALLS" STATUS_CALLS="$STATUS_CALLS" \
 		CLAUDE_PLUGIN_DATA="$d/attacker-selected-root" LOOM_WORK_DIR="$WORK_DIR" \
 		LOOM_STAGE_ID=stage-one LOOM_SESSION_ID=loom-session \
-		bash "$WRAPPER" task "$prompt" --model gpt-5.6-terra --effort xhigh --write \
+		bash "$WRAPPER" task "$prompt" --model gpt-6.1-terra --effort xhigh --write \
 		--unit-id unit-a --invocation-id "$INVOCATION" >"$stdout" 2>"$stderr" || RUN_STATUS=$?
 }
 
@@ -166,7 +166,7 @@ assert_line "$CAPTURE_LAUNCH" 4 --background
 assert_line "$CAPTURE_LAUNCH" 5 --json
 assert_line "$CAPTURE_LAUNCH" 6 --write
 assert_line "$CAPTURE_LAUNCH" 7 --model
-assert_line "$CAPTURE_LAUNCH" 8 gpt-5.6-terra
+assert_line "$CAPTURE_LAUNCH" 8 gpt-6.1-terra
 assert_line "$CAPTURE_LAUNCH" 9 --effort
 assert_line "$CAPTURE_LAUNCH" 10 xhigh
 rg -qF '=== TASK ===' "$CAPTURE_LAUNCH"
@@ -260,7 +260,7 @@ run_direct() {
 	RUN_STATUS=0
 	HOME="$HOME_DIR" PATH="$DIRECT_BIN:$PATH" DIRECT_SCENARIO="$scenario" DIRECT_ARGV="$d/direct-argv" \
 		LOOM_WORK_DIR="$WORK_DIR" LOOM_STAGE_ID=stage-one LOOM_SESSION_ID=loom-session \
-		bash "$WRAPPER" task "$prompt" --model gpt-5.6-terra --effort xhigh --write \
+		bash "$WRAPPER" task "$prompt" --model gpt-6.1-terra --effort xhigh --write \
 		--unit-id unit-a --invocation-id "$INVOCATION" <"$d/stdin-open" >"$stdout" 2>"$stderr" || RUN_STATUS=$?
 }
 printf '%s\n' 'caller stdin' >"$d/stdin-open"
@@ -281,7 +281,7 @@ assert_line "$OUT" 2 'LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"th
 OUT="$d/usage.stdout"; ERR="$d/usage.stderr"; status=0
 HOME="$HOME_DIR" PATH="$BIN_DIR:$PATH" LOOM_WORK_DIR="$WORK_DIR" \
 	LOOM_STAGE_ID=stage-one LOOM_SESSION_ID=loom-session \
-	bash "$WRAPPER" task hello --model gpt-5.6-terra --effort xhigh --write >"$OUT" 2>"$ERR" || status=$?
+	bash "$WRAPPER" task hello --model gpt-6.1-terra --effort xhigh --write >"$OUT" 2>"$ERR" || status=$?
 [[ $status -eq 2 && ! -s "$OUT" ]]
 
 printf '%s\n' PASS

@@ -273,7 +273,7 @@ pub(super) fn format_semi_stable_section(
         );
         content.push_str("scope just because orchestration is available.\n");
         content.push_str(
-            "Workflow fan-out spawns CLAUDE subagents only: the codex lane (gpt-5.6-terra /\n",
+            "Workflow fan-out spawns CLAUDE subagents only: the codex lane (gpt-6.1-terra /\n",
         );
         content.push_str(
             "gpt-6-luna) is NOT addressable from a Workflow script. On a stage licensed for\n",

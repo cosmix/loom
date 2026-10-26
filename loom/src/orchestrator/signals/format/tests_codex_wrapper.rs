@@ -11,7 +11,7 @@ use crate::assets::install::test_env::InstallRootsEnv;
 use crate::fs::permissions::settings::codex_forward_home_allow_entry;
 use crate::models::forward_receipt::transcript::exact_forward_argv;
 
-const ARGS: &str = "task 'work' --model gpt-5.6-terra --effort xhigh --write";
+const ARGS: &str = "task 'work' --model gpt-6.1-terra --effort xhigh --write";
 const TILDE_WRAPPER: &str = "~/.claude/hooks/loom/codex-forward.sh";
 
 #[test]

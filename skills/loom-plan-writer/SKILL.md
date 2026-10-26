@@ -171,7 +171,7 @@ BLOCK-B — model allocation playbook:
    default downward: HAIKU (`model: haiku` on loom-software-engineer) for
    mechanical edits, boilerplate, scaffolding, and simple unit tests; codex
    gpt-6-luna for that same work only when the user or the plan asks for it;
-   codex gpt-5.6-terra or SONNET (loom-software-engineer) for common
+   codex gpt-6.1-terra or SONNET (loom-software-engineer) for common
    implementation and integration tests — most work belongs at this tier, and
    neither lane is the default; OPUS (loom-senior-software-engineer, effort
    high) for mainstream architecture and algorithm implementation, spawned
@@ -209,7 +209,7 @@ BLOCK-B — model allocation playbook:
 
 **Stage descriptions carry decomposable detail:** exact file paths, signatures, `file:line` patterns to follow (and which property of the pattern NOT to copy), step-by-step subtasks, integration wiring (`mod.rs`, registry, route), and the error-handling approach. If you cannot write that, go back to Section 1. Full text, a worked example, `subagent_timeout_secs` (an idle budget, default 300) and the waiting protocol: `references/stage-sizing.md`.
 
-**Implementation lanes.** Neither lane is the default: judge each stage's work against both. Codex (`loom-codex-forwarder` → gpt-5.6-terra, xhigh; gpt-6-luna only when the user or plan asks for it, otherwise boilerplate and simple unit tests go to haiku) fits well-specified implementation that splits into single-file units with pinned interfaces, a large share of implementation work: its Claude-side cost is one sonnet forwarder per unit, and up to 6 units run at once in the foreground. Each unit must finish inside the 540 s wrapper deadline, runs no fixture-backed tests, and never touches git or `.loom/`. Claude fits exploration, multi-file iteration, work that converges by running tests, UI/visual design, and debugging, at its tier's token rate. Mixed stages list both lanes, preferred first. Check codex availability, then ask the user ONCE to confirm a per-stage lane recommendation, one-line reason each; if codex is unavailable, say so and plan on Claude. Comparison table, decision rule, install checks, unit sizing, anchors, and prohibitions: `references/codex-implementers.md`.
+**Implementation lanes.** Neither lane is the default: judge each stage's work against both. Codex (`loom-codex-forwarder` → gpt-6.1-terra, xhigh; gpt-6-luna only when the user or plan asks for it, otherwise boilerplate and simple unit tests go to haiku) fits well-specified implementation that splits into single-file units with pinned interfaces, a large share of implementation work: its Claude-side cost is one sonnet forwarder per unit, and up to 6 units run at once in the foreground. Each unit must finish inside the 540 s wrapper deadline, runs no fixture-backed tests, and never touches git or `.loom/`. Claude fits exploration, multi-file iteration, work that converges by running tests, UI/visual design, and debugging, at its tier's token rate. Mixed stages list both lanes, preferred first. Check codex availability, then ask the user ONCE to confirm a per-stage lane recommendation, one-line reason each; if codex is unavailable, say so and plan on Claude. Comparison table, decision rule, install checks, unit sizing, anchors, and prohibitions: `references/codex-implementers.md`.
 
 ### Context ceiling (`context_ceiling_tokens`)
 

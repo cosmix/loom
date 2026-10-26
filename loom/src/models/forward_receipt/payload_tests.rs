@@ -4,7 +4,7 @@ use serde_json::{json, Value};
 use super::*;
 use crate::assets::install::test_env::InstallRootsEnv;
 
-const WRAPPER: &str = "~/.claude/hooks/loom/codex-forward.sh task 'work' --model gpt-5.6-terra --effort xhigh --write";
+const WRAPPER: &str = "~/.claude/hooks/loom/codex-forward.sh task 'work' --model gpt-6.1-terra --effort xhigh --write";
 const UNIT: &str = "--unit-id unit-1";
 const INVOCATION: &str = "--invocation-id inv-0123456789abcdef0123456789abcdef";
 
@@ -44,7 +44,7 @@ fn the_8_10_and_12_word_forms_parse() {
         assert_eq!(forward.parent_session_id, "parent-1");
         assert_eq!(forward.agent_id, "agent-1");
         assert_eq!(forward.invocation.id, "tool-1");
-        assert_eq!(forward.invocation.model, "gpt-5.6-terra");
+        assert_eq!(forward.invocation.model, "gpt-6.1-terra");
         assert_eq!(forward.invocation.effort, "xhigh");
         assert_eq!(forward.invocation.timestamp, now());
         let result = forward.invocation.result.unwrap();

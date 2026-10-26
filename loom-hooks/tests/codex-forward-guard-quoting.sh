@@ -87,29 +87,29 @@ source "$FORWARD_LIB"
 
 # Apostrophes, escaped dollars, escaped double quotes/backslashes, and an
 # expanded scratch-HOME wrapper path all round-trip byte-for-byte in updatedInput.
-CMD="~/.claude/hooks/loom/codex-forward.sh task 'fix the reader'\''s zone' --model gpt-5.6-terra --effort xhigh --write"
+CMD="~/.claude/hooks/loom/codex-forward.sh task 'fix the reader'\''s zone' --model gpt-6.1-terra --effort xhigh --write"
 expect_allow "$CMD" apostrophe-tool "apostrophe-via-'\'' idiom"
 parse_shell_words "$CMD"
 [[ "${PARSED_WORDS[2]}" == "fix the reader's zone" ]]
 
-CMD='~/.claude/hooks/loom/codex-forward.sh task cost\ is\ \$5 --model gpt-5.6-terra --effort xhigh --write'
+CMD='~/.claude/hooks/loom/codex-forward.sh task cost\ is\ \$5 --model gpt-6.1-terra --effort xhigh --write'
 expect_allow "$CMD" dollar-tool 'backslash-escaped dollar'
 
-CMD='~/.claude/hooks/loom/codex-forward.sh task "say \"hi\" then \\ done" --model gpt-5.6-terra --effort xhigh --write'
+CMD='~/.claude/hooks/loom/codex-forward.sh task "say \"hi\" then \\ done" --model gpt-6.1-terra --effort xhigh --write'
 expect_allow "$CMD" double-quote-tool 'double-quoted escapes'
 
 CMD="$HOME_DIR/.claude/hooks/loom/codex-forward.sh task hello --model gpt-6-luna --effort xhigh --write"
 expect_allow "$CMD" expanded-home-tool 'HOME-expanded wrapper path'
 
 # Unquoted operators, incomplete escaping, wrong arity, and another path stay blocked.
-expect_block '~/.claude/hooks/loom/codex-forward.sh task $(whoami) --model gpt-5.6-terra --effort xhigh --write' substitution-tool 'command substitution'
-expect_block '~/.claude/hooks/loom/codex-forward.sh task hello; rm -rf / --model gpt-5.6-terra --effort xhigh --write' separator-tool 'command chaining'
-expect_block '~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write\' backslash-tool 'trailing backslash'
-expect_block '~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh' arity-tool 'missing write flag'
-expect_block "$HOME_DIR/.claude/hooks/loom/evil.sh task hello --model gpt-5.6-terra --effort xhigh --write" path-tool 'non-wrapper path'
+expect_block '~/.claude/hooks/loom/codex-forward.sh task $(whoami) --model gpt-6.1-terra --effort xhigh --write' substitution-tool 'command substitution'
+expect_block '~/.claude/hooks/loom/codex-forward.sh task hello; rm -rf / --model gpt-6.1-terra --effort xhigh --write' separator-tool 'command chaining'
+expect_block '~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-6.1-terra --effort xhigh --write\' backslash-tool 'trailing backslash'
+expect_block '~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-6.1-terra --effort xhigh' arity-tool 'missing write flag'
+expect_block "$HOME_DIR/.claude/hooks/loom/evil.sh task hello --model gpt-6.1-terra --effort xhigh --write" path-tool 'non-wrapper path'
 
 # The same syntactically valid quoted call is blocked outside a stage and with no companion.
-CMD="~/.claude/hooks/loom/codex-forward.sh task 'still literal' --model gpt-5.6-terra --effort xhigh --write"
+CMD="~/.claude/hooks/loom/codex-forward.sh task 'still literal' --model gpt-6.1-terra --effort xhigh --write"
 OUTSIDE_INPUT=$(payload_for "$CMD" outside-tool)
 run_guard "$OUTSIDE_INPUT" "$HOME_DIR" 0
 [[ $CODE -eq 2 && ! -s "$d/stdout" ]]
@@ -155,7 +155,7 @@ check_wrapper . "./$WRAPPER_REL" 1
 check_wrapper . "~/$WRAPPER_REL" 1
 check_wrapper relative/home "relative/home/$WRAPPER_REL" 1
 
-ARGS=' task x --model gpt-5.6-terra --effort high --write'
+ARGS=' task x --model gpt-6.1-terra --effort high --write'
 parse_word0 0 "~/$WRAPPER_REL$ARGS"
 parse_word0 1 "'~/$WRAPPER_REL'$ARGS"
 parse_word0 1 "\"~/$WRAPPER_REL\"$ARGS"

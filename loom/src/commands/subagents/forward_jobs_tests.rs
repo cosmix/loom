@@ -286,7 +286,7 @@ impl Fixture {
 }
 
 fn tool_use(id: &str) -> serde_json::Value {
-    json!({"type":"assistant","sessionId":PARENT,"timestamp":Utc::now().to_rfc3339(),"message":{"content":[{"type":"tool_use","id":id,"name":"Bash","input":{"command":"~/.claude/hooks/loom/codex-forward.sh task 'x' --model gpt-5.6-terra --effort xhigh --write"}}]}})
+    json!({"type":"assistant","sessionId":PARENT,"timestamp":Utc::now().to_rfc3339(),"message":{"content":[{"type":"tool_use","id":id,"name":"Bash","input":{"command":"~/.claude/hooks/loom/codex-forward.sh task 'x' --model gpt-6.1-terra --effort xhigh --write"}}]}})
 }
 
 fn tool_result(id: &str, text: &str) -> serde_json::Value {

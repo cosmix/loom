@@ -338,7 +338,7 @@ Running `loom status` FROM INSIDE a stage's own sandboxed session reports that s
 
 ## macOS: the stage sandbox refuses a nested Seatbelt, so the wrapper runs codex exec directly
 
-**Symptom.** Five `loom-codex-forwarder` spawns in a stage session each reached gpt-5.6-terra and the
+**Symptom.** Five `loom-codex-forwarder` spawns in a stage session each reached gpt-6.1-terra and the
 companion exited 0, but zero files were written: every shell command codex ran, even `pwd`, died with
 `sandbox-exec: sandbox_apply: Operation not permitted`. The 67b97114 state-root redirect (previous
 section) had worked; this failure sits one layer below it.

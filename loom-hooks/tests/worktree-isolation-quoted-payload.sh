@@ -68,7 +68,7 @@ expect_allow "single-quoted prose containing a relative import" "$PROSE_IMPORT_C
 CODEX_CMD="~/.claude/hooks/loom/codex-forward.sh task \"Update the chart loaders.
 import { computeQuantiles } from '../../../src/data/atlas/quantiles';
 import { decodeAdmin1Overlay } from '../../../src/data/admin1';
-Wire both into the loader module.\" --model gpt-5.6-terra --effort xhigh --write"
+Wire both into the loader module.\" --model gpt-6.1-terra --effort xhigh --write"
 expect_allow "the full codex-forward command with a multi-line quoted brief" "$CODEX_CMD"
 
 MEMORY_NOTE_CMD="loom memory note \"a relative import like ../../../src/data/atlas/foo is bad\""

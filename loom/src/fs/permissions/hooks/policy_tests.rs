@@ -227,7 +227,7 @@ fn forward_call_in_stage(fixture: &HookFixture, payload: Value) -> Output {
 #[test]
 fn forward_guard_allows_only_exact_forward_wrapper_command() {
     let fixture = HookFixture::new();
-    let command = "~/.claude/hooks/loom/codex-forward.sh task 'hello; literal' --model gpt-5.6-terra --effort xhigh --write --unit-id policy-unit";
+    let command = "~/.claude/hooks/loom/codex-forward.sh task 'hello; literal' --model gpt-6.1-terra --effort xhigh --write --unit-id policy-unit";
     install_forward_companion(&fixture);
 
     let invocation = assert_forward_allowed(&fixture, command);
@@ -304,7 +304,7 @@ fn assert_authorization_row(fixture: &HookFixture, invocation: &str) {
     assert_eq!(row["tool_use_id"], "policy-tool");
     assert_eq!(row["unit_id"], "policy-unit");
     assert_eq!(row["invocation_id"], invocation);
-    assert_eq!(row["model"], "gpt-5.6-terra");
+    assert_eq!(row["model"], "gpt-6.1-terra");
     assert_eq!(row["effort"], "xhigh");
 }
 
@@ -335,12 +335,12 @@ fn assert_missing_companion_rejected(command: &str) {
 #[test]
 fn forward_guard_rejects_shell_operators_substrings_and_missing_metadata() {
     let fixture = HookFixture::new();
-    let base = "~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write";
+    let base = "~/.claude/hooks/loom/codex-forward.sh task hello --model gpt-6.1-terra --effort xhigh --write";
     for command in [
         format!("{base}; touch escaped"),
         format!("{base} | sh"),
         format!("{base}\t--background"),
-        "/tmp/codex-forward.sh task hello --model gpt-5.6-terra --effort xhigh --write".to_string(),
+        "/tmp/codex-forward.sh task hello --model gpt-6.1-terra --effort xhigh --write".to_string(),
         "printf codex-forward.sh".to_string(),
     ] {
         let payload = json!({

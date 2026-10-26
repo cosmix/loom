@@ -16,7 +16,7 @@ PARENT_SESSION=parent-session
 COMPANION_DIR="$HOME_DIR/.claude/plugins/cache/openai-codex/codex/1.0.6/scripts"
 LEDGER="$WORK_DIR/subagents/$STAGE_ID/codex.jsonl"
 STARTS="$WORK_DIR/subagents/$STAGE_ID/starts.jsonl"
-COMPANION_CMD="~/.claude/hooks/loom/codex-forward.sh task 'hello; literal operator' --model gpt-5.6-terra --effort xhigh --write"
+COMPANION_CMD="~/.claude/hooks/loom/codex-forward.sh task 'hello; literal operator' --model gpt-6.1-terra --effort xhigh --write"
 mkdir -p "$COMPANION_DIR" "$WORKSPACE/.git" "$TRANSCRIPTS" "$WORK_DIR/subagents/$STAGE_ID"
 printf '%s\n' '// pinned fixture' >"$COMPANION_DIR/codex-companion.mjs"
 
@@ -73,7 +73,7 @@ expect_allow() {
 		.v == 2 and .stage_id == "bash-stage" and .session_id == "loom-session" and
 		.parent_session_id == "parent-session" and .forwarder_agent_id == $agent_id and
 		.tool_use_id == $tool_use_id and .unit_id == $unit and .invocation_id == $invocation and
-		.model == "gpt-5.6-terra" and .effort == "xhigh"' >/dev/null
+		.model == "gpt-6.1-terra" and .effort == "xhigh"' >/dev/null
 }
 
 expect_block() {
@@ -98,7 +98,7 @@ expect_allow 'first forward with no prior tool use' "$COMPANION_CMD" "$FIRST_TRA
 # A prior exact Bash tool use blocks a second call, including a noop task.
 PRIOR_TRANSCRIPT="$TRANSCRIPTS/agent-prior.jsonl"
 write_bash_tool_use first-forward "$COMPANION_CMD" "$PRIOR_TRANSCRIPT"
-NOOP_CMD="~/.claude/hooks/loom/codex-forward.sh task noop --model gpt-5.6-terra --effort xhigh --write"
+NOOP_CMD="~/.claude/hooks/loom/codex-forward.sh task noop --model gpt-6.1-terra --effort xhigh --write"
 expect_block 'second forward after a prior forward' "$(input_for "$NOOP_CMD" "$PRIOR_TRANSCRIPT" second-forward)"
 rg -q 'one forward per forwarder.*first forward is already running or finished' "$d/stderr"
 

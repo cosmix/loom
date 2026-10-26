@@ -184,7 +184,7 @@ fn direct_forward_shows_requested_model_in_execution_models() -> Result<()> {
 
     let models = execution_models_for_stage(&WorkDir::new(&fixture.work_dir)?, LIQUIDMON_STAGE);
     assert!(
-        models.contains(&"gpt-5.6-terra (requested)".to_owned()),
+        models.contains(&"gpt-6.1-terra (requested)".to_owned()),
         "{models:?}"
     );
     Ok(())
