@@ -29,14 +29,15 @@ pub enum VisionProblem {
         /// Heading line, 0-based.
         heading_line: usize,
     },
-    /// The first table contains no numbered rows.
+    /// The first table has body rows and none of them is numbered.
     NoNumberedRows {
         /// Heading line, 0-based.
         heading_line: usize,
     },
 }
 
-/// Parse the first table under the first `Specification sections` heading.
+/// Parse the first table under the first `Specification sections` heading. A table with a
+/// header and delimiter row but no body rows yields `Ok(vec![])`: the vision lists no sections.
 pub fn parse_sections_table(text: &str) -> Result<Vec<VisionRow>, VisionProblem> {
     let sections = sections_of(text);
     let heading = sections
@@ -56,6 +57,7 @@ pub fn parse_sections_table(text: &str) -> Result<Vec<VisionRow>, VisionProblem>
 
     let mut rows = Vec::new();
     let mut seen = HashSet::new();
+    let mut body_rows = 0;
     for line in table + 2..end {
         if mask[line] {
             break;
@@ -63,13 +65,16 @@ pub fn parse_sections_table(text: &str) -> Result<Vec<VisionRow>, VisionProblem>
         let Some(cells) = table_cells(lines[line]) else {
             break;
         };
+        body_rows += 1;
         if let Some(row) = numbered_row(&cells, line) {
             if seen.insert(row.number) {
                 rows.push(row);
             }
         }
     }
-    if rows.is_empty() {
+    // A table with no body rows is the file-expressed "no product spec" (section 01, "Skipped
+    // and reordered steps"); body rows that are none of them numbered are an unreadable table.
+    if rows.is_empty() && body_rows > 0 {
         Err(VisionProblem::NoNumberedRows { heading_line })
     } else {
         Ok(rows)
