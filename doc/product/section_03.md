@@ -225,6 +225,10 @@ vision is `product/index`, a section is `product/section_<nn>`, a plan is `plan/
 other document is its path under `doc/`. A plan's citations survive `PLAN-` to `IN_PROGRESS-`
 to `DONE-` to `archive/`.
 
+**Document paths on the wire.** On the wire every document path is repository-relative
+(`doc/...`); only request parameters naming a document and the browser's `/files/<path>`
+addresses are relative to `doc/`.
+
 **Plan metadata.** The YAML between `<!-- loom METADATA -->` and `<!-- END loom METADATA -->`
 is one section with the anchor `#loom-metadata`, and each stage inside it is addressable as
 `#stage:<stage-id>`, so a summary can cite the stage that does a piece of work. These two anchors

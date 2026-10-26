@@ -216,7 +216,7 @@ Agents never write into `doc/loom/summaries/` directly. They write the body of a
 draft file in the runtime directory and run:
 
 ```text
-loom plan summary seal <summary-id>
+loom plan summary seal <summary-id> [--force]
 ```
 
 `seal` reads `~/.loom/plan/<project-key>/drafts/<summary-id>.md`, checks every body rule above,
@@ -252,7 +252,11 @@ Keeping current sentences word for word keeps their ids, so overview links into 
 deletes a session's claim files when that session ends: its registry state becomes Ended or
 Failed, or the process identity check finds the process gone (section 07). A refinement
 subagent's claims are deleted when its `SubagentStop` arrives or when its parent session ends.
-`release` deletes claims early, and `seal` deletes the claim of the summary it writes.
+`release` deletes claims early, and `seal` deletes the claim of the summary it writes. At start,
+after recovering live sessions, the server deletes the claims of every session that is neither
+live nor left alone. A claim made from a terminal names no session; it never expires on its own,
+and the summary panel offers to release it. `seal` refuses a summary another session has claimed,
+and from a terminal refuses any claimed summary unless given `--force`.
 
 All of these subcommands work without a running server, since they need only the project root
 and the runtime directory. (My call; section 02 owns the CLI surface, and these sit beside
@@ -296,7 +300,10 @@ effort. Config keys override both, per level: `[plan] document_summary_model` an
 `document_summary_effort` for document summaries, `[plan] overview_model` and `overview_effort`
 for overviews. They resolve with loom's existing precedence (project `.loom/work/config.toml`
 when present, then `~/.loom/config.toml`, then the default;
-`doc/loom/knowledge/conventions/model-and-effort-config.md`), and they follow the one
+`doc/loom/knowledge/conventions/model-and-effort-config.md`). The project tier reads these keys
+from a `[planning]` table of `.loom/work/config.toml`, because `[plan]` there holds the run's
+identity (`source_path`, `plan_id`, `plan_name`, `base_branch`); `~/.loom/config.toml` keeps the
+`[plan]` section. They follow the one
 `[plan] <role>_model` / `<role>_effort` naming scheme section 09 uses for the authoring keys. The
 subagent tool takes no effort parameter, so the server writes the resolved model and effort into
 the `model` and `effort` frontmatter of the `loom-plan:summary` and `loom-plan:overview` agent

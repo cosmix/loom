@@ -460,7 +460,7 @@ The panel talks to the server over the app's WebSocket. Its failures look like t
 | ----------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
 | Socket closed, server still reachable     | A banner over the transcript, "Connection lost · reconnecting", retrying after 1, 2, 5, then every 10 seconds; on reconnect the full model replaces the panel's (section 07) |
 | Disconnected while holding authoring      | The banner adds: "If this browser stays disconnected for 10 minutes, the session writes its notes and ends."                            |
-| Server restarted (the cookie is refused)  | "loom plan restarted. Open the URL it printed in the terminal." as the dashboard's terminal well words its refusal (`terminal-notice.tsx:48`) |
+| Server restarted (the cookie is refused)  | The whole app shows the access screen of section 12 ("One token, every data route"), which leads with "loom plan restarted. Open the URL it printed in the terminal." when this page was connected before; the chat panel shows nothing of its own |
 | Server stopping (first Ctrl-C)            | "loom plan is stopping. The session is writing its notes." Composer disabled                                                           |
 | A command refused                         | An inline line under the composer with the server's reason, for example "Another browser holds authoring"                              |
 

@@ -52,7 +52,8 @@ takes a while, edits the plan, and writes `planning-omissions.md` at the reposit
 terminal run does. (My call: the CLI exposes these as flags, so the app exposes them per run.)
 
 A pressure run edits the plan, so it takes the project's authoring slot (vision, Decisions, "One
-authoring session per project"). With an authoring chat open, the dialog says the chat ends first
+authoring session per project") and holds it until the run ends; a step's session ending does
+not release it. With an authoring chat open, the dialog says the chat ends first
 with its closing write (section 09), and starting does that. (My call.)
 
 ### How the server runs it
@@ -133,6 +134,9 @@ at the end, as the terminal does.
   step, tears its session down, terminates the Codex process, deletes the Codex report, and writes
   no record. The plan keeps whatever edits the steps made. (My call: a partial pressure test is
   not a test, as section 01 says.)
+- **The holder goes away**: when the authoring browser has been gone for the grace period
+  (section 07), the run is stopped as by the stop button, and the header says "Stopped: the
+  holder was away for 10 minutes". Nobody is left to answer its permission prompts.
 - **A step fails** (a session dies, Codex exits with an error the terminal driver treats as
   fatal, `should_stop`, `loom/src/commands/pressure/spawn.rs:129`): the run stops the same way and
   the chat says which step failed and why.
@@ -252,7 +256,9 @@ user confirms by pressing "Abandon run" in the dialog.
 **Unmerged work.** Before running anything, the server lists the `loom/*` branches with commits
 ahead of the run's base branch, as `loom clean` does (`confirm_branch_deletion`,
 `loom/src/commands/clean/worktrees.rs:71`; a git error counts as unmerged). When there are any,
-the dialog shows each branch with its commit count and asks a second, separate confirmation:
+the dialog shows each branch with its commit count and asks a second, separate confirmation
+naming each branch and its commit count; the request carries that list, the server re-checks it
+before `loom stop` and again after it, and stops with the new list if it changed:
 "Delete N branches with unmerged commits". Declining cancels the whole abandon and changes
 nothing; the dialog says the user can merge or push those branches first and come back.
 
@@ -273,6 +279,12 @@ nothing; the dialog says the user can merge or push those branches first and com
 `loom clean` exits 0 when it declines to delete (`loom/src/commands/clean/mod.rs:60-64`), so the
 server renames the plan only after confirming `.loom/work` and the run's worktrees are gone; if
 they remain, the dialog shows `loom clean`'s output and the plan keeps its `IN_PROGRESS-` name.
+
+Before `loom stop`, the app writes an abandon marker for the plan in the runtime directory. If the
+server stops after `loom clean` removed the run but before the rename, the next `loom plan` finds
+that marker with an `IN_PROGRESS-` plan, no workspace, no `loom/*` branch and no worktree, and
+offers "Finish abandoning", which runs the rename alone. Without the marker, such as for a plan
+running from another clone, nothing is offered.
 
 ### The run dialog
 
@@ -304,8 +316,10 @@ The dialog shows:
 
 **Committing planning documents.** The dialog offers "Commit changes under `doc/`" with every
 changed path under `doc/` listed and checked, including new files, and a message field prefilled
-with `docs(plan): planning documents for <plan file name>`. The app runs `git add -- <paths>`
-and `git commit -m <message>` in the project root with the user's own git configuration, hooks,
+with `docs(plan): planning documents for <plan file name>`. The app runs
+`git --literal-pathspecs add -- <paths>` and `git --literal-pathspecs commit -m <message> --
+<paths>`, so the commit holds exactly the listed paths and nothing else that was already staged,
+in the project root with the user's own git configuration, hooks,
 and signing; it never passes `--no-verify` and never pushes. A failed commit shows git's output and
 starts nothing. `loom run` refuses uncommitted plans and modified files, and the vision asks for
 no terminal beyond `loom plan`, so the app commits planning documents itself. The summary store

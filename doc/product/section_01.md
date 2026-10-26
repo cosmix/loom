@@ -77,7 +77,8 @@ existing metaplan uses:
 ```
 
 A heading without a plan file name is prose, not an entry ("Policy notes (no plan file)" stays
-prose). The metaplan-writing skill (section 09) names the plan file in every entry heading, even
+prose); a numbered heading with no plan file name is a convention problem unless it says
+`(no plan file)`, as `## 6. Policy notes (no plan file)` does. The metaplan-writing skill (section 09) names the plan file in every entry heading, even
 before the plan exists, so that step 4's gaps are countable.
 
 ### Plans

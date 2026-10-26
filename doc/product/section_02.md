@@ -129,6 +129,12 @@ checkouts of one repository are two projects. (My call.) Keeping this out of the
 directory belongs to `loom run`. Hook commands write their events here from Claude Code's own
 process, outside the session's sandbox (section 12, "What a session may write").
 
+The server finds the runtime directory from `LOOM_HOME` alone and ignores `LOOM_PLAN_STATE`,
+warning when it is set. Inside a planning session the runtime directory is passed as
+`LOOM_PLAN_STATE`, since the session's environment carries no `LOOM_HOME`. The summary CLI accepts
+it only when `LOOM_PLAN_SESSION` is also set and the directory is absolute, real, owned by the
+user, named for this project, and has a parent the process cannot write.
+
 The summary store is project content, not runtime state; it lives in `doc/loom/summaries/`
 (vision, Decisions; section 04).
 
