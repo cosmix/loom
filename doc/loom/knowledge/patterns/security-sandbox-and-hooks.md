@@ -39,7 +39,7 @@ Plan-level `SandboxConfig` merges with stage-level policy, with stage values ove
 | Knowledge         | `auto`                  |
 | KnowledgeDistill  | `auto`                  |
 
-All four stage types default to `auto` as of 2026-07-01 (previously `accept-edits`). Loom stages execute autonomously with no human at the terminal, so the agent auto-accepts actions its heuristics deem safe; the sandbox filesystem deny/allow rules and hooks are the safety boundary. Override at plan or stage level with a stricter `permission_mode` (e.g. `accept-edits`, `plan`) if needed.
+All four stage types default to `auto`. Loom stages execute autonomously with no human at the terminal, so the agent auto-accepts actions its heuristics deem safe; the sandbox filesystem deny/allow rules and hooks are the safety boundary. Override at plan or stage level with a stricter `permission_mode` (e.g. `accept-edits`, `plan`) if needed.
 
 YAML key is `permission_mode` (snake_case), values are kebab-case: `"auto"`, `"accept-edits"`, `"plan"`, `"default"`.
 

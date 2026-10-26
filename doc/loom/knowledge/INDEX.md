@@ -29,7 +29,7 @@
 | [config-value-types](architecture/config-value-types.md) | ConfigValue typed read-path | 85 |
 | [context-ceiling](architecture/context-ceiling.md) | Resident-token ceiling tiers | 111 |
 | [context-retrieval](architecture/context-retrieval.md) | Graphs, lanes, gating, packs | 397 |
-| [context-retrieval-corpus](architecture/context-retrieval-corpus.md) | Stopwords, rescue floor, BM25 | 177 |
+| [context-retrieval-corpus](architecture/context-retrieval-corpus.md) | Stopwords, rescue floor, BM25 | 178 |
 | [context-retrieval-routing](architecture/context-retrieval-routing.md) | Intent routing, neighbours | 75 |
 | [context-retrieval-state](architecture/context-retrieval-state.md) | Layers, delivery records | 193 |
 | [contract-collection](architecture/contract-collection.md) | Scaffold, chain check | 70 |
@@ -67,7 +67,7 @@
 | [usage-evidence](architecture/usage-evidence.md) | Usage reasons, scope, trials | 127 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | v2 gates, order, owners | 238 |
 | [web-dashboard](architecture/web-dashboard.md) | status --web server, SPA | 99 |
-| [web-terminal](architecture/web-terminal.md) | loom status --web terminals | 181 |
+| [web-terminal](architecture/web-terminal.md) | loom status --web terminals | 182 |
 
 ### entry-points
 

@@ -140,17 +140,18 @@ in both modes and becomes only PageUp/PageDown keys (`protocol.rs::scroll_input`
 
 ## Frontend: the `Emulator` interface and the lazy xterm chunk
 
-`web/src/components/terminal/emulator.ts` defines `Emulator` (`:6-17`) — `open(host)`,
-`write(data: Uint8Array)`, `onData(handler): () => void`, `fit(): EmulatorSize | null`,
+`web/src/components/terminal/emulator.ts` defines `Emulator` (`:12-24`) — `open(host)`,
+`write(data: Uint8Array)`, `onData(handler): () => void`, `onScroll(handler): () => void`, `fit(): EmulatorSize | null`,
 `focus()`, `setReadOnly(readOnly)` ("view = stdin disabled, hollow bar cursor, no blink;
 control = block cursor, blink"), `dispose()` — and `EmulatorFactory = () =>
 Promise<Emulator>`, so `TerminalView`/`useTerminal` can be tested against a fake factory
-without ever importing xterm. `createXtermEmulator` (`:110-156`) is the real factory: it
+without ever importing xterm. `createXtermEmulator` (`:134`) is the real factory, delegating to
+`createEmulator` (`:157-177`), which
 dynamically `import()`s `@xterm/xterm`, `@xterm/addon-fit`, `@xterm/addon-webgl`, and
-`@xterm/addon-unicode11` (`:112-115`) precisely so the main dashboard bundle does not carry
+`@xterm/addon-unicode11` (`:158-161`) precisely so the main dashboard bundle does not carry
 them — they land in their own chunk (`dist/assets/xterm.js`), paid only by a page that
 actually opens a terminal. WebGL renders when available; xterm falls back to its DOM renderer
-otherwise (`installWebgl`, `:93-107`).
+otherwise (`installWebgl`, `:114-128`).
 
 ## Keystroke wire contract and the Esc rule
 

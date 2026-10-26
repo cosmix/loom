@@ -86,8 +86,9 @@ docstring claimed otherwise. Every `*.md` under `config.prose_roots` (default
 `["doc"]`) is now chunked by the same heading chunker the curated tree uses,
 with every id PREFIXED `prose:` (`fs::knowledge::catalog::prose::PROSE_ID_PREFIX`)
 so it can never collide with a curated chunk id and the prefix itself signals
-origin. Completed plans (`DONE-` filenames under a `plans/` path segment) are
-excluded as history; the curated knowledge tree itself is skipped during the
+origin. Completed plans (`DONE-` filenames under a `plans/` path segment) and every
+path with an `archive` component (so `doc/plans/archive/`, including its
+`REVIEW-PLAN-*` files) are excluded as history (`catalog/prose.rs:359-361`); the curated knowledge tree itself is skipped during the
 walk (it already has its own chunker) so `prose_roots = ["doc"]` does not
 double-index every curated chunk as its own prose clone.
 
