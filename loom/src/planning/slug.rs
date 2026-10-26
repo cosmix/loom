@@ -6,10 +6,7 @@ use std::path::{Path, PathBuf};
 
 use serde::Serialize;
 
-// These lifecycle prefixes originate in `fs::plan_lifecycle`.
-const IN_PROGRESS_PREFIX: &str = "IN_PROGRESS-";
-const DONE_PREFIX: &str = "DONE-";
-const RETIRED_PREFIX: &str = "RETIRED-";
+use crate::fs::plan_lifecycle::{DONE_PREFIX, IN_PROGRESS_PREFIX, RETIRED_PREFIX};
 
 /// A plan's lifecycle state, ordered from least to most advanced.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize)]

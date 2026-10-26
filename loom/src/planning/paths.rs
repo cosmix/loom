@@ -21,7 +21,7 @@ use serde::{Serialize, Serializer};
 
 use crate::fs::plan_lifecycle::{DONE_PREFIX, IN_PROGRESS_PREFIX, RETIRED_PREFIX};
 use crate::plan::inputs::collect_inputs;
-use crate::planning::discover::{discover, DocTree, Document};
+use crate::planning::discover::{discover, DocTree, Document, SUMMARIES};
 use crate::planning::slug::{plan_state, PlanState};
 
 #[cfg(test)]
@@ -31,7 +31,6 @@ const PLANS: &str = "doc/plans";
 const ARCHIVE: &str = "doc/plans/archive";
 const BRIEFS: &str = "doc/plans/briefs";
 const KNOWLEDGE: &str = "doc/loom/knowledge";
-const SUMMARIES: &str = "doc/loom/summaries";
 /// Longest request path, in bytes, `check_relpath_syntax` accepts.
 const MAX_RELPATH_BYTES: usize = 1024;
 

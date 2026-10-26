@@ -3,6 +3,7 @@ use std::os::unix::fs::symlink;
 use std::path::Path;
 
 use crate::planning::discover::{discover, read_doc, walk_doc, DocDirState, WalkScope};
+use crate::planning::kinds::DocId;
 
 fn put(root: &Path, rel: &str, content: &str) {
     fs::create_dir_all(root.join(rel).parent().unwrap()).unwrap();
@@ -77,4 +78,65 @@ fn read_doc_follows_an_allowed_link_and_refuses_escapes() {
     assert!(read_doc(dir.path(), Path::new("doc/out.md")).is_err());
     assert!(read_doc(dir.path(), Path::new("doc/../secret")).is_err());
     assert!(read_doc(dir.path(), Path::new("secret")).is_err());
+}
+
+#[test]
+fn by_id_resolves_a_plan_to_its_winning_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    for rel in [
+        "doc/plans/IN_PROGRESS-PLAN-foo.md",
+        "doc/plans/PLAN-foo.md",
+        "doc/plans/archive/DONE-PLAN-foo.md",
+        "doc/product/index.md",
+    ] {
+        put(dir.path(), rel, "# T\n");
+    }
+    let tree = discover(dir.path()).unwrap();
+    let winner = Path::new("doc/plans/archive/DONE-PLAN-foo.md");
+    assert_eq!(tree.plan("foo").unwrap().path, winner);
+    let found = tree.by_id("plan/foo").unwrap();
+    assert_eq!(found.path, winner);
+    assert_eq!(found.id, DocId("plan/foo".into()));
+    assert_eq!(
+        tree.by_id("product/index").unwrap().path,
+        Path::new("doc/product/index.md")
+    );
+    assert!(tree.by_id("plan/bar").is_none());
+}
+
+#[test]
+fn has_dir_is_true_only_for_directories_holding_documents() {
+    let dir = tempfile::tempdir().unwrap();
+    for rel in ["doc/a/b.md", "doc/a-b/x.md", "doc/c.md", "doc/d/e/f.md"] {
+        put(dir.path(), rel, "x\n");
+    }
+    let tree = discover(dir.path()).unwrap();
+    for yes in ["doc", "doc/a", "doc/a-b", "doc/d", "doc/d/e", "doc/d/e/"] {
+        assert!(tree.has_dir(Path::new(yes)), "{yes}");
+    }
+    for no in [
+        "doc/a/b.md",
+        "doc/c.md",
+        "doc/c",
+        "doc/ab",
+        "doc/a/b",
+        "doc/d/e/f.md/g",
+        "doc/typo",
+        "other",
+    ] {
+        assert!(!tree.has_dir(Path::new(no)), "{no}");
+    }
+}
+
+#[test]
+fn a_root_below_a_symlinked_directory_still_discovers_and_reads_links() {
+    let dir = tempfile::tempdir().unwrap();
+    put(dir.path(), "real/repo/doc/a.md", "alpha\n");
+    symlink("a.md", dir.path().join("real/repo/doc/in.md")).unwrap();
+    symlink(dir.path().join("real"), dir.path().join("alias")).unwrap();
+    let root = dir.path().join("alias/repo");
+    let tree = discover(&root).unwrap();
+    let linked = tree.get(Path::new("doc/in.md")).unwrap();
+    assert!(linked.via_symlink);
+    assert_eq!(read_doc(&root, Path::new("doc/in.md")).unwrap(), "alpha\n");
 }

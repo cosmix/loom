@@ -10,8 +10,8 @@ use super::{CurrentStep, ItemStatus, Offer, Step, StepMark};
 use crate::planning::project::Project;
 use crate::planning::watch::{OwnWrites, Watcher};
 
-const VISION: &str = "doc/product/index.md";
-const META: &str = "doc/plans/index.md";
+pub(super) const VISION: &str = "doc/product/index.md";
+pub(super) const META: &str = "doc/plans/index.md";
 const RECORD: &str = "\n## Pressure tests\n\n- 2026-10-26: one round\n";
 
 fn put(root: &Path, rel: &str, text: &str) {
@@ -29,7 +29,7 @@ fn tree(files: &[(&str, String)]) -> TempDir {
     temp
 }
 
-fn vision(numbers: &[u32]) -> (&'static str, String) {
+pub(super) fn vision(numbers: &[u32]) -> (&'static str, String) {
     let rows: String = numbers
         .iter()
         .map(|n| format!("| {n:02} | S{n} |\n"))
@@ -39,14 +39,14 @@ fn vision(numbers: &[u32]) -> (&'static str, String) {
     (VISION, text)
 }
 
-fn section(n: u32) -> (String, String) {
+pub(super) fn section(n: u32) -> (String, String) {
     (
         format!("doc/product/section_{n:02}.md"),
         format!("# Section {n:02}\n\nBody.\n"),
     )
 }
 
-fn plan(rel: &str, tested: bool) -> (String, String) {
+pub(super) fn plan(rel: &str, tested: bool) -> (String, String) {
     let record = if tested { RECORD } else { "" };
     (
         rel.to_string(),
@@ -54,7 +54,7 @@ fn plan(rel: &str, tested: bool) -> (String, String) {
     )
 }
 
-fn metaplan(slugs: &[&str]) -> (&'static str, String) {
+pub(super) fn metaplan(slugs: &[&str]) -> (&'static str, String) {
     let entry = |(i, slug): (usize, &&str)| format!("## {}. E (`PLAN-{slug}.md`)\n\n", i + 1);
     (
         META,
@@ -66,25 +66,25 @@ fn metaplan(slugs: &[&str]) -> (&'static str, String) {
 }
 
 /// Vision listing 01, section 01 written, plus `more`.
-fn spec(more: Vec<(String, String)>) -> Vec<(String, String)> {
+pub(super) fn spec(more: Vec<(String, String)>) -> Vec<(String, String)> {
     let (rel, text) = vision(&[1]);
     let mut files = vec![(rel.to_string(), text), section(1)];
     files.extend(more);
     files
 }
 
-fn load(files: &[(String, String)]) -> (TempDir, Project) {
+pub(super) fn load(files: &[(String, String)]) -> (TempDir, Project) {
     let pairs: Vec<(&str, String)> = files.iter().map(|(r, t)| (r.as_str(), t.clone())).collect();
     let temp = tree(&pairs);
     let project = Project::load(temp.path()).unwrap();
     (temp, project)
 }
 
-fn ids(offers: &[Offer]) -> Vec<String> {
+pub(super) fn ids(offers: &[Offer]) -> Vec<String> {
     offers.iter().map(Offer::id).collect()
 }
 
-fn owned(pair: (&'static str, String)) -> (String, String) {
+pub(super) fn owned(pair: (&'static str, String)) -> (String, String) {
     (pair.0.to_string(), pair.1)
 }
 

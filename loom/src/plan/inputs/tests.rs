@@ -1,4 +1,5 @@
 use super::{collect_inputs, Origin};
+use crate::planning::discover::MAX_DOC_BYTES;
 use std::fs;
 use std::path::{Path, PathBuf};
 use tempfile::TempDir;
@@ -87,4 +88,53 @@ fn bundle_members_carry_the_bundle_origin() {
         inputs.files[Path::new("doc/plans/briefs/foo/w.md")],
         Origin::Bundle
     );
+}
+
+fn sparse(root: &Path, path: &str, len: u64) {
+    write(root, path, "");
+    let file = fs::OpenOptions::new()
+        .write(true)
+        .open(root.join(path))
+        .unwrap();
+    file.set_len(len).unwrap();
+}
+
+#[test]
+fn oversized_markdown_input_is_invalid_unread_and_still_locked() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path();
+    write(root, PLAN, "no references");
+    let (big, edge) = (
+        "doc/plans/briefs/foo/big.md",
+        "doc/plans/briefs/foo/edge.md",
+    );
+    sparse(root, big, MAX_DOC_BYTES as u64 + 1);
+    sparse(root, edge, MAX_DOC_BYTES as u64);
+    let inputs = collect_inputs(root, Path::new(PLAN)).unwrap();
+    assert_eq!(inputs.invalid.len(), 1, "{:?}", inputs.invalid);
+    let invalid = &inputs.invalid[0];
+    assert_eq!(invalid.token, big);
+    assert_eq!(invalid.origin, Origin::Bundle);
+    assert_eq!(invalid.reason, "larger than 8 MiB");
+    assert_eq!(inputs.files[Path::new(big)], Origin::Bundle);
+    assert_eq!(inputs.files[Path::new(edge)], Origin::Bundle);
+}
+
+#[test]
+fn glob_through_parent_dirs_is_invalid_without_listing_outside_matches() {
+    let temp = TempDir::new().unwrap();
+    let root = temp.path().join("repo");
+    write(temp.path(), "outside/secret.md", "x");
+    let pattern = "doc/plans/briefs/../../../../outside/*.md";
+    write(&root, PLAN, &format!("See {pattern} here."));
+    let inputs = collect_inputs(&root, Path::new(PLAN)).unwrap();
+    assert_eq!(inputs.invalid.len(), 1, "{:?}", inputs.invalid);
+    let invalid = &inputs.invalid[0];
+    assert_eq!(invalid.token, pattern);
+    assert_eq!(invalid.origin, Origin::File(PathBuf::from(PLAN)));
+    assert_eq!(invalid.reason, "must not traverse parent directories");
+    assert!(inputs
+        .files
+        .keys()
+        .all(|f| !f.to_string_lossy().contains("secret")));
 }
