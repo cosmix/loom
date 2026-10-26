@@ -684,6 +684,8 @@ loom run                                 # Git branches preserve prior work
 - **`loom plan verify` checks STRUCTURE only** — valid YAML/DAG/bookends. It does NOT run acceptance, prove claims, or (currently) catch `bypass-permissions`. A plan can pass `plan verify` yet fail `loom init` or produce a non-working feature.
 - **`loom check` runs acceptance and every goal-backward layer** (`artifacts`, `wiring`, `wiring_tests`, `dead_code_check`) without changing stage state. `loom stage complete` runs acceptance before transitioning the stage. In a stage session both relay to a daemon host job and print `Host job: <state>` first: `requested` and `pending` (exit 0) are not results, so run the same command again; `stopped` exits 4, also run again; `failed`, `rejected` and `refused` exit 1.
 
+Planning sessions run `loom plan check` after editing planning documents. Exit 1 reports convention problems to fix; exit 2 means no repository or the doc/ tree could not be loaded.
+
 ## Anti-Patterns
 
 | Anti-Pattern | Why It's Wrong | Do This Instead |

@@ -29,6 +29,13 @@ pub enum PlanCommands {
         #[arg(long)]
         no_color: bool,
     },
+
+    /// Print the project checklist and every document convention problem under doc/
+    Check {
+        /// Machine-readable JSON output
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
