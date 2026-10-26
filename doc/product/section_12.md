@@ -34,7 +34,9 @@ loopback included**: viewing, browsing, search, the presence list, chat, saves, 
 answers, rebuild approval. Only the embedded static build (the SPA shell and its assets) is
 served without it, since it holds no project data. A shell that gets 401 from the API shows
 one screen: "Open the link `loom plan` printed. Running `loom plan` again in this project
-prints it." (Section 02: a second `loom plan` prints the running server's URL.) (My call.)
+prints it." (Section 02: a second `loom plan` prints the running server's URL.) (My call.) When
+the page had been connected before the refusal (the server restarted), the screen leads with
+"loom plan restarted. Open the URL it printed in the terminal."
 
 This tightens viewing beyond the dashboard, which leaves viewing open on a remote bind
 (`architecture/web-dashboard.md`, Remote access). Product specs and plans are often more
@@ -175,7 +177,8 @@ own drafts and claims in the runtime directory. It may not read:
 - loom's daemon tokens and terminal history, when the project has `.loom/work`
   (`token_deny_paths`, `fs/permissions/state_root.rs:158`, and the `terminal-history`
   directory);
-- the planning runtime directory of any project except its own `drafts/`, `claims/` and
+- the planning runtime directory of any project (the `plan/` directory under loom's user
+  directory, which follows `LOOM_HOME`, and `~/.loom/plan`) except its own `drafts/`, `claims/` and
   `summaries.lock`: the lock file holds the token, and `sessions/` holds every session's
   spool, launch script, and permission answers.
 
@@ -251,7 +254,9 @@ against the current tree:
 - a write whose path has a symlink in any component below `doc/` or the runtime directory is
   refused, as is a target that exists and is not a regular file;
 - a read, grep, or glob that names a read-denied path is refused (the same lists as
-  `denyRead`, from the same constants).
+  `denyRead`, from the same constants). The test applies to both the path as named and its
+  resolved form, and a path under `/proc` or `/dev/fd` is refused, so a symlink or
+  `/proc/self/cwd` cannot reach a read-denied file.
 
 The hook fails closed: any error, an unreadable record, or an unparsable payload answers
 deny with the reason. The same path predicate backs the server's save route (below), so
@@ -323,6 +328,7 @@ A session must never answer its own permission request. The channels and what cl
 | Allowed commands              | the five above               | `loom plan summary *` only               |
 | `WebSearch`, `WebFetch`       | see above                    | denied                                   |
 | `AskUserQuestion`             | denied (section 07)          | denied                                   |
+| `SendMessage`, `ListAgents`   | denied                       | denied                                   |
 
 Summary sessions run in Manual mode so that anything outside their rules reaches the
 `PermissionRequest` hook, which denies it and logs the request. A logged request means the
@@ -388,6 +394,7 @@ orchestration-state reads, and plan-authored `sandbox:` config, which planning h
 | ---------------------------------------------------------------------------- | ----------------------------------------- |
 | `failIfUnavailable`, `allowUnsandboxedCommands: false`, `strictAllowlist`    | `sandbox/settings/policy.rs:64-120`       |
 | The refusals of bypass mode, a disabled sandbox, and the unsandboxed escape, asserted on every planning settings file | `sandbox/config.rs:159` |
+| Tool denies `LSP`, `RemoteTrigger`, `CronCreate`, `PushNotification`, `Workflow` | `SESSION_TOOL_DENIES`, `native/session_settings/contents.rs:35` |
 | Credential read denies                                                       | `policy::mandatory_deny_read`             |
 | Daemon token read denies                                                     | `state_root::token_deny_paths`            |
 | `Edit`, never `Write`; no `Read` deny; literal paths; no nested denies       | `session_denies.rs`, knowledge cited above |
@@ -440,7 +447,8 @@ The permission mode is `default` (Manual), as for authoring: an unlisted command
 asks the holder, who watches the run in the chat and can answer (section 11, "What the chat
 shows"). The terminal driver's `--permission-mode auto` is not used, because the app's
 permission flow is the holder's prompt. `/pressure`'s teammates run in the session's own process
-(section 11), so they inherit these settings and hooks.
+(section 11), so they inherit these settings and hooks. Pressure sessions keep `SendMessage` and
+`ListAgents`, which `/pressure`'s teammates use.
 
 The Codex step is no Claude session and none of this binds it. The server runs it as the
 terminal driver does, `codex exec --sandbox workspace-write` in the project root
@@ -528,7 +536,11 @@ paths are all untrusted: any of them can carry text a session read from a file o
 - **Rendering.** Markdown is rendered with raw HTML never rendered (section 06): comments
   dropped, other HTML shown as escaped text. Transcript text uses the same renderer. Tool
   inputs, outputs, commands, and permission request bodies render as plain text in code
-  blocks. Nothing is inserted as HTML.
+  blocks. Every Unicode format (Cf) character in a permission body, a tool input or result, or a
+  path (bidi controls U+202A to U+202E and U+2066 to U+2069, U+200B to U+200F, U+061C, U+FEFF)
+  shows as a visible marker such as ⟨U+202E⟩, inside a left-to-right isolated block, so the text
+  the holder approves is the text that runs. The transcript keeps the raw characters. Nothing is
+  inserted as HTML.
 - **Links.** Only `http:`, `https:`, `mailto:`, relative document links, and `#anchors`
   become links; every other scheme (`javascript:`, `data:`, `file:`, `vbscript:`) renders as
   text. External links open in a new tab with `rel="noopener noreferrer"` (section 06).
@@ -606,7 +618,11 @@ does (`http.rs:154-161`). The new figures are my call.
 - **The Codex step of a pressure run.** `codex exec --sandbox workspace-write` can write any
   file in the working tree, the terminal `loom pressure`'s behaviour. Its edits outside the plan
   show as uncommitted changes in the next run dialog (section 11), and the step runs only when
-  the holder starts a pressure run.
+  the holder starts a pressure run. One exception is checked: after each Codex step the server
+  compares `.claude/`, `.mcp.json` and `CLAUDE.md` with their state before the step. Any change
+  ends the run and names the files, and no planning session of any kind starts until the holder
+  confirms them. This holds across a restart, because the block is kept in the runtime directory,
+  and those files run code in the next session.
 
 ## Out of scope for this section
 

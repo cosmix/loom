@@ -90,16 +90,21 @@ claude --session-id <session-id> --name "<display name>"
        --settings <session dir>/settings.json --setting-sources user,project
        --model <model> --effort <effort> --permission-mode <mode>
        --plugin-dir <session dir>/plugin --strict-mcp-config
-       --append-system-prompt-file <session dir>/brief.md "<opening message>"
+       --append-system-prompt-file <session dir>/brief.md
+       ["<opening message>"]      pressure sessions only
 ```
 
 The brief, the plugin and the opening message come from section 09, with section 11's
 differences for pressure sessions; the model and effort from section 09's table (section 04 for
 the summary levels, the `[pressure]` keys for pressure steps); `--strict-mcp-config` from
 section 12; the permission mode and the write rules in
-`settings.json` from section 12. The opening message travels as the positional prompt, as
-`loom pressure` passes its slash command (`loom/src/commands/pressure/spawn.rs:38`), so the
-first turn needs no input delivery.
+`settings.json` from section 12. The launch line carries no prompt, because a command line is
+readable by every local user through `/proc/<pid>/cmdline` and an opening message can quote
+documents. Once the session's first `SessionStart` arrives, the server delivers the opening
+message as the session's first turn, through the same path as every chat message ("Delivering
+input"): sanitised, held to the 100 KB cap, and pasted. The one exception is a pressure session's
+opening, which holds only a slash command and a plan path and travels on the launch line, as
+`loom pressure` passes it (`loom/src/commands/pressure/spawn.rs:38`).
 
 After `spawn_in_tmux` returns, the server reads the pane's process id
 (`display-message -p '#{pane_pid}'`), records its `ProcessIdentity` with start time in
@@ -200,7 +205,7 @@ working.
 
 ## Session state
 
-A **turn** runs from the `UserPromptSubmit` of a delivered message (or of the opening prompt) to
+A **turn** runs from the `UserPromptSubmit` of a delivered message (or of the opening message) to
 the next main-agent `Stop`.
 
 | State         | Entered on                                                                   |
@@ -285,7 +290,8 @@ summary session needing a permission means its rules (section 12) are wrong.
 interrupts Claude Code's turn. The transcript records the interruption and the session goes
 Idle. A pending permission request is denied first. The interrupt discards the queue and returns
 the queued texts to the holder's composer (section 08); nothing is delivered at the Idle the
-interrupt causes.
+interrupt causes. Stop does nothing while the session is idle, and it sends at most one Escape
+per turn: a second Escape at an idle prompt opens Claude Code's rewind picker.
 
 **End.** A session ends with a final write when:
 
@@ -293,7 +299,10 @@ interrupt causes.
 - the authoring browser has been gone for the grace period;
 - `loom plan` gets its first Ctrl-C or SIGTERM.
 
-The server waits for any running turn to reach Idle, delivers the closing message (wording from
+The server waits for any running turn to reach Idle, returns any queued messages to the composer
+of the tab that asked, accepts no new message, and, when the end comes from the grace period or a
+server stop, denies every pending and new permission request so the final write never waits on an
+answer nobody can give, delivers the closing message (wording from
 section 09: record the remaining open questions and anything pending into the documents), waits
 for that turn's `Stop` with no subagent running, then tears the session down. The final write
 is bounded at 10 minutes, after which the session is torn down as it stands. (My call: decisions
@@ -332,7 +341,8 @@ only as a cache.
 ## Crashes and kills
 
 - **The session process dies** outside Ending: the session goes Failed, the chat says so with
-  the last transcript activity, authoring is released, and the documents keep what the session
+  the last transcript activity, authoring is released only if the browser that started the chat
+  still holds it, and never while a pressure run holds it, and the documents keep what the session
   recorded as it went. Nothing restarts automatically; the user starts a new chat, cold. A
   failed summary session is reported to section 04's engine, which decides on a retry.
 - **The `loom plan` server dies** (a crash or `kill -9`): its sessions keep running in their own
