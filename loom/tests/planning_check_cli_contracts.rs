@@ -50,10 +50,16 @@ fn clean() -> (TempDir, PathBuf) {
     ])
 }
 
-/// Runs `loom plan check --json` in `dir` with a scratch `LOOM_HOME`.
+/// Runs `loom plan check --json` in `dir` with a scratch `LOOM_HOME` and no
+/// other inherited `LOOM_*` variable.
 fn check(dir: &Path, envs: &[(&str, &Path)]) -> Output {
     let home = TempDir::new().unwrap();
     let mut command = Command::new(env!("CARGO_BIN_EXE_loom"));
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("LOOM_") {
+            command.env_remove(key);
+        }
+    }
     command.args(["plan", "check", "--json"]).current_dir(dir);
     command
         .env("LOOM_HOME", home.path())
