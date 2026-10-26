@@ -13,7 +13,7 @@ mod tests;
 
 pub use detect::{detect_stage_type, detect_stage_type_from_id_name};
 pub use host_paths::stage_host_path_errors;
-pub(crate) use structural_checks::extract_brief_paths;
+pub(crate) use structural_checks::{extract_brief_paths, extract_prefixed_paths};
 pub use types::{
     AcceptanceCriterion, AdjudicationConfig, CodeReviewConfig, CommandConfinement, ContractSpec,
     DeadCodeCheck, FilesystemConfig, Implementer, Implementers, LinuxConfig, LoomConfig,

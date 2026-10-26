@@ -1,4 +1,10 @@
+mod briefs_tests;
 mod discover_tests;
+mod implements_tests;
 mod kinds_tests;
+mod metaplan_tests;
+mod pressure_tests;
 mod runtime_tests;
 mod slug_tests;
+mod vision_tests;
+mod xref_tests;
