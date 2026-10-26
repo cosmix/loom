@@ -93,7 +93,7 @@ Two more subdirectories, resolved by their own modules rather than a `WorkDir` h
 
 `sandbox/settings.rs:16-34` — `SENSITIVE_ENV_KEYS` array filters `ANTHROPIC_API_KEY` from agent sandbox environments.
 
-- This is env hygiene only. It no longer has anything to do with adjudication: an earlier version of this line claimed an absent `ANTHROPIC_API_KEY` disabled adjudication and sent disputes straight to `NeedsHumanReview`, which stopped being true when the adjudicator moved to a spawned `claude -p` session. What disables it now is a missing `claude` binary — see conventions.md § Adjudicator Transport Convention.
+- This is env hygiene only and has nothing to do with adjudication, which runs as an interactive loom session through the `TerminalBackend` with no API key and no `claude -p` — see conventions/dispute-and-adjudication.md § Adjudicator Transport Convention.
 
 ## HTTP Client Pattern — self_update/client.rs
 
@@ -107,7 +107,7 @@ Two more subdirectories, resolved by their own modules rather than a `WorkDir` h
 
 **Never call `api.github.com` from the updater (2026-09-16).** Anonymous REST calls share a 60 requests/hour budget per public IP with every other anonymous client behind the same router, and `loom update` failed on a real install with `HTTP 403 - Forbidden` for exactly that reason. `get_latest_release` (`commands/self_update/mod.rs`) resolves the tag from the `github.com/<repo>/releases/latest` redirect (`tag_from_release_location` parses the `/releases/tag/<tag>` segment) and `update_binary` builds `releases/download/<tag>/<asset>` URLs from the tag; neither carries that limit. `update_check::fetch_latest_version` reuses the same lookup.
 
-This is the pattern for loom's HTTP consumers (self-update). The adjudicator is NOT one of them: an earlier version of this line said an adjudicator HTTP client should mirror it, but the adjudicator spawns a `claude -p` session and makes no HTTP call at all — see conventions.md § Adjudicator Transport Convention.
+This is the pattern for loom's HTTP consumers (self-update). The adjudicator is not one of them: it spawns an interactive loom session (`orchestrator/adjudication/session.rs::start_pending_adjudications`) and makes no HTTP call — see conventions/dispute-and-adjudication.md § Adjudicator Transport Convention.
 
 ## Installation Asset Roots
 

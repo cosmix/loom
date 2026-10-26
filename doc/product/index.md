@@ -79,14 +79,14 @@ not the mockups' palette.
 The app works out the project's step from what exists under `doc/` on every start; it stores no
 step of its own. It suggests the next step and never forces one:
 
-| What exists under `doc/`                    | Step  | First screen and suggestion                                        |
-| ------------------------------------------- | ----- | ------------------------------------------------------------------ |
-| Nothing                                     | 1     | An empty state offering to start a vision discussion               |
-| A vision whose listed sections are missing  | 2     | The vision; offers to write the next missing section               |
-| A finished spec, no metaplan                | 3     | The product overview; notes there is no metaplan, offers to start one |
-| Metaplan entries without a plan file        | 4     | Both overviews; offers to write the missing plans                  |
-| Plans not yet pressure-tested               | 5     | Both overviews; offers to pressure-test them                       |
-| Everything present                          | 6, 7  | Both overviews for review and refinement; offers to start a run    |
+| What exists under `doc/`                   | Step | First screen and suggestion                                           |
+| ------------------------------------------ | ---- | --------------------------------------------------------------------- |
+| Nothing                                    | 1    | An empty state offering to start a vision discussion                  |
+| A vision whose listed sections are missing | 2    | The vision; offers to write the next missing section                  |
+| A finished spec, no metaplan               | 3    | The product overview; notes there is no metaplan, offers to start one |
+| Metaplan entries without a plan file       | 4    | Both overviews; offers to write the missing plans                     |
+| Plans not yet pressure-tested              | 5    | Both overviews; offers to pressure-test them                          |
+| Everything present                         | 6, 7 | Both overviews for review and refinement; offers to start a run       |
 
 Accepting a suggestion opens a new session briefed for that step. Refining is available at every
 step, including after everything exists. How "finished", "pressure-tested" and "listed sections"
@@ -176,9 +176,9 @@ Each becomes `doc/product/section_xx.md`. Order is a first proposal for discussi
 | 01  | Workflow model and project state | The seven steps as states; how the app infers the current state from the `doc/` tree; what "next step" the app offers in each; how a project that skipped or reordered steps reads |
 | 02  | `loom plan` command and server   | CLI surface, flags, port 7272 and browser launch, lifetime, code shared with `loom status --web`, behaviour without `.loom/work`                                                   |
 | 03  | Document model and conventions   | Which paths hold which documents (`doc/product`, `doc/plans`, briefs, knowledge); discovery rules; how a document declares its kind and its parent; cross-references               |
-| 04  | Summary engine                   | Content hashing, the hash manifest, the invalidation graph, which agents regenerate what and on which model, the store under `doc/loom/summaries/`, cost                       |
-| 05  | Concept mode                     | The two overviews, document summaries, sentence-to-source anchoring, product-to-plan traceability, what the reviewer sees at each level                                           |
-| 06  | File mode                        | Navigation, rendering of Markdown and plan YAML, briefs and knowledge, the CodeMirror editor, save-time plan validation, diffs, search                                            |
+| 04  | Summary engine                   | Content hashing, the hash manifest, the invalidation graph, which agents regenerate what and on which model, the store under `doc/loom/summaries/`, cost                           |
+| 05  | Concept mode                     | The two overviews, document summaries, sentence-to-source anchoring, product-to-plan traceability, what the reviewer sees at each level                                            |
+| 06  | File mode                        | Navigation, rendering of Markdown and plan YAML, briefs and knowledge, the CodeMirror editor, save-time plan validation, diffs, search                                             |
 | 07  | Session bridge                   | Starting and owning Claude Code sessions in tmux; reading transcript JSONL as structured messages; delivering input; permission and waiting states; several sessions; resume       |
 | 08  | Chat interface                   | Message rendering, tool activity, session states, attaching document passages as context, showing the files a turn changed                                                         |
 | 09  | Session skills and guidance      | Skills and instructions per step (vision, sections, metaplan, plans, pressure), how loom injects them, how they keep output in the conventions of section 03                       |
@@ -198,14 +198,15 @@ Each becomes `doc/product/section_xx.md`. Order is a first proposal for discussi
   live under `doc/loom/summaries/`, beside the committed knowledge base. (`.loom` is gitignored at
   any depth, so a store there would need a negation rule in every repository.)
 - **Summary levels (04, 05).** Two summary levels above the raw text:
-  - *Overviews*: one for the product, built from `doc/product/index.md` and its sections; one for
+  - _Overviews_: one for the product, built from `doc/product/index.md` and its sections; one for
     the engineering decisions, built from the metaplan and its plans.
-  - *Document summaries*: one per product section and one per plan.
+  - _Document summaries_: one per product section and one per plan.
 
   An overview sentence links to the document summaries it draws on (one or several); a document
   summary sentence links to the heading section of the raw document it draws on. Briefs are
   reached through their plan's summary and through file mode, with no summaries of their own (my
   call). The knowledge base keeps its own hierarchy and is browsed in file mode.
+
 - **Refinement (04, 05, 10).** A refinement edits only the documents under `doc/`. In the same
   turn, the session that made the edit has a subagent rebuild the summaries built on the changed
   passages and the overviews that cite them. The background summary sessions handle edits made
