@@ -5,6 +5,8 @@
 mod items;
 mod offers;
 #[cfg(test)]
+mod order_tests;
+#[cfg(test)]
 mod tests;
 
 pub use offers::Offer;
@@ -34,7 +36,8 @@ pub struct ParsedDocs {
     pub pressure: BTreeMap<String, Vec<PressureRecord>>,
     /// The existing locked files.
     pub locked_files: Vec<PathBuf>,
-    /// Sorted numbers of the product section files that hold a non-whitespace character.
+    /// Sorted numbers of the product section files that hold a non-whitespace character, or
+    /// that could not be read and are not empty.
     pub sections_written: Vec<u32>,
 }
 
@@ -130,7 +133,8 @@ pub struct ProjectState {
     pub vision_present: bool,
     /// Rows of the vision's table (0 when it cannot be read).
     pub sections_listed: usize,
-    /// Sorted numbers of the written (non-blank) section files.
+    /// Sorted numbers of the written section files: those holding a non-whitespace character,
+    /// or that could not be read and are not empty.
     pub sections_written: Vec<u32>,
     /// Metaplan paths, sorted.
     pub metaplans: Vec<PathBuf>,
