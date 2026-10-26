@@ -39,18 +39,22 @@ pub(super) fn check_missing_summaries(stages: &[StageDefinition]) -> Vec<String>
 /// `doc/plans/briefs/<plan>/<stage-id>/` name a layout, not a file, and are
 /// skipped.
 pub(crate) fn extract_brief_paths(text: &str) -> Vec<String> {
-    const PREFIX: &str = "doc/plans/briefs/";
+    extract_prefixed_paths(text, "doc/plans/briefs/")
+}
+
+/// Extract path-like tokens containing `prefix`, skipping placeholder paths.
+pub(crate) fn extract_prefixed_paths(text: &str, prefix: &str) -> Vec<String> {
     let mut paths = Vec::new();
 
     for token in text.split(|c: char| {
         c.is_whitespace() || matches!(c, '(' | ')' | '[' | ']' | '"' | '\'' | ',' | ';' | '|')
     }) {
         let trimmed = token.trim_matches(|c: char| matches!(c, '.' | ',' | ':' | '`'));
-        if let Some(idx) = trimmed.find(PREFIX) {
+        if let Some(idx) = trimmed.find(prefix) {
             // A backtick closes a code span, so markdown after it (`dir/`.** in
             // bold) is not part of the path and must not reach the glob expander.
             let path = trimmed[idx..].split(['#', '`']).next().unwrap_or_default();
-            if path.len() > PREFIX.len() && !path.contains(['<', '>']) {
+            if path.len() > prefix.len() && !path.contains(['<', '>']) {
                 paths.push(path.to_string());
             }
         }
@@ -260,6 +264,23 @@ mod tests {
     fn markdown_after_a_code_span_is_not_part_of_the_path() {
         let text = "**Briefs live outside `doc/plans/briefs/`.** See `doc/plans/briefs/v2/a.md`.**";
         assert_eq!(extract_brief_paths(text), vec!["doc/plans/briefs/v2/a.md"]);
+    }
+
+    #[test]
+    fn prefixed_paths_find_product_sections_in_prose() {
+        let text = "See doc/product/section_01.md for the specification.";
+        assert_eq!(
+            extract_prefixed_paths(text, "doc/"),
+            vec!["doc/product/section_01.md"]
+        );
+    }
+
+    #[test]
+    fn brief_prefix_preserves_extraction_rules() {
+        let text = "See `doc/plans/briefs/v2/a.md#heading` and doc/plans/briefs/<stage>/";
+        let expected = vec!["doc/plans/briefs/v2/a.md"];
+        assert_eq!(extract_prefixed_paths(text, "doc/plans/briefs/"), expected);
+        assert_eq!(extract_brief_paths(text), expected);
     }
 
     #[test]
