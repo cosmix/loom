@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "current": "vision",
+  "steps": [
+    { "step": "vision", "mark": "gap" },
+    { "step": "product_spec", "mark": "gap" },
+    { "step": "metaplan", "mark": "gap" },
+    { "step": "plans", "mark": "gap" },
+    { "step": "pressure_test", "mark": "optional" },
+    { "step": "review", "mark": "optional" },
+    { "step": "run", "mark": "active" }
+  ],
+  "primary": "start-vision",
+  "secondary": ["start-metaplan", "pressure-test:alpha", "pressure-test:beta"],
+  "problems": [
+    { "code": "implements-missing", "path": "doc/plans/PLAN-beta.md", "line": null }
+  ]
+}

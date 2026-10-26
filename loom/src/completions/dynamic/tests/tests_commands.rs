@@ -248,7 +248,13 @@ fn test_complete_commands_includes_plan() {
 #[test]
 fn test_complete_subcommands_plan() {
     let results = complete_subcommands("plan", "").unwrap();
-    assert_eq!(results, vec!["verify".to_string()]);
+    assert_eq!(results, vec!["check".to_string(), "verify".to_string()]);
+}
+
+#[test]
+fn test_complete_flags_plan_check() {
+    let results = complete_flags(&["plan", "check"], "--").unwrap();
+    assert!(results.contains(&"--json".to_string()));
 }
 
 #[test]

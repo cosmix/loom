@@ -109,6 +109,7 @@ fn dispatch_plan(command: PlanCommands) -> Result<()> {
             json,
             no_color,
         } => plan::verify::execute(&path, strict, json, no_color),
+        PlanCommands::Check { json } => crate::commands::plan::check::execute(json),
     }
 }
 
