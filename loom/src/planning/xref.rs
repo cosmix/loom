@@ -2,8 +2,9 @@
 
 use std::path::{Component, Path, PathBuf};
 
+use crate::fs::knowledge::splice::fence_mask;
 use crate::plan::schema::extract_prefixed_paths;
-use crate::planning::discover::DocTree;
+use crate::planning::discover::{DocTree, SUMMARIES};
 use crate::planning::kinds::DocId;
 use crate::planning::sections::DocSections;
 use crate::planning::slug::plan_slug;
@@ -32,15 +33,18 @@ pub struct Reference {
     pub target: Option<(DocId, Option<String>)>,
 }
 
-/// Extract document references without accessing the filesystem.
+/// Extract document references without accessing the filesystem. Fenced code blocks hold
+/// examples and templates, so their lines yield no reference; line numbers are unchanged.
 pub fn references(
     doc_rel: &Path,
     text: &str,
     tree: &DocTree,
     sections: &dyn Fn(&Path) -> Option<DocSections>,
 ) -> Vec<Reference> {
+    let lines: Vec<&str> = text.lines().collect();
+    let mask = fence_mask(&lines);
     let mut refs = Vec::new();
-    for (line_no, line) in text.lines().enumerate() {
+    for (line_no, line) in lines.iter().enumerate().filter(|(i, _)| !mask[*i]) {
         let (links, remaining) = links_on_line(line);
         for raw in links {
             if let Some(path) = link_path(doc_rel, &raw) {
@@ -54,9 +58,12 @@ pub fn references(
                 });
             }
         }
-        for raw in path_tokens(&remaining) {
-            let path = Path::new(&raw);
-            let target = resolve(path, None, tree, sections);
+        let tokens = path_tokens(&remaining);
+        for raw in tokens
+            .into_iter()
+            .filter(|raw| !names_no_document(raw, tree))
+        {
+            let target = resolve(Path::new(&raw), None, tree, sections);
             refs.push(Reference {
                 form: RefForm::PathToken,
                 raw,
@@ -65,10 +72,7 @@ pub fn references(
             });
         }
         for raw in backticked_plans(&remaining) {
-            let target = plan_slug(&raw)
-                .and_then(|slug| tree.plan(&slug))
-                .and_then(|plan| tree.get(&plan.path))
-                .map(|doc| (doc.id.clone(), None));
+            let target = plan_file_target(&raw, tree);
             refs.push(Reference {
                 form: RefForm::PlanFile,
                 raw,
@@ -78,6 +82,22 @@ pub fn references(
         }
     }
     refs
+}
+
+fn plan_file_target(raw: &str, tree: &DocTree) -> Option<(DocId, Option<String>)> {
+    let plan = tree.plan(&plan_slug(raw)?)?;
+    tree.get(&plan.path).map(|doc| (doc.id.clone(), None))
+}
+
+/// Whether a path token names something that is never a single document: the summary store,
+/// a dotfile (discovery skips both) or a directory that has documents under it.
+fn names_no_document(raw: &str, tree: &DocTree) -> bool {
+    let path = Path::new(raw);
+    let dotted = path.components().any(|part| match part {
+        Component::Normal(name) => name.to_str().is_some_and(|name| name.starts_with('.')),
+        _ => false,
+    });
+    path.starts_with(SUMMARIES) || dotted || tree.has_dir(path)
 }
 
 fn resolve(
@@ -154,21 +174,17 @@ fn links_on_line(line: &str) -> (Vec<String>, String) {
 }
 
 /// `doc/` paths in `text` that start at a token start (optionally after `./` or
-/// `../`), via the shared prefixed-path extractor. Directory mentions, globs and
-/// placeholders are dropped, and a `:<digits>` line suffix is stripped.
+/// `../`), via the shared prefixed-path extractor. Everything from the first `:` on (a line
+/// or range suffix) is cut; directory mentions, globs and `$`/`{}` placeholders are dropped.
 fn path_tokens(text: &str) -> Vec<String> {
     extract_prefixed_paths(text, "doc/")
         .into_iter()
-        .filter(|path| !path.ends_with('/') && !path.contains(['*', '?']))
         .filter(|path| at_token_start(text, path))
-        .map(|path| match path.rsplit_once(':') {
-            Some((base, suffix))
-                if !suffix.is_empty() && suffix.bytes().all(|b| b.is_ascii_digit()) =>
-            {
-                base.to_owned()
-            }
-            _ => path,
+        .map(|path| match path.split_once(':') {
+            Some((base, _)) => base.to_owned(),
+            None => path,
         })
+        .filter(|path| !path.ends_with('/') && !path.contains(['*', '?', '$', '{', '}']))
         .collect()
 }
 

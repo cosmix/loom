@@ -17,11 +17,13 @@ use crate::planning::kinds::{DocKind, VISION_PATH};
 use crate::planning::metaplan::{self, MetaplanEntry};
 use crate::planning::paths::{LockReason, LockedSet};
 use crate::planning::pressure;
-use crate::planning::problems::{self, Problem};
+use crate::planning::problems;
 use crate::planning::sections::{normalized_hash, sections_of, DocSections, Span};
 use crate::planning::vision::{parse_sections_table, VisionProblem, VisionRow};
 use crate::planning::watch::Batch;
 use crate::planning::xref::{references, Reference};
+
+pub use crate::planning::problems::Problem;
 
 /// The text of every Markdown document, or why it could not be read.
 type Sources = BTreeMap<PathBuf, std::result::Result<String, String>>;
@@ -277,13 +279,17 @@ fn project_doc(
     }
 }
 
-/// Section numbers whose file holds a non-whitespace character, sorted.
+/// Section numbers whose file holds a non-whitespace character, sorted. A file that exists
+/// but cannot be read (invalid UTF-8, over the size bound) counts as written when it is not
+/// empty: section 01 calls a section present when its file exists and is not empty.
 fn sections_written(tree: &DocTree, sources: &Sources) -> Vec<u32> {
     let written = tree.docs.iter().filter_map(|doc| match doc.kind {
         DocKind::ProductSection { number } => {
-            let text = sources.get(&doc.path)?.as_deref().ok()?;
-            text.contains(|c: char| !c.is_whitespace())
-                .then_some(number)
+            let present = match sources.get(&doc.path)? {
+                Ok(text) => text.contains(|c: char| !c.is_whitespace()),
+                Err(_) => doc.size > 0,
+            };
+            present.then_some(number)
         }
         _ => None,
     });

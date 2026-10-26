@@ -119,3 +119,104 @@ fn only_token_start_doc_paths_are_references() {
         Some((DocId("product/section_01".into()), None))
     );
 }
+
+fn tree_with(extra: &[&str]) -> DocTree {
+    let mut tree = tree();
+    for path in extra {
+        let path = PathBuf::from(path);
+        let kind = classify(&path);
+        tree.docs.push(Document {
+            id: doc_id(&path, &kind),
+            path,
+            kind,
+            size: 0,
+            via_symlink: false,
+        });
+    }
+    tree.docs.sort_by(|a, b| a.path.cmp(&b.path));
+    tree
+}
+
+fn refs_in(text: &str) -> Vec<(RefForm, String, usize, bool)> {
+    references(
+        Path::new("doc/product/section_02.md"),
+        text,
+        &tree(),
+        &|_| None,
+    )
+    .into_iter()
+    .map(|r| (r.form, r.raw, r.line, r.target.is_some()))
+    .collect()
+}
+
+#[test]
+fn fenced_code_yields_no_reference_and_keeps_line_numbers() {
+    let body = "[x](missing.md) `doc/plans/PLAN-x.md`";
+    assert!(refs_in(&format!("```text\n{body}\n```\n")).is_empty());
+    assert!(refs_in(&format!("~~~\n{body}\n~~~\n")).is_empty());
+    let outside = refs_in(&format!("```text\n{body}\n```\n{body}\n"));
+    assert_eq!(
+        outside,
+        [
+            (RefForm::RelativeLink, "missing.md".to_string(), 3, false),
+            (
+                RefForm::PathToken,
+                "doc/plans/PLAN-x.md".to_string(),
+                3,
+                false
+            ),
+        ]
+    );
+}
+
+#[test]
+fn any_colon_suffix_is_cut_from_a_path_token() {
+    for suffix in [":15-77", ":12:5", ":42"] {
+        let got = refs_in(&format!("see `doc/product/section_01.md{suffix}`"));
+        let want = [(
+            RefForm::PathToken,
+            "doc/product/section_01.md".to_string(),
+            0,
+            true,
+        )];
+        assert_eq!(got, want, "{suffix}");
+    }
+}
+
+#[test]
+fn directories_dotfiles_summaries_and_placeholders_are_not_references() {
+    let tree = tree_with(&["doc/loom/knowledge/concerns/x.md"]);
+    for text in [
+        "`doc/plans`",
+        "`doc/product`",
+        "`doc/loom/knowledge`",
+        "`doc/loom/knowledge/.bootstrap-receipt.json`",
+        "`doc/.hidden/a.md`",
+        "`doc/loom/summaries/plans/foo.md`",
+        "`doc/loom/summaries`",
+        "`doc/plans/$1`",
+        "`doc/plans/PLAN-${slug}.md`",
+        "`doc/plans/{a,b}.md`",
+    ] {
+        let refs = references(Path::new("doc/product/section_02.md"), text, &tree, &|_| {
+            None
+        });
+        let tokens: Vec<_> = refs
+            .iter()
+            .filter(|r| r.form == RefForm::PathToken)
+            .collect();
+        assert!(tokens.is_empty(), "{text}: {tokens:?}");
+    }
+}
+
+#[test]
+fn a_nonexistent_directory_is_still_a_broken_reference() {
+    assert_eq!(
+        refs_in("`doc/typo` and `doc/product/typo` and `doc/prod`"),
+        [
+            (RefForm::PathToken, "doc/typo".to_string(), 0, false),
+            (RefForm::PathToken, "doc/product/typo".to_string(), 0, false),
+            (RefForm::PathToken, "doc/prod".to_string(), 0, false),
+        ]
+    );
+}
