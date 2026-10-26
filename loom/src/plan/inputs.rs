@@ -11,9 +11,12 @@ use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 
+use crate::fs::plan_lifecycle::{DONE_PREFIX, IN_PROGRESS_PREFIX, RETIRED_PREFIX};
 use crate::git::runner::run_git_checked;
 use crate::plan::schema::extract_brief_paths;
 
+#[cfg(test)]
+mod retired_tests;
 #[cfg(test)]
 mod tests;
 
@@ -137,8 +140,9 @@ fn bundle_dir(root: &Path, plan: &Path) -> Option<PathBuf> {
     let slug = plan
         .file_stem()?
         .to_str()?
-        .trim_start_matches("IN_PROGRESS-")
-        .trim_start_matches("DONE-")
+        .trim_start_matches(IN_PROGRESS_PREFIX)
+        .trim_start_matches(DONE_PREFIX)
+        .trim_start_matches(RETIRED_PREFIX)
         .trim_start_matches("PLAN-");
     let bundle = PathBuf::from("doc/plans/briefs").join(slug);
     root.join(&bundle).exists().then_some(bundle)

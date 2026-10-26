@@ -305,7 +305,7 @@ pub(crate) fn plan_stage_ids(plan: &str) -> Result<Option<HashSet<String>>> {
     stage_ids(&work_dir)
 }
 
-/// Strip the status prefix (`IN_PROGRESS-`/`DONE-`) FIRST, then strip
+/// Strip the status prefix (`IN_PROGRESS-`/`DONE-`/`RETIRED-`) FIRST, then strip
 /// `PLAN-` from what remains - the two prefixes are sequential, not
 /// alternatives, so `IN_PROGRESS-PLAN-foo` only normalizes to `foo` when
 /// both strips run in order.
@@ -314,7 +314,7 @@ fn normalize_plan(path: &Path) -> String {
         .file_stem()
         .and_then(|name| name.to_str())
         .unwrap_or_default();
-    let without_status = ["IN_PROGRESS-", "DONE-"]
+    let without_status = ["IN_PROGRESS-", "DONE-", "RETIRED-"]
         .iter()
         .find_map(|prefix| value.strip_prefix(prefix))
         .unwrap_or(value);
