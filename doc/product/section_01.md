@@ -92,7 +92,8 @@ entry naming `PLAN-foo.md` is satisfied by any of these:
 | `doc/plans/DONE-PLAN-foo.md` or under `doc/plans/archive/` | done       |
 | `doc/plans/archive/RETIRED-PLAN-foo.md`                    | retired    |
 
-A retired plan was abandoned without a run; it closes its metaplan entry. Running, done and
+A retired plan was abandoned, either before it ran or by abandoning its unfinished run from the
+app (section 11, "Abandoning an unfinished run"); it closes its metaplan entry. Running, done and
 retired plans are read-only in the app (vision, Decisions, "Locked plans").
 
 A `PLAN-*.md` file that no metaplan names is an **unlisted plan**: read and reviewed like any
@@ -111,11 +112,12 @@ appends one line to a `## Pressure tests` section at the very end of the plan fi
 ```markdown
 ## Pressure tests
 
-- 2026-10-26: Claude opus, Codex gpt-5.6-terra; review addressed
-- 2026-11-02: Claude opus, Codex gpt-5.6-terra; review addressed
+- 2026-10-26: Claude opus, Codex gpt-6.1-sol; 2 rounds, review addressed
+- 2026-11-02: Claude opus, Codex gpt-6-sol; 1 round, Codex review missing in round 1
 ```
 
-Each line gives the date, the models of the two review lanes, and the outcome. The driver
+Each line gives the date, the `/pressure` model, the Codex model that ran after any fallback, the
+round count, and the outcome; section 11 owns the exact format. The driver
 writes the line, not the agents, so a run that fails or is interrupted leaves no line. A plan
 is pressure-tested when this section has at least one line. (My call: the date and the models
 are what a reviewer needs to judge how much a test is worth; the findings themselves live in
@@ -124,7 +126,7 @@ the plan edits the address step made.)
 The record is plain Markdown a reader without the app can follow, and it travels with the plan
 through its `IN_PROGRESS-` and `DONE-` renames. Plan parsing reads only the metadata block, so
 text after the end marker does not affect validation; the change to `loom pressure` that writes
-the line must confirm `loom plan validate` and `loom init` still accept the file.
+the line must confirm `loom plan verify` and `loom init` still accept the file.
 
 Editing a plan after a test does not mark it untested. The address step edits the plan by
 design, and refinements would otherwise reopen the offer on every change. The plan's view shows

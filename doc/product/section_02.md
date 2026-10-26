@@ -11,6 +11,7 @@ it behaves in a project that has never run `loom init`.
 ```text
 loom plan [--port <PORT>] [--host <HOST>] [--no-open]
 loom plan verify <PLAN> [--strict] [--json] [--no-color]
+loom plan check [--json]
 loom plan summary seal|brief|status|release
 loom plan hook <event>
 ```
@@ -30,7 +31,12 @@ positional value after `loom plan` would collide with subcommand names. (My call
 
 There are no config-file keys for any of these, matching the dashboard, which takes its bind
 host from the CLI only. (My call.) Shell completion tables (`completions/dynamic/`) gain the
-three flags and the `summary` subcommands; the hidden `hook` is left out.
+three flags, `check`, and the `summary` subcommands; the hidden `hook` is left out.
+
+`loom plan check [--json]` prints the project checklist of section 01 and every convention
+problem the app detects in `doc/`, reading only files and needing no running server; it exits
+non-zero when a checked file has a problem. Sessions run it at the end of every turn that edited
+documents. Section 09 owns it.
 
 `loom plan summary seal|brief|status|release` is how sessions and people build and claim
 summaries: `brief` prints what a summary is built from, `seal` validates and writes it,
@@ -173,7 +179,9 @@ repository, a stage worktree, a server already running for the project, a bind f
 
 - `listener.rs`: binding and port search, parameterised by the default port;
 - `access.rs`, `auth.rs`, `bootstrap.rs`: access policy, token, cookie bootstrap;
-- `connection.rs`: the request gate, security headers and CSP, connection and WebSocket caps;
+- `connection.rs`: the request gate, connection and WebSocket caps;
+- `http.rs`: response heads with the security headers and CSP (`CONTENT_SECURITY_POLICY` and
+  `response_head`, `loom/src/commands/status/web/http.rs:251-264`), and the body limit;
 - `ws.rs`: WebSocket framing;
 - static asset serving from the embedded build.
 

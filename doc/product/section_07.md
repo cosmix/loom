@@ -14,11 +14,13 @@ vision's Decisions ("Bridge", "Sessions start cold") fix the frame.
 | ------------- | ---------------------------------------------------------------- | ---------------------------- | ------------------------------------- |
 | Authoring     | The chat session that writes documents under `doc/`              | At most one per project      | The browser holding authoring         |
 | Summary       | A background session that rebuilds summaries (section 04)        | One at a time, others queued | The server; no browser                |
-| Refinement    | A subagent the authoring session spawns to rebuild summaries     | Inside the authoring session | The authoring session                 |
+| Refinement    | Subagents the authoring session spawns to rebuild summaries      | Inside the authoring session | The authoring session                 |
+| Pressure      | A Claude step of a pressure run (section 11)                     | One run per project, one step at a time | The server's pressure driver; the holder answers its prompts |
 
-The refinement subagent is no separate session. It runs through Claude Code's own subagent
-tool inside the authoring session, so the bridge sees it as tool activity and through the
-`SubagentStart`/`SubagentStop` hook events. Its transcript is the authoring session's
+A refinement subagent is no separate session. The authoring session spawns them in two waves
+(section 04: one `loom-plan:summary` agent per document summary, then one `loom-plan:overview`
+agent) through Claude Code's own subagent tool, so the bridge sees them as tool activity and
+through the `SubagentStart`/`SubagentStop` hook events. Each one's transcript is the authoring session's
 `<session-uuid>/subagents/agent-<id>.jsonl` (`loom/src/provider_data/resolve.rs:7`), which the
 bridge reads the same way as the main transcript.
 
@@ -44,9 +46,16 @@ files live in the section 02 runtime directory:
   session.json    registry record: kind, tmux socket, process identity, transcript path, state
   launch.sh       the launch script tmux runs (mode 0700)
   settings.json   hook registrations and permission rules (mode 0600)
+  brief.md        the appended system prompt (section 09)
+  plugin/         the per-session `loom-plan` plugin (section 09)
   events.jsonl    hook event spool
   answers/        permission decisions written by the server
+  done/           pressure sessions only: the completion marker's directory (section 12)
+  codex.log       pressure runs only: the Codex step's output (section 11)
 ```
+
+For a pressure run, `session.json` also records the Codex process's `ProcessIdentity`, so a
+later server can find and terminate it (section 11).
 
 The launch reuses loom's tmux lane at the level below stages. The stage-facing
 `TmuxBackend::spawn_session` takes a `Stage`, a `Session`, and `.loom/work`, none of which a
@@ -75,11 +84,14 @@ planning session as an ordinary user session. The working directory is the proje
 claude --session-id <session-id> --name "<display name>"
        --settings <session dir>/settings.json --setting-sources user,project
        --model <model> --effort <effort> --permission-mode <mode>
-       --append-system-prompt-file <brief> "<opening message>"
+       --plugin-dir <session dir>/plugin --strict-mcp-config
+       --append-system-prompt-file <session dir>/brief.md "<opening message>"
 ```
 
-The brief and the opening message come from section 09 (authoring) and section 04 (summary);
-the model and effort from the same sections; the permission mode and the write rules in
+The brief, the plugin and the opening message come from section 09, with section 11's
+differences for pressure sessions; the model and effort from section 09's table (section 04 for
+the summary levels, the `[pressure]` keys for pressure steps); `--strict-mcp-config` from
+section 12; the permission mode and the write rules in
 `settings.json` from section 12. The opening message travels as the positional prompt, as
 `loom pressure` passes its slash command (`loom/src/commands/pressure/spawn.rs:38`), so the
 first turn needs no input delivery.
@@ -125,6 +137,10 @@ and the hook payload's `session_id`, `transcript_path`, and the event-specific f
 | `SubagentStop`      | A subagent ended; never changes the session's own state                    |
 | `PreCompact`        | Compaction started; shown as a notice                                      |
 | `SessionEnd`        | Claude Code is exiting                                                     |
+
+`PreToolUse` is registered too, for section 12's path guard (`loom plan hook PreToolUse`,
+"The planning hook"). It writes nothing to the spool; it answers allow or deny for each file-tool
+call and fails closed.
 
 The server tails each session's spool. Hook commands never fail the session: an error writing
 the spool exits 0 with no output, except for `PermissionRequest`, which answers deny (below).
@@ -207,8 +223,14 @@ messages go in one at a time. Typing into the pane mid-turn would race Claude Co
 input handling, which the bridge cannot observe without reading the pane.
 
 A delivery counts once a `UserPromptSubmit` event arrives within 10 seconds. Without one the
-chat marks the message undelivered and offers to resend it. A message is capped at 100 KB.
-(My call.)
+chat marks the message undelivered and offers to resend it. The delivered text, the user's
+words with the attachment block section 10 appends, is capped at 100 KB, measured after the
+server builds it. The WebSocket command that carries a message is bounded separately by section
+12's 256 KiB inbound limit, which leaves room for the attachments' structured fields and JSON
+escaping. (My call.)
+
+A queued message can be withdrawn by the holder until its delivery starts; it leaves the queue
+and the chat.
 
 Chat messages that start with `/` are refused with a note, except `/compact`. (My call: `/clear`
 and `/exit` would change the session id or end it outside the bridge, and other commands open
@@ -240,10 +262,10 @@ dialog by keystrokes.
 There is no "always allow". Standing rules belong to section 12, which sets them per session
 kind.
 
-The hook is registered with a one-hour timeout. An unanswered request is denied after one hour;
-the answer is also deny when or when the
-session ends, the server is stopping, or the hook cannot reach its directory, the answer is deny
-with a message saying why, so a session never waits on a dialog in a pane nobody watches.
+The hook is registered with a one-hour timeout. The answer is deny, with a message saying why,
+when the request is unanswered after one hour, the session ends, the server is stopping, or the
+hook cannot reach its directory, so a session never waits on a dialog in a pane nobody watches.
+The chat shows that reason on the permission item.
 Summary sessions have no one to ask: their requests are denied at once and logged, since a
 summary session needing a permission means its rules (section 12) are wrong.
 
@@ -285,7 +307,7 @@ Sessions start cold: a new `loom plan` never resumes an earlier conversation, an
 never uses `claude --resume`. "Resume" in this product means a browser reattaching to a session
 that is still running in the same server:
 
-- A reload or reconnect from the holding browser (identified by its browser id, section 02)
+- A reload or reconnect from the holding browser (identified by its browser id, section 12)
   within the grace period gets the full chat model back, then live updates, and keeps
   authoring.
 - A read-only browser that connects at any time gets the same model, read-only.
@@ -306,7 +328,9 @@ only as a cache.
   process identity verifies as alive it delivers the closing message, waits within the same
   10-minute bound, and tears the session down, before accepting any new chat. A record whose
   identity cannot be verified is left alone and its socket name printed; a destructive sweep
-  reads missing evidence as "do not destroy" (`mistakes/tmux-backend.md`). (My call.)
+  reads missing evidence as "do not destroy" (`mistakes/tmux-backend.md`). (My call.) A
+  pressure session gets no closing message: it is torn down at once, and the run is handled as
+  section 11, "Stopping, failure, and server stops", describes.
 
 ## What the chat receives
 
@@ -318,13 +342,18 @@ deltas after. Section 08 owns how it is rendered.
   "session": {"id": "3f9a…", "kind": "authoring", "state": "working", "holder": "Dana",
               "away_until": null, "queued": 1},
   "turns": [{
-    "id": "t4", "duration_ms": 41200, "tokens": {"input": 1840, "output": 920},
+    "id": "t4", "duration_ms": 41200,
+    "tokens": {"input": 1840, "cache_write": 5200, "cache_read": 48000, "output": 920},
     "items": [
-      {"id": "u-…", "type": "user", "text": "…", "attachments": [{"path": "…", "heading": "…"}]},
+      {"id": "u-…", "type": "user", "text": "…", "attachments": [{
+        "kind": "source", "path": "doc/plans/PLAN-x.md", "anchor": "lifetime", "lines": [40, 44],
+        "stage": null, "summary_sentence": null, "rests_on": [], "quote": "…",
+        "changed_since_selected": false, "locked": null}]},
       {"id": "a-…", "type": "thinking", "duration_ms": 3100},
       {"id": "a-…", "type": "text", "markdown": "…"},
       {"id": "a-…", "type": "tool", "name": "Edit", "summary": "…", "status": "done", "subagent": null},
-      {"id": "p-…", "type": "permission", "tool": "Bash", "input": "…", "status": "pending"},
+      {"id": "p-…", "type": "permission", "tool": "Bash", "input": "…", "status": "denied",
+       "deny_reason": "holder", "note": "Not in doc/; ask before touching code."},
       {"id": "n-…", "type": "notice", "text": "Interrupted"}
     ],
     "changed_files": [{"path": "…", "before_hash": "…", "by_tool": true}],
@@ -334,13 +363,20 @@ deltas after. Section 08 owns how it is rendered.
 ```
 
 A delta adds an item, replaces an item by id (a tool call completing, a permission answered),
-or changes the session record. Subagent activity appears as tool items with `subagent` set to the
+or changes the session record. `tokens` holds the turn's four counts from the transcripts'
+`usage` (fresh input, cache writes, cache reads, output). A permission item's `deny_reason` is
+`holder`, `timeout`, `session_ended`, `server_stopping`, `hook_error`, `interrupt`, or
+`summary_session`; `note` is the holder's deny note, or null. Subagent activity appears as tool items with `subagent` set to the
 subagent's id, nested under the tool call that spawned it. `summaries_rebuilding` comes from
-section 04's engine. Attachments are formatted into the delivered text by section 10; the bridge
-keeps the structured form for display.
+section 04's engine. Attachments are formatted into the delivered text by section 10. The bridge
+parses each user record's `<loom-attachments>` block back into the structured fields above
+(section 10's header fields: kind, address and anchor, line range, `#stage:<id>`, summary
+sentence id, `rests-on` source anchors, quoted text, `changed-since-selected`, `locked`), so a
+reload rebuilds the chips from the transcript alone.
 
 Only the holding browser's connection may send the commands the bridge accepts: start a chat,
-send a message, answer a permission request, interrupt, end the chat. The server rejects them
+send a message, withdraw a queued message, answer a permission request, interrupt, end the
+chat. The server rejects them
 from any other connection.
 
 ## Out of scope for this section

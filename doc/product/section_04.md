@@ -233,8 +233,9 @@ loom plan summary release <summary-id>… gives up claims without sealing
 ```
 
 `brief` creates a **claim** file per summary under `~/.loom/plan/<project-key>/claims/`, naming
-the claiming session, and refuses summaries another live session has claimed. The server clears
-the claims of sessions that have ended. The brief lists, per summary, the source paths, the
+the claiming session, and refuses a summary that already has a claim file. It decides from
+`claims/` alone; whether the claiming session is still alive is the server's check, and the
+server clears the claims of sessions that have ended (section 12). The brief lists, per summary, the source paths, the
 current summary text with each stale sentence marked, which sentences may stay word for word,
 the body rules, the draft path, and the `seal` command. Keeping current sentences word for word
 keeps their ids, so overview links into them survive. All of these work without a running
@@ -253,9 +254,11 @@ that links a stale or missing sentence.
 | The user presses rebuild on a summary or a batch | a background summary session                                           | no           |
 
 **Refinement.** The authoring skill (section 09) ends every turn that edited documents by running
-`loom plan summary status`, then spawning one subagent that runs `brief` for the summaries built
-on what the turn changed and the overviews that cite them, rewrites, and seals them. The turn is
-not over until the subagent returns; the chat names the summaries being rebuilt (vision, The
+`loom plan summary status`, then rebuilding in two waves: one `loom-plan:summary` subagent per
+document summary the turn made stale, incomplete or missing, in parallel, each running `brief`,
+rewriting, and sealing its summary; then, once they have returned, one `loom-plan:overview`
+subagent for the overviews that cite them. The turn is not over until both waves return; the chat
+names the summaries being rebuilt (vision, The
 screen). While an authoring turn runs, the scheduler starts no background session, and at the
 end of the turn whatever is still stale or incomplete goes to the background queue. (My call:
 this keeps the watcher, which sees the session's edits the moment they are written, from
@@ -271,15 +274,19 @@ next batch. The server stops the session once every claim it held is sealed or r
 session that seals nothing for 10 minutes is stopped, its claims are released, and the
 summaries it held are shown as failed with the last `seal` error. (My call.)
 
-**Models.** Document summaries (one per product section, one per plan) are built on Haiku by
-default. Overviews (product and engineering) are built on Sonnet at high effort. Config keys
-override both, per level: `[plan] document_summary_model` and `document_summary_effort` for
-document summaries, `[plan] overview_model` and `overview_effort` for overviews. They resolve with loom's existing
-precedence (project `.loom/work/config.toml` when present, then `~/.loom/config.toml`, then the
-default; `doc/loom/knowledge/conventions/model-and-effort-config.md`). The brief prints the
-model and effort for each level, so the authoring session spawns its subagent on the same ones.
-Summarizing one document is small work for Haiku; the overviews join many documents and get the
-stronger model. Cost is an anti-goal concern.
+**Models.** Document summaries (one per product section, one per plan) are built on Haiku at
+medium effort by default. Overviews (product and engineering) are built on Sonnet at high
+effort. Config keys override both, per level: `[plan] document_summary_model` and
+`document_summary_effort` for document summaries, `[plan] overview_model` and `overview_effort`
+for overviews. They resolve with loom's existing precedence (project `.loom/work/config.toml`
+when present, then `~/.loom/config.toml`, then the default;
+`doc/loom/knowledge/conventions/model-and-effort-config.md`), and they follow the one
+`[plan] <role>_model` / `<role>_effort` naming scheme section 09 uses for the authoring keys. The
+subagent tool takes no effort parameter, so the server writes the resolved model and effort into
+the `model` and `effort` frontmatter of the `loom-plan:summary` and `loom-plan:overview` agent
+definitions when the session starts (section 09), and each wave runs on its level's model
+without the authoring session choosing one. Summarizing one document is small work for Haiku;
+the overviews join many documents and get the stronger model. Cost is an anti-goal concern.
 
 ## Asking before a large rebuild
 

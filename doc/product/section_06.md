@@ -44,9 +44,10 @@ Opening one shows the checklist line for that gap and, to the authoring browser,
 (section 01). (My call: the tree then doubles as the project checklist in document order.)
 
 **Plan entries** carry the plan's state from section 01 as a glyph and a word: written,
-running (`IN_PROGRESS-`), or done (`DONE-` or under `doc/plans/archive/`). A pressure-tested plan
-also shows the date of its last `## Pressure tests` line. A plan that fails validation shows an
-error count (see "Plan validation"). Running and done plans show a lock glyph.
+running (`IN_PROGRESS-`), done (`DONE-` or under `doc/plans/archive/`), or retired
+(`doc/plans/archive/RETIRED-`). A pressure-tested plan also shows the date of its last
+`## Pressure tests` line. A plan that fails validation shows an error count (see "Plan
+validation"). Running, done and retired plans show a lock glyph.
 
 **Briefs sit under their plan.** A plan entry expands to its brief bundle, laid out as it is on
 disk: `common.md` first, then one folder per stage directory, each holding that stage's brief
@@ -146,9 +147,9 @@ accepts them.
 when all of these hold:
 
 - it is a Markdown file under `doc/product/` or `doc/plans/`, or under the Other group;
-- it is not a running or done plan: no `IN_PROGRESS-` or `DONE-` prefix, not under
-  `doc/plans/archive/`;
-- it is not a brief of a running or done plan (My call: `loom run` reads briefs from the
+- it is not a running, done or retired plan: no `IN_PROGRESS-`, `DONE-` or `RETIRED-` prefix,
+  not under `doc/plans/archive/`;
+- it is not a brief of a running, done or retired plan (My call: `loom run` reads briefs from the
   committed tree, so an edit during a run reaches no stage and misleads a later reader about what
   the stages were told);
 - it is not under `doc/loom/`: the knowledge base and the summary store are read-only in file
@@ -310,8 +311,9 @@ next to the selection. It attaches the passage to the next chat message as a ref
 - the line range, when the selection is in the editor or a diff;
 - the stage id, when the selection is in a plan's Stages panel.
 
-Only the browser holding authoring, or a browser that can take it, sees the control. Section 08
-owns how attachments show in the chat and reach the session.
+Only the browser holding authoring, or any browser while nobody holds it, sees the control.
+Section 08 renders attachments as chips in the chat; section 10 defines the text delivered to the
+session.
 
 ## Out of scope for this section
 

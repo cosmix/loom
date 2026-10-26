@@ -28,8 +28,9 @@ lack these plans, and a user may have deleted them; a missing plan file may be d
 committed, and the app does not try to tell which.
 
 The walk skips dotfiles (`.DS_Store`), the summary store `doc/loom/summaries/` (project content
-owned by section 04, never shown as a document), and symlinks that resolve outside the
-repository (section 12).
+owned by section 04, never shown as a document), and every symlink except one whose target,
+resolved, is a regular file inside `doc/` (outside `doc/loom/summaries/`); symlinked
+directories are always skipped (section 12, "Symlinks under `doc/`").
 
 ## Document kinds
 
@@ -74,8 +75,9 @@ A plan's identity is its **slug**: the file stem with `IN_PROGRESS-`, `DONE-`, `
 | `doc/plans/archive/RETIRED-PLAN-<slug>.md`                 | retired |
 
 The first three rows are section 01's. `RETIRED-` is a convention the archive already uses
-(`doc/plans/archive/RETIRED-PLAN-secure-distilled-loom-v2.md`) for a plan abandoned without a
-run. A retired plan closes its metaplan entry, since retiring was a decision, and the checklist
+(`doc/plans/archive/RETIRED-PLAN-secure-distilled-loom-v2.md`) for an abandoned plan: one
+retired before it ran, or one whose unfinished run was abandoned (section 11, "Abandoning an
+unfinished run"), which moves `doc/plans/IN_PROGRESS-PLAN-<slug>.md` to this path. A retired plan closes its metaplan entry, since retiring was a decision, and the checklist
 shows it as retired instead of done. Retired plans are read-only, like running and done ones.
 
 If two files carry one slug, the most advanced state wins (retired, then done, then running,

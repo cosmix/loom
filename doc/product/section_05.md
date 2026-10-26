@@ -49,9 +49,9 @@ reader sees which summaries are out of date, without scanning the text.
 Every document summary is also readable on its own, at `/product/<doc>` (for example
 `/product/section_04`) and `/engineering/<plan-slug>`. The page header gives the title, the path
 (monospace), the colour, whether the summary is up to date, an **Open in file mode** link, and
-the cross links below. Plan pages also show the plan's state (written, running, done; section 01)
-and the date of its last pressure test, if any. Running and done plans show the read-only notice
-of the vision's "Locked plans" decision.
+the cross links below. Plan pages also show the plan's state (written, running, done, retired;
+section 01) and the date of its last pressure test, if any. Running, done and retired plans show
+the read-only notice of the vision's "Locked plans" decision.
 
 The body is the summary's text, every sentence opening to its source passages exactly as level 1
 sentences do inside an overview.
@@ -216,11 +216,14 @@ Selecting text anywhere in the reading column, at any level, shows a small float
 chat** button by the selection; `a` does the same for the focused sentence. The attachment
 carries the selected text and its provenance: for summary text, the sentence and the source
 sections it rests on; for passage text, the path, heading anchor and line range. A selection
-spanning levels carries each part's provenance. Section 08 renders attachments in the input box;
-section 10 owns what the session does with them.
+spanning levels carries each part's provenance. Section 08 renders attachments as chips in the
+input box; section 10 defines the text delivered to the session and what the session does with
+it.
 
-Read-only browsers have no chat input, so they get no Add to chat button and `a` does nothing;
-they can still select and copy.
+When nobody holds authoring, any browser may attach passages and start a chat, taking authoring
+as it sends (section 10, "Taking a passage into chat"). While another browser holds authoring, a
+read-only browser has no chat input: it gets **Send to author** in place of Add to chat (section
+10, "Read-only viewers"), `a` does nothing, and it can still select and copy.
 
 ## Empty and partial states
 

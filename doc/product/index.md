@@ -209,7 +209,7 @@ Each becomes `doc/product/section_xx.md`. Order is a first proposal for discussi
   call). The knowledge base keeps its own hierarchy and is browsed in file mode.
 
 - **Refinement (04, 05, 10).** A refinement edits only the documents under `doc/`. In the same
-  turn, the session that made the edit has a subagent rebuild the summaries built on the changed
+  turn, the session that made the edit has subagents rebuild the summaries built on the changed
   passages and the overviews that cite them. The background summary sessions handle edits made
   outside the app (an editor, a `git pull`). The reader's view updates where it stands: an open
   source passage changes as soon as its file changes; a summary sentence awaiting its rebuild
@@ -249,7 +249,8 @@ Each becomes `doc/product/section_xx.md`. Order is a first proposal for discussi
   documents at a time. A project has one `loom plan` server; a second `loom plan` refuses to
   start and prints the running server's URL. Several people can open that URL: the first
   browser to chat holds authoring, and every other browser is read-only: it can read, expand
-  and browse, sees who else is connected and who holds authoring, but cannot chat or save.
+  and browse, sees who else is connected and who holds authoring, and can send a passage with a
+  note to the holder (section 10), but cannot chat or save.
   Summary sessions run alongside the authoring session.
 - **Locked plans (01, 06, 11).** Plan files with the `IN_PROGRESS-`, `DONE-` or `RETIRED-` prefix are
   read-only in the app, in the editor and to sessions, with a notice saying why.
