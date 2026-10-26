@@ -1,6 +1,6 @@
 # Knowledge Write Channel
 
-> Why distill cannot write
+> Write channel
 
 ## The Distillation Stage Cannot Write Knowledge
 

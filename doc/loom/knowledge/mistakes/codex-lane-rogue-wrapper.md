@@ -1,6 +1,6 @@
 # Codex Lane Rogue Wrapper
 
-> Wrapper implemented itself
+> Rogue wrapper
 
 ## A forwarding wrapper implemented the task itself (2026-08-07)
 

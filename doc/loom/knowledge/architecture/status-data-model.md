@@ -1,6 +1,6 @@
 # Status Data Model
 
-> Status field sources
+> Status fields
 
 ## Sources of Truth
 

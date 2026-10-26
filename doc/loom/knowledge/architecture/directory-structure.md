@@ -1,6 +1,6 @@
 # Directory Structure
 
-> Module tree, state layout
+> Module tree
 
 ## Directory Structure
 

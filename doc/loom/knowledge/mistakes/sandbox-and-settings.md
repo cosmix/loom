@@ -1,6 +1,6 @@
 # Sandbox And Settings
 
-> Sandbox paths, perm sync
+> Sandbox config
 
 ## Sandbox: Contradictory Path Rules
 

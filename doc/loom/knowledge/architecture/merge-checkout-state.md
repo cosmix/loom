@@ -1,6 +1,6 @@
 # Merge Checkout State
 
-> Guarded fast-forward
+> Fast-forward
 
 ## Merge Checkout State
 

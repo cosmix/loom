@@ -1,6 +1,6 @@
 # Iterm2 Window Teardown
 
-> iTerm2 window never named
+> iTerm2 naming
 
 ## iTerm2 Windows Survive Stage Completion — Spawn Never Names the Window (GitHub #7)
 

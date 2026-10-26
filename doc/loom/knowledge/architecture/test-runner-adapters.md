@@ -1,6 +1,6 @@
 # Test Runner Adapters
 
-> Adapters, profiles, quoting
+> Adapters
 
 ## Test-Runner Adapters, Language Profiles, and Project Detection
 

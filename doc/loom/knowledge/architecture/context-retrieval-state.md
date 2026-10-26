@@ -1,6 +1,6 @@
 # Context Retrieval State
 
-> Layers, delivery records
+> Layers
 
 ## Base vs Overlay Ownership
 

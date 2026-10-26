@@ -1,6 +1,6 @@
 # Subagent Hierarchy
 
-> Fan-out, coordinators, teams
+> Fan-out, teams
 
 ## Subagent Hierarchy + Ultracode Guidance
 

@@ -1,6 +1,6 @@
 # Sandbox Write Rules Inert
 
-> Only Edit(path) rules bind
+> Inert rules
 
 Claude Code's file permission check consults **only** `Edit(path)` rules. A `Write(path)` rule
 parses, prints a startup warning, and is then ignored — so a `Write(**)` deny permits every write

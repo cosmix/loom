@@ -1,6 +1,6 @@
 # Remote Control
 
-> Capability, preflight, naming
+> Capability
 
 ## Remote Control Module (loom/src/remote_control.rs)
 

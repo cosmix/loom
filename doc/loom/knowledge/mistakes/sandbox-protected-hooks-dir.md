@@ -1,6 +1,6 @@
 # Directory Named `hooks/` Is Sandbox-Protected
 
-> hooks/ dir is protected
+> Hooks dir
 
 ## The Rule
 

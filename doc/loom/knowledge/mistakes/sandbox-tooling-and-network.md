@@ -1,6 +1,6 @@
 # Sandbox Tooling And Network
 
-> Sandbox tool failures
+> Tool failures
 
 ## The Sandbox's AF_UNIX Denial Also Kills sccache, Breaking Every Cargo Command (2026-09-04)
 
@@ -162,7 +162,7 @@ produces a grant path the sandbox never binds at all.
 
 ## Worktree Test Runs Resolve node_modules From the MAIN Repo When the Worktree Has None (2026-08-11)
 
-**What happened:** in a JS-project worktree stage (cartolyth `city-detail-popup`), codex's proof
+**What happened:** in a JS-project worktree stage (myproject `city-detail-popup`), codex's proof
 command `bunx vitest run …` failed with EROFS writing `node_modules/.vite-temp`, with no test
 assertions executed — while the file edits themselves landed fine.
 
@@ -172,7 +172,7 @@ MAIN repo's `node_modules/` — so test runners load dependencies from the main 
 their caches there too (vite writes `node_modules/.vite-temp/` while loading config). Both the
 codex nested sandbox and the stage sandbox refuse that write, correctly: it lands outside the
 worktree, in shared mutable state that parallel stages and the operator's checkout depend on.
-Proof it really happens: `node_modules/.vite-temp` exists in cartolyth's MAIN repo, created by a
+Proof it really happens: `node_modules/.vite-temp` exists in myproject's MAIN repo, created by a
 later unsandboxed run.
 
 **Prevention:** a plan whose stages run JS/TS tests in-session MUST provision dependencies inside

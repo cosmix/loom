@@ -1,6 +1,6 @@
 # Model And Effort Config
 
-> [models] precedence
+> [models]
 
 ## Two Configurable Sections
 

@@ -1,6 +1,6 @@
 # Web Dashboard Server (loom status --web)
 
-> Dashboard server concurrency
+> Server races
 > server under `loom/src/commands/status/web/` and its React frontend. See
 > [architecture/web-dashboard.md](../architecture/web-dashboard.md) for the shape of the
 > system these fixes apply to.

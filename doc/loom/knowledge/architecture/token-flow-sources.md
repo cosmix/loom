@@ -1,6 +1,6 @@
 # Token Flow Sources
 
-> Token flow sources
+> Token flow
 
 ## Token Usage Sources
 
