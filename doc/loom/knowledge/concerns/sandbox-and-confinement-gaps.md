@@ -1,6 +1,6 @@
 # Sandbox And Confinement Gaps
 
-> Canary, creds, env, caches
+> Confinement
 
 ## Sandbox Denial Has No End-to-End CI Canary
 

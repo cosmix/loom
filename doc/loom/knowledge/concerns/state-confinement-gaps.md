@@ -1,6 +1,6 @@
 # State Confinement Gaps
 
-> Shared package caches
+> Cache sharing
 
 ## Open Gap
 

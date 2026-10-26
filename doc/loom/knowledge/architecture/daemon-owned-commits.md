@@ -1,6 +1,6 @@
 # Daemon Owned Commits
 
-> Relayed signed commits
+> Daemon commits
 
 ## Daemon-Owned Commits
 

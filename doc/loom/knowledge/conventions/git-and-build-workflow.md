@@ -3,7 +3,7 @@
 
 # Git And Build Workflow
 
-> Git, cargo, CI, ledger
+> Git, build
 
 ## Git Operations
 

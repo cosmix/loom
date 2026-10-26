@@ -1,6 +1,6 @@
 # Target Guard
 
-> Accepted tip, hook, holds
+> Accepted tip
 
 ## Target Guard
 

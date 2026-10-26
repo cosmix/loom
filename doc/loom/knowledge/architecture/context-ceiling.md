@@ -11,7 +11,7 @@ verified: 6642fab24c3bdda26a2f32a751552411eca2039b
 
 # Context Ceiling
 
-> Resident-token ceiling tiers
+> Ceiling tiers
 
 ## The Context Ceiling: Three Independent Thresholds, One Number
 

@@ -1,6 +1,6 @@
 # Subagent Orchestration
 
-> Delegation, defect reports
+> Delegation
 
 ## "I Wrote My Own Because I Could Not Reach Yours" Is a Defect Report
 

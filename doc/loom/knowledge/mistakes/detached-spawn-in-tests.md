@@ -1,6 +1,6 @@
 # Detached Spawn In Tests
 
-> No process outlives its test
+> Test orphans
 
 ## Never Spawn a Surviving Process From a Test (2026-08-21)
 

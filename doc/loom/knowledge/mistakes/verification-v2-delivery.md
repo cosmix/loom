@@ -1,6 +1,6 @@
 # Verification V2 Delivery
 
-> Wave, gate, proof misses
+> v2 misses
 
 ## A Wave Brief Left Shared Files Unowned, and Mid-Run Approval Never Arrived (2026-09-24)
 
@@ -384,3 +384,13 @@ tests parent, `rg` the name in sibling files that glob-import `super::*`.
 **Why:** the fix rounds ran the installed binary, not the one the stage was building.
 
 **Prevention:** a stage that adds a CLI flag must not depend on it for its own fix rounds. Plan those rounds on the bare gate, and run the flag form after the stage completes and the binary is installed.
+
+## A Contract That Spawns the Loom Binary Failed the Spawn Guard Only in integration-verify (2026-10-26)
+
+**What happened:** `loom/tests/planning_check_cli_contracts.rs` (frozen by checklist-check) spawned `CARGO_BIN_EXE_loom` without removing the inherited `LOOM_*` variables, so a real session identity could reach the child. `cargo test --all-targets` failed only on `integration::binary_spawn_guard::only_sanctioned_spawners_spawn_the_loom_binary_directly`. The contract stage's own acceptance never ran `--test integration`. `loom stage dispute-contract` was not available to integration-verify: it admits only the filing stage's own frozen contracts, and integration-verify had none.
+
+**Why:** the frozen contract was gated by its own acceptance, and the cross-suite guard ran only at the end.
+
+**Prevention:** a contract stage whose contract spawns the loom binary lists `cargo test --test integration binary_spawn_guard` in its acceptance, removes every `LOOM_*` variable from the child before setting `LOOM_HOME`, and adds the file to `SANCTIONED_SPAWNERS` in `loom/tests/integration/binary_spawn_guard.rs`.
+
+**Fix:** integration-verify edited the contract's `check()` helper (no assertion line changed) and added the file to `SANCTIONED_SPAWNERS`.

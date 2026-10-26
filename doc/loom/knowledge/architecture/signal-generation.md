@@ -1,15 +1,15 @@
 ---
 sources:
-  - loom/src/telemetry/mod.rs
-  - loom/src/telemetry/spool.rs
-  - loom/src/commands/knowledge/telemetry.rs
-  - loom/src/orchestrator/core/stage_telemetry.rs
+- loom/src/telemetry/mod.rs
+- loom/src/telemetry/spool.rs
+- loom/src/commands/knowledge/telemetry.rs
+- loom/src/orchestrator/core/stage_telemetry.rs
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 
 # Signal Generation
 
-> Signal assembly, cache
+> Signals
 
 ## Signal Generation Pipeline (orchestrator/signals/) [DETAILED]
 

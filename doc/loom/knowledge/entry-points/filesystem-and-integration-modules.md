@@ -3,7 +3,7 @@
 
 # Filesystem And Integration Modules
 
-> Git, fs, handoff, sandbox
+> Fs, git, sandbox
 
 ## Git Modules
 

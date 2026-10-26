@@ -1,50 +1,50 @@
 ---
 aliases:
-  - loom usage
-  - read receipts
-  - forward receipts
-  - subagents wait
-  - worker brief
+- loom usage
+- read receipts
+- forward receipts
+- subagents wait
+- worker brief
 sources:
-  - loom/src/commands/usage/mod.rs
-  - loom/src/commands/usage/provider_types.rs
-  - loom/src/commands/usage/provider_normalization.rs
-  - loom/src/commands/usage/transcript_merge.rs
-  - loom/src/commands/usage/claude_provider.rs
-  - loom/src/commands/usage/codex_provider.rs
-  - loom/src/commands/usage/receipt_provider.rs
-  - loom/src/commands/usage/forward_join.rs
-  - loom/src/commands/usage/comparison.rs
-  - loom/src/commands/usage/comparison_validation.rs
-  - loom/src/models/execution_receipt.rs
-  - loom/src/quota/history.rs
-  - loom/src/verify/criteria/cache_contract.rs
-  - loom/src/models/forward_receipt.rs
-  - loom/src/commands/hook/forward_receipt.rs
-  - loom/src/commands/subagents/forward_jobs_wait.rs
-  - loom/src/commands/subagents/classify_forward.rs
-  - loom/src/commands/hook/worker_brief.rs
-  - loom/src/commands/hook/pre_compact.rs
-  - loom/src/plan/schema/structural_checks/worker_table.rs
-  - loom/src/orchestrator/signals/tests_size.rs
-  - loom/src/orchestrator/signals/cache.rs
-  - loom/src/orchestrator/signals/format/codex.rs
-  - loom-hooks/post-tool-use.sh
-  - loom-hooks/read-guard.sh
-  - loom-hooks/_read_discipline.sh
-  - loom-hooks/spawn-guard.sh
-  - loom-hooks/pre-compact.sh
-  - loom-hooks/poll-guard.sh
-  - loom-hooks/codex-forward-guard.sh
-  - agents/loom-codex-forwarder.md
-  - loom-hooks/_read_ledger.sh
-  - loom-hooks/knowledge-orient.sh
+- loom/src/commands/usage/mod.rs
+- loom/src/commands/usage/provider_types.rs
+- loom/src/commands/usage/provider_normalization.rs
+- loom/src/commands/usage/transcript_merge.rs
+- loom/src/commands/usage/claude_provider.rs
+- loom/src/commands/usage/codex_provider.rs
+- loom/src/commands/usage/receipt_provider.rs
+- loom/src/commands/usage/forward_join.rs
+- loom/src/commands/usage/comparison.rs
+- loom/src/commands/usage/comparison_validation.rs
+- loom/src/models/execution_receipt.rs
+- loom/src/quota/history.rs
+- loom/src/verify/criteria/cache_contract.rs
+- loom/src/models/forward_receipt.rs
+- loom/src/commands/hook/forward_receipt.rs
+- loom/src/commands/subagents/forward_jobs_wait.rs
+- loom/src/commands/subagents/classify_forward.rs
+- loom/src/commands/hook/worker_brief.rs
+- loom/src/commands/hook/pre_compact.rs
+- loom/src/plan/schema/structural_checks/worker_table.rs
+- loom/src/orchestrator/signals/tests_size.rs
+- loom/src/orchestrator/signals/cache.rs
+- loom/src/orchestrator/signals/format/codex.rs
+- loom-hooks/post-tool-use.sh
+- loom-hooks/read-guard.sh
+- loom-hooks/_read_discipline.sh
+- loom-hooks/spawn-guard.sh
+- loom-hooks/pre-compact.sh
+- loom-hooks/poll-guard.sh
+- loom-hooks/codex-forward-guard.sh
+- agents/loom-codex-forwarder.md
+- loom-hooks/_read_ledger.sh
+- loom-hooks/knowledge-orient.sh
 verified: c8c167bb2dbba1c5ec65b7b9c61130873a249da2
 ---
 
 # Token Accounting And Receipts
 
-> Usage ledger, compare
+> Usage ledger
 
 ## Scope and Evidence
 

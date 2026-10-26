@@ -3,7 +3,7 @@
 
 # Security And Isolation
 
-> 4-layer worktree defense
+> Isolation
 
 ## Worktree Isolation (4-Layer Defense)
 

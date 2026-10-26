@@ -1,15 +1,15 @@
 ---
 sources:
-  - loom/src/fs/memory/types.rs
-  - loom/src/fs/memory/spool.rs
-  - loom/src/fs/memory/parser.rs
-  - loom/src/orchestrator/signals/generate/findings.rs
+- loom/src/fs/memory/types.rs
+- loom/src/fs/memory/spool.rs
+- loom/src/fs/memory/parser.rs
+- loom/src/orchestrator/signals/generate/findings.rs
 verified: 4458f15d4ed3e0fb69cc87bdbdf1381fc937473e
 ---
 
 # Memory Spool and Drain
 
-> Memory spool and relay
+> Memory relay
 
 ## The Problem It Solves
 

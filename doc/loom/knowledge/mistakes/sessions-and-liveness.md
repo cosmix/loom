@@ -1,6 +1,6 @@
 # Sessions And Liveness
 
-> Session identity, liveness
+> Liveness
 
 ## Session Identity: Backend Metadata Must Be Persisted
 

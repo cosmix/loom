@@ -1,15 +1,15 @@
 ---
 sources:
-  - loom/src/fs/knowledge/catalog.rs
-  - loom/src/commands/knowledge/check.rs
-  - loom/src/fs/knowledge/catalog/issue.rs
-  - loom/src/fs/knowledge/catalog/evidence.rs
+- loom/src/fs/knowledge/catalog.rs
+- loom/src/commands/knowledge/check.rs
+- loom/src/fs/knowledge/catalog/issue.rs
+- loom/src/fs/knowledge/catalog/evidence.rs
 verified: fffbcda55b1c83af0e06059063cab7bf93c6de67
 ---
 
 # Knowledge Hierarchy
 
-> Knowledge fs, INDEX, checks
+> Knowledge fs
 
 ## Module Layout (`fs/knowledge/`)
 

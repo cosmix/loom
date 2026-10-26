@@ -1,6 +1,6 @@
 # Hook Command Matching
 
-> Hooks reading Bash text
+> Hook text
 > argv, match command words and argument values — and fall back to the old regexes when the
 > command will not parse.
 

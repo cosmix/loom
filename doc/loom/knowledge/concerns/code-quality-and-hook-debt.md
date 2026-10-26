@@ -1,6 +1,6 @@
 # Code Quality And Hook Debt
 
-> Oversized units, hooks
+> Code debt
 
 ## Oversized Rust Units Remain Controlled Debt
 
@@ -253,3 +253,7 @@ Reviewer suggestions and findings the plan left unimplemented, with no fix in th
 - **`CLAUDE_MD_TEMPLATE` and `ORCHESTRATION_SKILL` `include_str!` constants are declared in seven test files.** A shared test-constants module would remove it.
 - **Go skill triggers.** `skills/loom-golang/SKILL.md` keeps the two-word triggers `go code`, `go test`, `go mod` and `in go` as weight-2 solo qualifiers; an imperative-"go" Rust prompt could hit them. `error` and `sync` are dropped by the indexer's `STOPWORDS` (`skill_index.rs`). `hooks_skill_trigger_evidence.rs` skips silently when `python3` is missing (`skip_unless_python3`); run the gate with `LOOM_TEST_REQUIRE_SANDBOX_FREE=1` so a skip fails. The Go test fails only when two or more removed bare words return, since one bare hit scores 1 against `MIN_SCORE` 2 (`skill-trigger.sh`); asserting that the built `skill-keywords.json` has no bare key for the ten removed words would catch a single one.
 - **`loom/tests/guidance_gate_contracts.rs` spawns about 320 bash plus `jq` pipelines serially.** It is isolated and correct, and the slowest test of the suite for its size.
+
+## No Hook Refuses a Relayed `loom` Command Run in the Background or Through a Pipe
+
+`loom check`, `loom stage commit` and `loom stage complete` relay a request to the daemon and print the `LOOM_RELAY_V1` line the relay hook reads from foreground, unfiltered stdout. Run in a background Bash loop, piped, or redirected, the line is lost and the host job ends `refused: the request never reached the daemon` (the document-model and checklist-check stages hit it again). Proposal: extend the Bash PreToolUse guard to refuse `run_in_background`, a pipe or a redirect on these three commands. Prose in [Wave, Gate and Proof Misses](../mistakes/verification-v2-delivery.md) has not stopped the recurrence.

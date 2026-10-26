@@ -3,7 +3,7 @@
 
 # Cli And Plan Pipeline
 
-> CLI dispatch, plan pipeline
+> CLI dispatch
 
 ## CLI Entry Point
 
