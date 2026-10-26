@@ -123,11 +123,13 @@ contracts live in `loom/tests/planning_*_contracts.rs`.
 - `#[derive(Clone, Default)] pub struct OwnWrites(..)`; `impl OwnWrites { pub fn register(&self, rel: &Path, hash: &str) }`
   — plan 4 registers the `normalized_hash` of every summary file it seals or rewrites; the watcher drops a
   changed/added summary path whose hash equals the registered one (entry consumed on match).
-- `pub struct Watcher`; `impl Watcher { pub fn new(root: PathBuf, own: OwnWrites) -> Self; pub fn poll(&mut self) -> Result<Option<Batch>>; pub fn spawn(self, interval: Duration, stop: Arc<AtomicBool>, on_batch: impl FnMut(Batch) + Send + 'static) -> JoinHandle<()> }`.
+- `pub struct Watcher`; `impl Watcher { pub fn new(root: PathBuf, own: OwnWrites) -> Self; pub fn poll(&mut self) -> Result<Option<Batch>>; pub fn spawn(self, interval: Duration, stop: Arc<AtomicBool>, on_batch: impl FnMut(Batch) + Send + 'static) -> Result<JoinHandle<()>>; pub fn error_slot(&self) -> Arc<Mutex<Option<String>>>; pub fn last_error(&self) -> Option<String> }`.
   `poll` is one walk (size, mtime, inode compare; hashes only differing files); it returns the accumulated batch on
   the first walk that finds nothing new. The first walk returns `initial: true` with every file as `added`.
   The watcher walks ALL of `doc/` including `doc/loom/summaries/` (consumers filter), with discovery's skip rules
-  otherwise. `spawn` default interval 1 s.
+  otherwise. `spawn` default interval 1 s. `spawn` fails only when the thread cannot be created. A failed walk
+  delivers no batch and leaves its message in the error slot (cleared by the next good walk); `spawn` consumes
+  the watcher, so the caller takes `error_slot()` before `spawn` and checks it periodically.
 
 **Document parsing** [`checklist-check`] `loom::planning::{vision, metaplan, implements, pressure, xref, briefs}`:
 - `vision::parse_sections_table(text) -> Result<Vec<VisionRow { number: u32, name: String, line: usize }>, VisionProblem>`
@@ -138,7 +140,7 @@ contracts live in `loom/tests/planning_*_contracts.rs`.
 - `briefs::plan_briefs(root, &PlanEntry, stage_ids: &[String]) -> Result<PlanBriefs { by_stage: BTreeMap<String, Vec<PathBuf>>, common: Vec<PathBuf>, other: Vec<PathBuf>, broken: Vec<String> }>`; orphan bundles via `briefs::orphan_bundles(&DocTree)`.
 
 **Checklist** [`checklist-check`] `loom::planning::checklist`:
-- `pub struct ParsedDocs { pub vision_rows: Result<Vec<VisionRow>, VisionProblem>, pub metaplans: Vec<(PathBuf, Vec<MetaplanEntry>)>, pub pressure: BTreeMap<String /* slug */, Vec<PressureRecord>>, pub locked_files: Vec<PathBuf> }`; `pub fn build_checklist(tree: &DocTree, parsed: &ParsedDocs) -> Checklist` (pure; `Project::load` builds `ParsedDocs` and calls it).
+- `pub struct ParsedDocs { pub vision_rows: Result<Vec<VisionRow>, VisionProblem>, pub metaplans: Vec<(PathBuf, Vec<MetaplanEntry>)>, pub pressure: BTreeMap<String /* slug */, Vec<PressureRecord>>, pub locked_files: Vec<PathBuf>, pub sections_written: Vec<u32> /* sorted numbers of the product section files holding a non-whitespace character, or unreadable and not empty */ }`; `pub fn build_checklist(tree: &DocTree, parsed: &ParsedDocs) -> Checklist` (pure; `Project::load` builds `ParsedDocs` and calls it).
 - `pub enum Step { Vision = 1, ProductSpec, Metaplan, Plans, PressureTest, Review, Run }`; `pub enum StepMark { Done, Gap, Active, Optional }`
 - `pub struct Checklist { pub current: CurrentStep, pub steps: Vec<(Step, StepMark)>, pub items: Vec<ChecklistItem>, pub primary: Option<Offer>, pub secondary: Vec<Offer>, pub state: ProjectState }`,
   `pub enum CurrentStep { Step(Step), Ready, ReadyAllDone }`

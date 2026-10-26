@@ -84,7 +84,7 @@ deserialize into the Rust type, serialize back, compare `serde_json::Value`s; na
 `<name>_fixture_matches_serde_output`. `hello.json` holds a holder that is away (both time fields
 set), a read-only list with one entry, and a checklist with a primary offer, one secondary offer
 and two items, so every optional field is exercised. A `From<&Checklist>`
-test builds a `Checklist` through plan 1's public API from a fixture tree (`planning::checklist::checklist`
+test builds a `Checklist` through plan 1's public API from a fixture tree (`Project::load(&root)?.checklist`
 over a temp `doc/` with only `doc/product/index.md`) and asserts `current == Step { number: 2 }` or
 whatever plan 1's rules give; read plan 1's tests for the expected step rather than guessing.
 
