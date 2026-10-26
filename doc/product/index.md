@@ -1,0 +1,255 @@
+# Loom Plan — Product Vision
+
+Status: agreed vision (2026-10-26). Each section listed under
+[Specification sections](#specification-sections) becomes its own
+`doc/product/section_xx.md`.
+
+## Problem
+
+Planning a loom project happens in Claude Code today, in a sequence the user drives by hand:
+
+1. Brainstorm a product vision (`doc/product/index.md`) that names the sections the product
+   spec needs.
+2. Write each product section under `doc/product/`.
+3. Brainstorm a metaplan (`doc/plans/index.md` or `doc/plans/metaplan.md`): one entry per loom
+   plan, three or four paragraphs each.
+4. Author the loom plans, usually with an agent team.
+5. Pressure-test the first plans with `loom pressure`.
+6. Review the plans as a human.
+7. Start implementation with `loom run`.
+
+Two things go wrong. The user has to know this sequence, the skills behind each step, and the
+file conventions, and drive all of it from a terminal. And by step 6 the output is too large to
+review: a vision, a dozen product sections, a metaplan, several plans, and a tree of briefs under
+`doc/plans/briefs/`. A PM or engineer asked to approve that either skims it or gives up. The
+review step, the one where a human is supposed to catch a wrong direction before agents spend
+days building it, is the step the current tooling serves worst.
+
+## Vision
+
+`loom plan` opens a browser on a React app served by the `loom` binary. From that app a user
+takes a project from an empty `doc/` to approved, pressure-tested loom plans without opening a
+terminal, and can come back at any later point to read, question, and refine what exists.
+
+The app does two jobs.
+
+**Authoring.** The user talks to Claude Code through a chat panel in the app. Loom starts and
+owns those Claude Code sessions in tmux on the backend, relays the session's output to the chat
+panel as structured messages, and delivers the user's messages back into the session. The
+sessions run with skills and guidance that make them produce documents in loom's conventions for
+whichever step the project is at: vision, product sections, metaplan, plans, pressure review.
+
+**Reviewing.** The user explores everything that planning produced, in two modes:
+
+- **File mode.** Browse and read any document: product spec, metaplan, loom plans, briefs, and
+  the knowledge base under `doc/loom/knowledge/`.
+- **Concept mode.** Start from a short overview of the product (built from the vision and its
+  sections) or of the engineering decisions (built from the metaplan and its plans). Opening a
+  sentence replaces it in place with the more detailed sentences it summarizes, set in the same
+  type and flowing in the same paragraph, so the document grows where the reader is looking;
+  opening one of those replaces it with the source passage it came from. Any opened passage
+  folds back to the sentence it replaced. The user decides how deep to go and where. Nobody has to
+  read the full text to form a view, and anybody can reach the full text from any claim in the
+  summary.
+
+Review and authoring connect: from either mode, the user can point at a passage and take it into
+a chat ("this plan assumes the daemon is running; it should not"), and the session that answers
+edits the documents in `doc/`.
+
+## The screen
+
+The chosen layout (option A of the review mockups) has three regions:
+
+- **Header**: the seven workflow steps as a numbered tracker with the current step marked, and
+  tabs for the product overview, the engineering overview, and file mode.
+- **Reading column**, centred, at most about 70 characters wide: the overview or document being
+  read, expanding in place as described above. Each overview sentence carries small colour marks,
+  one per document it draws on, in that document's colour; a mark drawn dashed means that
+  summary is out of date and being rebuilt.
+- **Chat panel**, docked on the right: the current session's conversation. Selecting text in the
+  reading column attaches it to the next message. Each turn lists the files it changed with a
+  link to the diff, and names the summaries being rebuilt.
+
+The visual design (type, colour, components) follows the dashboard's conventions
+(`doc/loom/knowledge/conventions/web-dashboard-typography.md` and the existing `web/` components),
+not the mockups' palette.
+
+### What the first screen shows
+
+The app works out the project's step from what exists under `doc/` on every start; it stores no
+step of its own. It suggests the next step and never forces one:
+
+| What exists under `doc/`                    | Step  | First screen and suggestion                                        |
+| ------------------------------------------- | ----- | ------------------------------------------------------------------ |
+| Nothing                                     | 1     | An empty state offering to start a vision discussion               |
+| A vision whose listed sections are missing  | 2     | The vision; offers to write the next missing section               |
+| A finished spec, no metaplan                | 3     | The product overview; notes there is no metaplan, offers to start one |
+| Metaplan entries without a plan file        | 4     | Both overviews; offers to write the missing plans                  |
+| Plans not yet pressure-tested               | 5     | Both overviews; offers to pressure-test them                       |
+| Everything present                          | 6, 7  | Both overviews for review and refinement; offers to start a run    |
+
+Accepting a suggestion opens a new session briefed for that step. Refining is available at every
+step, including after everything exists. How "finished", "pressure-tested" and "listed sections"
+are detected from the files is for section 01 to settle.
+
+## Principles
+
+1. **The files in `doc/` are the truth.** Every document stays plain, committable Markdown (and
+   plan YAML where loom requires it) in the paths and conventions loom already uses. A person or
+   an agent that has never heard of `loom plan` can read and edit them with any editor, and the
+   app picks up those edits.
+2. **Summaries are derived and disposable.** Concept mode reads from summaries that agents
+   generate from the files (see Decisions for which agent rebuilds what). Each summary records content hashes of what it summarizes; a
+   changed, added, or removed file invalidates exactly the summaries built on it, and only those
+   get regenerated. Deleting every summary loses nothing but the cost of rebuilding them.
+3. **Every claim traces to its source.** A summary sentence that cannot be expanded down to the
+   text it came from is a defect. The expansion chain is the review: it is how a reviewer checks
+   that a summary says what the documents say.
+4. **Continuity across invocations.** `loom plan` on a project that already has a spec, a
+   metaplan, or completed plans opens on that state, with summaries brought up to date, and lets
+   the user carry on from there: refine a section, add a plan, revisit a decision after
+   implementation.
+5. **Loom drives the workflow; the user drives the content.** The app knows the seven steps,
+   shows where the project stands, and offers the next one. What the documents say comes from
+   the user's conversation with the session.
+6. **Reuse what loom already has.** `loom plan` runs its own server process on its own port, built
+   from the same parts as `loom status --web`: the hand-rolled HTTP/WebSocket server, the embedded
+   SPA build, the access model, and the tmux backend. The dashboard and the planning app should
+   look and feel like one product.
+7. **Subscription, not API.** Planning sessions and summary agents run as ordinary Claude Code
+   sessions under the user's Claude Code login, the same way `loom run` stages do. Nothing in the
+   app requires an Anthropic API key, and nothing uses `claude -p` (print, headless, or
+   stream-JSON mode), which Anthropic has said may be billed at API rates. Every session the app
+   starts, summary agents included, is an interactive session in tmux.
+
+## Users
+
+- **The author**: an engineer or PM who drives steps 1–5, today from Claude Code. They want to
+  stop juggling skills, file paths, and step order.
+- **The reviewer**: a PM, lead, or engineer who did not write the plans and has to approve them at
+  step 6. They want to understand the shape of the work in minutes, drill into the parts they
+  doubt, and send corrections back without reading everything.
+- **The returning author**: the same person weeks later, after some plans have run, coming back to
+  revise the spec or add plans in light of what was built.
+
+## Goals
+
+- A user can run all seven steps from the browser, with no terminal beyond `loom plan` itself.
+- A reviewer who has never seen the documents can state the product's main decisions and the
+  plan structure after a few minutes in concept mode, and can find the source text of any of
+  them in a few clicks.
+- Edits made outside the app (an editor, another Claude Code session, a `git pull`) show up in
+  the app and in its summaries without any manual step.
+- Chat with a session feels like a chat app: streaming replies, readable tool activity, clear
+  indication when the session is working, waiting on the user, or needs a permission decision.
+
+## Non-goals
+
+- Replacing Claude Code. Sessions are real Claude Code processes; the app is a front end to them.
+- A general Markdown editor or wiki. Chat with a session is the primary way to change documents;
+  file mode embeds a plain-text editor for direct fixes, and a saved edit goes through the same
+  hash check and summary rebuild as any other change made outside a session.
+- Replacing `loom status --web` for monitoring running stages. Step 7 hands off to `loom run` and
+  the existing dashboard.
+- Multi-user real-time collaboration. One operator per `loom plan` server.
+- Hosting outside the developer's machine. The access model stays the dashboard's.
+
+## Anti-goals
+
+These would make the product a failure even if every feature worked:
+
+- Summaries that drift from the documents, or that a reviewer trusts without being able to check.
+  A wrong summary is worse than none, because it makes review feel done.
+- Documents that only make sense inside the app: app-specific markup, sidecar state the files
+  depend on, or structure a plain reader cannot follow.
+- A chat that hides what the session did. The user must be able to see which files a session
+  changed and review those changes.
+- Background summarization whose token cost surprises the user. Regeneration is incremental and
+  its cost is visible.
+
+## Specification sections
+
+Each becomes `doc/product/section_xx.md`. Order is a first proposal for discussion.
+
+| #   | Section                          | Covers                                                                                                                                                                             |
+| --- | -------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 01  | Workflow model and project state | The seven steps as states; how the app infers the current state from the `doc/` tree; what "next step" the app offers in each; how a project that skipped or reordered steps reads |
+| 02  | `loom plan` command and server   | CLI surface, flags, port 7272 and browser launch, lifetime, code shared with `loom status --web`, behaviour without `.loom/work`                                                   |
+| 03  | Document model and conventions   | Which paths hold which documents (`doc/product`, `doc/plans`, briefs, knowledge); discovery rules; how a document declares its kind and its parent; cross-references               |
+| 04  | Summary engine                   | Content hashing, the hash manifest, the invalidation graph, which agents regenerate what and on which model, the store under `doc/loom/summaries/`, cost                       |
+| 05  | Concept mode                     | The two overviews, document summaries, sentence-to-source anchoring, product-to-plan traceability, what the reviewer sees at each level                                           |
+| 06  | File mode                        | Navigation, rendering of Markdown and plan YAML, briefs and knowledge, the CodeMirror editor, save-time plan validation, diffs, search                                            |
+| 07  | Session bridge                   | Starting and owning Claude Code sessions in tmux; reading transcript JSONL as structured messages; delivering input; permission and waiting states; several sessions; resume       |
+| 08  | Chat interface                   | Message rendering, tool activity, session states, attaching document passages as context, showing the files a turn changed                                                         |
+| 09  | Session skills and guidance      | Skills and instructions per step (vision, sections, metaplan, plans, pressure), how loom injects them, how they keep output in the conventions of section 03                       |
+| 10  | Review and refinement loop       | Questioning a passage, taking it into a chat, seeing what a refinement changed; step 6 is the user reading, with no approval record                                                |
+| 11  | Handoff to execution             | Pressure testing from the app, `loom init`/`loom run` from the app, returning to planning after plans complete                                                                     |
+| 12  | Access and safety                | The app can start write-capable sessions: authentication, sandboxing of planning sessions, which paths they may write                                                              |
+
+## Decisions
+
+- **Bridge (07).** Sessions run as interactive Claude Code in tmux, as loom stages do. The app reads
+  the session's transcript JSONL under `~/.claude/projects/` for messages and tool activity, and
+  delivers input into the tmux pane. States the transcript does not carry (a permission prompt,
+  waiting for input) come from hook events. No pane scraping, and no `claude -p` streaming mode
+  (principle 7).
+- **Summary storage (04).** Summaries are committed, together with a manifest of the content hashes
+  each summary was built from, so a fresh clone opens in concept mode without regeneration. Both
+  live under `doc/loom/summaries/`, beside the committed knowledge base. (`.loom` is gitignored at
+  any depth, so a store there would need a negation rule in every repository.)
+- **Summary levels (04, 05).** Two summary levels above the raw text:
+  - *Overviews*: one for the product, built from `doc/product/index.md` and its sections; one for
+    the engineering decisions, built from the metaplan and its plans.
+  - *Document summaries*: one per product section and one per plan.
+
+  An overview sentence links to the document summaries it draws on (one or several); a document
+  summary sentence links to the heading section of the raw document it draws on. Briefs are
+  reached through their plan's summary and through file mode, with no summaries of their own (my
+  call). The knowledge base keeps its own hierarchy and is browsed in file mode.
+- **Refinement (04, 05, 10).** A refinement edits only the documents under `doc/`. In the same
+  turn, the session that made the edit has a subagent rebuild the summaries built on the changed
+  passages and the overviews that cite them. The background summary sessions handle edits made
+  outside the app (an editor, a `git pull`). The reader's view updates where it stands: an open
+  source passage changes as soon as its file changes; a summary sentence awaiting its rebuild
+  stays readable and is marked out of date, and its replacement flashes once on arrival. Open
+  passages are keyed to the source section they came from, so they stay open across a rebuild;
+  one whose section was deleted folds back to its parent sentence with a note.
+- **Sessions start cold (07, 09).** A new `loom plan` invocation never resumes an earlier
+  conversation; it starts a fresh session against the current documents. Every session therefore
+  ends by writing what the conversation settled into the documents: decisions into the section
+  they affect, unresolved points as open questions in that same document. Nothing a later session
+  needs may live only in a transcript. The final write happens when the browser closes (after a
+  grace period, so a reload or a sleeping laptop does not end the session) and when `loom plan`
+  is stopped, which waits for every session to finish writing before it exits; a second Ctrl-C
+  exits at once. Because a crash or a kill allows no final write, sessions also record each
+  decision in the documents as it is made (my call), so the closing write only adds the open
+  questions and anything still pending.
+- **Embedded editor (06).** File mode embeds CodeMirror 6, loaded as a lazy chunk the way the
+  dashboard loads its terminal emulator: Markdown and YAML modes, `@codemirror/merge` for showing
+  what a turn changed, themed from the dashboard's CSS tokens. Plan YAML is checked on save by
+  loom's own plan validation on the server (my call); schema-aware completion in the editor is
+  left out.
+- **Concurrent writes (04, 06, 07), my call.** The editor saves only if the file's hash still
+  matches the one it opened; otherwise it shows the newer text and the user's unsaved edit side by
+  side. The summary store takes one writer at a time behind a lock. Each summary is its own file
+  with its own manifest entry, so a git merge of two people's rebuilds conflicts only on the same
+  summary, and any conflicted summary is resolved by regenerating it.
+- **Spec location (03).** `doc/product/`.
+- **Approval (10).** Not recorded. Step 6 is the user reading; starting execution is their act.
+- **Server (02).** Its own process, default port 7272, well clear of the dashboard's 7373 and up.
+- **Command (02).** Bare `loom plan` starts the app; the existing `loom plan` subcommands
+  (`validate` and the rest) keep working unchanged. It opens the browser unless it runs headless
+  (no display, for example over SSH on a VM), in which case it prints the URL.
+- **Rebuild budget (04).** Rebuilds after changes made outside the app run automatically up to a
+  threshold of 5 summaries; above it the app shows how many summaries are stale and asks before
+  starting the rebuild sessions.
+- **One authoring session per project (07, 08).** At most one session can edit a project's
+  documents at a time. Any further browser tab or `loom plan` instance on the same project is
+  read-only: it can read, expand and browse, and shows that another session holds authoring,
+  but cannot chat or save. Summary sessions run alongside the authoring session.
+- **Locked plans (01, 06, 11).** Plan files with the `IN_PROGRESS-` or `DONE-` prefix are
+  read-only in the app, in the editor and to sessions, with a notice saying why.
+- **Product-to-plan links (03, 05, 09).** Each plan names the product sections it implements in a
+  plain line, `Implements: section_07` (several separated by commas), which the plan-writing
+  skill adds. Concept mode's links between the two overviews come only from these lines, never
+  from inference.
