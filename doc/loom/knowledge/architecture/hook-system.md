@@ -1,17 +1,17 @@
 ---
 sources:
-  - loom/src/hooks/mod.rs
-  - loom/src/hooks/generator.rs
-  - loom/src/hooks/config.rs
-  - loom/src/fs/permissions/hooks.rs
-  - loom/src/fs/permissions/codex_hooks.rs
-  - loom-hooks/_common.sh
+- loom/src/hooks/mod.rs
+- loom/src/hooks/generator.rs
+- loom/src/hooks/config.rs
+- loom/src/fs/permissions/hooks.rs
+- loom/src/fs/permissions/codex_hooks.rs
+- loom-hooks/_common.sh
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 
 # Hook System
 
-> Hook embedding, SessionStart
+> Hooks
 
 ## Hook System Architecture (loom/src/hooks/)
 

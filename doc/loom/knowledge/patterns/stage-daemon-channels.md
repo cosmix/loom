@@ -1,6 +1,6 @@
 # Stage-to-Daemon Channels
 
-> Stage agent to daemon
+> Channels
 > routes rather than one.
 
 ## Three Routes, Chosen by What the Caller Can Actually Do

@@ -1,6 +1,6 @@
 # Subagent Briefing
 
-> Briefs, waves, ownership
+> Briefs, waves
 
 ## Never Hand Over a Proving Command You Have Not Run
 

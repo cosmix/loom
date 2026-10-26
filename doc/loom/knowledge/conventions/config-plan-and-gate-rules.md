@@ -1,6 +1,6 @@
 # Config Plan And Gate Rules
 
-> Config, plan-only, gate rules
+> Config rules
 
 ## Configuration Is the Only Authority for Configurable Behavior
 

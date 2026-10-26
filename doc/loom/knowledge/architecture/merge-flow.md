@@ -1,6 +1,6 @@
 # Merge Flow
 
-> Stage to target branch
+> Stage merge
 
 ## Merge Flow
 

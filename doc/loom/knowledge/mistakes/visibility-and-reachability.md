@@ -1,6 +1,6 @@
 # Visibility And Reachability
 
-> pub(crate) capped by path
+> Visibility
 
 ## `pub(crate)` Does Not Make an Item Nameable — Visibility Is Capped by PATH Reachability
 

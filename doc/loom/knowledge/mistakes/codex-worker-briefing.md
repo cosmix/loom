@@ -1,6 +1,6 @@
 # Codex Worker Briefing Gotchas
 
-> Codex brief pitfalls
+> Codex briefs
 
 ## A Bash Command Text Containing Both "loom" and Any "complete" Substring Gets Pinned, Even for Unrelated Commands
 
@@ -108,3 +108,13 @@ exists, or pin the interface inline in the brief so codex does not wait for it.
 **Why:** a code span that abuts prose reads as part of the word, so a worker copying the text loses the separator.
 
 **Prevention:** put every literal a worker must reproduce exactly in its own fenced block or a span set apart by spaces, and name the placeholder (`{distill_id}`), never a bare `{}`.
+
+## Repo-Relative Brief Paths in a Forward Prompt Left Workers Reading Nothing (2026-10-26)
+
+**What happened:** wave-1 prompts for the checklist-check stage gave brief paths as `doc/plans/...`. A codex unit runs from `loom/`, failed to read them, ran `loom memory note`, received `PENDING RELAY` and stopped with exit 0 `succeeded` and no edits (two units). Two Claude workers made the same error, resolving brief paths against the crate directory.
+
+**Why:** the prompt did not anchor paths; the brief paths are relative to the repository root, the worker's cwd is the crate.
+
+**Prevention:** give every brief as an absolute path inside the worktree, say that task paths are repository-root relative, and forbid `loom` CLI commands in a codex prompt.
+
+**Fix:** the units were re-forwarded with absolute paths.

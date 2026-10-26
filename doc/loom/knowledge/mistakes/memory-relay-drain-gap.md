@@ -1,14 +1,14 @@
 ---
 sources:
-  - loom-hooks/loom-relay.sh
-  - loom/src/commands/hook/relay/sweep.rs
-  - loom/src/commands/hook/relay/tests_sweep.rs
+- loom-hooks/loom-relay.sh
+- loom/src/commands/hook/relay/sweep.rs
+- loom/src/commands/hook/relay/tests_sweep.rs
 verified: e88e8294c12301e520f82aaf968b1456d5f4ce92
 ---
 
 # Memory Relay Drain Gap
 
-> Relay tickets leaked
+> Relay leaks
 
 ## A Ticket Whose Line Never Reached the Hook Was Leaked Forever (2026-09-18)
 

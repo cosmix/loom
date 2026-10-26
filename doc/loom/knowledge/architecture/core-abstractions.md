@@ -1,6 +1,6 @@
 # Core Abstractions
 
-> Graph, Stage, Session
+> Graph, Stage
 
 ## Core Abstractions
 

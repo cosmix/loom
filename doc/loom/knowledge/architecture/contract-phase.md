@@ -1,6 +1,6 @@
 # Contract Phase
 
-> Contract session, freeze
+> Freeze
 
 ## Contract Phase: A Second Writer Session Before the Implementer
 

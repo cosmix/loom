@@ -1,6 +1,6 @@
 # Merge And Recovery Edge Cases
 
-> Merge/retry edge cases
+> Merge edges
 
 ## Merge Path Follow-Ups After the Silent-Unmerged Fix
 

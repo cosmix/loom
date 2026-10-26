@@ -1,6 +1,6 @@
 # Codex Heartbeat Starvation
 
-> Heartbeat starvation
+> Heartbeat
 
 ## Long Codex Runs Starve the Loom Heartbeat
 

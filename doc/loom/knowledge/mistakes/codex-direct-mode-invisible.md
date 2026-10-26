@@ -1,6 +1,6 @@
 # Codex Direct Mode Invisible
 
-> Direct forwards unseen
+> Direct mode
 
 ## Direct-Mode Codex Forwards Are Invisible to Lifecycle Reconcile and Status
 
@@ -11,3 +11,13 @@
 **Prevention:** A new execution mode for a forwarded worker must be traced through every reader of the old mode's evidence: `codex_lifecycle` reconcile, `loom subagents watch` codex binding and stall detection, token discovery, and status. A test that runs the forwarder in each mode and asserts the stage's `execution_models` closes it.
 
 **Fix:** doc/plans/PLAN-contract-phase-autonomy.md, stage contract-collection, worker W4.
+
+## A Direct-Mode Codex Forward Reported `succeeded` After 25 to 70 Seconds With Nothing Written (2026-10-26)
+
+**What happened:** in the document-model stage, `loom-codex-forwarder` units ran in direct mode (the stage sandbox refuses a nested bubblewrap) and printed `LOOM-CODEX-DIRECT-RESULT state succeeded`, exit 0. One unit had written a source file but no tests; another had written nothing (`loom/src/planning/runtime.rs` was still one line) and its last events showed two commands `in_progress`. No `turn.completed` event appeared.
+
+**Why:** the direct backend ends the run when `codex exec` stops, however early, and reports that as success; the evidence trailer proves the process ended, not that the unit's work exists.
+
+**Prevention:** after every forward, read the unit's owned files (existence, length, the tests it was asked for) before accepting; an empty or unchanged owned file is a failed unit whatever the trailer says. Re-route a failed unit to a Claude implementer at once.
+
+**Fix:** the stage rerouted its codex units to `loom-software-engineer`.

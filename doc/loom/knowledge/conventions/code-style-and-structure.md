@@ -1,12 +1,12 @@
 ---
 sources:
-  - loom/src/models/constants.rs
+- loom/src/models/constants.rs
 verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 ---
 
 # Code Style And Structure
 
-> Rust naming, errors, limits
+> Rust style
 
 ## File & Branch Naming
 
@@ -17,6 +17,7 @@ verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 | Signal files   | `{session-id}.md`                                          | `.loom/work/signals/`  |
 | Handoff files  | `{stage-id}-handoff-{NNN:03d}.md`                          | `.loom/work/handoffs/` |
 | Plan files     | `PLAN-*` -> `IN_PROGRESS-PLAN-*` -> `DONE-PLAN-*`          | `doc/plans/`           |
+| Retired plans  | `RETIRED-PLAN-*` (abandoned before or during its run)      | `doc/plans/archive/`   |
 | Stage branches | `loom/{stage-id}`                                          |                        |
 | Base branches  | `loom/_base/{stage-id}` (multi-dep merges)                 |                        |
 

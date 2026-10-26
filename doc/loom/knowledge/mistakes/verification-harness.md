@@ -1,6 +1,6 @@
 # Verification Harness
 
-> Suspect the harness
+> Harness doubt
 
 ## A Harness That Redirects to a Hardcoded `/tmp` Path Reports False Failures (2026-07-28)
 

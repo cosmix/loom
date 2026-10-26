@@ -1,6 +1,6 @@
 # Codex Concurrency
 
-> Codex fan-out limits
+> Codex limits
 
 ## Fan-out cap: 6 (a doctrine number, not a code constant)
 

@@ -1,6 +1,6 @@
 # Knowledge Bootstrap
 
-> Digest phase, receipts
+> Digest phase
 
 ## Deterministic Phase
 

@@ -1,6 +1,6 @@
 # Refactor Stragglers
 
-> What a rename leaves behind
+> Rename misses
 
 ## Source vs Installed: Editing Wrong File
 
