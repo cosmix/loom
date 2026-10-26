@@ -46,7 +46,7 @@ pub use verifications::{
 // Re-export plan lifecycle utilities
 pub use plan_lifecycle::{
     all_stages_merged, mark_plan_done_if_all_merged, mark_plan_in_progress, DONE_PREFIX,
-    IN_PROGRESS_PREFIX,
+    IN_PROGRESS_PREFIX, RETIRED_PREFIX,
 };
 
 /// Parse base_branch from config.toml in a work directory.
