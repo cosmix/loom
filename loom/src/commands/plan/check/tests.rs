@@ -39,3 +39,25 @@ fn human_output_neutralizes_escape_in_section_title() {
     assert!(output.contains("Hello"), "{output}");
     assert!(!output.contains('\x1b'), "{output:?}");
 }
+
+#[test]
+fn human_output_lists_steps_current_offers_and_problems() {
+    let temp = tempfile::tempdir().unwrap();
+    let plans = temp.path().join("doc/plans");
+    fs::create_dir_all(&plans).unwrap();
+    fs::write(plans.join("PLAN-x.md"), "# Plan X\n\nNo mapping line.\n").unwrap();
+    let project = Project::load(temp.path()).unwrap();
+    let output = human(&project);
+    let lines: Vec<&str> = output.lines().collect();
+    assert_eq!(lines[0], "1 Vision: Gap", "{output}");
+    assert_eq!(lines[6], "7 Run: Optional", "{output}");
+    for want in [
+        "Current: Vision",
+        "Primary: start-vision",
+        "Secondary: start-metaplan",
+        "Secondary: pressure-test:x",
+        "doc/plans/PLAN-x.md: implements-missing: plan has no Implements: line",
+    ] {
+        assert!(lines.contains(&want), "missing {want:?} in {output}");
+    }
+}

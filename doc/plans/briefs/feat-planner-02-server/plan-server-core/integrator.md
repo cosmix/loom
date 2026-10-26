@@ -46,13 +46,20 @@ Read their committed code before use; do not reimplement any of it.
 
 ## watch.rs
 
-`pub fn spawn_watcher(ctx: Arc<PlanContext>, running: Arc<AtomicBool>) -> JoinHandle<()>`:
+`pub fn spawn_watcher(ctx: Arc<PlanContext>, running: Arc<AtomicBool>) -> Result<JoinHandle<()>>`
+(`Watcher::spawn` returns a `Result`; `start` propagates it with `?`):
 `Watcher::new(root, OwnWrites::default()).spawn(Duration::from_secs(1), stop, |batch| { ... })`;
 per batch: skip `initial` (the context loaded the project at start), write-lock and
 `Project::refresh(&batch)` (log an error with `tracing::warn`, keep serving), then run every
 `on_batch` hook in order, then broadcast `PlanMessage::Checklist` when the checklist changed.
 The `OwnWrites` handed to `Watcher::new` is the one `ctx.own_writes()` returns (a clone of one
 shared value), so plan 4's engine registrations reach the watcher.
+
+A failed walk delivers no batch: `Watcher::spawn`'s loop drops it and leaves the message in the
+watcher's error slot. `Watcher::spawn` consumes the watcher, so take `watcher.error_slot()`
+BEFORE calling it and hand the `Arc<Mutex<Option<String>>>` to the 1 s tick that `start` runs
+(next to `Authoring::tick`); the tick reads it and `tracing::warn`s the message once each time it
+changes. Otherwise a walk that keeps failing is invisible and the project goes stale.
 
 ## Gate (`gate.rs`) and router (`router.rs`)
 

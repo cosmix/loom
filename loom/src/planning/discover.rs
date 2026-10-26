@@ -22,7 +22,8 @@ pub const MAX_DOC_BYTES: usize = 8 * 1024 * 1024;
 const MAX_DEPTH: usize = 16;
 /// Most directory entries the walk lists before it gives up.
 const MAX_ENTRIES: usize = 20_000;
-const SUMMARIES: &str = "doc/loom/summaries";
+/// The summary store, which is never a document.
+pub(crate) const SUMMARIES: &str = "doc/loom/summaries";
 
 /// One file under `doc/`.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -71,9 +72,23 @@ impl DocTree {
         self.docs.get(index)
     }
 
-    /// The document with the given id string (e.g. `plan/foo`).
+    /// The document with the given id string (e.g. `plan/foo`). Every copy of a plan shares
+    /// its id, so a `plan/<slug>` id resolves to the winning copy in `plans`.
     pub fn by_id(&self, id: &str) -> Option<&Document> {
-        self.docs.iter().find(|d| d.id.0 == id)
+        let winner = id
+            .strip_prefix("plan/")
+            .and_then(|slug| self.plans.get(slug))
+            .and_then(|entry| self.get(&entry.path));
+        winner.or_else(|| self.docs.iter().find(|d| d.id.0 == id))
+    }
+
+    /// Whether at least one document lies under the directory `rel`. Documents are sorted by
+    /// path, component-wise, so the ones under `rel` follow the first path not below it.
+    pub(crate) fn has_dir(&self, rel: &Path) -> bool {
+        let first = self.docs.partition_point(|d| d.path.as_path() < rel);
+        self.docs
+            .get(first)
+            .is_some_and(|d| d.path.starts_with(rel) && d.path != rel)
     }
 
     /// The plan with the given slug.
@@ -151,7 +166,10 @@ pub(crate) fn walk_doc(root: &Path, scope: WalkScope) -> Result<(DocDirState, Ve
     if state != DocDirState::Present {
         return Ok((state, Vec::new()));
     }
-    let canon_doc = std::fs::canonicalize(root.join("doc")).context("cannot resolve doc/")?;
+    // `doc` is derived from the canonical root, not canonicalized on its own: a `doc` swapped
+    // for a link to the root after the check above must not widen "inside doc/" to the repo.
+    let canon_root = std::fs::canonicalize(root).context("cannot resolve the root")?;
+    let canon_doc = canon_root.join("doc");
     let fd = safe_open_dirfd(root)?;
     let mut found = Vec::new();
     let mut listed = 0usize;
@@ -241,14 +259,14 @@ pub(crate) fn read_doc_bytes(root: &Path, rel: &Path) -> Result<Vec<u8>> {
     if doc_dir_state(root) != DocDirState::Present {
         bail!("doc/ is not a real directory");
     }
-    let canon_doc = std::fs::canonicalize(root.join("doc"))?;
+    let canon_root = std::fs::canonicalize(root)?;
+    let canon_doc = canon_root.join("doc");
     let Some((target, _)) = allowed_link_target(&canon_doc, &root.join(rel)) else {
         bail!(
             "{} is a symlink that does not resolve to a file inside doc/",
             rel.display()
         );
     };
-    let canon_root = std::fs::canonicalize(root)?;
     let within = target
         .strip_prefix(&canon_root)
         .context("symlink target is outside the root")?;

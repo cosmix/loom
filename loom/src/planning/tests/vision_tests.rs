@@ -98,3 +98,15 @@ fn reports_first_table_without_numbered_rows() {
         Err(VisionProblem::NoNumberedRows { heading_line: 0 })
     );
 }
+
+#[test]
+fn header_only_table_lists_no_sections() {
+    let text = "## Specification sections\n\n| # | Name |\n| --- | --- |\n";
+    assert_eq!(parse_sections_table(text), Ok(vec![]));
+}
+
+#[test]
+fn table_ended_by_a_blank_line_after_its_delimiter_lists_no_sections() {
+    let text = "## Specification sections\n| # | Name |\n| - | - |\n\nNone yet.\n\n| # | Name |\n| - | - |\n| 1 | Later |\n";
+    assert_eq!(parse_sections_table(text), Ok(vec![]));
+}

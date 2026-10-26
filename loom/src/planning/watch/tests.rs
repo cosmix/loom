@@ -12,7 +12,7 @@ use crate::planning::sections::normalized_hash;
 
 const SUMMARY: &str = "doc/loom/summaries/plans/x.md";
 
-fn tmp() -> (TempDir, PathBuf) {
+pub(super) fn tmp() -> (TempDir, PathBuf) {
     let temp = tempfile::Builder::new()
         .prefix("loom-watch-")
         .tempdir()
@@ -22,23 +22,23 @@ fn tmp() -> (TempDir, PathBuf) {
     (temp, root)
 }
 
-fn put(root: &Path, rel: &str, content: impl AsRef<[u8]>) {
+pub(super) fn put(root: &Path, rel: &str, content: impl AsRef<[u8]>) {
     fs::create_dir_all(root.join(rel).parent().unwrap()).unwrap();
     fs::write(root.join(rel), content).unwrap();
 }
 
-fn p(rel: &str) -> PathBuf {
+pub(super) fn p(rel: &str) -> PathBuf {
     PathBuf::from(rel)
 }
 
-fn started(root: &Path, own: &OwnWrites) -> Watcher {
+pub(super) fn started(root: &Path, own: &OwnWrites) -> Watcher {
     let mut watcher = Watcher::new(root.to_path_buf(), own.clone());
     assert!(watcher.poll().unwrap().unwrap().initial);
     watcher
 }
 
 /// Polls until a walk delivers (at most four walks); `None` when nothing was delivered.
-fn deliver(watcher: &mut Watcher) -> Option<Batch> {
+pub(super) fn deliver(watcher: &mut Watcher) -> Option<Batch> {
     (0..4).find_map(|_| watcher.poll().unwrap())
 }
 
