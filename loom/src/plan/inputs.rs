@@ -12,8 +12,10 @@ use std::fs;
 use std::path::{Component, Path, PathBuf};
 
 use crate::fs::plan_lifecycle::{DONE_PREFIX, IN_PROGRESS_PREFIX, RETIRED_PREFIX};
+use crate::fs::safe_read::{read_to_string_bounded, OverLimit};
 use crate::git::runner::run_git_checked;
 use crate::plan::schema::extract_brief_paths;
+use crate::planning::discover::MAX_DOC_BYTES;
 
 #[cfg(test)]
 mod retired_tests;
@@ -148,7 +150,9 @@ fn bundle_dir(root: &Path, plan: &Path) -> Option<PathBuf> {
     root.join(&bundle).exists().then_some(bundle)
 }
 
-/// Record a file input and queue the brief references a markdown input names.
+/// Record a file input and queue the brief references a markdown input names. A markdown input
+/// over [`MAX_DOC_BYTES`] stays an input (so it is still locked) but is recorded as invalid and
+/// never read: a sparse file would otherwise exhaust memory on every load of the plan.
 fn visit_file(
     root: &Path,
     path: PathBuf,
@@ -157,10 +161,20 @@ fn visit_file(
     pending: &mut VecDeque<(PathBuf, Origin)>,
 ) -> Result<()> {
     let absolute = root.join(&path);
-    found.files.entry(path.clone()).or_insert(origin);
+    found.files.entry(path.clone()).or_insert(origin.clone());
     if absolute.is_file() && absolute.extension().is_some_and(|ext| ext == "md") {
-        let content = fs::read_to_string(&absolute)
-            .with_context(|| format!("Cannot read plan input {}", absolute.display()))?;
+        let content = match read_to_string_bounded(root, &path, MAX_DOC_BYTES) {
+            Ok(content) => content,
+            Err(error) if error.is::<OverLimit>() => {
+                let limit = format!("larger than {} MiB", MAX_DOC_BYTES / (1024 * 1024));
+                found.reject(&path, &origin, limit);
+                return Ok(());
+            }
+            Err(error) => {
+                return Err(error)
+                    .with_context(|| format!("Cannot read plan input {}", absolute.display()))
+            }
+        };
         let source = Origin::File(path);
         pending.extend(
             extract_brief_paths(&content)
@@ -180,6 +194,16 @@ fn expand_pattern(
     let text = path.to_str().context("Plan input path is not UTF-8")?;
     if root.join(path).exists() || !text.contains(['*', '?', '[']) {
         return Ok(Expansion::NotAPattern);
+    }
+    // Checked before globbing: the walk would list directories outside the repository, and
+    // `reject` would publish the matched paths.
+    if path
+        .components()
+        .any(|part| matches!(part, Component::ParentDir))
+    {
+        return Ok(Expansion::Invalid(
+            "must not traverse parent directories".to_string(),
+        ));
     }
     let pattern = format!(
         "{}/{}",
