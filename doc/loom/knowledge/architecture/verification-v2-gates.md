@@ -1,6 +1,6 @@
 # Verification V2 Gates
 
-> v2 gates, order, owners
+> v2 gates
 
 ## Verification v2 Gates: Order, Owners, and What Each Gate Reads
 

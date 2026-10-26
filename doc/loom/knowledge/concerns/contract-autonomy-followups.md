@@ -1,6 +1,6 @@
 # Contract Autonomy Followups
 
-> Chain, filing, test gaps
+> Contract gaps
 
 ## Contract Runs the Chain Check Cannot See
 

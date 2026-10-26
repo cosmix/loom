@@ -1,25 +1,25 @@
 ---
 sources:
-  - loom/src/verify/criteria/cache_contract.rs
-  - loom/src/verify/criteria/tests/runner_tests.rs
-  - loom/src/commands/usage/transcript_merge.rs
-  - loom-hooks/poll-guard.sh
-  - loom/tests/integration/hooks_poll_guard_subagents.rs
-  - loom-hooks/tests/codex-forward-guard-blocks-edit.sh
-  - loom/src/git/runner.rs
-  - loom/src/process/mod.rs
-  - loom/src/process/environment.rs
-  - loom/src/quota/history_store.rs
-  - loom/src/commands/usage/sections/edits.rs
-  - loom/src/fs/safe_read.rs
-  - loom-hooks/codex-forward-guard.sh
-  - CLAUDE.md.template
+- loom/src/verify/criteria/cache_contract.rs
+- loom/src/verify/criteria/tests/runner_tests.rs
+- loom/src/commands/usage/transcript_merge.rs
+- loom-hooks/poll-guard.sh
+- loom/tests/integration/hooks_poll_guard_subagents.rs
+- loom-hooks/tests/codex-forward-guard-blocks-edit.sh
+- loom/src/git/runner.rs
+- loom/src/process/mod.rs
+- loom/src/process/environment.rs
+- loom/src/quota/history_store.rs
+- loom/src/commands/usage/sections/edits.rs
+- loom/src/fs/safe_read.rs
+- loom-hooks/codex-forward-guard.sh
+- CLAUDE.md.template
 verified: 499b09b6297aeee4896a66df3da86d00f652a618
 ---
 
 # Token Accounting Follow-Ups
 
-> Token follow-ups
+> Token defects
 
 ## Open Follow-Ups After the Token-Optimization Plan
 

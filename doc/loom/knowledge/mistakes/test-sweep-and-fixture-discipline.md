@@ -1,6 +1,6 @@
 # Test Sweep And Fixture Discipline
 
-> Sweep: startup, fixtures
+> Fixture sweeps
 
 ## A loader stall outlived a memory-only watchdog
 
@@ -135,3 +135,11 @@ Rust test module names also need graph lookup: `orchestrator::core::tests` does 
 **Prevention:** a unit-test fixture that needs a parseable plan reuses the plan writer in `tests/host_verification_contracts/support.rs` (`write_plan`), not a hand-written string.
 
 **Fix:** `host_verify/tests_child.rs::write_plan` wraps its plan in the METADATA markers, the same wrapper as `write_plan` at `tests/host_verification_contracts/support.rs::write_plan`.
+
+## `cargo test --test integration` Inside an Agent Session Fails Tests That Pass in the Host Job (2026-10-26)
+
+**What happened:** run from an integration-verify agent session, `cargo test --test integration` failed 17 tests (`hooks_subagent_verify_guard::*`, `confined_loom_runtime::knowledge_completion_finds_loom_with_minimal_path`) that pass in the `loom check` host job.
+
+**Why:** the session's `LOOM_*` environment and sandbox leak into tests that assume a clean environment.
+
+**Prevention:** judge those tests from the host-job gate log (`loom check` in the foreground), not from a run inside the agent session; do not edit tests to make an in-session run pass.

@@ -1,6 +1,6 @@
 # Hooks
 
-> Hook scripts, events
+> Hook scripts
 
 ## Hooks
 

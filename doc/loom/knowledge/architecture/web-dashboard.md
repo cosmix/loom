@@ -1,6 +1,6 @@
 # Web Dashboard
 
-> status --web server, SPA
+> status --web
 
 ## Server
 

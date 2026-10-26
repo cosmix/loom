@@ -1,6 +1,6 @@
 # Agent Rule-Bending Hardening
 
-> Enforcement classes
+> Rule bending
 
 ## Why This Entry Exists
 

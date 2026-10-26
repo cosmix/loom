@@ -1,13 +1,13 @@
 ---
 sources:
-  - loom/src/context/refresh/source_graph.rs
-  - loom/src/context/graph_store/mod.rs
+- loom/src/context/refresh/source_graph.rs
+- loom/src/context/graph_store/mod.rs
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
 
 # Source Graph
 
-> Source graph contract
+> Graph contract
 
 ## What It Is, and What It Is Not
 

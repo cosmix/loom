@@ -3,7 +3,7 @@
 
 # Security Sandbox And Hooks
 
-> Hooks, validation, sandbox
+> Sandbox
 
 ## Hook Patterns
 

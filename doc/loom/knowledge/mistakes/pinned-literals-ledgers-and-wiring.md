@@ -1,6 +1,6 @@
 # Pinned Literals Ledgers And Wiring
 
-> Ledger exact-match, pins
+> Pins, ledgers
 
 ## Why These Two Belong Together
 

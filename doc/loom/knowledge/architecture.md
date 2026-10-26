@@ -180,20 +180,16 @@ Full detail: [architecture/context-retrieval.md](architecture/context-retrieval.
 
 ## Source Graph (`loom/src/context/source_graph/`, `context/extract/`)
 
-A derived tree-sitter graph of the repo's own source over twelve dialects in three grammar packs, with
-two live consumers: `loom map` and the `Source` retrieval channel, ranked by `context::rank_source` and
-fused into the same `ContextPack` as knowledge chunks. Its defining property is an explicit honesty
-contract: every edge carries one of seven evidence classes with a named confidence constant, sites and
-(when ambiguous) a bounded candidate set, cross-file binding refuses rather than guesses, and no file is
-ever silently omitted: a degraded file is reported as degraded. A persisted resolved view keeps queries
-cheap, and its incremental relink is proven equal to a cold build.
+A derived tree-sitter graph of the repo's own source over twelve dialects in three grammar packs, read by `loom map`
+and the `Source` retrieval channel (`context::rank_source`, fused into the same `ContextPack` as knowledge chunks).
+Every edge carries one of seven evidence classes with a named confidence constant, cross-file binding refuses rather
+than guesses, and a degraded file is reported, never omitted. A persisted resolved view keeps queries cheap and its
+incremental relink is proven equal to a cold build.
 
-- Contract, extractors and dialects, identity, cache and coverage: [source-graph](architecture/source-graph.md)
-- Local binding, resolver rules 1 to 7, path conventions: [source-graph-resolution](architecture/source-graph-resolution.md)
-- Builder, freshness states, the reconcile lease: [source-graph-build](architecture/source-graph-build.md)
-- Resolved view, persistence, relink equivalence: [source-graph-view](architecture/source-graph-view.md)
-- Census, source windows, edge-quality evaluator: [source-graph-evaluation](architecture/source-graph-evaluation.md)
-- Intent routing, explained neighbours, caveats, windows: [context-retrieval-routing](architecture/context-retrieval-routing.md)
+Topics: [source-graph](architecture/source-graph.md) (contract, extractors, cache),
+[resolution](architecture/source-graph-resolution.md) (binding rules 1 to 7), [build](architecture/source-graph-build.md)
+(freshness, lease), [view](architecture/source-graph-view.md) (relink), [evaluation](architecture/source-graph-evaluation.md)
+(census, windows), [routing](architecture/context-retrieval-routing.md) (intent routing, neighbours).
 
 ## Execution Containment (`loom/src/verify/criteria/confine.rs`)
 
@@ -245,3 +241,9 @@ recorded review gate, all read from `stage.plan_version == 2`. Disputes gain fiv
 integrity, impact tests, and the loom-filed freeze refusal). Rust contracts are proven compiled under their test name by the scaffold and chain check ([contract-collection](architecture/contract-collection.md)); a refused freeze goes to adjudication, never to the operator. Detail: [contract-phase](architecture/contract-phase.md), [verification-v2-gates](architecture/verification-v2-gates.md),
 [test-runner-adapters](architecture/test-runner-adapters.md), [plan fields and lints, provision, freeze formatter gate](architecture/plan-lifecycle-and-fields.md),
 [adjudication-lifecycle](architecture/adjudication-lifecycle.md).
+
+## Planning Document Model (`planning/`, `commands/plan/check.rs`)
+
+`loom::planning` models a project's `doc/` tree: kinds and ids, plan slugs (most advanced state wins), heading anchors
+and span hashes, the locked set, the polling watcher with `OwnWrites`, the runtime directory, and the checklist behind
+`loom plan check` (exit 0 clean, 1 problems, 2 cannot check). → [Planning Document Model](architecture/planning-document-model.md)
