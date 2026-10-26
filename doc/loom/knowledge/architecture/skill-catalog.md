@@ -1,6 +1,7 @@
 ---
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
+
 # Skill Catalog
 
 > Skill roots, catalog
@@ -70,8 +71,7 @@ them.
 **Adding a core skill touches the count in five places.** `loom/src/skills/index_catalog.rs`
 `every_core_skill_name_has_a_skill_directory` hardcodes the manifest length (10), and the prose
 count also lives in `README.md` (the cost-control line and the install table),
-`skills/loom-skills/SKILL.md` and `codex/skills/loom-skills/SKILL.md`. Adding `loom-orchestration`
-(2026-09-19) moved it from 9 to 10 and the test failed until all of them agreed; update them with
+`skills/loom-skills/SKILL.md` and `codex/skills/loom-skills/SKILL.md`. Adding a skill changes the count, and the test fails until all of them agree; update them with
 `skills/core-skills.txt` in one change.
 
 **`skills/loom-plan-writer/` is a condensed `SKILL.md` plus `references/`.** The doctrine-surfaces
@@ -90,13 +90,14 @@ Map Module (`loom/src/map/`): automated codebase analysis that populates knowled
 
 ## Skill Catalog Install and Migration Hazards, and Deliberate Cuts
 
-### Install and Migration Hazards (recorded, some pre-existing)
+### Install and Migration Hazards
 
 - **`cp -R "$dir/" dest/` copies the directory's CONTENTS on GNU coreutils but the DIRECTORY
   ITSELF on BSD/macOS `cp`** (`cp`'s own docs: a trailing `/` on the source copies contents on
   BSD). A glob like `"$src"/loom-*/` always yields a trailing slash, so this form passes every
   Linux test and silently splatters files into the destination root on macOS. Always write
-  `cp -R "${dir%/}" dest/` instead (found in `install.sh:288`, `install_skills_from_source`).
+  `cp -R "${dir%/}" dest/` instead. No shipped script copies skill directories today:
+  `assets/install/claude.rs::install_skills` does it in Rust.
 - **Bare skill and agent names are user-owned.** `dev-install.sh` delegates to `install.sh`, so
   even local development installs must never derive `rust`, `software-engineer`, or another bare
   name from a `loom-*` entry and delete it as migration cleanup. Installation now replaces only

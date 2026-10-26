@@ -72,8 +72,8 @@ prints the record; `loom stage contracts restore <stage> [--contract <id>]` copi
 
 **Session-kind filters.** A second worker kind breaks every filter keyed on `SessionType::Stage`. Six sites
 missed it: `orchestrator/coherence.rs` (`worker_session_type`, now `is_worker_session_type` and
-`live_worker_sessions`), `core/session_adoption.rs`, `native/wrapper.rs:208` (`LOOM_WORKTREE_PATH` export, else
-`relay/emit/cwd.rs:36` and `loom-control-complete.sh` treat the agent as a main-repo agent),
+`live_worker_sessions`), `core/session_adoption.rs`, `native/wrapper.rs::kind_env` (`LOOM_WORKTREE_PATH` export, else
+`relay/emit/cwd.rs::checkout_boundary` and `loom-control-complete.sh` treat the agent as a main-repo agent),
 `status/render/graph.rs`, `self_service.rs` (`BlockStage`), and `relay/matrix.rs` (Contract sends everything
 Stage does except `Dispute`, `Verdict` and completion, plus `FreezeContracts`, which only Contract may send).
 A relayed freeze is dropped unless `loom-hooks/loom-relay.sh` `relay_kind_at` maps `stage:contracts` to
@@ -105,7 +105,7 @@ fingerprint (`fingerprint::compute_local`) pin git to the worktree's git directo
 in the main repository (`WorktreeGit::pinned`), so a `.git` file the writer rewrote to point
 elsewhere cannot choose which configuration git reads.
 
-The daemon's own check (`daemon/server/contracts.rs::check_changes`, calling
+The daemon's own check (`stage_service/contracts.rs::check_changes`, calling
 `changes::special_files`, walk in `verify/contracts/special_walk.rs`) walks the worktree — skip
 `.git`, skip git-ignored — and refuses the freeze outright if it finds a FIFO, socket, or device
 node anywhere, except a device-node placeholder at one of the eleven protected root names

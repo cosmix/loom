@@ -4,13 +4,13 @@
 > read-path seam. See [Typed Config Values](../architecture/config-value-types.md) for the
 > architecture.
 
-- **No control-character stripping in the TUI's value cell.** `tui/render.rs`'s `value_cell` renders
+- **No control-character stripping in the TUI's value cell.** `commands/config/tui/render/table.rs::value_cell` renders
   `ConfigValue::Text` straight into a ratatui `Cell`. Harmless today because no `KEYS` entry uses
   `ValueKind::String` and the TUI only edits the operator's own `~/.loom/config.toml`; strip control
   characters before the first `String`-kind key is registered.
 - **No non-interactive way to unset a user-tier config key.** `user_config::write::unset`
-  (`write.rs:61`) is reached only from the dashboard's `POST` `value:null` path
-  (`config_api/apply.rs:33`); the CLI and TUI never call it. An operator can only clear a user-tier
+  (`user_config/write.rs::unset`) is reached only from the dashboard's `POST` `value:null` path
+  (`commands/status/web/config_api/apply.rs::apply`); the CLI and TUI never call it. An operator can only clear a user-tier
   key by editing `~/.loom/config.toml` directly or through the settings page. Also: a bare negative
   CLI value needs `--` (`loom config -k context.ceiling_tokens -- -1`) because clap reads `-1` as a
   flag.

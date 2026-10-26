@@ -7,7 +7,7 @@
 **`CODEX_MAX_PARALLEL` is NOT a symbol in this codebase.** It was the spike's variable name and it
 survives only in these knowledge files. `loom/src/codex.rs` defines `CODEX_IMPLEMENTER_MODEL_TERRA`,
 `CODEX_IMPLEMENTER_MODEL_LUNA`, and `CODEX_IMPLEMENTER_EFFORT`; the cap of 6 is a hardcoded literal inside the signal prose emitted
-by `format_codex_implementers_section` (`orchestrator/signals/format/sections.rs:821`). Do not go
+by `format_codex_implementers_section` (`orchestrator/signals/format/codex.rs`). Do not go
 looking for a constant to tune — if the cap ever needs to be tunable, add `CODEX_MAX_PARALLEL` to
 `codex.rs` and interpolate it there the way the model and effort already are.
 
@@ -79,7 +79,7 @@ the same consequence before reporting the conjunction as a verdict — report pe
   attach to the wrong thread. Use fresh runs.
 - **Same-file work belongs in separate stages** (worktree isolation), never concurrent subagents in one
   worktree. Disjoint file sets are the precondition for everything above.
-- **One unit = one file (or one file plus its test), at most three steps, interfaces pinned (2026-09-14).**
+- **One unit = one file (or one file plus its test), at most three steps, interfaces pinned.**
   The wrapper cancels a companion job still running at 540000 ms and exits 124 with
   `"outcome":"timed_out"`; a timed-out unit is re-split, never re-forwarded as is — see
   [Owned Waits](owned-waits.md). Watch for it with `loom subagents watch --worker codex:<unit>`, which

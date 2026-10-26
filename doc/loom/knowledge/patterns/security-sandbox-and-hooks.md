@@ -1,5 +1,6 @@
 ---
 ---
+
 # Security Sandbox And Hooks
 
 > Hooks, validation, sandbox
@@ -54,7 +55,7 @@ Its docstring states outright that a second copy would duplicate a security rule
 
 ## Ask Which Surfaces Render the Type, Not Who Copied the Helper
 
-`context/untrusted.rs:5-8` names its call sites in a doc comment — "this has exactly two
+the module doc of `context/untrusted.rs` names its call sites in a doc comment — "this has exactly two
 call sites, do not add a third copy". That does not prevent a THIRD SURFACE from having
 ZERO copies. `loom map` was rewritten into an agent-facing renderer of the same
 graph-derived strings — scopes, paths, ids, and a `ParseError` detail built from a raw
@@ -88,7 +89,7 @@ path as a symlink gets the trusted daemon to truncate any file its own user can 
 poll cycle (~5s). All three now open via `fs::safe_read::open_regular_no_follow(worktree_root,
 relpath, flags)`, which refuses a planted symlink instead of following it (`fs/safe_fs.rs`'s
 `O_NOFOLLOW`-at-every-component primitives back it). `context/refresh/source_graph/enumerate.rs`
-and `generation.rs` were fixed the same way, so a tracked or untracked symlink can no longer
+and `generation.rs` are guarded the same way, so a tracked or untracked symlink cannot
 make the host read a file outside the worktree into the graph.
 
 Prevention: any new host-side read or write of a worktree-writable path goes through
@@ -132,7 +133,7 @@ could disagree with the daemon's. The same asymmetry as the credential-narrowing
 `fs/permissions/drift.rs::flatten_hook_triples` already turned a hooks JSON value into the
 `(event, matcher, command)` triples the drift check compares. When the spawn preflight's
 `sandbox/config/preflight/hook_commands.rs` needed the same flattening to check installed hook
-commands, it imported the helper (`fs/permissions/mod.rs:33` re-exports it as `pub(crate)`) rather
+commands, it imported the helper (`fs/permissions/mod.rs` re-exports `flatten_hook_triples` as `pub(crate)`) rather
 than writing its own walk of the same JSON shape. A visibility bump plus a re-export is cheaper than
 a second copy that can drift from the first — see
 [Duplicated Extension-to-Language Table](../concerns/code-quality-and-hook-debt.md#duplicated-extension-to-language-table-2026-08-17)

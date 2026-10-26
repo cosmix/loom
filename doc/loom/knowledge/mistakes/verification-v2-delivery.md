@@ -6,7 +6,7 @@
 
 **What happened:** across schema-v2, contract-phase, dispute-kinds, review-harvest-gate and runner-adapters, workers
 kept hitting files no brief owned: `plan/schema/mod.rs` (explicit re-export list), `models/stage/mod.rs` and
-`defaults.rs`, `daemon/mod.rs`, the exhaustive `match request` in `daemon/server/client.rs:274`,
+`defaults.rs`, `daemon/mod.rs`, the exhaustive `match request` in `daemon/server/client.rs`,
 `inbox_drain/test_support.rs`, `cli/types_memory.rs` (the `--outcome` `value_parser`), `commands/subagents/mod.rs`,
 and about fifteen test files that construct a struct whose field moved (`criterion_index` into `DisputeKind`). A
 worker that asked for approval by message got none: `SendMessage` to a busy worker never reached it, and it ended
@@ -23,7 +23,7 @@ Two workers never write one file; when a brief hands one worker a type another o
 ## A Truncated Caller Search Was Read as Complete (2026-09-24)
 
 **What happened:** a worker changed `verdict::parse_and_validate`'s signature after `rg ... | head -30` cut off
-`commands/stage/adjudicate.rs:109`; the proof build broke in another worker's file.
+`commands/stage/adjudicate.rs`; the proof build broke in another worker's file.
 
 **Prevention:** before changing a `pub` signature, run the caller search with no limit, or `loom map --impact`.
 The same rule applies to a brief that names a private function: test-guards W2 cited `run_with_cache`, which is
@@ -114,7 +114,7 @@ unwired-file detector; name the `cargo test --lib` paths that run them.
 - **A clippy ICE** ("the compiler unexpectedly panicked", analysis passes, clippy 1.97.1) hit `loom stage complete`
   after files were swapped between intermediate states. An immediate manual re-run exited 0 on the same tree; retry.
 - **A merge in the main checkout** fails with `unable to unlink old loom/maintainability-baseline.txt: Device or resource
-  busy` because the sandbox bind-mounts that file writable. Merge in a detached worktree, commit there, `git reset`
+busy` because the sandbox bind-mounts that file writable. Merge in a detached worktree, commit there, `git reset`
   (mixed) in main, write the baseline in place with `git show`, `git checkout --` the rest.
 - **zsh** applies `:l` (lowercase) to an unbraced `$M:path`; `git show $M:loom/...` failed and the redirect truncated the
   baseline. Write `${M}:path`.
@@ -302,7 +302,7 @@ tests parent, `rg` the name in sibling files that glob-import `super::*`.
 
 ## A Build-State Claim Was Recorded Without Re-checking the Tree
 
-**What happened:** integration-verify noted that a `nix::unistd::geteuid` compile error in `loom/src/tokens/tracker_tests.rs:354` was pre-existing at HEAD, from a `git status` run once at the start. The file had an uncommitted 127-line change in the working tree that added the line.
+**What happened:** integration-verify noted that a `nix::unistd::geteuid` compile error in `loom/src/tokens/tracker_tests.rs` was pre-existing at HEAD, from a `git status` run once at the start. The file had an uncommitted 127-line change in the working tree that added the line.
 
 **Prevention:** run `git status` and `git diff <file>` immediately before recording a claim about build state, and attribute a compile error to a file only after the diff. The call is now `libc::geteuid()` in `unsafe` with a SAFETY comment, as `locator.rs` does.
 

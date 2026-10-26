@@ -11,7 +11,7 @@
 
 ## A Brief That Invents a New Guard Flag Can Widen an Existing One (2026-09-18)
 
-**What happened:** the brief for the relay hook's new ` memory ` fast-path arm told the worker to add a `NOTIFY` flag (relay line OR persisted-output marker) and gate every diagnostic on it. The worker did, moving `say()` off `HAS_LINE`. `say()` had been on `HAS_LINE` alone on purpose ("a large output that was merely persisted to a file is too common to comment on"), so any large Bash output could now emit relay diagnostics. Caught in the orchestrator's diff review; reverted in a fix pass.
+**What happened:** the brief for the relay hook's new `memory` fast-path arm told the worker to add a `NOTIFY` flag (relay line OR persisted-output marker) and gate every diagnostic on it. The worker did, moving `say()` off `HAS_LINE`. `say()` had been on `HAS_LINE` alone on purpose ("a large output that was merely persisted to a file is too common to comment on"), so any large Bash output could now emit relay diagnostics. Caught in the orchestrator's diff review; reverted in a fix pass.
 **Why:** the brief specified a mechanism without first checking whether the existing guard already gave the required silence. It did: a payload admitted only by the new arm has `HAS_LINE=0`.
 **Prevention:** before a brief introduces a new condition variable next to an existing one, state in the brief what the existing one already covers and why it is insufficient. If that sentence cannot be written, the new variable is not needed. A worker's "I changed behaviour X, flagging in case" note is a review item, never a footnote.
 
@@ -32,8 +32,8 @@ when a real command precedes it.
 ## Adding a Struct Field: Search src AND tests, and Gate With `--all-targets` (2026-09-19)
 
 **What happened:** a brief scoped the `StageDefinition` literal sites with `rg -l 'StageDefinition {' loom/src`
-and missed five literals under `loom/tests/` (`integration/helpers.rs:92`, `e2e/criteria_validation/mod.rs:24`,
-`e2e/daemon_config/mod.rs:65`, `tests.rs:65` and `:101`). The worker's `--lib` build passed; `--all-targets`
+and missed five literals under `loom/tests/` (`integration/helpers.rs::build_test_graph`, `e2e/criteria_validation/mod.rs::create_valid_stage`,
+`e2e/daemon_config/mod.rs::create_stage_def`, `e2e/daemon_config/tests.rs`). The worker's `--lib` build passed; `--all-targets`
 failed.
 **Prevention:** when adding a field to a struct built by exhaustive literals, search the whole `loom/` crate,
 not `loom/src`, and do not trust a worker's lib-only check: the orchestrator gates with `--all-targets`.
@@ -52,7 +52,7 @@ assertion.
 **What happened:** three separate workers broke it. Worker K2 raised `loom/maintainability-baseline.txt`
 entries (`cache.rs` 529 to 530, `generate_knowledge_distill_stable_prefix` 79 to 80) to fit a one-line
 addition and pushed `memory/handlers/tests.rs` to 424 lines. A sonnet worker told to offset baseline growth
-deleted blank `///` doc separators (clippy `doc_lazy_continuation` at `models/stage/types.rs:670`) and split
+deleted blank `///` doc separators (clippy `doc_lazy_continuation` in `models/stage/types.rs`) and split
 `let now` into two `Utc::now()` calls in `models/stage/defaults.rs`, so `created_at != updated_at`.
 **Why:** the briefs did not say the baseline may only shrink, and "offset the growth" reads as permission to
 squeeze lines.
@@ -61,7 +61,7 @@ squeeze lines.
 baseline-offset brief forbids deleting doc separators, merging statements that change behaviour and joining
 lines; it requires a real extraction (move a cohesive block to a sibling module) and lowering the entry.
 **Fix:** K2's work was re-delegated to refactor net-zero and split its tests.
-**Known residue:** `Stage::default` (`models/stage/defaults.rs:6`) is the single exhaustive `Stage` literal and
+**Known residue:** `Stage::default` (`models/stage/defaults.rs`) is the single exhaustive `Stage` literal and
 sat exactly at its baseline (70), so every new `Stage` field grows it by a line with no in-function reduction
 available. The plan-verification stage raised its entry to 71 by an explicit, recorded decision. Any stage
 that adds a `Stage` field needs either that decision or a field-grouping refactor planned in advance.
@@ -75,7 +75,7 @@ that adds a `Stage` field needs either that decision or a field-grouping refacto
 **What happened:** spawn prompts told two workers that the plan-writer `rg -qF '## '` and agents
 `tools:.*Task` criteria must MATCH; the plan sets `exit_code: 1` for both (they must be ABSENT).
 **Why:** the signal's Acceptance Criteria list renders only `criterion.command()`
-(`signals/format/sections.rs:485`), so a criterion that must fail reads as a positive check.
+(`orchestrator/signals/format/sections.rs::format_dynamic_section`), so a criterion that must fail reads as a positive check.
 **Prevention:** read the stage's YAML `acceptance` (with `exit_code`) in the plan before briefing; never infer
 the direction from the signal's bare command list. The rendering gap is recorded in
 [code-quality-and-hook-debt](../concerns/code-quality-and-hook-debt.md).
@@ -102,7 +102,7 @@ The pre-commit hook runs markdownlint with automatic fixes on every staged markd
 
 ## A Hook Diagnosis Read From the Enforce Path Alone Missed the Early Exit
 
-**What happened:** Asked whether loom blocks the official Codex plugin outside a stage, the orchestrator read `enforce_forwarder` (`codex-forward-guard.sh:312-337`) and a test pinning an outside-stage block, told the user the plugin was blocked, and briefed an opus subagent with a settled decision to add a stage gate. `block_forwarder` already calls `require_stage_evidence`, which exits 0 without stage evidence, so the plugin was never blocked in an ordinary session; the pinned test supplies partial stage evidence. The subagent saw `require_stage_evidence` and implemented the brief anyway, treating the settled decision as binding over the code.
+**What happened:** Asked whether loom blocks the official Codex plugin outside a stage, the orchestrator read `enforce_forwarder` (`codex-forward-guard.sh::enforce_forwarder`) and a test pinning an outside-stage block, told the user the plugin was blocked, and briefed an opus subagent with a settled decision to add a stage gate. `block_forwarder` already calls `require_stage_evidence`, which exits 0 without stage evidence, so the plugin was never blocked in an ordinary session; the pinned test supplies partial stage evidence. The subagent saw `require_stage_evidence` and implemented the brief anyway, treating the settled decision as binding over the code.
 **Why:** The diagnosis traced from the blocking call backwards and never read the function every block passes through; `loom knowledge context` was not queried for the hook, and `architecture/codex-plugin.md` documents the gate. The brief framed a wrong premise as settled, which discouraged the subagent from pushing back.
 **Prevention:** Before stating that a hook blocks something, trace from the hook's entry to the block, reading every early exit on the way (the block helper's own body included), and pull `loom knowledge context --query "<hook> <behaviour>"`. A brief built on a hook diagnosis quotes the traced path. A subagent whose tree contradicts its brief's stated problem reports that before editing.
 **Fix:** The subagent was redirected, reverted every edit, and ran each registered hook with a no-stage payload: none blocks, rewrites, or records a `codex:codex-rescue` call.

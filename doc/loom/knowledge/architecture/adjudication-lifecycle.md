@@ -1,6 +1,7 @@
 ---
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
+
 # Adjudication Persistence and Stage Resumption
 
 > Dispute to verdict
@@ -9,15 +10,15 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 
 Paths below are relative to `.loom/work/`, the run's state directory:
 
-| Path | Authority | Purpose |
-| --- | --- | --- |
-| `disputes/<stage>/<n>/request.md` | daemon on behalf of the stage agent | Original criterion index, reason, evidence commit, captured failure output, fix-attempt count, and timestamp |
-| `disputes/<stage>/<n>/verdict.json` | adjudication session | Draft passed to `loom stage adjudicate`; not authoritative |
-| `disputes/<stage>/<n>/verdict.md` | guarded adjudication record path | Immutable YAML-frontmatter record containing the verdict, reasoning or questions, citations, plan patch, model, attempt count, timestamp, and judge session id |
-| `disputes/<stage>/<n>/.applying` | daemon | Temporary crash-recovery marker while a verdict is being applied |
-| `disputes/<stage>/<n>/applied.marker` | daemon | Zero-byte idempotency sentinel proving that the verdict was applied |
-| `disputes/<stage>/<n>/attempts` | daemon | Adjudication-session respawn budget, spent when work is handed out |
-| `disputes/<stage>/feedback.md` | daemon | The one adjudication message that may be injected into a later stage signal |
+| Path                                  | Authority                           | Purpose                                                                                                                                                        |
+| ------------------------------------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `disputes/<stage>/<n>/request.md`     | daemon on behalf of the stage agent | Original criterion index, reason, evidence commit, captured failure output, fix-attempt count, and timestamp                                                   |
+| `disputes/<stage>/<n>/verdict.json`   | adjudication session                | Draft passed to `loom stage adjudicate`; not authoritative                                                                                                     |
+| `disputes/<stage>/<n>/verdict.md`     | guarded adjudication record path    | Immutable YAML-frontmatter record containing the verdict, reasoning or questions, citations, plan patch, model, attempt count, timestamp, and judge session id |
+| `disputes/<stage>/<n>/.applying`      | daemon                              | Temporary crash-recovery marker while a verdict is being applied                                                                                               |
+| `disputes/<stage>/<n>/applied.marker` | daemon                              | Zero-byte idempotency sentinel proving that the verdict was applied                                                                                            |
+| `disputes/<stage>/<n>/attempts`       | daemon                              | Adjudication-session respawn budget, spent when work is handed out                                                                                             |
+| `disputes/<stage>/feedback.md`        | daemon                              | The one adjudication message that may be injected into a later stage signal                                                                                    |
 
 `loom stage adjudicate` validates the draft `verdict.json` and records it as
 `disputes/<stage>/<n>/verdict.md`. The daemon's
@@ -69,11 +70,11 @@ the successor needs into one of the signal inputs above.
 
 ## What Each Verdict Delivers
 
-| Verdict | Durable effect | What a later stage session sees |
-| --- | --- | --- |
-| `Accept` | Applies each of the verdict's `patches` to `acceptance` or `wiring` as its own amendment (`apply_accept.rs`), in descending index order with audit dispute ids `<id>.<k>`; updates the active plan and stage file; writes `plan_versions/<n>.md` and one `plan_versions/audit.md` row per patch; requeues through `notify_and_requeue` | Amended acceptance/wiring rendered by the normal signal, plus `disputes/<stage>/feedback.md`: which indices were replaced or deleted, the adjudicator's reasoning (control characters stripped, capped at 2 KB), and the instruction to run `loom stage complete` before anything else and to dispute, never block, anything still failing. The full record stays in `disputes/<stage>/<n>/verdict.md`. |
-| `NeedsMoreEvidence` | Writes the judge's questions to `disputes/<stage>/feedback.md`, increments `evidence_rounds`, and re-queues unless another dispute is unanswered or the evidence cap is exhausted | The questions appended at the end of the signal under `## Adjudicator Feedback (from your prior dispute)` |
-| `Reject` | Writes reasoning and citations to `disputes/<stage>/feedback.md` and moves the stage to `NeedsHumanReview` | No automatic rerun. If a human later approves a fresh attempt, the persisted rejection feedback is available to its signal. |
+| Verdict             | Durable effect                                                                                                                                                                                                                                                                                                                         | What a later stage session sees                                                                                                                                                                                                                                                                                                                                                                         |
+| ------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `Accept`            | Applies each of the verdict's `patches` to `acceptance` or `wiring` as its own amendment (`apply_accept.rs`), in descending index order with audit dispute ids `<id>.<k>`; updates the active plan and stage file; writes `plan_versions/<n>.md` and one `plan_versions/audit.md` row per patch; requeues through `notify_and_requeue` | Amended acceptance/wiring rendered by the normal signal, plus `disputes/<stage>/feedback.md`: which indices were replaced or deleted, the adjudicator's reasoning (control characters stripped, capped at 2 KB), and the instruction to run `loom stage complete` before anything else and to dispute, never block, anything still failing. The full record stays in `disputes/<stage>/<n>/verdict.md`. |
+| `NeedsMoreEvidence` | Writes the judge's questions to `disputes/<stage>/feedback.md`, increments `evidence_rounds`, and re-queues unless another dispute is unanswered or the evidence cap is exhausted                                                                                                                                                      | The questions appended at the end of the signal under `## Adjudicator Feedback (from your prior dispute)`                                                                                                                                                                                                                                                                                               |
+| `Reject`            | Writes reasoning and citations to `disputes/<stage>/feedback.md` and moves the stage to `NeedsHumanReview`                                                                                                                                                                                                                             | No automatic rerun. If a human later approves a fresh attempt, the persisted rejection feedback is available to its signal.                                                                                                                                                                                                                                                                             |
 
 An accepted amendment's audit row stores the dispute id and the optional reason inside
 `plan_patch`; that reason is not necessarily the verdict's full `reasoning` field. For the complete
@@ -104,12 +105,12 @@ briefing's verdict rules, run reading, schema and evidence sections, with "the c
 the acceptance briefing stays byte-identical (`prompt/tests_golden.rs`). `CriterionField` keeps `Default` because
 test code builds `DisputeKind::criterion(Default::default(), vec![0])`. The four v2 kinds:
 
-| Kind | Filed with | Budget field | Judge verdicts | Durable effect |
-| --- | --- | --- | --- | --- |
-| Findings | `loom stage dispute-findings <stage> --finding <id>... --reason` | `finding_disputes` | `rulings` (per finding `uphold`, `dismiss`, `defer`) or `needs-more-evidence` | rulings append to `reviews/<stage>/rulings.json`; a `defer` appends to `reviews/<target>/carried.json`; feedback lists upheld findings |
-| Contract | `loom stage dispute-contract <stage> --contract <id> --reason` | `contract_disputes` | `accept`, `reject`, `needs-more-evidence` | accept re-freezes that contract's files at current worktree content and may apply a `plan_patch` to `contracts` (`AmendmentField::Contracts`); reject sends the agent to `loom stage contracts restore` |
-| Integrity | `loom stage dispute-integrity <stage> --event <id>... --reason` | `integrity_disputes` | `accept`, `reject`, `needs-more-evidence` | accept upserts `reviews/<stage>/integrity.json` with the evidence snapshot filed with the dispute |
-| Impact tests | `loom stage dispute-criteria <stage> --field impact-tests --test <id>... --reason` (standard stages) | `impact_disputes` | `accept`, `reject`, `needs-more-evidence` | accept upserts `reviews/<stage>/impact.json` by id with the failure as the observed record holds it (`apply_impact.rs`); reject tells the agent the failures stand |
+| Kind         | Filed with                                                                                           | Budget field         | Judge verdicts                                                                | Durable effect                                                                                                                                                                                          |
+| ------------ | ---------------------------------------------------------------------------------------------------- | -------------------- | ----------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Findings     | `loom stage dispute-findings <stage> --finding <id>... --reason`                                     | `finding_disputes`   | `rulings` (per finding `uphold`, `dismiss`, `defer`) or `needs-more-evidence` | rulings append to `reviews/<stage>/rulings.json`; a `defer` appends to `reviews/<target>/carried.json`; feedback lists upheld findings                                                                  |
+| Contract     | `loom stage dispute-contract <stage> --contract <id> --reason`                                       | `contract_disputes`  | `accept`, `reject`, `needs-more-evidence`                                     | accept re-freezes that contract's files at current worktree content and may apply a `plan_patch` to `contracts` (`AmendmentField::Contracts`); reject sends the agent to `loom stage contracts restore` |
+| Integrity    | `loom stage dispute-integrity <stage> --event <id>... --reason`                                      | `integrity_disputes` | `accept`, `reject`, `needs-more-evidence`                                     | accept upserts `reviews/<stage>/integrity.json` with the evidence snapshot filed with the dispute                                                                                                       |
+| Impact tests | `loom stage dispute-criteria <stage> --field impact-tests --test <id>... --reason` (standard stages) | `impact_disputes`    | `accept`, `reject`, `needs-more-evidence`                                     | accept upserts `reviews/<stage>/impact.json` by id with the failure as the observed record holds it (`apply_impact.rs`); reject tells the agent the failures stand                                      |
 
 Each request may name several ids, so one retire-and-respawn covers a whole review round. The four counters
 plus `evidence_rounds` and `amendments_applied` live in one `#[serde(flatten)]` struct
@@ -141,7 +142,7 @@ round-trip-stable "none" (a flattened `Null` serialises as `{}`). Rulings and ca
 integrity and impact acceptance are upserts by id. Requeue still goes through
 `requeue_or_hold_for_remaining_disputes`, so a sibling dispute holds the stage. `parse_and_validate(raw)` remains
 the criterion and relay pre-check; `parse_and_validate_for(raw, kind)` is the kind-aware entry (a signature change
-made after a truncated caller search broke `commands/stage/adjudicate.rs:109`).
+made after a truncated caller search broke `commands/stage/adjudicate.rs::relay_verdict`).
 
 **Prompts** (`orchestrator/adjudication/prompt.rs` and `prompt/{findings,contract,integrity,impact}.rs`) keep the shared
 instructions, the 100,000-byte cap and the JSON contract per kind. `prompt::build` computes the verdict draft

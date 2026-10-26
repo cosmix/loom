@@ -1,10 +1,11 @@
 ---
 ---
+
 # Filesystem And Integration Modules
 
 > Git, fs, handoff, sandbox
 
-## Git Operations
+## Git Modules
 
 - `git/worktree/operations.rs` - Create/remove worktrees at `.worktrees/{stage-id}/`
 - `git/worktree/config_worktree.rs` - `worktree_admin_dirs` (the real directories under `<common>/worktrees`, listed at spawn), `partition_admin_dirs` / `AdminDirs` (split them into the session's `own` entry and its `siblings`; an unclaimed or doubly claimed worktree is an error, so the spawn is refused), `check_worktree_config` (pinned git refuses unexpected `config.worktree` keys)
@@ -29,10 +30,10 @@
 - `fs/memory/mod.rs` - Session memory operations (module root; re-exports from `persistence.rs`, `query.rs`, `spool.rs`, `storage.rs`, `archive.rs`, `export.rs`, `types.rs`)
 - `fs/verifications.rs` - Goal-backward verification results
 
-## Handoff System
+## Handoff Modules
 
 - `commands/handoff/create.rs` - CLI `loom handoff create` implementation
-- `orchestrator/monitor/handoff_watch.rs` - `HandoffWatch::needs_handoff_from_document` recovers a handoff from the handoff DOCUMENT (not the stage file) for a session running sandboxed without write access to `.loom/work/stages`; caches per filename so no document is parsed twice. An earlier version of this entry pointed at a `handoff/detector.rs` that does not exist.
+- `orchestrator/monitor/handoff_watch.rs` - `HandoffWatch::needs_handoff_from_document` recovers a handoff from the handoff DOCUMENT (not the stage file) for a session running sandboxed without write access to `.loom/work/stages`; caches per filename so no document is parsed twice.
 - `handoff/generator/mod.rs` - Handoff file generation
 - `handoff/schema/mod.rs` - HandoffV2 structured format (module root; struct defined in `handoff/schema/v2.rs`)
 
@@ -65,7 +66,7 @@
 - `process/identity.rs` - PID plus start-time identity verification and fail-closed signaling
 - `process/environment.rs` - minimal allowlisted environment reconstruction for stage processes
 - `skills/` - SkillIndex, SkillMatch, SkillMetadata (index.rs, matcher.rs, types.rs)
-- `map/analyzer.rs` no longer exists — `analyze_codebase(root, deep, focus)` was removed along with `map/{analyzer,detectors,knowledge_sync}.rs`; `loom map` is now three read-only view flags (`--outline`, `--find-all`, `--impact`) defined in `map/mod.rs` — see entry-points/cli-and-plan-pipeline.md § New CLI Surface.
+- `loom map` is three read-only view flags (`--outline`, `--find-all`, `--impact`) defined in `map/mod.rs` — see entry-points/cli-and-plan-pipeline.md § New CLI Surface.
 
 ## WorkDir Directory Helpers (Existing vs. Missing)
 
@@ -91,7 +92,7 @@ Two more subdirectories, resolved by their own modules rather than a `WorkDir` h
 
 ## Sandbox Settings — ANTHROPIC_API_KEY
 
-`sandbox/settings.rs:16-34` — `SENSITIVE_ENV_KEYS` array filters `ANTHROPIC_API_KEY` from agent sandbox environments.
+`ANTHROPIC_API_KEY` never reaches an agent session through the environment: the session wrapper rebuilds the child environment from a minimal host allowlist (`orchestrator/terminal/native/wrapper/script_text.rs::env_allowlist`), so ambient credentials and token-shaped variables are not inherited. `sandbox/settings.rs` has no env filter.
 
 - This is env hygiene only and has nothing to do with adjudication, which runs as an interactive loom session through the `TerminalBackend` with no API key and no `claude -p` — see conventions/dispute-and-adjudication.md § Adjudicator Transport Convention.
 
@@ -105,7 +106,7 @@ Two more subdirectories, resolved by their own modules rather than a `WorkDir` h
 - Streaming download with size limit enforcement (buffer size 8192)
 - Error propagation: `.context("Failed to ...")` pattern throughout
 
-**Never call `api.github.com` from the updater (2026-09-16).** Anonymous REST calls share a 60 requests/hour budget per public IP with every other anonymous client behind the same router, and `loom update` failed on a real install with `HTTP 403 - Forbidden` for exactly that reason. `get_latest_release` (`commands/self_update/mod.rs`) resolves the tag from the `github.com/<repo>/releases/latest` redirect (`tag_from_release_location` parses the `/releases/tag/<tag>` segment) and `update_binary` builds `releases/download/<tag>/<asset>` URLs from the tag; neither carries that limit. `update_check::fetch_latest_version` reuses the same lookup.
+**Never call `api.github.com` from the updater.** Anonymous REST calls share a 60 requests/hour budget per public IP with every other anonymous client behind the same router, so `loom update` fails with `HTTP 403 - Forbidden` once that budget is spent. `get_latest_release` (`commands/self_update/mod.rs`) resolves the tag from the `github.com/<repo>/releases/latest` redirect (`tag_from_release_location` parses the `/releases/tag/<tag>` segment) and `update_binary` builds `releases/download/<tag>/<asset>` URLs from the tag; neither carries that limit. `update_check::fetch_latest_version` reuses the same lookup.
 
 This is the pattern for loom's HTTP consumers (self-update). The adjudicator is not one of them: it spawns an interactive loom session (`orchestrator/adjudication/session.rs::start_pending_adjudications`) and makes no HTTP call — see conventions/dispute-and-adjudication.md § Adjudicator Transport Convention.
 
@@ -117,15 +118,15 @@ Every reader of an installed asset uses those roots: the hooks dir (`hooks::gene
 
 ## Tiered Knowledge Base
 
-| Path                                               | Role                                                                                                                        |
-| ----------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `loom/src/fs/knowledge/types.rs`                   | `KnowledgeFile`, `KnowledgeTarget`, `KnowledgeLayout`, tier-1 alias table                                                   |
-| `loom/src/fs/knowledge/dir.rs`                     | `KnowledgeDir` — initialize, append, layout detection; `replace_section`/`replace_section_target` delegate the actual splicing to `splice.rs`                                                      |
-| `loom/src/fs/knowledge/splice.rs`                  | `splice_section` — level-agnostic (`##` through `######`) section splicer; returns `SectionOutcome`                                                   |
-| `loom/src/fs/knowledge/index.rs`                   | `scan_topics`, `generate_index`, `write_index`                                                                              |
-| `loom/src/fs/knowledge/templates.rs`               | tier-1/tier-2 scaffolds                                                                                                     |
-| `loom/src/commands/knowledge/mod.rs`               | the four knowledge verbs — `update` (append), `replace-section` (overwrite the section body at any heading level `##` to `######`), `context`, `sync`               |
-| `loom/src/cli/types_memory.rs`                     | clap definitions for the knowledge subcommands                                                                              |
+| Path                                 | Role                                                                                                                                                  |
+| ------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loom/src/fs/knowledge/types.rs`     | `KnowledgeFile`, `KnowledgeTarget`, `KnowledgeLayout`, tier-1 alias table                                                                             |
+| `loom/src/fs/knowledge/dir.rs`       | `KnowledgeDir` — initialize, append, layout detection; `replace_section`/`replace_section_target` delegate the actual splicing to `splice.rs`         |
+| `loom/src/fs/knowledge/splice.rs`    | `splice_section` — level-agnostic (`##` through `######`) section splicer; returns `SectionOutcome`                                                   |
+| `loom/src/fs/knowledge/index.rs`     | `scan_topics`, `generate_index`, `write_index`                                                                                                        |
+| `loom/src/fs/knowledge/templates.rs` | tier-1/tier-2 scaffolds                                                                                                                               |
+| `loom/src/commands/knowledge/mod.rs` | the four knowledge verbs — `update` (append), `replace-section` (overwrite the section body at any heading level `##` to `######`), `context`, `sync` |
+| `loom/src/cli/types_memory.rs`       | clap definitions for the knowledge subcommands                                                                                                        |
 
 `loom knowledge sync`, or any `loom knowledge update`, regenerates `INDEX.md` — the index
 regenerates on every knowledge write — and on a flat directory creates it, which is what flips

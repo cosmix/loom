@@ -12,12 +12,12 @@ what a pack says about its own weakness. The base ranking and the exact-rung gat
 `rank_source/intent.rs::classify(query) -> QueryIntent` returns one of four intents (first match wins, in
 this order):
 
-| Intent | Matches | Effect |
-| --- | --- | --- |
-| `Literal { text }` | a double-quoted span of 3+ characters containing a space or a non-identifier character | source lexical scores ×0.5; the pack gains a `TextSearchHint` |
-| `Relationship { direction, symbol }` | `(who\|what) (calls\|uses\|references\|invokes) X`, `callers of X`, `callees of X`, `what does X call`, `usages of X`, `impact of (changing )?X` | seed the exact node and add its direct neighbours |
-| `SymbolQuestion { symbol }` | the whole query is `(what does\|what is\|where is\|explain\|show me) X (do\|does\|defined\|work\|…)?` | admit the exact node |
-| `General` | everything else | today's candidacy, unchanged |
+| Intent                               | Matches                                                                                                                                          | Effect                                                        |
+| ------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------------------------------- |
+| `Literal { text }`                   | a double-quoted span of 3+ characters containing a space or a non-identifier character                                                           | source lexical scores ×0.5; the pack gains a `TextSearchHint` |
+| `Relationship { direction, symbol }` | `(who\|what) (calls\|uses\|references\|invokes) X`, `callers of X`, `callees of X`, `what does X call`, `usages of X`, `impact of (changing )?X` | seed the exact node and add its direct neighbours             |
+| `SymbolQuestion { symbol }`          | the whole query is `(what does\|what is\|where is\|explain\|show me) X (do\|does\|defined\|work\|…)?`                                            | admit the exact node                                          |
+| `General`                            | everything else                                                                                                                                  | today's candidacy, unchanged                                  |
 
 `RelationDirection` maps `calls`/`invokes`/`callers of` to `Callers`, `callees of`/`what does X call` to
 `Callees`, `impact of (changing) X` to `Impact` (`impact_with`, depth 1, no site line), and
@@ -40,9 +40,9 @@ function are recorded as `Calls`, `who uses fn_name` finds only non-call referen
   Routing shares ONE `MAX_EXPANDED_TOKENS` budget with expansion: `route()` returns the tokens spent and
   `expand_from_seeds` starts from that count.
 - A **literal** query sets `PackRequest.text_search` (by `build_pack_request`) and `pack()` copies it into
-  `ContextPack.text_search`. `TextSearchHint::for_pattern` builds ``rg -n -F -- '<pattern>'`` with every `'`
+  `ContextPack.text_search`. `TextSearchHint::for_pattern` builds `rg -n -F -- '<pattern>'` with every `'`
   written `'\''`; briefs and `loom knowledge context` render `Literal text: the graph does not index bodies; run
-  <command>` (written in both `orchestrator/signals/format/brief.rs` and `commands/knowledge/context_render.rs`, and
+<command>` (written in both `orchestrator/signals/format/brief.rs` and `commands/knowledge/context_render.rs`, and
   pinned by the stage wiring check). The line is charged additively in `recompute_estimate`, and `pack()` holds
   its cost back from the selection budget via a cloned `PackRequest`. `classify` also runs on the multi-line
   composite text of stage and worker briefs, where a quoted phrase is likely.

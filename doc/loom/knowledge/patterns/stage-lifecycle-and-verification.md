@@ -1,6 +1,7 @@
 ---
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
+
 # Stage Lifecycle And Verification
 
 > Stage states, locked writes
@@ -91,7 +92,7 @@ Every field group on `Session` that represents a runtime resource identity requi
 
 Four verification layers: **Artifacts** (files must exist, stub detection blocks TODO/FIXME/unimplemented\!/todo\!/pass/raise NotImplementedError). **Wiring** (grep patterns verify code connections). **Wiring Tests** (runtime commands with success criteria). **Dead Code Check** (command + fail/ignore patterns).
 
-**Truths is NOT a layer here.** It was removed as a standalone goal-backward layer and unified into the acceptance field as `AcceptanceCriterion::Extended(TruthCheck)`. A duplicate section claiming "Three verification layers: Truths, Artifacts, Wiring" was deleted from this file on 2026-07-30. Required for `stage_type: standard` and `integration-verify` — must have acceptance OR goal-backward checks.
+**Truths is NOT a layer here.** It is part of the acceptance field as `AcceptanceCriterion::Extended(TruthCheck)`, not a standalone goal-backward layer. Required for `stage_type: standard` and `integration-verify` — must have acceptance OR goal-backward checks.
 
 Validation limits (`plan/schema/validation.rs`): max 100 artifacts; max 20 `before_stage` checks; max 20 `after_stage` checks.
 
@@ -135,7 +136,7 @@ pub enum AcceptanceCriterion {
 `verify/criteria/tests/confine_tests.rs` ships
 `confined_shell_command_does_not_see_ambient_secret` **and**
 `inherited_shell_command_does_see_ambient_secret`. The pair distinguishes "the scrub works"
-from "the canary was never set", which a single negative assertion cannot. `process/environment.rs:92`
+from "the canary was never set", which a single negative assertion cannot. `process/environment.rs::ambient_secret_canary_is_excluded_but_terminal_basics_survive`
 does the same at unit level by exec'ing `/usr/bin/env` and asserting the canary is absent
 from real child output rather than inspecting a `Command` struct.
 

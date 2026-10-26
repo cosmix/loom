@@ -13,11 +13,11 @@ stage agent is entitled to (S-1).
 
 `daemon::rpc::try_send_request` returns a three-way `DaemonReach`, and each arm picks a route:
 
-| `DaemonReach` | What happened | Route taken |
-| --- | --- | --- |
-| `Answered(resp)` | a daemon replied | its answer stands, refusal included |
-| `NotListening` | no socket file, or a stale one nothing is bound to | the caller's local fallback (an operator's direct write) |
-| `Unreachable` | `PermissionDenied` on connect, a socket path `lstat` cannot look at, or a resolved socket path past `sun_path` | the worktree spool |
+| `DaemonReach`    | What happened                                                                                                  | Route taken                                              |
+| ---------------- | -------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| `Answered(resp)` | a daemon replied                                                                                               | its answer stands, refusal included                      |
+| `NotListening`   | no socket file, or a stale one nothing is bound to                                                             | the caller's local fallback (an operator's direct write) |
+| `Unreachable`    | `PermissionDenied` on connect, a socket path `lstat` cannot look at, or a resolved socket path past `sun_path` | the worktree spool                                       |
 
 **Every client dials `daemon::socket_path(work_dir)`** (`daemon/socket.rs`), never `work_dir.join("orchestrator.sock")`.
 In a stage worktree `.loom/work` is a symlink to the state root, and the daemon bound its socket under the
@@ -92,7 +92,7 @@ Two rules the drain depends on:
 
 A new file under a worktree's `.loom/` must be added to `git/worktree/settings.rs` in both places
 that already name the memory spool: `is_worktree_scaffold_path`, so `git status` does not read it as
-*agent work*, and `WORKTREE_EXCLUDE_PATTERNS`, so it reaches `info/exclude` and cannot be committed.
+_agent work_, and `WORKTREE_EXCLUDE_PATTERNS`, so it reaches `info/exclude` and cannot be committed.
 Deliberately not a blanket `.loom/` — a project may legitimately track `.loom/config.toml`.
 
 ## Relay Kinds and Their Hook Mapping
@@ -105,20 +105,20 @@ is never relayed. The nine control kinds (`RequestKind::is_control`, `loom/src/r
 dropped from a subagent by `drop_control_kinds` before an inbox entry exists, so a new control kind
 needs an entry there.
 
-| Session command | Kind | Control |
-| --- | --- | --- |
-| `loom memory note`, `decision`, `change`, `question`, `resolve` | `memory` | no |
-| `loom stage block` | `block` | yes |
-| `loom stage commit` | `commit` | yes |
-| `loom stage complete` | `complete` | yes |
-| `loom stage dispute-criteria` | `dispute`; `file-dispute` with `--field impact-tests` | yes |
-| `loom stage dispute-findings`, `dispute-contract`, `dispute-integrity` | `file-dispute` | yes |
-| `loom stage merge --resolved` | `merge-resolved` | yes |
-| `loom stage adjudicate` | `verdict` | yes |
-| `loom stage contracts freeze` | `freeze-contracts` | yes |
-| `loom knowledge context` | `telemetry` | no |
-| `loom check` | `check` | no |
-| `loom handoff` | `handoff` | yes |
+| Session command                                                        | Kind                                                  | Control |
+| ---------------------------------------------------------------------- | ----------------------------------------------------- | ------- |
+| `loom memory note`, `decision`, `change`, `question`, `resolve`        | `memory`                                              | no      |
+| `loom stage block`                                                     | `block`                                               | yes     |
+| `loom stage commit`                                                    | `commit`                                              | yes     |
+| `loom stage complete`                                                  | `complete`                                            | yes     |
+| `loom stage dispute-criteria`                                          | `dispute`; `file-dispute` with `--field impact-tests` | yes     |
+| `loom stage dispute-findings`, `dispute-contract`, `dispute-integrity` | `file-dispute`                                        | yes     |
+| `loom stage merge --resolved`                                          | `merge-resolved`                                      | yes     |
+| `loom stage adjudicate`                                                | `verdict`                                             | yes     |
+| `loom stage contracts freeze`                                          | `freeze-contracts`                                    | yes     |
+| `loom knowledge context`                                               | `telemetry`                                           | no      |
+| `loom check`                                                           | `check`                                               | no      |
+| `loom handoff`                                                         | `handoff`                                             | yes     |
 
 `check` is not a control kind, so a subagent may relay it. `loom check` and `loom stage complete`
 in a session are host jobs (below): the daemon runs the gate on the host, and only a passing
@@ -151,16 +151,16 @@ or `complete` and `<short head>` is the first 12 characters of HEAD (`host_verif
 A call buffers its output, so the first line is the one the agent reads when the call ends. The
 states and exit codes:
 
-| First line | Printed when | Exit |
-| --- | --- | --- |
-| `requested` | the ticket was emitted; the job is queued | 0 |
-| `pending` | the job is still running; `N criteria done` | 0 |
-| `passed` | `check` job passed | 0 |
-| `failed` | the job failed; each failing criterion follows | 1 |
-| `stopped` | the job was cancelled or interrupted | 4 |
-| `refused` | the call could not request or follow a job (a legacy session, a bad state, an emit failure) | 1 |
-| `completed` | `complete` only: the daemon applied a passing run and completed the stage | 0 |
-| `rejected` | `complete` only: the daemon rejected the application | 1 |
+| First line  | Printed when                                                                                | Exit |
+| ----------- | ------------------------------------------------------------------------------------------- | ---- |
+| `requested` | the ticket was emitted; the job is queued                                                   | 0    |
+| `pending`   | the job is still running; `N criteria done`                                                 | 0    |
+| `passed`    | `check` job passed                                                                          | 0    |
+| `failed`    | the job failed; each failing criterion follows                                              | 1    |
+| `stopped`   | the job was cancelled or interrupted                                                        | 4    |
+| `refused`   | the call could not request or follow a job (a legacy session, a bad state, an emit failure) | 1    |
+| `completed` | `complete` only: the daemon applied a passing run and completed the stage                   | 0    |
+| `rejected`  | `complete` only: the daemon rejected the application                                        | 1    |
 
 A `complete` call that follows a passing run waits for the daemon's application, so `passed` never
 appears for it. A session that cannot relay (no `LOOM_SCRATCH_DIR`) is refused; the operator's shell

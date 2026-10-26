@@ -16,21 +16,21 @@
 
 ## Key Dependencies (Cargo.toml)
 
-| Crate           | Purpose                                     |
-| --------------- | ------------------------------------------- |
-| clap            | CLI argument parsing                        |
-| serde           | Serialization framework                     |
-| serde-saphyr    | YAML via `loom::yaml` (plans, frontmatter)  |
-| serde_json      | JSON, and dynamic YAML values               |
-| anyhow          | Application errors and context              |
-| reqwest         | Blocking HTTP (self-update, quota)          |
-| toml            | Config file parsing                         |
-| chrono          | Timestamps                                  |
-| minisign-verify | Self-update signature verification          |
-| ratatui         | Terminal UI for status dashboard            |
-| serial_test     | Test isolation                              |
-| tempfile        | Temporary directories for tests             |
-| fs2             | File locking                                |
+| Crate           | Purpose                                    |
+| --------------- | ------------------------------------------ |
+| clap            | CLI argument parsing                       |
+| serde           | Serialization framework                    |
+| serde-saphyr    | YAML via `loom::yaml` (plans, frontmatter) |
+| serde_json      | JSON, and dynamic YAML values              |
+| anyhow          | Application errors and context             |
+| reqwest         | Blocking HTTP (self-update, quota)         |
+| toml            | Config file parsing                        |
+| chrono          | Timestamps                                 |
+| minisign-verify | Self-update signature verification         |
+| ratatui         | Terminal UI for status dashboard           |
+| serial_test     | Test isolation                             |
+| tempfile        | Temporary directories for tests            |
+| fs2             | File locking                               |
 
 ## Build Tools
 
@@ -92,11 +92,11 @@ preferred replacement is not installed.
 Thirteen optional dependencies behind three default-on cargo features (`loom/Cargo.toml`), all exact-pinned
 with `=`:
 
-| Pack (feature) | Crates |
-| --- | --- |
-| Core (`source-graph`) | `tree-sitter =0.27.0`, `tree-sitter-rust =0.24.2`, `tree-sitter-typescript =0.23.2` (TypeScript and TSX), `tree-sitter-python =0.25.0`, `tree-sitter-go =0.25.0`, `tree-sitter-javascript =0.25.0`, `streaming-iterator =0.1.9` |
-| Wave B (`source-graph-wave-b`) | `tree-sitter-java =0.23.5`, `tree-sitter-c-sharp =0.23.5`, `tree-sitter-ruby =0.23.1`, `tree-sitter-php =0.24.2` |
-| Wave C (`source-graph-wave-c`) | `tree-sitter-c =0.24.2`, `tree-sitter-cpp =0.23.4` |
+| Pack (feature)                 | Crates                                                                                                                                                                                                                          |
+| ------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Core (`source-graph`)          | `tree-sitter =0.27.0`, `tree-sitter-rust =0.24.2`, `tree-sitter-typescript =0.23.2` (TypeScript and TSX), `tree-sitter-python =0.25.0`, `tree-sitter-go =0.25.0`, `tree-sitter-javascript =0.25.0`, `streaming-iterator =0.1.9` |
+| Wave B (`source-graph-wave-b`) | `tree-sitter-java =0.23.5`, `tree-sitter-c-sharp =0.23.5`, `tree-sitter-ruby =0.23.1`, `tree-sitter-php =0.24.2`                                                                                                                |
+| Wave C (`source-graph-wave-c`) | `tree-sitter-c =0.24.2`, `tree-sitter-cpp =0.23.4`                                                                                                                                                                              |
 
 `default = ["source-graph", "source-graph-wave-b", "source-graph-wave-c"]`; each wave feature implies
 `source-graph`. `streaming-iterator` is required, not incidental: `QueryCursor::matches` returns a
@@ -118,7 +118,7 @@ The three packs cost binary size and build time: the release binary grew from 37
 (+37.9%) with both waves, and the grammar build scripts that compile `parser.c` take 0.5 to 1.7 s each (cpp and c-sharp
 1.7 s, ruby and php 1.4 s, javascript 0.8 s, java 0.6 s, c 0.5 s).
 
-Exact pins matter because `ExtractorIdentity.grammar_version` carries the *grammar* crate version into the cache
+Exact pins matter because `ExtractorIdentity.grammar_version` carries the _grammar_ crate version into the cache
 identity: a floating pin would silently invalidate or, worse, silently reuse cached extractions. A core-only
 `tree-sitter` bump does not change it. Upgrading the core crate is not free: 0.26 to 0.27 made
 `QueryMatch::captures` a method rather than a public field (`context/extract/treesitter/collect.rs`). See

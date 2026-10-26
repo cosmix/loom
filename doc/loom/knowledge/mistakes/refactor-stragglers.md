@@ -14,7 +14,7 @@
 
 ## Stale References After Field Removal
 
-**What happened:** After removing truths/truth_checks fields, stale references remained in comments (complete.rs:393), e2e test fixtures (plans.rs), README.md, skill files, and knowledge files.
+**What happened:** After removing truths/truth_checks fields, stale references remained in comments (`commands/stage/complete.rs`), e2e test fixtures (plans.rs), README.md, skill files, and knowledge files.
 
 **How to avoid:** When removing a struct field, grep the ENTIRE project (not just src/) for references. Include: tests/, doc/, skills/, README, knowledge files, comments, YAML fixtures.
 
@@ -84,7 +84,7 @@ missing file included — content was never at risk since a soft reset keeps the
 ## Registering a New Global PreToolUse Hook Has a Fourth Site Beyond the Documented Three
 
 **What happened:** adding a global `PreToolUse` hook has a documented three-site checklist
-(`fs/permissions/tests/constants_tests.rs:71`), but `fs/permissions/tests/hooks_tests.rs:32` also
+(`fs/permissions/tests/constants_tests.rs::loom_permission_constants_never_grant_a_write_rule`), but `fs/permissions/tests/hooks_tests.rs::test_hooks_config_structure` also
 hardcodes `assert_eq!(pre_tool.len(), N)` over the whole `pre_tool_hooks` list. Miss the fourth site
 and the new hook compiles, installs, and runs correctly — the only symptom is
 `test_hooks_config_structure` failing on a bare count mismatch that names no hook.
@@ -97,7 +97,7 @@ assertion elsewhere is a silent fourth site.
 
 **What happened:** codex unit w2b extracted `dispatch_key`/`dispatch_edit_key` as free functions out
 of `ConfigTui::handle_edit_key`, but left `handle_edit_key` itself in place as a now-unused wrapper
-(`loom/src/commands/config/tui/mod.rs:116`). The scoped `cargo test` the unit ran passed cleanly;
+(`loom/src/commands/config/tui/mod.rs`). The scoped `cargo test` the unit ran passed cleanly;
 only `cargo clippy --all-targets -D warnings` (`dead_code`) caught the stale method.
 
 **Prevention:** when a brief says "extract X into free functions", grep for the old method
@@ -123,7 +123,7 @@ uses; the name is live only through the glob re-export, one file away.
 before the parent's import can go.
 
 **Fix:** `dispute_kinds_tests.rs` gained its own `use crate::fs::work_dir::WorkDir;`
-(`daemon/server/dispute_kinds_tests.rs:11`), independent of whatever `dispute_kinds.rs` imports.
+(`daemon/server/dispute_kinds_tests.rs`), independent of whatever `dispute_kinds.rs` imports.
 
 ## A Scripted Rewrite Dropped a File's Test Module
 
@@ -147,7 +147,7 @@ before the parent's import can go.
 
 ## A Rate-Formula Change Broke Exact-Value Assertions the Plan Did Not List (2026-10-15)
 
-**What happened:** token-core replaced the fixed 300 s rate window with a span-based one (`flow_build.rs` `rate`). The plan's test-integrity list pinned only `token_flow_contracts.rs` and `flow_build_tests.rs`; `loom/tests/token_flow_bounds_contracts.rs:17` (`unix_now`) and `tracker_tests.rs` `two_stages_sum_into_the_plan_and_decay` also assert exact rates and broke about 1 run in 30, depending on where `now` fell inside a bucket.
+**What happened:** token-core replaced the fixed 300 s rate window with a span-based one (`flow_build.rs` `rate`). The plan's test-integrity list pinned only `token_flow_contracts.rs` and `flow_build_tests.rs`; `loom/tests/token_flow_bounds_contracts.rs::plan_rate_sums_stages_and_expires` (`unix_now`) and `tracker_tests.rs` `two_stages_sum_into_the_plan_and_decay` also assert exact rates and broke about 1 run in 30, depending on where `now` fell inside a bucket.
 
 **Why:** an exact-rate assertion that reads `unix_now()` depends on the bucket phase, and a search for the old symbol finds none of them.
 

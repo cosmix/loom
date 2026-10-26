@@ -1,23 +1,24 @@
 ---
 sources:
-- loom/src/models/constants.rs
+  - loom/src/models/constants.rs
 verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 ---
+
 # Code Style And Structure
 
 > Rust naming, errors, limits
 
 ## File & Branch Naming
 
-| Type           | Pattern                                                    | Location          |
-| -------------- | ----------------------------------------------------------- | ----------------- |
+| Type           | Pattern                                                    | Location               |
+| -------------- | ---------------------------------------------------------- | ---------------------- |
 | Stage files    | `{depth:02}-{stage-id}.md` (depth 0 = `01-` prefix)        | `.loom/work/stages/`   |
 | Session files  | `{session-id}.md` (ID: `session-{uuid_short}-{timestamp}`) | `.loom/work/sessions/` |
 | Signal files   | `{session-id}.md`                                          | `.loom/work/signals/`  |
 | Handoff files  | `{stage-id}-handoff-{NNN:03d}.md`                          | `.loom/work/handoffs/` |
-| Plan files     | `PLAN-*` -> `IN_PROGRESS-PLAN-*` -> `DONE-PLAN-*`          | `doc/plans/`      |
-| Stage branches | `loom/{stage-id}`                                          |                   |
-| Base branches  | `loom/_base/{stage-id}` (multi-dep merges)                 |                   |
+| Plan files     | `PLAN-*` -> `IN_PROGRESS-PLAN-*` -> `DONE-PLAN-*`          | `doc/plans/`           |
+| Stage branches | `loom/{stage-id}`                                          |                        |
+| Base branches  | `loom/_base/{stage-id}` (multi-dep merges)                 |                        |
 
 ## Error Handling
 
@@ -51,7 +52,7 @@ Re-export rules: `pub use` explicit items (never wildcards). Only export public 
 
 A module nested two levels deep (e.g. `sandbox/config/preflight.rs`, alongside `sandbox/config.rs`'s
 own `mod preflight;`) needs its own re-export at the TOP-level `mod.rs` for other code to reach it
-as `sandbox::preflight` (`sandbox/mod.rs:12`: `pub(crate) use config::preflight;`) — the immediate
+as `sandbox::preflight` (`sandbox/mod.rs::settings`: `pub(crate) use config::preflight;`) — the immediate
 parent's `mod` declaration does not surface it any further up on its own.
 
 ## Testing
@@ -70,7 +71,7 @@ parent's `mod` declaration does not surface it any further up on its own.
 ## ID and Input Validation
 
 | Field               | Rules                                                               |
-| ------------------- | --------------------------------------------------------------------- |
+| ------------------- | ------------------------------------------------------------------- |
 | Stage ID            | Max 128 chars, `[a-zA-Z0-9_-]`, no `/\.`, no reserved OS names      |
 | Fact Key            | Max 64 chars, `[a-zA-Z0-9_-]`                                       |
 | Acceptance criteria | Max 1024 chars, no control chars (except tab/newline/CR), non-empty |
@@ -109,7 +110,7 @@ Status icons: Completed=`✓` Executing=`●` Queued=`▶` WaitingForDeps=`○` 
 
 Colors (`colored` crate): Executing=blue.bold, Completed=green, Blocked=red.bold, Pending=dimmed, Queued=cyan, Warning=yellow
 
-Context bar: renders absolute `tokens`/`ceiling` and colours off `context_health(tokens, ceiling)` (`commands/status/render/progress.rs:56-72`) — Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved ceiling, not a fixed percentage of a 200k window.
+Context bar: renders absolute `tokens`/`ceiling` and colours off `context_health(tokens, ceiling)` (`commands/status/render/progress.rs::render_context_bar`) — Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved ceiling, not a fixed percentage of a 200k window.
 
 ## Enum Conventions
 
@@ -126,7 +127,7 @@ Used for complex struct construction: `fn builder() -> Self { Self::default() }`
 - Module docs: `//!` at top of file
 - Function docs: `///` with `# Arguments`, `# Returns` sections
 - Inline comments: sparingly, only for non-obvious logic
-- **Naming an item in doc prose: `` [`name`] `` ONLY if `name` is `pub` and resolves from that module; otherwise a plain code span `` `name` ``.** The brackets are an intra-doc link, and a link to a private `fn`, a `const`, a field, or a local fails `RUSTDOCFLAGS="-D warnings" cargo doc` — a CI job and a step in both git hooks, evaluated by no other local check. This has blocked pushes four times; since 2026-09-05 `pre-commit` runs the rustdoc gate whenever a staged `.rs` diff touches a `///` or `//!` line, so the failure now surfaces at commit time. See "A `[`link`]` to a Private Item Fails the Docs Build" in [Testing & Lint](../mistakes/testing-and-lint.md).
+- **Naming an item in doc prose: ``[`name`]`` ONLY if `name` is `pub` and resolves from that module; otherwise a plain code span `` `name` ``.** The brackets are an intra-doc link, and a link to a private `fn`, a `const`, a field, or a local fails `RUSTDOCFLAGS="-D warnings" cargo doc` — a CI job and a step in both git hooks, evaluated by no other local check. This has blocked pushes four times; since 2026-09-05 `pre-commit` runs the rustdoc gate whenever a staged `.rs` diff touches a `///` or `//!` line, so the failure now surfaces at commit time. See "A `[`link`]` to a Private Item Fails the Docs Build" in [Testing & Lint](../mistakes/testing-and-lint.md).
 
 ## Code Size Limits
 
@@ -177,7 +178,7 @@ Use the edition-2021 layout `<name>.rs` plus a `<name>/` subdirectory (as
 — it deletes the path that a stage's artifacts and wiring lists pin. Check the ledger
 and the wiring patterns first; see `mistakes/pinned-literals-ledgers-and-wiring.md`.
 
-(Correction 2026-08-21: this section previously cited `context/graph_store.rs` + `graph_store/` as the worked example, but `context/graph_store.rs` does not exist in the tree — that module has always been `context/graph_store/mod.rs`, the OTHER layout this section says to avoid. `context/rank.rs` is a verified, currently accurate example of the sibling-style split with no `mod.rs`; other equally valid ones include `context/lexical.rs` + `context/lexical/`, `context/refresh.rs` + `context/refresh/`, and `context/retrieve.rs` + `context/retrieve/`. The `<name>/mod.rs` layout is not wrong everywhere — `commands/hook/mod.rs` and `context/graph_store/mod.rs` are both legitimate _directory modules_ built that way from the start. The rule this section states applies specifically to _splitting an existing top-level `<name>.rs` file_: converting it to `<name>/mod.rs` mid-split changes the file's own path, which breaks anything pinning `<name>.rs` as a literal — acceptance criteria, artifacts lists, wiring checks.)
+`context/rank.rs` is a worked example of the sibling-style split with no `mod.rs`; others are `context/lexical.rs` + `context/lexical/`, `context/refresh.rs` + `context/refresh/` and `context/retrieve.rs` + `context/retrieve/`. The `<name>/mod.rs` layout is not wrong everywhere: `commands/hook/mod.rs` and `context/graph_store/mod.rs` are legitimate _directory modules_ built that way from the start. The rule above applies to _splitting an existing top-level `<name>.rs` file_: converting it to `<name>/mod.rs` mid-split changes the file's own path, which breaks anything pinning `<name>.rs` as a literal (acceptance criteria, artifacts lists, wiring checks).
 
 A file that must ADD a wired submodule without editing a read-only parent (the file that
 would otherwise gain the new `mod` declaration is owned by another stage or subagent) can
@@ -198,9 +199,9 @@ Two visibility details that bite when splitting:
 ## Docstring Honesty
 
 State the current wiring, not the intended one. If a consumer is unbuilt, say so — the house
-style to copy is `commands/context/record_edit.rs:12-14`, which states outright that it is
+style to copy is the module doc of `commands/context/record_edit.rs`, which states outright that it is
 consumed by nothing and is pure input for a consumer that has not been built. Prefer intra-doc
-links (`` [`crate::context::refresh`] ``) over plain backticks for module cross-references, so
+links (``[`crate::context::refresh`]``) over plain backticks for module cross-references, so
 a wrong path becomes a rustdoc warning instead of a permanent lie that survives
 `clippy -D warnings`.
 
@@ -215,7 +216,7 @@ dispatch path to whatever must still treat it as that language.
 
 `context/lexical_index.rs::INDEX_VERSION` (currently `2`) has no compile-time
 protection tying it to the tokenizer. The persisted index file already hashes
-the `WEIGHT_*` scoring constants (`derivation()`, `lexical_index.rs:85-98`) and
+the `WEIGHT_*` scoring constants (`derivation()`, `context/lexical_index.rs::derivation`) and
 is rejected on a mismatch, so retuning a weight cannot leave a warm cache
 scoring at the old value. `lexical::tokenize` (`context/lexical.rs`) is the one
 document input to that same index with **no** constant hashed into it: a

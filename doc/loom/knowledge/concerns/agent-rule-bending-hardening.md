@@ -11,20 +11,20 @@ unverified.
 
 ## The Three Enforcement Classes
 
-| Class | Where the check runs | Whose environment it sees | What it can be trusted for |
-| --- | --- | --- | --- |
-| 1 | The loom CLI, invoked from a Bash tool call | The agent's shell — agent-controlled | Routing, error messages |
-| 2 | A hook script | Claude Code's process — not agent-controlled, but the hook reads agent-authored command text | Workflow, accidents, deterrence |
-| 3 | The daemon, or `loom hook relay` inside a hook | Irrelevant: identity comes from process ancestry and file ownership | Authority |
+| Class | Where the check runs                           | Whose environment it sees                                                                    | What it can be trusted for      |
+| ----- | ---------------------------------------------- | -------------------------------------------------------------------------------------------- | ------------------------------- |
+| 1     | The loom CLI, invoked from a Bash tool call    | The agent's shell — agent-controlled                                                         | Routing, error messages         |
+| 2     | A hook script                                  | Claude Code's process — not agent-controlled, but the hook reads agent-authored command text | Workflow, accidents, deterrence |
+| 3     | The daemon, or `loom hook relay` inside a hook | Irrelevant: identity comes from process ancestry and file ownership                          | Authority                       |
 
 ### Class 1 — env read in the agent's own shell
 
 Every loom CLI call an agent makes reads its identity from its own process environment:
 `relay/emit.rs::from_process_env` (`LOOM_SESSION_ID`, `LOOM_SCRATCH_DIR`, `LOOM_STAGE_ID` and the
-rest), `commands/memory/handlers/record.rs:120`, `commands/handoff/create.rs:287-299`,
-`commands/subagents/render.rs:61`. `env -u LOOM_STAGE_ID loom …` changes what all of them see.
+rest), `commands/memory/handlers/record.rs::record_kind`, `commands/handoff/create.rs::resolve_stage_id`,
+`commands/subagents/render.rs::gather`. `env -u LOOM_STAGE_ID loom …` changes what all of them see.
 
-It buys nothing, because none of them grants a capability. `relay::emit::mode` (`relay/emit.rs:102`)
+It buys nothing, because none of them grants a capability. `relay::emit::mode` (`relay/emit.rs::mode`)
 reads the same variables to choose the route: without `LOOM_SESSION_ID`, or in a hook context, the
 operator route; with a session but no `LOOM_SCRATCH_DIR`, the legacy route, which host-job commands
 refuse; with both, a ticket relayed to the daemon. Unset them and the call takes the operator route,
@@ -33,34 +33,34 @@ the sandbox and the ancestry checks grant the right.**
 
 ### Class 2 — hook process
 
-Hooks are spawned by the Claude Code process and inherit *its* environment — the wrapper script's
+Hooks are spawned by the Claude Code process and inherit _its_ environment — the wrapper script's
 exports — not the Bash tool's shell. An `unset` inside a tool call mutates one shell and dies with
 it; the PreToolUse hook inspecting that same call still sees the real values.
 
-Hooks also run *outside* the OS sandbox. Internal proof: `loom hook relay` writes `W/inbox/`, which
+Hooks also run _outside_ the OS sandbox. Internal proof: `loom hook relay` writes `W/inbox/`, which
 the session's own capsule denies — if hooks ran under the capsule the relay could not function at
 all.
 
 The reachable attack on class 2 is the settings `env` block, which overrides process env (see
 [Session Identity Env](../mistakes/session-identity-env.md)). It is closed by
 `fs/permissions/settings.rs::scrub_session_identity_env` and by every capsule denying `.claude` in
-both layers (`sandbox/control_surfaces/session_denies.rs:89-103`, `sandbox/control_surfaces.rs:56-69`).
+both layers (`sandbox/control_surfaces/session_denies.rs::session_denies`, `sandbox/control_surfaces.rs::HOME_SURFACES`).
 
 What remains is command-text matching, which is bypassable and documented as such —
-`loom-hooks/commit-filter.sh:12-28`: *"command substitution that builds `git` from pieces, `$IFS`
+the SECURITY NOTE header of `loom-hooks/commit-filter.sh`: _"command substitution that builds `git` from pieces, `$IFS`
 tricks, `base64|sh`, or spawning git from a child interpreter… The DURABLE guarantee is
-architectural."* Its anti-evasion guard covers two spellings of the gate unset
-(`gate_var_unset_intent`, `commit-filter.sh:179-190`) and bare `eval`.
+architectural."_ Its anti-evasion guard covers two spellings of the gate unset
+(`gate_var_unset_intent`, called from `commit-filter.sh::block_anti_evasion`) and bare `eval`.
 
 **Observed gap in that guard:** nothing checks `git commit --no-verify`, which skips the installed
 pre-commit hook (`loom-hooks/git-pre-commit-hook.sh`, the staged-path check) outright.
 
 ### Class 3 — trusted host
 
-- `daemon/server/peer_identity.rs:157-185` — `SO_PEERCRED` pid, a pid-file start-time match so a
+- `daemon/server/peer_identity.rs::caller_is_inside_session` — `SO_PEERCRED` pid, a pid-file start-time match so a
   recycled pid cannot stand in, then an ancestry walk. Fails closed on `Unverifiable`, deliberately
   the opposite of the liveness helpers.
-- `commands/hook/relay.rs:206-246` — the hook process must sit inside the claimed session's process
+- `commands/hook/relay.rs::prove_session` — the hook process must sit inside the claimed session's process
   tree, the scratch dir must be the one loom derives (0700, uid-owned), and the ticket must match
   the hash printed in the relay line.
 
@@ -70,19 +70,19 @@ process ancestry and file ownership supply the proof.
 ### The rule that falls out
 
 If the agent controls a value, the worst it may buy is a wrong route or a worse error message,
-never a capability. Every new `LOOM_*` consumer should be answerable against that question *at its
-call site*, without reading three modules to find out which class it is in.
+never a capability. Every new `LOOM_*` consumer should be answerable against that question _at its
+call site_, without reading three modules to find out which class it is in.
 
 **Hard stops mapped to their enforcement.** Each row of `CLAUDE.md.template`'s hard-stop list, with what holds it, the class above and the test that pins it. "none" marks a gap.
 
-| Hard stop | Enforced by | Class | Pinning test |
-| --- | --- | --- | --- |
-| 1 PLANS | `loom-hooks/plans-path-guard.sh` denies a plan file outside `doc/plans/` | 2 | `loom-hooks/tests/plans-path-guard-allows-doc-plans.sh`, `plans-path-guard-blocks-claude-plans.sh`, `plans-path-guard-blocks-project-plans.sh`, `plans-path-guard-multiedit.sh` |
-| 2 MEMORY | `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` in the stage wrapper (`loom/src/orchestrator/terminal/native/wrapper.rs:364`) and the capsule's `.claude/projects/**` deny (`HOME_SURFACES` in `loom/src/sandbox/control_surfaces.rs`) | 3 | none found for the env line or the deny |
-| 3 GIT | `loom-hooks/commit-filter.sh` (blocks `git commit` and a subagent's stage completion), `loom-hooks/git-add-guard.sh` (blanket staging) and the PreToolUse pin in `loom-hooks/loom-control-complete.sh` (class 2); the daemon completes a stage only from its own host job and refuses a completion request from a subagent (`is_control` in `loom/src/relay/kind.rs`, `loom/src/host_verify/apply.rs`) (class 3) | 2 and 3 | `loom/tests/integration/hooks_commit_filter.rs` (`blocks_git_commit_in_a_stage_session`), `loom-hooks/tests/git-add-guard-quoting.sh`, `loom-hooks/tests/loom-control-complete-heredoc.sh`, `loom/tests/daemon_completion_contracts.rs` (`subagents_cannot_relay_completion`) |
-| 4 CONTEXT | the `CONTEXT CEILING REACHED` report in `loom-hooks/post-tool-use.sh` (class 2); the daemon backstop in `loom/src/orchestrator/monitor/ceiling.rs`, which writes the handoff a session in the Red band is owed (class 3) | 2 and 3 | `loom-hooks/tests/post-tool-use-ceiling-hard-block.sh`, `post-tool-use-ceiling-warn-once.sh`, `post-tool-use-ceiling-resolution.sh`; `loom/src/orchestrator/monitor/tests/ceilings.rs` |
-| 5 BRANCHES | none: no hook matches `git checkout -b`, `git switch -c` or `git branch <name>` | none | none |
-| 6 DELEGATION | `_loom_main_edit_advisory` in `loom-hooks/post-tool-use.sh`: one advisory per session past 20 changed lines or 2 files; advisory only, it never denies | 2 | `loom/tests/guidance_gate_contracts.rs` (`main_session_edit_advisory_fires_once_past_the_limit`), `loom-hooks/tests/post-tool-use-main-edit-advisory.sh` |
+| Hard stop    | Enforced by                                                                                                                                                                                                                                                                                                                                                                                                      | Class   | Pinning test                                                                                                                                                                                                                                                                  |
+| ------------ | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1 PLANS      | `loom-hooks/plans-path-guard.sh` denies a plan file outside `doc/plans/`                                                                                                                                                                                                                                                                                                                                         | 2       | `loom-hooks/tests/plans-path-guard-allows-doc-plans.sh`, `plans-path-guard-blocks-claude-plans.sh`, `plans-path-guard-blocks-project-plans.sh`, `plans-path-guard-multiedit.sh`                                                                                               |
+| 2 MEMORY     | `CLAUDE_CODE_DISABLE_AUTO_MEMORY=1` in the stage wrapper (`loom/src/orchestrator/terminal/native/wrapper.rs::build_wrapper_script`) and the capsule's `.claude/projects/**` deny (`HOME_SURFACES` in `loom/src/sandbox/control_surfaces.rs`)                                                                                                                                                                     | 3       | none found for the env line or the deny                                                                                                                                                                                                                                       |
+| 3 GIT        | `loom-hooks/commit-filter.sh` (blocks `git commit` and a subagent's stage completion), `loom-hooks/git-add-guard.sh` (blanket staging) and the PreToolUse pin in `loom-hooks/loom-control-complete.sh` (class 2); the daemon completes a stage only from its own host job and refuses a completion request from a subagent (`is_control` in `loom/src/relay/kind.rs`, `loom/src/host_verify/apply.rs`) (class 3) | 2 and 3 | `loom/tests/integration/hooks_commit_filter.rs` (`blocks_git_commit_in_a_stage_session`), `loom-hooks/tests/git-add-guard-quoting.sh`, `loom-hooks/tests/loom-control-complete-heredoc.sh`, `loom/tests/daemon_completion_contracts.rs` (`subagents_cannot_relay_completion`) |
+| 4 CONTEXT    | the `CONTEXT CEILING REACHED` report in `loom-hooks/post-tool-use.sh` (class 2); the daemon backstop in `loom/src/orchestrator/monitor/ceiling.rs`, which writes the handoff a session in the Red band is owed (class 3)                                                                                                                                                                                         | 2 and 3 | `loom-hooks/tests/post-tool-use-ceiling-hard-block.sh`, `post-tool-use-ceiling-warn-once.sh`, `post-tool-use-ceiling-resolution.sh`; `loom/src/orchestrator/monitor/tests/ceilings.rs`                                                                                        |
+| 5 BRANCHES   | none: no hook matches `git checkout -b`, `git switch -c` or `git branch <name>`                                                                                                                                                                                                                                                                                                                                  | none    | none                                                                                                                                                                                                                                                                          |
+| 6 DELEGATION | `_loom_main_edit_advisory` in `loom-hooks/post-tool-use.sh`: one advisory per session past 20 changed lines or 2 files; advisory only, it never denies                                                                                                                                                                                                                                                           | 2       | `loom/tests/guidance_gate_contracts.rs` (`main_session_edit_advisory_fires_once_past_the_limit`), `loom-hooks/tests/post-tool-use-main-edit-advisory.sh`                                                                                                                      |
 
 Stop 5 has no mechanical check, stop 6 only an advisory, and stop 2 has no pinning test.
 
@@ -232,9 +232,9 @@ socket while forwarding `DBUS_SESSION_BUS_ADDRESS` and `XAUTHORITY`, which reach
 variables; `spawn_confined` does not.
 
 **Fix direction:** a base list for confined commands plus a terminal-only extension, and derive the
-shell copy in `orchestrator/terminal/native/wrapper.rs:181-195` from the Rust constant with a test
-pinning the two together — which also closes the documented divergence in proxy variables, CA bundle
-locations and `CARGO_HOME`.
+shell loop in `orchestrator/terminal/native/wrapper/script_text.rs` already renders from the Rust
+`AGENT_SESSION_ENV_NAMES`, and tests pin every session name into the other two lists; the base-list
+split for confined commands remains open.
 
 ### G6 — Acceptance commands execute agent-written code on the host
 
@@ -243,7 +243,7 @@ agent-authored code: `cargo test` runs the stage's own `build.rs`. Where they ru
 exposure.
 
 - **Default boundary.** `CommandConfinement::Confined` (the default,
-  `models/stage/sandbox_config.rs:17`) does more than rebuild a minimal environment:
+  `models/stage/sandbox_config.rs::CommandConfinement`) does more than rebuild a minimal environment:
   `verify/criteria/confine.rs::prepare_confined` wraps the child in an OS boundary
   (`verify/criteria/confine_host.rs`: Linux bubblewrap with `--unshare-all` and a read-only root,
   macOS `sandbox-exec`), allows worktree writes and selected toolchain reads, and denies network.
@@ -295,7 +295,7 @@ The doctrine is BLOCK-F (`orchestrator/signals/helpers.rs::STAGE_EXIT_RULES`, by
 
 ### G8 — The knowledge-file guard gates tool names over a path the sandbox grants
 
-**The check.** `loom-hooks/worktree-file-guard.sh:326-334` refuses Write, Edit, MultiEdit and
+**The check.** `loom-hooks/worktree-file-guard.sh` (the `KNOWLEDGE_DIR` check) refuses Write, Edit, MultiEdit and
 NotebookEdit under `<worktree>/doc/loom/knowledge/`. It is class 2 and the only check on the
 directory: `sandbox/config.rs::apply_knowledge_write_grant` adds `doc/loom/knowledge/**` to every
 merged config's `allow_write` and strips it from `deny_write`, because `loom knowledge update` is an
@@ -306,7 +306,7 @@ Agents observed in knowledge-distill worktrees take that route right after the b
 **Why agents take it:**
 
 - **The message reads as "use another tool".** The reason line says "not file tools", and the shared
-  `block_path` footer (`worktree-file-guard.sh:124`) says "Use a path inside the current worktree"
+  `block_path` footer (`worktree-file-guard.sh::block_path`) says "Use a path inside the current worktree"
   about a path already inside it.
 - **The named verb cannot do an Edit's job.** The message names `update`, which appends. The
   in-place verbs, `replace-section` and `delete-section`, go unmentioned.
@@ -340,7 +340,7 @@ standard-stage path (the memory spool drain, an index refresh) writes the direct
    detection at completion only once item 1 exists.
 4. Add an exact-once `loom knowledge edit <topic> --old <text> --new <text>` verb, which removes the
    shell-transform recipe for most surgical fixes.
-5. No Bash-side text matcher: `commit-filter.sh:12-28` records why that class loses to `python -c`.
+5. No Bash-side text matcher: the SECURITY NOTE header of `commit-filter.sh` records why that class loses to `python -c`.
 
 ## Sibling Directory Denies: Residuals
 
@@ -364,16 +364,16 @@ standard-stage path (the memory spool drain, an index refresh) writes the direct
 - **Unmeasured tool routes:** `Monitor`, `AppifactRepl`, the self-hosted-runner tools, `EnterWorktree` and `ExitWorktree` (checklist row 15).
 - **`loom knowledge bootstrap` runs unconfined.** `commands/knowledge/bootstrap/mod.rs` starts `claude` through `crate::claude::run_foreground` with no capsule, outside manual mode, so the session it runs carries none of the capsule's denies and no confinement notice.
 - **Manual mode prints unquoted paths.** `orchestrator/core/manual_start.rs` prints the worktree, work-directory, repository-root and signal paths bare: a path with a space breaks the printed `cd`, and `$` or backticks in a path expand in the operator's shell. Ids are validated and cannot inject. The builder's text was pinned byte for byte, so `shell_escape::escape` is a later change.
-- **Documentation disagrees with the checklist.** `CONTRIBUTING.md` (the release-checklist paragraph near line 192) lists trigger paths that differ from `doc/sandbox-release-checklist.md`, which adds `state_root.rs` and `config_worktree.rs`; neither names `launch.rs`, which carries the Workflow licence; the paragraph also separates the tag sentence from its code block. `README.md` and `CONTRIBUTING.md` are outside the route-closure stages' files, so this stays open until a stage that owns them.
+- **Documentation disagrees with the checklist.** `CONTRIBUTING.md` (the release-checklist paragraph) lists trigger paths that differ from `doc/sandbox-release-checklist.md`, which adds `state_root.rs` and `config_worktree.rs`; neither names `launch.rs`, which carries the Workflow licence; the paragraph also separates the tag sentence from its code block. `README.md` and `CONTRIBUTING.md` are outside the route-closure stages' files, so this stays open until a stage that owns them.
 - **Unimplemented reviewer suggestions** are under "Route-Closure Review Suggestions" below.
 
 ## Route-Closure Review Suggestions
 
 Reviewer suggestions on the route-closure stages that nobody implemented; none blocks. Paths are under `loom/src/`.
 
-- **Capsule-level denyRead assertion.** `orchestrator/terminal/native/tests_capsule_routes.rs:36`: assert without bubblewrap that the nine credential files and `~/.codex/auth.json` are in `sandbox.filesystem.denyRead` for every session kind, plus a codex-licensed variant. Today only the bubblewrap probe (Stage only, skipped without user namespaces) proves it on an emitted capsule.
-- **Pin the Workflow licence.** `tests_launch_capsule.rs:157`: `try_launch_stage` returns the wrapper script and the closure discards it; assert it contains `licensed for ultracode` exactly when the capsule omits the `Workflow` deny. `:149`: the name claims no other kind gets `Workflow` but only Contract is probed; loop over `ALL_KINDS`. `:168`: give the ultracode test's stage the id `stage-1` like its sibling, not `Stage::default()`. The file is at the 400-line limit; move a test to a sibling file before adding one.
-- **Tests that read their own subject.** `sandbox/settings/tests.rs:436` builds its expectation from `mandatory_deny_read(false)` (the literal list lives only in `policy/tests.rs:37`); `orchestrator/core/manual_start.rs:100` asserts constant text contains words from the same constant.
-- **Fixture and gap tests.** `tests_capsule_routes.rs:78` hand-builds a `CapsuleRequest` that `tests_session_settings::write_capsule` already builds (parameterise `workflow_licensed`). `git/worktree/config_worktree_tests.rs:143` lacks a test for an unreadable registry. `tests_capsule_denies.rs:36` runs `git commit` without `-c commit.gpgsign=false` (see `verify/contracts/test_support.rs:142`), so a host with global signing fails three tests under plain `cargo test`. `tests_capsule_bwrap.rs:42` `resolve()` overlaps `tests_confinement_srt.rs` `srt_path()`; accepted.
-- **Code shape.** `session_settings/contents.rs:123`: `capsule_settings` is 46 lines (limit 50) and was meant not to grow from 42; binding `capsule_deny_rules(inputs)` to a local first costs 2 lines. `git/worktree/mod.rs:34`: the `pub` re-export of `worktree_admin_dirs` has no consumer outside `partition_admin_dirs` and its tests. `orchestrator/terminal/native/launch.rs:272`: the reason comment on `#[allow(clippy::too_many_arguments)]` ("Kept separate: ...") does not say what is kept separate or why bundling is not done (precedent `wrapper.rs:65-67`). `git/worktree/config_worktree.rs:100`: import `names_work_tree` like `common_dir`.
-- **Comments.** `launch.rs:75` ("that now stands in for the doctrine this stage moved out of the signal") and the assertion message at `fs/permissions/state_root.rs:245` ("is a mirror loom used to write") are history phrases; `session_settings/contents.rs:90` wraps a doc paragraph mid-clause.
+- **Capsule-level denyRead assertion.** `orchestrator/terminal/native/tests_capsule_routes.rs::capsule_sets`: assert without bubblewrap that the nine credential files and `~/.codex/auth.json` are in `sandbox.filesystem.denyRead` for every session kind, plus a codex-licensed variant. Today only the bubblewrap probe (Stage only, skipped without user namespaces) proves it on an emitted capsule.
+- **Pin the Workflow licence.** `tests_launch_capsule.rs::an_ultracode_stage_session_launches_with_the_workflow_tool_and_no_other_kind_does`: `try_launch_stage` returns the wrapper script and the closure discards it; assert it contains `licensed for ultracode` exactly when the capsule omits the `Workflow` deny. In that test the name claims no other kind gets `Workflow` but only Contract is probed; loop over `ALL_KINDS`. In `the_ultracode_prompt_keyword_appears_exactly_when_the_capsule_omits_the_workflow_deny`, give the ultracode test's stage the id `stage-1` like its sibling, not `Stage::default()`. The file is at the 400-line limit; move a test to a sibling file before adding one.
+- **Tests that read their own subject.** `sandbox/settings/tests.rs::test_generate_settings_keeps_mandatory_credential_deny_when_empty` builds its expectation from `mandatory_deny_read(false)` (the literal list lives only in `sandbox/settings/policy/tests.rs::adds_mandatory_credentials_and_filters_parent_traversal`); `orchestrator/core/manual_start.rs::the_stage_start_command_is_followed_by_the_confinement_notice` asserts constant text contains words from the same constant.
+- **Fixture and gap tests.** `tests_capsule_routes.rs::the_agent_team_web_and_core_tools_stay_allowed` hand-builds a `CapsuleRequest` that `tests_session_settings::write_capsule` already builds (parameterise `workflow_licensed`). `git/worktree/config_worktree_tests.rs` lacks a test for an unreadable registry. `tests_capsule_denies.rs::register_worktrees` runs `git commit` without `-c commit.gpgsign=false` (see `verify/contracts/test_support.rs::worktree_over`), so a host with global signing fails three tests under plain `cargo test`. `tests_capsule_bwrap.rs::resolve` `resolve()` overlaps `tests_confinement_srt.rs` `srt_path()`; accepted.
+- **Code shape.** `session_settings/contents.rs::capsule_settings`: `capsule_settings` is 46 lines (limit 50) and was meant not to grow from 42; binding `capsule_deny_rules(inputs)` to a local first costs 2 lines. `git/worktree/mod.rs`: the `pub` re-export of `worktree_admin_dirs` has no consumer outside `partition_admin_dirs` and its tests. `orchestrator/terminal/native/launch.rs::prepare_session_launch`: the reason comment on `#[allow(clippy::too_many_arguments)]` ("Kept separate: ...") does not say what is kept separate or why bundling is not done (precedent `wrapper.rs::build_wrapper_script`). `git/worktree/config_worktree.rs::partition_admin_dirs`: import `names_work_tree` like `common_dir`.
+- **Comments.** `orchestrator/terminal/native/launch.rs::prompt_cache_split_enabled` ("that now stands in for the doctrine this stage moved out of the signal") and the assertion message at `fs/permissions/state_root.rs::loom_written_denies_cover_the_credential_mirrors_and_nothing_of_the_operators` ("is a mirror loom used to write") are history phrases; `session_settings/contents.rs::capsule_deny_rules` wraps a doc paragraph mid-clause.

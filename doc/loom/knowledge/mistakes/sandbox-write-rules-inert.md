@@ -13,12 +13,12 @@ permission checks — only Edit(path) rules are. Use Edit(**) instead.
 
 ## Generated Stage Settings Emit `Edit(...)`
 
-`sandbox/settings.rs` emits `Edit(...)` throughout: `:227` for the per-path allow rule,
-`:287` for deny, `:302` and `:181` for the handoffs directory. An explicit `IMPORTANT` comment
-at `:240-244` records why, naming this rule. Verified by
-`rg '"Write\(|format!\("Write' loom/src/sandbox/settings.rs` — the only remaining `Write(`
-occurrences are at `:1234` and `:1286`, both in the carry-forward test asserting a
-USER-authored `Write(~/.bashrc)` **survives**.
+`sandbox/settings.rs::generate_settings_json` emits `Edit(...)` throughout: the per-path allow rule, the
+deny rules and the handoffs directory. An explicit `IMPORTANT` comment in that function records why,
+naming this rule. Verified by
+`rg '"Write\(|format!\("Write' loom/src/sandbox/settings.rs`: the only `Write(` literals left in the emitter
+are the prefix filter in `carry_forward_denies`; the tests (`sandbox/settings/tests.rs`,
+`sandbox/settings/tests_read_denies.rs`) assert that no inert `Write(...)` deny survives regeneration.
 
 Inherited entries were once carried forward verbatim, on the principle that loom is strict about
 the rules it GENERATES and conservative about the rules it INHERITS. That principle survives, but

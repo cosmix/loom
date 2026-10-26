@@ -106,12 +106,12 @@ full content.)
 
 ## A Historical/Example Marker Must Share Its Physical Markdown Line With the Backtick It Classifies (2026-09-10)
 
-`classify_reference` (`loom/src/fs/knowledge/chunker/references.rs:44-60`) judges a backticked
+`classify_reference` (`loom/src/fs/knowledge/chunker/references.rs::classify_reference`) judges a backticked
 path from its `sentence_window`, and that window is built per physical source line
 (`references_in` iterates `body.split_inclusive('\n')`) — a marker on the wrapped PREVIOUS line
 is invisible even though the prose reads as one sentence. Two specific traps:
 
-- The historical marker `is_there_is_no_this_path` (references.rs:110-112) only fires on the
+- The historical marker `is_there_is_no_this_path` (references.rs::is_there_is_no_this_path) only fires on the
   exact substring `` there is no `<path>` `` — a sentence like "there is no top-level module and
   no `path/to/file.rs` either" does not qualify; the backtick must follow "there is no"
   immediately.
@@ -120,7 +120,7 @@ is invisible even though the prose reads as one sentence. Two specific traps:
   wrap.
 
 Already fixed (verify before re-reporting either as a bug): `is_sentence_end`
-(references.rs:246-253) now excludes dots that are inside backticks or end an
+(`fs/knowledge/chunker/references.rs::mask_other_spans`) now excludes dots that are inside backticks or end an
 `e.g./i.e./vs./cf.` abbreviation, and `sentence_window`'s `mask_other_spans` blanks OTHER
 backtick spans' contents within the window instead of cutting the window at them — a sentence
 citing several example paths (e.g., `01-a.md`, `02-b.md`) classifies every one of them

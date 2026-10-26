@@ -6,7 +6,7 @@
 
 **What happened:** `loom-hooks/loom-control-complete.sh` (`PreToolUse:Bash`) blocked a `loom knowledge replace-section ...` call — nothing to do with completing a stage — because the heredoc content passed on stdin contained the word `Completed` (a `SessionExitReason` variant) and the command also invoked `loom`. The hook error was `LOOM_CONTROL_ERROR: completion must be one exact pinned command`.
 
-**Why:** the hook matches on the RAW text of the whole Bash `tool_input.command` — any command matching `*loom*complete*` (case-insensitive) or a `<loom> stage <verb containing complete>` token is held to the exact pinned `loom stage complete <stage>` form, regardless of what the command actually does. A codex forwarding brief hit the same trap from the other side: a forwarder whose task text (passed through an unquoted heredoc) contained the word "complete" or the phrase "loom stage" was blocked before its job ever launched (`loom-hooks/loom-control-complete.sh:155`).
+**Why:** the hook matches on the RAW text of the whole Bash `tool_input.command` — any command matching `*loom*complete*` (case-insensitive) or a `<loom> stage <verb containing complete>` token is held to the exact pinned `loom stage complete <stage>` form, regardless of what the command actually does. A codex forwarding brief hit the same trap from the other side: a forwarder whose task text (passed through an unquoted heredoc) contained the word "complete" or the phrase "loom stage" was blocked before its job ever launched (`loom-hooks/loom-control-complete.sh::strip_heredoc_bodies`).
 
 **Prevention:**
 
@@ -43,7 +43,7 @@ A codex unit that checks its own file/function line counts BEFORE the orchestrat
 
 ## `Stage::new` Derives a Timestamped Id — a Fixture Must Set `stage.id` Explicitly
 
-`Stage::new(name, ..)` (`loom/src/models/stage/methods.rs:95-102`) derives `id` as `stage-<name>-<timestamp>`, never the bare `name` passed in. A fixture that calls `Stage::new("notes", None)` and then looks up behavior by `"notes"` (e.g. `handle_stage_completed("notes")`) silently misses: the stage saves as `01-stage-notes-<ts>.md`, session lookups keyed by the derived id return `None`, and the code path under test never runs even though the test may still pass on an unrelated assertion. Set `stage.id` explicitly after `Stage::new` in any fixture that needs a known, stable id.
+`Stage::new(name, ..)` (`loom/src/models/stage/methods.rs::effective_subagent_timeout_secs`) derives `id` as `stage-<name>-<timestamp>`, never the bare `name` passed in. A fixture that calls `Stage::new("notes", None)` and then looks up behavior by `"notes"` (e.g. `handle_stage_completed("notes")`) silently misses: the stage saves as `01-stage-notes-<ts>.md`, session lookups keyed by the derived id return `None`, and the code path under test never runs even though the test may still pass on an unrelated assertion. Set `stage.id` explicitly after `Stage::new` in any fixture that needs a known, stable id.
 
 ## `loom subagents watch --worker codex:<unit>` Can Report "unknown" With Exit 0
 

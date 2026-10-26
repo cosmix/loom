@@ -89,7 +89,7 @@ operation in loom, so it fails closed: anything its prefilter matches must be
 byte-identical to the pinned invocation or it is rejected. The prefilter was
 hardened to tokenize the Bash command instead of globbing the raw string, and that
 fix is real - matching now happens on argv VALUES at command positions, so quoting
-can neither forge nor evade it (`scan_completion_segment` and `detect_completion`, `loom-hooks/loom-control-complete.sh:68-147`).
+can neither forge nor evade it (`scan_completion_segment` and `detect_completion`, `loom-hooks/loom-control-complete.sh::scan_completion_segment`).
 
 Both remaining false-positive paths were reproduced from a knowledge-distillation
 stage, the stage type most exposed to them because its whole job is feeding long
@@ -109,7 +109,7 @@ Render it as `loom stage <VERB> x` and name the verb in prose.
 
 ### Path 2 - the heredoc body is not stripped, so the raw command text decides
 
-`is_completion_command` (`loom-hooks/loom-control-complete.sh:208-219`) strips heredoc bodies
+`is_completion_command` (`loom-hooks/loom-control-complete.sh::is_completion_command`) strips heredoc bodies
 through `strip_heredoc_bodies` first, and a stripped body is ignored only when it is provably
 inert (`heredoc_bodies_are_inert`). The raw decision still stands (the old raw-substring glob over the lowercased command,
 matching `loom` followed anywhere by the verb) when any of these hold:
@@ -151,7 +151,7 @@ and it defeats a control that exists to prevent lost work. Do not write the know
 file tool from a path outside the worktree either: `worktree-file-guard.sh` blocks file tools
 outside the worktree. The one exception is the session's own harness scratchpad
 (`/tmp/claude-<uid>/<project>/<session>/scratchpad/`), allowed by `allow_scratchpad`
-(`loom-hooks/worktree-file-guard.sh:172`) when the path is canonical and owned by the uid.
+(`loom-hooks/worktree-file-guard.sh::allow_scratchpad`) when the path is canonical and owned by the uid.
 
 **Do not "fix" the raw fallback by loosening it.** A non-match on that branch exits 0 and ALLOWS,
 so the fallback is fail-safe by construction, and narrowing it opens a bypass rather than merely

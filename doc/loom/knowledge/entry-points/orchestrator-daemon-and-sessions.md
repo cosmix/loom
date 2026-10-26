@@ -1,5 +1,6 @@
 ---
 ---
+
 # Orchestrator Daemon And Sessions
 
 > Orchestrator, daemon
@@ -63,22 +64,22 @@
 - `orchestrator/signals/merge.rs` - Resolver signal: the resolver works in the stage worktree, never the main checkout
 - `orchestrator/signals/recovery.rs` - Recovery signal generation
 
-## Signal Generation — Key Files and Line References
+## Signal Generation — Key Files
 
-| File                                      | Purpose                                                                                                                   | Key Lines                                                                                 |
-| ------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
-| `orchestrator/signals/generate.rs`        | Entry point: `generate_signal_with_skills()`, `build_signal_context()`, `build_embedded_context_with_stage_and_session()` | 137-536                                                                                   |
-| `orchestrator/signals/cache.rs`           | 4 stable-prefix generators + 8 `append_*` helpers + SignalMetrics SHA-256                                                 | helpers:51-169, standard:174-310, IV:313-444, KnowledgeDistill:447-524, Knowledge:527-633 |
-| `orchestrator/signals/format/mod.rs`      | `format_signal_with_metrics()` — selects stable prefix by stage type, assembles 4 sections                                | 62-78                                                                                     |
-| `orchestrator/signals/format/sections.rs` | Semi-stable (19-310), Dynamic (314-593), Recitation (597-666)                                                             | see per-section notes                                                                     |
-| `orchestrator/signals/types.rs`           | `EmbeddedContext` struct (24-50), `DependencyStatus`, `SandboxSummary`                                                    | 24-50                                                                                     |
-| `orchestrator/signals/knowledge.rs`       | Knowledge-stage signal path: `generate_knowledge_signal()`, `format_knowledge_signal_content()`                           | 23-135                                                                                    |
-| `orchestrator/signals/recovery.rs`        | Recovery signal: recovery context header, last known state, recovery actions                                              | —                                                                                         |
-| `orchestrator/signals/recovery_format.rs` | `format_recovery_signal()` if exists as separate file                                                                     | —                                                                                         |
-| `orchestrator/signals/helpers.rs`         | `write_signal_file()` disk I/O                                                                                            | 17+                                                                                       |
-| `orchestrator/signals/crud.rs`            | Signal file CRUD                                                                                                          | —                                                                                         |
+| File                                      | Purpose                                                                                                                   |
+| ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------- |
+| `orchestrator/signals/generate.rs`        | Entry point: `generate_signal_with_skills()`; `generate/context.rs::build_embedded_context_with_stage_and_session()`      |
+| `orchestrator/signals/cache.rs`           | 4 stable-prefix generators + `append_*` helpers + SignalMetrics SHA-256                                                   |
+| `orchestrator/signals/format/mod.rs`      | `format_signal_with_metrics()` — selects stable prefix by stage type, assembles 4 sections                                |
+| `orchestrator/signals/format/sections.rs` | Semi-stable (`format_semi_stable_section`), Dynamic (`format_dynamic_section`), Recitation (`format_recitation_section`)  |
+| `orchestrator/signals/types.rs`           | `EmbeddedContext`, `DependencyStatus`, `SandboxSummary`                                                                   |
+| `orchestrator/signals/knowledge.rs`       | Knowledge-stage signal path: `generate_knowledge_signal()`                                                                |
+| `orchestrator/signals/recovery.rs`        | Recovery signal: recovery context header, last known state, recovery actions                                              |
+| `orchestrator/signals/recovery_format.rs` | Recovery signal rendering                                                                                                 |
+| `orchestrator/signals/helpers.rs`         | `write_signal_file()` disk I/O                                                                                            |
+| `orchestrator/signals/crud.rs`            | Signal file CRUD                                                                                                          |
 
-**Insertion point for new shared helper:** `cache.rs` lines 51-169 (the "Shared content blocks" cluster). Call it from each of the 4 generator functions.
+**Insertion point for new shared helper:** `orchestrator/signals/cache.rs` (the "Shared content blocks" cluster). Call it from each of the 4 generator functions.
 
 ## Stage Completion (CLI)
 
@@ -99,16 +100,16 @@
 - `orchestrator/terminal/native/pid_tracking.rs` - Wrapper script, PID tracking, env vars
 - `orchestrator/liveness.rs` - LivenessService: wraps the shared SessionBackend; fixed_for_tests() stub for unit tests
 
-## Orchestrator Core Recovery Functions (Exact Locations)
+## Orchestrator Core Recovery Functions
 
-| Function                            | File                                  | Lines   | Called From                        |
-| -------------------------------------- | ---------------------------------------- | --------- | ------------------------------------- |
-| `sync_graph_with_stage_files()`     | `orchestrator/core/recovery.rs`       | 179-567 | orchestrator.rs main loop (tick 2) |
-| `sync_queued_status_to_files()`     | `orchestrator/core/recovery.rs`       | 569-593 | orchestrator.rs main loop (tick 3) |
-| `recover_orphaned_sessions()`       | `orchestrator/core/recovery.rs`       | 595-791 | startup init only                  |
-| `reconcile_and_update_graph()`      | `orchestrator/core/recovery.rs`       | 149-177 | orchestrator.rs (tick 1 + startup) |
-| `spawn_merge_resolution_sessions()` | `orchestrator/core/merge_handler.rs`  | 637-758 | orchestrator.rs (tick 4)           |
-| `start_ready_stages()`              | `orchestrator/core/stage_executor.rs` | 64-86   | orchestrator.rs (tick 6)           |
+| Function                            | File                                  | Called From                                                      |
+| ----------------------------------- | ------------------------------------- | ---------------------------------------------------------------- |
+| `reconcile_and_update_graph()`      | `orchestrator/core/recovery.rs`       | `orchestrator/core/run.rs::initialize_run` and `::run_tick`      |
+| `sync_graph_with_stage_files()`     | `orchestrator/core/recovery.rs`       | `orchestrator/core/run.rs::initialize_run` and `::run_tick`      |
+| `sync_queued_status_to_files()`     | `orchestrator/core/recovery.rs`       | `orchestrator/core/run.rs::initialize_run` and `::run_tick`      |
+| `recover_orphaned_sessions()`       | `orchestrator/core/recovery.rs`       | `orchestrator/core/run.rs::initialize_run` only                  |
+| `spawn_merge_resolution_sessions()` | `orchestrator/core/merge_handler.rs`  | `orchestrator/core/run.rs::initialize_run` and `::run_tick`      |
+| `start_ready_stages()`              | `orchestrator/core/stage_executor.rs` | `orchestrator/core/run.rs::run_tick`                             |
 
 ## Daemon Credentials and Operator Proofs
 
@@ -167,30 +168,30 @@ pub fn dispute_criteria(
 
 ## Fix Attempts Counter — Current Usage
 
-`models/stage/types.rs:254` — `fix_attempts: u32` field:
+`models/stage/types.rs::Stage` — `fix_attempts: u32` field:
 
 - Incremented: `commands/stage/merge.rs` for an actual merge retry, using locked `update_stage`
-- Reset to 0: `commands/stage/human_review.rs:87` on human approve
+- Reset to 0: `commands/stage/human_review.rs::handle_approve` on human approve
 - Default max: 3 (via `get_effective_max_fix_attempts()` in methods.rs)
 - Warning printed when limit reached with hint to `loom stage dispute-criteria`
 
-Alongside it on the `Stage` struct (all shipped): `dispute_count` (600), `evidence_rounds` (603), `amendments_applied` (606).
+Alongside it on the `Stage` struct (all shipped): `dispute_count` (`models/stage/types.rs::Stage`), `evidence_rounds` and `amendments_applied` (`models/stage/dispute_budgets.rs`).
 
 ## TruthCheck / before_stage / after_stage / code_review
 
-| Location                                                        | Purpose                                                                                                                                                          |
-| ------------------------------------------------------------------ | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `models/stage/checks.rs` | `TruthCheck` (`command`, `stdout_contains`, `stdout_not_contains`, `stderr_empty`, `exit_code`, `description`), `WiringCheck` (with `literal: bool`) and `AcceptanceCriterion`, moved out of `types.rs`; `crate::models::stage::*` paths are unchanged |
-| `plan/schema/types.rs:100-261`                                  | `StageDefinition`: `before_stage: Vec<TruthCheck>` (221), `after_stage: Vec<TruthCheck>` (226), `code_review: Option<CodeReviewConfig>` (261)                    |
-| `plan/schema/types.rs:100-111`                                  | `CodeReviewConfig`: `dimensions: Vec<String>`, `require_all: bool`                                                                                               |
-| `models/stage/methods.rs::Stage::from_definition`               | Canonically copies before/after checks, `code_review`, sandbox, and all execution policy into persisted Stage state                                              |
-| `orchestrator/core/stage_executor.rs::before_stage_gate_passed` | Executes before_stage checks BEFORE session spawn; failure → stage Blocked. Skips the checks when `find_prior_stage_work` shows the workspace already holds work |
-| `verify/before_after.rs::find_prior_stage_work`                 | Pristine-workspace probe: commits on `loom/<id>` beyond base, or non-scaffold worktree changes → `Some(evidence)` (skip the gate)                                |
-| `git/branch/status.rs::list_working_tree_changes`               | `git status --porcelain` paths INCLUDING untracked (`has_uncommitted_changes` excludes them)                                                                     |
-| `git/worktree/settings.rs::is_worktree_scaffold_path`           | Discounts loom-planted `.loom/work` / `.claude/` / `CLAUDE.md` when judging whether a worktree holds agent work                                                       |
-| `commands/stage/complete.rs:847-866`                            | Executes after_stage checks AFTER acceptance criteria; failure → stage stays Executing                                                                           |
-| `verify/before_after.rs`                                        | `run_before_stage_checks()` + `run_after_stage_checks()` — both delegate to `verify_truth_checks()`                                                              |
-| `verify/goal_backward/truths.rs:16-134`                         | `verify_truth_checks(checks, working_dir)` → `Vec<VerificationGap>`, 30s timeout per check                                                                       |
+| Location                                                         | Purpose                                                                                                                                                                                                                                                |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `models/stage/checks.rs`                                         | `TruthCheck` (`command`, `stdout_contains`, `stdout_not_contains`, `stderr_empty`, `exit_code`, `description`), `WiringCheck` (with `literal: bool`) and `AcceptanceCriterion`, moved out of `types.rs`; `crate::models::stage::*` paths are unchanged |
+| `plan/schema/types.rs::StageDefinition`                          | `before_stage: Vec<TruthCheck>`, `after_stage: Vec<TruthCheck>`, `code_review: Option<CodeReviewConfig>`                                                                                                          |
+| `plan/schema/types.rs::CodeReviewConfig`                         | `CodeReviewConfig`: `dimensions: Vec<String>`, `require_all: bool`                                                                                                                                                                                     |
+| `models/stage/methods.rs::Stage::from_definition`                | Canonically copies before/after checks, `code_review`, sandbox, and all execution policy into persisted Stage state                                                                                                                                    |
+| `orchestrator/core/stage_preflight.rs::before_stage_gate_passed` | Executes before_stage checks BEFORE session spawn; failure → stage Blocked. Skips the checks when `find_prior_stage_work` shows the workspace already holds work                                                                                       |
+| `verify/before_after.rs::find_prior_stage_work`                  | Pristine-workspace probe: commits on `loom/<id>` beyond base, or non-scaffold worktree changes → `Some(evidence)` (skip the gate)                                                                                                                      |
+| `git/branch/status.rs::list_working_tree_changes`                | `git status --porcelain` paths INCLUDING untracked (`has_uncommitted_changes` excludes them)                                                                                                                                                           |
+| `git/worktree/settings.rs::is_worktree_scaffold_path`            | Discounts loom-planted `.loom/work` / `.claude/` / `CLAUDE.md` when judging whether a worktree holds agent work                                                                                                                                        |
+| `commands/stage/complete_verification.rs::run_after_checks`      | Executes after_stage checks AFTER acceptance criteria; failure → stage stays Executing                                                                                                                                                                 |
+| `verify/before_after.rs`                                         | `run_before_stage_checks()` + `run_after_stage_checks()` — both delegate to `verify_truth_checks()`                                                                                                                                                    |
+| `verify/goal_backward/truths.rs::verify_truth_checks`            | `verify_truth_checks(checks, working_dir)` → `Vec<VerificationGap>`, 30s timeout per check                                                                                                                                                             |
 
 ## Post-Tool Heartbeat
 
@@ -212,7 +213,7 @@ The legacy `ToolEvent` reader remains able to consume an older `.loom/work/tool-
 **3 display modes:**
 
 | Mode             | Flag        | Behavior                                                                                  |
-| ------------------ | ------------- | --------------------------------------------------------------------------------------------- |
+| ---------------- | ----------- | ----------------------------------------------------------------------------------------- |
 | Static (default) | none        | Snapshot: logo → plan name → daemon indicator → progress bar → stage graph → merge status |
 | Compact          | `--compact` | Single-line scripting output via `render_compact()`                                       |
 | Live             | `--live`    | TUI subscribed to daemon IPC; requires daemon running (`DaemonServer::is_running()`)      |
@@ -234,14 +235,14 @@ Design and limits: [architecture/token-flow-sources.md](../architecture/token-fl
 
 ## Subagent Verification Guard
 
-| Path                                                             | Role                                                                                                   |
-| -------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `loom-hooks/subagent-verify-guard.sh`                                 | PreToolUse:Bash guard — blocks project-wide verification for subagents (over the Rule 17 400-line cap — see [concerns.md](../concerns.md)) |
-| `loom-hooks/_common.sh`                                               | `loom_is_subagent()` — payload-first detection gate, process-tree walk as fallback; 619 lines, also over the Rule 17 cap — see [concerns.md](../concerns.md) |
-| `loom/src/orchestrator/signals/tests_doctrine.rs`                | pins the doctrine blocks byte-for-byte across signal, template, and hook                               |
-| `loom/tests/integration/hooks_subagent_verify_guard.rs`          | harness: process-tree construction, env scrubbing, payload building                                    |
-| `loom/tests/integration/hooks_subagent_verify_guard_cases.rs`    | `BLOCK_CASES` / `ALLOW_CASES` table data                                                               |
-| `loom/tests/integration/hooks_subagent_verify_guard_carveout.rs` | integration-verify carve-out **refusal** directions (decoy, wrong type, missing)                       |
+| Path                                                             | Role                                                                                                                                                         |
+| ---------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `loom-hooks/subagent-verify-guard.sh`                            | PreToolUse:Bash guard — blocks project-wide verification for subagents (over the Rule 17 400-line cap — see [concerns.md](../concerns.md))                   |
+| `loom-hooks/_common.sh`                                          | `loom_is_subagent()` — payload-first detection gate, process-tree walk as fallback; 619 lines, also over the Rule 17 cap — see [concerns.md](../concerns.md) |
+| `loom/src/orchestrator/signals/tests_doctrine.rs`                | pins the doctrine blocks byte-for-byte across signal, template, and hook                                                                                     |
+| `loom/tests/integration/hooks_subagent_verify_guard.rs`          | harness: process-tree construction, env scrubbing, payload building                                                                                          |
+| `loom/tests/integration/hooks_subagent_verify_guard_cases.rs`    | `BLOCK_CASES` / `ALLOW_CASES` table data                                                                                                                     |
+| `loom/tests/integration/hooks_subagent_verify_guard_carveout.rs` | integration-verify carve-out **refusal** directions (decoy, wrong type, missing)                                                                             |
 
 Split into three files because they grow for different reasons; wired with `#[path]` submodules
 so the children reach the parent's private helpers via `use super::*` without widening visibility.

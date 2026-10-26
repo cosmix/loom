@@ -39,7 +39,7 @@ failure whose cause looks like "the machine" deserves a root cause before it ear
 git repo?" before it would create a `.loom/work` directory. `find_repo_root_from_cwd` returns
 `Option<PathBuf>`, so `None` reads as "not in a repo" — but it is not. After walking to the
 filesystem root without finding a `.git`, it ends at
-`git/worktree/paths.rs:84-85` with an explicit _"Fallback: return the original cwd if nothing else
+`git/worktree/paths.rs::find_repo_root_from_cwd` with an explicit _"Fallback: return the original cwd if nothing else
 works"_ → `cwd.canonicalize().ok()`. Outside any repo it therefore returns `Some(cwd)`.
 
 **Why it matters:** the name says _find repo root_ and the `Option` implies a search that can

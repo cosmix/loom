@@ -17,11 +17,11 @@ User-provided regex patterns in plan wiring checks are compiled and executed wit
 Three host-environment lists remain ([The Host Environment Allowlist](../architecture/execution-containment.md)
 has the full contents):
 
-| List | Form | Consumer |
-| --- | --- | --- |
-| `process/environment.rs` `STAGE_HOST_ENV_ALLOWLIST` | Rust `&[&str]` | `spawn_confined`, the native spawner and the tmux server commands |
-| `process/environment.rs` `AGENT_SESSION_ENV_NAMES` | Rust `&[&str]` | stage agent sessions: `wrapper/script_text.rs` renders its `exec env -i` shell loop from it |
-| `daemon/server/environment.rs` `HOST_ENV_ALLOWLIST` | Rust `&[&str]` | the daemon child |
+| List                                                | Form           | Consumer                                                                                    |
+| --------------------------------------------------- | -------------- | ------------------------------------------------------------------------------------------- |
+| `process/environment.rs` `STAGE_HOST_ENV_ALLOWLIST` | Rust `&[&str]` | `spawn_confined`, the native spawner and the tmux server commands                           |
+| `process/environment.rs` `AGENT_SESSION_ENV_NAMES`  | Rust `&[&str]` | stage agent sessions: `wrapper/script_text.rs` renders its `exec env -i` shell loop from it |
+| `daemon/server/environment.rs` `HOST_ENV_ALLOWLIST` | Rust `&[&str]` | the daemon child                                                                            |
 
 One constant now drives the wrapper, and tests pin every session name into the other two lists, so
 the lists cannot drift apart silently. What remains is a deliberate gap: sessions do
@@ -40,7 +40,7 @@ subset tests green.
 
 `process/environment.rs` withholds `SSH_AUTH_SOCK` with an explicit rationale — it
 is a live credential-agent socket, not a location — while forwarding
-`DBUS_SESSION_BUS_ADDRESS` (`:33`) and `XAUTHORITY` (`:32`). A session bus address
+`DBUS_SESSION_BUS_ADDRESS` and `XAUTHORITY`. A session bus address
 reaches `org.freedesktop.secrets`, which is a live credential surface by exactly
 the argument used to withhold the SSH socket.
 
@@ -67,11 +67,11 @@ widening fields, `allow_write`, `allow_local_binding` and `linux.enable_weaker_n
 ## Uncalled Path-Escape Validators Read As Protection
 
 `sandbox/config.rs` ships three `pub` path-escape validators that **nothing in production
-calls**: `detect_path_escape` (`:192`), `validate_paths` (`:276`) and
-`is_legitimate_work_access` (`:297`). They are re-exported from `sandbox/mod.rs:10-11`, and
-`rg` over `loom/src` finds their only callers are their own tests at `:636-730`.
+calls**: `detect_path_escape`, `validate_paths` and
+`is_legitimate_work_access`. They are re-exported from `sandbox/mod.rs::merge_resolver`, and
+`rg` over `loom/src` finds their only callers are their own tests.
 
-`test_validate_paths_detects_escape_in_allow_write` (`:711`) asserts `validate_paths` flags an
+`test_validate_paths_detects_escape_in_allow_write` asserts `validate_paths` flags an
 escape in `allow_write` — but `loom init` runs `validate_sandbox` and `validate_emittable` per
 stage, never `validate_paths`, so that escape was in fact emitted unchecked. A green test
 standing in for an absent control (`mistakes/tests-that-cannot-fail.md`).
@@ -153,7 +153,7 @@ What Stays Readable"). `loom-hooks/credential-guard.sh`
 is a PreToolUse guard on Read, Glob, Grep, Edit, MultiEdit, Write and NotebookEdit. Its first rule
 blocks `admin.token`, `user.token` and `completion-attestation.key` under any state root
 unconditionally. Its second rule, which applies a `denyRead` list to the file tools
-(`deny_read_blocks`), reads `$PROJECT_DIR/.claude/settings.local.json`. Loom no longer writes that
+(`deny_read_blocks`), reads `$PROJECT_DIR/.claude/settings.local.json`. Loom does not write that
 file (every session launches from its capsule, `W/capsules/<session-id>.settings.json`), so the
 rule acts only on an operator-authored file, and a session's own `denyRead` list never reaches the
 file tools through it. A worktree session's file tools stay inside the worktree through
@@ -177,7 +177,7 @@ symlinked `doc/loom/knowledge` or `.loom` directory is still followed and writte
 
 ## Bubblewrap Confinement Reads as Stage Evidence in Remote-Tools Mode (unconfirmed)
 
-`_loom_confinement_evidence` (`loom-hooks/_codex_forward.sh`) treats a pid namespace whose pid 1 is `bwrap` as loom stage evidence. Claude Code runs project hooks through `wrapWithSandbox` (bubblewrap with `--unshare-pid`) when this machine executes tool calls for a remote session. A reconstruction of that confinement (`bwrap --ro-bind / / --dev /dev --unshare-pid --unshare-user --cap-drop ALL --proc /proc`) made `codex-forward-guard.sh` classify the session as a stage and block the stock `codex:codex-rescue` agent ("command is not an exact forwarding-wrapper invocation"); if those payloads also lack `agent_type` and `transcript_path`, the missing-metadata check (`codex-forward-guard.sh:345-347`) would block every call. Not reproduced in a real remote session. Local interactive sessions run hooks unsandboxed and are unaffected. Deciding it means weighing the plugin's usability there against the fail-closed stage classification that confinement evidence exists for.
+`_loom_confinement_evidence` (`loom-hooks/_codex_forward.sh`) treats a pid namespace whose pid 1 is `bwrap` as loom stage evidence. Claude Code runs project hooks through `wrapWithSandbox` (bubblewrap with `--unshare-pid`) when this machine executes tool calls for a remote session. A reconstruction of that confinement (`bwrap --ro-bind / / --dev /dev --unshare-pid --unshare-user --cap-drop ALL --proc /proc`) made `codex-forward-guard.sh` classify the session as a stage and block the stock `codex:codex-rescue` agent ("command is not an exact forwarding-wrapper invocation"); if those payloads also lack `agent_type` and `transcript_path`, the missing-metadata check (`loom-hooks/codex-forward-guard.sh::enforce_forwarder`) would block every call. Not reproduced in a real remote session. Local interactive sessions run hooks unsandboxed and are unaffected. Deciding it means weighing the plugin's usability there against the fail-closed stage classification that confinement evidence exists for.
 
 ## Plan Files Are Not Merge-Gate Control Paths
 
@@ -244,14 +244,14 @@ An in-session canary that exercises each route does not exist; the manual checkl
 
 Measured with bwrap 0.11.1, git 2.53.0, Linux 7.1.5. A read-only bind of a single file (`--ro-bind f f`, how a file `denyWrite` is enforced) refuses writes and renames inside the sandbox while the host leaves the file alone. Once a host process replaces the file by rename (`echo new > f.tmp && mv f.tmp f`, which is how git writes refs, `config`, `config.worktree` and `packed-refs`: `open(<ref>.lock, O_EXCL)`, then `rename`), the running sandbox resolves the path to the new file and can write it, and the write lands on the host. So every per-file deny (loom's `.git/config` and the session's own `config.worktree` deny in `sandbox/control_surfaces/session_denies.rs`, and Claude Code's own `config`/`config.worktree`/`commondir` denies) protects a session only until the host first rewrites that file during the session. The sibling administrative directories are denied as directories, which holds against that (rows E2 and E3 below).
 
-| Host action during the session | Bind | Sandbox write |
-| --- | --- | --- |
-| replaces the file by rename (E1) | file | lands on the host |
-| rewrites the file in place, same inode (E5) | file | still refused |
-| unlinks the file (E6) | file | sandbox creates it; lands on the host |
-| replaces a file inside the directory by rename (E2) | directory | refused |
-| none; sandbox creates `dir/new` or renames a file inside (E3) | directory | both refused |
-| replaces the directory itself (E4) | directory | lands on the host |
+| Host action during the session                                | Bind      | Sandbox write                         |
+| ------------------------------------------------------------- | --------- | ------------------------------------- |
+| replaces the file by rename (E1)                              | file      | lands on the host                     |
+| rewrites the file in place, same inode (E5)                   | file      | still refused                         |
+| unlinks the file (E6)                                         | file      | sandbox creates it; lands on the host |
+| replaces a file inside the directory by rename (E2)           | directory | refused                               |
+| none; sandbox creates `dir/new` or renames a file inside (E3) | directory | both refused                          |
+| replaces the directory itself (E4)                            | directory | lands on the host                     |
 
 A directory deny therefore holds against files replaced, created or renamed inside it, and stops holding once the host replaces the directory. Related measurements: an empty loose `refs/heads/<b>` shadows `packed-refs` and breaks the branch (`No commits yet`, commits fail), which is what a deny on an absent ref path would leave on the host; `git update-ref` to the ref's current value does not turn a packed ref into a loose file.
 
@@ -315,11 +315,11 @@ The Cargo home was the same defect and is now stable ([execution containment](..
 
 A session's `loom check` and `loom stage complete` relay a host job, and the daemon's host child runs each acceptance criterion through `verify/criteria/confine_host.rs::wrap`, outside the session sandbox ([Criteria Run Outside the Session Sandbox](#criteria-run-outside-the-session-sandbox)). The wrapper gives Linux criteria a private `/tmp` and `/var/tmp` (`TMPDIR=/tmp`), binds the resolver's target when it exists, mounts a linked worktree's git metadata read-only, and accepts `timeout_secs` on an extended criterion ([Execution Containment](../architecture/execution-containment.md#read-this-first-what-containment-means-in-loom)). What still differs from the session shell:
 
-| Symptom confined | Cause | Direction |
-| --- | --- | --- |
-| a criterion fetching packages (`bunx`, `npx`, `uvx`, `pip install`, `cargo install`, `curl`) fails `ConnectionRefused` | criteria never get network, whatever the plan's `allowed_domains` say; those reach only the session | by design: install the tool from a `provision` entry and call the installed binary; `loom plan verify` reports it (`v2_lints/registry_domains.rs`) |
-| an inner confined run cannot find `~/.cargo/bin` | an outer Linked Cargo home on Linux (only when the Cargo home overlaps the tree) is inherited by the inner wrap | open |
-| `plan_environment_contracts::failed_provision_names_command_and_dir` passes without the command running | `contains("registry refused")` matches the command text embedded in the asserted prefix | assert on `reason[prefix.len()..]` |
+| Symptom confined                                                                                                       | Cause                                                                                                           | Direction                                                                                                                                          |
+| ---------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| a criterion fetching packages (`bunx`, `npx`, `uvx`, `pip install`, `cargo install`, `curl`) fails `ConnectionRefused` | criteria never get network, whatever the plan's `allowed_domains` say; those reach only the session             | by design: install the tool from a `provision` entry and call the installed binary; `loom plan verify` reports it (`v2_lints/registry_domains.rs`) |
+| an inner confined run cannot find `~/.cargo/bin`                                                                       | an outer Linked Cargo home on Linux (only when the Cargo home overlaps the tree) is inherited by the inner wrap | open                                                                                                                                               |
+| `plan_environment_contracts::failed_provision_names_command_and_dir` passes without the command running                | `contains("registry refused")` matches the command text embedded in the asserted prefix                         | assert on `reason[prefix.len()..]`                                                                                                                 |
 
 Environmental, not defects: `cargo audit` fails in a session because the user's global git `url.ssh://git@github.com/.insteadOf` rewrites the advisory-database fetch to SSH and the sandbox denies `~/.ssh`; a link step once aborted with `relocation R_X86_64_32 out of range` in `.debug_info` of one test binary and linked on an identical second run (treat as a linker flake and report both runs).
 
@@ -360,10 +360,10 @@ denyWrite and credential denies in force. The history of this failure is in
 
 The unfiltered `cargo test --all-targets` fails 26 loom tests in a Claude Code sandboxed shell and passes under `loom check`, the confined runner that `loom stage complete` uses. The mistake and its evidence: [The Full Suite Fails 26 Tests in a Verifier Shell](../mistakes/completion-runner-blocks.md#the-full-suite-fails-26-tests-in-a-verifier-shell-and-passes-under-loom-check).
 
-- 17 lib tests (`verify::before_after`, `goal_backward::truths`, criteria `working_dir`, confine `tool_tests`) fail with `EROFS` at `/var/tmp/.loom-command-*`. `scratch_roots` (`verify/criteria/confine_scratch.rs:135-140`) drops the root equal to the tree under test and keeps `/tmp` and `/var/tmp`, both read-only in the sandbox.
-- 9 `hooks_subagent_verify_guard` integration tests refuse a TMPDIR containing `claude` (`loom/tests/integration/hooks_subagent_verify_guard.rs:44`), because that name collapses the guard's main-agent and subagent detection. A TMPDIR under `$LOOM_SCRATCH_DIR` fixes those 9 and not the 17.
+- 17 lib tests (`verify::before_after`, `goal_backward::truths`, criteria `working_dir`, confine `tool_tests`) fail with `EROFS` at `/var/tmp/.loom-command-*`. `scratch_roots` (`verify/criteria/confine_scratch.rs::scratch_roots`) drops the root equal to the tree under test and keeps `/tmp` and `/var/tmp`, both read-only in the sandbox.
+- 9 `hooks_subagent_verify_guard` integration tests refuse a TMPDIR containing `claude` (`loom/tests/integration/hooks_subagent_verify_guard.rs::temp_dir_no_claude`), because that name collapses the guard's main-agent and subagent detection. A TMPDIR under `$LOOM_SCRATCH_DIR` fixes those 9 and not the 17.
 - The gate-dedup contract tests create their temp dir under `CARGO_TARGET_TMPDIR` for the same reason (`loom/tests/gate_dedup_contracts/support.rs`).
-- Confined criteria cannot start in a worker's sandboxed shell, because bwrap has no user namespaces there. Runner and child tests that run real commands fail or skip in that shell. A unit test of selection logic sets `stage.sandbox.command_confinement = Some(Inherit)`. `check_criterion_runs_only_named_criteria` (`loom/tests/gate_dedup_contracts.rs:61`) needs `LOOM_TEST_ROOT` outside `/tmp` and working confinement.
+- Confined criteria cannot start in a worker's sandboxed shell, because bwrap has no user namespaces there. Runner and child tests that run real commands fail or skip in that shell. A unit test of selection logic sets `stage.sandbox.command_confinement = Some(Inherit)`. `check_criterion_runs_only_named_criteria` (`loom/tests/gate_dedup_contracts.rs::check_criterion_runs_only_named_criteria`) needs `LOOM_TEST_ROOT` outside `/tmp` and working confinement.
 
 Revisit when `scratch_roots` keeps the tree root or the guard stops keying on the TMPDIR name.
 

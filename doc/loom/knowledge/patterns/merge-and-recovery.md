@@ -1,12 +1,13 @@
 ---
 ---
+
 # Merge And Recovery
 
 > Progressive merge, recovery
 
 ## Progressive Merge Pattern
 
-Dependencies merge to the target branch before dependent stages execute: `Stage A completes -> Merge A to target -> Stage B starts`. Base branch resolution: no deps = init_base_branch or default; all deps merged = target branch; single dep not merged = dependency branch (legacy fallback). `MergeLock` serializes loom merges with a stable-inode OS advisory lock and a 30-second acquisition timeout (`loom/src/git/merge/lock.rs:25-95`). The lock file is not unlinked or reclaimed after five minutes; process exit releases the OS lock.
+Dependencies merge to the target branch before dependent stages execute: `Stage A completes -> Merge A to target -> Stage B starts`. Base branch resolution: no deps = init_base_branch or default; all deps merged = target branch; single dep not merged = dependency branch (legacy fallback). `MergeLock` serializes loom merges with a stable-inode OS advisory lock and a 30-second acquisition timeout (`loom/src/git/merge/lock.rs::acquire`). The lock file is not unlinked or reclaimed after five minutes; process exit releases the OS lock.
 
 ## Merge Anti-Respawn Pattern
 
@@ -54,18 +55,15 @@ Apply this pattern when adding routing/verification helpers: keep the function p
 
 ## No Worker Thread for Adjudication (Retired Pattern)
 
-**Retired 2026-08-31. Do not reintroduce this for adjudication.** This section described a
-worker-thread + mpsc channel the adjudicator used to drive a blocking call off the orchestrator's
-poll loop: `worker_completion_tx`/`_rx` on the `Orchestrator`, a `std::thread::spawn` per dispute,
-and a drain in the main tick. All of it is deleted: the adjudication worker and
-client modules were removed outright, so there is no thread to reintroduce it into.
+**Do not drive adjudication from a worker thread.** There is no worker-thread + mpsc channel
+(`worker_completion_tx`/`_rx`, a `std::thread::spawn` per dispute, a drain in the main tick) and
+no adjudication worker or client module; the orchestrator's poll loop does not host blocking calls.
 
-Adjudication now spawns a real loom session through the `TerminalBackend` and observes the
-resulting state change on the ordinary poll loop, the same way merge conflict resolution has always
-worked. That removed the thread registry, the mpsc channel, the cooperative cancellation flag, the
-`.inflight` staleness marker, and the retry/backoff loop in one go — a session is already a tracked,
-restart-surviving, externally-observable unit of work, and the thread machinery was reimplementing a
-worse version of it.
+Adjudication spawns a real loom session through the `TerminalBackend` and observes the
+resulting state change on the ordinary poll loop, the same way merge conflict resolution works.
+It has no thread registry, mpsc channel, cooperative cancellation flag, staleness marker or
+retry/backoff loop: a session is already a tracked, restart-surviving, externally-observable
+unit of work.
 
 The general lesson, if you are reaching for a worker thread in the orchestrator: ask first whether
 the work is a SESSION. Loom already knows how to spawn one, track its liveness across a daemon

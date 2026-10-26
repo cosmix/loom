@@ -58,13 +58,12 @@ Current settings behavior and remaining concerns:
 Two gaps accepted rather than closed while adding the theme picker and notification switch:
 
 1. **Two tone tokens keep Aubergine's hue under Pacific and Graphite.** `--tone-pending` and
-   `--tone-dimmed` are `oklch(... 0.025 325)` for every `.dark` variant (`web/src/index.css:63`
-   and `:67`). At chroma 0.025 they read as near-gray in practice, but the literal hue is still
+   `--tone-dimmed` are `oklch(... 0.025 325)` for every `.dark` variant (`web/src/index.css`). At chroma 0.025 they read as near-gray in practice, but the literal hue is still
    Aubergine's 325, not tuned per theme; "no new theme tokens" stayed a non-goal for this plan,
    so it was left rather than adding per-theme overrides. Every other loom token either derives
    from `var(--primary)`/`var(--border)` or is hue-neutral.
 2. **No gate in the web pipeline executes the built bundle in a browser.** `bun run --cwd web
-   test` runs vitest+jsdom over sources; the `dist` marker greps only prove strings reached
+test` runs vitest+jsdom over sources; the `dist` marker greps only prove strings reached
    `web/dist/assets/index.js`; `scripts/smoke-web-dashboard.sh` only curls Rust-served routes. A
    runtime-only defect in the shipped SPA (chunk init order, a missing global, a module-script
    failure) would pass every gate this repo has today. This gap predates this plan but the plan
@@ -86,17 +85,17 @@ closes gap 2 should revisit this probe.
 
 ## Merge-Conflict Stages Never Reach the Conflicts Counter
 
-`build_merge_report` (`git/merge/status.rs:163-166`) skips every stage whose status is not `Completed`, so a stage sitting in `MergeConflict` is never counted: `merge.conflicts` (a `string[]` of stage ids in `web/src/api/schema.ts`) stays empty, and the dashboard header's ⚡ conflicts cell reads 0 while the graph shows the stage in Conflict and the attention panel lists a MERGE CONFLICT entry. The cell only counts a `Completed` stage whose `merge_conflict` flag is still set.
+`build_merge_report` (`git/merge/status.rs::build_merge_report`) skips every stage whose status is not `Completed`, so a stage sitting in `MergeConflict` is never counted: `merge.conflicts` (a `string[]` of stage ids in `web/src/api/schema.ts`) stays empty, and the dashboard header's ⚡ conflicts cell reads 0 while the graph shows the stage in Conflict and the attention panel lists a MERGE CONFLICT entry. The cell only counts a `Completed` stage whose `merge_conflict` flag is still set.
 
-The conflicted card prints the word once: `ActivityLine` (the first line of the card's tray in `web/src/components/graph/stage-node.tsx:143`) renders `mergeText` only when its text differs from `activityText`'s, and for status merge-conflict both return the fixed text "conflict" (`web/src/lib/format.ts`).
+The conflicted card prints the word once: `ActivityLine` (the first line of the card's tray in `web/src/components/graph/stage-node.tsx::ActivityLine`) renders `mergeText` only when its text differs from `activityText`'s, and for status merge-conflict both return the fixed text "conflict" (`web/src/lib/format.ts`).
 
 ## Slow Terminal Connect Is Inside Firefox, Not in Loom's Connect Path
 
-`handle_upgrade` (`loom/src/commands/status/web/terminal/upgrade.rs:77`) writes the 101 (`tungstenite::accept_with_config`) before `start_bridge` resolves the stage or runs any tmux command, and the browser shows "live" on `onopen`, so neither tmux (`history-limit` 50000), the daemon token tracker nor the status broadcaster can delay "connected". Paired Firefox messages "can't establish" plus "interrupted while the page was loading" on one URL are `WebSocket::Close()` during CONNECTING: the page closed sockets still waiting for their handshake. Firefox admits one CONNECTING WebSocket per IP across all ports and delays a failing address+path+port 200-400 ms x1.5 up to 60 s, keeping the delayed channel queued, so any failing reconnect loop to `127.0.0.1` (a stale dashboard tab, a stopped dev server) stalls every new terminal socket. Confirm with `about:logging` `nsWebSocket:5` (`CONNECTING_QUEUED`, "delaying websocket") or `network.websocket.delay-failed-reconnects=false`. The 50000-line history only costs a full-history tmux reflow per width change after "viewing" shows (the PTY spawns at 120x36, `upgrade.rs:155`); spawning it at the browser's fitted size would remove one reflow per connect but needs `web/src/api/terminal.ts`.
+`handle_upgrade` (`loom/src/commands/status/web/terminal/upgrade.rs::handle_upgrade`) writes the 101 (`tungstenite::accept_with_config`) before `start_bridge` resolves the stage or runs any tmux command, and the browser shows "live" on `onopen`, so neither tmux (`history-limit` 50000), the daemon token tracker nor the status broadcaster can delay "connected". Paired Firefox messages "can't establish" plus "interrupted while the page was loading" on one URL are `WebSocket::Close()` during CONNECTING: the page closed sockets still waiting for their handshake. Firefox admits one CONNECTING WebSocket per IP across all ports and delays a failing address+path+port 200-400 ms x1.5 up to 60 s, keeping the delayed channel queued, so any failing reconnect loop to `127.0.0.1` (a stale dashboard tab, a stopped dev server) stalls every new terminal socket. Confirm with `about:logging` `nsWebSocket:5` (`CONNECTING_QUEUED`, "delaying websocket") or `network.websocket.delay-failed-reconnects=false`. The 50000-line history only costs a full-history tmux reflow per width change after "viewing" shows (the PTY spawns at 120x36, `upgrade.rs::start_bridge`); spawning it at the browser's fitted size would remove one reflow per connect but needs `web/src/api/terminal.ts`.
 
 ## Terminal Refusal Paths Drop the Socket Right After the Close Frame
 
-`close_refusal` (4004/4008/4009) and the `start_bridge` error paths return without reading while the browser has already sent its resize frame on open, so Linux answers the close with RST. Firefox can then report 1006 instead of 4009 ("connection lost" instead of "waiting, retrying in 2s"), log "interrupted" and record a failed reconnect for that path. The fix is to read until the peer's close or about 250 ms before dropping (`upgrade.rs:193`). It is not the cause of the slow connect above.
+`close_refusal` (4004/4008/4009) and the `start_bridge` error paths return without reading while the browser has already sent its resize frame on open, so Linux answers the close with RST. Firefox can then report 1006 instead of 4009 ("connection lost" instead of "waiting, retrying in 2s"), log "interrupted" and record a failed reconnect for that path. The fix is to read until the peer's close or about 250 ms before dropping (`upgrade.rs::close_refusal`). It is not the cause of the slow connect above.
 
 ## The Bundle Is Over 500 kB and the Gate Hides the Warning
 

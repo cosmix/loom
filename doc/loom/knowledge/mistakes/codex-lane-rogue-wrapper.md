@@ -142,7 +142,7 @@ lagged the worktree fix until merge.
 **Prevention:**
 
 - In the tree now: `codex-forward-guard.sh` allows one forward per forwarder transcript, and
-  `agents/loom-codex-forwarder.md:54-62` says a backgrounded forwarder makes no further tool call
+  `agents/loom-codex-forwarder.md` (the background-acknowledgement rule) says a backgrounded forwarder makes no further tool call
   and ends its turn. The orchestrator alone recovers the result, through
   `loom subagents wait --receipt <id>` or the named task output. Lifecycle:
   [Token Accounting and Receipts](../architecture/token-accounting-and-receipts.md).

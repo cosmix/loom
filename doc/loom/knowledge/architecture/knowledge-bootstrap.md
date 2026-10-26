@@ -4,29 +4,28 @@
 
 ## Deterministic Phase
 
-`loom knowledge bootstrap` restores the command deleted on 2026-08-18 by `36268adc`, for repos not
-managed by loom plans (`context/retrieve.rs:84,151` needs `doc/loom/knowledge/` to exist before
-`sync`/`context` work at all). `execute` (`loom/src/commands/knowledge/bootstrap/mod.rs:67`,
+`loom knowledge bootstrap` seeds knowledge for repos not managed by loom plans
+(`context/retrieve.rs::NO_KNOWLEDGE_DIR`: `sync`/`context` need `doc/loom/knowledge/` to exist at all). `execute` (`loom/src/commands/knowledge/bootstrap/mod.rs::execute`,
 `pub(crate)` — see Visibility below) runs three phases:
 
-1. **Host, no model:** resolve the git root (`resolve_repo_root`, mod.rs:142), scaffold the
-   knowledge tree (`scaffold`, mod.rs:214), rebuild the catalog and source graph
-   (`refresh_derived`, mod.rs:229 — the same refresh `loom knowledge sync` runs), partition the
+1. **Host, no model:** resolve the git root (`resolve_repo_root`, `commands/knowledge/bootstrap/mod.rs::resolve_repo_root`), scaffold the
+   knowledge tree (`scaffold`, commands/knowledge/bootstrap/mod.rs::scaffold), rebuild the catalog and source graph
+   (`refresh_derived`, commands/knowledge/bootstrap/mod.rs::refresh_derived — the same refresh `loom knowledge sync` runs), partition the
    repo into directory clusters with digests and fan-in hot spots (`clusters.rs`), and print
-   coverage plus the work plan (`work_set`, mod.rs:254).
+   coverage plus the work plan (`work_set`, commands/knowledge/bootstrap/mod.rs::work_set).
 2. **Semantic, model:** write a work brief under `.loom/work/bootstrap/` (`BOOTSTRAP_DIR`,
-   mod.rs:45) and launch an interactive foreground Claude session (`launch`, mod.rs:277) sharing
+   commands/knowledge/bootstrap/mod.rs::BOOTSTRAP_DIR) and launch an interactive foreground Claude session (`launch`, commands/knowledge/bootstrap/mod.rs::launch) sharing
    the driver `pressure` uses. The session explores with `Explore` subagents and `loom map`, and
    writes ONLY through `loom knowledge` — `--disallowedTools Edit,Write,NotebookEdit` as one
    comma-joined value (the flag is variadic; a trailing positional prompt would otherwise be
    swallowed by it).
-3. **Host finalization:** `finalize`/`conclude` (mod.rs:346,360) refresh the index and catalog,
+3. **Host finalization:** `finalize`/`conclude` (`commands/knowledge/bootstrap/mod.rs::finalize`, `::conclude`) refresh the index and catalog,
    report check issues, and write the receipt (see below).
 
 `--structural-only` stops after phase 1. `--dry-run` prints the plan and the exact `claude` argv
-(`shell_quote_argv`, mod.rs:309) without spawning. The command refuses inside a stage session
-(`guard_not_in_stage`, mod.rs:133): every stage exports `LOOM_STAGE_ID`
-(`orchestrator/terminal/native/wrapper.rs:340`) and child processes inherit it; stages write
+(`shell_quote_argv`, `commands/knowledge/bootstrap/mod.rs::shell_quote_argv`) without spawning. The command refuses inside a stage session
+(`guard_not_in_stage`, commands/knowledge/bootstrap/mod.rs::guard_not_in_stage): every stage exports `LOOM_STAGE_ID`
+(`orchestrator/terminal/native/wrapper.rs::build_wrapper_script`) and child processes inherit it; stages write
 knowledge through `loom knowledge update` instead.
 
 ## Clusters and Digest
@@ -49,7 +48,7 @@ fan-in descending then path ascending).
 The committed receipt `doc/loom/knowledge/.bootstrap-receipt.json` holds one digest per cluster,
 written ONLY when the session touched its completion marker, via `crate::fs::locking::locked_write`
 and loaded with `crate::fs::safe_read::read_to_string_bounded` (no-follow, 1 MiB cap). It is
-excluded from the `*.md`-only catalog walk (`catalog.rs:254`) so it never enters the index.
+excluded from the `*.md`-only catalog walk (`fs/knowledge/catalog.rs::collect_markdown_files`) so it never enters the index.
 Committing it is what makes `--refresh` report current across clones, not just locally.
 
 **Post-session refresh and catalog count are best-effort warnings, not hard failures**
@@ -62,7 +61,7 @@ brief, spawn, or receipt, deliberately not degrading the way `commands/map.rs` d
 ## `--refresh` Behaviour
 
 `--refresh` narrows the work set to clusters whose digest changed since the receipt, any removed
-cluster, and any tier-1 file still at its template content (`tier1_gaps`, mod.rs:241, compares
+cluster, and any tier-1 file still at its template content (`tier1_gaps`, commands/knowledge/bootstrap/mod.rs::tier1_gaps, compares
 trimmed content against `templates::default_content`). With nothing changed, it prints "knowledge
 is current" and spawns nothing — true both before and after the knowledge/receipt are committed,
 and in a fresh clone.
@@ -73,14 +72,12 @@ and in a fresh clone.
 from the private `cli/types_memory` module), so a `pub fn` taking it trips `private_interfaces`
 under `clippy -D warnings` (precedent: `knowledge::annotate::annotate` is also `pub(crate)`).
 
-`guard_not_in_stage` inlines its own `LOOM_STAGE_ID` check rather than calling
-`commands::hook::target::non_empty_env`, because `commands/hook/mod.rs:14` declares `mod target;`
-private — the same `pub(crate)`-item-in-a-private-module trap as
-[`mistakes/visibility-and-reachability.md`](../mistakes/visibility-and-reachability.md). Widening
-that module (`pub(crate) mod target` or a re-export) to de-duplicate the check is an open,
-low-priority follow-up (`concerns.md`).
+`guard_not_in_stage` reuses `commands::hook::target::non_empty_env` for its `LOOM_STAGE_ID` check;
+`commands/hook/mod.rs` declares `pub(crate) mod target`, so the helper is reachable from `commands/knowledge`
+(the private-module trap is recorded in
+[`mistakes/visibility-and-reachability.md`](../mistakes/visibility-and-reachability.md)).
 
 ## Related
 
 - `mistakes/visibility-and-reachability.md` — pub(crate) visibility is capped by path.
-- `concerns.md` — the dry-run argv quoting gap and the guard-reuse follow-up.
+- `concerns.md` — pressure and bootstrap follow-ups.

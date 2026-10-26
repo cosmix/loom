@@ -1,5 +1,6 @@
 ---
 ---
+
 # Writer/Reader Address
 
 > Layer under an ignored key
@@ -9,7 +10,7 @@
 **What happened:** the working-tree source-graph overlay is addressed by a
 `(plan, stage)` pair, and the two sides derived that pair differently. The producer
 keyed the stage component on `project_root.file_name()`
-(`context/local_overlay.rs:20`), while `WorkDir::project_root()` returns `.` at the
+(`context/local_overlay.rs::LOCAL_PLAN_KEY`), while `WorkDir::project_root()` returns `.` at the
 repo root and an ABSOLUTE path from any subdirectory — so ONE tree had TWO
 addresses, `_local/map` and `_local/map-<dirname>`. Proven in a fresh clone with no
 base layer: `loom knowledge sync` at the repo root wrote `_local/map`, then
@@ -18,7 +19,7 @@ items, because it read `_local/map-<dirname>`. It also built two ~16 MB overlays
 one tree.
 
 **Why it is invisible:** `GraphStore::resolved` returns the base layer with NO error
-when the overlay key is absent or `None` (`graph_store/mod.rs:251-271`), so a
+when the overlay key is absent or `None` (`graph_store/mod.rs::resolved_with_schema`), so a
 mismatch degrades to "the last merged revision" instead of failing. The write
 succeeded, the read succeeded, the command exited 0, every gate stayed green. A
 fallback that WRITES a derived layer under a key no reader consults is
@@ -33,7 +34,7 @@ wall-clock producing the thing nobody reads.
    derivations that "should agree" is the same bug in a different costume; the
    earlier instance in this codebase is `delivery::plan_key`, where a hand-rolled
    second derivation read an empty directory rather than a missing record (see
-   *Delivery Records* in [Context Retrieval State](../architecture/context-retrieval-state.md)).
+   _Delivery Records_ in [Context Retrieval State](../architecture/context-retrieval-state.md)).
 2. An address derived from a path must be derived from the CANONICAL path.
    `file_name()` on a caller-supplied spelling is an identity bug, not a naming
    choice — and a comment asserting "every caller spells it the same way" is the

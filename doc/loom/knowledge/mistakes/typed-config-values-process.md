@@ -43,7 +43,7 @@ markdownlint fixer, leaving an unstaged edit to the plan file after every commit
 
 ## `as const satisfies` Narrows an Optional Field Away and Fails tsc (2026-10-15)
 
-**What happened:** web-insights typed `MIX` in `web/src/components/token-flow-panel.tsx:32` as `as const satisfies ReadonlyArray<{hint?: string}>`. Destructuring `hint` from the narrowed union failed `tsc` with TS2339.
+**What happened:** web-insights typed `MIX` in `web/src/components/token-flow-panel.tsx::PALETTE` as `as const satisfies ReadonlyArray<{hint?: string}>`. Destructuring `hint` from the narrowed union failed `tsc` with TS2339.
 
 **Why:** the worker skipped the typecheck under the subagent rule of one narrow check.
 

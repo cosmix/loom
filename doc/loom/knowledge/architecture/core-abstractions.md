@@ -40,13 +40,13 @@ validated in transitions.rs. See [patterns.md -- State Machine Pattern](../patte
 - **Standard** (default) -- Regular implementation stages, require goal-backward verification
 - **Knowledge** -- No worktree, commits required (directly to main), auto merged=true, exploration focus
 - **IntegrationVerify** -- Second-to-last quality gate combining code review AND functional verification
-- **KnowledgeDistill** -- Final stage, runs after integration-verify, curates session memories into permanent knowledge (worktree stage; **sonnet default, `high` reasoning effort** — the one `StageType` arm that does not return opus, see `models/stage/types.rs::default_model`; configurable per stage type via `[models]`, see conventions/model-and-effort-config.md)
+- **KnowledgeDistill** -- Final stage, runs after integration-verify, curates session memories into permanent knowledge (worktree stage; **sonnet default, `high` reasoning effort** — the one `StageType` arm that does not return opus, see `models/stage/defaults.rs::default_model`; configurable per stage type via `[models]`, see conventions/model-and-effort-config.md)
 
 Signal generation has 4 stable prefix generators in cache.rs (standard, knowledge, integration-verify, knowledge-distill).
 
 ### Session Lifecycle (models/session/)
 
-States: Spawning -> Running -> Completed | Crashed | ContextExhausted | Paused. Tracks PID, terminal window ID, absolute `context_tokens` plus `transcript_path` (not a usage percentage — the `context_limit` field was deleted, so there is no denominator stored per-session; the ceiling is resolved per stage, see architecture.md "Context Budget Enforcement"), timestamps.
+States: Spawning -> Running -> Completed | Crashed | ContextExhausted | Paused. Tracks PID, terminal window ID, absolute `context_tokens` plus `transcript_path` (not a usage percentage — there is no `context_limit` field, so there is no denominator stored per-session; the ceiling is resolved per stage, see architecture.md "Context Budget Enforcement"), timestamps.
 
 ### SessionBackend (orchestrator/terminal/)
 
@@ -90,15 +90,15 @@ proof.
 
 ## File Ownership
 
-| Directory             | Owner Module                     | Purpose              |
-| --------------------- | -------------------------------- | -------------------- |
-| `.loom/work/stages/`       | orchestrator/core/persistence.rs | Stage state          |
-| `.loom/work/sessions/`     | orchestrator/core/persistence.rs | Session state        |
-| `.loom/work/signals/`      | orchestrator/signals/            | Agent assignments    |
-| `.loom/work/handoffs/`     | orchestrator/continuation/       | Context dumps        |
-| `.loom/work/config.toml`   | commands/init/, commands/run/    | Plan reference       |
-| `.worktrees/`         | git/worktree/                    | Isolated workspaces  |
-| `doc/loom/knowledge/` | fs/knowledge.rs                  | Persistent learnings |
+| Directory                | Owner Module                     | Purpose              |
+| ------------------------ | -------------------------------- | -------------------- |
+| `.loom/work/stages/`     | orchestrator/core/persistence.rs | Stage state          |
+| `.loom/work/sessions/`   | orchestrator/core/persistence.rs | Session state        |
+| `.loom/work/signals/`    | orchestrator/signals/            | Agent assignments    |
+| `.loom/work/handoffs/`   | orchestrator/continuation/       | Context dumps        |
+| `.loom/work/config.toml` | commands/init/, commands/run/    | Plan reference       |
+| `.worktrees/`            | git/worktree/                    | Isolated workspaces  |
+| `doc/loom/knowledge/`    | fs/knowledge.rs                  | Persistent learnings |
 
 ## Layering Violations (Known Issues)
 
@@ -111,16 +111,15 @@ Known violations (all four are pre-existing, none introduced by the context work
 - git/worktree imports orchestrator (hook config) -- fix: extract loom-hooks/ as top-level
 - models imports plan/schema (WiringCheck, StageType) -- fix: move types to models/
 
-### The newer modules are clean (verified 2026-08-17)
+### The newer modules are clean
 
-The list above predates `context/`, `telemetry/` and `process/`, so its silence about them was
-ambiguous rather than reassuring. Verified with
+The list above does not cover `context/`, `telemetry/` and `process/`. Verified with
 `rg '^use crate::[a-z_]+' loom/src/context`:
 
 - **`context`** imports only `crate::context`, `crate::fs`, `crate::language`, `crate::models`
   and `crate::git`. **No upward edge** to `orchestrator`, `commands` or `daemon`. The single
   `git` edge is deliberate — `git::runner::run_git_checked` at
-  `context/refresh/source_graph.rs:30`, needed to list tracked files and judge tree
+  `context/refresh/source_graph/generation.rs::working_tree`, needed to list tracked files and judge tree
   cleanliness — and it points downward, so it is not a violation. Record it rather than
   rediscovering it.
 - **`telemetry`** is a leaf: one module, no `crate::` imports beyond its own serde types. The
@@ -132,5 +131,5 @@ The rule to preserve: the orchestrator calls into `context`, never the other way
 `use crate::orchestrator` appearing anywhere under `loom/src/context/` is a regression, and the
 one-line check above is the way to catch it.
 
-(Note that a match for `crate::external` under `context/extract/rust.rs:132` is inside a golden
+(Note that a match for `crate::external` under `context/extract/rust/tests.rs::FIXTURE` is inside a golden
 test fixture string, not a real import.)

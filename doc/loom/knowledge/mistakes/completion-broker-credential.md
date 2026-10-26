@@ -59,7 +59,7 @@ transition is applied out of band by `loom-hooks/loom-control-complete.sh`, whic
 back out of the tool result and calls the daemon broker.
 
 **Why it was invisible:** the agent's only evidence was exit 0 plus a line containing "PASSED",
-both emitted *before* anything was completed and both unchanged whether or not the transition
+both emitted _before_ anything was completed and both unchanged whether or not the transition
 ever happened. The bridge had two bare `exit 0` skips — the command reported an error, or the
 marker was absent from the captured output — that called no broker and said nothing. The marker
 test is an exact whole-line match (`split("\n") | index($marker)`), so truncated, wrapped or
@@ -131,7 +131,7 @@ resolves to: /tmp/claude-1000/tool-results/fake.txt        # agent-WRITABLE
 forgery of a completion marker. See `mistakes/untrusted-value-boundaries.md` § "A Glob Is Not a
 Containment Check".
 
-**Prevention:** fixing the marker's *carrier* does not fix the marker's *volume*. Keep the
+**Prevention:** fixing the marker's _carrier_ does not fix the marker's _volume_. Keep the
 completion command's output small — a verbose verification stage will find this threshold again.
 
 ## The Daemon Grew a Token Gate the Broker Could Not Satisfy (2026-09-14)

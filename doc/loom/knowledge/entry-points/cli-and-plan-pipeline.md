@@ -1,5 +1,6 @@
 ---
 ---
+
 # Cli And Plan Pipeline
 
 > CLI dispatch, plan pipeline
@@ -11,43 +12,43 @@
 
 ## Command Dispatch (cli/types.rs)
 
-| Command       | Entry File                    | Purpose                                        |
-| ------------- | ------------------------------ | ----------------------------------------------- |
-| `init`        | `commands/init/execute.rs`    | Initialize `.loom/work/` from plan                  |
-| `run`         | `commands/run/mod.rs`         | Start orchestrator daemon                      |
-| `status`      | `commands/status.rs`          | Dashboard with stage/session info              |
-| `stop`        | `commands/stop.rs`            | Shutdown daemon                                |
-| `resume`      | `commands/resume.rs`          | Resume work on a stage                         |
-| `sessions`    | `commands/sessions.rs`        | List/kill active sessions                      |
-| `worktree`    | `commands/worktree_cmd.rs`    | List/clean/remove worktrees                    |
-| `graph`       | `commands/graph/mod.rs`       | Show execution graph                           |
-| `stage`       | `commands/stage/`             | Stage lifecycle (15+ subcommands)              |
-| `handoff`     | `commands/handoff/create.rs`  | Create handoff files                           |
-| `knowledge`   | `commands/knowledge/mod.rs`   | Manage codebase knowledge                      |
-| `memory`      | `commands/memory/handlers/mod.rs` | Session memory journal                     |
-| `review`      | `commands/review/mod.rs`      | Generate review docs from memories             |
-| `self-update` | `commands/self_update/mod.rs` | Update loom binary                             |
-| `clean`       | `commands/clean/mod.rs`       | Clean up resources                             |
-| `repair`      | `commands/repair.rs`          | Fix workspace issues                           |
-| `map`         | `commands/map.rs`             | Codebase structure analysis                    |
-| `pressure`    | `commands/pressure/mod.rs`    | Plan pressure-testing driver (Claude + Codex)  |
-| `plan verify` | `commands/plan/verify.rs`     | Validate plan file without side effects        |
-| `check`       | `commands/verify.rs`          | Goal-backward verification (`verify::execute`) |
-| `skill-index` | `commands/skill_index.rs`     | Build skill keyword index for skill-trigger    |
-| `completions` | `completions/mod.rs`          | Shell completions (custom scripts + dynamic)   |
-| `complete`    | Hidden (dynamic completions)  | Backend for shell tab completions              |
+| Command       | Entry File                        | Purpose                                        |
+| ------------- | --------------------------------- | ---------------------------------------------- |
+| `init`        | `commands/init/execute.rs`        | Initialize `.loom/work/` from plan             |
+| `run`         | `commands/run/mod.rs`             | Start orchestrator daemon                      |
+| `status`      | `commands/status.rs`              | Dashboard with stage/session info              |
+| `stop`        | `commands/stop.rs`                | Shutdown daemon                                |
+| `resume`      | `commands/resume.rs`              | Resume work on a stage                         |
+| `sessions`    | `commands/sessions.rs`            | List/kill active sessions                      |
+| `worktree`    | `commands/worktree_cmd.rs`        | List/clean/remove worktrees                    |
+| `graph`       | `commands/graph/mod.rs`           | Show execution graph                           |
+| `stage`       | `commands/stage/`                 | Stage lifecycle (15+ subcommands)              |
+| `handoff`     | `commands/handoff/create.rs`      | Create handoff files                           |
+| `knowledge`   | `commands/knowledge/mod.rs`       | Manage codebase knowledge                      |
+| `memory`      | `commands/memory/handlers/mod.rs` | Session memory journal                         |
+| `review`      | `commands/review/mod.rs`          | Generate review docs from memories             |
+| `self-update` | `commands/self_update/mod.rs`     | Update loom binary                             |
+| `clean`       | `commands/clean/mod.rs`           | Clean up resources                             |
+| `repair`      | `commands/repair.rs`              | Fix workspace issues                           |
+| `map`         | `commands/map.rs`                 | Codebase structure analysis                    |
+| `pressure`    | `commands/pressure/mod.rs`        | Plan pressure-testing driver (Claude + Codex)  |
+| `plan verify` | `commands/plan/verify.rs`         | Validate plan file without side effects        |
+| `check`       | `commands/verify.rs`              | Goal-backward verification (`verify::execute`) |
+| `skill-index` | `commands/skill_index.rs`         | Build skill keyword index for skill-trigger    |
+| `completions` | `completions/mod.rs`              | Shell completions (custom scripts + dynamic)   |
+| `complete`    | Hidden (dynamic completions)      | Backend for shell tab completions              |
 
 Total: 30 visible commands + 1 hidden (`complete`, for dynamic completions). Dispatch: `cli/dispatch.rs` match-based, two-level for nested commands. `completions` dispatches from `cli/dispatch.rs` into the top-level `completions/` module, not a `commands/completions/` directory.
 
-`loom diagnose` was removed on 2026-09-15. It wrote a prompt file into the signals directory but never started a session or passed the prompt to Claude; `loom/src/diagnosis/`, an unused copy of the same logic, went with it. A stage that exhausts its retries is `Blocked`, and `loom stage retry <id>` restarts it once the cause is fixed.
+There is no `loom diagnose` command (it would only write a prompt file into the signals directory without starting a session). A stage that exhausts its retries is `Blocked`, and `loom stage retry <id>` restarts it once the cause is fixed.
 
-**Three commands that do NOT exist** (an earlier version of this table listed all three — verify against `cli/dispatch.rs` before citing one):
+**Three names that are not commands** (verify against `cli/dispatch.rs` before citing a command):
 
-- `loom hooks` — there is no `commands/hooks.rs`. Hook install lives in `fs/permissions/hooks.rs` and runs as part of `loom init` / `loom repair --fix`.
-- `loom sandbox` — there is no `commands/sandbox/`. Sandbox config generation lives in `sandbox/config.rs` + `sandbox/settings.rs`, driven by the plan.
-- `loom verify` — there is no `commands/check.rs`; loom has no top-level `verify` command. `commands/verify.rs::execute` is reached via `loom check`; `loom plan verify` is the only separate verify subcommand. The unsafe `loom stage verify` completion pipeline was removed.
+- `loom hooks`: hook install lives in `fs/permissions/hooks.rs` and runs as part of `loom init` / `loom repair --fix`.
+- `loom sandbox`: sandbox config generation lives in `sandbox/config.rs` + `sandbox/settings.rs`, driven by the plan.
+- `loom verify`: loom has no top-level `verify` command. `commands/verify.rs::execute` is reached via `loom check`; `loom plan verify` is the only separate verify subcommand, and there is no `loom stage verify`.
 
-## CLI Subcommand Registration Pattern
+## CLI Subcommand Registration Files
 
 Three files to add a new subcommand:
 
@@ -82,12 +83,12 @@ Three files to add a new subcommand:
 
 Key public functions for `loom plan verify` to call:
 
-| Function                                            | Return                             | Severity                                       |
-| ----------------------------------------------------- | ------------------------------------- | ------------------------------------------------- |
-| `validate(&metadata)`                               | `Result<(), Vec<ValidationError>>` | Fatal — called by `parse_plan()` automatically |
-| `validate_structural_preflight(&stages, repo_root)` | `Vec<String>`                      | Advisory warnings                              |
-| `check_knowledge_recommendations(stages, repo_root)` | `Vec<String>`                     | Advisory; only when the knowledge tree is missing or scaffold-only |
-| `check_sandbox_recommendations(&metadata)`          | `Vec<String>`                      | Advisory suggestions                           |
+| Function                                             | Return                             | Severity                                                           |
+| ---------------------------------------------------- | ---------------------------------- | ------------------------------------------------------------------ |
+| `validate(&metadata)`                                | `Result<(), Vec<ValidationError>>` | Fatal — called by `parse_plan()` automatically                     |
+| `validate_structural_preflight(&stages, repo_root)`  | `Vec<String>`                      | Advisory warnings                                                  |
+| `check_knowledge_recommendations(stages, repo_root)` | `Vec<String>`                      | Advisory; only when the knowledge tree is missing or scaffold-only |
+| `check_sandbox_recommendations(&metadata)`           | `Vec<String>`                      | Advisory suggestions                                               |
 
 `validate()` runs inside `parse_and_validate()` → called by `parse_plan_content()` → called by `parse_plan()`. Any new command that calls `parse_plan()` automatically gets fatal validation for free.
 
@@ -99,7 +100,7 @@ Key public functions for `loom plan verify` to call:
 
 - `parse_plan(path: &Path) -> Result<ParsedPlan>` — reads file + validates
 - `parse_plan_content(content: &str, source_path: &Path) -> Result<ParsedPlan>` — for tests without I/O
-- `load_stage_definition_from_plan(work_dir, stage_id) -> Result<StageDefinition>` — reads config.toml for plan path, resolves path, parses plan, finds stage by ID. Centralized here after PLAN-anti-slop-thoroughness; was previously inlined in commands/verify.rs and re-inlined in generate.rs.
+- `load_stage_definition_from_plan(work_dir, stage_id) -> Result<StageDefinition>` — reads config.toml for plan path, resolves path, parses plan, finds stage by ID. One shared implementation; callers do not inline it.
 
 `ParsedPlan` fields: `id` (from filename stem), `name` (first H1), `source_path`, `stages: Vec<StageDefinition>`, `metadata: LoomMetadata`.
 
@@ -109,26 +110,23 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 
 - `ExecutionGraph::build(stages: Vec<StageDefinition>) -> Result<Self>` — two-pass: first creates nodes, second builds reverse-dependency edges, then calls `cycle::detect_cycles()` via DFS
 - `ExecutionGraph::update_ready_status()` → returns stage IDs that became `Queued`
-- Cycle detection: `cycle/mod.rs` uses recursive DFS with `visiting` / `visited` sets; returns `Err` with cycle path on detection
+- Cycle detection: `plan/graph/cycle.rs` uses recursive DFS with `visiting` / `visited` sets; returns `Err` with cycle path on detection
 - `plan/graph/loader.rs` has `build_execution_graph()` that loads stage files from `.loom/work/stages/` and calls `ExecutionGraph::build()`
 
 ## Plan Graph Loader — Stage File Preference (Critical)
 
-`plan/graph/loader.rs:56` — `build_graph_impl()`:
+`plan/graph/loader.rs::build_graph_impl` — `build_graph_impl()`:
 
-- **Lines 60-86**: Prefers `.loom/work/stages/` over plan file. If stages_dir exists with .md files → load from `fs::load_stages_from_work_dir()` + recover sandbox from `.loom/work/config.toml [plan_sandbox]`. Falls back to parsing plan file only if stages_dir is empty/missing.
+- Prefers `.loom/work/stages/` over plan file. If stages_dir exists with .md files → load from `fs::load_stages_from_work_dir()` + recover sandbox from `.loom/work/config.toml [plan_sandbox]`. Falls back to parsing plan file only if stages_dir is empty/missing.
 - This means plan-file edits are NOT automatically reflected until stages_dir is absent (i.e., fresh init).
-- **`plan/amendment.rs` honors this** — a runtime amendment rewrites the plan file **and** the target stage's `.loom/work/stages/<n>-<id>.md` under the same lock. This is a shipped guarantee, not an outstanding requirement (an earlier version of this bullet read as a TODO for a future "plan-amendment stage"). Any _other_ code path that edits a plan file at runtime must do the same, or the daemon keeps serving the old criteria.
+- **`plan/amendment.rs` honors this** — a runtime amendment rewrites the plan file **and** the target stage's `.loom/work/stages/<n>-<id>.md` under the same lock. Any _other_ code path that edits a plan file at runtime must do the same, or the daemon keeps serving the old criteria.
 
 ## Plan Schema — StageDefinition Amendable Fields
 
-`plan/schema/types.rs:306` — `StageDefinition` struct:
+`plan/schema/types.rs::StageDefinition` is the struct; `plan/amendment.rs::AmendmentField` names the fields a plan amendment may mutate:
 
-- Line 316: `acceptance: Vec<AcceptanceCriterion>` — amendable in v1
-- Line 336: `wiring: Vec<WiringCheck>` — amendable in v1
-- Line 347/352: `before_stage`/`after_stage: Vec<TruthCheck>` — deferred to v2
-- Line 333: `artifacts: Vec<String>` — deferred to v2
-- NOT amendable: `id`, `name`, `dependencies`, `working_dir`, `model`, `sandbox`, `execution`
+- Amendable: `acceptance`, `wiring`, `wiring_tests`, `contracts`, `harness`
+- NOT amendable: `before_stage`, `after_stage`, `artifacts`, `id`, `name`, `dependencies`, `working_dir`, `model`, `sandbox`, `execution`
 
 ## `loom pressure` — Plan Pressure-Testing Files
 
@@ -138,9 +136,9 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 - `loom/src/codex.rs` — `find_codex_path()` codex binary resolver (exported via lib.rs).
 - `loom/src/cli/types_pressure.rs` — `PressureArgs { plan, rounds (default 2, ≥1), dry_run, claude_model, codex_model, address_model }`, each model flag validated by a clap `PossibleValuesParser` over the vocabularies above. `cli/types.rs` holds only the tuple variant `Commands::Pressure(PressureArgs)` (it sits at its 400-line ceiling); dispatched in `loom/src/cli/dispatch.rs`.
 - `loom/src/user_config/keys.rs` — the `pressure.{claude,codex,address}_model` keys in `KEYS`, as `ValueKind::Enum` over the same vocabularies, so `loom config` and its TUI edit them with no per-key wiring.
-- `commands/{pressure,address,distill}.md` — vendored Claude slash commands (source for `~/.claude/commands/`).
+- `commands/{pressure,address,distill,changelog}.md` — vendored Claude slash commands (source for `~/.claude/commands/`).
 - `codex/skills/pressure/SKILL.md` — vendored Codex pressure skill (source for `~/.codex/skills/pressure/`).
-- `install.sh` — `install_commands()` (~line 336) and `install_codex_skill()` (~line 356), called only in the LOCAL (non-curl-pipe) branch of `main()` (~line 619).
+- `loom install-assets` (`assets/install.rs::install_all`, `assets/install/claude.rs::install_files`, `assets/install/codex.rs::install_skills`) installs both from the binary's embedded copies; `install.sh::main` runs it on the cloned-repo and `curl | bash` paths alike.
 
 ## Key Config Files
 
@@ -152,21 +150,21 @@ Internal modules: `extraction.rs` (YAML block extraction, plan name), `validatio
 
 ## Verification v2 Entry Points
 
-| Path | Role |
-| --- | --- |
-| `loom/src/commands/stage/complete_verification_v2.rs` | `run_v2`: contract check, integrity, impact tests, reachable re-check, review gate |
-| `loom/src/commands/stage/contracts/` | `loom stage contracts freeze\|show\|restore` |
-| `loom/src/orchestrator/core/event_handler/contract_phase.rs`, `core/contract_budget.rs`, `core/stage_spawn.rs` | contract-to-implementer handover, respawn budget, shared spawn tail |
-| `loom/src/verify/contracts/`, `verify/integrity/`, `verify/review/`, `verify/impact_tests.rs` | the v2 gates and their stores under `.loom/work/{contracts,reviews}/<stage>/` |
-| `loom/src/verify/contracts/collection/` (`rust/{targets,chain,items,scaffold}.rs`), `verify/contracts/refusal.rs` | contract scaffold, chain check and the refused-freeze records ([contract-collection](../architecture/contract-collection.md), [Refused Freezes Are Disputed](../architecture/contract-phase.md#refused-freezes-are-disputed)) |
-| `loom/src/orchestrator/core/event_handler/freeze_refusal.rs`, `orchestrator/adjudication/verdict_freeze_refusal.rs`, `orchestrator/adjudication/apply_freeze_refusal.rs` | the one filer of `freeze-refusal` disputes, and their verdict check and apply |
-| `loom/src/verify/goal_backward/{wiring_v2,definition_sites,reachable}.rs`, `context/worktree_graph.rs` | glob and literal wiring, definition-site exclusion, reachability |
-| `loom/src/testrun/` | 23 test-runner adapters, language profiles, shell quoting, zero-test recognition |
-| `loom/src/commands/project.rs`, `skills/project/{markers,runners,probe}.rs` | `loom project detect`, kind and runner detection |
-| `loom/src/commands/hook/review_harvest.rs` | `loom hook review-harvest`, called by `subagent-stop.sh` |
-| `loom/src/orchestrator/adjudication/{verdict_kinds,apply_kinds,prompt/*}.rs`, `daemon/server/{contracts,dispute_kinds}.rs` | dispute kinds: verdicts, apply, judge prompts, daemon handlers |
-| `loom/src/plan/schema/{types_v2.rs,validation/v2_lints/}` | v2 fields and `plan verify` lints |
-| `doc/loom/knowledge/architecture/verification-v2-gates.md` | current gate order, owners and runtime inputs |
+| Path                                                                                                                                                                     | Role                                                                                                                                                                                                                          |
+| ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loom/src/commands/stage/complete_verification_v2.rs`                                                                                                                    | `run_v2`: contract check, integrity, impact tests, reachable re-check, review gate                                                                                                                                            |
+| `loom/src/commands/stage/contracts/`                                                                                                                                     | `loom stage contracts freeze\|show\|restore`                                                                                                                                                                                  |
+| `loom/src/orchestrator/core/event_handler/contract_phase.rs`, `core/contract_budget.rs`, `core/stage_spawn.rs`                                                           | contract-to-implementer handover, respawn budget, shared spawn tail                                                                                                                                                           |
+| `loom/src/verify/contracts/`, `verify/integrity/`, `verify/review/`, `verify/impact_tests.rs`                                                                            | the v2 gates and their stores under `.loom/work/{contracts,reviews}/<stage>/`                                                                                                                                                 |
+| `loom/src/verify/contracts/collection/` (`rust/{targets,chain,items,scaffold}.rs`), `verify/contracts/refusal.rs`                                                        | contract scaffold, chain check and the refused-freeze records ([contract-collection](../architecture/contract-collection.md), [Refused Freezes Are Disputed](../architecture/contract-phase.md#refused-freezes-are-disputed)) |
+| `loom/src/orchestrator/core/event_handler/freeze_refusal.rs`, `orchestrator/adjudication/verdict_freeze_refusal.rs`, `orchestrator/adjudication/apply_freeze_refusal.rs` | the one filer of `freeze-refusal` disputes, and their verdict check and apply                                                                                                                                                 |
+| `loom/src/verify/goal_backward/{wiring_v2,definition_sites,reachable}.rs`, `context/worktree_graph.rs`                                                                   | glob and literal wiring, definition-site exclusion, reachability                                                                                                                                                              |
+| `loom/src/testrun/`                                                                                                                                                      | 23 test-runner adapters, language profiles, shell quoting, zero-test recognition                                                                                                                                              |
+| `loom/src/commands/project.rs`, `skills/project/{markers,runners,probe}.rs`                                                                                              | `loom project detect`, kind and runner detection                                                                                                                                                                              |
+| `loom/src/commands/hook/review_harvest.rs`                                                                                                                               | `loom hook review-harvest`, called by `subagent-stop.sh`                                                                                                                                                                      |
+| `loom/src/orchestrator/adjudication/{verdict_kinds,apply_kinds,prompt/*}.rs`, `daemon/server/{contracts,dispute_kinds}.rs`                                               | dispute kinds: verdicts, apply, judge prompts, daemon handlers                                                                                                                                                                |
+| `loom/src/plan/schema/{types_v2.rs,validation/v2_lints/}`                                                                                                                | v2 fields and `plan verify` lints                                                                                                                                                                                             |
+| `doc/loom/knowledge/architecture/verification-v2-gates.md`                                                                                                               | current gate order, owners and runtime inputs                                                                                                                                                                                 |
 
 ## New CLI Surface
 
@@ -175,19 +173,19 @@ lag `main` mid-plan: at the end of this plan `loom knowledge context` worked whi
 `loom map --outline`, `loom context` and `loom hook` all reported "unrecognized subcommand"
 from the same binary. Verify a flag against `loom/src/cli/` before documenting it.
 
-| Command                              | Defined in                      | Options                                                                                                                                                                                                                                  |
-| ------------------------------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `loom knowledge context`             | `commands/knowledge/context.rs` | `--query <QUERY>` (**required**), `--stage <STAGE>`, `--budget-tokens <N>` (default 2000), `--scope <knowledge\|source\|all>` (default `all`), `--require-id <ID>` (repeatable), `--explain`, `--json`.                                  |
-| `loom knowledge sync`                | `commands/knowledge/sync.rs`    | `--structural-only`, `--json`. Rebuilds derived context artifacts after the knowledge tree changes.                                                                                                                                      |
-| `loom map --outline <PATH>`          | `commands/map.rs:34`            | prints the indexed symbols of one file, in source order                                                                                                                                                                                  |
-| `loom map --find-all <SYMBOL>`       | `commands/map.rs:37`            | prints every indexed node whose name matches                                                                                                                                                                                             |
-| `loom map --impact <SYMBOL_OR_PATH>` | `commands/map.rs:40`            | prints what reaches a symbol or file, with path confidence                                                                                                                                                                               |
-| `loom context record-edit`           | `cli/types_ops.rs:78`           | `--stage <STAGE>`, `--path <PATH>` (**required**, repeatable). Keeps a stage's context overlay current.                                                                                                                                  |
-| `loom hook user-prompt`              | `cli/types_ops.rs:92`           | no options. `UserPromptSubmit` entry point; emits a retrieval brief or nothing.                                                                                                                                                          |
+| Command                              | Defined in                          | Options                                                                                                                                                                                                 |
+| ------------------------------------ | ----------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `loom knowledge context`             | `commands/knowledge/context.rs`     | `--query <QUERY>` (**required**), `--stage <STAGE>`, `--budget-tokens <N>` (default 2000), `--scope <knowledge\|source\|all>` (default `all`), `--require-id <ID>` (repeatable), `--explain`, `--json`. |
+| `loom knowledge sync`                | `commands/knowledge/sync.rs`        | `--structural-only`, `--json`. Rebuilds derived context artifacts after the knowledge tree changes.                                                                                                     |
+| `loom map --outline <PATH>`          | `commands/map.rs::MapArgs`          | prints the indexed symbols of one file, in source order                                                                                                                                                 |
+| `loom map --find-all <SYMBOL>`       | `commands/map.rs::MapArgs`          | prints every indexed node whose name matches                                                                                                                                                            |
+| `loom map --impact <SYMBOL_OR_PATH>` | `commands/map.rs::MapArgs`          | prints what reaches a symbol or file, with path confidence                                                                                                                                              |
+| `loom context record-edit`           | `cli/types_ops.rs::ContextCommands` | `--stage <STAGE>`, `--path <PATH>` (**required**, repeatable). Keeps a stage's context overlay current.                                                                                                 |
+| `loom hook user-prompt`              | `cli/types_ops.rs::HookCommands`    | no options. `UserPromptSubmit` entry point; emits a retrieval brief or nothing.                                                                                                                         |
 
 The three `loom map` view flags short-circuit the original knowledge-file analysis
-(`map.rs:56-58`): if any is set, `map` is a read-only source-graph view and does not write
+(`commands/map.rs::MapArgs`): if any is set, `map` is a read-only source-graph view and does not write
 knowledge. `--deep`, `--focus` and `--overwrite` remain the analysis-mode flags.
 
 Plan YAML gained `command_confinement: confined | inherit` at plan level
-(`plan/schema/types.rs:52`) and as a per-stage override (`models/stage/types.rs:305`).
+(`plan/schema/types.rs::SandboxConfig`) and as a per-stage override (`models/stage/types.rs::Stage`, field `sandbox`).

@@ -114,12 +114,12 @@ derived cache is writable. In a stage worktree `.loom/work` is a SYMLINK to the 
 and the plan sandbox denies writes to it, so any criterion whose command writes a
 derived cache behaves differently there than where it was written.
 
-| Criterion as written | What actually happens in a stage worktree |
-| --- | --- |
-| `loom map --outline src/main.rs \| rg -q function` | unsatisfiable — `loom map` called `reconcile_source_graph`, which WRITES an overlay under `.loom/work/context`, so every invocation hard-failed with `Read-only file system (os error 30)` even though a readable base layer existed |
-| `loom knowledge sync --json \| rg -q '"semantic":{'` | cannot fail — the denied write returns exit 0 with `{"semantic":{"layer":"skipped",...}}`, so the key is present on a sync that did nothing |
-| `$L init >/dev/null 2>&1 \|\| true` then check layers | cannot pass — `loom init` REQUIRES a `<PLAN_PATH>` and exits 2; `\|\| true` turns the usage error into a silent zero-result |
-| `rg --files doc/plans/PLAN-x.md > /dev/null && ...` | fails on an absent file — a worktree materialises only TRACKED files, and those sibling plans were untracked |
+| Criterion as written                                  | What actually happens in a stage worktree                                                                                                                                                                                            |
+| ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `loom map --outline src/main.rs \| rg -q function`    | unsatisfiable — `loom map` called `reconcile_source_graph`, which WRITES an overlay under `.loom/work/context`, so every invocation hard-failed with `Read-only file system (os error 30)` even though a readable base layer existed |
+| `loom knowledge sync --json \| rg -q '"semantic":{'`  | cannot fail — the denied write returns exit 0 with `{"semantic":{"layer":"skipped",...}}`, so the key is present on a sync that did nothing                                                                                          |
+| `$L init >/dev/null 2>&1 \|\| true` then check layers | cannot pass — `loom init` REQUIRES a `<PLAN_PATH>` and exits 2; `\|\| true` turns the usage error into a silent zero-result                                                                                                          |
+| `rg --files doc/plans/PLAN-x.md > /dev/null && ...`   | fails on an absent file — a worktree materialises only TRACKED files, and those sibling plans were untracked                                                                                                                         |
 
 **Prevention, in the order the failures appear:**
 
@@ -127,7 +127,7 @@ derived cache behaves differently there than where it was written.
    sandbox ON before shipping the plan.** "Works in my checkout" is not evidence; the
    stage sandbox is the primary environment for these commands.
 2. **A read-only CLI verb must degrade when its derived cache is unwritable**, the way
-   `context/retrieve.rs:87` `resolve_catalog` already does. `loom map` is documented as
+   `context/retrieve.rs` `resolve_catalog` already does. `loom map` is documented as
    a read-only view and was writing on every call — that is the bug the criterion
    exposed, not a criterion problem.
 3. **Grep for the VALUE that proves work happened, never for a key the degraded path
@@ -188,13 +188,13 @@ success line about the other half.
    failure.** Not a log line — output. If the command has `--json`, the layer gets a
    typed field there too.
 2. **Report the layer you actually wrote, as a VALUE, not a boolean.** `SemanticLayer`
-   (`context/refresh/semantic.rs:50-64`) is the shape that fixed this:
+   (`context/refresh/semantic.rs::SemanticOutcome`) is the shape that fixed this:
    `Base { revision }` | `LocalOverlay { plan, stage, refusal }` | `Skipped { reason }`,
-   serialized kebab-case, printed by `print_semantic` (`sync.rs:132-148`) behind the
+   serialized kebab-case, printed by `print_semantic` (`commands/knowledge/sync.rs::catalog_failure_context`) behind the
    `source graph:` prefix. "Did it work?" is not answerable; "which layer did I write,
    and why not the other one?" is.
 3. A freshness flag cannot carry this. `Freshness` alone could not say which layer ran
-   or how big it was (`semantic.rs:33-37`) — which is exactly why the typed outcome had
+   or how big it was (`context/refresh/semantic.rs::SOURCE_GRAPH_PREFIX`) — which is exactly why the typed outcome had
    to be introduced.
 
 **Fix:** if you add a second layer to an existing command, extend its output type in the
@@ -211,7 +211,7 @@ had nothing in common:
 - **`loom knowledge sync`** did nothing _because its failure was written into a JSON
   field instead of into the exit code._ It exited 0 with
   `{"semantic":{"layer":"skipped","stale":true,"nodes":0,"detail":"Failed to write
-  context state: ..."}}`.
+context state: ..."}}`.
 
 **Prevention:** before debugging an apparently inert command, decide which of the two it
 is — and the test is cheap: **look at the failure channel, not the exit code.** An
@@ -303,7 +303,7 @@ shared prefix and read the stage's `setup` first.
 
 ## A TMPDIR Inside the Checkout Lets Tests Write Into the Live Repo and .loom/work (2026-09-13)
 
-**What happened:** a baseline run for this plan pointed TMPDIR at `loom/target/token-optimization-checks`, inside the checkout. `cargo test --all-targets` failed 290 tests (283 lib, 7 e2e): clean, init cleanup, knowledge check/sync, memory "outside git repo", reconcile_graph, hook target/user_prompt e2e; example panics `commands/memory/handlers/tests.rs:34` NotFound, `commands/knowledge/tests_check.rs:149` failed to get current dir. Between 00:12:36 and 00:12:54 UTC that same run also mutated LIVE state of the running plan session: it wrote a junk `## Test Entry` / `test/file.rs - Test description` section into the real `doc/loom/knowledge/entry-points.md` (restored with `git restore`), fixture state into the live `.loom/work/` (`disputes/build-api/1/request.md`, `context/test-plan/stage-a/`, `context/default/stage-1/`, `context/_local/map-.tmpQ8ePxd/`), a false crash report `.loom/work/crashes/20260913-001236-knowledge-bootstrap.md` ("Process no longer running") for the live session, and a rewrite of `.loom/work/config.toml` (content still correct afterwards; no prior copy to diff). The ad-hoc memory journal present at session start was gone afterward. A rerun with TMPDIR outside the repo passed 4,575/0 and wrote none of this.
+**What happened:** a baseline run for this plan pointed TMPDIR at `loom/target/token-optimization-checks`, inside the checkout. `cargo test --all-targets` failed 290 tests (283 lib, 7 e2e): clean, init cleanup, knowledge check/sync, memory "outside git repo", reconcile_graph, hook target/user_prompt e2e; example panics `commands/memory/handlers/tests.rs` NotFound, `commands/knowledge/tests_check.rs` failed to get current dir. Between 00:12:36 and 00:12:54 UTC that same run also mutated LIVE state of the running plan session: it wrote a junk `## Test Entry` / `test/file.rs - Test description` section into the real `doc/loom/knowledge/entry-points.md` (restored with `git restore`), fixture state into the live `.loom/work/` (`disputes/build-api/1/request.md`, `context/test-plan/stage-a/`, `context/default/stage-1/`, `context/_local/map-.tmpQ8ePxd/`), a false crash report `.loom/work/crashes/20260913-001236-knowledge-bootstrap.md` ("Process no longer running") for the live session, and a rewrite of `.loom/work/config.toml` (content still correct afterwards; no prior copy to diff). The ad-hoc memory journal present at session start was gone afterward. A rerun with TMPDIR outside the repo passed 4,575/0 and wrote none of this.
 
 **Why:** a tempdir nested inside the checkout sits under the real git root and the real `.loom/work`, so tests written for "no enclosing repository" or "no work dir" discover the live ones instead of a clean fixture. The per-test mechanism was not traced.
 
@@ -313,14 +313,14 @@ shared prefix and read the stage's `setup` first.
 
 TMPDIR placement is only one of two leaks into a live session: even with TMPDIR correctly outside the repo, hook tests (`codex-forward-guard-blocks-edit.sh` and siblings) still inherited `LOOM_STAGE_ID`/`LOOM_SESSION_ID`/`LOOM_WORK_DIR` from the running session and wrote fake forward records to that session's live `.loom/work/subagents/<stage>/codex.jsonl` — a second leak that survives a correct TMPDIR. Clear the `LOOM_*` session variables before running hook tests, the same way TMPDIR must point outside the repo.
 
-**Fixed (job-lifecycle, 2026-09-13):** each `codex-forward-guard-*` test now unsets `LOOM_STAGE_ID`, `LOOM_SESSION_ID`, `LOOM_WORK_DIR`, `LOOM_SESSION_TYPE` and `LOOM_MAIN_AGENT_PID` on its own line 3 (`loom-hooks/tests/codex-forward-guard-blocks-edit.sh:3`). The unset must live inside the test script: `commit-filter.sh` blocks an orchestrator's Bash call that unsets `LOOM_MAIN_AGENT_PID`. Detection when in doubt: compare the line count of `.loom/work/subagents/<stage>/codex.jsonl` before and after a hook-suite run.
+**Fixed (job-lifecycle, 2026-09-13):** each `codex-forward-guard-*` test now unsets `LOOM_STAGE_ID`, `LOOM_SESSION_ID`, `LOOM_WORK_DIR`, `LOOM_SESSION_TYPE` and `LOOM_MAIN_AGENT_PID` on its own line 3 (`loom-hooks/tests/codex-forward-guard-blocks-edit.sh`). The unset must live inside the test script: `commit-filter.sh` blocks an orchestrator's Bash call that unsets `LOOM_MAIN_AGENT_PID`. Detection when in doubt: compare the line count of `.loom/work/subagents/<stage>/codex.jsonl` before and after a hook-suite run.
 
 ## Gate Environment Traps Found by the Token-Optimization Plan (2026-09-13)
 
 - **A long scratch TMPDIR breaks the tmux e2e socket budget.** Under the plan's scratch TMPDIR the
   stage sandbox makes `/tmp` read-only, the tmux helper falls back to a directory under `$TMPDIR`,
   and the projected socket path reaches 106 bytes, over the 104-byte `SUN_PATH_LIMIT`: all 7
-  tmux and web-terminal e2e tests panic (`loom/tests/e2e/tmux_backend.rs:145`). The bootstrap
+  tmux and web-terminal e2e tests panic (`loom/tests/e2e/tmux_backend.rs`). The bootstrap
   baseline passed only because it ran with the short harness TMPDIR. Check
   `dir + /tmux-<uid>/ + 40` against 104 before choosing a scratch root.
 - **Codex workers' own sandbox sees the plan scratch root read-only**, so a codex worker's one

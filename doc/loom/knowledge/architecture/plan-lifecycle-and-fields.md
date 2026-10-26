@@ -1,6 +1,7 @@
 ---
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
+
 # Plan Lifecycle And Fields
 
 > Plan fields, checks, lints
@@ -23,7 +24,7 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 
 ## Goal-Backward Verification (verify/goal_backward/)
 
-Four verification layers for standard stages. **`truths` is NOT one of them** — it was removed from goal-backward and merged into acceptance. A duplicate section listing `truths` as a goal-backward layer was deleted from architecture.md on 2026-07-30; if you see that claim anywhere else, it is stale.
+Four verification layers for standard stages. **`truths` is NOT one of them** — it is part of the acceptance field, not goal-backward. A claim listing `truths` as a goal-backward layer is stale.
 
 - **artifacts** -- Files must exist with real implementation (stub detection: TODO, FIXME, unimplemented\!, todo\!)
 - **wiring** -- Regex patterns verifying code connections in source files
@@ -41,19 +42,18 @@ Note: truths.rs module and verify_truth_checks() are retained for before_stage/a
 
 ## before_stage / after_stage / code_review Schema Fields — Execution Status
 
-**Status as of 2026-09-24 (verified against `stage_executor.rs::before_stage_gate_passed`,
-`models/stage/methods.rs::from_definition`, and `commands/stage/complete_verification.rs`).
-Earlier text cited `plan_setup.rs:280-281` for field storage and `complete.rs:847-866` for
-after-stage execution; both are stale -- `plan_setup.rs` no longer sets these fields, and
-`complete.rs` after-stage logic moved to a dedicated file.**
+**Status (verified against `orchestrator/core/stage_preflight.rs::before_stage_gate_passed`,
+`models/stage/methods.rs::from_definition`, and `commands/stage/complete_verification.rs`):
+`plan_setup.rs` does not set these fields, and the after-stage logic lives in
+`commands/stage/complete_verification.rs`.**
 
-| Field          | Schema Type                | Stored on Stage            | Executed   | Where                                             |
-| -------------- | --------------------------- | --------------------------- | ---------- | -------------------------------------------------- |
-| `before_stage` | `Vec<TruthCheck>`          | Yes (`models/stage/methods.rs::from_definition`) | Yes     | `orchestrator/core/stage_executor.rs::before_stage_gate_passed` (called pre-spawn) |
-| `after_stage`  | `Vec<TruthCheck>`          | Yes (`models/stage/methods.rs::from_definition`) | Yes     | `commands/stage/complete_verification.rs` (calls `verify::before_after::run_after_stage_checks`) |
-| `code_review`  | `Option<CodeReviewConfig>` | Yes (`models/stage/methods.rs::from_definition`) | Signal  | `orchestrator/signals/generate.rs` renders it for IV signals     |
+| Field          | Schema Type                | Stored on Stage                                  | Executed | Where                                                                                            |
+| -------------- | -------------------------- | ------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------ |
+| `before_stage` | `Vec<TruthCheck>`          | Yes (`models/stage/methods.rs::from_definition`) | Yes      | `orchestrator/core/stage_preflight.rs::before_stage_gate_passed` (called pre-spawn)              |
+| `after_stage`  | `Vec<TruthCheck>`          | Yes (`models/stage/methods.rs::from_definition`) | Yes      | `commands/stage/complete_verification.rs` (calls `verify::before_after::run_after_stage_checks`) |
+| `code_review`  | `Option<CodeReviewConfig>` | Yes (`models/stage/methods.rs::from_definition`) | Signal   | `orchestrator/signals/generate.rs` renders it for IV signals                                     |
 
-**`before_stage` execution (`stage_executor.rs::before_stage_gate_passed`):**
+**`before_stage` execution (`orchestrator/core/stage_preflight.rs::before_stage_gate_passed`):**
 
 - Runs after worktree creation, BEFORE session spawn
 - **Gated on a pristine workspace.** `verify::before_after::find_prior_stage_work(stage_branch, base_branch, repo_root, worktree_path)` runs first; if it finds commits on `loom/<stage-id>` beyond the resolved base, or non-scaffold changes in the worktree, the checks are SKIPPED (logged at `info`) and the spawn proceeds. `before_stage` is a delta-proof ("the feature does not exist yet"), which is only meaningful on the first attempt -- re-running it on a re-spawn (orphan recovery, `loom stage retry`, crash retry) fails on the previous attempt's own work and blocks the stage before any session exists to finish it (unrecoverable loop; see mistakes.md 2026-07-27)
@@ -61,7 +61,7 @@ after-stage execution; both are stale -- `plan_setup.rs` no longer sets these fi
 - Calls `crate::verify::before_after::run_before_stage_checks(&stage.before_stage, &check_dir)`
 - On failure gaps: stage becomes `Blocked` (FailureType::TestFailure), session NOT spawned. `TestFailure` is not auto-retryable (`should_auto_retry`), so the stage rests Blocked until an operator runs `loom stage retry`
 - On errors (infrastructure): prints warning, continues anyway (advisory)
-- TruthCheck timeout: 30 seconds (hardcoded in truths.rs:13)
+- TruthCheck timeout: 30 seconds (hardcoded in `verify/goal_backward/truths.rs`)
 
 **`after_stage` execution (`commands/stage/complete_verification.rs`, called from `loom stage complete`):**
 
@@ -78,7 +78,7 @@ after-stage execution; both are stale -- `plan_setup.rs` no longer sets these fi
 
 ## load_stage_definition_from_plan — Centralized Plan Lookup
 
-Centralized in `plan/parser/mod.rs` (re-exported via `plan/mod.rs`). Previously lived in `commands/verify.rs`.
+Centralized in `plan/parser/mod.rs` (re-exported via `plan/mod.rs`).
 
 **Signature:** `load_stage_definition_from_plan(stage_id, work_dir) -> Result<Option<StageDefinition>>`
 
@@ -96,14 +96,14 @@ Runtime plan amendment exists and is reachable from an `Accept` adjudication ver
 - `.loom/work/plan_versions/<n>.md` — snapshot of full plan content after amendment n
 - `.loom/work/plan_versions/audit.md` — O_APPEND atomic rows (amendment log)
 
-**The write set is TWO files, not one — this is the trap.** Under the lock, an amendment writes the snapshot, appends the audit row, replaces the live plan file via `safe_replace_outside_workdir`, **and rewrites the target stage's `.loom/work/stages/<n>-<id>.md`**. The last step is not optional: `plan/graph/loader.rs` prefers `.loom/work/stages/` over the plan file, so amending only the plan would leave `sync_graph_with_stage_files` serving the old criteria forever. (An earlier version of this section described a 6-step flow ending at "atomic rename plan file", omitting the stage-file write.)
+**The write set is TWO files, not one — this is the trap.** Under the lock, an amendment writes the snapshot, appends the audit row, replaces the live plan file via `safe_replace_outside_workdir`, **and rewrites the target stage's `.loom/work/stages/<n>-<id>.md`**. The last step is not optional: `plan/graph/loader.rs` prefers `.loom/work/stages/` over the plan file, so amending only the plan would leave `sync_graph_with_stage_files` serving the old criteria forever.
 
 The proposed value is deserialized into the **real** `AcceptanceCriterion` / `WiringCheck` types before anything is written, so a malformed patch fails fast rather than corrupting the plan. A per-stage cap (default 3, `loom.adjudication.max_amendments_per_stage`) bounds runaway adjudication.
 
 **Recovery** — `verify_plan_versions_consistency()`, called from orchestrator startup, handles three divergences:
 
 | On disk                                 | Action                                                             |
-| ---------------------------------------- | -------------------------------------------------------------------- |
+| --------------------------------------- | ------------------------------------------------------------------ |
 | Snapshot written, audit row missing     | Orphaned snapshot — removed so the next amendment can claim the id |
 | Audit row appended, plan file still old | Re-apply the snapshot to plan + stage file (catch-up commit)       |
 | Plan + audit in sync, stage file stale  | Re-apply just the stage-file update                                |
@@ -123,13 +123,13 @@ default 1) and every v2 behaviour reads it; nothing reads the plan file at run t
 
 **v2 fields** (types in `plan/schema/types_v2.rs`, re-exported through `plan/schema/mod.rs`'s explicit list):
 
-| Field | On | Meaning |
-| --- | --- | --- |
-| `contracts: [{id, file, test, runner?, scenario, rejects}]` | stage | tests written and frozen before implementation (`architecture/contract-phase.md`); `id` is `^[a-z0-9][a-z0-9-]*$` and unique in the stage |
-| `harness: [glob]` | stage | extra files the contract writer may edit; frozen with the contracts |
-| `reachable: [{symbol, from, min_confidence?, description}]` | stage | the new unit must be reached from an entry point (`architecture/verification-v2-gates.md`) |
-| `wiring[].literal: bool` | wiring check | escape the pattern before matching; `source` may be a glob |
-| `ratchet_files: [path]` | plan (`LoomConfig`), copied onto every `Stage` | exact checkout-relative baseline or ledger files; any change raises `TI-ratchet` |
+| Field                                                       | On                                             | Meaning                                                                                                                                   |
+| ----------------------------------------------------------- | ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
+| `contracts: [{id, file, test, runner?, scenario, rejects}]` | stage                                          | tests written and frozen before implementation (`architecture/contract-phase.md`); `id` is `^[a-z0-9][a-z0-9-]*$` and unique in the stage |
+| `harness: [glob]`                                           | stage                                          | extra files the contract writer may edit; frozen with the contracts                                                                       |
+| `reachable: [{symbol, from, min_confidence?, description}]` | stage                                          | the new unit must be reached from an entry point (`architecture/verification-v2-gates.md`)                                                |
+| `wiring[].literal: bool`                                    | wiring check                                   | escape the pattern before matching; `source` may be a glob                                                                                |
+| `ratchet_files: [path]`                                     | plan (`LoomConfig`), copied onto every `Stage` | exact checkout-relative baseline or ledger files; any change raises `TI-ratchet`                                                          |
 
 v2 validation, each an error: every `standard` stage has at least one contract and `knowledge`, `knowledge-distill`
 and `integration-verify` stages have none; contract `file`, `test`, `scenario`, `rejects` non-empty; `file`,
@@ -144,15 +144,15 @@ a flattened sub-struct or a moved unit, not a ledger raise (the dispute counters
 is v2 and the lint is `error_in_v2`, else a structural warning (so `--strict` fails on it). `plan verify` has no
 side effects: no cache or index writes, no builds. Commands are lexed with `validation/shell_lex.rs`.
 
-| Lint | Rule | Error in v2 |
-| --- | --- | --- |
-| unknown `loom` subcommand (`loom_subcommands.rs`) | argv[0] `loom` names a path absent from the compiled clap tree | yes, downgraded to a warning only when the calling stage or a transitive dependency touches `loom/src/cli` |
-| regex (`regex_patterns.rs`) | wiring pattern the 1 MiB-limit builder rejects; `[[`; a pattern read as a flag; `rg` (minus `-F`/`-P`/`--pcre2`/`--engine`) and `grep -E` patterns that do not compile in Rust syntax. grep BRE and PCRE are skipped: Rust syntax rejects valid BRE (`foo(`) | mixed |
-| sandbox capability (`sandbox_capability.rs`) | network binary without `allowed_domains`; a criterion needing `tmux`, `docker`, `loom map`, `loom knowledge context` | yes |
-| knowledge check (`knowledge_check.rs`) | `loom knowledge check --strict` without `--baseline` while the tree has structural issues; uses `catalog::structural_issues(root)` (`build_curated(root, false)`, evidence collector off, read-only) | yes |
-| rust filters (`rust_filters.rs`, G5) | a `cargo test` module filter whose every `::` segment is not present in the base graph (node name or path component) and that no `files:` entry could create; no base layer gives one note | no |
-| contracts (`contracts.rs`) | unknown `runner`; undetectable runner (warning: completion falls back to exit code); v2 integration-verify without an acceptance command an adapter recognises as a full run | mixed |
-| bookends (`bookends.rs`) | the plan does not have exactly one knowledge-distill stage; that stage has dependents or some stage is not its transitive ancestor (so its memory is never distilled); a standard stage is not an ancestor of any integration-verify stage (its merged code is never verified) | yes |
+| Lint                                              | Rule                                                                                                                                                                                                                                                                           | Error in v2                                                                                                |
+| ------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------- |
+| unknown `loom` subcommand (`loom_subcommands.rs`) | argv[0] `loom` names a path absent from the compiled clap tree                                                                                                                                                                                                                 | yes, downgraded to a warning only when the calling stage or a transitive dependency touches `loom/src/cli` |
+| regex (`regex_patterns.rs`)                       | wiring pattern the 1 MiB-limit builder rejects; `[[`; a pattern read as a flag; `rg` (minus `-F`/`-P`/`--pcre2`/`--engine`) and `grep -E` patterns that do not compile in Rust syntax. grep BRE and PCRE are skipped: Rust syntax rejects valid BRE (`foo(`)                   | mixed                                                                                                      |
+| sandbox capability (`sandbox_capability.rs`)      | network binary without `allowed_domains`; a criterion needing `tmux`, `docker`, `loom map`, `loom knowledge context`                                                                                                                                                           | yes                                                                                                        |
+| knowledge check (`knowledge_check.rs`)            | `loom knowledge check --strict` without `--baseline` while the tree has structural issues; uses `catalog::structural_issues(root)` (`build_curated(root, false)`, evidence collector off, read-only)                                                                           | yes                                                                                                        |
+| rust filters (`rust_filters.rs`, G5)              | a `cargo test` module filter whose every `::` segment is not present in the base graph (node name or path component) and that no `files:` entry could create; no base layer gives one note                                                                                     | no                                                                                                         |
+| contracts (`contracts.rs`)                        | unknown `runner`; undetectable runner (warning: completion falls back to exit code); v2 integration-verify without an acceptance command an adapter recognises as a full run                                                                                                   | mixed                                                                                                      |
+| bookends (`bookends.rs`)                          | the plan does not have exactly one knowledge-distill stage; that stage has dependents or some stage is not its transitive ancestor (so its memory is never distilled); a standard stage is not an ancestor of any integration-verify stage (its merged code is never verified) | yes                                                                                                        |
 
 **Stage `model` is an allowlist.** `StageDefinition.model` (`plan/schema/types.rs`) is parsed by `deserialize_stage_model` (`plan/schema/types_v2.rs`), which accepts only the `crate::claude::CLAUDE_MODELS` aliases (`haiku`, `sonnet`, `opus`, `fable`), so a typo fails when the plan is parsed rather than at spawn.
 
@@ -162,9 +162,9 @@ stage runs. The downgrade above resolves it; testing an independent stage's typo
 `loom` on `PATH` can predate a merge: `loom project detect` printed "unrecognized subcommand" from a checkout
 that contains it.
 
-**The D4 "Rustc wrapper" lint was dropped.** It warned on every cargo plan whenever sccache was installed and
-`LOOM_SCCACHE` unset, but loom withholds `RUSTC_WRAPPER` from sandboxed sessions that cannot run it
-(`build_cache::sccache_usable_in`), so the lint fired for a failure that cannot occur and made
+**There is no D4 "Rustc wrapper" lint.** Warning on every cargo plan whenever sccache is installed and
+`LOOM_SCCACHE` unset would be wrong, because loom withholds `RUSTC_WRAPPER` from sandboxed sessions that cannot run it
+(`build_cache::sccache_usable_in`), so the lint would fire for a failure that cannot occur and make
 `plan verify --strict loom/tests/fixtures/plans/v2-valid.md` fail on any host with `/usr/bin/sccache`.
 
 **Authoring rules learned from the merged tree** (also in `skills/loom-plan-writer/references/v2-contracts.md`):
@@ -182,19 +182,19 @@ absent from every stage worktree: a plan whose briefs cite a doc commits it with
 - **Snapshot, never the live plan.** `loom init` copies the entries into the work directory's config file under `[plan_provision]`, beside `[plan_sandbox]` (`orchestrator/provision.rs::persist_plan_snapshots`, called from `commands/init/plan_setup.rs::initialize_with_plan`). The spawn gate reads only that copy: a stage's sandbox may write `doc/**`, plan files are not merge-gate control paths, and provision runs on the host, so reading the live plan would let a merged stage edit run host commands. To change entries mid-run the operator edits `[plan_provision]` and runs `loom stage retry <id>`.
 - **Where it runs.** `orchestrator/core/stage_executor.rs::start_stage` calls `pre_spawn_gates_passed`: the `before_stage` checks run on the pristine worktree FIRST, then `core/provision_gate.rs` provisions (`find_prior_stage_work` skips the before-stage delta proof when it sees an uncommitted, non-ignored file, which a provision could write). `start_stage` is the one path by which a worktree stage leaves the queue, so a first spawn, a retry, a handoff successor and a requeue after a verdict all pass it, for standard stages (before the contract session), integration-verify and knowledge-distill. Knowledge-bootstrap, adjudication and merge sessions, adopted live sessions and the contract phase's own spawns on the same worktree (`event_handler/contract_phase.rs::spawn_on_stage_worktree`) do not.
 - **Synchronous.** The gate runs in the daemon's scheduling pass like `before_stage`: each entry may take up to `PROVISION_TIMEOUT` (600 s) and other stages' events, crashes and completions wait. `run_with_fresh_tick` runs `keep_tick_fresh` on a helper thread that stamps the tick every 10 s, with a drop guard that stops the ticker even if `run_provision` panics, so `loom status` does not report a stalled loop. The executor waits for output up to about 10 s per stream after the deadline, so a timed-out entry lives about 620 s.
-- **Ignored files only.** The gate lists `git status --porcelain -z --untracked-files=all` before and after provisioning (`split_status_entries` joins a rename or copy entry with its NUL-separated origin path). An entry that appears only afterwards blocks the stage, naming the paths and "a provision command may write only files git ignores"; such a file would otherwise count as the contract session's own non-contract edit (`contracts/freeze.rs::checked_reports`) or as prior stage work. The comparison matches entry strings, so a provision rewriting a file already listed before it ran passes. A failing listing skips the comparison with a warning.
+- **Ignored files only.** The gate lists `git status --porcelain -z --untracked-files=all` before and after provisioning (`split_status_entries` joins a rename or copy entry with its NUL-separated origin path). An entry that appears only afterwards blocks the stage, naming the paths and "a provision command may write only files git ignores"; such a file would otherwise count as the contract session's own non-contract edit (`commands/stage/contracts/freeze.rs`) or as prior stage work. The comparison matches entry strings, so a provision rewriting a file already listed before it ran passes. A failing listing skips the comparison with a warning.
 - **Failure.** A failing command or an unignored write sets `failure_info` (`InfrastructureError`, the last 10 non-blank stderr lines cut to 300 characters) as well as `close_reason`, so attention never labels it an agent block. `loom stop` mid-install leaves the command to finish; the stage is still Queued and the next spawn provisions again.
 - **Handoff successors provision too.** If the previous session edited `package.json` without updating the lockfile, `--frozen-lockfile` fails and the stage blocks with `InfrastructureError` instead of continuing.
 
 **Install hardening is a plan validation error** (`plan/schema/validation/v2_fields/provision_installs.rs`), run by `loom plan verify` and `loom init`, so no unhardened entry reaches the snapshot: an agent-written `postinstall` or a repository `.npmrc` would otherwise run on the host on the next retry or handoff.
 
-| Install | Required form |
-| --- | --- |
-| `bun install` | `--ignore-scripts --backend=copyfile --config=/dev/null` (`BUN_INSTALL`) |
-| `npm ci` / `npm install` | `--ignore-scripts` |
-| `pnpm install` | `--ignore-scripts --ignore-pnpmfile` |
-| `yarn install` | `--ignore-scripts` (classic syntax) |
-| `uv sync` | `--frozen --no-install-project` |
+| Install                  | Required form                                                            |
+| ------------------------ | ------------------------------------------------------------------------ |
+| `bun install`            | `--ignore-scripts --backend=copyfile --config=/dev/null` (`BUN_INSTALL`) |
+| `npm ci` / `npm install` | `--ignore-scripts`                                                       |
+| `pnpm install`           | `--ignore-scripts --ignore-pnpmfile`                                     |
+| `yarn install`           | `--ignore-scripts` (classic syntax)                                      |
+| `uv sync`                | `--frozen --no-install-project`                                          |
 
 Every JS install also needs the leading `.npmrc` refusal: `test ! -e .npmrc && test ! -L .npmrc && ...` as the first two commands with every top-level operator `&&` (a newline after `&&` or at the end is allowed), because `test ! -e .npmrc; npm ci` or `... || true && ...` accepts a refusal that gates nothing. `changes_directory` walks `visit_argvs` (nested scripts, wrapper-stripped argv) and rejects `cd`, `pushd` and `popd` after the refusal, since the refusal tests only the entry's working directory. The JS-provision lint suggests exactly these forms from the same constants and skips dependency-free packages (`skills::project::probe::declares_dependencies`, which reads `package.json` root-anchored through `safe_read`; a symlinked or over 256 KiB manifest counts as declaring dependencies).
 
@@ -219,14 +219,14 @@ Four checks turn plan-authoring mistakes into an error or warning at `loom plan 
 stage session spends tokens on them. All run inside `validation.rs` (`validate` for errors,
 `validate_structural_preflight` for warnings).
 
-| Check | Severity | Source | Catches |
-| --- | --- | --- | --- |
-| Declared skills | error / warning | `structural_checks/declared_skills.rs` | a stage `skills:` list with an empty name, a duplicate, or a name absent from the skill index; a warning when no index can be loaded |
-| Host paths | error | `host_paths.rs`, `host_paths/commands.rs` | an ephemeral (`/tmp`) `allow_write` grant, an absolute grant missing on the host, a `setup` `mkdir`/`touch`/redirect aimed outside the worktree, a `TMPDIR=` override |
-| Criterion hazards | error / warning | `validation/criterion_hazards.rs` | see below |
-| Base-tree evaluation | warning (`baseline` bucket) | `validation/base_tree.rs` | a criterion that already passes at HEAD |
+| Check                | Severity                    | Source                                    | Catches                                                                                                                                                               |
+| -------------------- | --------------------------- | ----------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Declared skills      | error / warning             | `structural_checks/declared_skills.rs`    | a stage `skills:` list with an empty name, a duplicate, or a name absent from the skill index; a warning when no index can be loaded                                  |
+| Host paths           | error                       | `host_paths.rs`, `host_paths/commands.rs` | an ephemeral (`/tmp`) `allow_write` grant, an absolute grant missing on the host, a `setup` `mkdir`/`touch`/redirect aimed outside the worktree, a `TMPDIR=` override |
+| Criterion hazards    | error / warning             | `validation/criterion_hazards.rs`         | see below                                                                                                                                                             |
+| Base-tree evaluation | warning (`baseline` bucket) | `validation/base_tree.rs`                 | a criterion that already passes at HEAD                                                                                                                               |
 
-**Declared skills.** `StageDefinition::skills` (`plan/schema/types.rs:321`) names the skills a stage's
+**Declared skills.** `StageDefinition::skills` (`plan/schema/types.rs::StageDefinition`) names the skills a stage's
 agents need. The signal renders them before detected ones (`signals/format/skills.rs`) and the worker-brief
 hook names them (`commands/hook/worker_brief.rs`), so a declared skill reaches a worker even with an empty
 context pack. `check_declared_skills(stages)` takes ONLY the stages and resolves `~/.claude/skills` plus its

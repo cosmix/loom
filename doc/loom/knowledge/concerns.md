@@ -14,10 +14,10 @@
 
 Lower layers import from higher ones:
 
-- daemon calls commands: `loom/src/daemon/server/client.rs:72` (`commands::stage::admin_proof::verify_and_consume_admin_proof`), `loom/src/daemon/server/status.rs:16` and `loom/src/daemon/protocol.rs:241` (`commands::status::data`)
-- orchestrator calls commands: `loom/src/orchestrator/core/coherence.rs:41` (`commands::stage::complete::strip_privileged_env_for_runtime`), `loom/src/orchestrator/core/inbox_drain/merge_resolved.rs:53` and `loom/src/orchestrator/core/merge_handler/resolver_exit.rs:128` (`commands::stage::complete::verify_resolved_completion`)
-- git imports orchestrator: `loom/src/git/cleanup/orphans.rs:10` (`orchestrator::merge_lifecycle::{CleanupOutcome, MergeLifecycle}`)
-- models imports plan: `loom/src/models/dispute.rs:14`, `loom/src/models/stage/types.rs:6`, `loom/src/models/stage/checks.rs:8`, `loom/src/models/stage/methods.rs:5`
+- daemon calls commands: `loom/src/daemon/server/client.rs::authorize_preface` (`commands::stage::admin_proof::verify_and_consume_admin_proof`), `loom/src/daemon/server/status.rs::collect_status` and `loom/src/daemon/protocol.rs::Response` (`commands::status::data`)
+- orchestrator calls commands: `loom/src/orchestrator/core/coherence.rs::begin_scheduling_pass` (`commands::stage::complete::strip_privileged_env_for_runtime`), `loom/src/orchestrator/core/inbox_drain/merge_resolved.rs::resolve_merge_from_inbox` and `loom/src/orchestrator/core/merge_handler/resolver_exit.rs::land_resolved_worktree` (`commands::stage::complete::verify_resolved_completion`)
+- git imports orchestrator: `loom/src/git/cleanup/orphans.rs` (`orchestrator::merge_lifecycle::{CleanupOutcome, MergeLifecycle}`)
+- models imports plan: `loom/src/models/dispute.rs`, `loom/src/models/stage/types.rs`, `loom/src/models/stage/checks.rs`, `loom/src/models/stage/methods.rs`
 
 ## Code Quality Concerns
 
@@ -110,13 +110,12 @@ Open and fixed reviewer findings on the host-verification code, one bullet per d
 
 → [Host-Verification Review Suggestions](concerns/source-graph-review-backlog.md)
 
-## Pressure and Bootstrap Gaps
+## Pressure Gaps
 
-`loom pressure` slash commands and the Codex skill ship only from a cloned-repo install (not `curl | bash`), and its
-two real-invocation smokes are manual-only. The knowledge bootstrap command inlines a stage guard it could share and
-prints a dry-run argv that cannot be pasted into a shell; repo-root resolution is duplicated in two places.
+`loom pressure`'s two real-invocation smokes are manual-only, its dry-run argv is not shell-quoted so it cannot be
+pasted into a shell, and repo-root resolution is duplicated in two places.
 
-→ [Pressure and Bootstrap Gaps](concerns/automatic-knowledge-source-graph-followups.md)
+→ [Pressure Gaps](concerns/automatic-knowledge-source-graph-followups.md)
 
 ## Execution Graph and Forward Guard Gaps
 

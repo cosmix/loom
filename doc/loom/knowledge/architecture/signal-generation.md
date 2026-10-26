@@ -1,11 +1,12 @@
 ---
 sources:
-- loom/src/telemetry/mod.rs
-- loom/src/telemetry/spool.rs
-- loom/src/commands/knowledge/telemetry.rs
-- loom/src/orchestrator/core/stage_telemetry.rs
+  - loom/src/telemetry/mod.rs
+  - loom/src/telemetry/spool.rs
+  - loom/src/commands/knowledge/telemetry.rs
+  - loom/src/orchestrator/core/stage_telemetry.rs
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
+
 # Signal Generation
 
 > Signal assembly, cache
@@ -24,16 +25,16 @@ Delegation details live in `skills/loom-orchestration/SKILL.md`. The prefix uses
 
 Shared signal blocks live in `cache/blocks.rs` and `signals/helpers.rs`.
 
-| Location | Helpers and responsibility |
-| --- | --- |
-| `cache/blocks.rs` | `append_path_boundaries`, `append_isolation_boundaries_simple`: confinement |
-| `cache/blocks.rs` | `append_execution_rules_header`: binding rules pointer and knowledge/source navigation |
-| `cache/blocks.rs` | `append_no_verify_block`, `append_subagent_ceiling_block`: pinned worker contracts |
-| `cache/blocks.rs` | `append_adversarial_review`: six review dimensions for code-producing stages |
-| `cache/blocks.rs` | `append_review_dimension_details`: integration-verification dimensions |
+| Location          | Helpers and responsibility                                                                                                                                      |
+| ----------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `cache/blocks.rs` | `append_path_boundaries`, `append_isolation_boundaries_simple`: confinement                                                                                     |
+| `cache/blocks.rs` | `append_execution_rules_header`: binding rules pointer and knowledge/source navigation                                                                          |
+| `cache/blocks.rs` | `append_no_verify_block`, `append_subagent_ceiling_block`: pinned worker contracts                                                                              |
+| `cache/blocks.rs` | `append_adversarial_review`: six review dimensions for code-producing stages                                                                                    |
+| `cache/blocks.rs` | `append_review_dimension_details`: integration-verification dimensions                                                                                          |
 | `cache/blocks.rs` | `append_gate_completion_header`: opens a standard stage's `**Completion:**` list with `ORCHESTRATOR_GATE`, which makes the orchestrator's `loom check` the gate |
-| `helpers.rs` | `append_commit_timing_rules`, `append_completion_rules`, `append_settled_completion_rules`: completion ordering |
-| `helpers.rs` | `append_knowledge_commit_header`, `append_knowledge_commit_bullet`, `append_knowledge_mission`: knowledge workflow |
+| `helpers.rs`      | `append_commit_timing_rules`, `append_completion_rules`, `append_settled_completion_rules`: completion ordering                                                 |
+| `helpers.rs`      | `append_knowledge_commit_header`, `append_knowledge_commit_bullet`, `append_knowledge_mission`: knowledge workflow                                              |
 
 Call helpers explicitly from the intended prefix generators. Keep pinned worker blocks identical across their delivery surfaces; the doctrine tests enforce that contract. Standard and IntegrationVerify receive adversarial review; Knowledge and KnowledgeDistill do not. The recovery formatter embeds `stable_prefix_for(stage.stage_type)`, preserving the same selection on resume. The removed staging, anti-slop and subagent-restriction helpers are not extension points.
 
@@ -116,7 +117,7 @@ to a per-worktree spool (`telemetry/spool.rs`, `.loom/telemetry-spool.jsonl`) th
 drains into the canonical event file.
 
 `ContextDelivered`/`ContextUnavailable` are written by `orchestrator/core/stage_telemetry.rs`
-(called from `stage_executor.rs:570`), deriving their fields from the `DeliveryRecord` signal
+(called from `orchestrator/core/stage_spawn.rs`), deriving their fields from the `DeliveryRecord` signal
 generation already wrote — no second retrieval. `loom knowledge telemetry`
 (`commands/knowledge/telemetry.rs`) is `read_events`'s production caller: it summarizes every event
 kind per stage (briefs, prompt briefs emitted/abstained with the top abstain reason, pulls with
@@ -131,7 +132,7 @@ Changes per **stage type**, not per session. Sub-sections, in order:
 - **Knowledge Brief**: the stage's retrieved pack (`format/brief.rs::format_stage_brief`), only when retrieval selected anything; its footer names `loom knowledge context --stage <id> --query "<question>" --budget-tokens <n>`.
 - **Reminder box**: Knowledge and KnowledgeDistill stages get "KNOWLEDGE UPDATES REQUIRED" (`append_knowledge_updates_required_box`). Standard and IntegrationVerify stages get no box; their memory reminder sits in `## Stage Memory`.
 - **`## Knowledge Management`** (Knowledge, KnowledgeDistill): with `knowledge_tree_empty` a "KNOWLEDGE BASE IS EMPTY" warning and the exploration order, otherwise "Extend the knowledge base as you work"; then the `loom knowledge update` command table. KnowledgeDistill adds `loom review` and the DOCUMENTATION UPDATE REQUIRED box.
-- **`## Stage Memory`** (Standard, IntegrationVerify): the SESSION MEMORY REQUIRED table (`mistake:`, `found:` and `gotcha:` notes, decisions, changes, questions, with `--evidence`), "NEVER use 'loom knowledge' in this stage — knowledge-distill curates memory into knowledge." and the auto-memory prohibition (`format_semi_stable_section`, `sections.rs:199`).
+- **`## Stage Memory`** (Standard, IntegrationVerify): the SESSION MEMORY REQUIRED table (`mistake:`, `found:` and `gotcha:` notes, decisions, changes, questions, with `--evidence`), "NEVER use 'loom knowledge' in this stage — knowledge-distill curates memory into knowledge." and the auto-memory prohibition (`format_semi_stable_section` in `orchestrator/signals/format/sections.rs`).
 - **Codex implementers** (`format/codex.rs::format_codex_implementers_section`): only when `implementers` includes codex.
 - **`## Ultracode Mode`**: only when `embedded_context.ultracode`. It licenses the Workflow tool and states that Workflow fan-out spawns Claude subagents only: the codex lane (`gpt-5.6-terra`/`gpt-6-luna`) is not addressable from a Workflow script, so on a stage licensed for both, codex-tier work goes through ordinary `loom-codex-forwarder` Agent spawns outside the Workflow.
 - **Sandbox restrictions** (`format/sandbox_section.rs::format_sandbox_section`): when a sandbox summary exists. With the sandbox enabled it always carries `append_package_cache_note()`, the package-manager-cache carve-out, after the filesystem deny/allow-write block and before the network section.
@@ -218,7 +219,7 @@ plans locate it by path (`test -f tests/signal_replay.rs` from `loom/`); a grep 
   `resident_estimate` multiplies bytes by the recorded requests after the admission point and is
   an estimate, not a measurement.
 - **Baseline.** On this tree the total reads `signal_bytes=214337 file_bytes=227124
-  brief_bytes=26569 asset_bytes=1619933 resident_estimate=19651501`; the usage-evidence plan
+brief_bytes=26569 asset_bytes=1619933 resident_estimate=19651501`; the usage-evidence plan
   changed no signal content, so the number was the same before and after it.
 - **Known limits.** Signals render with the real `HOME` while `worker-brief` runs with an
   isolated one, so developer-level config could shift byte counts between machines even though

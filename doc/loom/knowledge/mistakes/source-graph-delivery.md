@@ -114,7 +114,7 @@ script silently tested `/path` as absent, and a review round caught it.
 ## A Command Was Described From a Stale Doc Comment
 
 **What happened:** the user was told `loom stage complete --no-verify` marks a stage `CompletedWithFailures`, from the doc
-comment at `complete.rs:311`. The code (`complete.rs:694-742`) calls `try_complete`, and the daemon merges and triggers
+comment in `commands/stage/complete.rs`. The code path calls `try_complete`, and the daemon merges and triggers
 dependents.
 
 **Why:** the answer came from a comment without reading the branch.

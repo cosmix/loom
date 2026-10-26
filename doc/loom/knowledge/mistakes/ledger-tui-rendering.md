@@ -1,5 +1,6 @@
 ---
 ---
+
 # Ledger Tui Rendering
 
 > Ledger TUI rendering bugs
@@ -31,7 +32,7 @@ cells) as example acceptance content, which the column's own truncation rule can
 and example content, check the example actually fits before writing it into an acceptance criterion.
 
 **Two latent panics/overflows shipped with no test reaching them.** `commands/status/ui/tui/ledger/header.rs` collects
-`crate::LOGO.lines()` into a `Vec` and indexes `logos[0..3]`; `LOGO` (`loom/src/lib.rs:36`) happens to have
+`crate::LOGO.lines()` into a `Vec` and indexes `logos[0..3]`; `LOGO` (`loom/src/lib.rs::LOGO`) happens to have
 exactly four lines today, so shortening the banner would panic the dashboard at render time — prefer
 `logos.get(n).copied().unwrap_or("")`. And `commands/status/ui/tui/state.rs` did `self.scroll_y + delta as u16` while
 the sibling negative-delta branch two lines above correctly saturates; only reachable above ~32768
@@ -45,9 +46,9 @@ today — search for the sibling branch, don't just fix the one that was reporte
 executing stage, for the whole of the run, and only jumped to a real number once the stage finished.
 
 **Why:** `Stage::execution_secs` is a bank, not a clock. `begin_attempt`
-(`loom/src/models/stage/methods.rs:573`) seeds it to `Some(0)`, and only `accumulate_attempt_time`
-(`methods.rs:585`) credits an attempt's seconds — when that attempt ENDS, on completion, crash or
-handoff. `time_cell` (`loom/src/commands/status/ui/tui/ledger/cells.rs:301`) rendered
+(`loom/src/models/stage/methods.rs::begin_attempt`) seeds it to `Some(0)`, and only `accumulate_attempt_time`
+(`models/stage/methods.rs::accumulate_attempt_time`) credits an attempt's seconds — when that attempt ENDS, on completion, crash or
+handoff. `time_cell` (`loom/src/commands/status/ui/tui/ledger/cells.rs::time_cell`) rendered
 `execution_secs.or(elapsed_secs)`, and because the frozen value is `Some(0)` rather than `None`, the
 `elapsed_secs` fallback could never fire. A regression from cad9ee4b: the tree renderer the ledger
 replaced computed executing time as `now - started_at`, which ticked.

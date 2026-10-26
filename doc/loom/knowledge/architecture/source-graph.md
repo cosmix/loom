@@ -1,9 +1,10 @@
 ---
 sources:
-- loom/src/context/refresh/source_graph.rs
-- loom/src/context/graph_store/mod.rs
+  - loom/src/context/refresh/source_graph.rs
+  - loom/src/context/graph_store/mod.rs
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
+
 # Source Graph
 
 > Source graph contract
@@ -14,10 +15,10 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 tree-sitter-backed graph of the repository's own source: file and symbol nodes
 plus edges between them. It has **two** production consumers, and both are live:
 
-| Consumer | Route in | What it reads |
-| --- | --- | --- |
-| `loom map` (`--outline`, `--find-all`, `--impact`, `--callers`, `--callees`, `--references`, `--window`, `--census`, `--eval-edges`) | `context::graph_store` and the resolved view (`context::view`) | the resolved graph, rendered as read-only views |
-| the `Source` retrieval channel | `context::rank_source` → `fuse` → `pack` | symbol nodes, scored and fused with knowledge chunks into one `ContextPack` |
+| Consumer                                                                                                                             | Route in                                                       | What it reads                                                               |
+| ------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------- | --------------------------------------------------------------------------- |
+| `loom map` (`--outline`, `--find-all`, `--impact`, `--callers`, `--callees`, `--references`, `--window`, `--census`, `--eval-edges`) | `context::graph_store` and the resolved view (`context::view`) | the resolved graph, rendered as read-only views                             |
+| the `Source` retrieval channel                                                                                                       | `context::rank_source` → `fuse` → `pack`                       | symbol nodes, scored and fused with knowledge chunks into one `ContextPack` |
 
 The ranking design behind the second consumer is in
 `architecture/context-retrieval.md`. The failure class it closed, a store nothing
@@ -25,12 +26,12 @@ reads, is in `mistakes/store-without-consumer.md`.
 
 Nobody builds this graph by hand. `loom init` and `loom run`
 publish a base layer through `advisory_source_graph_preflight`, and every stage's
-overlay is reconciled just before its signal is written — see *Lifecycle* below.
+overlay is reconciled just before its signal is written — see _Lifecycle_ below.
 
 Types live in `context/source_graph/` (not `context/schema.rs`) because the graph
 is a distinct domain from the knowledge corpus; `schema.rs` re-exports the public
 names, so callers may reach them through either path
-(`context/source_graph/mod.rs:8-12`). A plan that names `schema.rs` as the home
+(the module doc of `context/source_graph/mod.rs`). A plan that names `schema.rs` as the home
 of `SourceNode`/`SourceEdge` is naming the re-export — run
 `rg -n "pub struct <Type>" loom/src/` before opening the file a plan points at.
 
@@ -43,15 +44,15 @@ edge to `UNRESOLVED_TARGET` (`"<unresolved>"`), never silently dropped and never
 an invented destination. Consumers that render or traverse the graph **must surface
 provenance and confidence rather than flattening them away**.
 
-| Class (`as_str`) | Meaning | Confidence constant |
-| --- | --- | --- |
-| `Structural` (`structural`) | containment: both endpoints are declarations the grammar placed in one file | `STRUCTURAL_CONFIDENCE = 1.0` |
-| `Compiler` (`compiler`) | bound by a compiler or language server; reserved, **nothing emits it** | ceiling `1.0` |
-| `Receiver` (`receiver`) | a `self`/`this`/`Self`/`$this`/`static` call bound to a member of the enclosing type | `RECEIVER_CONFIDENCE = 0.85` |
-| `Import` (`import`) | bound through an import, alias, module-qualified path or package/namespace scope to exactly one definition | `IMPORT_CONFIDENCE = 0.85` |
-| `LocalName` (`local-name`) | same-file spelling with exactly one eligible definition | `LOCAL_NAME_CONFIDENCE = 0.8` |
-| `UniqueName` (`unique-name`) | the only same-family definition of the name, no stronger evidence, no refusal rule firing | `UNIQUE_NAME_CONFIDENCE = 0.6` |
-| `Syntax` (`syntax`) | captured at a site; target unresolved or ambiguous | calls `0.3`, imports and references `0.5` (`syntax_confidence(kind)`); ceiling `MAX_SYNTAX_CONFIDENCE = 0.5` |
+| Class (`as_str`)             | Meaning                                                                                                    | Confidence constant                                                                                          |
+| ---------------------------- | ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `Structural` (`structural`)  | containment: both endpoints are declarations the grammar placed in one file                                | `STRUCTURAL_CONFIDENCE = 1.0`                                                                                |
+| `Compiler` (`compiler`)      | bound by a compiler or language server; reserved, **nothing emits it**                                     | ceiling `1.0`                                                                                                |
+| `Receiver` (`receiver`)      | a `self`/`this`/`Self`/`$this`/`static` call bound to a member of the enclosing type                       | `RECEIVER_CONFIDENCE = 0.85`                                                                                 |
+| `Import` (`import`)          | bound through an import, alias, module-qualified path or package/namespace scope to exactly one definition | `IMPORT_CONFIDENCE = 0.85`                                                                                   |
+| `LocalName` (`local-name`)   | same-file spelling with exactly one eligible definition                                                    | `LOCAL_NAME_CONFIDENCE = 0.8`                                                                                |
+| `UniqueName` (`unique-name`) | the only same-family definition of the name, no stronger evidence, no refusal rule firing                  | `UNIQUE_NAME_CONFIDENCE = 0.6`                                                                               |
+| `Syntax` (`syntax`)          | captured at a site; target unresolved or ambiguous                                                         | calls `0.3`, imports and references `0.5` (`syntax_confidence(kind)`); ceiling `MAX_SYNTAX_CONFIDENCE = 0.5` |
 
 The constants live in `context/source_graph/mod.rs`, each with a docstring stating that
 the number is an evidence ranking, not a calibrated probability. Only `Structural` (and
@@ -93,7 +94,7 @@ gives `b`). `path` is lossless: C/C++ `#include <x>` keeps its `<` and is extern
 The ceiling discipline is the reusable idea: when a component's view of the world is
 structurally narrower than the claim it is asked to make, encode the gap as a numeric ceiling
 in a named constant with the reasoning in its docstring, not as a comment at the call site.
-A unique *name* match is still not a parse: two unrelated crates can define one name, and a
+A unique _name_ match is still not a parse: two unrelated crates can define one name, and a
 graph that omits a file omits its definitions too, so "the only match I can see" is not "the
 only match". Resolution only ever raises confidence with evidence.
 
@@ -120,19 +121,19 @@ A `DialectSpec` carries `id` (equals `NodeLanguage::as_str()`), `language`, `fam
 `Lookup::{Extractor, Gap, Unknown}`; `extract_file`, `parser_version_matches`,
 `layer_is_current`, the `worktree_graph` scan and `verify/goal_backward` all call it.
 
-| id | family | extensions | grammar | pack |
-| --- | --- | --- | --- | --- |
-| `rust` | rust | `rs` | `tree-sitter-rust 0.24.2` | Core |
-| `typescript` / `tsx` | ecmascript | `ts,mts,cts` / `tsx` | `tree-sitter-typescript 0.23.2` | Core |
-| `javascript` | ecmascript | `js,mjs,cjs,jsx` | `tree-sitter-javascript 0.25.0` | Core |
-| `python` | python | `py,pyi` | `tree-sitter-python 0.25.0` | Core |
-| `go` | go | `go` | `tree-sitter-go 0.25.0` | Core |
-| `java` | java | `java` | `tree-sitter-java 0.23.5` | WaveB |
-| `csharp` | csharp | `cs` | `tree-sitter-c-sharp 0.23.5` | WaveB |
-| `ruby` | ruby | `rb,rake,gemspec` | `tree-sitter-ruby 0.23.1` | WaveB |
-| `php` | php | `php` | `tree-sitter-php 0.24.2` | WaveB |
-| `c` | c | `c` | `tree-sitter-c 0.24.2` | WaveC |
-| `cpp` | c | `cc,cpp,cxx,hh,hpp,hxx,h` | `tree-sitter-cpp 0.23.4` | WaveC |
+| id                   | family     | extensions                | grammar                         | pack  |
+| -------------------- | ---------- | ------------------------- | ------------------------------- | ----- |
+| `rust`               | rust       | `rs`                      | `tree-sitter-rust 0.24.2`       | Core  |
+| `typescript` / `tsx` | ecmascript | `ts,mts,cts` / `tsx`      | `tree-sitter-typescript 0.23.2` | Core  |
+| `javascript`         | ecmascript | `js,mjs,cjs,jsx`          | `tree-sitter-javascript 0.25.0` | Core  |
+| `python`             | python     | `py,pyi`                  | `tree-sitter-python 0.25.0`     | Core  |
+| `go`                 | go         | `go`                      | `tree-sitter-go 0.25.0`         | Core  |
+| `java`               | java       | `java`                    | `tree-sitter-java 0.23.5`       | WaveB |
+| `csharp`             | csharp     | `cs`                      | `tree-sitter-c-sharp 0.23.5`    | WaveB |
+| `ruby`               | ruby       | `rb,rake,gemspec`         | `tree-sitter-ruby 0.23.1`       | WaveB |
+| `php`                | php        | `php`                     | `tree-sitter-php 0.24.2`        | WaveB |
+| `c`                  | c          | `c`                       | `tree-sitter-c 0.24.2`          | WaveC |
+| `cpp`                | c          | `cc,cpp,cxx,hh,hpp,hxx,h` | `tree-sitter-cpp 0.23.4`        | WaveC |
 
 Resolution never binds across **families**: `ecmascript` joins TypeScript, TSX and JavaScript,
 `c` joins C and C++, every other dialect is its own family. `.h` belongs to `cpp` because the C++
@@ -248,21 +249,21 @@ is what makes keeping those entries safe.
 `FileCoverage` (`context/source_graph/node.rs`) records why a file got less than full
 treatment. No path silently disappears (the `context::extract` module doc):
 
-| Situation | Result |
-| --- | --- |
-| no dialect for the extension (`Lookup::Unknown`) | file node, `FileCoverage::LexicalOnly` |
-| dialect known, pack not compiled or no extractor (`Lookup::Gap`) | file node, `LexicalOnly`, named detail |
-| file over `MAX_EXTRACTED_FILE_BYTES` (512 KiB) | file node, `FileCoverage::Oversized` |
-| grammar reports a syntax error | file node, `FileCoverage::ParseError`, no symbol nodes |
-| a `@definition.*` match had no `@name` | named definitions still emitted, `FileCoverage::Partial` |
-| `source-graph` cargo feature disabled | file node, `FileCoverage::LexicalOnly` |
-| unreadable file | entry with no nodes and an empty `content_hash`, `LexicalOnly` ("unreadable: …"), see `unreadable_entry` |
-| file deleted in the working tree | overlay tombstone with no nodes, `FileCoverage::Deleted` |
+| Situation                                                        | Result                                                                                                   |
+| ---------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------- |
+| no dialect for the extension (`Lookup::Unknown`)                 | file node, `FileCoverage::LexicalOnly`                                                                   |
+| dialect known, pack not compiled or no extractor (`Lookup::Gap`) | file node, `LexicalOnly`, named detail                                                                   |
+| file over `MAX_EXTRACTED_FILE_BYTES` (512 KiB)                   | file node, `FileCoverage::Oversized`                                                                     |
+| grammar reports a syntax error                                   | file node, `FileCoverage::ParseError`, no symbol nodes                                                   |
+| a `@definition.*` match had no `@name`                           | named definitions still emitted, `FileCoverage::Partial`                                                 |
+| `source-graph` cargo feature disabled                            | file node, `FileCoverage::LexicalOnly`                                                                   |
+| unreadable file                                                  | entry with no nodes and an empty `content_hash`, `LexicalOnly` ("unreadable: …"), see `unreadable_entry` |
+| file deleted in the working tree                                 | overlay tombstone with no nodes, `FileCoverage::Deleted`                                                 |
 
 `FileCoverage::Full` means the configured syntax pass completed without unnamed definition
 matches. It does **not** mean the call graph is exhaustive. `Deleted` records a deletion rather
 than a degraded extraction, and only an overlay carries it (see [Source Graph Build](source-graph-build.md)). A
-degraded file is *reported as degraded*, never omitted; when you add an extractor, test the
+degraded file is _reported as degraded_, never omitted; when you add an extractor, test the
 degraded paths, because the happy path fails loudly and the degraded paths fail silently.
 
 `context::coverage::CoverageReport` (`context/coverage/{mod.rs,dialects.rs}`) aggregates it and
@@ -292,11 +293,11 @@ degrade retrieval, never block a run.
 **One decision path: `ensure_snapshot(store, graph_store, project_root, policy)`**
 (`context/refresh/snapshot.rs`). It inspects the working tree once, then:
 
-| `SnapshotPolicy` | Does |
-| --- | --- |
-| `BaseOnly` | ensure the base for `HEAD` |
-| `LocalCurrent` | ensure the base for `HEAD`; when the tree is dirty (its generation differs from `clean_generation(HEAD)`), also bring the checkout's `_local` overlay (`local_overlay_key`) current |
-| `StageOverlay { plan, stage }` | bring that stage's overlay current; no base publish |
+| `SnapshotPolicy`               | Does                                                                                                                                                                                |
+| ------------------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BaseOnly`                     | ensure the base for `HEAD`                                                                                                                                                          |
+| `LocalCurrent`                 | ensure the base for `HEAD`; when the tree is dirty (its generation differs from `clean_generation(HEAD)`), also bring the checkout's `_local` overlay (`local_overlay_key`) current |
+| `StageOverlay { plan, stage }` | bring that stage's overlay current; no base publish                                                                                                                                 |
 
 A base for `HEAD` is reused when it exists and is `layer_is_current` (current schema version
 and every entry current under `entries_are_current`); a stale or corrupt base is replaced in
@@ -312,15 +313,15 @@ appending `; not persisted (cache read-only)` or `; serving stale base <rev8>`. 
 publishes or reuses a layer, `ensure_snapshot` also materializes the resolved view so the
 prompt hook never builds one on its hot path ([Source Graph Resolved View](source-graph-view.md)).
 
-| When | Call site | Policy or scope |
-| --- | --- | --- |
-| `loom init` | `commands/init/execute.rs`, via `advisory_source_graph_preflight` | `BaseOnly` |
-| `loom run` (daemon) | `commands/run/mod.rs::prepare_background_run` | `BaseOnly` |
-| `loom run --foreground` | `commands/run/foreground.rs` | `BaseOnly` |
-| `loom map`, `loom knowledge sync` | `commands/map.rs`; `refresh::semantic::try_reconcile_semantic` | `LocalCurrent` |
-| prompt-hook self-heal | `loom hook reconcile-graph` (`commands/hook/reconcile_graph.rs`), spawned detached when `wants_rebuild` says so (a stale graph, or a current one with a degraded pack); guarded by a lease | `HookTarget::snapshot_policy`: `StageOverlay` in a stage, `LocalCurrent` in a checkout |
-| before a stage's signal is written, and before a merge | `MergeLifecycle::reconcile_overlay`, from `stage_executor.rs` (fresh spawn), `skip_retry.rs` (recovery), `merge_handler.rs` and `progressive_complete.rs` | `reconcile_source_graph` with `Overlay { plan, stage }` |
-| after a merge | `MergeLifecycle::reconcile_base` | `reconcile_source_graph` with `Base { revision }` of the merged revision |
+| When                                                   | Call site                                                                                                                                                                                  | Policy or scope                                                                        |
+| ------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | -------------------------------------------------------------------------------------- |
+| `loom init`                                            | `commands/init/execute.rs`, via `advisory_source_graph_preflight`                                                                                                                          | `BaseOnly`                                                                             |
+| `loom run` (daemon)                                    | `commands/run/mod.rs::prepare_background_run`                                                                                                                                              | `BaseOnly`                                                                             |
+| `loom run --foreground`                                | `commands/run/foreground.rs`                                                                                                                                                               | `BaseOnly`                                                                             |
+| `loom map`, `loom knowledge sync`                      | `commands/map.rs`; `refresh::semantic::try_reconcile_semantic`                                                                                                                             | `LocalCurrent`                                                                         |
+| prompt-hook self-heal                                  | `loom hook reconcile-graph` (`commands/hook/reconcile_graph.rs`), spawned detached when `wants_rebuild` says so (a stale graph, or a current one with a degraded pack); guarded by a lease | `HookTarget::snapshot_policy`: `StageOverlay` in a stage, `LocalCurrent` in a checkout |
+| before a stage's signal is written, and before a merge | `MergeLifecycle::reconcile_overlay`, from `stage_executor.rs` (fresh spawn), `skip_retry.rs` (recovery), `merge_handler.rs` and `progressive_complete.rs`                                  | `reconcile_source_graph` with `Overlay { plan, stage }`                                |
+| after a merge                                          | `MergeLifecycle::reconcile_base`                                                                                                                                                           | `reconcile_source_graph` with `Base { revision }` of the merged revision               |
 
 `advisory_source_graph_preflight(repo_root, work_dir)` (`commands/run/checks.rs`)
 never returns a `Result`, so it cannot bail startup: it prints the `describe()` line

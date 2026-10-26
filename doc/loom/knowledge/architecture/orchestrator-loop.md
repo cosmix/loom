@@ -1,12 +1,13 @@
 ---
 ---
+
 # Orchestrator Loop
 
 > Tick order, liveness
 
 ## Orchestrator Main-Loop Tick Sequence (Exact Call Order)
 
-The runtime loop lives in `loom/src/orchestrator/core/run.rs`. `run_tick` (lines 77–109) executes the following sequence; `poll_run_events` (lines 111–124) then handles monitor events in automatic mode.
+The runtime loop lives in `loom/src/orchestrator/core/run.rs`. `run_tick` executes the following sequence; `poll_run_events` then handles monitor events in automatic mode.
 
 ```text
 1. check_target_guard()
@@ -18,15 +19,17 @@ The runtime loop lives in `loom/src/orchestrator/core/run.rs`. `run_tick` (lines
 7. spawn_merge_resolution_sessions()
 8. drain_stage_spools()
 9. drain_session_inboxes()
-10. sweep_merged_leftovers()
-11. hand_off_frozen_contract_phases()
-12. start_ready_stages()
-13. monitor.poll() → handle_events() [automatic mode]
+10. tick_host_jobs()
+11. sweep_merged_leftovers()
+12. dispute_refused_freezes()
+13. hand_off_frozen_contract_phases()
+14. start_ready_stages()
+15. monitor.poll() → handle_events() [automatic mode]
 ```
 
 The constructor and configuration live in `core/orchestrator.rs`; that file does not own the loop. Worker draining is not a separate call in this sequence. Verdicts are applied before scheduling, so a stage re-queued by a verdict can start in the same tick. Spools, inboxes, and frozen-contract handoff also run in manual mode.
 
-`initialize_run` (lines 45–73) validates state, starts the target guard, reconciles and synchronizes stages, recovers orphaned sessions, refreshes readiness, synchronizes queued stages, checks disputes, applies verdicts, spawns merge resolvers, and sweeps leftovers. `wait_for_next_tick` uses the configured poll interval with 100 ms shutdown checks.
+`initialize_run` validates state, starts the target guard, reconciles and synchronizes stages, recovers orphaned sessions, refreshes readiness, synchronizes queued stages, checks disputes, applies verdicts, spawns merge resolvers, and sweeps leftovers. `wait_for_next_tick` uses the configured poll interval with 100 ms shutdown checks.
 
 ## Monitor Subsystem (orchestrator/monitor/)
 

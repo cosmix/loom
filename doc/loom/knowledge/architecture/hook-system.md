@@ -1,13 +1,14 @@
 ---
 sources:
-- loom/src/hooks/mod.rs
-- loom/src/hooks/generator.rs
-- loom/src/hooks/config.rs
-- loom/src/fs/permissions/hooks.rs
-- loom/src/fs/permissions/codex_hooks.rs
-- loom-hooks/_common.sh
+  - loom/src/hooks/mod.rs
+  - loom/src/hooks/generator.rs
+  - loom/src/hooks/config.rs
+  - loom/src/fs/permissions/hooks.rs
+  - loom/src/fs/permissions/codex_hooks.rs
+  - loom-hooks/_common.sh
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
+
 # Hook System
 
 > Hook embedding, SessionStart
@@ -21,13 +22,13 @@ The `loom/src/hooks/` module provides Claude Code hooks integration for session 
 **Global vs session hooks distinction:**
 
 - **Global hooks** include commit filtering, Git-add protection, Bash isolation, the canonical five-tool file guard, plan-path protection, `prefer-modern-tools.sh`, and the forwarding guard. They are installed under `~/.claude/hooks/loom/` and registered by `fs/permissions/hooks.rs`, so they persist across sessions. `prefer-modern-tools.sh` lives here as a global `PreToolUse:Bash` hook (`fs/permissions/hooks/config.rs`) — there is no `PreferModernTools` `HookEvent` variant (deleted); it never was one of the session hooks below.
-- **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh, subagent-start.sh, subagent-stop.sh, teammate-idle.sh): generated fresh per-session by `loom/src/hooks/generator.rs:generate_hooks_settings()` from the **8** `HookEvent`s that `HooksConfig::to_settings_hooks()` (`loom/src/hooks/config.rs`) emits, derived by iterating `HookEvent::all()` rather than eight hand-written blocks. Written into the per-session settings capsule (`<work_dir>/capsules/<session-id>.settings.json`) that every session kind launches with `--settings`; `contents.rs` sets `settings["hooks"]` (`loom/src/orchestrator/terminal/native/session_settings/contents.rs:132`). No session loads a `settings.local.json`. `TeammateIdle` (`teammate-idle.sh`) was added for agent-team teammates, which never fire `SubagentStop`; it writes nonterminal idle evidence through the same shared lifecycle-journal/heartbeat helpers (`loom-hooks/_lifecycle.sh`) that `subagent-stop.sh` uses.
+- **Session hooks** (session-start.sh, post-tool-use.sh, pre-compact.sh, session-end.sh, learning-validator.sh, subagent-start.sh, subagent-stop.sh, teammate-idle.sh): generated fresh per-session by `loom/src/hooks/generator.rs:generate_hooks_settings()` from the **8** `HookEvent`s that `HooksConfig::to_settings_hooks()` (`loom/src/hooks/config.rs`) emits, derived by iterating `HookEvent::all()` rather than eight hand-written blocks. Written into the per-session settings capsule (`<work_dir>/capsules/<session-id>.settings.json`) that every session kind launches with `--settings`; `contents.rs` sets `settings["hooks"]` (`loom/src/orchestrator/terminal/native/session_settings/contents.rs::capsule_settings`). No session loads a `settings.local.json`. `TeammateIdle` (`teammate-idle.sh`) was added for agent-team teammates, which never fire `SubagentStop`; it writes nonterminal idle evidence through the same shared lifecycle-journal/heartbeat helpers (`loom-hooks/_lifecycle.sh`) that `subagent-stop.sh` uses.
 
 `LOOM_HOOKS` (the full inventory: session hooks, global `PreToolUse` guards, compatibility bridges, and sourced libraries `_common.sh`/`_lifecycle.sh`/`_codex_forward.sh`/`_read_discipline.sh`/`_read_ledger.sh`/`_progress-classification.sh`/`_post-tool-heartbeat.sh`/`_subagent-preamble.txt`) is 42 rows. Earlier text said 33; the array in `fs/permissions/constants.rs` has since gained four sourced libraries plus `loom-control-complete.sh`, `loom-relay.sh`, `codex-forward-result.sh` and `teammate-idle.sh`. Claude's global `PreToolUse` registration alone is 47 entries, including `spawn-guard.sh` (Task+Agent), `read-guard.sh` (Read), and `poll-guard.sh` (Bash). Installers iterate `LOOM_HOOKS`; trigger configuration and tests remain separate registration surfaces — see [Registration Sites for a New Hook](../entry-points/hooks.md).
 
 ## Hook System — Session-Start Behavior and hookSpecificOutput Pattern
 
-### session-start.sh Behavior (Updated 2026-06-15)
+### session-start.sh Behavior
 
 - Captures stdin into a variable (not drained) using cross-platform gtimeout/timeout/cat, 1s timeout
 - Validates LOOM_STAGE_ID, LOOM_SESSION_ID, LOOM_WORK_DIR — silently exits if missing
@@ -105,10 +106,10 @@ Pinned by `loom-hooks/tests/post-tool-use-main-edit-advisory.sh` and
 
 Three-layer defense: documentation (the subagent preamble `spawn-guard.sh` prepends to every typed spawn; CLAUDE.md Rule 5), signal injection (cache.rs prefix), and hook enforcement — which is now **two** hooks, not one:
 
-| Hook                       | Enforces                                                                                                                                                                                                                |
-| -------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `commit-filter.sh`         | subagents may not run git operations; blocks AI attribution in commit messages. Matches argv TOKENS (raw-regex fallback on an unterminated quote), so quoted prose about git is not a git invocation                     |
-| `subagent-verify-guard.sh` | **still matches raw command strings** (see concerns.md). Subagents may not run project-wide build/test/lint/typecheck suites: at most one narrowly-scoped check. In a live standard stage it also blocks the main agent from an unfiltered test suite of any adapter runner; build, clippy and fmt stay allowed. Subagents of `integration-verify` stages are carved out, because that stage keeps its own gate. Ordinary sessions are never blocked (`live_loom_session`, `loom-hooks/subagent-verify-guard.sh:72-85`, needs a live `LOOM_MAIN_AGENT_PID` ancestor). Deliberately has **no opt-out env var** |
+| Hook                       | Enforces                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `commit-filter.sh`         | subagents may not run git operations; blocks AI attribution in commit messages. Matches argv TOKENS (raw-regex fallback on an unterminated quote), so quoted prose about git is not a git invocation                                                                                                                                                                                                                                                                                                                                                                                                          |
+| `subagent-verify-guard.sh` | **still matches raw command strings** (see concerns.md). Subagents may not run project-wide build/test/lint/typecheck suites: at most one narrowly-scoped check. In a live standard stage it also blocks the main agent from an unfiltered test suite of any adapter runner; build, clippy and fmt stay allowed. Subagents of `integration-verify` stages are carved out, because that stage keeps its own gate. Ordinary sessions are never blocked (`live_loom_session`, `loom-hooks/subagent-verify-guard.sh`, needs a live `LOOM_MAIN_AGENT_PID` ancestor). Deliberately has **no opt-out env var** |
 
 **Detection is payload-first, not a PPID comparison.** Both hooks gate on `loom_is_subagent()` in
 `loom-hooks/_common.sh`, which first requires `LOOM_MAIN_AGENT_PID` to be a **live ancestor** of the
@@ -204,7 +205,7 @@ Codex registers `user-prompt-context.sh` as well, through
   `Skill(skill="loom-skills", args=...)` line. `--codex` switches the output to
   native `SKILL.md` read paths: a high-confidence match (an exact skill name or a
   multi-word token) says "read ... in full", any other match says "read ... if the
-  task touches <kind>" (`skill-trigger.sh:207-212`). Plain mode only suggests loads
+  task touches <kind>" (`loom-hooks/skill-trigger.sh`). Plain mode only suggests loads
   under a neutral "skills matching this request" header and makes no mandatory
   claim. The 4+ character prefix rule still counts toward ranking on both surfaces;
   only the Codex read-in-full directive is gated.
@@ -255,18 +256,17 @@ summarizes them per stage.
 ### LOOM_* Env Vars Available to All Hooks
 
 Set by the wrapper script before `exec claude` (`orchestrator/terminal/native/wrapper.rs`: `kind_env`,
-`work_dir_env`, and `LOOM_SESSION_TYPE`; an earlier version of this line pointed at
-`pid_tracking.rs:463-479`):
+`work_dir_env`, and `LOOM_SESSION_TYPE`):
 
-| Variable               | Purpose                                             |
-| ---------------------- | --------------------------------------------------- |
-| `LOOM_SESSION_ID`      | Current session ID                                  |
-| `LOOM_STAGE_ID`        | Current stage ID                                    |
+| Variable               | Purpose                                                                                   |
+| ---------------------- | ----------------------------------------------------------------------------------------- |
+| `LOOM_SESSION_ID`      | Current session ID                                                                        |
+| `LOOM_STAGE_ID`        | Current stage ID                                                                          |
 | `LOOM_SESSION_TYPE`    | Session kind (`stage`, `knowledge`, `merge`, `base_conflict`, `adjudication`), every kind |
-| `LOOM_WORK_DIR`        | Absolute path to the state directory (`.loom/work`) |
-| `LOOM_MAIN_AGENT_PID`  | Process PID (set dynamically, NOT in settings.json) |
-| `LOOM_WORKTREE_PATH`   | Absolute worktree path (worktree sessions only)     |
-| `LOOM_MERGE_SESSION=1` | Set for merge resolution sessions only              |
+| `LOOM_WORK_DIR`        | Absolute path to the state directory (`.loom/work`)                                       |
+| `LOOM_MAIN_AGENT_PID`  | Process PID (set dynamically, NOT in settings.json)                                       |
+| `LOOM_WORKTREE_PATH`   | Absolute worktree path (worktree sessions only)                                           |
+| `LOOM_MERGE_SESSION=1` | Set for merge resolution sessions only                                                    |
 
 **Per-session identity gotcha (LOOM_MAIN_AGENT_PID, LOOM_STAGE_ID, LOOM_SESSION_ID):** Must NOT be in ANY settings-file env block — settings `env` overrides the process environment, so a persisted value from an earlier session shadows the wrapper's fresh exports (wrong-stage `loom memory` entries, heartbeats for the wrong session, commit-filter misidentifying the main agent). The wrapper script is the ONLY writer; `fs/permissions/settings.rs::scrub_session_identity_env()` strips these keys wherever settings are generated, copied, or merged (`generate_hooks_settings`, `create_worktree_settings`, worktree settings.local.json copy, `refresh_worktree_settings_local`, `ensure_loom_hooks_local`). Only the stable `LOOM_WORK_DIR` is persisted in settings env. `refresh_worktree_settings_local` merges main-repo permissions INTO the worktree's own settings (worktree base wins for env/hooks/defaultMode). **Claude Code applies the MAIN repo's settings env to sessions in linked worktrees** (observed v2.1.217), so worktree-side scrubbing alone is insufficient — the run path heals the main files too: `scrub_main_repo_settings_identity()` at `loom run` startup (`prepare_repo_for_run`) and `scrub_session_identity_env()` inside the sync fold-back (`merge_permissions_with_lock`), which rewrites the main settings.local.json on every stage completion (see mistakes.md 2026-07-23).
 

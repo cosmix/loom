@@ -11,7 +11,7 @@ Contract and lifecycle are in [Source Graph](source-graph.md).
 `refresh::source_graph::reconcile_source_graph(store, graph_store, project_root, scope)`
 is the builder: inspect the working tree, enumerate files through git, reuse or
 re-extract each one, and persist the resulting `GraphLayer` through `GraphStore`.
-`ensure_snapshot` (see *Lifecycle* in [Source Graph](source-graph.md#lifecycle-who-builds-it-and-when)) is the policy layer most callers go through; it
+`ensure_snapshot` (see _Lifecycle_ in [Source Graph](source-graph.md#lifecycle-who-builds-it-and-when)) is the policy layer most callers go through; it
 drives the same builder.
 
 - **Working tree** (`refresh/source_graph/generation.rs::working_tree`): `HEAD` plus
@@ -78,7 +78,7 @@ when `HEAD` cannot be read. `SnapshotOutcome::state()` maps `Reused`/`Updated`/`
 build keeps `SnapshotAction::Unavailable` with or without `serving`, so bootstrap's
 `require_snapshot` still refuses it.
 
-Surfaces: the Knowledge Brief header (`orchestrator/signals/format/brief.rs::freshness_word`) and
+Surfaces: the Knowledge Brief header (`orchestrator/signals/format/brief.rs::render_status_line`) and
 `loom knowledge context` print `state().as_str()`; `loom map` serves the older base with
 `state: "stale"` after a failed build, and with no base prints `source graph never built: <reason>`
 on stderr, emits `state: "never built"` and exits 0 with empty views. `retrieve/graph.rs::degraded_reason`
@@ -92,12 +92,12 @@ semantic revision is not degraded.
 the graph from the prompt hook. `wants_rebuild(freshness, degraded)` is the single spawn predicate
 and `spawn_if_needed` calls nothing else:
 
-| `freshness.state()` | `degraded` | rebuild |
-| --- | --- | --- |
-| `Stale` | any | yes |
-| `Current` | `Some` | yes |
-| `Current` | `None` | no |
-| `NeverBuilt`, `Unavailable` | any | no |
+| `freshness.state()`         | `degraded` | rebuild |
+| --------------------------- | ---------- | ------- |
+| `Stale`                     | any        | yes     |
+| `Current`                   | `Some`     | yes     |
+| `Current`                   | `None`     | no      |
+| `NeverBuilt`, `Unavailable` | any        | no      |
 
 A never-built graph is built only by explicit commands: `loom init`, `loom run`, `loom map` and
 `loom knowledge sync`.

@@ -28,7 +28,7 @@ These stale entries would have misled future agents into using `permission_mode:
 
 1. `rg -l "auto\|Auto" doc/loom/knowledge/` — find knowledge files with the old value
 2. Correct each stale entry in place with `loom knowledge replace-section <file> "<heading>"
-   "<body>"` — `loom knowledge update` only appends and would leave the old value above the new
+"<body>"` — `loom knowledge update` only appends and would leave the old value above the new
    one. Inside a worktree stage the knowledge files stay closed to Write/Edit
    (`loom-hooks/worktree-file-guard.sh`), but the CLI writes through: the sandbox grants
    `doc/loom/knowledge/**` unconditionally (`sandbox::config::apply_knowledge_write_grant`). A
@@ -68,7 +68,7 @@ These stale entries would have misled future agents into using `permission_mode:
 
 ## Worktree-Relative Escape Deny Rules Leak Into Main-Repo settings.local.json (2026-06-02)
 
-**What happened:** The default sandbox config (`default_deny_read`/`default_deny_write` in `plan/schema/types.rs`) bakes in worktree-escape rules — `../../**` and `../.worktrees/**`. The **worktree** settings generator, `sandbox::write_settings(config, target)`, was being pointed at the **main repo root** by two callers: `commands/repair.rs::fix_sandbox_settings` (`loom repair --fix`) and `orchestrator/core/stage_executor.rs:438` (knowledge-stage spawns, which run in the main checkout). At a worktree (`.worktrees/<stage>/`) `../..` is the repo root — the intended isolation boundary — but at the repo root `../..` is the repo's **parent**, typically `$HOME`. So `Read(../../**)` denied all of `$HOME` (including `~/.gitconfig` → git lost its identity → commits failed) and `Write(../../**)` denied writes across the whole home dir.
+**What happened:** The default sandbox config (`default_deny_read`/`default_deny_write` in `plan/schema/types.rs`) bakes in worktree-escape rules — `../../**` and `../.worktrees/**`. The **worktree** settings generator, `sandbox::write_settings(config, target)`, was being pointed at the **main repo root** by two callers: `commands/repair.rs::fix_sandbox_settings` (`loom repair --fix`) and `orchestrator/core/spawn_setup.rs` (knowledge-stage spawns, which run in the main checkout). At a worktree (`.worktrees/<stage>/`) `../..` is the repo root — the intended isolation boundary — but at the repo root `../..` is the repo's **parent**, typically `$HOME`. So `Read(../../**)` denied all of `$HOME` (including `~/.gitconfig` → git lost its identity → commits failed) and `Write(../../**)` denied writes across the whole home dir.
 
 **Misleading signal:** The bug is invisible inside worktrees, because there the exact same string is _correct_. It only bites when Claude runs at the repo root (interactive sessions, knowledge stages). A prior partial fix made `generate_settings_json` filter `Read(../…)` (because it also leaks into the macOS OS sandbox), which silenced the git-read symptom — but the **Write side was never filtered** (a comment called it "harmless," true only in a worktree), so `Write(../../**)` survived and kept denying `$HOME` writes. Three fossils prove an old file was written by an older binary: tilde-_expanded_ creds (`Read(/home/u/.ssh/**)`), the un-filtered `Read(../../**)`, and bare `excludedCommands: ["loom"]`.
 
@@ -108,15 +108,15 @@ These stale entries would have misled future agents into using `permission_mode:
 ## Worktree Settings Are a Whole-Object Rebuild — Unemitted Keys Vanish (2026-08-07)
 
 **What happened:** `.claude/settings.local.json` is not merged, it is REBUILT.
-`generate_settings_json` (`sandbox/settings.rs:246`) starts from `json!({})` and assigns exactly
-three top-level keys — `sandbox` (`:367`), `permissions` (`:435`, always present via
-`apply_default_mode` at `:440`), and `worktree` (`:452`) — then `write_settings` overwrites the
-whole file (`:197`). Only two things survive from the previous contents: `permissions.allow`/`deny`
-(`merge_existing_permissions`, `:187`) and the two-key allowlist
-`PRESERVED_SETTINGS_KEYS = ["enabledPlugins", "extraKnownMarketplaces"]` (`:580`, applied at `:191`).
+`generate_settings_json` (`sandbox/settings.rs::generate_settings_json`) starts from `json!({})` and assigns exactly
+three top-level keys — `sandbox`, `permissions` (always present via
+`apply_default_mode`), and `worktree` — then `write_settings` overwrites the
+whole file. Only two things survive from the previous contents: `permissions.deny`
+(`merge_existing_permissions`) and the two-key allowlist
+`PRESERVED_SETTINGS_KEYS = ["enabledPlugins", "extraKnownMarketplaces"]` (applied by `preserve_unowned_keys`).
 Every other top-level key — `env`, user-authored `hooks`, `hasTrustDialogAccepted`, anything another
 Claude Code feature wrote there — is silently dropped. This happens in worktrees AND in the main
-repo root (`stage_executor.rs:373` and `:584`, `commands/repair.rs:879`).
+repo root (the spawn paths in `orchestrator/core/spawn_setup.rs` and `stage_spawn.rs` at the time, and `commands/repair/sandbox_settings.rs::fix_sandbox_settings`).
 
 **Why:** the rebuild is deliberate — loom owns the sandbox and permission blocks and must not
 inherit drift from a previous run. But it makes the file hostile to every _other_ writer, and it
@@ -136,12 +136,12 @@ survive.
 
 **Fix:** either add the key to `PRESERVED_SETTINGS_KEYS` (a foreign key loom carries forward) or
 emit it from `generate_settings_json` (a key loom owns). `preserve_unowned_keys` skips any key the
-generated object already contains (`:595`), so generated always wins — the allowlist can never be
+generated object already contains, so generated always wins — the allowlist can never be
 used to smuggle privileges past loom's own sandbox/permission blocks. Negative-control tests at
-`settings.rs:1695-1742` pin exactly that: `enabledPlugins` and `extraKnownMarketplaces` carry
+the settings tests pin exactly that: `enabledPlugins` and `extraKnownMarketplaces` carry
 forward, a seeded `env` key and an arbitrary unknown key are both dropped.
 
-**Related trap:** `git/worktree/settings.rs:97-104` copies the main repo's `.claude/settings.local.json`
+**Related trap:** `git/worktree/settings.rs::setup_claude_directory` copies the main repo's `.claude/settings.local.json`
 wholesale into a new worktree _before_ the rebuild, so a main-repo local-scope key appears to
 propagate — then loses everything outside the allowlist on the first stage spawn. The copy is not
 evidence that the key survives.
@@ -177,7 +177,7 @@ documented, recommended lever for exactly this, preferred over `excludedCommands
 tmux, any non-Claude-tool binary) write access to a path outside the worktree,
 `sandbox.filesystem.allowWrite` is the lever. Plan `allow_write` DOES now reach it: `filesystem_settings`
 in `sandbox/settings/policy.rs` copies every plan `allow_write` entry straight into the OS-enforced
-`allowWrite` grant (pinned by a test near `sandbox/settings.rs:719`) — this note previously claimed
+`allowWrite` grant (pinned by a test in `sandbox/settings/tests.rs`) — this note previously claimed
 "nothing copies it there" and that wiring it through was a "live follow-up"; both were wrong by the
 time this correction was written. The remaining reasons a subprocess write can still fail are: (1) the
 path escapes the worktree with `../` — filtered out by both emitters; (2) the path did not exist at
@@ -276,7 +276,7 @@ bit is the boundary, not group membership.
 
 **What happened:** inside a stage worktree, `worktree-file-guard.sh` (`PreToolUse:Read/Write/Edit/Glob/Grep`) blocks Edit/Write/Read to any path outside the worktree: a knowledge-distill session's `$TMPDIR` (`/tmp/claude-<uid>/mem.txt`), the harness's per-session tool-result cache, and any other host path. A throwaway debug copy, a formatted dump written for easier reading, or a large tool-result payload saved there is unreachable by Read/Edit/Write even though a Bash write to it succeeds.
 
-**Corrected 2026-09-19:** this section used to say the guard also blocks the session's own scratchpad. It does not any more: `allow_scratchpad` (`loom-hooks/worktree-file-guard.sh:174-196`) lets every file tool use `/tmp/claude-<uid>/<project>/<session>/scratchpad/` when the directory exists, the path is already canonical (no symlink, `.` or `//` component) and each existing component from `claude-<uid>` is owned by the uid. Read-back of a file written there was re-verified in this stage. Only the scratchpad is exempt; `$TMPDIR` itself and the tool-result cache stay blocked.
+**Corrected 2026-09-19:** this section used to say the guard also blocks the session's own scratchpad. It does not any more: `allow_scratchpad` (`loom-hooks/worktree-file-guard.sh::allow_scratchpad`) lets every file tool use `/tmp/claude-<uid>/<project>/<session>/scratchpad/` when the directory exists, the path is already canonical (no symlink, `.` or `//` component) and each existing component from `claude-<uid>` is owned by the uid. Read-back of a file written there was re-verified in this stage. Only the scratchpad is exempt; `$TMPDIR` itself and the tool-result cache stay blocked.
 
 **Prevention:** for an intermediate file a worktree/stage session must write and then read back (a reformatted dump of `loom memory show --all --json`, a debug reproduction, a large payload), use the session scratchpad, or write INSIDE the worktree and remove it before the final commit. In a distill stage name such files `.distill-body-*` or `.kb_tmp_*` so the main-agent edit advisory ignores them. Debug hooks specifically should reproduce inline under `/tmp/loom-loop-checks` with `LOOM_HOOK_DEBUG=1` rather than editing a scratch copy at all.
 

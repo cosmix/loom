@@ -1,5 +1,6 @@
 ---
 ---
+
 # Concurrency And Locking
 
 > Locked writes, save races

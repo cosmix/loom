@@ -134,4 +134,4 @@ Rust test module names also need graph lookup: `orchestrator::core::tests` does 
 
 **Prevention:** a unit-test fixture that needs a parseable plan reuses the plan writer in `tests/host_verification_contracts/support.rs` (`write_plan`), not a hand-written string.
 
-**Fix:** `tests_child.rs:125` wraps its plan in the METADATA markers, the same wrapper as `write_plan` at `tests/host_verification_contracts/support.rs:138`.
+**Fix:** `host_verify/tests_child.rs::write_plan` wraps its plan in the METADATA markers, the same wrapper as `write_plan` at `tests/host_verification_contracts/support.rs::write_plan`.

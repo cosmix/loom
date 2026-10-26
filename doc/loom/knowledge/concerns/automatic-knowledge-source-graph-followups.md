@@ -50,36 +50,28 @@ and `loom/eval/retrieval-cases.yaml`. Its only natural-language case asks about 
 configuration, so `loom knowledge eval` does not measure this gap. A first step is adding a
 lifecycle case so the gap is measured before the threshold is tuned.
 
-## Pressure And Bootstrap Gaps
+## Pressure Gaps
 
-> loom pressure install/smoke gaps, bootstrap follow-ups
+> loom pressure smoke and dry-run gaps
 
 ## `loom pressure` Known Gaps
-
-### Vendored commands / Codex skill install LOCAL-only
-
-`install.sh` installs `commands/*.md` (→ `~/.claude/commands/`) and `codex/skills/pressure/SKILL.md` (→ `~/.codex/skills/pressure/`) ONLY in the local (cloned-repo) branch — `install_commands`/`install_codex_skill` run under the `else` of `is_curl_pipe` in `main()` (~install.sh:619). The remote `curl | bash` install path does NOT ship the `loom pressure` slash commands or the Codex skill. A user who installs via curl-pipe and then runs `loom pressure` will be missing `/pressure`, `/address`, and the `$pressure` skill.
 
 ### `loom pressure` real-invocation smokes are manual-only
 
 The two end-to-end smokes — Claude `/pressure` actually editing the plan, and Codex `$pressure` writing the `codex-` sidecar — need network + agent auth and are NOT exercised by `loom stage complete`. They are manual release-validation. Automated coverage is dry-run + 10 unit tests (argv, step order, exit classification, path resolution).
 
-### `git rev-parse --show-toplevel` Duplication (2026-08-18, updated 2026-09-10)
+### Dry-run argv is not shell-quoted
+
+`pressure::render_dry_run_step` (`commands/pressure/mod.rs`) prints each `claude`/`codex` argv with
+`.join(" ")` and no shell quoting, and its output is pinned by tests. A multi-line or spaced
+argument runs together, so the printed line cannot be pasted into a shell.
+`knowledge bootstrap --dry-run` already quotes through `shell_quote_argv`
+(`commands/knowledge/bootstrap/mod.rs`); a shared quoting helper would fix the pressure call sites.
+
+### `git rev-parse --show-toplevel` Duplication
 
 Repo-root resolution is inlined in two places: the merge-side resolution at
 `commands/stage/merge/preflight.rs` and the pressure-side one at
 `commands/pressure/paths.rs::resolve_repo_root`. Both are below the "extract at 3+" threshold in
 conventions.md Import Deduplication — not an active consolidation candidate, but the two copies
 could still drift.
-
-## Knowledge Bootstrap Follow-Ups
-
-- **Guard duplication:** `commands/knowledge/bootstrap/mod.rs::guard_not_in_stage` inlines its own
-  `LOOM_STAGE_ID` check instead of calling `commands::hook::target::non_empty_env`, because
-  `commands/hook/mod.rs:14` declares `mod target;` private (`mistakes/visibility-and-reachability.md`).
-  Widen the module (`pub(crate) mod target` or a re-export) to de-duplicate.
-- **Dry-run argv quoting:** `knowledge bootstrap --dry-run` prints the `claude` argv with
-  `argv.join(" ")` (no shell quoting), copied from `pressure::render_dry_run_step` whose output is
-  pinned by tests. The multi-line `--append-system-prompt` value and the positional prompt run
-  together, so the printed line cannot be pasted into a shell. A shared quoting helper would fix
-  both call sites.

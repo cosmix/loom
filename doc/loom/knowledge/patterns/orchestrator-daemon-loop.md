@@ -1,5 +1,6 @@
 ---
 ---
+
 # Orchestrator Daemon Loop
 
 > Signals, IPC, poll loop
@@ -15,7 +16,7 @@ Uses Manus KV-cache optimization with four sections:
 
 Four stage-type-specific prefix generators: standard, knowledge, integration-verify, knowledge-distill. Six signal types: Regular, Knowledge, Recovery, Merge, MergeConflict, BaseConflict. Signals are self-contained via `EmbeddedContext` struct.
 
-KnowledgeDistill prefix: focuses on memory reading and knowledge curation; includes `loom memory show --all` and `loom knowledge update` guidance. The stage's own model follows the usual chain: a plan stage's `model` field overrides `[models]` in either config tier, which overrides the per-type default; for `knowledge-distill` that default is sonnet at high effort (`models/stage/defaults.rs:99-124`). An earlier version of this section said every `StageType` defaults to opus, which is wrong for `knowledge-distill`.
+KnowledgeDistill prefix: focuses on memory reading and knowledge curation; includes `loom memory show --all` and `loom knowledge update` guidance. The stage's own model follows the usual chain: a plan stage's `model` field overrides `[models]` in either config tier, which overrides the per-type default; for `knowledge-distill` that default is sonnet at high effort (`models/stage/defaults.rs`); other stage types do not all default to opus.
 
 **Data flow:** Stage Ready -> start_stage() -> create worktree -> Session.new() -> build_signal_context() -> format_signal_content() -> write_signal_file() -> spawn Claude Code.
 
@@ -42,7 +43,7 @@ Main loop polls every 5 seconds: sync graph from stage files, sync queued status
 
 ## Monitoring Patterns
 
-**Heartbeat**: Sessions write to `.loom/work/heartbeat/{stage-id}.json`; the JSON's `session_id` identifies the current owner. The three shell writers share an ownership-checked `mkdir` lock and atomic rename, so an old session cannot replace its successor and readers never see a torn document. Timeout: 300s, but staleness is judged against PROGRESS, not raw liveness: since owned-waits the heartbeat carries optional `progress_at` (RFC 3339 UTC) and `activity_kind` (`"progress"`|`"observation"`); observation-only tool calls (status polling, `subagents list`/`watch`/`harvest`) carry the prior `progress_at` forward via `loom_heartbeat_prior_progress_at` (`loom-hooks/_common.sh`) instead of refreshing it, and hung detection reads `Heartbeat::effective_progress_at` (`progress_at`, else `timestamp` for legacy writers or a `progress_at` later than `timestamp`) through `HeartbeatWatcher::check_session_hung`, both in `loom/src/orchestrator/monitor/heartbeat.rs`. PID alive + no useful progress (effective_progress_at older than the timeout) = Hung; PID dead = Crashed; PID dead + stage finished normally = normal exit. Observation refreshes liveness only, never progress. The heartbeat carries real resident tokens (`context_tokens`, `transcript_path`) written by `loom-hooks/post-tool-use.sh` from the transcript tail — `context_percent` no longer exists. Judge sessions write a separate `heartbeat/<stage-id>.adjudication.json` instead of the stage file, keyed by the same stage id, read by `HeartbeatWatcher::judge_heartbeat`, and removed by `heartbeat::cleanup_judge_heartbeat` once the judge is closed. **Context health**: `orchestrator/monitor/context.rs::context_health(tokens, ceiling)` bands the ratio Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved `context_ceiling_tokens` (absolute tokens, default 800,000 = 0.80 × the 1M default window, `models/constants.rs` `DEFAULT_CONTEXT_CEILING_TOKENS`; per-stage override in tokens, not a percentage) — there is no auto-summarize step. **Retry**: Exponential backoff `min(30 * 2^retry_count, 300s)`. Retryable: SessionCrash, Timeout. Non-retryable: ContextExhausted, TestFailure, BuildFailure, CodeError. Max 3 retries.
+**Heartbeat**: Sessions write to `.loom/work/heartbeat/{stage-id}.json`; the JSON's `session_id` identifies the current owner. The three shell writers share an ownership-checked `mkdir` lock and atomic rename, so an old session cannot replace its successor and readers never see a torn document. Timeout: 300s, but staleness is judged against PROGRESS, not raw liveness: since owned-waits the heartbeat carries optional `progress_at` (RFC 3339 UTC) and `activity_kind` (`"progress"`|`"observation"`); observation-only tool calls (status polling, `subagents list`/`watch`/`harvest`) carry the prior `progress_at` forward via `loom_heartbeat_prior_progress_at` (`loom-hooks/_common.sh`) instead of refreshing it, and hung detection reads `Heartbeat::effective_progress_at` (`progress_at`, else `timestamp` for legacy writers or a `progress_at` later than `timestamp`) through `HeartbeatWatcher::check_session_hung`, both in `loom/src/orchestrator/monitor/heartbeat.rs`. PID alive + no useful progress (effective_progress_at older than the timeout) = Hung; PID dead = Crashed; PID dead + stage finished normally = normal exit. Observation refreshes liveness only, never progress. The heartbeat carries real resident tokens (`context_tokens`, `transcript_path`) written by `loom-hooks/post-tool-use.sh` from the transcript tail — there is no `context_percent` field. Judge sessions write a separate `heartbeat/<stage-id>.adjudication.json` instead of the stage file, keyed by the same stage id, read by `HeartbeatWatcher::judge_heartbeat`, and removed by `heartbeat::cleanup_judge_heartbeat` once the judge is closed. **Context health**: `orchestrator/monitor/context.rs::context_health(tokens, ceiling)` bands the ratio Green `<60%`, Yellow `60-90%`, Red `>=90%` of the resolved `context_ceiling_tokens` (absolute tokens, default 800,000 = 0.80 × the 1M default window, `models/constants.rs` `DEFAULT_CONTEXT_CEILING_TOKENS`; per-stage override in tokens, not a percentage) — there is no auto-summarize step. **Retry**: Exponential backoff `min(30 * 2^retry_count, 300s)`. Retryable: SessionCrash, Timeout. Non-retryable: ContextExhausted, TestFailure, BuildFailure, CodeError. Max 3 retries.
 
 ## Session Spawning and Liveness Pattern
 
@@ -55,9 +56,9 @@ cannot be verified. For tests, `LivenessService::fixed_for_tests(bool)` avoids c
 ## Session Backend Dispatch Details
 
 The orchestrator holds
-`Arc<SessionBackend>` (`orchestrator/core/orchestrator.rs`, constructed at `:194` via
+`Arc<SessionBackend>` (`orchestrator/core/orchestrator.rs`, constructed via
 `SessionBackend::from_config`), and shares that same `Arc` with the `LivenessService`
-(`orchestrator/liveness.rs:17,32`):
+(`orchestrator/liveness.rs::LivenessSource`):
 
 ```rust
 let backend = Arc::new(SessionBackend::from_config(config.work_dir.clone())?);
@@ -86,13 +87,13 @@ it, so `loom memory note` could not reach its own journal. Rather than widening 
 sandbox, the write was made asynchronous:
 
 - the agent appends to `<worktree_root>/.loom/memory-spool.jsonl` (`SPOOL_RELPATH`,
-  `fs/memory/spool.rs:33`), size-capped at `SPOOL_MAX_BYTES` (1 MiB);
-- `record()` (`commands/memory/handlers/record.rs:17`) falls into `record_via_spool`
+  `fs/memory/spool.rs::SPOOL_RELPATH`), size-capped at `SPOOL_MAX_BYTES` (1 MiB);
+- `record()` (`commands/memory/handlers/record.rs::record`) falls into `record_via_spool`
   ONLY when the direct write failed AND `is_write_denied(&error)` matches
   `PermissionDenied`/EROFS — every other error still propagates unchanged;
 - the daemon drains it: `Orchestrator::drain_stage_spools`
-  (`orchestrator/core/spool_drain.rs:38`) every tick, plus a teardown drain
-  `drain_spool_before_removal` (`git/cleanup/batch.rs:67`) so worktree-removal paths with
+  (`orchestrator/core/spool_drain.rs::Orchestrator`) every tick, plus a teardown drain
+  `drain_spool_before_removal` (`git/cleanup/batch.rs::drain_spool_before_removal`) so worktree-removal paths with
   no live orchestrator do not destroy pending entries.
 
 Two design points to keep if you copy it. **The spool payload carries no stage id** — the
@@ -105,7 +106,7 @@ a stage recovered as still-Executing.
 
 Known gap: with no daemon running at all, spooled entries stay pending until the next
 tick or a teardown drain. `record_via_spool` says so in its own warning
-(`record.rs:131`) rather than pretending the write landed.
+(`commands/memory/handlers/record.rs::reject_stage_forgery`) rather than pretending the write landed.
 
 ## Host-Job Retry List Is a Process-Wide Mutex
 

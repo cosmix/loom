@@ -175,7 +175,7 @@ Small items judged low value, recorded so they are not rediscovered:
   `fixture_support::write_executable` exists in the same crate; the same three-shim install loop also
   sits in `worker_evidence/setup.rs` and `_bsd_path.sh`.
 - `a_socket_path_past_the_limit_refuses_the_run` in `commands/run/daemon_child.rs` tests
-  `run/mod.rs::require_socket_path_fits` and belongs in `run/tests.rs`.
+  `run/mod.rs::require_socket_path_fits` and belongs in `commands/run/tests/`.
 - `verify/review/gate_hint_tests.rs` plants a FIFO at `starts.jsonl` only and hangs instead of failing
   if `O_NONBLOCK` is ever removed; running `harvest_hint` on a thread with `recv_timeout` would turn it
   into an assertion, and `stop-skips.jsonl` goes through the same `read_ledger`.

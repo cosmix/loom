@@ -48,8 +48,7 @@ edit from tripping the gate, and two are exactly AT 400 —
 include `utils.rs` 399, `terminal/native/detection.rs` 399, `verify/before_after.rs`
 398, `terminal/tmux/reconcile.rs` 398, `terminal/native/mod.rs` 398,
 `context/refresh/source_graph.rs` 397, `git/merge/in_progress.rs` 396,
-`context/coverage.rs` 394 (since renamed to the `context/coverage/` module), `signals/format/brief.rs` 392, `verify/wiring_detection.rs`
-390. None is a violation today. `wc -l` your target first; at >=390 plan the split in
+`context/coverage.rs` 394 (since renamed to the `context/coverage/` module), `signals/format/brief.rs` 392, `verify/wiring_detection.rs` 390. None is a violation today. `wc -l` your target first; at >=390 plan the split in
 the same round, because a split then collides with the wiring pins below.
 
 **The scanner walks fixtures too.** `tests/maintainability/scanner.rs` parses EVERY
@@ -227,9 +226,9 @@ after formatting; and a brief that states the baseline number as the goal invite
 
 ## `tests_doctrine.rs` Pins the Wrapper's Companion argv Order (2026-09-13)
 
-`loom/src/orchestrator/signals/tests_doctrine.rs:325` asserts that `loom-hooks/codex-forward.sh`
+`loom/src/orchestrator/signals/tests_doctrine.rs::codex_navigation_kit_wrapper_carries_and_delivers_the_preamble` asserts that `loom-hooks/codex-forward.sh`
 contains the literal `task "$task"`; the wrapper launches the companion as
-`node "$companion" task "$task" --background --json --write` (`codex-forward.sh:264`). A rewrite
+`node "$companion" task "$task" --background --json --write` (`codex-forward.sh::run_direct`). A rewrite
 that moves the flags before the positional task still delivers the preamble but fails
 `orchestrator::signals`. Keep the positional task directly after the subcommand, and put this pin
 in any brief that changes the wrapper's launch argv.
@@ -241,40 +240,40 @@ produced enough distinct gate failures to be worth one consolidated lesson:
 
 - **A wiring pattern must be a literal the consumer's source file spells, never a type it only
   infers.** A goal-backward wiring entry grepped `ConfigValue` in `loom/src/commands/config/mod.rs`,
-  but the CLI reads the typed value through `config.value_of(spec)` (`mod.rs:65,90`) with the
+  but the CLI reads the typed value through `config.value_of(spec)` (`commands/config/mod.rs::print_key`) with the
   `(ConfigValue, Origin)` return type inferred — the name never appears in that file, so
   verification failed after every acceptance criterion passed. Dry-run every wiring regex with `rg`
   against BOTH the post-change tree (must match) and the pre-change tree (must NOT match) when
   writing the plan.
 - **A `ValueKind` variant grep is unsatisfiable when the match arms live in another module.**
-  `loom/src/user_config/keys.rs:13-20` declares variants bare (`Bool`, `Number`, `Enum`, `String`);
-  only the `KEYS` table at `:47-174` writes the `ValueKind::` prefix. A variant no registry key uses
+  `loom/src/user_config/keys.rs::ValueKind` declares variants bare (`Bool`, `Number`, `Enum`, `String`);
+  only the `KEYS` table writes the `ValueKind::` prefix. A variant no registry key uses
   never appears as `"ValueKind::<Variant>"` in that file — grep the declaration site pattern
   (the bare variant name) instead of the qualified one.
 - **A before/after or wiring gate must be run at HEAD and rejected if it is already green.** Three
   separate typed-config-values gates were trivially satisfied by the pre-change (stringly) code:
   `jq .effective.value` on an enum key already yielded `["string"]`; `"value_of"` already appeared
-  in `config/mod.rs:65,90`; `rg -q "## "` matches any tier-1 knowledge file's headings regardless of
+  in `config/mod.rs::print_key`; `rg -q "## "` matches any tier-1 knowledge file's headings regardless of
   content. A minified-bundle staleness check has the same trap the other way: `rg -q '"u32"'
-  web/dist/assets/index.js` was already green because the vite minifier emits backtick strings, not
+web/dist/assets/index.js` was already green because the vite minifier emits backtick strings, not
   quoted ones — grep the bare token, not a quoted literal, against a minified bundle.
 - **Retyping a wire payload from string to native JSON silently inverts existing negative tests.**
-  `config_api/tests/updates.rs:289-302` pinned `{"value":true}` as a 400 while `ConfigUpdate.value`
+  `config_api/tests/updates.rs::a_project_write_without_a_workspace_is_a_conflict` pinned `{"value":true}` as a 400 while `ConfigUpdate.value`
   was `Option<String>`; a native-JSON `ConfigUpdate` makes that same body a 200, and every other POST
   body in that file that quotes its value (`"640000"`, `"false"`) 400s once the wire is typed. Grep
   the test file for quoted-value bodies before claiming a wire-typing change is gate-clean.
 - **A registry error message pinned in a test constrains the exact formatting of a later
-  validator.** `config_api/tests/updates.rs:199-221` pins `"abc" is not a u32 (expected a
-  non-negative integer)"` (debug-quoted raw text) for a bad POST. A later `ConfigValue::checked`
+  validator.** `config_api/tests/updates.rs::a_project_scope_write_reaches_the_terminal_section_too` pins `"abc" is not a u32 (expected a
+non-negative integer)"` (debug-quoted raw text) for a bad POST. A later `ConfigValue::checked`
   replacing `KeySpec::parse` on that path must format the offending value with `{:?}` to reproduce
   the same debug-quoted text, or the pinned assertion breaks.
-- **`wiring_tests` and `truths` get a hard 30 s cap** (`verify/goal_backward/wiring_tests.rs:13`,
-  `truths.rs:13`); acceptance criteria in the extended form are capped at 30 s too — TIGHTER than the
-  simple form's 300 s (`verify/criteria/runner.rs:82-86`, `config.rs:11`). No plan key raises any of
+- **`wiring_tests` and `truths` get a hard 30 s cap** (`verify/goal_backward/wiring_tests.rs::WIRING_TEST_TIMEOUT`,
+  `verify/goal_backward/truths.rs`); acceptance criteria in the extended form are capped at 30 s too — TIGHTER than the
+  simple form's 300 s (`verify/criteria/runner.rs::PreparedCriterion`, `verify/criteria/config.rs`). No plan key raises any of
   these. A `cargo test` wiring check is only safe when the crate is already warm-built.
-- **Plan-authored commands are not filesystem-sandboxed.** `verify/criteria/confine.rs:139-146`
-  applies only the environment allowlist (`process/environment.rs:14-77`); `sandbox.filesystem.
-  allow_write` governs the agent SESSION only (`sandbox/settings/policy.rs:140-165`). A criterion
+- **Plan-authored commands are not filesystem-sandboxed.** `verify/criteria/confine.rs::spawn_retaining_resources`
+  applies only the environment allowlist (`process/environment.rs::AGENT_SESSION_ENV_NAMES`); `sandbox.filesystem.
+allow_write` governs the agent SESSION only (`sandbox/settings/policy.rs::filesystem_settings`). A criterion
   that writes outside the worktree is never denied by the plan's own sandbox config.
 - **`rg -r` is REPLACE, not recursive** — `rg` is recursive by default; `-r "n"` after a pattern
   silently substitutes the next argument into every match, producing output that reads like scrubbed
@@ -284,7 +283,7 @@ produced enough distinct gate failures to be worth one consolidated lesson:
   path, failing structural validation with "outside the stage's declared files patterns." Annotate
   new files in a sentence below the table, never inside the cell.
 - **A codex brief must spell an ambiguous path in full.** `loom/src/commands/status/web/tests/
-  config_api.rs`, abbreviated to `web/tests/config_api.rs` in a brief, collides with the unrelated
+config_api.rs`, abbreviated to `web/tests/config_api.rs` in a brief, collides with the unrelated
   `web/` SPA tree at the repo root — always write the full path.
 - **Sequential codex units sharing one file must not have an earlier unit declare a `mod` line for
   a file a later unit creates** — that leaves a non-compiling tree between the two forwards. Order

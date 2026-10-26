@@ -79,14 +79,6 @@ Scope spans the daemon (retry policy, block record), the CLI (block and dispute 
 
 A retry after a successful archive whose DONE rename then failed writes another timestamped archive directory under `.loom/memory/archive/`. The clutter is harmless; an archive-once guard would remove it.
 
-## BranchMissing Phantom-Merge Risk in merge_handler.rs
-
-`handle_merge_session_completed` at line 97-103 treats `MergeState::BranchMissing` as a successful merge by calling `finalize_merge_resolution` which unconditionally sets `merged=true`. This violates the project invariant that daemon-side paths must never write `merged=true` without git ancestry verification.
-
-Scenario: merge session dies, `check_merge_state` returns Conflict/Unknown, branch was deleted without being merged (e.g., manual `git branch -D`), code assumes "branch missing = cleaned up after merge."
-
-Pre-existing issue, not introduced by the merge conflict session lifecycle fix. The `ProgressiveMergeResult::is_success()` method also still classifies `NoBranch` as success, inconsistent with `progressive_complete.rs` treating it as `Blocked`.
-
 ## BaseConflict Carve-out is Heuristic
 
 `attribute_main_repo_merge` carves out `loom/_base/*` merges with a heuristic on the current branch name and on `SessionType::BaseConflict` session metadata. If a base-merge ever runs from a non-`loom/_base/*` branch (manual flow, future refactor) and no `BaseConflict` session is alive, attribution would tie the active merge to the stage whose branch HEAD shows up in `MERGE_HEAD` — leading to a spurious revert.
@@ -95,7 +87,7 @@ Pre-existing issue, not introduced by the merge conflict session lifecycle fix. 
 
 ## Recovery: `retry --force` races daemon orphan-recovery on existing worktree
 
-**Observed:** `loom stage retry --force --context "..."` correctly set `integration-verify` to `Queued`, but on the next daemon poll the orphan-recovery routine in `orchestrator/core/recovery.rs:638-705` saw the (now-stale) session_id, found commits-ahead-of-base on the worktree branch, and immediately re-routed the stage to `NeedsHandoff` (commits_ahead path at `recovery.rs:668`). To the user, the stage looked stuck — they typed `retry`, it was ready for a second, then back to a handoff state with no agent activity.
+**Observed:** `loom stage retry --force --context "..."` correctly set `integration-verify` to `Queued`, but on the next daemon poll the orphan-recovery routine in `orchestrator/core/orphan_adoption.rs::route_orphaned_stage` saw the (now-stale) session_id, found commits-ahead-of-base on the worktree branch, and immediately re-routed the stage to `NeedsHandoff` (commits_ahead path in `route_orphaned_stage`). To the user, the stage looked stuck — they typed `retry`, it was ready for a second, then back to a handoff state with no agent activity.
 
 This is a logically defensible design (commits exist, don't burn tokens redoing them), but the user-visible interaction is confusing. The "fix" — using `retry --force` a _second_ time after acknowledging the handoff — is undocumented in the recovery flow.
 
@@ -106,8 +98,8 @@ This is a logically defensible design (commits exist, don't burn tokens redoing 
 
 **Where to look:**
 
-- `commands/stage/skip_retry.rs` (the `retry` command sets Queued at line 122 but leaves `stage.session` populated)
-- `orchestrator/core/recovery.rs:633-707` (the orphan-recovery decision tree that re-routes to `NeedsHandoff`)
+- `commands/stage/skip_retry.rs` (`retry` sets Queued but leaves `stage.session` populated)
+- `orchestrator/core/orphan_adoption.rs::route_orphaned_stage` (the orphan-recovery decision tree that re-routes to `NeedsHandoff`) and `orchestrator/core/recovery_sessions.rs`
 
 ## Status Dashboard: `started_at` not refreshed on retry, stage appears "stale/orphaned"
 
@@ -118,7 +110,7 @@ This is a logically defensible design (commits exist, don't burn tokens redoing 
 **Where to look:**
 
 - `commands/stage/skip_retry.rs::retry` (where retry mutates stage fields)
-- `orchestrator/core/stage_executor.rs:291-293` (`begin_attempt(Utc::now())` is already called here — confirm it's the only writer of `started_at` and that it's reached on retry).
+- `orchestrator/core/stage_spawn.rs` (`begin_attempt(Utc::now())` is already called here — confirm it's the only writer of `started_at` and that it's reached on retry).
 - The "stale" indicator emitter — likely in `commands/graph/indicators.rs` or a dashboard renderer.
 
 ## A Retry Reset a Completed Stage's Branch, and the Stage Still Read `merged: true`

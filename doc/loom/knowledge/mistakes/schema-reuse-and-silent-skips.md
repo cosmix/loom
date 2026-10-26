@@ -43,7 +43,7 @@ successful empty load. Its production caller is the documented recovery path in
 file"), so that fallback could never have worked; it would have produced an empty graph
 rather than an error.
 
-**Prevention:** a per-item skip is only safe when *some* items are expected to succeed. When
+**Prevention:** a per-item skip is only safe when _some_ items are expected to succeed. When
 a loop skips EVERY item, that is a total failure wearing a success type. Either fail loudly
 when the skip count equals the item count, or make the caller distinguish "no stage files"
 from "no stage file parsed". A warning printed once per file is not a substitute — it

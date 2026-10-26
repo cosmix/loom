@@ -1,5 +1,6 @@
 ---
 ---
+
 # Plan Yaml And Hooks
 
 > Plan YAML, hook I/O, skills
@@ -16,7 +17,7 @@ Only `version: 1` supported.
 
 - Location: `~/.claude/hooks/loom/`
 - Naming: `<event>-<action>.sh` (e.g., `session-start.sh`, `post-tool-use.sh`)
-- Source of truth is the repo: `loom-hooks/*.sh`, embedded into the binary by `include_str!` in `fs/permissions/constants.rs` and written out by `install.sh` / `loom repair`. Loom runs on other people's machines, so a hook defect is fixed in `loom-hooks/` (with its `loom-hooks/tests/` case) and shipped in a patch release. Never patch the installed copy under `~/.claude/hooks/loom/`: it is an artifact, it drifts from the embedded copy, and no one else receives the fix (2026-09-16).
+- Source of truth is the repo: `loom-hooks/*.sh`, embedded into the binary by `include_str!` in `fs/permissions/constants.rs` and written out by `install.sh` / `loom repair`. Loom runs on other people's machines, so a hook defect is fixed in `loom-hooks/` (with its `loom-hooks/tests/` case) and shipped in a patch release. Never patch the installed copy under `~/.claude/hooks/loom/`: it is an artifact, it drifts from the embedded copy, and no one else receives the fix.
 
 ## Skill File Format
 
@@ -53,11 +54,11 @@ Two forms in YAML:
 `has_any_goal_checks()` checks ONLY: artifacts, wiring, wiring_tests, dead_code_check.
 Validation requires: acceptance OR goal-backward checks for standard/integration-verify stages.
 
-Old `truths`/`truth_checks` fields were removed from `StageDefinition` and are now rejected by strict deserialization. `before_stage`/`after_stage` remain supported and still use `TruthCheck`.
+`StageDefinition` has no `truths`/`truth_checks` fields; strict deserialization rejects them. `before_stage`/`after_stage` remain supported and still use `TruthCheck`.
 
 Plan deserialization is strict at every policy-bearing layer: the metadata root, `LoomConfig`, `StageDefinition`, and nested sandbox, filesystem, network, Linux, adjudication, code-review, truth-check, wiring-test, and dead-code structures use `deny_unknown_fields`. A typo or retired field must fail parsing with an actionable unknown-field error; it must never disappear before validation. In particular, top-level `truths` is rejected.
 
-**`loom knowledge sync` (and anything that reaches `context::retrieve::resolve_roots` → `ContextStore::open` → a `refresh` write) can never sit in a worktree stage's acceptance list.** `ContextStore::open` (`context/store.rs:49`) resolves the context cache under `WorkDir::main_project_root().join(".loom/cache/context-v1")` — deliberately OUT of the worktree, through the `.loom/work` symlink, to the MAIN repository, so parallel stages share one cache instead of each growing an immediately-stale private copy. `sync`'s `refresh` step (`context/refresh.rs:218`) then WRITES there via `ContextStore::save_catalog`, and both settings emitters strip `.loom` from `allow_write`, so that write always trips the sandbox from inside a worktree. `loom knowledge context` (retrieval) also opens the same store but is safe: its refresh failure downgrades to a warning and it builds the catalog in memory instead (`context/retrieve.rs:147-149`), which is why the signal footer tells agents to run it directly. `loom knowledge check` was written specifically to be safe as an acceptance criterion by NEVER opening the context store at all — it resolves only the knowledge root and calls the pure, read-only `catalog::build` (`commands/knowledge/check.rs:1-21`); do not "simplify" it back into `context::resolve()`.
+**`loom knowledge sync` (and anything that reaches `context::retrieve::resolve_roots` → `ContextStore::open` → a `refresh` write) can never sit in a worktree stage's acceptance list.** `ContextStore::open` (`context/store.rs::open`) resolves the context cache under `WorkDir::main_project_root().join(".loom/cache/context-v1")` — deliberately OUT of the worktree, through the `.loom/work` symlink, to the MAIN repository, so parallel stages share one cache instead of each growing an immediately-stale private copy. `sync`'s `refresh` step (`context/refresh.rs::short_revision`) then WRITES there via `ContextStore::save_catalog`, and both settings emitters strip `.loom` from `allow_write`, so that write always trips the sandbox from inside a worktree. `loom knowledge context` (retrieval) also opens the same store but is safe: its refresh failure downgrades to a warning and it builds the catalog in memory instead (`context/retrieve.rs::ResolvedRoots`), which is why the signal footer tells agents to run it directly. `loom knowledge check` was written specifically to be safe as an acceptance criterion by NEVER opening the context store at all — it resolves only the knowledge root and calls the pure, read-only `catalog::build` (the module doc of `commands/knowledge/check.rs`); do not "simplify" it back into `context::resolve()`.
 
 ## Hook Output Contract
 
@@ -76,7 +77,12 @@ To issue a warning without blocking, exit 0 and write one JSON object to stdout 
 hook; a PostToolUse or SessionStart hook names its own event):
 
 ```json
-{ "hookSpecificOutput": { "hookEventName": "PreToolUse", "additionalContext": "LOOM_HOOK_WARN: consider using rg instead of grep" } }
+{
+  "hookSpecificOutput": {
+    "hookEventName": "PreToolUse",
+    "additionalContext": "LOOM_HOOK_WARN: consider using rg instead of grep"
+  }
+}
 ```
 
 `LOOM_HOOK_WARN:` is the prefix loom's hooks put on warning text (for example
@@ -129,7 +135,7 @@ for `implementers` and `subagent_timeout_secs`:
   `skip_serializing_if = "Option::is_none"` for `Option` fields so re-serialized plans stay clean.
 - Runtime `Stage` (`models/stage/types.rs`) — `#[serde(default)]`, so a stage file written
   before the field existed still loads mid-run.
-- Prefer a **closed enum over a string**: `Implementer` (`models/stage/types.rs:135`) derives
+- Prefer a **closed enum over a string**: `Implementer` (`models/stage/types.rs::default`) derives
   `Default` + `#[serde(rename_all = "kebab-case")]`, so a typo is a parse ERROR (`unknown variant
 'bogus-lane', expected 'claude' or 'codex'`), never a silent fallback. Pin `Display` to the serde
   spelling with a test (`plan/schema/tests/implementer_tests.rs`).
@@ -162,8 +168,7 @@ where a non-defaulted field breaks a running plan.
 
 A stage signal's smoke/acceptance command, run directly by the main agent's own Bash tool (not
 inside `wiring_tests`), is blocked by `commit-filter.sh` if it unsets `LOOM_MAIN_AGENT_PID` — that
-variable identifies the calling agent to the hook. `tests/integration/helpers.rs::RELAY_ENV_VARS_TO_CLEAR`
-(:225-238) is a template for scratch-repo smoke tests generally, but a plan author copying it into
+variable identifies the calling agent to the hook. `tests/integration/helpers.rs::RELAY_ENV_VARS_TO_CLEAR` is a template for scratch-repo smoke tests generally, but a plan author copying it into
 a main-agent command must drop that one variable (every other `RELAY_ENV_VARS_TO_CLEAR` entry is
 still safe to unset). `wiring_tests` entries run by `loom check` are a different execution path and
 are unaffected.
@@ -174,4 +179,4 @@ are unaffected.
 
 ## Acceptance Lines Run Under sh -c
 
-A plan acceptance string runs as `sh -c <line>` (`loom/src/verify/criteria/confine.rs:41`). On Linux `/bin/sh` is dash, so a bash script (`#!/usr/bin/env bash`, `[[`, `pipefail`, every `loom-hooks/tests/*.sh`) run as `sh <script>` exits 127 or takes a false branch. Invoke such a script with `bash`, and for hook changes run the suite the way CI does: `bash loom-hooks/tests/run-all.sh` (it scrubs the session's `LOOM_*` variables), `LOOM_HOOK_TEST_BSD=1 bash loom-hooks/tests/run-all.sh`, and `bash scripts/check-hook-syntax.sh`. A plan-level `!` negation works under dash.
+A plan acceptance string runs as `sh -c <line>` (`loom/src/verify/criteria/confine.rs::SHELL`). On Linux `/bin/sh` is dash, so a bash script (`#!/usr/bin/env bash`, `[[`, `pipefail`, every `loom-hooks/tests/*.sh`) run as `sh <script>` exits 127 or takes a false branch. Invoke such a script with `bash`, and for hook changes run the suite the way CI does: `bash loom-hooks/tests/run-all.sh` (it scrubs the session's `LOOM_*` variables), `LOOM_HOOK_TEST_BSD=1 bash loom-hooks/tests/run-all.sh`, and `bash scripts/check-hook-syntax.sh`. A plan-level `!` negation works under dash.

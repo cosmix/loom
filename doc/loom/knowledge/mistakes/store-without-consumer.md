@@ -30,12 +30,12 @@ present tense from a fact.
 
 ## The Concrete Trail (as it was)
 
-| Shape | Location | State |
-| --- | --- | --- |
-| `ItemKind::SourceNode` | `context/schema.rs:79` | variant NEVER constructed; `pack.rs:73` only ever writes `KnowledgeChunk` |
-| `ResolvedGraph::node()` | `context/graph_store/mod.rs:131` | zero callers in src or tests; also an O(nodes) linear scan, so a footgun as well as unused — recommend deleting |
-| `ContextItem.excerpt` `None` arm | `pack.rs:88` always sets `Some(bounded_excerpt(..))` | unreachable in production, so the no-excerpt branch in `brief.rs` and its test cover an untaken path |
-| `Channel::Source` | `context/schema.rs:48` | parsed by `parse_scope`, in `--help`, in `PackRequest.scope`, serialized into every pack, in `Channel::all()` DEFAULT path — consulted by nothing that can produce an item |
+| Shape                            | Location                                             | State                                                                                                                                                                      |
+| -------------------------------- | ---------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `ItemKind::SourceNode`           | `context/schema.rs::ItemKind`                       | variant NEVER constructed; `context/tests/pack.rs::rule_29_knowledge_candidates_still_become_knowledge_chunk_items` only ever writes `KnowledgeChunk`                      |
+| `ResolvedGraph::node()`          | `context/graph_store/layer_types.rs::node`         | zero callers in src or tests; also an O(nodes) linear scan, so a footgun as well as unused — recommend deleting                                                            |
+| `ContextItem.excerpt` `None` arm | `context/pack.rs` always sets `Some(bounded_excerpt(..))` | unreachable in production, so the no-excerpt branch in `brief.rs` and its test cover an untaken path                                                                       |
+| `Channel::Source`                | `context/schema.rs::fmt`                             | parsed by `parse_scope`, in `--help`, in `PackRequest.scope`, serialized into every pack, in `Channel::all()` DEFAULT path — consulted by nothing that can produce an item |
 
 ## The Docstring Overclaims, and One Detection Trap Worth Knowing
 
@@ -43,7 +43,7 @@ Three docstrings in the same subsystem described the source graph as a WIRED
 retrieval channel while the ranker ranked it over an empty slice. All three were
 corrected; the mechanism of one is the reusable lesson:
 
-`context/graph_store/mod.rs:22` attributed a write-timing decision to
+the module doc of `context/graph_store/mod.rs` attributed a write-timing decision to
 `crate::context::reconcile` — **a module that does not exist**. The real owner is
 `context::refresh::source_graph::reconcile_source_graph`.
 
@@ -58,7 +58,7 @@ typo becomes a rustdoc warning instead of a permanent lie.
 
 ## The House Style That Gets This Right
 
-`commands/context/record_edit.rs:12-14` states its own status flatly: consumed by
+the module doc of `commands/context/record_edit.rs` states its own status flatly: consumed by
 nothing — it is pure input for a consumer that has not been built. Copy that tone.
 A docstring that says "nothing reads this yet" costs one sentence and saves every
 later reader from inferring a wiring that is not there.

@@ -54,8 +54,8 @@
 
 - `rg -q -g '!tests/**' read-receipt ../loom-hooks` still matched `loom-hooks/tests/post-tool-use-tool-event.sh`. The glob is applied relative to the search root, so `!tests/**` never excludes `../loom-hooks/tests/`; `'!**/tests/**'` does.
 - A wiring pattern spanning a call's first argument (`let text = worker_query_text(&config.stage`) broke when rustfmt split the call across lines (`worker_brief.rs`).
-- `loom check` exits non-zero when an acceptance criterion fails: `ensure_passed` (`loom/src/commands/verify.rs:127`) returns an error when acceptance or the goal check fails, and the summary shows `Acceptance: ✗`. An earlier note here read the exit code as 0; the tree does not.
-- `loom check` shows only the last 20 lines of a failing criterion's output (`TAIL_LINES`, `loom/src/commands/stage/criterion_output.rs:7`) and persists no full output, so an unfiltered `cargo test` failure cannot be named from it.
+- `loom check` exits non-zero when an acceptance criterion fails: `ensure_passed` (`loom/src/commands/verify.rs::ensure_passed`) returns an error when acceptance or the goal check fails, and the summary shows `Acceptance: ✗`. An earlier note here read the exit code as 0; the tree does not.
+- `loom check` shows only the last 20 lines of a failing criterion's output (`TAIL_LINES`, `loom/src/commands/stage/criterion_output.rs::TAIL_LINES`) and persists no full output, so an unfiltered `cargo test` failure cannot be named from it.
 
 **Why:** the runner's report is a rendering of the result, and each one drops something a shell run shows: the full output and rustfmt's final layout.
 
@@ -63,7 +63,7 @@
 
 ## The Agent Sandbox Fails Part of the Full Gate for Environment Reasons (2026-10-20)
 
-**What happened:** in the agent sandbox the unfiltered `cargo test` gate failed 28 tests. Unix socket binds are denied (`handoff/completion/content_tests.rs:151`, the `completion_replay` daemon socket); `/var/tmp` is read-only for `verify::*` scratch; `TMPDIR=/tmp/claude-1000` trips the `claude`-name precheck in `hooks_subagent_verify_guard` (it passes under `/run/user/1000/loom/scratch/<session>`); and `bounded-stdin.py`'s `codex-forward-guard.sh` case sees stage evidence from an ancestor's `LOOM_*` environment and exits 2. In the completion sandbox `markdownlint` fails on unreadable git metadata and a refused `bunx` download, and the BSD-mode `run-all.sh` suite sits at the 300 s criterion timeout (about 5.5 minutes standalone, unchanged by the stage). `integration-verify` completed with every criterion green except the unfiltered `cargo test`, which needs a Unix socket.
+**What happened:** in the agent sandbox the unfiltered `cargo test` gate failed 28 tests. Unix socket binds are denied (the `completion_replay` daemon socket in `handoff/completion/content_tests.rs`); `/var/tmp` is read-only for `verify::*` scratch; `TMPDIR=/tmp/claude-1000` trips the `claude`-name precheck in `hooks_subagent_verify_guard` (it passes under `/run/user/1000/loom/scratch/<session>`); and `bounded-stdin.py`'s `codex-forward-guard.sh` case sees stage evidence from an ancestor's `LOOM_*` environment and exits 2. In the completion sandbox `markdownlint` fails on unreadable git metadata and a refused `bunx` download, and the BSD-mode `run-all.sh` suite sits at the 300 s criterion timeout (about 5.5 minutes standalone, unchanged by the stage). `integration-verify` completed with every criterion green except the unfiltered `cargo test`, which needs a Unix socket.
 
 **Why:** the confined runner and the session shell differ in network, sockets, temp directories and ancestor environment, so a criterion can pass in one and fail in the other without a code defect.
 
@@ -106,7 +106,7 @@ with `EROFS` at `/var/tmp/.loom-command-*`, and 9 `hooks_subagent_verify_guard` 
 
 **Why:** `confine_scratch.rs` `scratch_roots` drops the root equal to the tree under test, leaving
 only `/tmp` and `/var/tmp`, both read-only in the sandbox. The 9 guard tests refuse a `TMPDIR`
-containing `claude` (`tests/integration/hooks_subagent_verify_guard.rs:44`); `TMPDIR` pointed at
+containing `claude` (`tests/integration/hooks_subagent_verify_guard.rs::temp_dir_no_claude`); `TMPDIR` pointed at
 `$LOOM_SCRATCH_DIR` fixes those 9 and not the 17.
 
 **Prevention:** judge these names by `loom check <stage-id>`, the confined runner `loom stage
@@ -149,7 +149,7 @@ each diagnostic to stderr.
 
 **Prevention:** a routing function whose branch ends the process must not return `Ok` on the success path. The Relay branch exits with the wait code.
 
-**Fix:** the Relay branch always calls `std::process::exit(code)` (`loom/src/commands/verify_relay.rs:33` and `:43`).
+**Fix:** the Relay branch always calls `std::process::exit(code)` (`loom/src/commands/verify_relay.rs::run`).
 
 ## Claude Code Refused the Nested Criteria Runner on Linux, and the First Relay Design Exited 3 (2026-10-21)
 
@@ -169,17 +169,17 @@ each diagnostic to stderr.
 
 **Prevention:** judge a cache hit by its cached verdict (`tests_executed`), or run the probe uncached. A test-selection judge reads the cached run, never the replayed stdout.
 
-**Fix:** `judge_cached` in `verify/contracts/completion.rs:166` and in `verify/impact_tests/runs.rs:130` decide a certified cache hit from `CachedRun.tests_executed`. `ProbeRun` carries the cached count (`verify/criteria/runner.rs:199`). The impact-test judge reached this branch with the fast-forward to d758634d, which brought in upstream commit 5753d07a.
+**Fix:** `judge_cached` in `verify/contracts/completion.rs::judge_cached` and in `verify/impact_tests/runs.rs::judge_cached` decide a certified cache hit from `CachedRun.tests_executed`. `ProbeRun` carries the cached count (`verify/criteria/runner.rs::run_with_cache`). The impact-test judge reached this branch with the fast-forward to d758634d, which brought in upstream commit 5753d07a.
 
 ## Gate Verifier Subagents Repeated the Suite That Completion Runs Again
 
 **What happened:** the gate-dedup and integration-verify stages counted gate commands in their transcripts. The previous integration-verify ran `cargo test` 30 times across 4 verifier sessions and 15 completions.
 
-| Run | Verifier subagents | `cargo test` calls | `loom check` host jobs | `loom stage complete` calls |
-| --- | --- | --- | --- | --- |
-| Previous integration-verify | 4 sessions | 30 | not counted | 15 completions |
-| gate-dedup | 0 | 21: 19 by 9 workers, every one filtered; 2 by the main agent | 3 passed | 11: 2 refused, 9 pinned for 3 host jobs |
-| integration-verify (to 06:46Z) | 0 | 15, every one filtered: 11 by workers, 4 by the main agent | 3: one `--criterion 4`, one failed on the openat2 flake, one passed | 0 so far |
+| Run                            | Verifier subagents | `cargo test` calls                                           | `loom check` host jobs                                              | `loom stage complete` calls             |
+| ------------------------------ | ------------------ | ------------------------------------------------------------ | ------------------------------------------------------------------- | --------------------------------------- |
+| Previous integration-verify    | 4 sessions         | 30                                                           | not counted                                                         | 15 completions                          |
+| gate-dedup                     | 0                  | 21: 19 by 9 workers, every one filtered; 2 by the main agent | 3 passed                                                            | 11: 2 refused, 9 pinned for 3 host jobs |
+| integration-verify (to 06:46Z) | 0                  | 15, every one filtered: 11 by workers, 4 by the main agent   | 3: one `--criterion 4`, one failed on the openat2 flake, one passed | 0 so far                                |
 
 The unfiltered suite ran only inside host jobs.
 
@@ -193,4 +193,4 @@ The unfiltered suite ran only inside host jobs.
 
 **Why:** the brief assumed a stage session could reach a daemon-run stage.
 
-**Prevention:** brief a functional check through the stage's own `loom check --criterion`, or name the fixture the contract test uses (`loom/tests/gate_dedup_contracts.rs:61`, `check_criterion_runs_only_named_criteria`).
+**Prevention:** brief a functional check through the stage's own `loom check --criterion`, or name the fixture the contract test uses (`loom/tests/gate_dedup_contracts.rs::check_criterion_runs_only_named_criteria`, `check_criterion_runs_only_named_criteria`).

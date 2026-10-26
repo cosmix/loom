@@ -1,5 +1,6 @@
 ---
 ---
+
 # Cli Process And Conventions
 
 > CLI registration, TUI, errors
@@ -13,16 +14,16 @@ Two modes: **static** (one-time print) and **live** (real-time via daemon socket
 Three systems, in ascending order of permanence:
 
 | System            | Location                                                                  | Lifetime                          | Written by                                                                   |
-| ----------------- | ------------------------------------------------------------------------- | ---------------------------------- | ----------------------------------------------------------------------------- |
-| **Memory**        | `.loom/work/memory/{session}.md`                                               | The run                           | `loom memory note\|decision\|change\|question`                               |
+| ----------------- | ------------------------------------------------------------------------- | --------------------------------- | ---------------------------------------------------------------------------- |
+| **Memory**        | `.loom/work/memory/{session}.md`                                          | The run                           | `loom memory note\|decision\|change\|question`                               |
 | **Stage outputs** | `outputs: Vec<StageOutput>` on the stage file (key / value / description) | The run; read by dependent stages | `loom stage output set`                                                      |
 | **Knowledge**     | `doc/loom/knowledge/` (tiered)                                            | Permanent                         | `loom knowledge update` (stage execution) or direct Write/Edit (interactive) |
 
 Memory is placed in the signal's recitation section for maximum LLM attention. The promotion path from memory to knowledge is the **`knowledge-distill` stage**, which reads `loom memory show --all` and curates — there is no `loom memory promote` command.
 
-`loom knowledge update` appends; `loom knowledge replace-section <file> <heading> [content]` overwrites a `## <heading>` section's body in place — the correction path for stale knowledge — and falls back to appending, with a distinct message, when the heading is not found. There is still no verb that deletes a section outright, or renames its heading (see concerns.md). Knowledge commands resolve through `WorkDir::project_root()` (cwd-relative), so a worktree agent writes to its own worktree rather than the main repo.
+`loom knowledge update` appends; `loom knowledge replace-section <file> <heading> [content]` overwrites a `## <heading>` section's body in place — the correction path for stale knowledge — and falls back to appending, with a distinct message, when the heading is not found. `loom knowledge delete-section <file> <heading>` deletes a section and its nested subsections; no verb renames a heading in place (see concerns.md). Knowledge commands resolve through `WorkDir::project_root()` (cwd-relative), so a worktree agent writes to its own worktree rather than the main repo.
 
-**Corrected 2026-07-30:** an earlier version of this section claimed a `.loom/work/facts.toml` cross-stage KV store, a `loom memory promote` command, and `<!-- .loom-protected -->` file markers. None of the three exist in the codebase. Cross-stage KV is `loom stage output`; "Discovered Facts" survives only as a HandoffV2 field and a signal sub-section.
+Cross-stage KV is `loom stage output`; "Discovered Facts" survives only as a HandoffV2 field and a signal sub-section. There is no cross-stage facts store, no `loom memory promote` command and no file-protection marker.
 
 ## Error Handling Pattern
 
@@ -46,7 +47,7 @@ Three-level: **Project Root**, **Worktree** (`.worktrees/<stage-id>/`), **workin
 
 New agent guidance should be reinforced at: (1) Skill file (depth), (2) CLAUDE.md.template (authority), (3) cache.rs signals (runtime enforcement). Ensures guidance reaches agents regardless of entry point. Agent definitions (`agents/*.md`) serve as a supplementary fourth surface for role-specific guidance (e.g., coordinator/worker roles in subagent hierarchies).
 
-### Mini Adversarial Code Review (multi-surface, 2026-06-25)
+### Mini Adversarial Code Review (multi-surface)
 
 Every code-producing stage must end with a MANDATORY mini adversarial code review across six fixed dimensions: **code quality & architecture (SOLID), idiomatic code, security, wiring, dead & unnecessary code, no duplication (DRY across the whole codebase)**. The doctrine is reinforced across six surfaces that MUST stay consistent when the dimensions change:
 
@@ -63,7 +64,7 @@ Scope rule: code stages ONLY. Documentation stages (`knowledge`, `knowledge-dist
 ## Stage Necessity Test
 
 Before creating ANY stage beyond the bookends, it must answer YES to one of four questions
-(`skills/loom-plan-writer/SKILL.md:388`) and the plan prose must NAME which one:
+(`skills/loom-plan-writer/SKILL.md`) and the plan prose must NAME which one:
 
 - **Q1** — does another stage need this stage's code _merged_ before it can start? Only a
   MERGE-ORDER dependency counts. "B imports A" is compile-order → foundation step in ONE stage.
@@ -141,13 +142,13 @@ All writes to `.loom/work/config.toml` go through `fs/work_dir.rs` using `toml_e
 
 **`loom plan verify` contract:** run `parse_plan()` first (auto-runs Tier 1); if it returns `Err`, report fatal errors and exit non-zero. If it succeeds, run the three Tier 2 functions, print their warnings, exit 0 (advisory only).
 
-**Known gap (2026-05-14):** `loom plan verify` does NOT validate `sandbox.permission_mode=bypass-permissions`. That check lives only in `sandbox::config::validate_config`, called from `commands/init/plan_setup.rs` (init path) and at spawn time. `plan verify` skips it, so a plan with `bypass-permissions` reports 0 errors from `plan verify` but fails at `loom init`. Fix: thread `validate_config` into the `plan verify` flow.
+**Sandbox policy check:** `loom plan verify` runs `sandbox::validate_config` over each stage's merged sandbox config (`commands/plan/verify/checks.rs`), so a plan that sets `sandbox.permission_mode=bypass-permissions` is refused there, the same as at `loom init` (`commands/init/plan_setup.rs`) and at spawn time.
 
 **Call site:** `loom/src/commands/init/plan_setup.rs` — shows the canonical order and how warnings are surfaced to the user.
 
 ## reqwest::blocking HTTP Client Pattern
 
-Template from `commands/self_update/client.rs`, for loom's actual HTTP consumers. NOT for the adjudicator, which this line used to point at: it spawns a `claude -p` session and makes no HTTP call.
+Template from `commands/self_update/client.rs`, for loom's actual HTTP consumers. NOT for the adjudicator: it spawns a `claude -p` session and makes no HTTP call.
 
 ```rust
 use reqwest::blocking::Client;
@@ -215,7 +216,7 @@ marks derived state stale and leaves a good merge intact.
 
 ## Bounded Process Output Must Be Drained Concurrently With `wait()`
 
-`process::run_bounded` (`loom/src/process/mod.rs`) starts stdout/stderr reader threads before calling `OwnedProcess::wait` (`loom/src/process/owned.rs`). The owner polls `Child::try_wait` against an absolute deadline, sleeping at most 10 ms per iteration. It does not install the SIGCHLD notification handler used by `wait-timeout`, whose socket writes can be denied in a restricted sandbox. The claim that this path calls `child.wait_timeout` is incorrect.
+`process::run_bounded` (`loom/src/process/mod.rs`) starts stdout/stderr reader threads before calling `OwnedProcess::wait` (`loom/src/process/owned.rs`). The owner polls `Child::try_wait` against an absolute deadline, sleeping at most 10 ms per iteration. It does not install the SIGCHLD notification handler used by `wait-timeout`, whose socket writes can be denied in a restricted sandbox.
 
 Captured output must drain concurrently with the child wait: a child emitting more than the OS pipe buffer can otherwise block indefinitely. Keep a regression fixture whose output exceeds that buffer. `collect_output` consumes reader-channel results and never reads the pipes itself.
 

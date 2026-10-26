@@ -1,5 +1,6 @@
 ---
 ---
+
 # Security And Isolation
 
 > 4-layer worktree defense
@@ -16,7 +17,7 @@
 - **ID validation**: Alphanumeric + dash/underscore, max 128 chars, no path traversal (validation.rs)
 - **Acceptance criteria**: Runs arbitrary shell commands (trusted model)
 - **Socket**: Mode 0o600 (owner only), max 100 connections, 10MB message limit, Unix only
-- **Self-update**: minisign signature verification for binaries; `agents.zip`, `skills.zip`, and `CLAUDE.md.template` ARE SHA256-verified against the release checksums asset (self-update refuses to install an asset with no checksum entry). The asset-name mismatch an earlier version of this bullet described is fixed: `commands/self_update/mod.rs::checksum_asset` fetches `SHA256SUMS.txt`, the name the release workflow publishes (corrected 2026-09-03; `PLAN-embed-assets-and-complete-self-update` removes the config-asset download path entirely)
+- **Self-update**: minisign signature verification of the binary (`commands/self_update/signature.rs::verify_binary_signature`); agents, skills and commands are not downloaded separately: after the binary swap, `commands/self_update/mod.rs::run_asset_install` re-executes `loom install-assets` so the new binary installs its own embedded copies. The release workflow also publishes `SHA256SUMS.txt` for manual verification
 - **Shell escaping**: escape_shell_single_quote(), escape_applescript_string() in emulator.rs
 - **permission_mode field** (`SandboxConfig` / `StageSandboxConfig`): Resolves as stage > plan > stage-type default. Default by stage type: ALL four stage types → `auto` (Knowledge, KnowledgeDistill, Standard, IntegrationVerify) — loom stages run autonomously with no human to answer prompts, so the agent auto-accepts actions its heuristics deem safe; the sandbox deny/allow rules are the safety boundary. Override to a stricter mode (`accept-edits`, `plan`) at plan or stage level if needed. **Delivery:** the resolved mode is passed as the `--permission-mode` CLI flag by `build_claude_command` at spawn — NOT via `permissions.defaultMode` in the worktree's `settings.local.json`, which Claude Code v2.1.142+ ignores for `auto` (a repo cannot grant itself auto mode; only the CLI flag or user/managed settings are honored). Auto mode itself requires a supporting account/model (Opus 4.6+/Sonnet 4.6+); loom's job is only to request it correctly. See entry-points.md and mistakes.md.
 
@@ -106,13 +107,12 @@ A sandboxed session cannot write loom state directly (owner decision 3). Every w
 
 `loom-hooks/loom-relay.sh` (PostToolUse, matcher `Bash`) runs a fast bash check on the command's shell tokens, then hands off to `loom hook relay`, which proves the request came from the session it claims by process ancestry, verifies the ticket against the printed hash, and writes the entry to `W/inbox/<session-id>/`. The daemon's `drain_session_inboxes` applies each entry at most once against a per-session ledger.
 
-**Leftover tickets are swept.** A ticket's line can fail to reach the hook: stdout redirected or piped through `tail`, a script file, a background call, or more than `MAX_LINES_PER_CALL` (16) lines in one output. `loom hook relay` therefore relays its own lines and then every other `<id>.req` still in the scratch directory whose kind is in `--allowed-kinds` and is NOT a control kind (`commands/hook/relay/sweep.rs`), so only the non-control kinds (`memory`, `telemetry`, `check`) are swept. A control ticket stays bound to its own line: one a subagent wrote is refused, and sweeping it during a later main-agent call would relay the subagent's block, handoff or verdict under the main agent's authority. A swept ticket has no announced hash; `ticket_check::read_unlisted` requires the same file shape (single-link regular file, no symlink, owner uid, size cap) and a decoded id equal to the file stem. The hash never bound a ticket to anything the session could not produce itself; the session proof and the command-derived kinds authorise a relay, and both apply to the sweep. The hook's fast path lets any payload containing ` memory ` through so the helper runs even when the line was hidden, and stays silent unless a relay line was present. History: [Memory Relay Drain Gap](../mistakes/memory-relay-drain-gap.md).
+**Leftover tickets are swept.** A ticket's line can fail to reach the hook: stdout redirected or piped through `tail`, a script file, a background call, or more than `MAX_LINES_PER_CALL` (16) lines in one output. `loom hook relay` therefore relays its own lines and then every other `<id>.req` still in the scratch directory whose kind is in `--allowed-kinds` and is NOT a control kind (`commands/hook/relay/sweep.rs`), so only the non-control kinds (`memory`, `telemetry`, `check`) are swept. A control ticket stays bound to its own line: one a subagent wrote is refused, and sweeping it during a later main-agent call would relay the subagent's block, handoff or verdict under the main agent's authority. A swept ticket has no announced hash; `ticket_check::read_unlisted` requires the same file shape (single-link regular file, no symlink, owner uid, size cap) and a decoded id equal to the file stem. The hash never bound a ticket to anything the session could not produce itself; the session proof and the command-derived kinds authorise a relay, and both apply to the sweep. The hook's fast path lets any payload containing `memory` through so the helper runs even when the line was hidden, and stays silent unless a relay line was present. History: [Memory Relay Drain Gap](../mistakes/memory-relay-drain-gap.md).
 
 Modules: `loom/src/relay/*` (protocol: kind, line, ticket, payload, inbox, matrix, scratch), `fs/inbox/*` (layout, ledger, dedupe), `commands/hook/relay*` (the `loom hook relay` CLI), `orchestrator/core/inbox_drain/*` (the daemon side), `commands/request/*` (`loom request status`, for polling a request's outcome). See [Inbox Ledger Has Two Rows Per Request Id](../mistakes/concurrency-and-locking.md#inbox-ledger-has-two-rows-per-request-id--a-lookup-must-take-the-latest-2026-09-13) before writing any code that looks a request up by id.
 
 ## Loom's `config.worktree` Deny and Check
 
->
 > config.worktree deny and check
 
 `partition_admin_dirs` (`git/worktree/config_worktree.rs`) lists `<common>/worktrees/*` when the capsule is built and splits the entries by the session's location: the entry whose `gitdir` records `<worktree>/.git` is the session's own, every other entry is a sibling. `deny_worktree_admin_dirs` (`sandbox/control_surfaces/session_denies.rs`) then denies each sibling directory whole and the own entry's `config.worktree` alone. The own entry's `HEAD`, `index` and `logs/` stay writable, because `git add` writes its `index`; `config.worktree` is denied because, with `extensions.worktreeConfig`, git reads it and it could name a command the daemon's pinned git runs. Nothing is denied beneath a sibling directory: bubblewrap cannot create a mount point inside a read-only bind, and a sibling's entry vanishes when its stage merges. The common directory, `refs/` and the object store stay writable.
@@ -138,12 +138,12 @@ also matched and was miscounted as its own worktree root.
 
 **Fix:** anchor the pattern to the end of the path — `/\.worktrees/[^/]+/?$` in the shell hooks,
 and "parent directory is literally named `.worktrees`" in `is_loom_worktree_path`. A path several
-segments below a real worktree root no longer counts as one; nested worktree resolution now
+segments below a real worktree root does not count as one; nested worktree resolution
 selects the innermost stage.
 
 ## Spawn Preflight and the Merge Gate
 
-`sandbox::validate_config` (`sandbox/config.rs:167`) refuses three settings unconditionally, with no
+`sandbox::validate_config` (`sandbox/config.rs::validate_config`) refuses three settings unconditionally, with no
 plan-author acknowledgement possible: `permission_mode: bypass-permissions`, `sandbox.enabled: false`
 and `sandbox.allow_unsandboxed_escape: true`. The error is a typed `SandboxPreflightRefusal`
 (`sandbox/config/preflight.rs`), so a spawn it stops is recorded as `SandboxSetupFailure`
@@ -154,7 +154,7 @@ calls the same `sandbox::preflight::sandbox_policy_refusals` `loom run` uses; `i
 interactive confirmation.
 
 `commands/run/confinement.rs::require_confinement`, called from both `loom run` entry points'
-shared `run_startup_preflights` (`commands/run/mod.rs:115`), runs checks 1-4 (`validate_config`;
+shared `run_startup_preflights` (`commands/run/mod.rs::run_startup_preflights`), runs checks 1-4 (`validate_config`;
 every installed hook script present, `loom-relay.sh` included; `LOOM_BIN`/the hooks directory outside
 every writable root; `/bin/bash` and every `hook_path` tool resolve outside every writable root) plus
 the `R/loom-hooks/**` rule and the loom-written-keys check `repair --fix` also uses. Every spawn

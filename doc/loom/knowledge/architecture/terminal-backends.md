@@ -12,40 +12,37 @@ call goes through. It wraps two concrete lanes:
 | `Native` (default) | `NativeBackend` (`terminal/native/`) | a host terminal emulator window         |
 | `Tmux` (opt-in)    | `TmuxBackend` (`terminal/tmux/`)     | a detached tmux server, no GUI required |
 
-`SessionBackend::from_config(work_dir)` constructs `NativeBackend::new` eagerly when Native is configured (`orchestrator/terminal/backend.rs:63-69`), so valid configuration alone does not guarantee success: terminal detection can fail on a headless host. Tmux configuration constructs no native backend at startup. Each native detection/process-discovery probe has a two-second deadline.
+`SessionBackend::from_config(work_dir)` constructs `NativeBackend::new` eagerly when Native is configured (`orchestrator/terminal/backend.rs::from_config`), so valid configuration alone does not guarantee success: terminal detection can fail on a headless host. Tmux configuration constructs no native backend at startup. Each native detection/process-discovery probe has a two-second deadline.
 
-When Tmux is configured but a persisted session belongs to Native, `native_lane` constructs the native backend lazily and memoizes success or failure in `OnceLock<Result<NativeBackend, String>>` (`backend.rs:110-120`). The configured Native lane uses the eagerly constructed backend. `OnceLock` keeps the dispatcher `Send + Sync` for monitor access through `Arc`; storing errors as strings permits repeated reporting without rerunning terminal probes.
+When Tmux is configured but a persisted session belongs to Native, `native_lane` constructs the native backend lazily and memoizes success or failure in `OnceLock<Result<NativeBackend, String>>` (`orchestrator/terminal/backend.rs::native_lane`). The configured Native lane uses the eagerly constructed backend. `OnceLock` keeps the dispatcher `Send + Sync` for monitor access through `Arc`; storing errors as strings permits repeated reporting without rerunning terminal probes.
 
 ## Configuration and Lane Resolution
 
 - **Config:** `[terminal]` / `backend = "native" | "tmux"` in `.loom/work/config.toml`.
-  `TerminalConfig` (`models/session/types.rs:85-89`) holds one `SessionBackendKind`
-  (`types.rs:62-70`, `#[serde(rename_all = "lowercase")]`, `#[default] Native`).
-  Helpers `read_terminal_config` / `write_terminal_config` (`fs/work_dir/config_sections.rs`); a missing
+  `TerminalConfig` (`models/session/types.rs::TerminalConfig`) holds one `SessionBackendKind`
+  (`models/session/types.rs::SessionBackendKind`, `#[serde(rename_all = "lowercase")]`, `#[default] Native`).
+  Helpers `read_terminal_config` / `write_terminal_config` (`fs/work_dir/config_sections/terminal_config.rs`); a missing
   `backend` key (section absent or empty) falls through to `~/.loom/config.toml`'s `terminal.backend`, THEN the built-in default —
   absence is the inheritance channel, not a synonym for native. Written at init by
   `commands/init/plan_setup.rs`, and only when someone chose explicitly.
 - **CLI:** `--backend <native|tmux>` on both `loom init` (skips the interactive prompt) and
   `loom run` / `loom run --foreground` (persists to `[terminal]`). `loom run`'s
-  `resolve_backend_flag` (`commands/run/mod.rs:118-158`) is shared by both run paths.
+  `resolve_backend_flag` (`commands/run/mod.rs::resolve_backend_flag`) is shared by both run paths.
 - **`loom init`'s prompt inherits** (`commands/init/backend.rs`): pressing Enter returns `None`, so
   no `[terminal]` section is written and the repo follows the user config live; typing `native` or
-  `tmux` pins that value into the workspace. Before this, the prompt hardcoded `native` in three
-  places — its label, its empty-input arm and its EOF arm — so an operator with
-  `terminal.backend = "tmux"` in `~/.loom/config.toml` was shown `(native)`, pressed Enter, and got
-  native written into the workspace, shadowing their global preference for the life of the repo. The
-  user-scope key was dead for every interactively-initialised repo. The tmux-missing-from-PATH
-  warning keys off `effective_backend` (explicit choice, else the user config) precisely because an
-  inherited tmux backend now arrives as `None`.
+  `tmux` pins that value into the workspace. The prompt's default label comes from
+  `backend_default_label`, so an operator with `terminal.backend = "tmux"` in `~/.loom/config.toml` sees
+  `(tmux, from ~/.loom/config.toml)` and keeps following the user config. The tmux-missing-from-PATH warning keys off `effective_backend` (explicit
+  choice, else the user config) because an inherited tmux backend arrives as `None`.
 - **Per-spawn resolution** — `SessionBackend::resolve_lane` returns the configured kind verbatim; there
   is no marker and no automatic lane switch. `dispatch_spawn` dispatches on that configured kind only:
   configured tmux with no tmux on PATH returns `Err` (message names the missing binary and how to
   reconfigure), and a tmux spawn failure returns `Err` with context `tmux spawn failed for session
-  '<id>'` instead of retrying on the native lane.
+'<id>'` instead of retrying on the native lane.
 
 ## Session-Recorded Backend Dispatch
 
-`Session.backend: SessionBackendKind` (`#[serde(default)]`, `models/session/types.rs:119-123`) records
+`Session.backend: SessionBackendKind` (`#[serde(default)]`, `models/session/types.rs::Session`) records
 the lane **actually used**, and is persisted to `.loom/work/sessions/<id>.md`.
 
 This is the load-bearing part: sessions are reconstructed from disk after a daemon restart, so
@@ -59,9 +56,9 @@ that spawned them.
 The tmux lane deliberately does **not** use one shared server with many windows. Each session gets its
 own server on its own socket:
 
-- socket name — `format!("loom-{}", session.id)` (`tmux/mod.rs:41-43`)
-- socket dir — `$TMUX_TMPDIR` else literal `/tmp`, joined with `tmux-<uid>` (`tmux/socket.rs:23-30`)
-- tmux session name inside that server — `session.tracking_key` (`models/session/methods.rs:75-78`),
+- socket name — `format!("loom-{}", session.id)` (`orchestrator/terminal/tmux/mod.rs::socket_name`)
+- socket dir — `$TMUX_TMPDIR` else literal `/tmp`, joined with `tmux-<uid>` (`tmux/socket.rs::loom_socket_dir`)
+- tmux session name inside that server — `session.tracking_key` (`models/session/methods.rs::new_contract`),
   so merge/knowledge/base-conflict prefixes resolve correctly
 
 **Why per-session:** a wedged or killed server takes down exactly one stage. A shared server is a
@@ -110,9 +107,9 @@ There is no fallback marker and no automatic lane switch (removed 2026-09-13, se
 backend only:
 
 - Configured tmux with no tmux on PATH → `Err("terminal backend \"tmux\" is configured but tmux is not
-  on PATH; install tmux or set [terminal] backend = \"native\" ...")`.
+on PATH; install tmux or set [terminal] backend = \"native\" ...")`.
 - A tmux spawn that fails after the server may exist → `Err` with context `tmux spawn failed for
-  session '<id>'`, after teardown (killing the socket server and calling
+session '<id>'`, after teardown (killing the socket server and calling
   `native::cleanup_stage_files`).
 
 Either `Err` propagates to `stage_executor.rs`, which calls `block_and_undo_session`
@@ -151,7 +148,7 @@ build sequence (`build_overview_argv`, `VIEWER_HARDENING`).
   220x50, one pane per attachable session, re-tiled after **each** split.
   - `VIEWER_HARDENING` runs **before** `new-session`, as one `;`-separated sequence:
     `start-server ; set -g exit-empty off ; set -gw remain-on-exit on ; set -g mouse off ;
-    set -g terminal-overrides[99] '*:kmous@' ; set -g remain-on-exit-format`. The indexed
+set -g terminal-overrides[99] '*:kmous@' ; set -g remain-on-exit-format`. The indexed
     `kmous@` entry is idempotent on purpose — this sequence re-runs against the same long-lived
     viewer server on every `loom attach`.
     Pane 0 is born already running an attach client, so only a GLOBAL option can protect it — the
@@ -163,9 +160,9 @@ build sequence (`build_overview_argv`, `VIEWER_HARDENING`).
 
 ## Live Overview Reconciliation (Daemon-Side)
 
-The overview is no longer a one-shot snapshot. `Monitor::poll` calls
+The overview is reconciled live, not a one-shot snapshot. `Monitor::poll` calls
 `tmux::refresh_attached_viewer` (`orchestrator/terminal/tmux/reconcile.rs`) once per scheduler tick,
-best-effort: a failed pass is logged at `warn` (it was `debug` until 2026-08-26, which hid every
+best-effort: a failed pass is logged at `warn` (not `debug`, which would hide every
 later kill/add behind one bad step) and never fails the poll. The daemon never CREATES the viewer —
 only `loom attach` does — it maintains one the operator already built. Gate order keeps the common
 case free: viewer-socket `stat` (no subprocess, no session reads, no log when nobody is attached) →
@@ -241,15 +238,15 @@ Every tmux server starts with `set-option -g history-limit 50000` and `set-optio
 
 `terminal-history/` is a `STATE_SUBDIRS` entry (`fs/work_dir.rs`), so it exists before any session starts: every capsule denies it to Bash by its real path (`session_settings/contents.rs`), since the sandbox skips a deny whose path is missing at spawn, and `credential-guard.sh` refuses it to a session's file tools ([gaps](../concerns/sandbox-and-confinement-gaps.md#terminal-history-is-guarded-by-a-hook-not-a-boundary)). The web host serves a transcript read-only at `GET /api/terminal-history/<session-id>` (`commands/status/web/terminal/history.rs`, behind the terminal lane's Origin and cookie checks), and the dashboard replays it in an xterm with no input and a link handler that refuses navigation. Tmux tests guard every server they start with `TmuxServerGuard`, because `remain-on-exit` keeps a panicked test's server alive.
 
-## Entry Points
+## Terminal Backend Entry Points
 
 **Dispatcher and lanes**
 
 - `loom/src/orchestrator/terminal/backend.rs` — `SessionBackend`: `from_config`, `resolve_lane`,
   `dispatch_spawn` and the lazy `OnceLock` native lane. Tests in `terminal/backend/tests.rs`.
-- `loom/src/orchestrator/terminal/tmux/mod.rs` — `TmuxBackend`, `socket_name` (`:41-43`),
+- `loom/src/orchestrator/terminal/tmux/mod.rs` — `TmuxBackend`, `socket_name`,
   `spawn_in_tmux`, `evaluate_new_session`, `kill_session`.
-- `loom/src/orchestrator/terminal/tmux/socket.rs` — `loom_socket_dir` (`:23-30`), `socket_path_for`, `list_loom_sockets`, `socket_session_is_alive`, `kill_socket_server`.
+- `loom/src/orchestrator/terminal/tmux/socket.rs` — `loom_socket_dir`, `socket_path_for`, `list_loom_sockets`, `socket_session_is_alive`, `kill_socket_server`.
 - `loom/src/orchestrator/terminal/native/pid_guard.rs` — the deduped PID-file liveness layers shared by
   both lanes (six former copies).
 - `loom/tests/e2e/tmux_backend.rs` — external e2e; `TmuxTmpDirGuard` works around the sandbox. Note
@@ -257,27 +254,27 @@ Every tmux server starts with `set-option -g history-limit 50000` and `set-optio
 
 **`[terminal]` config**
 
-- `loom/src/models/session/types.rs` — `SessionBackendKind` (`:62-70`, `native`/`tmux`, default
-  `native`), `TerminalConfig` (`:85-89`), `Session.backend` (`:119-123`).
-- `loom/src/fs/work_dir.rs` — `TERMINAL_SECTION` (`:347`), `read_terminal_config` /
-  `write_terminal_config` (`:509-516`).
-- `loom/src/commands/init/plan_setup.rs:179-182` — writes the section at init.
+- `loom/src/models/session/types.rs` — `SessionBackendKind` (`native`/`tmux`, default
+  `native`), `TerminalConfig`, `Session.backend`.
+- `loom/src/fs/work_dir/config_sections/terminal_config.rs` — `TERMINAL_SECTION`, `read_terminal_config` /
+  `write_terminal_config`.
+- `loom/src/commands/init/plan_setup.rs::initialize_with_plan` — writes the section at init.
 
 **`--backend` flag**
 
-- `loom/src/cli/types.rs` — on `loom init` (`:41-43`) and `loom run` (`:68-70`),
+- `loom/src/cli/types.rs::Commands` — the `backend` option on `loom init` and `loom run`,
   `value_parser = ["native", "tmux"]`.
-- `loom/src/commands/run/mod.rs:118-158` — `resolve_backend_flag`, shared by `run/mod.rs:46` and
-  `run/foreground.rs:32`. Rejects unknown values, refuses to persist a change while the daemon is
+- `loom/src/commands/run/mod.rs::resolve_backend_flag` — shared by `run/mod.rs::execute_background` and
+  `run/foreground.rs::execute`. Rejects unknown values, refuses to persist a change while the daemon is
   running (prints a restart hint), and calls `resolve_backend_flag_with_probe`, which FAILS startup
   (not just warns) when the effective backend is tmux and tmux is not on PATH.
-- `loom/src/commands/init/execute.rs:184-226` — `resolve_backend_choice`; flag wins, else prompts when
+- `loom/src/commands/init/backend.rs::resolve_backend_choice`; flag wins, else prompts when
   both stdin and stdout are TTYs, else defaults to native.
 
 **`loom attach`**
 
-- `loom/src/commands/attach/mod.rs` — `execute` (`:67-79`), live-session discovery (`:115-141`),
-  `viewer_socket_name` (`:161-177`), `build_overview_argv` (pure), `run_overview`, `attach_direct`
-  (`:346-400`), `require_tty` (`:414-419`). Tests in `attach/tests.rs`.
-- `loom/src/cli/types.rs:101-106` — `Attach { stage_id: Option<String> }`; dispatch at
-  `cli/dispatch.rs:48`. Shell completions complete live stage ids after `loom attach`.
+- `loom/src/commands/attach/mod.rs` — `execute`, `matches_for_stage`, `pick_newest`, `wait_for_stage_target`,
+  `attach_direct`, `require_tty`; `attach/overview.rs` — `build_overview_argv` (pure), `run_overview`;
+  `attach/wait.rs` and `attach/diagnose.rs` — endpoint wait and failure diagnosis. Tests in `attach/tests.rs`.
+- `loom/src/cli/types.rs::Commands` — `Attach { stage_id: Option<String> }`; dispatch in
+  `cli/dispatch.rs` (`Commands::Attach`). Shell completions complete live stage ids after `loom attach`.

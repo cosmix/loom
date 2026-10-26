@@ -11,14 +11,14 @@ text. loom carries **six** named, positively-pinned blocks; the constants live i
 `tests_doctrine_waiting.rs` (`BLOCK_C`) and `tests_doctrine_v2.rs` (`BLOCK_E`, `BLOCK_F`), and the
 surface lists below are the ones the tests assert.
 
-| Block | Content | Const location | Surfaces pinned (test) |
-| --- | --- | --- | --- |
-| `BLOCK_A` | "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS" (subagent no-verify rule) | `orchestrator/signals/tests_doctrine_blocks.rs:11` | standard and integration-verify stable prefixes, `loom-hooks/_subagent-preamble.txt`, `loom-hooks/subagent-verify-guard.sh` (`block_a_agrees_across_every_surface`) |
-| `BLOCK_B` | Model allocation / delegation ladder, incl. `CODEX_IMPLEMENTER_MODEL_TERRA`/`_LUNA`/`_EFFORT`. Point 1 is "DELEGATION IS A COST DECISION" | `orchestrator/signals/tests_doctrine_blocks.rs:23` | `skills/loom-orchestration/SKILL.md` and `skills/loom-plan-writer/SKILL.md` (`block_b_agrees_across_every_surface`); also asserts `BLOCK_B.contains(..)` for each codex identifier constant, so a renamed codex tier fails here first |
-| `BLOCK_C` | Subagent one-background-watch / bounded-wait doctrine ("Checking on subagents...") | `orchestrator/signals/tests_doctrine_waiting.rs:33` | `skills/loom-orchestration/SKILL.md` ONLY, and absent from every stable prefix (`block_c_lives_in_the_orchestration_skill`, `block_c_absent_from_every_stable_prefix`, `block_c_pins_the_owned_wait_contract`) |
-| `BLOCK_D` | Subagent context-ceiling rule ("CONTEXT CEILING - HOOK-REPORTED ONLY") | `orchestrator/signals/tests_doctrine_blocks.rs:82` | standard and integration-verify stable prefixes and `loom-hooks/_subagent-preamble.txt` (`block_d_agrees_across_every_surface`) |
-| `BLOCK_E` | Plan-v2 review order ("**Review order (plan v2):** fix every finding, run the full gate, then run the final review round, then complete...") | `orchestrator/signals/tests_doctrine_v2.rs:34` | the `## Review Gate` section a v2 stage signal renders (`v2_section.rs::append_v2_section`) and `skills/loom-orchestration/SKILL.md` (`block_e_agrees_across_every_surface`) |
-| `BLOCK_F` | Stage exits ("**When the stage cannot finish.**": disputes, `loom stage block`, commit before filing) | `orchestrator/signals/tests_doctrine_v2.rs:38` | standard, integration-verify and knowledge-distill stable prefixes only; the orchestration skill carries no copy (`block_f_agrees_across_every_surface`) |
+| Block     | Content                                                                                                                                      | Const location                                            | Surfaces pinned (test)                                                                                                                                                                                                                |
+| --------- | -------------------------------------------------------------------------------------------------------------------------------------------- | --------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `BLOCK_A` | "VERIFICATION IS THE MAIN AGENT'S JOB - NOT YOURS" (subagent no-verify rule)                                                                 | `orchestrator/signals/tests_doctrine_blocks.rs::BLOCK_A`  | standard and integration-verify stable prefixes, `loom-hooks/_subagent-preamble.txt`, `loom-hooks/subagent-verify-guard.sh` (`block_a_agrees_across_every_surface`)                                                                   |
+| `BLOCK_B` | Model allocation / delegation ladder, incl. `CODEX_IMPLEMENTER_MODEL_TERRA`/`_LUNA`/`_EFFORT`. Point 1 is "DELEGATION IS A COST DECISION"    | `orchestrator/signals/tests_doctrine_blocks.rs::BLOCK_B`  | `skills/loom-orchestration/SKILL.md` and `skills/loom-plan-writer/SKILL.md` (`block_b_agrees_across_every_surface`); also asserts `BLOCK_B.contains(..)` for each codex identifier constant, so a renamed codex tier fails here first |
+| `BLOCK_C` | Subagent one-background-watch / bounded-wait doctrine ("Checking on subagents...")                                                           | `orchestrator/signals/tests_doctrine_waiting.rs::BLOCK_C` | `skills/loom-orchestration/SKILL.md` ONLY, and absent from every stable prefix (`block_c_lives_in_the_orchestration_skill`, `block_c_absent_from_every_stable_prefix`, `block_c_pins_the_owned_wait_contract`)                        |
+| `BLOCK_D` | Subagent context-ceiling rule ("CONTEXT CEILING - HOOK-REPORTED ONLY")                                                                       | `orchestrator/signals/tests_doctrine_blocks.rs::BLOCK_D`  | standard and integration-verify stable prefixes and `loom-hooks/_subagent-preamble.txt` (`block_d_agrees_across_every_surface`)                                                                                                       |
+| `BLOCK_E` | Plan-v2 review order ("**Review order (plan v2):** fix every finding, run the full gate, then run the final review round, then complete...") | `orchestrator/signals/tests_doctrine_v2.rs::BLOCK_E`      | the `## Review Gate` section a v2 stage signal renders (`v2_section.rs::append_v2_section`) and `skills/loom-orchestration/SKILL.md` (`block_e_agrees_across_every_surface`)                                                          |
+| `BLOCK_F` | Stage exits ("**When the stage cannot finish.**": disputes, `loom stage block`, commit before filing)                                        | `orchestrator/signals/tests_doctrine_v2.rs::BLOCK_E`        | standard, integration-verify and knowledge-distill stable prefixes only; the orchestration skill carries no copy (`block_f_agrees_across_every_surface`)                                                                              |
 
 `BLOCK_D` exists because a subagent that never sees the PostToolUse hook's literal `SUBAGENT CEILING
 REACHED` line has no falsifiable way to know it has NOT reached its ceiling, and confabulates one
@@ -47,7 +47,7 @@ surfaces agree. Two independently-worded copies both pass.
    stage brief that mandates ONE background `loom subagents watch --timeout 3600` against a block
    that still advises a short deadline and re-arming), the fix is to REWORD the pinned block to
    agree with the new rule — never to leave the block byte-frozen and let it contradict live
-   doctrine, and never to have a subagent freelance new foundation text. Reconcile *toward* the
+   doctrine, and never to have a subagent freelance new foundation text. Reconcile _toward_ the
    authoritative source, and update every pinning test's asserted needles to match the reworded
    block, keeping only the substrings that must survive.
 2. **Pin with equality, not greps.** A single test `include_str!`s each static surface, calls
@@ -55,11 +55,11 @@ surfaces agree. Two independently-worded copies both pass.
    substring containment of the identifiers it must carry) against the canonical block. See
    `loom/src/orchestrator/signals/tests_doctrine.rs`, `tests_doctrine_waiting.rs` and
    `tests_doctrine_v2.rs`.
-3. **Exceptions travel with the copied block.** For every rule ask: *which surface is pasted
-   verbatim into a subagent prompt?* Any carve-out must survive that paste. A carve-out that
+3. **Exceptions travel with the copied block.** For every rule ask: _which surface is pasted
+   verbatim into a subagent prompt?_ Any carve-out must survive that paste. A carve-out that
    lives only in the prose explaining the rule never reaches the agent that needs it.
 4. **Frame outside the block.** Surface-specific framing (a hook's `BLOCKED:` header line,
-   language-specific examples) sits *outside* the pinned block so the block itself stays
+   language-specific examples) sits _outside_ the pinned block so the block itself stays
    byte-identical everywhere.
 5. **Sweep for retired phrasing with a NEGATIVE pin, not a memory of the grep.** `RETIRED_PHRASES`
    in `tests_doctrine.rs` is asserted absent from `guidance_surfaces()` — CLAUDE.md.template +
@@ -76,7 +76,7 @@ When you add or retire a doctrine block, the table above is part of the change.
 
 **Known tradeoff:** because the blocks must stay byte-identical, per-language examples cannot
 live inside them. `BLOCK_A` carries one Rust example, so a blocked Python or Go subagent reads a
-`cargo` example. The fix is to append language examples *after* the block as explicitly
+`cargo` example. The fix is to append language examples _after_ the block as explicitly
 surface-local guidance.
 
 ## Ambiguity = Fail Safe (Privilege Lookups From State Files)
@@ -86,7 +86,7 @@ than one candidate match as ambiguous and refuse. Concretely: resolve by glob, c
 matches, and consult the file **only when exactly one exists**.
 
 `glob | head -1` is not a lookup — it is a silent tie-break, and the tie is attacker-chosen when
-filenames carry a sortable prefix. Cross-checking a field *inside* the file (`id:`) does not
+filenames carry a sortable prefix. Cross-checking a field _inside_ the file (`id:`) does not
 help: whoever plants the decoy writes that field too. Only the count is trustworthy.
 
 The matching test obligation: a fail-safe relaxation must be pinned by tests that assert the
@@ -99,7 +99,7 @@ For a hook that must decide "does this Bash command run a project-wide build/tes
 substring matching is wrong (it blocks `rg "cargo test" doc/`) and naive word-splitting is
 bypassable. The working shape:
 
-1. Strip embedded content (heredoc bodies, `-m` message text) so a *mention* is not a match.
+1. Strip embedded content (heredoc bodies, `-m` message text) so a _mention_ is not a match.
 2. Normalise newlines to `;`, then pad separators — `;`, `|`, `(`, `)`, and the pair `&&`.
    Never pad a lone `&`: it would split `2>&1` and reopen a redirection bypass.
 3. Split with `set -f` plus array splitting so quotes stay attached to their token.
@@ -113,14 +113,14 @@ bypassable. The working shape:
 
 ## Advisory Preflight: Do the Work, Report the Failure, Never Bail
 
-`advisory_source_graph_preflight` (`commands/run/checks.rs:103-111`) is the second
+`advisory_source_graph_preflight` (`commands/run/checks.rs::advisory_source_graph_preflight`) is the second
 instance of a shape worth copying, after `advisory_codex_lane_preflight`. The contract
 is three rules and no more:
 
 - it returns `()`, never a `Result`, so no caller can accidentally make it fatal;
 - on failure it prints ONE `eprintln!` line with a stable prefix and swallows the error;
 - it is idempotent and silent on the common path — `publish_source_graph`
-  (`checks.rs:127-129`) early-returns when the layer for `HEAD` already exists.
+  (`commands/run/checks.rs::advisory_codex_lane_preflight`) early-returns when the layer for `HEAD` already exists.
 
 Use it for derived state that IMPROVES a run but must never block one. The signature is
 the enforcement: a function that cannot return an error cannot be made load-bearing by a
@@ -128,12 +128,12 @@ later caller who forgets it was optional.
 
 ## Fail-Safe Direction for Destructive Sweeps
 
-Any sweep that kills or deletes must resolve *uncertainty* toward inaction:
+Any sweep that kills or deletes must resolve _uncertainty_ toward inaction:
 
 - **Cannot read the evidence ⇒ do not destroy.** `tmux/socket.rs`'s `socket_session_is_alive` returns
   `false` for an absent session file but **`true`** for one that exists and cannot be parsed — a file
   caught mid-write must not be read as "dead".
-- **Cannot positively attribute ⇒ do not destroy.** Reap only resources provably owned by *this* work
+- **Cannot positively attribute ⇒ do not destroy.** Reap only resources provably owned by _this_ work
   dir. Shared per-user namespaces (the tmux socket dir) make "no matching state file" match other
   checkouts' live resources.
 - **Report what you skipped.** Unattributable resources are surfaced to the user, never silently

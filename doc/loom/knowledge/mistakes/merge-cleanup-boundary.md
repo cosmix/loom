@@ -25,7 +25,7 @@ genuinely succeeded — the defect was in the ORDER, not in any step.
 **Detection rule:** when a function's name describes one action, list the
 irreversible side effects it performs. If any of them destroys an input another
 caller needs, the order is a latent defect regardless of whether tests pass. Ask
-specifically: *after this returns, what can no longer be verified?*
+specifically: _after this returns, what can no longer be verified?_
 
 ## The Fix, and the Shape Worth Copying
 

@@ -93,7 +93,7 @@ a `./`-prefixed path is — verify at `bun run build`, not by reading the CSS.
 ## A CI Smoke Script Depended on Ambient `.loom/work` (2026-09-04)
 
 **What happened:** `scripts/smoke-web-dashboard.sh` launched `loom status --web 0` in its
-inherited CWD; `status::web::execute` (`loom/src/commands/status/web/mod.rs:41-42`) bails
+inherited CWD; `status::web::execute` (`loom/src/commands/status/web/mod.rs`) bails
 with "does not exist. Run loom init first" when `./.loom/work` is absent. Every
 local/worktree run has that symlink, so the script passed everywhere except a clean CI
 checkout, where `.loom/work` is gitignored and never exists.
@@ -167,10 +167,10 @@ same as the stage branch already did.
 ...tests_pty::pty_child_shutdown_reaps_the_child -- --exact` finished in exactly `2.00s` on
 two consecutive runs, matching `PtyChild::shutdown`'s fallback deadline to the millisecond,
 never the fast path. `nix::pty::openpty` wraps libc `openpty(3)`, which has no flags argument
-and opens the master **without** `O_CLOEXEC`. The `fcntl` at `pty.rs:25-27` set `O_NONBLOCK`
+and opens the master **without** `O_CLOEXEC`. The `fcntl` at `pty.rs::spawn` set `O_NONBLOCK`
 (a file-status flag) but never touched the descriptor flags, so the master survived into the
 tmux child across `Command::spawn`'s fork+exec. With the child holding its own copy,
-`shutdown`'s `drop(master)` (`pty.rs:107` at the time) was never the last reference, the slave
+`shutdown`'s `drop(master)` (`pty.rs::write_some` at the time) was never the last reference, the slave
 never saw a hangup, the child never got `SIGHUP`, and every terminal close burned the full 2s
 deadline before `SIGKILL`. Ironically the surrounding code already carried a comment about
 dropping the three slave clones so the master would see the child's hangup — the master was
@@ -182,7 +182,7 @@ one — it passed either way.
 
 **Prevention:** after any `openpty`/`posix_openpt`-style call, `fcntl(F_SETFD(FD_CLOEXEC))` the
 master explicitly — never assume it. When timing a "did the fast path fire" behaviour, assert
-strictly *below* the fallback deadline, not merely under some larger ceiling.
+strictly _below_ the fallback deadline, not merely under some larger ceiling.
 
 ## A Backpressure Gate Made a Half-Closed Browser Invisible, and Two Fixes for It Failed First (2026-09-09)
 
@@ -219,7 +219,7 @@ alive but has wedged the PTY, so nothing ever signals its side.
 
 **Prevention:** before masking a readiness flag off any socket, name the exact syscall-level
 event that signals peer close on each target platform — do not generalise from "this flag
-fires unconditionally." Before proposing any mechanism that *reads* a socket to detect EOF,
+fires unconditionally." Before proposing any mechanism that _reads_ a socket to detect EOF,
 ask what is already sitting in the queue in the state being detected; a backpressure gate
 guarantees that queue is non-empty, which defeats every read-based EOF probe. A claim
 inherited from a reviewer and pasted into a brief carries no more authority than one invented
@@ -229,7 +229,7 @@ from scratch — verify it before it reaches an implementer.
 
 **What happened:** an early version of the terminal bridge's pending-input queue dropped from
 the **front** on overflow — the dangerous direction for a terminal. A typed command is
-submitted by its *last* byte (the newline), so front-truncation keeps that trailing newline
+submitted by its _last_ byte (the newline), so front-truncation keeps that trailing newline
 and discards the beginning: what reaches the agent is a suffix of what was typed, already
 terminated, so the shell executes it. `echo "summarise <70KB of pasted log>"` front-truncated
 becomes `...tail of the log"` + newline — a complete, executable line. Root cause was the
@@ -247,7 +247,7 @@ unconditionally — "stop reading input because the queue is full" plus "the que
 because the child is blocked writing" is the classic proxy deadlock.
 
 **Prevention:** when a bounded queue sits between a network peer and a PTY, identify which
-*end* of the stream carries the commit token (for line-oriented input, the trailing newline)
+_end_ of the stream carries the commit token (for line-oriented input, the trailing newline)
 before choosing a drop policy — any policy that discards context while preserving the commit
 token turns a truncated paste into an executed command. Prefer backpressure over any drop
 policy when the upstream transport already has flow control (TCP) to push back with.
@@ -264,7 +264,7 @@ its report: "this design choice looks wrong, here is why." Nothing in a diff-and
 distinguishes "the reviewer hasn't seen the rationale" from "the rationale doesn't exist."
 
 **Why:** an integration-verify reviewer reasons from the tree alone; it has no channel to the
-plan document that recorded *why* a behaviour is the way it is.
+plan document that recorded _why_ a behaviour is the way it is.
 
 **Prevention:** before briefing a fix for any review finding that would change a deliberate
 behaviour, grep the plan's decisions table for the same words. When two reviewers disagree

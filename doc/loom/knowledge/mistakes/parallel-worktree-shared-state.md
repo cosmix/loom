@@ -13,11 +13,11 @@ Four separate defects in one plan trace to this single fact.
 
 ## The Concrete Cases
 
-- **`ContextStore::open` follows the `.loom/work` symlink** (`context/store.rs:49`), so ANY
+- **`ContextStore::open` follows the `.loom/work` symlink** (`context/store.rs::open`), so ANY
   command that opens the store writes under the MAIN project root, not the worktree.
   From a sandboxed worktree session that surfaces as
   `Failed to create context cache directory: <main repo>/.loom/cache/context-v1:
-  Read-only file system (os error 30)`. **The path is gitignored derived state and the
+Read-only file system (os error 30)`. **The path is gitignored derived state and the
   command is not broken** — do not "fix" the command.
 - **Parallel worktrees therefore share ONE cache.** An interleaved save could leave one
   worktree's `catalog.json` paired with another worktree's `state.json`, serving foreign
@@ -35,7 +35,7 @@ Four separate defects in one plan trace to this single fact.
   layer, never the directory** — enumerate what else writes there first.
 
 Related trap in the same area: `GraphStore::overlay_dir`
-(`context/graph_store/mod.rs:180`) derives its path from the work root ALONE — the
+(`context/graph_store/mod.rs::overlay_dir`) derives its path from the work root ALONE — the
 `context_cache_root` passed to `GraphStore::new` never reaches it. Calling
 `base_dir`/`base_path` on a store built that way yields nonsense, so keep such a store
 scoped to a private helper.
@@ -265,7 +265,7 @@ paths for a contract freeze or a review fingerprint, and to the daemon's special
 
 `attempt_auto_merge` deleted the worktree and branch inside its own success arms — the branch its caller needed to verify the merge. Ask of any function with irreversible side effects: **after this returns, what can no longer be verified?** Also: cleanup refusing over scaffold it never planted, and over loom's own memory spool. → [Merge Cleanup Boundary](merge-cleanup-boundary.md)
 
-## A Tracked Symlink Named `<file>.tmp` Redirected a Locked Write (2026-09-22)
+## A Tracked Symlink Named `<file>.tmp` Redirected a Locked Write (2026-09-22), Pointer
 
 `atomic_write`/`atomic_write_locked` opened `<path>.tmp` without `O_NOFOLLOW`, so a TRACKED symlink
 named `<target>.tmp` redirected a locked write outside the repo. Directory-component following is

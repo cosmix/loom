@@ -1,46 +1,47 @@
 ---
 aliases:
-- loom usage
-- read receipts
-- forward receipts
-- subagents wait
-- worker brief
+  - loom usage
+  - read receipts
+  - forward receipts
+  - subagents wait
+  - worker brief
 sources:
-- loom/src/commands/usage/mod.rs
-- loom/src/commands/usage/provider_types.rs
-- loom/src/commands/usage/provider_normalization.rs
-- loom/src/commands/usage/transcript_merge.rs
-- loom/src/commands/usage/claude_provider.rs
-- loom/src/commands/usage/codex_provider.rs
-- loom/src/commands/usage/receipt_provider.rs
-- loom/src/commands/usage/forward_join.rs
-- loom/src/commands/usage/comparison.rs
-- loom/src/commands/usage/comparison_validation.rs
-- loom/src/models/execution_receipt.rs
-- loom/src/quota/history.rs
-- loom/src/verify/criteria/cache_contract.rs
-- loom/src/models/forward_receipt.rs
-- loom/src/commands/hook/forward_receipt.rs
-- loom/src/commands/subagents/forward_jobs_wait.rs
-- loom/src/commands/subagents/classify_forward.rs
-- loom/src/commands/hook/worker_brief.rs
-- loom/src/commands/hook/pre_compact.rs
-- loom/src/plan/schema/structural_checks/worker_table.rs
-- loom/src/orchestrator/signals/tests_size.rs
-- loom/src/orchestrator/signals/cache.rs
-- loom/src/orchestrator/signals/format/codex.rs
-- loom-hooks/post-tool-use.sh
-- loom-hooks/read-guard.sh
-- loom-hooks/_read_discipline.sh
-- loom-hooks/spawn-guard.sh
-- loom-hooks/pre-compact.sh
-- loom-hooks/poll-guard.sh
-- loom-hooks/codex-forward-guard.sh
-- agents/loom-codex-forwarder.md
-- loom-hooks/_read_ledger.sh
-- loom-hooks/knowledge-orient.sh
+  - loom/src/commands/usage/mod.rs
+  - loom/src/commands/usage/provider_types.rs
+  - loom/src/commands/usage/provider_normalization.rs
+  - loom/src/commands/usage/transcript_merge.rs
+  - loom/src/commands/usage/claude_provider.rs
+  - loom/src/commands/usage/codex_provider.rs
+  - loom/src/commands/usage/receipt_provider.rs
+  - loom/src/commands/usage/forward_join.rs
+  - loom/src/commands/usage/comparison.rs
+  - loom/src/commands/usage/comparison_validation.rs
+  - loom/src/models/execution_receipt.rs
+  - loom/src/quota/history.rs
+  - loom/src/verify/criteria/cache_contract.rs
+  - loom/src/models/forward_receipt.rs
+  - loom/src/commands/hook/forward_receipt.rs
+  - loom/src/commands/subagents/forward_jobs_wait.rs
+  - loom/src/commands/subagents/classify_forward.rs
+  - loom/src/commands/hook/worker_brief.rs
+  - loom/src/commands/hook/pre_compact.rs
+  - loom/src/plan/schema/structural_checks/worker_table.rs
+  - loom/src/orchestrator/signals/tests_size.rs
+  - loom/src/orchestrator/signals/cache.rs
+  - loom/src/orchestrator/signals/format/codex.rs
+  - loom-hooks/post-tool-use.sh
+  - loom-hooks/read-guard.sh
+  - loom-hooks/_read_discipline.sh
+  - loom-hooks/spawn-guard.sh
+  - loom-hooks/pre-compact.sh
+  - loom-hooks/poll-guard.sh
+  - loom-hooks/codex-forward-guard.sh
+  - agents/loom-codex-forwarder.md
+  - loom-hooks/_read_ledger.sh
+  - loom-hooks/knowledge-orient.sh
 verified: c8c167bb2dbba1c5ec65b7b9c61130873a249da2
 ---
+
 # Token Accounting And Receipts
 
 > Usage ledger, compare
@@ -56,14 +57,14 @@ are authoritative.
 
 ## Hook Phases
 
-| Event (hook) | Delegate | Effect |
-| --- | --- | --- |
-| PreToolUse:Read (`read-guard.sh`) | none (shell only) | rule 1 line-count advice and the sibling-read advisory from `_read_ledger.sh`; no Rust delegate runs |
-| PostToolUse (`post-tool-use.sh`) | `forward-receipt` | after a Bash call containing `codex-forward.sh task`; the PostToolUse payload arrives on stdin, no flags; bound 5 s |
-| PostToolUse (`post-tool-use.sh`) | `context-ceilings` | ceiling pair, cached per session; bound 3 s |
-| PreToolUse:Task/Agent (`spawn-guard.sh`) | `worker-brief` | files the delivery record and returns the brief after the untyped-spawn gate passes; Codex-bound types are skipped; bound 5 s |
-| PreCompact (`pre-compact.sh`) | `pre-compact` | stage sessions: deletes the session's prompt delivery record; bound 3 s |
-| SessionStart, source `compact` (`knowledge-orient.sh`) | `pre-compact` | ordinary sessions, which have no PreCompact hook: same reset; bound 3 s |
+| Event (hook)                                           | Delegate           | Effect                                                                                                                        |
+| ------------------------------------------------------ | ------------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| PreToolUse:Read (`read-guard.sh`)                      | none (shell only)  | rule 1 line-count advice and the sibling-read advisory from `_read_ledger.sh`; no Rust delegate runs                          |
+| PostToolUse (`post-tool-use.sh`)                       | `forward-receipt`  | after a Bash call containing `codex-forward.sh task`; the PostToolUse payload arrives on stdin, no flags; bound 5 s           |
+| PostToolUse (`post-tool-use.sh`)                       | `context-ceilings` | ceiling pair, cached per session; bound 3 s                                                                                   |
+| PreToolUse:Task/Agent (`spawn-guard.sh`)               | `worker-brief`     | files the delivery record and returns the brief after the untyped-spawn gate passes; Codex-bound types are skipped; bound 5 s |
+| PreCompact (`pre-compact.sh`)                          | `pre-compact`      | stage sessions: deletes the session's prompt delivery record; bound 3 s                                                       |
+| SessionStart, source `compact` (`knowledge-orient.sh`) | `pre-compact`      | ordinary sessions, which have no PreCompact hook: same reset; bound 3 s                                                       |
 
 Registrations: `loom/src/fs/permissions/hooks/config.rs` (global guards) and the session
 `HookEvent` set. Every delegate runs through `loom_run_bounded` and every failure is a silent
@@ -97,7 +98,7 @@ clap surface is `UsageArgs` in `commands/usage/args.rs`. Rules:
   `TokenUsage` keeps the reconciled value (`claude_provider.rs::claude_tokens`).
 - **Codex.** `CodexDirect` rows normalize `token_usage_record` `payload.usage`. `CodexFallback` rows
   normalize `token_count` `last_token_usage` and use the last/total pair only to suppress consecutive duplicate
-  snapshots (`loom/src/commands/usage/codex_provider.rs:128-208`). Fallback rows remain coverage evidence, tagged
+  snapshots (`loom/src/commands/usage/codex_provider.rs::direct_row`). Fallback rows remain coverage evidence, tagged
   `FallbackCoverage` and reported as `fallback_coverage_totals`; they are not derived cumulative deltas.
 - **Execution receipts** (`--receipts-root`, `loom/src/models/execution_receipt.rs`, schema 1) are
   a protocol for an external producer; nothing in the tree writes them. A 5m/1h split mismatch
@@ -124,7 +125,7 @@ clap surface is `UsageArgs` in `commands/usage/args.rs`. Rules:
 - **Time.** `--since` takes a duration (`7d`), an ISO date or an RFC3339 instant; `--until` is an
   inclusive RFC3339 instant (`time_range.rs`). Both bound event timestamps, not file mtimes.
 - **Run evidence** (`--run-evidence <declaration.json> --project <dir> --since <rfc3339> --until
-  <rfc3339>`) writes the `RunEvidence` that `--compare` pairs, measuring only the stages that
+<rfc3339>`) writes the `RunEvidence` that `--compare` pairs, measuring only the stages that
   started inside the window, refusing in-scope usage from an undeclared provider and mapping
   review severities to critical, high, medium and low
   ([details](usage-evidence.md#run-evidence)).
@@ -258,17 +259,17 @@ a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
 - **Wait.** `loom subagents wait --receipt <64 hex> [--timeout <secs>] [--json]`
   (`loom/src/commands/subagents/forward_jobs_wait.rs`) polls every 2 s, default timeout 300 s, and
   never starts, cancels or retries anything. The stage comes from `LOOM_STAGE_ID`, else from a scan
-  of `subagents/*/forward-receipts.jsonl` for the id. `wait_exit_code` (`forward_jobs_wait.rs:143`):
+  of `subagents/*/forward-receipts.jsonl` for the id. `wait_exit_code` (`forward_jobs_wait.rs::wait_exit_code`):
   exit 0 succeeded, 1 failed, canceled or timed out, 2 queued, running or unknown.
 - **Who waits.** The orchestrator, only, and only through one bound `loom subagents watch --worker
-  claude:<agent-id> --worker codex:<unit-id> --timeout 3600` — one `--worker` per worker, `--session`
+claude:<agent-id> --worker codex:<unit-id> --timeout 3600` — one `--worker` per worker, `--session`
   naming only the Claude parent UUID. The forwarder makes ONE foreground wrapper call; if the harness
   backgrounds it, the forwarder makes no further tool call and ends its turn
-  (`agents/loom-codex-forwarder.md:54-62`). `codex-forward-guard.sh` authorizes only the exact
+  (`agents/loom-codex-forwarder.md`, the background-acknowledgement rule). `codex-forward-guard.sh` authorizes only the exact
   wrapper argv and one forward per forwarder transcript; `has_prior_forwarding_call` allows the call
   when that transcript is missing or unreadable, so the harness writing the transcript after
   PreToolUse cannot block every first forward. The orchestrator's doctrine
-  (`orchestrator/signals/format/codex.rs:146`) names one `--worker codex:<unit-id>` per forwarded
+  (`orchestrator/signals/format/codex.rs::push_codex_prompt_rules`) names one `--worker codex:<unit-id>` per forwarded
   unit; the bare `--timeout <secs>`-only form with no `--worker` is REJECTED
   (`loom/src/commands/subagents/mod.rs`), and `codex-companion.mjs status --all` is never used. Exit
   2 (deadline passed) is not proof any worker died — see
@@ -278,7 +279,7 @@ a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
   (`loom/src/commands/subagents/forward_jobs.rs::marker_overlay`/`overlay_from_state`):
   `Queued`/`Running` -> `ForwardWait`; `Succeeded` -> `Done` if the transcript itself is done, else
   `ForwardWait`; `Failed`, `Canceled` and `TimedOut` all collapse to one `ForwardFailed`; `Unknown`
-  -> `ForwardUnknown`. `classify_forward.rs::state_for` (`:79`) then maps that overlay 1:1 to
+  -> `ForwardUnknown`. `classify_forward.rs::state_for` then maps that overlay 1:1 to
   `SubagentState::{Done,ForwardWait,ForwardFailed,ForwardUnknown}` — there is no direct
   `Failed->Failed`/`Cancelled->Cancelled` case. The legacy receipt/marker overlay applied after
   structural transcript classification survives only as the diagnostic `forward` field, and does not
@@ -291,7 +292,7 @@ a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
 `loom/src/commands/hook/worker_brief.rs` gives each typed Task/Agent worker a scoped retrieval
 brief. `spawn-guard.sh` runs `loom hook worker-brief` only after its untyped-spawn gate passes, and
 skips it for Codex-bound types (`loom-codex-forwarder`, `codex:*`): Codex units read the brief from
-loom's Codex `UserPromptSubmit` hook (`fs/permissions/codex_hooks.rs:114-121`). The delegate builds
+loom's Codex `UserPromptSubmit` hook (`fs/permissions/codex_hooks.rs::desired_hooks`). The delegate builds
 a query from the stage, the worker description and paths the prompt declares (plus
 `StageQuery::dependency_paths`), caps the query text at `WORKER_QUERY_MAX_BYTES` (2,048, cut with
 `floor_char_boundary`), calls `retrieve_for_stage` once per spawn, drops plan documents from the
@@ -305,10 +306,10 @@ only an object with exactly `brief` and a 32-hex `nonce`, and appends the brief 
 typed spawn. A delegate killed after `store_record` leaves a record for a brief it never carried;
 that is accepted because a delivery record is an optimisation.
 
-Worker records are loaded by `load_deliveries` (`context/delivery.rs:248-262`), so a dependent
+Worker records are loaded by `load_deliveries` (`context/delivery.rs::load_deliveries`), so a dependent
 stage's `dependency_chunk_ids` sees what its dependencies' workers were given. They suppress
 nothing for the worker's own prompt hook: `delivered_to_session` matches only the session's prompt
-recipient and the `LOOM_SESSION_ID` spawn record (`context/delivery/session.rs:104-126`), so a
+recipient and the `LOOM_SESSION_ID` spawn record (`context/delivery/session.rs::delivered_to_session`), so a
 suppression consumer for them is future work (see
 [concerns](../concerns/token-accounting-and-proof-defects.md)).
 
@@ -331,7 +332,7 @@ are YAML-indented and have no Markdown divider row; the parser accepts that shap
 ## Open Runtime Uncertainties
 
 - **Does a failed forward fire PostToolUse?** `codex-forward.sh` exits 124 on its unit deadline
-  (`codex-forward.sh:363`), and the receipt writer runs only from `post-tool-use.sh` on
+  (`loom-hooks/codex-forward.sh::run_direct`), and the receipt writer runs only from `post-tool-use.sh` on
   PostToolUse; no PostToolUseFailure hook is registered (`fs/permissions/hooks/config.rs`). If
   Claude Code fires only PostToolUseFailure for a Bash call that exits non-zero, neither the
   `running` nor the `timed_out`/124 line forms (the companion `timed_out` path is reached only
@@ -363,6 +364,6 @@ completion at the agent's next Read, from a transcript offset recorded at prepar
 
 ## Signal Caps and the IV Gate
 
-`loom/src/orchestrator/signals/tests_size.rs` pins `CLAUDE_MD_TEMPLATE_MAX_BYTES` at 20,138 (the template's measured size), `ORCHESTRATION_SKILL_MAX_BYTES` at 20,530 (`skills/loom-orchestration/SKILL.md`, loaded by every stage main session), `STABLE_PREFIX_MAX_BYTES` at 8,192, `STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` at 10,240 and `PLAN_OVERVIEW_MAX_BYTES` at 4,096. The overview cap mirrors `MAX_PLAN_OVERVIEW_BYTES` in `orchestrator/signals/generate/context.rs:98`. Trim doctrine before raising a cap.
+`loom/src/orchestrator/signals/tests_size.rs` pins `CLAUDE_MD_TEMPLATE_MAX_BYTES` at 20,138 (the template's measured size), `ORCHESTRATION_SKILL_MAX_BYTES` at 20,530 (`skills/loom-orchestration/SKILL.md`, loaded by every stage main session), `STABLE_PREFIX_MAX_BYTES` at 8,192, `STANDARD_SIGNAL_BOILERPLATE_FLOOR_MAX_BYTES` at 10,240 and `PLAN_OVERVIEW_MAX_BYTES` at 4,096. The overview cap mirrors `MAX_PLAN_OVERVIEW_BYTES` in `orchestrator/signals/generate/context.rs::MAX_PLAN_OVERVIEW_BYTES`. Trim doctrine before raising a cap.
 
 The IV stable prefix (`INTEGRATION_VERIFY_OVERRIDE`, `orchestrator/signals/cache.rs`) has the orchestrator run `loom check integration-verify` once; that check carries the complete suite. Reviewers run only targeted discriminating checks, which never substitute for that gate. After a review fix the orchestrator re-evaluates invalidated checks, and only the repaired criteria cache decides reuse.

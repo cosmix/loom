@@ -92,7 +92,7 @@
 
 **What happened:** When `loom stage complete` detected a merge conflict during progressive merge, the original execution session continued running instead of exiting. Three coordinated issues prevented clean handoff to the resolution session:
 
-1. `complete_with_merge()` returned `Ok(false)` on merge conflict, which propagated back to `complete.rs:623` without error — the session stayed alive
+1. `complete_with_merge()` returned `Ok(false)` on merge conflict, which propagated back to `commands/stage/complete.rs` without error — the session stayed alive
 2. `commit-guard.sh` (Stop hook) set `stage_incomplete=1` for `MergeConflict` status, blocking the session from exiting even if it tried
 3. `spawn_merge_resolution_sessions()` didn't kill the stale original session, leaving a zombie process that blocked merge resolver spawning
 
@@ -327,9 +327,9 @@ worktree, a session, a merge, and a FULL re-run of the acceptance gate.
 **Prevention (detection rule):** if a plan has one stage per architectural layer of a single feature
 and their `files:` sets are DISJOINT, it is fragmented — merge them. Disjoint file sets are evidence
 _for_ merging (parallel subagents can own them), not against it. `/loom-plan-writer` now enforces
-this: the Stage Necessity Test (`skills/loom-plan-writer/SKILL.md:388`) requires every non-bookend
-stage to name which of Q1-Q4 forced it, the validation checklist re-checks that at `:825`, and
-`:771` states outright that a compile-order dependency is a foundation step, not a stage split. A
+this: the Stage Necessity Test (`skills/loom-plan-writer/SKILL.md`) requires every non-bookend
+stage to name which of Q1-Q4 forced it, the validation checklist re-checks that, and
+`skills/loom-plan-writer/references/authoring-detail.md` states outright that a compile-order dependency is a foundation step, not a stage split. A
 stage that cannot cite a question is fragmentation.
 
 **Fix:** one stage, foundation edit first, then fan out. Derive the foundation sweep from

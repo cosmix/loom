@@ -1,11 +1,12 @@
 ---
 sources:
-- loom/src/fs/memory/types.rs
-- loom/src/fs/memory/spool.rs
-- loom/src/fs/memory/parser.rs
-- loom/src/orchestrator/signals/generate/findings.rs
+  - loom/src/fs/memory/types.rs
+  - loom/src/fs/memory/spool.rs
+  - loom/src/fs/memory/parser.rs
+  - loom/src/orchestrator/signals/generate/findings.rs
 verified: 4458f15d4ed3e0fb69cc87bdbdf1381fc937473e
 ---
+
 # Memory Spool and Drain
 
 > Memory spool and relay
@@ -31,7 +32,7 @@ gets a say. See the mistakes entry for the full diagnosis.
 
 The sandbox filter is path-based, not binary-based: allowing writes to `.loom/work/memory` grants them to every process in the session. Exempting the loom executable from confinement also exposes shell commands reachable through loom, so it is broader than a memory append capability.
 
-Memory can enter prompts across stages through one fenced `Dependency Findings` section (`orchestrator/signals/generate/findings.rs`, capped at 1,600 bytes). A stage's signal carries the relevant, unsettled entries of its direct, Completed, non-Knowledge dependencies; `IntegrationVerify` gets every non-excluded entry and `KnowledgeDistill` gets none. Each entry renders as one line through `single_line`. Ordinary stages also receive their own journal plus dependency outputs and artifacts separately (`generate/context.rs:65-68`). The claim that every dependency journal is embedded in every downstream stage is incorrect. A writable shared memory directory nevertheless remains a cross-stage prompt-injection channel; attribution and writes belong to the trusted drain.
+Memory can enter prompts across stages through one fenced `Dependency Findings` section (`orchestrator/signals/generate/findings.rs`, capped at 1,600 bytes). A stage's signal carries the relevant, unsettled entries of its direct, Completed, non-Knowledge dependencies; `IntegrationVerify` gets every non-excluded entry and `KnowledgeDistill` gets none. Each entry renders as one line through `single_line`. Ordinary stages also receive their own journal plus dependency outputs and artifacts separately (`orchestrator/signals/generate/context.rs::build_embedded_context_with_stage_and_session`). A writable shared memory directory remains a cross-stage prompt-injection channel; attribution and writes belong to the trusted drain.
 
 ## The Design
 
@@ -78,7 +79,7 @@ Key modules: `relay/emit.rs` (`mode`, `RelayContext`, ticket emission),
 
 ## Invariants That Are Easy To Break
 
-**No status filter on the drain.** `loom stage complete` is a session's *last*
+**No status filter on the drain.** `loom stage complete` is a session's _last_
 act, so entries recorded just before it are still pending when the stage leaves
 `Executing`. Filtering by status strands exactly the most valuable notes — the
 end-of-stage lessons. The trigger is spool-file existence; enumerating
@@ -91,7 +92,7 @@ the daemon sets the shutdown flag and **kills the daemon**
 
 **A validation failure must skip, not error.** `drain_spool` truncates only when
 every sink call returns `Ok`. An entry that fails `validate_content` therefore
-has to be *skipped* with `Ok(())`; returning `Err` would make one poison entry
+has to be _skipped_ with `Ok(())`; returning `Err` would make one poison entry
 redeliver forever and block every good entry behind it. Genuine I/O errors still
 return `Err`, because retrying those next tick is correct.
 
@@ -108,7 +109,7 @@ bytes) and concurrent subagents would interleave bytes on a line.
 **Reads merge the spool.** `loom memory list --stage <id>` is step one of
 post-compaction recovery (the SessionStart re-anchor message in `loom-hooks/session-start.sh`, which `CLAUDE.md.template` Rule 3b defers to), so `query`/`list`/`show` merge undrained entries,
 and the aggregate `list`/`show` additionally surface a stage whose only entries
-are still pending — both enumerate journal *files*, which such a stage does not
+are still pending — both enumerate journal _files_, which such a stage does not
 yet have. Daemon-side readers stay on the pure `read_journal`; they run after
 the drain.
 
@@ -143,7 +144,7 @@ re-mints it.
   evidence on the way out, so a poison entry is skipped rather than written or
   redelivered.
 - **Receipts** settle an earlier event. `loom memory resolve <event-id> --outcome
-  <promoted|merged|discarded|deferred|implemented>` builds a `Receipt` entry and writes it
+<promoted|merged|discarded|deferred|implemented>` builds a `Receipt` entry and writes it
   through the same `record` path, so the stage-forgery check and the spool fallback
   apply to it too. `promoted` and `merged` require `--target` (the knowledge target
   the event went into); `discarded`, `deferred` and `implemented` require `--reason`

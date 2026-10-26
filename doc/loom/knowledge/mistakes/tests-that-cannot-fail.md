@@ -101,7 +101,7 @@ against real production data before believing it.
 
 ### 5. An equality assertion that pins a broken string
 
-`brief.rs:200` asserts the rendered brief footer equals
+`orchestrator/signals/format/brief.rs` asserts the rendered brief footer equals
 `loom knowledge context --stage stage-1 --query "<question>" --budget-tokens <n>` —
 and that command does not work, because `loom knowledge context` has no `--stage`
 flag. The test pins the defect in place: an equality test on advertised command text
@@ -166,7 +166,7 @@ Bash sandbox `ps` is denied outright (`operation not permitted: ps`), so the pro
 test returns early, and the target still reports `test result: ok`. A skip is indistinguishable
 from a pass in the count.
 
-**Consequence, seen 2026-09-03:** commit `588a0446` reworded `loom-hooks/spawn-guard.sh:209` from
+**Consequence, seen 2026-09-03:** commit `588a0446` reworded `loom-hooks/spawn-guard.sh` from
 "Untyped spawn inherits this session's model" to "…the model of the spawning session" — a
 required fix, since the apostrophe inside a `$(cat <<'EOF')` heredoc opened a single-quoted region
 across lines 208-253 and made the script unparseable. The matching literal in
@@ -185,7 +185,7 @@ for f in loom/tests/integration/hooks_*.rs; do
 done
 ```
 
-Mirror the script's text into a `const` beside `PREAMBLE_LINE` (`hooks_spawn_guard.rs:16`) with a
+Mirror the script's text into a `const` beside `PREAMBLE_LINE` (`hooks_spawn_guard.rs::PREAMBLE_LINE`) with a
 doc comment naming the script and line, rather than inlining the literal at the assertion — the
 const gives the scan and the next reader one place to check. A few hits are legitimate (fixture
 symbol names such as `POLL_INTERVAL`, which is test data, not hook output).
@@ -240,7 +240,7 @@ positive case ran against the real contract:
   and YAML-indented, so the diagnostic would never have fired.
 - A doctrine test asserted the substring `status --all` as "the recovery path", while the new
   doctrine held it only inside a prohibition. It now asserts `loom subagents wait --receipt`
-  (`loom/src/orchestrator/signals/tests_cache.rs:394`).
+  (`loom/src/orchestrator/signals/tests_cache.rs`).
 
 Test edits lost coverage too: moving the IV prefix test dropped 11 assertions, and a fix told to
 "add an integration fixture" replaced the mandated one.

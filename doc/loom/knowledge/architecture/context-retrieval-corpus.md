@@ -29,17 +29,17 @@ sits at `WEIGHT_HEADINGS`, so the source corpus protects nothing, and its only
 over-floor terms are keywords and type names (`fn`, `pub`, `str`, `path`, `result`, `test`).
 Headings are also phrased with English function words ("Why this class is hard to
 see"), and no statistic separates `the` from `stage`, so protection skips the closed
-`FUNCTION_WORDS` list (`stopwords.rs:60`), the one place a fixed list is the right
+`FUNCTION_WORDS` list (`stopwords.rs::FUNCTION_WORDS`), the one place a fixed list is the right
 tool. The persisted BM25 index stores the naming set (`INDEX_VERSION` 2), so a warm
 index and a fresh scan partition identically.
 
 ## Persistent BM25 Index (A.13)
 
-Every prompt used to re-tokenize the whole corpus from scratch — ~656
-knowledge chunks and ~7,900 source nodes on this repository — then scan it
-again per query term for document frequencies, inside a hook with a hard
+Re-tokenizing the whole corpus on every prompt (~656
+knowledge chunks and ~7,900 source nodes on this repository) and scanning it
+again per query term for document frequencies would not fit a hook with a hard
 five-second ceiling. A persistent inverted index (`context/lexical_index.rs`)
-now makes a cache hit skip the tokenization entirely:
+makes a cache hit skip the tokenization entirely:
 
 - Keyed per channel: the knowledge index by the catalog revision, the source
   index by `lexical_index::source_layer_key` — a hash of the resolved layer
@@ -61,7 +61,7 @@ now makes a cache hit skip the tokenization entirely:
 - **Weights are stored as raw IEEE-754 bits**, not decimal, so a round trip
   cannot shift a score by an ULP.
 - The file hashes the `WEIGHT_*` constants (`derivation()`,
-  `lexical_index.rs:85-98`) and is rejected — falls back to the scan, then
+  `context/lexical_index.rs::derivation`) and is rejected — falls back to the scan, then
   rewrites — when they no longer match, so retuning a weight cannot leave a
   warm cache scoring at the old value.
 - **`INDEX_VERSION` (currently `2`) must be bumped whenever `lexical::tokenize`
@@ -88,7 +88,7 @@ with every id PREFIXED `prose:` (`fs::knowledge::catalog::prose::PROSE_ID_PREFIX
 so it can never collide with a curated chunk id and the prefix itself signals
 origin. Completed plans (`DONE-` filenames under a `plans/` path segment) and every
 path with an `archive` component (so `doc/plans/archive/`, including its
-`REVIEW-PLAN-*` files) are excluded as history (`catalog/prose.rs:359-361`); the curated knowledge tree itself is skipped during the
+`REVIEW-PLAN-*` files) are excluded as history (`fs/knowledge/catalog/prose.rs::prose_lifecycle`); the curated knowledge tree itself is skipped during the
 walk (it already has its own chunker) so `prose_roots = ["doc"]` does not
 double-index every curated chunk as its own prose clone.
 
@@ -149,7 +149,7 @@ content terms kept fewer DISTINCT surviving terms than `min_knowledge_terms`
 - the survivor floor REUSES `min_knowledge_terms` as its measure of "enough
   distinct surviving terms to retrieve on", so an operator who lowers the floor
   to 1 turns the thin-survivor rescue off. The rescue serves `loom knowledge
-  context` and stage briefs ONLY: a rescued term ranks, but it never counts
+context` and stage briefs ONLY: a rescued term ranks, but it never counts
   toward the prompt hook's emit floor (`LexicalCorpus::naming_matches`, see
   Brief Delivery below), because it is ubiquitous and names nothing. A prompt
   answered only on rescued terms gets candidates for a pull or a stage brief
@@ -164,9 +164,9 @@ The cap stays flat at three on both paths; sizing it to the deficit instead
 (enough to reach `min_knowledge_terms`, no more) was measured and rejected,
 because on the case above it restores `sessions` alone rather than `sessions`,
 `settings` and `sandbox` together. Note what the fix does and does not buy:
-that chunk went from not-a-candidate to a candidate ranked around 28th, and
+that chunk becomes a candidate ranked around 28th, and
 the rescued `sandbox`/`settings` also feed the source channel's candidacy
-rule, so two `sandbox_settings` source nodes now enter the fused top 5. The
+rule, so two `sandbox_settings` source nodes enter the fused top 5. The
 `genuine-win-sandbox-settings-rules` eval case still misses at hit@5 — what is
 left there is a ranking question, not a candidacy one.
 

@@ -6,8 +6,9 @@ sources:
 - loom/src/orchestrator/terminal/native/wrapper.rs
 - loom/src/orchestrator/monitor/detection.rs
 - loom/src/fs/work_dir/config_sections.rs
-verified: 499b09b6297aeee4896a66df3da86d00f652a618
+verified: 6642fab24c3bdda26a2f32a751552411eca2039b
 ---
+
 # Context Ceiling
 
 > Resident-token ceiling tiers
@@ -19,11 +20,11 @@ ABSOLUTE resident-token ceiling per stage/subagent. One resolved number —
 `context_ceiling_tokens` — feeds three completely independent enforcement mechanisms,
 each firing at a different multiple of it, from softest to hardest:
 
-| Multiple | Mechanism                          | Who enforces it                                                                                             | What happens                                                                                                                          |
-| -------- | ----------------------------------- | -------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------- |
-| 1.0x     | `PostToolUse` hook instruction       | `loom-hooks/post-tool-use.sh`, reading resident tokens off the transcript tail                                       | Runs after the tool has already executed, so exit 2 blocks nothing; it only writes a stderr message telling the agent to finish the unit of work, run `loom handoff --trigger ceiling`, and stop |
-| 1.25x    | Daemon backstop (`BudgetExceeded`)   | `orchestrator/monitor/detection.rs` (`DAEMON_CEILING_MULTIPLIER`, `models/constants.rs`)                        | Writes the outgoing handoff, discovers in-progress records even after daemon restart, KILLS the session, persists `ContextExhausted` only after confirmed death, then re-queues. Discovery/probe/persistence uncertainty leaves the stage in `NeedsHandoff`; stale events naming a predecessor are ignored. |
-| 1.5x     | `CLAUDE_CODE_AUTO_COMPACT_WINDOW`    | The installed Claude Code binary itself, via an env var loom's native wrapper sets (`auto_compact_window_tokens`, `orchestrator/terminal/native/wrapper.rs:227-238`) | Claude Code's own native auto-compaction kicks in — "effectively unreachable in practice" per the source comment, because the two lower thresholds should already have ended the session by this point |
+| Multiple | Mechanism                          | Who enforces it                                                                                                                                                      | What happens                                                                                                                                                                                                                                                                                                |
+| -------- | ---------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| 1.0x     | `PostToolUse` hook instruction     | `loom-hooks/post-tool-use.sh`, reading resident tokens off the transcript tail                                                                                       | Runs after the tool has already executed, so exit 2 blocks nothing; it only writes a stderr message telling the agent to finish the unit of work, run `loom handoff --trigger ceiling`, and stop                                                                                                            |
+| 1.25x    | Daemon backstop (`BudgetExceeded`) | `orchestrator/monitor/detection.rs` (`DAEMON_CEILING_MULTIPLIER`, `models/constants.rs`)                                                                             | Writes the outgoing handoff, discovers in-progress records even after daemon restart, KILLS the session, persists `ContextExhausted` only after confirmed death, then re-queues. Discovery/probe/persistence uncertainty leaves the stage in `NeedsHandoff`; stale events naming a predecessor are ignored. |
+| 1.5x     | `CLAUDE_CODE_AUTO_COMPACT_WINDOW`  | The installed Claude Code binary itself, via an env var loom's native wrapper sets (`auto_compact_window_tokens`, `orchestrator/terminal/native/wrapper.rs::AUTO_COMPACT_WINDOW_MAX_TOKENS`) | Claude Code's own native auto-compaction kicks in — "effectively unreachable in practice" per the source comment, because the two lower thresholds should already have ended the session by this point                                                                                                      |
 
 The daemon backstop is level-triggered while the exact over-budget assignment remains
 `Executing` or `NeedsHandoff`, so a handler failure before the state transition cannot disarm it.
@@ -62,10 +63,9 @@ parent. The two constants stay separate in name only, so `[context] ceiling_toke
 The user tier fills the ceiling only when the project's `[context]` sets NEITHER `ceiling_tokens`
 NOR `model_window_tokens`: a project window is a project-tier statement about the ceiling, so a
 user ceiling sized for another window never overrides a plan's smaller one
-(`ContextConfig::resolve_with_user_ceiling`, `fs/work_dir/context_config.rs:168`, shared by
+(`ContextConfig::resolve_with_user_ceiling`, `fs/work_dir/context_config.rs::resolve_with_user_ceiling`, shared by
 `read_context_config` and `resolve_context_ceiling_tokens` in `fs/work_dir/config_sections.rs`).
-`subagent_ceiling_tokens` has no user-tier counterpart. Earlier versions of this page listed only
-the stage, project and default tiers.
+`subagent_ceiling_tokens` has no user-tier counterpart.
 The 1.5x auto-compact env var is separately clamped to `AUTO_COMPACT_WINDOW_MAX_TOKENS` (1,000,000)
 before export, since the installed binary re-clamps to `[1, 1_000_000]` and then again to the
 model's own context window.
@@ -77,7 +77,7 @@ The handoff chain includes:
 1. **`loom handoff create`** — CLI command accepting `--stage`, `--session`, `--trigger`, and `--message`.
 2. **`pre-compact.sh`** — two-phase block-then-allow interception, with a handoff written before each phase.
 3. **`session-end.sh`** — uses glob `*-${LOOM_STAGE_ID}.md` for stage file lookup, including depth prefixes.
-4. **Signals** — shared `CONTEXT_CEILING_HANDOFF` guidance tells the agent to hand off when the hook reports the ceiling (`orchestrator/signals/helpers.rs:36`, `cache.rs:269`, `contract.rs:265`); dynamic sections embed prior handoffs (`format/sections.rs:445-464`). The claim that `append_common_footer()` supplies these instructions is incorrect: that helper does not exist.
+4. **Signals** — shared `CONTEXT_CEILING_HANDOFF` guidance tells the agent to hand off when the hook reports the ceiling (`orchestrator/signals/helpers.rs::CONTEXT_CEILING_HANDOFF`, `orchestrator/signals/cache.rs::generate_knowledge_stable_prefix`, `orchestrator/signals/contract.rs::generate_contract_signal`); dynamic sections embed prior handoffs (`orchestrator/signals/format/sections.rs::format_dynamic_section`).
 5. **`session-start.sh`** — on compact or resume, emits an additionalContext re-anchor pointer to the signal file.
 
 ## How the Ceiling Reaches the Shell Hook, and the Last Resort
@@ -98,7 +98,7 @@ intentional availability defense, not a second config parser.
 all three thresholds above (it fires whenever Claude Code's native compaction actually engages,
 by whatever trigger): the FIRST `PreCompact` invocation in a session drops a
 `.loom/work/compaction-pending/<session-id>` flag file, writes a handoff, and BLOCKS (exit 2) with an
-instruction to keep task state in the handoff and record only durable lessons in memory (loom-hooks/pre-compact.sh:129-142); the claim that it requests a memory note of working state is incorrect. The SECOND
+instruction to keep task state in the handoff and record only durable lessons in memory (`loom-hooks/pre-compact.sh`). The SECOND
 invocation (flag file present) removes the flag, writes an updated handoff, and ALLOWS (exit 0).
 This guarantees at least one forced context-preserving checkpoint before Claude Code discards
 anything, even if all three ceiling-based mechanisms above somehow never fired.

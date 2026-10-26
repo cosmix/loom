@@ -117,7 +117,7 @@ inoculates against the stale copy that may still exist elsewhere.
 
 ## Verifying "Dead Schema" Claims Before Writing Code (2026-06-15)
 
-**What happened:** Plan PLAN-anti-slop-thoroughness described `before_stage` as "dormant / parsed-but-never-run." Stage 3 Subagent 1 was tasked to wire it. It verified the claim against `stage_executor.rs:219-256` and found `before_stage` was already fully wired — runs pre-spawn, blocks session on failure. The task was a no-op.
+**What happened:** Plan PLAN-anti-slop-thoroughness described `before_stage` as "dormant / parsed-but-never-run." Stage 3 Subagent 1 was tasked to wire it. It verified the claim against the spawn path in `stage_executor.rs` (since moved to `stage_preflight.rs::before_stage_gate_passed`) and found `before_stage` was already fully wired — runs pre-spawn, blocks session on failure. The task was a no-op.
 
 **Misleading signal:** Plan descriptions are written at planning time and can go stale as other stages implement things. A plan claiming a field is "dead" is as reliable as code comments — it describes intent at authoring time, not current reality.
 
@@ -247,3 +247,13 @@ and the contradictory-path-rules lesson as relevant. Eval passes at hit@5 1.00, 
 **Prevention:** Preserve full source paths in research notes and validate every local target and pinned-source heading before delivery.
 
 **Fix:** Correct the report paths and anchors; check local files and upstream source snapshots.
+
+## Stale knowledge deferred instead of fixed on sight
+
+**What happened:** A stale history passage in conventions/model-and-effort-config.md (KEY-Level vs SECTION-Level Fallback, with "used to be" and a dated ruling) was reported during a product-spec session and deferred to a later batch instead of being fixed when found. The user restated that no stale knowledge is allowed.
+
+**Why:** The passage was outside the task at hand, so reporting it felt sufficient.
+
+**Prevention:** Fix stale knowledge the moment it is found, even mid-task. Deferring is not allowed; a report without a fix leaves the error for the next reader.
+
+**Fix:** A full sweep removed the history passages, dated headings and line-number citations from the non-mistakes knowledge files and deleted the concern that tracked them.

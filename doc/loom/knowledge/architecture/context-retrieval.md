@@ -2,8 +2,9 @@
 sources:
 - loom/src/context/pack.rs
 - loom/src/context/retrieve.rs
-verified: 054528e508d51ede343e254590cdb73ae00f7df6
+verified: 6642fab24c3bdda26a2f32a751552411eca2039b
 ---
+
 # Context Retrieval
 
 > Graphs, lanes, gating, packs
@@ -15,9 +16,8 @@ spending N tokens on for this query?" — and answers it identically every time.
 No embedding model, no network call, no randomness: a `ContextPack` is a pure
 function of the bytes on disk and the query string (the `context` module doc).
 
-Read `context/mod.rs` first for the module map. Its pipeline prose now describes
-both channels and two-tier fusion, so it is no longer the stale docstring an
-earlier version of this section warned about; its diagram still omits prose
+Read `context/mod.rs` first for the module map. Its pipeline prose describes
+both channels and two-tier fusion; its diagram still omits prose
 indexing, the lexical index, lifecycle filtering and source-lane expansion, which
 this file and its two companions cover: [Context Retrieval Corpus](context-retrieval-corpus.md)
 (query stopwording and the rescue floor, the persistent BM25 index, indexed prose) and
@@ -28,10 +28,10 @@ durable, delivery records, epoch suppression, brief delivery and telemetry).
 
 There are two distinct graphs.
 
-| Graph | Built by | Ranked by | Consumed by |
-| --- | --- | --- | --- |
-| Knowledge-chunk catalog (curated prose under `doc/loom/knowledge/`, plus indexed project prose — see below) | `fs::knowledge::chunker`/`catalog::prose` → `context::ingest` | `context::rank` | `loom knowledge context`, `loom knowledge eval`, the Knowledge Brief, the prompt hook |
-| Source graph (tree-sitter nodes/edges over the repo) | `context::extract` → `context::refresh::source_graph` | `context::rank_source` | the same, plus `loom map` via `context::graph_store` |
+| Graph                                                                                                       | Built by                                                      | Ranked by              | Consumed by                                                                           |
+| ----------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------- | ---------------------- | ------------------------------------------------------------------------------------- |
+| Knowledge-chunk catalog (curated prose under `doc/loom/knowledge/`, plus indexed project prose — see below) | `fs::knowledge::chunker`/`catalog::prose` → `context::ingest` | `context::rank`        | `loom knowledge context`, `loom knowledge eval`, the Knowledge Brief, the prompt hook |
+| Source graph (tree-sitter nodes/edges over the repo)                                                        | `context::extract` → `context::refresh::source_graph`         | `context::rank_source` | the same, plus `loom map` via `context::graph_store`                                  |
 
 `retrieve/channels.rs::rank_channels_cached` dispatches per channel:
 `Channel::Knowledge` to the knowledge ranker (then `apply_lifecycle_policy`),
@@ -96,10 +96,10 @@ An accepted neighbour carries the single reason `GraphNeighbor`,
 the test-path factor, so a neighbour can never outrank a direct exact hit, even
 one in a test file. `GraphNeighbor` is not an exact rung, so neighbours fuse in
 tier 2; the prompt hook admits one only while the pack still holds an exact-rung
-item (see *Brief Delivery* below).
+item (see _Brief Delivery_ below).
 
 Packing dispatches on `candidate.channel`, never by trying both maps
-(`pack.rs::build_item`). A source item is `ItemKind::SourceNode` with
+(`pack.rs::build_item`). A source item (`pack/source_item.rs::build_source_item`) is `ItemKind::SourceNode` with
 `id = node.id` (`<path>#<kind>:<scope>`, disjoint from a knowledge chunk id),
 `content_hash = node.body_hash`, and an excerpt taken from the signature. The
 strict dispatch is deliberate: if the two id spaces ever did collide, this
@@ -108,9 +108,9 @@ surfaces it as a bug instead of silently masking it.
 ## Exact-Rung Gating: the Query Side Also Has to Look Like Code
 
 Boundary-checked substring matching (`contains_whole_term`) fixes only the
-*candidate* side of an exact match — a symbol named `n` does not match every
-prompt containing the letter. Nothing in it checks whether the *query
-occurrence* looks like a code reference at all: "why doesn't loom repair --fix do
+_candidate_ side of an exact match — a symbol named `n` does not match every
+prompt containing the letter. Nothing in it checks whether the _query
+occurrence_ looks like a code reference at all: "why doesn't loom repair --fix do
 it, **the point** is" pulled in `lerpPoint`, `repairGini` and `type Point` at
 `high` confidence purely because an ordinary English word equalled a symbol name.
 
@@ -143,7 +143,7 @@ rung (backticked or shaped) is enough to restore `High` even alongside a
 weaker one. The ceiling is published, not just computed: `pack` builds every
 item through `RankedCandidate::confidence()`, which returns the WEAKER of the
 reasons-implied confidence and the ceiling — never `Confidence::from_reasons`
-directly (`rank.rs:144-178`, `pack.rs:96-100,154-156`). See
+directly (`context/rank.rs::prepare`, `context/pack.rs`). See
 [Tests That Cannot Fail](../mistakes/tests-that-cannot-fail.md) for why a
 ranker-level test alone did not catch a packer that forgot this.
 
@@ -171,14 +171,14 @@ tier 2 of "how do I configure the hooks so sessions get the right settings" on
 
 ## Two-Tier Fusion (Not Reciprocal-Rank Fusion Alone)
 
-`fuse` (`context/fuse.rs`) used to be plain reciprocal-rank fusion (RRF),
-which reduces every candidate to its rank *position* — so a knowledge chunk
+`fuse` (`context/fuse.rs`) is not plain reciprocal-rank fusion (RRF): RRF
+reduces every candidate to its rank _position_, so a knowledge chunk
 scoring 1080 on an explicit-id hit and a source node scoring 0.3 on a weak
-lexical match both landed at rank 1 and tied exactly, falling through to
-alphabetical id order. That systematically ordered the fused head by path
+lexical match would both land at rank 1 and tie exactly, falling through to
+alphabetical id order, which orders the fused head by path
 prefix rather than by relevance.
 
-Fusion is now two tiers:
+Fusion has two tiers:
 
 - **Tier 1** holds every candidate (from either channel) whose reasons
   include at least one exact rung — `ExplicitId`, `ExactPath`, `ExactSymbol`,
@@ -214,7 +214,7 @@ fuses in tier 2. Packing the fused list is the next section's subject.
 passes, and **there is still no per-channel budget**: a query that matches prose
 strongly can legitimately fill the pack with prose. A source item costs tens of
 tokens against a knowledge chunk's hundreds, so an unbounded source list crowds
-prose out by *slot*, not by token volume.
+prose out by _slot_, not by token volume.
 
 **Required items first** (`pack/required.rs::reserve_within_budget`). Every
 candidate carrying `ExplicitId` — a `--require-id` — is weighed before any
@@ -309,7 +309,7 @@ doc/**/*.md (prose) ──────┼──> KnowledgeChunk ──catalog─
   candidates first by raw score, the lexical remainder by RRF) — see above.
 - `pack` reserves required items, then takes optional items in fused order as
   compact, match-centred excerpts while the rendered brief fits, and always
-  reports what it left out (`OmissionSummary`, `unmet_required`) — see *Packing*
+  reports what it left out (`OmissionSummary`, `unmet_required`) — see _Packing_
   above.
 
 **Budgets come from config.** `RetrievalConfig::load` reads the `[retrieval]`

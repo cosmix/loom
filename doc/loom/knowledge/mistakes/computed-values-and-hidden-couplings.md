@@ -1,5 +1,6 @@
 ---
 ---
+
 # Computed Values and Hidden Couplings
 
 > Computed values unread
@@ -17,8 +18,8 @@
 is exact, but only on rarity, not on shape or an explicit backtick" without
 weakening the reason list itself. The fix threaded a `confidence_ceiling`
 through THREE files: `rank::rungs::RungScore::confidence_ceiling()`
-(`rank/rungs.rs:87-90`) computes it, `RankedCandidate::confidence_ceiling`
-(`rank.rs:141`) carries it, and `RankedCandidate::confidence()` (`rank.rs:157-163`)
+(`rank/rungs.rs::confidence_ceiling`) computes it, `RankedCandidate::confidence_ceiling`
+(`context/rank.rs`) carries it, and `RankedCandidate::confidence()` (`context/rank.rs`)
 is the one place meant to apply it — returning the weaker of the ceiling and
 `Confidence::from_reasons`. `pack::build_chunk_item` and `build_source_item`
 were both written to call `candidate.confidence()`, and every ranker-level
@@ -27,7 +28,7 @@ earlier draft of `build_source_item` called `Confidence::from_reasons(&candidate
 directly — bypassing the ceiling entirely — and nothing failed, because every
 existing test either inspected `RankedCandidate` before packing or built a
 `ContextItem` by hand with `confidence_ceiling: None` already baked in
-(`context/tests/pack.rs:32,118`). The un-capped `high` label would have shipped
+(`context/tests/pack.rs::rule_26_missing_candidates_are_skipped_and_omitted`). The un-capped `high` label would have shipped
 to every consumer of a packed item — the Knowledge Brief, `loom knowledge context
 --json`, the eval harness — none of which ever sees a bare `RankedCandidate`.
 
@@ -47,13 +48,13 @@ correctly proves nothing about whether real inputs from A ever reach it. Ask:
 already has the answer baked in?" If the answer is no, the wiring between A
 and C is unverified regardless of how much each module's own tests pass.
 
-**Fix:** `context/tests/pack_source.rs::published_confidence` (`:187-208`) ranks
+**Fix:** `context/tests/pack_source.rs::published_confidence` ranks
 a real graph through `rank_source`, packs the result through the real `pack`,
 and reads back `packed.items[...].confidence` — the only path that actually
 proves the cap survives ranker → candidate → packer. Its own doc comment
 states the point directly: "a hand-built candidate would only ever test the
 last of those three." `a_rare_only_exact_match_is_published_as_medium`
-(`:214-224`) is the pinning test.
+is the pinning test.
 
 ## A Display Predicate That Is Also a Control Signal
 
@@ -61,13 +62,13 @@ last of those three." `a_rare_only_exact_match_is_published_as_medium`
 specific reachable failure — a semantic revision naming a layer that neither
 the base nor any overlay could back — and rendered as a `DEGRADED:` banner on
 the brief's revision line. A first version of `degraded_reason`
-(`context/retrieve/graph.rs:116-125`) treated ANY missing base file as
+(`context/retrieve/graph.rs::load_resolved_graph`) treated ANY missing base file as
 degraded. That is wrong on its own terms — a dirty working tree never
 publishes a base at all (bases are immutable and revision-keyed; see
 `context/graph_store/mod.rs`'s module doc), so "no base for HEAD, served from the local
 overlay" is the ordinary steady state of any checkout someone is actively
 working in — but the consequence went well past a wrong banner:
-`reconcile_graph::spawn_if_needed` (`commands/hook/reconcile_graph.rs:210-211`)
+`reconcile_graph::spawn_if_needed` (`commands/hook/reconcile_graph.rs`)
 fires a DETACHED, unbounded, full-repository tree-sitter rebuild whenever
 `pack.semantic_freshness.stale || pack.degraded.is_some()`. Every prompt in
 every working checkout was therefore both mislabeled AND starting a
@@ -100,7 +101,7 @@ zero-file one — a docs-only repository is a real, non-degraded case) OR
 `graph.files` non-empty (an overlay alone answered the query with no base
 present). Only when NEITHER holds — nothing anywhere can answer this revision
 — does `degraded_reason` return `Some`. Its own doc comment
-(`context/retrieve/graph.rs:100-115`) now states the reconcile-trigger
+(`context/retrieve/graph.rs::load_resolved_graph`) now states the reconcile-trigger
 consequence explicitly, so the next person widening this predicate sees it is
 not merely a display choice.
 
@@ -148,7 +149,7 @@ would otherwise empty the whole query, itself capped by a looser
 under any reading (`the` at 90%) is never resurrected. The alternative that
 was considered and rejected — computing document frequencies over curated
 documents only, excluding prose — was rejected specifically because
-`lexical::ExactGate::is_rare` (`context/lexical/evidence.rs:185-191`) reads
+`lexical::ExactGate::is_rare` (`context/lexical/evidence.rs`) reads
 the SAME document-frequency map from the opposite end, to decide whether a
 name is corpus-rare enough to claim an exact-match rung on its own. Splitting
 the map in two would let one term be simultaneously "too common to score" and
@@ -199,7 +200,7 @@ same settings file, the strip must run first — this function does not do it fo
 
 ## Daemon Start Reverts Any Plan Edit Made After an Amendment (2026-09-13)
 
-**What happened:** the token-optimization plan lost its knowledge-bootstrap revalidation, committed in `ecb9eb06` at 03:28. Earlier, around 03:15, that stage had run `loom stage amend`, which saved snapshot `.loom/work/plan_versions/1.md`. At 12:10:18 a reinstall (`dev-install.sh` runs `pkill -x loom`) and `loom run` started a fresh daemon. `Orchestrator::new` (`orchestrator/core/orchestrator.rs:173`) calls `verify_plan_versions_consistency`, and its Case 2 (`plan/amendment.rs:805-826` at the time) found the live plan unequal to that snapshot and overwrote the whole file with it. The DONE rename later carried the stale text. The revalidated version survives only in commit `ecb9eb06`, as the plan file committed there.
+**What happened:** the token-optimization plan lost its knowledge-bootstrap revalidation, committed in `ecb9eb06` at 03:28. Earlier, around 03:15, that stage had run `loom stage amend`, which saved snapshot `.loom/work/plan_versions/1.md`. At 12:10:18 a reinstall (`dev-install.sh` runs `pkill -x loom`) and `loom run` started a fresh daemon. `Orchestrator::new` (`orchestrator/core/orchestrator.rs`) calls `verify_plan_versions_consistency`, and its Case 2 (in `plan/amendment.rs` at the time; the file has since shrunk) found the live plan unequal to that snapshot and overwrote the whole file with it. The DONE rename later carried the stale text. The revalidated version survives only in commit `ecb9eb06`, as the plan file committed there.
 
 **Why:** the catch-up compared whole files and restored the snapshot on any difference, so it could not tell an amendment that never reached the file from a prose edit made after one. Case 3 of the same function, the stage-file catch-up, already compared only the amended field.
 

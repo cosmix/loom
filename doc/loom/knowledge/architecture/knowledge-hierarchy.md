@@ -1,36 +1,37 @@
 ---
 sources:
-- loom/src/fs/knowledge/catalog.rs
-- loom/src/commands/knowledge/check.rs
-- loom/src/fs/knowledge/catalog/issue.rs
-- loom/src/fs/knowledge/catalog/evidence.rs
+  - loom/src/fs/knowledge/catalog.rs
+  - loom/src/commands/knowledge/check.rs
+  - loom/src/fs/knowledge/catalog/issue.rs
+  - loom/src/fs/knowledge/catalog/evidence.rs
 verified: fffbcda55b1c83af0e06059063cab7bf93c6de67
 ---
+
 # Knowledge Hierarchy
 
 > Knowledge fs, INDEX, checks
 
 ## Module Layout (`fs/knowledge/`)
 
-| File | Owns |
-| --- | --- |
-| `types.rs` | `KnowledgeFile`, `KnowledgeTarget`, `KnowledgeLayout`, `INDEX_FILENAME`, the tier-1 alias table |
-| `dir.rs` | `KnowledgeDir` — `initialize`, `append_target`, `replace_section_target`, `layout` detection, index read/write, `refresh_index_if_hierarchical` |
-| `index.rs` | `scan_topics`, `generate_index`, `write_index`, `MAX_BLURB_CHARS` |
-| `catalog.rs` | `catalog::build` — deterministic chunk list plus `CatalogIssue` diagnostics over the curated tree (see *Audit Rules* below) |
-| `catalog/issue.rs` | the `CatalogIssue` enum and `is_review_only` |
-| `catalog/baseline.rs` | `CheckBaseline` — reads and compares the `loom knowledge check --baseline` file |
-| `catalog/headings.rs` | `HeadingTally` — `DuplicateHeading` and `DuplicateHeadingAcrossFiles` |
-| `catalog/size.rs` | the three size limits and their checks |
-| `fs/knowledge/catalog/evidence.rs` | `changed_since_verified` — the `EvidenceChanged` check against frontmatter `sources` and `verified` |
-| `catalog/source_roots.rs` | resolving backticked source paths: project root, cargo package source roots, unique path suffix, or basename |
-| `catalog/order.rs` | deterministic issue ordering |
-| `catalog/prose.rs` | indexing the configured prose roots into the same catalog, with lifecycle derived from the path |
-| `chunker.rs` (+ `chunker/references.rs`) | `chunk_file` / `chunk_sections` — heading-anchored `KnowledgeChunk`s, links, and typed backticked source references |
-| `frontmatter.rs` | leading YAML frontmatter (`id`, `aliases`, `state`, `sources`, `verified`), read by the chunker and written by `loom knowledge annotate` |
-| `splice.rs` | `splice_section` — in-place `#{2,6}` heading section replace/append, backing `replace_section_target` |
-| `scaffold.rs` | tier-2 stub-header detection/healing helpers used when a new topic file is created |
-| `templates.rs` | tier-1 and tier-2 file scaffolds, and `scaffold_blurb` (what `GenericBlurb` compares against) |
+| File                                     | Owns                                                                                                                                            |
+| ---------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `types.rs`                               | `KnowledgeFile`, `KnowledgeTarget`, `KnowledgeLayout`, `INDEX_FILENAME`, the tier-1 alias table                                                 |
+| `dir.rs`                                 | `KnowledgeDir` — `initialize`, `append_target`, `replace_section_target`, `layout` detection, index read/write, `refresh_index_if_hierarchical` |
+| `index.rs`                               | `scan_topics`, `generate_index`, `write_index`, `MAX_BLURB_CHARS`                                                                               |
+| `catalog.rs`                             | `catalog::build` — deterministic chunk list plus `CatalogIssue` diagnostics over the curated tree (see _Audit Rules_ below)                     |
+| `catalog/issue.rs`                       | the `CatalogIssue` enum and `is_review_only`                                                                                                    |
+| `catalog/baseline.rs`                    | `CheckBaseline` — reads and compares the `loom knowledge check --baseline` file                                                                 |
+| `catalog/headings.rs`                    | `HeadingTally` — `DuplicateHeading` and `DuplicateHeadingAcrossFiles`                                                                           |
+| `catalog/size.rs`                        | the three size limits and their checks                                                                                                          |
+| `fs/knowledge/catalog/evidence.rs`       | `changed_since_verified` — the `EvidenceChanged` check against frontmatter `sources` and `verified`                                             |
+| `catalog/source_roots.rs`                | resolving backticked source paths: project root, cargo package source roots, unique path suffix, or basename                                    |
+| `catalog/order.rs`                       | deterministic issue ordering                                                                                                                    |
+| `catalog/prose.rs`                       | indexing the configured prose roots into the same catalog, with lifecycle derived from the path                                                 |
+| `chunker.rs` (+ `chunker/references.rs`) | `chunk_file` / `chunk_sections` — heading-anchored `KnowledgeChunk`s, links, and typed backticked source references                             |
+| `frontmatter.rs`                         | leading YAML frontmatter (`id`, `aliases`, `state`, `sources`, `verified`), read by the chunker and written by `loom knowledge annotate`        |
+| `splice.rs`                              | `splice_section` — in-place `#{2,6}` heading section replace/append, backing `replace_section_target`                                           |
+| `scaffold.rs`                            | tier-2 stub-header detection/healing helpers used when a new topic file is created                                                              |
+| `templates.rs`                           | tier-1 and tier-2 file scaffolds, and `scaffold_blurb` (what `GenericBlurb` compares against)                                                   |
 
 The alias table lives in `types.rs`, not the CLI layer:
 `commands/knowledge/mod.rs::update`/`replace_section` resolve their `file` argument
@@ -96,13 +97,13 @@ from `loom knowledge check` rather than being repaired automatically.
 The five size limits ARE enforced — as catalog issues, reported and never
 repaired (`catalog/size.rs`, the mechanical form of CLAUDE.md Rule 12):
 
-| Constant | Value | Issue |
-| --- | --- | --- |
-| `MAX_TIER_ONE_SECTION_LINES` | 40 | `OversizedSection` — a tier-1 `##` section over 40 lines, heading line included and trailing blank lines excluded; the headingless preamble is exempt |
-| `MAX_TIER_ONE_FILE_LINES` | 250 | `OversizedFile` — a tier-1 file over 250 lines |
-| `MAX_TIER_TWO_SECTION_LINES` | 80 | `OversizedSection` — a tier-2 `##` section over 80 lines: a section past this is several topics |
-| `MAX_TIER_TWO_FILE_LINES` | 400 | `OversizedFile` — a tier-2 topic file over 400 lines |
-| `MAX_INDEX_BYTES` | 16 384 | `OversizedIndex` — a generated `INDEX.md` over 16 384 bytes |
+| Constant                     | Value  | Issue                                                                                                                                                 |
+| ---------------------------- | ------ | ----------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `MAX_TIER_ONE_SECTION_LINES` | 40     | `OversizedSection` — a tier-1 `##` section over 40 lines, heading line included and trailing blank lines excluded; the headingless preamble is exempt |
+| `MAX_TIER_ONE_FILE_LINES`    | 250    | `OversizedFile` — a tier-1 file over 250 lines                                                                                                        |
+| `MAX_TIER_TWO_SECTION_LINES` | 80     | `OversizedSection` — a tier-2 `##` section over 80 lines: a section past this is several topics                                                       |
+| `MAX_TIER_TWO_FILE_LINES`    | 400    | `OversizedFile` — a tier-2 topic file over 400 lines                                                                                                  |
+| `MAX_INDEX_BYTES`            | 16 384 | `OversizedIndex` — a generated `INDEX.md` over 16 384 bytes                                                                                           |
 
 Tier-1 is decided by path depth alone (`is_tier_one`: one path component under the
 knowledge root); every file in a category directory is tier-2 and takes the tier-2
@@ -120,7 +121,7 @@ refuse, but raises no catalog issue.
 (frontmatter lifecycle state, `--source` evidence paths, the `--verified` revision,
 aliases, and the topic blurb), `context`, `eval` (scores retrieval against a
 checked-in case file), `telemetry` (summarizes delivery and retrieval events),
-`sync`, `check` (`commands/knowledge/check.rs`; see *Audit Rules* below), and
+`sync`, `check` (`commands/knowledge/check.rs`; see _Audit Rules_ below), and
 `bootstrap` (see [knowledge-bootstrap.md](knowledge-bootstrap.md)).
 
 No knowledge-coverage metric exists. `CoverageReport` (`context/coverage/mod.rs`)
@@ -177,7 +178,7 @@ content write is never retried into a double append.
   `mistake:` note without `Prevention:` and a `stale-knowledge:` note that does not parse as
   `<file>#<heading> ... Correction: ...`, printing the expected shape and writing nothing
   (`commands/memory/handlers/prefix.rs`).
-- **A backticked span that looks like a source path is checked** (`fs/knowledge/chunker/references.rs:44`,
+- **A backticked span that looks like a source path is checked** (`fs/knowledge/chunker/references.rs::classify_reference`,
   `classify_reference`); a sentence quoting a path that does not exist reports `MissingSourceRef`, and
   `annotate --clear-sources` cannot clear it because it comes from the body, not the frontmatter. Reword the
   sentence so it carries an example marker (`<`, "example") or says "does not exist".
@@ -200,7 +201,7 @@ deterministically by `catalog/order.rs`:
   `contained_link_target`). An absolute target, or one that folds outside the
   knowledge root, is reported as broken without being probed on disk.
 - **`MissingSourceRef`** — a backticked source path classified live does not
-  resolve (see *Reference classification* below).
+  resolve (see _Reference classification_ below).
 - **`EvidenceChanged`** — a file's frontmatter declares `sources` and a `verified`
   revision, and `git diff --name-only <verified>..HEAD -- <sources>` lists one of
   them (`fs/knowledge/catalog/evidence.rs`). `EvidenceCollector` defers the git
@@ -214,12 +215,12 @@ deterministically by `catalog/order.rs`:
   external or historical that does not resolve; a note, since such a path is not
   expected to exist.
 - **`OversizedSection`**, **`OversizedFile`**, **`OversizedIndex`** — the size
-  limits under *Thresholds* below (tier-1 AND tier-2).
+  limits under _Thresholds_ below (tier-1 AND tier-2).
 
 `EvidenceChanged`, `EvidenceUnavailable`, `UnverifiableReference` and `DuplicateHeadingAcrossFiles` are review-only
 (`CatalogIssue::is_review_only`): they print as `review:` / `note:` lines, land in
 the JSON `review` array instead of `issues`, and never count toward `--strict`.
-`--strict-evidence` (`commands/knowledge/check.rs:36-58`) additionally counts
+`--strict-evidence` (`commands/knowledge/check.rs::CheckOptions`) additionally counts
 `EvidenceChanged` and `EvidenceUnavailable`, and fails on a missing knowledge root.
 Stage gates use `--strict` alone: most pages were never assessed against their
 sources, so a corpus-wide `--strict-evidence` gate fails on unreviewed drift, not
@@ -230,14 +231,14 @@ sources and runs `loom knowledge annotate <target> --verified HEAD`.
 
 **Reference classification** (`chunker/references.rs::classify_reference`, applied
 to each backticked span ending in a source extension — rs, tsx, ts, py, go, sh, md,
-toml, yaml, yml — outside fenced blocks, using the text around it): *runtime* when
+toml, yaml, yml — outside fenced blocks, using the text around it): _runtime_ when
 the path starts with `.loom/`, `.loom/work/`, `target/`, `node_modules/`, `~`, `/tmp` or
-`$`, or contains an angle bracket; else *example* when the path or its sentence
+`$`, or contains an angle bracket; else _example_ when the path or its sentence
 carries a placeholder marker (foo, bar, baz, an angle bracket, an ellipsis,
 path/to, slug, the words example or placeholder, and a few more); else
-*historical* when the sentence says the path does not exist, no longer, was
+_historical_ when the sentence says the path does not exist, no longer, was
 removed or deleted, was renamed, used to, or "there is no" directly before it;
-else *external* on markers such as upstream or another project; otherwise *live*.
+else _external_ on markers such as upstream or another project; otherwise _live_.
 A live path must exist at the project root, under a cargo package source root, as
 the unique project file with that path suffix, or — bare basename — as any file
 with that name (`catalog/source_roots.rs::repository_source_path_exists`). A live

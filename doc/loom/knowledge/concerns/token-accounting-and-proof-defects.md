@@ -1,21 +1,22 @@
 ---
 sources:
-- loom/src/verify/criteria/cache_contract.rs
-- loom/src/verify/criteria/tests/runner_tests.rs
-- loom/src/commands/usage/transcript_merge.rs
-- loom-hooks/poll-guard.sh
-- loom/tests/integration/hooks_poll_guard_subagents.rs
-- loom-hooks/tests/codex-forward-guard-blocks-edit.sh
-- loom/src/git/runner.rs
-- loom/src/process/mod.rs
-- loom/src/process/environment.rs
-- loom/src/quota/history_store.rs
-- loom/src/commands/usage/sections/edits.rs
-- loom/src/fs/safe_read.rs
-- loom-hooks/codex-forward-guard.sh
-- CLAUDE.md.template
+  - loom/src/verify/criteria/cache_contract.rs
+  - loom/src/verify/criteria/tests/runner_tests.rs
+  - loom/src/commands/usage/transcript_merge.rs
+  - loom-hooks/poll-guard.sh
+  - loom/tests/integration/hooks_poll_guard_subagents.rs
+  - loom-hooks/tests/codex-forward-guard-blocks-edit.sh
+  - loom/src/git/runner.rs
+  - loom/src/process/mod.rs
+  - loom/src/process/environment.rs
+  - loom/src/quota/history_store.rs
+  - loom/src/commands/usage/sections/edits.rs
+  - loom/src/fs/safe_read.rs
+  - loom-hooks/codex-forward-guard.sh
+  - CLAUDE.md.template
 verified: 499b09b6297aeee4896a66df3da86d00f652a618
 ---
+
 # Token Accounting Follow-Ups
 
 > Token follow-ups
@@ -30,14 +31,14 @@ Found during the plan's stages and integration-verify, verified against the tree
   redirects every loom git call, knowledge evidence freshness included, to another repository.
   Owner: `git/runner.rs`; `env_remove` the `GIT_*` repository variables.
 - **`process::run_bounded_output` bounds time, not bytes.** Its reader threads `read_to_end` with
-  no cap (`loom/src/process/mod.rs:209`), so callers' output limits (for example
+  no cap (`loom/src/process/mod.rs::collect_output`), so callers' output limits (for example
   `MAX_GIT_OUTPUT_BYTES` in `fs/knowledge/catalog/evidence.rs`) cap the accepted result, not peak
   memory. Owner: `process/mod.rs`; read through `take(limit + 1)` and error over the limit.
 - **Two atomic-write implementations for quota state.** History rewrites reuse
   `quota/cache.rs`'s `atomic_write` instead of `fs::locking::atomic_write_locked`, and
-  `ensure_history_dir` (`loom/src/quota/history_store.rs:55`) checks for symlinks before
+  `ensure_history_dir` (`loom/src/quota/history_store.rs`) checks for symlinks before
   `locked_dir_update` takes the lock (TOCTOU; low, since the quota dir is 0700 and single-writer).
-- **Legacy stage inference from a project slug.** `commands/usage/sections/edits.rs:26` infers a
+- **Legacy stage inference from a project slug.** `commands/usage/sections/edits.rs::build` infers a
   stage from `project_slug` via `stage_id()`, the pattern the provider ledger forbids for new
   attribution. `cache_ignore.rs::check_ignore` duplicates `process::run_bounded`'s spawn and wait
   handling except stdin.
@@ -46,8 +47,8 @@ Found during the plan's stages and integration-verify, verified against the tree
   [Token Accounting and Receipts](../architecture/token-accounting-and-receipts.md)); a shared
   any-path variant in `fs/safe_read.rs` would retire the copy.
 - **`#[serial]` env mutation races non-serial siblings.** `verify/criteria` runner tests mutate the
-  process-wide `LANG` through `EnvGuard` (`loom/src/verify/criteria/tests/runner_tests.rs:320`);
-  `apply_stage_environment` (`loom/src/process/environment.rs:80`) re-reads the process environment
+  process-wide `LANG` through `EnvGuard` (`loom/src/verify/criteria/tests/runner_tests.rs::EnvGuard`);
+  `apply_stage_environment` (`loom/src/process/environment.rs::apply_stage_environment`) re-reads the process environment
   per run, so a concurrent non-serial test
   that spawns a confined command could fingerprint the mutated value. Not observed failing; pass the
   allowlisted env explicitly in those fixtures.
@@ -92,7 +93,7 @@ Open items from PLAN-token-flow; the design is in [token-flow-sources](../archit
 - **Numbers are a lower bound.** The tracker reads local transcripts only. Compaction and auxiliary API calls may be missing from them, and a session whose transcript is not found keeps its stage out of `stages` (the UIs show `—`).
 - **Other config homes are invisible.** Sessions under another `CLAUDE_CONFIG_DIR` or `CODEX_HOME` than the daemon's are not discovered: the daemon's environment allowlist (`daemon/server/environment.rs`) forwards `HOME` but not those two.
 - **Codex fork rollouts would double count.** A forked rollout replays its parent's history and the tracker has no fork handling, so a forked thread counts the replayed turns again.
-- **Running Codex jobs are discovered before forward receipts.** Validated companion job records provide `threadId` while the job runs. The legacy PostToolUse receipt still requires a forwarding result (`commands/hook/forward_receipt.rs:66-69`), but receipt lag no longer blocks an authorized job with a retained companion record.
+- **Running Codex jobs are discovered before forward receipts.** Validated companion job records provide `threadId` while the job runs. The legacy PostToolUse receipt still requires a forwarding result (`commands/hook/forward_receipt.rs::from_env`), but receipt lag does not block an authorized job with a retained companion record.
 - **A thread in two stages' receipts counts once.** `discover.rs` dedupes by path under the alphabetically first stage; if the other stage already accumulated it, its state is kept and the thread double counts across stages. Needs a thread forwarded from two stages.
 - **Flat usage can lose the time-left label.** With no history row inside the 30-minute window only the snapshot point remains, and fewer than 2 points gives no label although a slope-0 "lasts to reset" would be the better answer (`quota_points.rs`).
 
@@ -104,7 +105,7 @@ Open items from PLAN-token-flow; the design is in [token-flow-sources](../archit
 
 ### Hardening Backlog
 
-- **Quota cache/history file reads refuse nonregular files.** `quota/cache.rs:45-60` and `quota/history_store.rs:74-88` use `fs::safe_read::read_to_string_bounded`; a FIFO at either path is rejected, so the readers do not retain the blocking `File::open` gap.
+- **Quota cache/history file reads refuse nonregular files.** `quota/cache.rs::read_provider` and `quota/history_store.rs::read_history_body` use `fs::safe_read::read_to_string_bounded`; a FIFO at either path is rejected, so the readers do not retain the blocking `File::open` gap.
 - **Writes by path after the symlink check.** `checkpoint.save` and `write_flow` write by path seconds after `ensure_tokens_dir` checked the directory (a first pass can take seconds); recheck before each write or write through a directory fd. Exploiting it needs write access to `.loom/work`, which sandboxed sessions lack.
 - **Unbounded fan-out and id length.** `discover.rs` does not cap subagent files per directory or agents per stage, and `MessageTable` (`accumulate.rs`) caps the number of ids (4096) but not their length.
 - **`by_model` is capped at ingest, not when a checkpoint loads.** `add_model_usage` holds an agent to `MAX_MODEL_KEYS` keys plus `other`, but a hand-planted 8 MiB checkpoint can carry tens of thousands of entries per agent, and `add_model_usage` finds its key by a linear scan on every ingested line. `model_totals` aggregates in a `BTreeMap`, so only that scan and the flow size grow. Truncate `by_model` on load. It needs write access to the 0700 tokens directory.
@@ -113,7 +114,7 @@ Open items from PLAN-token-flow; the design is in [token-flow-sources](../archit
 
 ### Structure
 
-- **Shared discovery is below the commands layer.** The claim that `tokens` imports discovery from `commands::usage::codex_discovery` is incorrect: `tokens/discover.rs:9` imports `codex_root`, `collect_jsonl` and `CodexDiscovery` from `provider_data::codex_discovery`. `rollout_files` still drops unreadable-directory diagnostics.
+- **Shared discovery is below the commands layer.** `tokens/discover.rs` imports `codex_root`, `collect_jsonl` and `CodexDiscovery` from `provider_data::codex_discovery`. `rollout_files` still drops unreadable-directory diagnostics.
 - **Small couplings.** `checkpoint.rs` imports `CHECKPOINT_FILE` from `tracker.rs` while `tracker.rs` imports `Checkpoint`; the bucket index `div_euclid(BUCKET_SECS)` is inlined in `accumulate.rs`, `flow_build.rs` and `tracker.rs`; `tracker.rs` carries a `thread_local` `TrackerLocal` only because `scan_pass`'s signature is pinned (`guarded_pass` and `scan_until` share a module and could pass the flag directly); `CodexLine::SessionMeta` is parsed and never consumed, `tokens/accumulate_tests.rs` sits at 399 of the 400-line limit (the next test there needs a sibling test file), and `claude_line`, `codex_line` and `TRACKER_INTERVAL_SECS` are `pub` with no outside user, which hides dead code from rustc.
 - **Layering of TUI helpers.** `compact_tokens`, `spark` and `quota_left_text` are shared by `header.rs`, `cells.rs` and `quota.rs` but live in `tokens_pane.rs`. The `watch_lock_identity` doc comment in `daemon/server/lifecycle.rs` names only `tick::record` and the quota poller as path-writing threads, not the tracker.
 
@@ -126,13 +127,13 @@ Open items from PLAN-token-flow; the design is in [token-flow-sources](../archit
 - The `token-flow-panel.tsx` stage chart palette repeats after six stages.
 - **Legend rate and by-model bars.** `modelRates` and `modelHistoryBars` (`web/src/lib/model-history.ts`) key each agent's rate and series by its last model while shares key by per-line model, so an agent that switched models attributes its whole rate and window to the new one, and `other` always reads 0/m. A backend per-model series would fix both.
 - **Chip trends.** The "fresh so far" trend on a 0-based sparkline is nearly flat at the top for a stage older than an hour (subtract the window minimum), and the leading null buckets of the cache-hit trend carry forward as 0%, so a young stage appears to climb from 0.
-- **TUI by-model block.** `model_lines` cuts at `MODEL_BLOCK_MAX_ROWS` (10) with no "more" marker: past four models with efforts the smallest vanish silently and the visible shares stop adding to 100%, and `name_cells` is measured over groups the cut may hide. `render` (`layout.rs:62`) also rebuilds the pane and re-runs `budget` for the live-only fallback when the pane has no by-model block, where the second build is identical.
+- **TUI by-model block.** `model_lines` cuts at `MODEL_BLOCK_MAX_ROWS` (10) with no "more" marker: past four models with efforts the smallest vanish silently and the visible shares stop adding to 100%, and `name_cells` is measured over groups the cut may hide. `render` (`commands/status/ui/tui/ledger/layout.rs::render_dashboard`) also rebuilds the pane and re-runs `budget` for the live-only fallback when the pane has no by-model block, where the second build is identical.
 - **Hint and types.** The uncached-input hint is a `title` attribute, unavailable on touch and keyboard (an accessible disclosure would replace it). `Pie` types its prop as `ReturnType<typeof modelShares>` although `ModelShare` is exported.
 
 ### Test Weaknesses
 
 - The frozen contract `rate-is-five-minute-average` stays green under an 11-14 bucket rate window (the outside line sits at `now - 420 s`); `flow_build.rs` uses `RATE_BUCKETS` = 10 correctly. A contract revision should place the outside line in bucket 11 (a dispute, not an edit).
-- The contract `tracker-memo-keeps-work-roots-apart` stays green with the memo's `is_for` guard removed: its two fixtures differ in transcript paths and flow hash, so cross-root reuse is unobservable (`tracker.rs:106`). The implementation is right; the contract is weak.
+- The contract `tracker-memo-keeps-work-roots-apart` stays green with the memo's `is_for` guard removed: its two fixtures differ in transcript paths and flow hash, so cross-root reuse is unobservable (`tokens/tracker.rs::scan_until`). The implementation is right; the contract is weak.
 - The contract `stage-chips-carry-trends` stays green when a chip draws an empty series, because an empty `Sparkline` still renders `role="img"`.
 - No test clicks Back to details in control mode (`web/src/components/stage-modal.test.tsx`).
 - `quota/codex_tests.rs`: when `poll_once` fails early the pid-file watcher keeps polling for up to `REPLY_DEADLINE` (60 s) before the scope joins and the `expect` panics; a shared done flag would end the wait. The detached `std::thread::spawn` in `a_shutdown_flag_set_mid_exchange_returns_quickly` predates the scoped helpers.
@@ -146,7 +147,7 @@ Open items from PLAN-token-flow; the design is in [token-flow-sources](../archit
 
 ## Token Model Blank-Row Investigation
 
-`web/src/components/token-models.tsx:114-123` groups rows by model and uses a row-spanning model cell rendered only on the first effort row. Subsequent effort rows look blank in the Model column, but retain the same model. The xhigh row below claude-opus-5-5 is an effort continuation, not a missing model; repeating the label or strengthening group styling would remove the ambiguity.
+`web/src/components/token-models.tsx` groups rows by model and uses a row-spanning model cell rendered only on the first effort row. Subsequent effort rows look blank in the Model column, but retain the same model. The xhigh row below claude-opus-5-5 is an effort continuation, not a missing model; repeating the label or strengthening group styling would remove the ambiguity.
 
 ## Stage Token Metric Layout
 
@@ -166,17 +167,17 @@ Verified against the tree; each gap blocks or weakens a token-saving claim that 
 
 - **Worker-brief records credit nobody.** `store_record` files `<key>.json` at issue, and a
   dependent stage's `dependency_chunk_ids` reads them, but `delivered_to_session`
-  (`loom/src/context/delivery/session.rs:104-126`) matches only the session's prompt recipient and
+  (`loom/src/context/delivery/session.rs::delivered_to_session`) matches only the session's prompt recipient and
   its `LOOM_SESSION_ID` spawn record, so a worker's own prompt hook never skips what its brief
   carried. A suppression consumer, or removing the nonce and marker whose only remaining consumer
   is `spawn-guard.sh` validation, is deferred.
 - **Compaction keeps spawn-brief credit (accepted limit).** `loom hook pre-compact` deletes only
   the prompt recipient's delivery record (`loom/src/commands/hook/pre_compact.rs`).
-  `already_delivered` (`loom/src/commands/hook/user_prompt.rs:239-248`) still passes the
+  `already_delivered` (`loom/src/commands/hook/user_prompt.rs::already_delivered`) still passes the
   `LOOM_SESSION_ID` spawn recipient, and `delivered_to_session` credits its records while the
   context epoch is unchanged. The case has not occurred: 0 of 282 stage transcripts on this
   machine compacted, and a compacted stage session re-reads its signal
-  (`loom-hooks/session-start.sh:147-155`).
+  (the re-anchor block of `loom-hooks/session-start.sh`).
 - **Quota resolution.** Quota is reported in whole percents, so a subscription verdict cannot
   resolve a plausible saving. The offline comparison therefore lets an inconclusive subscription
   verdict stand beside a supported net-total verdict and keeps only a rejected one as a veto
@@ -192,11 +193,11 @@ Verified against the tree; each gap blocks or weakens a token-saving claim that 
   on line 0), so `forward-receipt` writes nothing; `codex-forward-result.sh` handles the notice,
   the payload writer does not. The forward's Codex rows read foreign.
 - **A damaged receipt line disables receipt formation.** `persist` refuses to append to a file
-  with a malformed or truncated line (`commands/hook/forward_receipt.rs:231-234`), every Codex
+  with a malformed or truncated line (`commands/hook/forward_receipt.rs::persist`), every Codex
   wait on the stage then fails, `post-tool-use.sh` discards the delegate's stderr, and there is
   no repair step or trace file. `loom usage` reads it as `malformed-forward-receipts`.
 - **Receipts are unauthenticated.** `receipt_id` is an unkeyed SHA-256 of public identifiers
-  (`models/forward_receipt.rs:127`), so anyone able to write `forward-receipts.jsonl` can name a
+  (`models/forward_receipt.rs::receipt_id`), so anyone able to write `forward-receipts.jsonl` can name a
   Codex thread and have `codex_scope.rs` count its rows. Receipt integrity rests on work-dir
   permissions.
 - **Spawn requests join Claude starts at one-second resolution.** `spawn_join.rs` stamps a spawn
@@ -204,7 +205,7 @@ Verified against the tree; each gap blocks or weakens a token-saving claim that 
   get swapped requested models; a single-model rule applies one model to every start even when
   spawn and start counts differ; an oversized or unreadable ledger reads as empty with no
   diagnostic. Making adjacent-second pairing ambiguous would rewrite
-  `spawn_join_tests.rs:72-155`, a test-integrity event, so it was disputed rather than fixed.
+  `spawn_join_tests.rs::requested_models_pairs_distinct_timestamps_in_order`, a test-integrity event, so it was disputed rather than fixed.
 - **Completeness blind spots.** Claude's `missing_timestamp_rows` counts every row type without a
   timestamp (29,986 on a real three-day window), so it is a diagnostic, not a reason, and a usage
   row without a timestamp is dropped without the report reading partial. Codex scope and
@@ -225,31 +226,30 @@ sibling-advisory wording, the `_bounded.sh` comment fix) are not listed.
 
 **Worker brief hook** (`loom/src/commands/hook/worker_brief.rs`):
 
-- `emit_normal` (`:84`) is the only mode left after the bind path was deleted; inline it into `worker_brief`.
-- `store_record` (`:300`) returns `Result<Option<()>>` with a `bound.exists()` branch that a fresh v4 nonce never reaches, forcing `.ok()??` in `issue`; return `Result<()>`.
+- `emit_normal` is the only mode (there is no bind path); inline it into `worker_brief`.
+- `store_record` returns `Result<Option<()>>` with a `bound.exists()` branch that a fresh v4 nonce never reaches, forcing `.ok()??` in `issue`; return `Result<()>`.
 - `HookPayload.cwd` and `transcript_path` are required by `valid_payload` but never read, so a payload lacking either silently gets no brief; drop them from the struct and the check.
-- `declared_paths` (`:241`) runs on the full prompt (up to 1 MiB) before the 2,048-byte cap, with a quadratic `paths.contains` and no cap on path count. The 5 s bound makes it fail open, so it is not unsafe; cap the path count.
-- The doc comment on `WORKER_QUERY_MAX_BYTES` (`:107`) says "the spawn guard's former three-second bound", a history note in a current-state comment; state the present 5 s bound.
-- `context/delivery/session.rs:59` calls the nonce "the only public join key", but nothing joins on it now; the marker and nonce have only `spawn-guard.sh` validation as a consumer (frozen contracts pin them). Revisit with plan 4.
+- `declared_paths` runs on the full prompt (up to 1 MiB) before the 2,048-byte cap, with a quadratic `paths.contains` and no cap on path count. The 5 s bound makes it fail open, so it is not unsafe; cap the path count.
+- The doc comment on `WORKER_QUERY_MAX_BYTES` says "the spawn guard's former three-second bound", a history note in a current-state comment; state the present 5 s bound.
 
 **Hook scripts**:
 
-- `spawn-guard.sh` writes the Codex-bound predicate twice (`case` at `:278`, `[[ ]]` at `:300`), and it is broader (`codex:*`) than `loom_codex_forwarder_verdict` in `_common.sh` (`loom-codex-forwarder | codex:codex-rescue`). Share one `CODEX_BOUND` flag and decide which names are intended; the file is 398 lines against a 400-line cap.
-- `_read_discipline.sh:275` keeps rule numbers 0, 0b, 1, 3, 4 after rule 2 was removed; the gap is deliberate and `_read_discipline.sh` carries no note saying so.
-- `post-tool-use.sh:23` sources `_read_ledger.sh`, which `_read_discipline.sh:26` already sources; `read-guard.sh:29` re-sources `_bounded.sh` likewise.
-- `_bounded.sh:21`: the final blocking `read` depends on the write end of the pipe being closed in the watchdog. That holds today; add a comment if the structure changes.
+- `spawn-guard.sh` writes the Codex-bound predicate twice (a `case` and a `[[ ]]`), and it is broader (`codex:*`) than `loom_codex_forwarder_verdict` in `_common.sh` (`loom-codex-forwarder | codex:codex-rescue`). Share one `CODEX_BOUND` flag and decide which names are intended; the file is 398 lines against a 400-line cap.
+- `_read_discipline.sh::loom_read_discipline_check` has no rule 2 (the numbers are 0, 0b, 1, 3, 4); the gap is deliberate and `_read_discipline.sh` carries no note saying so.
+- `post-tool-use.sh` sources `_read_ledger.sh`, which `_read_discipline.sh` already sources; `read-guard.sh` re-sources `_bounded.sh` likewise.
+- `_bounded.sh::_loom_watchdog`: the final blocking `read` depends on the write end of the pipe being closed in the watchdog. That holds today; add a comment if the structure changes.
 
 **Tests**:
 
-- `loom-hooks/tests/read-guard-sibling-receipts.sh` and its `run-all.sh:142` registration keep "receipts" in the name for a ledger of requested reads; rename to a "requests" name.
-- `loom/tests/integration/hooks_read_guard_repeat.rs` no longer tests a repeat rule (rule-one, ledger-row and tier-one cases); rename the module.
-- `hooks_read_guard.rs:329` `repeated_binary_reads_stay_silent` cannot fail against current code (50 lines is below the 400- and 200-line thresholds); remove it or give it a distinguishing assertion. `run_read_hook` (`:196`) still sends a `cwd` field only the receipt path needed.
-- `loom-hooks/tests/post-tool-use-tool-event.sh:47` keeps an `INELIGIBLE` PNG invocation left from receipt eligibility that exercises nothing distinct; its absence assertion at `:50` uses `rg -q`, which on a host without ripgrep is silently false, so it cannot fail. Use `grep -q`.
-- `loom/tests/read_intent_contracts.rs:74` runs the real binary, which no longer has `read-receipt`, so a shell-only re-added call writes nothing and passes. Use a stub `LOOM_BIN` that logs argv and assert the ledger file exists as a positive control.
-- `loom-hooks/tests/knowledge-orient-silent.sh:61` case (c) proves silence only with a nonexistent `LOOM_BIN`; no bash test pins the `pre-compact` invocation or that a `resume` source does not reset. The Rust contract covers the compact path end to end.
-- No test drives `pre-compact.sh`'s delegate call (`:40`), so removing the bound or the `|| true` passes every suite; a stub `loom` that sleeps past 3 s would pin it, as `loom-run-bounded.sh` does for the helper.
-- `loom-hooks/tests/loom-run-bounded.sh:68`: add a test that a caller-held fd 9 is preserved across `loom_run_bounded`.
-- `loom/src/commands/hook/tests_cli_surface.rs:1` placement is acceptable; `loom/src/cli/tests_web_host.rs` is the precedent if it moves.
+- `loom-hooks/tests/read-guard-sibling-receipts.sh` and its `run-all.sh` registration keep "receipts" in the name for a ledger of requested reads; rename to a "requests" name.
+- `loom/tests/integration/hooks_read_guard_repeat.rs` tests no repeat rule (rule-one, ledger-row and tier-one cases); rename the module.
+- `hooks_read_guard.rs::repeated_binary_reads_stay_silent` `repeated_binary_reads_stay_silent` cannot fail against current code (50 lines is below the 400- and 200-line thresholds); remove it or give it a distinguishing assertion. `run_read_hook` still sends a `cwd` field only the receipt path needed.
+- `loom-hooks/tests/post-tool-use-tool-event.sh` keeps an `INELIGIBLE` PNG invocation left from receipt eligibility that exercises nothing distinct; its absence assertion uses `rg -q`, which on a host without ripgrep is silently false, so it cannot fail. Use `grep -q`.
+- `loom/tests/read_intent_contracts.rs::read_guard_prepares_no_receipt_intent` runs the real binary, which has no `read-receipt`, so a shell-only re-added call writes nothing and passes. Use a stub `LOOM_BIN` that logs argv and assert the ledger file exists as a positive control.
+- `loom-hooks/tests/knowledge-orient-silent.sh` case (c) proves silence only with a nonexistent `LOOM_BIN`; no bash test pins the `pre-compact` invocation or that a `resume` source does not reset. The Rust contract covers the compact path end to end.
+- No test drives `pre-compact.sh`'s delegate call, so removing the bound or the `|| true` passes every suite; a stub `loom` that sleeps past 3 s would pin it, as `loom-run-bounded.sh` does for the helper.
+- `loom-hooks/tests/loom-run-bounded.sh`: add a test that a caller-held fd 9 is preserved across `loom_run_bounded`.
+- `loom/src/commands/hook/tests_cli_surface.rs` placement is acceptable; `loom/src/cli/tests_web_host.rs` is the precedent if it moves.
 
 ## Hook Hardening Proposals From the Delivery-Truth Plan
 
@@ -261,7 +261,7 @@ sibling-advisory wording, the `_bounded.sh` comment fix) are not listed.
 
 Open items from the plan's reviews, all small. The implemented ones are gone from this list.
 
-- **Receipt writer.** `post-tool-use.sh:246` prefilters on `*"codex-forward.sh task"*`, stricter
+- **Receipt writer.** `post-tool-use.sh` prefilters on `*"codex-forward.sh task"*`, stricter
   than `is_forward_wrapper`: a forwarder that quotes the absolute wrapper path runs the forward
   and forms no receipt, so its Codex rows read foreign with no partial reason (`*codex-forward.sh*`
   would match). `is_forward_wrapper` accepts the absolute spelling only in its canonical form
@@ -319,11 +319,11 @@ Open items from the plan's reviews, all small. The implemented ones are gone fro
 
 The offline harness (`orchestrator/signals/tests_dependency_harness.rs`) measured the Dependency Findings section and the change-set boost on three recorded pairs. All three print a stop-rule FAIL; the figures are upper bounds, never savings.
 
-| Pair | First-arrival gain | Replay-weighted gain | Section cost |
-| --- | --- | --- | --- |
+| Pair                            | First-arrival gain                                     | Replay-weighted gain            | Section cost                                    |
+| ------------------------------- | ------------------------------------------------------ | ------------------------------- | ----------------------------------------------- |
 | guard-core to guard-integration | -444 tokens (old 6,722 over 6 files, new 6,278 over 5) | -2,221 (old 56,438, new 54,217) | 12,190 (462 bytes, 115 tokens x 106 main calls) |
-| token-core to tui-tokens | 0 | 0 | 5,130 (54 tokens x 95 calls) |
-| token-core to web-tokens | 0 | 0 | 2,430 (54 tokens x 45 calls) |
+| token-core to tui-tokens        | 0                                                      | 0                               | 5,130 (54 tokens x 95 calls)                    |
+| token-core to web-tokens        | 0                                                      | 0                               | 2,430 (54 tokens x 45 calls)                    |
 
 For guard-core the old arm boosted nothing (its 15 declared paths were `working_dir`-relative), so the change set only reordered worker packs and cost one covered file; the change set reproduced the recorded 28 paths and no knowledge was lost. The operator overrode the stop rule and plan 4 completed: the guard-core harness test prints its verdict instead of asserting it, and no wave was re-run or tuned. Revisit when a pair with a real overlap between a dependency's change set and a successor's reads is recorded. The plan file `doc/plans/archive/DONE-PLAN-04-dependency-findings.md` still says the stop rule is asserted and has no Deviations entry for the override.
 
@@ -333,14 +333,14 @@ Signal replay at plan 4 integration-verify against the plan base: dynamic bytes 
 
 None has a failure on the merged tree. Each is a design extension, a performance bound unreached at current journal sizes, or a root cause outside the plan.
 
-- **Spool id validation.** `validate_spooled_entry` (`fs/memory/spool.rs:169`) does not validate the id or receipt event id (32 hex), the session, or receipt presence per entry type; fix at the spool boundary ([mistake](../mistakes/untrusted-value-boundaries.md)).
+- **Spool id validation.** `validate_spooled_entry` (`fs/memory/spool.rs::validate_spooled_entry`) does not validate the id or receipt event id (32 hex), the session, or receipt presence per entry type; fix at the spool boundary ([mistake](../mistakes/untrusted-value-boundaries.md)).
 - **Journal round trip.** A body with CRLF reads back with LF and leading and trailing whitespace is trimmed (`fs/memory/types.rs`). `fs/memory/tests/parser_escaping.rs` pins three surviving entries, which includes a receipt with a mangled event id (harmless, it matches no event); update it if `parse_receipt` ever validates the event id. Add CR, U+2028, U+0085, a `*`-leading body line, and line breaks in session and target to the hostile-body tests (`findings_render_tests.rs`, `tests/dependency_inputs_contracts.rs`).
 - **`single_line` Unicode.** `verify/review/report.rs::single_line` leaves format characters (U+202E bidi override, zero-width) in place; not structural, can mislead terminal display.
 - **Render cost.** `findings.rs::render` rebuilds the section for each candidate line, O(P x L^2) in dependencies and entries; stop once no line can fit. `names_dependency_path` allocates a normalized copy per candidate per node, and `dependency_paths` is now an uncapped change set on the worker-brief hook bounded at 5 seconds; pre-normalize once per query or cap the list if harness wall time shows cost. `dependency_paths` also runs three git calls per dependency, which matters for integration-verify.
 - **Duplicate dependency id.** A plan listing the same dependency twice builds two producers over one journal, so headline and entries render and count twice; dedupe changes by stage id.
 - **Evidence matching.** `strip_line_span` drops only `:<n>` and `:<n>-<n>`, so `src/a.rs:12:5` misses its file. A declared directory (`src/`) joins to a literal pattern and matches nothing beneath it; by design, the spec matches declared files as globs. `repository_relative` maps any absolute path containing `/.worktrees/` from any repository; require the `<root>/.worktrees/` prefix. The headline prints `prefix8` of the dependency's commit without `is_commit_id` validation when `range` is `None` (the stage record is loom-owned).
 - **Shared prefix list.** `findings.rs` `RANKED_NOTE_PREFIXES` repeats the list `commands/memory/handlers/prefix.rs::NotePrefix::parse` owns, with different matching (case-insensitive and `trim_start`, against exact `starts_with`); a shared constant in `fs::memory` would stop drift.
-- **Test gaps.** No test fails if the Completed filter (`findings.rs:99`) or the status gate in `retrieval.rs` is removed; add a dependency that is Completed then reopened (Queued or Executing) and still carries a commit. The harness (`tests_dependency_harness/packs.rs`) re-implements `retrieve_stage_pack` and `worker_brief::retrieve_pack`; assert that its stage pack ids equal `retrieve_stage_pack`'s on the same scratch repo.
+- **Test gaps.** No test fails if the Completed filter (`orchestrator/signals/generate/findings.rs::build_dependency_findings`) or the status gate in `retrieval.rs` is removed; add a dependency that is Completed then reopened (Queued or Executing) and still carries a commit. The harness (`tests_dependency_harness/packs.rs`) re-implements `retrieve_stage_pack` and `worker_brief::retrieve_pack`; assert that its stage pack ids equal `retrieve_stage_pack`'s on the same scratch repo.
 - **Structure.** `findings.rs` sits at 395 of 400 lines; move the path-reading helpers (`path_candidates` through `repository_relative`) to a sibling module before the next edit. The `git/merge/control_paths.rs` module doc covers only the control-path gate while `accepted_change_base` and `AcceptedBase` live there; document them or move them.
 
 ### Guard and Verification Gaps

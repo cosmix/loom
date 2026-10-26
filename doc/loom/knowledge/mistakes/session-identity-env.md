@@ -18,13 +18,13 @@ behavior is unchanged".
 
 **Blast radius — every consumer resolves that value as a real stage id:**
 
-| Consumer | Failure with the prefixed form |
-| --- | --- |
-| `loom-hooks/loom-control-complete.sh` (PreToolUse) | pins completion to a nonexistent stage id and **blocks** the correct command |
-| `sandbox_control_session` | `env_stage != stage_id` → "completion request does not match the active wrapper stage/session" |
-| `loom-hooks/session-start.sh` → `HeartbeatWatcher` | heartbeat written as `<kind>-<stage>.json`; `detect_heartbeat_events` looks up `session.stage_id`, gets `NoHeartbeat` **forever** — hung detection silently disabled for knowledge/merge/base-conflict |
-| `loom memory note\|decision` | entries filed under a phantom stage |
-| `loom handoff`, `session-end.sh`'s `*-${LOOM_STAGE_ID}.md` glob, `ask-user-pre.sh` | resolve the wrong stage |
+| Consumer                                                                           | Failure with the prefixed form                                                                                                                                                                         |
+| ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `loom-hooks/loom-control-complete.sh` (PreToolUse)                                 | pins completion to a nonexistent stage id and **blocks** the correct command                                                                                                                           |
+| `sandbox_control_session`                                                          | `env_stage != stage_id` → "completion request does not match the active wrapper stage/session"                                                                                                         |
+| `loom-hooks/session-start.sh` → `HeartbeatWatcher`                                 | heartbeat written as `<kind>-<stage>.json`; `detect_heartbeat_events` looks up `session.stage_id`, gets `NoHeartbeat` **forever** — hung detection silently disabled for knowledge/merge/base-conflict |
+| `loom memory note\|decision`                                                       | entries filed under a phantom stage                                                                                                                                                                    |
+| `loom handoff`, `session-end.sh`'s `*-${LOOM_STAGE_ID}.md` glob, `ask-user-pre.sh` | resolve the wrong stage                                                                                                                                                                                |
 
 **Prevention:** `LOOM_STAGE_ID` is the plain plan stage id for **every** session kind. Anything that
 varies by kind travels as the kind, not as a prefix on an id — `create_wrapper_script` now takes
@@ -77,15 +77,15 @@ re-proposed:
    stages have no branch, so nothing else ever would — the plan could never reach `DONE-`.
 3. Nothing in the daemon calls `trigger_dependents`; `complete_knowledge_stage` does it itself.
 
-The broker exists because a *sandboxed worktree* agent must not mutate trusted `.loom/work` state. An
+The broker exists because a _sandboxed worktree_ agent must not mutate trusted `.loom/work` state. An
 earlier version of this paragraph said a knowledge session "is not sandboxed" and that its spawn
 "generates no sandbox deny/allow settings" — wrong even at the time, since the spawn wrote a sandbox
 block into the main checkout's `.claude/settings.local.json`. That write is gone now (loom writes no
 `.claude/settings.local.json` at all — see
 [Where a Session's Write Grants Come From](../architecture/security-and-isolation.md#where-a-sessions-write-grants-come-from-stale-corrected-2026-09-13)),
 and blockers 1 and 2 above are lifted: `session_owns_stage_as`
-(`daemon/server/self_service.rs:87-97`) now admits `SessionType::Knowledge`, and
-`handle_complete_stage` (daemon/server/control_complete.rs:50-52 (removed)) sets `stage.merged = true` for a
+(`daemon/server/self_service.rs::ownership_to_enforce`) now admits `SessionType::Knowledge`, and
+`handle_complete_stage` (a daemon handler since removed) sets `stage.merged = true` for a
 knowledge stage before calling `try_complete`. Knowledge completion goes through the broker like
 every other kind.
 

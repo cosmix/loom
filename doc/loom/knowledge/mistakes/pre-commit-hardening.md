@@ -26,14 +26,14 @@ against the tree rather than assumed:
 - **Two `git diff --quiet` calls stay separate rather than sharing a loop helper**, and there is no
   submodule-dirtiness handling — the repo's `.gitmodules` exists but is 0 bytes and the index
   holds no `160000` gitlink entries, so there are no submodules to special-case. That conclusion
-  was reached correctly, but only after being reached once *without* checking (`.gitmodules`
+  was reached correctly, but only after being reached once _without_ checking (`.gitmodules`
   existing was read as "there might be submodules" and dismissed on assertion, not evidence) —
   before dismissing a submodule edge case, run `test -f .gitmodules && git ls-files -s | rg '^160000'`.
 - **The guard cannot false-positive under `git commit -a` or `git commit <path>`.** Git builds the
   hook's `GIT_INDEX_FILE` as a temporary index from `HEAD` plus the named/all-modified paths for
   that commit, so `git diff --quiet` sees index == working tree for those paths. The flip side is
   a real limitation, not a bug: `git commit <path>` (`--only`) does **not** trip the guard for a
-  *different*, genuinely partially staged file — that file's partial entry is simply absent from
+  _different_, genuinely partially staged file — that file's partial entry is simply absent from
   the temporary index the hook inspects.
 
 ## Why the Hook Was Never Syntax-Checked (fixed 2026-09-12)
@@ -42,13 +42,13 @@ against the tree rather than assumed:
 extension, so `loom/.githooks/pre-commit` was invisible to it and to the CI hook-syntax step. The
 partial-staging fixture's fully-staged path was the only thing that ever ran the hook to its last
 line. Fixed by adding a second `find` pass over `loom/.githooks` for executable files
-(`scripts/check-hook-syntax.sh:23,49`).
+(`scripts/check-hook-syntax.sh`).
 
 ## Test Design: a Space in a Filename Does Not Prove NUL-Safety
 
 A fixture filename containing only an internal space does not distinguish `-z`/NUL enumeration
 from newline enumeration: git does not C-quote a bare space, and `read -r` keeps it. A mutant
-that enumerates by newline still passed the space case. Use a name git *does* C-quote without
+that enumerates by newline still passed the space case. Use a name git _does_ C-quote without
 `-z` (a double quote, a backslash, a tab, or non-ASCII under default `core.quotePath`) to make a
 newline-enumeration mutant actually fail.
 

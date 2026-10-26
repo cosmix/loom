@@ -8,12 +8,12 @@ When the target branch is checked out in the operator's main checkout R, `advanc
 
 `classify` (`git/merge/checkout_state.rs`, pure) compares `git status --porcelain=v2 -z --untracked-files=all` with `git diff --name-status -z --no-renames T0 M`. A path is touched when T0..M modifies, adds or deletes it. Directory/file prefix overlaps count as overlaps; only an exact untracked path may be byte-compared and removed. Every `git status` in R runs with `GIT_OPTIONAL_LOCKS=0`.
 
-| Case | Action |
-| --- | --- |
-| No tracked change and no untracked file on a touched path | `git merge --ff-only M`; git carries the local changes |
+| Case                                                                                                     | Action                                                                       |
+| -------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------- |
+| No tracked change and no untracked file on a touched path                                                | `git merge --ff-only M`; git carries the local changes                       |
 | Only overlap: untracked files M adds, byte-identical to the blob, regular files (a symlink never counts) | remove them, then fast-forward; a rollback restores them with their exec bit |
-| Tracked overlap, dry run clean | reapply (below) |
-| Tracked overlap with a predicted conflict, an untracked file that differs, or any unmerged index entry | `Blocked(UncommittedOverlap { paths })`; R untouched |
+| Tracked overlap, dry run clean                                                                           | reapply (below)                                                              |
+| Tracked overlap with a predicted conflict, an untracked file that differs, or any unmerged index entry   | `Blocked(UncommittedOverlap { paths })`; R untouched                         |
 
 Status does not list ignored files, so `CheckoutProbe` (`checkout_files.rs`) looks on disk for local files at every path M adds and at their parent prefixes: an equal regular file is removed, anything else is `UncommittedOverlap`. This keeps `git merge --ff-only` from overwriting an ignored file the branch adds with `git add -f`.
 

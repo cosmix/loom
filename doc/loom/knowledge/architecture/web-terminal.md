@@ -7,9 +7,9 @@
 `loom status --web --terminals` turns on a write lane; bare `--web` never mints a
 `TerminalLane` and every `/ws/terminal/*` request 404s before any other check runs
 (`terminal/upgrade.rs::admit`, `lane` argument `None`). The token itself comes from
-`terminal::token::mint()` (`terminal/token.rs:12-16`), called from `mod.rs::auth_token`
+`terminal::token::mint()` (`terminal/token.rs::mint`), called from `mod.rs::auth_token`
 whenever the bind is remote or `--terminals` is set; `TerminalLane::from_token`
-(`terminal/upgrade.rs:28-33`) wraps it with a cookie name from
+(`terminal/upgrade.rs::from_token`) wraps it with a cookie name from
 `TerminalLane::cookie_name(port)` — named `loom_dashboard_<bound port>` because cookies
 carry no port scope and loom deliberately runs several dashboards at once
 (`listener::bind_first_available_port(host, start)`); one fixed name would let opening a
@@ -22,11 +22,11 @@ viewing routes never ask for it. A remote bind mints and prints the token even w
 Bootstrap: `GET`/`HEAD /?token=<presented>` (`bootstrap.rs::bootstrap_terminal_token`,
 :55-82) — right token sets the cookie via a 302 redirect to `/` with `Set-Cookie:
 loom_dashboard_<port>=<token>; Path=/; HttpOnly; SameSite=Strict`
-(`TerminalLane::bootstrap_cookie`, `terminal/upgrade.rs:39-50`); wrong token is a 403; no
+(`TerminalLane::bootstrap_cookie`, `terminal/upgrade.rs::bootstrap_cookie`); wrong token is a 403; no
 `token` query param falls through to the ordinary page. In remote mode this route also
 checks `Origin` (optional but, if present, must match the connection's own address) ahead of
 the token exchange. The printed startup line (loopback, terminals enabled) is
-`http://127.0.0.1:<port>/?token=<token>  (terminals enabled; Ctrl-C to stop)` (`mod.rs:178-183`).
+`http://127.0.0.1:<port>/?token=<token>  (terminals enabled; Ctrl-C to stop)` (`commands/status/web/mod.rs::print_startup`).
 
 ## Admission order (`terminal/upgrade.rs::admit`, :85-134)
 
@@ -38,50 +38,50 @@ surface:
    socket-identity gate in remote posture; shared with the rest of the dashboard.
 2. Lane present (`--terminals` was passed) — else 404, indistinguishable from an unknown
    route.
-3. `origin_matches_host` (`terminal/upgrade.rs:168-180`) — `Origin` must be `http`/`https`
+3. `origin_matches_host` (`terminal/upgrade.rs::origin_matches_host`) — `Origin` must be `http`/`https`
    with an authority byte-equal to `Host`; WebSockets ignore same-origin policy so this is
    the browser-side half of the gate.
 4. `lane.cookie_matches(head.cookie)` — the cookie half; constant-time token compare
    (`token::matches`).
-5. `terminal_path` (`terminal/upgrade.rs:182-191`) parses `/ws/terminal/<stage-id>/<view|control>`
+5. `terminal_path` (`terminal/upgrade.rs::terminal_path`) parses `/ws/terminal/<stage-id>/<view|control>`
    and rejects a `stage_id` that is not `is_plain_identifier`.
-6. `acquire_terminal_slot` against `MAX_TERMINALS = 8` (`limits.rs:25`).
+6. `acquire_terminal_slot` against `MAX_TERMINALS = 8` (`limits.rs::MAX_TERMINALS`).
 7. `running` (server not mid-shutdown).
 
-Only after all seven does `handle_upgrade` (`terminal/upgrade.rs:59-82`) call
-`tungstenite::accept_with_config` (capped at `MAX_INBOUND_BYTES = 64 KiB`, `limits.rs:36`,
+Only after all seven does `handle_upgrade` (`terminal/upgrade.rs::handle_upgrade`) call
+`tungstenite::accept_with_config` (capped at `MAX_INBOUND_BYTES = 64 KiB`, `limits.rs::MAX_INBOUND_BYTES`,
 one shared definition also used by `ws.rs` and `bridge::configure`) and `start_bridge`
-(`terminal/upgrade.rs:136-165`) resolves the target and spawns the PTY.
+(`terminal/upgrade.rs::start_bridge`) resolves the target and spawns the PTY.
 
-## Close-code contract (`protocol.rs:61-73`, pinned byte-for-byte against
+## Close-code contract (`commands/status/web/terminal/protocol.rs` `CLOSE_*`, pinned byte-for-byte against
 
-`web/src/api/terminal.ts:146-159`, via
+`web/src/api/terminal.ts::handleKnownClose`, via
 `tests_route.rs::close_codes_match_the_literal_wire_values_the_browser_depends_on`. Three
 classes of refusal close code, `4004/4008/4009`, plus the two ordinary WebSocket codes:
 
-| Code | Name | Meaning | Page reaction |
-| --- | --- | --- | --- |
-| 1000 | `CLOSE_ENDED` | tmux attach client exited normally | `ended` |
-| 1001 | `CLOSE_SERVER_STOPPING` | dashboard shutting down | `dropped` ("server stopping") |
-| 1009 | `CLOSE_TOO_LARGE` | frame past `MAX_INBOUND_BYTES`, input stream desynced | `refused` ("input too large") — never retried, since a retry resends the same oversized frame |
-| 4004 | `CLOSE_UNKNOWN_STAGE` | no stage with that id | `refused`, permanent, page never retries |
-| 4008 | `CLOSE_REFUSED` | `NativeBackend`, `Unrenderable`, or `Stop::Stalled` (gate never reopened) | `refused`, permanent |
-| 4009 | `CLOSE_NOT_YET` | `NoSession`/`NotReady` — stage exists, may become attachable | `waiting`, page retries after `RETRY_WAITING_MS = 2000` |
+| Code | Name                    | Meaning                                                                   | Page reaction                                                                                 |
+| ---- | ----------------------- | ------------------------------------------------------------------------- | --------------------------------------------------------------------------------------------- |
+| 1000 | `CLOSE_ENDED`           | tmux attach client exited normally                                        | `ended`                                                                                       |
+| 1001 | `CLOSE_SERVER_STOPPING` | dashboard shutting down                                                   | `dropped` ("server stopping")                                                                 |
+| 1009 | `CLOSE_TOO_LARGE`       | frame past `MAX_INBOUND_BYTES`, input stream desynced                     | `refused` ("input too large") — never retried, since a retry resends the same oversized frame |
+| 4004 | `CLOSE_UNKNOWN_STAGE`   | no stage with that id                                                     | `refused`, permanent, page never retries                                                      |
+| 4008 | `CLOSE_REFUSED`         | `NativeBackend`, `Unrenderable`, or `Stop::Stalled` (gate never reopened) | `refused`, permanent                                                                          |
+| 4009 | `CLOSE_NOT_YET`         | `NoSession`/`NotReady` — stage exists, may become attachable              | `waiting`, page retries after `RETRY_WAITING_MS = 2000`                                       |
 
 ## Resolver: from stage id to a tmux target (`resolve.rs`)
 
-`resolve_target` (`:108-118`) composes three independent lookups, never trusting a status
+`resolve_target` composes three independent lookups, never trusting a status
 field: `known_stage` from `verify::transitions::load_stage` (does the stage exist at all),
 `all` from `load_all_sessions` (every session ever recorded, for a better refusal reason),
 and `live` from `live_tmux_sessions(work_dir.root())` — the PID-verified liveness list
-(`orchestrator/terminal/tmux/viewer.rs:193-220`; a recorded session is live only if its PID
+(`orchestrator/terminal/tmux/viewer.rs::live_tmux_sessions`; a recorded session is live only if its PID
 still resolves to the right process identity, so a `Paused` session — no live PID — is never
-in `live`). `resolve` (`:57-73`) filters `live` to the stage via `matches_for_stage`, then
-`pick_newest` (`attach/mod.rs:84-86`, max by `created_at`) picks the same session `loom
-attach` would. `target_for` (`:88-106`) then requires `tmux_session_name`/`socket_name` to
+in `live`). `resolve` filters `live` to the stage via `matches_for_stage`, then
+`pick_newest` (`attach/mod.rs::pick_newest`, max by `created_at`) picks the same session `loom
+attach` would. `target_for` then requires `tmux_session_name`/`socket_name` to
 both be `is_plain_identifier` (`Refusal::Unrenderable` otherwise) and the tmux endpoint
 `ready` (`endpoint_ready`, else `Refusal::NotReady`). No match at all falls back to
-`refusal_without_live_session` (`:75-86`), which re-checks `all_sessions` for a non-terminal
+`refusal_without_live_session`, which re-checks `all_sessions` for a non-terminal
 session on a non-tmux backend to report `NativeBackend` instead of a generic `NoSession`.
 
 ## The poll-based bridge loop (`bridge.rs::run_with`, :75-123)
@@ -91,34 +91,34 @@ runtime. Per iteration: check `running`, check `gate_stalled`, `poll_ready`, dra
 (`pump_pty`), drain socket→PTY (`pump_socket`, gated), drain the pending-input queue into the
 PTY (`drain_pending`), check `socket_gone`.
 
-- **Non-blocking master.** `PtyChild::spawn` (`pty.rs:22-66`) sets `O_NONBLOCK` on the master
+- **Non-blocking master.** `PtyChild::spawn` (`pty.rs::spawn`) sets `O_NONBLOCK` on the master
   fd via `fcntl` after `openpty` (which never sets it) — `read`/`write_some` translate
   `EAGAIN` to `Ok(None)`/`Ok(0)` rather than blocking the bridge thread. It also sets
   `FD_CLOEXEC` on the master (openpty gives that to neither end): left unset, the master
   survives into the tmux child across `spawn`'s fork+exec, so `shutdown`'s `drop(master)`
   never closes the last reference and the slave never sees a hangup — see
   mistakes/web-dashboard-server.md.
-- **Bounded pending-input queue.** `MAX_PENDING_INPUT = 64 KiB` (`:24`) staged in a
-  `VecDeque<u8>` between the socket and the PTY. `poll_ready` (`:158-192`) narrows the TCP
+- **Bounded pending-input queue.** `MAX_PENDING_INPUT = 64 KiB` staged in a
+  `VecDeque<u8>` between the socket and the PTY. `poll_ready` narrows the TCP
   event mask to `POLLIN` only while `pending < MAX_PENDING_INPUT`; at the cap it asks for
   nothing, so the kernel's own TCP receive window pushes back on the browser instead of the
-  queue growing without bound. `MAX_INBOUND_MESSAGES = 64` (`:42`) additionally bounds how
+  queue growing without bound. `MAX_INBOUND_MESSAGES = 64` additionally bounds how
   many messages one `pump_socket` pass parses, since view-mode input and resize frames are
   parsed and discarded without ever reaching `pending` and could otherwise starve PTY output
   reads in the same iteration.
 - **Timeouts.** `READ_TIMEOUT = 5ms` / `WRITE_TIMEOUT = 250ms` on the TCP stream
-  (`configure`, `:147-156`); `POLL_TIMEOUT_MS = 50` per `poll` call; `MAX_WRITE_BUFFER = 2
-  MiB` on the WebSocket's own outbound buffer.
+  (`configure`); `POLL_TIMEOUT_MS = 50` per `poll` call; `MAX_WRITE_BUFFER = 2
+MiB` on the WebSocket's own outbound buffer.
 - **Gate-stall deadline.** Masking `POLLIN` off the gated socket means a half-closed peer
   (FIN → `POLLIN`/`POLLRDHUP` on Linux, never `POLLHUP` — see mistakes file) is invisible for
   the whole gated window, and no read-based EOF probe works either, since the gate exists
-  precisely because the receive queue is left unread. `gate_stalled` (`:132-138`) instead
+  precisely because the receive queue is left unread. `gate_stalled` instead
   times the queue sitting at its cap; past `GATE_STALL_TIMEOUT = 30s` the loop gives up
   (`Stop::Stalled` → close code 4008). This is the only mechanism that also covers a peer
   that is alive but has wedged the PTY, where no readiness flag or FIN is ever sent.
-- **Shutdown drain.** `finish` (`:323-352`) closes the WebSocket (4008 with reason for
+- **Shutdown drain.** `finish` closes the WebSocket (4008 with reason for
   `Stop::Stalled`, matching what `terminal.ts` already labels "refused") then calls
-  `PtyChild::shutdown` (`pty.rs:115-131`): drop the master (now hangs up the slave correctly
+  `PtyChild::shutdown` (`pty.rs::shutdown`): drop the master (now hangs up the slave correctly
   with `FD_CLOEXEC` set), poll `try_wait` up to 2s, then `kill`+`wait`. A terminal slot, its
   PTY, and its tmux child stay held for up to that 2s even on a clean close — see
   concerns/web-dashboard-latent-issues.md.
@@ -126,54 +126,54 @@ PTY (`drain_pending`), check `socket_gone`.
 ## View mode: one tmux attach for both modes, input gated by the bridge (`resolve.rs::attach_args`, :121-133)
 
 Both modes run the same `tmux -L <socket> -T 256,RGB attach-session -t <session>` on a PTY
-sized to the browser window (`WindowSize { cols: 120, rows: 36 }` at spawn, `upgrade.rs:154-158`,
+sized to the browser window (`WindowSize { cols: 120, rows: 36 }` at spawn, `upgrade.rs::start_bridge`,
 then `TIOCSWINSZ` via `PtyChild::resize` on each resize frame). Neither tmux flag is passed:
 `ignore-size` would force the agent's real terminal size (commonly ~220 columns) into the
 dashboard's well, and `-f read-only` also drops PageUp/PageDown, which view-mode paging needs.
 Under tmux's `window-size latest` the dashboard client resizes the agent's window, as `loom
 attach` does.
 
-View mode is enforced by the bridge alone (`bridge.rs:256-263`): a `ClientFrame::Input` reaches
+View mode is enforced by the bridge alone (`bridge.rs::pump_socket`): a `ClientFrame::Input` reaches
 the pending queue only in `Mode::Control` and is parsed and discarded in `Mode::View`, so a
 compromised or buggy client cannot reach the PTY write path. A `ClientFrame::Scroll` is admitted
 in both modes and becomes only PageUp/PageDown keys (`protocol.rs::scroll_input`, :72-75).
 
 ## Frontend: the `Emulator` interface and the lazy xterm chunk
 
-`web/src/components/terminal/emulator.ts` defines `Emulator` (`:12-24`) — `open(host)`,
+`web/src/components/terminal/emulator.ts` defines `Emulator` — `open(host)`,
 `write(data: Uint8Array)`, `onData(handler): () => void`, `onScroll(handler): () => void`, `fit(): EmulatorSize | null`,
 `focus()`, `setReadOnly(readOnly)` ("view = stdin disabled, hollow bar cursor, no blink;
 control = block cursor, blink"), `dispose()` — and `EmulatorFactory = () =>
 Promise<Emulator>`, so `TerminalView`/`useTerminal` can be tested against a fake factory
-without ever importing xterm. `createXtermEmulator` (`:134`) is the real factory, delegating to
-`createEmulator` (`:157-177`), which
+without ever importing xterm. `createXtermEmulator` is the real factory, delegating to
+`createEmulator`, which
 dynamically `import()`s `@xterm/xterm`, `@xterm/addon-fit`, `@xterm/addon-webgl`, and
-`@xterm/addon-unicode11` (`:158-161`) precisely so the main dashboard bundle does not carry
+`@xterm/addon-unicode11` precisely so the main dashboard bundle does not carry
 them — they land in their own chunk (`dist/assets/xterm.js`), paid only by a page that
 actually opens a terminal. WebGL renders when available; xterm falls back to its DOM renderer
-otherwise (`installWebgl`, `:114-128`).
+otherwise (`installWebgl`).
 
 ## Keystroke wire contract and the Esc rule
 
-`protocol.rs::parse_client_frame` (`:50-69`): a **binary** WebSocket frame is raw keystroke
+`protocol.rs::parse_client_frame`: a **binary** WebSocket frame is raw keystroke
 bytes, already xterm-encoded — sent as-is to the PTY in control mode. A **text** frame is JSON,
 either `{"scroll":{"pages":N}}` with N non-zero in -5..=5 (`ClientFrame::Scroll`), or
 `{"resize":{"cols":N,"rows":N}}` within 1..=500 columns / 1..=200 rows (`protocol.rs::clamp`,
 :77-83; a size that clamping would change is dropped, never clamped). Anything else is silently
 dropped, not an error.
 
-`TerminalView`'s `onKeyDown` (`terminal-view.tsx:87-91`) is bound in the **bubble** phase, so
+`TerminalView`'s `onKeyDown` (`web/src/components/terminal/terminal-view.tsx::onKeyDown`) is bound in the **bubble** phase, so
 xterm's own listener on its hidden helper textarea has already run and turned the keystroke
 into a binary frame before this handler sees it. In `control` mode, if the event originated
 inside the terminal host, it calls `stopPropagation()` unconditionally: Escape goes to the live
 agent instead of reaching the dialog's `onEscapeKeyDown`, and Tab / Shift+Tab stay out of the
 dialog's focus trap. In `view` mode nothing is stopped: Escape reaches `StageModal`'s
-`onEscapeKeyDown` (`stage-modal.tsx:154-158`), which prevents the dialog from closing and calls
+`onEscapeKeyDown` (`stage-modal.tsx::guard`), which prevents the dialog from closing and calls
 `toDetails`, deleting the `view` search parameter so the dialog shows the stage details again.
 `HistoryView` never reports a frame, so `StageModal` keeps `IDLE_FRAME` (mode `view`) and Esc
 leaves the history view the same way. Both footers carry the hint `Esc back to details` in the
 dialog frame (`Hint` in `terminal-view.tsx`, the footer of `history-view.tsx`).
-Both views also put a `BackButton` in the dialog header (`terminal-view.tsx:178`, `aria-label`
+Both views also put a `BackButton` in the dialog header (`terminal-view.tsx::BackButton`, `aria-label`
 "Back to details", its `onBack` is `toDetails`): the way back in control mode, where Esc goes to
 the agent, and there the control hint reads "leave with ← Back to details or ✕".
 

@@ -8,19 +8,19 @@ Claude Code's Bash sandbox treats a fixed set of paths as belonging to a "bare g
 
 ## Probed Behavior (2026-09-02)
 
-| Path | Shell write |
-| --- | --- |
-| `hooks/` | denied |
-| `hooks/tests/` | denied |
-| `.git/hooks/` | denied |
-| `agents/` | allowed |
-| `skills/` | allowed |
-| `doc/` | allowed |
-| `loom/` | allowed |
-| `loom/x/hooks/` (nested) | allowed |
-| `hooks2/` | allowed |
-| `.husky/` | allowed |
-| `.githooks/` | allowed |
+| Path                     | Shell write |
+| ------------------------ | ----------- |
+| `hooks/`                 | denied      |
+| `hooks/tests/`           | denied      |
+| `.git/hooks/`            | denied      |
+| `agents/`                | allowed     |
+| `skills/`                | allowed     |
+| `doc/`                   | allowed     |
+| `loom/`                  | allowed     |
+| `loom/x/hooks/` (nested) | allowed     |
+| `hooks2/`                | allowed     |
+| `.husky/`                | allowed     |
+| `.githooks/`             | allowed     |
 
 Only a directory literally named `hooks` at the point the rule matches is affected. A nested `hooks/` several path segments down, or a differently-named directory, is unaffected.
 

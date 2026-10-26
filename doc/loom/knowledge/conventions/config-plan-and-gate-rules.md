@@ -16,4 +16,4 @@ A completion, verification or cleanup rule never hardcodes one ecosystem's direc
 
 ## README Covers Current Behavior Only
 
-The README documents what loom does now. A fixed bug gets no warning box, mechanism write-up, or workaround recipe there; that history belongs in `mistakes/` and the commit log. A cost or limit that was expected but never materialized is deleted, not hedged: the `claude -p` billing warning was removed after the owner confirmed `-p` usage is not charged separately.
+The README documents what loom does now. A fixed bug gets no warning box, mechanism write-up, or workaround recipe there; that history belongs in `mistakes/` and the commit log. A cost or limit that was expected but never materialized is deleted, not hedged: the owner confirmed `-p` usage is not charged separately, so the README carries no `claude -p` billing warning.

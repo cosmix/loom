@@ -37,13 +37,13 @@ grace, so a dumping child is waited for up to the 10 s deadline and reported as 
 exit 1 and name what happened plus the captured text and, once `0x02` was seen, the last 20 lines of
 `orchestrator.log` (passed through `terminal_safe`):
 
-| Outcome | Report |
-| --- | --- |
+| Outcome                                       | Report                                                                                                                                            |
+| --------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- |
 | child exits before `0x01` or within the grace | its exit status or signal; the pipe is drained up to EOF or 1 s (`DRAIN_LIMIT`), because a process the child started could still hold a write end |
-| child still dumping core when the grace ends | its signal once the core handler releases it, or "still dumping core" after the deadline |
-| pipe closes with the child alive | the child is SIGTERMed (then SIGKILL after 2 s) and reaped |
-| no `0x01` by the 10 s deadline | SIGTERM, reap, then the text and log tail |
-| read or `try_wait` error | `await_ready` terminates a still-running child on every `Err` |
+| child still dumping core when the grace ends  | its signal once the core handler releases it, or "still dumping core" after the deadline                                                          |
+| pipe closes with the child alive              | the child is SIGTERMed (then SIGKILL after 2 s) and reaped                                                                                        |
+| no `0x01` by the 10 s deadline                | SIGTERM, reap, then the text and log tail                                                                                                         |
+| read or `try_wait` error                      | `await_ready` terminates a still-running child on every `Err`                                                                                     |
 
 `terminate` signals only a child `try_wait` still reports running, so a reaped child's reusable pid
 is never signalled. Unit tests never start a real daemon: `spawn_daemon` is disabled under

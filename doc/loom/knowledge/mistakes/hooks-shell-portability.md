@@ -1,5 +1,6 @@
 ---
 ---
+
 # Hooks Shell Portability
 
 > Hook portability
@@ -53,7 +54,7 @@ but the original version scanned the RAW command string, heredoc bodies and quot
 included, and could not tell literal prose from live shell tokens.
 
 **Status (2026-09-19):** the guard now strips heredoc bodies first (`is_completion_command`,
-`loom-hooks/loom-control-complete.sh:143-216`) and ignores a body only when it is provably inert:
+`loom-hooks/loom-control-complete.sh::detect_completion`) and ignores a body only when it is provably inert:
 every body terminated, single fully quoted `<<'WORD'` openers, no comment, backtick, `$'`, `${`,
 arithmetic or line splice, no `)` in a stripped line when `$(`/`<(`/`>(` exists, and every command on
 an allowlist of inert readers (`cat tee wc head tail cd mkdir touch echo printf true :`, `loom
@@ -94,13 +95,13 @@ file. `rg` is recursive by default; never pass `-r` unless you mean `--replace`.
 
 ## `BASH_SOURCE[0]` Is Unset When the Script Arrives on Stdin (2026-09-15)
 
-**What happened**: The documented install, `curl -fsSL .../install.sh | bash`, died at `install.sh:13` with `BASH_SOURCE[0]: unbound variable` and `cd: null directory`, followed by curl's `(23) Failure writing output` once bash closed the pipe. Reported from an Ubuntu 26.04 live CD (bash 5.3.9); bash 5.2 fails the same way. The line dated from the script's creation (2025-12-21), so the remote install path had never run.
+**What happened**: The documented install, `curl -fsSL .../install.sh | bash`, died at the `SCRIPT_DIR` assignment at the top of `install.sh` with `BASH_SOURCE[0]: unbound variable` and `cd: null directory`, followed by curl's `(23) Failure writing output` once bash closed the pipe. Reported from an Ubuntu 26.04 live CD (bash 5.3.9); bash 5.2 fails the same way. The line dated from the script's creation (2025-12-21), so the remote install path had never run.
 
 **Why**: When bash reads a script from stdin, `BASH_SOURCE` is an empty array, and under `set -u` the expansion `"${BASH_SOURCE[0]}"` aborts. Every local run used `bash ./install.sh`, which sets it, and no test fed the script on stdin.
 
 **Prevention**: In a script meant for `curl | bash`, read `${BASH_SOURCE[0]:-}` and treat empty as "no source file". Do not fall back to `$0` or the working directory: a pipe run from inside a checkout would then take the local path. Test the pipe form itself with `bash -s -- --help < install.sh`.
 
-**Fix**: `SCRIPT_DIR` stays empty without a source file and `is_curl_pipe` returns true when it is empty (`install.sh:13-17`, `install.sh:82-87`). `install_sh_runs_when_piped_on_stdin` in `loom/tests/integration/install_assets.rs` pipes the script to `bash -s -- --help`.
+**Fix**: `SCRIPT_DIR` stays empty without a source file and `is_curl_pipe` returns true when it is empty (the `SCRIPT_DIR` assignment and `is_curl_pipe` in `install.sh`). `install_sh_runs_when_piped_on_stdin` in `loom/tests/integration/install_assets.rs` pipes the script to `bash -s -- --help`.
 
 ## Stop hook exited 141: `cmd | head` under pipefail (2026-09-14)
 
@@ -114,7 +115,7 @@ file. `rg` is recursive by default; never pass `-r` unless you mean `--replace`.
 Redirections apply left to right, so `printf ... >>"$file" 2>/dev/null` opens `$file` BEFORE stderr is
 silenced, and bash's own `Permission denied` reaches the terminal when the open fails. Write
 `{ cmd >>"$file"; } 2>/dev/null`, or put `2>/dev/null` before the file redirect. The reads-ledger append
-(`loom-hooks/_read_ledger.sh:126`) had this and was fixed.
+(`loom-hooks/_read_ledger.sh::_loom_polls_count`) had this and was fixed.
 
 ## A Bash Function Ending in `cond && action` Aborts a `set -e` Script (2026-09-19)
 
@@ -137,7 +138,7 @@ A hook test run from a stage session inherits `LOOM_WORK_DIR`, `LOOM_SESSION_ID`
   temp dir. `hooks_skill_trigger.rs::run_hook` does this with `env_remove` and a per-`FakeHome` `TMPDIR`;
   without it the hook resolved `_loom_ledger_file`'s in-stage branch and touched the live `.loom/work` of the
   session running the suite;
-- `loom-hooks/_read_discipline.sh:12` sets `PATH="${LOOM_HOOK_PATH:-$PATH}"`, so a test that builds a PATH
+- `loom-hooks/_read_discipline.sh` sets `PATH="${LOOM_HOOK_PATH:-$PATH}"`, so a test that builds a PATH
   without `rg`/`fd` (`loom-hooks/tests/_path_without.sh`) must also unset `LOOM_HOOK_PATH`, or a live session's
   value splices the real PATH back in and the "tool not installed" branch never runs;
 - a once-per-session ledger keyed on the fallback session id `t` was shared by every test in the process
@@ -156,7 +157,7 @@ The out-of-stage reads ledger root `$TMPDIR/loom-reads` is shared with the Rust 
 unless `mode & 077 == 0` (line 369 of the `read_receipts` module file, removed by PLAN-02-delivery-truth). When the shell ledger layout made it an
 intermediate directory, `mkdir -p -m 700 <leaf>` would have created it with umask permissions and silently
 broken out-of-stage receipts, so `_loom_ledger_append` creates the parent 0700 too
-(`loom-hooks/_read_ledger.sh:106`). A test that `chmod 0500`s a ledger directory to make it unwritable fails
+(`loom-hooks/_read_ledger.sh::_loom_ledger_append`). A test that `chmod 0500`s a ledger directory to make it unwritable fails
 for the same reason the design works: `_loom_ledger_append` runs `chmod 700` on its own directory and an owner
 can always `chmod`. To simulate an unwritable ledger, make the parent of a not-yet-created directory read-only or
 pre-create the ledger FILE read-only (`read-guard-session-ledgers.sh` case 6). The sibling-read scan is one
@@ -167,7 +168,7 @@ POSIX awk pass over at most 20 ledgers instead of an `rg -F` prefilter.
 Claude Code silently discards a PreToolUse `updatedInput` that carries no `permissionDecision`
 (anthropics/claude-agent-sdk-python#381). `spawn-guard.sh` emitted the worker-brief-only rewrite without one,
 so that brief never reached the subagent. Every hook output carrying `updatedInput` also sets
-`permissionDecision: "allow"` (`loom-hooks/spawn-guard.sh:335`). Run a hook by its shebang, never `bash <hook>`
+`permissionDecision: "allow"` (`loom-hooks/spawn-guard.sh::emit_result`). Run a hook by its shebang, never `bash <hook>`
 without reading line 1: `skill-trigger.sh` is Python, and bash runs its `import os` lines as ImageMagick's
 `import`, which tries to screenshot the X display and, with a display, writes files named `os`, `json` and `re`
 into the working directory.
@@ -321,7 +322,7 @@ reaches 3.
 
 **Prevention:** never signal a freshly forked bash to retire it. A handshake over a pipe cannot race a trap; KILL would orphan the `sleep`.
 
-**Fix:** the watchdog is a process substitution on fd 9 that keeps time with `read -t`; the caller writes one line to retire it, and no `sleep` process exists. The line, not EOF, is the signal because bash 3.2 `read -t` returns 1 for both timeout and EOF (`loom-hooks/_bounded.sh:37-61`). Current behaviour: [Portable Shell Helpers](../architecture/hook-system.md#portable-shell-helpers-and-the-subagentstop-ledgers).
+**Fix:** the watchdog is a process substitution on fd 9 that keeps time with `read -t`; the caller writes one line to retire it, and no `sleep` process exists. The line, not EOF, is the signal because bash 3.2 `read -t` returns 1 for both timeout and EOF (`loom-hooks/_bounded.sh::_loom_watchdog`). Current behaviour: [Portable Shell Helpers](../architecture/hook-system.md#portable-shell-helpers-and-the-subagentstop-ledgers).
 
 ## Worker Briefs Vanished Under a Fixed Hook Bound (2026-10-20)
 

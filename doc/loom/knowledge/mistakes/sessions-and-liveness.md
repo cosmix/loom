@@ -59,8 +59,7 @@
 **Supersedes the "~15-20 Struct Literal Breakages" section above — treat that count as obsolete.**
 
 Adding `Session.backend` during the tmux-backend plan broke exactly **3** struct-literal sites, not
-15-20: `src/commands/handoff/create.rs:98`, and `src/commands/stage/tests/session.rs` at `:52` and
-`:146`. `Session` construction has migrated almost entirely to `Session::new()` / `new_merge()` /
+15-20: `src/commands/handoff/create.rs`, and `src/commands/stage/tests/session.rs`. `Session` construction has migrated almost entirely to `Session::new()` / `new_merge()` /
 `new_knowledge()` plus field mutation, so bare struct literals are now rare.
 
 **What still holds, and is the part worth keeping:** `cargo build` alone does not surface breakages in
@@ -273,7 +272,7 @@ persisting the session status; the judge test modules run under the flake-check 
 
 ## macOS GUI App CLI Not on PATH — Detection-Spawn Mismatch (2026-04-27)
 
-**What happened:** `TerminalEmulator::Ghostty` detection succeeded on macOS via a `/Applications/Ghostty.app` path-existence fallback (detection.rs:190-191), but spawn called `Command::new("ghostty")` and failed with "Failed to spawn terminal 'ghostty'. Is it installed?" The Ghostty CLI binary lives inside the bundle at `/Applications/Ghostty.app/Contents/MacOS/ghostty` and is not added to PATH (ghostty-org/ghostty#2483). Detection picked the terminal; spawn couldn't launch it.
+**What happened:** `TerminalEmulator::Ghostty` detection succeeded on macOS via a `/Applications/Ghostty.app` path-existence fallback (orchestrator/terminal/native/detection.rs::detect_terminal), but spawn called `Command::new("ghostty")` and failed with "Failed to spawn terminal 'ghostty'. Is it installed?" The Ghostty CLI binary lives inside the bundle at `/Applications/Ghostty.app/Contents/MacOS/ghostty` and is not added to PATH (ghostty-org/ghostty#2483). Detection picked the terminal; spawn couldn't launch it.
 
 **Misleading signal:** `which::which("ghostty")` failing was _handled_ by an explicit `.app` existence check that succeeded. The fallback proved the GUI app was installed, not that its CLI was reachable from a child `Command`. Two-binary detection (`which` OR `.app exists`) silently expanded the set of "detected" terminals beyond the set of "spawnable via PATH" terminals.
 

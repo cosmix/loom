@@ -8,8 +8,8 @@ The rule "any stderr with exit 0 is a failure" is a plan mandate, pinned by unit
 an explicit stage decision — so it was **deliberately left as-is**. But tmux prints `~/.tmux.conf`
 deprecation warnings to stderr _while creating the session fine_, so one benign warning now: fails the
 spawn, kills a **working** server via the abort path, and returns `Err` — which blocks the stage
-(`FailureType::InfrastructureError`) instead of retrying on another lane. Since the
-`.loom/work/terminal-backend-fallback` marker was removed (2026-09-13), the consequence is a single Blocked
+(`FailureType::InfrastructureError`) instead of retrying on another lane. There is no
+`.loom/work/terminal-backend-fallback` marker, so the consequence is a single Blocked
 stage rather than tmux being disabled repo-wide.
 
 The `has-session` probe that immediately follows is the authoritative signal and would distinguish the
@@ -99,7 +99,7 @@ Neither of these caused the 77-failure incident (an ambient impostor `.git` did,
 is why they were not changed. They remain a live hazard: any future test in that binary that
 resolves a relative path while a sibling holds a foreign cwd will fail in a way that looks
 unrelated to its own subject. Fix shape: inject the working directory instead of mutating the
-process's, as `orchestrator/merge_lifecycle/tests.rs:321` already does deliberately for this exact
+process's, as `orchestrator/merge_lifecycle/tests.rs::cleanup_defers_while_the_cwd_is_inside_the_worktree_it_would_remove` already does deliberately for this exact
 reason.
 
 ## Guard Hooks: Four Design Questions Deliberately Left Open
@@ -110,7 +110,7 @@ one-line fix:
 
 1. **The deny threshold may not fit CLAUDE.md's own workflow.** Five identical `git status`
    invocations in one session trigger a deny, yet CLAUDE.md's own commit workflow runs `git
-   status` before staging, again after committing, and again before completion — a real session
+status` before staging, again after committing, and again before completion — a real session
    following the documented workflow can plausibly hit the threshold.
 2. **Ledger TSV keys can interleave across processes.** `_loom_ledger_append` uses the whole
    normalised command line as the TSV key with no atomicity guarantee beyond `PIPE_BUF`; a key
@@ -151,4 +151,4 @@ After a crash, `failure_info` stays on the stage: the auto-retry in `orchestrato
 
 ## Concurrent Daemon-Absence Probes Read Each Other as a Running Daemon
 
-`inspect_lock` (`loom/src/fs/daemon_state.rs:23-52`) proves no daemon runs by taking `flock(LOCK_EX|LOCK_NB)` on `orchestrator.lock`. Two probers at once (threads, or two `loom hook review-harvest` processes with no daemon) can each see the other's probe as a held lock, and `fingerprint::compute` then fails with `DaemonUnreachable`. The window is microseconds, and inside a stage the daemon answers on the socket so the probe never runs. Candidate fix: probe with `LOCK_SH|LOCK_NB` so probers share while the daemon's `LOCK_EX` still excludes them; check every `inspect_lock` caller and a daemon starting mid-probe first.
+`inspect_lock` (`loom/src/fs/daemon_state.rs::inspect_lock`) proves no daemon runs by taking `flock(LOCK_EX|LOCK_NB)` on `orchestrator.lock`. Two probers at once (threads, or two `loom hook review-harvest` processes with no daemon) can each see the other's probe as a held lock, and `fingerprint::compute` then fails with `DaemonUnreachable`. The window is microseconds, and inside a stage the daemon answers on the socket so the probe never runs. Candidate fix: probe with `LOCK_SH|LOCK_NB` so probers share while the daemon's `LOCK_EX` still excludes them; check every `inspect_lock` caller and a daemon starting mid-probe first.

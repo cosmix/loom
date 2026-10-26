@@ -6,7 +6,7 @@
 
 ## Table of Contents
 
-Superseded by the generated index. Read the files directly, or run
+The generated index is the table of contents. Read the files directly, or run
 `loom knowledge context --query "..."` for a targeted pull; open
 [INDEX.md](INDEX.md) for the current tier-1 / tier-2 map — a hand-maintained
 table of contents goes stale the moment a topic is added.
@@ -97,7 +97,7 @@ instances of this in one stage.
 
 ## Draining a Stuck `loom-relay` Ticket Backlog
 
-A relay ticket whose `LOOM_RELAY_V1` line never reached `loom-hooks/loom-relay.sh` (stdout redirected or piped through `tail`, a script file, a background call, more than 16 lines in one output) stays in `$LOOM_SCRATCH_DIR`. Since 2026-09-18 `loom hook relay` sweeps leftover `memory` and `telemetry` tickets on the next foreground `loom memory` write command, so the backlog drains by running `loom memory note --help` on its own with its output unfiltered; it records nothing. An earlier version of this section said `memory:resolve` was missing from the hook's pattern match: that gap was closed on 2026-09-16 and was only one instance of the leak. Manual recovery for sessions on a pre-fix binary, and the root cause: [Memory Relay Drain Gap](mistakes/memory-relay-drain-gap.md).
+A relay ticket whose `LOOM_RELAY_V1` line never reached `loom-hooks/loom-relay.sh` (stdout redirected or piped through `tail`, a script file, a background call, more than 16 lines in one output) stays in `$LOOM_SCRATCH_DIR`. `loom hook relay` sweeps leftover `memory` and `telemetry` tickets on the next foreground `loom memory` write command, so the backlog drains by running `loom memory note --help` on its own with its output unfiltered; it records nothing. Manual recovery for sessions on a pre-fix binary, and the root cause: [Memory Relay Drain Gap](mistakes/memory-relay-drain-gap.md).
 
 ## One Canonical NotFound-Tolerant Delete Helper
 
@@ -160,8 +160,7 @@ topics you actually touch. Writing protocol: a tier-1 section that grows past ~4
 into a topic and replaced by a 2-4 line summary plus a relative link.
 
 A human-readable title pointing to `category/slug.md` in a **tier-1** file is the house convention:
-relative, `.md` extension, no `./`, no anchor. No audit enforces it today; an earlier version of
-this doc claimed two link-form checks required exactly this form, but no such checks exist in the
+relative, `.md` extension, no `./`, no anchor. No audit enforces it: no link-form check exists in the
 tree. See [Knowledge Hierarchy](architecture/knowledge-hierarchy.md) for the mechanics and the
 `catalog::build` diagnostics that actually run.
 

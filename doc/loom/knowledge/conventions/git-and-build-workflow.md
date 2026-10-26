@@ -1,5 +1,6 @@
 ---
 ---
+
 # Git And Build Workflow
 
 > Git, cargo, CI, ledger
@@ -38,8 +39,7 @@ cargo test --all-targets --no-fail-fast -- --test-threads=4
 
 `--no-fail-fast` continues after a failed target. `--all-targets` selects the
 library, binary, integration, example and benchmark test targets that exist in
-the manifest. Plain `cargo test` also includes the enabled integration targets;
-the claim that integration tests require `--all-targets` is incorrect.
+the manifest. Plain `cargo test` also includes the enabled integration targets.
 
 Target selection excludes doctests. Documentation generation alone does not
 execute examples. Run the separate documentation test and static gates:
@@ -95,7 +95,7 @@ Three consequences a plan author has to design around:
    file's tests into a new file (e.g. `fs/locking.rs` -> `fs/locking/tests.rs`) leaves
    the original's baseline line stale once it shrinks below its limit, and
    `tests/maintainability.rs` fails with "stale entry ... no longer violates its
-   limit; remove it" until that line is deleted in the same change (2026-09-22).
+   limit; remove it" until that line is deleted in the same change.
 
 Before adding lines to any function: `rg '<fn name>' loom/maintainability-baseline.txt`.
 If it is listed, refactor rather than extend. After any file split: `rg '<path>' loom/maintainability-baseline.txt`.

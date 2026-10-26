@@ -1,6 +1,7 @@
 ---
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
+
 # Sandbox State Channels
 
 > Sandboxed callers, work state
@@ -231,7 +232,7 @@ was installed and licensed on the stages that ran.
 **Why:** `.loom/work/subagents/<stage-id>/codex.jsonl` was appended by `loom-hooks/codex-forward.sh`,
 which the forwarder subagent invokes through the Bash tool — so it ran INSIDE the stage's Bash
 sandbox. From a worktree that append resolves through the `.loom/work` symlink into the main repo,
-outside the sandbox's write allow-list (handoffs and `doc/loom/knowledge`, `sandbox/settings.rs:295-311`).
+outside the sandbox's write allow-list (handoffs and `doc/loom/knowledge`, `sandbox/settings.rs::generate_settings_json`).
 `record_codex_task` was best-effort and returned 0 on every failure path, so the denial was logged
 nowhere. Its sibling `spawns.jsonl` filled normally because `loom-hooks/spawn-guard.sh` is a PreToolUse
 hook, and hook processes are not under that sandbox. The display could not fall back either: the

@@ -25,16 +25,16 @@ daemon never runs repository hooks (`NO_HOOKS_ARGS` pins `core.hooksPath` away f
 
 ## Modules
 
-| Piece | Where |
-| --- | --- |
-| CLI, hooks, relay or in-process commit | `commands/stage/commit.rs`; `RequestKind::Commit` is a control kind (`relay/kind.rs`), so a teammate cannot relay it |
-| Plumbing core | `git/stage_commit.rs` (`Committer`, `CommitScope`, `CommitRequest`, `CommitRefusal`), checks in `git/stage_commit/checks.rs` |
-| Signing | `git/signing.rs`: `commit_tree`, `SigningEnv`, `SIGN_TIMEOUT` (30 s), `take_from_process`, `probe_in` |
-| Daemon handler | `orchestrator/core/inbox_drain/commit.rs` (`apply_commit`, `prepare_*`), merge hold in `merge_handler/landing.rs` |
-| Status polling | `commands/request/status.rs` (`loom request status <id> --wait <s>`) |
-| Completion guard | `orchestrator/core/inbox_drain/complete.rs::validate` (uncommitted changes and a HEAD mismatch are refused before a host job is queued) |
-| Startup check | `commands/run/signing_preflight.rs` |
-| Hook block | `loom-hooks/commit-filter.sh` `git_runs_commit` |
+| Piece                                  | Where                                                                                                                                   |
+| -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
+| CLI, hooks, relay or in-process commit | `commands/stage/commit.rs`; `RequestKind::Commit` is a control kind (`relay/kind.rs`), so a teammate cannot relay it                    |
+| Plumbing core                          | `git/stage_commit.rs` (`Committer`, `CommitScope`, `CommitRequest`, `CommitRefusal`), checks in `git/stage_commit/checks.rs`            |
+| Signing                                | `git/signing.rs`: `commit_tree`, `SigningEnv`, `SIGN_TIMEOUT` (30 s), `take_from_process`, `probe_in`                                   |
+| Daemon handler                         | `orchestrator/core/inbox_drain/commit.rs` (`apply_commit`, `prepare_*`), merge hold in `merge_handler/landing.rs`                       |
+| Status polling                         | `commands/request/status.rs` (`loom request status <id> --wait <s>`)                                                                    |
+| Completion guard                       | `orchestrator/core/inbox_drain/complete.rs::validate` (uncommitted changes and a HEAD mismatch are refused before a host job is queued) |
+| Startup check                          | `commands/run/signing_preflight.rs`                                                                                                     |
+| Hook block                             | `loom-hooks/commit-filter.sh` `git_runs_commit`                                                                                         |
 
 ## Scopes
 
@@ -48,7 +48,7 @@ BaseConflict sessions are refused.
   loom's git runs no hooks and the `reference-transaction` hook never attests a daemon move.
 - `Merge`: `loom/<stage-id>` with `MERGE_HEAD` as the second parent, for the merge session that
   resolves that stage (`MergeConflict` or `MergeBlocked`). Merge resolvers never run `git merge
-  --continue` or a bare `git merge <target>`; they use `git merge --no-commit --no-ff <target>`.
+--continue` or a bare `git merge <target>`; they use `git merge --no-commit --no-ff <target>`.
   The daemon passes the target through `Committer::merging_into`, and the core requires `MERGE_HEAD`
   to be the target's tip or an ancestor of it on the same id it records, because a session can write
   `MERGE_HEAD`.

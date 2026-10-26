@@ -33,7 +33,7 @@ checked for missing rows only when its receipt lies in `[since + MAX_FORWARD_SEC
 (`forward-thread-missing`); `forward-receipt-unthreaded` counts receipts without a thread id
 observed in `[since, until]`. `from_receipt_threads` builds a scope from receipt threads without a
 `ForwardJoin`. Scope and session-record completeness read only the current `.loom/work`;
-`loom init` archives and removes it (`commands/init/cleanup.rs:177-187`), so a window before the
+`loom init` archives and removes it (`commands/init/cleanup.rs::cleanup_work_directory`), so a window before the
 last init reads 0 Codex tokens.
 
 ## Run Evidence
@@ -93,13 +93,13 @@ open: a stage session cannot run `loom run`, and its own consumption would count
    repetitions, and keep every outcome, including failures, retries, fixes and incomplete runs.
    A missing measurement is unknown, never zero.
 6. **Measure only canonical rows.** Only `measured-canonical` rows of `loom usage --provider all
-   --since <start> --until <end> --json` are measurements. `duplicate-exact`,
+--since <start> --until <end> --json` are measurements. `duplicate-exact`,
    `ambiguous-conflict`, `fallback-coverage`, `synthetic` and `unknown-usage` rows, and every
    absent dimension, go into the artifact as missing. A clone isolates Claude slugs only; Codex
    rollouts share `~/.codex/sessions`, so copy each run's rollouts out at the end of the run (they
    are not retained), and rely on forward-receipt scoping to keep another arm's threads out.
 7. **Produce the evidence at once.** Run `loom usage --run-evidence <declaration.json> --project
-   <clone> --since <start> --until <end>` as soon as the run ends, before the next run starts in
+<clone> --since <start> --until <end>` as soon as the run ends, before the next run starts in
    any clone, and keep the file: it is the run's evidence and is never produced again later,
    because review rounds and dispute rulings recorded afterwards change `open_findings`. The
    declaration names every provider the run used; the producer refuses a run with in-scope usage
@@ -120,7 +120,7 @@ open: a stage session cannot run `loom run`, and its own consumption would count
    A check that asks for a median computes it from `.pairs[].baseline_provider_tokens` and
    `.pairs[].candidate_provider_tokens` of the `--compare --json` report. Quantities
    `RunEvidence` does not carry are read from `loom usage --project <clone> --since <start>
-   --until <end> --json` over the same window: API calls from
+--until <end> --json` over the same window: API calls from
    `.provider_ledger.providers[].coverage.measured_responses`, cache read and cache write from the
    provider token vectors, tokens before the first edit from `.lifecycle.orientation`. A window
    opened before the clone's last `loom init` cannot be measured: Codex scope and session-record

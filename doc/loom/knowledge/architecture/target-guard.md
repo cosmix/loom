@@ -10,11 +10,11 @@ Code: `loom/src/git/target_guard/` (`mod.rs` verdicts and `accept`, `record.rs` 
 
 ## State Files (`.loom/work/`)
 
-| File | Writer | Content |
-| --- | --- | --- |
-| `target-guard.json` (`RECORD_FILE`) | host loom only | per target key (short branch name, a leading `refs/heads/` is stripped by `target_key`): `accepted` tip, current `hold`, `attestation` latch |
-| `target-guard.refs` (`REFS_FILE`) | rewritten with every record write | `ref <refs/heads/..>` lines naming the refs the hook guards, plus an `allow <prefix>` line (the knowledge prefix) |
-| `target-guard.ledger` (`LEDGER_FILE`) | the hook | `attest <from> <to> <ref>` when git prepares a move, `abort ...` when git aborts it |
+| File                                  | Writer                            | Content                                                                                                                                      |
+| ------------------------------------- | --------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `target-guard.json` (`RECORD_FILE`)   | host loom only                    | per target key (short branch name, a leading `refs/heads/` is stripped by `target_key`): `accepted` tip, current `hold`, `attestation` latch |
+| `target-guard.refs` (`REFS_FILE`)     | rewritten with every record write | `ref <refs/heads/..>` lines naming the refs the hook guards, plus an `allow <prefix>` line (the knowledge prefix)                            |
+| `target-guard.ledger` (`LEDGER_FILE`) | the hook                          | `attest <from> <to> <ref>` when git prepares a move, `abort ...` when git aborts it                                                          |
 
 The files last one plan run. Record writers: `merge_stage` after its own advance (`record_advance`), the evaluation, and `loom target accept`. The daemon creates a missing entry from the current tip at startup (trust on first use, `trust_on_first_use`); `merge_stage` does the same for an operator CLI merge. Loom's own plan commits (`fs/plan_lifecycle/commit.rs`, `attest_plan_commit`) are attested only when every path of the commit's own diff is the plan file's old or new path, `doc/plans/REVIEW-<plan id>.md` or under `doc/loom/knowledge/`; a wider rule would launder a session's edit of another pending plan.
 

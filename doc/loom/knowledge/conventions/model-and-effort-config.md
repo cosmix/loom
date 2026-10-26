@@ -35,12 +35,7 @@ is configurable through `[models]`.
 
 ## KEY-Level vs SECTION-Level Fallback
 
-There is no split any more. All four project-backed sections — `[pressure]`, `[models]`,
-`[terminal]` and `[context]` — resolve **per key**: a project section that omits a key lets that
-key fall through to the user config, then the built-in. `[terminal]` and `[context]` used to be
-SECTION-level (a present section won whole, and keys it omitted derived built-ins); the operator
-ruled that a defect on 2026-09-13, and it was removed from the runtime readers
-(`fs/work_dir/config_sections.rs`) and from `/api/config` (`config_api/workspace.rs`).
+All four project-backed sections (`[pressure]`, `[models]`, `[terminal]` and `[context]`) resolve **per key**: a project section that omits a key lets that key fall through to the user config, then the built-in. A keyless section changes nothing (`fs/work_dir/config_sections.rs::remove_key` drops a section once its last key goes). The runtime readers are `read_context_config` and `read_terminal_config` in `fs/work_dir/`, and the web `/api/config` resolves through the same predicate.
 
 One qualification: a project `[context]` that sets `model_window_tokens` supplies
 `ceiling_tokens` (derived from that window) even when it omits `ceiling_tokens`, so a user

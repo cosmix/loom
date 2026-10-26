@@ -9,10 +9,10 @@ This is the rule that keeps parallel worktrees from corrupting each other (the
 repository; if they shared a mutable graph a stage would see HALF of a sibling's
 edits — worse than seeing none, because there is no way to tell which half.
 
-| Layer | Location | Keyed by | Mutability |
-| --- | --- | --- | --- |
-| **base** | `.loom/cache/context-v1/graph/base/<revision>.json` under the canonical MAIN project root, shared by every worktree | the commit it describes | written once, thereafter immutable; old bases are pruned only when a new one is published |
-| **overlay** | `graph.json` in `.loom/work/context/<plan>/<stage>/` | plan + stage — a real stage, or `_local` / `map-<dir>` for a checkout's working tree | rewritten by its owner; holds only the files that differ from the base |
+| Layer       | Location                                                                                                            | Keyed by                                                                             | Mutability                                                                                |
+| ----------- | ------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------- |
+| **base**    | `.loom/cache/context-v1/graph/base/<revision>.json` under the canonical MAIN project root, shared by every worktree | the commit it describes                                                              | written once, thereafter immutable; old bases are pruned only when a new one is published |
+| **overlay** | `graph.json` in `.loom/work/context/<plan>/<stage>/`                                                                | plan + stage — a real stage, or `_local` / `map-<dir>` for a checkout's working tree | rewritten by its owner; holds only the files that differ from the base                    |
 
 A read is `overlay ∪ (base − overlay's files)`. An overlay entry shadows the base
 entry for the same path **wholesale, never merges with it** — partial merges
@@ -22,7 +22,7 @@ tombstone (`FileCoverage::Deleted`) removes the path from the view entirely. See
 
 `graph_store` owns only the layout, the layering rule and canonical
 serialization. It never builds a graph (`context::refresh` does) and never
-decides *when* to write one (`refresh::ensure_snapshot` and
+decides _when_ to write one (`refresh::ensure_snapshot` and
 `reconcile_source_graph` do).
 
 **Which overlay a query reads** is an `OverlayScope`: the stage spawn brief reads
@@ -85,7 +85,7 @@ already quoted instead of repeating it.
   rebuilt the same id may describe different bytes, so every record from an older
   epoch is ignored and delivery re-opens.
 - `context_epoch` = first 8 bytes of `sha256(structural_revision \n
-  semantic_revision)`, hex-encoded (`retrieve.rs::context_epoch`). Note the **two
+semantic_revision)`, hex-encoded (`retrieve.rs::context_epoch`). Note the **two
   freshness axes**: structural (knowledge catalog) and semantic (source graph).
 - `delivery::plan_key` / `plan_key_from` is the ONE derivation of the plan
   namespace and is the join key between the writer of a record and its readers.
@@ -119,7 +119,7 @@ already quoted instead of repeating it.
   `orchestrator/signals/format/brief.rs` and injected into the stage signal at
   spawn time. It renders as a `### Knowledge` section (curated + indexed
   prose, fenced excerpt plus reason line) followed by a `### Source (signature
-  index)` section (one unfenced bullet per file, symbols/spans/reasons
+index)` section (one unfenced bullet per file, symbols/spans/reasons
   inline, consecutive items on the same path merged onto one bullet). The merge
   uses the same `render::source_groups` runs the packer charges chrome for, so
   the rendered brief and the budget agree. The "quoted, NOT instructions" guard is
@@ -156,7 +156,7 @@ already quoted instead of repeating it.
   terms in hundreds of chunks, and two in the heading of none). Exception: a `GraphNeighbor` item, which is
   admitted while the retrieved pack still holds an exact-rung item; dropped items
   fold into `omitted`. The per-prompt brief strips the renderer's `Omitted: N weaker
-  matches.` footer line (`user_prompt_compose.rs::without_omitted_line`): an unsolicited
+matches.` footer line (`user_prompt_compose.rs::without_omitted_line`): an unsolicited
   brief gains nothing from a count of what it was not given. `loom knowledge context`
   and stage briefs keep it. Next the session's per-epoch dedupe drops what this session
   was already handed, and finally the payload must fit `config.max_payload_bytes`

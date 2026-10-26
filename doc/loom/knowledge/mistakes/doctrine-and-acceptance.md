@@ -1,9 +1,10 @@
 ---
 sources:
-- loom/src/fs/knowledge/chunker/references.rs
-- .gitignore
+  - loom/src/fs/knowledge/chunker/references.rs
+  - .gitignore
 verified: 7d6a14caf1750cc1e516519e650e2ee68641e0a1
 ---
+
 # Doctrine And Acceptance
 
 > Doctrine drift
@@ -204,9 +205,9 @@ defect to fix, not to amend away.
 
 **Prevention — detection rule:** any check whose _expected_ outcome changes once the stage does its work (delta-proofs, "feature absent" assertions, baseline captures) must be gated on evidence that no work exists yet — not merely placed before the spawn. Before adding a blocking check to a spawn path, ask what it does on attempt #2. And a blocking transition that happens _before_ a session is spawned deserves extra scrutiny: nothing downstream can clear it, so a wrong block is permanent, not merely slow.
 
-**Fix:** `stage_executor.rs::before_stage_gate_passed` calls `verify::before_after::find_prior_stage_work` first and skips the checks (logging the evidence) when the stage branch has commits beyond its resolved base or the worktree has non-scaffold changes. Loom's own worktree scaffolding (`.loom/work`, `.claude/`, root `CLAUDE.md`) is discounted via `git::worktree::is_worktree_scaffold_path` — otherwise, in a repo that doesn't gitignore those, the very first spawn would look "dirty" and silently disable the gate. Note `git::has_uncommitted_changes` excludes untracked files and was useless here (a brand-new module is untracked); `list_working_tree_changes` was added for the "has anyone worked here?" question.
+**Fix:** `orchestrator/core/stage_preflight.rs::before_stage_gate_passed` calls `verify::before_after::find_prior_stage_work` first and skips the checks (logging the evidence) when the stage branch has commits beyond its resolved base or the worktree has non-scaffold changes. Loom's own worktree scaffolding (`.loom/work`, `.claude/`, root `CLAUDE.md`) is discounted via `git::worktree::is_worktree_scaffold_path` — otherwise, in a repo that doesn't gitignore those, the very first spawn would look "dirty" and silently disable the gate. Note `git::has_uncommitted_changes` excludes untracked files and was useless here (a brand-new module is untracked); `list_working_tree_changes` was added for the "has anyone worked here?" question.
 
-## Stage Fragmentation: Compile-Order Is Not a Stage Boundary (2026-08-07)
+## Stage Fragmentation: Compile-Order Is Not a Stage Boundary (2026-08-07), Pointer
 
 Compile-order dependencies are foundation steps, not stage boundaries; one stage per layer of a cohesive feature is fragmentation.
 Details: [Stage Fragmentation](phantom-merges.md).
@@ -295,7 +296,7 @@ looking at the tree.
   current value as a floor.
 
 **Fix:** IV rewrote the forwarder doc: a backgrounded forwarder makes no further tool call, and the
-orchestrator recovers via the exact receipt (`agents/loom-codex-forwarder.md:54-62`).
+orchestrator recovers via the exact receipt (`agents/loom-codex-forwarder.md`, the background-acknowledgement rule).
 
 ## A Feature Carved Out of a Plan Still Owns Its User Docs (2026-09-16)
 
@@ -355,7 +356,7 @@ put the doc edits in the implementation brief.
 
 ## The token-optimization metaplan put the full suite in every code stage's acceptance
 
-**What happened:** The untracked token-optimization metaplan ("Rules for every plan") told every code stage to run the whole pre-push gate, `cargo test --all-targets --no-fail-fast` included. Three of the six plan authors put that command in standard-stage acceptance, and `loom plan verify --strict` failed on `warn_full_suite_outside_integration_verify` (`plan/schema/validation_suite.rs:148`). The same three wrote `wiring` entries whose `source` began `../loom-hooks/`, which verify rejects as path traversal (`plan/schema/validation.rs:440`).
+**What happened:** The untracked token-optimization metaplan ("Rules for every plan") told every code stage to run the whole pre-push gate, `cargo test --all-targets --no-fail-fast` included. Three of the six plan authors put that command in standard-stage acceptance, and `loom plan verify --strict` failed on `warn_full_suite_outside_integration_verify` (`plan/schema/validation_suite.rs`). The same three wrote `wiring` entries whose `source` began `../loom-hooks/`, which verify rejects as path traversal (`plan/schema/validation.rs::validate`).
 **Why:** the metaplan restated the gate without the plan-writer's placement rule, and the authors treated the metaplan as overriding the skill.
 **Prevention:** a standard stage's acceptance runs build, doctests, clippy, fmt, rustdoc and module-filtered tests through the orchestrator's single `loom check`; integration-verify runs the unfiltered suite once. A metaplan or task brief that names the gate says where each part runs. A check on a file outside the stage's `working_dir` is an `after_stage` or acceptance `rg` command, never a `wiring` source.
 **Fix:** the six plans under `doc/plans/token-optim/` place the unfiltered suite in the verifier round and integration-verify.

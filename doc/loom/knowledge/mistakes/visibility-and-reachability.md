@@ -35,7 +35,7 @@ place the problem surfaces automatically.
 ## Sweep for the Struct Itself, Not Just Its Wrapper
 
 Adding a field to `StageSandboxConfig` was swept with `rg 'MergedSandboxConfig \{'` only, so the
-exhaustive `sandbox: StageSandboxConfig {` literal at `models/stage/methods.rs:668` was missed and
+exhaustive `sandbox: StageSandboxConfig {` literal in `models/stage/methods.rs` was missed and
 broke the whole crate (exit 101) — which then surfaced as a bogus "test failure" in a sibling
 subagent's unrelated run.
 
@@ -76,7 +76,7 @@ string — see `concerns.md`.
 ## An Infallible Predicate Hides Every Failure As "No"
 
 `git::branch::branch_exists` wraps `run_git_bool`, which swallows spawn failures and non-zero exits
-into `false` (`git/runner.rs:112`). So any guard reading "branch absent" as "nothing to lose"
+into `false` (`git/runner.rs::run_git_program`). So any guard reading "branch absent" as "nothing to lose"
 **proceeds on a timeout, a locked repo, or a missing git.** Use
 `git::cleanup::branch_exists_strict`, which separates exit 1 from exit 128, whenever the answer is
 load-bearing.
@@ -117,10 +117,10 @@ across `src/` _and_ `tests/` before writing a subagent's step list.
 ## Recurrence: `commands::hook::target::non_empty_env` (2026-09-22)
 
 Same trap as above, this time causing duplication rather than an inert feature:
-`commands/hook/mod.rs:14` declares `mod target;` private, so `knowledge bootstrap`'s
-`guard_not_in_stage` (`commands/knowledge/bootstrap/mod.rs:133`) could not call the existing
+`commands/hook/mod.rs` declared `mod target;` private, so `knowledge bootstrap`'s
+`guard_not_in_stage` (`commands/knowledge/bootstrap/mod.rs::guard_not_in_stage`) could not call the existing
 `non_empty_env` and inlined its own copy of the same `LOOM_STAGE_ID` check instead. Widening
-the module (`pub(crate) mod target` or a re-export) to de-duplicate is tracked in `concerns.md`.
+the module (`pub(crate) mod target`) was the fix, now in place: the guard calls `non_empty_env`.
 
 ## A Re-Export Whose Only Users Are macOS-Gated Breaks the Linux Build
 

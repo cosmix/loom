@@ -1,6 +1,7 @@
 ---
 verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 ---
+
 # Dispute And Adjudication
 
 > Dispute authority, budgets
@@ -9,13 +10,13 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 
 `.loom/work/disputes/<stage>/<n>/` — always split by authority:
 
-| File | Authority | Notes |
-| --- | --- | --- |
-| `.loom/work/disputes/<stage>/<n>/request.md` | agent-attestable | written by the daemon on behalf of the agent's RPC, or drained from the worktree spool |
-| `.loom/work/disputes/<stage>/<n>/verdict.json` | adjudication session | the session's DRAFT, not the record — it has no authority until recorded |
-| `.loom/work/disputes/<stage>/<n>/verdict.md` | daemon-only | the record `apply_pending_verdicts` reads |
-| `.loom/work/disputes/<stage>/<n>/applied.marker` | daemon-only | zero-byte idempotency sentinel |
-| `.loom/work/disputes/<stage>/<n>/attempts` | daemon-only | respawn budget, spent when an adjudication job is handed out |
+| File                                             | Authority            | Notes                                                                                  |
+| ------------------------------------------------ | -------------------- | -------------------------------------------------------------------------------------- |
+| `.loom/work/disputes/<stage>/<n>/request.md`     | agent-attestable     | written by the daemon on behalf of the agent's RPC, or drained from the worktree spool |
+| `.loom/work/disputes/<stage>/<n>/verdict.json`   | adjudication session | the session's DRAFT, not the record — it has no authority until recorded               |
+| `.loom/work/disputes/<stage>/<n>/verdict.md`     | daemon-only          | the record `apply_pending_verdicts` reads                                              |
+| `.loom/work/disputes/<stage>/<n>/applied.marker` | daemon-only          | zero-byte idempotency sentinel                                                         |
+| `.loom/work/disputes/<stage>/<n>/attempts`       | daemon-only          | respawn budget, spent when an adjudication job is handed out                           |
 
 Never collapse these into one file. The rule behind the split is unchanged: **if the party under
 dispute can write the verdict, it can self-approve.**
@@ -30,14 +31,14 @@ through `loom stage adjudicate`, which refuses:
 - when the named dispute was never filed;
 - when a `.loom/work/disputes/<stage>/<n>/verdict.md` already exists — a recorded verdict is not replaceable.
 
-A degenerate verdict escalates rather than being recorded. An earlier version of this section said `verdict.md` was written by "a worker thread after an API call"; there is no worker thread and no API call.
+A degenerate verdict escalates rather than being recorded. The verdict file is written by the adjudication session itself; there is no worker thread and no API call.
 
 ## Adjudicator Scope Convention
 
 The adjudicator amends ONLY:
 
-- `acceptance: Vec<AcceptanceCriterion>` (plan/schema/types.rs:316)
-- `wiring: Vec<WiringCheck>` (plan/schema/types.rs:336)
+- `acceptance: Vec<AcceptanceCriterion>` (plan/schema/types.rs::StageDefinition)
+- `wiring: Vec<WiringCheck>` (plan/schema/types.rs::StageDefinition)
 - `contracts: Vec<ContractSpec>` on a v2 contract dispute (`AmendmentField::Contracts`; `loom stage amend` takes it too)
 
 Never amends: `before_stage`, `after_stage`, `artifacts`, `dependencies`, `id`, `working_dir`, `model`, `sandbox`, `execution`. Use `AmendmentField` enum to enforce this at the type level.
@@ -59,17 +60,16 @@ Respawn of an adjudication session is bounded by an on-disk `attempts` file in t
 directory, incremented when a job is handed out — the same shape as the merge-resolver attempt
 counter. `MAX_ADJUDICATION_ATTEMPTS` is 3.
 
-**The `.inflight` marker this section used to describe is gone**, along with the worker thread it
-guarded. An adjudication session's liveness is read from the session registry
+**No marker file tracks an in-flight adjudication.** An adjudication session's liveness is read from the session registry
 (`live_sessions_for_stage` filtered to `SessionType::Adjudication`, PID identity with start-time
-verification), so there is no marker to go stale and no 10-minute freshness window to tune. That
-also survives a daemon restart, which a process-local marker did not.
+verification), so there is no marker to go stale and no freshness window to tune. That
+also survives a daemon restart.
 
-**A bug worth remembering, found when this was rebuilt:** the old attempt cap never fired once. `current_attempt_count` derived the count by reading `verdict.md` — a file that by construction does not exist on the branch where the cap is checked — so it always returned 0, and only the `.inflight` marker's freshness limited respawn at all. A counter derived from an artifact that the counted operation has not produced yet is not a counter. Spend the budget when the work is HANDED OUT, not when it succeeds.
+**Counting rule:** a counter derived from an artifact that the counted operation has not produced yet is not a counter. Spend the budget when the work is HANDED OUT, not when it succeeds.
 
 ## Daemon-as-Filesystem-Writer Convention
 
-The intent: agent data that needs authority separation is persisted to the state directory by the daemon, not by the agent. An earlier version of this section said `loom memory note` sends an RPC and the daemon writes the journal. The tree does not do that (checked 2026-09-13):
+The intent: agent data that needs authority separation is persisted to the state directory by the daemon, not by the agent. `loom memory note` does not send an RPC for the daemon to write the journal:
 
 - `loom memory note` writes `.loom/work/memory/<stage>.md` directly from the calling process. Only when that write is denied (EROFS/EACCES, `is_write_denied`) does it append to the per-worktree spool `<worktree>/.loom/memory-spool.jsonl`, which the daemon drains (`commands/memory/handlers/record.rs` → `record_via_spool`; `orchestrator/core/spool_drain.rs`). Off a worktree the spool refuses, so a denied main-checkout session fails.
 - `loom stage dispute-criteria` never writes the state directory: it appends to `<worktree>/.loom/stage-request-spool.jsonl`, and the daemon writes `.loom/work/disputes/<stage>/<n>/request.md` (`fs/stage_request/`).

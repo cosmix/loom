@@ -69,7 +69,7 @@ Pre-existing; not introduced by any specific stage.
 
 **Prevention:** to test `install.sh` non-interactively in a throwaway `HOME`, override
 `HOME=$TMPDIR/...` (`CLAUDE_DIR=$HOME/.claude` is computed at runtime from `HOME`, never
-hardcoded) and pipe `y` to stdin for `confirm_overwrites` (`install.sh:486`, which reads plain
+hardcoded) and pipe `y` to stdin for `confirm_overwrites` (`install.sh::confirm_overwrites`, which reads plain
 stdin, not the tty) — but the run will still abort at `cleanup_backups()`'s tty read at the very
 end unless a tty is attached, so treat a `No such device or address` failure AFTER the install
 steps' own success output as a harness artifact, not evidence the install failed.
@@ -127,7 +127,7 @@ it from the directory that holds `Cargo.lock`: the command has no `--manifest-pa
 (`DirBuilderExt::mode`, `PermissionsExt::from_mode`, our own `safe_fs::open_safely`) all take `u32`
 unconditionally. So `const MODE: libc::mode_t = 0o700; builder.mode(MODE.into())` compiles on macOS
 and fails on Linux with `useless_conversion`, which `-D warnings` promotes to an error — it blocked
-`git push` (`loom/src/daemon/server/storage.rs:14`). The same trap applies to any
+`git push` (`loom/src/daemon/server/storage.rs`, the private-mode constants). The same trap applies to any
 platform-width alias: `c_int`, `off_t`, `nlink_t`, `time_t`.
 
 **Prevention:** declare permission constants as `u32` (the type every Rust-side API wants) and cast
@@ -298,7 +298,7 @@ The sweep follow-ups on executable startup, cache coverage, hook-path navigation
 
 ## A Stage Passed Its Gate and Failed the Commit's Maintainability Test
 
-**What happened:** the gate (`loom check`) passed and the review rounds closed, but `loom stage commit`'s pre-commit maintainability test failed on a 67-line test function that W2 added in `orchestrator/adjudication/prompt/contract_tests.rs:199`.
+**What happened:** the gate (`loom check`) passed and the review rounds closed, but `loom stage commit`'s pre-commit maintainability test failed on a 67-line test function that W2 added in `orchestrator/adjudication/prompt/contract_tests.rs::the_spec_block_shows_the_plan_and_recorded_cwd`.
 
 **Why:** no acceptance criterion ran `cargo test --test maintainability`, and the signal's extra steps checked only that the baseline file was unchanged.
 

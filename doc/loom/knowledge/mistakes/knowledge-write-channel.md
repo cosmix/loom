@@ -19,8 +19,8 @@ construction. Probed from inside the worktree: `README.md` writable, `doc/` writ
 2. That rule used to be inert. `sandbox/settings.rs` emitted denies as `Write(path)`, and
    Claude Code's file permission check consults only `Edit(path)` rules — see
    `sandbox-write-rules-inert.md`. Every earlier distillation stage wrote
-   knowledge fine *because the guard did nothing*. Correcting the emitter to `Edit(...)`
-   (`settings.rs:287`) made the guard real.
+   knowledge fine _because the guard did nothing_. Correcting the emitter to `Edit(...)`
+   (`sandbox/settings.rs::generate_settings_json`) made the guard real.
 3. The harness now projects permission denies down into the OS sandbox, so the block
    reaches CHILD PROCESSES. That is why `loom knowledge update` gets EROFS rather than a
    tool refusal.
@@ -79,7 +79,7 @@ a delete verb and a heading rename — see `concerns.md`.
 
 The signal for this stage ordered "ALWAYS finish distillation with `loom knowledge
 index`" — a verb this very plan deleted. The merged source already says the opposite
-(`orchestrator/signals/cache.rs:590`: the index regenerates on every knowledge write and
+(`orchestrator/signals/cache.rs`: the index regenerates on every knowledge write and
 there is NO index step). Signal prefixes are rendered by the RUNNING daemon binary, so a
 plan that rewrites agent doctrine cannot change the signals of its own later stages.
 
@@ -93,7 +93,7 @@ deleted `loom knowledge` verbs, so `loom knowledge --help` "proved" nothing had 
 deleted. Check `loom/src/cli/types_memory.rs` instead.
 
 This has teeth beyond confusion: `KnowledgeDir::refresh_index_if_hierarchical`
-(`fs/knowledge/dir.rs:264-271`) rewrites `INDEX.md` after EVERY `loom knowledge update`,
+(`fs/knowledge/dir.rs`) rewrites `INDEX.md` after EVERY `loom knowledge update`,
 and a pre-collapse binary writes the pre-collapse generated-by marker — which names a
 deleted verb, silently re-injecting into `doc/loom/knowledge/` the exact string this
 plan's acceptance forbids. Run any deleted-verb sweep AFTER the last knowledge write, and

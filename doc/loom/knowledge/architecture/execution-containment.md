@@ -8,7 +8,7 @@
 
 The writable tree and the working directory are separate inputs: a command starts in its acceptance or package directory but binds the whole stage worktree root, so monorepo siblings, root `node_modules` and editable path dependencies stay visible. Callers pass the root explicitly (`CriteriaConfig::with_tree_root`, `run_spec_in_optional_tree`), never inferred from a `.git` walk; a working directory outside the tree is refused. With no tree (provisioning, knowledge stages, `spawn_confined`) the working directory is the tree.
 
-Approved plan provision entries use `run_provision_with_timeout`: the same filesystem and environment boundary, with host networking on Linux and outbound networking on macOS. Both modes bind the canonical target of a symlinked `/etc/resolv.conf` read-only before remounting the sandbox root, and bind nothing when that target is missing (a dangling link no longer fails the wrap). Criteria never get network; the plan's `allowed_domains` reach only the session, so a tool a criterion needs is installed by a `provision` entry.
+Approved plan provision entries use `run_provision_with_timeout`: the same filesystem and environment boundary, with host networking on Linux and outbound networking on macOS. Both modes bind the canonical target of a symlinked `/etc/resolv.conf` read-only before remounting the sandbox root, and bind nothing when that target is missing (a dangling link does not fail the wrap). Criteria never get network; the plan's `allowed_domains` reach only the session, so a tool a criterion needs is installed by a `provision` entry.
 
 Linux criteria get a private `--tmpfs /tmp` and `--tmpfs /var/tmp`, mounted before every bind, with `TMPDIR`/`TMP`/`TEMP=/tmp`; writes there never reach the host. A fresh boundary sets `GIT_CONFIG_GLOBAL=/dev/null`.
 
@@ -29,10 +29,10 @@ No command inherits a boundary: a confined command never reuses a session's sand
 
 `CommandConfinement` lives in `models/stage/sandbox_config.rs` and uses kebab-case YAML.
 
-| Level | YAML | Behavior |
-| --- | --- | --- |
-| `Confined` | `confined` (default) | Rebuild the allowlisted environment and apply the host OS boundary (Seatbelt or bubblewrap). |
-| `Inherit` | `inherit` | Explicitly retain the invoking environment; no OS boundary is added (`verify/criteria/confine.rs`). |
+| Level      | YAML                 | Behavior                                                                                            |
+| ---------- | -------------------- | --------------------------------------------------------------------------------------------------- |
+| `Confined` | `confined` (default) | Rebuild the allowlisted environment and apply the host OS boundary (Seatbelt or bubblewrap).        |
+| `Inherit`  | `inherit`            | Explicitly retain the invoking environment; no OS boundary is added (`verify/criteria/confine.rs`). |
 
 The plan sets `command_confinement`; a stage may override it. `resolve_confinement` and `plan_confinement` centralize precedence.
 
@@ -87,8 +87,8 @@ bounds the agent **session** (a different mechanism from `spawn_confined`, which
 bounds plan-authored commands — do not conflate them).
 
 **Claude Code's file permission check consults only `Edit(path)`.** A `Write(path)`
-rule — allow or deny — is inert. `settings.rs:240-244` carries an explicit
-`IMPORTANT` comment recording this, and `settings.rs:181` pushes an `Edit(...)`
+rule — allow or deny — is inert. `sandbox/settings.rs::generate_settings_json` carries an explicit
+`IMPORTANT` comment recording this, and `fs/permissions/settings.rs::scrub_main_repo_settings_identity` pushes an `Edit(...)`
 rule for the handoffs directory. Loom's generated stage settings are therefore
 clean of the inert form.
 
@@ -96,12 +96,16 @@ Two things not to "fix" without reading the reasoning first:
 
 - **Deny beats allow.** A blanket `Edit` deny paired with a narrower `Edit` allow
   blocks the directory the session needs. Scope carefully.
-- **Pre-existing user rules are carried forward verbatim on purpose**
-  (`settings.rs:399-411`), and a test at `settings.rs:1221` asserts that a
-  user-authored `Write(~/.bashrc)` **survives**. Inert user rules are kept
-  deliberately; stripping them would break a passing test and silently discard
-  the developer's own configuration. This is the opposite policy from loom's own
-  emitted rules, and both are correct.
+- **Pre-existing user deny rules are carried forward on purpose**
+  (`sandbox/settings.rs::carry_forward_denies`, applied by `merge_existing_permissions`), then
+  migrated out of the inert `Write(...)` spelling by
+  `fs/permissions/write_rules.rs::migrate_inert_write_denies`: a user-authored
+  `Write(~/.bashrc)` survives as `Edit(~/.bashrc)`, while blanket, parent-traversal and
+  knowledge-channel `Write` rules are dropped
+  (`fs/permissions/tests/write_rules_tests.rs::test_migrate_inert_write_denies_rewrites_drops_and_passes_through`).
+  `allow` is never carried: it is rebuilt from config on every write. Stripping the
+  developer's own deny rules would silently discard their configuration, so this is the
+  opposite policy from loom's own emitted rules, and both are correct.
 
 `allow_write` rules also have parent traversal filtered out at the emitter, which
 is what actually closes the path-escape hole at the point of use.
@@ -142,7 +146,7 @@ every future boundary test in this repo.
 control**: `confined_shell_command_does_not_see_ambient_secret` **and**
 `inherited_shell_command_does_see_ambient_secret`. The pair distinguishes "the
 scrub works" from "the canary was never set" — which a single negative assertion
-cannot do. `process/environment.rs:92` does the same at unit level by actually
+cannot do. `process/environment.rs::ambient_secret_canary_is_excluded_but_terminal_basics_survive` does the same at unit level by actually
 exec'ing `/usr/bin/env` and asserting the canary string is absent from real child
 output, rather than inspecting a `Command` struct.
 
@@ -151,17 +155,17 @@ case, or it cannot fail when the boundary silently stops applying.** See
 `mistakes/tests-that-cannot-fail.md` for the counter-example this plan also
 produced.
 
-## Entry Points
+## Containment Entry Points
 
-| Path | Why |
-| --- | --- |
-| `loom/src/verify/criteria/confine.rs` | `spawn_confined`, `resolve_confinement`, `plan_confinement` — start here |
-| `loom/src/process/environment.rs` | the allowlist and `apply_stage_environment` |
-| `loom/src/models/stage/sandbox_config.rs:17` | `CommandConfinement`; `:100` `NetworkConfig` |
-| `loom/src/plan/schema/types.rs:52` | plan-level `command_confinement` |
-| `loom/src/sandbox/settings.rs` | per-stage session sandbox emission |
-| `loom/src/orchestrator/terminal/native/wrapper.rs:181` | the **second**, diverging copy of the allowlist (see `concerns.md`) |
-| `loom/src/verify/criteria/tests/confine_tests.rs` | the matched-control test pattern |
+| Path                                                           | Why                                                                                       |
+| -------------------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| `loom/src/verify/criteria/confine.rs`                          | `spawn_confined`, `resolve_confinement`, `plan_confinement` — start here                  |
+| `loom/src/process/environment.rs`                              | the allowlist and `apply_stage_environment`                                               |
+| `loom/src/models/stage/sandbox_config.rs::CommandConfinement`  | `CommandConfinement`; `NetworkConfig`                                              |
+| `loom/src/plan/schema/types.rs::SandboxConfig`                 | plan-level `command_confinement`                                                          |
+| `loom/src/sandbox/settings.rs`                                 | per-stage session sandbox emission                                                        |
+| `loom/src/orchestrator/terminal/native/wrapper/script_text.rs` | renders the session `exec env -i` loop from `AGENT_SESSION_ENV_NAMES` (see `concerns.md`) |
+| `loom/src/verify/criteria/tests/confine_tests.rs`              | the matched-control test pattern                                                          |
 
 ## Claude Code Grants a Linked Worktree Its Whole Git Common Directory
 
@@ -227,7 +231,7 @@ Loom's own administrative-directory denies and `config.worktree` check: [Loom's 
 
 `sandbox::build_settings` (`sandbox/settings.rs`) drops every non-glob `allow_write` entry whose resolved path is the session's working directory or inside it, so it reaches neither `sandbox.filesystem.allowWrite` nor an `Edit(...)` allow. The predicate is `sandbox/grant_paths.rs::is_inside_cwd`: `~/`, `/` and `//` entries resolve as absolute, a bare entry against the cwd, and both sides through symlinks, so an entry reaching through a link to a target outside the cwd (a worktree's `.loom/work/...`) is kept; globs (`*`, `?`, `[`, `{`) and entries that fail to resolve are kept too. `SettingsTarget::cwd` carries the working directory, and the session capsule (`orchestrator/terminal/native/session_settings/contents.rs::capsule_settings`) always sets it. `loom plan verify` warns on a relative non-glob entry outside `.loom/` and `.work/` (`plan/schema/validation/v2_lints/sandbox_capability.rs::report_in_tree_grants`).
 
-Why: the cwd is writable already, so the entry grants nothing, while Claude Code's Linux sandbox bind-mounts every listed non-glob path on its own and the kernel refuses to unlink or rename a mount point: git replacing the file, or `rm -rf` of a listed directory, fails with `Device or resource busy`. Deny rules still win, so effective permissions do not change. One side effect: under `permission_mode: default` a dropped exact-path entry no longer yields an `Edit(...)` allow, so a file-tool edit there can prompt; a glob keeps its rule.
+Why: the cwd is writable already, so the entry grants nothing, while Claude Code's Linux sandbox bind-mounts every listed non-glob path on its own and the kernel refuses to unlink or rename a mount point: git replacing the file, or `rm -rf` of a listed directory, fails with `Device or resource busy`. Deny rules still win, so effective permissions do not change. One side effect: under `permission_mode: default` a dropped exact-path entry yields no `Edit(...)` allow, so a file-tool edit there can prompt; a glob keeps its rule.
 
 ## Sandbox-List vs Permission-Rule Path Syntax, and Where Each Resolves From
 
@@ -241,11 +245,10 @@ Two settings surfaces read a leading `/` differently, confirmed against the Clau
   a bare path is cwd-relative, and a single leading `/` is relative to the SETTINGS SOURCE — the
   directory of the `--settings <file>` that recorded it, which for a capsule is `W/capsules/`.
 
-`sandbox/config.rs::expand_paths`'s doc comment used to claim Claude Code prepends the project root
-to an absolute sandbox path. It does not, and the comment is corrected in place — a bare (no-slash)
+Claude Code does not prepend the project root to an absolute sandbox path (`sandbox/config.rs::expand_paths`): a bare (no-slash)
 sandbox path is project-relative, but a `/`-prefixed one is already absolute, matching the docs
-above. The docs suggest an OLDER Claude Code version read a single-slash sandbox path as
-project-relative, which is why some older loom code favors `./path` there.
+above. Older Claude Code versions read a single-slash sandbox path as
+project-relative, which is why some loom code favors `./path` there.
 
 Two more facts from the same pass:
 
@@ -287,7 +290,7 @@ settings files (sandboxing.md, Troubleshooting).
 
 ## Confinement E2E Lives Outside the Sandbox
 
-Status (2026-09-14): passed outside the sandbox. The operator ran it with
+It passes outside the sandbox; run it with
 `LOOM_TEST_REQUIRE_SANDBOX_FREE=1` and a PATH shim for `srt` (`exec bunx @anthropic-ai/sandbox-runtime "$@"`).
 The srt tests are `#[serial]`: when four ran in parallel, two srt CLI instances died with an uncaught
 Node.js exception, and the exact error was never captured. Loom's parallel stages each run their own
@@ -317,12 +320,9 @@ the sandbox skipped, so the call fails with `Read-only file system`. `sandbox::m
 (`sandbox/grant_paths.rs`) resolves each absolute or `~/` entry, skips globs and relative entries,
 and returns the ones missing on the host. Both consumers read the merged plan and stage grants:
 
-- STALE (corrected 2026-09-13): this named `write_required_sandbox_settings`
-  in the former `sandbox_grants` module, which the state-confinement plan's B1 phase deleted along
-  with the rest of that module. The warning now comes from `sandbox::warn_missing_grants`
-  (`sandbox/grant_paths.rs:64`), called from `orchestrator/core/spawn_setup.rs:139` and
-  `orchestrator/core/stage_executor.rs:654`, one per missing path at spawn, for worktree and
-  knowledge stages alike.
+- `sandbox::warn_missing_grants` (`sandbox/grant_paths.rs`) warns once per missing path at
+  spawn, called from `orchestrator/core/spawn_setup.rs::validate_knowledge_sandbox` for knowledge
+  stages and `orchestrator/core/stage_preflight.rs::validate_stage_sandbox` for worktree stages.
 - The stage signal lists them under "Missing on the host, so NOT writable this session" with a
   stop-and-report instruction, whether or not the stage has deny rules
   (`missing_allow_write_from_merged` in `orchestrator/signals/generate.rs`).
@@ -332,7 +332,7 @@ Package-manager cache paths are not checked here; their own signal note covers t
 
 ## `loom status` Marks the Caller's Own Executing Stage "Orphaned" Inside Its Own Sandbox
 
-Running `loom status` FROM INSIDE a stage's own sandboxed session reports that stage's session as orphaned/dead (`session_alive` false, `render/graph.rs:133-137`), even though it is the live session asking the question. **Why:** bubblewrap's PID namespace hides the host PID from the sandboxed process, so the liveness check (which compares against a host PID) cannot see its own process as alive. This is a sandbox artifact of the caller inspecting itself from inside its own namespace, not evidence the session actually died — treat a self-reported "orphaned" from inside a stage sandbox as uninformative, never as a signal to intervene.
+Running `loom status` FROM INSIDE a stage's own sandboxed session reports that stage's session as orphaned/dead (`session_alive` false, `render/graph.rs::push_session_annotations`), even though it is the live session asking the question. **Why:** bubblewrap's PID namespace hides the host PID from the sandboxed process, so the liveness check (which compares against a host PID) cannot see its own process as alive. This is a sandbox artifact of the caller inspecting itself from inside its own namespace, not evidence the session actually died — treat a self-reported "orphaned" from inside a stage sandbox as uninformative, never as a signal to intervene.
 
 **Boundary-aware tests:** Unix-socket availability depends on the emitted sandbox policy of the path under test, so tests must report the actual boundary they exercise. A live companion, local TCP listener or tmux server can still require host execution. Use focused transport/route fixtures where the caller sandbox prevents the real boundary, and do not count a skipped boundary test as successful execution.
 
@@ -374,14 +374,14 @@ none found` on redirected machines). `mode: direct` lists the `session:` rollout
 (`~/.codex/sessions/YYYY/MM/DD/rollout-<ts>-<uuid>.jsonl`) that `codex exec` writes.
 `signals/format/codex.rs` accepts either.
 
-| Platform | Where | Lane | Inner sandbox |
-| --- | --- | --- | --- |
-| Linux | inside a stage sandbox | companion | bubblewrap, nested; needs `exclude_slash_tmp` |
-| macOS | inside a stage sandbox | direct `codex exec` | none |
-| macOS | outside any sandbox | companion | codex's own Seatbelt applies |
+| Platform | Where                  | Lane                | Inner sandbox                                 |
+| -------- | ---------------------- | ------------------- | --------------------------------------------- |
+| Linux    | inside a stage sandbox | companion           | bubblewrap, nested; needs `exclude_slash_tmp` |
+| macOS    | inside a stage sandbox | direct `codex exec` | none                                          |
+| macOS    | outside any sandbox    | companion           | codex's own Seatbelt applies                  |
 
 **Given up, deliberately.** No companion job record, so `/codex:status`/`/codex:result` cannot see
-direct runs. Codex's Seatbelt no longer masks `.git` on macOS, so the preamble's no-git rule and the
+direct runs. Codex's Seatbelt does not mask `.git` on macOS, so the preamble's no-git rule and the
 orchestrator's post-run `git status --short` are the remaining guards. Codex's inner network cut-off is
 gone, but the stage sandbox's domain allowlist still applies.
 

@@ -6,9 +6,9 @@
 
 **What happened.** An agent audited the untrusted-data containment boundary personally,
 traced the excerpt fencing, confirmed that chunk ANCHORS are normalized to
-alphanumerics-plus-hyphens by `normalize_heading` (`fs/knowledge/chunker.rs:236`), and
+alphanumerics-plus-hyphens by `normalize_heading`, and
 concluded the boundary was closed. It was not. An independent reviewer found
-`chunker.rs:73-77` takes the chunk id from
+`chunker.rs` takes the chunk id from
 `frontmatter.id.clone().unwrap_or(derived_id)` for index 0 — so a knowledge file's YAML
 frontmatter can set an **arbitrary multi-line id**, validated nowhere in `chunker.rs`,
 `catalog.rs` or `ingest.rs`, and the brief renderer emitted it unfenced inside an inline
@@ -53,8 +53,8 @@ cover.
 **Fix, and the shape worth copying:** `context/untrusted.rs` is now the ONE definition both
 surfaces call — `MAX_INLINE_CHARS = 200`, backticks replaced with `ˋ` (U+02CB) — and its
 module docstring states outright that a second copy would duplicate a security rule that
-must never drift. Verified: `brief.rs:48/65/84/93` and
-`commands/knowledge/context.rs:174/179/180/182` both route through it, and nothing else
+must never drift. Verified: `brief.rs` and
+`commands/knowledge/context.rs` both route through it, and nothing else
 defines a flattener.
 
 ## Why This Class Is Hard To See
@@ -123,11 +123,11 @@ budget against `Span::width()`, which is 0 for C0 controls (ESC included) and fo
 zero-width set — so `used + character_width > budget` is never true for a zero-width character and
 a 10,000-character ESC/ZWSP string passes a 16-cell column fully intact. The strings reaching those
 cells are not all trusted: `stage.model`/`execution_models` come from the spawn ledger's
-caller-controlled `.tool_input.model` (`loom-hooks/spawn-guard.sh:334`), and `last_tool`/`last_activity`
-come from heartbeat JSON (`commands/status/data/collector.rs:266-267`). A width-bounded renderer cannot do sanitization's
+caller-controlled `.tool_input.model` (`loom-hooks/spawn-guard.sh::emit_result`), and `last_tool`/`last_activity`
+come from heartbeat JSON. A width-bounded renderer cannot do sanitization's
 job — it does not even try, it just measures cells. The fix sanitizes once, at the collector boundary
 that constructs the shared `StatusData` (`commands/status/data/sanitize.rs`, wired at
-`commands/status/data/collector.rs:364`), using the same `inline_safe` from this file's main lesson — that one boundary
+`commands/status/data/collector.rs`), using the same `inline_safe` from this file's main lesson — that one boundary
 covers the wire, the static renderer, and the ledger TUI at once, where fixing each renderer
 separately would not.
 
@@ -180,8 +180,9 @@ a character-class case (`case $stage_id in *[!A-Za-z0-9._-]* | "") return 0`), w
 changes the work dir's own mode and the ledger row lands one level outside its per-stage directory.
 The Rust reader (`commands/status/data/sanitize.rs::valid_stage_id`) gets this right by explicitly
 rejecting `..`, so the two sides of the same boundary disagree, and the same check now exists in four
-places at three different strengths (`commands/status/data/execution_models.rs:38`, `commands/memory/handlers/work_dir.rs:99`,
-`loom-hooks/codex-forward.sh:43`, `loom-hooks/spawn-guard.sh:309`).
+places at three different strengths (`commands/status/data/execution_models.rs`, `commands/memory/handlers/work_dir.rs`,
+`loom-hooks/codex-forward.sh`, `loom-hooks/spawn-guard.sh`). The shell writers have since been fixed: `spawn-guard.sh::record_spawn`
+rejects `.`/`..` by name and `codex-forward.sh` anchors on a leading alphanumeric.
 
 **Prevention:** when validating a value that becomes a path COMPONENT, reject `.` and `..` by name
 explicitly — a charset check alone is not a path-component allowlist, whatever language it's written
@@ -232,7 +233,7 @@ Three lessons: a value computed and carried correctly was still wrong because so
 
 Enumerate every PRODUCER of a rendered field, not every field — one `unwrap_or` upstream defeats a normalizer you already read. Classify by DESTINATION, not origin. Also: consolidated security findings, UTF-8 byte-slicing panics, character-class allowlists that admit `..`. → [Untrusted Value Boundaries](untrusted-value-boundaries.md)
 
-## A Raw String's Own Body Can End It Early
+## A Raw String's Own Body Can End It Early, Pointer
 
 `r#"...## heading..."#` truncated silently at the first `"#` inside the body (a markdown heading
 quoted inside it) instead of erroring. Check the body for a `"` followed by N `#`s before picking

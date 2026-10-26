@@ -5,7 +5,7 @@
 ## Install and identity
 
 - Marketplace `openai-codex` from GitHub `openai/codex-plugin-cc`; plugin name `codex`.
-- Observed installed version **1.0.6** (`claude plugin list --json`, 2026-08-06), install path
+- Observed installed version **1.0.6** (`claude plugin list --json`), install path
   `~/.claude/plugins/cache/openai-codex/codex/<version>/`.
 - Needs the `codex` CLI on PATH (observed `codex-cli 0.146.0`) and an authenticated `~/.codex/auth.json`.
   Codex initialises a sqlite state runtime under `~/.codex`; a sandbox that denies writes there kills
@@ -22,7 +22,7 @@ claude plugin list [--json]
 
 ## The codex-rescue subagent
 
-**Loom stages no longer spawn this agent directly** — see "The loom-codex-forwarder lane"
+**Loom stages do not spawn this agent directly** — see "The loom-codex-forwarder lane"
 below. The plugin wrapper's contract is documented here because the forwarder wraps the same
 companion runtime and the hook pins BOTH agent types.
 
@@ -65,8 +65,8 @@ line and the actual reply, not by the presence of `sandbox` in stderr.
 
 The Stop gate is **OPT-IN**: `main()` returns early unless `config.stopReviewGate` is set
 (`stop-review-gate-hook.mjs:154-156`; `defaultState()` sets it `false`), and
-`STOP_REVIEW_TIMEOUT_MS = 15 * 60 * 1000` (`:16`). When it does run and fails it emits
-`{"decision":"block", ...}` (`:169`). loom also binds Stop via `commit-guard.sh` — **both run**.
+`STOP_REVIEW_TIMEOUT_MS = 15 * 60 * 1000`. When it does run and fails it emits
+`{"decision":"block", ...}`. loom also binds Stop via `commit-guard.sh` — **both run**.
 
 Those are the external Claude plugin's hooks. Loom separately installs a Codex-native subset under
 `~/.codex/hooks/loom/`; see [Hook System](hook-system.md#codex-native-subset).
@@ -76,7 +76,7 @@ Those are the external Claude plugin's hooks. Loom separately installs a Codex-n
 The per-stage `implementers` field names which agent lanes a stage may spawn subagents from.
 Three moving parts:
 
-1. **The field.** `Implementer` enum (`models/stage/types.rs:135`), `claude` | `codex`,
+1. **The field.** `Implementer` enum (`models/stage/types.rs`), `claude` | `codex`,
    `#[serde(rename_all = "kebab-case")]`, closed — an unknown value is a parse error. It is held by
    `Implementers` (`models/stage/types.rs`), a `#[serde(transparent)]` newtype over
    `Vec<Implementer>` whose `Default` is `vec![Claude]`. Carried on `StageDefinition`
@@ -147,12 +147,12 @@ Codex's harness is shell-based, so the cure for slow reading is a shell command 
 digested facts rather than bytes. Loom's source graph already ships four commands, all sub-second,
 all usable from any directory in the tree:
 
-| Command | Answers |
-| --- | --- |
-| `loom map --find-all <symbol>` | every definition of a name: path, line, kind |
-| `loom map --outline <file>` | a file's symbols with line ranges and signatures |
-| `loom map --impact <symbol\|path>` | what reaches it, with path confidence |
-| `loom knowledge context --query "<q>" --budget-tokens <n>` | ranked knowledge plus matching source |
+| Command                                                    | Answers                                          |
+| ---------------------------------------------------------- | ------------------------------------------------ |
+| `loom map --find-all <symbol>`                             | every definition of a name: path, line, kind     |
+| `loom map --outline <file>`                                | a file's symbols with line ranges and signatures |
+| `loom map --impact <symbol\|path>`                         | what reaches it, with path confidence            |
+| `loom knowledge context --query "<q>" --budget-tokens <n>` | ranked knowledge plus matching source            |
 
 Verified: given only the first two, `gpt-6-luna` answered a two-part structural question - where a
 constant is defined, and how many functions its file holds - in two commands and ~10k tokens, with
@@ -160,12 +160,12 @@ no file reads at all.
 
 **Not read-only: they try to refresh a cache outside the worktree's sandbox.** Both commands never
 write anything inside the worktree itself, but they DO try to refresh a derived-artifact cache under
-the canonical MAIN repo's `.loom/cache/context-v1/` (`context/store.rs:44-57` resolves it via
+the canonical MAIN repo's `.loom/cache/context-v1/` (`context/store.rs` resolves it via
 `main_project_root`, following `.loom/work`'s symlink out of the worktree on purpose so every parallel
 stage shares one cache rather than growing an immediately-stale copy of its own). That path is not
-in a stage worktree's `allowWrite` set (`sandbox/settings/policy.rs:137-158`), so inside a worktree
+in a stage worktree's `allowWrite` set (`sandbox/settings/policy.rs`), so inside a worktree
 the refresh is denied, the command prints `warning: could not refresh the working-tree source graph
-...; reading the layers already on disk` (`commands/map.rs:116`), and it answers from the last
+...; reading the layers already on disk` (`commands/map.rs`), and it answers from the last
 successfully published layer instead — the BASE the stage branched from, not the current working
 tree. Consequence: inside a worktree the navigation kit does not show edits made during the same
 session, including a sibling unit's earlier changes in that stage. See
@@ -195,7 +195,7 @@ prompt implemented all the edits itself on sonnet and nothing surfaced it. Three
 2. **`loom-hooks/codex-forward-guard.sh`** — PreToolUse on Bash/Edit/Write/Read/Task/Agent. Primary
    gate: payload `agent_type` ∈ {`loom-codex-forwarder`, `codex:codex-rescue`} → only the exact
    `~/.claude/hooks/loom/codex-forward.sh task ...` wrapper invocation passes
-   (`is_exact_forward_command`, `codex-forward-guard.sh:104-130`); everything else exits 2 with
+   (`is_exact_forward_command`, `codex-forward-guard.sh::valid_identity_id`); everything else exits 2 with
    forwarding doctrine on stderr. Every block first runs `require_stage_evidence`, so without
    stage evidence the guard enforces nothing and the stock plugin runs untouched. Fallback gate: `transcript_path` under `*/subagents/agent-*.jsonl` whose
    opening bytes carry `LOOM-CODEX-FORWARD-ONLY`. Fail-open everywhere else. `loom_is_subagent`
@@ -219,10 +219,10 @@ Codex is a subprocess, so the Bash sandbox — not Claude Code's tool permission
 can run at all. Its write set is the working directory plus the session temp dir, and codex needs two
 directories outside both:
 
-| Path                                       | Written by            | Failure when denied                            |
-| ------------------------------------------ | --------------------- | ---------------------------------------------- |
-| `~/.codex`                                 | codex CLI (sqlite state runtime, sessions, logs) | `failed to initialize state runtime`, `Read-only file system (os error 30)` |
-| `~/.claude/plugins/data/codex-openai-codex` | codex-companion (per-job state) | `ENOENT: no such file or directory, mkdir '.../state/<cwd>-<hash>/jobs'` |
+| Path                                        | Written by                                       | Failure when denied                                                         |
+| ------------------------------------------- | ------------------------------------------------ | --------------------------------------------------------------------------- |
+| `~/.codex`                                  | codex CLI (sqlite state runtime, sessions, logs) | `failed to initialize state runtime`, `Read-only file system (os error 30)` |
+| `~/.claude/plugins/data/codex-openai-codex` | codex-companion (per-job state)                  | `ENOENT: no such file or directory, mkdir '.../state/<cwd>-<hash>/jobs'`    |
 
 Both are declared once as `CODEX_SANDBOX_WRITE_PATHS` (`loom/src/codex.rs`) and emitted as
 `sandbox.filesystem.allowWrite` — additive, OS-enforced for child processes, and the mechanism the
@@ -303,8 +303,8 @@ Codex loads a project doc file named AGENTS.md from its working directory and ne
 `CLAUDE.md`. Probed both directions with `codex exec -m gpt-6-luna` in a scratch repo: a
 passphrase planted in a file named AGENTS.md came back verbatim; the identical file renamed
 `CLAUDE.md` produced `UNKNOWN`.
-`loom install-assets` now writes `~/.codex/AGENTS.md` from the repo-root AGENTS.md.template file
-(`loom/src/assets/install.rs:110-127`), capped at 12,288 bytes (`loom/src/assets/mod.rs:22`) —
+`loom install-assets` writes `~/.codex/AGENTS.md` from the repo-root AGENTS.md.template file
+(`loom/src/assets/install.rs::install_doctrine`), capped at 12,288 bytes (`AGENTS_MD_TEMPLATE_MAX_BYTES` in `loom/src/assets/mod.rs`) —
 well under codex's own 32,768-byte `project_doc_max_bytes` truncation point.
 
 Two consequences:
@@ -332,12 +332,12 @@ rmcp::transport::worker: worker quit with fatal: Transport channel closed ... ht
 
 Both are benign: codex 0.152's background model-list refresh, and a ChatGPT-hosted MCP endpoint. Neither
 is a missing sandbox grant. `chatgpt.com`, `*.chatgpt.com`, `api.openai.com` and `auth.openai.com` are
-already in `CODEX_SANDBOX_DOMAINS` (`loom/src/codex.rs:42-47`) and in the generated settings, so adding
+already in `CODEX_SANDBOX_DOMAINS` (`loom/src/codex.rs`) and in the generated settings, so adding
 hostnames or editing `~/.codex/config.toml` fixes nothing.
 
 **Detection rule.** Judge a forwarded run by the evidence trailer and the files, never by stderr: `exit:
 0` in the `--- LOOM-CODEX-EVIDENCE ---` trailer, a `session:` rollout newer than the spawn, and the
-task's files present and correct. Two spawns on 2026-09-02 (gpt-6-luna and gpt-5.6-terra, effort
+task's files present and correct. Probed spawns (gpt-6-luna and gpt-5.6-terra, effort
 xhigh) printed the pair throughout and wrote both files byte-exact.
 
 **Stdin.** The same runs printed `Reading additional input from stdin...`. `codex exec` treats an open
@@ -357,7 +357,7 @@ at all. `codex-forward-guard.sh` is now registered for `SendMessage` too
 
 ## The forward guard engages only inside a loom stage
 
-`loom-hooks/codex-forward-guard.sh` classifies `loom-codex-forwarder` AND the stock plugin agent `codex:codex-rescue` as forwarding shims. Until 2026-09-18 it blocked such a call whenever no stage could be resolved, so with loom's hooks installed the stock Codex plugin was unusable in every ordinary Claude Code session. Every blocking and rewriting path now passes `require_stage_evidence` first: with no stage evidence the guard exits 0 for every payload, including the missing-metadata and missing-jq blocks. With any evidence, behaviour is what it was, including the block when the stage cannot be resolved; the block message names the evidence when it is not the hook's own environment.
+`loom-hooks/codex-forward-guard.sh` classifies `loom-codex-forwarder` AND the stock plugin agent `codex:codex-rescue` as forwarding shims. Every blocking and rewriting path passes `require_stage_evidence` first: with no stage evidence the guard exits 0 for every payload, including the missing-metadata and missing-jq blocks. With any evidence the guard blocks and rewrites as usual, including the block when the stage cannot be resolved; the block message names the evidence when it is not the hook's own environment.
 
 Stage evidence (`loom_stage_evidence` in `loom-hooks/_codex_forward.sh`, memoized, cheapest first) is the OR of three signals a stage agent cannot shed: E1, the hook's own `LOOM_STAGE_ID`/`LOOM_SESSION_ID`/`LOOM_WORK_DIR` (for an in-process subagent the hook is run by the stage's own `claude` process, whose environment the agent cannot alter); E2, any ancestor's INITIAL environment carrying one of those names (`/proc/<pid>/environ` on Linux, `/bin/ps eww` on macOS, depth 12), which catches a nested `env -i claude`; E3, the hook process being confined (`/proc/1/comm == bwrap` on Linux; a refused nested `/usr/bin/sandbox-exec` on macOS). A sandbox profile is inherited and cannot be dropped, which is what covers macOS, where a double-forked process reparents to launchd and leaves the ancestry E2 walks. The payload cwd, the sentinel, the transcript and anything under the worktree are agent-controlled and are never evidence.
 
