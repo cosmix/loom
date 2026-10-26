@@ -46,9 +46,12 @@ pub enum DocKind {
 #[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
 pub struct DocId(pub String);
 
+/// Repository-relative path of the product vision document.
+pub const VISION_PATH: &str = "doc/product/index.md";
+
 /// Classify a repository-relative document path without reading the file.
 pub fn classify(rel: &Path) -> DocKind {
-    if rel == Path::new("doc/product/index.md") {
+    if rel == Path::new(VISION_PATH) {
         return DocKind::Vision;
     }
     if let Some(kind) = product_kind(rel) {
