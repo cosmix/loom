@@ -21,6 +21,7 @@ pub mod models;
 pub mod orchestrator;
 pub mod parser;
 pub mod plan;
+pub mod planning;
 pub mod process;
 pub mod provider_data;
 pub mod quota;
