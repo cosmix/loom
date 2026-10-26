@@ -64,8 +64,10 @@ it, since the table already declares the parent.
 ### Plans and their lifecycle
 
 A plan's identity is its **slug**: the file stem with `IN_PROGRESS-`, `DONE-`, `RETIRED-` and
-`PLAN-` stripped, the same stripping `loom run` applies to find a plan's brief bundle
-(`loom/src/plan/inputs.rs:136-145`). Every spelling below is the same plan:
+`PLAN-` stripped. `loom run` finds a plan's brief bundle by stripping `IN_PROGRESS-`, `DONE-` and
+`PLAN-` only (`loom/src/plan/inputs.rs:140-142`); that lookup gains `RETIRED-` as part of this
+work, so the app and `loom run` agree on every plan's slug. Every spelling below is the same
+plan:
 
 | File                                                       | State   |
 | ---------------------------------------------------------- | ------- |

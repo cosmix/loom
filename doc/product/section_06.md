@@ -138,9 +138,9 @@ validation result never disagree.
 ## Viewing and editing
 
 **Who may edit.** Only the browser holding authoring (section 02) sees the Edit control. A
-browser that saves while nobody holds authoring takes authoring, as starting a chat would.
-(My call.) Read-only browsers, and every browser when `loom plan` runs in its read-only mode
-because `tmux` or `claude` is missing (section 02), see no Edit control and no save route
+browser that saves while nobody holds authoring takes authoring, as starting a chat would
+(section 02). Read-only browsers, and every browser when `loom plan` runs in its read-only mode
+(section 02, "Missing prerequisites"), see no Edit control and no save route
 accepts them.
 
 **What may be edited.** The server decides; the browser only hides controls. A path is editable

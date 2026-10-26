@@ -13,7 +13,7 @@ vision's Decisions ("Bridge", "Sessions start cold") fix the frame.
 | Kind          | What it is                                                       | How many                     | Who drives it                         |
 | ------------- | ---------------------------------------------------------------- | ---------------------------- | ------------------------------------- |
 | Authoring     | The chat session that writes documents under `doc/`              | At most one per project      | The browser holding authoring         |
-| Summary       | A background session that rebuilds summaries (section 04)        | One at a time, others queued | The server; no browser                |
+| Summary       | A background session that rebuilds summaries (section 04)        | One at a time; later work batched | The server; no browser                |
 | Refinement    | Subagents the authoring session spawns to rebuild summaries      | Inside the authoring session | The authoring session                 |
 | Pressure      | A Claude step of a pressure run (section 11)                     | One run per project, one step at a time | The server's pressure driver; the holder answers its prompts |
 
@@ -24,16 +24,17 @@ through the `SubagentStart`/`SubagentStop` hook events. Each one's transcript is
 `<session-uuid>/subagents/agent-<id>.jsonl` (`loom/src/provider_data/resolve.rs:7`), which the
 bridge reads the same way as the main transcript.
 
-One summary session runs at a time, with the others queued; section 04 decides which summaries
-the session rebuilds and when. One keeps a rebuild after a `git pull` from competing with the
-authoring session for the user's subscription limits.
+Section 04 decides which summaries a summary session rebuilds and when; work that arrives while
+one runs forms its next batch. One summary session runs at a time, so a rebuild after a
+`git pull` does not compete with the authoring session for the user's subscription limits.
 
 ## Prerequisites
 
 At start the server checks for `tmux` and `claude` on `PATH` and runs the existing login probe,
-`claude auth status --json` (`loom/src/claude/auth.rs:87`). Any failure puts the server in the
-read-only mode of section 02, and the app names the missing piece: tmux not installed, Claude
-Code not installed, or Claude Code not logged in. (My call: a logged-out CLI would start a
+`claude auth status --json`, through `stage_auth_status` (`loom/src/claude/auth.rs:87`), which
+probes under the same minimal agent environment the launch script sets (below). Any failure
+puts the server in the read-only mode of section 02, and the app names the missing piece: tmux
+not installed, Claude Code not installed, or Claude Code not logged in. (My call: a logged-out CLI would start a
 session that sits on a login screen nobody can see.)
 
 ## Starting a session
@@ -70,6 +71,10 @@ planning session has, so the planning server calls the lane's free functions dir
 - liveness and every signal go through `ProcessIdentity` (`loom/src/process/identity.rs:11`),
   never `tmux has-session`, for the reason `TmuxBackend::is_session_alive` gives
   (`tmux/backend.rs:159`).
+
+`PRESENTATION_OPTIONS` and `teardown_socket` are private to the tmux module today, and the
+dashboard's `bind_first_available_port` (`commands/status/web/listener.rs:33`), which section 02's
+port search reuses, is `pub(super)`; widening their visibility is part of this work.
 
 One tmux server per session, as for stages, so a wedged server takes down one session.
 
@@ -144,8 +149,9 @@ call and fails closed.
 
 The server tails each session's spool. Hook commands never fail the session: an error writing
 the spool exits 0 with no output, except for `PermissionRequest`, which answers deny (below).
-Section 12 must let hook commands write to the session directory; hook commands run in Claude
-Code's own process, outside the Bash tool's sandbox.
+Hook commands run in Claude Code's own process, outside the Bash tool's sandbox, so they write
+the session directory while the session's own tools cannot (section 12, "What a session may
+write").
 
 The spool is runtime state. It is deleted with the session directory when the session ends.
 
@@ -181,10 +187,11 @@ and for how long, never what. Each assistant message's `usage` is read with the 
 parser (`loom/src/provider_data/claude.rs:13`) so a turn can show its token count.
 
 Tool results for file edits carry `filePath`, `originalFile`, and `structuredPatch`. The bridge
-uses them to give each turn its list of changed files with the file's text before the turn's
-first edit, which section 08 shows as the turn's diff. Files a turn changed through `Bash`
-appear through the file watcher (section 04) as "changed during this turn" without a tool
-attribution.
+uses `filePath` to build each turn's list of changed files, and `originalFile` and
+`structuredPatch` only for each tool row's `+a −b` counts. A file's text before the turn, and
+its `before_hash`, come from the pin section 06 takes when the turn starts ("Turn diffs"), which
+section 08 shows as the turn's diff. Files a turn changed through `Bash` appear through the file
+watcher (section 04) as "changed during this turn" without a tool attribution.
 
 **Streaming granularity.** Text reaches the chat one content block at a time, as Claude Code
 writes each completed block to the transcript. Word-by-word streaming is not a goal; it would
@@ -192,6 +199,9 @@ need stream-JSON or pane scraping, both ruled out. While a block is being writte
 working.
 
 ## Session state
+
+A **turn** runs from the `UserPromptSubmit` of a delivered message (or of the opening prompt) to
+the next main-agent `Stop`.
 
 | State         | Entered on                                                                   |
 | ------------- | ---------------------------------------------------------------------------- |
@@ -219,7 +229,7 @@ plan-<kind>` (bracketed paste, so newlines do not submit), then `send-keys Enter
 
 The server delivers only while the session is Idle. A message sent while the session works is
 queued in the server, shown in the chat as queued, and delivered at the next Idle; queued
-messages go in one at a time. Typing into the pane mid-turn would race Claude Code's own
+messages go in one at a time. An interrupt (below) is the exception: it discards the queue. Typing into the pane mid-turn would race Claude Code's own
 input handling, which the bridge cannot observe without reading the pane.
 
 A delivery counts once a `UserPromptSubmit` event arrives within 10 seconds. Without one the
@@ -273,7 +283,9 @@ summary session needing a permission means its rules (section 12) are wrong.
 
 **Interrupt.** The authoring browser's stop button sends `send-keys Escape` to the pane, which
 interrupts Claude Code's turn. The transcript records the interruption and the session goes
-Idle. A pending permission request is denied first.
+Idle. A pending permission request is denied first. The interrupt discards the queue and returns
+the queued texts to the holder's composer (section 08); nothing is delivered at the Idle the
+interrupt causes.
 
 **End.** A session ends with a final write when:
 
@@ -366,8 +378,8 @@ A delta adds an item, replaces an item by id (a tool call completing, a permissi
 or changes the session record. `tokens` holds the turn's four counts from the transcripts'
 `usage` (fresh input, cache writes, cache reads, output). A permission item's `deny_reason` is
 `holder`, `timeout`, `session_ended`, `server_stopping`, `hook_error`, `interrupt`, or
-`summary_session`; `note` is the holder's deny note, or null. Subagent activity appears as tool items with `subagent` set to the
-subagent's id, nested under the tool call that spawned it. `summaries_rebuilding` comes from
+`summary_session`; `note` is the holder's deny note, or null. Subagent activity appears as
+tool items with `subagent` set to the subagent's id, nested under the tool call that spawned it. `summaries_rebuilding` comes from
 section 04's engine. Attachments are formatted into the delivered text by section 10. The bridge
 parses each user record's `<loom-attachments>` block back into the structured fields above
 (section 10's header fields: kind, address and anchor, line range, `#stage:<id>`, summary
@@ -376,8 +388,9 @@ reload rebuilds the chips from the transcript alone.
 
 Only the holding browser's connection may send the commands the bridge accepts: start a chat,
 send a message, withdraw a queued message, answer a permission request, interrupt, end the
-chat. The server rejects them
-from any other connection.
+chat. The server rejects them from any other connection, except that while nobody holds
+authoring any browser may start a chat or send a message, and takes authoring by doing so
+(section 02).
 
 ## Out of scope for this section
 
@@ -387,4 +400,5 @@ from any other connection.
 - The briefs, opening messages, closing message wording, and per-step skills: section 09.
 - How a selected passage becomes part of a message: section 10.
 - Permission mode, sandboxing, writable paths, and standing permission rules: section 12.
-- Server lifetime, the lock, browser identity, and read-only mode: section 02.
+- Server lifetime, the lock, and read-only mode: section 02.
+- Browser naming: section 02; browser id: section 12.

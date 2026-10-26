@@ -34,7 +34,7 @@ start a run; the user picks either. An untested plan is a suggestion, never a ga
 
 Steps 6 and 7 share one state, "ready", because the app records no approval. The tracker marks
 step 7 as active while any plan is `IN_PROGRESS-`, and as done when every metaplan entry's plan
-is `DONE-`.
+is `DONE-` or `RETIRED-`.
 
 ## Detection rules
 

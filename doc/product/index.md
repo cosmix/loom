@@ -247,13 +247,15 @@ Each becomes `doc/product/section_xx.md`. Order is a first proposal for discussi
   starting the rebuild sessions.
 - **One authoring session per project (07, 08).** At most one session can edit a project's
   documents at a time. A project has one `loom plan` server; a second `loom plan` refuses to
-  start and prints the running server's URL. Several people can open that URL: the first
-  browser to chat holds authoring, and every other browser is read-only: it can read, expand
-  and browse, sees who else is connected and who holds authoring, and can send a passage with a
+  start and prints the running server's URL. Several people can open that URL. While nobody
+  holds authoring, any browser that starts a chat, sends a message, saves a file, or starts a
+  pressure run takes it; every other browser is read-only: it can read, expand and browse, sees who else is connected and who holds authoring, and can send a passage with a
   note to the holder (section 10), but cannot chat or save.
   Summary sessions run alongside the authoring session.
-- **Locked plans (01, 06, 11).** Plan files with the `IN_PROGRESS-`, `DONE-` or `RETIRED-` prefix are
-  read-only in the app, in the editor and to sessions, with a notice saying why.
+- **Locked plans (01, 06, 11).** Plan files with the `IN_PROGRESS-`, `DONE-` or `RETIRED-`
+  prefix, everything under `doc/plans/archive/`, run reviews (`REVIEW-*.md`), and the brief
+  bundles of locked plans are read-only in the app, in the editor and to sessions, with a notice
+  saying why.
 - **Product-to-plan links (03, 05, 09).** Each plan names the product sections it implements in a
   plain line, `Implements: section_07` (several separated by commas), which the plan-writing
   skill adds. Concept mode's links between the two overviews come only from these lines, never

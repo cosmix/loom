@@ -26,8 +26,9 @@ the subcommand becomes optional and the app's flags belong to `loom plan` itself
 | `--host <HOST>` | Bind this address instead of `127.0.0.1`. Same parser and rules as `loom status --web --host` |
 | `--no-open`     | Print the URL and do not open a browser                                                      |
 
-The port is a flag, not a positional argument as in `loom status --web [PORT]`, because a
-positional value after `loom plan` would collide with subcommand names. (My call.)
+`loom status --web [PORT]` takes its port as an optional value of `--web`. `loom plan` has no
+such flag to carry a value, and a positional port after `loom plan` would collide with
+subcommand names, so the port gets its own flag. (My call.)
 
 There are no config-file keys for any of these, matching the dashboard, which takes its bind
 host from the CLI only. (My call.) Shell completion tables (`completions/dynamic/`) gain the
@@ -85,10 +86,11 @@ is released with its process, so a crashed server leaves no stale lock to clean 
 
 ## Several people, one author
 
-Any number of people can open the server's URL. The first browser to start a chat holds
-authoring; every other browser is read-only: it reads, expands, and browses, but cannot chat
-or save. Authoring passes on when the holder's session ends (the grace period after its browser
-closes, section 07), and the next browser to start a chat takes it.
+Any number of people can open the server's URL. At most one browser holds authoring; every
+other browser is read-only: it reads, expands, and browses, but cannot chat or save. While
+nobody holds authoring, any browser that starts a chat, sends a message, saves a file, or starts
+a pressure run takes it. Authoring frees on the events section 07 lists, among them the end of
+the grace period after the holder's browser closes.
 
 Every browser sees who else is connected: a presence list in the header names each connected
 browser, marks the one holding authoring, and shows the document each is reading. Read-only
@@ -104,15 +106,28 @@ write there). Its runtime state lives in a per-user directory:
 
 ```text
 ~/.loom/plan/<project-key>/
-  lock            server lock (pid, URL, token; mode 0600)
-  sessions/       session registry and hook event spool (section 07)
+  lock                server lock (pid, URL, token; mode 0600)
+  drafts/             summary drafts awaiting `seal` (section 04)
+  claims/             one claim file per summary being rebuilt (section 04)
+  summaries.lock      the summary store's write lock (section 04)
+  summary-cost.jsonl  one line per finished summary rebuild (section 04)
+  sessions/<id>/      one directory per session (section 07):
+    session.json      registry record
+    launch.sh         launch script
+    settings.json     hook registrations and permission rules (section 12)
+    brief.md          appended system prompt (section 09)
+    plugin/           the per-session `loom-plan` plugin (section 09)
+    events.jsonl      hook event spool
+    answers/          permission decisions
+    done/             pressure sessions: the completion marker (section 11)
+    codex.log         pressure runs: the Codex step's output (section 11)
 ```
 
 `<project-key>` is the project directory's name plus a short hash of its canonical path, so two
 checkouts of one repository are two projects. (My call.) Keeping this out of the project means
 `loom plan` needs no `.gitignore` entry and no `loom init` before it runs; a project's `.loom/`
-directory belongs to `loom run`. Section 12 must allow planning sessions to write their hook
-events here.
+directory belongs to `loom run`. Hook commands write their events here from Claude Code's own
+process, outside the session's sandbox (section 12, "What a session may write").
 
 The summary store is project content, not runtime state; it lives in `doc/loom/summaries/`
 (vision, Decisions; section 04).
@@ -206,9 +221,15 @@ app is section 11.
 
 ## Missing prerequisites
 
-Planning sessions need `tmux` and the `claude` CLI. When either is missing, `loom plan` still
-starts, in read-only mode: file mode and concept mode work on the summaries already committed,
-and the app and the terminal both say what is missing and how to install it. (My call: a
+`loom plan` starts in read-only mode when any of these holds:
+
+- `tmux` is not on `PATH` (section 07, "Prerequisites");
+- the `claude` CLI is not on `PATH` (section 07);
+- Claude Code is not logged in (section 07);
+- on Linux or WSL, the sandbox's prerequisites are missing (section 12, "Sandbox prerequisites").
+
+In read-only mode no session starts: file mode and concept mode work on the summaries already
+committed, and the app and the terminal both say what is missing and how to install or fix it. (My call: a
 reviewer reading the plans on a machine without these should not be turned away.)
 
 ## Out of scope for this section

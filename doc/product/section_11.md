@@ -115,8 +115,9 @@ naming the plan, the round, and the step:
   written" with a link to the `codex-<plan file>` report or "no review", with the log's tail on a
   failure;
 - each step lists the plan edits it made with their diffs (section 07's changed-file list);
-- token counts per Claude step come from the transcripts, as for any session; Codex tokens are not
-  shown.
+- token counts per Claude step come from the transcripts, as for any session, and include the
+  step's teammates: the bridge reads each teammate's transcript for its token counts only and
+  renders none of its messages; Codex tokens are not shown.
 
 The input box stays open to the browser holding authoring: the terminal driver lets the user type
 into the foreground session, and so does the app. The stop button stops the whole run (below).
@@ -210,7 +211,7 @@ still refuse.
 | No modified or staged tracked files (untracked files are allowed)      | `check_for_uncommitted_changes`, `loom/src/commands/run/checks.rs:217`; `loom/src/git/branch/status.rs:23` |
 | The plan and every brief it reads committed                            | `require_committed_plan`, `loom/src/commands/run/plan_inputs.rs:17` |
 | The current branch is the plan's base branch                           | same function                                                  |
-| `jq`, Claude Code logged in, git 2.40 or later, the sandbox prerequisites, signing when `commit.gpgsign` is set | `prepare_repo_for_run` and `run_startup_preflights`, `loom/src/commands/run/mod.rs:148` |
+| `jq`, Claude Code logged in, git 2.40 or later, the sandbox prerequisites, signing when `commit.gpgsign` is set | `prepare_repo_for_run` (`loom/src/commands/run/checks.rs:16`) and `run_startup_preflights` (`loom/src/commands/run/mod.rs:148`) |
 
 Nothing requires a daemon to be running: `loom run` starts it (`execute_background`,
 `loom/src/commands/run/mod.rs:45`), and the daemon is its own process group, independent of

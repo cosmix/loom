@@ -47,6 +47,12 @@ older project can hold dozens of them (this repository has 89) and summarizing t
 more than any reader gains; they stay readable in file mode. The vision and the
 metaplans have no document summary of their own: the overviews cite them directly (below).
 
+**Overview scope.** The product overview covers the vision and the product sections its table
+lists (section 01); the engineering overview covers the metaplans and the plans a metaplan
+names. An unlisted section, or a plan no metaplan names, is outside overview scope: it still gets
+its document summary, and section 05 lists it under the overview instead of in it. An overview's
+members are the document summaries in its scope.
+
 Each summary is its own file with its own manifest entry, so a git merge of two people's
 rebuilds conflicts only when both rebuilt the same summary (vision, Decisions). There is no
 shared index file. (My call: a single manifest file would put every rebuild's hash changes in
@@ -106,8 +112,8 @@ Rules for the body, enforced when the summary is sealed (below):
 - **An overview cites document-summary sentences and raw passages.** It links a document
   summary's sentence by the sentence's id as fragment (`#s-3fa9c2d1`), and links heading
   sections of the vision (product overview) or of the metaplans (engineering overview) directly,
-  since those documents have no summary. Every member document must be cited by at least one
-  overview sentence, so no section or plan drops out of the overview silently.
+  since those documents have no summary. Every document in the overview's scope must be cited by
+  at least one overview sentence, so no section or plan drops out of the overview silently.
 - **Length.** A document summary holds at most 15 sentences, an overview at most 30. (My call:
   the overview has to be readable in the few minutes the vision's reviewer goal allows.)
 
@@ -124,7 +130,7 @@ text, a rebuild that keeps a sentence word for word keeps the overview links int
 | `of`      | both       | the source file's path (document), or `product` / `engineering` (overview)                  |
 | `file`    | document   | hash of the whole source file                                                               |
 | `cites`   | both       | `path#anchor` to the hash of that span, for every raw passage the body links                |
-| `members` | overview   | summary id to the hash of its ordered sentence ids, for every document summary in scope     |
+| `members` | overview   | summary id to the hash of its ordered sentence ids, for every document summary in its scope |
 
 `members` hashes the ordered list of sentence ids, so rewriting a link or the front
 matter of a document summary does not make the overview out of date. Front matter carries no
@@ -189,8 +195,9 @@ One watcher in the server reports changes under `doc/`, and sections 01, 05, 06,
 engine all consume its events. It polls: every second it walks `doc/`, compares each file's
 size, modification time, and inode with the last walk, and hashes only the files that differ.
 `doc/` holds hundreds of files at most, so a walk is cheap, and polling needs no new dependency
-and behaves the same on macOS, Linux, and network mounts. The dashboard already polls its state
-files the same way (`loom/src/commands/status/web/broadcast.rs:23`). (My call.)
+and behaves the same on macOS, Linux, and network mounts. The dashboard already polls rather than
+subscribing to file events: it reads its state on a 2-second timer and compares snapshots
+(`loom/src/commands/status/web/broadcast.rs:23`). (My call.)
 
 - **Batching.** Changes are held until a walk finds nothing new, then delivered as one batch of
   added, changed, removed, and renamed (same hash, new path) files. A `git pull` that touches
@@ -215,8 +222,8 @@ loom plan summary seal <summary-id>
 `seal` reads `~/.loom/plan/<project-key>/drafts/<summary-id>.md`, checks every body rule above,
 resolves every link (anchors must exist, cited summary sentences must exist and be current),
 computes the hashes, takes the store lock, writes the summary file with its front matter by
-temp file and rename, releases the lock, and deletes the draft. A rule it rejects is printed with
-the offending line, and the agent fixes the draft and seals again. Sealing turns "every claim
+temp file and rename, releases the lock, and deletes the draft and the summary's claim. A rule it
+rejects is printed with the offending line, and the agent fixes the draft and seals again. Sealing turns "every claim
 traces to its source" (vision, principle 3) into a mechanical check.
 
 The **store lock** is an exclusive OS lock on `~/.loom/plan/<project-key>/summaries.lock`, held
@@ -228,19 +235,28 @@ The other subcommands sessions use:
 
 ```text
 loom plan summary status [--json]      every summary's state, stale sentences, claims
-loom plan summary brief <summary-id>…  claims the summaries and prints the rebuild brief
+loom plan summary brief <summary-id>… [--note <text>]  claims the summaries and prints the rebuild brief
 loom plan summary release <summary-id>… gives up claims without sealing
 ```
 
 `brief` creates a **claim** file per summary under `~/.loom/plan/<project-key>/claims/`, naming
 the claiming session, and refuses a summary that already has a claim file. It decides from
-`claims/` alone; whether the claiming session is still alive is the server's check, and the
-server clears the claims of sessions that have ended (section 12). The brief lists, per summary, the source paths, the
-current summary text with each stale sentence marked, which sentences may stay word for word,
-the body rules, the draft path, and the `seal` command. Keeping current sentences word for word
-keeps their ids, so overview links into them survive. All of these work without a running
-server, since they need only the project root and the runtime directory. (My call; section 02
-owns the CLI surface, and these sit beside `loom plan verify`.)
+`claims/` alone. It accepts a current summary as well as an out-of-date one, so a session that
+finds a sentence misstating its source can rebuild it (section 10); `--note <text>` names the
+sentence to replace and why, and the brief prints the note beside that sentence. The brief
+lists, per summary, the source paths, the current summary text with each stale sentence marked,
+which sentences may stay word for word, the body rules, the draft path, and the `seal` command.
+Keeping current sentences word for word keeps their ids, so overview links into them survive.
+
+**Clearing claims.** Whether a claiming session is alive is the server's check. The server
+deletes a session's claim files when that session ends: its registry state becomes Ended or
+Failed, or the process identity check finds the process gone (section 07). A refinement
+subagent's claims are deleted when its `SubagentStop` arrives or when its parent session ends.
+`release` deletes claims early, and `seal` deletes the claim of the summary it writes.
+
+All of these subcommands work without a running server, since they need only the project root
+and the runtime directory. (My call; section 02 owns the CLI surface, and these sit beside
+`loom plan verify`.)
 
 Overviews are sealed after the document summaries they cite, because `seal` refuses an overview
 that links a stale or missing sentence.
@@ -328,12 +344,13 @@ against the subscription's quota.
   when a daemon already polls for the same account, and renders it with the dashboard's
   `web/src/components/quota-meters.tsx`.
 
-## Without tmux or claude
+## In read-only mode
 
-When `tmux` or the `claude` CLI is missing, `loom plan` runs read-only (section 02). The engine
+When `loom plan` runs read-only (section 02, "Missing prerequisites": `tmux` or `claude`
+missing, Claude Code logged out, or the sandbox's prerequisites missing), the engine
 still watches, hashes, and marks every sentence's state, so concept mode shows exactly which
 committed sentences no longer match the documents; it starts no rebuilds and asks nothing. The
-summary panel says why and how to install the missing tool. A missing summary stays missing;
+summary panel says why and how to fix it. A missing summary stays missing;
 section 05 says what concept mode shows in its place. `loom plan summary seal` still works from
 any terminal, so a session started by hand can rebuild summaries without the app.
 

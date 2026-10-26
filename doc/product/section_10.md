@@ -102,8 +102,7 @@ whether the summary or the document is wrong; for a `locked` entry, never edit t
 When the session finds that a summary sentence misstates a document that is right, it leaves the
 document alone and rebuilds that summary through `loom plan summary brief`
 and `seal` (section 04) in the same turn, giving its rebuild subagent the doubted sentence and
-what the source says instead. This needs section 04's `brief` to accept a summary that is
-current, and to take a note naming the sentence to replace. The turn's footer then shows a rebuilt
+what the source says instead through `brief --note`. The turn's footer then shows a rebuilt
 summary and no changed document, which is what happened.
 
 A reviewer who does not want a chat can also press rebuild on the summary (section 04, "Who
@@ -166,9 +165,10 @@ tree, which the plain-Markdown rule (vision, principle 1) makes possible.
 ## Refinement after plans ran
 
 The returning author (vision, Users) comes back after some plans have run. A refinement then
-works on the same documents with one rule: running, done, and retired plans, and the briefs of
-running and done plans, are read-only to sessions as they are in the editor (vision, Decisions,
-"Locked plans"; section 06). Section 12 enforces this for sessions; section 09's guidance tells
+works on the same documents with one rule: the locked set (running, done, and retired plans,
+everything under `doc/plans/archive/`, run reviews `REVIEW-*.md`, and the brief bundles of
+locked plans) is read-only to sessions as it is in the editor (vision, Decisions, "Locked
+plans"; section 06). Section 12 enforces this for sessions; section 09's guidance tells
 the session before it tries.
 
 What a refinement may do instead of editing a locked plan:

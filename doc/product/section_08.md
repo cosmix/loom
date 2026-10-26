@@ -7,7 +7,7 @@ hands it (user messages, assistant text, thinking markers, tool activity, notice
 session state looks, permission prompts, queued messages and interrupts, attachments in the
 composer and in sent messages, what a read-only browser sees, the per-turn list of changed files
 and rebuilt summaries with their cost, how a session started from an offer looks, ending a chat,
-and the error states. Section 07 owns what the server knows; this section owns what the browser
+how a pressure run shows, the Share control, and the error states. Section 07 owns what the server knows; this section owns what the browser
 shows and which commands it sends. What a passage attached to a message means to the session is
 section 10's.
 
@@ -203,17 +203,18 @@ Read-only browsers see the same card without buttons: "Waiting for Dana to decid
 
 After the answer the card collapses to one line:
 
-| Outcome                               | Line                                                    |
-| ------------------------------------- | ------------------------------------------------------- |
-| Allowed                               | "Allowed: Bash"                                         |
-| Denied by the holder                  | "Denied: Bash", and the note                            |
-| Denied after one hour                 | "Denied automatically after one hour: Bash"             |
-| Denied by an interrupt                | "Denied when the turn was stopped: Bash"                |
-| Denied because the session ended or the server is stopping | "Denied: the session was ending"   |
+| Outcome                                         | Line                                         |
+| ----------------------------------------------- | -------------------------------------------- |
+| `allowed`                                       | "Allowed: Bash"                              |
+| `denied`, `holder`                              | "Denied: Bash", and the note                 |
+| `denied`, `timeout`                             | "Denied automatically after one hour: Bash"  |
+| `denied`, `interrupt`                           | "Denied when the turn was stopped: Bash"     |
+| `denied`, `session_ended` or `server_stopping`  | "Denied: the session was ending"             |
+| `denied`, `hook_error`                          | "Denied: the permission hook failed: Bash"   |
 
-Section 07's `permission` item carries `status` (`pending`, `allowed`, `denied`); this panel needs
-two more fields to write these lines: the deny reason (holder, timeout, interrupt, ending) and
-the note.
+The line comes from section 07's `permission` item: its `status` (`pending`, `allowed`,
+`denied`), its `deny_reason`, and its `note`, the holder's deny note. The `summary_session`
+reason never shows here: summary sessions have no chat.
 
 ## Composing and sending
 
@@ -247,8 +248,8 @@ A message sent while the session is Starting, Working, or waiting on a permissio
 queued in the server and shown in a strip above the composer: "Queued (2)", each with its first
 line. The server delivers them one at a time at the next Idle (section 07). Before delivery the
 holder can remove a queued message or take it back into the composer to edit, which removes it
-from the queue. (My call: this adds a "withdraw a queued message" command to section 07's list.)
-Read-only browsers see the count only.
+from the queue through section 07's "withdraw a queued message" command. Read-only browsers see
+the count only.
 
 ### Interrupt
 
@@ -316,7 +317,8 @@ diff at the turn's end. A file the turn changed through `Bash` instead of an edi
 
 A file outside `doc/` that an edit tool changed is listed with a `--tone-warning` glyph and no
 Diff link, since file mode serves only `doc/` (section 06); the note says "outside doc/".
-Section 12 decides whether a planning session can write there at all.
+Sessions can write outside `doc/` only for a pressure run's `planning-omissions.md` (section
+12).
 
 Under a changed product section, the row lists the plans whose `Implements:` line names it, with
 their state; section 10 says what that list is for.
@@ -338,8 +340,7 @@ the main agent and its subagents, the summary rebuild included; the rebuilt-summ
 that part out. The session line shows the session's running total the same way, and, when the
 quota poller (section 04) has a figure, the time left in the five-hour window from
 `quotaLeftText` (`web/src/lib/tokens.ts:57`). (My call: cost is an anti-goal concern, so it shows
-where the spending happens.) This needs section 07's per-turn `tokens` to carry the four-part
-vector section 04 records; today it has input and output only.
+where the spending happens.)
 
 ## Starting a chat
 
@@ -383,13 +384,44 @@ authoring frees at 14:32", from section 07's `away_until`. When the holder retur
 grace period the line returns to normal. When it runs out, the session goes through Ending, and
 any browser can start the next chat.
 
+## Pressure runs
+
+A pressure run (section 11) occupies the panel the way an authoring session does. Starting one
+takes authoring like starting a chat (section 02).
+
+- **Run header.** Under the state line, in place of the session line, a header names the plan,
+  the round, and the step: "Pressure test · `PLAN-foo.md` · round 2 of 3 · /address", with the
+  run's elapsed time and its token total. The state line shows the running step's state as for
+  any session.
+- **Claude steps.** Each Claude step renders as a run of turns, as any session's do, under a
+  divider naming the step and its model. Its footer lists the plan edits the step made, with
+  Diff links (above, "What a turn changed"), and its tokens, teammates included (section 11).
+- **Codex step.** The Codex step is one status item: the model actually running, the elapsed
+  time with a `BusyRoundel` while it runs, and on finish either "Review written" with a link that
+  opens the `codex-<plan file>` report in file mode, or "No review". On a failure the item shows
+  the log's tail as monospace text. Codex tokens are not shown.
+- **Composer.** The holder keeps the composer, and messages go to the foreground Claude step as
+  in a chat. During the Codex step there is no session to deliver to, so Send is disabled with
+  "Codex is reviewing; send when the next Claude step starts". (My call.)
+- **Stop.** Stop is shown for the whole run and stops the whole run (section 11, "Stopping,
+  failure, and server stops"), after confirming: "Stop the pressure test? The plan keeps the
+  edits made so far, and no record is written." (My call: unlike a chat interrupt, stopping a run
+  discards its progress.) There is no End chat while a run lasts.
+- **The end.** The header's last line says how the run ended: "Pressure test recorded", "Stopped
+  by Dana", or "Step 3 failed" with the reason section 11 gives. The run's turns stay readable
+  like an ended chat until the next chat or run starts.
+
+Read-only browsers watch the same panel without the composer and without Stop.
+
 ## Read-only browsers
 
 A browser that does not hold authoring (section 02, "Several people, one author") sees the
 panel exactly as the holder does, live, with these differences:
 
-- no composer: in its place a muted line, "Read-only · Dana is authoring", or, when nobody holds
-  authoring, "New chat" and the primary offer, which take authoring;
+- no composer while another browser holds authoring: in its place a muted line, "Read-only ·
+  Dana is authoring". When nobody holds authoring there is no read-only browser: every browser
+  gets the composer, "New chat", and the primary offer, and the first to use one takes authoring
+  (section 02);
 - no Allow or Deny on permission cards, no Stop, no End chat (the Brief link still opens);
 - queued messages as a count only;
 - no "Add to chat" in the reading column (section 05); in its place "Send to author", whose
@@ -401,9 +433,24 @@ watching". Hovering the count lists them by their browser names, as the header's
 does (section 02). The chat panel shows no typing indicator. (My call: it would need a new
 message lane for little gain.)
 
-When `loom plan` runs in its read-only mode because `tmux` or `claude` is missing or Claude Code
-is not logged in (sections 02, 07), every browser is read-only. The panel shows a `HazardPanel`
-in its warning tone naming the missing piece and how to install or log in, and no offers.
+When `loom plan` runs in its read-only mode (section 02, "Missing prerequisites": `tmux` or
+`claude` missing, Claude Code logged out, or the sandbox's prerequisites missing), every browser
+is read-only. The panel shows a `HazardPanel` in its warning tone naming the missing piece and
+how to install, log in, or fix it, and no offers.
+
+## Share
+
+Every authenticated browser has a **Share** control beside the header's presence list (section
+02). It opens a popover that asks the server for the tokenized link (section 12, "Sharing
+access") and shows it in monospace with a Copy button, under the line section 12 sets for the
+bind:
+
+- on a loopback bind, "Works on this machine. From another machine, tunnel first:" and the
+  `ssh -L <port>:127.0.0.1:<port> <hostname>` command, with its own Copy button;
+- on a remote bind, the link as bound and the plain-HTTP warning in `--tone-warning`.
+
+The popover holds the link only while open. (My call: a link left on screen is a link in a
+screenshot.)
 
 ## Connection and server errors
 
@@ -445,3 +492,5 @@ received, dimmed, with "Last update 3m ago". (My call.)
 - Cost measurement, the summary panel, and quota meters: section 04.
 - The header's presence list and browser naming: section 02.
 - Which paths sessions may write and the access checks on chat commands: section 12.
+- Running a pressure run, its steps, and how it stops: section 11; the share link's access
+  rules: section 12.

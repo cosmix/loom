@@ -204,8 +204,8 @@ text.
   same in reverse. (My call: the link appears where the reader has drilled into one document, so
   level 0 prose stays uncluttered.)
 - An `Implements:` line naming a section that does not exist shows on the plan page as a broken
-  link with the name as written, so the reviewer sees it. Section 03 owns whether that is an
-  error.
+  link with the name as written, so the reviewer sees it. It is a broken reference (section 03),
+  never a checklist gap.
 - A plan with no `Implements:` line shows "Implements: not stated".
 
 Crossing tabs keeps each tab's open runs; the back button returns to the previous page.

@@ -51,7 +51,7 @@ Channels not used:
   in planning sessions only. (My call.)
 - **A `SessionStart` hook's `additionalContext`.** The brief would arrive as a hook message and
   again after every compaction; the appended system prompt already does both, and section 07
-  registers hooks for state only.
+  registers hooks for state and the path guard.
 - **Editing any `CLAUDE.md` or `.claude/settings*.json`.** `loom plan` writes nothing into the
   project outside `doc/` (section 02).
 
@@ -243,9 +243,10 @@ part of plan authoring. The app conventions:
 
 Several missing plans can be written in one chat. The session may hand each plan to its own
 subagent with the metaplan entry, the conventions above, and the decisions the chat made; it
-reviews each plan when the subagent returns. Agent teams are not used: section 07's launch
-environment does not enable them, and the bridge reads subagent transcripts but not teammates'.
-(My call.)
+reviews each plan when the subagent returns. Agent teams are not used in authoring: section 07's
+launch environment does not enable them, and the bridge renders subagent transcripts but never
+teammates'. Pressure sessions do run a team (section 11); there the bridge reads teammate
+transcripts for token counts only. (My call.)
 
 `loom-plan-writer` itself gains the `Implements:` line in its skeleton and its plan template
 (`skills/loom-plan-writer/SKILL.md`, `references/plan-template.md`), so plans written outside the
@@ -406,8 +407,8 @@ the detector exists in the server anyway.) It sits beside `loom plan verify` and
 | `loom-plan:overview` agent            | sonnet             | high               | `[plan] overview_model`, `overview_effort`                   |
 | Pressure steps (section 11)           | as `loom pressure` | as `loom pressure` | `[pressure]` keys                                            |
 
-Every `[plan]` key follows one scheme, `<role>_model` and `<role>_effort`, shared with section 04
-and section 11. The pressure steps keep the existing `[pressure]` keys
+Every `[plan]` key follows one scheme, `<role>_model` and `<role>_effort`, shared with section
+04. The pressure steps keep the existing `[pressure]` keys
 (`doc/loom/knowledge/conventions/model-and-effort-config.md`), so a pressure run started from the
 app and one started from a terminal resolve the same way.
 

@@ -142,8 +142,8 @@ Two routes from section 10 sit on this model:
 - **Restore** and **Restore all** are saves: holder only, refused while a turn runs, each file
   through the save route below with the turn-end hash as the opened hash, so the shared path
   predicate refuses a locked plan, a path outside the write table, and a symlink exactly as it
-  refuses a typed save. The server takes the text to restore from its own record of the turn's
-  starting content, never from the request.
+  refuses a typed save. The server takes the text to restore from the pin section 06 takes when the
+  turn starts (section 07), never from the request.
 
 ### Display names
 
@@ -184,7 +184,7 @@ own drafts and claims in the runtime directory. It may not read:
 | Path                                                          | Authoring                     | Summary          |
 | ------------------------------------------------------------- | ----------------------------- | ---------------- |
 | `doc/`, outside the rows below                                | file tools and commands       | no               |
-| locked plans: `IN_PROGRESS-`, `DONE-`, `RETIRED-` files, `doc/plans/archive/`, and the briefs of a locked plan | no | no |
+| locked set: `IN_PROGRESS-`, `DONE-`, `RETIRED-` plans, `doc/plans/archive/`, run reviews `doc/plans/REVIEW-*.md`, and the briefs of a locked plan | no | no |
 | `doc/loom/knowledge/`                                         | only through `loom knowledge` | no               |
 | `doc/loom/summaries/`                                         | only through `loom plan summary seal` | only through `seal` |
 | `~/.loom/plan/<key>/drafts/`                                  | yes                           | yes              |
@@ -212,7 +212,8 @@ row of the table is enforced where the write can come from.
 **1. The OS sandbox (Bash and its children).** Claude Code always lets a sandboxed command
 write the working directory, so the settings take that back: at spawn the server lists the
 project root and writes a `denyWrite` entry for every top-level entry except `doc`, `.git`
-included. It adds the locked plan files and `doc/plans/archive/` as they exist at spawn, and
+included. It adds the locked plan files, the run reviews in `doc/plans/`, and `doc/plans/archive/` as
+they exist at spawn, and
 grants `allowWrite` on `drafts/`, `claims/` and `summaries.lock`, which the server creates
 before the first session starts. `doc/loom/knowledge/` and `doc/loom/summaries/` stay
 OS-writable because `loom knowledge` and `loom plan summary seal` run as Bash subprocesses
@@ -231,7 +232,8 @@ bind file writes; `Write(...)` rules are inert (`mistakes/sandbox-write-rules-in
   plus `doc/product/**` and `doc/plans/**` whether or not they exist yet, plus `Edit` on the
   top-level files of `doc/`; `Edit` and `Read` on `drafts/**`; `Read` on `claims/**`. No
   allow rule covers `doc/loom/`, so a file-tool write there can never pass silently.
-- `deny`: `Edit` on each locked plan file and on `doc/plans/archive/**`. Deny rules on
+- `deny`: `Edit` on each locked plan file, on `doc/plans/REVIEW-*.md`, and on
+  `doc/plans/archive/**`. Deny rules on
   `doc/loom/knowledge/` or `doc/loom/summaries/` are impossible: an `Edit` deny also becomes
   an OS write deny and would block the two CLIs. No `Read(...)` deny is written anywhere,
   for the reason stage settings never write one
@@ -243,8 +245,8 @@ bind file writes; `Write(...)` rules are inert (`mistakes/sandbox-write-rules-in
 against the current tree:
 
 - a write is allowed only inside the write table's file-tool rows for the session's kind;
-- the locked-plan test is by name (prefix, `archive/`, a brief of a locked plan per section
-  03's brief-to-plan rule), so a plan locked while the session runs is locked to it at once,
+- the locked-plan test is by name (prefix, a `REVIEW-` run review, `archive/`, a brief of a
+  locked plan per section 03's brief-to-plan rule), so a plan locked while the session runs is locked to it at once,
   before the next session refreshes layers 1 and 2;
 - a write whose path has a symlink in any component below `doc/` or the runtime directory is
   refused, as is a target that exists and is not a regular file;
@@ -268,6 +270,7 @@ it `true`). A command runs without a prompt when it is in Claude Code's built-in
 Bash(loom knowledge *)
 Bash(loom plan summary *)
 Bash(loom plan verify *)
+Bash(loom plan check*)
 Bash(loom map *)
 ```
 
@@ -317,7 +320,7 @@ A session must never answer its own permission request. The channels and what cl
 | `--permission-mode`           | `default` (Manual)           | `default` (Manual)                       |
 | Unlisted command or tool      | asks the holder (section 07) | denied at once and logged (section 07)   |
 | File-tool writes              | `doc/` per the table, drafts | drafts only                              |
-| Allowed commands              | the four above               | `loom plan summary *` only               |
+| Allowed commands              | the five above               | `loom plan summary *` only               |
 | `WebSearch`, `WebFetch`       | see above                    | denied                                   |
 | `AskUserQuestion`             | denied (section 07)          | denied                                   |
 
@@ -332,7 +335,10 @@ and hooks; they write drafts and run `seal` like a summary session.
 ### The settings file
 
 An authoring session's `settings.json`, with `<root>` the project root and `<rt>` its runtime
-directory, both absolute (hook registrations omitted):
+directory, both absolute (hook registrations omitted). An entry holding `…` or `<each other
+dir>` stands for the list the server enumerates at spawn: one `denyWrite` entry per top-level
+entry but `doc`, and one `Edit` allow per directory under `doc/` other than `loom`, `product`
+and `plans`.
 
 ```json
 {
@@ -344,7 +350,8 @@ directory, both absolute (hook registrations omitted):
     "network": { "strictAllowlist": true },
     "filesystem": {
       "denyWrite": ["<root>/.git", "<root>/loom", "<root>/README.md", "…every top-level entry but doc",
-                    "<root>/doc/plans/IN_PROGRESS-PLAN-x.md", "<root>/doc/plans/archive"],
+                    "<root>/doc/plans/IN_PROGRESS-PLAN-x.md", "<root>/doc/plans/REVIEW-PLAN-x.md",
+                    "<root>/doc/plans/archive"],
       "allowWrite": ["<rt>/drafts", "<rt>/claims", "<rt>/summaries.lock"],
       "denyRead": ["~/.ssh", "…mandatory_deny_read", "~/.loom/plan", "…token_deny_paths"],
       "allowRead": ["<rt>/drafts", "<rt>/claims", "<rt>/summaries.lock"]
@@ -353,12 +360,13 @@ directory, both absolute (hook registrations omitted):
   "permissions": {
     "defaultMode": "default",
     "disableBypassPermissionsMode": "disable",
-    "allow": ["Edit(//<root>/doc/product/**)", "Edit(//<root>/doc/plans/**)", "Edit(//<root>/doc/*)",
+    "allow": ["Edit(//<root>/doc/product/**)", "Edit(//<root>/doc/plans/**)",
+              "Edit(//<root>/doc/<each other dir>/**)", "Edit(//<root>/doc/*)",
               "Edit(//<rt>/drafts/**)", "Read(//<rt>/drafts/**)", "Read(//<rt>/claims/**)",
               "Bash(loom knowledge *)", "Bash(loom plan summary *)", "Bash(loom plan verify *)",
-              "Bash(loom map *)", "WebSearch"],
+              "Bash(loom plan check*)", "Bash(loom map *)", "WebSearch"],
     "deny": ["AskUserQuestion", "Edit(//<root>/doc/plans/IN_PROGRESS-PLAN-x.md)",
-             "Edit(//<root>/doc/plans/archive/**)"]
+             "Edit(//<root>/doc/plans/REVIEW-*.md)", "Edit(//<root>/doc/plans/archive/**)"]
   },
   "worktree": { "bgIsolation": "none" }
 }
@@ -392,7 +400,7 @@ orchestration-state reads, and plan-authored `sandbox:` config, which planning h
 | Where                         | a worktree (knowledge stages: the checkout)    | the checkout, on the user's branch                        |
 | Write set                     | the worktree, minus control surfaces           | `doc/` and three runtime grants; the rest of the root denied |
 | Permission mode               | `auto`                                         | `default` (Manual)                                        |
-| Sandboxed Bash                | runs unprompted                                | read-only and four loom commands unprompted; the rest asks |
+| Sandboxed Bash                | runs unprompted                                | read-only and five loom commands unprompted; the rest asks |
 | Network                       | the plan's allowed domains                     | none                                                      |
 | File-tool path guards         | `worktree-file-guard.sh`, `credential-guard.sh` | `loom plan hook PreToolUse`, in Rust, sharing the server's predicate |
 | Package caches                | writable                                       | not granted                                               |
@@ -500,9 +508,9 @@ the checks above. Sessions cannot write `.git`, so the server's git reads config
 session wrote.
 
 The summary CLI inside a session reads only `drafts/`, `claims/`, and `summaries.lock` from the
-runtime directory. Checking whether a claim's session is alive is the server's job (section
-04 already has it clear the claims of ended sessions), because session records are not
-readable inside the sandbox.
+runtime directory. Checking whether a claim's session is alive, and deleting the claims of
+ended sessions, is the server's job (section 04, "Clearing claims"), because session records
+are not readable inside the sandbox.
 
 ### Input delivered to the pane
 
@@ -560,6 +568,7 @@ does (`http.rs:154-161`). The new figures are my call.
 | Anyone who can see traffic to a remote bind                | Read the token in transit                                        | Not stopped: plain HTTP. Loopback default, tunnel hint, startup warning and banner                  |
 | A person with the link                                     | Everything the author can do, when authoring is free             | By design; restart `loom plan` to revoke                                                            |
 | A read-only browser                                        | Take authoring while held, answer the holder's permission prompts | The holder is bound to the `HttpOnly` browser id, which no other browser ever receives              |
+| A read-only browser                                        | Use the dashboard link the app offers to control a run           | Its "Open dashboard" URL carries no dashboard token (section 11); it sees what the dashboard's own rules show a tokenless browser, on loopback the dashboard without its write lanes |
 | A planning session, mistaken or steered by injected text   | Edit code, locked plans, the knowledge base or summaries directly | The write table, enforced by the OS sandbox, permission rules, and the planning hook                |
 | The same session                                           | Read credentials or the server token                             | `denyRead` for Bash; the planning hook for file tools                                               |
 | The same session                                           | Send data out                                                    | No sandbox network; `WebFetch` asks the holder; summary sessions have no web tools                  |
