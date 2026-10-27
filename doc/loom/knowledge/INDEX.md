@@ -36,7 +36,7 @@
 | [contract-phase](architecture/contract-phase.md) | Freeze | 226 |
 | [core-abstractions](architecture/core-abstractions.md) | Graph, Stage | 135 |
 | [daemon-launch](architecture/daemon-launch.md) | Launch | 65 |
-| [daemon-owned-commits](architecture/daemon-owned-commits.md) | Daemon commits | 151 |
+| [daemon-owned-commits](architecture/daemon-owned-commits.md) | Commits | 151 |
 | [directory-structure](architecture/directory-structure.md) | Module tree | 50 |
 | [execution-containment](architecture/execution-containment.md) | Containment | 389 |
 | [hook-system](architecture/hook-system.md) | Hooks | 307 |
@@ -48,14 +48,14 @@
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Tick order | 79 |
 | [owned-waits](architecture/owned-waits.md) | Worker waits | 70 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) | Plan fields | 257 |
-| [plan-server](architecture/plan-server.md) | Plan server | 69 |
-| [planning-document-model](architecture/planning-document-model.md) | Planning model | 169 |
+| [plan-server](architecture/plan-server.md) | Plan server | 119 |
+| [planning-document-model](architecture/planning-document-model.md) | Doc model | 169 |
 | [quota-poller](architecture/quota-poller.md) | Quota polling | 35 |
 | [remote-control](architecture/remote-control.md) | Capability | 81 |
 | [security-and-isolation](architecture/security-and-isolation.md) | Isolation | 186 |
 | [signal-generation](architecture/signal-generation.md) | Signals | 241 |
 | [skill-catalog](architecture/skill-catalog.md) | Skill catalog | 155 |
-| [source-graph](architecture/source-graph.md) | Graph contract | 369 |
+| [source-graph](architecture/source-graph.md) | Contract | 369 |
 | [source-graph-build](architecture/source-graph-build.md) | Graph builder | 128 |
 | [source-graph-evaluation](architecture/source-graph-evaluation.md) | Evaluator | 68 |
 | [source-graph-resolution](architecture/source-graph-resolution.md) | Bindings | 123 |
@@ -95,7 +95,7 @@
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Sandbox | 140 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) | Channels | 191 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage states | 202 |
-| [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out, teams | 99 |
+| [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out | 99 |
 
 ### conventions
 
@@ -108,6 +108,7 @@
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, build | 235 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance | 139 |
 | [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 98 |
+| [plan-web](conventions/plan-web.md) | Plan web rules | 24 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard CSS | 51 |
 
@@ -133,13 +134,13 @@
 | [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork, threads | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) | Two daemons | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | Test orphans | 55 |
-| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine drift | 392 |
+| [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine | 392 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | Hook shells | 345 |
-| [knowledge-base-drift](mistakes/knowledge-base-drift.md) | Stale knowledge | 259 |
+| [knowledge-base-drift](mistakes/knowledge-base-drift.md) | Stale docs | 259 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | CLI invariants | 206 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Write channel | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Ledger TUI | 84 |
-| [live-state-pollution](mistakes/live-state-pollution.md) | Test pollution | 117 |
+| [live-state-pollution](mistakes/live-state-pollution.md) | Pollution | 117 |
 | [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay leaks | 37 |
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | Cleanup bug | 171 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Operator git | 70 |
@@ -147,11 +148,11 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared state | 341 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merged flag | 337 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins, ledgers | 322 |
-| [plan-server-delivery](mistakes/plan-server-delivery.md) | Plan-server misses | 64 |
+| [plan-server-delivery](mistakes/plan-server-delivery.md) | Server misses | 112 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging guard | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | Rename misses | 312 |
 | [release-feature-review](mistakes/release-feature-review.md) | Release gaps | 13 |
-| [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Sandbox config | 391 |
+| [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Settings | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | Hooks dir | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Work state | 299 |
 | [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Tool failures | 389 |
@@ -168,12 +169,12 @@
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Watch traps | 377 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation | 369 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests | 332 |
-| [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) | Fixture sweeps | 145 |
+| [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) | Fixtures | 145 |
 | [testing-and-lint](mistakes/testing-and-lint.md) | Lint, testing | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Vacuous tests | 392 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux failures | 146 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Dev server | 76 |
-| [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Untrusted data | 252 |
+| [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Untrusted | 252 |
 | [verification-harness](mistakes/verification-harness.md) | Harness doubt | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 misses | 396 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | Visibility | 141 |
@@ -192,7 +193,7 @@
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 naming | 49 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | CLI gaps | 103 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge edges | 126 |
-| [planning-document-model-followups](concerns/planning-document-model-followups.md) | Planning followups | 46 |
+| [planning-document-model-followups](concerns/planning-document-model-followups.md) | Planning TODO | 46 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Platform gaps | 210 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Orphans, tmux | 154 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Confinement | 384 |

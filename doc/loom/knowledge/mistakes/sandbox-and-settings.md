@@ -1,6 +1,6 @@
 # Sandbox And Settings
 
-> Sandbox config
+> Settings
 
 ## Sandbox: Contradictory Path Rules
 
