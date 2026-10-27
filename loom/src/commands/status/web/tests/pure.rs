@@ -15,12 +15,12 @@ use crate::commands::status::data::StatusData;
 use crate::commands::status::web::broadcast::{self, DaemonStep, SUBSCRIBER_QUEUE_DEPTH};
 use crate::commands::status::web::connection::{self, Route};
 use crate::commands::status::web::model::{SnapshotSource, WebSnapshot};
-use crate::commands::status::web::{
-    adopt_for, assets, http, wildcard_bootstrap_lines, DEFAULT_PORT,
-};
+use crate::commands::status::web::startup::wildcard_bootstrap_lines;
+use crate::commands::status::web::{adopt_for, DEFAULT_PORT};
 use crate::daemon::Response;
 use crate::fs::tmux_tmpdir::{adopt_recorded_tmux_tmpdir, TmuxTmpdirAdoption};
 use crate::fs::work_dir::WorkDir;
+use crate::web_server::{assets, http};
 
 fn hold_lock(path: &Path) -> std::fs::File {
     let lock = OpenOptions::new()

@@ -1,20 +1,22 @@
 //! HTTP handling for `/api/config`: the gates a write must clear, and the
 //! responses both methods write.
 //!
-//! The gate order is deliberate. `Host` is already behind us — `connection`
-//! applies it to every request ahead of routing — so this runs `Origin`, then
-//! the dashboard cookie (remote posture only), then the CSRF token, then the
-//! framing checks. The access gates come first so a request that has no
-//! business writing is refused before the server reads a byte of its body.
+//! The gate order is deliberate. `Host` is already behind us —
+//! `web_server::serve` applies it to every request ahead of routing — so this
+//! runs `Origin`, then the dashboard cookie (remote posture only), then the
+//! CSRF token, then the framing checks. The access gates come first so a
+//! request that has no business writing is refused before the server reads a
+//! byte of its body.
 //! Reads stay open: a remote bind lets anyone who reaches it view the
 //! settings, and only writing asks for the cookie.
 
 use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 
-use super::super::access::{AccessPolicy, OriginRequirement};
-use super::super::connection::{drain_pending, respond};
-use super::super::http::{self, RequestHead};
+use crate::web_server::access::{AccessPolicy, OriginRequirement};
+use crate::web_server::connection::{drain_pending, respond};
+use crate::web_server::http::{self, RequestHead};
+
 use super::{csrf, error_body};
 
 /// The JSON content type every response on this route carries.

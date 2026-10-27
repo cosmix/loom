@@ -40,6 +40,7 @@ pub mod utils;
 pub mod validation;
 pub mod verify;
 pub mod version;
+pub mod web_server;
 pub mod yaml;
 
 /// ASCII art logo for loom CLI
