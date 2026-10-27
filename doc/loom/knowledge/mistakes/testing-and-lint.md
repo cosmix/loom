@@ -1,6 +1,6 @@
 # Testing And Lint
 
-> Lint, testing
+> Testing
 
 ## Test Code: Struct Init Without Default
 

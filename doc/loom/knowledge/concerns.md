@@ -220,7 +220,7 @@ The plan 4 harness printed a stop-rule FAIL on all three recorded pairs (guard-c
 
 ## Planning Document Model Open Items
 
-Unapplied reviewer suggestions for `loom::planning`: heading and cross-reference parsing edges, refresh and lock-scan cost, symlink and non-UTF-8 handling in `LockedSet::scan` and `collect_inputs`, Unicode folding in the locked-name rules, and untested branches.
+Unapplied reviewer suggestions for `loom::planning`: heading and cross-reference parsing edges, refresh and lock-scan cost, symlink and non-UTF-8 handling in `LockedSet::scan` and `collect_inputs`, Unicode folding in the locked-name rules, and untested branches; plus the summary store's open robustness items (store lock timeout, unreadable summary files, claim-removal failure after a seal) and test gaps.
 
 → [Planning Document Model Followups](concerns/planning-document-model-followups.md)
 

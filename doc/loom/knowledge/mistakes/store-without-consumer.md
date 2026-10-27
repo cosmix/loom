@@ -1,6 +1,6 @@
 # Store Without Consumer
 
-> Unread stores
+> Unread
 
 ## What Happened
 

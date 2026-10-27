@@ -1,6 +1,6 @@
 # Pre Commit Hardening
 
-> Staging guard
+> Staging
 
 Design decisions and edge cases behind the pre-commit partial-staging guard, and how the black-box regression settled disputed claims about git's defaults.
 
