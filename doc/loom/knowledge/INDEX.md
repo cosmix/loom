@@ -60,7 +60,7 @@
 | [source-graph-evaluation](architecture/source-graph-evaluation.md) | Evaluator | 68 |
 | [source-graph-resolution](architecture/source-graph-resolution.md) | Bindings | 123 |
 | [source-graph-view](architecture/source-graph-view.md) | Resolved view | 76 |
-| [status-data-model](architecture/status-data-model.md) | Status fields | 237 |
+| [status-data-model](architecture/status-data-model.md) | Status fields | 239 |
 | [summary-store](architecture/summary-store.md) | Summary store: format, states, seal, claims | 146 |
 | [target-guard](architecture/target-guard.md) | Accepted tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) | Backends | 280 |
@@ -69,7 +69,7 @@
 | [token-flow-sources](architecture/token-flow-sources.md) | Token flow | 75 |
 | [usage-evidence](architecture/usage-evidence.md) | Evidence | 127 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | v2 gates | 238 |
-| [web-dashboard](architecture/web-dashboard.md) | status --web | 101 |
+| [web-dashboard](architecture/web-dashboard.md) | status --web | 103 |
 | [web-terminal](architecture/web-terminal.md) | Terminals | 181 |
 
 ### entry-points
@@ -108,7 +108,7 @@
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute rules | 119 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, build | 235 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance | 139 |
-| [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 119 |
+| [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 123 |
 | [plan-web](conventions/plan-web.md) | Plan web | 24 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard CSS | 51 |
@@ -120,7 +120,7 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Deadlock | 220 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | Ambient trust | 156 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Briefs, bugs | 315 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift | 343 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift | 353 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) | Direct mode | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Rogue wrapper | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Codex reader | 102 |
@@ -166,7 +166,7 @@
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle detect | 35 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Status | 75 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
-| [subagent-briefing](mistakes/subagent-briefing.md) | Briefs | 376 |
+| [subagent-briefing](mistakes/subagent-briefing.md) | Briefs | 386 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Watch traps | 387 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation | 369 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests | 332 |
@@ -198,7 +198,7 @@
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge edges | 126 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) | Planning TODO | 98 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Platform gaps | 210 |
-| [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Orphans, tmux | 154 |
+| [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Orphans, tmux | 156 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Confinement | 384 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Graph limits | 79 |
 | [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Graph backlog | 327 |
