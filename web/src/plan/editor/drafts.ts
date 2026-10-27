@@ -1,3 +1,4 @@
+import { repoRel } from "@/plan/files/address";
 import { serverInfoAtom } from "@/plan/state/atoms";
 import { store } from "@/state/store";
 
@@ -50,6 +51,7 @@ function readEntries(storage: Storage): Entry[] {
   return entries.sort((a, b) => a.draft.savedAt - b.draft.savedAt);
 }
 
+// Paths are keyed repo-relative, so `product/a.md` and `doc/product/a.md` share their drafts.
 export function loadDraft(path: string, openedHash: string): string | null {
   return findDrafts(path).find((draft) => draft.openedHash === openedHash)?.text ?? null;
 }
@@ -58,8 +60,9 @@ export function findDrafts(path: string): Draft[] {
   try {
     const project = projectKey();
     if (!project) return [];
+    const rel = repoRel(path);
     return readEntries(localStorage)
-      .filter(({ draft }) => draft.projectKey === project && draft.path === path)
+      .filter(({ draft }) => draft.projectKey === project && draft.path === rel)
       .reverse()
       .map(({ draft: { openedHash, text, savedAt } }) => ({ openedHash, text, savedAt }));
   } catch {
@@ -72,15 +75,17 @@ export function clearDrafts(path: string): void {
     const project = projectKey();
     if (!project) return;
     const storage = localStorage;
+    const rel = repoRel(path);
     for (const { key, draft } of readEntries(storage)) {
-      if (draft.projectKey === project && draft.path === path) storage.removeItem(key);
+      if (draft.projectKey === project && draft.path === rel) storage.removeItem(key);
     }
   } catch {
     // Storage may be blocked by the browser.
   }
 }
 
-export function saveDraft(path: string, openedHash: string, text: string): SaveDraftResult {
+export function saveDraft(docPath: string, openedHash: string, text: string): SaveDraftResult {
+  const path = repoRel(docPath);
   const bytes = encoder.encode(text).length;
   if (bytes > MAX_DRAFT) return "too_large";
   try {

@@ -86,13 +86,14 @@ export function DiffView({
       ref={wrapper}
       className="flex min-h-0 flex-1 flex-col"
       data-diff-layout={wide ? "split" : "unified"}
+      role="group"
       aria-label={`Diff of ${path}`}
     >
       {phase === "loading" ? (
-        <p className="px-3 py-2 text-sm text-muted-foreground">Loading diff</p>
+        <p className="px-3 py-2 text-[13px] text-muted-foreground">Loading diff</p>
       ) : null}
       {phase === "failed" ? (
-        <p role="alert" className="px-3 py-2 text-sm text-destructive">
+        <p role="alert" className="px-3 py-2 text-[13px] text-destructive">
           The diff failed to load. Reload the page to try again.
         </p>
       ) : null}

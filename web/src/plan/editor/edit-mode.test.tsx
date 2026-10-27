@@ -7,10 +7,12 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import docFixture from "@/plan/api/fixtures/files-doc.json";
 import invalidFixture from "@/plan/api/fixtures/files-save-invalid.json";
 import { docViewSchema, validationViewSchema, type DocView } from "@/plan/api/schema-files";
+import { docRel } from "@/plan/files/address";
 import { docChangedAtom, validationAtom } from "@/plan/files/atoms";
 import { authoringAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
 import { store } from "@/state/store";
 
+import { findDrafts, loadDraft } from "./drafts";
 import { EditMode } from "./edit-mode";
 import { requestEditAtom } from "./request-edit";
 
@@ -268,5 +270,71 @@ describe("EditMode", () => {
     act(() => store.set(docChangedAtom, { [doc.path]: "sha256:other" }));
     expect(screen.getByTestId("source-editor")).toBe(editor);
     expect(editor.value).toBe("typed");
+  });
+});
+
+describe("EditMode drafts and requests", () => {
+  it("writes one draft after typing pauses instead of one per keystroke", async () => {
+    renderEdit();
+    const editor = await source();
+    const setItem = vi.spyOn(Storage.prototype, "setItem");
+    for (const value of ["a", "ab", "abc"]) fireEvent.input(editor, { target: { value } });
+    expect(setItem).not.toHaveBeenCalled();
+    await waitFor(() => expect(loadDraft(doc.path, doc.hash)).toBe("abc"), { timeout: 2000 });
+    expect(setItem).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the pending draft when the editor goes away", async () => {
+    renderEdit();
+    fireEvent.input(await source(), { target: { value: "kept" } });
+    cleanup();
+    expect(loadDraft(doc.path, doc.hash)).toBe("kept");
+  });
+
+  it("does not bring a discarded draft back", async () => {
+    const router = renderEdit();
+    fireEvent.input(await source(), { target: { value: "unsaved" } });
+    fireEvent.click(screen.getByRole("button", { name: "Done" }));
+    fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
+    await waitFor(() => expect(router.state.location.search).toBe(""));
+    await new Promise((resolve) => setTimeout(resolve, 700));
+    expect(findDrafts(doc.path)).toEqual([]);
+  });
+
+  it("opens the merge for a request that names the document doc-relative", async () => {
+    store.set(requestEditAtom, {
+      path: docRel(doc.path),
+      text: "restored",
+      openedHash: "sha256:old",
+    });
+    renderEdit();
+    expect(((await screen.findByTestId("merge-right")) as HTMLTextAreaElement).value).toBe(
+      "restored",
+    );
+    await waitFor(() => expect(store.get(requestEditAtom)).toBeNull());
+  });
+
+  it("opens the merge read-only while another browser holds authoring", async () => {
+    store.set(authoringAtom, { holder: OTHER });
+    store.set(requestEditAtom, { path: doc.path, text: "restored", openedHash: "sha256:old" });
+    const created = vi.spyOn(fake, "createMergeView");
+    renderEdit();
+    await screen.findByTestId("merge-right");
+    expect(created).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ readOnly: true }),
+    );
+  });
+
+  it("moves focus into the unsaved-changes choice and back when it closes", async () => {
+    renderEdit();
+    fireEvent.input(await source(), { target: { value: "unsaved" } });
+    const done = screen.getByRole("button", { name: "Done" });
+    done.focus();
+    fireEvent.click(done);
+    const save = await screen.findByRole("button", { name: "Save and close" });
+    expect(document.activeElement).toBe(save);
+    fireEvent.click(screen.getByRole("button", { name: "Keep editing" }));
+    expect(document.activeElement).toBe(done);
   });
 });

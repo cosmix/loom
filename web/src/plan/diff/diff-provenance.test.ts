@@ -56,3 +56,22 @@ describe("diff provenance", () => {
     expect(provenance(selection, { start: 1.5, end: 2 })).toBeNull();
   });
 });
+
+describe("diff provenance sides", () => {
+  it("anchors the after side to the current sections and leaves the before side unanchored", () => {
+    const provenance = diffProvenance("doc/plan.md", sections);
+    const selection = select("text");
+    const draft = (side?: "before" | "after") => ({
+      kind: "source",
+      path: "doc/plan.md",
+      anchor: side === "before" ? null : "child",
+      text: "text",
+      lines: { start: 6, end: 6 },
+      stageId: null,
+      hash: null,
+    });
+    expect(provenance(selection, { start: 6, end: 6, side: "after" })).toEqual(draft("after"));
+    expect(provenance(selection, { start: 6, end: 6 })).toEqual(draft());
+    expect(provenance(selection, { start: 6, end: 6, side: "before" })).toEqual(draft("before"));
+  });
+});

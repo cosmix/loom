@@ -46,7 +46,9 @@ export function saveFlow(state: SaveFlowState, event: SaveFlowEvent): SaveFlowSt
         ...state,
         text: event.text,
         clearDrafts: false,
-        status: state.status === "saved" ? "idle" : state.status,
+        // An invalid verdict covers the text that was submitted; "Save with errors" must not
+        // force-save text typed since, so editing sends the user back through a validated save.
+        status: state.status === "saved" || state.status === "invalid" ? "idle" : state.status,
       };
     case "save":
       if (state.status === "saving") return state;

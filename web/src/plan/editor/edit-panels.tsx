@@ -1,4 +1,4 @@
-import type { JSX } from "react";
+import { useEffect, useRef, type JSX } from "react";
 
 import { Button } from "@/components/ui/button";
 import { DisabledReason } from "@/plan/ui/disabled-reason";
@@ -6,7 +6,7 @@ import { DisabledReason } from "@/plan/ui/disabled-reason";
 export function GonePanel(props: { what: string; text: string; onDiscard(): void }): JSX.Element {
   return (
     <div className="flex min-h-0 flex-1 flex-col gap-2 px-4 py-3">
-      <p role="alert" className="text-sm">
+      <p role="alert" className="text-[13px]">
         This file was {props.what}; your text is kept
       </p>
       <div className="flex gap-2">
@@ -46,13 +46,32 @@ export function Notes(props: { lines: (string | null)[] }): JSX.Element {
   );
 }
 
+/** Moves focus into the choice while it is open and gives it back to where it came from. */
+function useFocusFirstButton() {
+  const ref = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const previous = document.activeElement;
+    ref.current?.querySelector("button")?.focus();
+    return () => {
+      if (previous instanceof HTMLElement && previous.isConnected) previous.focus();
+    };
+  }, []);
+  return ref;
+}
+
 export function LeaveChoice(props: {
   onSave(): void;
   onDiscard(): void;
   onKeep(): void;
 }): JSX.Element {
+  const ref = useFocusFirstButton();
   return (
-    <div role="alertdialog" aria-label="Unsaved changes" className="flex flex-wrap gap-2 px-4 py-2">
+    <div
+      ref={ref}
+      role="alertdialog"
+      aria-label="Unsaved changes"
+      className="flex flex-wrap gap-2 px-4 py-2"
+    >
       <span className="text-[13px]">You have unsaved changes.</span>
       <Button type="button" size="sm" onClick={props.onSave}>
         Save and close
@@ -75,10 +94,10 @@ export function EditToolbar(props: {
 }): JSX.Element {
   return (
     <div className="flex flex-wrap items-start gap-2 border-b border-hairline px-4 py-2">
-      <DisabledReason reason={props.blockReason} onClick={props.onSave}>
+      <DisabledReason reason={props.blockReason} onClick={props.onSave} size="sm">
         Save
       </DisabledReason>
-      <Button type="button" variant="outline" onClick={props.onDone}>
+      <Button type="button" variant="outline" size="sm" onClick={props.onDone}>
         Done
       </Button>
       {props.saving && (
