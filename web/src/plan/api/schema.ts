@@ -1,4 +1,5 @@
 import { z } from "@/api/zod";
+import { conceptMessageSchemas } from "./schema-concept";
 import { filesMessageSchemas } from "./schema-files";
 
 export const PREREQ_KINDS = ["tmux", "claude", "claude_login", "sandbox"] as const;
@@ -28,6 +29,7 @@ export const PLAN_MESSAGE_TYPES = [
   "tree_changed",
   "doc_changed",
   "validation",
+  "concept_changed",
 ] as const;
 export const CLIENT_MESSAGE_TYPES = ["set_name", "reading"] as const;
 
@@ -117,6 +119,7 @@ export const planMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("server_stopping") }),
   z.strictObject({ type: z.literal("refused"), ...refusedSchema.shape }),
   ...filesMessageSchemas,
+  ...conceptMessageSchemas,
 ]);
 export const clientMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("set_name"), name: z.string() }),

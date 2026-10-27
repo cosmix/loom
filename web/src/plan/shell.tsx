@@ -4,6 +4,7 @@ import { Outlet, useLocation } from "react-router";
 
 import { ErrorBoundary } from "@/aurora-ui/feedback/ErrorBoundary";
 import { ShortcutGroups } from "@/components/help-shortcuts";
+import { isTyping } from "@/lib/is-typing";
 import {
   Dialog,
   DialogContent,
@@ -18,11 +19,6 @@ import { PlanHeader } from "@/plan/header/header";
 import { PLAN_HELP_KEYS } from "@/plan/help-keys";
 import { unauthorizedAtom } from "@/plan/state/atoms";
 import { Unauthorized } from "@/plan/unauthorized";
-
-function isTyping(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
-}
 
 function PlanHelp({
   open,
