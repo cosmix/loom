@@ -312,6 +312,23 @@ describe("long text", () => {
 });
 
 describe("the details disclosure", () => {
+  it("shows orchestrator usage and tokens while folded", () => {
+    renderModal(
+      fixtureStage("server", {
+        status: "executing",
+        context_tokens: 78000,
+        context_ceiling_tokens: 200000,
+      }),
+      [],
+    );
+
+    const toggle = screen.getByRole("button", { name: "details" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(within(toggle).getByText("orchestrator")).toBeTruthy();
+    expect(within(toggle).getByText(`${(78000).toLocaleString()} tokens`)).toBeTruthy();
+    expect(within(toggle).getByRole("img", { name: "context 39% of ceiling" })).toBeTruthy();
+  });
+
   it("stays folded until opened, then lists the sections", () => {
     renderModal(fixtureStage("server"), []);
 

@@ -1,14 +1,15 @@
 import { ChevronRight, Fingerprint } from "lucide-react";
-import { useId, useState } from "react";
+import { useId, useState, type ReactNode } from "react";
 
 import type { StageSummary } from "@/api/schema";
-import { yesNo } from "@/components/stage-detail";
+import { ContextMeter } from "@/components/context-meter";
+import { tokens, yesNo } from "@/components/stage-detail";
 import { MERGE_STATES, StageSectionGrid } from "@/components/stage-sections";
 import { formatElapsed } from "@/lib/format";
 
 interface Fact {
   label: string;
-  value: string;
+  value: ReactNode;
 }
 
 /// The handful of fields the folded disclosure lists on its face.
@@ -17,6 +18,17 @@ function facts(stage: StageSummary, level: number | null): Fact[] {
     { label: "type", value: stage.stage_type },
     level === null ? null : { label: "level", value: String(level) },
     { label: "model", value: stage.model },
+    stage.context_tokens === null
+      ? null
+      : {
+          label: "orchestrator",
+          value: (
+            <span className="inline-flex flex-wrap items-center gap-2">
+              <ContextMeter stage={stage} />
+              <span>{tokens(stage.context_tokens)} tokens</span>
+            </span>
+          ),
+        },
     stage.elapsed_secs === null
       ? null
       : { label: "elapsed", value: formatElapsed(stage.elapsed_secs) },
