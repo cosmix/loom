@@ -187,3 +187,9 @@ full-run failure that passes alone as a timing flake and say so; commit a rebuil
 diffs it; run `oxfmt` on every file a commit touches. In a stage session the commit-filter hook blocks any command text
 containing `git commit`, even in a scratch fixture repo, so prove a no-diff reseal with `git add` and
 `git diff` between index and worktree.
+
+## Moving Tests Into a New File Raises a Test-Integrity Event (2026-10-28)
+
+**What happened:** shrinking an over-400-line test file by moving whole tests verbatim into a new test file raised a `TI-edit-<file>` event (assertion lines removed from a file that exists at base). The rule that a moved line does not count does not follow lines across files.
+
+**Prevention:** to shrink a test file, extract non-assertion setup into helpers and leave the tests in place.

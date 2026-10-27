@@ -1,6 +1,6 @@
 # Commit Convention
 
-> Commit format
+> Format
 
 ## Required Commit Practice
 

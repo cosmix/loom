@@ -229,3 +229,9 @@ Unapplied reviewer suggestions for `loom::planning`: heading and cross-reference
 A new stage worktree has no build state, so its first compile or install is cold in every ecosystem; the contract freeze pays it first (about 2 min 20 s of a 3.5-minute contract phase on loom). sccache is gated off in sandboxed sessions and stripped from confined host jobs, so nothing is shared. Options, constraints (parallel stages, all languages, macOS and Linux, no copies, no worktree pool) and next steps:
 
 → [Every Stage Worktree Builds From Cold](concerns/worktree-build-cold-start.md)
+
+## Concept Mode Open Items
+
+Reviewer suggestions left open on concept mode: engine-failure and claims-fallback paths that name no pages or call no listener, a summary hash read apart from its evaluation, accessibility and path-rendering gaps, passage provenance scope, and presence not wired to concept pages.
+
+→ [Planning Document Model Followups](concerns/planning-document-model-followups.md#concept-mode-server-gaps)

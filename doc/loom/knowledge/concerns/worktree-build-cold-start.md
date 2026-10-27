@@ -1,6 +1,6 @@
 # Worktree Build Cold Start
 
-> Cold builds
+> Cold
 
 ## Every Stage Worktree Builds From Cold, and the Contract Freeze Pays First
 
