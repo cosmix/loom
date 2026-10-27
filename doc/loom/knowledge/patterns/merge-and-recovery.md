@@ -31,7 +31,7 @@ Key invariant: the original execution session MUST exit when a merge conflict is
 
 **Daemon ordering invariant:** Reconciliation runs BEFORE `sync_graph_with_stage_files` AND BEFORE `recover_orphaned_sessions`. Recovery deletes orphaned merge session files; attribution depends on their metadata. Sync reads stage files into the graph; if reconcile flips disk state AFTER sync, the graph keeps the stale view and would queue dependents based on a phantom merge.
 
-**Daemon-off CLI parity:** `loom stage complete` on a `Completed + merged=true` stage with an active main-repo merge attributed to it triggers the same revert the daemon performs (`Completed → MergeConflict + merged=false + merge_conflict=true`) before spawning the resolver. The router's `RevertAndSpawnResolver` arm encodes this; persistence is the caller's responsibility, BEFORE spawn so `spawn_merge_resolver`'s status contract is satisfied.
+**Daemon-off CLI parity:** `loom stage complete` on a Completed, unmerged stage with an active main-repo merge attributed to it performs the same move the daemon does (`Completed → MergeConflict + merge_conflict=true`) before spawning the resolver. The router's `RevertAndSpawnResolver` arm encodes this; the caller persists it BEFORE the spawn so `spawn_merge_resolver`'s status contract holds. A final stage (Stage::is_final_merged: Completed with `merged` or `merge_assumed`) is refused instead (`complete_route.rs::final_stage_refusal`), and `reconcile_main_repo_active_merge` leaves it unchanged (`AttributedNoOp`).
 
 ## Attribution-Aware Recovery
 

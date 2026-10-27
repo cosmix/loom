@@ -82,7 +82,7 @@ test ([Sandbox gaps](../concerns/sandbox-and-confinement-gaps.md)).
 `persist_merge_blocked` is the writer for the infrastructure outcomes and `route_to_human_review`
 for the review outcome; both use `force_status_with_reason` because `Completed` has no legal exits.
 Nothing on the daemon path writes `merged: true` without `is_ancestor_of` returning true. The
-daemon's ancestry settles of a stage (the sweep and phantom-merge revert in `sync_graph_with_stage_files`, the
+daemon's ancestry settles of a stage (the sweep in `sync_graph_with_stage_files`, which settles only Completed stages not yet merged, the
 `NoWorktree` finalize in `merge_handler.rs`) tests against the guard's accepted tip through
 `merged_into_accepted`, never the live ref: a ref any session could move would mark a stage merged without its work
 landing; other consumers still read the live ref ([open list](target-guard.md#unimplemented-review-suggestions)). The auto-merge precheck records `TargetHeld` before the gate, the zero-commits route and the finalize.

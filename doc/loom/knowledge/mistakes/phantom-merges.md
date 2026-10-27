@@ -335,3 +335,13 @@ stage that cannot cite a question is fragmentation.
 **Fix:** one stage, foundation edit first, then fan out. Derive the foundation sweep from
 `cargo build`, never from the plan's hand-counted file table — in execution the foundation step had
 to fix three `Stage` struct literals, not the one the plan named, before fan-out could compile.
+
+## Merge Re-Verification Demoted an Operator's Assumed-Merged Stage (2026-10-27)
+
+**What happened:** `integration-verify` was completed with `--force-unsafe --assume-merged`. While the daemon was stopped, `feat-planner-ui` was fast-forwarded outside loom onto the stage's branch, so the target held. At startup `verify_merged_true_or_revert` re-checked the stage against the accepted tip (`ec0f59e0`), which lacked the commit, logged "Phantom merge detected at sync" and reverted `merged`. The stage became an auto-merge candidate again, and `try_auto_merge` hit the hold and forced Completed -> MergeBlocked, although the move that caused the hold carried the stage's own commit.
+
+**Why:** the phantom-merge protection re-verified every merged stage on every sync, operator assertions included, and verified against the accepted tip rather than accepting that a completed, merged stage is done.
+
+**Prevention:** a Completed stage with `merged` or `merge_assumed` is final ([A Completed, Merged Stage Is Final](../conventions/config-plan-and-gate-rules.md#a-completed-merged-stage-is-final)): protection belongs on the writers of `merged = true`, never on re-checking a final stage.
+
+**Fix:** `Stage::is_final_merged` gates sync, auto-merge, attribution, resolver exit, `ensure_unmerged` and the dependency scheduler; `verify_merged_true_or_revert` is deleted.
