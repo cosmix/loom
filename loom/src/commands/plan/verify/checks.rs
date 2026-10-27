@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use super::{build_levels_output, JsonError, JsonStageLevel, JsonWarnings};
+use super::report::{build_levels_output, VerifyError, VerifyStageLevel, VerifyWarnings};
 use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::schema::{
     check_knowledge_recommendations, check_sandbox_recommendations, detect_stage_type,
@@ -14,9 +14,9 @@ use crate::plan::schema::{
 pub(super) fn soft_checks(
     metadata: &LoomMetadata,
     repo_root: Option<&Path>,
-    hard_errors: &mut Vec<JsonError>,
+    hard_errors: &mut Vec<VerifyError>,
     notes: &mut Vec<String>,
-) -> (JsonWarnings, Vec<Vec<JsonStageLevel>>) {
+) -> (VerifyWarnings, Vec<Vec<VerifyStageLevel>>) {
     let stages = &metadata.loom.stages;
     hard_errors.extend(sandbox_policy_errors(metadata));
     let context = v2_lints::LintContext {
@@ -25,8 +25,8 @@ pub(super) fn soft_checks(
     };
     let lints = v2_lints::run(&context, notes);
     let (lint_errs, lint_warns) = split_lint_findings(metadata.loom.version, lints);
-    hard_errors.extend(lint_errs.into_iter().map(JsonError::from));
-    let mut warnings = JsonWarnings {
+    hard_errors.extend(lint_errs.into_iter().map(VerifyError::from));
+    let mut warnings = VerifyWarnings {
         structural: validate_structural_preflight(stages, repo_root),
         knowledge: check_knowledge_recommendations(stages, repo_root),
         sandbox: check_sandbox_recommendations(metadata),
@@ -46,7 +46,7 @@ pub(super) fn soft_checks(
 /// validate_config / validate_emittable), so a plan `loom init` would refuse
 /// is not reported clean here. These are errors, not warnings — init already
 /// rejects these plans outright.
-fn sandbox_policy_errors(metadata: &LoomMetadata) -> Vec<JsonError> {
+fn sandbox_policy_errors(metadata: &LoomMetadata) -> Vec<VerifyError> {
     use crate::plan::schema::stage_host_path_errors;
     let mut errors = Vec::new();
     for stage in &metadata.loom.stages {
@@ -63,7 +63,7 @@ fn sandbox_policy_errors(metadata: &LoomMetadata) -> Vec<JsonError> {
         if let Err(e) = crate::sandbox::validate_emittable(&merged) {
             messages.push(e.to_string());
         }
-        errors.extend(messages.into_iter().map(|message| JsonError {
+        errors.extend(messages.into_iter().map(|message| VerifyError {
             stage_id: Some(stage.id.clone()),
             message,
         }));
@@ -72,9 +72,9 @@ fn sandbox_policy_errors(metadata: &LoomMetadata) -> Vec<JsonError> {
 }
 
 /// DAG cycle detection, then the stages grouped by execution level.
-fn dag_levels(stages: &[StageDefinition]) -> Result<Vec<Vec<JsonStageLevel>>, JsonError> {
+fn dag_levels(stages: &[StageDefinition]) -> Result<Vec<Vec<VerifyStageLevel>>, VerifyError> {
     if let Err(e) = crate::plan::graph::ExecutionGraph::build(stages.to_vec()) {
-        return Err(JsonError {
+        return Err(VerifyError {
             stage_id: None,
             message: e.to_string(),
         });
