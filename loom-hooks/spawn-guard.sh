@@ -242,6 +242,7 @@ NEEDS_REWRITE=0
 WARN_ESCALATION=""
 RESOLVED_TIER=""
 RESOLVE_SOURCE=""
+WARN_REVIEWER=""
 
 if [[ -z "$MODEL_REQ" ]]; then
 	if resolve_defined_tier "$AGENT_TYPE_REQ"; then
@@ -263,6 +264,15 @@ else
 			WARN_ESCALATION="explicit model '${MODEL_REQ}' on ${AGENT_TYPE_REQ} (defined tier: ${DEFINED_TIER}) is an escalation above the agent's tier - Rule 7 point 4 requires evidence; record it with loom memory decision"
 		fi
 	fi
+fi
+
+# --- 4b. REVIEWER MODEL FROM CONFIG ------------------------------------------
+# loom-code-reviewer runs the operator-configured model and effort over any
+# caller `model` (loom_reviewer_model_override, _common.sh); a failure keeps the
+# frontmatter behavior above and sets WARN_REVIEWER.
+EFFORT=""
+if [[ "$AGENT_TYPE_REQ" == loom-code-reviewer ]]; then
+	loom_reviewer_model_override
 fi
 
 # --- 5. PREPEND THE SUBAGENT PREAMBLE ---------------------------------------
@@ -291,29 +301,11 @@ loom-codex-forwarder | codex:*) ;;
 esac
 
 WARN_TEXT="$WARN_ESCALATION"
+if [[ -n "$WARN_REVIEWER" ]]; then WARN_TEXT="${WARN_TEXT:+${WARN_TEXT} | }${WARN_REVIEWER}"; fi
 if [[ -n "$WARN_PREAMBLE" ]]; then WARN_TEXT="${WARN_TEXT:+${WARN_TEXT} | }${WARN_PREAMBLE}"; fi
 
-# A scoped brief is optional: a missing command, timeout, bad envelope or empty selection changes nothing.
-# Codex-bound types get none: Codex units read loom's Codex UserPromptSubmit brief (fs/permissions/codex_hooks.rs).
-# The prompt is read from TOOL_INPUT so its trailing newlines survive the merge.
-WORKER_BRIEF_JSON=""
-if [[ $GATE_PASSED -eq 1 && "$AGENT_TYPE_REQ" != loom-codex-forwarder && "$AGENT_TYPE_REQ" != codex:* ]] && command -v "${LOOM_BIN:-loom}" &>/dev/null &&
-	printf '%s' "$TOOL_INPUT" | jq -e 'type == "object" and (.prompt | type == "string")' >/dev/null 2>&1; then
-	if ! WORKER_BRIEF_ENVELOPE=$(printf '%s' "$INPUT_JSON" | LOOM_HOOK_CONTEXT=1 loom_run_bounded 5 "${LOOM_BIN:-loom}" hook worker-brief 2>/dev/null) || [[ -z "$WORKER_BRIEF_ENVELOPE" ]]; then
-		loom_debug "spawn-guard: worker-brief timeout, nonzero exit or empty output"
-	else
-		if [[ "$WORKER_BRIEF_ENVELOPE" != *$'\n'* ]]; then
-			WORKER_BRIEF_JSON=$(printf '%s' "$WORKER_BRIEF_ENVELOPE" | jq -ec '
-				select(type == "object" and (keys | sort) == ["brief", "nonce"])
-				| .nonce as $nonce
-				| select(($nonce | type) == "string" and ($nonce | test("^[0-9a-f]{32}$")))
-				| select((.brief | type) == "string" and (.brief | length) > 0)
-				| select(([.brief | split("\n")[] | select(. == ("<!-- loom-worker-brief nonce=" + $nonce + " -->"))] | length) == 1)
-				| .brief' 2>/dev/null || true)
-		fi
-		[[ -n "$WORKER_BRIEF_JSON" ]] || loom_debug "spawn-guard: worker-brief invalid envelope"
-	fi
-fi
+# A scoped brief is optional (loom_worker_brief, _common.sh): any failure changes nothing.
+loom_worker_brief
 
 if [[ -n "$WORKER_BRIEF_JSON" ]]; then
 	UPDATED_INPUT=$(printf '%s' "$UPDATED_INPUT" | jq -c --argjson brief "$WORKER_BRIEF_JSON" \
@@ -322,6 +314,9 @@ if [[ -n "$WORKER_BRIEF_JSON" ]]; then
 fi
 if [[ $NEEDS_REWRITE -eq 1 ]]; then
 	UPDATED_INPUT=$(printf '%s' "$UPDATED_INPUT" | jq -c --arg model "$MODEL" '. + {model: $model}')
+	if [[ -n "$EFFORT" ]]; then
+		UPDATED_INPUT=$(printf '%s' "$UPDATED_INPUT" | jq -c --arg effort "$EFFORT" '. + {effort: $effort}')
+	fi
 fi
 
 # emit_result - Print ONE hookSpecificOutput object with the whole rewrite and
