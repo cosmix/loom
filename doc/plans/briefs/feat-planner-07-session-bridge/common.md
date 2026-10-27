@@ -22,8 +22,9 @@ and report it; if one is missing, stop that piece and report it.
 - Plan 2 `loom::plan_server`: `PlanContext` (`root()`, `runtime()`, `project()`, `authoring()`,
   `presence()`, `hub()`, `shutdown()`, `read_only()`, `is_stopping()`, `extensions()`),
   `ctx.require_authoring(&BrowserId, Take::{HolderOnly, TakeIfFree}) -> Result<(), Refusal>` (use this, never the raw
-  `Authoring::require`, which also takes the public id and the stopping flag; `Refusal::NotHolder { holder: PublicId }`,
-  its `Display` names the holder), `Authoring::{holder() -> Option<HolderView { public_id, name, away_since }>, is_holder, release(FreeReason::Released(&'static str)), subscribe(Box<dyn Fn(&AuthoringEvent)>)}`
+  `Authoring::require`, which also takes the public id and the stopping flag; `Refusal::NotHolder { holder: PublicId }` has no `Display`:
+  the text naming the holder is `ctx.refusal_message(&refusal) -> String`), `Authoring::{holder() -> Option<(PublicId, Option<SystemTime>)>, view(&Presence) -> AuthoringView { holder: Option<HolderView { public_id, name, away_since, frees_at }> }, is_holder, release(FreeReason::Released(&'static str)), subscribe(Box<dyn Fn(&AuthoringEvent)>)}`
+  (the holder with its name is `ctx.authoring().view(ctx.presence()).holder`)
   with `AuthoringEvent::{Taken, Away { since }, Back, Freed { reason: FreeReason::{GraceExpired, Released(_)} }}`
   (plan 2 owns the 10-minute grace timer), `hub().{broadcast(&PlanMessage), send_to_conn, send_to_browser, send_to_holder, on_open(Box<dyn Fn(&ConnCtx) -> Vec<PlanMessage>>), on_close}`,
   `ConnCtx { id: ConnId, browser: BrowserId, public_id: PublicId }` (dispatch runs on the

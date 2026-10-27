@@ -78,10 +78,10 @@ changed since the last batch.
 `pub(crate) fn dispatch(ctx: &Arc<PlanContext>, conn: &ConnCtx, cmd: ReviewCommand)`, called from
 one arm in plan 2's `ws/dispatch.rs` (spelled `review::commands::dispatch(`; the stage's wiring
 check greps it). Plan 2 exposes the holder to server code as `is_holder(&BrowserId)` and
-`holder() -> HolderView { public_id, name, away_since }`, never the holder's cookie value, so in
+`holder() -> Option<(PublicId, Option<SystemTime>)>` and `view(ctx.presence()).holder: Option<HolderView { public_id, name, away_since, frees_at }>`, never the holder's cookie value, so in
 production every `BrowserRef.id` is the browser's public id (unique per browser, already sent to
 every browser in presence, and never the cookie): the sender's from `conn.public_id`, the
-holder's from `holder().public_id`. Refuse a `suggest` from a browser for which
+holder's from `holder()`'s `PublicId` (or `view(..).holder`'s `public_id`). Refuse a `suggest` from a browser for which
 `ctx.authoring().is_holder(&conn.browser)` (plan 2's holder query; writes go through
 `ctx.require_authoring`) is true before calling the box. `suggest` calls
 `SuggestionBox::submit` with the sender's name from `ctx.presence().name_of(&conn.browser)`; on
