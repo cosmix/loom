@@ -391,6 +391,94 @@
         "value": "xhigh",
         "source": "default"
       }
+    },
+    {
+      "name": "plan.document_summary_model",
+      "help": "Model the loom-plan summary agent builds document summaries on",
+      "kind": {
+        "type": "enum",
+        "variants": ["haiku", "sonnet", "opus", "fable"]
+      },
+      "scopes": ["user", "project"],
+      "default": "haiku",
+      "user": {
+        "value": "haiku",
+        "set": false
+      },
+      "project": {
+        "value": "haiku",
+        "set": false
+      },
+      "effective": {
+        "value": "haiku",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.document_summary_effort",
+      "help": "Reasoning effort for document summaries",
+      "kind": {
+        "type": "enum",
+        "variants": ["low", "medium", "high", "xhigh", "max"]
+      },
+      "scopes": ["user", "project"],
+      "default": "medium",
+      "user": {
+        "value": "medium",
+        "set": false
+      },
+      "project": {
+        "value": "medium",
+        "set": false
+      },
+      "effective": {
+        "value": "medium",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.overview_model",
+      "help": "Model overviews and background summary sessions run on",
+      "kind": {
+        "type": "enum",
+        "variants": ["haiku", "sonnet", "opus", "fable"]
+      },
+      "scopes": ["user", "project"],
+      "default": "sonnet",
+      "user": {
+        "value": "sonnet",
+        "set": false
+      },
+      "project": {
+        "value": "sonnet",
+        "set": false
+      },
+      "effective": {
+        "value": "sonnet",
+        "source": "default"
+      }
+    },
+    {
+      "name": "plan.overview_effort",
+      "help": "Reasoning effort for overviews and summary sessions",
+      "kind": {
+        "type": "enum",
+        "variants": ["low", "medium", "high", "xhigh", "max"]
+      },
+      "scopes": ["user", "project"],
+      "default": "high",
+      "user": {
+        "value": "high",
+        "set": false
+      },
+      "project": {
+        "value": "high",
+        "set": false
+      },
+      "effective": {
+        "value": "high",
+        "source": "default"
+      }
     }
   ]
 }

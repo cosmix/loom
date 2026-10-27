@@ -14,6 +14,7 @@
 //!   [plan_sandbox]   # persisted snapshot of plan-level sandbox at init time
 //!
 //!   [models]     # stage-type model/effort policy, KEY-level fallback to the user tier
+//!   [planning]   # the loom-plan summary model/effort slots, KEY-level fallback to the user tier
 //!   [pressure]   # `loom pressure`'s model/effort slots, KEY-level fallback to the user tier
 //!
 //! Section keys for the persisted plan-level config (see `read_plan_sandbox`).
@@ -30,10 +31,12 @@ use super::ContextConfig;
 
 mod allowed;
 mod models_config;
+mod plan_config;
 mod pressure_config;
 mod terminal_config;
 
 pub use models_config::resolve_stage_model_effort;
+pub use plan_config::{read_plan_config, PlanConfig};
 pub use pressure_config::{read_pressure_config, PressureConfig};
 pub use terminal_config::{read_terminal_config, write_terminal_config};
 
