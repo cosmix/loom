@@ -159,7 +159,7 @@ function TopicContent({ topic }: { topic: HelpTopic }) {
   );
 }
 
-function ShortcutGroups({ groups }: { groups: HelpShortcutGroup[] }) {
+export function ShortcutGroups({ groups }: { groups: HelpShortcutGroup[] }) {
   return (
     <div className="help-shortcut-groups">
       {groups.map((group, i) => (

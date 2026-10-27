@@ -9,6 +9,7 @@ use serial_test::serial;
 use super::{start, DEFAULT_PORT};
 use support::{bootstrap, get, json_body, options, project, serve, serve_with, skip, status};
 
+mod embedded;
 mod socket;
 pub(crate) mod support;
 mod ws;

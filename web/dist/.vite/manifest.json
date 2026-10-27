@@ -1,0 +1,71 @@
+{
+  "_help-dialog.css": {
+    "file": "assets/help-dialog.css",
+    "src": "_help-dialog.css"
+  },
+  "_help-dialog.js": {
+    "file": "assets/help-dialog.js",
+    "name": "help-dialog",
+    "dynamicImports": [
+      "node_modules/@xterm/xterm/lib/xterm.mjs",
+      "node_modules/@xterm/addon-fit/lib/addon-fit.mjs",
+      "node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs",
+      "node_modules/@xterm/addon-unicode11/lib/addon-unicode11.mjs"
+    ],
+    "css": [
+      "assets/help-dialog.css"
+    ],
+    "assets": [
+      "assets/inter-latin-wght-normal.woff2"
+    ]
+  },
+  "index.html": {
+    "file": "assets/index.js",
+    "name": "index",
+    "src": "index.html",
+    "isEntry": true,
+    "imports": [
+      "_help-dialog.js"
+    ]
+  },
+  "node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2": {
+    "file": "assets/inter-latin-wght-normal.woff2",
+    "src": "node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2"
+  },
+  "node_modules/@xterm/addon-fit/lib/addon-fit.mjs": {
+    "file": "assets/addon-fit.js",
+    "name": "addon-fit",
+    "src": "node_modules/@xterm/addon-fit/lib/addon-fit.mjs",
+    "isDynamicEntry": true
+  },
+  "node_modules/@xterm/addon-unicode11/lib/addon-unicode11.mjs": {
+    "file": "assets/addon-unicode11.js",
+    "name": "addon-unicode11",
+    "src": "node_modules/@xterm/addon-unicode11/lib/addon-unicode11.mjs",
+    "isDynamicEntry": true
+  },
+  "node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs": {
+    "file": "assets/addon-webgl.js",
+    "name": "addon-webgl",
+    "src": "node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs",
+    "isDynamicEntry": true
+  },
+  "node_modules/@xterm/xterm/lib/xterm.mjs": {
+    "file": "assets/xterm.js",
+    "name": "xterm",
+    "src": "node_modules/@xterm/xterm/lib/xterm.mjs",
+    "isDynamicEntry": true
+  },
+  "plan.html": {
+    "file": "assets/plan.js",
+    "name": "plan",
+    "src": "plan.html",
+    "isEntry": true,
+    "imports": [
+      "_help-dialog.js"
+    ],
+    "css": [
+      "assets/plan.css"
+    ]
+  }
+}
