@@ -7,7 +7,7 @@
 
 ## clippy::never_loop Caught a Real Drain Bug No Test Could (2026-09-04)
 
-**What happened:** `loom/src/commands/status/web/ws.rs`'s `send_pending()` was meant to
+**What happened:** `loom/src/web_server/ws.rs`'s `send_pending()` was meant to
 drain the whole frame queue but its match arms returned on the FIRST iteration
 (`Ok(frame) if send fails => return false`, `Ok(_) | Err(Empty) => return true`),
 conflating "sent one frame" with "queue empty". A client that fell behind drained its
@@ -324,7 +324,7 @@ nothing were: `peek_head` returning `Ok(0)` and its catch-all `Err` arm (`ErrorK
 `set_nonblocking`, `local_addr` or the thread spawn fails.
 
 **Prevention:** every early return on a connection path answers the client or has a reason to stay silent;
-retry EINTR on a peek. `commands/status/web/head.rs` retries the EINTR case and `unserved.rs` answers 503 when
+retry EINTR on a peek. `web_server/head.rs` retries the EINTR case and `unserved.rs` answers 503 when
 the spawn fails; the other candidates stay as listed.
 
 ## A Signal Ended Terminal Bridges as Dead Peers (2026-10-14)
@@ -397,4 +397,4 @@ the spawn fails; the other candidates stay as listed.
 **What happened:** a dashboard tab viewed over the LAN (`loom status --web --host 0.0.0.0`, through a router) kept a stage on `writing contract tests`/executing after it was blocked and later merged, with no terminal and the connection badge on `live`; a reload showed the truth. The server was publishing correct frames and held no connection for that tab: the socket was dead on the server and still open in the browser.
 **Why:** the status socket had no liveness check on either side. The server writes only when `Broadcaster::publish` sees a changed frame, so silence is normal; the client reacted only to `onclose`/`onerror`, which a half-open TCP connection (sleeping device, dropped NAT mapping) never fires. The rule in "A push-fed page read liveness out of the payload" (trust the socket) assumes the socket reports its own death; it does not.
 **Prevention:** a push feed whose server suppresses unchanged frames needs an application-level heartbeat the client can observe (browser JS cannot see protocol pings), and the client must treat a missed heartbeat as an outage.
-**Fix:** `commands/status/web/ws.rs` resends the socket's last frame after 10 s of silence; `web/src/api/ws.ts` reconnects after 30 s without any message (checked every 5 s and on `visibilitychange`), and `applySnapshot` skips a frame whose `generated_at` is not newer, so a keepalive does not re-render. A frame republished with a notice is restamped for the same reason.
+**Fix:** `web_server/ws.rs` resends the socket's last frame after 10 s of silence; `web/src/api/ws.ts` reconnects after 30 s without any message (checked every 5 s and on `visibilitychange`), and `applySnapshot` skips a frame whose `generated_at` is not newer, so a keepalive does not re-render. A frame republished with a notice is restamped for the same reason.

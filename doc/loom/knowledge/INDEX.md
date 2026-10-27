@@ -48,7 +48,8 @@
 | [orchestrator-loop](architecture/orchestrator-loop.md) | Tick order | 79 |
 | [owned-waits](architecture/owned-waits.md) | Worker waits | 70 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) | Plan fields | 257 |
-| [planning-document-model](architecture/planning-document-model.md) | loom::planning: anchors, checklist | 169 |
+| [plan-server](architecture/plan-server.md) | Plan server | 69 |
+| [planning-document-model](architecture/planning-document-model.md) | Planning model | 169 |
 | [quota-poller](architecture/quota-poller.md) | Quota polling | 35 |
 | [remote-control](architecture/remote-control.md) | Capability | 81 |
 | [security-and-isolation](architecture/security-and-isolation.md) | Isolation | 186 |
@@ -67,8 +68,8 @@
 | [token-flow-sources](architecture/token-flow-sources.md) | Token flow | 75 |
 | [usage-evidence](architecture/usage-evidence.md) | Evidence | 127 |
 | [verification-v2-gates](architecture/verification-v2-gates.md) | v2 gates | 238 |
-| [web-dashboard](architecture/web-dashboard.md) | status --web | 99 |
-| [web-terminal](architecture/web-terminal.md) | Terminals | 182 |
+| [web-dashboard](architecture/web-dashboard.md) | status --web | 101 |
+| [web-terminal](architecture/web-terminal.md) | Terminals | 181 |
 
 ### entry-points
 
@@ -146,6 +147,7 @@
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared state | 341 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merged flag | 337 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins, ledgers | 322 |
+| [plan-server-delivery](mistakes/plan-server-delivery.md) | Plan-server misses | 64 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging guard | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | Rename misses | 312 |
 | [release-feature-review](mistakes/release-feature-review.md) | Release gaps | 13 |
@@ -184,7 +186,7 @@
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) | Rule bending | 379 |
 | [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Followups | 77 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Code debt | 259 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Code debt | 263 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) | Heartbeat | 49 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) | Contract gaps | 63 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 naming | 49 |
