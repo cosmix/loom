@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::checklist::ChecklistView;
+use super::concept::ConceptChanged;
 use super::files::{DocChanged, FileTree, ValidationChanged};
 use super::presence::{AuthoringView, PresenceList};
 use super::server::{Refused, ServerInfo, You};
@@ -38,6 +39,8 @@ pub enum PlanMessage {
     DocChanged(DocChanged),
     /// A plan's validation changed.
     Validation(ValidationChanged),
+    /// Concept pages or their sources changed.
+    ConceptChanged(ConceptChanged),
 }
 
 impl PlanMessage {

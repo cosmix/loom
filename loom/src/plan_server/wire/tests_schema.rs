@@ -109,8 +109,10 @@ fn all_offer_kinds() -> Vec<OfferKind> {
     ]
 }
 
-fn all_plan_messages() -> Vec<PlanMessage> {
-    match PlanMessage::ServerStopping {
+// Exhaustive matches fail to compile when a variant is added without a new case here.
+// concept_changed joins the vec in all_plan_messages once concept-web adds it to schema.ts.
+fn assert_exhaustive(message: &PlanMessage) {
+    match message {
         PlanMessage::Hello(_)
         | PlanMessage::Presence(_)
         | PlanMessage::Authoring(_)
@@ -119,8 +121,13 @@ fn all_plan_messages() -> Vec<PlanMessage> {
         | PlanMessage::Refused(_)
         | PlanMessage::TreeChanged(_)
         | PlanMessage::DocChanged(_)
-        | PlanMessage::Validation(_) => {}
+        | PlanMessage::Validation(_)
+        | PlanMessage::ConceptChanged(_) => {}
     }
+}
+
+fn all_plan_messages() -> Vec<PlanMessage> {
+    assert_exhaustive(&PlanMessage::ServerStopping);
     let tree_changed: PlanMessage = serde_json::from_str(include_str!(
         "../../../../web/src/plan/api/fixtures/files-tree-changed.json"
     ))
