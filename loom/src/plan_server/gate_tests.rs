@@ -14,6 +14,7 @@ use super::prereq::ReadOnly;
 use super::request::{ApiRequest, ApiResponse, QueryParams};
 use super::routes::{find, BodyKind, Lookup, Method, Role, RouteSpec};
 use super::wire::server::{MissingPrereq, PrereqKind};
+use crate::planning::watch::OwnWrites;
 use crate::web_server::access::AccessPolicy;
 use crate::web_server::auth::Auth;
 use crate::web_server::http::RequestHead;
@@ -39,7 +40,8 @@ fn context(problems: Vec<MissingPrereq>) -> (TempDir, Arc<PlanContext>) {
     std::fs::write(dir.path().join("doc/product/index.md"), "# Demo\n").expect("index");
     let bind = BindInfo::new(local(), &token());
     let read_only = ReadOnly::from_problems(problems);
-    let ctx = PlanContext::new(dir.path().to_path_buf(), read_only, bind).expect("context");
+    let root = dir.path().to_path_buf();
+    let ctx = PlanContext::new(root, read_only, bind, OwnWrites::default()).expect("context");
     (dir, Arc::new(ctx))
 }
 

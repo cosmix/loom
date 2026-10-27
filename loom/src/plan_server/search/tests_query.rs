@@ -1,6 +1,6 @@
 //! Tests for search::query.
 
-use super::query::{literal_count, parse_query, snippet, Query};
+use super::query::{literal_count, literal_snippet, parse_query, snippet, Query};
 
 #[test]
 fn parses_quoted_literals_and_tokenizes_other_queries() {
@@ -33,4 +33,18 @@ fn snippet_centers_first_match_on_character_boundaries() {
     assert_eq!(snippet("αβγδε", &[], 3), "αβγ…");
     assert_eq!(snippet("αβγ", &["β".into()], 10), "αβγ");
     assert_eq!(snippet(body, &[], 0), "");
+}
+
+#[test]
+fn a_literal_snippet_centers_on_the_case_sensitive_match() {
+    let body = format!("quartz {} Quartz tail", "x".repeat(300));
+    let shown = literal_snippet(&body, "Quartz", 20);
+    assert!(
+        shown.contains("Quartz") && !shown.contains("quartz"),
+        "{shown}"
+    );
+    // Terms are matched without regard to case, so the same window starts at the first one.
+    assert!(snippet(&body, &["Quartz".into()], 20).contains("quartz"));
+    assert_eq!(literal_snippet("αβγδε", "", 3), "αβγ…");
+    assert_eq!(literal_snippet("αβγ", "β", 0), "");
 }

@@ -1,12 +1,13 @@
 //! The text of every discovered document, and the per-turn pins diffs compare against.
 //!
-//! `current` follows the watcher (`apply` runs on every batch). A turn pins the current texts
-//! at `begin_turn`; `end_turn` re-reads every document from disk at that moment, so a write
-//! made just before the turn ended is seen even when the watcher has not polled yet. Pins and
-//! end texts live for the process. Every path is repo-relative (`doc/...`); the summary store
-//! is never held.
+//! `current` follows the watcher (`apply` runs on every batch) and the server's own writes
+//! (`refresh_path`). `begin_turn` and `end_turn` both re-read every document from disk at that
+//! moment, so a write the watcher has not polled yet is seen by both: one made just before the
+//! turn began is part of its pins, one made just before it ended is its change. Once a turn has
+//! ended it keeps only the documents it changed, and the store keeps the newest `MAX_TURNS`
+//! turns. Every path is repo-relative (`doc/...`); the summary store is never held.
 
-use std::collections::{BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap, VecDeque};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError, RwLock};
 
@@ -49,17 +50,68 @@ pub struct TurnChange {
 
 type Texts = HashMap<PathBuf, PinnedText>;
 
-#[derive(Default)]
+/// How many turns the store remembers; beginning one more drops the oldest. A turn that has
+/// ended holds only the texts of the documents it changed, but those still stay for the life of
+/// the process, and a diff is opened for a recent turn. Revisit when a screen browses turns
+/// older than this.
+pub(crate) const MAX_TURNS: usize = 64;
+
+/// One turn's texts. Until the turn ends `pins` holds every document; `finish` then cuts both
+/// maps down to the documents the turn changed.
 struct TurnTexts {
     pins: Texts,
     end: Texts,
+    ended: bool,
+}
+
+impl TurnTexts {
+    /// Record `end` (every document read when the turn ended) and return what changed, sorted by
+    /// path. A turn ends once: a later call returns the changes recorded then.
+    fn finish(&mut self, end: Texts) -> Vec<TurnChange> {
+        if self.ended {
+            return changes(&self.pins, &self.end);
+        }
+        let changed = changes(&self.pins, &end);
+        self.pins.retain(|path, _| is_listed(&changed, path));
+        self.end = end
+            .into_iter()
+            .filter(|(path, _)| is_listed(&changed, path))
+            .collect();
+        self.ended = true;
+        changed
+    }
+}
+
+/// The remembered turns and the order they began in.
+#[derive(Default)]
+struct Turns {
+    by_id: HashMap<TurnId, TurnTexts>,
+    order: VecDeque<TurnId>,
+}
+
+impl Turns {
+    /// Remember `texts` for `turn`, replacing an earlier turn of that id, and drop the oldest
+    /// turns past `MAX_TURNS`.
+    fn begin(&mut self, turn: &TurnId, texts: TurnTexts) {
+        if self.by_id.insert(turn.clone(), texts).is_some() {
+            self.order.retain(|id| id != turn);
+        }
+        self.order.push_back(turn.clone());
+        while self.order.len() > MAX_TURNS {
+            if let Some(oldest) = self.order.pop_front() {
+                self.by_id.remove(&oldest);
+            }
+        }
+    }
 }
 
 /// The texts the server holds, stored in `ctx.extensions()`.
 #[derive(Default)]
 pub struct TextStore {
+    /// The repository root `load` read; `None` for an empty store, which has nothing to re-read.
+    root: Option<PathBuf>,
     current: RwLock<Texts>,
-    turns: Mutex<HashMap<TurnId, TurnTexts>>,
+    turns: Mutex<Turns>,
 }
 
 impl TextStore {
@@ -68,8 +120,9 @@ impl TextStore {
     pub fn load(root: &Path, project: &Project) -> Result<TextStore> {
         let paths = project.tree.docs.iter().map(|doc| doc.path.clone());
         Ok(TextStore {
+            root: Some(root.to_path_buf()),
             current: RwLock::new(read_all(root, paths)),
-            turns: Mutex::new(HashMap::new()),
+            turns: Mutex::default(),
         })
     }
 
@@ -87,11 +140,16 @@ impl TextStore {
             current.remove(path);
         }
         for path in batch.added.iter().chain(&batch.changed) {
-            match read_text(root, path) {
-                Some(text) if is_held(path) => current.insert(path.clone(), text),
-                _ => current.remove(path),
-            };
+            reread(&mut current, root, path);
         }
+    }
+
+    /// Re-read one document into `current` (a path that no longer reads loses its text). The
+    /// server calls it after its own write, so a turn that begins before the watcher polls
+    /// still pins the saved text.
+    pub fn refresh_path(&self, root: &Path, rel: &Path) {
+        let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
+        reread(&mut current, root, rel);
     }
 
     /// The current text of `rel`.
@@ -100,68 +158,105 @@ impl TextStore {
         current.get(rel).cloned()
     }
 
-    /// Pin the current texts for `turn`, replacing any earlier pins and end texts of it.
+    /// Re-read every document from disk (`current` takes what was read), pin the texts for
+    /// `turn`, and replace any earlier pins and end texts of it.
     pub fn begin_turn(&self, turn: &TurnId) {
-        let pins = self
-            .current
-            .read()
-            .unwrap_or_else(PoisonError::into_inner)
-            .clone();
+        let pins = self.refresh_all();
         let texts = TurnTexts {
             pins,
             end: Texts::new(),
+            ended: false,
         };
-        self.turns().insert(turn.clone(), texts);
+        self.turns().begin(turn, texts);
     }
 
     /// Re-read every document now (those of `project.tree` and any discovery lists that the
-    /// project has not seen yet), store them as the turn's end texts and return what changed
-    /// since `begin_turn`, sorted by path. A turn that was never begun has no changes.
+    /// project has not seen yet), keep the texts of the documents that changed since
+    /// `begin_turn` as the turn's pins and end texts, and return what changed, sorted by path.
+    /// A turn that was never begun (or was dropped as too old) has no changes.
     pub fn end_turn(&self, turn: &TurnId, root: &Path, project: &Project) -> Vec<TurnChange> {
-        if !self.turns().contains_key(turn) {
-            return Vec::new();
+        match self.turns().by_id.get(turn) {
+            None => return Vec::new(),
+            Some(texts) if texts.ended => return changes(&texts.pins, &texts.end),
+            Some(_) => {}
         }
-        let mut paths: BTreeSet<PathBuf> =
-            project.tree.docs.iter().map(|d| d.path.clone()).collect();
-        match discover(root) {
-            Ok(tree) => paths.extend(tree.docs.into_iter().map(|d| d.path)),
-            Err(error) => tracing::warn!("end of turn: rediscovering doc/ failed: {error:#}"),
+        let mut paths = listed_paths(root);
+        paths.extend(project.tree.docs.iter().map(|d| d.path.clone()));
+        let end = read_all(root, paths);
+        match self.turns().by_id.get_mut(turn) {
+            Some(texts) => texts.finish(end),
+            None => Vec::new(),
         }
-        let mut end = read_all(root, paths);
-        let mut turns = self.turns();
-        let Some(texts) = turns.get_mut(turn) else {
-            return Vec::new();
-        };
-        // Turns live for the whole process: an unchanged document shares its pin's text
-        // instead of keeping a second copy.
-        for (rel, text) in end.iter_mut() {
-            if let Some(pin) = texts.pins.get(rel).filter(|pin| pin.hash == text.hash) {
-                *text = pin.clone();
-            }
-        }
-        texts.end = end;
-        changes(&texts.pins, &texts.end)
     }
 
-    /// The text `rel` had when `turn` began.
+    /// Whether `turn` has ended (`false` for a turn that was never begun).
+    pub fn turn_ended(&self, turn: &TurnId) -> bool {
+        self.turns()
+            .by_id
+            .get(turn)
+            .is_some_and(|texts| texts.ended)
+    }
+
+    /// The text `rel` had when `turn` began. Once the turn has ended only a document it
+    /// changed has one.
     pub fn turn_pin(&self, turn: &TurnId, rel: &Path) -> Option<PinnedText> {
-        self.turns().get(turn)?.pins.get(rel).cloned()
+        self.turns().by_id.get(turn)?.pins.get(rel).cloned()
     }
 
-    /// The text `rel` had when `turn` ended.
+    /// The text `rel` had when `turn` ended: `None` for a document the turn deleted or did
+    /// not change, and for a turn that has not ended.
     pub fn turn_end(&self, turn: &TurnId, rel: &Path) -> Option<PinnedText> {
-        self.turns().get(turn)?.end.get(rel).cloned()
+        self.turns().by_id.get(turn)?.end.get(rel).cloned()
     }
 
-    fn turns(&self) -> MutexGuard<'_, HashMap<TurnId, TurnTexts>> {
-        // The map holds plain values, so a panic elsewhere cannot leave it inconsistent.
+    /// Re-read the documents `current` holds and any that `doc/` lists now, and return the
+    /// texts. Holds the write lock throughout, as `apply` does, so a `refresh_path` after the
+    /// server's own write cannot be overwritten by a read that predates it.
+    fn refresh_all(&self) -> Texts {
+        let Some(root) = self.root.as_deref() else {
+            return self
+                .current
+                .read()
+                .unwrap_or_else(PoisonError::into_inner)
+                .clone();
+        };
+        let mut paths = listed_paths(root);
+        let mut current = self.current.write().unwrap_or_else(PoisonError::into_inner);
+        paths.extend(current.keys().cloned());
+        for rel in &paths {
+            reread(&mut current, root, rel);
+        }
+        current.clone()
+    }
+
+    fn turns(&self) -> MutexGuard<'_, Turns> {
+        // The turns hold plain values, so a panic elsewhere cannot leave them inconsistent.
         self.turns.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+}
+
+/// Every document `doc/` lists now; empty when discovery fails.
+fn listed_paths(root: &Path) -> BTreeSet<PathBuf> {
+    match discover(root) {
+        Ok(tree) => tree.docs.into_iter().map(|doc| doc.path).collect(),
+        Err(error) => {
+            tracing::warn!("rediscovering doc/ failed: {error:#}");
+            BTreeSet::new()
+        }
     }
 }
 
 /// Discovery never lists the summary store; the watcher's batches do.
 fn is_held(rel: &Path) -> bool {
     rel.starts_with("doc") && !rel.starts_with(SUMMARIES)
+}
+
+/// Put the text `rel` has on disk now into `current`, or remove its entry when it has none to hold.
+fn reread(current: &mut Texts, root: &Path, rel: &Path) {
+    match is_held(rel).then(|| read_text(root, rel)).flatten() {
+        Some(text) => current.insert(rel.to_path_buf(), text),
+        None => current.remove(rel),
+    };
 }
 
 fn read_text(root: &Path, rel: &Path) -> Option<PinnedText> {
@@ -196,4 +291,11 @@ fn changes(pins: &Texts, end: &Texts) -> Vec<TurnChange> {
             })
         })
         .collect()
+}
+
+/// Whether `path` is one of `changed`, which is sorted by path.
+fn is_listed(changed: &[TurnChange], path: &Path) -> bool {
+    changed
+        .binary_search_by(|change| change.path.as_path().cmp(path))
+        .is_ok()
 }

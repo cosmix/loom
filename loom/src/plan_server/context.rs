@@ -85,7 +85,13 @@ pub struct PlanContext {
 
 impl PlanContext {
     /// Load the project under `root` and compute its runtime paths (nothing is created).
-    pub(crate) fn new(root: PathBuf, read_only: ReadOnly, bind: BindInfo) -> Result<Self> {
+    /// `own_writes` is the registry the `doc/` watcher was built with.
+    pub(crate) fn new(
+        root: PathBuf,
+        read_only: ReadOnly,
+        bind: BindInfo,
+        own_writes: OwnWrites,
+    ) -> Result<Self> {
         let project = Project::load(&root)?;
         let (runtime, _) = server_runtime_paths(&root)?;
         Ok(PlanContext {
@@ -99,7 +105,7 @@ impl PlanContext {
             shutdown: Arc::new(Shutdown::new()),
             read_only,
             bind,
-            own_writes: OwnWrites::default(),
+            own_writes,
             batch_hooks: RwLock::new(Vec::new()),
             extensions: Extensions::default(),
             next_conn: AtomicU64::new(1),

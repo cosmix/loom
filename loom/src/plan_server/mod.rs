@@ -1,8 +1,9 @@
 //! Planning server: the local web app behind bare `loom plan`.
 //!
-//! [`start`] binds, builds the [`context::PlanContext`], runs every route module's `install`,
-//! then starts the watcher, the 1 s tick and the accept loop. [`run`] is the command: project
-//! root, runtime directory, lock, [`start`], startup lines, browser, signals.
+//! [`start`] binds, takes the `doc/` watcher's baseline, builds the [`context::PlanContext`],
+//! runs every route module's `install`, then starts the watcher, the 1 s tick and the accept
+//! loop. [`run`] is the command: project root, runtime directory, lock, [`start`], startup
+//! lines, browser, signals.
 
 pub mod authoring;
 pub mod browser;
@@ -68,6 +69,7 @@ use anyhow::{anyhow, Context, Result};
 use crate::cli::PlanServeArgs;
 use crate::fs::safe_fs::{safe_create_dir_all, safe_open_dirfd};
 use crate::planning::runtime::{server_runtime_paths, RuntimePaths};
+use crate::planning::watch::{OwnWrites, Watcher};
 use crate::web_server::access::AccessPolicy;
 use crate::web_server::auth::Auth;
 use crate::web_server::limits::Limits;
@@ -134,8 +136,8 @@ impl RunningServer {
     }
 }
 
-/// Bind, mint the token, load the project, build the context and run every module's
-/// `install`, then start the watcher, the tick and the accept loop. Touches neither the lock
+/// Bind, mint the token, take the watcher's baseline, load the project, build the context and
+/// run every module's `install`, then start the watcher, the tick and the accept loop. Touches neither the lock
 /// nor the runtime directory.
 pub fn start(opts: ServerOptions) -> Result<RunningServer> {
     start_with_routes(opts, routes::all_routes())
@@ -147,11 +149,10 @@ fn start_with_routes(opts: ServerOptions, routes: Vec<RouteSpec>) -> Result<Runn
     let local = listener.local_addr()?;
     let token = token::mint().context("failed to mint the loom plan access token")?;
     let bind = BindInfo::new(local, &token);
-    let ctx = Arc::new(PlanContext::new(opts.root, opts.read_only, bind)?);
-    routes::install_all(&ctx);
+    let (ctx, watcher) = load(opts.root, opts.read_only, bind)?;
     let running = Arc::new(AtomicBool::new(true));
     let stop = Arc::new(AtomicBool::new(false));
-    let started = spawn_workers(&ctx, &stop).and_then(|workers| {
+    let started = spawn_workers(&ctx, watcher, &stop).and_then(|workers| {
         let serve = spawn_accept_loop(listener, &ctx, routes, &token, &running)?;
         Ok((serve, workers))
     });
@@ -167,8 +168,23 @@ fn start_with_routes(opts: ServerOptions, routes: Vec<RouteSpec>) -> Result<Runn
     })
 }
 
-fn spawn_workers(ctx: &Arc<PlanContext>, stop: &Arc<AtomicBool>) -> Result<Vec<JoinHandle<()>>> {
-    let (watcher, errors) = watch::spawn_watcher(Arc::clone(ctx), Arc::clone(stop))?;
+/// Take the watcher's baseline, then load the project into a new context and run every route
+/// module's `install`. The baseline comes first, so a document edited while the project and
+/// the stores load reaches them as the watcher's first batch.
+fn load(root: PathBuf, read_only: ReadOnly, bind: BindInfo) -> Result<(Arc<PlanContext>, Watcher)> {
+    let own_writes = OwnWrites::default();
+    let watcher = watch::baseline(root.clone(), own_writes.clone());
+    let ctx = Arc::new(PlanContext::new(root, read_only, bind, own_writes)?);
+    routes::install_all(&ctx);
+    Ok((ctx, watcher))
+}
+
+fn spawn_workers(
+    ctx: &Arc<PlanContext>,
+    watcher: Watcher,
+    stop: &Arc<AtomicBool>,
+) -> Result<Vec<JoinHandle<()>>> {
+    let (watcher, errors) = watch::spawn_watcher(Arc::clone(ctx), watcher, Arc::clone(stop))?;
     let tick = watch::spawn_tick(Arc::clone(ctx), errors, Arc::clone(stop));
     let tick = tick.inspect_err(|_| stop.store(true, Ordering::SeqCst))?;
     Ok(vec![watcher, tick])
