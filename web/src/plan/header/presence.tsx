@@ -26,10 +26,7 @@ function PresenceRow({
 }) {
   const frees = entry.away ? freeTime(holder, entry) : null;
   return (
-    <li
-      tabIndex={0}
-      className="plan-presence-row flex flex-col rounded-md px-1.5 py-1 outline-none"
-    >
+    <li className="flex flex-col rounded-md px-1.5 py-1">
       <span className="flex flex-wrap items-baseline gap-x-1.5 text-[13px] font-medium">
         <span>{entry.name}</span>
         {you && <span className="text-muted-foreground">(you)</span>}
@@ -39,9 +36,7 @@ function PresenceRow({
         )}
       </span>
       {entry.reading && (
-        <span className="plan-presence-reading truncate text-xs text-muted-foreground">
-          {entry.reading}
-        </span>
+        <span className="truncate text-xs text-muted-foreground">{entry.reading}</span>
       )}
     </li>
   );
@@ -60,7 +55,7 @@ export function Presence() {
           <span>{entries.length}</span>
         </Button>
       </PopoverTrigger>
-      <PopoverContent>
+      <PopoverContent aria-label="People here">
         <NamePrompt />
         <ul aria-label="People here" className="flex flex-col gap-0.5">
           {entries.map((entry) => (

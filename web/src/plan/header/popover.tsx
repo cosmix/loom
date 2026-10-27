@@ -10,12 +10,13 @@ function PopoverTrigger(props: ComponentProps<typeof PopoverPrimitive.Trigger>) 
   return <PopoverPrimitive.Trigger data-slot="popover-trigger" {...props} />;
 }
 
+/** Radix renders the content as `role="dialog"`, so every popover needs an accessible name. */
 function PopoverContent({
   className,
   align = "end",
   sideOffset = 6,
   ...props
-}: ComponentProps<typeof PopoverPrimitive.Content>) {
+}: ComponentProps<typeof PopoverPrimitive.Content> & { "aria-label": string }) {
   return (
     <PopoverPrimitive.Portal>
       <PopoverPrimitive.Content

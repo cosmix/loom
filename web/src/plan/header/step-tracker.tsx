@@ -56,7 +56,9 @@ export function StepList({
           >
             <mark.icon className={cn("size-3.5 shrink-0", mark.tone)} aria-hidden="true" />
             <span>{step.number}</span>
-            <span className={cn(!showNames && !current && "hidden xl:inline")}>{step.name}</span>
+            <span className={cn(!showNames && !current && "sr-only xl:not-sr-only")}>
+              {step.name}
+            </span>
             <span className="sr-only">, {mark.label}</span>
           </li>
         );
@@ -85,12 +87,12 @@ export function StepTracker({
     return (
       <Popover>
         <PopoverTrigger asChild>
-          <Button variant="ghost" size="sm" className="min-w-0 text-xs">
+          <Button variant="ghost" size="sm" className="min-w-0 shrink text-xs">
             <span className="truncate">{summary(checklist)}</span>
             <ChevronDownIcon aria-hidden="true" />
           </Button>
         </PopoverTrigger>
-        <PopoverContent align="start">
+        <PopoverContent align="start" aria-label="Steps">
           <StepList checklist={checklist} className="flex flex-col gap-0.5" />
         </PopoverContent>
       </Popover>

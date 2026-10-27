@@ -14,7 +14,7 @@ export function Overflow() {
           <EllipsisIcon aria-hidden="true" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className="w-auto flex-row items-center">
+      <PopoverContent aria-label="More" className="w-auto flex-row items-center">
         <Presence />
         <Share />
       </PopoverContent>

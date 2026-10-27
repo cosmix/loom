@@ -7,11 +7,11 @@ import {
 } from "lucide-react";
 import { useLayoutEffect, useRef, useState, type CSSProperties, type RefObject } from "react";
 
-import { HelpKeys } from "@/components/help-keys";
 import { SceneFigure } from "@/components/help-scene";
 import { LegendTopic } from "@/components/help-legend";
+import { ShortcutGroups } from "@/components/help-shortcuts";
 import { HelpVisual } from "@/components/help-visuals";
-import { HELP_TOPICS, type HelpShortcutGroup, type HelpTopic } from "@/components/help-topics";
+import { HELP_TOPICS, type HelpTopic } from "@/components/help-topics";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogTitle } from "@/components/ui/dialog";
 import { Kbd } from "@/components/ui/kbd";
@@ -156,32 +156,6 @@ function TopicContent({ topic }: { topic: HelpTopic }) {
       {topic.shortcuts && <ShortcutGroups groups={topic.shortcuts} />}
       {topic.tips && <Tips tips={topic.tips} />}
     </>
-  );
-}
-
-export function ShortcutGroups({ groups }: { groups: HelpShortcutGroup[] }) {
-  return (
-    <div className="help-shortcut-groups">
-      {groups.map((group, i) => (
-        <section
-          key={group.title}
-          className="help-shortcut-group help-reveal"
-          style={{ "--i": i + 1 } as CSSProperties}
-        >
-          <h3>{group.title}</h3>
-          <dl className="help-shortcuts">
-            {group.rows.map(([keys, action]) => (
-              <div key={`${keys}${action}`}>
-                <dt>
-                  <HelpKeys spec={keys} />
-                </dt>
-                <dd>{action}</dd>
-              </div>
-            ))}
-          </dl>
-        </section>
-      ))}
-    </div>
   );
 }
 
