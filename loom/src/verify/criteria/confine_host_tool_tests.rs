@@ -155,6 +155,24 @@ fn optional_tool(name: &str, variable: &str) -> Option<PathBuf> {
     tool
 }
 
+/// Copies an installed tool into a fixture. A sibling test thread that forks
+/// while the copy's write fd is open holds a duplicate until its own exec, and
+/// an exec of the copy in that window fails with `ETXTBSY`. One exec that
+/// succeeds proves no writer remains, so every later exec of the copy is safe.
+fn install_tool(tool: &Path, binary: &Path) {
+    const MAX_ATTEMPTS: u32 = 50;
+    std::fs::copy(tool, binary).unwrap();
+    for attempt in 1..=MAX_ATTEMPTS {
+        match Command::new(binary).arg("--version").output() {
+            Ok(_) => return,
+            Err(error) if attempt < MAX_ATTEMPTS && error.raw_os_error() == Some(libc::ETXTBSY) => {
+                std::thread::sleep(Duration::from_millis(10));
+            }
+            Err(error) => panic!("{}: {error}", binary.display()),
+        }
+    }
+}
+
 #[test]
 fn actual_uv_lock_check_uses_private_writable_cache_offline() {
     if !launcher_available("actual_uv_lock_check_uses_private_writable_cache_offline") {
@@ -167,7 +185,7 @@ fn actual_uv_lock_check_uses_private_writable_cache_offline() {
     let cwd = root.path().join("worktree");
     std::fs::create_dir(&cwd).unwrap();
     let binary = cwd.join("uv");
-    std::fs::copy(tool, &binary).unwrap();
+    install_tool(&tool, &binary);
     std::fs::write(
         cwd.join("pyproject.toml"),
         "[project]\nname = \"cache-fixture\"\nversion = \"0.1.0\"\nrequires-python = \">=3.8\"\n",
@@ -259,7 +277,7 @@ fn biome_fixture(root: &Path, tool: &Path) -> PathBuf {
         std::fs::create_dir_all(cwd.join(generated)).unwrap();
         std::fs::write(cwd.join(generated).join("broken.js"), "function {\n").unwrap();
     }
-    std::fs::copy(tool, cwd.join("biome")).unwrap();
+    install_tool(tool, &cwd.join("biome"));
     cwd
 }
 
