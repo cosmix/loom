@@ -1,17 +1,19 @@
 //! Per-project planning runtime paths.
 //!
-//! Pure path computation: nothing here creates a file or directory. Outside a
-//! planning session the runtime directory is `<loom user dir>/plan/<project key>`;
+//! Path computation, plus [`create_runtime_dir`] as the one place that creates the directory.
+//! Outside a planning session the runtime directory is `<loom user dir>/plan/<project key>`;
 //! inside one, `LOOM_PLAN_STATE` names it and must pass a set of provenance checks.
 
 use std::ffi::OsString;
-use std::os::unix::fs::MetadataExt;
+use std::fs::{File, Permissions};
+use std::os::unix::fs::{MetadataExt, PermissionsExt};
 use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, bail, Context, Result};
 use nix::unistd::{access, AccessFlags};
 
 use crate::context::source_graph::body_hash;
+use crate::fs::safe_fs::{safe_create_dir_all, safe_open_dirfd};
 
 /// Environment variable a planning session uses to name its runtime directory.
 const STATE_VAR: &str = "LOOM_PLAN_STATE";
@@ -165,6 +167,24 @@ pub fn runtime_paths(root: &Path) -> Result<RuntimePaths> {
         &loom_user_dir()?,
         root,
     )
+}
+
+/// Create the runtime directory mode 0700, and the loom user directory above it when that is
+/// missing, refusing a symlink or a non-directory anywhere below the loom user directory.
+pub fn create_runtime_dir(paths: &RuntimePaths) -> Result<()> {
+    let base = paths
+        .planning_root
+        .parent()
+        .context("the planning root has no parent directory")?;
+    std::fs::create_dir_all(base).with_context(|| format!("cannot create {}", base.display()))?;
+    let rel = paths
+        .dir
+        .strip_prefix(base)
+        .context("the runtime directory is outside the loom user directory")?;
+    safe_create_dir_all(base, rel, 0o700)?;
+    let dir = File::from(safe_open_dirfd(&paths.dir)?);
+    dir.set_permissions(Permissions::from_mode(0o700))
+        .with_context(|| format!("cannot restrict {} to mode 0700", paths.dir.display()))
 }
 
 /// Runtime paths for the server, which never honours `LOOM_PLAN_STATE`.

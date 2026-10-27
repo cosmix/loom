@@ -5,13 +5,13 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{bail, Context, Result};
 
-use super::claims::{create_claim, delete_claim, draft_path};
+use super::claims::{create_claim, delete_claim, draft_path, ClaimHeld};
 use super::evaluate::{evaluate, Evaluation, SentenceState, SummaryEval};
 use super::format::{MAX_DOCUMENT_SENTENCES, MAX_OVERVIEW_SENTENCES};
 use super::lock::with_store_lock;
 use super::store::{self, validate_id};
 use super::write::read_summary;
-use crate::context::untrusted::{inline_safe, terminal_safe};
+use crate::context::untrusted::terminal_safe;
 use crate::planning::kinds::VISION_PATH;
 use crate::planning::project::Project;
 use crate::planning::runtime::RuntimePaths;
@@ -43,10 +43,11 @@ pub fn brief(
         for id in ids {
             match create_claim(paths, id)? {
                 Ok(_) => made.push(id.clone()),
-                Err(holder) => bail!(
-                    "{id} is claimed by {}",
-                    inline_safe(holder.session.as_deref().unwrap_or("a terminal"))
-                ),
+                Err(holder) => bail!(ClaimHeld {
+                    summary: id.clone(),
+                    holder: holder.session,
+                    release: false,
+                }),
             }
         }
         with_store_lock(paths, || build_brief(&project, paths, ids, note))
@@ -87,7 +88,7 @@ fn write_summary_brief(
     note: Option<&str>,
 ) -> Result<()> {
     let id = &eval.id;
-    let overview = id == "product" || id == "engineering";
+    let overview = store::is_overview(id);
     write_heading(out, project, evaluation, eval, overview)?;
     let matched = note.and_then(|n| {
         eval.sentences.iter().find(|s| {

@@ -9,11 +9,11 @@ use std::fs::File;
 use std::os::fd::AsRawFd;
 use std::path::Path;
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 use fs2::FileExt;
 
-use crate::fs::safe_fs::{open_safely, safe_create_dir_all, safe_open_dirfd};
-use crate::planning::runtime::RuntimePaths;
+use crate::fs::safe_fs::{open_safely, safe_open_dirfd};
+use crate::planning::runtime::{create_runtime_dir, RuntimePaths};
 
 /// Holds the exclusive lock; unlocks when dropped, on every exit path.
 struct StoreLock {
@@ -28,27 +28,14 @@ impl Drop for StoreLock {
     }
 }
 
-/// Create the runtime directory (`<planning root>/<key>`, mode 0700) when it is missing,
-/// refusing a symlink in any component. An existing real directory is used as it is, so a
-/// session whose planning root is read-only never tries to create anything.
+/// Create the runtime directory, and the loom user directory above it, when the runtime
+/// directory is missing. An existing real directory is used as it is, so a session whose
+/// planning root is read-only never tries to create anything.
 pub(crate) fn ensure_runtime_dir(paths: &RuntimePaths) -> Result<()> {
     if safe_open_dirfd(&paths.dir).is_ok() {
         return Ok(());
     }
-    let base = paths.planning_root.parent().ok_or_else(|| {
-        anyhow!(
-            "planning root {} has no parent",
-            paths.planning_root.display()
-        )
-    })?;
-    let rel = paths.dir.strip_prefix(base).with_context(|| {
-        format!(
-            "runtime directory {} is outside {}",
-            paths.dir.display(),
-            base.display()
-        )
-    })?;
-    safe_create_dir_all(base, rel, 0o700).with_context(|| {
+    create_runtime_dir(paths).with_context(|| {
         format!(
             "cannot create the runtime directory {}",
             paths.dir.display()

@@ -16,7 +16,7 @@ use std::path::{Path, PathBuf};
 
 use anyhow::{anyhow, Context};
 
-use super::claims::{current_session, delete_claim, list_claims};
+use super::claims::{current_session, delete_claim, draft_rel, list_claims};
 use super::evaluate::{evaluate, members_hash};
 use super::format::{
     parse_draft, render, Block, FormatError, FrontMatter, SummaryBody, SummaryFile, SummaryKind,
@@ -90,15 +90,19 @@ pub fn seal(
     if !store::expected_ids(&project).iter().any(|e| e == id) {
         return Err(rejected(format!("no such summary in this project: {id}")));
     }
-    let draft_rel = Path::new("drafts").join(format!("{id}.md"));
-    let text = read_to_string_bounded(&paths.dir, &draft_rel, MAX_DRAFT_BYTES)
+    let draft = draft_rel(id);
+    let text = read_to_string_bounded(&paths.dir, &draft, MAX_DRAFT_BYTES)
         .with_context(|| format!("cannot read the draft of {id}"))?;
     let claimed = check_claim(paths, id, force)?;
     let body = parse_draft(id, &text).map_err(SealError::Rejected)?;
     let sentences = write_locked(root, paths, &project, id, &body)?;
-    remove_draft(paths, &draft_rel)?;
     if claimed {
         delete_claim(paths, id)?;
+    }
+    if let Err(error) = remove_draft(paths, &draft) {
+        // The summary is already written and its claim released; a leftover draft is harmless,
+        // so report it and succeed.
+        tracing::warn!(summary = %id, error = %format!("{error:#}"), "sealed draft could not be removed");
     }
     Ok(SealOutcome {
         sentences,
@@ -106,19 +110,21 @@ pub fn seal(
     })
 }
 
-/// Refuse when another session, or a terminal without `force`, holds the claim on `id`;
+/// Refuse when a claim on `id` is another session's, or a terminal's without `force`;
 /// otherwise say whether a claim on `id` exists (the sealer then owns it and deletes it).
+/// `--force` overrides a claim only from a terminal: a planning session never does.
 fn check_claim(paths: &RuntimePaths, id: &str, force: bool) -> Result<bool, SealError> {
     let claims = list_claims(paths)?;
     let Some(claim) = claims.iter().find(|c| c.summary == id) else {
         return Ok(false);
     };
     let holder = claim.session.as_deref();
-    let allowed = force || matches!((holder, current_session()), (Some(h), Some(me)) if h == me);
-    if allowed {
+    let session = current_session();
+    let same_session = matches!((holder, session.as_deref()), (Some(h), Some(me)) if h == me);
+    if same_session || (force && session.is_none()) {
         return Ok(true);
     }
-    let hint = if current_session().is_some() {
+    let hint = if session.is_some() {
         ""
     } else {
         "; pass --force"
@@ -170,7 +176,7 @@ fn sentence_count(body: &SummaryBody) -> usize {
 
 /// Check the links of `body` and render the summary file text; runs under the store lock.
 fn build_text(project: &Project, id: &str, body: &SummaryBody) -> Result<String, SealError> {
-    let overview = id == "product" || id == "engineering";
+    let overview = store::is_overview(id);
     let evaluation = overview.then(|| evaluate(project, &[]));
     let rules = Rules {
         project,
@@ -217,10 +223,10 @@ fn build_text(project: &Project, id: &str, body: &SummaryBody) -> Result<String,
 }
 
 /// Delete the draft; an absent draft is fine.
-fn remove_draft(paths: &RuntimePaths, draft_rel: &Path) -> Result<(), SealError> {
+fn remove_draft(paths: &RuntimePaths, draft_rel: &Path) -> anyhow::Result<()> {
     let dirfd = safe_open_dirfd(&paths.dir)?;
     match safe_remove_in_workdir(dirfd.as_raw_fd(), draft_rel) {
-        Err(error) if !is_not_found(&error) => Err(error.into()),
+        Err(error) if !is_not_found(&error) => Err(error),
         _ => Ok(()),
     }
 }

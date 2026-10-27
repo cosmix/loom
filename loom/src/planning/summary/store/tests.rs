@@ -31,6 +31,19 @@ fn project() -> (TempDir, Project) {
 }
 
 #[test]
+fn only_product_and_engineering_are_overviews() {
+    assert!(is_overview("product") && is_overview("engineering"));
+    for id in [
+        "product/section_01",
+        "plans/engineering",
+        "plans/product",
+        "",
+    ] {
+        assert!(!is_overview(id), "{id}");
+    }
+}
+
+#[test]
 fn document_ids_cover_store_rules() {
     let (_dir, project) = project();
     let cases = [
