@@ -46,35 +46,113 @@ fn accepts_title_headings_and_sentences() {
 }
 
 #[test]
-fn rejects_each_line_kind_at_its_line() {
+fn rejects_each_line_kind_at_its_line_with_its_own_message() {
+    // Every line ends in a citation link, so only the rule under test can
+    // reject it: deleting that rule would let the line parse as a sentence.
     let rejected = [
-        format!("- item {LINK}"),
-        format!("* item {LINK}"),
-        format!("+ item {LINK}"),
-        format!("1. item {LINK}"),
-        format!("2) item {LINK}"),
-        "| a | b |".to_string(),
-        "```".to_string(),
-        "~~~".to_string(),
-        format!("    indented {LINK}"),
-        format!("\tindented {LINK}"),
-        format!("> quote {LINK}"),
-        format!("<b>x</b> {LINK}"),
-        format!("Text <!-- c --> {LINK}"),
-        format!("Text </p> {LINK}"),
-        "### Deep".to_string(),
-        format!("## Heading {LINK}"),
-        "No citation here.".to_string(),
-        format!("{LINK} only a link"),
-        format!("Mid {LINK} text {LINK}"),
-        LINK.to_string(),
-        "Spaced [x](a b)".to_string(),
-        "Angle [x](<a.md>)".to_string(),
+        (format!("- item {LINK}"), "list items are not allowed"),
+        (format!("* item {LINK}"), "list items are not allowed"),
+        (format!("+ item {LINK}"), "list items are not allowed"),
+        (format!("1. item {LINK}"), "list items are not allowed"),
+        (format!("2) item {LINK}"), "list items are not allowed"),
+        (format!("| a | b | {LINK}"), "table rows are not allowed"),
+        (format!("``` {LINK}"), "code fences are not allowed"),
+        (format!("```rust {LINK}"), "code fences are not allowed"),
+        (format!("~~~ {LINK}"), "code fences are not allowed"),
+        (
+            format!("    indented {LINK}"),
+            "indented lines are not allowed",
+        ),
+        (
+            format!("\tindented {LINK}"),
+            "indented lines are not allowed",
+        ),
+        (format!("> quote {LINK}"), "block quotes are not allowed"),
+        (format!("<b>x</b> {LINK}"), "HTML is not allowed"),
+        (format!("Text <!-- c --> {LINK}"), "HTML is not allowed"),
+        (format!("Text </p> {LINK}"), "HTML is not allowed"),
+        (
+            format!("### Deep {LINK}"),
+            "headings deeper than level 2 are not allowed",
+        ),
+        (
+            format!("## Heading {LINK}"),
+            "a heading must not contain a link",
+        ),
     ];
-    for line in &rejected {
+    assert_rejected_at_line_3(&rejected);
+}
+
+#[test]
+fn rejects_each_sentence_defect_at_its_line_with_its_own_message() {
+    let rejected = [
+        ("No citation here.".to_string(), "no citation link"),
+        (format!("{LINK} only a link"), "no citation link"),
+        (
+            format!("Mid {LINK} text {LINK}"),
+            "must not contain links before its citations",
+        ),
+        (LINK.to_string(), "sentence has no text"),
+        ("Spaced [x](a b)".to_string(), "malformed link target"),
+        ("Angle [x](<a.md>)".to_string(), "malformed link target"),
+    ];
+    assert_rejected_at_line_3(&rejected);
+}
+
+/// Each `(line, message)` drafted under a title is rejected at line 3 with `message`.
+fn assert_rejected_at_line_3(rejected: &[(String, &str)]) {
+    for (line, message) in rejected {
         let errors = draft(&format!("# T\n\n{line}\n")).expect_err(line);
         assert_eq!(lines_of(&errors), vec![3], "{line:?}: {errors:?}");
+        assert!(
+            errors[0].message.contains(message),
+            "{line:?}: want {message:?}, got {errors:?}"
+        );
     }
+}
+
+#[test]
+fn link_scan_pairs_brackets_like_the_depth_count() {
+    let links = |text: &str| -> Vec<(String, String)> {
+        let body = draft(&format!("# T\n\n{text}\n")).unwrap();
+        let first = sentences(&body)[0].clone();
+        let pairs = first.links.into_iter();
+        pairs.map(|l| (l.label, l.target)).collect()
+    };
+    let want = |label: &str| vec![(label.to_string(), "t".to_string())];
+    assert_eq!(links("Text. [a [b] c](t)"), want("a [b] c"), "nested label");
+    assert_eq!(links("Text ] more. [x](t)"), want("x"), "stray ] first");
+    assert_eq!(links("Text [ more. [x](t)"), want("x"), "unmatched [ first");
+    assert_eq!(links("Text. [a][b](t)"), want("b"), "adjacent brackets");
+    // The outer pair is followed by an unclosed `(`, yet the inner link is
+    // still scanned and its malformed target reported.
+    let errors = draft("# T\n\nT [a [b](x y) c](t\n").unwrap_err();
+    assert!(
+        errors[0].message.contains("malformed link target"),
+        "{errors:?}"
+    );
+}
+
+/// Parses `text` as a draft and fails when that takes more than a generous
+/// 2 s in a debug build; a quadratic scan needs minutes on these inputs.
+fn assert_parses_fast(text: &str) {
+    let started = std::time::Instant::now();
+    let _ = draft(text);
+    let took = started.elapsed();
+    assert!(took.as_secs() < 2, "parse took {took:?}");
+}
+
+#[test]
+fn link_scan_is_linear_on_bracket_heavy_lines() {
+    let opens = "[".repeat(1 << 20);
+    assert_parses_fast(&format!("# T\n\n{opens}\n"));
+    let closes = "]".repeat(1 << 20);
+    assert_parses_fast(&format!("# T\n\n{closes}\n"));
+    let calls = "[a](".repeat(100_000);
+    assert_parses_fast(&format!("# T\n\nText {calls}\n"));
+    assert_parses_fast(&format!("# T\n\nText {calls})\n"));
+    let nested = format!("{}{}", "[".repeat(100_000), "]".repeat(100_000));
+    assert_parses_fast(&format!("# T\n\nText {nested}\n"));
 }
 
 #[test]

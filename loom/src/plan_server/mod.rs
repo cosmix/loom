@@ -54,9 +54,7 @@ mod startup_tests;
 mod tests;
 
 use std::fmt;
-use std::fs::{File, Permissions};
 use std::net::{IpAddr, SocketAddr, TcpListener};
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, RecvTimeoutError};
@@ -67,8 +65,7 @@ use std::time::Duration;
 use anyhow::{anyhow, Context, Result};
 
 use crate::cli::PlanServeArgs;
-use crate::fs::safe_fs::{safe_create_dir_all, safe_open_dirfd};
-use crate::planning::runtime::{server_runtime_paths, RuntimePaths};
+use crate::planning::runtime::{create_runtime_dir, server_runtime_paths};
 use crate::planning::watch::{OwnWrites, Watcher};
 use crate::web_server::access::AccessPolicy;
 use crate::web_server::auth::Auth;
@@ -260,24 +257,6 @@ pub fn run(args: &PlanServeArgs) -> Result<()> {
     }
     announce(&server, &root, args.no_open);
     serve_until_stopped(server)
-}
-
-/// Create the runtime directory mode 0700, refusing a symlink or a non-directory anywhere
-/// below the loom user directory.
-fn create_runtime_dir(paths: &RuntimePaths) -> Result<()> {
-    let base = paths
-        .planning_root
-        .parent()
-        .context("the planning root has no parent directory")?;
-    std::fs::create_dir_all(base).with_context(|| format!("cannot create {}", base.display()))?;
-    let rel = paths
-        .dir
-        .strip_prefix(base)
-        .context("the runtime directory is outside the loom user directory")?;
-    safe_create_dir_all(base, rel, 0o700)?;
-    let dir = File::from(safe_open_dirfd(&paths.dir)?);
-    dir.set_permissions(Permissions::from_mode(0o700))
-        .with_context(|| format!("cannot restrict {} to mode 0700", paths.dir.display()))
 }
 
 /// Print the startup lines, then open the first URL unless `--no-open`, SSH or no display.

@@ -8,13 +8,7 @@ afterEach(cleanup);
 describe("Sparkline", () => {
   it("labels the chart and preserves dimensions and classes", () => {
     render(
-      <Sparkline
-        values={[1, 2]}
-        width={80}
-        height={20}
-        label="Token flow"
-        className="sample"
-      />,
+      <Sparkline values={[1, 2]} width={80} height={20} label="Token flow" className="sample" />,
     );
 
     const chart = screen.getByRole("img", { name: "Token flow" });
@@ -30,9 +24,7 @@ describe("Sparkline", () => {
 
     const paths = container.querySelectorAll("path");
     expect(paths).toHaveLength(2);
-    expect(paths[0]?.getAttribute("d")).toBe(
-      "M 0 20 L 40 10 L 80 0 L 80 20 L 0 20 Z",
-    );
+    expect(paths[0]?.getAttribute("d")).toBe("M 0 20 L 40 10 L 80 0 L 80 20 L 0 20 Z");
     expect(paths[0]?.getAttribute("fill")).toBe("currentColor");
     expect(paths[0]?.getAttribute("fill-opacity")).toBe("0.2");
     expect(paths[1]?.getAttribute("d")).toBe("M 0 20 L 40 10 L 80 0");
@@ -51,14 +43,10 @@ describe("Sparkline", () => {
     { values: [0], path: "M 80 20" },
     { values: [5], path: "M 80 0" },
   ])("renders finite geometry for $values", ({ values, path }) => {
-    const { container } = render(
-      <Sparkline values={values} width={80} height={20} label="Flow" />,
-    );
+    const { container } = render(<Sparkline values={values} width={80} height={20} label="Flow" />);
 
     expect(container.innerHTML).not.toMatch(/NaN|Infinity/);
-    expect(
-      container.querySelector('path[fill="none"]')?.getAttribute("d"),
-    ).toBe(path);
+    expect(container.querySelector('path[fill="none"]')?.getAttribute("d")).toBe(path);
   });
 });
 
@@ -77,9 +65,14 @@ describe("HeatStrip", () => {
     expect(strip.classList.contains("sample")).toBe(true);
     expect(strip.style.gridAutoFlow).toBe("column");
     expect(strip.querySelectorAll("span")).toHaveLength(6);
-    expect(
-      Array.from(strip.children, (cell) => cell.getAttribute("data-level")),
-    ).toEqual(["0", "1", "1", "2", "3", "4"]);
+    expect(Array.from(strip.children, (cell) => cell.getAttribute("data-level"))).toEqual([
+      "0",
+      "1",
+      "1",
+      "2",
+      "3",
+      "4",
+    ]);
     expect(strip.children[0]?.getAttribute("style")).toContain(
       "color-mix(in oklch, var(--tone-completed) 8%, transparent)",
     );
@@ -92,22 +85,15 @@ describe("HeatStrip", () => {
   });
 
   it("glows only the hottest cells", () => {
-    const { container } = render(
-      <HeatStrip values={[10, 74, 75, 100]} max={100} label="Glow" />,
-    );
+    const { container } = render(<HeatStrip values={[10, 74, 75, 100]} max={100} label="Glow" />);
 
     expect(
-      Array.from(
-        container.querySelectorAll("span"),
-        (cell) => cell.style.boxShadow !== "",
-      ),
+      Array.from(container.querySelectorAll("span"), (cell) => cell.style.boxShadow !== ""),
     ).toEqual([false, false, true, true]);
   });
 
   it("renders floor-intensity zero cells with a zero maximum", () => {
-    const { container } = render(
-      <HeatStrip values={[0, 0]} max={0} label="Idle" />,
-    );
+    const { container } = render(<HeatStrip values={[0, 0]} max={0} label="Idle" />);
 
     expect(container.innerHTML).not.toMatch(/NaN|Infinity/);
     expect(
@@ -124,8 +110,6 @@ describe("HeatStrip", () => {
   it("renders an empty grid for an empty series", () => {
     render(<HeatStrip values={[]} max={0} label="No flow" />);
 
-    expect(screen.getByRole("img", { name: "No flow" }).children).toHaveLength(
-      0,
-    );
+    expect(screen.getByRole("img", { name: "No flow" }).children).toHaveLength(0);
   });
 });

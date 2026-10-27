@@ -11,6 +11,11 @@ use crate::planning::project::Project;
 /// Repository-relative directory containing summaries.
 pub const STORE_DIR: &str = "doc/loom/summaries";
 
+/// Whether `id` names an overview (`product` or `engineering`) rather than a document summary.
+pub fn is_overview(id: &str) -> bool {
+    matches!(id, "product" | "engineering")
+}
+
 /// Validate a summary id before using it as a path.
 pub fn validate_id(id: &str) -> Result<()> {
     let valid = match id {

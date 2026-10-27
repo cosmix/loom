@@ -79,3 +79,15 @@ fn human_status_includes_stale_counts_and_claimant() {
         .lines()
         .any(|line| line == "missing product/section_02  0/0 sentences"));
 }
+
+#[test]
+fn human_status_neutralises_a_hostile_session_name() {
+    let fx = two_sections();
+    seal_document(&fx.root, ID1, &[("Alpha holds.", "a")]);
+    create_claim_as(&fx.paths, ID1, Some("evil\u{202E}name".into()))
+        .unwrap()
+        .unwrap();
+    let rendered = render_status(&status_report(&fx.root, &fx.paths).unwrap());
+    assert!(!rendered.contains('\u{202E}'), "{rendered:?}");
+    assert!(rendered.contains("[claimed by evil name]"), "{rendered:?}");
+}
