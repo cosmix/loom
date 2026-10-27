@@ -248,7 +248,14 @@ fn test_complete_commands_includes_plan() {
 #[test]
 fn test_complete_subcommands_plan() {
     let results = complete_subcommands("plan", "").unwrap();
-    assert_eq!(results, vec!["check".to_string(), "verify".to_string()]);
+    assert_eq!(
+        results,
+        vec![
+            "check".to_string(),
+            "summary".to_string(),
+            "verify".to_string()
+        ]
+    );
     assert!(complete_subcommands("plan", "h").unwrap().is_empty());
 }
 

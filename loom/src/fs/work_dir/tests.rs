@@ -1,4 +1,5 @@
 use super::*;
+use std::os::unix::fs::PermissionsExt;
 use tempfile::TempDir;
 
 mod git_marker_bound;
@@ -233,8 +234,7 @@ fn test_workdir_new_legacy_hint_naming_work_dir_resolves_to_itself() {
 
 // ----- Centralized config.toml API tests -----
 
-use crate::models::session::TerminalConfig;
-use crate::plan::schema::SandboxConfig;
+use crate::{models::session::TerminalConfig, plan::schema::SandboxConfig};
 
 fn init_work(temp: &TempDir) -> PathBuf {
     let work = temp.path().join(".loom").join("work");

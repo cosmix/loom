@@ -460,6 +460,10 @@ When the codex model is unavailable to the account (codex rejects it as not supp
 loom plan [--port <PORT>] [--host <HOST>] [--no-open]
 loom plan verify <plan-path> [--strict] [--json] [--no-color]
 loom plan check [--json]
+loom plan summary brief <SUMMARY_ID>... [--note <TEXT>]  # Claim summaries and print rebuild briefs
+loom plan summary seal <SUMMARY_ID> [--force]            # Validate and save a draft
+loom plan summary status [--json]                        # List summary states
+loom plan summary release <SUMMARY_ID>...               # Release claims
 ```
 
 Bare `loom plan` starts the planning app for the current git repository and prints a URL with an access token. It opens the URL in a browser unless `--no-open` is given, the session is over SSH, or Linux has no display. By default it binds to `127.0.0.1`, starting at port 7272 and trying the next port if that one is in use. `--host` selects the bind address; `--port` binds exactly the given port, with `0` asking the OS for a free port.
@@ -473,6 +477,8 @@ The server runs in the foreground after browser tabs close. The first Ctrl-C sto
 `loom plan verify` validates a plan file without touching `.loom/work/` or requiring a git repo. It runs the same fatal validation as `loom init` (schema errors, unknown or retired fields at every nested policy layer, duplicate IDs, unknown dependencies, path safety) plus advisory warnings (structural issues, a stage without a `summary`, a missing knowledge-bootstrap stage when the repository's knowledge tree is missing or holds only the scaffold, sandbox gaps). A retired top-level `truths` block is rejected; move behavioral commands to `acceptance`. It additionally rejects requirements a sandboxed stage cannot satisfy — an `allow_write` grant under `/tmp` or missing on the host, a `TMPDIR=<absolute path>` override, a hardcoded `/tmp/` path, and a `mkdir`, `touch` or output redirect aimed outside the worktree in `acceptance`, `setup`, `wiring_tests`, `before_stage` or `after_stage` commands — because the stage sandbox already provides a writable `$TMPDIR`. It rejects commands that cannot mean what they say inside a sandbox — an exit status masked by a final `|| true`, `|| :`, `|| exit 0` or `; true`, `HOME` assigned from a variable or substitution, and a bare `mktemp -d` — and warns on network tools, reads of `doc/plans/`, `rg -r`, and hardcoded `/tmp/` paths. A single `rg` or `grep` acceptance criterion that already passes at `HEAD` earns a `baseline` warning, since it cannot tell a stage that did its work from one that did nothing. A stage's `skills:` list is checked against the skill index: an empty, duplicate or unknown name is an error. It also warns when a stage description's worker/files-owned table claims overlapping paths between workers, or a claim outside the stage's declared `files`. Exits 0 on success, non-zero on fatal errors; `--strict` promotes warnings to errors.
 
 `loom plan check` prints the seven-step checklist, current step, offers, and convention problems. It reads only files and needs no server. It exits 0 when there are no problems, 1 when there are problems, and 2 on an error such as running outside a repository. `--json` outputs the schema used by the planning app and sessions.
+
+`loom plan summary` stores drafts and claims under `~/.loom/plan/<project-key>/` and needs no server. Seal refuses a summary claimed by another session. The commands exit 0 on success, 1 for a rejected seal, claimed brief, or refused release, and 2 for other errors.
 
 ### Stage Commands
 

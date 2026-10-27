@@ -8,7 +8,8 @@
 //!
 //! # One shadowing rule: every workspace-backed key resolves per KEY
 //!
-//! `[terminal]`, `[context]`, `[pressure]` and `[models]` all shadow
+//! `[terminal]`, `[context]`, `[pressure]`, `[models]` and `[planning]` (the
+//! registry's `plan` section; see [`workspace_table`]) all shadow
 //! `~/.loom/config.toml` a KEY at a time: a present section that omits a key
 //! falls through to the user tier for that key rather than shadowing it with
 //! a built-in the operator never asked for — a plan's stage can leave
@@ -38,8 +39,8 @@
 //! [`crate::fs::work_dir::read_terminal_config`] and
 //! [`crate::fs::work_dir::resolve_context_ceiling_tokens`] for the two keys
 //! above, [`crate::fs::work_dir::read_pressure_config`] and
-//! [`crate::fs::work_dir::resolve_stage_model_effort`] for the fourteen
-//! `[pressure]`/`[models]` ones — because a settings page that disagrees with
+//! [`crate::fs::work_dir::resolve_stage_model_effort`] for the `[pressure]`/`[models]`/`[planning]`
+//! ones — because a settings page that disagrees with
 //! the daemon about the value in force is worse than no settings page.
 
 use std::path::{Path, PathBuf};
@@ -100,7 +101,7 @@ impl Workspace {
     /// Whether the file sets `spec`'s key itself.
     pub(crate) fn has_key(&self, spec: &KeySpec) -> bool {
         self.doc
-            .get(spec.section)
+            .get(workspace_table(spec.section))
             .and_then(|section| section.get(spec.field))
             .is_some()
     }
@@ -110,7 +111,7 @@ impl Workspace {
     /// For a key the file does not supply, this is the user tier's value:
     /// that is what clearing the key (or never setting it) leaves in force.
     pub(crate) fn value_of(&self, spec: &KeySpec) -> Result<ConfigValue> {
-        match resolve(spec, self.doc.get(spec.section)) {
+        match resolve(spec, self.doc.get(workspace_table(spec.section))) {
             Some(value) => Ok(value?.unwrap_or_else(|| UserConfig::load().value_of(spec).0)),
             None => bail!("{} has no project scope", spec.name),
         }
@@ -120,7 +121,10 @@ impl Workspace {
     /// supplies the key itself (directly, or via [`resolve`]'s
     /// `context.ceiling_tokens` qualification).
     pub(crate) fn shadows(&self, spec: &KeySpec) -> bool {
-        matches!(resolve(spec, self.doc.get(spec.section)), Some(Ok(Some(_))))
+        matches!(
+            resolve(spec, self.doc.get(workspace_table(spec.section))),
+            Some(Ok(Some(_)))
+        )
     }
 
     /// Write or clear `spec` in this workspace's `config.toml`, reporting what
@@ -141,14 +145,29 @@ impl Workspace {
         update_config(&root, |doc| {
             let old = Self::from_document(&root, doc)?.value_of(spec)?;
             match value {
-                Some(value) => insert_key(doc, spec.section, spec.field, value.to_toml_edit())?,
-                None => remove_key(doc, spec.section, spec.field),
+                Some(value) => insert_key(
+                    doc,
+                    workspace_table(spec.section),
+                    spec.field,
+                    value.to_toml_edit(),
+                )?,
+                None => remove_key(doc, workspace_table(spec.section), spec.field),
             }
             let new = Self::from_document(&root, doc)?.value_of(spec)?;
             old_new = Some((old, new));
             Ok(())
         })?;
         old_new.ok_or_else(|| anyhow!("update_config returned without a captured value"))
+    }
+}
+
+/// The table of `<repo>/.loom/work/config.toml` that backs registry section
+/// `section`: `plan` lives in `[planning]` because the run's own `[plan]` table
+/// (`source_path`, `plan_id`, ...) belongs to `loom init` and the daemon.
+fn workspace_table(section: &str) -> &str {
+    match section {
+        "plan" => "planning",
+        other => other,
     }
 }
 
@@ -179,7 +198,7 @@ fn resolve(spec: &KeySpec, section: Option<&toml::Value>) -> Option<Result<Optio
             ),
         ),
         _ => match spec.section {
-            "pressure" | "models" => Some(Ok(section_key(section, spec))),
+            "pressure" | "models" | "plan" => Some(Ok(section_key(section, spec))),
             _ => None,
         },
     }

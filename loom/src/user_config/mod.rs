@@ -73,6 +73,7 @@ pub use value::ConfigValue;
 
 mod models;
 mod parse;
+mod plan;
 mod pressure;
 mod render;
 mod write;
@@ -99,7 +100,7 @@ mod tests;
 ///
 /// `loom config` reads only the user config, never a workspace config, so
 /// these two are the whole space — a workspace `[terminal]`/`[context]`/
-/// `[pressure]`/`[models]` section is a separate resolution tier that
+/// `[pressure]`/`[models]`/`[planning]` section is a separate resolution tier that
 /// [`crate::fs::work_dir::read_terminal_config`]/
 /// [`crate::fs::work_dir::read_context_config`] merge in themselves, above
 /// this module.
@@ -135,6 +136,7 @@ pub struct UserConfig {
     update_check_interval_hours: Option<u32>,
     terminal_backend: Option<SessionBackendKind>,
     context_ceiling_tokens: Option<u32>,
+    plan: plan::PlanSection,
     pressure: pressure::PressureSection,
     models: models::ModelsSection,
 }
@@ -282,6 +284,7 @@ pub(crate) fn parse_document(text: &str) -> Result<UserConfig> {
         update_check_interval_hours: parse::get_u32(&doc, "update", "check_interval_hours")?,
         terminal_backend: parse::get_backend(&doc)?,
         context_ceiling_tokens: parse::get_u32(&doc, "context", "ceiling_tokens")?,
+        plan: plan::PlanSection::parse(&doc)?,
         pressure: pressure::PressureSection::parse(&doc)?,
         models: models::ModelsSection::parse(&doc)?,
     })
