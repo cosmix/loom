@@ -72,6 +72,39 @@ function Chip({ value, label, trend }: { value: string; label: string; trend: Tr
   );
 }
 
+function LaneIdentity({ agent }: { agent: AgentFlow }) {
+  const label = agentLabel(agent);
+  const state = agent.active ? "live" : "idle";
+  return (
+    <div className="flex min-w-0 flex-col">
+      <span className="flex items-center gap-1.5 text-sm font-medium">
+        <span
+          role="img"
+          aria-label={state}
+          data-testid="agent-dot"
+          data-state={state}
+          className={`size-2 shrink-0 rounded-full bg-(--tone) ${agent.active ? "tone-completed dot-live" : "tone-dimmed"}`}
+        />
+        <span className="truncate" title={label}>
+          {label}
+        </span>
+        {agent.kind === "codex" && (
+          <span className="rounded-sm border border-hairline px-1 text-[10px] text-muted-foreground">
+            codex
+          </span>
+        )}
+      </span>
+      <span className="flex min-w-0 items-baseline font-mono text-[11px] text-muted-foreground">
+        <span className="shrink-0">{agent.model ?? "unknown model"}</span>
+        <span className="shrink-0 whitespace-pre"> · </span>
+        <span className="min-w-0 truncate" title={agent.id}>
+          {agent.id}
+        </span>
+      </span>
+    </div>
+  );
+}
+
 function Lane({
   agent,
   series,
@@ -83,41 +116,16 @@ function Lane({
   max: number;
   compact?: boolean;
 }) {
-  const label = agentLabel(agent);
-  const state = agent.active ? "live" : "idle";
   return (
     <li
       data-testid="token-lane"
       className={`grid grid-cols-[minmax(0,20rem)_minmax(0,1fr)_auto_auto] items-center gap-x-3 max-md:grid-cols-[minmax(0,1fr)_auto_auto] ${compact ? "gap-y-0.5" : "gap-y-1"}`}
     >
-      <div className="flex min-w-0 flex-col">
-        <span className="flex items-center gap-1.5 text-sm font-medium">
-          <span
-            aria-hidden="true"
-            data-testid="agent-dot"
-            data-state={state}
-            className={`size-2 shrink-0 rounded-full bg-(--tone) ${agent.active ? "tone-completed dot-live" : "tone-dimmed"}`}
-          />
-          <span className="truncate" title={label}>
-            {label}
-          </span>
-          {agent.kind === "codex" && (
-            <span className="rounded-sm border border-hairline px-1 text-[10px] text-muted-foreground">
-              codex
-            </span>
-          )}
-        </span>
-        <span
-          className="truncate font-mono text-[11px] text-muted-foreground"
-          title={`${agent.id} · ${agent.model ?? "unknown model"} · ${state}`}
-        >
-          {agent.id} · {agent.model ?? "unknown model"} · {state}
-        </span>
-      </div>
+      <LaneIdentity agent={agent} />
       <HeatStrip
         values={series}
         max={max}
-        label={`${label} fresh tokens per 30 s, last 30 min`}
+        label={`${agentLabel(agent)} fresh tokens per 30 s, last 30 min`}
         className="max-md:order-last max-md:col-span-3"
       />
       <span className="w-16 text-right font-mono text-xs tabular-nums text-muted-foreground">
@@ -212,7 +220,14 @@ export function StageTokens({ stageId }: { stageId: string }) {
         <h2 className="eyebrow">tokens</h2>
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <span>30 s cells</span>
-          <HeatStrip values={RAMP} max={4} label="intensity, low to high" className="w-16" />
+          <span className="font-mono tabular-nums">0</span>
+          <HeatStrip
+            values={RAMP}
+            max={4}
+            label={`intensity, 0 to ${max} fresh tokens per 30 s`}
+            className="w-16"
+          />
+          <span className="font-mono tabular-nums">{compactTokens(max)}</span>
         </div>
       </div>
       <Chips tokens={tokens} flow={flow} />
