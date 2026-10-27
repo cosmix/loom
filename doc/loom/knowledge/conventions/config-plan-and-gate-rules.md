@@ -17,3 +17,7 @@ A completion, verification or cleanup rule never hardcodes one ecosystem's direc
 ## README Covers Current Behavior Only
 
 The README documents what loom does now. A fixed bug gets no warning box, mechanism write-up, or workaround recipe there; that history belongs in `mistakes/` and the commit log. A cost or limit that was expected but never materialized is deleted, not hedged: the owner confirmed `-p` usage is not charged separately, so the README carries no `claude -p` billing warning.
+
+## A Completed, Merged Stage Is Final
+
+A stage that is Completed with `merged: true`, or completed by the operator with `--force-unsafe --assume-merged` (`merge_assumed: true`), is final. Loom never re-verifies its merge, never reverts `merged`, and never moves it to MergeBlocked, MergeConflict or any other status, whatever happens to the target branch afterwards (a move outside loom, a target hold, a changed HEAD). `--assume-merged` is the operator's statement that the work landed, and loom takes it as given. Owner direction.

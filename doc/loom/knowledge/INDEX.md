@@ -104,7 +104,7 @@
 | --- | --- | --- |
 | [code-style-and-structure](conventions/code-style-and-structure.md) | Rust style | 283 |
 | [commits](conventions/commits.md) | Commit format | 24 |
-| [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) | Config rules | 19 |
+| [config-plan-and-gate-rules](conventions/config-plan-and-gate-rules.md) | Config rules | 23 |
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute rules | 119 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, build | 235 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance | 139 |
