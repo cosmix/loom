@@ -5,6 +5,7 @@ import { useLocation } from "react-router";
 import { Button } from "@/components/ui/button";
 import { useMediaQuery } from "@/lib/use-media-query";
 import { fetchTree, useFileSocket } from "@/plan/files/api";
+import { DiffPage } from "@/plan/diff";
 import { parseAddress } from "@/plan/files/address";
 import { treeAtom } from "@/plan/files/atoms";
 import { ReadingColumn } from "@/plan/files/reading-column";
@@ -65,6 +66,45 @@ function Drawer({ onClose, children }: { onClose: () => void; children: JSX.Elem
   );
 }
 
+/** Fetches the tree once when nothing has put it in `treeAtom` yet. */
+function useLoadTree(): void {
+  const store = useStore();
+  useEffect(() => {
+    if (store.get(treeAtom)) return;
+    void fetchTree().then((result) => {
+      if (result.ok && !store.get(treeAtom)) store.set(treeAtom, result.value);
+    });
+  }, [store]);
+}
+
+/** No document open: the drawer control on narrow screens, then the gap view or a hint. */
+function NoDocument({
+  wide,
+  gap,
+  onOpenTree,
+}: {
+  wide: boolean;
+  gap: string | null;
+  onOpenTree: () => void;
+}) {
+  return (
+    <>
+      {!wide && (
+        <div className="border-b border-hairline px-4 py-2">
+          <Button variant="ghost" size="sm" onClick={onOpenTree}>
+            Documents
+          </Button>
+        </div>
+      )}
+      {gap ? (
+        <GapView title={gap} />
+      ) : (
+        <p className="p-6 text-[13px] text-muted-foreground">Choose a document from the tree.</p>
+      )}
+    </>
+  );
+}
+
 /** The Files tab: the tree beside the reading column, a drawer on narrow screens. */
 export function FileMode(): JSX.Element {
   const store = useStore();
@@ -77,12 +117,7 @@ export function FileMode(): JSX.Element {
   const hasPath = location.pathname.startsWith("/files/") && location.pathname.length > 7;
   const gap = new URLSearchParams(location.search).get("gap");
 
-  useEffect(() => {
-    if (store.get(treeAtom)) return;
-    void fetchTree().then((result) => {
-      if (result.ok && !store.get(treeAtom)) store.set(treeAtom, result.value);
-    });
-  }, [store]);
+  useLoadTree();
   useEffect(() => setDrawer(false), [location.pathname, location.search]);
 
   const tab = tree ? (
@@ -98,7 +133,9 @@ export function FileMode(): JSX.Element {
       )}
       {!wide && drawer && <Drawer onClose={() => setDrawer(false)}>{tab}</Drawer>}
       <div data-reading-scroll className="min-w-0 flex-1 overflow-y-auto">
-        {hasPath ? (
+        {hasPath && address.diff ? (
+          <DiffPage path={address.path} kind={address.diff} turn={address.turn} />
+        ) : hasPath ? (
           <ReadingColumn
             path={address.path}
             anchor={address.anchor}
@@ -106,22 +143,7 @@ export function FileMode(): JSX.Element {
             onOpenTree={wide ? undefined : () => setDrawer(true)}
           />
         ) : (
-          <>
-            {!wide && (
-              <div className="border-b border-hairline px-4 py-2">
-                <Button variant="ghost" size="sm" onClick={() => setDrawer(true)}>
-                  Documents
-                </Button>
-              </div>
-            )}
-            {gap ? (
-              <GapView title={gap} />
-            ) : (
-              <p className="p-6 text-[13px] text-muted-foreground">
-                Choose a document from the tree.
-              </p>
-            )}
-          </>
+          <NoDocument wide={wide} gap={gap} onOpenTree={() => setDrawer(true)} />
         )}
       </div>
     </div>

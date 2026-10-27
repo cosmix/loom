@@ -9,4 +9,11 @@ export const PLAN_HELP_KEYS: HelpShortcutGroup[] = [
       ["Esc", "Clear search"],
     ],
   },
+  {
+    title: "Editor",
+    rows: [
+      ["Ctrl + S / ⌘ S", "Save"],
+      ["Esc", "Leave the editor (closes the search panel first)"],
+    ],
+  },
 ];
