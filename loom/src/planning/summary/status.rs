@@ -10,6 +10,7 @@ use serde::Serialize;
 use super::claims::{list_claims, Claim};
 use super::evaluate::{evaluate, SentenceState, SummaryEval, SummaryState};
 use super::store::{expected_ids, summary_path};
+use crate::context::untrusted::inline_safe;
 use crate::planning::project::Project;
 use crate::planning::runtime::RuntimePaths;
 
@@ -127,7 +128,7 @@ pub fn render_status(report: &StatusReport) -> String {
         if let Some(claim) = &summary.claim {
             output.push_str(&format!(
                 "  [claimed by {}]",
-                claim.session.as_deref().unwrap_or("a terminal")
+                inline_safe(claim.session.as_deref().unwrap_or("a terminal"))
             ));
         }
         output.push('\n');

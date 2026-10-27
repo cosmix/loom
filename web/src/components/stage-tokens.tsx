@@ -31,14 +31,8 @@ interface Trend {
 /// Each chip's trend over the last `TREND_POINTS` buckets of the stage's series.
 function chipTrends(tokens: TokenFlow, flow: StageFlow) {
   return {
-    rate: lastValues(
-      rollingRate(flow.series, tokens.bucket_secs),
-      TREND_POINTS,
-    ),
-    total: lastValues(
-      cumulativeSeries(fresh(flow.total), flow.series),
-      TREND_POINTS,
-    ),
+    rate: lastValues(rollingRate(flow.series, tokens.bucket_secs), TREND_POINTS),
+    total: lastValues(cumulativeSeries(fresh(flow.total), flow.series), TREND_POINTS),
     hit: lastValues(carryForward(flow.hit_series), TREND_POINTS),
     live: lastValues(liveCounts(flow.agents, flow.series.length), TREND_POINTS),
   };
@@ -51,9 +45,7 @@ function chipTrends(tokens: TokenFlow, flow: StageFlow) {
 /// are scaled to. Loops over the series rather than spreading them into
 /// arguments, which throws a RangeError on a long series.
 function laneSeries(stage: StageFlow): { lanes: number[][]; max: number } {
-  const lanes = stage.agents.map((agent) =>
-    lastValues(agent.series, TREND_POINTS),
-  );
+  const lanes = stage.agents.map((agent) => lastValues(agent.series, TREND_POINTS));
   const max = lanes.reduce(
     (best, series) => maxOf(series, best),
     maxOf(lastValues(stage.series, TREND_POINTS)),
@@ -61,22 +53,12 @@ function laneSeries(stage: StageFlow): { lanes: number[][]; max: number } {
   return { lanes, max };
 }
 
-function Chip({
-  value,
-  label,
-  trend,
-}: {
-  value: string;
-  label: string;
-  trend: Trend;
-}) {
+function Chip({ value, label, trend }: { value: string; label: string; trend: Trend }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-hairline bg-background px-2.5 py-1.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-2">
         <span className="font-mono text-sm tabular-nums">{value}</span>
-        <span className="ml-auto text-right text-[11px] text-muted-foreground">
-          {label}
-        </span>
+        <span className="ml-auto text-right text-[11px] text-muted-foreground">{label}</span>
       </div>
       <Sparkline
         values={trend.values}
@@ -198,13 +180,7 @@ function CodexCluster({
         <span className="eyebrow">codex</span>
         <ul className="flex flex-col gap-1.5">
           {rows.map(({ agent, series }) => (
-            <Lane
-              key={agent.id}
-              agent={agent}
-              series={series}
-              max={max}
-              compact
-            />
+            <Lane key={agent.id} agent={agent} series={series} max={max} compact />
           ))}
         </ul>
       </div>
@@ -237,12 +213,7 @@ export function StageTokens({ stageId }: { stageId: string }) {
         <h2 className="eyebrow">tokens</h2>
         <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
           <span>30 s cells</span>
-          <HeatStrip
-            values={RAMP}
-            max={4}
-            label="intensity, low to high"
-            className="w-16"
-          />
+          <HeatStrip values={RAMP} max={4} label="intensity, low to high" className="w-16" />
         </div>
       </div>
       <Chips tokens={tokens} flow={flow} />

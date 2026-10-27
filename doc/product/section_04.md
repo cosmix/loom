@@ -186,8 +186,8 @@ like any other.
 When a source file disappears and another appears with the same file hash (a plan's
 `IN_PROGRESS-` or `DONE-` rename, a move into `archive/`), the engine rewrites the paths in the
 affected front matter and links itself, with no agent and no rebuild. When a source is deleted,
-its document summary is deleted and the overview becomes incomplete. A new section or plan
-gets a missing summary, which queues it.
+its document summary is deleted and the overview sentences that cite it turn stale. A new section
+or plan gets a missing summary, which queues it.
 
 ## The watcher
 

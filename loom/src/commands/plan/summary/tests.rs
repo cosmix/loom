@@ -2,11 +2,20 @@ use super::*;
 
 #[test]
 fn exit_codes_distinguish_refusals_from_other_errors() {
+    let held = claims::ClaimHeld {
+        summary: "plans/x".into(),
+        holder: Some("s1".into()),
+        release: false,
+    };
+    assert_eq!(exit_code(&claim_error(anyhow::Error::new(held.clone()))), 1);
+    let wrapped = anyhow::Error::new(held).context("while claiming");
+    assert_eq!(exit_code(&claim_error(wrapped)), 1, "typed through context");
+    // Text alone is no refusal: only the typed error maps to exit code 1.
     assert_eq!(
         exit_code(&claim_error(anyhow::anyhow!(
             "plans/x is claimed by another session"
         ))),
-        1
+        2
     );
     assert_eq!(
         exit_code(&claim_error(anyhow::anyhow!("cannot read claims"))),

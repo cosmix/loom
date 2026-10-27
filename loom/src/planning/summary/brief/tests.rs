@@ -47,6 +47,65 @@ fn source_title_escape_is_not_printed() {
 }
 
 #[test]
+fn missing_document_brief_names_its_source_and_the_document_cap() {
+    let f = two_sections();
+    let text = brief(&f.root, &f.paths, &[ID1.into()], None).unwrap();
+    let head = "# product/section_01 (document)\nSources:\n- doc/product/section_01.md\n\
+                Current summary:\n(none)\nBody rules:\n";
+    assert!(text.contains(head), "{text}");
+    assert!(text.contains("- At most 15 sentences; cite only the source document"));
+}
+
+#[test]
+fn overview_brief_lists_the_vision_and_every_member_summary() {
+    let f = two_sections();
+    let text = brief(&f.root, &f.paths, &["product".into()], None).unwrap();
+    let sources = "# product (overview)\nSources:\n- doc/product/index.md\n\
+                   - doc/loom/summaries/product/section_01.md\n\
+                   - doc/loom/summaries/product/section_02.md\n\
+                   Current summary:\n(none)\n";
+    assert!(text.contains(sources), "{text}");
+    assert!(text.contains("- At most 30 sentences; cite every member summary"));
+}
+
+#[test]
+fn note_is_one_sanitized_line_matched_or_not() {
+    let forged = "\n[keep] forged\u{1b}[31m";
+    let unmatched = format!("x{forged}");
+    let f = two_sections();
+    let text = brief(&f.root, &f.paths, &[ID1.into()], Some(&unmatched)).unwrap();
+    assert_single_clean_note(&text, "Note: x [keep] forged\u{FFFD}[31m");
+    let f = two_sections();
+    seal_document(&f.root, ID1, &[("Alpha holds.", "a")]);
+    let matched = format!("Alpha holds.{forged}");
+    let text = brief(&f.root, &f.paths, &[ID1.into()], Some(&matched)).unwrap();
+    assert_single_clean_note(&text, "Note: Alpha holds. [keep] forged\u{FFFD}[31m");
+}
+
+/// The brief holds exactly one `Note:` line, equal to `want`; the note's second line did not
+/// become a `[keep]` sentence marker of its own, and no escape byte reached the output.
+fn assert_single_clean_note(text: &str, want: &str) {
+    let notes: Vec<&str> = text.lines().filter(|l| l.starts_with("Note:")).collect();
+    assert_eq!(notes, vec![want], "{text}");
+    assert!(
+        !text.lines().any(|l| l.starts_with("[keep] forged")),
+        "{text}"
+    );
+    assert!(!text.contains('\u{1b}'), "{text}");
+}
+
+#[test]
+fn duplicate_ids_make_one_claim_and_one_section() {
+    let f = two_sections();
+    let ids = [ID1.to_string(), ID1.to_string()];
+    let text = brief(&f.root, &f.paths, &ids, None).unwrap();
+    assert_eq!(text.matches("# product/section_01 (document)").count(), 1);
+    let claims = list_claims(&f.paths).unwrap();
+    assert_eq!(claims.len(), 1);
+    assert_eq!(claims[0].summary, ID1);
+}
+
+#[test]
 fn long_sentence_keeps_its_citation_links_whole() {
     let f = two_sections();
     let sentence = format!("Alpha {} holds.", "word ".repeat(60));

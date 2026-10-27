@@ -2,10 +2,12 @@
 //! a symlinked claims directory.
 
 use std::fs;
-use std::os::unix::fs::symlink;
+use std::os::unix::fs::{symlink, PermissionsExt};
 
 use super::*;
+use crate::planning::runtime::runtime_paths_under;
 use crate::planning::summary::evaluate::fixtures::{fixture, Fixture, ID1};
+use crate::planning::summary::lock::with_store_lock;
 
 const PLAN: &str = "plans/x";
 
@@ -166,8 +168,75 @@ fn session_text_is_sanitised_and_drafts_live_under_the_runtime_dir() {
         fx.paths.drafts.join("product/section_01.md")
     );
     assert_eq!(draft_path(&fx.paths, "../x"), std::path::PathBuf::new());
+    assert_eq!(draft_rel(ID1), Path::new("drafts/product/section_01.md"));
+    assert_eq!(draft_rel("../x"), PathBuf::new());
     assert_eq!(
         id_from_file("plans__a__b.json").as_deref(),
         Some("plans/a__b")
     );
+}
+
+#[test]
+fn read_claim_is_none_only_for_an_absent_file() {
+    let fx = fixture(&[]);
+    assert!(read_claim(&fx.paths, ID1).is_none(), "no runtime directory");
+    claim(&fx, ID1, Some("s1"));
+    assert!(read_claim(&fx.paths, PLAN).is_none(), "no claim file");
+    let held = read_claim(&fx.paths, ID1).expect("claim file");
+    assert_eq!(held.session.as_deref(), Some("s1"));
+    fs::write(fx.paths.claims.join("plans__x.json"), "{not json").unwrap();
+    let broken = read_claim(&fx.paths, PLAN).expect("unparsable file still claims");
+    assert_eq!(broken.session, None);
+    fs::remove_file(fx.paths.claims.join("plans__x.json")).unwrap();
+    assert_eq!(list_claims(&fx.paths).expect("list").len(), 1);
+}
+
+#[test]
+fn claim_held_message_names_the_holder_and_neutralises_it() {
+    let held = |holder: Option<&str>, release| ClaimHeld {
+        summary: PLAN.into(),
+        holder: holder.map(str::to_string),
+        release,
+    };
+    assert_eq!(
+        held(Some("s1"), false).to_string(),
+        "plans/x is claimed by s1"
+    );
+    assert_eq!(
+        held(None, true).to_string(),
+        "plans/x is claimed by a terminal, not by this session"
+    );
+    assert_eq!(
+        held(Some("s\u{202E}2"), false).to_string(),
+        "plans/x is claimed by s 2"
+    );
+}
+
+/// A repository beside a loom user directory that does not exist yet.
+fn fresh_loom_home() -> (tempfile::TempDir, RuntimePaths) {
+    let temp = tempfile::tempdir().expect("temp dir");
+    let root = temp.path().join("repo");
+    fs::create_dir_all(&root).unwrap();
+    let home = temp.path().join("home").join(".loom");
+    let paths = runtime_paths_under(&home, &root).expect("runtime paths");
+    assert!(!home.exists(), "the loom user directory must be absent");
+    (temp, paths)
+}
+
+#[test]
+fn first_claim_creates_a_missing_loom_user_directory() {
+    let (_temp, paths) = fresh_loom_home();
+    let made = create_claim_as(&paths, ID1, Some("s1".into())).expect("create");
+    assert!(made.is_ok(), "the first claim is made");
+    let mode = fs::metadata(&paths.dir).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o700, "runtime directory mode");
+    assert_eq!(list_claims(&paths).expect("list").len(), 1);
+}
+
+#[test]
+fn store_lock_creates_a_missing_loom_user_directory() {
+    let (_temp, paths) = fresh_loom_home();
+    let value = with_store_lock(&paths, || Ok(5)).expect("lock");
+    assert_eq!(value, 5);
+    assert!(paths.summaries_lock.is_file());
 }

@@ -5,6 +5,7 @@ use std::path::Path;
 
 use super::*;
 use crate::planning::summary::evaluate::fixtures::*;
+use crate::planning::summary::evaluate::SentenceState;
 use crate::planning::watch::Watcher;
 
 const PLAN_X: &str = "doc/plans/PLAN-x.md";
@@ -128,6 +129,32 @@ fn deletes_archived_plan_no_metaplan_names() {
     assert!(!fx.root.join(store::summary_path("plans/d")).exists());
     assert!(!update.evaluation.summaries.contains_key("plans/d"));
     assert!(update.evaluation.orphans.is_empty());
+}
+
+#[test]
+fn deleted_source_deletes_its_summary_and_stales_the_overview_citing_it() {
+    let fx = fixture(&[
+        (META, &metaplan(&["PLAN-x.md"])),
+        (PLAN_X, "# Plan: X\n\nDoes x.\n"),
+    ]);
+    seal_document(&fx.root, "plans/x", &[("X does x.", "plan-x")]);
+    seal_overview(&fx.root, "engineering", &[("plans/x", "X does x.")], &[]);
+    let mut engine = engine(&fx, OwnWrites::default());
+    let before = engine
+        .on_batch(&load(&fx.root), &Batch::default())
+        .expect("first batch");
+    let overview = &before.evaluation.summaries["engineering"];
+    assert_eq!(overview.state, SummaryState::Current);
+    fs::remove_file(fx.root.join(PLAN_X)).unwrap();
+    let update = engine
+        .on_batch(&load(&fx.root), &Batch::default())
+        .expect("batch after the delete");
+    assert_eq!(update.deleted, vec!["plans/x".to_string()]);
+    assert!(!fx.root.join(store::summary_path("plans/x")).exists());
+    let overview = &update.evaluation.summaries["engineering"];
+    assert_eq!(overview.state, SummaryState::Stale);
+    assert_eq!(overview.sentences[0].state, SentenceState::Stale);
+    assert_eq!(update.invalidated, vec!["engineering".to_string()]);
 }
 
 #[test]
