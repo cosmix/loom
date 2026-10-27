@@ -1,6 +1,7 @@
 //! Check that planning wire enum values appear in their matching TypeScript arrays.
 
 use super::checklist::{ChecklistView, CurrentView, MarkView, OfferKind};
+use super::concept::ConceptChanged;
 use super::message::{ClientMessage, PlanMessage};
 use super::presence::{AuthoringView, PresenceList};
 use super::server::{BindKind, PrereqKind, Refused};
@@ -110,7 +111,6 @@ fn all_offer_kinds() -> Vec<OfferKind> {
 }
 
 // Exhaustive matches fail to compile when a variant is added without a new case here.
-// concept_changed joins the vec in all_plan_messages once concept-web adds it to schema.ts.
 fn assert_exhaustive(message: &PlanMessage) {
     match message {
         PlanMessage::Hello(_)
@@ -164,6 +164,11 @@ fn all_plan_messages() -> Vec<PlanMessage> {
         tree_changed,
         PlanMessage::DocChanged(doc_changed),
         PlanMessage::Validation(validation),
+        PlanMessage::ConceptChanged(ConceptChanged {
+            pages: vec![],
+            out_of_date: vec![],
+            sources: vec![],
+        }),
     ]
 }
 

@@ -45,6 +45,26 @@
   --tone-control: oklch(0.55 0.21 27);
   --tone-neutral: var(--foreground);
   --tone-contract: oklch(0.53 0.18 300);
+  /* Document colours of concept mode (section 05). Hues stay clear of the amber
+   * accent (~80) and the warning orange (50-58). Contrast against the Ledger
+   * --background, measured by OKLCH to sRGB relative luminance:
+   *   --doc-1 hue 155: 4.49:1
+   *   --doc-2 hue 200: 4.24:1
+   *   --doc-3 hue 245: 4.76:1
+   *   --doc-4 hue 285: 5.03:1
+   *   --doc-5 hue 325: 5.16:1
+   *   --doc-6 hue 355: 5.18:1
+   *   --doc-7 hue 20: 5.15:1
+   *   --doc-8 hue 175: 4.28:1
+   */
+  --doc-1: oklch(0.5 0.13 155);
+  --doc-2: oklch(0.5 0.13 200);
+  --doc-3: oklch(0.5 0.13 245);
+  --doc-4: oklch(0.5 0.13 285);
+  --doc-5: oklch(0.5 0.13 325);
+  --doc-6: oklch(0.5 0.13 355);
+  --doc-7: oklch(0.5 0.13 20);
+  --doc-8: oklch(0.5 0.13 175);
   /* Stage identity in charts, kept off the state tones so a stage's colour
    * never reads as a state: no executing blue, no blocked red. */
   --series-1: #1baf7a;
@@ -77,6 +97,24 @@
   --tone-dimmed: oklch(0.55 0.025 325);
   --tone-control: oklch(0.72 0.17 25);
   --tone-contract: oklch(0.75 0.14 300);
+  /* Against the Aubergine --background:
+   *   --doc-1 hue 155: 8.94:1
+   *   --doc-2 hue 200: 8.96:1
+   *   --doc-3 hue 245: 8.56:1
+   *   --doc-4 hue 285: 8.21:1
+   *   --doc-5 hue 325: 8.0:1
+   *   --doc-6 hue 355: 7.96:1
+   *   --doc-7 hue 20: 8.0:1
+   *   --doc-8 hue 175: 8.98:1
+   */
+  --doc-1: oklch(0.74 0.13 155);
+  --doc-2: oklch(0.74 0.13 200);
+  --doc-3: oklch(0.74 0.13 245);
+  --doc-4: oklch(0.74 0.13 285);
+  --doc-5: oklch(0.74 0.13 325);
+  --doc-6: oklch(0.74 0.13 355);
+  --doc-7: oklch(0.74 0.13 20);
+  --doc-8: oklch(0.74 0.13 175);
   --series-1: #199e70;
   --series-2: #c98500;
   --series-3: #d55181;

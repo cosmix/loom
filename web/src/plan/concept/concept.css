@@ -1,0 +1,249 @@
+/*
+ * Concept mode reading column (section 05, "Visual design"). Reading text is prose, so it sets
+ * larger than the dashboard chrome: Inter 16px on a 1.6 line height. The column width is in
+ * ch, so browser zoom to 200% reflows without horizontal scrolling.
+ */
+.concept-column {
+  position: relative;
+  box-sizing: border-box;
+  max-width: 70ch;
+  margin-inline: auto;
+  padding-inline: 16px;
+  font-family: var(--font-sans);
+  font-size: 16px;
+  line-height: 1.6;
+  outline: none;
+}
+
+@media (min-width: 1024px) {
+  .concept-column {
+    padding-inline: 0;
+  }
+}
+
+.concept-heading {
+  font-family: var(--font-display);
+  line-height: 1.25;
+  margin-block: 1.5em 0.5em;
+  font-weight: 600;
+}
+
+.concept-h1 {
+  font-size: 1.75rem;
+}
+
+.concept-h2 {
+  font-size: 1.35rem;
+}
+
+.concept-h3 {
+  font-size: 1.1rem;
+}
+
+.concept-paragraph {
+  position: relative;
+  margin-block: 0 1em;
+}
+
+.concept-column [data-focus]:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+  border-radius: 2px;
+}
+
+.concept-sentence {
+  cursor: pointer;
+  border-radius: 2px;
+}
+
+.concept-sentence:hover {
+  background: var(--muted);
+}
+
+.concept-sentence-plain {
+  cursor: default;
+}
+
+.concept-marks {
+  white-space: nowrap;
+  margin-inline-start: 0.2em;
+}
+
+.concept-mark {
+  display: inline-block;
+  box-sizing: border-box;
+  width: 0.55em;
+  height: 0.55em;
+  margin-inline-end: 0.2em;
+  padding: 0;
+  vertical-align: baseline;
+  border: 1px solid transparent;
+  border-radius: 2px;
+  cursor: pointer;
+}
+
+.concept-mark:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* An out-of-date mark is an outline, not a fill: the shape differs, not only the colour. */
+.concept-mark[data-dashed="true"] {
+  background: transparent !important;
+  border: 1.5px dashed var(--mark-colour);
+}
+
+.concept-no-source {
+  margin-inline-start: 0.35em;
+  color: var(--muted-foreground);
+  font-size: 0.75em;
+}
+
+/* Opened text sits on a faint --muted wash so the reader sees what has been opened. */
+.concept-run {
+  background: color-mix(in oklch, var(--muted) 55%, transparent);
+  border-radius: 3px;
+}
+
+.concept-passages {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-block: 8px;
+  background: color-mix(in oklch, var(--muted) 55%, transparent);
+  border-radius: 3px;
+  padding: 4px;
+}
+
+.concept-passage {
+  background: var(--card);
+  color: var(--card-foreground);
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  padding: 8px 14px;
+  overflow-x: auto;
+}
+
+.concept-passage-head {
+  display: block;
+  margin-bottom: 4px;
+  color: var(--muted-foreground);
+  font-size: 12px;
+  line-height: 1.4;
+  font-weight: 500;
+}
+
+.concept-passage-head:hover {
+  color: var(--foreground);
+  text-decoration: underline;
+}
+
+.concept-passage-path {
+  font-family: var(--font-mono);
+}
+
+.concept-muted {
+  color: var(--muted-foreground);
+  font-size: 13px;
+}
+
+.concept-note {
+  display: block;
+  margin-block: 4px;
+  color: var(--muted-foreground);
+  font-size: 13px;
+  line-height: 1.4;
+}
+
+.concept-note a {
+  text-decoration: underline;
+}
+
+/* The fold handle: a thin muted bracket in the left margin, shown on hover or focus within. */
+.concept-fold-handle {
+  position: absolute;
+  z-index: 1;
+  left: calc(-14px * (var(--depth, 0) + 1));
+  width: 10px;
+  padding: 0;
+  border: 1.5px solid var(--muted-foreground);
+  border-right: 0;
+  border-radius: 4px 0 0 4px;
+  background: transparent;
+  opacity: 0;
+  cursor: pointer;
+  transition: opacity 120ms;
+}
+
+.concept-run:hover .concept-fold-handle,
+.concept-run:focus-within .concept-fold-handle,
+.concept-passages:hover .concept-fold-handle,
+.concept-passages:focus-within .concept-fold-handle,
+.concept-fold-handle:hover,
+.concept-fold-handle:focus-visible {
+  opacity: 1;
+}
+
+.concept-fold-handle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Below lg the handles sit inside the 16px gutter. */
+@media (max-width: 1023px) {
+  .concept-fold-handle {
+    left: calc(1px + 5px * var(--depth, 0));
+    width: 4px;
+  }
+}
+
+.concept-plan-glyph {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.1em;
+  height: 1.1em;
+  margin-inline-start: 0.1em;
+  padding: 0;
+  border: 1px solid var(--hairline);
+  border-radius: 4px;
+  background: var(--card);
+  color: var(--muted-foreground);
+  vertical-align: middle;
+  cursor: pointer;
+}
+
+.concept-plan-glyph:hover {
+  color: var(--foreground);
+}
+
+.concept-plan-glyph:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/* Arrival flash: a --primary wash fading over about one second. */
+.concept-flash {
+  animation: concept-flash 1s ease-out;
+}
+
+@keyframes concept-flash {
+  from {
+    background: color-mix(in oklch, var(--primary) 45%, transparent);
+  }
+  to {
+    background: transparent;
+  }
+}
+
+/* Reduced motion: the wash shows without animation; flash.ts clears the class after 3s. */
+@media (prefers-reduced-motion: reduce) {
+  .concept-flash {
+    animation: none;
+    background: color-mix(in oklch, var(--primary) 30%, transparent);
+  }
+
+  .concept-fold-handle {
+    transition: none;
+  }
+}
