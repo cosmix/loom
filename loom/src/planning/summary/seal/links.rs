@@ -32,10 +32,6 @@ pub(super) struct Rules<'a> {
 }
 
 impl Rules<'_> {
-    fn is_overview(&self) -> bool {
-        self.id == "product" || self.id == "engineering"
-    }
-
     /// The documents a passage link may point at.
     pub(super) fn allowed_sources(&self) -> Vec<PathBuf> {
         match self.id {
@@ -129,7 +125,7 @@ fn sentence_problem(
     id: &str,
     cited: &mut Cited,
 ) -> Option<String> {
-    if !rules.is_overview() {
+    if !store::is_overview(rules.id) {
         return Some("a document summary cites only its source document".to_string());
     }
     if !rules.members().iter().any(|m| m == summary) {
@@ -153,7 +149,7 @@ fn sentence_problem(
 
 /// Overviews cite every member and every source document at least once.
 fn uncited(rules: &Rules<'_>, allowed: &[PathBuf], cited: &Cited) -> Vec<FormatError> {
-    if !rules.is_overview() {
+    if !store::is_overview(rules.id) {
         return Vec::new();
     }
     let members = rules

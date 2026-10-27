@@ -138,7 +138,7 @@ pub fn evaluate(project: &Project, claims: &[Claim]) -> Evaluation {
     let scope = store::scope(project);
     let expected = store::expected_ids(project);
     let (overviews, documents): (Vec<&String>, Vec<&String>) =
-        expected.iter().partition(|id| is_overview(id));
+        expected.iter().partition(|id| store::is_overview(id));
     let mut summaries = BTreeMap::new();
     for id in documents.into_iter().chain(overviews) {
         let claim = claims.iter().find(|c| &c.summary == id).cloned();
@@ -187,10 +187,6 @@ pub fn sentences_of(file: &SummaryFile) -> impl Iterator<Item = &Sentence> {
             Block::Heading { .. } => None,
         })
         .flatten()
-}
-
-fn is_overview(id: &str) -> bool {
-    id == "product" || id == "engineering"
 }
 
 fn evaluate_one(
@@ -271,8 +267,8 @@ fn load_summary(project: &Project, id: &str, source: Option<&Path>) -> Result<Su
     let file = format::parse(&store::summary_path(id), &text).map_err(|e| describe(&e))?;
     let front = &file.front;
     let fits = match (front.kind == SummaryKind::Overview, source) {
-        (true, _) => is_overview(id) && front.of == id,
-        (false, Some(source)) => !is_overview(id) && same_source(id, &front.of, source),
+        (true, _) => store::is_overview(id) && front.of == id,
+        (false, Some(source)) => !store::is_overview(id) && same_source(id, &front.of, source),
         (false, None) => false,
     };
     if !fits {

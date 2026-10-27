@@ -32,6 +32,10 @@ struct RawLink {
 /// Finds every inline link of `line`; a malformed target is an error message.
 fn scan_links(line: &str) -> Result<Vec<RawLink>, String> {
     let bytes = line.as_bytes();
+    let pairs = bracket_pairs(bytes);
+    // A `)` search from `from` can only succeed while a `)` sits at or after
+    // it; checking this first keeps a failing search from rescanning the line.
+    let last_paren = line.rfind(')');
     let mut links = Vec::new();
     let mut i = 0;
     while i < bytes.len() {
@@ -39,17 +43,21 @@ fn scan_links(line: &str) -> Result<Vec<RawLink>, String> {
             i += 1;
             continue;
         }
-        let close = matching_bracket(bytes, i);
-        let Some(close) = close.filter(|c| bytes.get(c + 1) == Some(&b'(')) else {
+        let close = pairs[i].filter(|c| bytes.get(c + 1) == Some(&b'('));
+        let Some(close) = close else {
             i += 1;
             continue;
         };
-        let Some(rel) = line[close + 2..].find(')') else {
+        let from = close + 2;
+        let rel = last_paren
+            .filter(|paren| *paren >= from)
+            .and_then(|_| line[from..].find(')'));
+        let Some(rel) = rel else {
             i += 1;
             continue;
         };
-        let end = close + 2 + rel;
-        let target = &line[close + 2..end];
+        let end = from + rel;
+        let target = &line[from..end];
         if target.is_empty() || target.contains(char::is_whitespace) || target.contains(['<', '('])
         {
             return Err(format!("malformed link target {target:?}"));
@@ -66,21 +74,24 @@ fn scan_links(line: &str) -> Result<Vec<RawLink>, String> {
     Ok(links)
 }
 
-fn matching_bracket(bytes: &[u8], open: usize) -> Option<usize> {
-    let mut depth = 0usize;
-    for (offset, byte) in bytes[open..].iter().enumerate() {
+/// For every `[` of `bytes`, the offset of the `]` that closes it, found in one
+/// pass with a stack so a line of unmatched brackets costs linear time. A `]`
+/// with nothing open is ignored; an unclosed `[` has no entry.
+fn bracket_pairs(bytes: &[u8]) -> Vec<Option<usize>> {
+    let mut pairs = vec![None; bytes.len()];
+    let mut open = Vec::new();
+    for (at, byte) in bytes.iter().enumerate() {
         match byte {
-            b'[' => depth += 1,
+            b'[' => open.push(at),
             b']' => {
-                depth -= 1;
-                if depth == 0 {
-                    return Some(open + offset);
+                if let Some(start) = open.pop() {
+                    pairs[start] = Some(at);
                 }
             }
             _ => {}
         }
     }
-    None
+    pairs
 }
 
 /// What one non-rejected line is.

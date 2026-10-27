@@ -72,7 +72,8 @@ pub enum SummaryCommands {
         /// Summary id, for example `product/section_01` or `plans/my-plan`
         id: String,
 
-        /// Seal even when another session or a terminal claimed the summary
+        /// Seal a summary another session or a terminal claimed; only applies from a terminal,
+        /// never inside a planning session
         #[arg(long)]
         force: bool,
     },
