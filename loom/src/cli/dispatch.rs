@@ -12,7 +12,8 @@ use super::dispatch_admin;
 use super::dispatch_stage;
 use super::types::{
     Commands, ContextCommands, HookCommands, KnowledgeCommands, MemoryCommands, PlanCommands,
-    ProjectCommands, RequestCommands, SessionsCommands, TargetCommands, WorktreeCommands,
+    PlanServeArgs, ProjectCommands, RequestCommands, SessionsCommands, TargetCommands,
+    WorktreeCommands,
 };
 
 // `dispatch_stage` reaches these through `super::dispatch::{..}`; re-exporting
@@ -96,20 +97,21 @@ fn dispatch_knowledge_context(command: KnowledgeCommands) -> Result<()> {
     )
 }
 
-/// `loom plan <subcommand>` dispatch.
+/// `loom plan [<subcommand>]` dispatch: bare `loom plan` serves the planning app.
 ///
 /// Broken out for the same reason as `dispatch_knowledge`: the top-level match
 /// sits at its line ceiling, so every new top-level arm has to buy its line back
 /// from an existing one.
-fn dispatch_plan(command: PlanCommands) -> Result<()> {
+fn dispatch_plan(command: Option<PlanCommands>, serve: PlanServeArgs) -> Result<()> {
     match command {
-        PlanCommands::Verify {
+        None => plan::serve::execute(&serve),
+        Some(PlanCommands::Verify {
             path,
             strict,
             json,
             no_color,
-        } => plan::verify::execute(&path, strict, json, no_color),
-        PlanCommands::Check { json } => crate::commands::plan::check::execute(json),
+        }) => plan::verify::execute(&path, strict, json, no_color),
+        Some(PlanCommands::Check { json }) => crate::commands::plan::check::execute(json),
     }
 }
 
@@ -354,7 +356,7 @@ pub fn dispatch(command: Commands) -> Result<()> {
         Commands::Usage { args } => usage::execute(args),
         Commands::Pressure(args) => pressure::execute(args),
         Commands::Stop => stop::execute(),
-        Commands::Plan { command } => dispatch_plan(command),
+        Commands::Plan { command, serve } => dispatch_plan(command, serve),
         Commands::Project {
             command: ProjectCommands::Detect { path, json },
         } => project::execute(path, json),
