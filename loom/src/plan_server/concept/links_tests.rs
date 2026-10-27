@@ -119,3 +119,27 @@ fn implemented_by_in_slug_order() {
     );
     assert!(implemented_by(&project, 99).is_empty());
 }
+
+#[test]
+fn implemented_by_skips_plans_without_a_concept_page() {
+    let (_temp, project) = fixture(&[
+        ("doc/plans/PLAN-a#b.md", "# Hash\nImplements: section_02\n"),
+        (
+            "doc/plans/archive/DONE-PLAN-c.md",
+            "# Archived\nImplements: section_02\n",
+        ),
+        ("doc/plans/PLAN-b.md", "# Beta\nImplements: section_02\n"),
+    ]);
+    assert_eq!(
+        project.implemented_by.get(&2).map(|slugs| slugs.len()),
+        Some(3)
+    );
+    assert_eq!(
+        implemented_by(&project, 2),
+        vec![PlanLink {
+            slug: "b".into(),
+            title: "Beta".into(),
+            state: "written".into()
+        }]
+    );
+}

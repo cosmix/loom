@@ -4,7 +4,7 @@ use std::path::{Path, PathBuf};
 
 use crate::plan_server::concept::key::colour_of;
 use crate::plan_server::concept::links::implemented_by;
-use crate::plan_server::concept::page::{page_key_of, PageContext};
+use crate::plan_server::concept::page::{page_key_of, PageContext, PageKey};
 use crate::plan_server::concept::state::out_of_date_reason;
 use crate::plan_server::wire::concept::{
     Block, Citation, DocLink, KeyChip, Mark, Sentence, SourceAnchor,
@@ -216,7 +216,8 @@ fn mark(cx: &Cx, cited: &Cited) -> Option<Mark> {
 }
 
 /// The link to a document's concept page: the vision and metaplans stand for their overview.
-/// `None` for documents concept mode has no page for.
+/// `None` for documents concept mode has no page for, and for a document whose page key the
+/// web client would reject (a slug past the 128-character page name).
 pub(crate) fn doc_link(project: &Project, path: &Path) -> Option<DocLink> {
     let doc = project.docs.get(path)?;
     let (id, page) = match summary_id_for(project, path) {
@@ -230,6 +231,7 @@ pub(crate) fn doc_link(project: &Project, path: &Path) -> Option<DocLink> {
             _ => return None,
         },
     };
+    PageKey::parse(&page)?;
     Some(DocLink {
         id,
         title: doc.title.clone(),

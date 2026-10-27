@@ -1,5 +1,8 @@
 //! Tests for key chips.
 
+use std::path::Path;
+
+use super::body::doc_link;
 use super::key::*;
 use super::page::{PageContext, Scope};
 use crate::planning::summary::evaluate::{evaluate, fixtures};
@@ -123,4 +126,27 @@ fn chip_carries_colour_label_and_title() {
     assert_eq!(chips[0].out_of_date, None);
     assert_eq!(colour_of(&chips, "doc/product/section_02.md"), Some(2));
     assert_eq!(colour_of(&chips, "doc/missing.md"), None);
+}
+
+#[test]
+fn a_plan_whose_page_key_is_too_long_has_no_chip_and_no_link() {
+    let long = "a".repeat(129);
+    let long_file = format!("doc/plans/PLAN-{long}.md");
+    let fixture = fixtures::fixture(&[
+        (
+            fixtures::META,
+            &fixtures::metaplan(&["PLAN-a.md", &format!("PLAN-{long}.md")]),
+        ),
+        ("doc/plans/PLAN-a.md", "# A\n"),
+        (&long_file, "# Long\n"),
+    ]);
+    let project = fixtures::load(&fixture.root);
+    let eval = evaluate(&project, &[]);
+    assert!(eval.scope.engineering.contains(&format!("plans/{long}")));
+    let chips = key_chips(&project, &eval, Scope::Engineering, &PageContext::default());
+    let ids: Vec<_> = chips.iter().map(|chip| chip.doc.id.as_str()).collect();
+    assert_eq!(ids, ["plans/a"]);
+    assert!(doc_link(&project, Path::new(&long_file)).is_none());
+    let short = doc_link(&project, Path::new("doc/plans/PLAN-a.md")).expect("a link");
+    assert_eq!(short.page, "engineering/a");
 }

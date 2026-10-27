@@ -2,6 +2,7 @@
 //! server-side from plan 4's summary store.
 
 pub mod body;
+mod delta;
 pub mod engine;
 pub mod key;
 pub mod links;
@@ -13,6 +14,8 @@ pub use engine::{install, page_keys_for_summary, ConceptState};
 pub use page::{load_page, PageContext, PageKey, Scope};
 pub use routes::routes;
 
+#[cfg(test)]
+mod engine_tests;
 #[cfg(test)]
 mod key_tests;
 #[cfg(test)]
