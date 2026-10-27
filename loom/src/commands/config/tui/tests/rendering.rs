@@ -61,7 +61,7 @@ fn bool_cell_renders_its_glyph_and_an_enum_cell_renders_guillemets() {
     assert!(contains(&rows, "◯ off"), "{rows:?}");
     focus_by_name(&mut state, "terminal.backend");
     let rows = screen(&state);
-    assert!(contains(&rows, "‹ native ›"), "{rows:?}");
+    assert!(contains(&rows, "‹ tmux ›"), "{rows:?}");
 }
 
 /// The screen names both files and marks the one the keyboard writes, which
@@ -116,7 +116,7 @@ fn the_inspector_survives_a_narrow_frame_as_a_strip() {
     // The strip's block is titled with the full dotted key.
     assert!(contains(&rows, "terminal.backend"), "{rows:?}");
     // The table still shows the key and its value.
-    assert!(contains(&rows, "‹ native ›"), "{rows:?}");
+    assert!(contains(&rows, "‹ tmux ›"), "{rows:?}");
     assert!(contains(&rows, "── terminal"), "{rows:?}");
     // 80 columns still carries every column of the table.
     assert!(contains(&rows, "SOURCE"), "{rows:?}");
@@ -177,14 +177,14 @@ fn a_cramped_frame_drops_columns_rather_than_information() {
     // Inner width 54: past OTHER's floor, still above SOURCE's.
     let rows = screen_sized(&state, 56, 16);
     assert!(contains(&rows, "backend"), "{rows:?}");
-    assert!(contains(&rows, "‹ native ›"), "{rows:?}");
+    assert!(contains(&rows, "‹ tmux ›"), "{rows:?}");
     assert!(contains(&rows, "SOURCE"), "{rows:?}");
     assert!(!contains(&rows, "OTHER"), "{rows:?}");
 
     // Inner width 46: SOURCE goes too. KEY and VALUE never do.
     let rows = screen_sized(&state, 48, 16);
     assert!(contains(&rows, "backend"), "{rows:?}");
-    assert!(contains(&rows, "‹ native ›"), "{rows:?}");
+    assert!(contains(&rows, "‹ tmux ›"), "{rows:?}");
     assert!(!contains(&rows, "SOURCE"), "{rows:?}");
     // The logo has collapsed by this height, but the screen still names itself.
     assert!(contains(&rows, "configuration"), "{rows:?}");

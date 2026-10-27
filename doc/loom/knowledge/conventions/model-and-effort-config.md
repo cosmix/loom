@@ -23,16 +23,24 @@ a project config. A third pair of slots, the plan summary models, is configured 
 `pressure.claude_model` opus, `pressure.claude_effort` xhigh, `pressure.codex_model`
 gpt-6.1-sol (in-family fallback to gpt-6-sol, see Codex Model Fallback below),
 `pressure.codex_effort` xhigh, `pressure.address_model` opus, `pressure.address_effort` high.
+`pressure.rounds` (Number, at least 1, default 1) sets the round count absent `--rounds`; a zero is
+rejected on write and dropped from a project file. Precedence: flag, project, user, built-in.
 
 ## `[models]` Keys and Defaults
 
-`models.standard_model` opus / `models.standard_effort` medium (`standard`);
+`models.standard_model` sonnet / `models.standard_effort` high (`standard`);
 `models.knowledge_model` opus / `models.knowledge_effort` medium (`knowledge`);
 `models.knowledge_distill_model` sonnet / `models.knowledge_distill_effort` high
 (`knowledge-distill`); `models.integration_verify_model` opus /
 `models.integration_verify_effort` xhigh (`integration-verify`). Merge and base-conflict
 sessions stay pinned at opus/high; adjudication keeps its own `[adjudication] model`; neither
 is configurable through `[models]`.
+
+`models.code_reviewer_model` opus / `models.code_reviewer_effort` high are not a stage type: they
+set the `loom-code-reviewer` subagent, applied by the spawn guard to every reviewer spawn and
+overriding a model the caller passes. They resolve project -> user -> built-in per key through
+`fs::work_dir::resolve_code_reviewer_model_effort`, which the hidden `loom hook reviewer-model`
+prints as `model=<m> effort=<e>` (non-zero exit on a config parse error).
 
 ## KEY-Level vs SECTION-Level Fallback
 

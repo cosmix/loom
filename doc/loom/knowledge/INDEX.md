@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 68 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 162 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 169 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 231 |
 
@@ -96,7 +96,7 @@
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) | Sandbox | 140 |
 | [stage-daemon-channels](patterns/stage-daemon-channels.md) | Channels | 191 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage states | 202 |
-| [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out | 99 |
+| [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out | 100 |
 
 ### conventions
 
@@ -108,7 +108,7 @@
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute rules | 119 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, build | 235 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance | 139 |
-| [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 111 |
+| [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 119 |
 | [plan-web](conventions/plan-web.md) | Plan web | 24 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard CSS | 51 |
@@ -151,7 +151,7 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 322 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Server | 189 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
-| [refactor-stragglers](mistakes/refactor-stragglers.md) | Renames | 312 |
+| [refactor-stragglers](mistakes/refactor-stragglers.md) | Renames | 319 |
 | [release-feature-review](mistakes/release-feature-review.md) | Release gaps | 13 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Settings | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | Hooks dir | 37 |
@@ -180,7 +180,8 @@
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 misses | 396 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | Visibility | 141 |
 | [web-dashboard](mistakes/web-dashboard.md) | Dashboard UI mistakes: codex lane grouping and heat-strip alignment | 10 |
-| [web-dashboard-server](mistakes/web-dashboard-server.md) | Server races | 400 |
+| [web-dashboard-server](mistakes/web-dashboard-server.md) | Server races | 278 |
+| [web-terminal](mistakes/web-terminal.md) | Terminal bridge fd/backpressure bugs and viewer wheel/touch paging | 135 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Ignored keys | 105 |
 
 ### concerns

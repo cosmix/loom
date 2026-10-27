@@ -89,6 +89,11 @@
   .terminal-well[data-mode="view"][data-phase="live"] .terminal-host {
     cursor: pointer;
   }
+  /* A swipe in View mode pages the terminal (viewer-touch.ts), so the page
+     must not pan or bounce underneath it. Pinch zoom stays available. */
+  .terminal-well[data-mode="view"] .terminal-host {
+    touch-action: pinch-zoom;
+  }
 
   /* The key's echo: a quiet glass tab that rises from the terminal edge on
    * hover, enough to disclose the click target without competing with it. */

@@ -193,6 +193,11 @@ pub enum HookCommands {
     #[command(hide = true)]
     WorkerBrief,
 
+    /// Print the resolved `loom-code-reviewer` model and effort as
+    /// `model=<model> effort=<effort>` for the spawn guard.
+    #[command(hide = true)]
+    ReviewerModel,
+
     /// Discover package-scoped project types for skill recommendations.
     #[command(hide = true)]
     ProjectTypes,

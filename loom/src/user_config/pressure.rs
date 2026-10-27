@@ -21,6 +21,7 @@ pub(super) struct PressureSection {
     codex_effort: Option<String>,
     address_model: Option<String>,
     address_effort: Option<String>,
+    rounds: Option<u32>,
 }
 
 impl PressureSection {
@@ -55,6 +56,7 @@ impl PressureSection {
                 crate::claude::CLAUDE_MODELS,
             )?,
             address_effort: parse::get_enum(doc, "pressure", "address_effort", claude_efforts)?,
+            rounds: parse::get_u32(doc, "pressure", "rounds")?,
         })
     }
 }
@@ -120,6 +122,14 @@ impl UserConfig {
             .unwrap_or(crate::claude::DEFAULT_PRESSURE_ADDRESS_EFFORT)
     }
 
+    /// Pressure/address rounds `loom pressure` runs absent a `--rounds` flag.
+    /// Default: [`crate::claude::DEFAULT_PRESSURE_ROUNDS`].
+    pub fn pressure_rounds(&self) -> u32 {
+        self.pressure
+            .rounds
+            .unwrap_or(crate::claude::DEFAULT_PRESSURE_ROUNDS)
+    }
+
     /// The typed value and origin for a `pressure.*` key, or `None` when
     /// `spec` is not one — the arm `UserConfig::value_of` delegates to.
     pub(super) fn pressure_value_of(&self, spec: &KeySpec) -> Option<(ConfigValue, Origin)> {
@@ -148,6 +158,10 @@ impl UserConfig {
                 ConfigValue::Text(self.pressure_address_effort().to_string()),
                 self.origin_of(self.pressure.address_effort.as_ref()),
             ),
+            "pressure.rounds" => (
+                ConfigValue::Number(self.pressure_rounds()),
+                self.origin_of(self.pressure.rounds),
+            ),
             _ => return None,
         })
     }
@@ -157,13 +171,14 @@ impl UserConfig {
     /// the blank line separating sections.
     pub(super) fn pressure_toml(&self) -> String {
         format!(
-            "[pressure]\nclaude_model = {}\nclaude_effort = {}\ncodex_model = {}\ncodex_effort = {}\naddress_model = {}\naddress_effort = {}\n",
+            "[pressure]\nclaude_model = {}\nclaude_effort = {}\ncodex_model = {}\ncodex_effort = {}\naddress_model = {}\naddress_effort = {}\nrounds = {}\n",
             ConfigValue::Text(self.pressure_claude_model().to_string()).to_toml_literal(),
             ConfigValue::Text(self.pressure_claude_effort().to_string()).to_toml_literal(),
             ConfigValue::Text(self.pressure_codex_model().to_string()).to_toml_literal(),
             ConfigValue::Text(self.pressure_codex_effort().to_string()).to_toml_literal(),
             ConfigValue::Text(self.pressure_address_model().to_string()).to_toml_literal(),
             ConfigValue::Text(self.pressure_address_effort().to_string()).to_toml_literal(),
+            ConfigValue::Number(self.pressure_rounds()).to_toml_literal(),
         )
     }
 }

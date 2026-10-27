@@ -276,3 +276,27 @@ fn the_string_kind_accepts_free_text() {
     assert_eq!(parsed.to_string(), raw);
     assert_eq!(parsed.to_toml_literal(), "\"my project\"");
 }
+
+#[test]
+fn pressure_rounds_rejects_zero_through_every_entry_point() {
+    let key = "pressure.rounds";
+    let err = ConfigValue::parse(&ValueKind::Number, key, "0")
+        .unwrap_err()
+        .to_string();
+    assert!(err.contains("below the minimum of 1"), "{err}");
+    assert!(ConfigValue::Number(0)
+        .checked(&ValueKind::Number, key)
+        .is_err());
+    assert!(
+        ConfigValue::from_toml_value(&ValueKind::Number, key, &toml::Value::Integer(0)).is_err()
+    );
+    assert!(crate::user_config::parse_document("[pressure]\nrounds = 0\n").is_err());
+    assert_eq!(
+        crate::user_config::parse_document("[pressure]\nrounds = 3\n")
+            .unwrap()
+            .pressure_rounds(),
+        3
+    );
+    // Other number keys still accept zero.
+    assert!(ConfigValue::parse(&ValueKind::Number, NUMBER_KEY, "0").is_ok());
+}

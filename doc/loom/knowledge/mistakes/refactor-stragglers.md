@@ -310,3 +310,10 @@ before the parent's import can go.
 **Why:** the plan's worker table listed the owners of the struct, not its literal construction sites.
 
 **Prevention:** when a plan adds a field to a struct without `Default`, grep the struct literals (`rg 'StructName \{'`) and assign every site to a worker's territory before spawning.
+
+## Tmux Default Requested but the Enum Default Stayed Native
+
+**What happened:** the operator had asked for tmux as the default terminal backend, but only their ~/.loom/config.toml was set; `SessionBackendKind` kept `#[default] Native`, so the web settings showed native as the built-in default.
+**Why:** the request was met through the operator's own config rather than the built-in default every surface reads.
+**Prevention:** a change to a default goes into the single source (the enum or constant the config surfaces read), not into one operator's config file.
+**Fix:** `#[default]` moved to `Tmux` in `models/session/types.rs`; CLI, TUI, web and `loom init` read it from there.

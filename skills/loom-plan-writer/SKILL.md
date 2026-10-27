@@ -143,7 +143,7 @@ Never give a knowledge stage a heading-presence grep on a tier-1 file: an establ
 
 ## 4. Model Selection Per Stage (REQUIRED)
 
-> ⚠️ **A stage OMITS `model` and `reasoning_effort` by default**, so the stage type's configured default applies — `standard`, `knowledge`, and `integration-verify` default to opus, `knowledge-distill` to sonnet; default effort is `medium`, `medium`, `xhigh`, and `high` respectively, configurable per stage type in `[models]` of `~/.loom/config.toml` or `.loom/work/config.toml`. Set either field only as a DELIBERATE OVERRIDE, and say why in the stage description. Subagent model choice happens at spawn time (BLOCK-B), never in the YAML.
+> ⚠️ **A stage OMITS `model` and `reasoning_effort` by default**, so the stage type's configured default applies — `knowledge` and `integration-verify` default to opus, `standard` and `knowledge-distill` to sonnet; default effort is `high` (`standard`), `medium` (`knowledge`), `xhigh` (`integration-verify`), and `high` (`knowledge-distill`), configurable per stage type in `[models]` of `~/.loom/config.toml` or `.loom/work/config.toml`. Set either field only as a DELIBERATE OVERRIDE, and say why in the stage description. Subagent model choice happens at spawn time (BLOCK-B), never in the YAML.
 
 BLOCK-B — model allocation playbook:
 

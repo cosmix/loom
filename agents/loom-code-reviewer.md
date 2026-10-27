@@ -2,7 +2,8 @@
 name: loom-code-reviewer
 description: Read-only code review agent for comprehensive review of code quality, security, architecture, and best practices. Cannot modify files.
 tools: Read, Glob, Grep
-model: sonnet
+model: opus
+effort: high
 maxTurns: 1000
 ---
 

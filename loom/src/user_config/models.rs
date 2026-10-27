@@ -11,8 +11,8 @@ use crate::models::stage::StageType;
 
 use super::{parse, ConfigValue, KeySpec, Origin, UserConfig};
 
-/// The `[models]` section as the file set it. Eight keys, one model/effort
-/// pair per [`StageType`].
+/// The `[models]` section as the file set it. Ten keys: one model/effort pair
+/// per [`StageType`] plus the `loom-code-reviewer` subagent's pair.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
 pub(super) struct ModelsSection {
     standard_model: Option<String>,
@@ -23,6 +23,8 @@ pub(super) struct ModelsSection {
     knowledge_distill_effort: Option<String>,
     integration_verify_model: Option<String>,
     integration_verify_effort: Option<String>,
+    code_reviewer_model: Option<String>,
+    code_reviewer_effort: Option<String>,
 }
 
 impl ModelsSection {
@@ -60,6 +62,8 @@ impl ModelsSection {
                 "integration_verify_effort",
                 efforts,
             )?,
+            code_reviewer_model: parse::get_enum(doc, "models", "code_reviewer_model", models)?,
+            code_reviewer_effort: parse::get_enum(doc, "models", "code_reviewer_effort", efforts)?,
         })
     }
 
@@ -101,9 +105,43 @@ impl UserConfig {
             .unwrap_or_else(|| stage_type.default_reasoning_effort())
     }
 
+    /// The model the `loom-code-reviewer` subagent runs on absent a project
+    /// `[models]` override. Default: [`crate::claude::DEFAULT_CODE_REVIEWER_MODEL`].
+    pub fn code_reviewer_model(&self) -> &str {
+        self.models
+            .code_reviewer_model
+            .as_deref()
+            .unwrap_or(crate::claude::DEFAULT_CODE_REVIEWER_MODEL)
+    }
+
+    /// The reasoning effort the `loom-code-reviewer` subagent runs at absent
+    /// a project `[models]` override. Default:
+    /// [`crate::claude::DEFAULT_CODE_REVIEWER_EFFORT`].
+    pub fn code_reviewer_effort(&self) -> &str {
+        self.models
+            .code_reviewer_effort
+            .as_deref()
+            .unwrap_or(crate::claude::DEFAULT_CODE_REVIEWER_EFFORT)
+    }
+
     /// The typed value and origin for a `models.*` key, or `None` when
     /// `spec` is not one — the arm `UserConfig::value_of` delegates to.
     pub(super) fn models_value_of(&self, spec: &KeySpec) -> Option<(ConfigValue, Origin)> {
+        match spec.name {
+            "models.code_reviewer_model" => {
+                return Some((
+                    ConfigValue::Text(self.code_reviewer_model().to_string()),
+                    self.origin_of(self.models.code_reviewer_model.as_ref()),
+                ))
+            }
+            "models.code_reviewer_effort" => {
+                return Some((
+                    ConfigValue::Text(self.code_reviewer_effort().to_string()),
+                    self.origin_of(self.models.code_reviewer_effort.as_ref()),
+                ))
+            }
+            _ => {}
+        }
         let (stage_type, is_effort) = match spec.name {
             "models.standard_model" => (StageType::Standard, false),
             "models.standard_effort" => (StageType::Standard, true),
@@ -134,7 +172,7 @@ impl UserConfig {
     /// the blank line separating sections.
     pub(super) fn models_toml(&self) -> String {
         format!(
-            "[models]\nstandard_model = {}\nstandard_effort = {}\nknowledge_model = {}\nknowledge_effort = {}\nknowledge_distill_model = {}\nknowledge_distill_effort = {}\nintegration_verify_model = {}\nintegration_verify_effort = {}\n",
+            "[models]\nstandard_model = {}\nstandard_effort = {}\nknowledge_model = {}\nknowledge_effort = {}\nknowledge_distill_model = {}\nknowledge_distill_effort = {}\nintegration_verify_model = {}\nintegration_verify_effort = {}\ncode_reviewer_model = {}\ncode_reviewer_effort = {}\n",
             ConfigValue::Text(self.stage_model(StageType::Standard).to_string()).to_toml_literal(),
             ConfigValue::Text(self.stage_reasoning_effort(StageType::Standard).to_string())
                 .to_toml_literal(),
@@ -155,6 +193,8 @@ impl UserConfig {
                     .to_string()
             )
             .to_toml_literal(),
+            ConfigValue::Text(self.code_reviewer_model().to_string()).to_toml_literal(),
+            ConfigValue::Text(self.code_reviewer_effort().to_string()).to_toml_literal(),
         )
     }
 }

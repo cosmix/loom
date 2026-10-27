@@ -168,7 +168,7 @@ Foreground fan-out verified safe to 6 concurrent codex-companion tasks; backgrou
 
 ## Terminal Backends: SessionBackend / TmuxBackend [DETAILED]
 
-`SessionBackend` dispatches every spawn/kill/liveness call to a `Native` or opt-in `Tmux` lane, recorded on `Session.backend`.
+`SessionBackend` dispatches every spawn/kill/liveness call to a `Tmux` (default) or opt-in `Native` lane, recorded on `Session.backend`.
 
 → [Terminal Backends](architecture/terminal-backends.md)
 

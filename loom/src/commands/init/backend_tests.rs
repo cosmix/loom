@@ -60,7 +60,7 @@ fn init_backend_default_label_names_the_set_value_and_its_source() {
 
 #[test]
 fn init_backend_default_label_says_built_in_default_when_unset() {
-    assert_eq!(backend_default_label(None), "native, built-in default");
+    assert_eq!(backend_default_label(None), "tmux, built-in default");
 }
 
 #[test]
@@ -87,9 +87,9 @@ fn init_backend_effective_backend_inherits_user_config_when_none_chosen() {
 }
 
 #[test]
-fn init_backend_effective_backend_defaults_to_native_without_user_config() {
+fn init_backend_effective_backend_defaults_to_tmux_without_user_config() {
     let temp = tempdir().unwrap();
     let _guard = redirect_user_config(temp.path().join("config.toml"));
 
-    assert_eq!(effective_backend(None), SessionBackendKind::Native);
+    assert_eq!(effective_backend(None), SessionBackendKind::Tmux);
 }
