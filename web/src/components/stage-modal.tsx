@@ -6,6 +6,7 @@ import { Link, useSearchParams } from "react-router";
 
 import type { Attention, StageSummary } from "@/api/schema";
 import { HazardHeader } from "@/aurora-ui/feedback/HazardPanel";
+import { isTyping } from "@/lib/is-typing";
 import { OperatorGuidance, attentionCounts, attentionHazard } from "@/components/attention-panel";
 import { CopyCommand } from "@/components/copy-command";
 import { StageSummaryText } from "@/components/stage-detail";
@@ -70,11 +71,6 @@ export function useOpenTerminal(): (id: string) => void {
       }),
     [setParams],
   );
-}
-
-function isTyping(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
 /// The stage page's content in a dialog, opened from any view with

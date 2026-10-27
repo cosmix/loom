@@ -3,6 +3,7 @@ import { useEffect, useState } from "react";
 import { Outlet, useLocation } from "react-router";
 
 import { ErrorBoundary } from "@/aurora-ui/feedback/ErrorBoundary";
+import { isTyping } from "@/lib/is-typing";
 
 import { Header } from "@/components/header";
 import { useNow } from "@/components/hooks/use-now";
@@ -49,11 +50,6 @@ export function Shell() {
       </div>
     </TooltipProvider>
   );
-}
-
-function isTyping(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
 /// Provider quota gauges on the left when either provider has data, and the
