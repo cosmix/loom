@@ -71,6 +71,7 @@ run_test "worktree-file-guard: malformed non-empty input is blocked" "$SCRIPT_DI
 run_test "worktree-file-guard: MultiEdit honours the worktree boundary" "$SCRIPT_DIR/worktree-file-guard-multiedit.sh"
 run_test "worktree-file-guard: the session scratchpad is open, its surroundings stay blocked" "$SCRIPT_DIR/worktree-file-guard-scratchpad.sh"
 run_test "spawn-guard: agent tier falls back to ~/.claude/agents" "$SCRIPT_DIR/spawn-guard-home-agent-tier.sh"
+run_test "spawn-guard: loom-code-reviewer runs the configured model and effort" "$SCRIPT_DIR/spawn-guard-reviewer-model.sh"
 run_test "credential-guard: capability tokens blocked through the state-root symlink" "$SCRIPT_DIR/credential-guard-tokens.sh"
 run_test "credential-guard: sandbox denyRead gates file tools, search roots above a denial run" "$SCRIPT_DIR/credential-guard-deny-read.sh"
 run_test "credential-guard: a saved terminal history is closed to a loom session, open to the operator" "$SCRIPT_DIR/credential-guard-terminal-history.sh"
