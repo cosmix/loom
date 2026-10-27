@@ -9,9 +9,13 @@ import refused from "@/plan/api/fixtures/refused.json";
 import serverInfo from "@/plan/api/fixtures/server-info.json";
 import share from "@/plan/api/fixtures/share.json";
 import {
+  CLIENT_MESSAGE_TYPES,
+  CURRENT_KINDS,
+  PLAN_MESSAGE_TYPES,
   authoringViewSchema,
   checklistViewSchema,
   clientMessageSchema,
+  currentViewSchema,
   planMessageSchema,
   presenceListSchema,
   refusedSchema,
@@ -75,5 +79,28 @@ describe("planning wire schemas", () => {
       checklistViewSchema.safeParse({ ...checklist, current: { kind: "step", number: 256 } })
         .success,
     ).toBe(false);
+  });
+});
+
+// loom/src/plan_server/wire/tests_schema.rs compares the Rust enums with these
+// exported arrays only. The unions below are what parses frames, so each must
+// list exactly the tags its array lists, or a variant added to the array alone
+// passes the Rust test while the app drops the frame.
+describe("schema unions track the exported tag arrays", () => {
+  const sorted = (tags: readonly string[]) => [...tags].sort();
+
+  it("lists every server message type in planMessageSchema", () => {
+    const tags = planMessageSchema.options.map((option) => option.shape.type.value);
+    expect(sorted(tags)).toEqual(sorted(PLAN_MESSAGE_TYPES));
+  });
+
+  it("lists every client message type in clientMessageSchema", () => {
+    const tags = clientMessageSchema.options.map((option) => option.shape.type.value);
+    expect(sorted(tags)).toEqual(sorted(CLIENT_MESSAGE_TYPES));
+  });
+
+  it("lists every current-step kind in currentViewSchema", () => {
+    const tags = currentViewSchema.options.map((option) => option.shape.kind.value);
+    expect(sorted(tags)).toEqual(sorted(CURRENT_KINDS));
   });
 });
