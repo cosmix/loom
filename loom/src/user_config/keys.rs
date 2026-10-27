@@ -171,6 +171,34 @@ pub const KEYS: &[KeySpec] = &[
         kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
         help: "Reasoning effort an integration-verify stage's main agent session runs at",
     },
+    KeySpec {
+        name: "plan.document_summary_model",
+        section: "plan",
+        field: "document_summary_model",
+        kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
+        help: "Model the loom-plan summary agent builds document summaries on",
+    },
+    KeySpec {
+        name: "plan.document_summary_effort",
+        section: "plan",
+        field: "document_summary_effort",
+        kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
+        help: "Reasoning effort for document summaries",
+    },
+    KeySpec {
+        name: "plan.overview_model",
+        section: "plan",
+        field: "overview_model",
+        kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
+        help: "Model overviews and background summary sessions run on",
+    },
+    KeySpec {
+        name: "plan.overview_effort",
+        section: "plan",
+        field: "overview_effort",
+        kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
+        help: "Reasoning effort for overviews and summary sessions",
+    },
 ];
 
 /// The spec for `name`, or an error listing every valid key.

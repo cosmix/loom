@@ -282,15 +282,17 @@ fn to_toml_string_renders_every_key_resolved() {
     let config = parse_document("[context]\nceiling_tokens = 55555\n").unwrap();
     let rendered = config.to_toml_string();
 
-    // Section order: context, models, pressure, terminal, update.
+    // Section order: context, models, plan, pressure, terminal, update.
     let context_at = rendered.find("[context]").unwrap();
     let models_at = rendered.find("[models]").unwrap();
+    let plan_at = rendered.find("[plan]").unwrap();
     let pressure_at = rendered.find("[pressure]").unwrap();
     let terminal_at = rendered.find("[terminal]").unwrap();
     let update_at = rendered.find("[update]").unwrap();
     assert!(
         context_at < models_at
-            && models_at < pressure_at
+            && models_at < plan_at
+            && plan_at < pressure_at
             && pressure_at < terminal_at
             && terminal_at < update_at,
         "{rendered}"
@@ -333,6 +335,10 @@ fn value_of_has_an_arm_for_every_registered_key() {
             "context.ceiling_tokens" => {
                 assert_eq!(value, DEFAULT_CONTEXT_CEILING_TOKENS.to_string())
             }
+            "plan.document_summary_model" => assert_eq!(value, "haiku"),
+            "plan.document_summary_effort" => assert_eq!(value, "medium"),
+            "plan.overview_model" => assert_eq!(value, "sonnet"),
+            "plan.overview_effort" => assert_eq!(value, "high"),
             "pressure.claude_model" => assert_eq!(value, "opus"),
             "pressure.claude_effort" => assert_eq!(value, "xhigh"),
             "pressure.codex_model" => assert_eq!(value, "gpt-6.1-sol"),
@@ -350,4 +356,21 @@ fn value_of_has_an_arm_for_every_registered_key() {
             other => panic!("no expected default wired up for key {other}"),
         }
     }
+}
+
+#[test]
+fn plan_keys_parse_a_set_value_and_reject_an_unknown_variant() {
+    let config = parse_document("[plan]\noverview_model = \"opus\"\n").unwrap();
+    let (value, origin) = config.value_of(spec("plan.overview_model").unwrap());
+    assert_eq!(value.to_string(), "opus");
+    assert_eq!(origin, Origin::Set);
+    let (value, origin) = config.value_of(spec("plan.overview_effort").unwrap());
+    assert_eq!(value.to_string(), "high");
+    assert_eq!(origin, Origin::Default);
+
+    let error = parse_document("[plan]\noverview_model = \"gpt\"\n").unwrap_err();
+    assert!(
+        format!("{error:#}").contains("plan.overview_model"),
+        "{error:#}"
+    );
 }

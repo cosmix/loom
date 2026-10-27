@@ -137,7 +137,7 @@ fn only_the_workspace_backed_keys_carry_a_project_scope() {
     let payload = parse(&scratch.base);
     for entry in &payload.entries {
         let key = KEYS.iter().find(|key| key.name == entry.name).unwrap();
-        let project = matches!(key.section, "pressure" | "models")
+        let project = matches!(key.section, "pressure" | "models" | "plan")
             || matches!(
                 entry.name.as_str(),
                 "terminal.backend" | "context.ceiling_tokens"
@@ -201,6 +201,13 @@ fn the_config_fixture_matches_a_real_payload() {
         toml_edit::Value::from(900_000_i64),
     );
 
+    if let Ok(out) = std::env::var("REGEN_FIXTURE") {
+        let mut p = parse(&scratch.base);
+        p.csrf_token = serde_json::from_str::<ConfigPayload>(FIXTURE)
+            .unwrap()
+            .csrf_token;
+        std::fs::write(out, serde_json::to_string_pretty(&p).unwrap() + "\n").unwrap();
+    }
     let fixture: ConfigPayload = serde_json::from_str(FIXTURE).expect("fixture is JSON");
     let payload = parse(&scratch.base);
     assert_eq!(fixture.project, payload.project);
@@ -280,15 +287,15 @@ fn every_entry_reports_the_registrys_own_default() {
 }
 
 /// The project scope covers `terminal.backend`, `context.ceiling_tokens`,
-/// plus every `[pressure]`/`[models]` key (sixteen total) — every key
+/// plus every `[pressure]`/`[models]`/`[plan]` key (twenty total) — every key
 /// `workspace::backs` resolves. The key-level set is derived from [`KEYS`]
-/// rather than typed out fourteen times, so this test keeps testing the right
-/// thing when a fifteenth key is added.
+/// rather than typed out eighteen times, so this test keeps testing the right
+/// thing when another key is added.
 #[test]
 fn project_scoped_covers_the_workspace_backed_keys() {
     let key_level: Vec<&str> = KEYS
         .iter()
-        .filter(|key| matches!(key.section, "pressure" | "models"))
+        .filter(|key| matches!(key.section, "pressure" | "models" | "plan"))
         .map(|key| key.name)
         .collect();
     let expected: Vec<&str> = ["terminal.backend", "context.ceiling_tokens"]
@@ -302,4 +309,45 @@ fn project_scoped_covers_the_workspace_backed_keys() {
         .map(|key| key.name)
         .collect();
     assert_eq!(named, expected);
+}
+
+/// A project write of a `plan.*` key lands in `[planning]`; the run-owned
+/// `[plan]` table stays byte-identical.
+#[test]
+fn plan_keys_write_to_the_planning_table_and_leave_the_run_plan_table_alone() {
+    let scratch = scratch();
+    scratch.write_project("plan", "plan_id", toml_edit::Value::from("demo"));
+    let config = scratch.work().join("config.toml");
+    let plan_table = |text: &str| -> String {
+        text.split("[planning]")
+            .next()
+            .unwrap_or_default()
+            .to_owned()
+    };
+    let before = std::fs::read_to_string(&config).expect("read config");
+
+    let workspace = crate::user_config::workspace::Workspace::open(&scratch.base)
+        .expect("open workspace")
+        .expect("workspace exists");
+    workspace
+        .write(
+            spec("plan.overview_model").unwrap(),
+            Some(ConfigValue::Text("opus".to_owned())),
+        )
+        .expect("write the project value");
+
+    let after = std::fs::read_to_string(&config).expect("read config");
+    let parsed: toml::Value = toml::from_str(&after).expect("config is TOML");
+    assert_eq!(parsed["planning"]["overview_model"].as_str(), Some("opus"));
+    assert!(parsed["plan"].get("overview_model").is_none(), "{after}");
+    assert_eq!(
+        plan_table(&before).trim_end(),
+        plan_table(&after).trim_end()
+    );
+    let payload = parse(&scratch.base);
+    let overview = entry(&payload, "plan.overview_model");
+    assert_eq!(
+        overview.effective.value,
+        ConfigValue::Text("opus".to_owned())
+    );
 }
