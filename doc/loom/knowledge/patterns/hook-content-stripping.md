@@ -149,9 +149,12 @@ diagnose than one large one.
 different from what runs - that is hook evasion, it will be refused by the permission classifier,
 and it defeats a control that exists to prevent lost work. Do not write the knowledge file with a
 file tool from a path outside the worktree either: `worktree-file-guard.sh` blocks file tools
-outside the worktree. The one exception is the session's own harness scratchpad
+outside the worktree. Two exceptions: the session's own harness scratchpad
 (`/tmp/claude-<uid>/<project>/<session>/scratchpad/`), allowed by `allow_scratchpad`
-(`loom-hooks/worktree-file-guard.sh::allow_scratchpad`) when the path is canonical and owned by the uid.
+(`loom-hooks/worktree-file-guard.sh::allow_scratchpad`) when the path is canonical and owned by the uid;
+and the loom relay scratch directory `$LOOM_SCRATCH_DIR`, where judges draft verdicts, allowed by
+`allow_loom_scratch` when it is a uid-owned directory named for `$LOOM_SESSION_ID` and the target
+resolves inside it.
 
 **Do not "fix" the raw fallback by loosening it.** A non-match on that branch exits 0 and ALLOWS,
 so the fallback is fail-safe by construction, and narrowing it opens a bypass rather than merely
