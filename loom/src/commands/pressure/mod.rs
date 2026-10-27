@@ -323,6 +323,7 @@ pub fn execute(args: PressureArgs) -> Result<()> {
     let project = project_pressure_config(&repo_root);
     let user = UserConfig::load();
     let models = PressureModels::resolve(flags, &project, &user);
+    let rounds = models::resolve_rounds(rounds, &project, &user);
 
     let resolved = resolve_plan_path(&plan, &repo_root)?;
     let report = codex_report_path(&resolved.fs_path);

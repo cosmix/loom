@@ -27,6 +27,18 @@ pub const DEFAULT_PRESSURE_CLAUDE_EFFORT: &str = "xhigh";
 /// reconciling a written report is cheaper work than producing it.
 pub const DEFAULT_PRESSURE_ADDRESS_EFFORT: &str = "high";
 
+/// Built-in number of pressure/address rounds `loom pressure` runs absent a
+/// `--rounds` flag or a `pressure.rounds` setting.
+pub const DEFAULT_PRESSURE_ROUNDS: u32 = 1;
+
+/// Built-in model the `loom-code-reviewer` subagent runs on absent a
+/// `models.code_reviewer_model` setting.
+pub const DEFAULT_CODE_REVIEWER_MODEL: &str = "opus";
+
+/// Built-in reasoning effort the `loom-code-reviewer` subagent runs at absent
+/// a `models.code_reviewer_effort` setting.
+pub const DEFAULT_CODE_REVIEWER_EFFORT: &str = "high";
+
 /// Find the absolute path to the claude binary
 ///
 /// On macOS, spawned terminals don't inherit the parent's PATH, so we need

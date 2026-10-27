@@ -46,9 +46,19 @@ impl ConfigValue {
     }
 
     fn parse_number(name: &str, raw: &str) -> Result<Self> {
-        raw.parse::<u32>()
-            .map(Self::Number)
-            .map_err(|_| Self::number_error(name, raw))
+        let number = raw
+            .parse::<u32>()
+            .map_err(|_| Self::number_error(name, raw))?;
+        Self::at_least_min(name, number)
+    }
+
+    /// Reject a number below the key's [`super::keys::number_min`].
+    pub(super) fn at_least_min(name: &str, number: u32) -> Result<Self> {
+        let min = super::keys::number_min(name);
+        if number < min {
+            bail!("{name}: {number} is below the minimum of {min}");
+        }
+        Ok(Self::Number(number))
     }
 
     fn parse_enum(name: &str, raw: &str, variants: &[&str]) -> Result<Self> {
@@ -116,9 +126,9 @@ impl ConfigValue {
         let int = value
             .as_integer()
             .ok_or_else(|| Self::shape_error(name, "an integer", value))?;
-        u32::try_from(int)
-            .map(Self::Number)
-            .map_err(|_| anyhow::anyhow!("{name}: {int} is out of range for a u32"))
+        let number = u32::try_from(int)
+            .map_err(|_| anyhow::anyhow!("{name}: {int} is out of range for a u32"))?;
+        Self::at_least_min(name, number)
     }
 
     fn enum_from_toml(name: &str, value: &toml::Value, variants: &[&str]) -> Result<Self> {
@@ -152,6 +162,9 @@ impl ConfigValue {
     ///
     /// [`Display`]: std::fmt::Display
     pub fn checked(self, kind: &ValueKind, name: &str) -> Result<Self> {
+        if let (Self::Number(number), ValueKind::Number) = (&self, kind) {
+            return Self::at_least_min(name, *number);
+        }
         let matches = match (&self, kind) {
             (Self::Bool(_), ValueKind::Bool) => true,
             (Self::Number(_), ValueKind::Number) => true,

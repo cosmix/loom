@@ -40,6 +40,15 @@ pub struct KeySpec {
     pub help: &'static str,
 }
 
+/// The smallest value a [`ValueKind::Number`] key accepts. Every number key
+/// is non-negative; `pressure.rounds` is the one that must also be non-zero.
+pub fn number_min(name: &str) -> u32 {
+    match name {
+        "pressure.rounds" => 1,
+        _ => 0,
+    }
+}
+
 /// Every key `loom config` knows about, in the order `--list`/`--print`
 /// render them. The default for each key lives on
 /// [`crate::user_config::UserConfig`]'s getters, not here — one source of
@@ -116,18 +125,25 @@ pub const KEYS: &[KeySpec] = &[
         help: "Claude reasoning effort loom pressure uses for the /address reconciliation step",
     },
     KeySpec {
+        name: "pressure.rounds",
+        section: "pressure",
+        field: "rounds",
+        kind: ValueKind::Number,
+        help: "Pressure/address rounds loom pressure runs (at least 1)",
+    },
+    KeySpec {
         name: "models.standard_model",
         section: "models",
         field: "standard_model",
         kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
-        help: "Model a standard stage's main agent session runs on",
+        help: "Stage orchestrator model for standard (implementation) stages",
     },
     KeySpec {
         name: "models.standard_effort",
         section: "models",
         field: "standard_effort",
         kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
-        help: "Reasoning effort a standard stage's main agent session runs at",
+        help: "Stage orchestrator reasoning effort for standard (implementation) stages",
     },
     KeySpec {
         name: "models.knowledge_model",
@@ -170,6 +186,20 @@ pub const KEYS: &[KeySpec] = &[
         field: "integration_verify_effort",
         kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
         help: "Reasoning effort an integration-verify stage's main agent session runs at",
+    },
+    KeySpec {
+        name: "models.code_reviewer_model",
+        section: "models",
+        field: "code_reviewer_model",
+        kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
+        help: "Model the loom-code-reviewer subagent runs on",
+    },
+    KeySpec {
+        name: "models.code_reviewer_effort",
+        section: "models",
+        field: "code_reviewer_effort",
+        kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
+        help: "Reasoning effort the loom-code-reviewer subagent runs at",
     },
     KeySpec {
         name: "plan.document_summary_model",

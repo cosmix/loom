@@ -141,6 +141,7 @@ fn dispatch_hook(command: HookCommands) -> Result<()> {
         HookCommands::ContextCeilings => hook::context_ceilings::context_ceilings(),
         HookCommands::ForwardReceipt => hook::forward_receipt::forward_receipt(),
         HookCommands::WorkerBrief => hook::worker_brief::worker_brief(),
+        HookCommands::ReviewerModel => hook::reviewer_model::reviewer_model(),
         HookCommands::ProjectTypes => hook::project_types::execute(),
         HookCommands::Relay { allowed_kinds } => hook::relay::relay(&allowed_kinds),
         HookCommands::ReviewHarvest => hook::review_harvest::review_harvest(),
