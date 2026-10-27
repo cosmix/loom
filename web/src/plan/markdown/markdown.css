@@ -1,0 +1,210 @@
+/* The reading column's Markdown. Colours come from the shared tokens; Tailwind's
+ * preflight has reset margins, list markers and heading sizes, so they are set here. */
+
+.md {
+  min-width: 0;
+  max-width: 100%;
+  font-size: 0.9375rem;
+  line-height: 1.65;
+  overflow-wrap: break-word;
+}
+
+.md > * + *,
+.md li > * + *,
+.md blockquote > * + *,
+.md .md-footnote > * + * {
+  margin-top: 0.75em;
+}
+
+.md h1,
+.md h2,
+.md h3,
+.md h4,
+.md h5,
+.md h6 {
+  font-weight: 600;
+  line-height: 1.3;
+  scroll-margin-top: 1rem;
+}
+.md h1 {
+  font-size: 1.625rem;
+}
+.md h2 {
+  font-size: 1.3125rem;
+}
+.md h3 {
+  font-size: 1.125rem;
+}
+.md h4,
+.md h5,
+.md h6 {
+  font-size: 1rem;
+}
+.md > .md-heading,
+.md > h1,
+.md > h2,
+.md > h3 {
+  margin-top: 1.5em;
+}
+.md > :first-child {
+  margin-top: 0;
+}
+
+.md-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.md-heading .md-copy {
+  opacity: 0;
+}
+.md-heading:hover .md-copy,
+.md-heading .md-copy:focus-visible,
+.md-heading .md-copy[data-state="copied"],
+.md-heading .md-copy[data-state="failed"] {
+  opacity: 1;
+}
+@media (hover: none) {
+  .md-heading .md-copy {
+    opacity: 1;
+  }
+}
+
+.md a {
+  text-decoration: underline;
+  text-decoration-color: var(--muted-foreground);
+  text-underline-offset: 2px;
+}
+.md a:hover {
+  text-decoration-color: currentColor;
+}
+.md .md-missing {
+  text-decoration: line-through;
+  color: var(--muted-foreground);
+}
+.md .md-outside {
+  text-decoration: underline dotted var(--muted-foreground);
+  cursor: help;
+}
+
+.md ul {
+  list-style: disc;
+  padding-left: 1.5rem;
+}
+.md ol {
+  list-style: decimal;
+  padding-left: 1.5rem;
+}
+.md ul.md-tasks {
+  list-style: none;
+  padding-left: 0.25rem;
+}
+.md li + li {
+  margin-top: 0.25em;
+}
+.md .md-task > input[type="checkbox"] {
+  margin-right: 0.5rem;
+  vertical-align: middle;
+}
+.md .md-task > input + p {
+  display: inline;
+}
+
+.md blockquote {
+  border-left: 3px solid var(--hairline);
+  padding-left: 1rem;
+  color: var(--muted-foreground);
+}
+
+.md hr {
+  border: 0;
+  border-top: 1px solid var(--hairline);
+}
+
+.md mark {
+  background: var(--highlight);
+  color: var(--highlight-foreground);
+  border-radius: 2px;
+  padding: 0 1px;
+}
+
+.md :not(pre) > code,
+.md a > code {
+  font-size: 0.875em;
+  padding: 0.05em 0.3em;
+  border-radius: 4px;
+  background: var(--muted);
+}
+
+.md .md-raw {
+  white-space: pre-wrap;
+  font-size: 0.875em;
+  color: var(--muted-foreground);
+}
+
+.md-code {
+  border: 1px solid var(--hairline);
+  border-radius: 6px;
+  background: var(--muted);
+  min-width: 0;
+}
+.md-code-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0.125rem 0.25rem 0 0.75rem;
+}
+.md-code-lang {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted-foreground);
+}
+.md-code pre {
+  margin: 0;
+  padding: 0.25rem 0.75rem 0.75rem;
+  overflow-x: auto;
+  font-size: 0.8125rem;
+  line-height: 1.55;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.md-table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+}
+.md-table {
+  min-width: 100%;
+  border-collapse: collapse;
+  font-size: 0.875rem;
+  overflow-wrap: normal;
+}
+.md-table thead tr {
+  border-bottom: var(--ledger-head-rule);
+}
+.md-table tbody tr {
+  border-bottom: 1px solid var(--ledger-rule);
+}
+.md-table th,
+.md-table td {
+  padding: 0.375rem 0.75rem;
+  text-align: left;
+  vertical-align: top;
+}
+.md-table th {
+  font-weight: 500;
+}
+.md-table .md-align-center {
+  text-align: center;
+}
+.md-table .md-align-right {
+  text-align: right;
+}
+
+.md-footnote {
+  font-size: 0.875em;
+  color: var(--muted-foreground);
+}
+.md-footnote-label {
+  margin-right: 0.375rem;
+}
