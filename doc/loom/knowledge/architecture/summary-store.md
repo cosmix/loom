@@ -1,6 +1,6 @@
 # Summary Store
 
-> Summary store: format, states, seal, claims
+> Summary store
 
 ## Store Layout and Ids
 

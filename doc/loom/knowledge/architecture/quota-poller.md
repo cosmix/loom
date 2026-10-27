@@ -1,6 +1,6 @@
 # Quota Poller
 
-> Quota polling
+> Polling
 
 ## Sources
 

@@ -1,6 +1,6 @@
 # State Confinement Gaps
 
-> Cache sharing
+> Caches
 
 ## Open Gap
 

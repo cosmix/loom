@@ -1,6 +1,6 @@
 # Spurious waiting-for-input stages
 
-> Idle detect
+> Idle
 
 ## What happened
 

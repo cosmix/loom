@@ -244,7 +244,6 @@ integrity, impact tests, and the loom-filed freeze refusal). Rust contracts are 
 
 ## Planning Document Model (`planning/`, `commands/plan/check.rs`)
 
-`loom::planning` models a project's `doc/` tree: kinds and ids, plan slugs (most advanced state wins), heading anchors
-and span hashes, the locked set, the polling watcher with `OwnWrites`, the runtime directory, and the checklist behind
-`loom plan check` (exit 0 clean, 1 problems, 2 cannot check). → [Planning Document Model](architecture/planning-document-model.md)
+`loom::planning` models a project's `doc/` tree: kinds and ids, plan slugs (most advanced state wins), heading anchors and span hashes, the locked set, the polling watcher with `OwnWrites`, the runtime directory, and the checklist behind `loom plan check` (exit 0 clean, 1 problems, 2 cannot check). → [Planning Document Model](architecture/planning-document-model.md)
 `planning/summary/` keeps sentence-level summaries of product sections, plans and the two overviews in `doc/loom/summaries/`; each sentence cites its source by hash, so every summary evaluates `current`, `stale`, `incomplete`, `rebuilding` or `missing`, and `loom plan summary brief|seal|status|release` claims, validates and writes them under one store lock. → [Summary Store](architecture/summary-store.md)
+Concept mode (`plan_server/concept/`, `web/src/plan/concept/`) serves the Product and Engineering reading views: the server resolves each page and drives plan 4's engine from the watcher, the browser renders it, opens sentences down to source passages and carries open runs across rebuilds by the source sections they rest on. → [Plan Server](architecture/plan-server.md#page-route-and-page-model)
