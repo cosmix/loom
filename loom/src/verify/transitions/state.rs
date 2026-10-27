@@ -167,12 +167,15 @@ pub fn trigger_dependents(
 /// Check if all dependencies of a stage are satisfied
 ///
 /// A dependency is satisfied if:
-///   - Its status is `Completed`, AND
-///   - `merged` is true, AND
-///   - (non-knowledge deps) its `completed_commit` is an ancestor of the target branch.
+///   - It is final (`Stage::is_final_merged`: `Completed` and merged or
+///     assumed merged), AND
+///   - (loom-merged, non-knowledge deps) its `completed_commit` is an ancestor
+///     of the target branch.
 ///
 /// Knowledge stages are exempt from the git ancestry check because they
 /// have no branch by design — their "merge" is a pure metadata operation.
+/// So is a stage completed with `--force-unsafe --assume-merged`: the
+/// operator's statement that the work landed is taken as given.
 ///
 /// The git ancestry check is defense-in-depth against phantom merges: the
 /// `merged` flag can lie (see `PLAN-fix-phantom-merge.md`), so we
@@ -231,10 +234,10 @@ pub fn describe_dependency_block(
         // skipped dependency" look identical from the outside otherwise.
         let (detail, self_resolving) = match dep_stage.status {
             StageStatus::Completed => {
-                if !dep_stage.merged {
+                if !dep_stage.is_final_merged() {
                     ("Completed but not merged yet".to_string(), true)
-                } else if dep_stage.stage_type == StageType::Knowledge {
-                    continue; // Satisfied: knowledge stages skip the ancestry check.
+                } else if dep_stage.stage_type == StageType::Knowledge || dep_stage.merge_assumed {
+                    continue; // Satisfied: no ancestry check for these.
                 } else {
                     match dep_stage.completed_commit {
                         None => (
@@ -321,18 +324,13 @@ pub fn are_all_dependencies_satisfied(
             )
         })?;
 
-        // Knowledge stages are exempt from the git ancestry check
-        // (they have no branch by design). Status + merged flag are sufficient.
-        if dep_stage.stage_type == StageType::Knowledge {
-            if dep_stage.status != StageStatus::Completed || !dep_stage.merged {
-                return Ok(false);
-            }
-            continue;
-        }
-
-        // Non-knowledge stages: require status, merged flag, AND git ancestry.
-        if dep_stage.status != StageStatus::Completed || !dep_stage.merged {
+        if !dep_stage.is_final_merged() {
             return Ok(false);
+        }
+        // Knowledge stages have no branch by design, and an operator's
+        // `--assume-merged` is taken as given: neither is checked in git.
+        if dep_stage.stage_type == StageType::Knowledge || dep_stage.merge_assumed {
+            continue;
         }
 
         let Some(ref completed_commit) = dep_stage.completed_commit else {

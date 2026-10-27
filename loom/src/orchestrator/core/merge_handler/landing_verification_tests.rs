@@ -107,8 +107,14 @@ fn recovery_never_derives_completion_proof_from_the_branch_tip() {
         orchestrator.sync_graph_with_stage_files().unwrap();
         let stage = on_disk(&orchestrator);
         assert_eq!(stage.completed_commit, None);
-        assert!(!stage.merged);
-        assert_eq!(stage.status, StageStatus::NeedsHumanReview);
+        // Merged, so final: recovery neither re-verifies nor reverts it.
+        assert_eq!(stage.merged, merged);
+        let status = if merged {
+            StageStatus::Completed
+        } else {
+            StageStatus::NeedsHumanReview
+        };
+        assert_eq!(stage.status, status);
         assert_eq!(main_tip(&repo), before);
         assert!(worktree(&repo).exists());
     }

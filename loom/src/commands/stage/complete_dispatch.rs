@@ -69,6 +69,13 @@ fn apply_route(
 fn revert_phantom_merge(stage: &mut Stage, work_dir: &Path) -> Result<()> {
     mark_conflict(stage);
     update_stage(&stage.id, work_dir, |current| {
+        // A final stage is never reverted, even if it became final on disk
+        // after the caller loaded it.
+        anyhow::ensure!(
+            !current.is_final_merged(),
+            "stage '{}' is already merged",
+            current.id
+        );
         mark_conflict(current);
         Ok(())
     })?;

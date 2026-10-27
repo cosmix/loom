@@ -8,6 +8,7 @@ use tempfile::TempDir;
 use crate::git::branch::{
     branch_name_for_stage, commits_ahead_of, get_branch_head, is_ancestor_of,
 };
+use crate::verify::transitions::update_stage_at_path;
 
 #[test]
 fn stage_enumeration_and_direct_load_remain_linear_at_scale() {
@@ -45,7 +46,7 @@ fn verified_commit_and_merge_reconciliation_preserve_each_other() {
 
     let temp = TempDir::new().unwrap();
     let work_dir = temp.path().to_path_buf();
-    let stage_path = create_merged_recovery_stage(&work_dir);
+    let stage_path = create_completed_recovery_stage(&work_dir);
     let barrier = Arc::new(Barrier::new(3));
 
     let recovery_dir = work_dir.clone();
@@ -87,12 +88,11 @@ fn verified_commit_and_merge_reconciliation_preserve_each_other() {
     assert!(!stage.merged);
 }
 
-fn create_merged_recovery_stage(work_dir: &std::path::Path) -> std::path::PathBuf {
+fn create_completed_recovery_stage(work_dir: &std::path::Path) -> std::path::PathBuf {
     let stage = Stage {
         id: "recovery-merge-race".to_string(),
         name: "Recovery merge race".to_string(),
         status: StageStatus::Completed,
-        merged: true,
         ..Stage::default()
     };
     crate::verify::transitions::create_stage(&stage, work_dir).unwrap();

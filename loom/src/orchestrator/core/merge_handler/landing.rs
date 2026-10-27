@@ -310,9 +310,10 @@ pub(super) fn merge_signing_reason(stage_id: &str, detail: &str) -> String {
     )
 }
 
-/// A merge result may only be recorded on a stage that is not merged yet.
+/// A merge result may only be recorded on a stage that is not merged yet and
+/// not final: a final stage never moves to MergeConflict or MergeBlocked.
 fn ensure_unmerged(stage: &Stage) -> anyhow::Result<()> {
-    if stage.merged {
+    if stage.merged || stage.is_final_merged() {
         anyhow::bail!("stage '{}' is already merged", stage.id);
     }
     Ok(())

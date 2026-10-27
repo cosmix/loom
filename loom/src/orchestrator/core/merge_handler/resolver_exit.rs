@@ -32,14 +32,16 @@ impl Orchestrator {
 
         let mut stage = self.load_stage(stage_id)?;
         let target = resolve_target_branch(&self.config.base_branch, &self.config.repo_root);
+        // A final stage is not re-verified: only the cleanup is left to do.
+        if stage.is_final_merged() || (stage.merged && self.merged_flag_is_proven(&stage, &target))
+        {
+            self.cleanup_resolved_merge(stage_id, &target);
+            self.clear_merge_resolver_attempts(stage_id);
+            clear_status_line();
+            eprintln!("Stage '{stage_id}' merge completed successfully");
+            return Ok(());
+        }
         if stage.merged {
-            if self.merged_flag_is_proven(&stage, &target) {
-                self.cleanup_resolved_merge(stage_id, &target);
-                self.clear_merge_resolver_attempts(stage_id);
-                clear_status_line();
-                eprintln!("Stage '{stage_id}' merge completed successfully");
-                return Ok(());
-            }
             stage = self.revert_unproven_merge(stage_id, stage);
         }
         match stage.status {
@@ -75,8 +77,9 @@ impl Orchestrator {
         }
     }
 
-    /// Whether git proves `stage`, flagged merged, is in `target`. A flag is
-    /// not trusted blindly; only knowledge stages (no branch by design) are.
+    /// Whether git proves `stage`, flagged merged but not final (a merged flag
+    /// on a stage that is not `Completed`), is in `target`. Such a flag is not
+    /// trusted blindly; only knowledge stages (no branch by design) are.
     fn merged_flag_is_proven(&self, stage: &Stage, target: &str) -> bool {
         if stage.stage_type == StageType::Knowledge {
             return true;

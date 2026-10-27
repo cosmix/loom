@@ -61,19 +61,33 @@ pub(super) fn check(repo_root: &Path) -> Vec<RepairIssue> {
     };
 
     for stage in &stages {
-        // Knowledge stages legitimately have merged=true with no commit —
-        // they have no branch and no git work to verify. Skip them.
-        if stage.stage_type == StageType::Knowledge {
-            continue;
-        }
-        if stage.merged {
-            audit_merged_stage(stage, &target_branch, repo_root, &mut issues);
-        } else if stage.status == StageStatus::Completed {
-            audit_completed_unmerged(stage, repo_root, &mut issues);
-        }
+        audit_stage(stage, &target_branch, repo_root, &mut issues);
     }
 
     issues
+}
+
+/// Dispatch one stage to the audit that applies to it, if any.
+fn audit_stage(
+    stage: &Stage,
+    target_branch: &str,
+    repo_root: &Path,
+    issues: &mut Vec<RepairIssue>,
+) {
+    // Knowledge stages legitimately have merged=true with no commit —
+    // they have no branch and no git work to verify.
+    if stage.stage_type == StageType::Knowledge {
+        return;
+    }
+    // An operator's assumed merge is final, not a phantom merge.
+    if stage.merge_assumed {
+        return;
+    }
+    if stage.merged {
+        audit_merged_stage(stage, target_branch, repo_root, issues);
+    } else if stage.status == StageStatus::Completed {
+        audit_completed_unmerged(stage, repo_root, issues);
+    }
 }
 
 /// merged=true: verify the recorded commit actually landed in the target
@@ -175,4 +189,72 @@ pub(super) fn fix_phantom_merge(repo_root: &Path, description: &str) -> Result<(
     .with_context(|| format!("Failed to save stage '{stage_id}' after reverting merged flag"))?;
 
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use std::path::Path;
+    use std::process::Command;
+
+    use tempfile::TempDir;
+
+    use super::*;
+
+    fn git(root: &Path, args: &[&str]) -> String {
+        let out = Command::new("git")
+            .args(args)
+            .current_dir(root)
+            .output()
+            .expect("git");
+        assert!(out.status.success(), "git {args:?} failed");
+        String::from_utf8_lossy(&out.stdout).trim().to_string()
+    }
+
+    /// A repo on `main` plus a commit on a side branch that `main` lacks.
+    fn repo_with_stranded_commit() -> (TempDir, String) {
+        let dir = TempDir::new().unwrap();
+        let root = dir.path();
+        git(root, &["init", "-q", "-b", "main"]);
+        git(root, &["config", "user.email", "t@t.com"]);
+        git(root, &["config", "user.name", "T"]);
+        git(root, &["commit", "-q", "--allow-empty", "-m", "initial"]);
+        git(root, &["checkout", "-q", "-b", "side"]);
+        git(root, &["commit", "-q", "--allow-empty", "-m", "stranded"]);
+        let commit = git(root, &["rev-parse", "HEAD"]);
+        git(root, &["checkout", "-q", "main"]);
+        (dir, commit)
+    }
+
+    fn completed_stage(root: &Path, commit: &str, assumed: bool) -> (std::path::PathBuf, String) {
+        let work_dir = WorkDir::new(root).unwrap().root().to_path_buf();
+        let mut stage = Stage::new("s".to_string(), None);
+        stage.status = StageStatus::Completed;
+        stage.merged = true;
+        stage.merge_assumed = assumed;
+        stage.completed_commit = Some(commit.to_string());
+        crate::verify::transitions::save_stage(&stage, &work_dir).unwrap();
+        (work_dir, stage.id)
+    }
+
+    #[test]
+    fn an_assumed_merge_is_final_not_a_phantom_merge() {
+        let (dir, commit) = repo_with_stranded_commit();
+        let (work_dir, id) = completed_stage(dir.path(), &commit, true);
+
+        assert!(check(dir.path()).is_empty());
+        // `loom repair --fix` reaches fix_phantom_merge only through a finding.
+        let stage = crate::verify::transitions::load_stage(&id, &work_dir).unwrap();
+        assert!(stage.merged && stage.merge_assumed);
+    }
+
+    #[test]
+    fn a_merged_stage_missing_from_the_target_is_still_a_phantom_merge() {
+        let (dir, commit) = repo_with_stranded_commit();
+        completed_stage(dir.path(), &commit, false);
+
+        let issues = check(dir.path());
+
+        assert_eq!(issues.len(), 1);
+        assert!(issues[0].description.starts_with("Phantom merge: "));
+    }
 }

@@ -45,7 +45,7 @@ fn require_merge_state(stage: &Stage, stage_id: &str) -> Result<()> {
     let is_merge_state = matches!(
         stage.status,
         StageStatus::MergeConflict | StageStatus::MergeBlocked
-    ) || (stage.status == StageStatus::Completed && !stage.merged);
+    ) || (stage.status == StageStatus::Completed && !stage.is_final_merged());
 
     if !is_merge_state {
         bail!(

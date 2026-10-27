@@ -81,7 +81,7 @@ impl Orchestrator {
     ) -> ReviewRoute {
         let mut moved_on = None;
         let updated = self.update_stage(stage_id, |stage| {
-            if !may_route(&stage.status) {
+            if stage.is_final_merged() || !may_route(&stage.status) {
                 moved_on = Some(stage.status.clone());
                 anyhow::bail!("stage '{stage_id}' is {} on disk", stage.status);
             }

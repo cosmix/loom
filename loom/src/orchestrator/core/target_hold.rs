@@ -237,22 +237,6 @@ impl Orchestrator {
         self.merge_probe_error = Some(message);
     }
 
-    /// Whether `commit` is in the accepted target tip, for a caller that
-    /// reverts `merged` when it is not; no commit counts as not merged.
-    /// `None` when the guard cannot be evaluated: that is not evidence of a
-    /// phantom merge, and the guard keeps merges held.
-    pub(in crate::orchestrator::core) fn probe_merged(
-        &mut self,
-        stage_id: &str,
-        commit: Option<&str>,
-        target: &str,
-    ) -> Option<bool> {
-        let Some(commit) = commit else {
-            return Some(false);
-        };
-        self.probe_accepted(stage_id, commit, target).ok()
-    }
-
     /// Why `stage` must not spawn now: `Held` for a held stage, `TargetHeld`
     /// for a knowledge stage while the target is held.
     pub(in crate::orchestrator::core) fn spawn_hold_reason(

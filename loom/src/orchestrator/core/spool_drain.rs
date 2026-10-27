@@ -210,8 +210,7 @@ impl Orchestrator {
     }
 
     /// Forget a stage's remembered drain failure for `kind`, so a later
-    /// recurrence is reported again - mirroring `verified_merged`'s
-    /// invalidate-on-change pattern.
+    /// recurrence is reported again.
     fn clear_drain_error(&mut self, kind: &str, stage_id: &str) {
         self.spool_drain_error_logged
             .remove(&drain_error_key(kind, stage_id));

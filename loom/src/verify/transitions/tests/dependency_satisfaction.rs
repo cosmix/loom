@@ -104,3 +104,32 @@ fn are_all_dependencies_satisfied_requires_merged_flag() {
         "Dependency should be satisfied when Completed AND merged=true (knowledge stage)"
     );
 }
+
+/// A stage completed with `--force-unsafe --assume-merged` satisfies its
+/// dependents whatever git shows: here `work_dir` is no repository, so any
+/// ancestry check fails. Both shapes count: `merged` as `--assume-merged`
+/// writes it, and `merged: false` beside `merge_assumed`.
+#[test]
+fn an_assumed_merge_satisfies_dependents_without_an_ancestry_check() {
+    let temp_dir = TempDir::new().unwrap();
+    let work_dir = temp_dir.path();
+
+    for merged in [true, false] {
+        let dep_id = format!("assumed-{merged}");
+        let mut dep = create_test_stage(&dep_id, "Assumed", StageStatus::Completed);
+        dep.merged = merged;
+        dep.merge_assumed = true;
+        dep.completed_commit = Some("3550d9e0000000000000000000000000000000aa".to_string());
+        save_stage(&dep, work_dir).expect("Should save dep stage");
+        let mut dependent =
+            create_test_stage("dependent", "Dependent", StageStatus::WaitingForDeps);
+        dependent.add_dependency(dep_id);
+
+        let satisfied = are_all_dependencies_satisfied(&dependent, work_dir, work_dir, "main")
+            .expect("Should check dependencies");
+        assert!(
+            satisfied,
+            "merged={merged}: an assumed merge blocked its dependent"
+        );
+    }
+}
