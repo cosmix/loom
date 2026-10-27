@@ -10,7 +10,7 @@
 
 mod candidacy;
 mod candidate;
-mod corpus;
+pub(crate) mod corpus;
 mod ladder;
 mod rungs;
 

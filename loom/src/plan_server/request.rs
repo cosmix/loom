@@ -158,6 +158,7 @@ pub(crate) fn reason_phrase(status: u16) -> &'static str {
         411 => "Length Required",
         413 => "Content Too Large",
         415 => "Unsupported Media Type",
+        422 => "Unprocessable Content",
         429 => "Too Many Requests",
         503 => "Service Unavailable",
         _ if status >= 500 => "Internal Server Error",
