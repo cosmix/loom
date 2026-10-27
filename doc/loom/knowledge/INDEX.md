@@ -8,7 +8,7 @@
 
 | File | Description | Lines |
 | --- | --- | --- |
-| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 249 |
+| [architecture.md](architecture.md) | High-level component relationships, data flow, module dependencies | 250 |
 | [entry-points.md](entry-points.md) | Key files agents should read first | 68 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
@@ -49,7 +49,7 @@
 | [owned-waits](architecture/owned-waits.md) | Worker waits | 70 |
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) | Plan fields | 257 |
 | [plan-server](architecture/plan-server.md) | Plan server | 119 |
-| [planning-document-model](architecture/planning-document-model.md) | Doc model | 169 |
+| [planning-document-model](architecture/planning-document-model.md) | Doc model | 172 |
 | [quota-poller](architecture/quota-poller.md) | Quota polling | 35 |
 | [remote-control](architecture/remote-control.md) | Capability | 81 |
 | [security-and-isolation](architecture/security-and-isolation.md) | Isolation | 186 |
@@ -61,6 +61,7 @@
 | [source-graph-resolution](architecture/source-graph-resolution.md) | Bindings | 123 |
 | [source-graph-view](architecture/source-graph-view.md) | Resolved view | 76 |
 | [status-data-model](architecture/status-data-model.md) | Status fields | 237 |
+| [summary-store](architecture/summary-store.md) | Summary store: format, states, seal, claims | 146 |
 | [target-guard](architecture/target-guard.md) | Accepted tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) | Backends | 280 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) | Adapters | 57 |
@@ -77,7 +78,7 @@
 | --- | --- | --- |
 | [cli-and-plan-pipeline](entry-points/cli-and-plan-pipeline.md) | CLI dispatch | 191 |
 | [context-and-source-graph](entry-points/context-and-source-graph.md) | Retrieval | 80 |
-| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Fs, git, sandbox | 133 |
+| [filesystem-and-integration-modules](entry-points/filesystem-and-integration-modules.md) | Fs, git | 133 |
 | [hooks](entry-points/hooks.md) | Hook scripts | 150 |
 | [orchestrator-daemon-and-sessions](entry-points/orchestrator-daemon-and-sessions.md) | Daemon | 248 |
 | [remote-control](entry-points/remote-control.md) | Call sites | 96 |
@@ -107,8 +108,8 @@
 | [dispute-and-adjudication](conventions/dispute-and-adjudication.md) | Dispute rules | 119 |
 | [git-and-build-workflow](conventions/git-and-build-workflow.md) | Git, build | 235 |
 | [guidance-channels-and-plugin-scope](conventions/guidance-channels-and-plugin-scope.md) | Guidance | 139 |
-| [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 98 |
-| [plan-web](conventions/plan-web.md) | Plan web rules | 24 |
+| [model-and-effort-config](conventions/model-and-effort-config.md) | [models] | 111 |
+| [plan-web](conventions/plan-web.md) | Plan web | 24 |
 | [plan-yaml-and-hooks](conventions/plan-yaml-and-hooks.md) | Plan YAML | 182 |
 | [web-dashboard-typography](conventions/web-dashboard-typography.md) | Dashboard CSS | 51 |
 
@@ -130,15 +131,15 @@
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Couplings | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locking races | 47 |
 | [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Chain bypass | 65 |
-| [contract-phase-human-blocking](mistakes/contract-phase-human-blocking.md) | Operator wait | 11 |
-| [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork, threads | 38 |
+| [contract-phase-human-blocking](mistakes/contract-phase-human-blocking.md) | Waits | 11 |
+| [daemon-fork-after-threads](mistakes/daemon-fork-after-threads.md) | Fork | 38 |
 | [daemon-singleton](mistakes/daemon-singleton.md) | Two daemons | 141 |
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | Test orphans | 55 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) | Doctrine | 392 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | Hook shells | 345 |
 | [knowledge-base-drift](mistakes/knowledge-base-drift.md) | Stale docs | 259 |
-| [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | CLI invariants | 206 |
-| [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Write channel | 100 |
+| [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | CLI rules | 206 |
+| [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) | Ledger TUI | 84 |
 | [live-state-pollution](mistakes/live-state-pollution.md) | Pollution | 117 |
 | [memory-relay-drain-gap](mistakes/memory-relay-drain-gap.md) | Relay leaks | 37 |
@@ -147,15 +148,15 @@
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) | Resolver | 15 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared state | 341 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merged flag | 337 |
-| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins, ledgers | 322 |
-| [plan-server-delivery](mistakes/plan-server-delivery.md) | Server misses | 112 |
-| [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging guard | 93 |
-| [refactor-stragglers](mistakes/refactor-stragglers.md) | Rename misses | 312 |
+| [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 322 |
+| [plan-server-delivery](mistakes/plan-server-delivery.md) | Server | 189 |
+| [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
+| [refactor-stragglers](mistakes/refactor-stragglers.md) | Renames | 312 |
 | [release-feature-review](mistakes/release-feature-review.md) | Release gaps | 13 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Settings | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | Hooks dir | 37 |
 | [sandbox-state-channels](mistakes/sandbox-state-channels.md) | Work state | 299 |
-| [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Tool failures | 389 |
+| [sandbox-tooling-and-network](mistakes/sandbox-tooling-and-network.md) | Tooling | 389 |
 | [sandbox-write-rules-inert](mistakes/sandbox-write-rules-inert.md) | Inert rules | 57 |
 | [schema-reuse-and-silent-skips](mistakes/schema-reuse-and-silent-skips.md) | Silent skips | 130 |
 | [session-identity-env](mistakes/session-identity-env.md) | LOOM_* env | 126 |
@@ -163,19 +164,19 @@
 | [shell-command-matchers](mistakes/shell-command-matchers.md) | Matchers | 246 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Graph misses | 172 |
 | [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle detect | 35 |
-| [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Status frames | 75 |
-| [store-without-consumer](mistakes/store-without-consumer.md) | Unread stores | 104 |
-| [subagent-briefing](mistakes/subagent-briefing.md) | Briefs, waves | 376 |
+| [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Status | 75 |
+| [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
+| [subagent-briefing](mistakes/subagent-briefing.md) | Briefs | 376 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Watch traps | 377 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation | 369 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests | 332 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) | Fixtures | 145 |
-| [testing-and-lint](mistakes/testing-and-lint.md) | Lint, testing | 398 |
-| [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Vacuous tests | 392 |
-| [tmux-backend](mistakes/tmux-backend.md) | tmux failures | 146 |
+| [testing-and-lint](mistakes/testing-and-lint.md) | Testing | 398 |
+| [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Vacuous | 392 |
+| [tmux-backend](mistakes/tmux-backend.md) | tmux | 146 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Dev server | 76 |
 | [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Untrusted | 252 |
-| [verification-harness](mistakes/verification-harness.md) | Harness doubt | 399 |
+| [verification-harness](mistakes/verification-harness.md) | Harness | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 misses | 396 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | Visibility | 141 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Server races | 400 |
@@ -193,7 +194,7 @@
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 naming | 49 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | CLI gaps | 103 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge edges | 126 |
-| [planning-document-model-followups](concerns/planning-document-model-followups.md) | Planning TODO | 46 |
+| [planning-document-model-followups](concerns/planning-document-model-followups.md) | Planning TODO | 98 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Platform gaps | 210 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Orphans, tmux | 154 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) | Confinement | 384 |

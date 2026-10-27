@@ -1,6 +1,6 @@
 # Plan Web
 
-> Plan web rules
+> Plan web
 
 ## Markdown renderer rules
 

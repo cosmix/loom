@@ -1,6 +1,6 @@
 # Plan Server Delivery
 
-> Server misses
+> Server
 
 ## A New Test Target Spawned the Loom Binary and Failed the Spawn Guard Only in integration-verify (2026-10-27)
 
@@ -110,3 +110,80 @@
 **Prevention:** set `LOOM_HOME` (`user_config/mod.rs`) under `TMPDIR` for the run, put a stub `claude` on `PATH` that prints `{"loggedIn":true}`, and have the main agent make any committed baseline, or `git clone --depth 1 file://<worktree>` then `git branch -m main` (`loom plan` refuses `loom/*` branches). Subagents write `TMPDIR` files with Bash heredocs.
 
 **Fix:** the run used all three; no code change.
+
+## A Plan Artifact Glob Ending in `/**` Can Never Pass (2026-10-27)
+
+**What happened:** the summary-store plan declared `artifacts` of `src/fs/work_dir/config_sections/plan_config/**` and
+`src/commands/plan/summary/**`. `verify_artifacts` (`loom/src/verify/goal_backward/artifacts.rs:43`) fails them whatever
+the stage writes, and `dispute-criteria` has no `artifacts` field to file the failure against.
+
+**Why:** `glob` 0.3.3 treats a trailing `**` as "directories only": `glob("d1/**")` over a directory holding only `tests.rs`
+returns nothing, and over one holding a subdirectory returns the directory, which `verify_artifacts` then fails to read as
+a file.
+
+**Prevention:** list artifacts as files or `dir/*.rs` patterns, never a trailing `/**`. A check in `loom plan verify` that
+rejects a trailing `/**` in `artifacts` would end the recurrence.
+
+**Fix:** none in the tree: `verify_artifacts` still reads a matched directory as a file, and the plan file still lists
+both patterns.
+
+## The Session Sandbox's `.mcp.json` Mount Made `loom check` Fail Every Time (2026-10-27)
+
+**What happened:** a stage whose `working_dir` is `loom` got "the tree does not match the request" from every
+`loom check`, whatever it changed.
+
+**Why:** the session sandbox bind-mounts `/dev/null` at `loom/.mcp.json` (the working directory, not the repository root),
+so the session's tree digest differs from the daemon's; the digest's `.mcp.json` mount-point exemption covers only the
+repository root (mount behavior: `architecture/execution-containment.md`, "A Denied Missing Path Shows Up in the Session's
+`git status`").
+
+**Prevention:** when `loom check` reports a mismatch with no change between runs, look for a mount point under
+`working_dir` before editing anything. Extending the exemption to `<working_dir>/.mcp.json` is the open fix.
+
+**Fix:** none in the tree.
+
+## A Parallel Wave Left the Library Not Compiling (2026-10-27)
+
+**What happened:** the config wave added `read_plan_config` and `PlanConfig` but not the `pub use
+config_sections::{read_plan_config, PlanConfig}` line in `loom/src/fs/work_dir.rs`. `planning/summary/config.rs` in the
+next wave failed with E0432 and the lib did not compile; that wave verified its tests in a scratch copy with the line
+added.
+
+**Why:** the re-export file belonged to no worker's ownership table, so every brief assumed another had written it.
+
+**Prevention:** a worker that adds a public item owns the re-export that makes it reachable, and the brief names that
+file (the same rule as the shared-files entry in [Verification V2 Delivery](verification-v2-delivery.md)). After a wave,
+the orchestrator runs `cargo check` before briefing the next one.
+
+**Fix:** the re-export was added after the wave.
+
+## Codex Forwards Failed on Cwd, Parallelism and Network (2026-10-27)
+
+**What happened:** the codex forwarders for c6-docs found no repository-relative brief paths and recovered by searching;
+c8 and c9 failed with "codex direct supervisor state was inconsistent" while four units ran in parallel, after writing
+every file. The sandbox denied outbound network (the stage has none), and the `sandbox_violations` for the MCP hosts were
+noise: c2-front succeeded in direct mode under the same denials.
+
+**Why:** forwarders run from the orchestrator's cwd, not the worktree root; direct mode's supervisor state breaks under
+four concurrent units.
+
+**Prevention:** spawn forwarders with the worktree root as cwd; keep concurrent codex units at two or three; after a
+wrapper exit 1, read the written files and run the narrow test before deciding to resend. A failure naming the
+supervisor, with the files complete and tests green, is a lost status, not lost work.
+
+**Fix:** c8 and c9 output was accepted after `cargo test --lib` over their modules passed 170 of 170 and review covered
+them.
+
+## Web Gate Traps in a Stage That Touches `web/` (2026-10-27)
+
+**What happened:** four separate gate failures: (1) `vitest -t` did not select a `describe` plus `it` name joined by
+spaces, so a contract test was skipped; (2) a `bun run test` run failed `file-mode.test.tsx` "scrolls to the anchor"
+once and passed three of three alone; (3) a criterion ending in `git diff --quiet -- dist` fails for an uncommitted
+rebuild even when `diff -r` matches; (4) `bun run check` failed `oxfmt --check` on four token-strip files committed outside
+a gated stage, and `format:check` stops the script before vitest, so the format failure also hid the test results.
+
+**Prevention:** write a web contract test as ONE top-level `it()` carrying the whole contract title; treat a single
+full-run failure that passes alone as a timing flake and say so; commit a rebuilt `dist/` before the criterion that
+diffs it; run `oxfmt` on every file a commit touches. In a stage session the commit-filter hook blocks any command text
+containing `git commit`, even in a scratch fixture repo, so prove a no-diff reseal with `git add` and
+`git diff` between index and worktree.
