@@ -22,13 +22,14 @@ const fixture = configResponseSchema.parse(fixtureJson);
 describe("sectionRows", () => {
   const sections = sectionRows(fixture.entries);
 
-  it("groups the fixture into five sections in registry order", () => {
+  it("groups the fixture into six sections in registry order", () => {
     expect(sections.map((s) => s.section)).toEqual([
       "update",
       "terminal",
       "context",
       "pressure",
       "models",
+      "plan",
     ]);
   });
 
