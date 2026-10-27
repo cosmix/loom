@@ -86,8 +86,17 @@
       "_react.js",
       "_store.js"
     ],
+    "dynamicImports": [
+      "src/plan/editor/codemirror.ts"
+    ],
     "css": [
       "assets/plan.css"
     ]
+  },
+  "src/plan/editor/codemirror.ts": {
+    "file": "assets/codemirror.js",
+    "name": "codemirror",
+    "src": "src/plan/editor/codemirror.ts",
+    "isDynamicEntry": true
   }
 }
