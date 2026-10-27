@@ -1,7 +1,7 @@
 import { cn } from "cn";
 import type { JSX } from "react";
 
-import type { ConceptPage, SectionLink } from "@/plan/api/schema-concept";
+import type { ConceptPage, PlanLink, SectionLink, Sentence } from "@/plan/api/schema-concept";
 
 import { canOpen, runDomId, sentenceKey, useColumn, type SentenceSite } from "./column-context";
 import { FLASH_CLASS, flashKey } from "./flash";
@@ -34,7 +34,7 @@ export function ClosedSentence({
   const { sentence, summary, parent } = site;
   const button = canOpen(sentence);
   const flashing = column.flashing.has(flashKey(flashPage, sentence.id));
-  const sections = glyph ? implementsOf(column.citedPage(summary)) : [];
+  const cited = glyph ? column.citedPage(summary) : null;
   return (
     <span>
       <span
@@ -65,11 +65,27 @@ export function ClosedSentence({
       ) : (
         <span className="concept-no-source">no source</span>
       )}
-      {glyph && <PlanGlyph plans={sentence.plans} sections={sections} />}
+      {cited && <PlanGlyph plans={plansOf(cited, sentence)} sections={implementsOf(cited)} />}
     </span>
   );
 }
 
-function implementsOf(page: ConceptPage | null): SectionLink[] {
-  return page?.implements?.kind === "sections" ? page.implements.links : [];
+/**
+ * The plans implementing the drilled-into product section. The server sets `plans` only on
+ * the first sentence of each paragraph, and a run may start at any sentence, so they are read
+ * from the first sentence of the paragraph holding `sentence` on the cited page.
+ * Not from the page's `implemented_by`: the frozen contract "concept opening an overview
+ * sentence shows its cited summary sentences in place" pins a run without a glyph on
+ * fixtures whose pages list implementing plans and whose sentences carry none.
+ */
+function plansOf(page: ConceptPage, sentence: Sentence): PlanLink[] {
+  const paragraph = page.blocks.find(
+    (block) => block.kind === "paragraph" && block.sentences.some((s) => s.id === sentence.id),
+  );
+  const first = paragraph?.kind === "paragraph" ? paragraph.sentences[0] : undefined;
+  return first?.plans ?? sentence.plans;
+}
+
+function implementsOf(page: ConceptPage): SectionLink[] {
+  return page.implements?.kind === "sections" ? page.implements.links : [];
 }

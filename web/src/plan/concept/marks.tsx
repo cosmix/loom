@@ -3,8 +3,12 @@ import type { CSSProperties, JSX } from "react";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { ConceptPage, Mark, OutOfDate, Sentence } from "@/plan/api/schema-concept";
 
-/** Colours run 1 to 8 (`--doc-1` to `--doc-8`) and repeat after eight. */
+/**
+ * Colours run 1 to 8 (`--doc-1` to `--doc-8`) and repeat after eight. Colour 0 is the server's
+ * "no colour in this scope" (vision, metaplan, out-of-scope citations) and draws muted.
+ */
 export function docColour(colour: number): string {
+  if (colour === 0) return "var(--muted-foreground)";
   return `var(--doc-${((colour + 7) % 8) + 1})`;
 }
 

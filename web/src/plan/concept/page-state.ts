@@ -1,9 +1,10 @@
-import { useEffect } from "react";
+import { useEffect, useRef } from "react";
 import { atom, useAtomValue, useStore, type PrimitiveAtom } from "jotai";
 
 import { apiGet } from "@/plan/api/client";
 import {
   conceptPageSchema,
+  isConceptPageKey,
   type ConceptChanged,
   type ConceptPage,
   type OutOfDate,
@@ -18,17 +19,21 @@ import { notesAtom, openRunsAtom } from "./view-state";
 /**
  * One concept page as loaded. `previous` is the page the current one replaced (null on the
  * first load); a mark-only update (out-of-date dashes) sets both to the marked page, so
- * `previous === page` reads as "no rebuild arrived".
+ * `previous === page` reads as "no rebuild arrived". `status` is the HTTP status of the failed
+ * fetch behind `error` (0 when the request never got an answer).
  */
 export type ConceptPageState = {
   page: ConceptPage | null;
   previous: ConceptPage | null;
   error: string | null;
+  status?: number;
 };
 
 const EMPTY: ConceptPageState = { page: null, previous: null, error: null };
 const SOURCE_CHANGED: OutOfDate = { reason: "source_changed", detail: null };
 const pageAtoms = new Map<string, PrimitiveAtom<ConceptPageState>>();
+/** What `useConceptPage` reads for a key that is no page key; nothing ever sets it. */
+const NO_PAGE = atom<ConceptPageState>(EMPTY);
 const tickets = new WeakMap<Store, Map<string, number>>();
 
 /** Page keys: `product`, `engineering`, `product/<stem>`, `engineering/<slug>`. */
@@ -101,26 +106,55 @@ function takeTicket(store: Store, key: string): number {
   return ticket;
 }
 
-function pagePath(key: string): string {
-  return `/api/concept/${key.split("/").map(encodeURIComponent).join("/")}`;
+/**
+ * The request path of a page key; null for a key the server would reject, so nothing is sent.
+ * A valid key holds only unreserved characters and `/`, which need no escaping.
+ */
+function pagePath(key: string): string | null {
+  return isConceptPageKey(key) ? `/api/concept/${key}` : null;
+}
+
+/** 404, or 400 for a key the server cannot parse: the page does not exist. */
+const MISSING_STATUSES: readonly number[] = [404, 400];
+
+/** Whether the last fetch said the page does not exist. */
+export function isMissing(state: ConceptPageState): boolean {
+  return state.error !== null && MISSING_STATUSES.includes(state.status ?? 0);
+}
+
+/**
+ * A failed fetch keeps a loaded page and records the error, unless the server says the page
+ * is gone: then the cached page goes too and the route shows the not-found state.
+ */
+function failedState(
+  state: ConceptPageState,
+  failure: { status: number; message: string },
+): ConceptPageState {
+  const { status, message } = failure;
+  if (MISSING_STATUSES.includes(status)) {
+    return { page: null, previous: null, error: message, status };
+  }
+  return { ...state, error: message, status };
 }
 
 /**
  * Fetches the pages and applies every answer in one pass, so an overview and the summary
  * pages its runs cite are replaced together and the open-state rule sees them all. A
  * response overtaken by a later request for the same key is dropped; a failed refetch
- * keeps the page and records the error.
+ * keeps the page and records the error (see `failedState`). A key that is not a page key is
+ * never fetched.
  */
 export async function loadConceptPages(store: Store, keys: string[]): Promise<void> {
-  const requests = [...new Set(keys)].map((key) => ({ key, ticket: takeTicket(store, key) }));
-  const results = await Promise.all(
-    requests.map(({ key }) => apiGet(pagePath(key), conceptPageSchema)),
-  );
+  const requests = [...new Set(keys)].flatMap((key) => {
+    const path = pagePath(key);
+    return path === null ? [] : [{ key, path, ticket: takeTicket(store, key) }];
+  });
+  const results = await Promise.all(requests.map(({ path }) => apiGet(path, conceptPageSchema)));
   requests.forEach(({ key, ticket }, index) => {
     if (tickets.get(store)?.get(key) !== ticket) return;
     const result = results[index]!;
     if (result.ok) replacePage(store, key, result.value);
-    else store.set(conceptPageAtom(key), (state) => ({ ...state, error: result.message }));
+    else store.set(conceptPageAtom(key), (state) => failedState(state, result));
   });
 }
 
@@ -159,21 +193,43 @@ function dashOutOfDate(store: Store, summaries: string[]): void {
   }
 }
 
+/** The overview keys; every page key of a scope is the overview's key or starts with `<key>/`. */
+const SCOPES = ["product", "engineering"];
+
+/**
+ * The pages a delta refetches: the loaded pages it names, plus every loaded page of a scope
+ * whose overview it names. The server names the overview whenever a member's summary state or
+ * the key row changes, and every page of the scope embeds that key row, so a sibling the
+ * delta does not name is stale too. Each page then shows its own fresh response, ordered by
+ * its own ticket; no state is copied from one page to another (copying across keys has no
+ * order, so an older response could overwrite a newer dash).
+ */
+function pagesToRefetch(store: Store, named: string[]): string[] {
+  const loaded = loadedKeys(store);
+  const scopes = SCOPES.filter((scope) => named.includes(scope));
+  const inScope = (key: string) =>
+    scopes.some((scope) => key === scope || key.startsWith(`${scope}/`));
+  return [...named.filter((key) => loaded.includes(key)), ...loaded.filter(inScope)];
+}
+
 /**
  * A `concept_changed` delta: dash the out-of-date documents' marks at once, refetch the
- * listed pages that are loaded (an unloaded page is never fetched), and refetch the changed
- * source documents in the passage cache.
+ * pages it affects that are loaded (an unloaded page is never fetched; see `pagesToRefetch`),
+ * and refetch the changed source documents in the passage cache.
  */
 export function applyConceptChanged(store: Store, changed: ConceptChanged): void {
   dashOutOfDate(store, changed.out_of_date);
-  const keys = changed.pages.filter((key) => loadedPage(store, key) !== null);
+  const keys = pagesToRefetch(store, changed.pages);
   if (keys.length > 0) void loadConceptPages(store, keys);
   for (const path of changed.sources) refreshDocView(store, path);
 }
 
-/** After a reconnect deltas were missed: refetch every loaded page and passage. */
-export function refetchAllLoaded(store: Store): void {
-  const keys = loadedKeys(store);
+/**
+ * After a reconnect, or on mounting after time away, deltas were missed: refetch every loaded
+ * page (and `also`, loaded or not, in the same pass) and every passage.
+ */
+export function refetchAllLoaded(store: Store, also: string[] = []): void {
+  const keys = [...also, ...loadedKeys(store)];
   if (keys.length > 0) void loadConceptPages(store, keys);
   refreshAllDocViews(store);
 }
@@ -217,15 +273,21 @@ export function useConceptSubscription(): void {
 }
 
 /**
- * The page for `key`. A cached page renders at once and is refetched on mount (deltas are
- * only followed while a concept page is mounted), replacing it through the normal path so
- * the open-state rule runs on the result.
+ * The page for `key`. A cached page renders at once. Deltas are followed only while a concept
+ * page is mounted, so on mount every cached page and passage is refetched, as after a
+ * reconnect (a cited summary page or an opened passage may have changed while away); a later
+ * key change happens while subscribed and refetches only its own page. Pages are replaced
+ * through the normal path so the open-state rule runs on the result. A key that is not a page
+ * key reads a shared empty atom, so a mistyped URL adds nothing to the page atom map.
  */
 export function useConceptPage(key: string): ConceptPageState {
   const store = useStore();
-  const state = useAtomValue(conceptPageAtom(key));
+  const state = useAtomValue(isConceptPageKey(key) ? conceptPageAtom(key) : NO_PAGE);
+  const mounted = useRef(false);
   useEffect(() => {
-    void loadConceptPage(store, key);
+    if (mounted.current) void loadConceptPage(store, key);
+    else refetchAllLoaded(store, [key]);
+    mounted.current = true;
   }, [store, key]);
   return state;
 }

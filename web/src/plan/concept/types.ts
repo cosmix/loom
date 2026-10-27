@@ -21,3 +21,10 @@ export type FocusTarget = {
   level: 0 | 1 | 2;
   runOf: string | null;
 };
+
+/**
+ * A reading-order target as the column focuses it. A passage also names the parent of the run
+ * that holds it: a sentence cited by two overview sentences can be open under both, and then
+ * shows the same passages twice, which only the parent tells apart.
+ */
+export type ColumnTarget = FocusTarget & { parent?: string | null };

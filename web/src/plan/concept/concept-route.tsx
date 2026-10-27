@@ -3,7 +3,7 @@ import { useEffect, useRef } from "react";
 import { Link, useLocation, useNavigate } from "react-router";
 
 import { isTyping } from "@/lib/is-typing";
-import type { ConceptPage } from "@/plan/api/schema-concept";
+import { isConceptPageKey, type ConceptPage } from "@/plan/api/schema-concept";
 import { AddToChat, addAttachmentAtom, useSelectionAttachment } from "@/plan/attachments";
 import { canAuthorAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
@@ -16,13 +16,20 @@ import { pageSentences } from "./open-state";
 import { PageHeader } from "./page-header";
 import {
   conceptPageAtom,
+  isMissing,
   loadConceptPage,
   pageKeyOfSummary,
   useConceptPage,
   useConceptSubscription,
+  type ConceptPageState,
 } from "./page-state";
 import { ReadingColumn } from "./reading-column";
-import { attachmentFromSelection, type SentenceResolver } from "./selection";
+import {
+  attachmentFromSelection,
+  attachmentsFromSelection,
+  overLimit,
+  type SentenceResolver,
+} from "./selection";
 
 /** The second key of `g p` / `g e` must follow the first within this long. */
 const GO_KEY_WINDOW_MS = 1000;
@@ -41,12 +48,25 @@ function segmentsOf(pathname: string): string[] {
     });
 }
 
-/** The page key of a concept URL: `product`, `engineering`, `product/<stem>`, `engineering/<slug>`. */
+/**
+ * The page key of a concept URL: `product`, `engineering`, `product/<stem>`, `engineering/<slug>`.
+ * Decoding can yield anything (`..%2F..%2Fserver` becomes `../../server`); `isConceptPageKey`
+ * decides whether the result is a page.
+ */
 function pageKeyOf(pathname: string): string {
   return segmentsOf(pathname).join("/");
 }
 
-/** What a browser at `pathname` is reading, for the presence list; null outside concept mode. */
+/** The last path part as written in the URL: still encoded, so it holds no `/`. */
+function rawNameOf(pathname: string): string {
+  return pathname.split("/").filter(Boolean).pop() ?? "";
+}
+
+/**
+ * The name of the concept page at `pathname`; null outside concept mode. Its only caller is the
+ * eyebrow above an overview (a summary page's header shows its own title); the presence list
+ * does not read it.
+ */
 export function conceptPageLabel(pathname: string): string | null {
   const [scope, name, ...rest] = segmentsOf(pathname);
   if ((scope !== "product" && scope !== "engineering") || rest.length > 0) return null;
@@ -102,7 +122,13 @@ function sentenceResolver(store: Store, page: ConceptPage, pageKey: string): Sen
   };
 }
 
-/** The reading column plus the floating "Add to chat" for a text selection inside it. */
+/**
+ * The reading column plus the floating "Add to chat" for a text selection inside it. A
+ * selection spanning levels carries each part's provenance. When any part is over the
+ * per-attachment limit, `AddToChat` is given the first such part: it shows its over-limit
+ * note and no Add button, so nothing is added and the reader is told why. Otherwise it adds
+ * the first part and `addRest` the others.
+ */
 function Column({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   const canAuthor = useAtomValue(canAuthorAtom);
   const add = useSetAtom(addAttachmentAtom);
@@ -111,6 +137,16 @@ function Column({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   const selection = useSelectionAttachment(columnRef, (sel) =>
     attachmentFromSelection(sel, sentenceResolver(store, page, pageKey)),
   );
+  // `addRest` re-reads the live selection, so it holds the others to the limit itself.
+  const addRest = () => {
+    const sel = window.getSelection();
+    const parts = sel ? attachmentsFromSelection(sel, sentenceResolver(store, page, pageKey)) : [];
+    parts
+      .slice(1)
+      .filter((draft) => !overLimit(draft))
+      .forEach((draft) => add(draft));
+    selection.clear();
+  };
   return (
     <div ref={columnRef}>
       <ReadingColumn
@@ -120,7 +156,7 @@ function Column({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
         onAttach={canAuthor ? (draft) => add(draft) : undefined}
       />
       {selection.draft && selection.rect && (
-        <AddToChat draft={selection.draft} rect={selection.rect} onAdded={selection.clear} />
+        <AddToChat draft={selection.draft} rect={selection.rect} onAdded={addRest} />
       )}
     </div>
   );
@@ -147,27 +183,43 @@ function LoadedPage({ page, pageKey }: { page: ConceptPage; pageKey: string }) {
   );
 }
 
+/** What the route shows for a page key and its load state. */
+function RouteBody({
+  pageKey,
+  rawName,
+  state,
+}: {
+  pageKey: string;
+  rawName: string;
+  state: ConceptPageState;
+}) {
+  const store = useStore();
+  // An address that is no page key is never fetched; `rawName` keeps the not-found lookup
+  // from deriving a source path out of it.
+  if (!isConceptPageKey(pageKey)) return <ConceptNotFound pageKey={rawName} />;
+  if (state.page) return <LoadedPage page={state.page} pageKey={pageKey} />;
+  if (state.error === null) return <LoadState state="loading" />;
+  if (isMissing(state)) return <ConceptNotFound pageKey={pageKey} />;
+  return (
+    <LoadState
+      state="error"
+      title="Could not load this page"
+      message={state.error}
+      action={{ label: "Retry", onClick: () => void loadConceptPage(store, pageKey) }}
+    />
+  );
+}
+
 /** The Product and Engineering tabs and their document summary pages. */
 export function ConceptRoute() {
   useConceptSubscription();
   useGoKeys();
-  const store = useStore();
   const { pathname } = useLocation();
   const key = pageKeyOf(pathname);
-  const { page, error } = useConceptPage(key);
-  let body;
-  if (page) body = <LoadedPage page={page} pageKey={key} />;
-  else if (error === null) body = <LoadState state="loading" />;
-  else if (/no such|not found/i.test(error)) body = <ConceptNotFound pageKey={key} />;
-  else {
-    body = (
-      <LoadState
-        state="error"
-        title="Could not load this page"
-        message={error}
-        action={{ label: "Retry", onClick: () => void loadConceptPage(store, key) }}
-      />
-    );
-  }
-  return <div className="mx-auto w-full max-w-[70ch] px-4 py-6 lg:px-6">{body}</div>;
+  const state = useConceptPage(key);
+  return (
+    <div className="mx-auto w-full max-w-[70ch] px-4 py-6 lg:px-6">
+      <RouteBody pageKey={key} rawName={rawNameOf(pathname)} state={state} />
+    </div>
+  );
 }

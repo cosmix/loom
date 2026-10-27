@@ -13,6 +13,13 @@ export type CitedLookup = (summary: string, id: string) => Sentence | undefined;
 
 export type CarryResult = { open: OpenRun[]; notes: FoldNote[] };
 
+/**
+ * Whether a source section is still in its file: true or false when the caller holds that
+ * file's sections, undefined when it does not, in which case a dropped section's note keeps
+ * the "was removed" wording. Revisit if notes claim removals of sections still in the file.
+ */
+export type SectionInFile = (anchor: SourceAnchor) => boolean | undefined;
+
 type Candidate = { id: string; restsOn: SourceAnchor[] };
 
 type Context = {
@@ -22,10 +29,11 @@ type Context = {
   anchors: Set<string>;
   open: OpenRun[];
   cited: CitedLookup | undefined;
+  inFile: SectionInFile | undefined;
   fallbackPath: string;
   results: Map<number, OpenRun | null>;
   notes: FoldNote[];
-  /** `paragraphOf|anchor` of every removed-section note, so a run and its passage note once. */
+  /** `paragraphOf|anchor` of every dropped-section note, so a run and its passage note once. */
   noted: Set<string>;
 };
 
@@ -119,12 +127,20 @@ function topParagraph(ctx: Context, run: OpenRun): string {
   return "";
 }
 
-/** "Section X was removed" once per paragraph and section. */
-function noteRemoved(ctx: Context, anchor: SourceAnchorRef, paragraphOf: string): void {
+/**
+ * One note per paragraph and section the next page no longer rests on: "Section X was
+ * removed" when the section is gone from its file (or the file's sections are unknown),
+ * "This summary was rewritten and no longer draws on X" when the file still has it.
+ */
+function noteDropped(ctx: Context, anchor: SourceAnchorRef, paragraphOf: string): void {
   const key = `${paragraphOf}|${anchorKey(anchor)}`;
   if (ctx.noted.has(key)) return;
   ctx.noted.add(key);
-  ctx.notes.push(removedSectionNote(anchor, paragraphOf));
+  ctx.notes.push(
+    ctx.inFile?.(anchor) === true
+      ? rewrittenNote(anchor, paragraphOf, ctx.fallbackPath)
+      : removedSectionNote(anchor, paragraphOf),
+  );
 }
 
 /** Last known section titles from the run's own open passage entries, by anchor key. */
@@ -141,8 +157,8 @@ function passageTitles(ctx: Context, run: OpenRun): Map<string, string> {
 /**
  * The passages an open sentence shows are derived from its `rests_on` (the column writes only
  * level 0 and 1 runs), so the carried run notes each section it rested on that is gone from
- * its new sentence and from every sentence of the next page: a deleted section. A section
- * that only moved to another sentence is still there and gets no note.
+ * its new sentence and from every sentence of the next page. A section that only moved to
+ * another sentence is still there and gets no note.
  */
 function noteDroppedSections(
   ctx: Context,
@@ -156,7 +172,7 @@ function noteDroppedSections(
     const key = anchorKey(anchor);
     if (kept.has(key) || ctx.anchors.has(key)) continue;
     const title = anchor.title ?? titles.get(key);
-    noteRemoved(ctx, title === undefined ? anchor : { ...anchor, title }, paragraphOf);
+    noteDropped(ctx, title === undefined ? anchor : { ...anchor, title }, paragraphOf);
   }
 }
 
@@ -220,7 +236,7 @@ function carryPassage(ctx: Context, run: OpenRun, parent: OpenRun | null): OpenR
   const exists =
     ctx.anchors.has(key) || (parent?.restsOn ?? []).some((at) => anchorKey(at) === key);
   if (!exists) {
-    noteRemoved(ctx, anchor, parent ? (parent.parent ?? parent.sentenceId) : "");
+    noteDropped(ctx, anchor, parent ? (parent.parent ?? parent.sentenceId) : "");
     return null;
   }
   return {
@@ -300,13 +316,14 @@ function ordered(ctx: Context): OpenRun[] {
  * Section 05 "What stays open": carries the open runs of `prev` onto `next`, keyed to the
  * source sections each run rests on. Folded runs leave a note whose `paragraphOf` is the
  * id of the sentence on `next` the note follows (the run's restored parent), or "" for the
- * start of the page.
+ * start of the page. `inFile` picks the wording of a dropped section's note.
  */
 export function carryOpenState(
   prev: ConceptPage,
   next: ConceptPage,
   open: OpenRun[],
   cited?: CitedLookup,
+  inFile?: SectionInFile,
 ): CarryResult {
   const top = pageSentences(next);
   const ctx: Context = {
@@ -316,6 +333,7 @@ export function carryOpenState(
     anchors: new Set(top.flatMap((sentence) => sentence.rests_on.map(anchorKey))),
     open,
     cited,
+    inFile,
     fallbackPath: next.path ?? "",
     results: new Map(),
     notes: [],

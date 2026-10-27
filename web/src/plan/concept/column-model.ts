@@ -9,7 +9,7 @@ import {
   type SentenceSite,
 } from "./column-context";
 import { anchorKey, pageSentences, type CitedLookup } from "./open-state";
-import type { FocusTarget, OpenRun } from "./types";
+import type { ColumnTarget, OpenRun } from "./types";
 
 const isTop = (run: OpenRun, id: string) => run.sentenceId === id && run.parent === null;
 
@@ -74,50 +74,78 @@ export function paragraphIds(page: ConceptPage, id: string): string[] {
   return at === 0 ? ["", ...ids] : ids;
 }
 
-function movedKey(prevOpen: OpenRun[], open: OpenRun[], lostId: string): string | null {
+/**
+ * The top-level run a lost top-level run moved to: of the open runs whose sentence is on the
+ * next page (its key in `keys`), the one resting on the most sections the lost one did. A run
+ * already open at the top level before the rebuild did not move, so it never counts, and a run
+ * of a sentence that left the page does not either, so runs from before a carry are never
+ * taken for moved ones.
+ */
+export function movedRun(
+  prevOpen: OpenRun[],
+  open: OpenRun[],
+  lostId: string,
+  keys: ReadonlySet<string>,
+): OpenRun | undefined {
   const old = prevOpen.find((run) => isTop(run, lostId));
-  if (!old) return null;
+  if (!old) return undefined;
   const sources = new Set(old.restsOn.map(anchorKey));
-  const moved = open.find(
+  const overlap = (run: OpenRun) => run.restsOn.filter((a) => sources.has(anchorKey(a))).length;
+  const candidates = open.filter(
     (run) =>
-      run.parent === null && run.level < 2 && run.restsOn.some((a) => sources.has(anchorKey(a))),
+      run.parent === null &&
+      run.level < 2 &&
+      keys.has(sentenceKey(null, run.sentenceId)) &&
+      !prevOpen.some((before) => isTop(before, run.sentenceId)),
   );
-  return moved ? sentenceKey(null, moved.sentenceId) : null;
+  let best: OpenRun | undefined;
+  for (const run of candidates) {
+    if (overlap(run) > (best ? overlap(best) : 0)) best = run;
+  }
+  return best;
 }
+
+/** The target at `index` and its ancestors in the order, innermost first. */
+function ancestry(order: ColumnTarget[], index: number): ColumnTarget[] {
+  const chain = [order[index]!];
+  for (let at = index - 1; at >= 0 && chain.at(-1)!.runOf !== null; at -= 1) {
+    const candidate = order[at]!;
+    const holder = chain.at(-1)!.runOf;
+    if (candidate.kind === "sentence" && candidate.id === holder) chain.push(candidate);
+  }
+  return chain;
+}
+
+/** A target's key with the sentence `from` replaced by `to` where it names the holding run. */
+function rehomedKey(target: ColumnTarget, from: string, to: string): string {
+  const swap = <T extends string | null | undefined>(id: T) => (id === from ? to : id);
+  return targetKey({ ...target, runOf: swap(target.runOf), parent: swap(target.parent) });
+}
+
+type Snapshot = { order: ColumnTarget[]; open: OpenRun[] };
 
 /**
  * Where the roving focus goes when its target left the reading order (Fold all, a rebuild
  * that folds or moves its run, a removed passage): the nearest surviving ancestor sentence,
- * else the sentence the run moved to, else the target nearest its old position.
+ * else the same target inside the run its outermost lost ancestor moved to, else that run's
+ * sentence, else the target nearest its old position.
  */
-export function survivorKey(
-  prev: { order: FocusTarget[]; open: OpenRun[] },
-  next: { order: FocusTarget[]; open: OpenRun[] },
-  lostKey: string,
-): string | null {
+export function survivorKey(prev: Snapshot, next: Snapshot, lostKey: string): string | null {
   if (next.order.length === 0) return null;
   const keys = new Set(next.order.map(targetKey));
   const index = prev.order.findIndex((target) => targetKey(target) === lostKey);
-  let current = index < 0 ? undefined : prev.order[index];
-  let at = index;
-  while (current?.runOf) {
-    const ancestorId = current.runOf;
-    let found = -1;
-    for (let i = at - 1; i >= 0; i -= 1) {
-      const candidate = prev.order[i]!;
-      if (candidate.kind === "sentence" && candidate.id === ancestorId) {
-        found = i;
-        break;
-      }
-    }
-    if (found < 0) break;
-    const ancestor = prev.order[found]!;
-    if (keys.has(targetKey(ancestor))) return targetKey(ancestor);
-    current = ancestor;
-    at = found;
+  const chain = index < 0 ? [] : ancestry(prev.order, index);
+  const survivor = chain.slice(1).find((target) => keys.has(targetKey(target)));
+  if (survivor) return targetKey(survivor);
+  const top = chain.at(-1);
+  const moved = top && movedRun(prev.open, next.open, top.id, keys);
+  if (top && moved) {
+    const inside = chain
+      .slice(0, -1)
+      .map((target) => rehomedKey(target, top.id, moved.sentenceId))
+      .find((key) => keys.has(key));
+    return inside ?? sentenceKey(null, moved.sentenceId);
   }
-  const moved = current ? movedKey(prev.open, next.open, current.id) : null;
-  if (moved && keys.has(moved)) return moved;
   return targetKey(next.order[Math.min(Math.max(index, 0), next.order.length - 1)]!);
 }
 

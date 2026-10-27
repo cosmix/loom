@@ -11,6 +11,8 @@ const KEY_NAMES = new Set([
   "Escape",
   "Tab",
   "Shift",
+  "Ctrl",
+  "⌘",
   "Enter",
   "Space",
   "↓",
@@ -19,8 +21,8 @@ const KEY_NAMES = new Set([
   "←",
 ]);
 
-/// A key: a named key or a single lowercase letter.
-const isKey = (token: string) => KEY_NAMES.has(token) || /^[a-z]$/.test(token);
+/// A key: a named key or a single letter (`S` in `Ctrl + S` is a key as much as `g`).
+const isKey = (token: string) => KEY_NAMES.has(token) || /^[A-Za-z]$/.test(token);
 
 /// A space-separated sequence of keys (`g p`), pressed one after another.
 const sequenceOf = (alternative: string): string[] | null => {

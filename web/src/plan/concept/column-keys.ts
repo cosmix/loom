@@ -8,9 +8,10 @@ import type { Store } from "@/state/store";
 
 import { sentenceCitations, targetKey, type SentenceSite } from "./column-context";
 import { findSite } from "./column-model";
+import { pageSentences, type CitedLookup } from "./open-state";
+import { pageKeyOfSummary } from "./page-state";
 import { docViewAtom, passageOf } from "./passages";
-import type { CitedLookup } from "./open-state";
-import type { FocusTarget, OpenRun } from "./types";
+import type { ColumnTarget, OpenRun } from "./types";
 
 export type KeyEnv = {
   page: ConceptPage;
@@ -18,7 +19,7 @@ export type KeyEnv = {
   lookup: CitedLookup;
   citedPage: (summary: string) => ConceptPage | null;
   open: OpenRun[];
-  order: FocusTarget[];
+  order: ColumnTarget[];
   store: Store;
   move: (key: string) => void;
   openSentence: (site: SentenceSite) => void;
@@ -27,22 +28,14 @@ export type KeyEnv = {
   onAttach?: (draft: AttachmentDraft) => void;
 };
 
-function siteOfTarget(env: KeyEnv, target: FocusTarget): SentenceSite | null {
-  const parent = target.kind === "sentence" ? target.runOf : null;
-  if (target.kind === "sentence")
-    return findSite(env.page, env.lookup, env.pageKey, target.id, parent);
-  // A passage belongs to the sentence it opened from; that sentence sits at the page or in a run.
-  return (
-    findSite(env.page, env.lookup, env.pageKey, target.runOf ?? "", null) ??
-    env.open
-      .filter((run) => run.sentenceId === target.runOf && run.parent !== null)
-      .map((run) => findSite(env.page, env.lookup, env.pageKey, run.sentenceId, run.parent))
-      .find((site) => site !== null) ??
-    null
-  );
+/** A sentence at its site; a passage's site is the sentence whose run shows it. */
+function siteOfTarget(env: KeyEnv, target: ColumnTarget): SentenceSite | null {
+  return target.kind === "sentence"
+    ? findSite(env.page, env.lookup, env.pageKey, target.id, target.runOf)
+    : findSite(env.page, env.lookup, env.pageKey, target.runOf ?? "", target.parent ?? null);
 }
 
-function isOpenAt(env: KeyEnv, target: FocusTarget): boolean {
+function isOpenAt(env: KeyEnv, target: ColumnTarget): boolean {
   return (
     target.kind === "sentence" &&
     env.open.some(
@@ -52,16 +45,19 @@ function isOpenAt(env: KeyEnv, target: FocusTarget): boolean {
 }
 
 /** The innermost run around the focus: the sentence's own when open, else the run holding it. */
-function runAround(env: KeyEnv, target: FocusTarget): OpenRun | undefined {
+function runAround(env: KeyEnv, target: ColumnTarget): OpenRun | undefined {
   if (isOpenAt(env, target)) {
     return env.open.find((run) => run.sentenceId === target.id && run.parent === target.runOf);
   }
   if (target.runOf === null) return undefined;
-  const holders = env.open.filter((run) => run.sentenceId === target.runOf && run.level < 2);
-  return holders.find((run) => run.parent === null) ?? holders[0];
+  // A cited sentence's run is a page sentence's (parent null); a passage names its run's parent.
+  const parent = target.kind === "passage" ? (target.parent ?? null) : null;
+  return env.open.find(
+    (run) => run.sentenceId === target.runOf && run.parent === parent && run.level < 2,
+  );
 }
 
-function firstSource(env: KeyEnv, target: FocusTarget): { path: string; anchor: string } | null {
+function firstSource(env: KeyEnv, target: ColumnTarget): { path: string; anchor: string } | null {
   if (target.kind === "passage") {
     const split = target.id.indexOf("#");
     return split < 0
@@ -76,43 +72,66 @@ function firstSource(env: KeyEnv, target: FocusTarget): { path: string; anchor: 
   return (first && env.lookup(first.summary, first.id)?.rests_on[0]) || null;
 }
 
-function openFile(env: KeyEnv, target: FocusTarget): void {
+function openFile(env: KeyEnv, target: ColumnTarget): void {
   const source = firstSource(env, target);
   if (source) env.openAddress(toAddress(source.path, source.anchor));
 }
 
-function openFirstDocument(env: KeyEnv, target: FocusTarget, element: HTMLElement): void {
+/**
+ * The summary page of an open sentence's first document: its own first mark, else the mark
+ * its citer supplies for its summary, else the page of its first cited summary.
+ */
+function firstDocumentPage(env: KeyEnv, target: ColumnTarget): string | null {
+  const site = siteOfTarget(env, target);
+  if (!site) return null;
+  const citing =
+    site.parent === null ? undefined : pageSentences(env.page).find((s) => s.id === site.parent);
+  const mark = site.sentence.marks[0] ?? citing?.marks.find((item) => item.doc.id === site.summary);
+  if (mark) return mark.doc.page;
+  const first = sentenceCitations(site.sentence)[0];
+  return first ? pageKeyOfSummary(env.page, first.summary) : null;
+}
+
+function openFirstDocument(env: KeyEnv, target: ColumnTarget, element: HTMLElement): void {
   if (target.kind !== "sentence") return;
-  // The marks on screen are the truth (a cited sentence's mark is supplied by its citer).
-  const shown = element.parentElement?.querySelector<HTMLElement>(".concept-mark");
+  // A closed sentence's own marks sit beside it and are the truth on screen (a cited
+  // sentence's mark is supplied by its citer). An opened run shows other sentences' marks.
+  const shown = element.hasAttribute("data-sentence-id")
+    ? element.parentElement?.querySelector<HTMLElement>(":scope > .concept-marks .concept-mark")
+    : null;
   if (shown) {
     shown.click();
     return;
   }
-  const page = siteOfTarget(env, target)?.sentence.marks[0]?.doc.page;
+  const page = firstDocumentPage(env, target);
   if (page) env.openAddress(`/${page}`);
 }
 
 /** The `a` key: summary arm for a sentence, source arm (from the DocView) for a passage. */
-function attach(env: KeyEnv, target: FocusTarget): void {
+function attach(env: KeyEnv, target: ColumnTarget): void {
   const { onAttach } = env;
   if (!onAttach) return;
   if (target.kind === "passage") {
     const source = firstSource(env, target);
     if (!source) return;
-    void env.store.get(docViewAtom(source.path)).then((doc) => {
-      const passage = passageOf(doc, source.anchor);
-      if (!passage) return;
-      onAttach({
-        kind: "source",
-        path: source.path,
-        anchor: source.anchor,
-        text: passage.markdown,
-        lines: { start: passage.startLine, end: passage.endLine },
-        stageId: null,
-        hash: doc.hash,
-      });
-    });
+    void env.store.get(docViewAtom(source.path)).then(
+      (doc) => {
+        const passage = passageOf(doc, source.anchor);
+        if (!passage) return;
+        onAttach({
+          kind: "source",
+          path: source.path,
+          anchor: source.anchor,
+          text: passage.markdown,
+          lines: { start: passage.startLine, end: passage.endLine },
+          stageId: null,
+          hash: doc.hash,
+        });
+      },
+      // The file could not be read (gone, or the request failed): there is nothing to
+      // attach, and the passage already says it could not be loaded.
+      () => undefined,
+    );
     return;
   }
   const site = siteOfTarget(env, target);
@@ -133,10 +152,13 @@ function step(env: KeyEnv, index: number, delta: number): void {
   if (next) env.move(targetKey(next));
 }
 
-function openFocused(env: KeyEnv, target: FocusTarget): void {
-  if (target.kind !== "sentence" || isOpenAt(env, target)) return;
+/** Opens the focused sentence; false when it is not a closed sentence that can open. */
+function openFocused(env: KeyEnv, target: ColumnTarget): boolean {
+  if (target.kind !== "sentence" || isOpenAt(env, target)) return false;
   const site = siteOfTarget(env, target);
-  if (site && site.sentence.citations.length > 0) env.openSentence(site);
+  if (!site || site.sentence.citations.length === 0) return false;
+  env.openSentence(site);
+  return true;
 }
 
 /**
@@ -169,7 +191,12 @@ export function handleColumnKey(
     case "Enter":
     case "ArrowRight":
       consume();
-      return openFocused(env, target);
+      openFocused(env, target);
+      return;
+    case " ":
+      // A sentence button activates on Space (ARIA button pattern); elsewhere Space scrolls.
+      if (openFocused(env, target)) consume();
+      return;
     case "Escape":
     case "ArrowLeft": {
       const run = runAround(env, target);

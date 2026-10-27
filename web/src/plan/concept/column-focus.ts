@@ -12,7 +12,7 @@ import {
 
 import { targetKey } from "./column-context";
 import { survivorKey } from "./column-model";
-import type { FocusTarget, OpenRun } from "./types";
+import type { ColumnTarget, OpenRun } from "./types";
 
 export function focusElement(
   root: HTMLElement | null,
@@ -36,29 +36,41 @@ export type Roving = {
 };
 
 /**
- * The roving focus over the reading order. Focus is a real DOM focus on the target's element,
- * so a screen reader hears the sentence and its `aria-expanded`. When the target leaves the
- * order (Fold all, a rebuild, a removed passage) it moves to its nearest surviving ancestor,
- * and DOM focus follows if it was in the column, so it never falls to `body`.
+ * A page replacement and the flag the open-state carry sets when it writes (see
+ * `useScrollAnchor`): the write re-renders the column with the carried runs before paint.
  */
-export function useRovingFocus(
-  root: RefObject<HTMLElement | null>,
-  order: FocusTarget[],
-  open: OpenRun[],
-): Roving {
-  const [focusKey, setFocusKey] = useState<string | null>(null);
-  const [inside, setInside] = useState(false);
-  const insideRef = useRef(false);
-  const want = useRef(false);
-  const prev = useRef({ order, open });
-  const keys = useMemo(() => new Set(order.map(targetKey)), [order]);
-  const valid = focusKey !== null && keys.has(focusKey);
-  const first = order[0] ? targetKey(order[0]) : null;
-  const current = valid ? focusKey : first;
+export type Carry = { replacement: unknown; carried: MutableRefObject<boolean> };
 
+type Follow = {
+  root: RefObject<HTMLElement | null>;
+  order: ColumnTarget[];
+  open: OpenRun[];
+  carry: Carry;
+  current: string | null;
+  /** The focus key when its target left the order, else null. */
+  lostKey: string | null;
+  insideRef: MutableRefObject<boolean>;
+  want: MutableRefObject<boolean>;
+  setFocusKey: (key: string | null) => void;
+};
+
+/**
+ * After every commit: a focus target that left the order is replaced by its survivor, and
+ * DOM focus follows the roving target when a move asked for it or focus fell out of the column.
+ * A replacement's first commit still shows the runs open before it; when the carry wrote, the
+ * survivor waits for the carry's commit and is judged against the order before the replacement,
+ * so a run the carry reopens under a new sentence id keeps the focus inside it.
+ */
+function useFocusFollow(follow: Follow): void {
+  const { root, order, open, carry, current, lostKey, insideRef, want, setFocusKey } = follow;
+  const prev = useRef({ order, open });
+  const seen = useRef(carry.replacement);
   useLayoutEffect(() => {
-    if (focusKey !== null && !valid) {
-      setFocusKey(survivorKey(prev.current, { order, open }, focusKey));
+    const replaced = seen.current !== carry.replacement;
+    seen.current = carry.replacement;
+    if (replaced && carry.carried.current) return;
+    if (lostKey !== null) {
+      setFocusKey(survivorKey(prev.current, { order, open }, lostKey));
       want.current = insideRef.current;
     }
     prev.current = { order, open };
@@ -66,7 +78,7 @@ export function useRovingFocus(
 
   useLayoutEffect(() => {
     // A target that left the order is replaced first; focusing the fallback would overwrite it.
-    if (focusKey !== null && !valid) return;
+    if (lostKey !== null) return;
     const element = focusElement(root.current, current);
     const lost = insideRef.current && !root.current?.contains(document.activeElement);
     if ((want.current || lost) && element) {
@@ -74,6 +86,30 @@ export function useRovingFocus(
       want.current = false;
     }
   });
+}
+
+/**
+ * The roving focus over the reading order. Focus is a real DOM focus on the target's element,
+ * so a screen reader hears the sentence and its `aria-expanded`. When the target leaves the
+ * order (Fold all, a rebuild, a removed passage) it moves to its nearest surviving ancestor,
+ * and DOM focus follows if it was in the column, so it never falls to `body`.
+ */
+export function useRovingFocus(
+  root: RefObject<HTMLElement | null>,
+  order: ColumnTarget[],
+  open: OpenRun[],
+  carry: Carry,
+): Roving {
+  const [focusKey, setFocusKey] = useState<string | null>(null);
+  const [inside, setInside] = useState(false);
+  const insideRef = useRef(false);
+  const want = useRef(false);
+  const keys = useMemo(() => new Set(order.map(targetKey)), [order]);
+  const valid = focusKey !== null && keys.has(focusKey);
+  const first = order[0] ? targetKey(order[0]) : null;
+  const current = valid ? focusKey : first;
+  const lostKey = focusKey !== null && !valid ? focusKey : null;
+  useFocusFollow({ root, order, open, carry, current, lostKey, insideRef, want, setFocusKey });
 
   const move = useCallback((key: string) => {
     want.current = true;
@@ -127,13 +163,20 @@ function firstVisible(root: HTMLElement): HTMLElement | undefined {
  * focused sentence (else the first visible one) is on screen after every commit and scroll,
  * and after a page replacement scrolls by whatever it moved, so content that changes above
  * the viewport never moves the text the reader is looking at.
+ *
+ * A replacement takes two commits: the new page renders with the old open runs, then the
+ * carry's store write (a layout effect, so React re-renders synchronously before paint)
+ * renders the carried runs. `carried` is set by that write; the commit after it compensates
+ * too, against the anchor recorded at the end of the first.
  */
 export function useScrollAnchor(
   root: RefObject<HTMLElement | null>,
   roving: Roving,
   replacement: unknown,
+  carried: MutableRefObject<boolean>,
 ): void {
   const snapshot = useRef<Snapshot | null>(null);
+  const seen = useRef(replacement);
   const { current, insideRef } = roving;
   const record = useCallback(() => {
     const column = root.current;
@@ -145,12 +188,18 @@ export function useScrollAnchor(
   }, [root, current, insideRef]);
 
   useLayoutEffect(() => {
+    const replaced = seen.current !== replacement;
+    seen.current = replacement;
+    if (!replaced) {
+      if (!carried.current) return;
+      carried.current = false;
+    }
     const before = snapshot.current;
     const element = before ? focusElement(root.current, before.key) : undefined;
     if (!before || !element) return;
     const delta = element.getBoundingClientRect().top - before.top;
     if (Math.abs(delta) > 0.5) scrollByY(element, delta);
-  }, [root, replacement]);
+  });
   useLayoutEffect(record);
   useEffect(() => {
     document.addEventListener("scroll", record, { capture: true, passive: true });

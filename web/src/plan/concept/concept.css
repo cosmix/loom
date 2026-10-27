@@ -1,24 +1,20 @@
 /*
  * Concept mode reading column (section 05, "Visual design"). Reading text is prose, so it sets
- * larger than the dashboard chrome: Inter 16px on a 1.6 line height. The column width is in
- * ch, so browser zoom to 200% reflows without horizontal scrolling.
+ * larger than the dashboard chrome: Inter 16px (1rem, so the reader's default size applies) on
+ * a 1.6 line height. The column width is in ch, so browser zoom to 200% reflows without
+ * horizontal scrolling; a long token wraps rather than widening it. The route wrapper owns the
+ * page gutter (16px below lg), so the column adds none and its text lines up with the key and
+ * the header. Rules are written for narrow screens first; min-width: 64rem is Tailwind's lg.
  */
 .concept-column {
   position: relative;
-  box-sizing: border-box;
   max-width: 70ch;
   margin-inline: auto;
-  padding-inline: 16px;
   font-family: var(--font-sans);
-  font-size: 16px;
+  font-size: 1rem;
   line-height: 1.6;
+  overflow-wrap: anywhere;
   outline: none;
-}
-
-@media (min-width: 1024px) {
-  .concept-column {
-    padding-inline: 0;
-  }
 }
 
 .concept-heading {
@@ -56,7 +52,8 @@
   border-radius: 2px;
 }
 
-.concept-sentence:hover {
+/* A plain sentence has nothing to open, so it takes no hover tint. */
+.concept-sentence:not(.concept-sentence-plain):hover {
   background: var(--muted);
 }
 
@@ -159,20 +156,40 @@
   text-decoration: underline;
 }
 
-/* The fold handle: a thin muted bracket in the left margin, shown on hover or focus within. */
+/*
+ * The fold handle sits in the gutter left of the column, shown on hover or focus within. The
+ * button is the hit area and is transparent; ::before draws the thin muted bracket. The box is
+ * --fold-gutter wide at depth 0 and shares that width with deeper runs (gutter / (depth + 1),
+ * all ending at the text edge, the innermost on top), so it never reaches into the text, whose
+ * click target starts at the column edge. Below lg the gutter is the wrapper's 16px; from lg it
+ * is the wrapper's 24px, which also keeps the nested handle inside the page when the dock is
+ * open. A run's height gives the target its second dimension.
+ */
 .concept-fold-handle {
+  --fold-gutter: 16px;
+  --fold-width: calc(var(--fold-gutter) / (var(--depth, 0) + 1));
   position: absolute;
-  z-index: 1;
-  left: calc(-14px * (var(--depth, 0) + 1));
-  width: 10px;
+  z-index: calc(1 + var(--depth, 0));
+  left: calc(-1 * var(--fold-width));
+  width: var(--fold-width);
   padding: 0;
-  border: 1.5px solid var(--muted-foreground);
-  border-right: 0;
-  border-radius: 4px 0 0 4px;
+  border: 0;
   background: transparent;
   opacity: 0;
   cursor: pointer;
   transition: opacity 120ms;
+}
+
+.concept-fold-handle::before {
+  content: "";
+  position: absolute;
+  inset-block: 0;
+  inset-inline-start: 2px;
+  box-sizing: border-box;
+  width: 5px;
+  border: 1.5px solid var(--muted-foreground);
+  border-right: 0;
+  border-radius: 4px 0 0 4px;
 }
 
 .concept-run:hover .concept-fold-handle,
@@ -184,16 +201,22 @@
   opacity: 1;
 }
 
-.concept-fold-handle:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 2px;
+/* Without hover there is nothing to reveal the bracket, so a touch screen always shows it. */
+@media (hover: none) {
+  .concept-fold-handle {
+    opacity: 1;
+  }
 }
 
-/* Below lg the handles sit inside the 16px gutter. */
-@media (max-width: 1023px) {
+/* Inset: the ring stays inside the gutter instead of being clipped at the viewport edge. */
+.concept-fold-handle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+@media (min-width: 64rem) {
   .concept-fold-handle {
-    left: calc(1px + 5px * var(--depth, 0));
-    width: 4px;
+    --fold-gutter: 24px;
   }
 }
 
