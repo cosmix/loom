@@ -4,7 +4,7 @@ use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
 use std::sync::{PoisonError, RwLock};
 
-use super::query::{literal_count, parse_query, snippet, Query};
+use super::query::{literal_count, literal_snippet, parse_query, snippet, Query};
 use crate::context::config::RetrievalConfig;
 use crate::context::lexical::field_tokens;
 use crate::context::rank::corpus::prepare_lexical;
@@ -14,6 +14,7 @@ use crate::fs::knowledge::frontmatter::Frontmatter;
 use crate::plan_server::files::texts::TextStore;
 use crate::plan_server::wire::files::{SearchHit, SearchResults};
 use crate::planning::project::{Project, ProjectDoc};
+use crate::planning::sections::HeadingSection;
 use crate::planning::watch::Batch;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -23,6 +24,8 @@ pub enum Scope {
     Knowledge,
     All,
 }
+
+const SNIPPET_CHARS: usize = 160;
 
 struct IndexedChunk {
     chunk: KnowledgeChunk,
@@ -93,12 +96,18 @@ impl SearchIndex {
             .take(50)
             .map(|(_, i, terms)| {
                 let entry = chunks[i];
+                let body = &entry.chunk.body;
+                // A quoted literal is found case-sensitively, so its snippet is too.
+                let snippet = match &query {
+                    Query::Literal(needle) => literal_snippet(body, needle, SNIPPET_CHARS),
+                    Query::Terms(_) => snippet(body, &terms, SNIPPET_CHARS),
+                };
                 SearchHit {
                     path: entry.chunk.file.to_string_lossy().into_owned(),
                     title: entry.title.clone(),
                     heading_path: entry.heading_path.clone(),
                     anchor: entry.anchor.clone(),
-                    snippet: snippet(&entry.chunk.body, &terms, 160),
+                    snippet,
                     terms,
                 }
             })
@@ -152,25 +161,13 @@ fn index_document(path: &Path, doc: &ProjectDoc, texts: &TextStore) -> Option<Ve
     }
     let text = texts.current(path)?;
     let chunks = chunk_sections(path, &text.text, &Frontmatter::default());
-    let lines: Vec<&str> = text.text.lines().collect();
-    let mut h2 = doc.sections.headings.iter().enumerate().filter(|(_, h)| {
-        h.level == 2
-            && lines
-                .get(h.span.start_line)
-                .is_some_and(|line| line.starts_with("## "))
-    });
+    let places = places(&chunks, doc, &text.text);
     let scope = scope_for(path);
     Some(
         chunks
             .into_iter()
-            .map(|chunk| {
-                let (heading_path, anchor) = if !chunk.body.starts_with("## ") {
-                    (Vec::new(), String::new())
-                } else if let Some((index, heading)) = h2.next() {
-                    (heading_path(doc, index), heading.anchor.clone())
-                } else {
-                    (Vec::new(), String::new())
-                };
+            .zip(places)
+            .map(|(chunk, (heading_path, anchor))| {
                 let tokens = field_tokens(&chunk);
                 IndexedChunk {
                     chunk,
@@ -185,20 +182,68 @@ fn index_document(path: &Path, doc: &ProjectDoc, texts: &TextStore) -> Option<Ve
     )
 }
 
-fn heading_path(doc: &ProjectDoc, index: usize) -> Vec<String> {
-    let mut parents: Vec<&crate::planning::sections::HeadingSection> = Vec::new();
-    for heading in &doc.sections.headings[..=index] {
-        while parents
-            .last()
-            .is_some_and(|parent| parent.level >= heading.level)
-        {
-            parents.pop();
-        }
-        parents.push(heading);
-    }
-    parents
-        .into_iter()
-        .map(|heading| heading.title.clone())
+/// The heading path and anchor of the section a chunk belongs to.
+type Place = (Vec<String>, String);
+
+/// The place of every chunk, in chunk order. A chunk that starts `## ` takes the next level-2
+/// heading of the parsed sections whose line carries the chunk's heading text, never the next
+/// one by position: the chunker closes a fence on any fence line of the same character while
+/// `sections_of` closes it only on one at least as long as the opener, so a `## ` line inside a
+/// nested fence starts a chunk that has no heading, and pairing by position would hand it the
+/// anchor of the heading after it, and every later one the anchor before theirs. A chunk with
+/// no heading of its own, like the preamble, takes the place of the chunk before it.
+fn places(chunks: &[KnowledgeChunk], doc: &ProjectDoc, text: &str) -> Vec<Place> {
+    let lines: Vec<&str> = text.lines().collect();
+    let headings = &doc.sections.headings;
+    let paths = heading_paths(headings);
+    let level_two: Vec<usize> = (0..headings.len())
+        .filter(|&i| headings[i].level == 2 && heading_line(&lines, &headings[i]).is_some())
+        .collect();
+    let mut next = 0;
+    let mut place: Place = (Vec::new(), String::new());
+    chunks
+        .iter()
+        .map(|chunk| {
+            if chunk.body.starts_with("## ") {
+                let own = Some(chunk.heading.as_str());
+                let found = level_two[next..]
+                    .iter()
+                    .position(|&i| heading_line(&lines, &headings[i]) == own);
+                if let Some(offset) = found {
+                    let index = level_two[next + offset];
+                    next += offset + 1;
+                    place = (paths[index].clone(), headings[index].anchor.clone());
+                }
+            }
+            place.clone()
+        })
+        .collect()
+}
+
+/// The text of a `## ` heading's own line, trimmed as the chunker trims it; `None` when the
+/// heading is not written with `## ` (a setext heading is not a chunk boundary).
+fn heading_line<'a>(lines: &[&'a str], heading: &HeadingSection) -> Option<&'a str> {
+    let line = lines.get(heading.span.start_line)?;
+    Some(line.strip_prefix("## ")?.trim())
+}
+
+/// The heading path of every heading (the titles of its enclosing headings, then its own), in
+/// one pass: building each path from the first heading would be quadratic in the headings, and
+/// the watcher thread holds the index's write lock meanwhile.
+fn heading_paths(headings: &[HeadingSection]) -> Vec<Vec<String>> {
+    let mut parents: Vec<&HeadingSection> = Vec::new();
+    headings
+        .iter()
+        .map(|heading| {
+            while parents
+                .last()
+                .is_some_and(|parent| parent.level >= heading.level)
+            {
+                parents.pop();
+            }
+            parents.push(heading);
+            parents.iter().map(|parent| parent.title.clone()).collect()
+        })
         .collect()
 }
 

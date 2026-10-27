@@ -5,12 +5,13 @@
 //! the `TextStore`, which reads with plan 1's bounded, no-follow `read_doc`, so a symlinked
 //! document reaches only a file inside `doc/`. Every path in the answer is repo-relative.
 
+use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 
 use serde::Serialize;
 
-use super::plan_view::plan_view;
+use super::plan_view::{plan_view, product_sections};
 use super::texts::{PinnedText, TextStore};
 use super::validate::ValidationCache;
 use crate::plan_server::context::PlanContext;
@@ -59,12 +60,13 @@ pub fn doc_view(ctx: &PlanContext, rel: &Path) -> Result<DocView, ApiResponse> {
     };
     let plan = match (&facts.kind, &sections) {
         (DocKind::Plan { .. }, Some(sections)) => {
-            let validation = cached_validation(ctx, rel);
+            let validation = cached_validation(ctx, rel, &pinned.text);
             Some(plan_view(
                 ctx.root(),
                 rel,
                 &pinned.text,
                 sections,
+                &facts.product_sections,
                 validation,
             ))
         }
@@ -96,6 +98,8 @@ struct Facts {
     sections: Option<DocSections>,
     lock: Option<LockView>,
     editable: bool,
+    /// Product section paths by number, for a plan's `Implements:` links (empty otherwise).
+    product_sections: BTreeMap<u32, String>,
 }
 
 impl Facts {
@@ -114,6 +118,10 @@ impl Facts {
             sections: parsed.map(|p| p.sections.clone()),
             lock: lock_view(project, rel),
             editable: editable(project, rel),
+            product_sections: match doc.kind {
+                DocKind::Plan { .. } => product_sections(&project.tree),
+                _ => BTreeMap::new(),
+            },
         })
     }
 }
@@ -144,12 +152,13 @@ fn section_views(sections: &DocSections) -> Vec<SectionView> {
         .collect()
 }
 
-/// The plan's validation from the cache, which holds unlocked plans only; `None` for a locked
-/// plan, or when the cache is not installed.
-fn cached_validation(ctx: &PlanContext, rel: &Path) -> Option<ValidationView> {
-    let cache = ctx.extensions().get::<ValidationCache>()?;
-    let cache = cache.lock().unwrap_or_else(PoisonError::into_inner);
-    cache.get(rel).cloned()
+/// The plan's validation from the cache, which holds unlocked plans only (one the startup
+/// pass has not reached is validated from `text` now); `None` for a locked plan, or when the
+/// cache is not installed.
+fn cached_validation(ctx: &PlanContext, rel: &Path, text: &str) -> Option<ValidationView> {
+    ctx.extensions()
+        .get::<ValidationCache>()?
+        .view_or_validate(ctx, rel, text)
 }
 
 /// Whether file mode may edit `rel` (repo-relative, discovered) at its current size: Markdown,
@@ -223,7 +232,8 @@ pub fn entry_kind(kind: &DocKind) -> EntryKind {
     }
 }
 
-fn is_markdown(rel: &Path) -> bool {
+/// Whether `rel` names a Markdown file.
+pub(crate) fn is_markdown(rel: &Path) -> bool {
     rel.extension().is_some_and(|ext| ext == "md")
 }
 

@@ -28,10 +28,10 @@ pub fn routes() -> Vec<RouteSpec> {
 
 /// Install after file mode so its text store and batch hook are already registered.
 pub fn install(ctx: &Arc<PlanContext>) {
-    let texts = ctx
-        .extensions()
-        .get::<TextStore>()
-        .expect("file mode must be installed before search");
+    let Some(texts) = ctx.extensions().get::<TextStore>() else {
+        tracing::warn!("search is unavailable: file mode installed no text store");
+        return;
+    };
     let index = Arc::new(SearchIndex::build(&ctx.project(), &texts));
     ctx.extensions().insert(Arc::clone(&index));
     ctx.on_batch(Box::new(move |ctx, batch| {

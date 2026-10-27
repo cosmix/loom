@@ -4,10 +4,10 @@ use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
 
+use super::plan_view::OUT_OF_ORDER_PRESSURE;
+use crate::plan_server::files::texts::TextStore;
 use crate::plan_server::files::tree::build_tree;
-use crate::plan_server::wire::files::{
-    EntryKind, MetadataView, ValidationItem, ValidationView, ValidationWarnings,
-};
+use crate::plan_server::wire::files::EntryKind;
 use crate::planning::project::Project;
 
 fn write(root: &Path, path: &str, text: &str) {
@@ -48,36 +48,17 @@ fn write_fixture(root: &Path) {
     write(root, "doc/misc.md", "no heading\n");
 }
 
-fn alpha_validation() -> ValidationView {
-    ValidationView {
-        valid: false,
-        errors: vec![ValidationItem {
-            message: "bad".into(),
-            stage_id: None,
-            line: None,
-            column: None,
-        }],
-        warnings: ValidationWarnings {
-            structural: vec![],
-            knowledge: vec![],
-            sandbox: vec![],
-            baseline: vec![],
-        },
-        notes: vec![],
-        metadata: MetadataView::Missing,
-    }
-}
-
 #[test]
 fn groups_documents_and_preserves_listed_order_and_gaps() {
     let temp = tempfile::tempdir().unwrap();
     let root = temp.path();
     write_fixture(root);
     let project = Project::load(root).unwrap();
-    let validation = alpha_validation();
+    let texts = TextStore::load(root, &project).unwrap();
     let tree = build_tree(
         &project,
-        &HashMap::from([("doc/plans/PLAN-alpha.md".into(), validation)]),
+        &texts,
+        &HashMap::from([("doc/plans/PLAN-alpha.md".into(), 1)]),
     );
     assert_eq!(
         tree.product
@@ -109,4 +90,23 @@ fn groups_documents_and_preserves_listed_order_and_gaps() {
         .iter()
         .any(|e| e.title == "orphan" && e.children[0].title == "Orphan"));
     assert!(tree.other.iter().any(|e| e.title == "misc.md"));
+}
+
+#[test]
+fn a_plan_row_shows_the_latest_pressure_date_from_the_stored_text() {
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    write(root, "doc/plans/PLAN-alpha.md", OUT_OF_ORDER_PRESSURE);
+    let project = Project::load(root).unwrap();
+    let texts = TextStore::load(root, &project).unwrap();
+    // The tree takes the text from the store: the file is gone from disk.
+    fs::remove_file(root.join("doc/plans/PLAN-alpha.md")).unwrap();
+    let tree = build_tree(&project, &texts, &HashMap::new());
+    let plan = tree
+        .plans
+        .iter()
+        .find(|entry| entry.path.as_deref() == Some("doc/plans/PLAN-alpha.md"))
+        .expect("the plan row");
+    assert_eq!(plan.pressure_date.as_deref(), Some("2025-03-03"));
+    assert_eq!(plan.errors, 0);
 }

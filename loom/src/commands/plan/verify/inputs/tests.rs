@@ -110,6 +110,35 @@ fn committed_inputs_produce_no_findings() {
 }
 
 #[test]
+fn each_input_gets_its_own_reason_in_order() {
+    let brief = |name: &str| format!("doc/plans/briefs/foo/{name}.md");
+    let temp = repo("The bundle is the input.");
+    for name in ["clean", "edited", "hidden"] {
+        write(temp.path(), &brief(name), name);
+    }
+    git(temp.path(), &["add", "doc"]);
+    git(temp.path(), &["commit", "-m", "plan"]);
+    write(temp.path(), &brief("edited"), "edited again");
+    write(temp.path(), &brief("new"), "new");
+    git(
+        temp.path(),
+        &["update-index", "--assume-unchanged", &brief("hidden")],
+    );
+    write(temp.path(), &brief("hidden"), "hidden edit");
+    let (errors, notes) = input_findings(temp.path(), &temp.path().join(PLAN), None);
+    assert!(errors.is_empty(), "{:?}", messages(&errors));
+    let expected = format!(
+        "3 plan input(s) not committed; loom run refuses to start until they are committed: \
+         {} (uncommitted changes), {} (working copy differs from the committed file), \
+         {} (not committed (untracked, ignored, or staged only))",
+        brief("edited"),
+        brief("hidden"),
+        brief("new")
+    );
+    assert_eq!(notes, vec![expected]);
+}
+
+#[test]
 fn prose_after_a_code_span_is_not_a_reference() {
     let temp = repo("**Briefs live outside `doc/plans/briefs/`.** Nothing else.");
     let (errors, _) = input_findings(temp.path(), &temp.path().join(PLAN), None);

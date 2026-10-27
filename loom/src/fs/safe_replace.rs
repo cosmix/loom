@@ -24,7 +24,8 @@ mod tests;
 
 /// Replace the regular file `rel` (relative to `root`, no `..`) with `bytes`, keeping its
 /// permission bits. Refuses a missing target, a target that is not a regular file (a symlink
-/// included) and a path with a symlinked directory component; never creates the target.
+/// included) and a path with a symlinked directory component; never creates the target. Once
+/// the rename has happened the call succeeds, even when syncing the directory then fails.
 pub fn replace_no_follow(root: &Path, rel: &Path, bytes: &[u8]) -> Result<()> {
     let name = match rel.components().next_back() {
         Some(Component::Normal(name)) => name,
@@ -37,12 +38,32 @@ pub fn replace_no_follow(root: &Path, rel: &Path, bytes: &[u8]) -> Result<()> {
     let tmp = c_name(&temp_name(name.as_bytes()))?;
     let file = create_temp(&parent, &tmp, mode)
         .with_context(|| format!("cannot create a temporary file beside {}", rel.display()))?;
-    let written = fill(file, mode, bytes).and_then(|()| rename_at(&parent, &tmp, &name));
-    if let Err(error) = written {
-        unlink_at(&parent, &tmp);
-        return Err(error).with_context(|| format!("cannot replace {}", rel.display()));
+    publish(&parent, &tmp, &name, file, mode, bytes)
+        .with_context(|| format!("cannot replace {}", rel.display()))?;
+    // The rename has happened and the file is replaced: a directory sync that fails now only
+    // weakens durability, and reporting it as an error would tell the caller a replaced file
+    // was not.
+    if let Err(error) = sync_dir(&parent) {
+        tracing::warn!("cannot sync the directory of {}: {error:#}", rel.display());
     }
-    sync_dir(&parent).with_context(|| format!("cannot sync the directory of {}", rel.display()))
+    Ok(())
+}
+
+/// Fill the temporary file `tmp` and rename it over `name`; the temporary file is removed when
+/// either step fails.
+fn publish(
+    parent: &OwnedFd,
+    tmp: &CString,
+    name: &CString,
+    file: File,
+    mode: u32,
+    bytes: &[u8],
+) -> Result<()> {
+    let written = fill(file, mode, bytes).and_then(|()| rename_at(parent, tmp, name));
+    if written.is_err() {
+        unlink_at(parent, tmp);
+    }
+    written
 }
 
 /// The directory holding `rel`, opened from `root` without following any symlink.
@@ -61,15 +82,31 @@ fn c_name(bytes: &[u8]) -> Result<CString> {
     CString::new(bytes).context("a file name holds a NUL byte")
 }
 
-/// `.<name>.<16 random hex>.tmp`.
+/// The longest file name the supported file systems accept, in bytes.
+const NAME_MAX: usize = 255;
+/// What `temp_name` adds around the target's name: `.`, `.`, 16 hex digits and `.tmp`.
+const TEMP_OVERHEAD: usize = 1 + 1 + 16 + 4;
+
+/// `.<name>.<16 random hex>.tmp`, with `name` cut so the result fits `NAME_MAX` (a target with
+/// a name of 234 bytes or more would otherwise fail with `ENAMETOOLONG`).
 fn temp_name(name: &[u8]) -> Vec<u8> {
     let random = uuid::Uuid::new_v4().simple().to_string();
     let mut tmp = b".".to_vec();
-    tmp.extend_from_slice(name);
+    tmp.extend_from_slice(&name[..prefix_len(name, NAME_MAX - TEMP_OVERHEAD)]);
     tmp.push(b'.');
     tmp.extend_from_slice(&random.as_bytes()[..16]);
     tmp.extend_from_slice(b".tmp");
     tmp
+}
+
+/// The length of the longest prefix of `name` within `max` bytes that does not end inside a
+/// UTF-8 sequence. Bytes that are not UTF-8 are cut where they fall: the name is only a label.
+fn prefix_len(name: &[u8], max: usize) -> usize {
+    let mut len = max.min(name.len());
+    while len > 0 && len < name.len() && name[len] & 0xC0 == 0x80 {
+        len -= 1;
+    }
+    len
 }
 
 /// The permission bits of `name` in `parent`, which must be a regular file. The open does not

@@ -4,31 +4,39 @@
 //! over HEAD of the repository, harness globs that match production source and
 //! Rust contracts whose module chain cannot be derived (the scaffold).
 
-use std::collections::HashSet;
+use std::cell::OnceCell;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
 use super::super::base_tree::HeadTree;
 use crate::plan::schema::{detect_stage_type, ContractSpec, StageDefinition, StageType};
+use crate::skills::project::ProjectProfile;
 use crate::testrun::recognize::invocations;
-use crate::testrun::registry;
+use crate::testrun::{registry, TestRunnerAdapter};
 use crate::verify::contracts::collection::harness_source_matches;
 use crate::verify::contracts::collection::rust::derive_scaffold;
-use crate::verify::contracts::{normalize, resolve_adapter};
+use crate::verify::contracts::{detected_adapter, normalize};
 
 use super::{LintContext, LintFinding};
 
 pub(super) fn check(ctx: &LintContext<'_>, out: &mut Vec<LintFinding>) {
     let head = ctx.repo_root.and_then(HeadTree::new);
+    let listing = OnceCell::new();
+    let mut adapters = Adapters::default();
     for stage in &ctx.metadata.loom.stages {
         if let (Some(tree), Some(root)) = (&head, ctx.repo_root) {
-            check_collection(stage, tree, root, out);
+            let head = HeadListing {
+                tree,
+                files: &listing,
+            };
+            check_collection(stage, &head, root, &mut adapters, out);
         }
         for contract in &stage.contracts {
             match (&contract.runner, ctx.repo_root) {
                 (Some(runner), _) => check_known_runner(stage, contract, runner, out),
                 (None, Some(root)) => {
                     let package_dir = root.join(&stage.working_dir);
-                    check_detected_runner(stage, contract, &package_dir, out);
+                    check_detected_runner(stage, contract, &package_dir, &mut adapters, out);
                 }
                 (None, None) => {}
             }
@@ -36,6 +44,41 @@ pub(super) fn check(ctx: &LintContext<'_>, out: &mut Vec<LintFinding>) {
         if ctx.metadata.loom.version == 2 {
             check_full_test_run(stage, ctx.repo_root, out);
         }
+    }
+}
+
+/// HEAD and its file listing, which every stage's collection lint reads; listed once per plan.
+struct HeadListing<'h, 'r> {
+    tree: &'h HeadTree<'r>,
+    files: &'h OnceCell<Option<Vec<String>>>,
+}
+
+impl HeadListing<'_, '_> {
+    /// Every tracked regular file at HEAD; `None` when git fails.
+    fn files(&self) -> Option<&[String]> {
+        self.files.get_or_init(|| self.tree.files("")).as_deref()
+    }
+}
+
+/// `resolve_adapter`'s answers, with one checkout discovery per package directory for the whole
+/// plan: discovery walks the checkout, and a plan names many contracts of one package.
+#[derive(Default)]
+struct Adapters(HashMap<PathBuf, ProjectProfile>);
+
+impl Adapters {
+    fn resolve(
+        &mut self,
+        contract: &ContractSpec,
+        package_dir: &Path,
+    ) -> Option<&'static dyn TestRunnerAdapter> {
+        if let Some(name) = contract.runner.as_deref() {
+            return registry::by_name(name);
+        }
+        let profile = self
+            .0
+            .entry(package_dir.to_path_buf())
+            .or_insert_with(|| ProjectProfile::discover(package_dir));
+        detected_adapter(profile, package_dir, &contract.file)
     }
 }
 
@@ -76,8 +119,9 @@ fn files_under(listed: &[String], prefix: &str) -> Vec<String> {
 /// warns.
 fn check_collection(
     stage: &StageDefinition,
-    tree: &HeadTree<'_>,
+    head: &HeadListing<'_, '_>,
     root: &Path,
+    adapters: &mut Adapters,
     out: &mut Vec<LintFinding>,
 ) {
     // Listing HEAD is a git call; a stage with nothing to lint skips it.
@@ -85,11 +129,11 @@ fn check_collection(
         return;
     }
     let prefix = working_prefix(stage);
-    let Some(listed) = tree.files("") else {
+    let Some(listed) = head.files() else {
         return;
     };
-    let head: HashSet<&str> = listed.iter().map(String::as_str).collect();
-    for path in harness_source_matches(&stage.harness, &files_under(&listed, &prefix)) {
+    let tracked: HashSet<&str> = listed.iter().map(String::as_str).collect();
+    for path in harness_source_matches(&stage.harness, &files_under(listed, &prefix)) {
         let message = format!(
             "harness glob matches production source {path}; it is frozen for the implementer. \
              Harness is for test-only files; module declarations are derived as scaffold"
@@ -97,15 +141,15 @@ fn check_collection(
         out.push(LintFinding::in_stage(stage, message, false));
     }
     let source = |path: &str| {
-        let bytes = head.contains(path).then(|| tree.content(path)).flatten()?;
+        let bytes = tracked
+            .contains(path)
+            .then(|| head.tree.content(path))
+            .flatten()?;
         String::from_utf8(bytes).ok()
     };
     let package_dir = root.join(&stage.working_dir);
     for contract in &stage.contracts {
-        let adapter = match contract.runner.as_deref() {
-            Some(name) => registry::by_name(name),
-            None => resolve_adapter(contract, &package_dir),
-        };
+        let adapter = adapters.resolve(contract, &package_dir);
         if !adapter.is_some_and(|adapter| adapter.language() == "rust") {
             continue;
         }
@@ -142,9 +186,10 @@ fn check_detected_runner(
     stage: &StageDefinition,
     contract: &ContractSpec,
     package_dir: &Path,
+    adapters: &mut Adapters,
     out: &mut Vec<LintFinding>,
 ) {
-    if resolve_adapter(contract, package_dir).is_some() {
+    if adapters.resolve(contract, package_dir).is_some() {
         return;
     }
     let message = format!(

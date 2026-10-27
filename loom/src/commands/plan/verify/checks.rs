@@ -2,11 +2,12 @@
 
 use std::path::Path;
 
-use super::report::{build_levels_output, VerifyError, VerifyStageLevel, VerifyWarnings};
+use super::report::{VerifyError, VerifyStageLevel, VerifyWarnings};
 use crate::plan::graph::levels::compute_all_levels;
 use crate::plan::schema::{
     check_knowledge_recommendations, check_sandbox_recommendations, detect_stage_type,
     split_lint_findings, v2_lints, validate_structural_preflight, LoomMetadata, StageDefinition,
+    StageType,
 };
 
 /// Sandbox, lint and DAG hard errors go to `hard_errors`, skipped-check notes
@@ -81,4 +82,39 @@ fn dag_levels(stages: &[StageDefinition]) -> Result<Vec<Vec<VerifyStageLevel>>, 
     }
     let levels_map = compute_all_levels(stages, |s| s.id.as_str(), |s| &s.dependencies);
     Ok(build_levels_output(stages, &levels_map))
+}
+
+fn stage_type_label(st: StageType) -> &'static str {
+    match st {
+        StageType::Standard => "standard",
+        StageType::Knowledge => "knowledge",
+        StageType::IntegrationVerify => "integration-verify",
+        StageType::KnowledgeDistill => "knowledge-distill",
+    }
+}
+
+fn build_levels_output(
+    stages: &[StageDefinition],
+    levels_map: &std::collections::HashMap<String, usize>,
+) -> Vec<Vec<VerifyStageLevel>> {
+    let max_level = levels_map.values().copied().max().unwrap_or(0);
+    let mut result = Vec::new();
+    for level_num in 0..=max_level {
+        let mut level_stages: Vec<&StageDefinition> = stages
+            .iter()
+            .filter(|s| levels_map.get(&s.id).copied().unwrap_or(0) == level_num)
+            .collect();
+        level_stages.sort_by(|a, b| a.id.cmp(&b.id));
+        let json_stages = level_stages
+            .iter()
+            .map(|s| VerifyStageLevel {
+                id: s.id.clone(),
+                name: s.name.clone(),
+                stage_type: stage_type_label(detect_stage_type(s)).to_string(),
+                dependencies: s.dependencies.clone(),
+            })
+            .collect();
+        result.push(json_stages);
+    }
+    result
 }
