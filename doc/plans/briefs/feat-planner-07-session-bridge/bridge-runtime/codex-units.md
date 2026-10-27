@@ -1,12 +1,14 @@
 # Codex units of stage bridge-runtime
 
 Forwarding, rules and reading order as in `doc/plans/briefs/feat-planner-07-session-bridge/bridge-core/codex-units.md`
-(FOREGROUND `loom-codex-forwarder`, `--model gpt-6.1-terra --effort high`, Bash timeout 600000 ms,
+(FOREGROUND `loom-codex-forwarder`, the model flags in its block below (always `--effort high`), Bash timeout 600000 ms,
 compile checks only, no git, 10% size margin). Every unit reads
 `doc/plans/briefs/feat-planner-07-session-bridge/common.md` first. Codex cannot run the tmux tests; the
 orchestrator runs every proof command.
 
 ## C14 authoring leases (wave 1)
+
+- Model: `--model gpt-6.1-terra --effort high`.
 
 - Owns: `loom/src/plan_server/chat/lease.rs` (the seed declared it in `plan_server/chat/mod.rs`).
 - Entry points: `AuthoringLeases` (`Default`), `AuthoringLeases::hold(&self) -> AuthoringLease`,
@@ -17,6 +19,8 @@ orchestrator runs every proof command.
 - Done: `cargo test --lib plan_server::chat::lease` passes.
 
 ## C15 launch script (wave 2, after W4)
+
+- Model: `--model gpt-6.1-sol --effort high`.
 
 - Owns: `loom/src/plan_session/launch/script.rs` (declared from `launch.rs` by the seed).
 - Reads: `loom/src/plan_session/bridge/host.rs` (W4, this stage: `LaunchSpec` with
@@ -34,6 +38,8 @@ orchestrator runs every proof command.
 
 ## C16 tmux host (wave 3, after W5)
 
+- Model: `--model gpt-6.1-terra --effort high`.
+
 - Owns: `loom/src/plan_session/tmux_host.rs` (seeded).
 - Reads: `loom/src/plan_session/launch.rs` and `loom/src/plan_session/tmux_io.rs` (W5, this
   stage: `launch::launch(spec) -> Result<Spawned>`, `tmux_io::{paste_text, press}`),
@@ -47,6 +53,8 @@ orchestrator runs every proof command.
 
 ## C17 planning sockets skip (wave 2)
 
+- Model: `--model gpt-6.1-terra --effort high`.
+
 - Owns: `loom/src/orchestrator/terminal/tmux/socket.rs` (351 lines; stay under 400).
 - Entry points: `list_loom_sockets`, the `view-` skip inside it, and the test
   `list_loom_sockets_ignores_the_overview_viewer_socket`.
@@ -57,6 +65,8 @@ orchestrator runs every proof command.
 - Done: `cargo test --lib orchestrator::terminal::tmux::socket` passes.
 
 ## C18 fixed guidance (wave 2, after W4)
+
+- Model: `--model gpt-6.1-sol --effort high`.
 
 - Owns: `loom/src/plan_server/chat/guidance.rs` (declared by the seed).
 - Reads: `loom/src/plan_session/bridge/mod.rs` (W4: `LaunchGuidance`), `loom/src/plan_session/kind.rs`
@@ -71,6 +81,8 @@ orchestrator runs every proof command.
 
 ## C19 turn pins (wave 2)
 
+- Model: `--model gpt-6.1-terra --effort high`.
+
 - Owns: `loom/src/plan_server/chat/pins.rs` (declared by the seed).
 - Reads: plan 3 `loom/src/plan_server/files/texts.rs` (`TextStore::{begin_turn, end_turn}`,
   `TurnId`, `TurnChange`), `loom/src/plan_session/bridge/mod.rs` (W4: `TurnPins`).
@@ -82,6 +94,8 @@ orchestrator runs every proof command.
 - Done: `cargo build` passes.
 
 ## C20 dispatch tests (wave 3, after W6)
+
+- Model: `--model gpt-6.1-sol --effort high`.
 
 - Owns: `loom/src/plan_server/chat/tests_dispatch.rs` (declared by the seed in `chat/mod.rs`).
 - Reads: `loom/src/plan_server/chat/mod.rs`, `dispatch.rs`, `tests.rs` (W6, this stage: the

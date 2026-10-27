@@ -1,6 +1,6 @@
 # chat-server C5: restore decision
 
-Codex unit (gpt-6.1-terra, effort high). Working dir: loom/.
+Codex unit (gpt-6.1-sol, effort high). Working dir: loom/.
 
 ## Files
 

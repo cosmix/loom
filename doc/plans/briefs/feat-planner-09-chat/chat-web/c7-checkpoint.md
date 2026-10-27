@@ -1,6 +1,6 @@
 # chat-web C7: changed-since checkpoint
 
-Codex unit (gpt-6.1-terra, effort high). Working dir: web/.
+Codex unit (gpt-6.1-sol, effort high). Working dir: web/.
 
 ## Files
 

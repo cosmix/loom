@@ -1,6 +1,6 @@
 # chat-server C4: changed sections of a turn
 
-Codex unit (gpt-6.1-terra, effort high). Working dir: loom/.
+Codex unit (gpt-6.1-sol, effort high). Working dir: loom/.
 
 ## Files
 

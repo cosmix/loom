@@ -374,3 +374,13 @@ reports. Read SKIP lines before calling a test green. The cap now sits at `maxTu
 **Why:** the scripted edit matched a repeated `assert_eq` line. The brief copied a line count from memory instead of reading the file.
 
 **Prevention:** edit repeated lines with the Edit tool and unique context. A brief that pins a size limit states the measured count and the command that produced it (`wc -l`).
+
+## Model allocation over grouped worker rows
+
+**What happened:** A model-allocation edit expanded the planner bridge row C3-C5 into a nonexistent Codex C4 and added a model line to its moved-to-Claude note; review caught both before delivery.
+
+**Why:** A numeric range and a heading were treated as executable unit inventories despite the row listing only C3 and C5.
+
+**Prevention:** Use the explicit unit blocks as the inventory; exclude moved-to-Claude notes and check grouped row members against the actual blocks.
+
+**Fix:** Name the row C3, C5, assign both Sol/high, and remove the model line from the Claude-only note.

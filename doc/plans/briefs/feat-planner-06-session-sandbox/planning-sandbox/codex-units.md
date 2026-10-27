@@ -1,7 +1,7 @@
 # Codex units of stage planning-sandbox
 
 Each unit is forwarded by the orchestrator through one `loom-codex-forwarder` subagent in the
-FOREGROUND with `--model gpt-6.1-terra --effort high` and an explicit Bash timeout of 600000 ms.
+FOREGROUND with the model flags in its block below (always `--effort high`) and an explicit Bash timeout of 600000 ms.
 The unit text the orchestrator forwards is the block below, verbatim. Every unit reads
 `doc/plans/briefs/feat-planner-06-session-sandbox/common.md` (the pinned public API) first.
 
@@ -12,6 +12,8 @@ and functions under 45 (a 10% margin: `cargo fmt` grows them); double literal br
 command and `git status --short` after each unit.
 
 ## C1 kind (wave 1)
+
+- Model: `--model gpt-6.1-terra --effort high`.
 
 - Owns: `loom/src/plan_session/kind.rs` (seeded with a purpose line).
 - Reads: `loom/src/planning/slug.rs` (`plan_slug`).
@@ -26,6 +28,8 @@ command and `git status --short` after each unit.
   `Pressure { plan }` is `{"kind":"pressure","plan":"..."}`; keep that exact attribute.
 
 ## C2 sandbox snapshot tests (wave 3, after W1)
+
+- Model: `--model gpt-6.1-sol --effort high`.
 
 - Owns: `loom/src/plan_session/sandbox/tests.rs`.
 - Reads: `loom/src/plan_session/sandbox/mod.rs`, `filesystem.rs`, `permissions.rs`, `reads.rs`
@@ -42,6 +46,8 @@ command and `git status --short` after each unit.
 
 ## C3 kind-specific settings tests (wave 3, after W1)
 
+- Model: `--model gpt-6.1-sol --effort high`.
+
 - Owns: `loom/src/plan_session/sandbox/tests_kinds.rs`.
 - Reads: as C2, plus the fixture helper shape of C2 (write your own copy; do not import the C2 module).
 - Entry points: `build_settings`, `assert_planning_settings`.
@@ -55,6 +61,8 @@ command and `git status --short` after each unit.
 
 ## C4 hook entry (wave 4, after W2)
 
+- Model: `--model gpt-6.1-terra --effort high`.
+
 - Owns: `loom/src/plan_session/hook_cli.rs`.
 - Reads: `loom/src/plan_session/guard/mod.rs` (`run_pre_tool_use`, written by W2 in this stage).
 - Entry points: `hook_cli::run(event: &str, session_dir: &Path, stdin: impl Read, stdout: impl Write) -> i32`.
@@ -64,6 +72,8 @@ command and `git status --short` after each unit.
 - Done: `cargo test --lib plan_session::hook_cli` passes.
 
 ## C5 plan hook command (wave 4)
+
+- Model: `--model gpt-6.1-terra --effort high`.
 
 - Owns: `loom/src/commands/plan/hook.rs` (seeded).
 - Entry points: `pub fn execute(event: &str, session_dir: &Path) -> anyhow::Result<()>`, which calls
@@ -75,6 +85,8 @@ command and `git status --short` after each unit.
 
 ## C6 CLI variant (wave 4)
 
+- Model: `--model gpt-6.1-terra --effort high`.
+
 - Owns: `loom/src/cli/types_ops.rs`.
 - Entry points: `PlanCommands`.
 - Steps: 1. add `#[command(hide = true)] Hook { event: String, #[arg(long)] session_dir: std::path::PathBuf }`
@@ -84,6 +96,8 @@ command and `git status --short` after each unit.
 
 ## C7 CLI dispatch (wave 5, after C6)
 
+- Model: `--model gpt-6.1-terra --effort high`.
+
 - Owns: `loom/src/cli/dispatch.rs`.
 - Entry points: `dispatch_plan` (about line 104 at `b0f91c00`; plans 1, 2 and 4 added arms since).
 - Steps: 1. add the arm `PlanCommands::Hook { event, session_dir } => plan::hook::execute(&event, &session_dir),`;
@@ -91,6 +105,8 @@ command and `git status --short` after each unit.
 - Done: `cargo build` passes. Note: C6 changed `cli/types_ops.rs` in this stage (the `Hook` variant).
 
 ## C8 guard write-table tests (wave 4, after W2)
+
+- Model: `--model gpt-6.1-sol --effort high`.
 
 - Owns: `loom/src/plan_session/guard/tests.rs`.
 - Reads: `loom/src/plan_session/guard/mod.rs`, `guard/paths.rs` (W2, this stage),
@@ -106,6 +122,8 @@ command and `git status --short` after each unit.
 
 ## C9 guard read tests (wave 4, after W2)
 
+- Model: `--model gpt-6.1-sol --effort high`.
+
 - Owns: `loom/src/plan_session/guard/tests_reads.rs`.
 - Reads: as C8.
 - Steps: 1. own fixture helper; 2. the read tests of w2-guard.md step 6 (credentials, runtime lock,
@@ -116,6 +134,8 @@ command and `git status --short` after each unit.
 
 ## C10 README entry (wave 3)
 
+- Model: `--model gpt-6.1-terra --effort high`.
+
 - Owns: `README.md` (repository root).
 - Steps: 1. under `### Plan Commands`, add one entry for `loom plan hook <event> --session-dir <dir>`,
   matching the surrounding entry format: a hidden internal command that Claude Code runs for
@@ -123,6 +143,8 @@ command and `git status --short` after each unit.
 - Done: the orchestrator reads the diff.
 
 ## C11 loom-usage sentence (wave 3)
+
+- Model: `--model gpt-6.1-terra --effort high`.
 
 - Owns: `skills/loom-usage/SKILL.md`.
 - Steps: 1. where `loom plan` subcommands are described (find them with `rg -n "loom plan"`), add

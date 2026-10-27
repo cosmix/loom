@@ -4,7 +4,7 @@ These are IMPLEMENTER units: `loom-codex-forwarder` runs that write code for thi
 unrelated to the Codex `$pressure` step this plan's code drives (`codex exec`), which is the
 product under construction, not a lane.
 
-Each unit: `--model gpt-6.1-terra --effort high`, FOREGROUND, Bash timeout 600000 ms. A unit
+Each unit: the model flags in its block below (always `--effort high`), FOREGROUND, Bash timeout 600000 ms. A unit
 writes only its files, runs no git and no tests (compile checks at most, `cargo check --lib`
 from `loom/`), and touches no dot-loom or dot-work path. The orchestrator runs the proof command
 right after the unit, then `git status --short`. Stay 10% under the limits (360 lines per file, 45
@@ -14,6 +14,8 @@ backticks. `loom map` answers from the BASE tree, so this file names what earlie
 ## Wave 1 (foreground, while P1 runs in the background)
 
 ### R1 `src/pressure/record.rs`
+
+- Model: `--model gpt-6.1-sol --effort high`.
 - Owns: `loom/src/pressure/record.rs` (ending with `#[cfg(test)] mod tests;`).
 - Spec: `doc/plans/briefs/feat-planner-11-execution-handoff/pressure-pipeline/p2-record-writer.md`, sections
   "API", "render", "append_to_text placement", "append_record". Implement exactly that API:
@@ -31,6 +33,8 @@ backticks. `loom map` answers from the BASE tree, so this file names what earlie
   `cargo test --test pressure_pipeline_contracts`.
 
 ### R2 `src/pressure/record/tests.rs`
+
+- Model: `--model gpt-6.1-sol --effort high`.
 - Owns: `loom/src/pressure/record/tests.rs`.
 - Spec: p2-record-writer.md "Tests". Use `super::*` for R1's API, which is exactly:
   `pub struct RecordLine { pub date: chrono::NaiveDate, pub claude_model: String, pub codex_models: Vec<String>, pub rounds: u32, pub missing_rounds: Vec<u32> }`,
@@ -40,6 +44,8 @@ backticks. `loom map` answers from the BASE tree, so this file names what earlie
 - Proof: `cargo test --lib pressure::record::`.
 
 ### T1 built-in backend default
+
+- Model: `--model gpt-6.1-terra --effort high`.
 - Owns: `loom/src/models/session/types.rs` and the one assertion at `loom/src/user_config/tests.rs:94`.
 - Spec: p3-tmux-default.md edits 1 and 3: move `#[default]` on `SessionBackendKind` from `Native`
   to `Tmux`, update the two variant doc comments, change the test assertion to `Tmux`.
@@ -49,6 +55,8 @@ backticks. `loom map` answers from the BASE tree, so this file names what earlie
 - Proof: `cargo test --lib models::session::` and `cargo test --lib user_config::`.
 
 ### T2 init prompt label
+
+- Model: `--model gpt-6.1-terra --effort high`.
 - Owns: `loom/src/commands/init/backend.rs` and `loom/src/commands/init/backend_tests.rs`.
 - Spec: p3-tmux-default.md edit 2: `backend_default_label(None)` returns `tmux, built-in default`;
   update `backend_tests.rs:63`; rename `init_backend_effective_backend_defaults_to_native_without_user_config`
@@ -56,12 +64,16 @@ backticks. `loom map` answers from the BASE tree, so this file names what earlie
 - Proof: `cargo test --lib init::`.
 
 ### T3 docs
+
+- Model: `--model gpt-6.1-terra --effort high`.
 - Owns: `README.md` (repo root) and `skills/loom-usage/SKILL.md`.
 - Spec: p3-tmux-default.md edit 6 (README lines naming native as the default, plus the one new
   sentence); in the skill, only lines that call native the default.
 - Proof: `rg -n -i 'native.*default|default.*native' README.md skills/loom-usage/SKILL.md` prints nothing that still calls native the built-in default.
 
 ### T4 dashboard fixtures
+
+- Model: `--model gpt-6.1-terra --effort high`.
 - Owns: `web/src/api/fixtures/config.json` and `web/src/test/settings-kit.tsx`.
 - Spec: p3-tmux-default.md edit 5: in the `terminal.backend` entry the `default`, `user.value`,
   `project.value` and `effective.value` become `"tmux"`; the same four in `settings-kit.tsx`.

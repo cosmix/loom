@@ -1,6 +1,6 @@
 # C1: cost lines, the log and transcript tokens
 
-Codex unit (gpt-6.1-terra, effort high). Read `doc/plans/briefs/feat-planner-10-summary-rebuilds/common.md` first.
+Codex unit (gpt-6.1-sol, effort high). Read `doc/plans/briefs/feat-planner-10-summary-rebuilds/common.md` first.
 
 ## Files owned
 

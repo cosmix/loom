@@ -1,6 +1,6 @@
 # chat-web C1: zod schema for the chat model
 
-Codex unit (gpt-6.1-terra, effort high). Working dir: web/.
+Codex unit (gpt-6.1-sol, effort high). Working dir: web/.
 
 ## Files
 

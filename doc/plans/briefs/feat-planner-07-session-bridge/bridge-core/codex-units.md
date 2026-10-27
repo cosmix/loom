@@ -1,7 +1,7 @@
 # Codex units of stage bridge-core
 
 Each unit is forwarded through one `loom-codex-forwarder` subagent in the FOREGROUND with
-`--model gpt-6.1-terra --effort high` and an explicit Bash timeout of 600000 ms; the forwarded text
+the model flags in its block below (always `--effort high`) and an explicit Bash timeout of 600000 ms; the forwarded text
 is the unit block below, verbatim. Every unit reads `doc/plans/briefs/feat-planner-07-session-bridge/common.md`
 first: it pins every type and rule these units implement.
 
@@ -13,6 +13,8 @@ backticks. When a file named under Reads was written earlier in this stage, read
 command and `git status --short` after each unit.
 
 ## C1 attachment types (wave 1)
+
+- Model: `--model gpt-6.1-terra --effort high`.
 
 - Owns: `loom/src/plan_session/attachments/mod.rs` (seeded with a purpose line).
 - Entry points: `Attachment`, `AttachmentInput`, `AttachmentKind`, `LockedTag`, `AttachmentError`
@@ -28,6 +30,8 @@ command and `git status --short` after each unit.
 
 ## C2 chat model types (wave 2)
 
+- Model: `--model gpt-6.1-terra --effort high`.
+
 - Owns: `loom/src/plan_session/model/mod.rs` (seeded).
 - Reads: `loom/src/plan_session/attachments/mod.rs` (C1, this stage: the `Attachment` type).
 - Entry points: every type of common.md "The chat model" (`SessionView`, `Failure`, `FailureKind`,
@@ -41,6 +45,8 @@ command and `git status --short` after each unit.
 - Done: `cargo build` passes.
 
 ## C3 spool (wave 2)
+
+- Model: `--model gpt-6.1-sol --effort high`.
 
 - Owns: `loom/src/plan_session/spool.rs` (seeded), `loom/src/plan_session/spool_tests.rs`
   (declared from `spool.rs` with `#[cfg(test)] #[path = "spool_tests.rs"] mod tests;`).
@@ -75,6 +81,8 @@ there is no codex unit C4.
 
 ## C5 tool summaries and patches (wave 2)
 
+- Model: `--model gpt-6.1-sol --effort high`.
+
 - Owns: `loom/src/plan_session/transcript/tools.rs`, `loom/src/plan_session/transcript/tests_tools.rs`
   (declared from `tools.rs` with `#[cfg(test)] #[path = "tests_tools.rs"] mod tests;`).
 - Entry points: `pub(crate) fn summary(tool: &str, input: &Value, project_root: &Path) -> String`,
@@ -89,6 +97,8 @@ there is no codex unit C4.
 
 ## C6 chat wire enums (wave 3)
 
+- Model: `--model gpt-6.1-terra --effort high`.
+
 - Owns: `loom/src/plan_server/wire/chat.rs` (the seed declared `pub mod chat;` and
   `#[cfg(test)] mod tests_chat;` in `plan_server/wire/mod.rs` and created both files).
 - Reads: `loom/src/plan_session/model/mod.rs` (C2), `loom/src/plan_session/attachments/mod.rs` (C1).
@@ -97,6 +107,8 @@ there is no codex unit C4.
 - Done: `cargo build` passes.
 
 ## C7-C10 wire fixtures (wave 3, one forward per file)
+
+- Model: `--model gpt-6.1-terra --effort high`.
 
 - C7 owns `web/src/plan/api/fixtures/chat-snapshot.json`; C8 `chat-deltas.json`; C9
   `chat-commands.json`; C10 `chat-frames.json`.
@@ -113,6 +125,8 @@ there is no codex unit C4.
 
 ## C11 usage (wave 3)
 
+- Model: `--model gpt-6.1-sol --effort high`.
+
 - Owns: `loom/src/plan_session/transcript/usage.rs`.
 - Reads: `loom/src/plan_session/model/mod.rs` (C2: `TokenCounts`), `loom/src/provider_data/claude.rs`
   (`parse`, `invalid_usage`, both `pub(crate)`).
@@ -124,6 +138,8 @@ there is no codex unit C4.
 
 ## C12 wire parity tests (wave 4)
 
+- Model: `--model gpt-6.1-terra --effort high`.
+
 - Owns: `loom/src/plan_server/wire/tests_chat.rs`.
 - Reads: `loom/src/plan_server/wire/tests.rs` (plan 2, the pattern), C6 and C7-C10 (this stage).
 - Steps: 1. per fixture `<name>_fixture_matches_serde_output` (`include_str!` the fixture,
@@ -133,6 +149,8 @@ there is no codex unit C4.
 - Done: `cargo test --lib plan_server::wire::tests_chat` passes.
 
 ## C13 model tests (wave 4)
+
+- Model: `--model gpt-6.1-terra --effort high`.
 
 - Owns: `loom/src/plan_session/model/tests.rs`.
 - Steps: 1. serde round trips for each type with a hand-built value; 2. `Item` tag values and
