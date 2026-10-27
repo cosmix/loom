@@ -10,13 +10,13 @@
 use std::net::{SocketAddr, TcpStream};
 use std::path::Path;
 
-use crate::commands::status::web::access::{AccessPolicy, OriginRequirement};
-use crate::commands::status::web::connection::respond;
-use crate::commands::status::web::http::RequestHead;
 use crate::commands::status::web::TerminalLane;
 use crate::fs::work_dir::WorkDir;
 use crate::orchestrator::terminal::tmux::read_history;
 use crate::validation::validate_id;
+use crate::web_server::access::{AccessPolicy, OriginRequirement};
+use crate::web_server::connection::respond;
+use crate::web_server::http::RequestHead;
 
 /// Path prefix of the history route.
 pub(in crate::commands::status::web) const ROUTE_PREFIX: &str = "/api/terminal-history/";

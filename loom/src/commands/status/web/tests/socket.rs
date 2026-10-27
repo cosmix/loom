@@ -15,13 +15,14 @@ use super::{
     assert_security_headers, body, request, skip_without_loopback, start, stop, workspace,
 };
 use crate::commands::status::web::broadcast::Broadcaster;
-use crate::commands::status::web::http;
-use crate::commands::status::web::limits::MAX_CONNECTIONS;
 use crate::commands::status::web::model::{DaemonState, SnapshotSource, WebSnapshot};
-use crate::commands::status::web::ws::handle_with_keepalive;
+use crate::commands::status::web::MAX_INBOUND_BYTES;
 use crate::fs::work_dir::WorkDir;
 use crate::models::stage::Stage;
 use crate::verify::transitions::create_stage;
+use crate::web_server::http;
+use crate::web_server::limits::{Limits, MAX_CONNECTIONS};
+use crate::web_server::ws::handle_with_keepalive;
 
 fn split_request(port: u16, first: &str, headers: &str) -> TcpStream {
     let mut stream = TcpStream::connect(("127.0.0.1", port)).expect("connect split request");
@@ -375,7 +376,13 @@ fn websocket_resends_the_last_frame_after_the_keepalive() {
     let flag = running.clone();
     let server = thread::spawn(move || {
         let (stream, _) = listener.accept().expect("accept client");
-        handle_with_keepalive(stream, rx, &flag, Duration::from_millis(300));
+        handle_with_keepalive(
+            stream,
+            rx,
+            &flag,
+            Duration::from_millis(300),
+            &Limits::new(MAX_INBOUND_BYTES),
+        );
     });
     let mut socket = connect_websocket(port);
     tx.send(Arc::new("{\"frame\":1}".to_owned()))

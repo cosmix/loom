@@ -4,8 +4,8 @@
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 
 use super::{AccessPolicy, OriginRequirement};
-use crate::commands::status::web::http::RequestHead;
 use crate::commands::status::web::ServeOptions;
+use crate::web_server::http::RequestHead;
 
 const REMOTE_TOKEN: &str = "b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0";
 

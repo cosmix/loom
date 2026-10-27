@@ -4,8 +4,8 @@ use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, TcpListener};
 
 use super::skip_without_loopback;
-use crate::commands::status::web::listener::{bind_first_available_port, bind_listener};
-use crate::commands::status::web::DEFAULT_PORT;
+use crate::commands::status::web::{bind_listener, DEFAULT_PORT};
+use crate::web_server::listener::bind_first_available_port;
 
 const LOOPBACK: IpAddr = IpAddr::V4(Ipv4Addr::LOCALHOST);
 

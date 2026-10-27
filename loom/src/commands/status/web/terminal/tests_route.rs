@@ -3,13 +3,13 @@
 use chrono::{DateTime, Duration, Utc};
 
 use crate::models::session::{Session, SessionBackendKind, SessionStatus};
+use crate::web_server::token;
 
 use super::protocol::{
     CLOSE_ENDED, CLOSE_NOT_YET, CLOSE_REFUSED, CLOSE_SERVER_STOPPING, CLOSE_TOO_LARGE,
     CLOSE_UNKNOWN_STAGE,
 };
 use super::resolve::{attach_args, resolve, Refusal, Target};
-use super::token;
 use super::upgrade::origin_matches_host;
 use super::Mode;
 

@@ -1,40 +1,38 @@
-//! One process-wide authentication token, minted whenever the dashboard
-//! either binds off loopback or opts into browser terminals, and the cookie
-//! bootstrap that exchanges a query token for it.
+//! One process-wide authentication token and the cookie bootstrap that
+//! exchanges a query token for it.
 //!
-//! [`super::TerminalLane`] mints and checks its own copy of this same shape
-//! for the terminal WebSocket lane; [`Auth`] backs the dashboard-wide
-//! equivalent that remote mode requires on `/api/config` writes. Viewing
-//! routes never ask for either. The two
+//! The dashboard mints the token whenever it either binds off loopback or opts
+//! into browser terminals; its terminal lane checks its own copy of this same
+//! shape, and [`Auth`] backs the server-wide equivalent that a remote policy
+//! requires on writes. Viewing routes never ask for either. The two dashboard
 //! cookies carry the same name and, whenever both exist, the same value -
-//! `ServeOptions` requires `terminal_token` and `dashboard_token` to agree -
-//! so a browser holding either has effectively satisfied both.
+//! `resolve_process_token` requires the two configured tokens to agree - so a
+//! browser holding either has effectively satisfied both.
 
 use anyhow::{ensure, Result};
 
-use super::terminal::token;
+use super::token;
 
-/// A minted 64-lowercase-hex-character process token, port-scoped into a
-/// cookie name so two dashboards on the same host never collide.
+/// A minted 64-lowercase-hex-character process token and the cookie that
+/// carries it, named by the server (the dashboard scopes it by port so two
+/// dashboards on the same host never collide).
 #[derive(Debug, Clone)]
-pub(super) struct Auth {
+pub struct Auth {
     token: String,
     cookie_name: String,
 }
 
 impl Auth {
-    pub(super) fn new(token: String, port: u16) -> Self {
-        Self {
-            cookie_name: token::cookie_name(port),
-            token,
-        }
+    /// Authenticate with `token`, carried in the cookie `cookie_name`.
+    pub fn new(token: String, cookie_name: String) -> Self {
+        Self { token, cookie_name }
     }
 
     /// Exchange a query-string token for the port cookie, or refuse it.
     ///
     /// `None` when the query carries no `token` at all - the caller's cue
     /// that this is not a bootstrap request, not a refusal of one.
-    pub(super) fn bootstrap_cookie(&self, query: Option<&str>) -> Option<Option<String>> {
+    pub(crate) fn bootstrap_cookie(&self, query: Option<&str>) -> Option<Option<String>> {
         let presented = token::query_token(query)?;
         Some(token::matches(Some(presented), &self.token).then(|| {
             format!(
@@ -44,7 +42,7 @@ impl Auth {
         }))
     }
 
-    pub(super) fn cookie_matches(&self, cookie: Option<&str>) -> bool {
+    pub(crate) fn cookie_matches(&self, cookie: Option<&str>) -> bool {
         token::matches(token::cookie_token(cookie, &self.cookie_name), &self.token)
     }
 }
@@ -63,14 +61,14 @@ fn validate_token_format(token: &str) -> Result<()> {
     Ok(())
 }
 
-/// Resolve one process token from the two `ServeOptions` fields, requiring
-/// agreement when both are present and validating whichever is used.
+/// Resolve one process token from the dashboard's two `ServeOptions` fields,
+/// requiring agreement when both are present and validating whichever is used.
 ///
 /// Neither field is trusted merely because it is `Some`: a caller that
-/// constructs `ServeOptions` directly - a test fixture, or a future public
-/// caller of [`super::serve`] - gets the same format check a minted token
-/// already satisfies by construction.
-pub(super) fn resolve_process_token(
+/// constructs `ServeOptions` directly - a test fixture, or a public caller of
+/// the dashboard's `serve` - gets the same format check a minted token already
+/// satisfies by construction.
+pub(crate) fn resolve_process_token(
     dashboard_token: Option<&str>,
     terminal_token: Option<&str>,
 ) -> Result<Option<String>> {
@@ -132,7 +130,7 @@ mod tests {
     #[test]
     fn auth_bootstrap_cookie_matches_and_mismatches() {
         let token = "a".repeat(64);
-        let auth = Auth::new(token.clone(), 7373);
+        let auth = Auth::new(token.clone(), token::cookie_name(7373));
         assert_eq!(auth.bootstrap_cookie(None), None);
         assert_eq!(auth.bootstrap_cookie(Some("token=wrong")), Some(None));
         let cookie = auth
