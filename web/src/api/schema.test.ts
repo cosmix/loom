@@ -320,13 +320,7 @@ describe("snapshot schema", () => {
   });
 
   it("requires every attention entry to carry the block facts", () => {
-    for (const field of [
-      "reason",
-      "acceptance",
-      "failing_criteria",
-      "disputes",
-      "terminal_history",
-    ]) {
+    for (const field of ["reason", "acceptance", "failing_criteria", "terminal_history"]) {
       const without = structuredClone(fixtureJson) as {
         attention: Array<Record<string, unknown>>;
       };
@@ -346,7 +340,6 @@ describe("snapshot schema", () => {
     const malformed = structuredClone(fixtureJson);
     stages(malformed)[0].block_detail = {
       failing_criteria: [{ index: -1, command: "x", diagnostic: null }],
-      disputes: [],
     };
     expect(snapshotSchema.safeParse(malformed).success).toBe(false);
   });

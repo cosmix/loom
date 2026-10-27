@@ -11,6 +11,7 @@
 @import "./aurora-ui/feedback/busy-roundel.css";
 @import "./aurora-ui/feedback/hazard.css";
 @import "./graph.css";
+@import "./components/stage-report.css";
 @import "./header.css";
 @import "@xterm/xterm/css/xterm.css";
 @import "./components/terminal/terminal.css";

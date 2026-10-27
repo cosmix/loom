@@ -126,9 +126,11 @@ describe("stage modal terminal history", () => {
     expect(button.disabled).toBe(true);
   });
 
-  it("lists the acceptance criteria and the whole reason in the dialog", () => {
+  it("lists the acceptance criteria under details and the whole reason in now", () => {
     renderModal(blockedStage(), "/?stage=local-runtime");
 
+    expect(screen.queryByRole("region", { name: "acceptance criteria" })).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: /^details/ }));
     expect(screen.getByRole("region", { name: "acceptance criteria" })).toBeTruthy();
     expect(screen.getByText("what to do")).toBeTruthy();
     expect(screen.getByText(/Or allow AF_UNIX for this stage\./)).toBeTruthy();

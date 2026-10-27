@@ -1,0 +1,382 @@
+/*
+ * The stage report shared by the stage dialog and the stage page: the thread
+ * chips under the title, then the now card, the history spine and the folded
+ * details. Every colour is a token; `--tone` comes from the tone class on the
+ * card, the history row or the mark. Nothing here truncates: long text wraps
+ * anywhere, and long blocks scroll inside their own box.
+ */
+@layer components {
+  /* The thread as one row of chips: depends on, then feeds. */
+  .thread-chips {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 24px;
+  }
+  .thread-side {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 8px 12px;
+  }
+  .thread-chip {
+    display: inline-flex;
+    max-width: 100%;
+    min-height: 30px;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 2px 8px;
+    border-radius: 15px;
+    border: 1px solid var(--hairline);
+    background: var(--card);
+    padding: 4px 12px 4px 10px;
+    font-size: 13px;
+    text-align: left;
+    color: var(--foreground);
+    transition: background-color 150ms ease;
+  }
+  .thread-chip:hover:enabled,
+  .thread-chip:focus-visible {
+    outline: none;
+    background: color-mix(in oklch, var(--muted) 60%, var(--card));
+  }
+  .thread-chip:focus-visible {
+    box-shadow: 0 0 0 1.5px var(--ring);
+  }
+  .thread-chip:disabled {
+    color: var(--muted-foreground);
+  }
+  .thread-chip-arrow,
+  .thread-chip-go {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    color: var(--muted-foreground);
+  }
+  .thread-end {
+    display: inline-flex;
+    min-height: 30px;
+    align-items: center;
+    gap: 8px;
+    padding: 0 4px;
+    font-size: 13px;
+    color: var(--muted-foreground);
+  }
+  .thread-end-icon {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    color: var(--primary);
+  }
+  .thread-side:first-child .thread-end-icon {
+    color: var(--tone-completed);
+  }
+
+  /* Now: the stage's tone rings the card and tints its body. */
+  .ledger-card.now-card {
+    box-shadow:
+      0 0 0 1px color-mix(in oklch, var(--tone) 35%, var(--hairline)),
+      0 1px 2px color-mix(in oklch, var(--foreground) 5%, transparent);
+  }
+  .now-card .ledger-icon {
+    background: color-mix(in oklch, var(--tone) 16%, var(--card));
+  }
+  .now-card .ledger-head {
+    flex-wrap: wrap;
+    row-gap: 4px;
+  }
+  /* The attention label: the issue itself, in the entry's tone. */
+  .now-label {
+    display: inline-flex;
+    min-height: 18px;
+    max-width: 100%;
+    align-items: center;
+    border-radius: 999px;
+    background: var(--tone);
+    padding: 1px 8px;
+    font-size: 11px;
+    line-height: 16px;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    overflow-wrap: anywhere;
+    color: var(--card);
+  }
+  .now-since {
+    margin-left: auto;
+    font-size: 12px;
+    color: var(--muted-foreground);
+  }
+  .moment-day {
+    margin-right: 0.35em;
+  }
+  .now-body {
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    background: color-mix(in oklch, var(--tone) 3%, transparent);
+    padding: 14px 14px 16px;
+    font-size: 14px;
+  }
+  .attention-note {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    border-radius: 8px;
+    border: 1px solid var(--hairline);
+    background: var(--card);
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.55;
+  }
+  .attention-note-dot {
+    width: 8px;
+    height: 8px;
+    flex-shrink: 0;
+    margin-top: 6px;
+    border-radius: 999px;
+    background: var(--tone, var(--muted-foreground));
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--tone, var(--muted-foreground)) 25%, transparent);
+  }
+  .attention-steps {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .attention-step {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    align-items: start;
+    gap: 10px;
+  }
+  .earlier-issues {
+    display: inline-flex;
+    width: fit-content;
+    max-width: 100%;
+    align-items: center;
+    gap: 6px;
+    font-size: 12px;
+    line-height: 16px;
+    font-weight: 500;
+    color: var(--foreground);
+  }
+  .earlier-issues:hover {
+    text-decoration: underline;
+  }
+
+  /* Long untrusted text: whole, scrolling inside its box past 288px. */
+  .text-box {
+    max-height: 288px;
+    overflow: auto;
+    border-radius: 8px;
+    border: 1px solid var(--hairline);
+    background: var(--background);
+  }
+  .text-box:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
+  .text-box-lines {
+    margin: 0;
+    padding: 10px;
+    font-size: 12px;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+    color: var(--foreground);
+  }
+  .text-box-prose {
+    padding: 10px 12px;
+    font-size: 13px;
+    line-height: 1.55;
+    overflow-wrap: anywhere;
+  }
+
+  /* History: a mono time column, a spine with a dot per event, the entry. On
+   * phones the time moves above the entry, beside the spine. */
+  .history-list {
+    padding: 16px 14px 6px;
+  }
+  .history-item {
+    display: grid;
+    grid-template-columns: 22px minmax(0, 1fr);
+    grid-template-areas:
+      "spine time"
+      "spine body";
+    column-gap: 10px;
+  }
+  @media (min-width: 40rem) {
+    .history-item {
+      grid-template-columns: 80px 22px minmax(0, 1fr);
+      grid-template-areas: "time spine body";
+    }
+    /* The day stacks over the clock in the time column. */
+    .history-time .moment-day {
+      display: block;
+      margin-right: 0;
+    }
+  }
+  .history-time {
+    grid-area: time;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    line-height: 20px;
+    white-space: nowrap;
+    color: var(--muted-foreground);
+  }
+  .history-spine {
+    grid-area: spine;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .history-dot {
+    width: 10px;
+    height: 10px;
+    flex-shrink: 0;
+    margin-top: 5px;
+    border-radius: 999px;
+    border: 2px solid var(--tone);
+  }
+  .history-item[data-loud] .history-dot {
+    background: var(--tone);
+  }
+  .history-item[data-mark="current"] .history-dot {
+    box-shadow: 0 0 0 4px color-mix(in oklch, var(--tone) 18%, transparent);
+  }
+  .history-line {
+    width: 1px;
+    flex: 1;
+    margin-top: 4px;
+    background: var(--hairline);
+  }
+  .history-body {
+    grid-area: body;
+    display: flex;
+    min-width: 0;
+    flex-direction: column;
+    gap: 4px;
+    padding-bottom: 10px;
+  }
+  .history-item[data-loud] .history-body {
+    gap: 10px;
+    padding-bottom: 18px;
+  }
+  .history-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 10px;
+  }
+  .history-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    font-size: 11px;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--tone);
+  }
+  .history-title {
+    min-width: 0;
+    font-size: 13px;
+    line-height: 20px;
+    overflow-wrap: anywhere;
+    color: var(--foreground);
+  }
+  .history-item[data-loud] .history-title {
+    font-size: 14px;
+    font-weight: 500;
+  }
+  .history-mark {
+    display: inline-flex;
+    height: 18px;
+    align-items: center;
+    border-radius: 999px;
+    border: 1px solid color-mix(in oklch, var(--tone) 45%, transparent);
+    background: color-mix(in oklch, var(--tone) 10%, transparent);
+    padding: 0 7px;
+    font-size: 11px;
+    font-weight: 500;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+    color: var(--tone);
+  }
+  .history-item[data-mark="current"] .history-mark {
+    border-color: var(--tone);
+    background: var(--tone);
+    font-weight: 600;
+    color: var(--card);
+  }
+  .history-foot {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    border-top: 1px solid var(--hairline);
+    padding: 10px 14px;
+  }
+
+  /* Details: one folded card listing a few facts on its face. */
+  .ledger-card.details-toggle {
+    width: 100%;
+    flex-direction: row;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 14px;
+    text-align: left;
+    color: var(--foreground);
+    transition: background-color 150ms ease;
+  }
+  .ledger-card.details-toggle:hover,
+  .ledger-card.details-toggle:focus-visible {
+    outline: none;
+    background: color-mix(in oklch, var(--muted) 45%, var(--card));
+  }
+  .ledger-card.details-toggle:focus-visible {
+    box-shadow:
+      0 0 0 1.5px var(--ring),
+      0 1px 2px color-mix(in oklch, var(--foreground) 5%, transparent);
+  }
+  .details-facts {
+    display: flex;
+    min-width: 0;
+    flex-wrap: wrap;
+    gap: 6px 16px;
+  }
+  .details-fact {
+    display: inline-flex;
+    min-width: 0;
+    align-items: baseline;
+    gap: 6px;
+  }
+  .details-chevron {
+    width: 14px;
+    height: 14px;
+    flex-shrink: 0;
+    margin-left: auto;
+    color: var(--muted-foreground);
+    transition: rotate 150ms ease;
+  }
+  .details-toggle[aria-expanded="true"] .details-chevron {
+    rotate: 90deg;
+  }
+
+  /* The hazard strip's detail beside the label wraps instead of being cut; its
+   * slot is let shrink with the kit's `actionClassName`. */
+  .attention-detail {
+    text-align: right;
+    overflow-wrap: anywhere;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .details-chevron,
+  .thread-chip {
+    transition: none;
+  }
+}

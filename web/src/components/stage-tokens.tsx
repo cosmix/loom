@@ -85,7 +85,7 @@ function LaneIdentity({ agent }: { agent: AgentFlow }) {
           data-state={state}
           className={`size-2 shrink-0 rounded-full bg-(--tone) ${agent.active ? "tone-completed dot-live" : "tone-dimmed"}`}
         />
-        <span className="truncate" title={label}>
+        <span className="min-w-0 wrap-anywhere" title={label}>
           {label}
         </span>
         {agent.kind === "codex" && (
@@ -97,7 +97,7 @@ function LaneIdentity({ agent }: { agent: AgentFlow }) {
       <span className="flex min-w-0 items-baseline font-mono text-[11px] text-muted-foreground">
         <span className="shrink-0">{agent.model ?? "unknown model"}</span>
         <span className="shrink-0 whitespace-pre"> · </span>
-        <span className="min-w-0 truncate" title={agent.id}>
+        <span className="min-w-0 wrap-anywhere" title={agent.id}>
           {agent.id}
         </span>
       </span>

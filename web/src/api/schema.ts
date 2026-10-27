@@ -87,20 +87,24 @@ export const failingCriterionSchema = z.object({
   command: z.string(),
   diagnostic: z.string().nullable(),
 });
-export const disputeOpSchema = z.object({
-  op: z.string(),
-  index: z.number().int().nonnegative().nullable(),
-});
-export const disputeLineSchema = z.object({
-  id: z.number().int(),
-  kind: z.string(),
-  verdict: z.string().nullable(),
-  field: z.string().nullable(),
-  ops: z.array(disputeOpSchema),
-});
+export const issueKindSchema = z.enum(["failure", "review", "merge-conflict", "adjudication"]);
+// One issue a stage moved past (`StageIssue` in loom/src/models/stage/issue_history.rs).
+// Every key is always present; text is whole, never cut.
+export const stageIssueSchema = z
+  .object({
+    kind: issueKindSchema,
+    failure_type: failureTypeSchema.nullable(),
+    detected_at: z.string().nullable(),
+    evidence: z.array(z.string()),
+    ended_at: z.string(),
+    ended_by: z.string(),
+    dispute_id: z.number().int().nonnegative().nullable(),
+  })
+  .strict();
+// The dashboard reads the failing criteria from the attention entry; the stage
+// still carries them for the terminal renderers, and any other key is dropped.
 export const blockDetailSchema = z.object({
   failing_criteria: z.array(failingCriterionSchema),
-  disputes: z.array(disputeLineSchema),
 });
 export const stageSummarySchema = z
   .object({
@@ -149,6 +153,8 @@ export const stageSummarySchema = z
     acceptance: z.array(z.string()).optional(),
     terminal_history_session: z.string().optional(),
     block_detail: blockDetailSchema.optional(),
+    // Newest first by `ended_at`. The daemon always sends it; a fixture without it reads as empty.
+    history: z.array(stageIssueSchema).default([]),
   })
   .strict();
 export const mergeSummarySchema = z.object({
@@ -279,7 +285,6 @@ export const attentionSchema = z.object({
   reason: z.string().nullable(),
   acceptance: z.array(z.string()),
   failing_criteria: z.array(failingCriterionSchema),
-  disputes: z.array(disputeLineSchema),
   terminal_history: z.boolean(),
   cleanup_warning: z.string().nullable(),
   has_human_review_choices: z.boolean(),
@@ -336,7 +341,8 @@ export type StageStatus = z.infer<typeof stageStatusSchema>;
 export type StageSummary = z.infer<typeof stageSummarySchema>;
 export type StatusData = z.infer<typeof statusDataSchema>;
 export type FailingCriterion = z.infer<typeof failingCriterionSchema>;
-export type DisputeLine = z.infer<typeof disputeLineSchema>;
+export type IssueKind = z.infer<typeof issueKindSchema>;
+export type StageIssue = z.infer<typeof stageIssueSchema>;
 export type Attention = z.infer<typeof attentionSchema>;
 export type Alternative = z.infer<typeof alternativeSchema>;
 export type Alert = z.infer<typeof alertSchema>;

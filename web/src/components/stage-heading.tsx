@@ -4,8 +4,8 @@ import { ArrowDown, ArrowUp, ChevronRight, Flag, Sprout, type LucideIcon } from 
 
 import type { StageSummary } from "@/api/schema";
 import { ActivityRoundel } from "@/components/activity-roundel";
-import { LedgerCard, StageSummaryText } from "@/components/stage-detail";
-import { StateBadge, StateGlyph, toneClass } from "@/components/state-badge";
+import { StageSummaryText } from "@/components/stage-detail";
+import { StateBadge, toneClass } from "@/components/state-badge";
 import { activityText, mergeText, stateMeta, timeText } from "@/lib/format";
 import { dependentsOf } from "@/lib/graph";
 import { STAGE_STATES } from "@/lib/states";
@@ -39,9 +39,10 @@ export function StateLine({ stage, className }: { stage: StageSummary; className
   );
 }
 
-/// The stages on either side of this one along the thread: what it waits
-/// for, and what waits for it. Each chip hands its id to `pick`.
-export function ThreadRows({
+/// The stages on either side of this one along the thread, as one row of
+/// chips: what it waits for, and what waits for it. Each chip hands its id to
+/// `pick`; an empty side says why it is empty.
+export function ThreadChips({
   stage,
   pick,
   className,
@@ -53,74 +54,73 @@ export function ThreadRows({
   const stages = useAtomValue(snapshotAtom)?.status.stages ?? [];
   const feeds = dependentsOf(stages, stage.id).map((entry) => entry.id);
   if (stage.dependencies.length === 0 && feeds.length === 0) return null;
-  // Both sides show whenever either has a stage, so upstream stays on the
-  // left and downstream on the right; the empty side says why it is empty.
-  const panel = (
-    label: string,
-    ids: string[],
-    Arrow: LucideIcon,
-    empty: { icon: LucideIcon; title: string; detail: string },
-  ) => (
-    <LedgerCard
-      title={label}
-      icon={Arrow}
-      aside={<span className="ledger-count">{ids.length}</span>}
-    >
-      {ids.map((id) => {
-        const target = stages.find((entry) => entry.id === id);
-        return (
-          <button
-            key={id}
-            type="button"
-            className="thread-row"
-            title={target?.name}
-            onClick={() => pick(id)}
-            disabled={target === undefined}
-          >
-            {target ? (
-              <StateGlyph status={target.status} className="text-xs" />
-            ) : (
-              <span className="size-3" />
-            )}
-            <span className="flex min-w-0 flex-col">
-              <span className="truncate text-[13px] font-medium">{target?.name ?? id}</span>
-              <span className="font-mono text-[11.5px] text-muted-foreground">{id}</span>
-            </span>
-            {target && (
-              <span className={cn("text-xs", toneClass(stateMeta(target.status).tone))}>
-                {STAGE_STATES[target.status].label}
-              </span>
-            )}
-            <ChevronRight aria-hidden="true" className="thread-row-go" />
-          </button>
-        );
-      })}
+  const side = (label: string, ids: string[], Arrow: LucideIcon, empty: ThreadEnd) => (
+    <div className="thread-side" role="group" aria-label={label}>
+      <span className="eyebrow">{label}</span>
+      {ids.map((id) => (
+        <ThreadChip
+          key={id}
+          id={id}
+          target={stages.find((entry) => entry.id === id)}
+          arrow={Arrow}
+          pick={pick}
+        />
+      ))}
       {ids.length === 0 && (
-        <div className="thread-empty">
-          <span className="thread-empty-icon">
-            <empty.icon aria-hidden="true" className="size-4" />
-          </span>
-          <span className="flex min-w-0 flex-col">
-            <span className="text-[13px] font-medium">{empty.title}</span>
-            <span className="text-xs text-muted-foreground">{empty.detail}</span>
-          </span>
-        </div>
+        <span className="thread-end">
+          <empty.icon aria-hidden="true" className="thread-end-icon" />
+          {empty.text}
+        </span>
       )}
-    </LedgerCard>
+    </div>
   );
   return (
-    <div className={cn("thread-panels", className)}>
-      {panel("depends on", stage.dependencies, ArrowUp, {
+    <div className={cn("thread-chips", className)}>
+      {side("depends on", stage.dependencies, ArrowUp, {
         icon: Sprout,
-        title: "Start of the thread",
-        detail: "No dependencies, so this stage starts first.",
+        text: "Start of the thread: no dependencies, so this stage starts first",
       })}
-      {panel("feeds", feeds, ArrowDown, {
+      {side("feeds", feeds, ArrowDown, {
         icon: Flag,
-        title: "End of the thread",
-        detail: "Nothing waits on this stage.",
+        text: "End of the thread: nothing waits on this stage",
       })}
     </div>
+  );
+}
+
+interface ThreadEnd {
+  icon: LucideIcon;
+  text: string;
+}
+
+function ThreadChip({
+  id,
+  target,
+  arrow: Arrow,
+  pick,
+}: {
+  id: string;
+  target: StageSummary | undefined;
+  arrow: LucideIcon;
+  pick: (id: string) => void;
+}) {
+  return (
+    <button
+      type="button"
+      className="thread-chip"
+      onClick={() => pick(id)}
+      disabled={target === undefined}
+    >
+      <Arrow aria-hidden="true" className="thread-chip-arrow" />
+      <span className="font-medium wrap-anywhere">{target?.name ?? id}</span>
+      <span className="font-mono text-[11.5px] wrap-anywhere text-muted-foreground">{id}</span>
+      {target && (
+        <span className={cn("text-xs", toneClass(stateMeta(target.status).tone))}>
+          {STAGE_STATES[target.status].label}
+        </span>
+      )}
+      <ChevronRight aria-hidden="true" className="thread-chip-go" />
+    </button>
   );
 }
 

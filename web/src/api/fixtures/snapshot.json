@@ -22,6 +22,7 @@
         "context_ceiling_tokens": null,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": false,
@@ -58,6 +59,7 @@
         "context_ceiling_tokens": 800000,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": false,
@@ -102,6 +104,7 @@
         "context_ceiling_tokens": null,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": false,
@@ -138,6 +141,7 @@
         "context_ceiling_tokens": null,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": false,
@@ -174,6 +178,7 @@
         "context_ceiling_tokens": null,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": false,
@@ -212,6 +217,7 @@
         "context_ceiling_tokens": null,
         "review_reason": "acceptance criterion 3 disputed twice",
         "review_notes": "acceptance criterion 3 disputed twice",
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": true,
@@ -248,6 +254,7 @@
         "context_ceiling_tokens": null,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": false,
@@ -284,6 +291,7 @@
         "context_ceiling_tokens": null,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "merge_block": "the target branch moved while the merge was being prepared; it will be retried",
@@ -321,6 +329,7 @@
         "context_ceiling_tokens": null,
         "review_reason": null,
         "review_notes": null,
+        "history": [],
         "merged": false,
         "merge_assumed": false,
         "held": false,
@@ -350,27 +359,6 @@
               "index": 4,
               "command": "TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/db/src/ephemeral-services",
               "diagnostic": "FAILED [criterion 4]: stack:ephemeral cannot create AF_UNIX sockets"
-            }
-          ],
-          "disputes": [
-            {
-              "id": 1,
-              "kind": "integrity",
-              "verdict": "accept",
-              "field": null,
-              "ops": []
-            },
-            {
-              "id": 2,
-              "kind": "criterion",
-              "verdict": "accept",
-              "field": "acceptance",
-              "ops": [
-                {
-                  "op": "replace",
-                  "index": 3
-                }
-              ]
             }
           ]
         }
@@ -672,7 +660,6 @@
       "reason": null,
       "acceptance": [],
       "failing_criteria": [],
-      "disputes": [],
       "terminal_history": false
     },
     {
@@ -695,7 +682,6 @@
       "reason": null,
       "acceptance": [],
       "failing_criteria": [],
-      "disputes": [],
       "terminal_history": false
     },
     {
@@ -718,7 +704,6 @@
       "reason": "acceptance criterion 3 disputed twice",
       "acceptance": [],
       "failing_criteria": [],
-      "disputes": [],
       "terminal_history": false
     },
     {
@@ -741,7 +726,6 @@
       "reason": null,
       "acceptance": [],
       "failing_criteria": [],
-      "disputes": [],
       "terminal_history": false
     },
     {
@@ -787,27 +771,6 @@
           "index": 4,
           "command": "TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/db/src/ephemeral-services",
           "diagnostic": "FAILED [criterion 4]: stack:ephemeral cannot create AF_UNIX sockets"
-        }
-      ],
-      "disputes": [
-        {
-          "id": 1,
-          "kind": "integrity",
-          "verdict": "accept",
-          "field": null,
-          "ops": []
-        },
-        {
-          "id": 2,
-          "kind": "criterion",
-          "verdict": "accept",
-          "field": "acceptance",
-          "ops": [
-            {
-              "op": "replace",
-              "index": 3
-            }
-          ]
         }
       ],
       "terminal_history": true

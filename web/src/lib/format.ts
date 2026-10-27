@@ -395,6 +395,26 @@ export function formatClock(value: string | number | Date): string {
   return Number.isNaN(date.getTime()) ? "—" : CLOCK_FORMAT.format(date);
 }
 
+const DAY_FORMAT = new Intl.DateTimeFormat(undefined, { month: "short", day: "numeric" });
+
+const YEAR_DAY_FORMAT = new Intl.DateTimeFormat(undefined, {
+  year: "numeric",
+  month: "short",
+  day: "numeric",
+});
+
+/// The calendar day of `value` when it is not `now`'s: "Oct 27", with the
+/// year when that differs too. Null for today and for an unparseable input,
+/// so a time column shows the clock alone for today's events.
+export function formatDayUnlessToday(
+  value: string | number | Date,
+  now: Date = new Date(),
+): string | null {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime()) || date.toDateString() === now.toDateString()) return null;
+  return (date.getFullYear() === now.getFullYear() ? DAY_FORMAT : YEAR_DAY_FORMAT).format(date);
+}
+
 /// 24-hour date + time; "—" for an unparseable input.
 export function formatStamp(value: string | number | Date): string {
   const date = new Date(value);

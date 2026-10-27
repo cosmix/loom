@@ -133,6 +133,7 @@ describe("stage modal", () => {
     });
 
     renderModal(stage, `/?stage=${stage.id}`);
+    fireEvent.click(screen.getByRole("button", { name: /^details/ }));
 
     expect(screen.getAllByText(`completion blocked, writer unconfirmed: ${summary}`).length).toBe(
       1,
@@ -165,7 +166,7 @@ describe("stage modal", () => {
     const entry: Snapshot["attention"][number] = {
       id: stage.id,
       name: stage.name,
-      label: "NEEDS ADJUDICATION",
+      label: "ADJUDICATING",
       command: null,
       command_when: null,
       alternatives: [],
@@ -178,7 +179,6 @@ describe("stage modal", () => {
       reason: null,
       acceptance: [],
       failing_criteria: [],
-      disputes: [],
       terminal_history: false,
       cleanup_warning: null,
       has_human_review_choices: false,
@@ -189,6 +189,7 @@ describe("stage modal", () => {
 
     const counts = screen.getByText("2 disputed");
     expect(counts.className).not.toContain("truncate");
+    expect(counts.parentElement?.className.split(" ")).not.toContain("shrink-0");
     expect(counts.textContent).not.toContain("acceptance criterion");
     expect(screen.getByText(reason)).toBeTruthy();
     expect(screen.getAllByText(reason)).toHaveLength(1);
