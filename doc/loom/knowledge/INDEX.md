@@ -12,7 +12,7 @@
 | [entry-points.md](entry-points.md) | Key files agents should read first | 68 |
 | [patterns.md](patterns.md) | Architectural patterns discovered in the codebase | 186 |
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
-| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 158 |
+| [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 162 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
 | [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 231 |
 
@@ -179,6 +179,7 @@
 | [verification-harness](mistakes/verification-harness.md) | Harness | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 misses | 396 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) | Visibility | 141 |
+| [web-dashboard](mistakes/web-dashboard.md) | Dashboard UI mistakes: codex lane grouping and heat-strip alignment | 10 |
 | [web-dashboard-server](mistakes/web-dashboard-server.md) | Server races | 400 |
 | [writer-reader-address](mistakes/writer-reader-address.md) | Ignored keys | 105 |
 

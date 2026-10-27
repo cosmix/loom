@@ -156,3 +156,7 @@ A metaplan that denied the `Workflow` tool every ultracode stage runs on, a sibl
 ## Contract Autonomy Delivery
 
 A chain check that read attributes by position and refused by deny-list (a `cfg` bypass), recording-time verdict validation that skipped the apply's per-patch order, escaping names where only refusal fails closed, worker checks that missed shared-fixture consumers and the maintainability test, and a package-free fixture base: [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md).
+
+## Web Dashboard Layout
+
+Codex lanes were grouped all together instead of per forwarder/job pair, and a nested cluster frame narrowed its heat strips out of line with the plain lanes. Group on AgentFlow.forwarder, cancel a nested frame's border and padding, and measure strip x ranges in a real browser. → [Web Dashboard](mistakes/web-dashboard.md)
