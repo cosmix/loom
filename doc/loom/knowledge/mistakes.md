@@ -1,6 +1,6 @@
 # Mistakes & Lessons Learned
 
-> Mistakes and prevention rules
+> Mistakes and lessons
 >
 > **Format:** Describe what went wrong, why, and how to avoid it next time.
 >
