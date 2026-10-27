@@ -363,3 +363,24 @@ fn apply_cap_escalates_after_max_attempts_then_no_ops() {
     let final_state = crate::verify::transitions::load_stage("s1", work).unwrap();
     assert_eq!(final_state.status, StageStatus::NeedsHumanReview);
 }
+
+/// A relative `source_path` names a file under the project root, which is two
+/// levels above `.loom/work`. Resolving it against the work dir's parent
+/// looked under `.loom/` and refused every Accept verdict on a contract stage.
+#[test]
+fn a_relative_source_path_resolves_from_the_project_root() {
+    let tmp = tempfile::tempdir().unwrap();
+    let work = tmp.path().join(".loom/work");
+    std::fs::create_dir_all(&work).unwrap();
+    std::fs::write(
+        work.join("config.toml"),
+        "[plan]\nsource_path = \"doc/plans/PLAN-x.md\"\nplan_id = \"x\"\nplan_name = \"x\"\nbase_branch = \"main\"\n",
+    )
+    .unwrap();
+    let expected = tmp
+        .path()
+        .canonicalize()
+        .unwrap()
+        .join("doc/plans/PLAN-x.md");
+    assert_eq!(super::resolve_plan_path(&work), Some(expected));
+}
