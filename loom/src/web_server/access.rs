@@ -1,7 +1,7 @@
-//! The dashboard's access policy: which requests reach which routes.
+//! A server's access policy: which requests reach which routes.
 //!
-//! Resolved once from the listener's bound address before any connection is
-//! accepted ([`AccessPolicy::resolve`]), then threaded into every accepted
+//! Built once from the listener's bound address before any connection is
+//! accepted ([`AccessPolicy::new`]), then threaded into every accepted
 //! connection alongside that connection's own `local_addr` for `Host`
 //! validation - a wildcard bind's accepted local endpoint varies per client,
 //! even though the listener's own bind address never changes. Loopback mode
@@ -12,15 +12,12 @@
 
 use std::net::{IpAddr, Ipv6Addr, SocketAddr};
 
-use anyhow::{bail, Result};
-
-use super::auth::{self, Auth};
+use super::auth::Auth;
 use super::http::{self, RequestHead};
-use super::ServeOptions;
 
 /// Whether an `Origin` header may be absent on an otherwise-permitted route.
 #[derive(Clone, Copy, PartialEq, Eq)]
-pub(super) enum OriginRequirement {
+pub enum OriginRequirement {
     /// Ordinary navigation and asset `GET`/`HEAD`: a same-origin browser
     /// request carries no `Origin` at all.
     Optional,
@@ -28,53 +25,41 @@ pub(super) enum OriginRequirement {
     Required,
 }
 
-/// Immutable for the life of one server: resolved once from the listener's
+/// Immutable for the life of one server: built once from the listener's
 /// bound address and never re-derived per connection.
 #[derive(Debug, Clone)]
-pub(super) struct AccessPolicy {
+pub struct AccessPolicy {
     remote: bool,
-    dashboard_auth: Option<Auth>,
+    auth: Option<Auth>,
 }
 
 impl AccessPolicy {
-    /// Resolve the policy for a listener bound to `local_addr`, failing
-    /// closed when that bind is not loopback and carries no valid process
-    /// token - including when a caller reaches [`super::serve`] directly
-    /// with a wildcard listener and no token at all.
-    pub(super) fn resolve(local_addr: SocketAddr, options: &ServeOptions) -> Result<Self> {
-        let remote = !local_addr.ip().is_loopback();
-        let token = auth::resolve_process_token(
-            options.dashboard_token.as_deref(),
-            options.terminal_token.as_deref(),
-        )?;
-        if remote && token.is_none() {
-            bail!(
-                "refusing to serve {local_addr}: a non-loopback dashboard requires a process token"
-            );
+    /// The policy for a listener bound to `local_addr`. A non-loopback
+    /// (including wildcard) bind is remote; [`crate::web_server::serve`]
+    /// refuses to serve a remote policy without `auth`.
+    pub fn new(local_addr: SocketAddr, auth: Option<Auth>) -> Self {
+        Self {
+            remote: !local_addr.ip().is_loopback(),
+            auth,
         }
-        let dashboard_auth = token
-            .filter(|_| remote)
-            .map(|token| Auth::new(token, local_addr.port()));
-        Ok(Self {
-            remote,
-            dashboard_auth,
-        })
     }
 
-    pub(super) fn is_remote(&self) -> bool {
+    /// Whether the bind is not loopback, so the strict remote checks apply.
+    pub fn is_remote(&self) -> bool {
         self.remote
     }
 
-    pub(super) fn dashboard_auth(&self) -> Option<&Auth> {
-        self.dashboard_auth.as_ref()
+    /// The process token and cookie this server authenticates with, if any.
+    pub fn auth(&self) -> Option<&Auth> {
+        self.auth.as_ref()
     }
 
-    /// Whether this request carries the dashboard cookie a write route
-    /// requires in remote posture. Viewing routes never ask. Always true in
-    /// the default loopback posture, since that mode authenticates nothing
-    /// beyond `Host`/`Origin`.
-    pub(super) fn authenticated(&self, cookie: Option<&str>) -> bool {
-        match &self.dashboard_auth {
+    /// Whether this request carries the cookie a write route requires when
+    /// the policy holds an [`Auth`]. Viewing routes never ask. Always true
+    /// without one, as in the dashboard's default loopback posture, which
+    /// authenticates nothing beyond `Host`/`Origin`.
+    pub fn authenticated(&self, cookie: Option<&str>) -> bool {
+        match &self.auth {
             None => true,
             Some(auth) => auth.cookie_matches(cookie),
         }
@@ -82,7 +67,7 @@ impl AccessPolicy {
 
     /// Validate `Host` against `local`, the socket address this particular
     /// connection was actually accepted on.
-    pub(super) fn host_allowed(&self, local: SocketAddr, head: &RequestHead) -> bool {
+    pub fn host_allowed(&self, local: SocketAddr, head: &RequestHead) -> bool {
         if !self.remote {
             return http::host_allowed(head.host.as_deref());
         }
@@ -96,7 +81,7 @@ impl AccessPolicy {
 
     /// Validate `Origin` against `local`. `requirement` states whether an
     /// absent header is acceptable on this route.
-    pub(super) fn origin_allowed(
+    pub fn origin_allowed(
         &self,
         local: SocketAddr,
         head: &RequestHead,

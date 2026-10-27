@@ -16,13 +16,14 @@
 //! `--host` widens that bind. Any bind that is not loopback - a concrete
 //! remote address, or a wildcard (`0.0.0.0`/`::`) reachable from anywhere,
 //! even when a particular client happens to arrive over loopback - runs
-//! under `access::AccessPolicy`'s remote posture instead: viewing stays open
-//! to anyone who can reach the listener, `/api/config` writes additionally
-//! require a cookie minted from a process token printed once at startup,
-//! `Host` and `Origin` must name the connection's own accepted socket
-//! address exactly, and HTTP carries the token and every snapshot
-//! unencrypted. See `access` for the resolved policy and `auth` for the
-//! cookie/token mechanics it shares with the terminal lane below.
+//! under `web_server::access::AccessPolicy`'s remote posture instead:
+//! viewing stays open to anyone who can reach the listener, `/api/config`
+//! writes additionally require a cookie minted from a process token printed
+//! once at startup, `Host` and `Origin` must name the connection's own
+//! accepted socket address exactly, and HTTP carries the token and every
+//! snapshot unencrypted. See `web_server::access` for the resolved policy and
+//! `web_server::auth` for the cookie/token mechanics it shares with the
+//! terminal lane below.
 //!
 //! ## The write surface
 //!
@@ -32,7 +33,7 @@
 //! three deep:
 //!
 //! 1. **`Host`** - the DNS-rebinding (or, remotely, socket-identity) gate
-//!    `connection::handle` already applies to every request ahead of
+//!    `web_server::serve` already applies to every request ahead of
 //!    routing.
 //! 2. **`Origin`, strictly** - required rather than merely permitted, in
 //!    both postures. Absence is fine for a same-origin `GET`, which carries
@@ -45,9 +46,10 @@
 //! The third gate holds only because this server sends no CORS header
 //! anywhere: that is what stops a cross-site page reading the token out of the
 //! `GET` or setting the header on a `POST`. Adding one would defeat it.
-//! Request bodies are capped at `http::MAX_BODY_BYTES`, and no response
-//! anywhere names an absolute path - a failure that would is logged and served
-//! generically, because every local process can read this server by default.
+//! Request bodies are capped at `web_server::http::MAX_BODY_BYTES`, and no
+//! response anywhere names an absolute path - a failure that would is logged
+//! and served generically, because every local process can read this server
+//! by default.
 //!
 //! What the write surface does NOT do is raise the read posture above: a local
 //! process that could already read the ledger can now also change loom's
@@ -71,43 +73,51 @@
 //! dashboard's cookie alone never grants terminal capability: that still
 //! derives only from `--terminals`.
 
-mod access;
-mod assets;
-mod auth;
-mod bootstrap;
 mod broadcast;
 mod config_api;
 mod connection;
-mod head;
-mod http;
-mod interfaces;
-mod limits;
-mod listener;
 pub mod model;
+mod router;
 #[cfg(test)]
 mod schema_parity;
+mod startup;
 mod terminal;
 #[cfg(test)]
 mod tests;
-mod unserved;
-mod ws;
 
 use std::net::{IpAddr, SocketAddr, TcpListener};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use std::thread;
-use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::{bail, Context, Result};
 
 use crate::fs::tmux_tmpdir::{adopt_recorded_tmux_tmpdir, TmuxTmpdirAdoption};
 use crate::fs::work_dir::WorkDir;
+use crate::web_server::access::AccessPolicy;
+use crate::web_server::auth::{self, Auth};
+use crate::web_server::limits::Limits;
+use crate::web_server::{self, assets, listener, token, ServeConfig};
 
-use access::AccessPolicy;
+use router::DashboardRouter;
+pub use startup::startup_lines;
 
 /// First port considered by `loom status --web` without a value.
 pub const DEFAULT_PORT: u16 = 7373;
+
+/// Largest inbound message and frame accepted from a browser on either
+/// WebSocket lane.
+///
+/// The dashboard snapshot socket discards every message the client sends, so
+/// nothing there ever needs to buffer one; the terminal socket stages
+/// keystrokes, which stay far under this bound. Both configure it as their
+/// `max_message_size` and `max_frame_size` so tungstenite's 64 MiB / 16 MiB
+/// defaults cannot let a local client make a connection thread hold that
+/// much for nothing.
+pub(super) const MAX_INBOUND_BYTES: usize = 64 * 1024;
+
+/// Name of every dashboard connection thread.
+const CONNECTION_THREAD: &str = "loom-dashboard-conn";
 
 /// What `loom status --web` was started with.
 #[derive(Debug, Clone, Default)]
@@ -135,7 +145,7 @@ pub(super) fn cookie_name_for_port(port: u16) -> String {
 pub fn execute(port: Option<u16>, terminals: bool, host: IpAddr) -> Result<()> {
     let work_dir = WorkDir::new(".")?;
     work_dir.load()?;
-    let listener = listener::bind_listener(host, port)?;
+    let listener = bind_listener(host, port)?;
     let local = listener.local_addr()?;
     let remote = !local.ip().is_loopback();
     let process_token = (remote || terminals).then(auth_token).transpose()?;
@@ -149,7 +159,7 @@ pub fn execute(port: Option<u16>, terminals: bool, host: IpAddr) -> Result<()> {
     if terminals {
         log_adoption(adopt_for(&work_dir));
     }
-    print_startup(local, remote, terminals, process_token.as_deref());
+    startup::print_startup(local, remote, terminals, process_token.as_deref());
     if assets::WEB_ASSETS.is_empty() {
         eprintln!(
             "warning: dashboard assets are not embedded in this binary; run `cd web && bun install && bun run build`, then rebuild loom"
@@ -171,79 +181,14 @@ pub fn execute(port: Option<u16>, terminals: bool, host: IpAddr) -> Result<()> {
     )
 }
 
+/// Bind an explicit port exactly on `host`, or the first available port from
+/// [`DEFAULT_PORT`].
+fn bind_listener(host: IpAddr, port: Option<u16>) -> Result<TcpListener> {
+    listener::bind_listener(host, port, DEFAULT_PORT)
+}
+
 fn auth_token() -> Result<String> {
-    terminal::token::mint().context("failed to mint a dashboard process token")
-}
-
-/// Print the URL an operator should open, and the remote-mode caveats.
-fn print_startup(local: SocketAddr, remote: bool, terminals: bool, token: Option<&str>) {
-    if !remote {
-        match token {
-            Some(token) if terminals => println!(
-                "loom dashboard: http://{local}/?token={token}  (terminals enabled; Ctrl-C to stop)"
-            ),
-            _ => println!("loom dashboard: http://{local}/  (Ctrl-C to stop)"),
-        }
-        return;
-    }
-    if local.ip().is_unspecified() {
-        print_startup_wildcard(local, terminals, token);
-    } else {
-        print_startup_concrete(local, terminals, token);
-    }
-}
-
-/// A wildcard bind's own address names no reachable interface, so advertise
-/// every configured address in the same IP family.
-fn print_startup_wildcard(local: SocketAddr, terminals: bool, token: Option<&str>) {
-    let token = token.unwrap_or_default();
-    let note = if terminals { "; terminals enabled" } else { "" };
-    println!("loom dashboard listening on {local} (remote access enabled{note})");
-    for line in wildcard_bootstrap_lines(
-        local.port(),
-        token,
-        interfaces::matching_addresses(local.ip()),
-    ) {
-        println!("{line}");
-    }
-    print_remote_warning(terminals);
-}
-
-fn wildcard_bootstrap_lines(
-    port: u16,
-    token: &str,
-    addresses: impl IntoIterator<Item = IpAddr>,
-) -> Vec<String> {
-    addresses
-        .into_iter()
-        .map(|ip| {
-            let location = if ip.is_loopback() {
-                "this machine"
-            } else {
-                "another machine"
-            };
-            let endpoint = SocketAddr::new(ip, port);
-            format!("  bootstrap from {location} at: http://{endpoint}/?token={token}")
-        })
-        .collect()
-}
-
-/// A concrete non-loopback bind's own address is directly reachable, and the
-/// listener is not reachable on 127.0.0.1 - so the printed URL is the real one
-/// rather than a placeholder plus a loopback fallback.
-fn print_startup_concrete(local: SocketAddr, terminals: bool, token: Option<&str>) {
-    let token = token.unwrap_or_default();
-    let note = if terminals { "; terminals enabled" } else { "" };
-    println!("loom dashboard listening on {local} (remote access enabled{note})");
-    println!("  bootstrap from another machine at: http://{local}/?token={token}");
-    print_remote_warning(terminals);
-}
-
-/// Viewing a remote dashboard needs no token; the token grants the writes.
-fn print_remote_warning(terminals: bool) {
-    let terminal = if terminals { " and terminal" } else { "" };
-    println!("  warning: plain HTTP; anyone who can reach this address can view the dashboard, and the token above grants settings{terminal} access to anyone who has it");
-    println!("  (Ctrl-C to stop)");
+    token::mint().context("failed to mint a dashboard process token")
 }
 
 /// Adopt the live daemon's tmux directory for terminal attachments only.
@@ -286,7 +231,8 @@ pub fn serve(
     running: Arc<AtomicBool>,
     options: ServeOptions,
 ) -> Result<()> {
-    serve_with(listener, base, running, options, limits::Limits::new())
+    let limits = Limits::new(MAX_INBOUND_BYTES);
+    serve_with(listener, base, running, options, limits)
 }
 
 fn serve_with(
@@ -294,59 +240,43 @@ fn serve_with(
     base: PathBuf,
     running: Arc<AtomicBool>,
     options: ServeOptions,
-    limits: Arc<limits::Limits>,
+    limits: Arc<Limits>,
 ) -> Result<()> {
-    let policy = Arc::new(AccessPolicy::resolve(listener.local_addr()?, &options)?);
-    listener.set_nonblocking(true)?;
-    let lane = terminal_lane(&listener, &options)?;
-    let broadcaster = broadcast::Broadcaster::spawn(base.clone(), running.clone(), lane.is_some());
-    while running.load(Ordering::SeqCst) {
-        accept_connection(
-            &listener,
-            &broadcaster,
-            &base,
-            &running,
-            &limits,
-            &lane,
-            &policy,
-        );
-    }
-    drain_connections(&limits);
-    Ok(())
-}
-
-#[allow(clippy::too_many_arguments)]
-fn accept_connection(
-    listener: &TcpListener,
-    broadcaster: &broadcast::Broadcaster,
-    base: &std::path::Path,
-    running: &Arc<AtomicBool>,
-    limits: &Arc<limits::Limits>,
-    lane: &Option<TerminalLane>,
-    policy: &Arc<AccessPolicy>,
-) {
-    match listener.accept() {
-        Ok((stream, _)) => {
-            unserved::spawn_connection(stream, broadcaster, base, running, limits, lane, policy)
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
-            thread::sleep(Duration::from_millis(50));
-        }
-        Err(error) => tracing::warn!("dashboard accept failed: {error}"),
-    }
-}
-
-fn terminal_lane(listener: &TcpListener, options: &ServeOptions) -> Result<Option<TerminalLane>> {
-    let port = listener.local_addr()?.port();
-    Ok(options
+    let local = listener.local_addr()?;
+    let policy = AccessPolicy::resolve(local, &options)?;
+    let lane = options
         .terminal_token
-        .as_ref()
-        .map(|token| TerminalLane::from_token(token.clone(), port)))
+        .map(|token| TerminalLane::from_token(token, local.port()));
+    let broadcaster = broadcast::Broadcaster::spawn(base.clone(), running.clone(), lane.is_some());
+    let router = Arc::new(DashboardRouter::new(broadcaster, base, lane));
+    let config = ServeConfig {
+        policy,
+        limits,
+        thread_name: CONNECTION_THREAD,
+    };
+    web_server::serve(listener, router, running, config)
 }
 
-fn drain_connections(limits: &limits::Limits) {
-    let deadline = std::time::Instant::now() + Duration::from_secs(3);
-    while limits.connection_count() != 0 && std::time::Instant::now() < deadline {
-        thread::sleep(Duration::from_millis(50));
+impl AccessPolicy {
+    /// Resolve the dashboard's policy for a listener bound to `local_addr`,
+    /// failing closed when that bind is not loopback and carries no valid
+    /// process token - including when a caller reaches [`serve`] directly
+    /// with a wildcard listener and no token at all. Only a remote bind
+    /// authenticates with the dashboard cookie.
+    pub(crate) fn resolve(local_addr: SocketAddr, options: &ServeOptions) -> Result<Self> {
+        let remote = !local_addr.ip().is_loopback();
+        let token = auth::resolve_process_token(
+            options.dashboard_token.as_deref(),
+            options.terminal_token.as_deref(),
+        )?;
+        if remote && token.is_none() {
+            bail!(
+                "refusing to serve {local_addr}: a non-loopback dashboard requires a process token"
+            );
+        }
+        let auth = token
+            .filter(|_| remote)
+            .map(|token| Auth::new(token, token::cookie_name(local_addr.port())));
+        Ok(Self::new(local_addr, auth))
     }
 }

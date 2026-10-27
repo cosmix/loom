@@ -1,4 +1,4 @@
-//! Lookup helpers for the dashboard bundle embedded by `build.rs`.
+//! Lookup helpers for the web bundle embedded by `build.rs`.
 
 /// A binary asset addressed relative to `web/dist`.
 pub type WebAsset = (&'static str, &'static [u8]);
@@ -13,6 +13,15 @@ pub fn lookup(path: &str) -> Option<(&'static [u8], &'static str)> {
         .iter()
         .find(|(asset_key, _)| *asset_key == key)
         .map(|(key, bytes)| (*bytes, mime_for(key)))
+}
+
+/// Return the embedded asset stored under exactly `name` (a key relative to
+/// `web/dist`, such as `"index.html"`), if the bundle carries it.
+pub fn page(name: &str) -> Option<&'static [u8]> {
+    WEB_ASSETS
+        .iter()
+        .find(|(asset_key, _)| *asset_key == name)
+        .map(|(_, bytes)| *bytes)
 }
 
 /// Return the SPA entry page if the bundle is embedded.

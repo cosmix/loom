@@ -15,6 +15,7 @@ use crate::commands::status::data::{collect_status_data, StatusData};
 use crate::commands::status::ui::tui::daemon_client;
 use crate::daemon::{read_message, Response};
 use crate::fs::work_dir::WorkDir;
+use crate::web_server::hub::Hub;
 
 use super::model::{collect_snapshot, SnapshotSource, WebSnapshot};
 
@@ -38,16 +39,12 @@ pub struct Broadcaster {
     inner: Arc<Inner>,
 }
 
-/// Lock order, taken by both [`Broadcaster::publish`] and
-/// [`Broadcaster::subscribe`]: `last_body`, then `subscribers`, then `latest`.
-/// Registering a subscriber reads `latest` while holding `subscribers`, so a
-/// concurrent `publish` cannot slip a frame past a half-registered client —
-/// which would otherwise strand it on a stale snapshot for as long as the tree
-/// stayed unchanged, because `publish` suppresses unchanged frames.
+/// Lock order, taken by [`Broadcaster::publish`]: `last_body`, then the
+/// hub's own locks. Holding `last_body` across the hub publish keeps two
+/// producers from interleaving a suppressed frame with a delivered one.
 struct Inner {
-    latest: Mutex<Option<Arc<String>>>,
     last_body: Mutex<Option<String>>,
-    subscribers: Mutex<Vec<mpsc::SyncSender<Arc<String>>>>,
+    hub: Hub,
     terminals: bool,
 }
 
@@ -75,26 +72,12 @@ impl Broadcaster {
 
     /// Queue the most recent frame, if any, for a newly-connected client.
     pub fn subscribe(&self) -> mpsc::Receiver<Arc<String>> {
-        let (sender, receiver) = mpsc::sync_channel(SUBSCRIBER_QUEUE_DEPTH);
-        let mut subscribers = self
-            .inner
-            .subscribers
-            .lock()
-            .expect("dashboard subscribers poisoned");
-        if let Some(frame) = self.latest() {
-            let _ = sender.try_send(frame);
-        }
-        subscribers.push(sender);
-        receiver
+        self.inner.hub.subscribe()
     }
 
     /// Return the latest frame delivered to subscribers.
     pub fn latest(&self) -> Option<Arc<String>> {
-        self.inner
-            .latest
-            .lock()
-            .expect("dashboard latest frame poisoned")
-            .clone()
+        self.inner.hub.latest()
     }
 
     #[cfg(test)]
@@ -105,9 +88,8 @@ impl Broadcaster {
     fn with_terminals(terminals: bool) -> Self {
         Self {
             inner: Arc::new(Inner {
-                latest: Mutex::new(None),
                 last_body: Mutex::new(None),
-                subscribers: Mutex::new(Vec::new()),
+                hub: Hub::new(SUBSCRIBER_QUEUE_DEPTH),
                 terminals,
             }),
         }
@@ -117,6 +99,7 @@ impl Broadcaster {
         self.inner.terminals
     }
 
+    /// Deliver `json` unless its body, ignoring the timestamp, is unchanged.
     pub(super) fn publish(&self, json: String) {
         let body = body_without_timestamp(&json);
         let mut last_body = self
@@ -128,19 +111,7 @@ impl Broadcaster {
             return;
         }
         *last_body = Some(body);
-
-        let frame = Arc::new(json);
-        let mut subscribers = self
-            .inner
-            .subscribers
-            .lock()
-            .expect("dashboard subscribers poisoned");
-        *self
-            .inner
-            .latest
-            .lock()
-            .expect("dashboard latest frame poisoned") = Some(frame.clone());
-        subscribers.retain(|sender| sender.try_send(frame.clone()).is_ok());
+        self.inner.hub.publish(json);
     }
 }
 

@@ -14,15 +14,13 @@ use crate::orchestrator::terminal::tmux::viewer::is_plain_identifier;
 use super::bridge;
 use super::pty::PtyChild;
 use super::resolve::{self, attach_args, Refusal, Target};
-use super::token;
 use super::{Mode, WindowSize};
-use crate::commands::status::web::access::AccessPolicy;
-use crate::commands::status::web::connection::fail;
-use crate::commands::status::web::http::RequestHead;
-use crate::commands::status::web::limits::{
-    acquire_terminal_slot, Limits, Slot, MAX_INBOUND_BYTES,
-};
-use crate::commands::status::web::TerminalLane;
+use crate::commands::status::web::{TerminalLane, MAX_INBOUND_BYTES};
+use crate::web_server::access::AccessPolicy;
+use crate::web_server::connection::fail;
+use crate::web_server::http::RequestHead;
+use crate::web_server::limits::{acquire_terminal_slot, Limits, Slot};
+use crate::web_server::token;
 
 impl TerminalLane {
     pub(in crate::commands::status::web) fn from_token(token: String, port: u16) -> Self {
@@ -34,19 +32,6 @@ impl TerminalLane {
 
     pub(in crate::commands::status::web) fn cookie_name(port: u16) -> String {
         token::cookie_name(port)
-    }
-
-    pub(in crate::commands::status::web) fn bootstrap_cookie(
-        &self,
-        query: Option<&str>,
-    ) -> Option<Option<String>> {
-        let presented = token::query_token(query)?;
-        Some(token::matches(Some(presented), &self.token).then(|| {
-            format!(
-                "{}={presented}; Path=/; HttpOnly; SameSite=Strict",
-                self.cookie_name
-            )
-        }))
     }
 
     pub(in crate::commands::status::web) fn cookie_matches(&self, cookie: Option<&str>) -> bool {
@@ -91,7 +76,7 @@ fn admit<'a>(
     policy: &AccessPolicy,
     local: SocketAddr,
 ) -> Option<(&'a str, bool, Slot)> {
-    // Re-asserted here rather than trusted to the caller: `connection::handle`
+    // Re-asserted here rather than trusted to the caller: `web_server::serve`
     // checks this ahead of routing today, but `handle_upgrade` is
     // `pub(crate)` and this lane is a keystroke-injection surface, so the
     // gate belongs to the lane it guards rather than to whichever caller

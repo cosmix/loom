@@ -1,4 +1,5 @@
-//! Admission control for dashboard connection threads.
+//! Admission control for connection threads, and the inbound WebSocket size
+//! bound a server configures.
 
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -8,7 +9,7 @@ use std::sync::Arc;
 /// Each one costs a 16 KiB request-head buffer plus its stack, and nothing
 /// bounds how many clients a local process may open, so the accept loop turns
 /// clients away past this point instead of spawning without limit.
-pub(super) const MAX_CONNECTIONS: usize = 64;
+pub(crate) const MAX_CONNECTIONS: usize = 64;
 
 /// How many of [`MAX_CONNECTIONS`] may be WebSocket subscriptions at once.
 ///
@@ -19,25 +20,14 @@ pub(super) const MAX_CONNECTIONS: usize = 64;
 /// with a 503 whose explanation only ever reaches a client that already has
 /// the dashboard loaded. The difference between the two constants is the
 /// reserve that non-upgrade requests always draw on.
-pub(super) const MAX_WEBSOCKETS: usize = 48;
+pub(crate) const MAX_WEBSOCKETS: usize = 48;
 
 /// Browser terminals allowed in flight at once.
-pub(super) const MAX_TERMINALS: usize = 8;
+pub(crate) const MAX_TERMINALS: usize = 8;
 
-/// Largest inbound message and frame accepted from a browser on either
-/// WebSocket lane.
-///
-/// The dashboard snapshot socket discards every message the client sends, so
-/// nothing there ever needs to buffer one; the terminal socket stages
-/// keystrokes, which stay far under this bound. Both configure it as their
-/// `max_message_size` and `max_frame_size` so tungstenite's 64 MiB / 16 MiB
-/// defaults cannot let a local client make a connection thread hold that
-/// much for nothing.
-pub(super) const MAX_INBOUND_BYTES: usize = 64 * 1024;
-
-/// The two lanes a connection can occupy a slot in.
+/// The lanes a connection can occupy a slot in.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Lane {
+pub(crate) enum Lane {
     /// Held for the whole life of a connection thread, upgraded or not.
     Connection,
     /// Held additionally, for the life of the subscription, by `/ws`.
@@ -64,31 +54,48 @@ impl Lane {
     }
 }
 
-/// The server's live occupancy of both lanes, shared by every connection.
-#[derive(Debug, Default)]
-pub(super) struct Limits {
+/// The server's live occupancy of every lane, shared by every connection, and
+/// the largest inbound WebSocket message it accepts.
+#[derive(Debug)]
+pub struct Limits {
     connections: AtomicUsize,
     websockets: AtomicUsize,
     terminals: AtomicUsize,
+    max_inbound_bytes: usize,
 }
 
 impl Limits {
-    pub(super) fn new() -> Arc<Self> {
-        Arc::new(Self::default())
+    /// Empty lanes, with `max_inbound_bytes` as the largest inbound message
+    /// and frame a WebSocket lane accepts from a browser. Lanes configure it
+    /// as tungstenite's `max_message_size` and `max_frame_size`, so its
+    /// 64 MiB / 16 MiB defaults cannot let a client make a connection thread
+    /// hold that much for nothing.
+    pub fn new(max_inbound_bytes: usize) -> Arc<Self> {
+        Arc::new(Self {
+            connections: AtomicUsize::new(0),
+            websockets: AtomicUsize::new(0),
+            terminals: AtomicUsize::new(0),
+            max_inbound_bytes,
+        })
     }
 
-    pub(super) fn connection_count(&self) -> usize {
+    /// The largest inbound WebSocket message and frame, in bytes.
+    pub fn max_inbound_bytes(&self) -> usize {
+        self.max_inbound_bytes
+    }
+
+    pub(crate) fn connection_count(&self) -> usize {
         self.connections.load(Ordering::SeqCst)
     }
 
     #[cfg(test)]
-    pub(super) fn terminal_count(&self) -> usize {
+    pub(crate) fn terminal_count(&self) -> usize {
         self.terminals.load(Ordering::SeqCst)
     }
 }
 
 /// Reserve a terminal lane slot for a browser terminal.
-pub(super) fn acquire_terminal_slot(limits: &Arc<Limits>) -> Option<Slot> {
+pub(crate) fn acquire_terminal_slot(limits: &Arc<Limits>) -> Option<Slot> {
     Slot::acquire(limits, Lane::Terminal)
 }
 
@@ -96,7 +103,7 @@ pub(super) fn acquire_terminal_slot(limits: &Arc<Limits>) -> Option<Slot> {
 ///
 /// The release runs in `Drop`, so a panicking connection thread returns its
 /// slots as well.
-pub(super) struct Slot {
+pub(crate) struct Slot {
     limits: Arc<Limits>,
     lane: Lane,
 }
@@ -107,7 +114,7 @@ impl Slot {
     /// The increment and the capacity test are one read-modify-write, so two
     /// threads racing at the boundary cannot both see room: the loser reads a
     /// count at or above the cap and rolls its own increment back.
-    pub(super) fn acquire(limits: &Arc<Limits>, lane: Lane) -> Option<Self> {
+    pub(crate) fn acquire(limits: &Arc<Limits>, lane: Lane) -> Option<Self> {
         let counter = lane.counter(limits);
         let taken = counter.fetch_add(1, Ordering::SeqCst);
         if taken >= lane.capacity() {

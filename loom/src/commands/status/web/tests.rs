@@ -67,16 +67,13 @@ pub(super) fn start(base: PathBuf) -> (u16, Arc<AtomicBool>) {
 pub(super) fn start_with(
     base: PathBuf,
     options: crate::commands::status::web::ServeOptions,
-) -> (
-    u16,
-    Arc<AtomicBool>,
-    Arc<crate::commands::status::web::limits::Limits>,
-) {
+) -> (u16, Arc<AtomicBool>, Arc<crate::web_server::limits::Limits>) {
     let listener = TcpListener::bind("127.0.0.1:0").expect("bind test server");
     let port = listener.local_addr().expect("server address").port();
     let running = Arc::new(AtomicBool::new(true));
     let serve_running = running.clone();
-    let limits = crate::commands::status::web::limits::Limits::new();
+    let limits =
+        crate::web_server::limits::Limits::new(crate::commands::status::web::MAX_INBOUND_BYTES);
     let serve_limits = limits.clone();
     thread::spawn(move || {
         let _ = crate::commands::status::web::serve_with(
