@@ -139,7 +139,9 @@ describe("reading column", () => {
     await screen.findByTestId("markdown");
     expect(fetchDoc).toHaveBeenCalledWith(DOC_PATH);
     expect(screen.getByText(notice)).toBeTruthy();
-    expect(scrolled.mock.contexts.some((el) => (el as Element).id === "purpose")).toBe(true);
+    await waitFor(() =>
+      expect(scrolled.mock.contexts.some((el) => (el as Element).id === "purpose")).toBe(true),
+    );
   });
 
   it("notes a missing anchor and renders plans with the plan view", async () => {
