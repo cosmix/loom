@@ -315,7 +315,7 @@ fn read_terminal_config_defaults_when_section_missing() {
     assert_eq!(config, TerminalConfig::default());
     assert_eq!(
         config.backend,
-        crate::models::session::SessionBackendKind::Native
+        crate::models::session::SessionBackendKind::Tmux
     );
 }
 

@@ -20,9 +20,9 @@ fn cycles_an_enum_forward_and_wraps() {
     focus_by_name(&mut state, "terminal.backend");
 
     state.cycle(1);
-    assert_eq!(state.displayed_value(), "tmux");
-    state.cycle(1);
     assert_eq!(state.displayed_value(), "native");
+    state.cycle(1);
+    assert_eq!(state.displayed_value(), "tmux");
 }
 
 #[test]
@@ -32,7 +32,7 @@ fn cycles_an_enum_backward_and_wraps() {
 
     state.cycle(-1);
 
-    assert_eq!(state.displayed_value(), "tmux");
+    assert_eq!(state.displayed_value(), "native");
 }
 
 #[test]
@@ -71,7 +71,7 @@ fn saves_a_cycled_enum_to_disk() {
     state.save();
 
     let saved = std::fs::read_to_string(scratch.user_config()).unwrap();
-    assert!(saved.contains("backend = \"tmux\""), "{saved}");
+    assert!(saved.contains("backend = \"native\""), "{saved}");
 }
 
 #[test]
@@ -99,7 +99,7 @@ fn enter_edits_only_the_free_form_kinds() {
         let (_scratch, mut state) = state();
         focus_by_name(&mut state, "terminal.backend");
         press(&mut state, KeyCode::Enter);
-        assert_eq!(state.displayed_value(), "tmux");
+        assert_eq!(state.displayed_value(), "native");
         assert!(state.is_modified());
         assert!(!state.is_editing());
     }
@@ -125,13 +125,13 @@ fn cycle_keys_dispatch_through_the_key_handler() {
         let (_scratch, mut state) = state();
         focus_by_name(&mut state, "terminal.backend");
         press(&mut state, KeyCode::Left);
-        assert_eq!(state.displayed_value(), "tmux");
+        assert_eq!(state.displayed_value(), "native");
         press(&mut state, KeyCode::Right);
-        assert_eq!(state.displayed_value(), "native");
-        press(&mut state, KeyCode::Char('h'));
         assert_eq!(state.displayed_value(), "tmux");
-        press(&mut state, KeyCode::Char('l'));
+        press(&mut state, KeyCode::Char('h'));
         assert_eq!(state.displayed_value(), "native");
+        press(&mut state, KeyCode::Char('l'));
+        assert_eq!(state.displayed_value(), "tmux");
     }
     {
         let (_scratch, mut state) = state();

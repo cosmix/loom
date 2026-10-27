@@ -91,7 +91,7 @@ fn defaults_when_the_file_is_absent() {
     let config = UserConfig::default();
     assert!(config.update_check());
     assert_eq!(config.update_check_interval_hours(), 24);
-    assert_eq!(config.terminal_backend(), SessionBackendKind::Native);
+    assert_eq!(config.terminal_backend(), SessionBackendKind::Tmux);
     assert_eq!(
         config.context_ceiling_tokens(),
         DEFAULT_CONTEXT_CEILING_TOKENS
@@ -230,7 +230,7 @@ fn origin_is_set_only_for_keys_the_document_wrote() {
     assert_eq!(origin.to_string(), "set");
 
     let (value, origin) = config.value_of(spec("terminal.backend").unwrap());
-    assert_eq!(value.to_string(), "native");
+    assert_eq!(value.to_string(), "tmux");
     assert_eq!(origin, Origin::Default);
     assert_eq!(origin.to_string(), "default");
 }
@@ -334,7 +334,7 @@ fn value_of_has_an_arm_for_every_registered_key() {
         match key.name {
             "update.check" => assert_eq!(value, "true"),
             "update.check_interval_hours" => assert_eq!(value, "24"),
-            "terminal.backend" => assert_eq!(value, "native"),
+            "terminal.backend" => assert_eq!(value, "tmux"),
             "context.ceiling_tokens" => {
                 assert_eq!(value, DEFAULT_CONTEXT_CEILING_TOKENS.to_string())
             }

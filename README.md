@@ -630,7 +630,7 @@ The keys, with their built-in defaults:
 | ---------------------------------- | ------------- | ------------------------------------------------------------------------ | ------------- |
 | `update.check`                     | `true`        | `true`, `false`                                                          | no            |
 | `update.check_interval_hours`      | `24`          | integer                                                                  | no            |
-| `terminal.backend`                 | `native`      | `native`, `tmux`                                                         | whole section |
+| `terminal.backend`                 | `tmux`        | `native`, `tmux`                                                         | whole section |
 | `context.ceiling_tokens`           | `800000`      | integer                                                                  | whole section |
 | `pressure.claude_model`            | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `pressure.claude_effort`           | `xhigh`       | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
@@ -1202,8 +1202,8 @@ Loom spawns each stage's Claude Code session through a terminal backend. Two are
 
 | Backend  | Default | Sessions run in                    | Needs a GUI? |
 | -------- | ------- | ---------------------------------- | ------------ |
-| `native` | ✅ yes  | a host terminal emulator window    | yes          |
-| `tmux`   | opt-in  | a detached tmux server (no window) | no           |
+| `native` | opt-in  | a host terminal emulator window    | yes          |
+| `tmux`   | ✅ yes  | a detached tmux server (no window) | no           |
 
 The `native` backend opens a real terminal window per session — you watch stages run in your own
 terminal emulator. It requires a detectable emulator, so it cannot run headless.
@@ -1217,7 +1217,7 @@ and on `PATH`.**
 ```toml
 # .loom/work/config.toml
 [terminal]
-backend = "tmux"   # or "native" (default)
+backend = "tmux"   # default; or "native"
 ```
 
 Or from the CLI:
@@ -1227,7 +1227,7 @@ loom init <plan> --backend tmux   # skips the interactive backend prompt
 loom run --backend tmux           # persists the choice to [terminal]
 ```
 
-`loom init` prompts for a backend when run interactively; with no TTY it defaults to `native`.
+`loom init` prompts for a backend when run interactively; with no TTY it inherits `~/.loom/config.toml`, then the built-in default, `tmux`.
 Changing the backend while the daemon is running is refused with a hint — `loom stop` first, then
 re-run with `--backend`. Selecting a backend takes effect on the next spawn.
 

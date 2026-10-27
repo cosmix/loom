@@ -43,23 +43,23 @@
     },
     {
       "name": "terminal.backend",
-      "help": "Terminal backend loom run defaults to",
+      "help": "Terminal backend loom run defaults to (built-in default: tmux)",
       "kind": {
         "type": "enum",
         "variants": ["native", "tmux"]
       },
       "scopes": ["user", "project"],
-      "default": "native",
+      "default": "tmux",
       "user": {
-        "value": "native",
+        "value": "tmux",
         "set": false
       },
       "project": {
-        "value": "native",
+        "value": "tmux",
         "set": false
       },
       "effective": {
-        "value": "native",
+        "value": "tmux",
         "source": "default"
       }
     },

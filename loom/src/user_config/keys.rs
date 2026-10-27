@@ -73,7 +73,7 @@ pub const KEYS: &[KeySpec] = &[
         section: "terminal",
         field: "backend",
         kind: ValueKind::Enum(&["native", "tmux"]),
-        help: "Terminal backend loom run defaults to",
+        help: "Terminal backend loom run defaults to (built-in default: tmux)",
     },
     KeySpec {
         name: "context.ceiling_tokens",
