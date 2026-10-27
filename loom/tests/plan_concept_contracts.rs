@@ -200,6 +200,7 @@ fn unlisted_plans_listed() {
 }
 
 #[test]
+#[allow(clippy::needless_update)]
 fn read_only_stale_reason() {
     let (_t, root) = product_project(&[1]);
     put(
