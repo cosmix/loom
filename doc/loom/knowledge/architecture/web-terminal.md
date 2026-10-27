@@ -7,26 +7,25 @@
 `loom status --web --terminals` turns on a write lane; bare `--web` never mints a
 `TerminalLane` and every `/ws/terminal/*` request 404s before any other check runs
 (`terminal/upgrade.rs::admit`, `lane` argument `None`). The token itself comes from
-`terminal::token::mint()` (`terminal/token.rs::mint`), called from `mod.rs::auth_token`
+`web_server::token::mint()`, called from `mod.rs::auth_token`
 whenever the bind is remote or `--terminals` is set; `TerminalLane::from_token`
 (`terminal/upgrade.rs::from_token`) wraps it with a cookie name from
 `TerminalLane::cookie_name(port)` — named `loom_dashboard_<bound port>` because cookies
 carry no port scope and loom deliberately runs several dashboards at once
-(`listener::bind_first_available_port(host, start)`); one fixed name would let opening a
+(`web_server::listener::bind_first_available_port(host, start)`); one fixed name would let opening a
 second instance's tokenized URL silently steal the first instance's cookie. In remote mode
-this same token also backs the cookie that gates `POST /api/config` (`auth::Auth`,
+this same token also backs the cookie that gates `POST /api/config` (`web_server::auth::Auth`,
 `ServeOptions` requires `dashboard_token`/`terminal_token` to agree when both are set);
 viewing routes never ask for it. A remote bind mints and prints the token even without
 `--terminals`, since remote settings writes need it.
 
-Bootstrap: `GET`/`HEAD /?token=<presented>` (`bootstrap.rs::bootstrap_terminal_token`,
-:55-82) — right token sets the cookie via a 302 redirect to `/` with `Set-Cookie:
+Bootstrap: `GET`/`HEAD /?token=<presented>` (`web_server::bootstrap::bootstrap_cookie`, called from `DashboardRouter::upgrade`) — right token sets the cookie via a 302 redirect to `/` with `Set-Cookie:
 loom_dashboard_<port>=<token>; Path=/; HttpOnly; SameSite=Strict`
 (`TerminalLane::bootstrap_cookie`, `terminal/upgrade.rs::bootstrap_cookie`); wrong token is a 403; no
 `token` query param falls through to the ordinary page. In remote mode this route also
 checks `Origin` (optional but, if present, must match the connection's own address) ahead of
 the token exchange. The printed startup line (loopback, terminals enabled) is
-`http://127.0.0.1:<port>/?token=<token>  (terminals enabled; Ctrl-C to stop)` (`commands/status/web/mod.rs::print_startup`).
+`http://127.0.0.1:<port>/?token=<token>  (terminals enabled; Ctrl-C to stop)` (`commands/status/web/startup.rs::print_startup`).
 
 ## Admission order (`terminal/upgrade.rs::admit`, :85-134)
 
@@ -45,12 +44,12 @@ surface:
    (`token::matches`).
 5. `terminal_path` (`terminal/upgrade.rs::terminal_path`) parses `/ws/terminal/<stage-id>/<view|control>`
    and rejects a `stage_id` that is not `is_plain_identifier`.
-6. `acquire_terminal_slot` against `MAX_TERMINALS = 8` (`limits.rs::MAX_TERMINALS`).
+6. `acquire_terminal_slot` against `MAX_TERMINALS = 8` (`web_server/limits.rs::MAX_TERMINALS`).
 7. `running` (server not mid-shutdown).
 
 Only after all seven does `handle_upgrade` (`terminal/upgrade.rs::handle_upgrade`) call
-`tungstenite::accept_with_config` (capped at `MAX_INBOUND_BYTES = 64 KiB`, `limits.rs::MAX_INBOUND_BYTES`,
-one shared definition also used by `ws.rs` and `bridge::configure`) and `start_bridge`
+`tungstenite::accept_with_config` (capped at `MAX_INBOUND_BYTES = 64 KiB`, `status/web/mod.rs::MAX_INBOUND_BYTES`,
+the one value also given to `Limits::new` for `web_server/ws.rs` and read by `bridge::configure`) and `start_bridge`
 (`terminal/upgrade.rs::start_bridge`) resolves the target and spawns the PTY.
 
 ## Close-code contract (`commands/status/web/terminal/protocol.rs` `CLOSE_*`, pinned byte-for-byte against
