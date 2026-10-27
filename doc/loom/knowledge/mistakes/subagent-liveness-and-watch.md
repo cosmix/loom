@@ -375,3 +375,13 @@ applies only below it. Never weaken the refusal to admit a symlinked root.
 **Why:** exit 3 records a bound worker's failure from the evidence at that moment, and a codex job process that is gone is not final until the job record says so.
 
 **Prevention:** on exit 3 for a codex worker, read the job's own status once before re-delegating, and do not start a duplicate unit while the original may still land its files.
+
+## Operator monitoring cadence
+
+**What happened:** Checked an executing plan roughly every minute; the operator requested checks every four minutes.
+
+**Why:** Applied the general progress-update cadence to passive plan monitoring.
+
+**Prevention:** During this requested plan 04–06 run, poll status every four minutes and avoid intermediate status checks unless an observed failure needs intervention.
+
+**Fix:** Use a four-minute monitoring interval for the remainder of this run.

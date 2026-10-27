@@ -167,7 +167,7 @@
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) | Status | 75 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
 | [subagent-briefing](mistakes/subagent-briefing.md) | Briefs | 376 |
-| [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Watch traps | 377 |
+| [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Watch traps | 387 |
 | [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation | 369 |
 | [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests | 332 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) | Fixtures | 145 |
