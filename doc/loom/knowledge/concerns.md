@@ -223,3 +223,9 @@ The plan 4 harness printed a stop-rule FAIL on all three recorded pairs (guard-c
 Unapplied reviewer suggestions for `loom::planning`: heading and cross-reference parsing edges, refresh and lock-scan cost, symlink and non-UTF-8 handling in `LockedSet::scan` and `collect_inputs`, Unicode folding in the locked-name rules, and untested branches.
 
 → [Planning Document Model Followups](concerns/planning-document-model-followups.md)
+
+## Every Stage Worktree Builds From Cold [DETAILED]
+
+A new stage worktree has no build state, so its first compile or install is cold in every ecosystem; the contract freeze pays it first (about 2 min 20 s of a 3.5-minute contract phase on loom). sccache is gated off in sandboxed sessions and stripped from confined host jobs, so nothing is shared. Options, constraints (parallel stages, all languages, macOS and Linux, no copies, no worktree pool) and next steps:
+
+→ [Every Stage Worktree Builds From Cold](concerns/worktree-build-cold-start.md)
