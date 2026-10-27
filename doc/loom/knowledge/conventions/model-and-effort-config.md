@@ -7,7 +7,8 @@
 `[pressure]` (`~/.loom/config.toml` / `.loom/work/config.toml`) sets the model and effort for
 the three `loom pressure` steps. `[models]` sets the model and effort each stage type's
 main-agent session launches with. Both are opt-in: `loom init` never writes either section into
-a project config.
+a project config. A third pair of slots, the plan summary models, is configured through `[plan]`
+(user tier) and `[planning]` (project tier); see `[plan]` Keys and Defaults below.
 
 ## Precedence Chain (per key, model and effort resolve independently)
 
@@ -35,7 +36,7 @@ is configurable through `[models]`.
 
 ## KEY-Level vs SECTION-Level Fallback
 
-All four project-backed sections (`[pressure]`, `[models]`, `[terminal]` and `[context]`) resolve **per key**: a project section that omits a key lets that key fall through to the user config, then the built-in. A keyless section changes nothing (`fs/work_dir/config_sections.rs::remove_key` drops a section once its last key goes). The runtime readers are `read_context_config` and `read_terminal_config` in `fs/work_dir/`, and the web `/api/config` resolves through the same predicate.
+All five project-backed sections (`[pressure]`, `[models]`, `[terminal]`, `[context]` and `[planning]`) resolve **per key**: a project section that omits a key lets that key fall through to the user config, then the built-in. A keyless section changes nothing (`fs/work_dir/config_sections.rs::remove_key` drops a section once its last key goes). The runtime readers are `read_context_config`, `read_terminal_config` and `read_plan_config` in `fs/work_dir/`, and the web `/api/config` resolves through the same predicate.
 
 One qualification: a project `[context]` that sets `model_window_tokens` supplies
 `ceiling_tokens` (derived from that window) even when it omits `ceiling_tokens`, so a user
@@ -96,3 +97,15 @@ cached between runs, since rollout reaches accounts over time.
 
 Codex "Ultrafast" (for example GPT-6.1 Sol Ultrafast) is a speed mode for the same model, like
 Claude Code `/fast`; it is not a model id and never belongs in `CODEX_MODELS`.
+
+## `[plan]` Keys and Defaults
+
+Four string keys pick the model and reasoning effort of plan summary sessions (`planning/summary/config.rs`,
+`SummaryModels::resolve`): `plan.document_summary_model` haiku and `plan.document_summary_effort` medium for a
+document summary; `plan.overview_model` sonnet and `plan.overview_effort` high for an overview and the summary session
+that rebuilds them. The user tier is the `[plan]` table of `~/.loom/config.toml` (`user_config/plan.rs`, defaults
+`DEFAULT_PLAN_*`, values validated as model and effort enums); the project tier is the `[planning]` table of
+`.loom/work/config.toml` (`fs/work_dir/config_sections/plan_config.rs`, `read_plan_config`, `deny_unknown_fields`).
+The tables differ because the project `[plan]` table already holds the run identity (`plan_id`, `source_path`, ...), so
+the keys sit in `[planning]` there. A project table holding one unknown or malformed key is dropped whole without a log
+line, so all four project overrides revert to the user tier; this mirrors `read_pressure_config`.
