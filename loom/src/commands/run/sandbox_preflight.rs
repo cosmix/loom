@@ -53,7 +53,7 @@ pub fn require_sandbox_prerequisites(work_dir: &Path) -> Result<()> {
 /// carries `microsoft-standard` without a `WSL2` substring at all — e.g.
 /// `Linux version 4.19.128-microsoft-standard (oe-user@oe-host) ...` — so
 /// checking `wsl2` alone would misclassify that host as WSL1 and refuse it.
-pub(super) fn sandbox_prerequisite_problem(
+pub(crate) fn sandbox_prerequisite_problem(
     proc_version: Option<&str>,
     has_bwrap: bool,
     has_socat: bool,

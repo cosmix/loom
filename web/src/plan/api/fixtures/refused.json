@@ -1,0 +1,4 @@
+{
+  "command": "set_name",
+  "reason": "Name is too long"
+}

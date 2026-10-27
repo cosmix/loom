@@ -249,6 +249,36 @@ fn test_complete_commands_includes_plan() {
 fn test_complete_subcommands_plan() {
     let results = complete_subcommands("plan", "").unwrap();
     assert_eq!(results, vec!["check".to_string(), "verify".to_string()]);
+    assert!(complete_subcommands("plan", "h").unwrap().is_empty());
+}
+
+#[test]
+fn test_complete_flags_plan_server() {
+    let results = complete_flags(&["plan"], "--").unwrap();
+    for flag in ["--port", "--host", "--no-open"] {
+        assert!(results.contains(&flag.to_string()), "missing {flag}");
+    }
+    assert_eq!(
+        complete_flags(&["plan"], "--no-o").unwrap(),
+        vec!["--no-open"]
+    );
+}
+
+#[test]
+fn test_plan_hook_and_server_flag_values_have_no_completions() {
+    use crate::completions::dynamic::route_completion;
+    use std::path::Path;
+
+    for (prefix, prev, path) in [
+        ("--", "hook", &["plan", "hook"][..]),
+        ("", "hook", &["plan", "hook"][..]),
+        ("", "--port", &["plan"][..]),
+        ("", "--host", &["plan"][..]),
+    ] {
+        assert!(route_completion(Path::new("."), prefix, prev, path, "")
+            .unwrap()
+            .is_empty());
+    }
 }
 
 #[test]

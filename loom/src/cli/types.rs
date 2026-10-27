@@ -6,13 +6,14 @@ pub use super::types_config::ConfigArgs;
 use super::types_help::{positive_usize, HELP_TEMPLATE, VERSION_STRING};
 pub use super::types_memory::{KnowledgeCommands, MemoryCommands};
 pub use super::types_ops::{
-    ContextCommands, HookCommands, PlanCommands, RequestCommands, SessionsCommands,
+    ContextCommands, HookCommands, PlanCommands, PlanServeArgs, RequestCommands, SessionsCommands,
     WorktreeCommands,
 };
 pub use super::types_stage::{OutputCommands, StageCommands};
 
 #[path = "types_status_web.rs"]
 mod status_web;
+pub(super) use status_web::parse_web_host;
 use status_web::StatusWebArgs;
 
 #[path = "types_project.rs"]
@@ -269,10 +270,13 @@ pub enum Commands {
     /// Stop the running daemon
     Stop,
 
-    /// Manage plan files (validate, inspect)
+    /// Serve the planning app for this project, or manage plan files (validate, inspect)
+    #[command(args_conflicts_with_subcommands = true)]
     Plan {
         #[command(subcommand)]
-        command: PlanCommands,
+        command: Option<PlanCommands>,
+        #[command(flatten)]
+        serve: PlanServeArgs,
     },
 
     /// Inspect the checkout: packages, test runners and language skills
