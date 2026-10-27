@@ -60,6 +60,8 @@ Helper accessors: `effective_model()`, `effective_subagent_timeout_secs()`, `get
 
 There are five distinct counters on `Stage` — retry_count, fix_attempts, dispute_count, evidence_rounds, stall_recoveries — that track different loops. Name which one is meant; they are easy to conflate.
 
+- `history`: the stage's ended issues, newest first by `ended_at` (`commands/status/data/history.rs`), built from `Stage.issue_history` plus every adjudication round that ended with an `applied.marker` or `closed.marker` (`commands/status/data/rounds.rs`, which checks marker timestamps before reading and caches parsed rounds by directory and timestamps). A review entry whose text equals an ended round's filing reason is dropped as a duplicate of that round. Entries carry `kind` (failure, review, merge-conflict, adjudication), `failure_type`, `detected_at`, full `evidence` lines (never truncated), `ended_at`, `ended_by` and `dispute_id`. The current issue is the live attention, never in `history`.
+
 ## Session Fields
 
 `Session`: id, stage_id, worktree_path, pid, status, context_tokens, transcript_path, created_at, last_active, session_type, merge_source_branch/merge_target_branch, tracking_key, backend.

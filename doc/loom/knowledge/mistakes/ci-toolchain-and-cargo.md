@@ -341,3 +341,13 @@ The sweep follow-ups on executable startup, cache coverage, hook-path navigation
 **Prevention:** before telling the operator to push, check `git status --short --untracked-files=no`. With tracked changes present, say the pass will not be recorded and the push may need a second full run; with a clean tree, recommend `scripts/push.sh` (deleted in the cleanup that followed) over `git push`.
 
 **Fix:** `scripts/push.sh` no longer needs a clean tree: it checks HEAD in a persistent detached worktree at `${XDG_CACHE_HOME:-$HOME/.cache}/loom-push-check/<cksum of the git common dir>` (own `loom/target`, so later runs build incrementally), runs that commit's hook there with `LOOM_PUSH_CHECK=1`, refuses to push unless HEAD landed in `loom-pre-push-verified`, then `git push`es on a fresh connection. A `mkdir` lock beside the worktree serializes runs. The hook's "Result not recorded" hint for a dirty tree pointed at `scripts/push.sh`, which was removed. The operator rejected the cached worktree and any push script. `scripts/push.sh` was removed, along with the verified-commit record and the check worktree, and the pre-push hook was cut to fast gates (fmt, markdownlint, clippy, rustdoc, test compilation, the maintainability test, a `loom --version`/`--help` smoke run) so plain `git push` finishes before the remote closes the connection. The full suite, flake-check and audit run in CI.
+
+## A Daemon Started During dev-install.sh Keeps the Old Binary (2026-10-27)
+
+**What happened:** an adjudication spawn failed with "loom hook scripts in ~/.claude/hooks/loom are missing or differ from this loom build: _common.sh, spawn-guard.sh" although the operator had restarted the daemon after reinstalling. The daemon had started at 21:57:20; `install.sh` replaced the binary at 21:57:24 and `install-assets` rewrote the hooks at 21:57:25.
+
+**Why:** `dev-install.sh` stopped the daemon before `cargo build`, then left it stopped. A daemon started during the build or install ran the binary still installed, so its embedded hooks no longer matched the ones written seconds later.
+
+**Prevention:** stop the daemon after the binary and hooks are both installed. When the drift refusal appears, compare the daemon's start time with the binary's install time before assuming the hook files are wrong.
+
+**Fix:** `dev-install.sh` runs its `pkill -x loom` block after `install.sh`.
