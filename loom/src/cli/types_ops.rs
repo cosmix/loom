@@ -7,8 +7,28 @@
 //! does not have. `types.rs` re-exports everything here, so callers keep naming
 //! a single `cli::types` surface.
 
+use std::net::IpAddr;
+
+use super::types::parse_web_host;
 use crate::validation::clap_id_validator;
-use clap::Subcommand;
+use clap::{Args, Subcommand};
+
+/// Bare `loom plan`: serve the planning app for the project in the current directory.
+#[derive(Args, Debug, Clone)]
+pub struct PlanServeArgs {
+    /// Port to bind (default: 7272, or the next free port after it; 0 picks a free port)
+    #[arg(long)]
+    pub port: Option<u16>,
+
+    /// Address to bind: an IPv4/IPv6 literal or `localhost`. Binding off loopback serves
+    /// plain HTTP and prints a warning
+    #[arg(long, value_parser = parse_web_host, default_value = "127.0.0.1")]
+    pub host: IpAddr,
+
+    /// Print the URL without opening a browser
+    #[arg(long)]
+    pub no_open: bool,
+}
 
 #[derive(Subcommand)]
 pub enum PlanCommands {
