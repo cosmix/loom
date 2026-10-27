@@ -1,0 +1,51 @@
+{
+  "current": {
+    "kind": "step",
+    "number": 2
+  },
+  "steps": [
+    {
+      "number": 1,
+      "name": "Vision",
+      "mark": "done"
+    },
+    {
+      "number": 2,
+      "name": "Product spec",
+      "mark": "gap"
+    }
+  ],
+  "primary": {
+    "id": "write-section:05",
+    "kind": "write_section",
+    "label": "Write section 05",
+    "target": "doc/product/section_05.md"
+  },
+  "secondary": [
+    {
+      "id": "start-metaplan",
+      "kind": "start_metaplan",
+      "label": "Start a metaplan from the product spec",
+      "target": null
+    }
+  ],
+  "items": [
+    {
+      "step": 1,
+      "text": "product vision",
+      "path": "doc/product/index.md",
+      "offer": null
+    },
+    {
+      "step": 2,
+      "text": "section 05: Example",
+      "path": "doc/product/section_05.md",
+      "offer": {
+        "id": "write-section:05",
+        "kind": "write_section",
+        "label": "Write section 05",
+        "target": "doc/product/section_05.md"
+      }
+    }
+  ]
+}

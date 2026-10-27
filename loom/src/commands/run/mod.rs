@@ -12,7 +12,7 @@ mod git_preflight;
 mod graph_loader;
 mod guidance;
 mod plan_inputs;
-mod sandbox_preflight;
+pub(crate) mod sandbox_preflight;
 mod signing_preflight;
 
 #[cfg(test)]
