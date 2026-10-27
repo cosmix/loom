@@ -32,7 +32,7 @@ fn a_project_scope_save_writes_only_the_project_file() {
 
     assert_eq!(state.status(), "1 key written · 1 project.");
     let project = std::fs::read_to_string(scratch.project_config()).expect("project config");
-    assert!(project.contains("backend = \"tmux\""), "{project}");
+    assert!(project.contains("backend = \"native\""), "{project}");
     let user = std::fs::read_to_string(scratch.user_config()).unwrap_or_default();
     assert!(!user.contains("backend"), "{user}");
 }
@@ -104,10 +104,10 @@ fn edits_on_both_scopes_survive_a_toggle_and_save_together() {
     assert_eq!(state.status(), "2 keys written · 1 user · 1 project.");
     assert!(std::fs::read_to_string(scratch.user_config())
         .unwrap()
-        .contains("backend = \"tmux\""));
+        .contains("backend = \"native\""));
     assert!(std::fs::read_to_string(scratch.project_config())
         .unwrap()
-        .contains("backend = \"tmux\""));
+        .contains("backend = \"native\""));
 }
 
 /// With no `.loom/work` the project tab still opens — an operator who cannot
@@ -161,17 +161,17 @@ fn the_other_column_reports_only_what_the_other_file_sets() {
     state.save();
 
     let row = row_of(&state, "terminal.backend");
-    let tmux = ConfigValue::Text("tmux".to_owned());
+    let native = ConfigValue::Text("native".to_owned());
     // Seen from the user tab, the other tier is the project file, which says
     // nothing about this key even though it resolves to a value.
     assert_eq!(row.set_value(Scope::Project), None);
     // Seen from the project tab, the other tier is the user file, which set it.
-    assert_eq!(row.set_value(Scope::User), Some(&tmux));
+    assert_eq!(row.set_value(Scope::User), Some(&native));
 
     // The narrower question belongs to OTHER alone. The project tier still
     // RESOLVES to the inherited value, and the VALUE column, the inspector's
     // tier lines and `stage_clear` all depend on it continuing to.
-    assert_eq!(row.displayed(Scope::Project), Some(tmux));
+    assert_eq!(row.displayed(Scope::Project), Some(native));
     assert_eq!(row.source(Scope::Project), Source::Inherited);
 }
 

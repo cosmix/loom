@@ -90,10 +90,10 @@ impl std::fmt::Display for SessionStatus {
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "lowercase")]
 pub enum SessionBackendKind {
-    /// Native terminal emulator window (today's default).
-    #[default]
+    /// Native terminal emulator window.
     Native,
-    /// Headless tmux server, one per session.
+    /// Headless tmux server, one per session (the built-in default).
+    #[default]
     Tmux,
 }
 
