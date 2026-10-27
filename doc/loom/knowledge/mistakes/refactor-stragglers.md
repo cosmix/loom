@@ -66,7 +66,7 @@ Use `rg -i "container\|docker\|dispatcher" loom/src/ --include="*.rs"` to catch 
 **What happened:** a stage nearly shipped a branch whose committed tree could not compile.
 The first commit was staged with an EXPLICIT file list taken from the subagent's report, but
 the subagent had split `loom/src/commands/status/web/connection.rs` and created
-`loom/src/commands/status/web/head.rs`, which its report never named.
+`loom/src/web_server/head.rs`, which its report never named.
 `loom/src/commands/status/web/mod.rs` (committed) carried `mod head;` while the split-off
 file stayed untracked — HEAD referenced a file not in git. `cargo build`, clippy, the full
 test suite, the smoke script and the pre-commit hook all read the WORKING TREE, where the

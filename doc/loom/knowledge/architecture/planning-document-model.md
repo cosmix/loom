@@ -7,7 +7,7 @@ sources:
 ---
 # Planning Document Model
 
-> loom::planning: anchors, checklist
+> Planning model
 
 ## Module Map
 
