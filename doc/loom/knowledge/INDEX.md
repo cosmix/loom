@@ -88,7 +88,7 @@
 | --- | --- | --- |
 | [cli-process-and-conventions](patterns/cli-process-and-conventions.md) | CLI, TUI | 239 |
 | [doctrine-cross-surface](patterns/doctrine-cross-surface.md) | Pinned text | 140 |
-| [hook-content-stripping](patterns/hook-content-stripping.md) | Hook text | 160 |
+| [hook-content-stripping](patterns/hook-content-stripping.md) | Hook text | 163 |
 | [merge-and-recovery](patterns/merge-and-recovery.md) | Merge flow | 111 |
 | [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Poll loop | 117 |
 | [remote-control](patterns/remote-control.md) | RC detection | 51 |

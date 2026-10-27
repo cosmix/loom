@@ -47,6 +47,8 @@ ln -s "$OUTSIDE" "$SCRATCH/link"
 ln -s "$OUTSIDE/secret" "$SCRATCH/leaf"
 ln -s "$OUTSIDE" "$PROJECT/session-link/scratchpad"
 
+LOOM_ENV=()
+
 # run_hook <tool> <path> [session_id] - one guard call from inside the worktree.
 run_hook() {
 	local tool=$1 path=$2 session=${3-$SESSION} field=file_path payload
@@ -56,7 +58,7 @@ run_hook() {
 		 + (if $s == "" then {} else {session_id: $s} end)')
 	set +e
 	OUTPUT=$(cd "$WORKTREE" && printf '%s' "$payload" |
-		env -i PATH="${SHIM_PATH:-}$PATH" HOME="$TMP" bash "$HOOK" 2>&1)
+		env -i PATH="${SHIM_PATH:-}$PATH" HOME="$TMP" ${LOOM_ENV[@]+"${LOOM_ENV[@]}"} bash "$HOOK" 2>&1)
 	RC=$?
 	set -e
 }
@@ -124,5 +126,21 @@ expect_allowed Read "$SKILLS/loom-skill-catalog/bar/SKILL.md"
 expect_blocked Read "$SKILLS/skills/a/b/SKILL.md"
 expect_blocked Read "$SKILLS/sibling/foo/SKILL.md"
 expect_blocked Read "$TMP/other/.claude/skills/foo/SKILL.md"
+
+# 6. The loom relay scratch directory ($LOOM_SCRATCH_DIR) is open to every file
+# tool when it is a real directory named for $LOOM_SESSION_ID; a symlink out of
+# it, a sibling, or a directory named for another session stays blocked.
+RELAY="$TMP/relay/judge-1"
+mkdir -p "$RELAY" "$TMP/relay/judge-2"
+ln -s "$OUTSIDE" "$RELAY/out"
+LOOM_ENV=(LOOM_SESSION_ID=judge-1 LOOM_SCRATCH_DIR="$RELAY")
+expect_allowed Write "$RELAY/verdict.json"
+expect_allowed Read "$RELAY"
+expect_blocked Write "$RELAY/out/x.txt"
+expect_blocked Write "$TMP/relay/judge-2/verdict.json"
+LOOM_ENV=(LOOM_SESSION_ID=judge-2 LOOM_SCRATCH_DIR="$RELAY")
+expect_blocked Write "$RELAY/verdict.json"
+LOOM_ENV=()
+expect_blocked Write "$RELAY/verdict.json"
 
 echo "PASS"

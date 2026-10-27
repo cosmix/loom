@@ -190,6 +190,23 @@ allow_scratchpad() {
 	return 1
 }
 
+# Any file tool may use the session's loom relay scratch directory
+# ($LOOM_SCRATCH_DIR), where judges draft verdicts and writers leave notes. It is
+# trusted under the rules `relay::scratch::validate_session_dir` applies: a real
+# directory named for $LOOM_SESSION_ID and owned by us; the target must resolve
+# inside it.
+allow_loom_scratch() {
+	local lexical=${1%/} scratch=${LOOM_SCRATCH_DIR:-} resolved
+	scratch=${scratch%/}
+	[[ "$scratch" == /* && -n "${LOOM_SESSION_ID:-}" ]] || return 1
+	[[ "${scratch##*/}" == "$LOOM_SESSION_ID" && -d "$scratch" ]] || return 1
+	owned_by_uid "$scratch" || return 1
+	[[ "$lexical" == "$scratch" || "$lexical" == "$scratch"/* ]] || return 1
+	scratch=$(canonical_existing "$scratch") || return 1
+	resolved=$(canonical_target "$lexical" 2>/dev/null) || return 1
+	[[ "$resolved" == "$scratch" || "$resolved" == "$scratch"/* ]]
+}
+
 FILE_PATH=$(extract_path)
 if [[ -z "$FILE_PATH" ]]; then
 	case "$TOOL_NAME" in
@@ -225,7 +242,8 @@ else
 	LEXICAL_PATH="$CURRENT_DIR/$FILE_PATH"
 fi
 
-if allow_background_output "$LEXICAL_PATH" || allow_scratchpad "$LEXICAL_PATH"; then
+if allow_background_output "$LEXICAL_PATH" || allow_scratchpad "$LEXICAL_PATH" ||
+	allow_loom_scratch "$LEXICAL_PATH"; then
 	exit 0
 fi
 
