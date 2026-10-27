@@ -176,6 +176,20 @@ pub fn read_body(stream: &mut TcpStream, prefix: Vec<u8>, length: usize) -> Resu
     Ok(body)
 }
 
+/// A declared `Content-Length` as a byte count, or `None` when it is not one.
+///
+/// Digits only, per RFC 9110 section 8.6: `str::parse` alone would accept `+8`, and a length
+/// this server reads differently from whatever wrote it is the shape request smuggling takes.
+/// Surrounding whitespace is tolerated (the head parser already strips it); an empty value and
+/// a value too large for `usize` are not counts.
+pub fn parse_content_length(raw: &str) -> Option<usize> {
+    let raw = raw.trim();
+    if raw.is_empty() || !raw.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    raw.parse().ok()
+}
+
 /// Hosts whose origin the dashboard accepts: the loopback interface only.
 const LOOPBACK_HOSTS: [&str; 3] = ["127.0.0.1", "localhost", "::1"];
 
@@ -272,7 +286,11 @@ fn response_head(
     )
 }
 
-/// Encode an HTTP response with the fixed security headers.
+/// Encode an HTTP response with the fixed security headers, through `response_head`.
+///
+/// Test-only: `commands/status/web/tests/pure.rs` is its sole caller; the servers write through
+/// `write_response_with_headers`.
+#[cfg(test)]
 pub fn response_bytes(status: u16, reason: &str, content_type: &str, body: &[u8]) -> Vec<u8> {
     let mut bytes =
         response_head(status, reason, content_type, body.len(), None, None, &[]).into_bytes();
