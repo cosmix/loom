@@ -1,4 +1,4 @@
-//! WebSocket delivery for dashboard snapshots.
+//! WebSocket delivery of text frames from a [`super::hub::Hub`] subscription.
 
 use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -9,33 +9,40 @@ use std::time::{Duration, Instant};
 use tungstenite::protocol::WebSocketConfig;
 use tungstenite::{Error, Message};
 
-use super::limits::MAX_INBOUND_BYTES;
+use super::limits::Limits;
 
 /// How long a blocked send or an idle read may hold the connection thread.
 const SOCKET_TIMEOUT: Duration = Duration::from_millis(250);
 
-/// Silence after which the last frame is sent again. The broadcaster drops
-/// unchanged frames, so a quiet tree sends nothing, and a client cannot tell
-/// that from a half-open connection. Browser JS cannot observe protocol pings,
-/// hence a text frame. The client's watchdog (web/src/api/ws.ts) must stay well
-/// above this.
+/// Silence after which the last frame is sent again. The dashboard's
+/// broadcaster drops unchanged frames, so a quiet tree sends nothing, and a
+/// client cannot tell that from a half-open connection. Browser JS cannot
+/// observe protocol pings, hence a text frame. The client's watchdog
+/// (web/src/api/ws.ts) must stay well above this.
 const KEEPALIVE: Duration = Duration::from_secs(10);
 
-/// Complete a peek-preserved handshake, then stream snapshot text frames until
-/// the client leaves or `running` clears.
-pub fn handle(stream: TcpStream, rx: Receiver<Arc<String>>, running: &AtomicBool) {
-    handle_with_keepalive(stream, rx, running, KEEPALIVE);
+/// Complete a peek-preserved handshake, then stream text frames until the
+/// client leaves or `running` clears. Inbound messages and frames are capped
+/// at [`Limits::max_inbound_bytes`].
+pub(crate) fn handle(
+    stream: TcpStream,
+    rx: Receiver<Arc<String>>,
+    running: &AtomicBool,
+    limits: &Limits,
+) {
+    handle_with_keepalive(stream, rx, running, KEEPALIVE, limits);
 }
 
-pub(super) fn handle_with_keepalive(
+pub(crate) fn handle_with_keepalive(
     stream: TcpStream,
     rx: Receiver<Arc<String>>,
     running: &AtomicBool,
     keepalive: Duration,
+    limits: &Limits,
 ) {
     let config = WebSocketConfig::default()
-        .max_message_size(Some(MAX_INBOUND_BYTES))
-        .max_frame_size(Some(MAX_INBOUND_BYTES));
+        .max_message_size(Some(limits.max_inbound_bytes()))
+        .max_frame_size(Some(limits.max_inbound_bytes()));
     let Ok(mut socket) = tungstenite::accept_with_config(stream, Some(config)) else {
         tracing::warn!("dashboard WebSocket handshake failed");
         return;

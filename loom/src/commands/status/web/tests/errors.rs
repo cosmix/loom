@@ -12,9 +12,10 @@ use super::{
     assert_security_headers, body, request, request_with_timeout, skip_without_loopback, start,
     start_with, stop, workspace,
 };
-use crate::commands::status::web::http::MAX_HEAD_BYTES;
-use crate::commands::status::web::limits::{Lane, Limits, Slot, MAX_CONNECTIONS, MAX_WEBSOCKETS};
 use crate::commands::status::web::terminal::tests_upgrade::terminal_options;
+use crate::commands::status::web::MAX_INBOUND_BYTES;
+use crate::web_server::http::MAX_HEAD_BYTES;
+use crate::web_server::limits::{Lane, Limits, Slot, MAX_CONNECTIONS, MAX_WEBSOCKETS};
 
 /// Read the `Content-Length` a response advertises.
 fn content_length(response: &str) -> usize {
@@ -125,7 +126,7 @@ fn head_omits_the_body_but_keeps_the_length() {
 
 #[test]
 fn connection_slots_are_admitted_to_the_cap_and_refused_past_it() {
-    let limits = Limits::new();
+    let limits = Limits::new(MAX_INBOUND_BYTES);
     let held = (0..MAX_CONNECTIONS)
         .map(|index| {
             Slot::acquire(&limits, Lane::Connection)
@@ -139,7 +140,7 @@ fn connection_slots_are_admitted_to_the_cap_and_refused_past_it() {
 
 #[test]
 fn websocket_subscriptions_leave_connection_slots_for_the_page() {
-    let limits = Limits::new();
+    let limits = Limits::new(MAX_INBOUND_BYTES);
     let subscriptions = (0..MAX_WEBSOCKETS)
         .map(|index| {
             (
@@ -163,7 +164,7 @@ fn websocket_subscriptions_leave_connection_slots_for_the_page() {
 
 #[test]
 fn a_panicking_connection_thread_returns_its_slot() {
-    let limits = Limits::new();
+    let limits = Limits::new(MAX_INBOUND_BYTES);
     let held = (0..MAX_CONNECTIONS - 1)
         .map(|index| {
             Slot::acquire(&limits, Lane::Connection)

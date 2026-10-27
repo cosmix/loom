@@ -3,8 +3,8 @@
 //! embedded at build time - not just that the embed step produced something
 //! non-empty.
 
-use crate::commands::status::web::assets;
 use crate::commands::status::web::connection::{self, Route};
+use crate::web_server::assets;
 
 #[test]
 fn root_route_serves_the_embedded_index_html_byte_for_byte() {

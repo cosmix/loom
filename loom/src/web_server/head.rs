@@ -1,4 +1,4 @@
-//! Reading a request head off a dashboard connection without consuming it.
+//! Reading a request head off a connection without consuming it.
 
 use std::io::ErrorKind;
 use std::net::TcpStream;
@@ -9,7 +9,7 @@ use super::connection::fail;
 use super::http::{self, RequestHead, MAX_HEAD_BYTES};
 
 /// Total budget for a client to deliver a complete request head.
-pub(super) const HEAD_TIMEOUT: Duration = Duration::from_secs(5);
+const HEAD_TIMEOUT: Duration = Duration::from_secs(5);
 
 /// Outcome of one peek-and-parse attempt for a request head.
 enum HeadAttempt {
@@ -85,7 +85,7 @@ fn peek_head(stream: &mut TcpStream, buffer: &mut [u8], started: Instant) -> Hea
 /// Peek-retry until the request head is complete, times out, overflows the
 /// head budget, or fails to parse; on any terminal outcome besides success,
 /// the caller has already had an HTTP error response written for it.
-pub(super) fn complete(stream: &mut TcpStream, running: &AtomicBool) -> Option<RequestHead> {
+pub(crate) fn complete(stream: &mut TcpStream, running: &AtomicBool) -> Option<RequestHead> {
     let started = Instant::now();
     let mut buffer = [0_u8; MAX_HEAD_BYTES];
     while running.load(Ordering::SeqCst) {

@@ -250,8 +250,8 @@ pub fn origin_allowed(origin: Option<&str>) -> bool {
 /// `'unsafe-inline'` for React's inline styles.
 const CONTENT_SECURITY_POLICY: &str = "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'";
 
-/// Encode the status line and the dashboard's fixed security headers for a
-/// body of `content_length` bytes.
+/// Encode the status line, the fixed security headers and any
+/// `extra_headers` for a body of `content_length` bytes.
 fn response_head(
     status: u16,
     reason: &str,
@@ -259,26 +259,25 @@ fn response_head(
     content_length: usize,
     location: Option<&str>,
     set_cookie: Option<&str>,
+    extra_headers: &[(&str, &str)],
 ) -> String {
+    let extra: String = extra_headers
+        .iter()
+        .map(|(name, value)| format!("{name}: {value}\r\n"))
+        .collect();
     format!(
-        "HTTP/1.1 {status} {reason}\r\nContent-Length: {content_length}\r\nContent-Type: {content_type}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: {CONTENT_SECURITY_POLICY}\r\n{}{}Connection: close\r\n\r\n",
+        "HTTP/1.1 {status} {reason}\r\nContent-Length: {content_length}\r\nContent-Type: {content_type}\r\nCache-Control: no-store\r\nX-Content-Type-Options: nosniff\r\nX-Frame-Options: DENY\r\nContent-Security-Policy: {CONTENT_SECURITY_POLICY}\r\n{}{}{extra}Connection: close\r\n\r\n",
         location.map(|value| format!("Location: {value}\r\n")).unwrap_or_default(),
         set_cookie.map(|value| format!("Set-Cookie: {value}\r\n")).unwrap_or_default(),
     )
 }
 
-/// Encode an HTTP response with the dashboard's fixed security headers.
-pub(crate) fn response_bytes(
-    status: u16,
-    reason: &str,
-    content_type: &str,
-    body: &[u8],
-) -> Vec<u8> {
-    response_head(status, reason, content_type, body.len(), None, None)
-        .into_bytes()
-        .into_iter()
-        .chain(body.iter().copied())
-        .collect()
+/// Encode an HTTP response with the fixed security headers.
+pub fn response_bytes(status: u16, reason: &str, content_type: &str, body: &[u8]) -> Vec<u8> {
+    let mut bytes =
+        response_head(status, reason, content_type, body.len(), None, None, &[]).into_bytes();
+    bytes.extend_from_slice(body);
+    bytes
 }
 
 /// Write a complete response and flush it to the client. `send_body` is false
@@ -292,20 +291,45 @@ pub fn write_response(
     body: &[u8],
     send_body: bool,
 ) -> std::io::Result<()> {
-    let bytes = if send_body {
-        response_bytes(status, reason, content_type, body)
-    } else {
-        response_head(status, reason, content_type, body.len(), None, None).into_bytes()
-    };
+    write_response_with_headers(stream, status, reason, content_type, body, send_body, &[])
+}
+
+/// [`write_response`], adding `extra_headers` after the fixed security
+/// headers. The fixed headers and the Content-Security-Policy are never
+/// replaced.
+pub fn write_response_with_headers(
+    stream: &mut TcpStream,
+    status: u16,
+    reason: &str,
+    content_type: &str,
+    body: &[u8],
+    send_body: bool,
+    extra_headers: &[(&str, &str)],
+) -> std::io::Result<()> {
+    let mut bytes = response_head(
+        status,
+        reason,
+        content_type,
+        body.len(),
+        None,
+        None,
+        extra_headers,
+    )
+    .into_bytes();
+    if send_body {
+        bytes.extend_from_slice(body);
+    }
     stream.write_all(&bytes)?;
     stream.flush()
 }
 
-/// Drain a peeked request, then redirect while setting an optional cookie.
-pub(super) fn write_redirect(
+/// Drain a peeked request, then redirect while setting an optional cookie and
+/// any `extra_headers`.
+pub(crate) fn write_redirect(
     stream: &mut TcpStream,
     location: &str,
     set_cookie: Option<&str>,
+    extra_headers: &[(&str, &str)],
 ) -> std::io::Result<()> {
     super::connection::drain_pending(stream);
     let bytes = response_head(
@@ -315,6 +339,7 @@ pub(super) fn write_redirect(
         0,
         Some(location),
         set_cookie,
+        extra_headers,
     );
     stream.write_all(bytes.as_bytes())?;
     stream.flush()

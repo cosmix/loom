@@ -11,10 +11,10 @@ use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use crate::commands::status::web::access::AccessPolicy;
-use crate::commands::status::web::limits::{acquire_terminal_slot, Limits};
 use crate::commands::status::web::tests::{body, skip_without_loopback, workspace};
-use crate::commands::status::web::{self, ServeOptions, TerminalLane};
+use crate::commands::status::web::{self, ServeOptions, TerminalLane, MAX_INBOUND_BYTES};
+use crate::web_server::access::AccessPolicy;
+use crate::web_server::limits::{acquire_terminal_slot, Limits};
 use tungstenite::client::IntoClientRequest;
 
 use super::super::bridge;
@@ -50,7 +50,7 @@ fn terminal_upgrade_after_stop_is_503() {
         Some(&cookie(port, &token)),
         Some(&format!("http://127.0.0.1:{port}")),
     );
-    let head = crate::commands::status::web::http::parse_head(request.as_bytes())
+    let head = crate::web_server::http::parse_head(request.as_bytes())
         .unwrap()
         .unwrap();
     client.write_all(request.as_bytes()).unwrap();
@@ -58,7 +58,7 @@ fn terminal_upgrade_after_stop_is_503() {
         token: token.clone(),
         cookie_name: web::cookie_name_for_port(port),
     };
-    let limits = Limits::new();
+    let limits = Limits::new(MAX_INBOUND_BYTES);
     let running = AtomicBool::new(false);
     let local = server.local_addr().unwrap();
     let policy = AccessPolicy::resolve(
@@ -101,7 +101,7 @@ fn start_server(base: PathBuf) -> RunningServer {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
     let running = Arc::new(AtomicBool::new(true));
-    let limits = Limits::new();
+    let limits = Limits::new(MAX_INBOUND_BYTES);
     let server_running = running.clone();
     let server_limits = limits.clone();
     let (done, result) = std::sync::mpsc::sync_channel(1);

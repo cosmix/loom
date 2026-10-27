@@ -1,4 +1,4 @@
-//! Local interface addresses advertised for wildcard dashboard listeners.
+//! Local interface addresses advertised for wildcard listeners.
 
 use std::collections::BTreeSet;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
@@ -8,7 +8,7 @@ use std::ptr;
 ///
 /// Loopback is retained because a wildcard listener is also reachable from
 /// the machine that launched it. Unspecified addresses are not destinations.
-pub(super) fn matching_addresses(bind_ip: IpAddr) -> Vec<IpAddr> {
+pub(crate) fn matching_addresses(bind_ip: IpAddr) -> Vec<IpAddr> {
     let mut addresses = BTreeSet::new();
     let mut head = ptr::null_mut();
     let family = match bind_ip {
