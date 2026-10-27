@@ -3,6 +3,8 @@ import { useEffect, useRef, type JSX, type RefObject } from "react";
 
 import { cn } from "cn";
 
+import { isTyping } from "@/lib/is-typing";
+
 export const SEARCH_SCOPES = [
   ["product", "Product"],
   ["plans", "Plans"],
@@ -11,11 +13,6 @@ export const SEARCH_SCOPES = [
 ] as const;
 export type SearchScope = (typeof SEARCH_SCOPES)[number][0];
 export const MAX_QUERY = 256;
-
-function isTyping(target: EventTarget | null): boolean {
-  if (!(target instanceof HTMLElement)) return false;
-  return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
-}
 
 /** `/` focuses the input unless the keystroke is already going into a field. */
 function useSlashFocus(input: RefObject<HTMLInputElement | null>): void {
