@@ -17,6 +17,7 @@ fn agent(id: &str, kind: AgentKind, model: &str, total: TokenUsage, rate: TokenU
         id: id.into(),
         kind,
         agent_type: None,
+        forwarder: None,
         model: Some(model.into()),
         active: true,
         total,

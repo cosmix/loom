@@ -199,6 +199,29 @@ fn a_planted_checked_at_cannot_overflow_the_retry_age() {
 }
 
 #[test]
+fn a_codex_source_names_the_forwarder_of_its_receipt() {
+    let fx = Fixture::new();
+    fx.add_session("alpha", SESSION_UUID, "");
+    add_receipt(&fx, "alpha");
+    let dir = fx.codex_sessions().join("2026/10/14");
+    fs::create_dir_all(&dir).expect("rollout dir");
+    let rollout = dir.join(format!("rollout-2026-10-14T10-58-07-{THREAD_ID}.jsonl"));
+    fs::write(&rollout, "").expect("rollout");
+
+    let found = sources(&fx, &mut BTreeMap::new(), NOW);
+
+    let codex = found
+        .iter()
+        .find(|s| s.kind == AgentKind::Codex)
+        .expect("codex source");
+    assert_eq!(codex.forwarder.as_deref(), Some("a0c0dec0ffee"));
+    assert!(found
+        .iter()
+        .filter(|s| s.kind != AgentKind::Codex)
+        .all(|s| s.forwarder.is_none()));
+}
+
+#[test]
 fn a_short_id_equal_to_the_last_segment_does_not_resolve_to_another_threads_rollout() {
     let fx = Fixture::new();
     fx.add_session("alpha", SESSION_UUID, "");

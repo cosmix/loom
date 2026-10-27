@@ -98,6 +98,7 @@ fn agent_flow(id: String, agent: &AgentState, now: i64) -> AgentFlow {
         id,
         kind: agent.kind,
         agent_type: agent.agent_type.clone(),
+        forwarder: agent.forwarder.clone(),
         model: agent.model.clone(),
         active,
         total: agent.total,

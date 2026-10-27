@@ -32,6 +32,8 @@ pub(super) struct Source {
     pub(super) kind: AgentKind,
     pub(super) path: String,
     pub(super) agent_type: Option<String>,
+    /// For a codex source: the id of the forwarder subagent that forwarded to it.
+    pub(super) forwarder: Option<String>,
 }
 
 /// Where a Codex thread's rollout was found, or when it was last looked for.
@@ -77,13 +79,18 @@ fn discover_with(
         .filter(|stage| is_safe_id(stage))
         .collect();
     let mut stage_threads = stage_threads(work_root, &stages);
-    stage_threads.extend(authorized(work_root, &sessions));
+    let authorized = authorized(work_root, &sessions)
+        .into_iter()
+        .map(|(stage, thread)| (stage, thread, None));
+    stage_threads.extend(authorized);
     let mut seen = HashSet::new();
-    stage_threads.retain(|(_, thread)| seen.insert(thread.clone()));
+    stage_threads.retain(|(_, thread, _)| seen.insert(thread.clone()));
     resolve_threads(threads, &stage_threads, codex_sessions_root, now);
     let codex: Vec<Source> = stage_threads
         .into_iter()
-        .filter_map(|(stage_id, thread)| codex_source(stage_id, thread, threads))
+        .filter_map(|(stage_id, thread, forwarder)| {
+            codex_source(stage_id, thread, forwarder, threads)
+        })
         .collect();
     sources.extend(codex);
     let mut paths = HashSet::new();
@@ -136,6 +143,7 @@ fn session_sources(
         kind: AgentKind::Main,
         path: transcript.to_owned(),
         agent_type: None,
+        forwarder: None,
     });
     for file in list_agent_files(&path.with_file_name(stem).join("subagents")) {
         let agent_id = agent_id_from_path(&file);
@@ -151,14 +159,18 @@ fn session_sources(
             kind: AgentKind::Subagent,
             path: file_path.to_owned(),
             agent_type,
+            forwarder: None,
         });
     }
 }
 
-/// `(stage id, thread id)` for every safe `codex_thread_id` in each stage's
-/// forward receipts. A receipts path that is not a regular file is skipped
+/// `(stage id, thread id, forwarder id)` for every safe `codex_thread_id` in
+/// each stage's forward receipts; the forwarder is the receipt's agent id when
+/// it is a safe id. A receipts path that is not a regular file is skipped
 /// before `load_receipts` opens it, so a FIFO there cannot block the pass.
-fn stage_threads(work_root: &Path, stages: &BTreeSet<&str>) -> Vec<(String, String)> {
+type StageThread = (String, String, Option<String>);
+
+fn stage_threads(work_root: &Path, stages: &BTreeSet<&str>) -> Vec<StageThread> {
     let mut pairs = Vec::new();
     for stage_id in stages {
         let Ok(path) = receipts_path(work_root, stage_id) else {
@@ -170,9 +182,12 @@ fn stage_threads(work_root: &Path, stages: &BTreeSet<&str>) -> Vec<(String, Stri
         let Ok(load) = load_receipts(&path) else {
             continue;
         };
-        let threads = load.receipts.into_iter().filter_map(|r| r.codex_thread_id);
-        for thread in threads.filter(|thread| is_safe_id(thread)) {
-            pairs.push(((*stage_id).to_owned(), thread));
+        for receipt in load.receipts {
+            let Some(thread) = receipt.codex_thread_id.filter(|t| is_safe_id(t)) else {
+                continue;
+            };
+            let forwarder = Some(receipt.identity.agent_id).filter(|id| is_safe_id(id));
+            pairs.push(((*stage_id).to_owned(), thread, forwarder));
         }
     }
     pairs
@@ -184,13 +199,13 @@ fn stage_threads(work_root: &Path, stages: &BTreeSet<&str>) -> Vec<(String, Stri
 /// `now`.
 fn resolve_threads(
     threads: &mut BTreeMap<String, ThreadLookup>,
-    stage_threads: &[(String, String)],
+    stage_threads: &[StageThread],
     sessions_root: Option<&Path>,
     now: i64,
 ) {
     let due: BTreeSet<&str> = stage_threads
         .iter()
-        .map(|(_, thread)| thread.as_str())
+        .map(|(_, thread, _)| thread.as_str())
         .filter(|thread| {
             threads.get(*thread).is_none_or(|lookup| {
                 // `checked_at` comes from the checkpoint file, so the difference saturates.
@@ -262,6 +277,7 @@ fn rollout_files(sessions_root: Option<&Path>) -> Vec<PathBuf> {
 fn codex_source(
     stage_id: String,
     thread: String,
+    forwarder: Option<String>,
     threads: &BTreeMap<String, ThreadLookup>,
 ) -> Option<Source> {
     let path = threads.get(&thread)?.rollout.clone()?;
@@ -271,6 +287,7 @@ fn codex_source(
         kind: AgentKind::Codex,
         path,
         agent_type: None,
+        forwarder,
     })
 }
 

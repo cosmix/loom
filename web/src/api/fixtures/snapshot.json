@@ -484,6 +484,7 @@
               "id": "main-01ed9f4c",
               "kind": "main",
               "agent_type": null,
+              "forwarder": null,
               "model": "claude-opus-5-5",
               "active": true,
               "total": {
@@ -514,6 +515,7 @@
               "id": "a04baa183f888b773",
               "kind": "subagent",
               "agent_type": "loom-software-engineer",
+              "forwarder": null,
               "model": "claude-sonnet-5-5",
               "active": true,
               "total": {
@@ -545,6 +547,7 @@
               "id": "codex-01a1396b",
               "kind": "codex",
               "agent_type": null,
+              "forwarder": null,
               "model": "gpt-6.1-sol",
               "active": true,
               "total": {

@@ -16,6 +16,7 @@ fn source(kind: AgentKind, key: &str) -> Source {
         kind,
         path: format!("/t/{key}.jsonl"),
         agent_type: None,
+        forwarder: None,
     }
 }
 

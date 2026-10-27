@@ -41,6 +41,7 @@ fn agent(id: &str, kind: AgentKind, model: &str, usages: [TokenUsage; 2], per: u
         id: id.to_owned(),
         kind,
         agent_type: None,
+        forwarder: None,
         model: Some(model.to_owned()),
         active: true,
         total: usages[0],

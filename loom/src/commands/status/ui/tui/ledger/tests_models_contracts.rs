@@ -61,6 +61,7 @@ fn flow() -> TokenFlow {
         id: "main-01ed9f4c".to_owned(),
         kind: AgentKind::Main,
         agent_type: None,
+        forwarder: None,
         model: Some("claude-opus-5-5".to_owned()),
         active: true,
         total,

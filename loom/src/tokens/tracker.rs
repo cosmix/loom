@@ -180,6 +180,9 @@ fn read_source(
     if source.agent_type.is_some() {
         agent.agent_type.clone_from(&source.agent_type);
     }
+    if source.forwarder.is_some() {
+        agent.forwarder.clone_from(&source.forwarder);
+    }
     let file = &agent.file;
     if file.path != source.path || file.inode != stat.inode || stat.len < file.offset {
         agent.restart(&source.path, stat.inode);

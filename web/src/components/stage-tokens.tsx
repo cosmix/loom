@@ -6,9 +6,11 @@ import {
   agentLabel,
   cacheHitPercent,
   carryForward,
+  codexPairs,
   compactTokens,
   cumulativeSeries,
   fresh,
+  isCodexLane,
   lastValues,
   liveCounts,
   maxOf,
@@ -18,8 +20,6 @@ import {
 import { snapshotAtom } from "@/state/atoms";
 
 const RAMP = [0, 1, 2, 3, 4];
-/// The subagent type that forwards work to a codex job.
-const FORWARDER_TYPE = "loom-codex-forwarder";
 /// The chips' trends show the last 60 buckets: 30 minutes of 30 s cells.
 const TREND_POINTS = 60;
 
@@ -70,10 +70,6 @@ function Chip({ value, label, trend }: { value: string; label: string; trend: Tr
       />
     </div>
   );
-}
-
-function isCodexLane(agent: AgentFlow): boolean {
-  return agent.kind === "codex" || agent.agent_type === FORWARDER_TYPE;
 }
 
 function Lane({
@@ -165,8 +161,11 @@ function Chips({ tokens, flow }: { tokens: TokenFlow; flow: StageFlow }) {
   );
 }
 
-/// The codex job(s) and the forwarder subagents that feed them, clustered in
-/// one tighter frame so the lane reads as a unit; every lane keeps all its fields.
+/// A forwarder subagent and the codex job(s) it forwarded to, clustered in one
+/// tighter frame so the lanes read as a unit; every lane keeps all its fields.
+/// The frame pulls outward by its own border and padding (1px + `px-2.5`), so
+/// the lanes inside keep the width, and the heat-strip cells the x positions,
+/// of the plain lanes above.
 function CodexCluster({
   rows,
   max,
@@ -176,7 +175,7 @@ function CodexCluster({
 }) {
   return (
     <li data-testid="codex-cluster" className="list-none">
-      <div className="flex flex-col gap-1.5 rounded-md border border-hairline bg-background px-2.5 py-2">
+      <div className="-mx-[11px] flex flex-col gap-1.5 rounded-md border border-hairline bg-background px-2.5 py-2">
         <span className="eyebrow">codex</span>
         <ul className="flex flex-col gap-1.5">
           {rows.map(({ agent, series }) => (
@@ -189,7 +188,7 @@ function CodexCluster({
 }
 
 /// The stage's token flow: headline chips and one heat-strip lane per agent,
-/// the codex job and its forwarders clustered last.
+/// each forwarder and its codex job clustered last.
 /// Renders nothing for a stage the tracker has not seen.
 export function StageTokens({ stageId }: { stageId: string }) {
   const tokens = useAtomValue(snapshotAtom)?.status.tokens;
@@ -202,7 +201,7 @@ export function StageTokens({ stageId }: { stageId: string }) {
     series: lanes[index] ?? [],
   }));
   const plain = rows.filter(({ agent }) => !isCodexLane(agent));
-  const codex = rows.filter(({ agent }) => isCodexLane(agent));
+  const clusters = codexPairs(rows);
 
   return (
     <section
@@ -221,7 +220,9 @@ export function StageTokens({ stageId }: { stageId: string }) {
         {plain.map(({ agent, series }) => (
           <Lane key={agent.id} agent={agent} series={series} max={max} />
         ))}
-        {codex.length > 0 && <CodexCluster rows={codex} max={max} />}
+        {clusters.map((cluster) => (
+          <CodexCluster key={cluster[0]?.agent.id} rows={cluster} max={max} />
+        ))}
       </ul>
     </section>
   );

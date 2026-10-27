@@ -192,6 +192,7 @@ export const agentFlowSchema = z
     id: z.string(),
     kind: z.enum(["main", "subagent", "codex"]),
     agent_type: z.string().nullable(),
+    forwarder: z.string().nullable(),
     model: z.string().nullable(),
     active: z.boolean(),
     total: tokenUsageSchema,
