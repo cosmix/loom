@@ -118,3 +118,13 @@ exists, or pin the interface inline in the brief so codex does not wait for it.
 **Prevention:** give every brief as an absolute path inside the worktree, say that task paths are repository-root relative, and forbid `loom` CLI commands in a codex prompt.
 
 **Fix:** the units were re-forwarded with absolute paths.
+
+## A `cd` Into a Brief Directory Persists Into the Forwarder Spawn (2026-10-28)
+
+**What happened:** wave 2 of the concept-web stage spawned its codex forwarders while the main session's working directory was `doc/plans/briefs/feat-planner-05-concept-mode/`, left there by an earlier `cd`. Codex started in that directory, and one unit's direct supervisor ended inconsistent.
+
+**Why:** the Bash tool carries `cd` from one call to the next, and a forwarder starts in the main session's current directory.
+
+**Prevention:** `cd` to the worktree root in the same Bash call that precedes a forwarder spawn, and give every brief path as an absolute path inside the worktree. A codex unit that reads a stylesheet in a vitest test uses an `@/...css?raw` import (`web/src/plan/editor/theme.test.ts:3`); `readFileSync(new URL(..., import.meta.url))` fails under jsdom with "URL must be of scheme file".
+
+**Fix:** the units were re-forwarded from the worktree root.

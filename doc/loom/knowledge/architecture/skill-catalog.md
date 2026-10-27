@@ -4,7 +4,7 @@ verified: 5546d3c47ddc1f8890b40157134f057393b8b90e
 
 # Skill Catalog
 
-> Skill catalog
+> Catalog
 
 ## Skill Catalog: Two Roots, and Why the Split
 

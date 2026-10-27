@@ -19,7 +19,7 @@ verified: 499b09b6297aeee4896a66df3da86d00f652a618
 
 # Token Accounting Follow-Ups
 
-> Token defects
+> Defects
 
 ## Open Follow-Ups After the Token-Optimization Plan
 

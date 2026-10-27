@@ -218,3 +218,13 @@ prompt spells the schema out.
 **Prevention:** Any relayed request the daemon can refuse must tell its sender to wait for the outcome (`loom request status <id> --wait 90` in the next Bash call) and to correct and resubmit on refusal, as `loom stage commit` does.
 
 **Fix:** `commands/stage/adjudicate.rs::relay_verdict` prints the wait command; `adjudication/prompt.rs::verdict_protocol` adds step 3 (wait, correct on refusal, never ask for input).
+
+## A Contract Dispute Proposed an Edit It Had Not Applied (2026-10-28)
+
+**What happened:** the concept-data stage's first `dispute-contract` for `read-only-stale-reason` proposed an `#[allow(clippy::needless_update)]` in the frozen contract file without applying it, so the adjudicator saw no diff. The cause of the dispute was real: the frozen `tests/plan_concept_contracts.rs` builds `PageContext { read_only, ..Default::default() }` as the stage description mandates, which fails `cargo clippy --all-targets -D warnings` while `PageContext` has one field.
+
+**Why:** the dispute was filed before the frozen file was edited.
+
+**Prevention:** apply the exact proposed edit to the frozen file and commit it before `dispute-contract`, then cite the commit with `--evidence-commit`. A source site that builds a struct with a trailing `..Default::default()` for a field a later plan adds carries `#[allow(clippy::needless_update)]` (precedent `loom/src/map/views/tests.rs:313`), and a frozen contract that does the same needs the same allow.
+
+**Fix:** the second dispute carried the applied edit and its commit.

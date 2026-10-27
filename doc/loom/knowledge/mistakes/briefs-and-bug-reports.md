@@ -313,3 +313,13 @@ sibling's files.
 **Prevention**: Capture the actual cumulative model deltas and existing rate over a full fixed interval; explain the arithmetic with evidence before claiming resolution.
 
 **Fix**: Compare live 30-second token increases against the chart while leaving the pie and its legend unchanged.
+
+## A Brief Paraphrased a Validation Regex, and Fix Briefs Named One Scenario (2026-10-28)
+
+**What happened:** (1) `PageKey::parse` in the concept-data stage rejected `.` and had no 128-character cap against the stage's `^[A-Za-z0-9._-]{1,128}$` rule, because the worker brief paraphrased the rule. (2) The concept-web integration-verify review loop took three fix rounds; each re-review of a fix surfaced a neighbouring edge case (focus identity across two citers, cross-key response ordering, pages the delta did not list).
+
+**Why:** a paraphrase of a pattern drops its character class and bounds; a fix brief that names only the filed scenario leaves its siblings to the next review round.
+
+**Prevention:** quote every validation regex and limit verbatim in the brief, and list the neighbouring cases beside the filed scenario when a fix touches focus identity or delta naming.
+
+**Fix:** the orchestrator corrected `parse`, and the later fix briefs carried the neighbouring cases.

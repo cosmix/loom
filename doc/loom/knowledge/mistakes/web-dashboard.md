@@ -1,6 +1,6 @@
 # Web Dashboard
 
-> Dashboard UI mistakes: codex lane grouping and heat-strip alignment
+> Dashboard UI
 
 ## Codex lanes clustered as one group instead of per forwarder/job pair
 
