@@ -1,11 +1,22 @@
 import { useAtomValue, useStore } from "jotai/react";
 import { MenuIcon } from "lucide-react";
-import { useEffect, useMemo, useRef, useState, type JSX, type RefObject } from "react";
-import { Link, useLocation, useNavigate } from "react-router";
+import {
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type Dispatch,
+  type JSX,
+  type RefObject,
+  type SetStateAction,
+} from "react";
+import { Link, useLocation, useNavigate, useSearchParams } from "react-router";
 
 import { Button } from "@/components/ui/button";
 import type { DocView, FileTree } from "@/plan/api/schema-files";
 import { SelectionAttach } from "@/plan/attachments";
+import { openDiff } from "@/plan/diff/open-diff";
+import { EditMode } from "@/plan/editor/edit-mode";
 import { toAddress } from "@/plan/files/address";
 import { fetchDoc } from "@/plan/files/api";
 import { openDocAtom, openDocIsStaleAtom, previousOpenTextAtom } from "@/plan/files/atoms";
@@ -44,15 +55,11 @@ function formatSize(bytes: number): string {
  * (`openDocIsStaleAtom`) refetches in place and records the text it replaced, so the
  * reader keeps their place and can see what changed.
  */
-function useOpenDoc(path: string, container: RefObject<HTMLElement | null>) {
-  const store = useStore();
-  const [load, setLoad] = useState<Load>({ status: "loading" });
-  const [attempt, setAttempt] = useState(0);
-  const stale = useAtomValue(openDocIsStaleAtom);
-  const seenHash = useAtomValue(openDocAtom)?.seenHash;
-  const keep = useRef<string | null>(null);
-  const slug = useRef<{ path: string; slug: string } | null>(null);
+type SetLoad = Dispatch<SetStateAction<Load>>;
+type SlugRef = RefObject<{ path: string; slug: string } | null>;
 
+function useInitialFetch(path: string, attempt: number, setLoad: SetLoad, slug: SlugRef): void {
+  const store = useStore();
   useEffect(() => {
     let active = true;
     store.set(openDocAtom, null);
@@ -76,8 +83,18 @@ function useOpenDoc(path: string, container: RefObject<HTMLElement | null>) {
     return () => {
       active = false;
     };
-  }, [path, attempt, store]);
+  }, [path, attempt, store, setLoad, slug]);
+}
 
+function useStaleRefetch(
+  path: string,
+  container: RefObject<HTMLElement | null>,
+  setLoad: SetLoad,
+  keep: RefObject<string | null>,
+): void {
+  const store = useStore();
+  const stale = useAtomValue(openDocIsStaleAtom);
+  const seenHash = useAtomValue(openDocAtom)?.seenHash;
   useEffect(() => {
     const open = store.get(openDocAtom);
     if (!stale || !open || open.doc.path !== path) return;
@@ -92,8 +109,16 @@ function useOpenDoc(path: string, container: RefObject<HTMLElement | null>) {
     return () => {
       active = false;
     };
-  }, [stale, seenHash, path, store, container]);
+  }, [stale, seenHash, path, store, container, setLoad, keep]);
+}
 
+function useOpenDoc(path: string, container: RefObject<HTMLElement | null>) {
+  const [load, setLoad] = useState<Load>({ status: "loading" });
+  const [attempt, setAttempt] = useState(0);
+  const keep = useRef<string | null>(null);
+  const slug = useRef<{ path: string; slug: string } | null>(null);
+  useInitialFetch(path, attempt, setLoad, slug);
+  useStaleRefetch(path, container, setLoad, keep);
   return { load, retry: () => setAttempt((n) => n + 1), keep, slug };
 }
 
@@ -174,19 +199,14 @@ function Missing({
   );
 }
 
-/** The open document: header, lock notice and the rendered text. */
-export function ReadingColumn({ path, anchor, tree, onOpenTree }: Props): JSX.Element {
-  const container = useRef<HTMLDivElement>(null);
-  const navigate = useNavigate();
-  const marks = useMarks();
-  const { load, retry, keep, slug } = useOpenDoc(path, container);
-  const open = useAtomValue(openDocAtom);
-  const previous = useAtomValue(previousOpenTextAtom);
-  const doc = open && open.doc.path === path && load.status !== "missing" ? open.doc : null;
-
-  const missingAnchor =
-    doc && anchor && !anchor.startsWith("stage:") && !doc.sections.some((s) => s.anchor === anchor);
-
+/** Scrolls to the anchor (or the top) on a new target, and restores the heading kept across a refresh. */
+function useScrollRestore(
+  doc: DocView | null,
+  anchor: string | null,
+  missingAnchor: boolean,
+  container: RefObject<HTMLElement | null>,
+  keep: RefObject<string | null>,
+): void {
   useEffect(() => {
     if (!doc) return;
     if (anchor && !missingAnchor) document.getElementById(anchor)?.scrollIntoView?.();
@@ -199,25 +219,66 @@ export function ReadingColumn({ path, anchor, tree, onOpenTree }: Props): JSX.El
     keep.current = null;
     if (id) document.getElementById(id)?.scrollIntoView?.();
   }, [doc?.hash, keep]);
+}
 
-  // A renamed plan: the tree no longer lists this path but lists the same slug elsewhere.
+/** A renamed plan: the tree no longer lists this path but lists the same slug elsewhere. */
+function useRenamedRedirect(doc: DocView | null, tree: FileTree | null, path: string): void {
+  const navigate = useNavigate();
   useEffect(() => {
     if (!doc?.plan || !tree || treeDocs(tree).some((e) => e.path === path)) return;
     const moved = renamedPlan(tree, doc.plan.slug.toLowerCase(), path);
     if (moved?.path) navigate(toAddress(moved.path), { replace: true });
   }, [tree, doc, path, navigate]);
+}
 
+function Notices({
+  doc,
+  anchor,
+  missingAnchor,
+  previous,
+}: {
+  doc: DocView;
+  anchor: string | null;
+  missingAnchor: boolean;
+  previous: { path: string } | null;
+}) {
   return (
-    <div className="flex min-w-0 flex-1 flex-col">
-      {onOpenTree && (
-        <div className="border-b border-hairline px-4 py-2">
-          <Button variant="ghost" size="sm" onClick={onOpenTree}>
-            <MenuIcon aria-hidden="true" />
-            Documents
-          </Button>
-        </div>
+    <>
+      {doc.lock && !doc.plan && <LockNotice lock={doc.lock} />}
+      {previous?.path === doc.path && (
+        <p className="px-6 pt-2 text-[13px] text-muted-foreground">
+          <Link to={openDiff("open", doc.path)} className="underline">
+            changed just now
+          </Link>
+        </p>
       )}
-      {load.status === "loading" && !doc && (
+      {missingAnchor && (
+        <p className="px-6 pt-2 text-[13px] text-muted-foreground">
+          Section #{anchor} is not in this document any more
+        </p>
+      )}
+    </>
+  );
+}
+
+function LoadStates({
+  load,
+  loaded,
+  retry,
+  tree,
+  path,
+  slug,
+}: {
+  load: Load;
+  loaded: boolean;
+  retry: () => void;
+  tree: FileTree | null;
+  path: string;
+  slug: SlugRef;
+}) {
+  return (
+    <>
+      {load.status === "loading" && !loaded && (
         <LoadState state="loading" title="Loading the document" />
       )}
       {load.status === "error" && (
@@ -235,22 +296,37 @@ export function ReadingColumn({ path, anchor, tree, onOpenTree }: Props): JSX.El
           path={path}
         />
       )}
-      {doc && (
+    </>
+  );
+}
+
+function DocPane({
+  doc,
+  anchor,
+  missingAnchor,
+  previous,
+  editing,
+  tree,
+  marks,
+  container,
+}: {
+  doc: DocView;
+  anchor: string | null;
+  missingAnchor: boolean;
+  previous: { path: string } | null;
+  editing: boolean;
+  tree: FileTree | null;
+  marks: string[];
+  container: RefObject<HTMLDivElement | null>;
+}) {
+  return (
+    <>
+      <DocHeader doc={doc} />
+      <Notices doc={doc} anchor={anchor} missingAnchor={missingAnchor} previous={previous} />
+      {editing ? (
+        <EditMode doc={doc} />
+      ) : (
         <>
-          <DocHeader doc={doc} />
-          {doc.lock && !doc.plan && <LockNotice lock={doc.lock} />}
-          {previous?.path === doc.path && (
-            <p className="px-6 pt-2 text-[13px] text-muted-foreground">
-              <Link to={`${toAddress(doc.path)}?diff=open`} className="underline">
-                changed just now
-              </Link>
-            </p>
-          )}
-          {missingAnchor && (
-            <p className="px-6 pt-2 text-[13px] text-muted-foreground">
-              Section #{anchor} is not in this document any more
-            </p>
-          )}
           <div ref={container} data-doc-container className="min-w-0 px-6 py-4">
             <DocBody doc={doc} tree={tree} marks={marks} />
           </div>
@@ -261,6 +337,52 @@ export function ReadingColumn({ path, anchor, tree, onOpenTree }: Props): JSX.El
             hash={doc.hash}
           />
         </>
+      )}
+    </>
+  );
+}
+
+/** The open document: header, lock notice and the rendered text. */
+export function ReadingColumn({ path, anchor, tree, onOpenTree }: Props): JSX.Element {
+  const container = useRef<HTMLDivElement>(null);
+  const marks = useMarks();
+  const [params] = useSearchParams();
+  const { load, retry, keep, slug } = useOpenDoc(path, container);
+  const open = useAtomValue(openDocAtom);
+  const previous = useAtomValue(previousOpenTextAtom);
+  const doc = open && open.doc.path === path && load.status !== "missing" ? open.doc : null;
+  const editing = params.get("edit") === "1" && !!doc?.editable && !doc.truncated;
+  const missingAnchor =
+    !!doc &&
+    !!anchor &&
+    !anchor.startsWith("stage:") &&
+    !doc.sections.some((s) => s.anchor === anchor);
+
+  useScrollRestore(doc, anchor, missingAnchor, container, keep);
+  useRenamedRedirect(doc, tree, path);
+
+  return (
+    <div className="flex min-w-0 flex-1 flex-col">
+      {onOpenTree && (
+        <div className="border-b border-hairline px-4 py-2">
+          <Button variant="ghost" size="sm" onClick={onOpenTree}>
+            <MenuIcon aria-hidden="true" />
+            Documents
+          </Button>
+        </div>
+      )}
+      <LoadStates load={load} loaded={!!doc} retry={retry} tree={tree} path={path} slug={slug} />
+      {doc && (
+        <DocPane
+          doc={doc}
+          anchor={anchor}
+          missingAnchor={missingAnchor}
+          previous={previous}
+          editing={editing}
+          tree={tree}
+          marks={marks}
+          container={container}
+        />
       )}
     </div>
   );
