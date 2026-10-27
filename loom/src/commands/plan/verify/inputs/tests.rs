@@ -50,14 +50,14 @@ fn repo(plan_text: &str) -> TempDir {
     temp
 }
 
-fn messages(errors: &[crate::commands::plan::verify::JsonError]) -> Vec<&str> {
+fn messages(errors: &[crate::commands::plan::verify::report::VerifyError]) -> Vec<&str> {
     errors.iter().map(|e| e.message.as_str()).collect()
 }
 
 #[test]
 fn invalid_glob_token_is_a_hard_error() {
     let temp = repo("Read doc/plans/briefs/x**.md");
-    let (errors, _) = input_findings(temp.path(), &temp.path().join(PLAN));
+    let (errors, _) = input_findings(temp.path(), &temp.path().join(PLAN), None);
     let text = messages(&errors);
     assert_eq!(text.len(), 1, "{text:?}");
     assert!(text[0].starts_with("doc/plans/briefs/x**.md (referenced in doc/plans/PLAN-foo.md)"));
@@ -66,7 +66,7 @@ fn invalid_glob_token_is_a_hard_error() {
 #[test]
 fn missing_brief_is_a_hard_error_naming_the_source() {
     let temp = repo(&format!("Read {BRIEF}"));
-    let (errors, notes) = input_findings(temp.path(), &temp.path().join(PLAN));
+    let (errors, notes) = input_findings(temp.path(), &temp.path().join(PLAN), None);
     let text = messages(&errors);
     assert_eq!(text.len(), 1, "{text:?}");
     assert!(
@@ -85,7 +85,7 @@ fn missing_brief_is_a_hard_error_naming_the_source() {
 fn uncommitted_present_brief_is_a_note_not_an_error() {
     let temp = repo(&format!("Read {BRIEF}"));
     write(temp.path(), BRIEF, "brief");
-    let (errors, notes) = input_findings(temp.path(), &temp.path().join(PLAN));
+    let (errors, notes) = input_findings(temp.path(), &temp.path().join(PLAN), None);
     assert!(errors.is_empty(), "{:?}", messages(&errors));
     assert_eq!(notes.len(), 1, "{notes:?}");
     assert!(
@@ -105,14 +105,14 @@ fn committed_inputs_produce_no_findings() {
     write(temp.path(), BRIEF, "brief");
     git(temp.path(), &["add", "doc"]);
     git(temp.path(), &["commit", "-m", "plan"]);
-    let (errors, notes) = input_findings(temp.path(), &temp.path().join(PLAN));
+    let (errors, notes) = input_findings(temp.path(), &temp.path().join(PLAN), None);
     assert!(errors.is_empty() && notes.is_empty(), "{notes:?}");
 }
 
 #[test]
 fn prose_after_a_code_span_is_not_a_reference() {
     let temp = repo("**Briefs live outside `doc/plans/briefs/`.** Nothing else.");
-    let (errors, _) = input_findings(temp.path(), &temp.path().join(PLAN));
+    let (errors, _) = input_findings(temp.path(), &temp.path().join(PLAN), None);
     assert!(errors.is_empty(), "{:?}", messages(&errors));
 }
 
@@ -121,7 +121,7 @@ fn outside_a_git_repository_the_note_is_skipped() {
     let temp = TempDir::new().unwrap();
     write(temp.path(), PLAN, &format!("Read {BRIEF}"));
     write(temp.path(), BRIEF, "brief");
-    let (errors, notes) = input_findings(temp.path(), &temp.path().join(PLAN));
+    let (errors, notes) = input_findings(temp.path(), &temp.path().join(PLAN), None);
     assert!(errors.is_empty() && notes.is_empty(), "{notes:?}");
 }
 
