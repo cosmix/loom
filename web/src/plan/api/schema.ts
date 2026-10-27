@@ -1,4 +1,5 @@
 import { z } from "@/api/zod";
+import { filesMessageSchemas } from "./schema-files";
 
 export const PREREQ_KINDS = ["tmux", "claude", "claude_login", "sandbox"] as const;
 export const BIND_KINDS = ["loopback", "remote"] as const;
@@ -24,6 +25,9 @@ export const PLAN_MESSAGE_TYPES = [
   "checklist",
   "server_stopping",
   "refused",
+  "tree_changed",
+  "doc_changed",
+  "validation",
 ] as const;
 export const CLIENT_MESSAGE_TYPES = ["set_name", "reading"] as const;
 
@@ -112,6 +116,7 @@ export const planMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("checklist"), ...checklistViewSchema.shape }),
   z.strictObject({ type: z.literal("server_stopping") }),
   z.strictObject({ type: z.literal("refused"), ...refusedSchema.shape }),
+  ...filesMessageSchemas,
 ]);
 export const clientMessageSchema = z.discriminatedUnion("type", [
   z.strictObject({ type: z.literal("set_name"), name: z.string() }),

@@ -6,6 +6,7 @@
 //! Invalid references are collected, not raised, so one pass lists them all.
 
 use anyhow::{Context, Result};
+use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet, VecDeque};
 use std::fmt;
 use std::fs;
@@ -92,6 +93,16 @@ enum Expansion {
 /// Walk the plan's inputs. I/O failures propagate; unusable references are
 /// recorded in `Inputs::invalid`.
 pub(crate) fn collect_inputs(root: &Path, plan: &Path) -> Result<Inputs> {
+    collect_inputs_with_text(root, plan, None)
+}
+
+/// [`collect_inputs`] with the plan's own text taken from `plan_text` when it is given, so a
+/// proposed edit is checked before it is on disk. Every other input is read from the tree.
+pub(crate) fn collect_inputs_with_text(
+    root: &Path,
+    plan: &Path,
+    plan_text: Option<&str>,
+) -> Result<Inputs> {
     let plan = plan.strip_prefix(root).unwrap_or(plan);
     let root = root.canonicalize()?;
     let mut found = Inputs::default();
@@ -130,7 +141,8 @@ pub(crate) fn collect_inputs(root: &Path, plan: &Path) -> Result<Inputs> {
                 pending.push_back((path.join(entry?.file_name()), origin.clone()));
             }
         } else {
-            visit_file(&root, path, origin, &mut found, &mut pending)?;
+            let text = plan_text.filter(|_| path == plan);
+            visit_file(&root, path, origin, text, &mut found, &mut pending)?;
         }
     }
     Ok(found)
@@ -150,39 +162,65 @@ fn bundle_dir(root: &Path, plan: &Path) -> Option<PathBuf> {
     root.join(&bundle).exists().then_some(bundle)
 }
 
-/// Record a file input and queue the brief references a markdown input names. A markdown input
-/// over [`MAX_DOC_BYTES`] stays an input (so it is still locked) but is recorded as invalid and
-/// never read: a sparse file would otherwise exhaust memory on every load of the plan.
+/// Record a file input and queue the brief references a markdown input names. `text`, when
+/// given, is the input's content in place of the file on disk.
 fn visit_file(
     root: &Path,
     path: PathBuf,
     origin: Origin,
+    text: Option<&str>,
     found: &mut Inputs,
     pending: &mut VecDeque<(PathBuf, Origin)>,
 ) -> Result<()> {
-    let absolute = root.join(&path);
     found.files.entry(path.clone()).or_insert(origin.clone());
-    if absolute.is_file() && absolute.extension().is_some_and(|ext| ext == "md") {
-        let content = match read_to_string_bounded(root, &path, MAX_DOC_BYTES) {
-            Ok(content) => content,
-            Err(error) if error.is::<OverLimit>() => {
-                let limit = format!("larger than {} MiB", MAX_DOC_BYTES / (1024 * 1024));
-                found.reject(&path, &origin, limit);
-                return Ok(());
-            }
-            Err(error) => {
-                return Err(error)
-                    .with_context(|| format!("Cannot read plan input {}", absolute.display()))
-            }
-        };
-        let source = Origin::File(path);
-        pending.extend(
-            extract_brief_paths(&content)
-                .into_iter()
-                .map(|token| (PathBuf::from(token), source.clone())),
-        );
-    }
+    let Some(content) = markdown_content(root, &path, &origin, text, found)? else {
+        return Ok(());
+    };
+    let source = Origin::File(path);
+    pending.extend(
+        extract_brief_paths(&content)
+            .into_iter()
+            .map(|token| (PathBuf::from(token), source.clone())),
+    );
     Ok(())
+}
+
+/// The content of a markdown input to scan for references: `text` when given, else the file.
+/// `None` for a non-markdown or absent input. A markdown input over [`MAX_DOC_BYTES`] stays an
+/// input (so it is still locked) but is recorded as invalid and never read: a sparse file would
+/// otherwise exhaust memory on every load of the plan.
+fn markdown_content<'a>(
+    root: &Path,
+    path: &Path,
+    origin: &Origin,
+    text: Option<&'a str>,
+    found: &mut Inputs,
+) -> Result<Option<Cow<'a, str>>> {
+    let limit = || format!("larger than {} MiB", MAX_DOC_BYTES / (1024 * 1024));
+    if path.extension().is_none_or(|ext| ext != "md") {
+        return Ok(None);
+    }
+    if let Some(text) = text {
+        if text.len() > MAX_DOC_BYTES {
+            found.reject(path, origin, limit());
+            return Ok(None);
+        }
+        return Ok(Some(Cow::Borrowed(text)));
+    }
+    let absolute = root.join(path);
+    if !absolute.is_file() {
+        return Ok(None);
+    }
+    match read_to_string_bounded(root, path, MAX_DOC_BYTES) {
+        Ok(content) => Ok(Some(Cow::Owned(content))),
+        Err(error) if error.is::<OverLimit>() => {
+            found.reject(path, origin, limit());
+            Ok(None)
+        }
+        Err(error) => {
+            Err(error).with_context(|| format!("Cannot read plan input {}", absolute.display()))
+        }
+    }
 }
 
 fn expand_pattern(

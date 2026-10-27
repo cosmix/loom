@@ -11,6 +11,7 @@ pub mod plan_lifecycle;
 pub mod plan_review;
 pub mod safe_fs;
 pub mod safe_read;
+pub mod safe_replace;
 pub mod safe_write;
 pub mod session_files;
 pub mod stage_events;
