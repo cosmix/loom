@@ -7,28 +7,32 @@ import {
   useState,
   type JSX,
   type KeyboardEvent,
+  type MutableRefObject,
+  type RefObject,
 } from "react";
 import { useNavigate } from "react-router";
 
 import { TooltipProvider } from "@/components/ui/tooltip";
-import type { ConceptPage } from "@/plan/api/schema-concept";
+import type { ConceptPage, SourceAnchor } from "@/plan/api/schema-concept";
 import type { AttachmentDraft } from "@/plan/attachments/types";
 import { treeAtom } from "@/plan/files/atoms";
 import { docPathsOf } from "@/plan/files/tree";
 import type { Store } from "@/state/store";
 
 import { Announcer, type Arrival } from "./announce";
-import { useColumnActions } from "./column-actions";
+import { useColumnActions, type ColumnActions } from "./column-actions";
 import { ColumnContext, type ColumnContextValue } from "./column-context";
-import { useOpenScroll, useRovingFocus, useScrollAnchor } from "./column-focus";
+import { useOpenScroll, useRovingFocus, useScrollAnchor, type Roving } from "./column-focus";
 import { handleColumnKey } from "./column-keys";
 import { passagesRecord } from "./column-model";
-import { useCitedPages } from "./cited-pages";
+import { useCitedPages, type CitedPages } from "./cited-pages";
 import { useSentenceFlash } from "./flash";
 import { carryOpenState } from "./open-state";
 import { citedLookup, conceptPageAtom } from "./page-state";
 import { Blocks } from "./paragraph";
-import { readingOrder } from "./reading-order";
+import { sectionInShownDoc } from "./passage-doc";
+import { columnOrder } from "./reading-order";
+import type { ColumnTarget, OpenRun } from "./types";
 import { notesAtom, openRunsAtom } from "./view-state";
 
 import "./concept.css";
@@ -54,69 +58,90 @@ function useDocPaths(page: ConceptPage): ReadonlySet<string> {
  * On every page replacement (the `page` prop changes and a rebuild arrived, `previous` is a
  * different page), carries the open runs onto the new page by the open-state rule and stores
  * the runs and the notes of the ones that folded. The page present at mount carries nothing:
- * page-state already restored stored runs on load.
+ * page-state already restored stored runs on load. The returned flag is set when the carry
+ * wrote, which re-renders the column once more (see `useScrollAnchor`).
  */
-function useCarryOnReplace(store: Store, pageKey: string, page: ConceptPage): void {
+function useCarryOnReplace(
+  store: Store,
+  pageKey: string,
+  page: ConceptPage,
+): MutableRefObject<boolean> {
   const seen = useRef(page);
+  const carried = useRef(false);
   useLayoutEffect(() => {
     if (seen.current === page) return;
     seen.current = page;
     const previous = store.get(conceptPageAtom(pageKey)).previous;
     if (!previous || previous === page) return;
     const open = store.get(openRunsAtom(pageKey));
-    const result = carryOpenState(previous, page, open, citedLookup(store, page));
-    store.set(openRunsAtom(pageKey), result.open);
+    const inFile = (anchor: SourceAnchor) => sectionInShownDoc(store, anchor);
+    const result = carryOpenState(previous, page, open, citedLookup(store, page), inFile);
+    if (JSON.stringify(result.open) !== JSON.stringify(open)) {
+      store.set(openRunsAtom(pageKey), result.open);
+      carried.current = true;
+    }
     if (result.notes.length > 0) {
       store.set(notesAtom(pageKey), (notes) => [...notes, ...result.notes]);
+      carried.current = true;
     }
   }, [store, pageKey, page]);
+  return carried;
 }
 
-type Props = {
-  pageKey: string;
-  page: ConceptPage;
-  /** Called by the `a` key with the focused sentence or passage; absent for read-only browsers. */
-  onAttach?: (draft: AttachmentDraft) => void;
+type ColumnModel = {
+  open: OpenRun[];
+  cited: CitedPages;
+  flashing: ReadonlySet<string>;
+  arrival: Arrival | null;
+  order: ColumnTarget[];
+  roving: Roving;
+  actions: ColumnActions;
 };
 
 /**
- * The reading column of concept mode: a document with one tab stop and a roving focus over the
- * page's sentences, the runs opened under them and their passages (section 05). Open runs are
- * view state of this browser tab; a page replacement carries them forward by the source
- * sections they rest on.
+ * The column's state and behaviour: open runs, cited pages, flashes, the reading order with
+ * its roving focus, opening and folding, and scrolling. The carry runs before the scroll
+ * anchor so the anchor's compensation sees the carry's write in the same commit.
  */
-export function ReadingColumn({ pageKey, page, onAttach }: Props): JSX.Element {
-  const store = useStore();
-  const navigate = useNavigate();
-  const columnRef = useRef<HTMLDivElement>(null);
+function useColumnModel(
+  store: Store,
+  columnRef: RefObject<HTMLDivElement | null>,
+  pageKey: string,
+  page: ConceptPage,
+): ColumnModel {
   const open = useAtomValue(openRunsAtom(pageKey));
-  const notes = useAtomValue(notesAtom(pageKey));
   const cited = useCitedPages(pageKey, page);
-  const docPaths = useDocPaths(page);
   const [arrival, setArrival] = useState<Arrival | null>(null);
-
-  useCarryOnReplace(store, pageKey, page);
+  const carried = useCarryOnReplace(store, pageKey, page);
   const flashing = useSentenceFlash(
     cited.states,
     useCallback((count) => setArrival((last) => ({ count, seq: (last?.seq ?? 0) + 1 })), []),
   );
   const order = useMemo(
-    () => readingOrder(page, open, passagesRecord(page, open, cited.lookup)),
+    () => columnOrder(page, open, passagesRecord(page, open, cited.lookup)),
     [page, open, cited.lookup],
   );
-  const roving = useRovingFocus(columnRef, order, open);
-  const { openSentence, foldRun, pendingOpen } = useColumnActions(
-    store,
-    pageKey,
-    page,
-    roving.move,
-  );
-  useScrollAnchor(columnRef, roving, page);
-  useOpenScroll(columnRef, pendingOpen, open);
+  const roving = useRovingFocus(columnRef, order, open, { replacement: page, carried });
+  const actions = useColumnActions(store, pageKey, page, roving.move);
+  useScrollAnchor(columnRef, roving, page, carried);
+  useOpenScroll(columnRef, actions.pendingOpen, open);
+  return { open, cited, flashing, arrival, order, roving, actions };
+}
 
+/** The value the column's sentences, runs and passages read through `useColumn`. */
+function useContextValue(
+  pageKey: string,
+  page: ConceptPage,
+  model: ColumnModel,
+): ColumnContextValue {
+  const navigate = useNavigate();
+  const notes = useAtomValue(notesAtom(pageKey));
+  const docPaths = useDocPaths(page);
   const openPage = useCallback((target: string) => void navigate(`/${target}`), [navigate]);
   const openAddress = useCallback((address: string) => void navigate(address), [navigate]);
-  const context = useMemo<ColumnContextValue>(
+  const { open, flashing, cited } = model;
+  const { openSentence, foldRun } = model.actions;
+  return useMemo<ColumnContextValue>(
     () => ({
       pageKey,
       page,
@@ -145,19 +170,39 @@ export function ReadingColumn({ pageKey, page, onAttach }: Props): JSX.Element {
       openAddress,
     ],
   );
+}
+
+type Props = {
+  pageKey: string;
+  page: ConceptPage;
+  /** Called by the `a` key with the focused sentence or passage; absent for read-only browsers. */
+  onAttach?: (draft: AttachmentDraft) => void;
+};
+
+/**
+ * The reading column of concept mode: a document with one tab stop and a roving focus over the
+ * page's sentences, the runs opened under them and their passages (section 05). Open runs are
+ * view state of this browser tab; a page replacement carries them forward by the source
+ * sections they rest on.
+ */
+export function ReadingColumn({ pageKey, page, onAttach }: Props): JSX.Element {
+  const store = useStore();
+  const columnRef = useRef<HTMLDivElement>(null);
+  const model = useColumnModel(store, columnRef, pageKey, page);
+  const context = useContextValue(pageKey, page, model);
   const onKeyDown = (event: KeyboardEvent<HTMLDivElement>) =>
-    handleColumnKey(event, roving.current, {
+    handleColumnKey(event, model.roving.current, {
       page,
       pageKey,
-      lookup: cited.lookup,
-      citedPage: cited.citedPage,
-      open,
-      order,
+      lookup: model.cited.lookup,
+      citedPage: model.cited.citedPage,
+      open: model.open,
+      order: model.order,
       store,
-      move: roving.move,
-      openSentence,
-      foldRun,
-      openAddress,
+      move: model.roving.move,
+      openSentence: model.actions.openSentence,
+      foldRun: model.actions.foldRun,
+      openAddress: context.openAddress,
       onAttach,
     });
 
@@ -169,14 +214,14 @@ export function ReadingColumn({ pageKey, page, onAttach }: Props): JSX.Element {
           role="document"
           aria-label="Reading column"
           // One tab stop: the column itself steps aside while focus roves inside it.
-          tabIndex={roving.inside ? -1 : 0}
+          tabIndex={model.roving.inside ? -1 : 0}
           className="concept-column"
           onKeyDown={onKeyDown}
-          onFocus={roving.onFocus}
-          onBlur={roving.onBlur}
+          onFocus={model.roving.onFocus}
+          onBlur={model.roving.onBlur}
         >
           <Blocks blocks={page.blocks} />
-          <Announcer title={page.title} arrival={arrival} />
+          <Announcer title={page.title} arrival={model.arrival} />
         </div>
       </ColumnContext.Provider>
     </TooltipProvider>

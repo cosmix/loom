@@ -191,6 +191,32 @@ describe("carryOpenState", () => {
     ]);
   });
 
+  it("a section the rebuild stopped citing but the file still has gets the rewritten note", () => {
+    const prev = page([sentence("s0", [at("y")]), sentence("s1", [at("a"), at("b", "Bee")])]);
+    const next = page([sentence("s0", [at("y")]), sentence("s1", [at("a")])]);
+    const inFile = (anchor: SourceAnchorRef) => anchor.anchor === "b";
+    const open = [run("s1", [at("a"), at("b", "Bee")])];
+    const result = carryOpenState(prev, next, open, undefined, inFile);
+    expect(result.open).toEqual([run("s1", [at("a")])]);
+    expect(result.notes).toEqual([
+      {
+        paragraphOf: "s1",
+        text: "This summary was rewritten and no longer draws on Bee",
+        path: FILE,
+      },
+    ]);
+  });
+
+  it("a section gone from its file keeps the removed note", () => {
+    const prev = page([sentence("s0", [at("y")]), sentence("s1", [at("a"), at("b", "Bee")])]);
+    const next = page([sentence("s0", [at("y")]), sentence("s1", [at("a")])]);
+    const open = [run("s1", [at("a"), at("b", "Bee")])];
+    const result = carryOpenState(prev, next, open, undefined, () => false);
+    expect(result.notes).toEqual([
+      { paragraphOf: "s1", text: "Section Bee was removed from section_01.md", path: FILE },
+    ]);
+  });
+
   it("output follows the next page's reading order", () => {
     const prev = page([sentence("s1", [at("a")]), sentence("s2", [at("b")])]);
     const next = page([sentence("t1", [at("b")])], [sentence("t2", [at("a")])]);

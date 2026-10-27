@@ -16,6 +16,7 @@ import { planSocketAtom } from "@/plan/state/atoms";
 import { pageSentences } from "./open-state";
 import {
   conceptPageAtom,
+  isMissing,
   loadConceptPage,
   subscribeConcept,
   useConceptPage,
@@ -301,5 +302,98 @@ describe("resync and remount", () => {
     expect(
       JSON.parse(window.sessionStorage.getItem(`loom-plan:concept:${key}`) ?? "[]"),
     ).toHaveLength(1);
+  });
+});
+
+describe("pages the server does not have", () => {
+  const key = "product/section_01";
+  const failWith = (status: number, error: string, message: string) =>
+    fetchMock.mockImplementationOnce(
+      async () => new Response(JSON.stringify({ error, message }), { status }),
+    );
+  it("a refetch that returns 404 drops the loaded page", async () => {
+    const store = createStore();
+    await loadConceptPage(store, key);
+    expect(store.get(conceptPageAtom(key)).page).not.toBeNull();
+    delete served[key];
+    await loadConceptPage(store, key);
+    const state = store.get(conceptPageAtom(key));
+    expect(state).toMatchObject({ page: null, previous: null, status: 404 });
+    expect(isMissing(state)).toBe(true);
+  });
+
+  it("a 400 bad_page answer reads as missing too", async () => {
+    const store = createStore();
+    failWith(400, "bad_page", "not a concept page key");
+    await loadConceptPage(store, key);
+    const state = store.get(conceptPageAtom(key));
+    expect(state).toMatchObject({ page: null, error: "not a concept page key", status: 400 });
+    expect(isMissing(state)).toBe(true);
+  });
+
+  it("a refetch that fails with 500 keeps the page and is not missing", async () => {
+    const store = createStore();
+    await loadConceptPage(store, key);
+    failWith(500, "internal", "database is down");
+    await loadConceptPage(store, key);
+    const state = store.get(conceptPageAtom(key));
+    expect(state.page).not.toBeNull();
+    expect(state).toMatchObject({ error: "database is down", status: 500 });
+    expect(isMissing(state)).toBe(false);
+    await loadConceptPage(store, key);
+    expect(store.get(conceptPageAtom(key)).status).toBeUndefined();
+  });
+
+  it.each(["product/../../server", "product/..", "product/a/b", "plans/x", "product/", "..", ""])(
+    "the key %j is never fetched",
+    async (bad) => {
+      const store = createStore();
+      await loadConceptPage(store, bad);
+      expect(fetchMock).not.toHaveBeenCalled();
+      expect(store.get(conceptPageAtom(bad)).page).toBeNull();
+    },
+  );
+});
+
+describe("mounting after time away", () => {
+  function Page({ pageKey }: { pageKey: string }) {
+    useConceptSubscription();
+    useConceptPage(pageKey);
+    return null;
+  }
+  const mount = (store: Store, pageKey: string) =>
+    createElement(Provider, { store }, createElement(Page, { pageKey }));
+
+  it("refetches every cached page once and refreshes the passages", async () => {
+    const store = connected();
+    await loadConceptPage(store, "product");
+    await loadConceptPage(store, "product/section_01");
+    served["product/section_01"] = withFirstText(summary(), "Rewritten while away.");
+    fetchMock.mockClear();
+    render(mount(store, "product"));
+    await waitFor(() =>
+      expect(store.get(conceptPageAtom("product/section_01")).previous).not.toBeNull(),
+    );
+    expect(fetchedKeys().sort()).toEqual([
+      "/api/concept/product",
+      "/api/concept/product/section_01",
+    ]);
+    const cited = store.get(conceptPageAtom("product/section_01")).page!;
+    expect(pageSentences(cited)[0]!.text).toBe("Rewritten while away.");
+    expect(refreshAllDocViews).toHaveBeenCalledWith(store);
+  });
+
+  it("a key change while mounted refetches only that page", async () => {
+    const store = connected();
+    await loadConceptPage(store, "product");
+    await loadConceptPage(store, "product/section_01");
+    const view = render(mount(store, "product"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(4));
+    fetchMock.mockClear();
+    vi.mocked(refreshAllDocViews).mockClear();
+    view.rerender(mount(store, "product/section_01"));
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(1));
+    expect(fetchedKeys()).toEqual(["/api/concept/product/section_01"]);
+    expect(refreshAllDocViews).not.toHaveBeenCalled();
   });
 });

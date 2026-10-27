@@ -1,5 +1,8 @@
 import type { Sentence } from "@/plan/api/schema-concept";
+import { MAX_ATTACHMENT_BYTES } from "@/plan/attachments";
 import type { AttachmentDraft } from "@/plan/attachments/types";
+
+const encoder = new TextEncoder();
 
 /** The sentence a `data-summary` / `data-sentence-id` pair names, with the hash of its page. */
 export type SentenceResolver = (
@@ -86,15 +89,33 @@ function draftForPart(part: Part, resolve: SentenceResolver): AttachmentDraft | 
 }
 
 /**
- * The draft for the first selected part. Passage blocks supply their document hash in
- * `data-hash`; a summary sentence is resolved by (summary, id) through `resolve`, because an
- * opened level-1 run shows another summary's sentences whose ids can collide with the page's.
+ * One draft per selected part, in reading order, so a selection spanning levels carries each
+ * part's provenance. Passage blocks supply their document hash in `data-hash`; a summary
+ * sentence is resolved by (summary, id) through `resolve`, because an opened level-1 run shows
+ * another summary's sentences whose ids can collide with the page's. A part that does not
+ * resolve is dropped.
+ */
+export function attachmentsFromSelection(
+  sel: Selection,
+  resolve: SentenceResolver,
+): AttachmentDraft[] {
+  if (sel.rangeCount === 0 || sel.isCollapsed) return [];
+  return selectedParts(sel.getRangeAt(0)).flatMap((part) => draftForPart(part, resolve) ?? []);
+}
+
+/** Whether a draft is over plan 3's per-attachment limit (section 12, 16 KiB). */
+export function overLimit(draft: AttachmentDraft): boolean {
+  return encoder.encode(draft.text).length > MAX_ATTACHMENT_BYTES;
+}
+
+/**
+ * The draft plan 3's single-draft `useSelectionAttachment` shows: the first part over the limit,
+ * so Add to chat shows its note and adds nothing, else the first part.
  */
 export function attachmentFromSelection(
   sel: Selection,
   resolve: SentenceResolver,
 ): AttachmentDraft | null {
-  if (sel.rangeCount === 0 || sel.isCollapsed) return null;
-  const part = selectedParts(sel.getRangeAt(0))[0];
-  return part ? draftForPart(part, resolve) : null;
+  const parts = attachmentsFromSelection(sel, resolve);
+  return parts.find(overLimit) ?? parts[0] ?? null;
 }

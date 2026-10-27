@@ -31,7 +31,7 @@ export function PlanGlyph({
         <ul className="m-0 flex list-none flex-col gap-1 p-0 text-[13px]">
           {plans.map((plan) => (
             <li key={plan.slug}>
-              <Link className="underline" to={`/engineering/${plan.slug}`}>
+              <Link className="underline" to={`/engineering/${encodeURIComponent(plan.slug)}`}>
                 {plan.title}
               </Link>
               <span className="ml-2 text-muted-foreground">{plan.state}</span>

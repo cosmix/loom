@@ -1,23 +1,30 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { createStore } from "jotai";
-import { Provider } from "jotai/react";
-import { createMemoryRouter, RouterProvider } from "react-router";
+import { cleanup, fireEvent, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { initClient } from "@/plan/api/client";
-import authoringFixture from "@/plan/api/fixtures/authoring.json";
 import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import filesDocFixture from "@/plan/api/fixtures/files-doc.json";
-import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
-import { authoringViewSchema, serverInfoSchema } from "@/plan/api/schema";
 import { conceptPageSchema } from "@/plan/api/schema-concept";
 import { pendingAttachmentsAtom } from "@/plan/attachments";
 import { PLAN_HELP_KEYS } from "@/plan/help-keys";
-import { routes } from "@/plan/router";
-import { authoringAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 import { conceptPageLabel } from "./concept-route";
+import {
+  canAuthor,
+  clone,
+  descriptionOf,
+  doc,
+  FIRST_OVERVIEW,
+  keyList,
+  makeStubFetch,
+  openFirstRun,
+  OVERVIEW_RUN,
+  planPage,
+  readingColumn,
+  renderAt,
+  text,
+  type Page,
+} from "./concept-route-support";
 import { conceptPageAtom } from "./page-state";
 
 const extras = vi.hoisted(() => ({
@@ -29,45 +36,10 @@ vi.mock("./page-header-extras", () => ({ PageHeaderExtras: extras.header }));
 vi.mock("./key-chip-extras", () => ({ KeyChipExtras: extras.chip }));
 vi.mock("./key-row-extras", () => ({ KeyRowExtras: extras.row }));
 
-type Store = ReturnType<typeof createStore>;
-type Page = Record<string, unknown>;
-
-const FIRST_OVERVIEW = /^Teams plan work together/;
-const OVERVIEW_RUN = "Detail of Teams plan work together and";
-const doc = (id: string, title: string, page: string) => ({
-  id,
-  title,
-  path: `doc/${page}.md`,
-  page,
-});
-
 let pages: Record<string, unknown> = {};
 let docs: Record<string, unknown> = {};
 let failing = false;
-let fetched: string[] = [];
-
-const clone = <T,>(value: T): T => structuredClone(value);
-const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), { status, headers: { "content-type": "application/json" } });
-
-function stubFetch(input: RequestInfo | URL): Promise<Response> {
-  const raw = typeof input === "string" ? input : input instanceof URL ? input.href : input.url;
-  fetched.push(raw);
-  const url = new URL(raw, "http://localhost");
-  const notFound = json({ error: "not_found", message: "no such concept page" }, 404);
-  if (failing && url.pathname.startsWith("/api/concept/")) {
-    return Promise.resolve(json({ error: "internal", message: "database is down" }, 500));
-  }
-  if (url.pathname.startsWith("/api/concept/")) {
-    const page = pages[decodeURIComponent(url.pathname.slice("/api/concept/".length))];
-    return Promise.resolve(page ? json(page) : notFound);
-  }
-  if (url.pathname === "/api/doc") {
-    const found = docs[(url.searchParams.get("path") ?? "").replace(/^doc\//, "")];
-    return Promise.resolve(found ? json(found) : notFound);
-  }
-  return Promise.resolve(notFound);
-}
+const fetched: string[] = [];
 
 function serveOverview(overview: Page = clone(overviewFixture)): void {
   pages = {
@@ -78,65 +50,16 @@ function serveOverview(overview: Page = clone(overviewFixture)): void {
   };
 }
 
-function planPage(extra: Page): Page {
-  return {
-    ...clone(summaryFixture),
-    key: "engineering/a",
-    title: "Plan a",
-    path: "doc/plans/PLAN-a.md",
-    colour: null,
-    plan_state: "written",
-    key_chips: [],
-    implemented_by: [],
-    implements: { kind: "not_stated" },
-    ...extra,
-  };
-}
-
-function canAuthor(store: Store): void {
-  store.set(serverInfoAtom, serverInfoSchema.parse({ ...serverInfoFixture, read_only: [] }));
-  store.set(authoringAtom, authoringViewSchema.parse({ ...authoringFixture, holder: null }));
-}
-
-function renderAt(path: string, setup?: (store: Store) => void) {
-  const store = createStore();
-  initClient(store);
-  setup?.(store);
-  const router = createMemoryRouter(routes, { initialEntries: [path] });
-  render(
-    <Provider store={store}>
-      <RouterProvider router={router} />
-    </Provider>,
-  );
-  return { router, store };
-}
-
-const readingColumn = () => screen.findByRole("document", { name: "Reading column" });
-const text = () => (document.body.textContent ?? "").replace(/\s+/g, " ");
-const keyList = () => screen.getByRole("list", { name: "Document key" });
-
-function descriptionOf(element: Element): string {
-  const ids = (element.getAttribute("aria-describedby") ?? "").split(/\s+/).filter(Boolean);
-  return ids.map((id) => document.getElementById(id)?.textContent?.trim() ?? "").join(" ");
-}
-
-async function openFirstRun(): Promise<HTMLElement> {
-  const column = await readingColumn();
-  fireEvent.click(within(column).getByRole("button", { name: FIRST_OVERVIEW }));
-  await within(column).findByRole("group", { name: OVERVIEW_RUN });
-  return column;
-}
-
 beforeEach(() => {
   pages = {};
   docs = {};
   failing = false;
-  fetched = [];
+  fetched.length = 0;
   extras.header.mockClear();
   extras.chip.mockClear();
   extras.row.mockClear();
   window.sessionStorage.clear();
-  vi.stubGlobal("fetch", vi.fn(stubFetch));
+  vi.stubGlobal("fetch", vi.fn(makeStubFetch(() => ({ pages, docs, failing }), fetched)));
 });
 
 afterEach(() => {
@@ -189,6 +112,8 @@ describe("overviews and the document key", () => {
       { number: 1, name: "section_01", doc: doc("section_01", "Planning", "product/section_01") },
     ];
     const loaded = conceptPageSchema.parse(planPage({ implements: { kind: "sections", links } }));
+    // The seeded page is one the server has: mounting refetches every cached page.
+    pages["engineering/a"] = loaded;
     renderAt("/engineering", (store) =>
       store.set(conceptPageAtom("engineering/a"), { page: loaded, previous: null, error: null }),
     );

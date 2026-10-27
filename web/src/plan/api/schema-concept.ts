@@ -1,5 +1,7 @@
 import { z } from "@/api/zod";
 
+import { planStateViewSchema } from "./schema-files";
+
 export const SUMMARY_STATES = ["current", "incomplete", "stale", "rebuilding", "missing"] as const;
 export const OUT_OF_DATE_REASONS = [
   "source_changed",
@@ -17,8 +19,32 @@ export const EMPTY_KINDS = [
   "building",
 ] as const;
 
+/** The empty-state offers the server sends (`Offer::id` of the two start offers). */
+export const EMPTY_OFFERS = ["start-vision", "start-metaplan"] as const;
+
 const u8 = z.number().int().min(0).max(255);
 const u32 = z.number().int().min(0).max(4294967295);
+
+const PAGE_NAME = /^[A-Za-z0-9._-]{1,128}$/;
+
+function isPageName(name: string): boolean {
+  return PAGE_NAME.test(name) && name !== "." && name !== "..";
+}
+
+/**
+ * Whether `key` is a concept page key: `product`, `engineering`, or `<scope>/<name>`. Mirrors
+ * the server's `PageKey::parse` (loom/src/plan_server/concept/page.rs), so a key that passes
+ * names no path outside `/api/concept/`.
+ */
+export function isConceptPageKey(key: string): boolean {
+  const [scope, name, ...rest] = key.split("/");
+  if (scope !== "product" && scope !== "engineering") return false;
+  if (name === undefined) return true;
+  return rest.length === 0 && isPageName(name);
+}
+
+const pageKeySchema = z.string().refine(isConceptPageKey, "not a concept page key");
+const pageNameSchema = z.string().refine(isPageName, "not a page name");
 
 export const summaryStateViewSchema = z.enum(SUMMARY_STATES);
 export const outOfDateReasonSchema = z.enum(OUT_OF_DATE_REASONS);
@@ -31,7 +57,7 @@ export const docLinkSchema = z.strictObject({
   id: z.string(),
   title: z.string(),
   path: z.string(),
-  page: z.string(),
+  page: pageKeySchema,
 });
 export const keyChipSchema = z.strictObject({
   doc: docLinkSchema,
@@ -51,7 +77,7 @@ export const citationSchema = z.discriminatedUnion("kind", [
 ]);
 export const sourceAnchorSchema = z.strictObject({ path: z.string(), anchor: z.string() });
 export const planLinkSchema = z.strictObject({
-  slug: z.string(),
+  slug: pageNameSchema,
   title: z.string(),
   state: z.string(),
 });
@@ -83,7 +109,7 @@ export const implementsViewSchema = z.discriminatedUnion("kind", [
 export const emptyStateSchema = z.strictObject({
   kind: emptyKindSchema,
   count: u32.nullable(),
-  offer: z.string().nullable(),
+  offer: z.enum(EMPTY_OFFERS).nullable(),
   docs: z.array(docLinkSchema),
 });
 export const progressSchema = z.strictObject({ done: u32, total: u32 });
@@ -94,7 +120,7 @@ export const conceptPageSchema = z.strictObject({
   file_hash: z.string().nullable(),
   colour: u8.nullable(),
   state: summaryViewSchema.nullable(),
-  plan_state: z.string().nullable(),
+  plan_state: planStateViewSchema.nullable(),
   last_pressure: z.string().nullable(),
   key_chips: z.array(keyChipSchema),
   blocks: z.array(blockSchema),

@@ -83,6 +83,32 @@ describe("readingOrder", () => {
     ).toEqual([{ kind: "sentence", id: "a", level: 0, runOf: null }]);
   });
 
+  it("expands a sentence cited by two parents only under the parent it was opened from", () => {
+    const order = readingOrder(
+      page([sentence("a", [cite("x")]), sentence("b", [cite("x")])]),
+      [run("a", 0), run("b", 0), run("x", 1, "a")],
+      { x: ["doc/a.md#one"] },
+    );
+    expect(order).toEqual([
+      { kind: "sentence", id: "a", level: 0, runOf: null },
+      { kind: "sentence", id: "x", level: 1, runOf: "a" },
+      { kind: "passage", id: "doc/a.md#one", level: 2, runOf: "x" },
+      { kind: "sentence", id: "b", level: 0, runOf: null },
+      { kind: "sentence", id: "x", level: 1, runOf: "b" },
+    ]);
+  });
+
+  it("does not take a top-level run for a cited sentence with the same id", () => {
+    const order = readingOrder(
+      page([sentence("x"), sentence("a", [cite("x")])]),
+      [run("x", 1), run("a", 0)],
+      { x: ["doc/a.md#one"] },
+    );
+    expect(order.filter((target) => target.kind === "passage")).toEqual([
+      { kind: "passage", id: "doc/a.md#one", level: 1, runOf: "x" },
+    ]);
+  });
+
   it("opens a level-0 source citation directly to passages", () => {
     const source: Sentence["citations"][number] = {
       kind: "source",

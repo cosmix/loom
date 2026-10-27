@@ -7,17 +7,25 @@ import {
   type RefObject,
 } from "react";
 
-type Span = { top: number; height: number };
+/** The run's vertical extent in its paragraph, and the id of the run the handle folds. */
+type Span = { top: number; height: number; runId: string };
+
+/** The measurement origin: a run's top and height are relative to its paragraph. */
+const PARAGRAPH = ".concept-paragraph";
+
+function sameSpan(a: Span | null, b: Span | null): boolean {
+  return a?.top === b?.top && a?.height === b?.height && a?.runId === b?.runId;
+}
 
 /** The run's vertical extent relative to its paragraph, from its first to its last line box. */
 function measure(run: HTMLElement): Span | null {
-  const paragraph = run.closest<HTMLElement>(".concept-paragraph");
+  const paragraph = run.closest<HTMLElement>(PARAGRAPH);
   const rects = run.getClientRects();
   const first = rects[0];
   const last = rects[rects.length - 1];
   if (!paragraph || !first || !last) return null;
   const origin = paragraph.getBoundingClientRect().top;
-  return { top: first.top - origin, height: Math.max(last.bottom - first.top, 0) };
+  return { top: first.top - origin, height: Math.max(last.bottom - first.top, 0), runId: run.id };
 }
 
 function useSpan(target: RefObject<HTMLElement | null>): Span | null {
@@ -25,16 +33,19 @@ function useSpan(target: RefObject<HTMLElement | null>): Span | null {
   const update = () => {
     const run = target.current;
     const next = run ? measure(run) : null;
-    setSpan((current) =>
-      current?.top === next?.top && current?.height === next?.height ? current : next,
-    );
+    setSpan((current) => (sameSpan(current, next) ? current : next));
   };
   // Every commit: a run's lines move when anything above or inside it changes.
   useLayoutEffect(update);
   useEffect(() => {
-    if (typeof ResizeObserver === "undefined" || !target.current) return;
+    const run = target.current;
+    if (typeof ResizeObserver === "undefined" || !run) return;
     const observer = new ResizeObserver(update);
-    observer.observe(target.current);
+    observer.observe(run);
+    // An inline run is a span with no box of its own, so observing it never fires. Its
+    // paragraph is the measurement origin and resizes when a nested passage loads.
+    const paragraph = run.closest(PARAGRAPH);
+    if (paragraph) observer.observe(paragraph);
     window.addEventListener("resize", update);
     return () => {
       observer.disconnect();
@@ -47,7 +58,9 @@ function useSpan(target: RefObject<HTMLElement | null>): Span | null {
 /**
  * The thin muted bracket in the left margin that spans an opened run and folds it. Nested
  * runs step further out with `depth`. Tab leaves the column, so the keyboard folds with
- * Escape or the left arrow; the handle is for the pointer and assistive technology.
+ * Escape or the left arrow; the handle is for the pointer and assistive technology. The
+ * accessible name stays "Fold"; the run's own label is its description, so the handles of
+ * several open runs are told apart.
  */
 export function FoldHandle({
   target,
@@ -68,6 +81,7 @@ export function FoldHandle({
       type="button"
       tabIndex={-1}
       aria-label="Fold"
+      aria-describedby={span?.runId || undefined}
       className="concept-fold-handle"
       data-depth={depth}
       style={style}

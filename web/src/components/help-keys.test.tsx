@@ -28,6 +28,19 @@ describe("HelpKeys", () => {
     expect(container.querySelector(".help-gesture")).toBeNull();
   });
 
+  it("renders Ctrl + S and the command key chord as keycaps, not gestures", () => {
+    const { container } = render(<HelpKeys spec="Ctrl + S / ⌘ + S" />);
+    expect(caps(container)).toEqual(["Ctrl", "S", "⌘", "S"]);
+    expect(container.querySelector(".help-gesture")).toBeNull();
+    expect(container.textContent).not.toContain("then");
+  });
+
+  it("keeps a click gesture whose words are not keys as a gesture", () => {
+    const { container } = render(<HelpKeys spec="Esc / Click empty canvas" />);
+    expect(caps(container)).toEqual(["Esc"]);
+    expect(container.querySelector(".help-gesture")?.textContent).toBe("Click empty canvas");
+  });
+
   it("keeps a pointer gesture as a gesture", () => {
     const { container } = render(<HelpKeys spec="Drag a handle" />);
     expect(container.querySelector(".help-gesture")).not.toBeNull();

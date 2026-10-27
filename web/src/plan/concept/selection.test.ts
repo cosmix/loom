@@ -1,7 +1,11 @@
 import { afterEach, describe, expect, it } from "vitest";
 
 import type { ConceptPage, Sentence } from "@/plan/api/schema-concept";
-import { attachmentFromSelection, type SentenceResolver } from "./selection";
+import {
+  attachmentFromSelection,
+  attachmentsFromSelection,
+  type SentenceResolver,
+} from "./selection";
 
 const page: ConceptPage = {
   key: "product/section_05",
@@ -127,5 +131,63 @@ describe("concept selection provenance", () => {
       '<span data-summary="product/section_09" data-sentence-id="s1">Gone words</span>';
     const text = document.querySelector("span")!.firstChild!;
     expect(attachmentFromSelection(select(text, 0, text, 4), () => undefined)).toBeNull();
+  });
+});
+
+describe("selection spanning several parts", () => {
+  const sentenceHtml = (id: string, text: string) =>
+    `<span data-summary="product/section_05" data-sentence-id="${id}">${text}</span>`;
+  const resolveAny: SentenceResolver = (summary, id) =>
+    summary === "product/section_05" && id !== "gone"
+      ? {
+          sentence: { ...own, id, rests_on: [{ path: `doc/product/${id}.md`, anchor: id }] },
+          hash: "summary-hash",
+        }
+      : undefined;
+  const textOf = (selector: string) => document.querySelector(selector)!.firstChild!;
+  const sentenceText = (id: string) => textOf(`[data-sentence-id="${id}"]`);
+  const sentenceIds = (drafts: ReturnType<typeof attachmentsFromSelection>) =>
+    drafts.map((draft) => (draft.kind === "summary" ? draft.sentence : null));
+
+  it("carries one draft per selected sentence, in reading order", () => {
+    document.body.innerHTML =
+      `<p>${sentenceHtml("s1", "First words")}${sentenceHtml("s2", "Second words")}</p>` +
+      `<p>${sentenceHtml("s3", "Third words")}</p>`;
+    const sel = select(sentenceText("s1"), 6, sentenceText("s3"), 5);
+    const drafts = attachmentsFromSelection(sel, resolveAny);
+    expect(drafts.map((draft) => draft.text)).toEqual(["words", "Second words", "Third"]);
+    expect(sentenceIds(drafts)).toEqual(["s1", "s2", "s3"]);
+    expect(drafts[1]).toMatchObject({ restsOn: [{ path: "doc/product/s2.md", anchor: "s2" }] });
+    expect(attachmentFromSelection(sel, resolveAny)).toEqual(drafts[0]);
+  });
+
+  it("carries a summary sentence and a passage, each with its own provenance", () => {
+    document.body.innerHTML =
+      sentenceHtml("s1", "Summary words") +
+      '<div data-passage="doc/product/source.md#details" data-hash="source-hash" data-start-line="3" data-end-line="8"><p data-line="5">Source words</p></div>';
+    const sel = select(textOf("span"), 0, textOf("p"), 6);
+    expect(attachmentsFromSelection(sel, resolveAny)).toEqual([
+      expect.objectContaining({ kind: "summary", sentence: "s1", text: "Summary words" }),
+      expect.objectContaining({
+        kind: "source",
+        anchor: "details",
+        text: "Source",
+        hash: "source-hash",
+      }),
+    ]);
+  });
+
+  it("drops a part that does not resolve and keeps the others", () => {
+    document.body.innerHTML = sentenceHtml("gone", "Lost") + sentenceHtml("s2", "Kept words");
+    const sel = select(sentenceText("gone"), 0, sentenceText("s2"), 4);
+    const drafts = attachmentsFromSelection(sel, resolveAny);
+    expect(drafts.map((draft) => draft.text)).toEqual(["Kept"]);
+    expect(attachmentFromSelection(sel, resolveAny)).toEqual(drafts[0]);
+  });
+
+  it("returns nothing for a collapsed selection", () => {
+    document.body.innerHTML = sentenceHtml("s1", "First words");
+    const sel = select(sentenceText("s1"), 2, sentenceText("s1"), 2);
+    expect(attachmentsFromSelection(sel, resolveAny)).toEqual([]);
   });
 });

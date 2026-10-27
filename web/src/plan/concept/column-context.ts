@@ -3,7 +3,7 @@ import { createContext, useContext } from "react";
 import type { ConceptPage, Mark, Sentence, SourceAnchor } from "@/plan/api/schema-concept";
 
 import { anchorKey, type CitedLookup } from "./open-state";
-import type { FocusTarget, FoldNote, OpenRun } from "./types";
+import type { ColumnTarget, FoldNote, OpenRun } from "./types";
 
 /**
  * Where a rendered sentence sits: the summary it belongs to, the run that holds it, and the
@@ -46,15 +46,16 @@ export function sentenceKey(parent: string | null, id: string): string {
   return `s|${parent ?? ""}|${id}`;
 }
 
-export function passageKey(sentenceId: string, anchor: string): string {
-  return `p|${sentenceId}|${anchor}`;
+/** A passage's key names its run (the sentence and that run's parent) and its section. */
+export function passageKey(parent: string | null, sentenceId: string, anchor: string): string {
+  return `p|${parent ?? ""}|${sentenceId}|${anchor}`;
 }
 
 /** The roving-focus key of a reading-order target; elements carry it as `data-focus`. */
-export function targetKey(target: FocusTarget): string {
+export function targetKey(target: ColumnTarget): string {
   return target.kind === "sentence"
     ? sentenceKey(target.runOf, target.id)
-    : passageKey(target.runOf ?? "", target.id);
+    : passageKey(target.parent ?? null, target.runOf ?? "", target.id);
 }
 
 /** A DOM id safe in `aria-controls`, unique per run. */
