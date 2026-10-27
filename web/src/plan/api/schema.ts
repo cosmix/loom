@@ -1,0 +1,141 @@
+import { z } from "@/api/zod";
+
+export const PREREQ_KINDS = ["tmux", "claude", "claude_login", "sandbox"] as const;
+export const BIND_KINDS = ["loopback", "remote"] as const;
+export const STEP_MARKS = ["done", "gap", "active", "optional"] as const;
+export const CURRENT_KINDS = ["step", "ready", "ready_all_done"] as const;
+export const OFFER_KINDS = [
+  "start_vision",
+  "fix_vision_table",
+  "write_section",
+  "add_section_to_vision",
+  "start_metaplan",
+  "write_plan",
+  "add_plan_to_metaplan",
+  "pressure_test",
+  "start_run",
+  "refine_spec",
+  "new_metaplan_round",
+] as const;
+export const PLAN_MESSAGE_TYPES = [
+  "hello",
+  "presence",
+  "authoring",
+  "checklist",
+  "server_stopping",
+  "refused",
+] as const;
+export const CLIENT_MESSAGE_TYPES = ["set_name", "reading"] as const;
+
+export const prereqKindSchema = z.enum(PREREQ_KINDS);
+export const bindKindSchema = z.enum(BIND_KINDS);
+export const markViewSchema = z.enum(STEP_MARKS);
+export const offerKindSchema = z.enum(OFFER_KINDS);
+export const youSchema = z.strictObject({ public_id: z.string(), name: z.string() });
+export const missingPrereqSchema = z.strictObject({
+  what: prereqKindSchema,
+  message: z.string(),
+  fix: z.string(),
+});
+export const serverInfoSchema = z.strictObject({
+  project: z.string(),
+  project_key: z.string(),
+  port: z.number().int().min(0).max(65535),
+  remote: z.boolean(),
+  read_only: z.array(missingPrereqSchema),
+  stopping: z.boolean(),
+  you: youSchema,
+});
+export const shareLinkSchema = z.strictObject({
+  url: z.string(),
+  bind: bindKindSchema,
+  tunnel: z.string().nullable(),
+});
+export const refusedSchema = z.strictObject({ command: z.string(), reason: z.string() });
+export const presenceEntrySchema = z.strictObject({
+  public_id: z.string(),
+  name: z.string(),
+  holder: z.boolean(),
+  away: z.boolean(),
+  reading: z.string().nullable(),
+  tabs: z.number().int().min(0).max(4294967295),
+});
+export const presenceListSchema = z.strictObject({ entries: z.array(presenceEntrySchema) });
+export const holderViewSchema = z.strictObject({
+  public_id: z.string(),
+  name: z.string(),
+  away_since: z.string().nullable(),
+  frees_at: z.string().nullable(),
+});
+export const authoringViewSchema = z.strictObject({ holder: holderViewSchema.nullable() });
+const u8 = z.number().int().min(0).max(255);
+export const stepViewSchema = z.strictObject({
+  number: u8,
+  name: z.string(),
+  mark: markViewSchema,
+});
+export const currentViewSchema = z.discriminatedUnion("kind", [
+  z.strictObject({ kind: z.literal("step"), number: u8 }),
+  z.strictObject({ kind: z.literal("ready") }),
+  z.strictObject({ kind: z.literal("ready_all_done") }),
+]);
+export const offerViewSchema = z.strictObject({
+  id: z.string(),
+  kind: offerKindSchema,
+  label: z.string(),
+  target: z.string().nullable(),
+});
+export const itemViewSchema = z.strictObject({
+  step: u8,
+  text: z.string(),
+  path: z.string().nullable(),
+  offer: offerViewSchema.nullable(),
+});
+export const checklistViewSchema = z.strictObject({
+  current: currentViewSchema,
+  steps: z.array(stepViewSchema),
+  primary: offerViewSchema.nullable(),
+  secondary: z.array(offerViewSchema),
+  items: z.array(itemViewSchema),
+});
+export const helloSchema = z.strictObject({
+  you: youSchema,
+  server: serverInfoSchema,
+  checklist: checklistViewSchema,
+  presence: presenceListSchema,
+  authoring: authoringViewSchema,
+});
+export const planMessageSchema = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("hello"), ...helloSchema.shape }),
+  z.strictObject({ type: z.literal("presence"), ...presenceListSchema.shape }),
+  z.strictObject({ type: z.literal("authoring"), ...authoringViewSchema.shape }),
+  z.strictObject({ type: z.literal("checklist"), ...checklistViewSchema.shape }),
+  z.strictObject({ type: z.literal("server_stopping") }),
+  z.strictObject({ type: z.literal("refused"), ...refusedSchema.shape }),
+]);
+export const clientMessageSchema = z.discriminatedUnion("type", [
+  z.strictObject({ type: z.literal("set_name"), name: z.string() }),
+  z.strictObject({ type: z.literal("reading"), path: z.string().nullable() }),
+]);
+
+export type PrereqKind = z.infer<typeof prereqKindSchema>;
+export type BindKind = z.infer<typeof bindKindSchema>;
+export type MarkView = z.infer<typeof markViewSchema>;
+export type OfferKind = z.infer<typeof offerKindSchema>;
+export type You = z.infer<typeof youSchema>;
+export type MissingPrereq = z.infer<typeof missingPrereqSchema>;
+export type ServerInfo = z.infer<typeof serverInfoSchema>;
+export type ShareLink = z.infer<typeof shareLinkSchema>;
+export type Refused = z.infer<typeof refusedSchema>;
+export type PresenceEntry = z.infer<typeof presenceEntrySchema>;
+export type PresenceList = z.infer<typeof presenceListSchema>;
+export type HolderView = z.infer<typeof holderViewSchema>;
+export type AuthoringView = z.infer<typeof authoringViewSchema>;
+export type StepView = z.infer<typeof stepViewSchema>;
+export type CurrentView = z.infer<typeof currentViewSchema>;
+export type OfferView = z.infer<typeof offerViewSchema>;
+export type ItemView = z.infer<typeof itemViewSchema>;
+export type ChecklistView = z.infer<typeof checklistViewSchema>;
+export type Hello = z.infer<typeof helloSchema>;
+export type PlanMessage = z.infer<typeof planMessageSchema>;
+export type ClientMessage = z.infer<typeof clientMessageSchema>;

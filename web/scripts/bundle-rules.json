@@ -1,0 +1,10 @@
+{
+  "index.html": {
+    "forbidChunks": ["src/plan/**"],
+    "forbidText": ["data-loom-plan"]
+  },
+  "plan.html": {
+    "forbidChunks": ["node_modules/@xterm/**", "src/components/terminal/**"],
+    "forbidText": []
+  }
+}
