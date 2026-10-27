@@ -25,7 +25,7 @@ validated in transitions.rs. See [patterns.md -- State Machine Pattern](../patte
 **Documented state-machine bypasses:** Two paths intentionally bypass `try_transition`:
 
 1. **`--force-unsafe`** (`commands/stage/complete_force.rs::handle_force_unsafe_completion`) — sets `Status::Completed` from any state. Manual recovery only. Without `--assume-merged` it records the committed branch tip as `completed_commit` (`progressive_complete/operator_commit.rs::branch_work`, validated under the stage lock) and leaves the stage unmerged for the daemon's auto-merge, which re-checks zero commits under `MergeGate::Enforce`; a missing or zero-commit branch records nothing. With `--assume-merged` the router first proves the commit is in the target.
-2. **Phantom-merge revert** (`reconcile_main_repo_active_merge` and `complete()`'s `RevertAndSpawnResolver` arm) — flips a `Completed + merged=true` stage back to `MergeConflict + merged=false + merge_conflict=true` when an active main-repo merge is attributed to that stage. The bypass is necessary because `Completed` is terminal; `try_transition` would refuse, but this is exactly the case the bypass is designed for. All such mutations are logged at `error` level.
+2. **Attributed active merge** (`reconcile_main_repo_active_merge` and `complete()`'s `RevertAndSpawnResolver` arm): moves a Completed, unmerged stage to `MergeConflict + merge_conflict=true` when an active main-repo merge is attributed to it. The bypass is needed because `Completed` is terminal and `try_transition` would refuse. A final stage (Completed with `merged` or `merge_assumed`) is never moved. The move is logged at `error` level.
 
 **Transitions FROM `NeedsAdjudication`** (`transitions.rs`) — note it can loop to itself:
 

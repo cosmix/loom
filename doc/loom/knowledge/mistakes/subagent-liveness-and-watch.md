@@ -378,10 +378,10 @@ applies only below it. Never weaken the refusal to admit a symlinked root.
 
 ## Operator monitoring cadence
 
-**What happened:** Checked an executing plan roughly every minute; the operator requested checks every four minutes. During recovery, another agent had uncommitted work in the main checkout.
+**What happened:** Checked an executing plan roughly every minute; the operator requested checks every four minutes. During recovery, another agent had uncommitted work in the main checkout. The operator subsequently instructed this monitor not to restart the daemon.
 
-**Why:** Applied the general progress-update cadence to passive plan monitoring; daemon startup requires a clean tracked checkout.
+**Why:** Applied the general progress-update cadence to passive plan monitoring and treated daemon recovery as implicit permission to restart while another agent managed the runtime.
 
-**Prevention:** During this requested plan 04–06 run, poll status every four minutes. The operator confirmed that concurrent main-checkout edits belong to another active agent: wait for that agent, preserve its edits, and resume the daemon after the tracked checkout is clean.
+**Prevention:** During this requested plan 04–06 run, poll every four minutes, preserve the other agent’s main-checkout edits, and do not restart the daemon unless the operator explicitly reauthorizes it.
 
-**Fix:** Use four-minute monitoring intervals and wait for the concurrent agent before restarting.
+**Fix:** Continue read-only monitoring; leave daemon lifecycle changes to the operator.

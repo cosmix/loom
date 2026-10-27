@@ -17,7 +17,7 @@ Loom never runs a three-way merge in the operator's main checkout; the only merg
 
 **Operator-operation guard rule:** `merge_stage` returns `Blocked(OperatorOperation { marker })` when the main checkout has a `MERGE_HEAD`, `CHERRY_PICK_HEAD`, `REVERT_HEAD`, `rebase-merge/` or `rebase-apply/` (`git/merge/in_progress.rs` is the single source for `MERGE_HEAD` detection). Never silently `git merge --abort` an operator's merge.
 
-**Phantom-merge revert logging:** All phantom-merge reverts (sync-time merged=true revert, daemon `reconcile_main_repo_active_merge`, CLI `RevertAndSpawnResolver`) MUST log at `tracing::error!` level — not `warn` — so they show up in production logs. Reverts represent invariants violated; the noise is the point.
+**Attributed-merge logging:** the daemon's `reconcile_main_repo_active_merge` and the CLI `RevertAndSpawnResolver` arm log at `tracing::error!`, not `warn`, when they move a Completed, unmerged stage to MergeConflict: the move means an invariant broke, and the noise is the point. A final stage is never reverted, so no sync-time revert exists.
 
 ## Formatting and Test Invocation in a Shared Worktree
 

@@ -147,7 +147,7 @@
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Operator git | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) | Resolver | 15 |
 | [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Shared state | 341 |
-| [phantom-merges](mistakes/phantom-merges.md) | Merged flag | 337 |
+| [phantom-merges](mistakes/phantom-merges.md) | Merged flag | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 322 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Server | 189 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
@@ -195,7 +195,7 @@
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) | Contract gaps | 63 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) | iTerm2 naming | 49 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) | CLI gaps | 103 |
-| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge edges | 126 |
+| [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge edges | 125 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) | Planning TODO | 98 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) | Platform gaps | 210 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Orphans, tmux | 156 |
