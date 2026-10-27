@@ -101,3 +101,16 @@ describe("DiffPage", () => {
     expect(address).toMatchObject({ path: PATH, diff: "turn", turn: "sess/t3" });
   });
 });
+
+describe("DiffPage without a turn id", () => {
+  it("shows the not-found state and fetches nothing", () => {
+    vi.mocked(fetchTurnDiff).mockReset();
+    for (const turn of [undefined, null, ""]) {
+      mount({ path: PATH, kind: "turn", turn });
+      expect(screen.getByText(/loom plan restarted/)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
+      cleanup();
+    }
+    expect(fetchTurnDiff).not.toHaveBeenCalled();
+  });
+});

@@ -18,12 +18,16 @@ function TextList({ label, items }: { label: string; items: string[] }) {
 }
 
 /// One stage: id, name, type, summary and dependencies, expanding to its
-/// description, acceptance criteria and files, all as plain text.
-export function StageRow({ stage }: { stage: StageRowData }) {
+/// description, acceptance criteria and files, all as plain text. `idSuffix` keeps the DOM ids
+/// unique when a plan repeats a stage id; the first row of an id takes the bare `stage:<id>`.
+export function StageRow({ stage, idSuffix = "" }: { stage: StageRowData; idSuffix?: string }) {
   const [open, setOpen] = useState(false);
-  const bodyId = `stage-body:${stage.id}`;
+  const bodyId = `stage-body:${stage.id}${idSuffix}`;
   return (
-    <li id={`stage:${stage.id}`} className="scroll-mt-4 border-b border-(--hairline) py-2">
+    <li
+      id={`stage:${stage.id}${idSuffix}`}
+      className="scroll-mt-4 border-b border-(--hairline) py-2"
+    >
       <button
         type="button"
         aria-expanded={open}

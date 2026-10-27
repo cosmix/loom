@@ -82,6 +82,21 @@ describe("Markdown against hostile input", () => {
     }
   });
 
+  // The fixture wraps its autolinks in angle brackets (the formatter rewrites bare ones), so a
+  // GFM literal URL is covered here with an inline source.
+  it("links a bare GFM literal URL and leaves a bare script scheme as text", () => {
+    const { container } = renderMarkdown(
+      "See https://example.com/x for details.\n\nThen javascript:alert(1) stays put.\n",
+    );
+    expectInert(container);
+    const link = linkNamed(container, "https://example.com/x");
+    expect(link?.getAttribute("href")).toBe("https://example.com/x");
+    expect(link?.getAttribute("rel")).toBe("noopener noreferrer");
+    expect(link?.getAttribute("target")).toBe("_blank");
+    expect(container.textContent).toContain("javascript:alert(1)");
+    expect(container.querySelectorAll("a")).toHaveLength(1);
+  });
+
   it("renders an image as a link to its target and loads nothing", () => {
     const { container } = renderMarkdown(hostile);
     expect(container.querySelector("img")).toBeNull();

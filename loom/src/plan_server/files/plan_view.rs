@@ -1,5 +1,6 @@
 //! Data for the plan panel of a document.
 
+use std::collections::BTreeMap;
 use std::fs::File;
 use std::os::fd::AsRawFd;
 use std::path::Path;
@@ -12,7 +13,7 @@ use crate::plan::schema::{detect_stage_type, LoomMetadata, StageDefinition, Stag
 use crate::plan_server::wire::files::{
     ImplementsLink, PlanStateView, PlanView, StageRow, ValidationView,
 };
-use crate::planning::discover::discover;
+use crate::planning::discover::DocTree;
 use crate::planning::implements::{self, Implements};
 use crate::planning::kinds::DocKind;
 use crate::planning::pressure;
@@ -20,11 +21,13 @@ use crate::planning::sections::DocSections;
 use crate::planning::slug::{plan_slug, plan_state, PlanState};
 
 /// Build a plan panel from the same metadata parser used by plan verification.
+/// `product_sections` (from [`product_sections`]) resolves the `Implements:` links.
 pub fn plan_view(
     root: &Path,
     rel: &Path,
     text: &str,
     sections: &DocSections,
+    product_sections: &BTreeMap<u32, String>,
     validation: Option<ValidationView>,
 ) -> PlanView {
     let slug = rel
@@ -43,11 +46,8 @@ pub fn plan_view(
     PlanView {
         slug,
         state,
-        implements: implements_links(root, text),
-        pressure_date: pressure::records(text)
-            .into_iter()
-            .map(|record| record.date)
-            .max(),
+        implements: implements_links(text, product_sections),
+        pressure_date: latest_pressure_date(text),
         last_change: last_change(root, rel),
         validation,
         stages,
@@ -104,23 +104,39 @@ fn stage_row(stage: &StageDefinition, sections: &DocSections) -> StageRow {
     }
 }
 
-fn implements_links(root: &Path, text: &str) -> Vec<ImplementsLink> {
+/// The latest date among the plan's pressure-test records; `pressure::records` keeps document
+/// order, which need not be date order. The tree row and the plan panel both show this date.
+pub(crate) fn latest_pressure_date(text: &str) -> Option<String> {
+    pressure::records(text)
+        .into_iter()
+        .map(|record| record.date)
+        .max()
+}
+
+/// Every discovered product section's repo-relative path by section number; of two files with
+/// one number, the first discovered wins.
+pub fn product_sections(tree: &DocTree) -> BTreeMap<u32, String> {
+    tree.docs
+        .iter()
+        .rev()
+        .filter_map(|doc| match doc.kind {
+            DocKind::ProductSection { number } => {
+                Some((number, doc.path.to_string_lossy().into_owned()))
+            }
+            _ => None,
+        })
+        .collect()
+}
+
+fn implements_links(text: &str, product_sections: &BTreeMap<u32, String>) -> Vec<ImplementsLink> {
     let Implements::Sections(numbers) = implements::parse(text).value else {
         return Vec::new();
     };
-    let tree = discover(root).ok();
     numbers
         .into_iter()
-        .map(|number| {
-            let path = tree
-                .as_ref()
-                .and_then(|tree| {
-                    tree.docs.iter().find(|doc| {
-            matches!(doc.kind, DocKind::ProductSection { number: n } if n == number)
-        })
-                })
-                .map(|doc| doc.path.to_string_lossy().into_owned());
-            ImplementsLink { number, path }
+        .map(|number| ImplementsLink {
+            number,
+            path: product_sections.get(&number).cloned(),
         })
         .collect()
 }

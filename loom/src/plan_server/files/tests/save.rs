@@ -8,6 +8,7 @@ use super::validate::{plan, SELF_DEPENDENCY};
 use crate::plan_server::authoring::{Refusal, Take};
 use crate::plan_server::files::doc::{DONE_NOTICE, KNOWLEDGE_NOTICE};
 use crate::plan_server::files::save::{save_document, SaveOutcome, SaveRefusal, SaveRequest};
+use crate::plan_server::files::texts::{TextStore, TurnId};
 use crate::plan_server::files::validate::NO_METADATA_NOTE;
 use crate::plan_server::ids::BrowserId;
 use crate::plan_server::prereq::ReadOnly;
@@ -252,5 +253,34 @@ fn plan_saves_carry_validation() {
         "{blocked:?}"
     );
     assert_eq!(read(&dir, "doc/plans/PLAN-x.md"), warned);
+    server.stop().unwrap();
+}
+
+#[test]
+fn a_turn_begun_right_after_a_save_does_not_report_the_save() {
+    if skip("a_turn_begun_right_after_a_save_does_not_report_the_save") {
+        return;
+    }
+    let (_dir, server) = served(&[], writable());
+    let saved = save(&server, "product/index.md", "# Mine\n", "# Demo\n");
+    assert!(matches!(saved, Ok(SaveOutcome::Saved { .. })), "{saved:?}");
+    let store = server
+        .ctx
+        .extensions()
+        .get::<TextStore>()
+        .expect("text store");
+    // No watcher batch has run: the store itself must already hold the saved text.
+    let rel = std::path::Path::new("doc/product/index.md");
+    assert_eq!(
+        store.current(rel).map(|pinned| pinned.hash),
+        Some(normalized_hash("# Mine\n"))
+    );
+    let turn = TurnId("session/after-save".to_owned());
+    store.begin_turn(&turn);
+    let changes = {
+        let project = server.ctx.project();
+        store.end_turn(&turn, server.ctx.root(), &project)
+    };
+    assert!(changes.is_empty(), "{changes:?}");
     server.stop().unwrap();
 }

@@ -12,12 +12,15 @@ use crate::plan_server::files::doc::{
     checked_path, doc_view, DONE_NOTICE, KNOWLEDGE_NOTICE, MAX_EDIT_BYTES, RUNNING_NOTICE,
 };
 use crate::plan_server::files::texts::TextStore;
-use crate::plan_server::files::validate::ValidationCache;
+use crate::plan_server::files::validate::{
+    validate_plan, CachedValidation, PlanInputs, ValidationCache,
+};
 use crate::plan_server::prereq::ReadOnly;
 use crate::plan_server::wire::files::{
     DocView, EntryKind, LockKind, MetadataView, ValidationView, ValidationWarnings,
 };
 use crate::planning::sections::normalized_hash;
+use crate::planning::watch::OwnWrites;
 
 /// A plan with one stage, enough for the locked set's input scan.
 pub(super) const PLAN: &str = "# Plan X\n\n<!-- loom METADATA -->\n\n```yaml\nloom:\n  version: 1\n  \
@@ -44,6 +47,7 @@ pub(super) fn context(dir: &TempDir) -> PlanContext {
         dir.path().to_path_buf(),
         read_only,
         BindInfo::new(local, "t"),
+        OwnWrites::default(),
     )
     .expect("context");
     let store = {
@@ -156,7 +160,11 @@ fn a_plan_answers_its_plan_view() {
         notes: Vec::new(),
         metadata: MetadataView::Present,
     };
-    let cache = HashMap::from([(PathBuf::from("doc/plans/PLAN-x.md"), cached.clone())]);
+    let entry = CachedValidation {
+        view: cached.clone(),
+        inputs: PlanInputs::default(),
+    };
+    let cache = HashMap::from([(PathBuf::from("doc/plans/PLAN-x.md"), entry)]);
     ctx.extensions()
         .insert(Arc::new(ValidationCache::new(cache)));
     let doc = view(&ctx, "plans/PLAN-x.md");
@@ -176,6 +184,23 @@ fn a_plan_answers_its_plan_view() {
         .position(|l| l.contains("- id: stage-one"))
         .expect("id line");
     assert_eq!(stage.line, Some(u32::try_from(id_line + 1).expect("line")));
+}
+
+#[test]
+fn a_plan_the_cache_lacks_is_validated_on_request_unless_locked() {
+    let dir = write_files(&[
+        ("doc/plans/PLAN-x.md", PLAN),
+        ("doc/plans/DONE-PLAN-old.md", PLAN),
+    ]);
+    let ctx = context(&dir);
+    let cache = Arc::new(ValidationCache::default());
+    ctx.extensions().insert(Arc::clone(&cache));
+    let rel = Path::new("doc/plans/PLAN-x.md");
+    let plan = view(&ctx, "plans/PLAN-x.md").plan.expect("a plan view");
+    assert_eq!(plan.validation, Some(validate_plan(dir.path(), rel, PLAN)));
+    assert_eq!(cache.view(rel), None, "a request does not fill the cache");
+    let done = view(&ctx, "plans/DONE-PLAN-old.md");
+    assert_eq!(done.plan.and_then(|plan| plan.validation), None);
 }
 
 #[test]

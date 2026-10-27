@@ -85,4 +85,32 @@ describe("plan API client", () => {
       error: "bad_response",
     });
   });
+
+  it("parses the body of a listed result status and leaves other statuses as errors", async () => {
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce(new Response('{"value":"stale"}', { status: 409 }))
+      .mockResolvedValueOnce(new Response('{"value":42}', { status: 409 }))
+      .mockResolvedValueOnce(new Response('{"value":"stale"}', { status: 409 }))
+      .mockResolvedValueOnce(new Response('{"value":"x"}', { status: 500 }));
+    vi.stubGlobal("fetch", fetchMock);
+    const listed = { contentType: "text", resultStatuses: [409, 422] } as const;
+    expect(await apiPost("/api/test", "t", schema, listed)).toEqual({
+      ok: true,
+      value: { value: "stale" },
+    });
+    expect(await apiPost("/api/test", "t", schema, listed)).toMatchObject({
+      ok: false,
+      error: "bad_response",
+    });
+    expect(await apiPost("/api/test", "t", schema, { contentType: "text" })).toMatchObject({
+      ok: false,
+      status: 409,
+      error: "http_error",
+    });
+    expect(await apiPost("/api/test", "t", schema, listed)).toMatchObject({
+      ok: false,
+      status: 500,
+    });
+  });
 });

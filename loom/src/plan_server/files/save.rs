@@ -1,11 +1,13 @@
 //! `POST /api/save?path=&hash=[&with_errors=1]`: write one document (section 06, "What the
 //! server does on save"). The checks run in order: authoring, path syntax, discovery, the
-//! editable rules, symlinks, size, the opened hash, then plan validation. Nothing else happens:
-//! the watcher sees the write like any outside change.
+//! editable rules, symlinks, size, the opened hash, then plan validation. After the write the
+//! text store re-reads the document, so a turn that begins next pins the saved text; nothing
+//! else happens, and the watcher sees the write like any outside change.
 
 use std::path::Path;
 
 use super::doc::{editable, lock_view, MAX_EDIT_BYTES};
+use super::texts::TextStore;
 use super::validate::{is_plan_file, validate_plan};
 use crate::fs::safe_replace::replace_no_follow;
 use crate::plan_server::authoring::{Refusal, Take};
@@ -93,15 +95,19 @@ pub fn save_document(
         .map_err(SaveRefusal::Authoring)?;
     replace_no_follow(root, &rel, req.text.as_bytes())
         .map_err(|error| SaveRefusal::Io(format!("{error:#}")))?;
+    if let Some(texts) = ctx.extensions().get::<TextStore>() {
+        texts.refresh_path(root, &rel);
+    }
     Ok(SaveOutcome::Saved {
         hash: normalized_hash(req.text),
         validation,
     })
 }
 
-/// Refuse a browser while another one holds authoring, or in read-only mode. Free authoring is
-/// taken only right before the write, so a save that ends in `Conflict` or `Invalid` takes
-/// nothing (the HTTP route's gate has already taken it for the requesting browser).
+/// Refuse a browser while another one holds authoring, or in read-only mode. `save_document`
+/// itself takes free authoring only right before the write, so a `Conflict` or `Invalid` outcome
+/// leaves authoring as it was found. Over HTTP the route's `HolderOrTake` gate has already taken
+/// it for the requesting browser before this function runs.
 fn check_authoring(ctx: &PlanContext, browser: &BrowserId) -> Result<(), SaveRefusal> {
     match ctx.require_authoring(browser, Take::HolderOnly) {
         Ok(()) | Err(Refusal::NoHolder) => Ok(()),

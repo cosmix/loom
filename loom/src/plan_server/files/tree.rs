@@ -2,21 +2,28 @@
 
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::sync::Arc;
 
-use crate::plan_server::wire::files::{
-    EntryKind, FileTree, PlanStateView, TreeEntry, ValidationView,
-};
-use crate::planning::sections::normalized_hash;
+use crate::plan_server::wire::files::{EntryKind, FileTree, PlanStateView, TreeEntry};
 use crate::planning::slug::{PlanEntry, PlanState};
-use crate::planning::{briefs, discover::read_doc, kinds::DocKind, pressure, project::Project};
+use crate::planning::{briefs, kinds::DocKind, project::Project};
 
-use super::doc::entry_kind;
+use super::doc::{entry_kind, is_markdown};
 use super::knowledge_index::parse_index;
+use super::plan_view::latest_pressure_date;
+use super::texts::TextStore;
 
-pub fn build_tree(project: &Project, validation: &HashMap<PathBuf, ValidationView>) -> FileTree {
+/// The navigation tree of `project`. Plan pressure dates and the knowledge index come from
+/// `texts` (no file is read); `errors` is each validated plan's error count.
+pub fn build_tree(
+    project: &Project,
+    texts: &TextStore,
+    errors: &HashMap<PathBuf, u32>,
+) -> FileTree {
     let mut builder = Builder {
         project,
-        validation,
+        texts,
+        errors,
         used: HashSet::new(),
     };
     let product = builder.product();
@@ -48,7 +55,8 @@ pub fn build_tree(project: &Project, validation: &HashMap<PathBuf, ValidationVie
 
 struct Builder<'a> {
     project: &'a Project,
-    validation: &'a HashMap<PathBuf, ValidationView>,
+    texts: &'a TextStore,
+    errors: &'a HashMap<PathBuf, u32>,
     used: HashSet<PathBuf>,
 }
 
@@ -59,9 +67,10 @@ impl Builder<'_> {
         Some(entry(Some(path), &doc.title, kind, doc.lock.is_some()))
     }
 
-    fn text(&self, path: &Path) -> Option<String> {
-        let text = read_doc(&self.project.root, path).ok()?;
-        (self.project.content_hash(path)? == normalized_hash(&text)).then_some(text)
+    /// The stored text of `path` when it is the text the project view parsed.
+    fn text(&self, path: &Path) -> Option<Arc<str>> {
+        let pinned = self.texts.current(path)?;
+        (self.project.content_hash(path)? == pinned.hash).then_some(pinned.text)
     }
 
     fn product(&mut self) -> Vec<TreeEntry> {
@@ -154,11 +163,8 @@ impl Builder<'_> {
         });
         item.pressure_date = self
             .text(&plan.path)
-            .and_then(|text| pressure::records(&text).last().map(|r| r.date.clone()));
-        item.errors = self
-            .validation
-            .get(&plan.path)
-            .map_or(0, |v| v.errors.len().try_into().unwrap_or(u32::MAX));
+            .and_then(|text| latest_pressure_date(&text));
+        item.errors = self.errors.get(&plan.path).copied().unwrap_or(0);
         item.children = self.bundle(&plan.slug);
         item
     }
@@ -176,7 +182,9 @@ impl Builder<'_> {
         let mut folders: BTreeMap<String, Vec<TreeEntry>> = BTreeMap::new();
         let mut root = Vec::new();
         for path in paths {
-            let relative = path.strip_prefix(&base).unwrap();
+            let Ok(relative) = path.strip_prefix(&base) else {
+                continue;
+            };
             let parts: Vec<_> = relative.components().collect();
             let folder =
                 (parts.len() > 1).then(|| parts[0].as_os_str().to_string_lossy().into_owned());
@@ -324,8 +332,4 @@ fn entry(path: Option<&Path>, title: &str, kind: EntryKind, locked: bool) -> Tre
         blurb: None,
         children: Vec::new(),
     }
-}
-
-fn is_markdown(path: &Path) -> bool {
-    path.extension().is_some_and(|ext| ext == "md")
 }

@@ -2,7 +2,8 @@ import type { SectionView } from "@/plan/api/schema-files";
 import type { AttachmentDraft } from "@/plan/attachments";
 
 export type StageSpan = { id: string; start_line: number; end_line: number };
-export type SelectionLines = { start: number; end: number };
+/** `side` is set by a side-by-side diff: which text the lines number. */
+export type SelectionLines = { start: number; end: number; side?: "before" | "after" };
 
 /** Builds a source attachment from a selection and its 1-based inclusive document lines. */
 export function editorProvenance(path: string, sections: SectionView[], stages: StageSpan[]) {
@@ -27,7 +28,7 @@ export function editorProvenance(path: string, sections: SectionView[], stages: 
       path,
       anchor: section?.anchor ?? null,
       text,
-      lines: { ...lines },
+      lines: { start: lines.start, end: lines.end },
       stageId: stage?.id ?? null,
       hash: null,
     };

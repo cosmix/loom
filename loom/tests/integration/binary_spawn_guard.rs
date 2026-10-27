@@ -41,7 +41,8 @@ fn strip_whitespace(s: &str) -> String {
 /// `cli_command`/`configure_child`, and `subagent_owned_wait::support`'s
 /// `cli_command`, `merge_off_checkout_cli`'s `merge_resolved`,
 /// `planning_check_cli_contracts`'s `check`, `plan_server_cli`'s `command`,
-/// and `plan_server_contracts`'s `spawn_loom_plan`. A new test target that
+/// `plan_server_contracts`'s `spawn_loom_plan`, and `file_mode_contracts`'s
+/// `verify_text_agrees_with_verify_json`. A new test target that
 /// spawns the binary directly must scrub the same way and be added to this
 /// list.
 const SANCTIONED_SPAWNERS: &[&str] = &[
@@ -53,6 +54,7 @@ const SANCTIONED_SPAWNERS: &[&str] = &[
     "planning_check_cli_contracts.rs",
     "plan_server_cli.rs",
     "plan_server_contracts.rs",
+    "file_mode_contracts.rs",
 ];
 
 fn rust_files_under(dir: &Path, out: &mut Vec<PathBuf>) {

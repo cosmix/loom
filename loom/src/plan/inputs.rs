@@ -14,14 +14,18 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::fs::plan_lifecycle::{DONE_PREFIX, IN_PROGRESS_PREFIX, RETIRED_PREFIX};
 use crate::fs::safe_read::{read_to_string_bounded, OverLimit};
-use crate::git::runner::run_git_checked;
 use crate::plan::schema::extract_brief_paths;
 use crate::planning::discover::MAX_DOC_BYTES;
 
+mod git_state;
+#[cfg(test)]
+mod git_state_tests;
 #[cfg(test)]
 mod retired_tests;
 #[cfg(test)]
 mod tests;
+
+use git_state::{changed_paths, committed_objects, working_objects};
 
 /// Where a reference was found.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -291,29 +295,44 @@ pub(crate) fn uncommitted_reason(root: &Path, path: &Path) -> Result<Option<&'st
     if !root.join(path).is_file() {
         return Ok(Some("missing file"));
     }
-    let path = path.to_str().context("Plan input path is not UTF-8")?;
-    let literal = format!(":(literal){path}");
-    let committed = run_git_checked(&["ls-tree", "HEAD", "--", &literal], root)?;
-    if committed.is_empty() {
-        return Ok(Some("not committed (untracked, ignored, or staged only)"));
+    Ok(uncommitted_reasons(root, &[path])?
+        .into_iter()
+        .flatten()
+        .next())
+}
+
+/// Why each of `paths` (repo-relative files that exist, in order) would make `loom run`
+/// refuse, or `None` for one that is committed and unchanged. One `ls-tree`, one `status` (and
+/// the `rev-parse` that places its paths) and one `hash-object` answer every path, so a plan
+/// with many inputs costs four git calls. Errors mean git could not answer.
+pub(crate) fn uncommitted_reasons(
+    root: &Path,
+    paths: &[&Path],
+) -> Result<Vec<Option<&'static str>>> {
+    if paths.is_empty() {
+        return Ok(Vec::new());
     }
-    let status = run_git_checked(
-        &[
-            "status",
-            "--porcelain=v1",
-            "--untracked-files=all",
-            "--",
-            &literal,
-        ],
-        root,
-    )?;
-    if !status.is_empty() {
-        return Ok(Some("uncommitted changes"));
-    }
+    let paths: Vec<&str> = paths
+        .iter()
+        .map(|path| path.to_str().context("Plan input path is not UTF-8"))
+        .collect::<Result<_>>()?;
+    let literals: Vec<String> = paths.iter().map(|p| format!(":(literal){p}")).collect();
+    let committed = committed_objects(root, &literals)?;
+    let changed = changed_paths(root, &literals)?;
     // `assume-unchanged` and `skip-worktree` can hide edits from git status.
-    let actual = run_git_checked(&["hash-object", "--path", path, "--", path], root)?;
-    if committed.split_whitespace().nth(2) != Some(actual.as_str()) {
-        return Ok(Some("working copy differs from the committed file"));
-    }
-    Ok(None)
+    let unchanged: Vec<&str> = paths
+        .iter()
+        .copied()
+        .filter(|path| committed.contains_key(*path) && !changed.contains(*path))
+        .collect();
+    let actual = working_objects(root, &unchanged)?;
+    let reason = |path: &str| match committed.get(path) {
+        None => Some("not committed (untracked, ignored, or staged only)"),
+        Some(_) if changed.contains(path) => Some("uncommitted changes"),
+        Some(object) if actual.get(path) != Some(object) => {
+            Some("working copy differs from the committed file")
+        }
+        Some(_) => None,
+    };
+    Ok(paths.iter().map(|&path| reason(path)).collect())
 }

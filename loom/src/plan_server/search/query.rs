@@ -26,18 +26,30 @@ pub fn literal_count(text: &str, needle: &str) -> usize {
     }
 }
 
-/// Return a character-bounded window around the first matching term.
+/// Return a character-bounded window around the first occurrence of any term, found without
+/// regard to ASCII case (the terms are lowercased tokens).
 pub fn snippet(body: &str, terms: &[String], max_chars: usize) -> String {
-    if max_chars == 0 || body.is_empty() {
-        return String::new();
-    }
     let lower = body.to_ascii_lowercase();
     let first = terms
         .iter()
         .filter(|term| !term.is_empty())
         .filter_map(|term| lower.find(&term.to_ascii_lowercase()))
-        .min()
-        .unwrap_or(0);
+        .min();
+    window(body, first.unwrap_or(0), max_chars)
+}
+
+/// [`snippet`] for a quoted literal: the window is around the first occurrence that
+/// `literal_count` counts, so the match is case-sensitive too.
+pub fn literal_snippet(body: &str, needle: &str, max_chars: usize) -> String {
+    // An empty needle is found at 0, where a window with no match starts too.
+    window(body, body.find(needle).unwrap_or(0), max_chars)
+}
+
+/// `max_chars` characters of `body` around the byte offset `first`.
+fn window(body: &str, first: usize, max_chars: usize) -> String {
+    if max_chars == 0 || body.is_empty() {
+        return String::new();
+    }
     let match_char = body[..first].chars().count();
     let total = body.chars().count();
     let start = match_char

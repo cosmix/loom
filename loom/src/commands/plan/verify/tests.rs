@@ -206,3 +206,194 @@ fn proposed_text_input_errors_do_not_come_from_the_disk() {
     assert!(mentions_brief(&report), "{:?}", report.errors);
     assert!(!report.valid);
 }
+
+// ── `--json` bytes ─────────────────────────────────────────────────────────
+// Field order defines the bytes: plan {id, name, source}, valid, errors [{stage_id, message}],
+// warnings {structural, knowledge, sandbox, baseline}, notes, levels [[{id, name, stage_type,
+// dependencies}]]. Compared as strings, never through `serde_json::Value`.
+
+fn json(report: &VerifyReport) -> String {
+    serde_json::to_string_pretty(report).unwrap()
+}
+
+/// A report that ran validation; the caller fills the findings.
+fn ran(valid: bool) -> report::VerifyReport {
+    report::VerifyReport {
+        plan: report::VerifyPlan {
+            id: Some("PLAN-demo".to_string()),
+            name: Some("Demo".to_string()),
+            source: "doc/plans/PLAN-demo.md".to_string(),
+        },
+        valid,
+        errors: Vec::new(),
+        warnings: VerifyWarnings::default(),
+        notes: Vec::new(),
+        levels: Vec::new(),
+        yaml_location: None,
+        metadata: MetadataPresence::Present,
+        stopped: false,
+    }
+}
+
+fn level(id: &str, stage_type: &str, dependencies: &[&str]) -> report::VerifyStageLevel {
+    report::VerifyStageLevel {
+        id: id.to_string(),
+        name: id.to_uppercase(),
+        stage_type: stage_type.to_string(),
+        dependencies: dependencies.iter().map(|d| d.to_string()).collect(),
+    }
+}
+
+#[test]
+fn json_bytes_of_a_valid_report() {
+    let mut report = ran(true);
+    report.notes = vec!["a skipped check".to_string()];
+    report.levels = vec![
+        vec![level("a", "standard", &[])],
+        vec![level("b", "integration-verify", &["a"])],
+    ];
+    let expected = r#"{
+  "plan": {
+    "id": "PLAN-demo",
+    "name": "Demo",
+    "source": "doc/plans/PLAN-demo.md"
+  },
+  "valid": true,
+  "errors": [],
+  "warnings": {
+    "structural": [],
+    "knowledge": [],
+    "sandbox": [],
+    "baseline": []
+  },
+  "notes": [
+    "a skipped check"
+  ],
+  "levels": [
+    [
+      {
+        "id": "a",
+        "name": "A",
+        "stage_type": "standard",
+        "dependencies": []
+      }
+    ],
+    [
+      {
+        "id": "b",
+        "name": "B",
+        "stage_type": "integration-verify",
+        "dependencies": [
+          "a"
+        ]
+      }
+    ]
+  ]
+}"#;
+    assert_eq!(json(&report), expected);
+}
+
+const INVALID_REPORT_JSON: &str = r#"{
+  "plan": {
+    "id": "PLAN-demo",
+    "name": "Demo",
+    "source": "doc/plans/PLAN-demo.md"
+  },
+  "valid": false,
+  "errors": [
+    {
+      "stage_id": "a",
+      "message": "stage error"
+    },
+    {
+      "stage_id": null,
+      "message": "plan error"
+    }
+  ],
+  "warnings": {
+    "structural": [
+      "s"
+    ],
+    "knowledge": [
+      "k"
+    ],
+    "sandbox": [
+      "x"
+    ],
+    "baseline": [
+      "b"
+    ]
+  },
+  "notes": [],
+  "levels": []
+}"#;
+
+#[test]
+fn json_bytes_of_an_invalid_report() {
+    let mut report = ran(false);
+    report.errors = vec![
+        report::VerifyError {
+            stage_id: Some("a".to_string()),
+            message: "stage error".to_string(),
+        },
+        report::VerifyError {
+            stage_id: None,
+            message: "plan error".to_string(),
+        },
+    ];
+    report.warnings = VerifyWarnings {
+        structural: vec!["s".to_string()],
+        knowledge: vec!["k".to_string()],
+        sandbox: vec!["x".to_string()],
+        baseline: vec!["b".to_string()],
+    };
+    assert_eq!(json(&report), INVALID_REPORT_JSON);
+}
+
+/// The stopped envelope: no plan id or name, one error, empty buckets, notes and levels.
+fn stopped_json(source: &str, message: &str) -> String {
+    format!(
+        r#"{{
+  "plan": {{
+    "id": null,
+    "name": null,
+    "source": "{source}"
+  }},
+  "valid": false,
+  "errors": [
+    {{
+      "stage_id": null,
+      "message": "{message}"
+    }}
+  ],
+  "warnings": {{
+    "structural": [],
+    "knowledge": [],
+    "sandbox": [],
+    "baseline": []
+  }},
+  "notes": [],
+  "levels": []
+}}"#
+    )
+}
+
+#[test]
+fn json_bytes_of_a_missing_metadata_report() {
+    let report = verify_text(None, Path::new("PLAN-x.md"), "# Prose\n\nNo plan here.\n");
+    let expected = stopped_json("PLAN-x.md", "No loom METADATA block found");
+    assert_eq!(json(&report), expected);
+}
+
+#[test]
+fn json_bytes_of_the_early_failure_envelope() {
+    let failure = report::EarlyFailure {
+        source: "missing/PLAN-x.md".to_string(),
+        message: "Plan file not found: missing/PLAN-x.md".to_string(),
+    };
+    let expected = stopped_json(
+        "missing/PLAN-x.md",
+        "Plan file not found: missing/PLAN-x.md",
+    );
+    assert_eq!(json(&VerifyReport::from(failure)), expected);
+}

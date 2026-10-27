@@ -2,28 +2,13 @@ import { useAtomValue } from "jotai/react";
 import { useCallback, useMemo } from "react";
 import { useNavigate } from "react-router";
 
-import type { DocView, FileTree, TreeEntry } from "@/plan/api/schema-files";
+import type { DocView } from "@/plan/api/schema-files";
 import { treeAtom } from "@/plan/files/atoms";
 import { PlanHeader } from "@/plan/files/plan/plan-header";
 import { splitPlan } from "@/plan/files/plan/split";
 import { StagesPanel } from "@/plan/files/plan/stages-panel";
+import { docPathsOf } from "@/plan/files/tree";
 import { Markdown } from "@/plan/markdown";
-
-function collectPaths(entries: TreeEntry[], into: Set<string>): void {
-  for (const entry of entries) {
-    if (entry.path !== null) into.add(entry.path);
-    collectPaths(entry.children, into);
-  }
-}
-
-function docPathsOf(tree: FileTree | null, own: string): Set<string> {
-  const paths = new Set([own]);
-  if (tree === null) return paths;
-  for (const group of [tree.product, tree.plans, tree.knowledge, tree.other, tree.archive]) {
-    collectPaths(group, paths);
-  }
-  return paths;
-}
 
 /// A plan, rendered: header, the prose before the metadata block, the Stages
 /// panel in place of the block, then the pressure-test record. `doc.plan` is set.

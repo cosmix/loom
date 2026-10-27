@@ -1,11 +1,12 @@
 import { useAtomValue, useSetAtom } from "jotai/react";
-import type { RefObject } from "react";
+import type { ReactNode, RefObject } from "react";
 
 import { Button } from "@/components/ui/button";
 import type { SectionView } from "@/plan/api/schema-files";
 import { canAuthorAtom } from "@/plan/state/atoms";
 
 import { addAttachmentAtom } from "./atoms";
+import { useFloatingPlacement } from "./floating-position";
 import { selectionSecondaries } from "./secondary";
 import type { AttachmentDraft } from "./types";
 import { useSelectionAttachment } from "./use-selection-attachment";
@@ -29,14 +30,7 @@ export function AddToChat({ draft, rect, onAdded }: AddToChatProps) {
   if (!canAuthor && secondaries.every((node) => node === null)) return null;
 
   return (
-    <div
-      role="group"
-      aria-label="Selection actions"
-      className="fixed z-50 flex items-center gap-1.5 rounded-lg border bg-popover p-1 text-[13px] font-medium text-popover-foreground shadow-md"
-      style={{ top: rect.bottom + 6, left: rect.left }}
-      // Keep the selection alive while the control is pressed.
-      onMouseDown={(event) => event.preventDefault()}
-    >
+    <FloatingControl rect={rect}>
       {canAuthor &&
         (tooLong ? (
           <span role="note" className="px-2 text-destructive">
@@ -55,6 +49,25 @@ export function AddToChat({ draft, rect, onAdded }: AddToChatProps) {
           </Button>
         ))}
       {secondaries}
+    </FloatingControl>
+  );
+}
+
+/** The actions box next to the selection; absent while the selection is outside the viewport. */
+function FloatingControl({ rect, children }: { rect: DOMRect; children: ReactNode }) {
+  const { ref, placement } = useFloatingPlacement(rect);
+  if (!placement) return null;
+  return (
+    <div
+      ref={ref}
+      role="group"
+      aria-label="Selection actions"
+      className="fixed z-50 flex items-center gap-1.5 rounded-lg border bg-popover p-1 text-[13px] font-medium text-popover-foreground shadow-md"
+      style={placement}
+      // Keep the selection alive while the control is pressed.
+      onMouseDown={(event) => event.preventDefault()}
+    >
+      {children}
     </div>
   );
 }

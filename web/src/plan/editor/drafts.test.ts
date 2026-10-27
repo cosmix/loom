@@ -106,3 +106,18 @@ describe("draft storage", () => {
     expect(localStorage.getItem("other-module")).toBe("keep");
   });
 });
+
+describe("draft paths", () => {
+  it("keys one document the same whether its path is doc-relative or repo-relative", () => {
+    expect(saveDraft("product/a.md", "h1", "from doc-relative")).toBe("saved");
+    expect(loadDraft("doc/product/a.md", "h1")).toBe("from doc-relative");
+    expect(saveDraft("doc/product/a.md", "h1", "from repo-relative")).toBe("saved");
+    expect(findDrafts("product/a.md")).toEqual([
+      { openedHash: "h1", text: "from repo-relative", savedAt: expect.any(Number) },
+    ]);
+    expect(localStorage.length).toBe(1);
+
+    clearDrafts("product/a.md");
+    expect(findDrafts("doc/product/a.md")).toEqual([]);
+  });
+});
