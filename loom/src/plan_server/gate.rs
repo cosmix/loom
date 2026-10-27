@@ -2,6 +2,7 @@
 //! `Host`, exact `Origin` (every `POST` and WebSocket), the access cookie, the body's type and
 //! length (before any body byte is read), then the route's role.
 
+use std::fmt;
 use std::net::SocketAddr;
 
 use super::authoring::{Refusal, Take};
@@ -9,18 +10,27 @@ use super::context::PlanContext;
 use super::ids::BrowserId;
 use super::routes::{BodyKind, Method, Role, RouteSpec};
 use crate::web_server::access::AccessPolicy;
-use crate::web_server::http::{RequestHead, MAX_BODY_BYTES};
+use crate::web_server::http::{parse_content_length, RequestHead, MAX_BODY_BYTES};
 use crate::web_server::token;
 
 /// The planning WebSocket's path.
 pub const WS_PATH: &str = "/ws";
 
 /// A request that passed the gate.
-#[derive(Debug)]
 pub struct Admitted {
     pub browser: BrowserId,
     /// A `Set-Cookie` value when the request carried no valid browser cookie and got a new one.
     pub set_cookie: Option<String>,
+}
+
+/// `set_cookie` carries the browser id's value, so `{:?}` shows only whether one is set.
+impl fmt::Debug for Admitted {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Admitted")
+            .field("browser", &self.browser)
+            .field("set_cookie", &self.set_cookie.as_ref().map(|_| ".."))
+            .finish()
+    }
 }
 
 impl Admitted {
@@ -173,10 +183,8 @@ fn check_body(head: &RequestHead, spec: &RouteSpec) -> Result<(), Denied> {
 pub(crate) fn content_length(head: &RequestHead) -> Result<usize, Denied> {
     match head.content_length.as_deref() {
         None => Ok(0),
-        Some(raw) => raw
-            .trim()
-            .parse()
-            .map_err(|_| denied(400, "bad_request", "invalid Content-Length")),
+        Some(raw) => parse_content_length(raw)
+            .ok_or_else(|| denied(400, "bad_request", "invalid Content-Length")),
     }
 }
 

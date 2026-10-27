@@ -1,23 +1,32 @@
 {
-  "_help-dialog.css": {
-    "file": "assets/help-dialog.css",
-    "src": "_help-dialog.css"
+  "_help-shortcuts.css": {
+    "file": "assets/help-shortcuts.css",
+    "src": "_help-shortcuts.css"
   },
-  "_help-dialog.js": {
-    "file": "assets/help-dialog.js",
-    "name": "help-dialog",
-    "dynamicImports": [
-      "node_modules/@xterm/xterm/lib/xterm.mjs",
-      "node_modules/@xterm/addon-fit/lib/addon-fit.mjs",
-      "node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs",
-      "node_modules/@xterm/addon-unicode11/lib/addon-unicode11.mjs"
+  "_help-shortcuts.js": {
+    "file": "assets/help-shortcuts.js",
+    "name": "help-shortcuts",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js"
     ],
     "css": [
-      "assets/help-dialog.css"
+      "assets/help-shortcuts.css"
     ],
     "assets": [
       "assets/inter-latin-wght-normal.woff2"
     ]
+  },
+  "_react.js": {
+    "file": "assets/react.js",
+    "name": "react",
+    "imports": [
+      "_rolldown-runtime.js"
+    ]
+  },
+  "_rolldown-runtime.js": {
+    "file": "assets/rolldown-runtime.js",
+    "name": "rolldown-runtime"
   },
   "index.html": {
     "file": "assets/index.js",
@@ -25,7 +34,18 @@
     "src": "index.html",
     "isEntry": true,
     "imports": [
-      "_help-dialog.js"
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_help-shortcuts.js"
+    ],
+    "dynamicImports": [
+      "node_modules/@xterm/xterm/lib/xterm.mjs",
+      "node_modules/@xterm/addon-fit/lib/addon-fit.mjs",
+      "node_modules/@xterm/addon-webgl/lib/addon-webgl.mjs",
+      "node_modules/@xterm/addon-unicode11/lib/addon-unicode11.mjs"
+    ],
+    "css": [
+      "assets/index.css"
     ]
   },
   "node_modules/@fontsource-variable/inter/files/inter-latin-wght-normal.woff2": {
@@ -62,7 +82,9 @@
     "src": "plan.html",
     "isEntry": true,
     "imports": [
-      "_help-dialog.js"
+      "_rolldown-runtime.js",
+      "_react.js",
+      "_help-shortcuts.js"
     ],
     "css": [
       "assets/plan.css"

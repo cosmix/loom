@@ -75,7 +75,7 @@ pub(super) fn collect_problems(
         )),
         Some(AuthProbe::Unknown(reason)) => problems.push(problem(
             PrereqKind::ClaudeLogin,
-            reason,
+            format!("could not determine the Claude Code login ({reason})"),
             "Run claude auth login",
         )),
         Some(AuthProbe::LoggedIn { .. }) => {}

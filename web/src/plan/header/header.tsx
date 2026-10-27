@@ -19,7 +19,7 @@ export function PlanHeader() {
   useResendStoredName();
   return (
     <header className="plan-header flex h-12 shrink-0 items-center gap-3 border-b border-hairline bg-card px-3">
-      <span className="font-display text-base">loom plan</span>
+      <span className="shrink-0 font-display text-base whitespace-nowrap">loom plan</span>
       <StepTracker checklist={checklist} narrow={narrow} />
       <Tabs />
       <div className="ml-auto flex shrink-0 items-center gap-2">

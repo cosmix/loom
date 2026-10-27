@@ -49,6 +49,14 @@ describe("Presence", () => {
     expect(ada!.textContent).toContain("doc/plans/a.md");
   });
 
+  it("names its dialog and keeps the rows out of the tab order", () => {
+    const list = openPresence([entry("me", "Alex"), entry("ada", "Ada", { reading: "a.md" })]);
+    expect(screen.getByRole("dialog", { name: "People here" })).toBeTruthy();
+    for (const row of list.getAllByRole("listitem")) {
+      expect(row.hasAttribute("tabindex")).toBe(false);
+    }
+  });
+
   it("renders a hostile name as literal text", () => {
     const hostile = "<img src=x onerror=alert(1)>";
     const list = openPresence([entry("eve", hostile)]);

@@ -16,6 +16,11 @@ function Banner({ children }: { children: ReactNode }) {
   );
 }
 
+/** Server messages are not uniform: some end in a full stop, and the banner adds its own. */
+function withoutTrailingStop(message: string): string {
+  return message.replace(/[.!?\s]+$/, "");
+}
+
 /** Remote bind, read-only mode (one banner listing each prerequisite) and stopping. */
 export function Banners() {
   const server = useAtomValue(serverInfoAtom);
@@ -34,7 +39,7 @@ export function Banners() {
           <ul>
             {server.read_only.map((problem) => (
               <li key={problem.what}>
-                {problem.message}. {problem.fix}
+                {withoutTrailingStop(problem.message)}. {problem.fix}
               </li>
             ))}
           </ul>

@@ -40,14 +40,20 @@ fn repo() -> TempDir {
     repo
 }
 
+/// A `loom plan --no-open` command in `repo`, with a scratch `LOOM_HOME` and no other inherited
+/// `LOOM_*` variable (a real session's identity must not reach the child), nor `GIT_DIR` or
+/// `GIT_WORK_TREE`. Callers add a `LOOM_*` variable after this returns when a test needs one.
 fn command(repo: &Path, home: &Path) -> Command {
     let mut cmd = Command::new(env!("CARGO_BIN_EXE_loom"));
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("LOOM_") {
+            cmd.env_remove(key);
+        }
+    }
     cmd.arg("plan")
         .arg("--no-open")
         .current_dir(repo)
         .env("LOOM_HOME", home)
-        .env_remove("LOOM_PLAN_STATE")
-        .env_remove("LOOM_PLAN_SESSION")
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
         .stdin(Stdio::null());

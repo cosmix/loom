@@ -69,7 +69,7 @@ fn auth_outcomes_control_login_problem() {
         unknown[0],
         MissingPrereq {
             what: PrereqKind::ClaudeLogin,
-            message: "timed out".into(),
+            message: "could not determine the Claude Code login (timed out)".into(),
             fix: "Run claude auth login".into(),
         }
     );

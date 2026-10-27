@@ -67,7 +67,7 @@ Read each plan 2 file before editing it; if a published name differs, follow the
      chat running: `bridge.send(id, formatted, resolved)`; with none running it acts as `Start`
      with that text.
    - `Withdraw`, `Permission`, `Interrupt`, `End`: `ctx.require_authoring(&conn.browser, Take::HolderOnly)` first. A refusal's
-     error text is the `Refusal`'s `Display` (it names the holder).
+     error text is `ctx.refusal_message(&refusal)` (it names the holder; `Refusal` has no `Display`).
      `Interrupt` sends the returned texts as `ChatFrame::QueueReturned { texts }` through
      `ctx.hub().send_to_conn(conn.id, ..)` only (the tab that pressed Stop; the other holder tabs
      see the bridge's notice item; px-state-23).

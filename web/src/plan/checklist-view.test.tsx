@@ -32,6 +32,18 @@ describe("ChecklistView", () => {
     expect(screen.getByText("doc/product/section_05.md")).toBeTruthy();
   });
 
+  it("never nests an offer button inside an inline span", () => {
+    const unregister = registerOfferAction(offer.kind, vi.fn());
+    try {
+      renderWith(<ChecklistView />, (store) => store.set(checklistAtom, checklist));
+      const buttons = screen.getAllByRole("button", { name: offer.label });
+      expect(buttons).toHaveLength(2);
+      for (const button of buttons) expect(button.closest("span")).toBeNull();
+    } finally {
+      unregister();
+    }
+  });
+
   it("shows the loading state before the first checklist", () => {
     renderWith(<ChecklistView />);
     expect(screen.getByRole("status", { name: "Loading the checklist" })).toBeTruthy();

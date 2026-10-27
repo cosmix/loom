@@ -1,9 +1,9 @@
 import { useAtomValue } from "jotai/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Outlet, useLocation } from "react-router";
 
 import { ErrorBoundary } from "@/aurora-ui/feedback/ErrorBoundary";
-import { ShortcutGroups } from "@/components/help-dialog";
+import { ShortcutGroups } from "@/components/help-shortcuts";
 import {
   Dialog,
   DialogContent,
@@ -31,9 +31,21 @@ function PlanHelp({
   open: boolean;
   onOpenChange: (open: boolean) => void;
 }) {
+  // The dialog has no trigger (the `?` key opens it), so Radix has nothing to return focus to.
+  const returnFocus = useRef<HTMLElement | null>(null);
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent>
+      <DialogContent
+        className="sm:max-w-xl"
+        onOpenAutoFocus={() => {
+          returnFocus.current =
+            document.activeElement instanceof HTMLElement ? document.activeElement : null;
+        }}
+        onCloseAutoFocus={(event) => {
+          event.preventDefault();
+          returnFocus.current?.focus();
+        }}
+      >
         <DialogHeader>
           <DialogTitle>Help</DialogTitle>
           <DialogDescription>Keyboard shortcuts</DialogDescription>

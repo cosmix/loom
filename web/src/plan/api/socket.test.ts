@@ -39,6 +39,18 @@ class FakeSocket {
   receive(data: unknown) {
     this.onmessage?.({ data: JSON.stringify(data) });
   }
+  fail() {
+    this.onerror?.();
+  }
+}
+
+/** A WebSocket constructor the browser rejects (for example a blocked mixed-content URL). */
+class ThrowingSocket {
+  static attempts = 0;
+  constructor() {
+    ThrowingSocket.attempts += 1;
+    throw new DOMException("blocked", "SecurityError");
+  }
 }
 
 const deps = { WebSocketImpl: FakeSocket as unknown as typeof WebSocket };
@@ -53,6 +65,7 @@ function latest() {
 beforeEach(() => {
   vi.useFakeTimers();
   FakeSocket.instances = [];
+  ThrowingSocket.attempts = 0;
   vi.stubGlobal(
     "fetch",
     vi.fn().mockImplementation(async () => response()),
@@ -127,7 +140,14 @@ describe("plan socket", () => {
     const store = createStore();
     const handle = connectPlanSocket(store, deps);
     const presence = vi.fn();
-    const resync = vi.fn(() => expect(store.get(checklistAtom)).toEqual(hello.checklist));
+    const changed = { ...hello, checklist: { ...hello.checklist, current: { kind: "ready" } } };
+    expect(changed.checklist.current).not.toEqual(hello.checklist.current);
+    // Records what the callback sees instead of asserting inside it, so a
+    // failure names the stale value rather than surfacing as a thrown frame.
+    const resync = vi.fn(() => ({
+      checklist: store.get(checklistAtom),
+      epoch: store.get(connectionEpochAtom),
+    }));
     const unsubscribe = handle.subscribe("presence", presence);
     const stopResync = handle.onResync(resync);
     expect(handle.send({ type: "reading", path: null })).toBe(false);
@@ -138,6 +158,7 @@ describe("plan socket", () => {
     latest().receive(hello);
     expect(resync).not.toHaveBeenCalled();
     expect(store.get(connectionEpochAtom)).toBe(0);
+    expect(store.get(checklistAtom)).toEqual(hello.checklist);
     latest().receive({ type: "presence", entries: [] });
     expect(presence).toHaveBeenCalledTimes(1);
     expect(store.get(presenceAtom)).toEqual({ entries: [] });
@@ -149,14 +170,66 @@ describe("plan socket", () => {
     expect(handle.send({ type: "reading", path: null })).toBe(false);
     await vi.advanceTimersByTimeAsync(1000);
     latest().open();
-    latest().receive(hello);
+    latest().receive(changed);
     expect(resync).toHaveBeenCalledOnce();
-    expect(store.get(connectionEpochAtom)).toBe(1);
+    expect(resync).toHaveReturnedWith({ checklist: changed.checklist, epoch: 1 });
     unsubscribe();
     stopResync();
     latest().receive({ type: "presence", entries: [] });
     expect(presence).toHaveBeenCalledTimes(1);
     handle.dispose();
+  });
+
+  it("closes a socket that errors, retries once, and ignores later events from it", async () => {
+    const store = createStore();
+    const handle = connectPlanSocket(store, deps);
+    await flush();
+    const failed = latest();
+    failed.open();
+    failed.fail();
+    expect(failed.readyState).toBe(3);
+    expect(store.get(connectionAtom).phase).toBe("reconnecting");
+    failed.fail();
+    failed.close();
+    await vi.advanceTimersByTimeAsync(999);
+    expect(FakeSocket.instances).toHaveLength(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(FakeSocket.instances).toHaveLength(2);
+    expect(fetch).toHaveBeenCalledTimes(2);
+    latest().open();
+    expect(store.get(connectionAtom).phase).toBe("open");
+    handle.dispose();
+  });
+
+  it("retries with growing delays when the WebSocket constructor throws", async () => {
+    const store = createStore();
+    const handle = connectPlanSocket(store, {
+      WebSocketImpl: ThrowingSocket as unknown as typeof WebSocket,
+    });
+    await flush();
+    expect(ThrowingSocket.attempts).toBe(1);
+    expect(store.get(connectionAtom).phase).toBe("reconnecting");
+    await vi.advanceTimersByTimeAsync(999);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ThrowingSocket.attempts).toBe(2);
+    await vi.advanceTimersByTimeAsync(1999);
+    expect(ThrowingSocket.attempts).toBe(2);
+    await vi.advanceTimersByTimeAsync(1);
+    expect(ThrowingSocket.attempts).toBe(3);
+    handle.dispose();
+  });
+
+  it("cancels a pending retry on dispose so no probe fires afterwards", async () => {
+    const handle = connectPlanSocket(createStore(), deps);
+    await flush();
+    latest().close();
+    expect(vi.getTimerCount()).toBe(1);
+    handle.dispose();
+    expect(vi.getTimerCount()).toBe(0);
+    await vi.advanceTimersByTimeAsync(30000);
+    expect(fetch).toHaveBeenCalledTimes(1);
+    expect(FakeSocket.instances).toHaveLength(1);
   });
 
   it("does not connect if disposed while a probe is pending", async () => {

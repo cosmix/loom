@@ -26,6 +26,11 @@ export default defineConfig(({ mode }) => ({
         entryFileNames: "assets/[name].js",
         chunkFileNames: "assets/[name].js",
         assetFileNames: "assets/[name][extname]",
+        // React is shared by both entries; its own chunk keeps the shared chunk under the
+        // 500 kB size warning.
+        codeSplitting: {
+          groups: [{ name: "react", test: /node_modules[\\/](react|react-dom|scheduler)[\\/]/ }],
+        },
       },
     },
   },

@@ -19,6 +19,15 @@ describe("StepTracker", () => {
     expect(items[1]!.textContent).toContain("has gaps");
   });
 
+  it("keeps non-current step names in the accessibility tree below xl", () => {
+    render(<StepTracker checklist={checklist} narrow={false} />);
+    const name = screen.getByText("Vision").classList;
+    expect(name.contains("sr-only")).toBe(true);
+    expect(name.contains("xl:not-sr-only")).toBe(true);
+    expect(name.contains("hidden")).toBe(false);
+    expect(screen.getByText("Product spec").classList.contains("sr-only")).toBe(false);
+  });
+
   it("marks no step current and says Ready to run when ready", () => {
     render(<StepTracker checklist={{ ...checklist, current: { kind: "ready" } }} narrow={false} />);
     expect(screen.queryByRole("listitem", { current: "step" })).toBeNull();
@@ -38,7 +47,12 @@ describe("StepTracker", () => {
   it("collapses to a summary button whose popover lists the steps when narrow", () => {
     render(<StepTracker checklist={checklist} narrow />);
     expect(screen.queryByRole("list")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Step 2 of 2 · Product spec/ }));
+    const trigger = screen.getByRole("button", { name: /Step 2 of 2 · Product spec/ });
+    // shrink-0 on Button's base class would stop the inner truncate from ever applying.
+    expect(trigger.classList.contains("shrink")).toBe(true);
+    expect(trigger.classList.contains("shrink-0")).toBe(false);
+    fireEvent.click(trigger);
+    expect(screen.getByRole("dialog", { name: "Steps" })).toBeTruthy();
     expect(screen.getAllByRole("listitem")).toHaveLength(2);
   });
 

@@ -20,6 +20,9 @@ describe("DisabledReason", () => {
     });
     expect(button.getAttribute("aria-disabled")).toBe("true");
     expect(button.hasAttribute("disabled")).toBe(false);
+    // Button dims only the `disabled` attribute, so a blocked control styles `aria-disabled` itself.
+    expect(button.classList.contains("aria-disabled:opacity-50")).toBe(true);
+    expect(button.classList.contains("aria-disabled:cursor-not-allowed")).toBe(true);
     expect(screen.getByText("Dana holds authoring").className).toContain("text-muted-foreground");
     button.focus();
     expect(document.activeElement).toBe(button);

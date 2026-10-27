@@ -148,12 +148,7 @@ fn length(head: &RequestHead) -> Result<usize, Rejection> {
             error_body("Content-Length is required"),
         ));
     };
-    // Digits only, per RFC 9110 section 8.6: `parse` alone would accept `+8`
-    // and surrounding whitespace, and a length this server reads differently
-    // from whatever wrote it is the shape request smuggling takes.
-    let declared = declared.trim();
-    let numeric = !declared.is_empty() && declared.bytes().all(|byte| byte.is_ascii_digit());
-    let Some(length) = numeric.then(|| declared.parse::<usize>().ok()).flatten() else {
+    let Some(length) = http::parse_content_length(declared) else {
         return Err(Rejection(
             400,
             "Bad Request",
