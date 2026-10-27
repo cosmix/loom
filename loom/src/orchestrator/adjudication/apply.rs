@@ -93,6 +93,7 @@ impl AdjudicatorRegistry {
 
         let record = read_verdict_record(&verdict_path)?;
         let mut stage = load_stage(stage_id, work_dir)?;
+        let loaded_reason = stage.review_reason.clone();
 
         // Write the .applying marker BEFORE mutating any state so a
         // crash mid-apply is recoverable (the next tick re-enters here
@@ -103,7 +104,14 @@ impl AdjudicatorRegistry {
         let _ = std::fs::write(&applying, b"");
 
         let result = apply_by_kind(work_dir, &mut stage, &record);
-        let final_result = persist_verdict_result(work_dir, stage_id, &stage, &applied, result);
+        let final_result = persist_verdict_result(
+            work_dir,
+            stage_id,
+            &stage,
+            loaded_reason.as_deref(),
+            &applied,
+            result,
+        );
         // Always remove the .applying marker — success means the
         // applied.marker now exists, failure means we'll retry on
         // the next tick and re-write the marker.
@@ -119,8 +127,9 @@ impl AdjudicatorRegistry {
 ///
 /// Re-applies ONLY the verdict-owned fields onto the FRESH on-disk stage so a
 /// concurrent dispute-thread write (e.g. dispute_count for a parallel filing)
-/// or CLI write is not reverted (A-5). The verdict owns: status (+
-/// review_reason via try_request_human_review), evidence_rounds,
+/// or CLI write is not reverted (A-5). The verdict owns: status, the change
+/// it made to review_reason (from `loaded_reason`, the reason `stage` was
+/// loaded with; see [`apply_reason_change`]), evidence_rounds,
 /// and amendments_applied. Amendment policy stays on disk: the amendment
 /// transaction already persisted it, and a cached copy could overwrite a
 /// newer amendment. The amendment tally is monotonic for the same reason.
@@ -140,12 +149,12 @@ fn persist_verdict_result(
     work_dir: &Path,
     stage_id: &str,
     stage: &Stage,
+    loaded_reason: Option<&str>,
     applied: &Path,
     inner_result: Result<()>,
 ) -> Result<()> {
     inner_result?;
     let verdict_status = stage.status.clone();
-    let verdict_review_reason = stage.review_reason.clone();
     let verdict_evidence_rounds = stage.tally.evidence_rounds;
     let verdict_amendments_applied = stage.tally.amendments_applied;
     let persisted = update_stage(stage_id, work_dir, |s| {
@@ -156,7 +165,7 @@ fn persist_verdict_result(
                 s.force_status_with_reason(verdict_status.clone(), "adjudicator verdict applied");
             }
         }
-        s.review_reason = verdict_review_reason.clone();
+        apply_reason_change(s, loaded_reason, stage.review_reason.as_deref());
         s.tally.evidence_rounds = verdict_evidence_rounds;
         s.tally.amendments_applied = s.tally.amendments_applied.max(verdict_amendments_applied);
         Ok(())
@@ -174,6 +183,28 @@ fn persist_verdict_result(
         close_open_disputes(work_dir, stage_id);
     }
     Ok(())
+}
+
+/// Re-apply the verdict's change to `review_reason` onto the locked on-disk
+/// `stage`. The verdict was worked out on a copy loaded unlocked with
+/// `loaded`; a sibling filing may have written a newer reason since. A reason
+/// the verdict left as loaded is not its to write, so the newer one stays; a
+/// reason it set replaces whatever is on disk (archived as replaced, which it
+/// is); a reason it cleared is retired only while the disk still holds the
+/// one it cleared. A verdict that requeued the stage never reaches that arm:
+/// the on-disk `NeedsAdjudication -> Queued` transition has already retired
+/// the reason it held.
+fn apply_reason_change(stage: &mut Stage, loaded: Option<&str>, verdict: Option<&str>) {
+    if verdict == loaded {
+        return;
+    }
+    match verdict {
+        Some(reason) => stage.replace_review_reason(reason.to_owned()),
+        None if stage.review_reason.as_deref() == loaded => {
+            stage.retire_review_reason("adjudicator verdict applied");
+        }
+        None => {}
+    }
 }
 
 /// Apply an accepted verdict's amendment and resync the stage from it.
@@ -269,7 +300,7 @@ pub(super) fn apply_reject(
             "reject verdict could not transition the stage to NeedsHumanReview; forcing it",
         );
         stage.force_status_with_reason(StageStatus::NeedsHumanReview, &reason);
-        stage.review_reason = Some(reason);
+        stage.replace_review_reason(reason);
     }
     Ok(())
 }
@@ -327,31 +358,5 @@ fn write_applied_marker_after_apply_cap(work_dir: &Path, stage_id: &str, dispute
 }
 
 #[cfg(test)]
-mod persistence_tests {
-    use super::*;
-    use crate::plan::schema::AcceptanceCriterion;
-
-    #[test]
-    fn cached_verdict_preserves_newer_policy_and_amendment_tally() {
-        let temp = tempfile::tempdir().unwrap();
-        let work = temp.path();
-        let mut cached = Stage {
-            id: "a".into(),
-            name: "a".into(),
-            status: StageStatus::Queued,
-            acceptance: vec![AcceptanceCriterion::Simple("old".into())],
-            ..Stage::default()
-        };
-        cached.tally.amendments_applied = 1;
-        let mut fresh = cached.clone();
-        fresh.acceptance = vec![AcceptanceCriterion::Simple("new".into())];
-        fresh.tally.amendments_applied = 2;
-        crate::verify::transitions::save_stage(&fresh, work).unwrap();
-        let marker = work.join("applied.marker");
-        persist_verdict_result(work, "a", &cached, &marker, Ok(())).unwrap();
-        let persisted = load_stage("a", work).unwrap();
-        assert_eq!(persisted.acceptance, fresh.acceptance);
-        assert_eq!(persisted.tally.amendments_applied, 2);
-        assert!(marker.exists());
-    }
-}
+#[path = "apply_persistence_tests.rs"]
+mod persistence_tests;

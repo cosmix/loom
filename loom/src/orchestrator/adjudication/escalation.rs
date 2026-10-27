@@ -121,7 +121,7 @@ impl Escalation {
             }
             stage.try_request_human_review(self.reason.clone())?;
             if let Some(failure_type) = &self.failure_type {
-                stage.failure_info = Some(FailureInfo {
+                stage.replace_failure(FailureInfo {
                     failure_type: failure_type.clone(),
                     detected_at: Utc::now(),
                     evidence: vec![self.reason.clone()],

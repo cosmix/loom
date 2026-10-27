@@ -186,11 +186,9 @@ fn read_standing(work_dir: &Path, stage: &Stage) -> Result<Standing> {
 }
 
 /// Take a stage out of `WaitingForInput`; the reason it waited for no longer
-/// holds.
+/// holds, and entering `Executing` archives it into `issue_history`.
 pub fn end_wait(stage: &mut Stage) -> Result<()> {
-    stage.try_mark_executing()?;
-    stage.review_reason = None;
-    Ok(())
+    stage.try_mark_executing()
 }
 
 /// Who found the problems of a refusal on record.

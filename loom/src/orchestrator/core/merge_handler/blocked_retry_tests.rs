@@ -300,3 +300,23 @@ fn a_memo_survives_a_stage_file_that_cannot_be_read() {
 
     assert!(orchestrator.blocked_merge_inputs.contains_key(ID));
 }
+
+#[test]
+fn persisting_a_different_block_archives_the_first_failure_once_and_an_identical_one_nothing() {
+    let (_repo, mut orchestrator) = blocked_stage();
+    let mut stage = on_disk(&orchestrator);
+    let first = stage.failure_info.clone().expect("the block recorded one");
+
+    orchestrator.persist_merge_blocked(&mut stage, ID, "a different error");
+    let second = on_disk(&orchestrator);
+    assert_eq!(second.issue_history.len(), 1);
+    assert_eq!(second.issue_history[0].evidence, first.evidence);
+    let recorded = second.failure_info.clone().expect("the new failure stands");
+    assert_eq!(recorded.evidence, ["a different error"]);
+
+    orchestrator.persist_merge_blocked(&mut stage, ID, "a different error");
+    let third = on_disk(&orchestrator);
+    assert_eq!(third.issue_history.len(), 1);
+    let kept = third.failure_info.expect("still recorded");
+    assert_eq!(kept.detected_at, recorded.detected_at);
+}

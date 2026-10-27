@@ -5,8 +5,10 @@ mod criteria_results;
 mod disputes;
 mod execution_models;
 mod heartbeat_facts;
+mod history;
 mod merge_note;
 mod resolver;
+mod rounds;
 mod sanitize;
 mod stopped;
 mod timing;
@@ -17,7 +19,6 @@ pub use completion_view::{
     CompletionBlockerSummary,
 };
 pub use criteria_results::FailingCriterion;
-pub use disputes::{DisputeLine, DisputeOp};
 pub use execution_models::execution_models_for_stage;
 
 use serde::{Deserialize, Serialize};
@@ -26,7 +27,7 @@ use serde::{Deserialize, Serialize};
 pub use crate::models::failure::FailureInfo;
 pub use crate::models::session::SessionExitReason;
 pub use crate::models::session::{SessionBackendKind, SessionType};
-pub use crate::models::stage::{StageStatus, StageType};
+pub use crate::models::stage::{IssueKind, StageIssue, StageStatus, StageType};
 
 /// Activity status derived from heartbeat and session state
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, Default, PartialEq, Eq)]
@@ -239,24 +240,26 @@ pub struct StageSummary {
     /// What the attention card for a blocked stage shows beyond the reason.
     #[serde(default, skip_serializing_if = "BlockDetail::is_empty")]
     pub block_detail: BlockDetail,
+    /// Every issue the stage moved past, newest first by `ended_at`: the
+    /// archived failures, review reasons and merge conflicts, plus each
+    /// adjudication round that ended. The attention entry describes only the
+    /// current status; this is everything before it, in full.
+    #[serde(default)]
+    pub history: Vec<StageIssue>,
 }
 
 /// The facts about a blocked stage that the attention card lists: which
-/// criteria failed and which disputes were already ruled on. Empty for every
-/// other stage.
+/// criteria failed. Empty for every other stage.
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 pub struct BlockDetail {
     /// Acceptance criteria that failed in the stage's last completion attempt.
     #[serde(default)]
     pub failing_criteria: Vec<FailingCriterion>,
-    /// The stage's newest disputes, oldest first.
-    #[serde(default)]
-    pub disputes: Vec<DisputeLine>,
 }
 
 impl BlockDetail {
     pub fn is_empty(&self) -> bool {
-        self.failing_criteria.is_empty() && self.disputes.is_empty()
+        self.failing_criteria.is_empty()
     }
 }
 

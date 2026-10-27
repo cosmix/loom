@@ -198,7 +198,6 @@ fn attention_conversion_keeps_failure_label() {
         review_reason: None,
         reason: None,
         failing_criteria: Vec::new(),
-        disputes: Vec::new(),
         terminal_history: None,
         cleanup_warning: None,
         has_human_review_choices: false,
@@ -230,7 +229,7 @@ fn attention_conversion_carries_the_block_facts_and_flags_the_history() {
 
     assert_eq!(wire["terminal_history"], true);
     assert_eq!(wire["failing_criteria"][0]["index"], 4);
-    assert_eq!(wire["disputes"].as_array().unwrap().len(), 2);
+    assert!(wire.get("disputes").is_none());
     assert_eq!(wire["acceptance"].as_array().unwrap().len(), 5);
     assert_eq!(
         wire["reason"],

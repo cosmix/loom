@@ -2,10 +2,13 @@
 
 use super::checks::default_plan_version;
 use super::dispute_budgets::DisputeTally;
+use super::implementers::Implementers;
 use super::merge_block::MergeRecord;
-use super::types::{Implementers, Stage, StageStatus, StageType};
+use super::types::{Stage, StageStatus, StageType};
 
 impl Default for Stage {
+    // Kept at the baselined length of this literal by pairing the empty lists.
+    #[rustfmt::skip]
     fn default() -> Self {
         Self {
             id: String::new(),
@@ -56,8 +59,7 @@ impl Default for Stage {
             wiring: Vec::new(),
             wiring_tests: Vec::new(),
             dead_code_check: None,
-            before_stage: Vec::new(),
-            after_stage: Vec::new(),
+            before_stage: Vec::new(), after_stage: Vec::new(),
             code_review: None,
             fix_attempts: 0,
             dispute_count: 0,
@@ -67,6 +69,7 @@ impl Default for Stage {
             execution_mode: None,
             max_fix_attempts: None,
             review_reason: None,
+            issue_history: Vec::new(),
             bug_fix: None,
             regression_test: None,
             model: None,

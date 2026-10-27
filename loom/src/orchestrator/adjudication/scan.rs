@@ -169,7 +169,7 @@ impl AdjudicatorRegistry {
 
 /// The numbered dispute subdirectories under one stage's dispute directory,
 /// walked the same way as [`scan_pending_verdicts`].
-pub(super) fn dispute_ids(stage_dir: &Path) -> Vec<u32> {
+pub(crate) fn dispute_ids(stage_dir: &Path) -> Vec<u32> {
     let Ok(entries) = std::fs::read_dir(stage_dir) else {
         return Vec::new();
     };

@@ -223,8 +223,9 @@ fn kill_orphan_session(work_dir: &Path, evidence: &OrphanEvidence) -> Result<()>
 /// Reset a stage to pending
 ///
 /// NOTE: This is a manual recovery command that intentionally bypasses state machine validation.
-/// WaitingForDeps has no incoming transitions because it's the initial state. For recovery scenarios,
-/// we allow direct assignment to reset stages to their initial state.
+/// WaitingForDeps has no incoming transitions because it's the initial state, so the reset goes
+/// through `Stage::reset_to_waiting_for_deps`, which assigns it directly without the error-level
+/// log of a forced transition.
 pub fn reset(stage_id: String, hard: bool, kill_session: bool) -> Result<()> {
     let work_dir = crate::commands::common::work_dir_path()?;
     let runtime = loop_recovery::OsRuntime::new(&work_dir);
@@ -355,7 +356,14 @@ pub fn release(stage_id: String) -> Result<()> {
 }
 
 fn apply_reset(stage: &mut Stage) {
-    stage.status = StageStatus::WaitingForDeps;
+    // No edge leads to `WaitingForDeps`; the sanctioned reset write archives
+    // the failure, review reason, merge block and merge conflict the left
+    // status recorded. For an already waiting stage it archives nothing the
+    // calls below do not.
+    stage.reset_to_waiting_for_deps();
+    stage.retire_failure("loom stage reset");
+    stage.retire_review_reason("loom stage reset");
+    stage.merge_conflict = false;
     stage.completed_at = None;
     stage.close_reason = None;
     stage.started_at = None;
@@ -365,7 +373,6 @@ fn apply_reset(stage: &mut Stage) {
     // A reset hands the stage to a fresh attempt with a fresh stall budget.
     stage.stall_recoveries = 0;
     stage.last_failure_at = None;
-    stage.failure_info = None;
     // Cleared in both soft and hard resets: by this point any live agent has
     // either been killed or refused (see `reset`), so a stage naming a
     // session it no longer owns is the exact inconsistency this fix exists

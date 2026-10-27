@@ -38,11 +38,7 @@ pub(super) fn block_with_mode(
         DaemonReach::Answered(response) => super::handle_block_response(&stage_id, response)?,
         DaemonReach::NotListening => {
             crate::verify::transitions::update_stage(&stage_id, &work_dir, |stage| {
-                stage.try_mark_blocked()?;
-                stage.close_reason = Some(reason.clone());
-                stage.failure_info = None;
-                stage.updated_at = chrono::Utc::now();
-                Ok(())
+                crate::stage_service::apply_block(stage, &reason)
             })?;
         }
         DaemonReach::Unreachable => return super::queue_block_request(&stage_id, &reason),
@@ -197,6 +193,16 @@ mod tests {
         assert_eq!(blocked.status, StageStatus::Blocked);
         assert_eq!(blocked.close_reason.as_deref(), Some("spec is ambiguous"));
         assert!(blocked.failure_info.is_none());
+        assert_eq!(blocked.issue_history.len(), 1);
+        assert_eq!(
+            blocked.issue_history[0].failure_type,
+            Some(FailureType::SessionCrash)
+        );
+        assert_eq!(blocked.issue_history[0].evidence, ["an earlier attempt"]);
+        assert_eq!(
+            blocked.issue_history[0].ended_by,
+            "blocked by loom stage block"
+        );
     }
 
     #[test]

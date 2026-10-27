@@ -10,27 +10,12 @@ use super::AdjudicatorRegistry;
 
 fn transition_to_queued(stage: &mut Stage) -> Result<()> {
     let target = StageStatus::Queued;
-    // try_transition refuses NeedsAdjudication → Queued unless it knows
-    // about it (the foundations stage added that transition). If the stage
-    // is somehow in NeedsAdjudication but not recognized as a valid
-    // transition source, fall back to a direct assignment with a warning so
-    // we don't refuse to apply a verdict because of unrelated state drift.
-    //
-    // Any OTHER status must be left untouched: it means a verdict on an
-    // earlier, sibling dispute already moved the stage (e.g. a Reject to
-    // NeedsHumanReview), and forcing Queued here would silently erase that
-    // escalation.
+    // NeedsAdjudication → Queued is a legal edge. Any OTHER status must be
+    // left untouched: it means a verdict on an earlier, sibling dispute
+    // already moved the stage (e.g. a Reject to NeedsHumanReview), and
+    // forcing Queued here would silently erase that escalation.
     if stage.status.can_transition_to(&target) {
         stage.try_transition(target)?;
-    } else if stage.status == StageStatus::NeedsAdjudication {
-        tracing::warn!(
-            target: "loom::adjudication",
-            stage = %stage.id,
-            status = %stage.status,
-            "stage not recognized as transitionable to Queued from NeedsAdjudication; forcing it",
-        );
-        stage.status = target;
-        stage.updated_at = chrono::Utc::now();
     } else {
         tracing::warn!(
             target: "loom::adjudication",

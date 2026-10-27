@@ -1,7 +1,7 @@
 //! The typed reason a stage's merge was not advanced (`Stage::merge`)
 //! and the transitions that set and clear it.
 
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
 use super::types::{Stage, StageStatus};
@@ -36,15 +36,25 @@ pub struct MergeRecord {
         skip_serializing_if = "Vec::is_empty"
     )]
     pub unrestored: Vec<String>,
+    /// When the stage entered `MergeConflict`; set while it is there, and
+    /// moved into the conflict's `issue_history` entry when it leaves.
+    #[serde(
+        rename = "merge_conflict_since",
+        default,
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub conflict_since: Option<DateTime<Utc>>,
 }
 
 impl Stage {
     /// Record `block` as the reason the merge did not advance and move the
     /// stage to `MergeBlocked`, with the sentence in `failure_info` so
-    /// `loom status` shows it. The daemon retries such a stage every tick.
+    /// `loom status` shows it. The daemon retries such a stage every tick:
+    /// re-recording the same block keeps its failure as recorded, and a
+    /// different one archives the failure it replaces.
     pub fn block_merge(&mut self, block: MergeBlock) {
         let sentence = block.to_string();
-        self.failure_info = Some(FailureInfo {
+        self.replace_failure(FailureInfo {
             failure_type: FailureType::InfrastructureError,
             detected_at: Utc::now(),
             evidence: vec![sentence.clone()],
@@ -121,14 +131,6 @@ impl Stage {
         self.try_transition(StageStatus::MergeBlocked)
     }
 
-    /// Forget the typed block once the stage's status is no longer
-    /// `MergeBlocked`; both status writers call this after assigning.
-    pub(super) fn drop_merge_block_unless_blocked(&mut self) {
-        if self.status != StageStatus::MergeBlocked {
-            self.clear_merge_block();
-        }
-    }
-
     /// Why a stage whose branch has zero commits beyond `target` goes to human
     /// review instead of merging: a no-op merge would stand for work that was
     /// never committed.
@@ -142,28 +144,29 @@ impl Stage {
     }
 
     /// Move the stage to `NeedsHumanReview` with `reason`, whatever its
-    /// status, clearing any merge block. The merge gate uses it for a branch
-    /// that touches a control path.
+    /// status; the transition drops any merge block. The merge gate uses it
+    /// for a branch that touches a control path.
     pub fn route_to_review(&mut self, reason: &str) {
-        self.clear_merge_block();
         self.force_status_with_reason(StageStatus::NeedsHumanReview, reason);
-        self.review_reason = Some(reason.to_string());
+        self.replace_review_reason(reason.to_string());
     }
 
-    /// Forget the typed merge block. Every transition out of a blocked merge
-    /// calls this, so a stale reason never outlives the status it explained.
-    /// The `failure_info` that `block_merge` wrote goes with the block; with
-    /// no block recorded, an unrelated `failure_info` stays.
+    /// Forget the typed merge block. Every status change out of `MergeBlocked`
+    /// drops it too (`retire_issues_of`, labelled by the transition), so a
+    /// stale reason never outlives the status it explained. The
+    /// `failure_info` that `block_merge` wrote goes with the block, into
+    /// `issue_history`; with no block recorded, an unrelated `failure_info`
+    /// stays.
     pub fn clear_merge_block(&mut self) {
         if self.merge.block.take().is_some() {
-            self.failure_info = None;
+            self.retire_failure("merge block cleared");
         }
     }
 
     /// Move the stage to `MergeConflict`, clearing any merge block.
     pub fn enter_merge_conflict(&mut self) {
-        self.clear_merge_block();
         if self.status == StageStatus::MergeConflict {
+            self.clear_merge_block();
             self.merge_conflict = true;
         } else if let Err(error) = self.try_mark_merge_conflict() {
             self.force_status_with_reason(

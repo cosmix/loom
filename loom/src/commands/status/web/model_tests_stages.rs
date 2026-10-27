@@ -59,6 +59,7 @@ macro_rules! stage {
             acceptance: vec![],
             terminal_history_session: None,
             block_detail: Default::default(),
+            history: Vec::new(),
         }
     };
 }

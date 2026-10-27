@@ -25,7 +25,6 @@ fn entry(label: &'static str, command: Option<&str>, note: Option<&str>) -> Atte
         review_reason: None,
         reason: None,
         failing_criteria: Vec::new(),
-        disputes: Vec::new(),
         terminal_history: None,
         cleanup_warning: None,
         has_human_review_choices: false,

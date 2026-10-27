@@ -15,12 +15,9 @@ use std::fs::OpenOptions;
 use std::io::ErrorKind;
 use std::path::Path;
 
-use crate::models::dispute::{applied_marker, dispute_dir};
+use crate::models::dispute::{applied_marker, dispute_dir, CLOSED_MARKER};
 
 use super::scan::dispute_ids;
-
-/// Zero-byte marker written into a closed dispute's directory.
-const CLOSED_MARKER: &str = "closed.marker";
 
 /// Whether the dispute whose directory is `dispute_dir` was closed. Any entry
 /// under the marker's name counts, so a dangling link cannot reopen it.

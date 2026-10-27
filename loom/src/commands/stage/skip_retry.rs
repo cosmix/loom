@@ -122,7 +122,7 @@ pub fn retry(stage_id: String, force: bool, context: Option<String>) -> Result<(
     // Reset or increment for retry
     if force {
         stage.retry_count = 0;
-        stage.failure_info = None;
+        stage.retire_failure("loom stage retry --force");
     } else {
         stage.retry_count += 1;
     }
@@ -317,7 +317,7 @@ pub(super) fn apply_retry_delta(
 ) -> Result<()> {
     if force {
         current.retry_count = 0;
-        current.failure_info = None;
+        current.retire_failure("loom stage retry --force");
     } else {
         current.retry_count += 1;
     }

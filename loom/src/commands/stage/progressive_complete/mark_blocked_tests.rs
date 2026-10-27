@@ -53,3 +53,24 @@ fn an_untyped_merge_failure_records_its_reason() {
     assert_eq!(info.evidence, vec!["first line", "second line"]);
     assert!(stage.failure_info.is_some());
 }
+
+#[test]
+fn an_untyped_failure_archives_the_typed_one_it_replaces_and_a_repeat_archives_nothing() {
+    let mut stage = executing_stage();
+    stage.block_merge(MergeBlock::TargetMoved);
+
+    block_untyped(&mut stage, "boom").unwrap();
+    block_untyped(&mut stage, "boom").unwrap();
+
+    assert_eq!(stage.merge.block, None);
+    assert_eq!(stage.failure_info.unwrap().evidence, ["boom"]);
+    assert_eq!(stage.issue_history.len(), 1);
+    assert_eq!(
+        stage.issue_history[0].evidence,
+        [MergeBlock::TargetMoved.to_string()]
+    );
+    assert_eq!(
+        stage.issue_history[0].ended_by,
+        "replaced by a newer failure"
+    );
+}
