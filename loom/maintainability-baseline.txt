@@ -15,8 +15,8 @@ file src/fs/work_dir.rs 429
 file src/fs/work_dir/tests.rs 873
 file src/git/worktree/base.rs 469
 file src/git/worktree/settings.rs 462
-file src/models/stage/methods.rs 639
-file src/models/stage/types.rs 696
+file src/models/stage/methods.rs 493
+file src/models/stage/types.rs 591
 file src/orchestrator/merge_attribution.rs 543
 file src/orchestrator/signals/cache.rs 511
 file src/orchestrator/signals/format/sections.rs 569
@@ -92,7 +92,7 @@ function src/git/worktree/settings.rs create_worktree_settings 115
 function src/git/worktree/tests_settings_env.rs test_worktree_gitignore_actually_hides_loom_runtime_paths 57
 function src/handoff/generator/formatter.rs format_handoff_markdown 112
 function src/models/stage/defaults.rs default 76
-function src/models/stage/methods.rs from_definition_copies_all_runtime_policy_fields 118
+function src/models/stage/methods_tests.rs from_definition_copies_all_runtime_policy_fields 118
 function src/orchestrator/core/event_handler.rs handle_one_event 116
 function src/orchestrator/merge_attribution.rs attribute_main_repo_merge 101
 function src/orchestrator/merge_attribution.rs reconcile_main_repo_active_merge 64

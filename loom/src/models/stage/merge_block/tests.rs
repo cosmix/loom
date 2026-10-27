@@ -195,10 +195,15 @@ fn merge_record_keeps_top_level_keys_and_round_trips() {
             restored: false,
         }),
         unrestored: vec!["refs/loom/autostash/x".to_string()],
+        conflict_since: Some(chrono::Utc::now()),
     };
     let text = crate::yaml::to_string(&stage).unwrap();
     assert!(
         text.lines().any(|l| l.starts_with("merge_block:")),
+        "{text}"
+    );
+    assert!(
+        text.lines().any(|l| l.starts_with("merge_conflict_since:")),
         "{text}"
     );
     assert!(

@@ -52,6 +52,7 @@ fn make_stage_summary(id: &str, deps: Vec<&str>, status: StageStatus) -> StageSu
         acceptance: vec![],
         terminal_history_session: None,
         block_detail: Default::default(),
+        history: Vec::new(),
     }
 }
 

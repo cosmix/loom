@@ -31,12 +31,13 @@ pub(super) fn awaits_merge(status: &StageStatus) -> bool {
 }
 
 /// Force `stage` into `NeedsHumanReview` with `reason`, recording
-/// `failure_type` as its `failure_info` when given.
+/// `failure_type` as its `failure_info` when given; the failure it replaces
+/// goes into `issue_history`.
 fn record_review(stage: &mut Stage, reason: &str, failure_type: Option<FailureType>) {
     stage.force_status_with_reason(StageStatus::NeedsHumanReview, reason);
-    stage.review_reason = Some(reason.to_string());
+    stage.replace_review_reason(reason.to_string());
     if let Some(failure_type) = failure_type {
-        stage.failure_info = Some(FailureInfo {
+        stage.replace_failure(FailureInfo {
             failure_type,
             detected_at: Utc::now(),
             evidence: vec![reason.to_string()],

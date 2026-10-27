@@ -128,7 +128,7 @@ impl Orchestrator {
             }
             parked = true;
             stage.force_status_with_reason(StageStatus::NeedsHumanReview, "stall park");
-            stage.review_reason = Some(review_reason);
+            stage.replace_review_reason(review_reason);
             stage.release_session();
             Ok(())
         })?;

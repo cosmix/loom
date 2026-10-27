@@ -46,9 +46,7 @@ impl Landing {
             stage.id,
             stage.status
         );
-        stage.try_transition(StageStatus::Executing)?;
-        stage.review_reason = None;
-        Ok(())
+        stage.try_transition(StageStatus::Executing)
     }
 }
 

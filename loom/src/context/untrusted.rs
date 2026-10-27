@@ -102,6 +102,78 @@ fn is_bidi_control(ch: char) -> bool {
     matches!(ch, '\u{202A}'..='\u{202E}' | '\u{2066}'..='\u{2069}')
 }
 
+/// Most combining marks [`bound_marks`] keeps on one base character.
+///
+/// Real text stacks two or three (a Vietnamese vowel carries two, pointed
+/// Hebrew three); four leaves room for those and nothing for a flood.
+pub(crate) const MAX_STACKED_MARKS: usize = 4;
+
+/// The combining marks a hostile value stacks on one base character: the
+/// generic combining blocks, the Cyrillic, Hebrew, Arabic and Thai marks, the
+/// kana sound marks and the variation selectors. Each has a display width of
+/// zero, so a width-budgeted column bounds none of them.
+///
+/// Marks of scripts outside these ranges (the Indic vowel signs, for one) are
+/// kept as written. Revisit with a full general-category table (the
+/// `unicode-width` crate's zero-width test) if an untrusted source carries
+/// those in runs.
+fn is_combining_mark(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{0300}'..='\u{036F}'
+            | '\u{0483}'..='\u{0489}'
+            | '\u{0591}'..='\u{05BD}'
+            | '\u{05BF}'
+            | '\u{05C1}'..='\u{05C2}'
+            | '\u{05C4}'..='\u{05C5}'
+            | '\u{05C7}'
+            | '\u{0610}'..='\u{061A}'
+            | '\u{064B}'..='\u{065F}'
+            | '\u{0670}'
+            | '\u{06D6}'..='\u{06DC}'
+            | '\u{06DF}'..='\u{06E4}'
+            | '\u{06E7}'..='\u{06E8}'
+            | '\u{06EA}'..='\u{06ED}'
+            | '\u{0E31}'
+            | '\u{0E34}'..='\u{0E3A}'
+            | '\u{0E47}'..='\u{0E4E}'
+            | '\u{1AB0}'..='\u{1AFF}'
+            | '\u{1DC0}'..='\u{1DFF}'
+            | '\u{20D0}'..='\u{20FF}'
+            | '\u{3099}'..='\u{309A}'
+            | '\u{FE00}'..='\u{FE0F}'
+            | '\u{FE20}'..='\u{FE2F}'
+            | '\u{E0100}'..='\u{E01EF}'
+    )
+}
+
+/// Collect `chars`, dropping each combining mark past the
+/// [`MAX_STACKED_MARKS`]-th in a run. Every other character is kept, so text
+/// is never cut; only a mark flood (`x` and 100,000 U+0301, a few hundred
+/// kilobytes that print as one cell) shrinks.
+fn bound_marks(chars: impl Iterator<Item = char>) -> String {
+    let mut run = 0;
+    chars
+        .filter(|&ch| {
+            if is_combining_mark(ch) {
+                run += 1;
+                run <= MAX_STACKED_MARKS
+            } else {
+                run = 0;
+                true
+            }
+        })
+        .collect()
+}
+
+/// Neutralize a value a surface shows whole, on one line: every character
+/// goes through [`flatten_char`], combining-mark runs are bounded by
+/// [`bound_marks`], and nothing else is cut or collapsed. Failure evidence,
+/// acceptance criteria and archived issue history take this rule.
+pub(crate) fn whole_safe(value: &str) -> String {
+    bound_marks(value.chars().map(flatten_char))
+}
+
 /// Flatten a value that is rendered as part of a surface's own structure.
 ///
 /// Ids, pointers and query text carry arbitrary bytes: `fs::knowledge::chunker`
@@ -117,11 +189,11 @@ fn is_bidi_control(ch: char) -> bool {
 /// assignment.
 ///
 /// So: control and whitespace characters become spaces, runs collapse,
-/// backticks become [`BACKTICK_SUBSTITUTE`], and the result is bounded. A value
-/// with none of those is returned unchanged — the common case must not pay for
-/// the hostile one.
+/// backticks become [`BACKTICK_SUBSTITUTE`], combining-mark runs are bounded
+/// ([`bound_marks`]), and the result is bounded. A value with none of those is
+/// returned unchanged — the common case must not pay for the hostile one.
 pub(crate) fn inline_safe(value: &str) -> String {
-    let flattened: String = value.chars().map(neutralize).collect();
+    let flattened = bound_marks(value.chars().map(neutralize));
     let collapsed = flattened.split_whitespace().collect::<Vec<_>>().join(" ");
     crate::utils::truncate_for_display(&collapsed, MAX_INLINE_CHARS)
 }
@@ -160,14 +232,16 @@ pub(crate) const MAX_MULTILINE_CHARS: usize = 16_000;
 ///
 /// Applies the [`inline_safe`] character rules but keeps line structure:
 /// `\r\n` and lone `\r` become `\n`, `\n` survives, a tab becomes a space,
-/// trailing whitespace is trimmed per line, and the result is cut to
-/// [`MAX_MULTILINE_CHARS`] characters with a trailing `…` when the cap bites.
+/// combining-mark runs are bounded ([`bound_marks`]), trailing whitespace is
+/// trimmed per line, and the result is cut to [`MAX_MULTILINE_CHARS`]
+/// characters with a trailing `…` when the cap bites.
 pub(crate) fn multiline_safe(value: &str) -> String {
     let normalized = value.replace("\r\n", "\n").replace('\r', "\n");
-    let cleaned: String = normalized
-        .chars()
-        .map(|ch| if ch == '\n' { ch } else { neutralize(ch) })
-        .collect();
+    let cleaned = bound_marks(
+        normalized
+            .chars()
+            .map(|ch| if ch == '\n' { ch } else { neutralize(ch) }),
+    );
     let joined = cleaned
         .split('\n')
         .map(str::trim_end)
@@ -267,6 +341,26 @@ mod tests {
         assert_eq!(flatten_char('`'), '`');
         assert_eq!(neutralize('`'), BACKTICK_SUBSTITUTE);
         assert_eq!(flatten_char('x'), 'x');
+    }
+
+    #[test]
+    fn a_combining_mark_flood_keeps_its_base_and_four_marks() {
+        let flood = format!("x{}y", "\u{0301}".repeat(100_000));
+        let kept = format!("x{}y", "\u{0301}".repeat(MAX_STACKED_MARKS));
+
+        assert_eq!(whole_safe(&flood), kept);
+        assert_eq!(multiline_safe(&flood), kept);
+        assert_eq!(inline_safe(&flood), kept);
+    }
+
+    #[test]
+    fn real_text_keeps_every_mark_and_character() {
+        // Vietnamese stacks two marks, pointed Hebrew three; a long line stays whole.
+        let decomposed = "Vie\u{0302}\u{0323}t \u{05E9}\u{05C1}\u{05B8}\u{05BC} cafe\u{0301}";
+        let long = "é".repeat(5_000);
+        assert_eq!(whole_safe(decomposed), decomposed);
+        assert_eq!(whole_safe(&long), long);
+        assert_eq!(whole_safe("a\u{202E}b\tc"), "a b c");
     }
 
     #[test]

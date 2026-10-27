@@ -229,7 +229,7 @@ impl Orchestrator {
                 stage.accumulate_attempt_time(Utc::now());
             }
             stage.force_status_with_reason(StageStatus::NeedsHumanReview, &reason);
-            stage.review_reason = Some(reason.clone());
+            stage.replace_review_reason(reason.clone());
             Ok(())
         })?;
         self.graph

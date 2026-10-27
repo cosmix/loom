@@ -198,6 +198,32 @@ fn test_handle_reject_clears_a_prior_attempts_failure_info() {
     assert_eq!(rejected.status, StageStatus::Blocked);
     assert_eq!(rejected.close_reason.as_deref(), Some("Not needed anymore"));
     assert!(rejected.failure_info.is_none());
+    let archived: Vec<(Option<FailureType>, &[String], &str)> = rejected
+        .issue_history
+        .iter()
+        .map(|issue| {
+            (
+                issue.failure_type.clone(),
+                issue.evidence.as_slice(),
+                issue.ended_by.as_str(),
+            )
+        })
+        .collect();
+    assert_eq!(
+        archived,
+        [
+            (
+                None,
+                &["Bad criteria".to_string()][..],
+                "replaced by a newer review reason"
+            ),
+            (
+                Some(FailureType::SessionCrash),
+                &["an earlier attempt".to_string()][..],
+                "human review rejected"
+            ),
+        ]
+    );
 }
 
 #[test]

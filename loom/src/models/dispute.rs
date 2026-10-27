@@ -356,8 +356,12 @@ pub struct DisputeVerdictRecord {
     pub session_id: Option<String>,
 }
 
+/// Zero-byte marker written into the directory of a dispute closed without
+/// an applied outcome (`orchestrator::adjudication::close_open_disputes`).
+pub const CLOSED_MARKER: &str = "closed.marker";
+
 /// Layout helpers for the on-disk dispute directory:
-/// `.loom/work/disputes/<stage>/<n>/{request.md,verdict.md,applied.marker}`.
+/// `.loom/work/disputes/<stage>/<n>/{request.md,verdict.md,applied.marker,closed.marker}`.
 pub fn dispute_dir(disputes_root: &std::path::Path, stage_id: &str, id: u32) -> PathBuf {
     disputes_root.join(stage_id).join(id.to_string())
 }

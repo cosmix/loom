@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::commands::status::data::{
-    CompletionBlockerState, CompletionBlockerSummary, DisputeLine, FailingCriterion, StageSummary,
+    CompletionBlockerState, CompletionBlockerSummary, FailingCriterion, StageSummary,
 };
 use crate::models::failure::FailureType;
 use crate::models::session::{SessionExitReason, SessionType};
@@ -49,8 +49,6 @@ pub struct AttentionEntry {
     pub reason: Option<String>,
     /// Acceptance criteria that failed in the stage's last completion attempt.
     pub failing_criteria: Vec<FailingCriterion>,
-    /// Disputes already ruled on for a blocked stage, oldest first.
-    pub disputes: Vec<DisputeLine>,
     /// The session whose terminal history the stage left, when it left one.
     pub terminal_history: Option<String>,
     pub cleanup_warning: Option<String>,
@@ -138,7 +136,6 @@ impl AttentionEntry {
             review_reason: None,
             reason: None,
             failing_criteria: Vec::new(),
-            disputes: Vec::new(),
             terminal_history: None,
             cleanup_warning: None,
             has_human_review_choices: false,
@@ -290,7 +287,6 @@ fn status_entry(stage: &StageSummary) -> Option<AttentionEntry> {
         review_reason,
         reason,
         failing_criteria: stage.block_detail.failing_criteria.clone(),
-        disputes: stage.block_detail.disputes.clone(),
         terminal_history,
         has_human_review_choices: in_review,
         dispute_count,

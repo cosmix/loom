@@ -122,6 +122,7 @@ fn stage_summary(id: &str, status: StageStatus) -> StageSummary {
         acceptance: vec![],
         terminal_history_session: None,
         block_detail: Default::default(),
+        history: Vec::new(),
     }
 }
 
@@ -348,10 +349,7 @@ fn file_dispute_debug_output_redacts_credential_reason_and_ids() {
     assert!(!output.contains("user-secret"));
     assert!(!output.contains("private reason"));
     assert!(!output.contains("private-contract"));
-    assert!(
-        output.contains("contract"),
-        "the kind stays legible: {output}"
-    );
+    assert!(output.contains("contract"), "kind: {output}");
     assert!(output.contains("session-1"));
 }
 

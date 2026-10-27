@@ -237,7 +237,7 @@ fn handle_reject(stage_id: &str, reason: &str, work_dir: &Path) -> Result<()> {
     update_stage(stage_id, work_dir, |stage| {
         stage.try_reject_review(reason.to_string())?;
         stage.close_reason = Some(reason.to_string());
-        stage.failure_info = None;
+        stage.retire_failure("human review rejected");
         Ok(())
     })?;
 

@@ -51,11 +51,13 @@ pub(super) fn block_missing_branch(
 
 /// Enter `MergeBlocked` without a typed block: an untyped failure replaces any
 /// typed block an earlier attempt left, and `reason` goes into `failure_info`
-/// so `loom status` shows it, as the daemon's merge failures do.
+/// so `loom status` shows it, as the daemon's merge failures do. A different
+/// failure it replaces goes into `issue_history`; the same one re-recorded
+/// stays as it was.
 fn block_untyped(stage: &mut Stage, reason: &str) -> Result<()> {
-    stage.clear_merge_block();
     stage.try_mark_merge_blocked()?;
-    stage.failure_info = Some(FailureInfo {
+    stage.merge.block = None;
+    stage.replace_failure(FailureInfo {
         failure_type: FailureType::InfrastructureError,
         detected_at: Utc::now(),
         evidence: reason.lines().map(str::to_owned).collect(),

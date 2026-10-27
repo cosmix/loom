@@ -76,6 +76,7 @@ use scan::{read_dispute_request, scan_pending_requests};
 
 pub(crate) use closed_disputes::close_open_disputes;
 pub use escalation::Escalation;
+pub(crate) use scan::dispute_ids;
 pub use session::{
     attempt_count, persist_verdict, read_request, resolve_model, scratch_verdict_draft,
     scratch_verdict_file_name, verdict_draft_file, AdjudicationJob, DEFAULT_ADJUDICATION_MODEL,

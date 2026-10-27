@@ -122,7 +122,7 @@ impl Orchestrator {
         let first_line = error.lines().next().unwrap_or(error);
         let updated = self.update_stage(stage_id, |current| {
             current.clear_merge_block();
-            current.failure_info = Some(FailureInfo {
+            current.replace_failure(FailureInfo {
                 failure_type: FailureType::InfrastructureError,
                 detected_at: Utc::now(),
                 evidence: error.lines().map(str::to_owned).collect(),

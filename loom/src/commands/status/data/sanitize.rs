@@ -17,29 +17,11 @@
 //! the ledger TUI, the static renderer and the wire in one place.
 
 use super::{BlockDetail, StageSummary};
-use crate::context::untrusted::{inline_safe, multiline_safe};
+use crate::context::untrusted::{inline_safe, multiline_safe, whole_safe};
 
 #[path = "sanitize_token_flow.rs"]
 mod token_flow;
 pub(super) use token_flow::{flow_is_fresh, sanitize_token_flow};
-
-/// Longest evidence list a status payload carries for one stage.
-///
-/// The longest list loom itself builds is 21 lines: a startup refusal is one
-/// reason line extended with up to `STARTUP_REFUSAL_TAIL_LINES` (20) lines of
-/// stderr tail (`orchestrator/core/crash_classification.rs`). Thirty-two sits
-/// comfortably above that, so a genuine crash is never truncated, and still
-/// bounds what one stage contributes to a payload the whole dashboard shares —
-/// at the 200-char inline limit each line is flattened to, roughly 6 KB.
-const MAX_EVIDENCE_LINES: usize = 32;
-
-/// Marker left in place of the evidence a cap dropped.
-///
-/// The static renderer prints `evidence.len() - 5` as "... N more lines"
-/// (`render/attention.rs`), so a silent truncation makes that count read as the
-/// whole story. The marker occupies one of the kept slots and says where the
-/// rest is.
-const EVIDENCE_TRUNCATED_MARKER: &str = "... evidence truncated; see the stage file for full text";
 
 /// Longest close reason a status payload carries.
 ///
@@ -62,7 +44,9 @@ const CLOSE_REASON_TRUNCATED_MARKER: &str =
 /// `stage_id`, both read from unvalidated frontmatter. `merge_resolver_session`
 /// is likewise a session record's `id`, and the attention note prints it.
 /// `close_reason` is free text a stage agent writes with `loom stage block`; it
-/// keeps its line breaks and is bounded by [`bound_close_reason`].
+/// keeps its line breaks and is bounded by [`bound_close_reason`]. Acceptance
+/// criteria, failure evidence and the block detail are read in full on the
+/// dashboard, so they go through [`neutralize`], which cuts nothing.
 pub(super) fn sanitize_stage_summary(summary: &mut StageSummary) {
     flatten(&mut summary.model);
     summary.execution_models.iter_mut().for_each(flatten);
@@ -77,7 +61,7 @@ pub(super) fn sanitize_stage_summary(summary: &mut StageSummary) {
     summary.incoherence.iter_mut().for_each(flatten);
     summary.merge_resolver_session.iter_mut().for_each(flatten);
     bound_close_reason(&mut summary.close_reason);
-    summary.acceptance.iter_mut().for_each(flatten);
+    summary.acceptance.iter_mut().for_each(neutralize);
     summary
         .terminal_history_session
         .iter_mut()
@@ -89,28 +73,39 @@ pub(super) fn sanitize_stage_summary(summary: &mut StageSummary) {
         flatten(&mut blocker.next_action);
     }
     if let Some(failure) = summary.failure_info.as_mut() {
-        cap_evidence(&mut failure.evidence);
-        failure.evidence.iter_mut().for_each(flatten);
+        failure.evidence.iter_mut().for_each(neutralize);
     }
 }
 
-/// The criteria commands and dispute fields come from files a stage agent can
+/// The criteria commands come from files a stage agent can
 /// influence, and the card prints them.
 fn sanitize_block_detail(detail: &mut BlockDetail) {
     for criterion in &mut detail.failing_criteria {
-        flatten(&mut criterion.command);
-        criterion.diagnostic.iter_mut().for_each(flatten);
-    }
-    for dispute in &mut detail.disputes {
-        flatten(&mut dispute.kind);
-        dispute.verdict.iter_mut().for_each(flatten);
-        dispute.field.iter_mut().for_each(flatten);
-        dispute.ops.iter_mut().for_each(|op| flatten(&mut op.op));
+        neutralize(&mut criterion.command);
+        criterion.diagnostic.iter_mut().for_each(neutralize);
     }
 }
 
+/// Flatten an identifier-like value to one line of at most `MAX_INLINE_CHARS`.
 fn flatten(value: &mut String) {
     *value = inline_safe(value);
+}
+
+/// Neutralize a value the dashboard shows whole ([`whole_safe`]): each
+/// control, line-shaped, bidi and zero-width format character becomes a
+/// space, a run of combining marks keeps its first
+/// [`MAX_STACKED_MARKS`](crate::context::untrusted::MAX_STACKED_MARKS), and
+/// nothing else is cut, so a 400-character evidence line or criterion arrives
+/// as it was written. Combining marks are zero-width too: the run bound is
+/// what keeps one base character from carrying a flood of them into a
+/// width-budgeted terminal column and every frame of the payload. Marks
+/// outside the ranges `whole_safe` knows pass unbounded.
+///
+/// Evidence lists are shipped whole as well. Revisit with a cap that leaves a
+/// visible marker if one stage's evidence makes the status frame too large for
+/// the dashboard's refresh.
+fn neutralize(value: &mut String) {
+    *value = whole_safe(value);
 }
 
 /// Neutralize a value the dashboard renders as a block, keeping its lines.
@@ -136,15 +131,6 @@ fn bound_close_reason(value: &mut Option<String>) {
         reason.push('\n');
         reason.push_str(CLOSE_REASON_TRUNCATED_MARKER);
     }
-}
-
-/// Bound an evidence list to [`MAX_EVIDENCE_LINES`], saying so when it bites.
-fn cap_evidence(evidence: &mut Vec<String>) {
-    if evidence.len() <= MAX_EVIDENCE_LINES {
-        return;
-    }
-    evidence.truncate(MAX_EVIDENCE_LINES - 1);
-    evidence.push(EVIDENCE_TRUNCATED_MARKER.to_string());
 }
 
 /// Whether a stage id may be joined into a path.
@@ -221,10 +207,11 @@ mod tests {
             acceptance: vec![],
             terminal_history_session: None,
             block_detail: Default::default(),
+            history: Vec::new(),
         }
     }
 
-    fn failure_with(evidence: Vec<String>) -> FailureInfo {
+    pub(super) fn failure_with(evidence: Vec<String>) -> FailureInfo {
         FailureInfo {
             failure_type: FailureType::SessionCrash,
             detected_at: Utc::now(),
@@ -342,35 +329,6 @@ mod tests {
     }
 
     #[test]
-    fn an_over_long_evidence_list_is_capped_and_says_so() {
-        let mut stage = summary();
-        let lines = (0..500).map(|index| format!("line {index}")).collect();
-        stage.failure_info = Some(failure_with(lines));
-
-        sanitize_stage_summary(&mut stage);
-
-        let evidence = stage.failure_info.unwrap().evidence;
-        assert_eq!(evidence.len(), MAX_EVIDENCE_LINES);
-        assert_eq!(evidence[0], "line 0");
-        assert_eq!(evidence[MAX_EVIDENCE_LINES - 2], "line 30");
-        assert_eq!(evidence[MAX_EVIDENCE_LINES - 1], EVIDENCE_TRUNCATED_MARKER);
-    }
-
-    #[test]
-    fn the_longest_evidence_a_crash_builds_survives_intact() {
-        // A startup refusal is one reason line plus up to 20 stderr tail lines.
-        let mut stage = summary();
-        let lines: Vec<String> = std::iter::once("startup refusal".to_string())
-            .chain((0..20).map(|index| format!("stderr {index}")))
-            .collect();
-        stage.failure_info = Some(failure_with(lines.clone()));
-
-        sanitize_stage_summary(&mut stage);
-
-        assert_eq!(stage.failure_info.unwrap().evidence, lines);
-    }
-
-    #[test]
     fn stage_ids_that_could_escape_a_directory_are_rejected() {
         assert!(valid_stage_id("stage-1.a_b"));
         assert!(!valid_stage_id(""));
@@ -385,3 +343,7 @@ mod tests {
 #[cfg(test)]
 #[path = "sanitize_close_reason_tests.rs"]
 mod close_reason_tests;
+
+#[cfg(test)]
+#[path = "sanitize_whole_text_tests.rs"]
+mod whole_text_tests;
