@@ -21,6 +21,7 @@ pub struct PressureConfig {
     codex_effort: Option<String>,
     address_model: Option<String>,
     address_effort: Option<String>,
+    rounds: Option<u32>,
 }
 
 /// Each accessor below shares its name with a private field of the same
@@ -89,6 +90,22 @@ impl PressureConfig {
     }
 }
 
+impl PressureConfig {
+    /// The rounds the file set, if at least 1. A zero is dropped with a
+    /// warning so the run falls through to the next tier.
+    pub fn rounds(&self) -> Option<u32> {
+        let rounds = self.rounds?;
+        if rounds >= 1 {
+            return Some(rounds);
+        }
+        tracing::warn!(
+            key = "pressure.rounds",
+            "workspace config value is below the minimum of 1; dropping to fall through to the next tier"
+        );
+        None
+    }
+}
+
 /// Read `[pressure]`; a missing, unreadable or malformed section yields an
 /// all-`None` config, so a broken workspace file falls through to
 /// `~/.loom/config.toml` instead of failing the run.
@@ -120,6 +137,15 @@ mod tests {
         assert_eq!(config.codex_effort(), Some("xhigh"));
         assert_eq!(config.address_model(), Some("opus"));
         assert_eq!(config.address_effort(), Some("medium"));
+    }
+
+    #[test]
+    fn rounds_returns_a_set_value_and_drops_zero() {
+        let config = PressureConfig::from_section_toml("rounds = 4\n").unwrap();
+        assert_eq!(config.rounds(), Some(4));
+        let zero = PressureConfig::from_section_toml("rounds = 0\n").unwrap();
+        assert_eq!(zero.rounds(), None);
+        assert_eq!(PressureConfig::default().rounds(), None);
     }
 
     #[test]

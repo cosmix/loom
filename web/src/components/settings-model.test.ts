@@ -40,10 +40,11 @@ describe("sectionRows", () => {
     expect(sections[2]?.rows).toHaveLength(1);
   });
 
-  it("pairs pressure into three rows labelled claude, codex, address with their captions", () => {
+  it("pairs pressure into three rows labelled claude, codex, address with their captions, then the rounds key", () => {
     const pressure = sections[3];
-    expect(pressure?.rows).toHaveLength(3);
-    const pairs = pressure?.rows as PairRow[];
+    expect(pressure?.rows).toHaveLength(4);
+    expect(pressure?.rows[3]?.kind).toBe("single");
+    const pairs = (pressure?.rows ?? []).slice(0, 3) as PairRow[];
     expect(pairs.map((row) => row.label)).toEqual(["claude", "codex", "address"]);
     expect(pairs.map((row) => row.caption)).toEqual([
       "/pressure, Claude",
@@ -53,14 +54,15 @@ describe("sectionRows", () => {
     expect(pressure?.caption).toBe("who runs each step of loom pressure");
   });
 
-  it("pairs models into four rows", () => {
+  it("pairs models into five rows", () => {
     const models = sections[4];
-    expect(models?.rows).toHaveLength(4);
+    expect(models?.rows).toHaveLength(5);
     expect(models?.rows.map((row) => rowLabel(row))).toEqual([
       "standard",
       "knowledge",
       "knowledge_distill",
       "integration_verify",
+      "code_reviewer",
     ]);
     expect(models?.caption).toBe("a stage's main agent session, by stage type");
   });

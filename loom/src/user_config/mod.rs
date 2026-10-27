@@ -244,7 +244,7 @@ impl UserConfig {
         self.update_check_interval_hours.unwrap_or(24)
     }
 
-    /// Terminal backend `loom run` defaults to. Default: native.
+    /// Terminal backend `loom run` defaults to. Default: tmux.
     pub fn terminal_backend(&self) -> SessionBackendKind {
         self.terminal_backend.unwrap_or_default()
     }

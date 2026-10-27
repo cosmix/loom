@@ -155,6 +155,7 @@ export const ROW_CAPTIONS: Readonly<Record<string, string>> = {
   "pressure.claude": "/pressure, Claude",
   "pressure.codex": "$pressure, Codex",
   "pressure.address": "/address reconciliation",
+  "models.code_reviewer": "loom-code-reviewer subagent",
 };
 
 /// A `_model`/`_effort` suffix's prefix, or null when the field doesn't end

@@ -27,7 +27,7 @@
 
 - **A stalled control-mode terminal holds its resources for up to `GATE_STALL_TIMEOUT` + 2s.**
   `bridge.rs`'s inbound gate cannot distinguish a genuinely half-closed browser from a live one
-  that is merely slow to drain (see mistakes/web-dashboard-server.md) — it bounds the ambiguity
+  that is merely slow to drain (see mistakes/web-terminal.md) — it bounds the ambiguity
   with a 30s stall deadline rather than resolving it. Until that deadline, and for up to a
   further 2s while `PtyChild::shutdown` waits for a clean `try_wait` before `SIGKILL`, the
   terminal keeps one of `MAX_TERMINALS = 8` slots, its PTY and its tmux child alive. Deliberate

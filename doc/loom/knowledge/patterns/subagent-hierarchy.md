@@ -64,9 +64,10 @@ rg -n "HIERARCHY SECOND" skills/   # must be ZERO hits (criteria-keyed, not rank
 ## Model Playbook: Orchestration Model Is Per Stage Type, Configurable
 
 Every stage's main agent runs the model and reasoning effort configured for its stage type
-(`models/stage/defaults.rs::default_model` / `default_reasoning_effort`): `standard`, `knowledge`,
-and `integration-verify` default to opus, `knowledge-distill` to sonnet; default effort is
-`medium`, `medium`, `xhigh`, and `high` respectively. The operator can change either per stage
+(`models/stage/defaults.rs::default_model` / `default_reasoning_effort`): `knowledge` and
+`integration-verify` default to opus, `standard` and `knowledge-distill` to sonnet; default effort
+is `high` (`standard`), `medium` (`knowledge`), `xhigh` (`integration-verify`) and `high`
+(`knowledge-distill`). The operator can change either per stage
 type via `[models]` in `~/.loom/config.toml` (user tier) or `<repo>/.loom/work/config.toml`
 (project tier, resolved per key — see conventions/model-and-effort-config.md); a plan stage's
 `model` / `reasoning_effort` field overrides both config tiers for that stage.

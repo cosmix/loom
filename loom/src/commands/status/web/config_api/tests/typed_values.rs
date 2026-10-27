@@ -66,7 +66,7 @@ fn a_number_key_ships_a_json_number() {
         .filter(|entry| entry["kind"]["type"] == "number")
         .collect();
 
-    assert_eq!(numbers.len(), 2);
+    assert_eq!(numbers.len(), 3);
     for entry in numbers {
         assert!(entry["user"]["value"].is_number(), "{entry}");
         assert!(entry["effective"]["value"].is_number(), "{entry}");

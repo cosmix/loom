@@ -91,7 +91,7 @@ fn defaults_when_the_file_is_absent() {
     let config = UserConfig::default();
     assert!(config.update_check());
     assert_eq!(config.update_check_interval_hours(), 24);
-    assert_eq!(config.terminal_backend(), SessionBackendKind::Native);
+    assert_eq!(config.terminal_backend(), SessionBackendKind::Tmux);
     assert_eq!(
         config.context_ceiling_tokens(),
         DEFAULT_CONTEXT_CEILING_TOKENS
@@ -105,8 +105,11 @@ fn defaults_when_the_file_is_absent() {
     assert_eq!(config.pressure_address_model(), "opus");
     assert_eq!(config.pressure_address_effort(), "high");
 
-    assert_eq!(config.stage_model(StageType::Standard), "opus");
-    assert_eq!(config.stage_reasoning_effort(StageType::Standard), "medium");
+    assert_eq!(config.stage_model(StageType::Standard), "sonnet");
+    assert_eq!(config.stage_reasoning_effort(StageType::Standard), "high");
+    assert_eq!(config.code_reviewer_model(), "opus");
+    assert_eq!(config.code_reviewer_effort(), "high");
+    assert_eq!(config.pressure_rounds(), 1);
     assert_eq!(config.stage_model(StageType::Knowledge), "opus");
     assert_eq!(
         config.stage_reasoning_effort(StageType::Knowledge),
@@ -227,7 +230,7 @@ fn origin_is_set_only_for_keys_the_document_wrote() {
     assert_eq!(origin.to_string(), "set");
 
     let (value, origin) = config.value_of(spec("terminal.backend").unwrap());
-    assert_eq!(value.to_string(), "native");
+    assert_eq!(value.to_string(), "tmux");
     assert_eq!(origin, Origin::Default);
     assert_eq!(origin.to_string(), "default");
 }
@@ -331,7 +334,7 @@ fn value_of_has_an_arm_for_every_registered_key() {
         match key.name {
             "update.check" => assert_eq!(value, "true"),
             "update.check_interval_hours" => assert_eq!(value, "24"),
-            "terminal.backend" => assert_eq!(value, "native"),
+            "terminal.backend" => assert_eq!(value, "tmux"),
             "context.ceiling_tokens" => {
                 assert_eq!(value, DEFAULT_CONTEXT_CEILING_TOKENS.to_string())
             }
@@ -345,8 +348,11 @@ fn value_of_has_an_arm_for_every_registered_key() {
             "pressure.codex_effort" => assert_eq!(value, "xhigh"),
             "pressure.address_model" => assert_eq!(value, "opus"),
             "pressure.address_effort" => assert_eq!(value, "high"),
-            "models.standard_model" => assert_eq!(value, "opus"),
-            "models.standard_effort" => assert_eq!(value, "medium"),
+            "models.standard_model" => assert_eq!(value, "sonnet"),
+            "models.standard_effort" => assert_eq!(value, "high"),
+            "models.code_reviewer_model" => assert_eq!(value, "opus"),
+            "models.code_reviewer_effort" => assert_eq!(value, "high"),
+            "pressure.rounds" => assert_eq!(value, "1"),
             "models.knowledge_model" => assert_eq!(value, "opus"),
             "models.knowledge_effort" => assert_eq!(value, "medium"),
             "models.knowledge_distill_model" => assert_eq!(value, "sonnet"),

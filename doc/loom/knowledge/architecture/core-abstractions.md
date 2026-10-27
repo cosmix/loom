@@ -51,7 +51,7 @@ States: Spawning -> Running -> Completed | Crashed | ContextExhausted | Paused. 
 ### SessionBackend (orchestrator/terminal/)
 
 `SessionBackend` is the shared dispatcher for every spawn, kill, and liveness operation. It selects
-the native host-terminal lane or the opt-in tmux lane per spawn and persists the lane on
+the default tmux lane or the opt-in native host-terminal lane per spawn and persists the lane on
 `Session.backend`. Later kill and liveness calls dispatch by that recorded value, so configuration
 changes and daemon restarts cannot route an existing session through the wrong backend.
 

@@ -52,7 +52,7 @@ use crate::fs::work_dir::{
     insert_key, read_config, remove_key, update_config, ContextConfig, WorkDir,
 };
 use crate::models::session::TerminalConfig;
-use crate::user_config::keys::{KeySpec, KEYS};
+use crate::user_config::keys::{KeySpec, ValueKind, KEYS};
 use crate::user_config::{ConfigValue, UserConfig};
 
 /// A tree's `.loom/work` and its parsed `config.toml`.
@@ -234,15 +234,19 @@ fn section_key(section: Option<&toml::Value>, spec: &KeySpec) -> Option<ConfigVa
 }
 
 /// Whether the daemon can deserialize the `[models]` or `[pressure]` section:
-/// a table whose entries are registered fields in `name`, all holding strings.
+/// a table whose entries are registered fields in `name`, each holding the
+/// shape its key accepts (an integer for number keys, else a string).
 fn section_readable(section: &toml::Value, name: &str) -> bool {
     let Some(table) = section.as_table() else {
         return false;
     };
     table.iter().all(|(field, value)| {
         KEYS.iter()
-            .any(|spec| spec.section == name && spec.field == field)
-            && value.is_str()
+            .find(|spec| spec.section == name && spec.field == field)
+            .is_some_and(|spec| match spec.kind {
+                ValueKind::Number => value.is_integer(),
+                _ => value.is_str(),
+            })
     })
 }
 

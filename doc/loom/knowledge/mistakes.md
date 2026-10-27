@@ -88,10 +88,17 @@ Five workers fanning the ledger TUI out by file each reimplemented cell-padding 
 
 ## Web Dashboard Server
 
-Concurrency bugs, a cross-worker field-semantics bug, a browser-vs-jsdom gotcha, terminal bridge
-lessons, and chart bands in state tones by rank, from `loom/src/commands/status/web/` and `web/`.
+Concurrency bugs, a cross-worker field-semantics bug, a browser-vs-jsdom gotcha, and chart bands
+in state tones by rank, from `loom/src/commands/status/web/` and `web/`.
 
 → [Web Dashboard Server](mistakes/web-dashboard-server.md)
+
+## Web Terminal
+
+PTY fd leak and backpressure lessons in the terminal bridge, the bounded input queue, and viewer
+scrolling that must page through `{scroll:{pages}}` for both wheel and touch.
+
+→ [Web Terminal](mistakes/web-terminal.md)
 
 ## Pre-Commit Partial-Staging Guard: Design Decisions and Edge Cases (2026-09-12)
 
