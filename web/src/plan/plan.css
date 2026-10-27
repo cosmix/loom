@@ -11,12 +11,3 @@
   gap: 0.25rem;
   white-space: nowrap;
 }
-
-[data-loom-plan] .plan-presence-row .plan-presence-reading {
-  opacity: 0;
-}
-
-[data-loom-plan] .plan-presence-row:hover .plan-presence-reading,
-[data-loom-plan] .plan-presence-row:focus-visible .plan-presence-reading {
-  opacity: 1;
-}

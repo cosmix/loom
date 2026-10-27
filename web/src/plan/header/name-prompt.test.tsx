@@ -70,4 +70,14 @@ describe("NamePrompt", () => {
     expect(window.localStorage.getItem(NAME_KEY)).toBe("Grace");
     expect(screen.queryByLabelText("Your name")).toBeNull();
   });
+
+  it("caps the field at the 32 characters the server keeps", () => {
+    const { store } = fakeSocket();
+    render(
+      <Provider store={store}>
+        <NamePrompt />
+      </Provider>,
+    );
+    expect(screen.getByLabelText("Your name").getAttribute("maxlength")).toBe("32");
+  });
 });

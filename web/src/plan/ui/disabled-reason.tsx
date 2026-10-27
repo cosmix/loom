@@ -16,8 +16,10 @@ export function DisabledReason({
 
   return (
     <div className="flex flex-col items-start gap-1">
+      {/* Button styles only `disabled`; this stays focusable, so `aria-disabled` needs its own. */}
       <Button
         type="button"
+        className="aria-disabled:cursor-not-allowed aria-disabled:opacity-50 aria-disabled:hover:bg-primary aria-disabled:active:translate-y-0!"
         aria-disabled={blocked || undefined}
         aria-describedby={blocked ? reasonId : undefined}
         onClick={blocked ? undefined : onClick}

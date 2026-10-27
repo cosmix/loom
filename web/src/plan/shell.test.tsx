@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { MemoryRouter, Route, Routes } from "react-router";
@@ -77,6 +77,22 @@ describe("PlanShell", () => {
     expect(screen.queryByText("Open or close Help")).toBeNull();
   });
 
+  it("returns focus to the previously focused control when help closes", async () => {
+    setWide(true);
+    renderShell(<button type="button">outlet button</button>);
+    const origin = screen.getByRole("button", { name: "outlet button" });
+    origin.focus();
+    fireEvent.keyDown(origin, { key: "?" });
+    const dialog = screen.getByRole("dialog", { name: "Help" });
+    // Wide enough for the 220px key column, so "Open or close Help" does not wrap.
+    expect(dialog.className).toContain("sm:max-w-xl");
+    expect(dialog.className).not.toContain("sm:max-w-sm");
+    expect(document.activeElement).not.toBe(origin);
+    fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    await waitFor(() => expect(document.activeElement).toBe(origin));
+  });
+
   it("ignores the question mark key while typing", () => {
     setWide(true);
     renderShell(<input aria-label="field" />);
@@ -107,7 +123,7 @@ describe("PlanShell", () => {
     expect(screen.getByTestId("extras").getAttribute("data-compact")).toBe("true");
     expect(screen.queryByRole("button", { name: /^share/i })).toBeNull();
     fireEvent.click(screen.getByRole("button", { name: "More" }));
-    const menu = screen.getByRole("dialog");
+    const menu = screen.getByRole("dialog", { name: "More" });
     expect(within(menu).getByRole("button", { name: /^share/i })).toBeTruthy();
     expect(within(menu).getByRole("button", { name: /people here/i })).toBeTruthy();
   });

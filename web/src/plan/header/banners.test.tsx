@@ -27,6 +27,26 @@ describe("Banners", () => {
     expect(screen.getByText(/Claude is not logged in\. Log in to Claude/)).toBeTruthy();
   });
 
+  it("joins each message and fix with one full stop, whatever the message ends with", () => {
+    renderBanners((store) =>
+      store.set(serverInfoAtom, {
+        ...serverInfoSchema.parse(serverInfoFixture),
+        read_only: [
+          { what: "sandbox", message: "bubblewrap is not installed.", fix: "Install bubblewrap" },
+          {
+            what: "claude_login",
+            message: "Claude is not logged in",
+            fix: "Run claude auth login",
+          },
+        ],
+      }),
+    );
+    const banner = screen.getByRole("status");
+    expect(banner.textContent).toContain("bubblewrap is not installed. Install bubblewrap");
+    expect(banner.textContent).toContain("Claude is not logged in. Run claude auth login");
+    expect(banner.textContent).not.toContain("..");
+  });
+
   it("warns for the life of the page on a remote bind", () => {
     renderBanners((store) =>
       store.set(serverInfoAtom, {
@@ -45,5 +65,16 @@ describe("Banners", () => {
   it("announces stopping", () => {
     renderBanners((store) => store.set(stoppingAtom, true));
     expect(screen.getByText("loom plan is stopping.")).toBeTruthy();
+  });
+
+  it("announces stopping once when the server snapshot says so", () => {
+    renderBanners((store) =>
+      store.set(serverInfoAtom, {
+        ...serverInfoSchema.parse(serverInfoFixture),
+        read_only: [],
+        stopping: true,
+      }),
+    );
+    expect(screen.getAllByText("loom plan is stopping.")).toHaveLength(1);
   });
 });

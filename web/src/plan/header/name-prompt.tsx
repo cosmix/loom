@@ -5,7 +5,8 @@ import { Button } from "@/components/ui/button";
 import { planSocketAtom } from "@/plan/state/atoms";
 
 const NAME_KEY = "loom-plan-name";
-const MAX_NAME_CHARS = 64;
+/** Matches the server's cap (`plan_server/presence.rs`); it truncates anything longer. */
+const MAX_NAME_CHARS = 32;
 
 export function readStoredName(): string | null {
   try {
