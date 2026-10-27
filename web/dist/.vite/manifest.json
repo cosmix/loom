@@ -1,22 +1,4 @@
 {
-  "_help-shortcuts.css": {
-    "file": "assets/help-shortcuts.css",
-    "src": "_help-shortcuts.css"
-  },
-  "_help-shortcuts.js": {
-    "file": "assets/help-shortcuts.js",
-    "name": "help-shortcuts",
-    "imports": [
-      "_rolldown-runtime.js",
-      "_react.js"
-    ],
-    "css": [
-      "assets/help-shortcuts.css"
-    ],
-    "assets": [
-      "assets/inter-latin-wght-normal.woff2"
-    ]
-  },
   "_react.js": {
     "file": "assets/react.js",
     "name": "react",
@@ -28,6 +10,24 @@
     "file": "assets/rolldown-runtime.js",
     "name": "rolldown-runtime"
   },
+  "_store.css": {
+    "file": "assets/store.css",
+    "src": "_store.css"
+  },
+  "_store.js": {
+    "file": "assets/store.js",
+    "name": "store",
+    "imports": [
+      "_rolldown-runtime.js",
+      "_react.js"
+    ],
+    "css": [
+      "assets/store.css"
+    ],
+    "assets": [
+      "assets/inter-latin-wght-normal.woff2"
+    ]
+  },
   "index.html": {
     "file": "assets/index.js",
     "name": "index",
@@ -36,7 +36,7 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_help-shortcuts.js"
+      "_store.js"
     ],
     "dynamicImports": [
       "node_modules/@xterm/xterm/lib/xterm.mjs",
@@ -84,7 +84,7 @@
     "imports": [
       "_rolldown-runtime.js",
       "_react.js",
-      "_help-shortcuts.js"
+      "_store.js"
     ],
     "css": [
       "assets/plan.css"
