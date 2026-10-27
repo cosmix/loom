@@ -2,7 +2,7 @@
 
 use anyhow::{Context, Result};
 use glob::glob;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use super::result::{GapType, VerificationGap};
 
@@ -37,14 +37,7 @@ pub fn verify_artifacts(artifacts: &[String], working_dir: &Path) -> Result<Vec<
     let mut gaps = Vec::new();
 
     for pattern in artifacts {
-        let full_pattern = working_dir.join(pattern);
-        let pattern_str = full_pattern.to_string_lossy();
-
-        let matches: Vec<_> = glob(&pattern_str)
-            .map_err(|e| anyhow::anyhow!("Invalid glob pattern '{pattern}': {e}"))?
-            .filter_map(|r| r.ok())
-            .collect();
-
+        let matches = matching_files(pattern, working_dir)?;
         if matches.is_empty() {
             gaps.push(VerificationGap::new(
                 GapType::ArtifactMissing,
@@ -99,6 +92,24 @@ pub fn verify_artifacts(artifacts: &[String], working_dir: &Path) -> Result<Vec<
     }
 
     Ok(gaps)
+}
+
+/// Files matching an artifact pattern; directories are skipped, having no content to check.
+///
+/// The glob crate matches only directories for a trailing `**`, so `dir/**`
+/// becomes `dir/**/*` to match every file under `dir`.
+fn matching_files(pattern: &str, working_dir: &Path) -> Result<Vec<PathBuf>> {
+    let expanded = if pattern == "**" || pattern.ends_with("/**") {
+        format!("{pattern}/*")
+    } else {
+        pattern.to_string()
+    };
+    let full_pattern = working_dir.join(expanded);
+    Ok(glob(&full_pattern.to_string_lossy())
+        .map_err(|e| anyhow::anyhow!("Invalid glob pattern '{pattern}': {e}"))?
+        .filter_map(|r| r.ok())
+        .filter(|path| path.is_file())
+        .collect())
 }
 
 /// Verify a regression test file exists and contains required patterns.
@@ -240,6 +251,30 @@ mod tests {
         };
         let gaps = verify_regression_test(&rt, dir.path()).unwrap();
         assert!(gaps.is_empty()); // No patterns to check = pass
+    }
+
+    #[test]
+    fn trailing_globstar_matches_files_and_skips_directories() {
+        let root = TempDir::new().unwrap();
+        std::fs::create_dir_all(root.path().join("d1/sub")).unwrap();
+        std::fs::write(root.path().join("d1/tests.rs"), "fn a() {}").unwrap();
+        std::fs::write(root.path().join("d1/sub/more.rs"), "fn b() {}").unwrap();
+
+        let gaps = verify_artifacts(&["d1/**".to_string()], root.path()).unwrap();
+        assert!(gaps.is_empty(), "{gaps:?}");
+
+        let gaps = verify_artifacts(&["d1/*".to_string()], root.path()).unwrap();
+        assert!(gaps.is_empty(), "{gaps:?}");
+    }
+
+    #[test]
+    fn trailing_globstar_over_a_directory_without_files_is_missing() {
+        let root = TempDir::new().unwrap();
+        std::fs::create_dir_all(root.path().join("d1/sub")).unwrap();
+
+        let gaps = verify_artifacts(&["d1/**".to_string()], root.path()).unwrap();
+        assert_eq!(gaps.len(), 1);
+        assert!(matches!(gaps[0].gap_type, GapType::ArtifactMissing));
     }
 
     #[test]
