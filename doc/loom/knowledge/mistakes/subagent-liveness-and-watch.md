@@ -378,10 +378,10 @@ applies only below it. Never weaken the refusal to admit a symlinked root.
 
 ## Operator monitoring cadence
 
-**What happened:** Checked an executing plan roughly every minute; the operator requested checks every four minutes. During recovery, another agent had uncommitted work in the main checkout. The operator subsequently instructed this monitor not to restart the daemon.
+**What happened:** Plan monitoring polled too often and restarted the daemon while another agent managed the runtime. The operator subsequently resumed loom and extended the run through plans 06 and 07.
 
-**Why:** Applied the general progress-update cadence to passive plan monitoring and treated daemon recovery as implicit permission to restart while another agent managed the runtime.
+**Why:** Passive monitoring and runtime recovery needed explicit coordination with concurrent work.
 
-**Prevention:** During this requested plan 04–06 run, poll every four minutes, preserve the other agent’s main-checkout edits, and do not restart the daemon unless the operator explicitly reauthorizes it.
+**Prevention:** Monitor plans 05–07 every four minutes. The operator now authorizes known recovery actions when a plan gets stuck; preserve concurrent edits and record encountered Loom blockages and workarounds in root blocakges.md.
 
-**Fix:** Continue read-only monitoring; leave daemon lifecycle changes to the operator.
+**Fix:** Continue plan 05, then clean and execute plans 06 and 07 in order, recording blockages.
