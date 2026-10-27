@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use super::checklist::ChecklistView;
+use super::files::{DocChanged, FileTree, ValidationChanged};
 use super::presence::{AuthoringView, PresenceList};
 use super::server::{Refused, ServerInfo, You};
 
@@ -31,6 +32,12 @@ pub enum PlanMessage {
     ServerStopping,
     /// A command was refused.
     Refused(Refused),
+    /// The document tree changed.
+    TreeChanged(FileTree),
+    /// A document changed on disk or was removed.
+    DocChanged(DocChanged),
+    /// A plan's validation changed.
+    Validation(ValidationChanged),
 }
 
 impl PlanMessage {

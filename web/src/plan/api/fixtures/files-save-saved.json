@@ -1,0 +1,23 @@
+{
+  "result": "saved",
+  "hash": "sha256:def",
+  "validation": {
+    "valid": false,
+    "errors": [
+      {
+        "message": "Stage needs files",
+        "stage_id": "build",
+        "line": 12,
+        "column": 3
+      }
+    ],
+    "warnings": {
+      "structural": ["Review dependencies"],
+      "knowledge": [],
+      "sandbox": [],
+      "baseline": []
+    },
+    "notes": ["Check the plan"],
+    "metadata": "present"
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "path": "doc/product/section_01.md",
+  "title": "Product",
+  "text": "# Product\n\n## Purpose\nText\n",
+  "hash": "sha256:abc",
+  "kind": "section",
+  "editable": true,
+  "lock": null,
+  "sections": [
+    {
+      "level": 2,
+      "title": "Purpose",
+      "anchor": "purpose",
+      "start_line": 3,
+      "end_line": 5
+    }
+  ],
+  "plan": null,
+  "too_large": false,
+  "truncated": false,
+  "size": 27
+}
