@@ -29,6 +29,9 @@
     "cn": "0.2.5",
     "jotai": "2.20.3",
     "lucide-react": "^1.41.0",
+    "mdast-util-from-markdown": "^2.1.0",
+    "mdast-util-gfm": "^3.1.0",
+    "micromark-extension-gfm": "^3.0.0",
     "radix-ui": "^1.6.7",
     "react": "19.2.8",
     "react-dom": "19.2.8",
@@ -41,6 +44,7 @@
   },
   "devDependencies": {
     "@testing-library/react": "16.3.3",
+    "@types/mdast": "^4.0.4",
     "@types/node": "^24.13.3",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.4",
