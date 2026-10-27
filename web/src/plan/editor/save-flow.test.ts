@@ -132,3 +132,28 @@ describe("saveFlow", () => {
     });
   });
 });
+
+describe("saveFlow edits after a verdict", () => {
+  const invalid = saveResultSchema.parse(invalidFixture);
+
+  it("leaves invalid on the next edit, so Save with errors cannot send unvalidated text", () => {
+    let state = saveFlow(initialSaveFlow("original", "h1"), { type: "change", text: "edit" });
+    state = saveFlow(state, { type: "save" });
+    state = saveFlow(state, { type: "result", result: { ok: true, value: invalid } });
+    expect(state.status).toBe("invalid");
+    state = saveFlow(state, { type: "change", text: "edit, then more" });
+    expect(state).toMatchObject({ status: "idle", text: "edit, then more" });
+  });
+
+  it("keeps a conflict while the user edits the merge", () => {
+    let state = saveFlow(initialSaveFlow("original", "h1"), { type: "change", text: "mine" });
+    state = saveFlow(state, {
+      type: "merge",
+      currentText: "theirs",
+      currentHash: "h2",
+      text: "mine",
+    });
+    state = saveFlow(state, { type: "change", text: "merged" });
+    expect(state).toMatchObject({ status: "conflict", openedHash: "h2" });
+  });
+});

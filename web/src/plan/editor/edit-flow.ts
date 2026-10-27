@@ -7,9 +7,10 @@ import { docChangedAtom, treeAtom } from "@/plan/files/atoms";
 import { renamedPlan, treeDocs } from "@/plan/files/tree";
 import type { Store } from "@/state/store";
 
-import { clearDrafts, findDrafts, saveDraft, type SaveDraftResult } from "./drafts";
+import { useDraftWriter } from "./draft-writer";
+import { clearDrafts, findDrafts, type SaveDraftResult } from "./drafts";
 import type { StageSpan } from "./editor-provenance";
-import { requestEditAtom } from "./request-edit";
+import { pendingEditFor, requestEditAtom } from "./request-edit";
 import { initialSaveFlow, saveFlow, type SaveFlowEvent, type SaveFlowState } from "./save-flow";
 
 type Start = { flow: SaveFlowState; restored: boolean };
@@ -22,8 +23,8 @@ function startState(doc: DocView, store: Store): Start {
   const base = initialSaveFlow(doc.text, doc.hash);
   const merge = (text: string): SaveFlowState =>
     saveFlow(base, { type: "merge", currentText: doc.text, currentHash: doc.hash, text });
-  const request = store.get(requestEditAtom);
-  if (request && request.path === doc.path) {
+  const request = pendingEditFor(store, doc.path);
+  if (request) {
     const flow =
       request.openedHash === doc.hash
         ? saveFlow(base, { type: "change", text: request.text })
@@ -75,6 +76,7 @@ function useFlowActions(
   latest: Latest,
   dispatch: Dispatch<SaveFlowEvent>,
   canAuthor: boolean,
+  cancelDraft: () => void,
 ) {
   const author = useRef(canAuthor);
   author.current = canAuthor;
@@ -106,9 +108,10 @@ function useFlowActions(
   }, [path, latest, dispatch]);
 
   const discard = useCallback(() => {
+    cancelDraft();
     clearDrafts(path);
     dispatch({ type: "discard" });
-  }, [path, dispatch]);
+  }, [path, dispatch, cancelDraft]);
 
   return { compareError, save, compare, discard };
 }
@@ -122,26 +125,28 @@ export function useEditFlow(doc: DocView, canAuthor: boolean) {
   const latest = useRef(state);
   latest.current = state;
   const { path } = doc;
-  const actions = useFlowActions(path, latest, dispatch, canAuthor);
+  const { schedule: scheduleDraft, cancel: cancelDraft } = useDraftWriter(setDraftResult);
+  const actions = useFlowActions(path, latest, dispatch, canAuthor, cancelDraft);
 
   useEffect(() => {
-    if (store.get(requestEditAtom)?.path === path) store.set(requestEditAtom, null);
+    if (pendingEditFor(store, path)) store.set(requestEditAtom, null);
   }, [store, path]);
 
   useEffect(() => {
     if (!state.clearDrafts) return;
+    cancelDraft();
     clearDrafts(path);
     setRestored(false);
     dispatch({ type: "draftsCleared" });
-  }, [state.clearDrafts, path]);
+  }, [state.clearDrafts, path, cancelDraft]);
 
   const change = useCallback(
     (text: string) => {
       dispatch({ type: "change", text });
-      setDraftResult(saveDraft(path, latest.current.openedHash, text));
+      scheduleDraft(path, latest.current.openedHash, text);
       setRestored(false);
     },
-    [path],
+    [path, scheduleDraft],
   );
 
   return { state, restored, draftResult, change, ...actions };

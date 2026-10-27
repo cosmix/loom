@@ -1,10 +1,12 @@
 /* The reading column's Markdown. Colours come from the shared tokens; Tailwind's
  * preflight has reset margins, list markers and heading sizes, so they are set here. */
 
+/* Reading text is 16px against 12-13px chrome, held to a line length that reads well on a wide
+ * screen. Tables and code blocks scroll inside their own box instead of widening the column. */
 .md {
   min-width: 0;
-  max-width: 100%;
-  font-size: 0.9375rem;
+  max-width: min(100%, 76ch);
+  font-size: 1rem;
   line-height: 1.65;
   overflow-wrap: break-word;
 }
@@ -54,6 +56,10 @@
   display: flex;
   align-items: center;
   gap: 0.25rem;
+}
+.md-heading > :is(h1, h2, h3, h4, h5, h6) {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .md-heading .md-copy {
   opacity: 0;
@@ -155,7 +161,7 @@
   padding: 0.125rem 0.25rem 0 0.75rem;
 }
 .md-code-lang {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 500;
   color: var(--muted-foreground);
 }

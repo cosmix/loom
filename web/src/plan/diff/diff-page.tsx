@@ -84,6 +84,8 @@ function NotFound({ kind, path }: { kind: "turn" | "head"; path: string }): JSX.
   );
 }
 
+// Turn and head diffs attach to the chat with anchor null: the page has no sections to give
+// either text (only the open-document diff passes them).
 function ServerDiff({ kind, path, turn }: DiffPageProps & { kind: "turn" | "head" }): JSX.Element {
   const { load, retry } = useServerDiff(kind, path, turn);
   if (load.status === "loading") return <LoadState state="loading" title="Loading the diff" />;
@@ -111,16 +113,19 @@ function OpenDiff({ path }: { path: string }): JSX.Element {
   return <DiffView before={previous.text} after={after} path={path} sections={open.doc.sections} />;
 }
 
+function DiffBody({ path, kind, turn }: DiffPageProps): JSX.Element {
+  if (kind === "open") return <OpenDiff path={path} />;
+  // No turn id: the server would answer 400 and Retry could not change that, so do not ask.
+  if (kind === "turn" && !turn) return <NotFound kind="turn" path={path} />;
+  return <ServerDiff kind={kind} path={path} turn={turn} />;
+}
+
 /** The diff address of file mode: the header and the diff of one kind. */
-export function DiffPage({ path, kind, turn }: DiffPageProps): JSX.Element {
+export function DiffPage(props: DiffPageProps): JSX.Element {
   return (
     <div className="flex min-h-0 flex-1 flex-col">
-      <Header kind={kind} path={path} />
-      {kind === "open" ? (
-        <OpenDiff path={path} />
-      ) : (
-        <ServerDiff kind={kind} path={path} turn={turn} />
-      )}
+      <Header kind={props.kind} path={props.path} />
+      <DiffBody {...props} />
     </div>
   );
 }

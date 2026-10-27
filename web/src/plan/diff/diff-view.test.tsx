@@ -1,7 +1,8 @@
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { Provider } from "jotai/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
+import { pendingAttachmentsAtom } from "@/plan/attachments/atoms";
 import { authoringAtom, serverInfoAtom, youAtom } from "@/plan/state/atoms";
 import { store } from "@/state/store";
 
@@ -154,5 +155,51 @@ describe("DiffView", () => {
     selection.addRange(range);
     act(() => void document.dispatchEvent(new Event("selectionchange")));
     expect(screen.queryByText("Add to chat")).toBeNull();
+  });
+});
+
+describe("DiffView anchors", () => {
+  it("gives a before-side selection no anchor and an after-side one its section", async () => {
+    mockWidth(true);
+    Range.prototype.getBoundingClientRect = () => new DOMRect(0, 0, 10, 10);
+    store.set(pendingAttachmentsAtom, []);
+    createDiffView.mockImplementationOnce((parent) => {
+      for (const side of ["before-side", "after-side"]) {
+        const pane = document.createElement("div");
+        pane.dataset.testid = side;
+        pane.textContent = `${side} words`;
+        parent.append(pane);
+      }
+      return {
+        destroy,
+        rangeLines: (range: Range) => ({
+          start: 2,
+          end: 2,
+          side: parent.firstChild?.contains(range.startContainer) ? "before" : "after",
+        }),
+      };
+    });
+    const sections = [{ level: 2, title: "Intro", anchor: "intro", start_line: 1, end_line: 9 }];
+    render(
+      <Provider store={store}>
+        <DiffView before="a" after="b" path="doc/x.md" sections={sections} />
+      </Provider>,
+    );
+    for (const side of ["before-side", "after-side"]) {
+      const pane = await screen.findByTestId(side);
+      const range = document.createRange();
+      range.setStart(pane.firstChild as Node, 0);
+      range.setEnd(pane.firstChild as Node, 4);
+      const selection = window.getSelection() as Selection;
+      selection.removeAllRanges();
+      selection.addRange(range);
+      act(() => void document.dispatchEvent(new Event("selectionchange")));
+      fireEvent.click(await screen.findByText("Add to chat"));
+      await waitFor(() => expect(screen.queryByText("Add to chat")).toBeNull());
+    }
+    const anchors = store
+      .get(pendingAttachmentsAtom)
+      .map((draft) => (draft.kind === "source" ? draft.anchor : "summary"));
+    expect(anchors).toEqual([null, "intro"]);
   });
 });

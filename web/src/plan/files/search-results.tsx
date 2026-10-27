@@ -1,10 +1,10 @@
 import type { JSX } from "react";
 
 import type { SearchHit, SearchResults as Results } from "@/plan/api/schema-files";
+import { escapeRegExp } from "@/plan/markdown/context";
 
-function escapeRegExp(text: string): string {
-  return text.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
+/** The same highlight the rendered document gives a mark (`.md mark`), outside `.md` here. */
+const MARK = "rounded-[2px] bg-(--highlight) px-px text-(color:--highlight-foreground)";
 
 /** The snippet as text with the terms wrapped in `<mark>`; server text never becomes HTML. */
 function Marked({ text, terms }: { text: string; terms: string[] }): JSX.Element {
@@ -14,11 +14,15 @@ function Marked({ text, terms }: { text: string; terms: string[] }): JSX.Element
   const wanted = new Set(usable.map((term) => term.toLowerCase()));
   return (
     <>
-      {text
-        .split(pattern)
-        .map((part, index) =>
-          wanted.has(part.toLowerCase()) ? <mark key={index}>{part}</mark> : part,
-        )}
+      {text.split(pattern).map((part, index) =>
+        wanted.has(part.toLowerCase()) ? (
+          <mark key={index} className={MARK}>
+            {part}
+          </mark>
+        ) : (
+          part
+        ),
+      )}
     </>
   );
 }

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 
+import tokensSheet from "@/aurora-ui/shared/styles/tokens.css?raw";
+import indexSheet from "@/index.css?raw";
 import themeSource from "./theme.ts?raw";
 import { themeSpec } from "./theme";
 
@@ -18,10 +20,63 @@ describe("editor theme", () => {
     expect(themeSpec["&"].color).toBe("var(--foreground)");
   });
 
-  // Vitest serves CSS `?raw` imports as "" without `css` processing, so token
-  // definitions are not cross-checked here; the source must hold no colour literal.
+  // Token definitions are cross-checked in the next describe; this one checks the source
+  // alone: no CodeMirror import and no colour literal.
   it("keeps the theme independent of CodeMirror and free of colour literals", () => {
     expect(themeSource).not.toContain("@codemirror");
     expect(themeSource).not.toMatch(/#[0-9a-f]{3,8}\b|\brgba?\(|\bhsla?\(/i);
+  });
+});
+
+describe("editor theme tokens", () => {
+  it("uses only variables that the dashboard's token sheets define", () => {
+    const sheets = [indexSheet, tokensSheet].join("\n");
+    expect(sheets).toContain("--foreground:");
+    const used = [...themeSource.matchAll(/var\((--[\w-]+)\)/g)].map((match) => match[1]!);
+    expect(used.length).toBeGreaterThan(10);
+    const undefinedTokens = [...new Set(used)].filter(
+      (name) => !new RegExp(`(?<![\\w-])${name}\\s*:`).test(sheets),
+    );
+    expect(undefinedTokens).toEqual([]);
+  });
+
+  it("overrides what CodeMirror's light base rules colour", () => {
+    expect(themeSpec[".cm-content"].caretColor).toBe("var(--foreground)");
+    expect(themeSpec["&.cm-focused"].outline).toContain("var(--ring)");
+    expect(themeSpec[".cm-textfield"].backgroundColor).toBe("var(--background)");
+    expect(themeSpec[".cm-textfield"].color).toBe("var(--foreground)");
+    expect(themeSpec[".cm-button, .cm-button:active"].backgroundImage).toBe("none");
+    expect(themeSpec[".cm-panels"].backgroundColor).toBe("var(--muted)");
+  });
+
+  it("selects text with a token that shows against the page", () => {
+    const selection = themeSpec[".cm-content ::selection"].backgroundColor;
+    expect(selection).toBe("var(--highlight)");
+    expect(selection).not.toBe("var(--accent)");
+  });
+
+  it("marks validation lines with the destructive token", () => {
+    expect(themeSpec[".cm-line-mark"].color).toBe("var(--destructive)");
+    expect(themeSpec[".cm-marked-line"].background).toContain("var(--destructive)");
+  });
+});
+
+describe("editor theme readability", () => {
+  it("pairs the selection background with its foreground token", () => {
+    const selection = themeSpec[".cm-content ::selection"];
+    expect(selection.backgroundColor).toBe("var(--highlight)");
+    expect(selection.color).toBe("var(--highlight-foreground)");
+  });
+
+  it("sets the monospace face on the scroller, where CodeMirror's base theme sets it", () => {
+    expect(themeSpec[".cm-scroller"].fontFamily).toBe("var(--font-mono)");
+    expect(themeSpec["&"].fontFamily).toBe("var(--font-mono)");
+  });
+
+  it("sets the search panel's controls in the body face at 12px", () => {
+    for (const rule of [themeSpec[".cm-button, .cm-button:active"], themeSpec[".cm-textfield"]]) {
+      expect(rule.fontSize).toBe("12px");
+      expect(rule.fontFamily).toBe("var(--font-sans)");
+    }
   });
 });
