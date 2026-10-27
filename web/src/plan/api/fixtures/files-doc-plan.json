@@ -1,0 +1,83 @@
+{
+  "path": "doc/plans/PLAN-file-mode.md",
+  "title": "File mode",
+  "text": "# Product\n\n## Purpose\nText\n",
+  "hash": "sha256:abc",
+  "kind": "plan",
+  "editable": true,
+  "lock": null,
+  "sections": [
+    {
+      "level": 2,
+      "title": "Purpose",
+      "anchor": "purpose",
+      "start_line": 3,
+      "end_line": 5
+    }
+  ],
+  "plan": {
+    "slug": "file-mode",
+    "state": "written",
+    "implements": [
+      {
+        "number": 6,
+        "path": "doc/product/section_06.md"
+      },
+      {
+        "number": 7,
+        "path": null
+      }
+    ],
+    "pressure_date": "2026-10-17",
+    "last_change": "2026-10-18",
+    "validation": {
+      "valid": false,
+      "errors": [
+        {
+          "message": "Stage needs files",
+          "stage_id": "build",
+          "line": 12,
+          "column": 3
+        }
+      ],
+      "warnings": {
+        "structural": ["Review dependencies"],
+        "knowledge": [],
+        "sandbox": [],
+        "baseline": []
+      },
+      "notes": ["Check the plan"],
+      "metadata": "present"
+    },
+    "stages": [
+      {
+        "id": "build",
+        "name": "Build",
+        "stage_type": "code",
+        "summary": "Build the feature",
+        "dependencies": [],
+        "description": "Implement it.",
+        "acceptance": ["It works"],
+        "files": ["loom/src/lib.rs"],
+        "line": 12
+      },
+      {
+        "id": "review",
+        "name": "Review",
+        "stage_type": "review",
+        "summary": null,
+        "dependencies": ["build"],
+        "description": "Review it.",
+        "acceptance": [],
+        "files": [],
+        "line": 20
+      }
+    ],
+    "yaml": "stages:\n  - id: build\n  - id: review\n",
+    "yaml_error": null,
+    "metadata_line": 10
+  },
+  "too_large": false,
+  "truncated": false,
+  "size": 27
+}

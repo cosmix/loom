@@ -63,6 +63,8 @@ impl RouteSpec {
 pub fn all_routes() -> Vec<RouteSpec> {
     let mut routes = Vec::new();
     routes.extend(super::server_info::routes());
+    routes.extend(super::files::routes());
+    routes.extend(super::search::routes());
     routes
 }
 
@@ -72,6 +74,8 @@ pub fn all_routes() -> Vec<RouteSpec> {
 /// WebSocket receives and later modules' `on_open` frames follow it.
 pub fn install_all(ctx: &Arc<PlanContext>) {
     PlanContext::install_hub_hooks(ctx);
+    super::files::install(ctx);
+    super::search::install(ctx);
 }
 
 /// The outcome of looking a request up in the route table.

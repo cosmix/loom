@@ -1,0 +1,5 @@
+{
+  "path": "doc/product/section_01.md",
+  "before": "old",
+  "after": "new"
+}

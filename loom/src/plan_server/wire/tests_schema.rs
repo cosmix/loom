@@ -116,8 +116,23 @@ fn all_plan_messages() -> Vec<PlanMessage> {
         | PlanMessage::Authoring(_)
         | PlanMessage::Checklist(_)
         | PlanMessage::ServerStopping
-        | PlanMessage::Refused(_) => {}
+        | PlanMessage::Refused(_)
+        | PlanMessage::TreeChanged(_)
+        | PlanMessage::DocChanged(_)
+        | PlanMessage::Validation(_) => {}
     }
+    let tree_changed: PlanMessage = serde_json::from_str(include_str!(
+        "../../../../web/src/plan/api/fixtures/files-tree-changed.json"
+    ))
+    .unwrap();
+    let doc_changed = serde_json::from_str(include_str!(
+        "../../../../web/src/plan/api/fixtures/files-doc-changed.json"
+    ))
+    .unwrap();
+    let validation = serde_json::from_str(include_str!(
+        "../../../../web/src/plan/api/fixtures/files-validation.json"
+    ))
+    .unwrap();
     let hello: PlanMessage = serde_json::from_str(include_str!(
         "../../../../web/src/plan/api/fixtures/hello.json"
     ))
@@ -139,6 +154,9 @@ fn all_plan_messages() -> Vec<PlanMessage> {
             command: String::new(),
             reason: String::new(),
         }),
+        tree_changed,
+        PlanMessage::DocChanged(doc_changed),
+        PlanMessage::Validation(validation),
     ]
 }
 
