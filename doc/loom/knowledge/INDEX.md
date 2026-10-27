@@ -151,7 +151,7 @@
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 322 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) | Server | 189 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
-| [refactor-stragglers](mistakes/refactor-stragglers.md) | Renames | 312 |
+| [refactor-stragglers](mistakes/refactor-stragglers.md) | Renames | 319 |
 | [release-feature-review](mistakes/release-feature-review.md) | Release gaps | 13 |
 | [sandbox-and-settings](mistakes/sandbox-and-settings.md) | Settings | 391 |
 | [sandbox-protected-hooks-dir](mistakes/sandbox-protected-hooks-dir.md) | Hooks dir | 37 |
