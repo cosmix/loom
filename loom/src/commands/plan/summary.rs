@@ -7,7 +7,9 @@ use anyhow::{Context, Result};
 use crate::cli::SummaryCommands;
 use crate::context::untrusted::terminal_safe;
 use crate::planning::runtime::{runtime_paths, RuntimePaths};
-use crate::planning::summary::{brief, claims, format::FormatError, seal, status};
+use crate::planning::summary::brief::brief;
+use crate::planning::summary::seal::{seal, SealError};
+use crate::planning::summary::{claims, format::FormatError, status};
 
 #[cfg(test)]
 mod tests;
@@ -66,13 +68,13 @@ fn root() -> Result<PathBuf> {
 
 fn run(command: SummaryCommands, root: &Path, paths: &RuntimePaths) -> Result<(), CommandError> {
     match command {
-        SummaryCommands::Seal { id, force } => match seal::seal(root, paths, &id, force) {
+        SummaryCommands::Seal { id, force } => match seal(root, paths, &id, force) {
             Ok(outcome) => println!(
                 "Sealed {} ({} sentences)",
                 terminal_safe(&outcome.path.display().to_string()),
                 outcome.sentences
             ),
-            Err(seal::SealError::Rejected(errors)) => {
+            Err(SealError::Rejected(errors)) => {
                 let draft = claims::draft_path(paths, &id);
                 let draft = if draft.is_absolute() {
                     draft
@@ -88,7 +90,7 @@ fn run(command: SummaryCommands, root: &Path, paths: &RuntimePaths) -> Result<()
         SummaryCommands::Brief { ids, note } => {
             print!(
                 "{}",
-                brief::brief(root, paths, &ids, note.as_deref()).map_err(claim_error)?
+                brief(root, paths, &ids, note.as_deref()).map_err(claim_error)?
             );
         }
         SummaryCommands::Status { json } => {
