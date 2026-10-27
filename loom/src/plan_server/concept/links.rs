@@ -2,6 +2,7 @@
 
 use std::path::Path;
 
+use crate::plan_server::concept::page::{page_key_of, PageKey};
 use crate::plan_server::wire::concept::{DocLink, ImplementsView, PlanLink, SectionLink};
 use crate::planning::implements::Implements;
 use crate::planning::project::Project;
@@ -55,6 +56,9 @@ pub(crate) fn plan_state_name(state: PlanState) -> &'static str {
     }
 }
 
+/// The plans implementing section `number` that have a concept page: a plan with no summary id
+/// (an archived plan no metaplan names) or whose slug is not a valid page key is left out, so
+/// every link resolves.
 pub(crate) fn implemented_by(project: &Project, number: u32) -> Vec<PlanLink> {
     let mut links: Vec<_> = project
         .implemented_by
@@ -63,6 +67,8 @@ pub(crate) fn implemented_by(project: &Project, number: u32) -> Vec<PlanLink> {
         .flatten()
         .filter_map(|slug| {
             let plan = project.tree.plan(slug)?;
+            let id = summary_id_for(project, &plan.path)?;
+            PageKey::parse(&page_key_of(&id))?;
             let document = project.docs.get(&plan.path)?;
             Some(PlanLink {
                 slug: slug.clone(),

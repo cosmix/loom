@@ -1,47 +1,39 @@
-//! Engine driver: runs the summary engine on every watcher batch and broadcasts the delta.
+//! Engine driver: runs the summary engine at install and on every watcher batch, and broadcasts
+//! the delta.
 
-use std::collections::{BTreeMap, BTreeSet};
 use std::sync::{Arc, Mutex, PoisonError, RwLock};
 
 use anyhow::Result;
 
-use crate::plan_server::concept::page::{page_key_of, summary_file_hash};
+use crate::plan_server::concept::delta::{delta, page_keys, snapshot, sources, Snapshot};
+use crate::plan_server::concept::routes::page_context;
 use crate::plan_server::context::PlanContext;
 use crate::plan_server::lifecycle;
 use crate::plan_server::wire::concept::ConceptChanged;
 use crate::plan_server::wire::message::PlanMessage;
 use crate::planning::project::Project;
+use crate::planning::runtime::RuntimePaths;
 use crate::planning::summary::claims::list_claims;
 use crate::planning::summary::engine::{EngineUpdate, SummaryEngine};
-use crate::planning::summary::evaluate::{evaluate, Evaluation, SummaryState};
-use crate::planning::summary::store::{self, STORE_DIR};
+use crate::planning::summary::evaluate::{evaluate, Evaluation};
+use crate::planning::summary::store;
 use crate::planning::watch::Batch;
 
 /// A callback run with every successful engine update (plan 10 registers its rebuild hooks).
 pub type Listener = Box<dyn Fn(&PlanContext, &EngineUpdate) + Send + Sync>;
 
-/// Per summary id: its state and the content hash of its summary file.
-type Snapshot = BTreeMap<String, (SummaryState, Option<String>)>;
-
 /// The summary engine and its latest evaluation, shared through `ctx.extensions()`.
 pub struct ConceptState {
     engine: Mutex<SummaryEngine>,
+    /// The runtime directory the engine reads session claims from.
+    runtime: RuntimePaths,
     latest: RwLock<Arc<Evaluation>>,
     previous: Mutex<Snapshot>,
     listeners: RwLock<Vec<Arc<Listener>>>,
 }
 
 impl ConceptState {
-    fn new(engine: SummaryEngine, first: Evaluation, previous: Snapshot) -> Self {
-        ConceptState {
-            engine: Mutex::new(engine),
-            latest: RwLock::new(Arc::new(first)),
-            previous: Mutex::new(previous),
-            listeners: RwLock::new(Vec::new()),
-        }
-    }
-
-    /// The evaluation after the last successful batch.
+    /// The evaluation after the last batch.
     pub fn latest(&self) -> Arc<Evaluation> {
         let guard = self.latest.read().unwrap_or_else(PoisonError::into_inner);
         Arc::clone(&guard)
@@ -67,106 +59,96 @@ impl ConceptState {
         self.apply(ctx, batch, result)
     }
 
-    /// Store a successful update, notify listeners and broadcast the delta. An error keeps the
-    /// previous evaluation and prints one terminal line.
+    /// Store a successful update, notify listeners and broadcast the delta. A failure prints one
+    /// terminal line and still broadcasts the batch's sources so open passages refetch. When the
+    /// session claims are unreadable (the engine's only failing step) the project is evaluated
+    /// without them, as `install` does; otherwise the previous evaluation stays.
     pub(crate) fn apply(
         &self,
         ctx: &PlanContext,
         batch: &Batch,
         result: Result<EngineUpdate>,
     ) -> Option<ConceptChanged> {
-        let update = match result {
-            Ok(update) => update,
-            Err(error) => {
-                lifecycle::line(&format!("summary engine failed: {error:#}"));
-                return None;
+        let error = match result {
+            Ok(update) => {
+                let evaluation = self.store(update.evaluation.clone());
+                self.notify(ctx, &update);
+                return self.publish(ctx, batch, Some(&evaluation));
             }
+            Err(error) => error,
         };
-        *self.latest.write().unwrap_or_else(PoisonError::into_inner) =
-            Arc::new(update.evaluation.clone());
+        if list_claims(&self.runtime).is_ok() {
+            lifecycle::line(&format!("summary engine failed: {}", safe_error(&error)));
+            return self.publish(ctx, batch, None);
+        }
+        let evaluation = self.store(without_claims(&ctx.project(), &error));
+        self.publish(ctx, batch, Some(&evaluation))
+    }
+
+    fn store(&self, evaluation: Evaluation) -> Arc<Evaluation> {
+        let evaluation = Arc::new(evaluation);
+        *self.latest.write().unwrap_or_else(PoisonError::into_inner) = Arc::clone(&evaluation);
+        evaluation
+    }
+
+    fn notify(&self, ctx: &PlanContext, update: &EngineUpdate) {
         let listeners: Vec<_> = self
             .listeners
             .read()
             .unwrap_or_else(PoisonError::into_inner)
             .clone();
         for listener in listeners {
-            listener(ctx, &update);
+            listener(ctx, update);
         }
-        let changed = self.delta(&ctx.project(), &update.evaluation, batch);
-        if let Some(changed) = &changed {
-            ctx.hub()
-                .broadcast(&PlanMessage::ConceptChanged(changed.clone()));
-        }
-        changed
     }
 
-    fn delta(&self, project: &Project, eval: &Evaluation, batch: &Batch) -> Option<ConceptChanged> {
-        let after = snapshot(project, eval);
-        let mut previous = self.previous.lock().unwrap_or_else(PoisonError::into_inner);
-        let changed = delta(project, &previous, &after, batch);
-        *previous = after;
+    /// Broadcast what changed since the previous evaluation. With no evaluation the pages are
+    /// unknown and the delta carries the batch's sources alone.
+    fn publish(
+        &self,
+        ctx: &PlanContext,
+        batch: &Batch,
+        evaluation: Option<&Evaluation>,
+    ) -> Option<ConceptChanged> {
+        let changed = match evaluation {
+            Some(eval) => {
+                let project = ctx.project();
+                let after = snapshot(&project, eval, &page_context(ctx));
+                let mut previous = self.previous.lock().unwrap_or_else(PoisonError::into_inner);
+                let changed = delta(&project, &previous, &after, batch);
+                *previous = after;
+                changed
+            }
+            None => ConceptChanged {
+                pages: Vec::new(),
+                out_of_date: Vec::new(),
+                sources: sources(batch),
+            },
+        };
         let empty = changed.pages.is_empty()
             && changed.out_of_date.is_empty()
             && changed.sources.is_empty();
-        (!empty).then_some(changed)
-    }
-}
-
-fn snapshot(project: &Project, eval: &Evaluation) -> Snapshot {
-    eval.summaries
-        .iter()
-        .map(|(id, summary)| {
-            let hash = summary_file_hash(project, id);
-            (id.clone(), (summary.state, hash))
-        })
-        .collect()
-}
-
-fn delta(project: &Project, before: &Snapshot, after: &Snapshot, batch: &Batch) -> ConceptChanged {
-    let scope = store::scope(project);
-    let ids: BTreeSet<&String> = before.keys().chain(after.keys()).collect();
-    let mut pages = BTreeSet::new();
-    let mut out_of_date = BTreeSet::new();
-    for id in ids {
-        let (old, new) = (before.get(id), after.get(id));
-        if old == new {
-            continue;
+        if empty {
+            return None;
         }
-        pages.extend(page_keys(id, &scope));
-        let became = new.is_some_and(|(state, _)| is_pending(*state));
-        if became && old.map(|(state, _)| *state) != new.map(|(state, _)| *state) {
-            out_of_date.insert(id.clone());
-        }
-    }
-    ConceptChanged {
-        pages: pages.into_iter().collect(),
-        out_of_date: out_of_date.into_iter().collect(),
-        sources: sources(batch),
+        ctx.hub()
+            .broadcast(&PlanMessage::ConceptChanged(changed.clone()));
+        Some(changed)
     }
 }
 
-fn is_pending(state: SummaryState) -> bool {
-    matches!(
-        state,
-        SummaryState::Stale | SummaryState::Incomplete | SummaryState::Rebuilding
-    )
+/// `error` as one terminal-safe line.
+fn safe_error(error: &anyhow::Error) -> String {
+    lifecycle::safe(&format!("{error:#}"))
 }
 
-/// Every batch path under `doc/` outside the summary store, sorted.
-fn sources(batch: &Batch) -> Vec<String> {
-    let moved = batch.renamed.iter().flat_map(|(from, to)| [from, to]);
-    let paths = batch
-        .added
-        .iter()
-        .chain(&batch.changed)
-        .chain(&batch.removed)
-        .chain(moved);
-    paths
-        .filter(|path| path.starts_with("doc") && !path.starts_with(STORE_DIR))
-        .map(|path| path.to_string_lossy().into_owned())
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
+/// Evaluate `project` with no session claims after the engine failed to read them.
+fn without_claims(project: &Project, error: &anyhow::Error) -> Evaluation {
+    lifecycle::line(&format!(
+        "summary claims could not be read, evaluating without them: {}",
+        safe_error(error)
+    ));
+    evaluate(project, &[])
 }
 
 /// The page keys whose content depends on summary `id`: its own page and, when it is a member
@@ -175,39 +157,36 @@ pub fn page_keys_for_summary(id: &str, project: &Project) -> Vec<String> {
     page_keys(id, &store::scope(project))
 }
 
-fn page_keys(id: &str, scope: &store::Scope) -> Vec<String> {
-    let (page, overview, members) = if id == "product" || id == "engineering" {
-        return vec![id.to_owned()];
-    } else if id.starts_with("product/") {
-        (id.to_owned(), "product", &scope.product)
-    } else if id.starts_with("plans/") {
-        (page_key_of(id), "engineering", &scope.engineering)
-    } else {
-        return Vec::new();
-    };
-    let mut keys = vec![page];
-    if members.iter().any(|member| member == id) {
-        keys.push(overview.to_owned());
-    }
-    keys
+/// Build the engine, run it once, and follow every watcher batch.
+pub fn install(ctx: &Arc<PlanContext>) {
+    install_with(ctx, ctx.runtime().clone());
 }
 
-/// Build the engine, seed the latest evaluation, and follow every watcher batch.
-pub fn install(ctx: &Arc<PlanContext>) {
-    let engine = SummaryEngine::new(
-        ctx.root().to_path_buf(),
-        ctx.runtime().clone(),
-        ctx.own_writes().clone(),
-    );
-    let claims = list_claims(ctx.runtime()).unwrap_or_else(|error| {
-        lifecycle::line(&format!("summary claims could not be read: {error:#}"));
-        Vec::new()
-    });
+/// [`install`] with the runtime directory the engine locks and reads claims from.
+pub(crate) fn install_with(ctx: &Arc<PlanContext>, runtime: RuntimePaths) {
+    let own = ctx.own_writes().clone();
+    let mut engine = SummaryEngine::new(ctx.root().to_path_buf(), runtime.clone(), own);
+    // The watcher drops its initial batch because the project loads after that walk. This run
+    // is the engine's share of it (section 04 "The watcher", Start): renames and deletions made
+    // while no server ran are applied before the first request.
+    let initial = Batch {
+        initial: true,
+        ..Batch::default()
+    };
     let state = {
         let project = ctx.project();
-        let first = evaluate(&project, &claims);
-        let previous = snapshot(&project, &first);
-        Arc::new(ConceptState::new(engine, first, previous))
+        let first = match engine.on_batch(&project, &initial) {
+            Ok(update) => update.evaluation,
+            Err(error) => without_claims(&project, &error),
+        };
+        let previous = snapshot(&project, &first, &page_context(ctx));
+        Arc::new(ConceptState {
+            engine: Mutex::new(engine),
+            runtime,
+            latest: RwLock::new(Arc::new(first)),
+            previous: Mutex::new(previous),
+            listeners: RwLock::new(Vec::new()),
+        })
     };
     ctx.extensions().insert(Arc::clone(&state));
     ctx.on_batch(Box::new(move |ctx, batch| {

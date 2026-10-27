@@ -1,6 +1,6 @@
 //! Key chips: the documents of an overview scope in reading order, with their colours.
 
-use crate::plan_server::concept::page::{page_key_of, PageContext, Scope};
+use crate::plan_server::concept::page::{page_key_of, PageContext, PageKey, Scope};
 use crate::plan_server::wire::concept::{DocLink, KeyChip};
 use crate::planning::project::Project;
 use crate::planning::summary::{evaluate::Evaluation, store};
@@ -20,21 +20,10 @@ pub(crate) fn key_chips(
         .filter_map(|(index, id)| {
             let path = store::source_of(project, id)?;
             let doc = project.docs.get(&path)?;
-            let (label, page, no_plan) = match scope {
-                Scope::Product => {
-                    let number = id.strip_prefix("product/section_")?;
-                    let no_plan = !eval.scope.engineering.is_empty()
-                        && number
-                            .parse::<u32>()
-                            .ok()
-                            .is_some_and(|n| !project.implemented_by.contains_key(&n));
-                    (number.to_string(), id.clone(), no_plan)
-                }
-                Scope::Engineering => {
-                    let slug = id.strip_prefix("plans/")?;
-                    (slug.to_string(), page_key_of(id), false)
-                }
-            };
+            let (label, page, no_plan) = chip_label(project, eval, scope, id)?;
+            // A page key the web client would reject (a slug past 128 characters) drops the
+            // chip instead of failing every page that embeds the key row.
+            PageKey::parse(&page)?;
             Some(KeyChip {
                 doc: DocLink {
                     id: id.clone(),
@@ -52,6 +41,30 @@ pub(crate) fn key_chips(
             })
         })
         .collect()
+}
+
+/// A chip's label, page key and "no plan" marker; `None` for an id outside the scope's form.
+fn chip_label(
+    project: &Project,
+    eval: &Evaluation,
+    scope: Scope,
+    id: &str,
+) -> Option<(String, String, bool)> {
+    match scope {
+        Scope::Product => {
+            let number = id.strip_prefix("product/section_")?;
+            let no_plan = !eval.scope.engineering.is_empty()
+                && number
+                    .parse::<u32>()
+                    .ok()
+                    .is_some_and(|n| !project.implemented_by.contains_key(&n));
+            Some((number.to_string(), id.to_owned(), no_plan))
+        }
+        Scope::Engineering => {
+            let slug = id.strip_prefix("plans/")?;
+            Some((slug.to_string(), page_key_of(id), false))
+        }
+    }
 }
 
 pub(crate) fn colour_of(chips: &[KeyChip], doc_path: &str) -> Option<u8> {
