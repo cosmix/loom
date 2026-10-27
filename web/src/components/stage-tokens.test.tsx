@@ -10,7 +10,10 @@ import { applySnapshot } from "@/state/apply";
 
 afterEach(cleanup);
 
-function renderTokens(stageId: string, mutate?: (raw: typeof fixtureJson) => void) {
+function renderTokens(
+  stageId: string,
+  mutate?: (raw: typeof fixtureJson) => void,
+) {
   const raw = structuredClone(fixtureJson);
   mutate?.(raw);
   const store = createStore();
@@ -28,12 +31,73 @@ describe("StageTokens", () => {
 
     const lanes = screen.getAllByTestId("token-lane");
     expect(lanes).toHaveLength(3);
-    expect(lanes.filter((lane) => lane.textContent?.includes("codex"))).toHaveLength(1);
+    expect(
+      lanes.filter((lane) => lane.textContent?.includes("codex")),
+    ).toHaveLength(1);
     expect(lanes[0]?.textContent).toContain("main session");
-    expect(lanes[0]?.textContent).toContain("main-01ed9f4c · claude-opus-5-5 · live");
+    expect(lanes[0]?.textContent).toContain(
+      "main-01ed9f4c · claude-opus-5-5 · live",
+    );
     const dot = within(lanes[0] as HTMLElement).getByTestId("agent-dot");
     expect(dot.dataset.state).toBe("live");
     expect(dot.classList).toContain("dot-live");
+  });
+
+  it("clusters the codex job with its forwarder subagents after the other lanes", () => {
+    renderTokens("server", (raw) => {
+      const agents = raw.status.tokens.stages[0]?.agents;
+      const forwarder = agents?.[1];
+      if (!agents || !forwarder) throw new Error("fixture agents are missing");
+      agents.push({
+        ...structuredClone(forwarder),
+        id: "a0forwarder",
+        agent_type: "loom-codex-forwarder",
+      });
+    });
+
+    const cluster = screen.getByTestId("codex-cluster");
+    const inCluster = within(cluster).getAllByTestId("token-lane");
+    expect(inCluster).toHaveLength(2);
+    expect(inCluster[0]?.textContent).toContain("codex job");
+    expect(inCluster[1]?.textContent).toContain("loom-codex-forwarder");
+    expect(inCluster[1]?.textContent).toContain(
+      "a0forwarder · claude-sonnet-5-5 · live",
+    );
+    const all = screen.getAllByTestId("token-lane");
+    expect(all).toHaveLength(4);
+    expect(all.slice(0, 2).every((lane) => !cluster.contains(lane))).toBe(true);
+  });
+
+  it("keeps every strip at 60 cells, newest on the right, however long the series", () => {
+    const cellCounts = (stageSeries: number[]) => {
+      renderTokens("server", (raw) => {
+        const stage = raw.status.tokens.stages[0];
+        if (!stage) throw new Error("fixture server stage is missing");
+        stage.series = stageSeries;
+        for (const agent of stage.agents) agent.series = [...stageSeries];
+      });
+      const strips = screen
+        .getAllByTestId("token-lane")
+        .map((lane) => within(lane).getByRole("img", { name: /last 30 min/ }));
+      cleanup();
+      return strips;
+    };
+
+    expect(
+      cellCounts([0, 0, 7]).every((strip) => strip.children.length === 60),
+    ).toBe(true);
+    expect(
+      cellCounts(Array<number>(500).fill(3)).every(
+        (strip) => strip.children.length === 60,
+      ),
+    ).toBe(true);
+
+    const [young] = cellCounts([0, 0, 7]);
+    const levels = Array.from(young?.children ?? [], (cell) =>
+      cell.getAttribute("data-level"),
+    );
+    expect(levels.slice(0, 57).every((level) => level === "0")).toBe(true);
+    expect(levels[59]).toBe("4");
   });
 
   it("shows the four chips from the stage flow", () => {
@@ -56,7 +120,9 @@ describe("StageTokens", () => {
       "cache hit per 30 s, last 30 min",
       "agents live, last 30 min",
     ]) {
-      expect(within(section).getAllByRole("img", { name: label })).toHaveLength(1);
+      expect(within(section).getAllByRole("img", { name: label })).toHaveLength(
+        1,
+      );
     }
   });
 
