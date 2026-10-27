@@ -44,3 +44,55 @@ Reviewer suggestions not applied, with the file that owns each. See [Planning Do
 - Not asserted: `ProjectState.sections_listed`, `sections_written` and `metaplans` in `checklist_json_shape` (it pins `plans_by_state` and `locked_files`); `Project::load` with an unreadable Markdown file raising no `missing-title`; exit 2 on a `Project::load` error such as `doc/` nested deeper than 16 levels; a symlinked document in the watcher and in `LockedSet::scan`; sparse-file and `..`-glob cases of `inputs.rs`.
 - `doc/product/section_01.md` says the table's step 2 writes the "lowest-numbered missing section" but the code and `table_order_decides_the_first_missing_section` follow the vision table's order.
 - Four plans (`PLAN-adopt-ecc-best-practices`, `PLAN-loom-ui-mods`, `PLAN-model-router-hooks`, `PLAN-web-host-graft-followthrough`) have no `Implements:` line, so `loom plan check` reports `implements-missing` and exits 1 on this repository; `Implements: none` under each title clears it (`section_03.md`).
+
+## Summary Store Open Items
+
+Reviewer suggestions on `loom/src/planning/summary/` and `loom plan summary` that no stage implemented; each names its
+file. See [Summary Store](../architecture/summary-store.md) for the behavior they qualify. The delivery mistakes of this
+work are in [Plan Server Delivery](../mistakes/plan-server-delivery.md).
+
+Robustness:
+
+- `lock.rs` `lock_exclusive` waits with no timeout, so any process holding `summaries.lock` (a sandboxed session
+  included) stalls seal, brief and the engine. Consider a bounded wait with a clear error.
+- `seal.rs` `write_locked` reads the existing summary with `read_summary(...)?`, while `evaluate` counts an unreadable one
+  (symlink, invalid UTF-8, oversize) as missing: a summary file that cannot be read can never be resealed without a manual
+  delete. Replace or delete an unreadable file under the lock.
+- `seal.rs`: `delete_claim(...)?` after a written summary still fails the seal (exit 2) and strands the claim, while the
+  draft removal beside it is warn-only. Make both warn-only. `claims::delete_claim` also fails `NotFound` on a missing
+  `claims/` directory although it documents an absent claim as fine (race only).
+- `claims.rs` `created_at` is read from a session-writable claim file as an unsanitised string and reaches `status
+  --json`. Parse it as RFC 3339 on read or drop it.
+- `store.rs`: `summary_path` and `link_from_summary` return an empty path or string for invalid input (fail closed today
+  because the `safe_*` calls refuse empty paths and callers validate first); returning `Result` or `Option` removes the
+  footgun. `validate_id`'s slug rule is stricter than `plan_slug`, so a plan file with a space in its slug never gets a
+  summary and never appears in `status`.
+- `seal.rs:93` rebuilds `drafts/<id>.md` while `brief` prints `claims::draft_path` (`paths.drafts`); derive both from one
+  helper before `RuntimePaths.drafts` can change.
+- `commands/plan/summary.rs` `root()` runs `output.trim()` on the repository path; `run_git_checked` already trims
+  (`git/runner.rs:193`), so only `run_git_records` (untrimmed, `pub(crate)`) would preserve a path with edge whitespace.
+- `fs/work_dir/config_sections/plan_config.rs` `read_plan_config` drops the whole `[planning]` table without a log line on
+  one bad key; a `warn` would help.
+- `SummaryModels::load` returns `Result` but never errors and its only caller is `tests/planning_summary_cli_contracts.rs`;
+  the signature is pinned by `briefs/feat-planner-04-summary-store/common.md` and consumed by plans 8 and 10, so it stays
+  until plan 10 shows it needs no fallibility.
+- `loom-hooks/worktree-file-guard.sh:193` `allow_loom_scratch` is confined to the validated scratch directory, but its
+  comment omits `validate_session_dir`'s 0700 mode check, `LOOM_SCRATCH_DIR` is not tied to the scratch root, and file
+  tools can now create `.req` relay tickets directly (the relay verifies them). Say so in the comment.
+
+Untested branches: the `Changed` outcome and `WRITE_ATTEMPTS` exhaustion of `write_locked`; `read_claim` on an absent
+file; a failing rewrite or deletion in `engine.rs` (the batch must still complete); `delete_summary` with a symlinked
+parent or orphan; `validate_id` with control characters, newline, space, `product/section_` and `product/`; a
+`members_hash` over a reordered member (sorting before hashing would survive); a claimed summary with no file (evaluates
+`missing`, not `rebuilding`; no unit test pins it); `runtime::create_runtime_dir` refusing a symlinked `plan/` or runtime
+directory and chmod-ing an existing one; the `brief` and `release` CLI arms at binary level; `relay_verdict`'s wait notice
+and `end_turn=false` in `commands/stage/adjudicate.rs`. In tests, `summary_cli_uses_session_state` fails as uid 0, the
+`#[serial]` tests that mutate `LOOM_HOME` race un-annotated tests in the same binary that read the environment, and
+`seal_rejects_duplicate_sentence` matches `'3'` and `'5'` loosely enough for a hex id to satisfy it.
+
+Open question for the operator: the "incomplete" row of `doc/product/section_04.md` ("What out of date means") still
+lists a removed member summary as a trigger, but with seal requiring every member cited a removal stales the citing
+overview sentences instead, so that route is reachable only by a hand edit. Confirm the stale direction and amend the row.
+
+Also open: `loom/maintainability-baseline.txt:42` could not be confirmed as a decrease from the range alone; check `git diff`
+for the rows of `dispatch`, `verify_artifacts`, `verify_regression_test` and `work_dir.rs`.

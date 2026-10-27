@@ -22,7 +22,8 @@ sources:
 | `sections`, `sections/metadata` | heading sections, GitHub anchors, line spans, hashes, plan metadata and stage spans |
 | `paths` | `LockedSet`, `classify_write`, `check_relpath_syntax`, `symlink_component` |
 | `watch`, `watch/pending` | polling `Watcher`, `Batch`, `OwnWrites` |
-| `runtime` | per-project runtime directory (path computation only) |
+| `runtime` | per-project runtime directory: path computation, `LOOM_PLAN_STATE` provenance checks, and `create_runtime_dir` shared by the plan server and the summary CLI |
+| `summary/` | the summary store: format, evaluation, seal, claims, engine; see [Summary Store](summary-store.md) |
 | `vision`, `metaplan`, `implements`, `pressure`, `briefs`, `xref` | parsers over document text |
 | `problems`, `checklist`, `checklist/{items,offers}` | convention problems; the checklist |
 | `project` | `Project::load` and `refresh`: tree, parsed documents, problems, checklist |
@@ -119,7 +120,9 @@ checks it, or failures go unseen.
 
 ## Runtime Directory
 
-`runtime::runtime_paths_from(state, session, loom_dir, root)` computes paths without creating anything. Outside a
+`runtime::runtime_paths_from(state, session, loom_dir, root)` computes paths without creating anything;
+`runtime::create_runtime_dir` (pub, `loom/src/planning/runtime.rs`) creates the loom home and `<home>/plan/<key>` at 0700,
+refusing symlinks, for both the plan server and `loom plan summary`. Outside a
 planning session the directory is `<loom user dir>/plan/<project key>` (the user dir follows `LOOM_HOME`); the key is
 `<sanitised root dir name>-<first 12 hex of sha256(canonical root)>`. `RuntimePaths` holds `lock`, `drafts`, `claims`,
 `summaries.lock`, `summary-cost.jsonl` and `sessions` under it. Inside a session `LOOM_PLAN_STATE` names the directory

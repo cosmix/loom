@@ -1,6 +1,6 @@
 # Architecture
 
-> Components, data flow, modules
+> Components, data flow, module dependencies
 >
 > **Related files:** [patterns.md](patterns.md) for design patterns, [entry-points.md](entry-points.md) for code navigation, [conventions.md](conventions.md) for coding standards.
 
@@ -247,3 +247,4 @@ integrity, impact tests, and the loom-filed freeze refusal). Rust contracts are 
 `loom::planning` models a project's `doc/` tree: kinds and ids, plan slugs (most advanced state wins), heading anchors
 and span hashes, the locked set, the polling watcher with `OwnWrites`, the runtime directory, and the checklist behind
 `loom plan check` (exit 0 clean, 1 problems, 2 cannot check). → [Planning Document Model](architecture/planning-document-model.md)
+`planning/summary/` keeps sentence-level summaries of product sections, plans and the two overviews in `doc/loom/summaries/`; each sentence cites its source by hash, so every summary evaluates `current`, `stale`, `incomplete`, `rebuilding` or `missing`, and `loom plan summary brief|seal|status|release` claims, validates and writes them under one store lock. → [Summary Store](architecture/summary-store.md)

@@ -1,6 +1,6 @@
 # Pinned Literals Ledgers And Wiring
 
-> Pins, ledgers
+> Pins
 
 ## Why These Two Belong Together
 

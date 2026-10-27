@@ -3,7 +3,7 @@
 
 # Status Broadcast Hardening
 
-> Status frames
+> Status
 
 ## Status Broadcast Hardening: Frame-Overflow Eviction and Read-Timeout Desync (2026-09-04)
 

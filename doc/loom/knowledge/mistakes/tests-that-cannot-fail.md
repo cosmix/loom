@@ -1,6 +1,6 @@
 # Tests That Cannot Fail
 
-> Vacuous tests
+> Vacuous
 
 ## A Test Named for a Property Is Not Evidence the Property Is Pinned
 
