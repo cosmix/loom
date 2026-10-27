@@ -1,0 +1,25 @@
+//! Concept mode: the product and engineering overviews and per-document summary pages, resolved
+//! server-side from plan 4's summary store.
+
+pub mod body;
+pub mod engine;
+pub mod key;
+pub mod links;
+pub mod page;
+pub mod routes;
+pub mod state;
+
+pub use engine::{install, page_keys_for_summary, ConceptState};
+pub use page::{load_page, PageContext, PageKey, Scope};
+pub use routes::routes;
+
+#[cfg(test)]
+mod key_tests;
+#[cfg(test)]
+mod links_tests;
+#[cfg(test)]
+mod route_tests;
+#[cfg(test)]
+mod state_tests;
+#[cfg(test)]
+mod tests;
