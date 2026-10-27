@@ -96,7 +96,7 @@ PTY (`drain_pending`), check `socket_gone`.
   `FD_CLOEXEC` on the master (openpty gives that to neither end): left unset, the master
   survives into the tmux child across `spawn`'s fork+exec, so `shutdown`'s `drop(master)`
   never closes the last reference and the slave never sees a hangup — see
-  mistakes/web-dashboard-server.md.
+  mistakes/web-terminal.md.
 - **Bounded pending-input queue.** `MAX_PENDING_INPUT = 64 KiB` staged in a
   `VecDeque<u8>` between the socket and the PTY. `poll_ready` narrows the TCP
   event mask to `POLLIN` only while `pending < MAX_PENDING_INPUT`; at the cap it asks for
@@ -178,4 +178,4 @@ the agent, and there the control hint reads "leave with ← Back to details or �
 
 ## Viewer wheel sensitivity
 
-Alternate-screen viewing scroll accumulates one browser viewport of wheel movement before sending a page request, capped at one page per event. The previous three-line threshold could emit five PageUp/PageDown keys from one event and skip visible output. Keep the bounded page protocol: raw arrows recall prompts. Normal-buffer scrolling stays local and line-based.
+View-mode scrolling of the alternate screen goes through one pager (`createViewerPager` in `web/src/components/terminal/viewer-wheel.ts`): movement accumulates in lines, resets on reversal, and sends a `{scroll:{pages}}` request once it reaches one terminal height, capped at one page per event. The wheel feeds it (`installViewerWheel`); a one-finger vertical swipe feeds it too (`installViewerTouch` in `viewer-touch.ts`, finger up = newer output, short swipes in one direction accumulate), because xterm's own touch scrolling moves only its scrollback viewport, which is empty while tmux holds the alternate screen. Both prevent default and stop propagation so xterm never synthesizes Up/Down (raw arrows recall prompts). The View-mode host sets `touch-action: pinch-zoom` so the page does not pan under a swipe. Normal-buffer wheel scrolling stays local and line-based; normal-buffer touch and all Control-mode wheel and touch input stay with xterm.
