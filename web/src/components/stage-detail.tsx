@@ -75,7 +75,7 @@ export function LedgerCard({
 }
 
 /// The label/value list on its own, for a section that brings its own frame.
-export function Rows({ rows, className }: { rows: Row[]; className?: string }) {
+function Rows({ rows, className }: { rows: Row[]; className?: string }) {
   return (
     <dl className={cn("ledger-rows text-sm", className)}>
       {rows.map((entry) => (

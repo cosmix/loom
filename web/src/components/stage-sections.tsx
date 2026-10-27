@@ -5,7 +5,6 @@ import {
   Gauge,
   GitMerge,
   ListChecks,
-  MessageSquareText,
   RotateCcw,
   Scale,
   SquareTerminal,
@@ -14,27 +13,18 @@ import {
 } from "lucide-react";
 
 import type { StageSummary } from "@/api/schema";
-import { HazardPanel } from "@/aurora-ui/feedback/HazardPanel";
 import { ContextMeter } from "@/components/context-meter";
 import {
   LedgerCard,
   present,
   row,
-  Rows,
   Section,
   secs,
   tokens,
   yesNo,
   type SectionSpec,
 } from "@/components/stage-detail";
-import { StageTokens } from "@/components/stage-tokens";
-import {
-  contextUsage,
-  exitReasonLabel,
-  failureLabel,
-  formatStamp,
-  sessionTypeLabel,
-} from "@/lib/format";
+import { contextUsage, exitReasonLabel, formatStamp, sessionTypeLabel } from "@/lib/format";
 
 /// What each field means, in the words a person reading the ledger needs.
 const HINT = {
@@ -66,7 +56,7 @@ const HINT = {
   staleness: "Time since the last heartbeat.",
   retries: "Automatic retries so far, of the stage's limit.",
   acceptance:
-    "The number in front of each criterion is its index for loom stage amend --index, counted from 0. A criterion's own text is cut at 200 characters here.",
+    "The number in front of each criterion is its index for loom stage amend --index, counted from 0.",
   disputes: "Acceptance criteria the stage's agent disputed. A judge session settles them.",
   judge: "Time since the adjudication judge for this stage last reported in.",
   merged:
@@ -83,9 +73,6 @@ const HINT = {
   incoherence:
     "Why an executing stage does not describe a working agent, for example because its session is an adjudication session.",
   held: "Held by you: the daemon leaves the stage alone until you release it.",
-  failureType: "How the daemon classified the failure.",
-  detectedAt: "When the daemon detected it.",
-  evidence: "Lines the daemon kept as evidence. Untrusted text, shown verbatim.",
   completionState: "Whether completion verification is pending, blocked, or has unknown ownership.",
   completionFingerprint: "Stable identity for this completion boundary failure.",
   completionFailureCode: "Machine-readable code for the failed completion boundary.",
@@ -97,13 +84,8 @@ const HINT = {
 } as const;
 
 const FAILURE_STATES = new Set<StageSummary["status"]>(["blocked", "completed-with-failures"]);
-const CURRENT_FAILURE_STATES = new Set<StageSummary["status"]>([
-  ...FAILURE_STATES,
-  "merge-conflict",
-  "merge-blocked",
-  "needs-human-review",
-]);
-const MERGE_STATES = new Set<StageSummary["status"]>([
+/// States in which the stage's merge is the question, so "merged" is worth a row.
+export const MERGE_STATES = new Set<StageSummary["status"]>([
   "completed",
   "merge-conflict",
   "merge-blocked",
@@ -269,6 +251,8 @@ export function stageSections(stage: StageSummary, level: number | null): Sectio
 }
 
 /// The sections as cards; `wide` adds the third column the page has room for.
+/// The live issue and its review notes are the now card's, archived ones the
+/// history card's, and the token flow sits under the details, always shown.
 export function StageSectionGrid({
   stage,
   level,
@@ -278,15 +262,8 @@ export function StageSectionGrid({
   level: number | null;
   wide?: boolean;
 }) {
-  const currentFailure = CURRENT_FAILURE_STATES.has(stage.status) ? stage.failure_info : null;
-
   return (
     <div className={cn("grid gap-4 md:grid-cols-2", wide && "xl:grid-cols-3")}>
-      {stage.review_notes !== null && (
-        <div className={cn("md:col-span-2", wide && "xl:col-span-3")}>
-          <ReviewNotes notes={stage.review_notes} />
-        </div>
-      )}
       {stage.acceptance !== undefined && stage.acceptance.length > 0 && (
         <div className={cn("md:col-span-2", wide && "xl:col-span-3")}>
           <AcceptanceList criteria={stage.acceptance} />
@@ -304,37 +281,12 @@ export function StageSectionGrid({
           <Section key={section.title} {...section} />
         ))}
       </div>
-      <div className={cn("empty:hidden md:col-span-2", wide && "xl:col-span-3")}>
-        <StageTokens stageId={stage.id} />
-      </div>
-      {currentFailure && (
-        <div className={cn("md:col-span-2", wide && "xl:col-span-3")}>
-          <FailureSection failure={currentFailure} />
-        </div>
-      )}
     </div>
   );
 }
 
-/// The complete review reason, full width. Untrusted text: a text node only.
-/// The scroll box takes focus so a keyboard can scroll it.
-function ReviewNotes({ notes }: { notes: string }) {
-  return (
-    <LedgerCard title="review notes" icon={MessageSquareText}>
-      <div
-        tabIndex={0}
-        role="region"
-        aria-label="review notes text"
-        className="max-h-64 overflow-y-auto px-4 py-3 text-sm leading-relaxed break-words whitespace-pre-wrap"
-      >
-        {notes}
-      </div>
-    </LedgerCard>
-  );
-}
-
-/// A blocked stage's acceptance criteria, each with the 0-based index that
-/// `loom stage amend --index` takes. Untrusted text: text nodes only.
+/// A stage's acceptance criteria, each with the 0-based index that
+/// `loom stage amend --index` takes, each whole. Untrusted text: text nodes only.
 function AcceptanceList({ criteria }: { criteria: string[] }) {
   return (
     <LedgerCard
@@ -347,39 +299,11 @@ function AcceptanceList({ criteria }: { criteria: string[] }) {
       <ol className="flex flex-col px-4 py-2 text-sm">
         {criteria.map((criterion, index) => (
           <li key={index} className="acceptance-item" data-index={index}>
-            <span className="acceptance-index">{index}</span>
+            <span className="index-badge">{index}</span>
             <code className="min-w-0 text-xs leading-relaxed wrap-anywhere">{criterion}</code>
           </li>
         ))}
       </ol>
     </LedgerCard>
-  );
-}
-
-/// The failure under the kit's red caution tape. Evidence is untrusted
-/// text: rendered as text nodes only.
-function FailureSection({ failure }: { failure: NonNullable<StageSummary["failure_info"]> }) {
-  return (
-    <HazardPanel
-      tone="error"
-      title={`failure · ${failureLabel(failure.failure_type)}`}
-      className="bg-card"
-    >
-      <Rows
-        rows={present([
-          row("type", HINT.failureType, failure.failure_type, true),
-          row("detected at", HINT.detectedAt, formatStamp(failure.detected_at), true),
-          row(
-            "evidence",
-            HINT.evidence,
-            failure.evidence.length > 0 && (
-              <pre className="max-h-64 overflow-auto rounded-md border border-hairline bg-background p-2.5 text-[11px] leading-relaxed whitespace-pre-wrap">
-                {failure.evidence.join("\n")}
-              </pre>
-            ),
-          ),
-        ])}
-      />
-    </HazardPanel>
   );
 }

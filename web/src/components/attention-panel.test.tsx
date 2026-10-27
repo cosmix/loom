@@ -5,14 +5,9 @@ import { createMemoryRouter, RouterProvider } from "react-router";
 import { afterEach, describe, expect, it } from "vitest";
 
 import fixtureJson from "@/api/fixtures/snapshot.json";
-import { snapshotSchema, type Attention } from "@/api/schema";
-import {
-  AttentionBody,
-  AttentionPanel,
-  attentionDetail,
-  attentionHazard,
-  attentionStatus,
-} from "@/components/attention-panel";
+import { snapshotSchema, type Attention, type Snapshot, type StageIssue } from "@/api/schema";
+import { AttentionBody, AttentionPanel } from "@/components/attention-panel";
+import { attentionDetail, attentionHazard, attentionStatus } from "@/components/attention-status";
 import { applySnapshot } from "@/state/apply";
 
 const fixture = snapshotSchema.parse(fixtureJson);
@@ -23,9 +18,11 @@ function fixtureEntry(id: string): Attention {
   return entry;
 }
 
-function renderPanel(attention: Attention[]) {
+function renderPanel(attention: Attention[], edit: (snapshot: Snapshot) => void = () => {}) {
   const store = createStore();
-  applySnapshot(store, { ...structuredClone(fixture), attention });
+  const snapshot = { ...structuredClone(fixture), attention };
+  edit(snapshot);
+  applySnapshot(store, snapshot);
   const router = createMemoryRouter([{ path: "/", element: <AttentionPanel /> }]);
   render(
     <Provider store={store}>
@@ -81,6 +78,23 @@ describe("AttentionBody", () => {
     expect(
       screen.getAllByRole("button").map((button) => button.getAttribute("aria-label")),
     ).toEqual(["copy loom stage retry client --force"]);
+  });
+
+  it("shows a cleanup warning on an entry with no failure or review reason", () => {
+    const warning = "git worktree remove failed: worktree contains modified files";
+    renderBody({
+      ...fixtureEntry("client"),
+      label: "CLEANUP FAILED",
+      command: "loom worktree remove client",
+      failure_type: null,
+      failure_label: null,
+      evidence: [],
+      review_reason: null,
+      cleanup_warning: warning,
+    });
+
+    expect(screen.getByText(warning).tagName).toBe("P");
+    expect(screen.getByText("loom worktree remove client").tagName).toBe("CODE");
   });
 });
 
@@ -178,14 +192,21 @@ describe("a deliberate block", () => {
     expect(note.className).not.toMatch(/truncate|line-clamp|text-ellipsis/);
   });
 
-  it("introduces the retry as the step after the reason and lists the other ways out", () => {
+  it("numbers the retry first and the other ways out after it", () => {
     renderBody(entry());
 
-    expect(screen.getByText(/^Once you have done what the reason asks/)).toBeTruthy();
-    const options = within(screen.getByRole("list", { name: "other options" }));
-    expect(options.getAllByRole("listitem")).toHaveLength(3);
-    expect(options.getByText(/^If criterion 4 cannot pass/)).toBeTruthy();
-    expect(options.getByText(/^If you give up on the stage/)).toBeTruthy();
+    const steps = within(screen.getByRole("list", { name: "steps" }));
+    const items = steps.getAllByRole("listitem");
+    expect(items).toHaveLength(4);
+    expect(items.map((item) => item.querySelector(".index-badge")?.textContent)).toEqual([
+      "1",
+      "2",
+      "3",
+      "4",
+    ]);
+    expect(within(items[0]!).getByText(/^Once you have done what the reason asks/)).toBeTruthy();
+    expect(within(items[1]!).getByText(/^If criterion 4 cannot pass/)).toBeTruthy();
+    expect(within(items[3]!).getByText(/^If you give up on the stage/)).toBeTruthy();
   });
 
   it("gives the retry and each alternative its own copy button", () => {
@@ -210,14 +231,6 @@ describe("a deliberate block", () => {
     expect(failing.getByText(/cannot create AF_UNIX sockets/)).toBeTruthy();
   });
 
-  it("summarizes the disputes already ruled on in one line", () => {
-    renderBody(entry());
-
-    expect(
-      screen.getByText("Disputes: #1 integrity accepted · #2 criterion 3 replaced"),
-    ).toBeTruthy();
-  });
-
   it("links the terminal history instead of printing a shell command", () => {
     renderBody(entry());
 
@@ -230,27 +243,87 @@ describe("a deliberate block", () => {
     renderBody(fixtureEntry("client"));
 
     expect(screen.queryByRole("list", { name: "failing criteria" })).toBeNull();
-    expect(screen.queryByText(/^Disputes:/)).toBeNull();
     expect(screen.queryByRole("link", { name: "View terminal history" })).toBeNull();
   });
 
-  it("leaves out the option list and the introduction when an entry has none", () => {
+  it("numbers a lone command as the only step, with no introduction", () => {
     renderBody(fixtureEntry("client"));
 
-    expect(screen.queryByRole("list", { name: "other options" })).toBeNull();
+    const steps = within(screen.getByRole("list", { name: "steps" }));
+    expect(steps.getAllByRole("listitem")).toHaveLength(1);
     expect(screen.queryByText(/^Once /)).toBeNull();
+    expect(screen.queryByText(/^If /)).toBeNull();
   });
 });
 
 describe("attentionDetail", () => {
-  it("heads a block with the first line of its reason", () => {
-    expect(attentionDetail(fixtureEntry("local-runtime"))).toBe(
-      "Adjudicator needs an unsandboxed run only the operator can do. From the worktree root run: TROOFOO_STACK=ephemeral bun run stack:ephemeral --with objectstore -- bun test packages/storage packages/db/src/ephemeral-services; report exit code, test summary, and .stack/objectstore.log on failure. Criterion 5 (stack:ephemeral --with objectstore) cannot pass in this sandbox: it denies AF_UNIX socket creation everywhere.",
-    );
+  it("never repeats the reason the body shows", () => {
+    expect(fixtureEntry("local-runtime").reason).not.toBeNull();
+    expect(attentionDetail(fixtureEntry("local-runtime"))).toBeNull();
   });
 
-  it("falls back to the failure label, never a review reason the entry does not carry", () => {
-    const entry = { ...fixtureEntry("client"), reason: null };
-    expect(attentionDetail(entry)).toBe("test");
+  it("composes the failure label and the adjudication numbers", () => {
+    expect(attentionDetail(fixtureEntry("client"))).toBe("test");
+    const adjudicating = {
+      ...fixtureEntry("client"),
+      dispute_count: 2,
+      judge_heartbeat_secs: 42,
+    };
+    expect(attentionDetail(adjudicating)).toBe("test · 2 disputed · judge heard 42s ago");
+  });
+});
+
+describe("the attention card", () => {
+  const archived: StageIssue = {
+    kind: "failure",
+    failure_type: "sandbox-setup-failure",
+    detected_at: "2026-10-27T20:40:18Z",
+    evidence: ["No adjudication session could be started for this dispute"],
+    ended_at: "2026-10-27T20:41:32Z",
+    ended_by: "replaced by a newer failure",
+    dispute_id: null,
+  };
+  const withHistory = (snapshot: Snapshot) => {
+    const docs = snapshot.status.stages.find((stage) => stage.id === "docs");
+    if (!docs) throw new Error("fixture stage docs is missing");
+    docs.history = [archived, { ...archived, ended_at: "2026-10-27T20:30:00Z" }];
+  };
+
+  it("shows the current issue alone and links its earlier ones into the dialog history", () => {
+    renderPanel([fixtureEntry("docs")], withHistory);
+
+    const link = screen.getByRole("link", { name: "2 earlier issues" });
+    expect(link.getAttribute("href")).toBe("/?stage=docs#history");
+    expect(screen.queryByText(/No adjudication session could be started/)).toBeNull();
+    expect(screen.getByText(/merge resolver session-3f9a2c1e-1788720000 is working/)).toBeTruthy();
+  });
+
+  it("has no earlier issues link for a stage without history", () => {
+    renderPanel([fixtureEntry("docs")]);
+
+    expect(screen.queryByRole("link", { name: /earlier issue/ })).toBeNull();
+  });
+
+  it("wraps the header detail instead of cutting it", () => {
+    renderPanel([fixtureEntry("client")]);
+
+    const detail = document.querySelector(".attention-detail");
+    expect(detail?.textContent).toBe("test");
+    expect(detail?.className).not.toMatch(/truncate|line-clamp|text-ellipsis|max-w-/);
+    expect(detail?.getAttribute("title")).toBeNull();
+    const slot = detail?.parentElement?.className.split(" ");
+    expect(slot).toContain("min-w-0");
+    expect(slot).toContain("shrink");
+    expect(slot).not.toContain("shrink-0");
+  });
+
+  it("shows a block's reason once, in the body and never in the header", () => {
+    const entry = fixtureEntry("local-runtime");
+    renderPanel([entry]);
+
+    expect(document.querySelector(".attention-detail")).toBeNull();
+    const firstLine = entry.note?.split("\n", 1)[0] ?? "";
+    expect(firstLine.length).toBeGreaterThan(0);
+    expect(screen.getAllByText((text) => text.includes(firstLine))).toHaveLength(1);
   });
 });

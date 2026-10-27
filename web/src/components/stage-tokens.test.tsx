@@ -41,7 +41,7 @@ describe("StageTokens", () => {
     expect(dot.classList).toContain("dot-live");
   });
 
-  it("keeps the model before the truncating agent id", () => {
+  it("keeps the model before the agent id, which wraps instead of truncating", () => {
     renderTokens("server");
 
     const lane = within(screen.getAllByTestId("token-lane")[0] as HTMLElement);
@@ -54,9 +54,10 @@ describe("StageTokens", () => {
     for (const className of ["flex", "min-w-0", "items-baseline"]) {
       expect(model.parentElement?.classList).toContain(className);
     }
-    for (const className of ["truncate", "min-w-0"]) {
+    for (const className of ["wrap-anywhere", "min-w-0"]) {
       expect(id.classList).toContain(className);
     }
+    expect(id.classList).not.toContain("truncate");
   });
 
   it("gives the agent id its full value as a hover title", () => {

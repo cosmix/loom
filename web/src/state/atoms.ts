@@ -1,4 +1,5 @@
-import { atom } from "jotai/vanilla";
+import { atom, type Atom } from "jotai/vanilla";
+import { selectAtom } from "jotai/vanilla/utils";
 
 import type { Alert, Attention, Snapshot, StageSummary } from "@/api/schema";
 import { orderStages, type OrderedStage } from "@/lib/levels";
@@ -32,4 +33,14 @@ export const alertsAtom = atom<Alert[]>((get) => get(snapshotAtom)?.alerts ?? []
 
 export function selectStage(snapshot: Snapshot | null, id: string): StageSummary | undefined {
   return snapshot?.status.stages.find((stage) => stage.id === id);
+}
+
+/// One value `read` off stage `id`. Its reader re-renders only when that value
+/// changes (`Object.is`), not on every snapshot, so `read` should return a
+/// primitive. Each call makes a new atom: memoize it per id.
+export function stageValueAtom<T>(
+  id: string,
+  read: (stage: StageSummary | undefined) => T,
+): Atom<T> {
+  return selectAtom(snapshotAtom, (snapshot) => read(selectStage(snapshot, id)));
 }
