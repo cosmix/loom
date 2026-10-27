@@ -49,13 +49,6 @@ cleanup_backups() {
     fi
 }
 
-# Kill any running loom daemon
-if pgrep -x loom &>/dev/null; then
-    echo "Killing loom daemon..."
-    pkill -x loom 2>/dev/null || true
-    sleep 1
-fi
-
 # Override the repository's four-job cap for local installs, while allowing
 # callers to limit concurrency on machines with less memory.
 build_jobs="${CARGO_BUILD_JOBS:-$(nproc 2>/dev/null || getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
@@ -73,5 +66,14 @@ echo ""
 echo "Running install.sh..."
 cd "$SCRIPT_DIR"
 bash ./install.sh "$@"
+
+# Stop the daemon only after the binary and hooks are both installed: a daemon
+# started while the build or install is still running keeps the old binary and
+# refuses every spawn because its embedded hooks differ from the installed ones.
+if pgrep -x loom &>/dev/null; then
+    echo "Killing loom daemon..."
+    pkill -x loom 2>/dev/null || true
+    sleep 1
+fi
 
 cleanup_backups
