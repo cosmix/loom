@@ -8,6 +8,38 @@ import type {
 } from "@/api/schema";
 import type { Tone } from "@/lib/format";
 
+/// The subagent type that forwards work to a codex job.
+export const FORWARDER_TYPE = "loom-codex-forwarder";
+
+export function isCodexLane(agent: AgentFlow): boolean {
+  return agent.kind === "codex" || agent.agent_type === FORWARDER_TYPE;
+}
+
+/// The codex lanes of `rows` (in `flow.agents` order) grouped into clusters: each
+/// forwarder subagent with the codex job(s) it forwarded to, forwarder first. A
+/// job whose forwarder is null or not among `rows` is a cluster of its own, as
+/// is a forwarder with no job yet. Clusters are ordered by their first lane's
+/// position in `rows`.
+export function codexPairs<T extends { agent: AgentFlow }>(rows: readonly T[]): T[][] {
+  const forwarders = new Set(
+    rows.filter(({ agent }) => agent.kind !== "codex").map(({ agent }) => agent.id),
+  );
+  const clusters: T[][] = [];
+  for (const row of rows) {
+    const { agent } = row;
+    if (!isCodexLane(agent)) continue;
+    if (agent.kind === "codex") {
+      if (agent.forwarder === null || !forwarders.has(agent.forwarder)) clusters.push([row]);
+    } else {
+      const jobs = rows.filter(
+        ({ agent: job }) => job.kind === "codex" && job.forwarder === agent.id,
+      );
+      clusters.push([row, ...jobs]);
+    }
+  }
+  return clusters;
+}
+
 export function fresh(u: TokenUsage): number {
   return u.input + u.cache_write + u.output;
 }

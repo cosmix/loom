@@ -25,6 +25,8 @@ pub(super) type StageAgents = BTreeMap<String, AgentState>;
 pub(crate) struct AgentState {
     pub(super) kind: AgentKind,
     pub(super) agent_type: Option<String>,
+    /// For a codex agent: the id of the forwarder subagent that forwarded to it.
+    pub(super) forwarder: Option<String>,
     pub(super) model: Option<String>,
     /// The last reasoning effort a line named.
     pub(super) effort: Option<String>,
@@ -88,6 +90,7 @@ impl AgentState {
         Self {
             kind,
             agent_type: None,
+            forwarder: None,
             model: None,
             effort: None,
             first_seen: None,
@@ -103,11 +106,13 @@ impl AgentState {
     }
 
     /// Forgets everything read from the file, to read `path` (inode `inode`)
-    /// again from offset 0. The ledger's agent type is kept.
+    /// again from offset 0. The ledger's agent type and forwarder are kept.
     pub(super) fn restart(&mut self, path: &str, inode: u64) {
         let agent_type = self.agent_type.take();
+        let forwarder = self.forwarder.take();
         *self = Self {
             agent_type,
+            forwarder,
             ..Self::new(self.kind, path)
         };
         self.file.inode = inode;

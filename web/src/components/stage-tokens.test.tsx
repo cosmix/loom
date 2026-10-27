@@ -46,17 +46,57 @@ describe("StageTokens", () => {
         id: "a0forwarder",
         agent_type: "loom-codex-forwarder",
       });
+      const job = agents?.[2];
+      if (!job) throw new Error("fixture codex job is missing");
+      (job as { forwarder: string | null }).forwarder = "a0forwarder";
     });
 
     const cluster = screen.getByTestId("codex-cluster");
     const inCluster = within(cluster).getAllByTestId("token-lane");
     expect(inCluster).toHaveLength(2);
-    expect(inCluster[0]?.textContent).toContain("codex job");
-    expect(inCluster[1]?.textContent).toContain("loom-codex-forwarder");
-    expect(inCluster[1]?.textContent).toContain("a0forwarder · claude-sonnet-5-5 · live");
+    expect(inCluster[0]?.textContent).toContain("loom-codex-forwarder");
+    expect(inCluster[0]?.textContent).toContain("a0forwarder · claude-sonnet-5-5 · live");
+    expect(inCluster[1]?.textContent).toContain("codex job");
     const all = screen.getAllByTestId("token-lane");
     expect(all).toHaveLength(4);
     expect(all.slice(0, 2).every((lane) => !cluster.contains(lane))).toBe(true);
+  });
+
+  it("gives each forwarder and its codex job a cluster of their own", () => {
+    renderTokens("server", (raw) => {
+      const agents = raw.status.tokens.stages[0]?.agents;
+      const forwarder = agents?.[1];
+      const job = agents?.[2];
+      if (!agents || !forwarder || !job) throw new Error("fixture agents are missing");
+      for (const n of ["1", "2"]) {
+        agents.push({
+          ...structuredClone(forwarder),
+          id: `a0fwd${n}`,
+          agent_type: "loom-codex-forwarder",
+        });
+        agents.push({
+          ...structuredClone(job),
+          id: `codex-job${n}`,
+          forwarder: `a0fwd${n}` as unknown as null,
+        });
+      }
+      job.forwarder = null;
+    });
+
+    const clusters = screen.getAllByTestId("codex-cluster");
+    const texts = clusters.map((c) =>
+      within(c)
+        .getAllByTestId("token-lane")
+        .map((lane) => lane.textContent ?? ""),
+    );
+    expect(texts).toHaveLength(3);
+    expect(texts[0]).toHaveLength(1);
+    expect(texts[0]?.[0]).toContain("codex-01a1396b");
+    expect(texts[1]).toHaveLength(2);
+    expect(texts[1]?.[0]).toContain("a0fwd1");
+    expect(texts[1]?.[1]).toContain("codex-job1");
+    expect(texts[2]?.[0]).toContain("a0fwd2");
+    expect(texts[2]?.[1]).toContain("codex-job2");
   });
 
   it("keeps every strip at 60 cells, newest on the right, however long the series", () => {

@@ -26,6 +26,7 @@ fn sample_flow() -> TokenFlow {
                 id: "main-01".into(),
                 kind: AgentKind::Main,
                 agent_type: None,
+                forwarder: None,
                 model: Some("claude-opus-5-5".into()),
                 active: true,
                 total: usage,

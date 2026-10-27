@@ -19,6 +19,7 @@ fn flow_of(value: u64, series: Vec<u64>) -> TokenFlow {
         id: "main-01ed9f4c".into(),
         kind: AgentKind::Main,
         agent_type: Some("loom-software-engineer".into()),
+        forwarder: None,
         model: Some("claude-opus-5-5".into()),
         active: true,
         total: usage_of(value),

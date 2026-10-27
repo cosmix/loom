@@ -114,6 +114,8 @@ fn authorized_jobs_without_receipts_or_claude_transcripts_reach_all_totals_once(
     receipt(&fx, "thread-done");
     let mut with_receipt = discover();
     let mut sources = sources;
+    // The receipt adds the forwarder; the source is otherwise the same.
+    with_receipt.iter_mut().for_each(|s| s.forwarder = None);
     with_receipt.sort_by(|a, b| a.key.cmp(&b.key));
     sources.sort_by(|a, b| a.key.cmp(&b.key));
     assert_eq!(

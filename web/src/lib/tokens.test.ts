@@ -5,6 +5,7 @@ import {
   agentLabel,
   cacheHitPercent,
   carryForward,
+  codexPairs,
   compactTokens,
   cumulativeSeries,
   fresh,
@@ -29,6 +30,7 @@ const main: AgentFlow = {
   id: "main-01ed9f4c",
   kind: "main",
   agent_type: null,
+  forwarder: null,
   model: "claude-opus-5-5",
   active: true,
   total: usage(40000, 600000, 9000000, 100000),
@@ -39,6 +41,7 @@ const subagent: AgentFlow = {
   id: "a04baa183f888b773",
   kind: "subagent",
   agent_type: "loom-software-engineer",
+  forwarder: null,
   model: "claude-sonnet-5-5",
   active: true,
   total: usage(50000, 900000, 13000000, 160000),
@@ -49,6 +52,7 @@ const codex: AgentFlow = {
   id: "codex-01a1396b",
   kind: "codex",
   agent_type: null,
+  forwarder: null,
   model: "gpt-6.1-sol",
   active: true,
   total: usage(30000, 300000, 4000000, 50000),
@@ -331,4 +335,30 @@ it("wholePercents gives a single model 100 and no models none", () => {
 it("wholePercents hands the missing points to the largest remainders", () => {
   expect(wholePercents([0.256, 0.254, 0.49])).toEqual([26, 25, 49]);
   expect(wholePercents([0.29, 0.71])).toEqual([29, 71]);
+});
+
+it("codexPairs makes one cluster per forwarder with its jobs, orphan jobs alone", () => {
+  const lane = (id: string, over: Partial<AgentFlow>) => ({ agent: { ...subagent, id, ...over } });
+  const fwd = (id: string) => lane(id, { agent_type: "loom-codex-forwarder" });
+  const job = (id: string, forwarder: string | null) =>
+    lane(id, { kind: "codex", agent_type: null, forwarder });
+  const rows = [
+    lane("plain", {}),
+    job("job-b", "fwd-b"),
+    fwd("fwd-a"),
+    fwd("fwd-b"),
+    job("job-a", "fwd-a"),
+    job("lost", "gone"),
+    job("none", null),
+  ];
+
+  const ids = codexPairs(rows).map((cluster) => cluster.map(({ agent }) => agent.id));
+
+  expect(ids).toEqual([["fwd-a", "job-a"], ["fwd-b", "job-b"], ["lost"], ["none"]]);
+});
+
+it("codexPairs keeps a forwarder with no job and ignores plain lanes", () => {
+  const rows = [{ agent: main }, { agent: { ...subagent, agent_type: "loom-codex-forwarder" } }];
+
+  expect(codexPairs(rows).map((cluster) => cluster.length)).toEqual([1]);
 });

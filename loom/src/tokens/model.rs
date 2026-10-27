@@ -72,6 +72,8 @@ pub struct AgentFlow {
     pub id: String,
     pub kind: AgentKind,
     pub agent_type: Option<String>,
+    /// For a codex agent: the id of the forwarder subagent that forwarded to it.
+    pub forwarder: Option<String>,
     pub model: Option<String>,
     pub active: bool,
     pub total: TokenUsage,

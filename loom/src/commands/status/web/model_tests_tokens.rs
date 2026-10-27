@@ -24,6 +24,7 @@ fn fixture_agent(
         id: id.to_owned(),
         kind,
         agent_type: agent_type.map(str::to_owned),
+        forwarder: None,
         model: Some(model.to_owned()),
         active: true,
         total,

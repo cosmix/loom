@@ -52,6 +52,7 @@ fn flow(active: bool, models: Vec<ModelUsage>) -> TokenFlow {
         id: "main-01ed9f4c".into(),
         kind: AgentKind::Main,
         agent_type: None,
+        forwarder: None,
         model: Some("claude-opus-5-5".into()),
         active,
         total,
