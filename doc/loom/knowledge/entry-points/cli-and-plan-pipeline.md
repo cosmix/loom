@@ -32,7 +32,7 @@
 | `repair`      | `commands/repair.rs`              | Fix workspace issues                           |
 | `map`         | `commands/map.rs`                 | Codebase structure analysis                    |
 | `pressure`    | `commands/pressure/mod.rs`        | Plan pressure-testing driver (Claude + Codex)  |
-| `plan verify` | `commands/plan/verify.rs`         | Validate plan file without side effects        |
+| `plan verify` | `commands/plan/verify.rs`         | Validate plan file without side effects (result and `--json` types: `verify/report.rs`) |
 | `check`       | `commands/verify.rs`              | Goal-backward verification (`verify::execute`) |
 | `skill-index` | `commands/skill_index.rs`         | Build skill keyword index for skill-trigger    |
 | `completions` | `completions/mod.rs`              | Shell completions (custom scripts + dynamic)   |
@@ -92,7 +92,7 @@ Key public functions for `loom plan verify` to call:
 
 `validate()` runs inside `parse_and_validate()` → called by `parse_plan_content()` → called by `parse_plan()`. Any new command that calls `parse_plan()` automatically gets fatal validation for free.
 
-`commands/plan/verify.rs` additionally runs a verify-only per-stage check, `plan/schema/host_paths.rs::stage_host_path_errors`, rejecting `allow_write` grants under `/tmp` or missing on the host, `TMPDIR=` overrides, hardcoded `/tmp/` paths, and `mkdir`/`touch`/output redirects aimed outside the worktree in stage commands — `loom init` and `loom run` do not run this check.
+`commands/plan/verify/checks.rs` additionally runs a verify-only per-stage check, `plan/schema/host_paths.rs::stage_host_path_errors`, rejecting `allow_write` grants under `/tmp` or missing on the host, `TMPDIR=` overrides, hardcoded `/tmp/` paths, and `mkdir`/`touch`/output redirects aimed outside the worktree in stage commands — `loom init` and `loom run` do not run this check.
 
 ## Plan Parser Module (plan/parser/mod.rs)
 

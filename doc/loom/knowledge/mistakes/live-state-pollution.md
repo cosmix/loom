@@ -1,6 +1,6 @@
 # Live State Pollution
 
-> Test pollution
+> Pollution
 
 ## A Stage's Test Run Rewrote the Live State Directory (2026-09-13)
 
