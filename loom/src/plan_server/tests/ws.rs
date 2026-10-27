@@ -1,15 +1,18 @@
 //! The `/ws` gate, the frames a connection receives, and serving through a shutdown drain.
 
 use std::sync::mpsc;
+use std::time::Instant;
 
+use serde_json::Value;
 use tungstenite::Message;
 
 use super::support::{
-    bootstrap, connect_ws, cookie_pair, get, host, json_body, project, read_until, serve, skip,
+    bootstrap, connect_ws, cookie_pair, get, host, json_body, post_json, project, read_until,
+    serve, skip, status, Socket, WAIT,
 };
-use crate::plan_server::begin_shutdown;
 use crate::plan_server::gate::{access_cookie_name, browser_cookie_name};
 use crate::plan_server::shutdown::ShutdownHook;
+use crate::plan_server::{begin_shutdown, RunningServer};
 
 #[test]
 fn websocket_upgrades_need_exact_origin_and_both_cookies() {
@@ -140,4 +143,118 @@ fn the_server_keeps_serving_while_shutdown_drains() {
         std::net::TcpStream::connect(addr).is_err(),
         "the listener is closed"
     );
+}
+
+/// One browser with an open, admitted socket: its cookies, the socket and its public id.
+struct Browser {
+    cookies: String,
+    socket: Socket,
+    public_id: String,
+}
+
+/// Bootstrap a new browser and open its socket; its `hello` is read, so the connection is
+/// registered with the hub and receives every later broadcast.
+fn join(server: &RunningServer) -> Browser {
+    let cookies = bootstrap(server);
+    let origin = format!("http://{}", host(server));
+    let mut socket =
+        connect_ws(server, &cookies, Some(origin.as_str())).expect("an admitted socket");
+    let hello: Value = serde_json::from_str(&read_until(&mut socket, "hello")).expect("JSON");
+    let public_id = hello["you"]["public_id"]
+        .as_str()
+        .expect("a public id in hello")
+        .to_owned();
+    Browser {
+        cookies,
+        socket,
+        public_id,
+    }
+}
+
+/// Read frames of type `kind` until `accept` holds for one; other types are skipped. Bounded by
+/// `WAIT`, by the socket's own read timeout, and so by a panic when no such frame arrives.
+fn frame_where(socket: &mut Socket, kind: &str, accept: impl Fn(&Value) -> bool) -> Value {
+    let deadline = Instant::now() + WAIT;
+    while Instant::now() < deadline {
+        let frame: Value = serde_json::from_str(&read_until(socket, kind)).expect("JSON frame");
+        if accept(&frame) {
+            return frame;
+        }
+    }
+    panic!("no matching {kind} frame within {WAIT:?}");
+}
+
+/// The entry of `public_id` in a `presence` frame.
+fn entry<'a>(presence: &'a Value, public_id: &str) -> Option<&'a Value> {
+    presence["entries"]
+        .as_array()?
+        .iter()
+        .find(|entry| entry["public_id"] == public_id)
+}
+
+/// Taking authoring reaches another browser's socket as an `authoring` frame naming the holder
+/// and a `presence` frame marking it.
+#[test]
+fn taking_authoring_reaches_every_socket() {
+    if skip("taking_authoring_reaches_every_socket") {
+        return;
+    }
+    let project = project();
+    let server = serve(&project);
+    let holder = join(&server);
+    let mut viewer = join(&server);
+    let taken = post_json(&server, "/api/test/take", &holder.cookies, "");
+    assert_eq!(status(&taken), 200, "{taken}");
+    let authoring = frame_where(&mut viewer.socket, "authoring", |frame| {
+        frame["holder"]["public_id"] == holder.public_id.as_str()
+    });
+    assert!(authoring["holder"]["away_since"].is_null(), "{authoring}");
+    let presence = frame_where(&mut viewer.socket, "presence", |frame| {
+        entry(frame, &holder.public_id).is_some_and(|entry| entry["holder"] == true)
+    });
+    let marked = entry(&presence, &holder.public_id).expect("the holder's entry");
+    assert_eq!(marked["away"], false, "{presence}");
+    server.stop().expect("stop");
+}
+
+/// The holder's last socket closing marks it away for everyone and keeps its authoring: a
+/// second browser is still refused.
+#[test]
+fn the_holder_closing_its_socket_goes_away_and_keeps_authoring() {
+    if skip("the_holder_closing_its_socket_goes_away_and_keeps_authoring") {
+        return;
+    }
+    let project = project();
+    let server = serve(&project);
+    let mut holder = join(&server);
+    let mut viewer = join(&server);
+    let taken = post_json(&server, "/api/test/take", &holder.cookies, "");
+    assert_eq!(status(&taken), 200, "{taken}");
+    frame_where(&mut viewer.socket, "authoring", |frame| {
+        frame["holder"]["public_id"] == holder.public_id.as_str()
+    });
+    holder
+        .socket
+        .close(None)
+        .expect("close the holder's socket");
+    drop(holder.socket);
+    let away = frame_where(&mut viewer.socket, "authoring", |frame| {
+        assert!(
+            !frame["holder"].is_null(),
+            "authoring freed when its holder's socket closed: {frame}"
+        );
+        !frame["holder"]["away_since"].is_null()
+    });
+    assert_eq!(away["holder"]["public_id"], holder.public_id, "{away}");
+    assert!(!away["holder"]["frees_at"].is_null(), "{away}");
+    let presence = frame_where(&mut viewer.socket, "presence", |frame| {
+        entry(frame, &holder.public_id).is_some_and(|entry| entry["away"] == true)
+    });
+    let marked = entry(&presence, &holder.public_id).expect("the holder's entry");
+    assert_eq!(marked["holder"], true, "{presence}");
+    assert_eq!(marked["tabs"], 0, "{presence}");
+    let refused = post_json(&server, "/api/test/take", &viewer.cookies, "");
+    assert_eq!(status(&refused), 403, "{refused}");
+    assert_eq!(json_body(&refused)["error"], "not_holder", "{refused}");
+    server.stop().expect("stop");
 }
