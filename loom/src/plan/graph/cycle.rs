@@ -11,7 +11,10 @@ pub fn detect_cycles(nodes: &HashMap<String, StageNode>) -> Result<()> {
     let mut rec_stack = HashSet::new();
     let mut cycle_path = Vec::new();
 
-    for node_id in nodes.keys() {
+    // Sorted so the reported cycle is the same on every run.
+    let mut ids: Vec<&String> = nodes.keys().collect();
+    ids.sort();
+    for node_id in ids {
         if !visited.contains(node_id) {
             if let Some(cycle) = dfs_detect_cycle(
                 nodes,
