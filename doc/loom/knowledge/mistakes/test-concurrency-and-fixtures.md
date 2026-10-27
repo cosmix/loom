@@ -330,3 +330,9 @@ expects to expire stays short. Reproduce a timing failure by looping the test un
 **Prevention:** a test that injects failure through directory permissions must check the platform's lookup rules (`openat2` versus a component walk) and skip where the injection cannot isolate the one failure. A concurrency test exercises the lock it proves (`store::record_round`) directly, never through a path that also probes the daemon lock.
 
 **Fix:** the host-verify test returns early when the record is unreadable after the chmod; the concurrency proof moved to `verify/review/store_tests.rs::concurrent_recorders_of_one_review_write_one_round` (four threads on a barrier, a 20 ms decide delay).
+
+## An Assertion on a Passive Effect Right After `findBy*` Is a Race (2026-10-28)
+
+**What happened:** concept-web tests that asserted `scrollIntoView` or focus right after `findBy*` failed under load. A React passive effect that follows a fetch-driven render (`DefaultLane`) flushes in a separate scheduler `setImmediate`, never in the commit's own macrotask (`react-dom-client.development.js:18232` sets `needsPaint`; `scheduler.development.js:166` yields on it). RTL's `findBy*` and `waitFor` resolve on the commit's `MutationObserver` microtask and drain with `setTimeout(0)` (`pure.js:92`), which fires before that `setImmediate` under load.
+
+**Prevention:** wrap any assertion on a passive-effect side effect in `waitFor`, as `web/src/plan/files/file-mode.test.tsx:213` does.

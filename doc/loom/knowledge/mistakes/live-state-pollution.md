@@ -115,3 +115,9 @@ The workflow topic also contained stale advice opposing job throttling. Keep the
 **Fix:** Preserve both strictness flags in generated harness environments and check the actual wrapper environment. The completed full run required tmux but did not request strict sandbox-free mode; do not claim it did.
 
 The environment check initially tried to decode the entire combined stdout/stderr log as JSON. Preserve the complete log, select the explicit JSON evidence line, and validate its full schema/value set; unrelated runtime diagnostics are not JSON data.
+
+## Concept Route Tests Ran the Engine Against the Real Runtime Directory (2026-10-28)
+
+**What happened:** route tests that call `concept::install()` run plan 4's `SummaryEngine` against the real `~/.loom/plan/<key>` runtime directory, because `PlanContext::new` has no runtime override. A test that makes the engine write (a rename rewrite, an orphan delete) or needs unreadable claims would write to the operator's runtime state.
+
+**Prevention:** such a test calls `engine::install_with(ctx, fixture.paths.clone())` with a fixture runtime directory.

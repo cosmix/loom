@@ -62,3 +62,11 @@ Three things hid the cause:
 **Why:** the plan wrote the criterion as a plain string; DONE-PLAN-03 gave the same criterion `timeout_secs: 1200` (`doc/plans/archive/DONE-PLAN-03-usage-evidence.md:731-732`).
 
 **Prevention:** an integration-verify full-suite criterion is an extended criterion with `timeout_secs` of at least 1200 (`verify/criteria/config.rs`).
+
+## Stage Completion Refused on an Untracked `target/` File Its Own Build Wrote (2026-10-28)
+
+**What happened:** the completion command was refused twice with "untracked completion input loom/target/debug/..." naming a different gitignored file each time, while the host job's Rust impact-test build wrote `loom/target` in the worktree. `loom/.gitignore:2` ignores the files.
+
+**Why:** the completion scan raced the build the same host job ran; the refusal was not a missing commit.
+
+**Prevention:** after a refusal that names a gitignored build output, check `git status --short` for real untracked sources, then rerun the completion command; the rerun passes once the build is quiet.

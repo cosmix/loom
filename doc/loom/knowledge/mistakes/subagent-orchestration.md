@@ -367,3 +367,11 @@ Review rounds are counted per reviewer and per stage. A gate runs once per tree,
 **Why:** The agent treated the sol fallback pair as a rule that every family keeps its previous version.
 **Prevention:** A model rename replaces the id. Keep the old id as a fallback only when the user asks for one, and ask before adding it.
 **Fix:** Removed gpt-5.6-terra from `loom/src/codex.rs` `CODEX_MODELS` and from the allowlists in `loom-hooks/codex-forward.sh`, `codex-forward-guard.sh` and `codex-forward-result.sh`.
+
+## The Main Agent Asked the User About a Decided Dispute and a Plain Fix (2026-10-28)
+
+**What happened:** after completion failed on a racy test and an open finding the session had already decided to dispute, the integration-verify main agent asked the user whether to fix the test and file the dispute.
+
+**Why:** a settled decision and a zero-tolerance fix were treated as user choices.
+
+**Prevention:** in integration-verify, fix every failing test and file every decided dispute without asking; the signal already authorizes both.
