@@ -54,9 +54,9 @@ fn test_detect_cycle() {
         make_stage("c", vec!["b"], None),
     ];
 
-    let result = ExecutionGraph::build(stages);
-    assert!(result.is_err());
-    assert!(result.unwrap_err().to_string().contains("Circular"));
+    // The DFS starts at the smallest id, so the reported path is the same on every run.
+    let message = ExecutionGraph::build(stages).unwrap_err().to_string();
+    assert_eq!(message, "Circular dependency detected: a -> c -> b -> a");
 }
 
 #[test]
