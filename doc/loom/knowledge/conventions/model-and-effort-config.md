@@ -117,3 +117,7 @@ that rebuilds them. The user tier is the `[plan]` table of `~/.loom/config.toml`
 The tables differ because the project `[plan]` table already holds the run identity (`plan_id`, `source_path`, ...), so
 the keys sit in `[planning]` there. A project table holding one unknown or malformed key is dropped whole without a log
 line, so all four project overrides revert to the user tier; this mirrors `read_pressure_config`.
+
+## Planner Execution Worker Allocation
+
+For planner plans 06–11 and their linked briefs, substantial Codex execution units use `gpt-6.1-sol` with `--effort high`; routine types, fixtures, documentation and mechanical wiring may use `gpt-6.1-terra` at high effort. Each unit names its model explicitly and the stage dispatch instructions follow that allocation. This choice applies to execution subagents; stage orchestrator models and the product pressure-review model remain independently configured.
