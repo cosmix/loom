@@ -10,10 +10,7 @@ import { applySnapshot } from "@/state/apply";
 
 afterEach(cleanup);
 
-function renderTokens(
-  stageId: string,
-  mutate?: (raw: typeof fixtureJson) => void,
-) {
+function renderTokens(stageId: string, mutate?: (raw: typeof fixtureJson) => void) {
   const raw = structuredClone(fixtureJson);
   mutate?.(raw);
   const store = createStore();
@@ -31,13 +28,9 @@ describe("StageTokens", () => {
 
     const lanes = screen.getAllByTestId("token-lane");
     expect(lanes).toHaveLength(3);
-    expect(
-      lanes.filter((lane) => lane.textContent?.includes("codex")),
-    ).toHaveLength(1);
+    expect(lanes.filter((lane) => lane.textContent?.includes("codex"))).toHaveLength(1);
     expect(lanes[0]?.textContent).toContain("main session");
-    expect(lanes[0]?.textContent).toContain(
-      "main-01ed9f4c · claude-opus-5-5 · live",
-    );
+    expect(lanes[0]?.textContent).toContain("main-01ed9f4c · claude-opus-5-5 · live");
     const dot = within(lanes[0] as HTMLElement).getByTestId("agent-dot");
     expect(dot.dataset.state).toBe("live");
     expect(dot.classList).toContain("dot-live");
@@ -60,9 +53,7 @@ describe("StageTokens", () => {
     expect(inCluster).toHaveLength(2);
     expect(inCluster[0]?.textContent).toContain("codex job");
     expect(inCluster[1]?.textContent).toContain("loom-codex-forwarder");
-    expect(inCluster[1]?.textContent).toContain(
-      "a0forwarder · claude-sonnet-5-5 · live",
-    );
+    expect(inCluster[1]?.textContent).toContain("a0forwarder · claude-sonnet-5-5 · live");
     const all = screen.getAllByTestId("token-lane");
     expect(all).toHaveLength(4);
     expect(all.slice(0, 2).every((lane) => !cluster.contains(lane))).toBe(true);
@@ -83,19 +74,13 @@ describe("StageTokens", () => {
       return strips;
     };
 
+    expect(cellCounts([0, 0, 7]).every((strip) => strip.children.length === 60)).toBe(true);
     expect(
-      cellCounts([0, 0, 7]).every((strip) => strip.children.length === 60),
-    ).toBe(true);
-    expect(
-      cellCounts(Array<number>(500).fill(3)).every(
-        (strip) => strip.children.length === 60,
-      ),
+      cellCounts(Array<number>(500).fill(3)).every((strip) => strip.children.length === 60),
     ).toBe(true);
 
     const [young] = cellCounts([0, 0, 7]);
-    const levels = Array.from(young?.children ?? [], (cell) =>
-      cell.getAttribute("data-level"),
-    );
+    const levels = Array.from(young?.children ?? [], (cell) => cell.getAttribute("data-level"));
     expect(levels.slice(0, 57).every((level) => level === "0")).toBe(true);
     expect(levels[59]).toBe("4");
   });
@@ -120,9 +105,7 @@ describe("StageTokens", () => {
       "cache hit per 30 s, last 30 min",
       "agents live, last 30 min",
     ]) {
-      expect(within(section).getAllByRole("img", { name: label })).toHaveLength(
-        1,
-      );
+      expect(within(section).getAllByRole("img", { name: label })).toHaveLength(1);
     }
   });
 
