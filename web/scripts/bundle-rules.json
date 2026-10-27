@@ -1,10 +1,32 @@
 {
   "index.html": {
-    "forbidChunks": ["src/plan/**"],
-    "forbidText": ["data-loom-plan", "loom-plan-name", "/api/share", "plan socket: invalid frame"]
+    "forbidChunks": [
+      "src/plan/**",
+      "node_modules/@codemirror/**",
+      "node_modules/@lezer/**",
+      "src/plan/editor/codemirror.ts"
+    ],
+    "forbidText": [
+      "data-loom-plan",
+      "loom-plan-name",
+      "/api/share",
+      "plan socket: invalid frame",
+      "cm-editor"
+    ]
   },
   "plan.html": {
-    "forbidChunks": ["node_modules/@xterm/**", "src/components/terminal/**"],
-    "forbidText": ["xterm-helper-textarea", "terminal-takeover-cue", "Saved terminal history"]
+    "forbidChunks": [
+      "node_modules/@xterm/**",
+      "src/components/terminal/**",
+      "node_modules/@codemirror/**",
+      "node_modules/@lezer/**",
+      "src/plan/editor/codemirror.ts"
+    ],
+    "forbidText": [
+      "xterm-helper-textarea",
+      "terminal-takeover-cue",
+      "Saved terminal history",
+      "cm-editor"
+    ]
   }
 }

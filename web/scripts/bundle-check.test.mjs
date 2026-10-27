@@ -9,8 +9,11 @@ import { checkRules, initialClosure, runBundleCheck, staleSentinels } from "./bu
 const scriptDir = dirname(fileURLToPath(import.meta.url));
 const webDir = resolve(scriptDir, "..");
 const rules = JSON.parse(readFileSync(resolve(scriptDir, "bundle-rules.json"), "utf8"));
-const planOnly = rules["index.html"].forbidText;
-const terminalOnly = rules["plan.html"].forbidText;
+// A sentinel both entries forbid (CodeMirror's `cm-editor`) belongs only in a lazy chunk.
+const indexText = rules["index.html"].forbidText;
+const planText = rules["plan.html"].forbidText;
+const planOnly = indexText.filter((text) => !planText.includes(text));
+const lazyOnly = planText;
 const XTERM = "node_modules/@xterm/xterm/lib/xterm.mjs";
 
 // Shaped like web/dist/.vite/manifest.json: only entry and dynamic-entry chunks
@@ -40,7 +43,7 @@ const clean = {
   "assets/shared.js": "react;import(`./xterm.js`)",
   "assets/index.js": "dashboard",
   "assets/plan.js": planOnly.join(" "),
-  "assets/xterm.js": terminalOnly.join(" "),
+  "assets/xterm.js": lazyOnly.join(" "),
 };
 const reader = (files) => (file) => {
   if (!(file in files)) throw new Error(`unexpected read of ${file}`);
@@ -48,6 +51,11 @@ const reader = (files) => (file) => {
 };
 const sentinels = Object.entries(rules).flatMap(([entry, entryRules]) =>
   entryRules.forbidText.map((text) => [entry, text]),
+);
+// The shared chunk sits in both closures, so a sentinel both entries forbid is
+// reported twice there; that table takes the sentinels unique to one entry.
+const ownSentinels = sentinels.filter(
+  ([, text]) => sentinels.filter(([, other]) => other === text).length === 1,
 );
 
 describe("initial closure", () => {
@@ -71,12 +79,15 @@ describe("rule checks over a manifest shaped like Vite's", () => {
     });
   });
 
-  it.each(sentinels)("%s fails when %s sits in the shared chunk of its closure", (entry, text) => {
-    const files = { ...clean, "assets/shared.js": `react;${text}` };
-    expect(runBundleCheck(manifest, rules, reader(files)).violations).toEqual([
-      `${entry}: assets/shared.js matches ${text}`,
-    ]);
-  });
+  it.each(ownSentinels)(
+    "%s fails when %s sits in the shared chunk of its closure",
+    (entry, text) => {
+      const files = { ...clean, "assets/shared.js": `react;${text}` };
+      expect(runBundleCheck(manifest, rules, reader(files)).violations).toEqual([
+        `${entry}: assets/shared.js matches ${text}`,
+      ]);
+    },
+  );
 
   it.each(sentinels)("%s fails when %s is merged into its entry chunk", (entry, text) => {
     const file = manifest[entry].file;
