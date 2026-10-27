@@ -8,3 +8,5 @@ pub mod server;
 
 #[cfg(test)]
 mod paths_tests;
+#[cfg(test)]
+mod tests_schema;
