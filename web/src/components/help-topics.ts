@@ -71,6 +71,7 @@ export const HELP_TOPICS: HelpTopic[] = [
           {
             at: "[data-pin=waiting]",
             text: "Waits until every dependency is completed and merged.",
+            place: "tl",
           },
           {
             at: "[data-pin=queued]",
