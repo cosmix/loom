@@ -7,7 +7,7 @@ sources:
 ---
 # Planning Document Model
 
-> Planning model
+> Doc model
 
 ## Module Map
 

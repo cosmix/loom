@@ -1,6 +1,6 @@
 # Entry Points
 
-> Files to read first
+> Where to start reading
 >
 > **Related files:** [architecture.md](architecture.md) for system overview, [patterns.md](patterns.md) for design patterns.
 

@@ -217,7 +217,7 @@ A daemon thread (`loom/src/quota/poller.rs`) polls the Claude OAuth usage endpoi
 
 ## Web Dashboard
 
-`loom status --web [PORT] [--host HOST]` serves an embedded React SPA over HTTP/WebSocket, streaming the same `StatusData` the live TUI renders, on the shared `loom/src/web_server/` transport. Viewing routes remain public on remote binds; the startup token protects configuration writes and terminal access (`web_server::serve` runs the `Host` gate, `config_api/request.rs` and `terminal/upgrade.rs::admit` check the cookie). Bare `loom plan` serves the planning app from `loom/src/plan_server/` on the same transport (per-project lock, cookie pair, typed WebSocket, authoring holder, two-signal shutdown): [Plan Server](architecture/plan-server.md).
+`loom status --web [PORT] [--host HOST]` serves an embedded React SPA over HTTP/WebSocket, streaming the same `StatusData` the live TUI renders, on the shared `loom/src/web_server/` transport. Viewing routes remain public on remote binds; the startup token protects configuration writes and terminal access (`web_server::serve` runs the `Host` gate, `config_api/request.rs` and `terminal/upgrade.rs::admit` check the cookie). Bare `loom plan` serves the planning app from `loom/src/plan_server/` on the same transport (per-project lock, cookie pair, typed WebSocket, authoring holder, two-signal shutdown) and file mode (document tree, documents, diffs, saves, validation, search): [Plan Server](architecture/plan-server.md).
 
 → [Web Dashboard](architecture/web-dashboard.md)
 

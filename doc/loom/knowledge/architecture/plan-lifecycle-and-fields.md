@@ -140,7 +140,7 @@ a flattened sub-struct or a moved unit, not a ledger raise (the dispute counters
 `TruthCheck`, `WiringCheck` and `AcceptanceCriterion` moved to `models/stage/checks.rs`.
 
 **Lints** (`plan/schema/validation/v2_lints/`, one entry `run(&LintContext, &mut notes)`, called from
-`commands/plan/verify.rs` and mapped through `v2_fields::split_lint_findings`). A finding is an error when the plan
+`commands/plan/verify/checks.rs` and mapped through `v2_fields::split_lint_findings`). A finding is an error when the plan
 is v2 and the lint is `error_in_v2`, else a structural warning (so `--strict` fails on it). `plan verify` has no
 side effects: no cache or index writes, no builds. Commands are lexed with `validation/shell_lex.rs`.
 

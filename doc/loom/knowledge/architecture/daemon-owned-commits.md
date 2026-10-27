@@ -1,6 +1,6 @@
 # Daemon Owned Commits
 
-> Daemon commits
+> Commits
 
 ## Daemon-Owned Commits
 

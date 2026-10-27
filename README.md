@@ -464,6 +464,8 @@ loom plan check [--json]
 
 Bare `loom plan` starts the planning app for the current git repository and prints a URL with an access token. It opens the URL in a browser unless `--no-open` is given, the session is over SSH, or Linux has no display. By default it binds to `127.0.0.1`, starting at port 7272 and trying the next port if that one is in use. `--host` selects the bind address; `--port` binds exactly the given port, with `0` asking the OS for a free port.
 
+File mode in the planning app browses the repository's `doc/` tree: it renders Markdown documents (raw HTML is shown as text and images as links), searches them, shows diffs against `HEAD` or a chat turn, and edits and saves plain `doc/` documents in a CodeMirror editor. Saving needs the authoring seat, refuses a document that changed since you opened it (you merge the current text), and validates a plan before it writes unless you choose "Save with errors". Plans that are running or done, knowledge files and the summary store are read-only.
+
 Only one planning server runs per project. A second invocation exits non-zero and prints the running server's URL, or asks you to retry if it is still starting. Runtime state lives under `~/.loom/plan/<project-key>/`; no `loom init` is needed. If tmux, Claude Code, its login, or the Linux sandbox prerequisites are missing, the app starts read-only and reports how to fix them.
 
 The server runs in the foreground after browser tabs close. The first Ctrl-C stops new sessions and messages and waits for running sessions to finish writing; a second Ctrl-C exits at once.
