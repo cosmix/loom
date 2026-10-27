@@ -113,17 +113,6 @@ pub struct Orchestrator {
     ///
     /// Lifecycle: in-memory only; reset on next `loom run`.
     pub(super) merge_retry_attempted: HashSet<String>,
-    /// Stage IDs whose `Completed + merged=true` ancestry has already been
-    /// git-verified during this daemon session. Memoizes the result so
-    /// `verify_merged_true_or_revert` does not re-run `git symbolic-ref` +
-    /// `git merge-base --is-ancestor` per Completed+merged stage every 5s
-    /// tick (P-3) — these facts cannot change absent a history rewrite.
-    ///
-    /// Invalidated (entry removed) whenever a reconcile mutation flips a
-    /// stage's merged flag, so a phantom-merge revert forces re-verification.
-    ///
-    /// Lifecycle: in-memory only; reset on next `loom run`.
-    pub(super) verified_merged: HashSet<String>,
     /// Stage IDs for which spawn-time dependency verification has already
     /// logged a skip reason. Prevents the 5-second poll loop from flooding
     /// the logs when a dependent stage cannot start because of a phantom
@@ -217,7 +206,6 @@ impl Orchestrator {
             skill_index,
             detected_languages,
             merge_retry_attempted: HashSet::new(),
-            verified_merged: HashSet::new(),
             spawn_skip_logged: HashSet::new(),
             spool_drain_error_logged: HashSet::new(),
             adjudicators: AdjudicatorRegistry::new(),

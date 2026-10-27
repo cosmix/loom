@@ -19,10 +19,10 @@ impl Orchestrator {
             }
         };
 
-        // An already merged stage (e.g. by `loom stage complete`) is not merged
-        // again: a redundant merge after a partial cleanup would overwrite the
-        // terminal Completed status with MergeConflict/MergeBlocked.
-        if stage.merged {
+        // An already merged or final stage (e.g. by `loom stage complete`) is
+        // not merged again: a redundant merge after a partial cleanup would
+        // overwrite the terminal Completed status with MergeConflict/MergeBlocked.
+        if stage.merged || stage.is_final_merged() {
             self.cleanup_already_merged(stage_id);
             return true;
         }

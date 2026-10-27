@@ -27,7 +27,7 @@ use loom::models::stage::{Stage, StageStatus, StageType};
 use loom::orchestrator::merge_attribution::{
     reconcile_main_repo_active_merge, ReconciliationOutcome,
 };
-use loom::verify::transitions::{load_stage, save_stage};
+use loom::verify::transitions::{load_stage, save_stage, update_stage};
 
 fn run_git(args: &[&str], cwd: &Path) {
     let out = Command::new("git")
@@ -271,7 +271,7 @@ fn complete_routes_merge_blocked_to_resolver_same_as_merge_conflict() {
 
 #[test]
 #[serial]
-fn complete_completed_with_active_merge_returns_revert_when_daemon_off() {
+fn complete_completed_with_active_merge_reverts_only_an_unmerged_stage() {
     let repo = init_repo();
     let root = repo.path();
     let work_dir = make_work_dir(root);
@@ -279,22 +279,18 @@ fn complete_completed_with_active_merge_returns_revert_when_daemon_off() {
     create_conflict_branch("phantom-stage", root);
     start_active_merge_in_main("phantom-stage", root);
 
-    let stage = make_stage("phantom-stage", StageStatus::Completed);
-    let route = route_complete_for_conflicts(
-        &stage,
-        &[],
-        std::slice::from_ref(&stage),
-        root,
-        &work_dir,
-        false, // daemon off
-        false,
-        false,
-    )
-    .unwrap();
-    assert!(
-        matches!(route, CompleteConflictRoute::RevertAndSpawnResolver { .. }),
-        "Completed stage with active merge owned by it must revert + spawn"
-    );
+    // Unmerged: revert + spawn. Merged, so final: refused, never reopened.
+    let mut stage = make_stage("phantom-stage", StageStatus::Completed);
+    for merged in [false, true] {
+        stage.merged = merged;
+        let stages = std::slice::from_ref(&stage);
+        let route =
+            route_complete_for_conflicts(&stage, &[], stages, root, &work_dir, false, false, false);
+        let route = route.unwrap();
+        let revert = matches!(route, CompleteConflictRoute::RevertAndSpawnResolver { .. });
+        let refuse = matches!(route, CompleteConflictRoute::Refuse { .. });
+        assert_eq!((revert, refuse), (!merged, merged), "{route:?}");
+    }
 }
 
 #[test]
@@ -324,34 +320,38 @@ fn complete_completed_with_active_merge_returns_daemon_managed_when_daemon_runni
 
 #[test]
 #[serial]
-fn daemon_reconcile_reverts_completed_merged_when_active_merge_present() {
+fn daemon_reconcile_moves_only_an_unmerged_completed_stage_to_conflict() {
     let repo = init_repo();
     let root = repo.path();
     let work_dir = make_work_dir(root);
-
     let stranded = create_conflict_branch("phantom", root);
     start_active_merge_in_main("phantom", root);
 
-    // Pretend the daemon flushed `merged=true` despite the active merge.
+    // Merged, so final: left alone. Then unmerged: moved to MergeConflict.
     let mut stage = make_stage("phantom", StageStatus::Completed);
     stage.completed_commit = Some(stranded);
     stage.merged = true;
     save_stage(&stage, &work_dir).unwrap();
-
     let outcome = reconcile_main_repo_active_merge(root, &work_dir).unwrap();
-    match outcome {
-        ReconciliationOutcome::StageMutated {
-            stage_id,
-            new_status,
-            ..
-        } => {
-            assert_eq!(stage_id, "phantom");
-            assert_eq!(new_status, StageStatus::MergeConflict);
-        }
-        other => panic!("expected StageMutated revert, got {other:?}"),
-    }
+    assert!(
+        matches!(outcome, ReconciliationOutcome::AttributedNoOp { .. }),
+        "{outcome:?}"
+    );
+    let after = load_stage("phantom", &work_dir).unwrap();
+    assert_eq!((after.status, after.merged), (StageStatus::Completed, true));
+    assert!(!after.merge_conflict);
 
-    // Stage on disk is now MergeConflict + merged=false + merge_conflict=true.
+    update_stage("phantom", &work_dir, |s| {
+        s.merged = false;
+        Ok(())
+    })
+    .unwrap();
+    let outcome = reconcile_main_repo_active_merge(root, &work_dir).unwrap();
+    assert!(
+        matches!(&outcome, ReconciliationOutcome::StageMutated { new_status, .. }
+            if *new_status == StageStatus::MergeConflict),
+        "{outcome:?}"
+    );
     let after = load_stage("phantom", &work_dir).unwrap();
     assert_eq!(after.status, StageStatus::MergeConflict);
     assert!(!after.merged);

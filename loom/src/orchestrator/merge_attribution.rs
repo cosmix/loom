@@ -81,12 +81,12 @@ pub(super) fn reconcile_attributed_stage_record(
     let stage = update_stage(stage_id, work_dir, |stage| {
         prior_status = Some(stage.status.clone());
         match stage.status {
+            StageStatus::Completed if stage.is_final_merged() => {} // final: never reopened
             StageStatus::Completed => {
                 stage.force_status_with_reason(
                     StageStatus::MergeConflict,
-                    "phantom-merge revert: completed stage's merge commit is no longer an ancestor of the target branch",
+                    "an active merge in the main checkout is attributed to this completed, unmerged stage",
                 );
-                stage.merged = false;
                 stage.merge_conflict = true;
                 status_mutated = true;
             }
@@ -304,8 +304,8 @@ pub fn reconcile_main_repo_active_merge(
             if status_mutated {
                 tracing::error!(
                     stage_id = %stage_id,
-                    "Detected active merge for Completed stage; reverting to \
-                     MergeConflict + merged=false (phantom-merge revert)."
+                    "Detected active merge for a Completed, unmerged stage; moving \
+                     it to MergeConflict."
                 );
                 return Ok(ReconciliationOutcome::StageMutated {
                     stage_id,

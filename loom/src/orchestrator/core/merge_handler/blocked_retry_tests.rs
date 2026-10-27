@@ -320,3 +320,21 @@ fn persisting_a_different_block_archives_the_first_failure_once_and_an_identical
     let kept = third.failure_info.expect("still recorded");
     assert_eq!(kept.detected_at, recorded.detected_at);
 }
+
+#[test]
+fn a_stage_that_became_final_on_disk_is_not_moved_to_merge_blocked() {
+    let (_repo, mut orchestrator) = blocked_stage();
+    let mut stale = on_disk(&orchestrator);
+    update_stage(ID, &orchestrator.config.work_dir, |stage| {
+        stage.status = StageStatus::Completed;
+        stage.merged = true;
+        Ok(())
+    })
+    .unwrap();
+
+    orchestrator.persist_merge_blocked(&mut stale, ID, "late failure");
+
+    let fresh = on_disk(&orchestrator);
+    assert_eq!(fresh.status, StageStatus::Completed);
+    assert!(fresh.merged);
+}

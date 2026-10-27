@@ -11,7 +11,6 @@ use crate::models::session::Session;
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::retry::{calculate_backoff, is_backoff_elapsed, should_auto_retry};
 use crate::orchestrator::session_registry::orphan_evidence;
-use crate::verify::transitions::update_stage_at_path;
 
 use super::persistence::Persistence;
 use super::Orchestrator;
@@ -55,10 +54,10 @@ pub(super) trait Recovery: Persistence {
     /// `recover_orphaned_sessions`:
     /// - Recovery deletes orphaned merge sessions; attribution depends on
     ///   their metadata.
-    /// - Sync reads stage files into the graph; if reconcile flips
-    ///   `Completed + merged=true` -> `MergeConflict + merged=false` AFTER
-    ///   sync, the graph still has the stale view and would queue dependents
-    ///   based on a phantom merge.
+    /// - Sync reads stage files into the graph; reconcile moves only
+    ///   `Completed`, unmerged stages (a final stage, `merged` or
+    ///   `merge_assumed`, is left alone). If it moves one AFTER sync, the
+    ///   graph still has the stale view.
     fn reconcile_and_update_graph(&mut self) -> Result<()>;
 
     /// Sync the execution graph with existing stage file statuses.
@@ -164,67 +163,6 @@ fn stage_file_is_terminal(stage: &Stage) -> bool {
     }
 }
 
-impl Orchestrator {
-    /// Re-verify a `Completed + merged=true` non-knowledge stage at sync time.
-    ///
-    /// Derives `completed_commit` from `loom/<id>` HEAD when missing, then
-    /// checks ancestry with `merged_into_accepted()` against the accepted tip of
-    /// the (pre-resolved) target. If that check fails OR the branch is missing, reverts
-    /// `merged=false` so dependents don't treat the stage as satisfied. A
-    /// guard that cannot be evaluated leaves the flag unchanged.
-    ///
-    /// `target` is passed in so the caller resolves it once per sync pass
-    /// rather than spawning `git symbolic-ref` per stage (P-3).
-    ///
-    /// # Returns
-    /// `true` if the stage is verified `merged=true` (ancestry holds) — the
-    /// caller memoizes this so the verification is not repeated every tick.
-    /// `false` if the merge was reverted or could not be verified.
-    pub(super) fn verify_merged_true_or_revert(
-        &mut self,
-        stage: &mut Stage,
-        stage_path: &Path,
-        target: &str,
-    ) -> bool {
-        let original_commit = stage.completed_commit.clone();
-        let commit = original_commit.clone();
-        let Some(verified) = self.probe_merged(&stage.id, commit.as_deref(), target) else {
-            return false;
-        };
-
-        if !verified {
-            tracing::error!(
-                stage_id = %stage.id,
-                commit = ?commit,
-                target = %target,
-                "Phantom merge detected at sync; reverting merged=false when the \
-                 canonical commit still matches this verification probe"
-            );
-        }
-
-        let mut applicable = false;
-        let result =
-            update_stage_at_path(&stage.id, stage_path, &self.config.work_dir, |current| {
-                let commit_matches = current.completed_commit == original_commit;
-                applicable = commit_matches;
-                if commit_matches && !verified {
-                    current.merged = false;
-                }
-                Ok(())
-            });
-        match result {
-            Ok(updated) => {
-                *stage = updated;
-                applicable && verified && stage.merged
-            }
-            Err(error) => {
-                tracing::warn!(stage_id = %stage.id, %error, "Failed to persist merge verification");
-                false
-            }
-        }
-    }
-}
-
 impl Recovery for Orchestrator {
     fn reconcile_and_update_graph(&mut self) -> Result<()> {
         use crate::orchestrator::merge_attribution::{
@@ -239,11 +177,6 @@ impl Recovery for Orchestrator {
                 // caller in this iteration sees the corrected state. The
                 // next sync_graph_with_stage_files call will pick this up
                 // again, which is harmless (idempotent).
-                // P-3: a phantom-merge revert changes git ancestry reality, so
-                // invalidate the verified-merged memo for this stage; the next
-                // sync re-verifies it instead of trusting the cached result.
-                self.verified_merged.remove(&stage_id);
-                self.graph.set_node_merged(&stage_id, false);
                 if let Err(e) = self
                     .graph
                     .mark_status(&stage_id, StageStatus::MergeConflict)
@@ -251,8 +184,8 @@ impl Recovery for Orchestrator {
                     tracing::warn!(
                         stage_id = %stage_id,
                         error = %e,
-                        "Failed to update graph after phantom-merge revert; \
-                         next sync will reconcile."
+                        "Failed to update graph after the attributed merge moved the \
+                         stage to MergeConflict; next sync will reconcile."
                     );
                 }
             }

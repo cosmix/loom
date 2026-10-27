@@ -1,6 +1,6 @@
 //! Project complete stage snapshots into the disposable graph and apply guarded retries.
 use super::{recovery::check_retry_eligibility, Orchestrator};
-use crate::models::stage::{Stage, StageStatus, StageType};
+use crate::models::stage::{Stage, StageStatus};
 use crate::verify::transitions::{load_stage, update_stage_at_path};
 use anyhow::{Context, Result};
 use std::path::Path;
@@ -15,9 +15,9 @@ impl Orchestrator {
         let mut merge_candidates = Vec::new();
         for (mut stage, path) in snapshot.records.into_values() {
             self.abort_if_foreign_plan(&stage);
-            if stage.status == StageStatus::Completed {
+            if stage.status == StageStatus::Completed && !stage.is_final_merged() {
                 self.recover_completed_evidence(&mut stage, &path, &target);
-                if stage.status == StageStatus::Completed && !stage.merged {
+                if !stage.merged {
                     merge_candidates.push(stage.id.clone());
                 }
             } else if stage.status == StageStatus::Blocked {
@@ -78,7 +78,8 @@ impl Orchestrator {
     fn project_stage(&mut self, stage: &Stage) -> Result<()> {
         self.graph
             .set_node_outputs(&stage.id, stage.outputs.clone());
-        self.graph.set_node_merged(&stage.id, stage.merged);
+        self.graph
+            .set_node_merged(&stage.id, stage.merged || stage.is_final_merged());
         match stage.status {
             StageStatus::Queued => {
                 if self.graph.mark_queued(&stage.id).is_err() {
@@ -95,20 +96,10 @@ impl Orchestrator {
         Ok(())
     }
 
+    /// Mark a `Completed`, not yet merged stage merged when its recorded commit
+    /// is already in the accepted target tip. Only reached for stages that are
+    /// not final: a final stage is never re-verified (`Stage::is_final_merged`).
     fn recover_completed_evidence(&mut self, stage: &mut Stage, path: &Path, target: &str) {
-        if stage.merged
-            && stage.stage_type != StageType::Knowledge
-            && !self.verified_merged.contains(&stage.id)
-        {
-            if self.verify_merged_true_or_revert(stage, path, target) {
-                self.verified_merged.insert(stage.id.clone());
-            } else {
-                self.verified_merged.remove(&stage.id);
-            }
-        }
-        if stage.merged || stage.status != StageStatus::Completed {
-            return;
-        }
         let Some(commit) = stage.completed_commit.clone() else {
             return;
         };
@@ -127,12 +118,7 @@ impl Orchestrator {
             Ok(())
         });
         match result {
-            Ok(updated) => {
-                *stage = updated;
-                if stage.merged {
-                    self.verified_merged.insert(stage.id.clone());
-                }
-            }
+            Ok(updated) => *stage = updated,
             Err(error) => tracing::warn!(%error, "Cannot save verified merge state"),
         }
     }

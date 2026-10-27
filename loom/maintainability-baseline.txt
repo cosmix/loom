@@ -32,7 +32,7 @@ file src/sandbox/config.rs 822
 file src/sandbox/settings.rs 438
 file src/sandbox/settings/tests.rs 1565
 file src/skills/index.rs 564
-file src/verify/transitions/state.rs 433
+file src/verify/transitions/state.rs 431
 file tests/adjudication_e2e.rs 525
 file tests/e2e/tmux_backend.rs 437
 file tests/failure_resume.rs 468
@@ -140,7 +140,7 @@ function src/sandbox/settings/tests_read_denies.rs test_build_settings_main_repo
 function src/skills/matcher.rs match_skills 62
 function src/verify/goal_backward/artifacts.rs verify_artifacts 60
 function src/verify/goal_backward/artifacts.rs verify_regression_test 52
-function src/verify/transitions/state.rs are_all_dependencies_satisfied 67
+function src/verify/transitions/state.rs are_all_dependencies_satisfied 62
 function src/verify/transitions/state.rs describe_dependency_block 95
 function tests/completion_flow.rs test_acceptance_failure_creates_correct_status 64
 function tests/completion_flow.rs test_completion_requires_merged_dependencies 70

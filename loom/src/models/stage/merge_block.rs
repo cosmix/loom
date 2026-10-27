@@ -47,6 +47,15 @@ pub struct MergeRecord {
 }
 
 impl Stage {
+    /// Whether the stage is final: `Completed` and merged, by loom or by the
+    /// operator's `loom stage complete --force-unsafe --assume-merged`. Loom
+    /// never re-verifies, reverts or moves a final stage, whatever happens to
+    /// the target branch afterwards (an owner decision): recovery, merge and
+    /// attribution paths all leave it as it is.
+    pub fn is_final_merged(&self) -> bool {
+        self.status == StageStatus::Completed && (self.merged || self.merge_assumed)
+    }
+
     /// Record `block` as the reason the merge did not advance and move the
     /// stage to `MergeBlocked`, with the sentence in `failure_info` so
     /// `loom status` shows it. The daemon retries such a stage every tick:

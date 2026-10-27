@@ -121,6 +121,12 @@ impl Orchestrator {
     ) {
         let first_line = error.lines().next().unwrap_or(error);
         let updated = self.update_stage(stage_id, |current| {
+            // A stage that became final on disk after the caller loaded it
+            // is never moved to MergeBlocked.
+            anyhow::ensure!(
+                !current.is_final_merged(),
+                "stage '{stage_id}' is already merged"
+            );
             current.clear_merge_block();
             current.replace_failure(FailureInfo {
                 failure_type: FailureType::InfrastructureError,

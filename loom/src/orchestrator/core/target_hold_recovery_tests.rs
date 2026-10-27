@@ -1,6 +1,7 @@
-//! Recovery's merged-flag check against the target guard: a definite "not in
-//! the accepted tip" reverts `merged` whatever the live target holds, a
-//! guard record that cannot be read leaves it alone.
+//! Recovery against the target guard. A final stage (`Completed` and merged
+//! or assumed merged) is never re-verified, reverted or moved, whatever the
+//! live or accepted target holds; a completed stage that is not merged yet
+//! still waits on a held target through its normal merge path.
 
 use std::path::Path;
 use std::process::Command;
@@ -10,7 +11,8 @@ use tempfile::TempDir;
 
 use crate::fs::permissions::scratch_home::ScratchHome;
 use crate::fs::work_dir::write_terminal_config;
-use crate::git::target_guard::{HoldReason, RECORD_FILE};
+use crate::git::target_guard::{Hold, HoldReason, RECORD_FILE};
+use crate::git::MergeBlock;
 use crate::models::session::{SessionBackendKind, TerminalConfig};
 use crate::models::stage::{Stage, StageStatus};
 use crate::orchestrator::core::recovery::Recovery;
@@ -93,16 +95,40 @@ fn orchestrator(root: &Path) -> Orchestrator {
     Orchestrator::new(config, ExecutionGraph::build(vec![definition]).unwrap()).unwrap()
 }
 
-/// Save a completed stage flagged `merged` at `commit`.
-fn save_merged(orchestrator: &Orchestrator, commit: &str) {
+/// Save a completed stage at `commit` with the given merge flags.
+fn save_completed(orchestrator: &Orchestrator, commit: &str, merged: bool, merge_assumed: bool) {
     let stage = Stage {
         id: ID.to_string(),
         status: StageStatus::Completed,
-        merged: true,
+        merged,
+        merge_assumed,
         completed_commit: Some(commit.to_string()),
         ..Stage::default()
     };
     save_stage(&stage, &orchestrator.config.work_dir).unwrap();
+}
+
+/// Save a completed stage flagged `merged` at `commit`.
+fn save_merged(orchestrator: &Orchestrator, commit: &str) {
+    save_completed(orchestrator, commit, true, false);
+}
+
+/// Sync, then require the stage to be exactly as final as it was saved.
+fn assert_still_final(orchestrator: &mut Orchestrator, merged: bool, why: &str) {
+    orchestrator.sync_graph_with_stage_files().unwrap();
+    let stage = load_stage(ID, &orchestrator.config.work_dir).unwrap();
+    assert_eq!(stage.status, StageStatus::Completed, "{why}");
+    assert_eq!(stage.merged, merged, "{why}");
+    assert!(
+        stage.merge.block.is_none(),
+        "{why}: {:?}",
+        stage.merge.block
+    );
+    assert!(
+        stage.failure_info.is_none(),
+        "{why}: {:?}",
+        stage.failure_info
+    );
 }
 
 #[test]
@@ -123,7 +149,7 @@ fn an_unreadable_guard_record_keeps_a_merged_stage_merged() {
 
 #[test]
 #[serial]
-fn a_commit_outside_the_accepted_tip_still_reverts_merged() {
+fn a_final_merged_stage_outside_the_accepted_tip_stays_merged() {
     let repo = repo();
     let root = repo.path();
     let side = side_commit(root);
@@ -132,13 +158,8 @@ fn a_commit_outside_the_accepted_tip_still_reverts_merged() {
     assert!(orchestrator.config.work_dir.join(RECORD_FILE).exists());
     save_merged(&orchestrator, &side);
 
-    orchestrator.sync_graph_with_stage_files().unwrap();
-
-    let stage = load_stage(ID, &orchestrator.config.work_dir).unwrap();
-    assert!(
-        !stage.merged,
-        "a commit outside the accepted tip stayed merged"
-    );
+    let why = "a merged stage whose commit is not in the accepted tip was reopened";
+    assert_still_final(&mut orchestrator, true, why);
 }
 
 /// `main` moved onto `commit` the way an agent would, with hooks off.
@@ -147,27 +168,69 @@ fn agent_move(root: &Path, commit: &str) {
     git(root, &[&args[..], &["refs/heads/main", commit]].concat());
 }
 
-#[test]
-#[serial]
-fn a_merged_commit_only_the_held_tip_contains_reverts_merged() {
-    let repo = repo();
-    let root = repo.path();
+/// The incident's shape: `main` moved outside loom onto the tip of `loom/s`,
+/// so the guard holds it as carrying that stage's work. Returns the hold.
+fn hold_a_move_carrying_stage_work(root: &Path, orchestrator: &mut Orchestrator) -> Hold {
     let side = side_commit(root);
-    let mut orchestrator = orchestrator(root);
     assert_eq!(orchestrator.check_target_guard(), None);
     agent_move(root, &side);
     let hold = orchestrator
         .check_target_guard()
         .expect("the move was not held");
     assert_eq!(hold.observed, side);
-    save_merged(&orchestrator, &side);
+    let stage_work = HoldReason::StageWork {
+        branches: vec!["loom/s".to_string()],
+    };
+    assert!(hold.reasons.contains(&stage_work), "{hold:?}");
+    hold
+}
+
+#[test]
+#[serial]
+fn a_held_move_carrying_assumed_work_leaves_the_stage_final() {
+    let repo = repo();
+    let root = repo.path();
+    let mut orchestrator = orchestrator(root);
+    let hold = hold_a_move_carrying_stage_work(root, &mut orchestrator);
+    save_completed(&orchestrator, &hold.observed, true, true);
+
+    let why = "a held target moved an assume-merged stage";
+    assert_still_final(&mut orchestrator, true, why);
+    let stage = load_stage(ID, &orchestrator.config.work_dir).unwrap();
+    assert!(stage.merge_assumed, "{why}");
+}
+
+#[test]
+#[serial]
+fn an_assumed_stage_recorded_unmerged_is_not_merged_again() {
+    let repo = repo();
+    let root = repo.path();
+    let mut orchestrator = orchestrator(root);
+    let hold = hold_a_move_carrying_stage_work(root, &mut orchestrator);
+    save_completed(&orchestrator, &hold.observed, false, true);
+
+    let why = "an assume-merged stage went through auto-merge";
+    assert_still_final(&mut orchestrator, false, why);
+}
+
+#[test]
+#[serial]
+fn an_unmerged_completed_stage_still_waits_on_the_held_target() {
+    let repo = repo();
+    let root = repo.path();
+    let mut orchestrator = orchestrator(root);
+    let hold = hold_a_move_carrying_stage_work(root, &mut orchestrator);
+    save_completed(&orchestrator, &hold.observed, false, false);
 
     orchestrator.sync_graph_with_stage_files().unwrap();
 
     let stage = load_stage(ID, &orchestrator.config.work_dir).unwrap();
+    assert_eq!(stage.status, StageStatus::MergeBlocked);
+    assert!(!stage.merged);
     assert!(
-        !stage.merged,
-        "a commit only the held live tip contains stayed merged"
+        matches!(stage.merge.block, Some(MergeBlock::TargetHeld { .. })),
+        "{:?}",
+        stage.merge.block
     );
 }
 
