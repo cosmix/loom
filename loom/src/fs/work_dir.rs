@@ -1,8 +1,6 @@
 use anyhow::{bail, Context, Result};
 use std::fs;
 use std::os::unix::fs::DirBuilderExt;
-#[cfg(test)]
-use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 
 use crate::fs::knowledge::KnowledgeDir;
@@ -10,11 +8,13 @@ use crate::fs::knowledge::KnowledgeDir;
 mod config_sections;
 mod discovery;
 pub use config_sections::{
-    insert_key, read_config, read_context_config, read_plan_sandbox, read_pressure_config,
-    read_remote_control_config, read_terminal_config, remove_key, resolve_context_ceiling_tokens,
-    resolve_stage_model_effort, update_config, write_config, write_context_config,
-    write_plan_sandbox, write_remote_control_config, write_terminal_config, PressureConfig,
+    insert_key, read_config, read_context_config, read_plan_config, read_plan_sandbox,
+    read_pressure_config, read_remote_control_config, read_terminal_config, remove_key,
+    resolve_context_ceiling_tokens, resolve_stage_model_effort, update_config, write_config,
+    write_context_config, write_plan_sandbox, write_remote_control_config, write_terminal_config,
+    PlanConfig, PressureConfig,
 };
+
 mod context_config;
 pub use context_config::ContextConfig;
 

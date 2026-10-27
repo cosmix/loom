@@ -687,6 +687,8 @@ loom run                                 # Git branches preserve prior work
 
 Planning sessions run `loom plan check` after editing planning documents. Exit 1 reports convention problems to fix; exit 2 means no repository or the doc/ tree could not be loaded.
 
+Sessions rebuild summaries with `loom plan summary brief`, write the draft, and run `loom plan summary seal` until it is accepted. `loom plan summary status` lists what is out of date.
+
 ## Anti-Patterns
 
 | Anti-Pattern | Why It's Wrong | Do This Instead |

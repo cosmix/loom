@@ -30,6 +30,7 @@ pub mod project;
 pub mod runtime;
 pub mod sections;
 pub mod slug;
+pub mod summary;
 pub mod vision;
 pub mod watch;
 pub mod xref;

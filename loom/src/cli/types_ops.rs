@@ -56,6 +56,51 @@ pub enum PlanCommands {
         #[arg(long)]
         json: bool,
     },
+
+    /// Seal, brief, report and release plan and spec summaries (no server needed)
+    Summary {
+        #[command(subcommand)]
+        command: SummaryCommands,
+    },
+}
+
+/// `loom plan summary <subcommand>`.
+#[derive(Subcommand)]
+pub enum SummaryCommands {
+    /// Validate the draft of a summary and write it into the store
+    Seal {
+        /// Summary id, for example `product/section_01` or `plans/my-plan`
+        id: String,
+
+        /// Seal even when another session or a terminal claimed the summary
+        #[arg(long)]
+        force: bool,
+    },
+
+    /// Claim summaries and print the brief for rebuilding them
+    Brief {
+        /// Summary ids to claim and brief
+        #[arg(required = true)]
+        ids: Vec<String>,
+
+        /// Note to show beside the sentence it names, or at the top
+        #[arg(long)]
+        note: Option<String>,
+    },
+
+    /// Print the state of every summary
+    Status {
+        /// Machine-readable JSON output
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Give up the claims on summaries
+    Release {
+        /// Summary ids to release
+        #[arg(required = true)]
+        ids: Vec<String>,
+    },
 }
 
 #[derive(Subcommand)]

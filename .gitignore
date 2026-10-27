@@ -24,6 +24,7 @@ Desktop.ini
 /.gitmodules
 /.idea
 /.mcp.json
+/loom/.mcp.json
 /.profile
 /.ripgreprc
 /.vscode
