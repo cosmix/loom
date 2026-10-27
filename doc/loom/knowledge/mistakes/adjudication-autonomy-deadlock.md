@@ -208,3 +208,13 @@ prompt spells the schema out.
 **Prevention:** Resolve the plan's `source_path` from `.loom/work/config.toml` only through `crate::fs::resolve_source_path`, which owns the `.loom/work` layout via `WorkDir::main_project_root`. Never hand-roll a parent walk from the work dir.
 
 **Fix:** Both resolvers now delegate to `crate::fs::resolve_source_path`; regression test `tests_verdicts.rs::a_relative_source_path_resolves_from_the_project_root`.
+
+## A Relayed Verdict Ended the Judge's Turn Before the Daemon Checked It
+
+**What happened:** A freeze-refusal judge relayed an Accept verdict whose replacement criterion ran `bunx`. The daemon refused it on drain (`plan verify` rejects network-only commands), but the judge had already ended its turn on the relay receipt, so it never read the refusal and the stage sat in ADJUDICATING until the judge watchdog fired.
+
+**Why:** `relay_verdict` emitted with the end-turn reminder and the judge prompt said the work was done once the command succeeded. The daemon's check of a freeze amendment runs only when it drains the ticket, after the command has returned.
+
+**Prevention:** Any relayed request the daemon can refuse must tell its sender to wait for the outcome (`loom request status <id> --wait 90` in the next Bash call) and to correct and resubmit on refusal, as `loom stage commit` does.
+
+**Fix:** `commands/stage/adjudicate.rs::relay_verdict` prints the wait command; `adjudication/prompt.rs::verdict_protocol` adds step 3 (wait, correct on refusal, never ask for input).

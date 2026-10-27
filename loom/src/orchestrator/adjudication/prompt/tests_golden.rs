@@ -197,9 +197,14 @@ loom stage adjudicate --stage demo --dispute 1 --verdict-file <draft file>
 The command validates the JSON and hands the verdict to the orchestrator,
 which applies it on its next poll. If it prints a PENDING RELAY notice, keep
 its output unfiltered and in the foreground and follow that notice. If it
-reports an error, correct the JSON and run it again. Once it succeeds, your
-work is done — end your turn. The daemon closes this session once the
-verdict is applied.
+reports an error, correct the JSON and run it again.
+
+3. In your NEXT Bash call, run the `loom request status <id> --wait 90`
+   command it prints. The orchestrator checks the verdict again when it
+   records it; if the status is refused, correct the JSON as the reason
+   says and repeat from step 2. Never ask anyone and never wait for input.
+   Once the status is no longer pending or refused, your work is done — end
+   your turn. The daemon closes this session once the verdict is applied.
 
 
 ## Dispute
