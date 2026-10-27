@@ -116,7 +116,7 @@
 
 | Topic | Blurb | Lines |
 | --- | --- | --- |
-| [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Deadlock | 210 |
+| [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Deadlock | 220 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | Ambient trust | 156 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Briefs, bugs | 315 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift | 343 |

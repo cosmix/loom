@@ -128,7 +128,17 @@ fn relay_verdict(
         verdict: raw,
     })
     .context("failed to encode the verdict request")?;
-    context.emit(RequestKind::Verdict, payload, "verdict", true, sink)?;
+    // The daemon re-checks the verdict when it drains the ticket (a freeze
+    // amendment must leave a plan `plan verify` accepts), so the judge waits
+    // for that answer instead of ending its turn on the relay receipt.
+    let line = context.emit(RequestKind::Verdict, payload, "verdict", false, sink)?;
+    writeln!(
+        sink.stderr(),
+        "Wait for it in your NEXT Bash call: loom request status {} --wait 90. If it is \
+         refused, correct the JSON as the reason says and run `loom stage adjudicate` again.",
+        line.id
+    )
+    .context("failed to write the verdict wait notice")?;
     Ok(())
 }
 
