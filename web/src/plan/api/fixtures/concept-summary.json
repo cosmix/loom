@@ -1,0 +1,74 @@
+{
+  "key": "product/section_01",
+  "title": "Planning",
+  "path": "doc/product/section_01.md",
+  "file_hash": "4b8d0e2f6a1c7395",
+  "colour": 1,
+  "state": { "state": "stale", "out_of_date": { "reason": "source_changed", "detail": null } },
+  "plan_state": null,
+  "last_pressure": null,
+  "key_chips": [
+    {
+      "doc": {
+        "id": "section_01",
+        "title": "Planning",
+        "path": "doc/product/section_01.md",
+        "page": "product/section_01"
+      },
+      "colour": 1,
+      "label": "01",
+      "out_of_date": { "reason": "source_changed", "detail": null },
+      "no_plan": false
+    }
+  ],
+  "blocks": [
+    { "kind": "heading", "level": 1, "text": "Planning" },
+    {
+      "kind": "paragraph",
+      "sentences": [
+        {
+          "id": "s1",
+          "text": "A plan starts from a short statement of intent.",
+          "marks": [],
+          "citations": [
+            { "kind": "source", "path": "doc/product/section_01.md", "anchor": "intent" }
+          ],
+          "rests_on": [{ "path": "doc/product/section_01.md", "anchor": "intent" }],
+          "plans": []
+        },
+        {
+          "id": "s2",
+          "text": "Each stage names the files it may change.",
+          "marks": [],
+          "citations": [
+            { "kind": "source", "path": "doc/product/section_01.md", "anchor": "stages" }
+          ],
+          "rests_on": [{ "path": "doc/product/section_01.md", "anchor": "stages" }],
+          "plans": []
+        },
+        {
+          "id": "s3",
+          "text": "Stages and intent are checked against each other.",
+          "marks": [],
+          "citations": [
+            { "kind": "source", "path": "doc/product/section_01.md", "anchor": "intent" },
+            { "kind": "source", "path": "doc/product/section_01.md", "anchor": "stages" }
+          ],
+          "rests_on": [
+            { "path": "doc/product/section_01.md", "anchor": "intent" },
+            { "path": "doc/product/section_01.md", "anchor": "stages" }
+          ],
+          "plans": []
+        }
+      ]
+    }
+  ],
+  "unlisted": [],
+  "implements": null,
+  "implemented_by": [
+    { "slug": "feat-planner-05-concept-mode", "title": "Concept mode", "state": "in_progress" }
+  ],
+  "empty": null,
+  "building": null,
+  "estimate": null
+}
