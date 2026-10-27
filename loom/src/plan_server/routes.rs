@@ -101,3 +101,50 @@ pub(crate) fn find<'a>(routes: &'a [RouteSpec], method: &str, path: &str) -> Loo
         None => Lookup::WrongMethod,
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn handler(_: &ApiRequest<'_>) -> ApiResponse {
+        ApiResponse::error(500, "unused", "never routed")
+    }
+
+    fn route(method: Method, path: &'static str) -> RouteSpec {
+        RouteSpec {
+            method,
+            path,
+            body: BodyKind::None,
+            role: Role::Viewer,
+            handler,
+        }
+    }
+
+    /// The first `(method, path)` pair that appears twice. `find` takes the first match, so a
+    /// repeated pair would leave the later route unreachable without any error.
+    fn first_duplicate(routes: &[RouteSpec]) -> Option<(Method, &'static str)> {
+        routes.iter().enumerate().find_map(|(index, spec)| {
+            routes[..index]
+                .iter()
+                .any(|earlier| earlier.method == spec.method && earlier.path == spec.path)
+                .then_some((spec.method, spec.path))
+        })
+    }
+
+    #[test]
+    fn the_route_table_holds_each_method_and_path_once() {
+        assert_eq!(first_duplicate(&all_routes()), None);
+    }
+
+    #[test]
+    fn a_repeated_method_and_path_is_reported_but_a_second_method_is_not() {
+        let routes = [
+            route(Method::Get, "/api/a"),
+            route(Method::Post, "/api/a"),
+            route(Method::Get, "/api/b"),
+            route(Method::Get, "/api/a"),
+        ];
+        assert_eq!(first_duplicate(&routes), Some((Method::Get, "/api/a")));
+        assert_eq!(first_duplicate(&routes[..3]), None);
+    }
+}

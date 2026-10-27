@@ -214,6 +214,27 @@ fn bodies_are_checked_by_type_then_length() {
 }
 
 #[test]
+fn content_length_is_digits_only() {
+    let (_dir, ctx) = context(Vec::new());
+    let browser = BrowserId::mint().expect("browser");
+    let json = spec(Method::Post, "/api/x", BodyKind::Json, Role::Viewer);
+    let check = |length: &str| {
+        let mut head = admitted_head("POST", json.path, &browser);
+        head.content_type = Some("application/json".to_owned());
+        head.content_length = Some(length.to_owned());
+        status(admit(&head, local(), &policy(), &ctx, Some(&json)))
+    };
+    // Digits only (RFC 9110 section 8.6), as the dashboard reads it: a sign or an empty value is
+    // refused, surrounding whitespace is the same count.
+    for malformed in ["+5", "-5", "", "5 5", "0x5"] {
+        assert_eq!(check(malformed), 400, "{malformed:?}");
+    }
+    for padded in [" 5", "5 "] {
+        assert_eq!(check(padded), 200, "{padded:?}");
+    }
+}
+
+#[test]
 fn roles_refuse_with_the_authoring_text() {
     let (_dir, ctx) = context(Vec::new());
     let holder = BrowserId::mint().expect("holder");
