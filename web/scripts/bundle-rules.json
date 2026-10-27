@@ -1,10 +1,10 @@
 {
   "index.html": {
     "forbidChunks": ["src/plan/**"],
-    "forbidText": ["data-loom-plan"]
+    "forbidText": ["data-loom-plan", "loom-plan-name", "/api/share", "plan socket: invalid frame"]
   },
   "plan.html": {
     "forbidChunks": ["node_modules/@xterm/**", "src/components/terminal/**"],
-    "forbidText": []
+    "forbidText": ["xterm-helper-textarea", "terminal-takeover-cue", "Saved terminal history"]
   }
 }
