@@ -9,6 +9,8 @@
 //! `resolve_process_token` requires the two configured tokens to agree - so a
 //! browser holding either has effectively satisfied both.
 
+use std::fmt;
+
 use anyhow::{ensure, Result};
 
 use super::token;
@@ -16,10 +18,20 @@ use super::token;
 /// A minted 64-lowercase-hex-character process token and the cookie that
 /// carries it, named by the server (the dashboard scopes it by port so two
 /// dashboards on the same host never collide).
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Auth {
     token: String,
     cookie_name: String,
+}
+
+/// The token is the credential, so `{:?}` never prints it.
+impl fmt::Debug for Auth {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("Auth")
+            .field("token", &"..")
+            .field("cookie_name", &self.cookie_name)
+            .finish()
+    }
 }
 
 impl Auth {

@@ -20,9 +20,9 @@ function Item({ item }: { item: ItemView }) {
       <span className="font-medium">{item.text}</span>
       {item.path && <code className="font-mono text-xs text-muted-foreground">{item.path}</code>}
       {item.offer && (
-        <span className="ml-auto">
+        <div className="ml-auto">
           <OfferButton offer={item.offer} />
-        </span>
+        </div>
       )}
     </li>
   );

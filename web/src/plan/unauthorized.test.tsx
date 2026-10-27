@@ -1,4 +1,4 @@
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, render, screen } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -20,6 +20,13 @@ function text(everOpen: boolean): string {
 }
 
 describe("Unauthorized", () => {
+  it("moves focus to the heading so a mid-session 401 is announced", () => {
+    text(true);
+    const heading = screen.getByRole("heading", { name: "Sign in required" });
+    expect(heading.getAttribute("tabindex")).toBe("-1");
+    expect(document.activeElement).toBe(heading);
+  });
+
   it("shows only the section 12 wording on a first visit", () => {
     const shown = text(false);
     expect(shown).toContain(

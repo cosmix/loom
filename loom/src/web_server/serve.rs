@@ -116,7 +116,12 @@ fn accept_connection(listener: &TcpListener, shared: &Arc<Shared>) {
         Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
             thread::sleep(Duration::from_millis(50));
         }
-        Err(error) => tracing::warn!("dashboard accept failed: {error}"),
+        Err(error) => {
+            tracing::warn!("dashboard accept failed: {error}");
+            // A persistent failure (EMFILE) returns at once every time: without a pause this
+            // loop spins and floods the log. It is shared by the long-lived planning server.
+            thread::sleep(Duration::from_millis(50));
+        }
     }
 }
 

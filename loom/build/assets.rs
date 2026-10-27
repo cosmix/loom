@@ -122,7 +122,7 @@ pub(crate) fn generate_web_assets(repo_root: &Path) {
         emit_web_assets(&mut generated, &dist);
     } else {
         generated.push_str("pub const WEB_ASSETS: &[WebAsset] = &[];\n");
-        println!("cargo:warning=web/dist is missing; `loom status --web` will answer 503. Build it with: cd web && bun install && bun run build");
+        println!("cargo:warning=web/dist is missing; `loom status --web` and `loom plan` will answer 503. Build it with: cd web && bun install && bun run build");
     }
     let output =
         PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR must be set")).join("web_assets.rs");

@@ -54,6 +54,7 @@ fn serve(repo: &TempDir) -> RunningServer {
 
 fn client() -> Client {
     Client::builder()
+        .no_proxy()
         .redirect(reqwest::redirect::Policy::none())
         .timeout(Duration::from_secs(20))
         .build()
@@ -280,12 +281,20 @@ impl Drop for ChildGuard {
     }
 }
 
+/// Spawns `loom plan --no-open --port 0` in `repo` with a scratch `LOOM_HOME` and no other
+/// inherited `LOOM_*` variable (a real session's identity must not reach the child), nor
+/// `GIT_DIR` or `GIT_WORK_TREE`.
 fn spawn_loom_plan(repo: &Path, home: &Path) -> (ChildGuard, mpsc::Receiver<String>) {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_loom"))
+    let mut command = Command::new(env!("CARGO_BIN_EXE_loom"));
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("LOOM_") {
+            command.env_remove(key);
+        }
+    }
+    let mut child = command
         .args(["plan", "--no-open", "--port", "0"])
         .current_dir(repo)
         .env("LOOM_HOME", home)
-        .env_remove("LOOM_PLAN_STATE")
         .env_remove("GIT_DIR")
         .env_remove("GIT_WORK_TREE")
         .stdin(Stdio::null())
