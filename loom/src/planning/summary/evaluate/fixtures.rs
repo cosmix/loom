@@ -122,14 +122,33 @@ fn with_body(id: &str, front: FrontMatter, body: &str) -> SummaryFile {
 /// A sealed document summary of `id` with one `<text> [§](<source>#<anchor>)` sentence per
 /// pair, hashed from the current project; written and returned.
 pub(crate) fn seal_document(root: &Path, id: &str, lines: &[(&str, &str)]) -> SummaryFile {
+    let cited: Vec<(&str, Vec<&str>)> = lines.iter().map(|(text, a)| (*text, vec![*a])).collect();
+    seal_document_citing(root, id, &cited)
+}
+
+/// Like [`seal_document`], but each sentence cites every anchor of its list, in order.
+pub(crate) fn seal_document_citing(
+    root: &Path,
+    id: &str,
+    lines: &[(&str, Vec<&str>)],
+) -> SummaryFile {
     let project = load(root);
     let source = store::source_of(&project, id).unwrap_or_else(|| panic!("no source for {id}"));
     let link = store::link_from_summary(id, &source);
     let body: String = lines
         .iter()
-        .map(|(text, a)| format!("{text} [§]({})\n\n", target(&link, a)))
+        .map(|(text, anchors)| {
+            let links: Vec<String> = anchors
+                .iter()
+                .map(|a| format!("[§]({})", target(&link, a)))
+                .collect();
+            format!("{text} {}\n\n", links.join(" "))
+        })
         .collect();
-    let refs: Vec<(PathBuf, &str)> = lines.iter().map(|(_, a)| (source.clone(), *a)).collect();
+    let refs: Vec<(PathBuf, &str)> = lines
+        .iter()
+        .flat_map(|(_, anchors)| anchors.iter().map(|a| (source.clone(), *a)))
+        .collect();
     let front = FrontMatter {
         kind: SummaryKind::Document,
         of: source.to_string_lossy().into_owned(),

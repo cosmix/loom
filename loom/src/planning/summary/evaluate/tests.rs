@@ -86,6 +86,34 @@ fn document_sentence_stale_when_cited_span_changes_or_anchor_goes() {
 }
 
 #[test]
+fn document_sentence_needs_every_cited_span_to_hold() {
+    let fx = two_sections();
+    seal_document_citing(
+        &fx.root,
+        ID1,
+        &[("Both hold.", vec!["a", "b"]), ("Alpha holds.", vec!["a"])],
+    );
+    assert_eq!(state_of(&fx.root, ID1), SummaryState::Current);
+    put(&fx.root, S1, &section(1, "Alpha.", "Beta edited."));
+    let eval = evaluate(&load(&fx.root), &[]);
+    let want = vec![
+        ("Both hold.".to_string(), SentenceState::Stale),
+        ("Alpha holds.".to_string(), SentenceState::Current),
+    ];
+    assert_eq!(
+        sentence_states(&eval, ID1),
+        want,
+        "only the second span changed"
+    );
+    let held: Vec<bool> = eval.summaries[ID1].sentences[0]
+        .citations
+        .iter()
+        .map(|c| c.current)
+        .collect();
+    assert_eq!(held, vec![true, false]);
+}
+
+#[test]
 fn document_sentence_stale_without_its_cites_entry() {
     let fx = two_sections();
     let mut file = seal_document(&fx.root, ID1, &[("Alpha holds.", "a")]);
@@ -195,6 +223,62 @@ fn overview_sentence_stale_when_raw_span_changes() {
         (last.text.as_str(), last.state),
         ("Point 0 holds.", SentenceState::Stale)
     );
+}
+
+#[test]
+fn overview_sentence_stale_when_raw_source_is_not_one_of_its_sources() {
+    let fx = two_sections();
+    seal_document(&fx.root, ID1, &[("Alpha holds.", "a")]);
+    seal_document(&fx.root, ID2, &[("Alpha holds.", "a")]);
+    let cited = [(ID1, "Alpha holds."), (ID2, "Alpha holds.")];
+    // The recorded hash of the section span matches, so only the sources check can reject it.
+    let raw = [(VISION, "specification-sections"), (S1, "a")];
+    seal_overview(&fx.root, "product", &cited, &raw);
+    let eval = evaluate(&load(&fx.root), &[]);
+    let states: Vec<_> = sentence_states(&eval, "product")
+        .into_iter()
+        .map(|(_, state)| state)
+        .collect();
+    let (current, stale) = (SentenceState::Current, SentenceState::Stale);
+    assert_eq!(states, vec![current, current, current, stale]);
+}
+
+#[test]
+fn overview_sentence_stale_when_cited_summary_is_not_a_member_in_scope() {
+    let plan = "# Plan: X\n\nDoes x.\n";
+    let fx = fixture(&[
+        (VISION, &vision(&[1, 2])),
+        (S1, &section(1, "Alpha.", "Beta.")),
+        (S2, &section(2, "Alpha.", "Beta.")),
+        (META, &metaplan(&["PLAN-x.md"])),
+        ("doc/plans/PLAN-x.md", plan),
+    ]);
+    seal_document(&fx.root, ID1, &[("Alpha holds.", "a")]);
+    seal_document(&fx.root, ID2, &[("Alpha holds.", "a")]);
+    seal_document(&fx.root, "plans/x", &[("X does x.", "plan-x")]);
+    let cited = [
+        (ID1, "Alpha holds."),
+        (ID2, "Alpha holds."),
+        ("plans/x", "X does x."),
+    ];
+    seal_overview(
+        &fx.root,
+        "product",
+        &cited,
+        &[(VISION, "specification-sections")],
+    );
+    let eval = evaluate(&load(&fx.root), &[]);
+    assert_eq!(eval.summaries["plans/x"].state, SummaryState::Current);
+    let states = sentence_states(&eval, "product");
+    let member = |i: usize| states[i].1;
+    assert_eq!(member(0), SentenceState::Current);
+    assert_eq!(member(1), SentenceState::Current);
+    assert_eq!(
+        member(2),
+        SentenceState::Stale,
+        "plans/x is an engineering member"
+    );
+    assert_eq!(eval.summaries["product"].state, SummaryState::Stale);
 }
 
 #[test]
