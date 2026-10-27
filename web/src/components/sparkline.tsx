@@ -27,7 +27,9 @@ export function Sparkline({
   const first = points[0] ?? { x: 0, y: height };
   const last = points.at(-1) ?? { x: width, y: height };
   const line = points.length
-    ? points.map(({ x, y }, index) => `${index === 0 ? "M" : "L"} ${x} ${y}`).join(" ")
+    ? points
+        .map(({ x, y }, index) => `${index === 0 ? "M" : "L"} ${x} ${y}`)
+        .join(" ")
     : `M 0 ${height} L ${width} ${height}`;
 
   return (
@@ -57,7 +59,15 @@ export function Sparkline({
   );
 }
 
-function SparklineDot({ x, y, stretch }: { x: number; y: number; stretch: boolean }) {
+function SparklineDot({
+  x,
+  y,
+  stretch,
+}: {
+  x: number;
+  y: number;
+  stretch: boolean;
+}) {
   if (!stretch) return <circle cx={x} cy={y} r={1.75} fill="currentColor" />;
   // A round, non-scaling stroke keeps the endpoint circular as the chart stretches.
   return (
@@ -70,6 +80,13 @@ function SparklineDot({ x, y, stretch }: { x: number; y: number; stretch: boolea
     />
   );
 }
+
+/// Share of the accent an empty cell keeps, so a quiet stretch still reads as a
+/// row of cells; busy cells run from `HEAT_BASE` to full on top of it.
+const HEAT_FLOOR = 8;
+const HEAT_BASE = 16;
+/// Cells at or above this share of the maximum glow.
+const HEAT_GLOW = 0.75;
 
 export function HeatStrip({
   values,
@@ -86,20 +103,31 @@ export function HeatStrip({
     <div
       role="img"
       aria-label={label}
-      className={cn("grid h-2 gap-px", className)}
+      className={cn(
+        "grid h-[18px] gap-px rounded-[3px] bg-foreground/[0.04] p-px",
+        className,
+      )}
       style={{ gridAutoFlow: "column", gridAutoColumns: "minmax(0, 1fr)" }}
     >
       {values.map((value, index) => {
         const ratio = max > 0 ? Math.min(1, Math.max(0, value / max)) : 0;
+        // Square root spreads the low end: token series are heavily skewed, and
+        // a linear ramp leaves everything below the peak looking idle.
+        const tone = Math.sqrt(ratio);
+        const percent =
+          ratio === 0
+            ? HEAT_FLOOR
+            : Math.round(HEAT_BASE + (100 - HEAT_BASE) * tone);
+        const mix = (share: number) =>
+          `color-mix(in oklch, var(--tone-completed) ${share}%, transparent)`;
         return (
           <span
             key={index}
+            className="rounded-[2px]"
             data-level={Math.ceil(4 * ratio)}
             style={{
-              background:
-                ratio === 0
-                  ? "transparent"
-                  : `color-mix(in oklch, var(--tone-executing) ${Math.round(18 + 82 * ratio)}%, transparent)`,
+              background: mix(percent),
+              boxShadow: ratio >= HEAT_GLOW ? `0 0 5px ${mix(45)}` : undefined,
             }}
           />
         );
