@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 158 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 225 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 231 |
 
 ## Tier 2 — Topics
 
@@ -117,7 +117,7 @@
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) | Deadlock | 200 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) | Ambient trust | 156 |
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Briefs, bugs | 315 |
-| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift | 345 |
+| [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift | 343 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) | Direct mode | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) | Rogue wrapper | 157 |
 | [codex-navigation](mistakes/codex-navigation.md) | Codex reader | 102 |
@@ -201,3 +201,4 @@
 | [typed-config-values](concerns/typed-config-values.md) | Config gaps | 27 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) | v2 followups | 169 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Latent issues | 102 |
+| [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold builds | 159 |
