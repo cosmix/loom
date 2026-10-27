@@ -38,5 +38,7 @@ export default defineConfig(({ mode }) => ({
     environment: "jsdom",
     setupFiles: ["./src/test/setup.ts"],
     globals: false,
+    // Without this, vitest serves every CSS import as "", `?raw` included.
+    css: { include: [/\.css\?raw$/] },
   },
 }));

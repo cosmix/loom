@@ -1,12 +1,19 @@
 // The lazy CodeMirror chunk: the only module that statically imports @codemirror/*.
 // Every other file reaches it through loadCodeMirror() in ./load.
-import { defaultKeymap, history, historyKeymap, indentWithTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { markdown } from "@codemirror/lang-markdown";
 import { yaml } from "@codemirror/lang-yaml";
 import { HighlightStyle, LanguageDescription, syntaxHighlighting } from "@codemirror/language";
 import { MergeView, unifiedMergeView } from "@codemirror/merge";
 import { search, searchKeymap, searchPanelOpen } from "@codemirror/search";
-import { EditorState, RangeSet, StateEffect, StateField, type Extension } from "@codemirror/state";
+import {
+  Compartment,
+  EditorState,
+  RangeSet,
+  StateEffect,
+  StateField,
+  type Extension,
+} from "@codemirror/state";
 import { EditorView, GutterMarker, gutter, keymap, lineNumbers } from "@codemirror/view";
 import { tags } from "@lezer/highlight";
 
@@ -14,8 +21,11 @@ import { themeSpec } from "./theme";
 
 type Change = (text: string) => void;
 
-/** 1-based inclusive document lines. */
-export type LineSpan = { start: number; end: number };
+/**
+ * 1-based inclusive document lines. `side` is set only by a side-by-side diff handle: the
+ * lines are in the text before or after the change.
+ */
+export type LineSpan = { start: number; end: number; side?: "before" | "after" };
 
 export interface EditorHandle {
   destroy(): void;
@@ -29,6 +39,11 @@ export interface EditorHandle {
    * inside an editor this handle owns (for a merge view, only the editable right side).
    */
   rangeLines(range: Range): LineSpan | null;
+}
+
+export interface MergeHandle extends EditorHandle {
+  /** Makes the editable (right) side read-only or editable again; revert controls follow. */
+  setReadOnly(readOnly: boolean): void;
 }
 
 export interface SourceEditorHandle extends EditorHandle {
@@ -49,6 +64,8 @@ export interface MergeViewOptions {
   onChange?: Change;
   /** Mod-s on the editable side; the browser's save dialog never opens. */
   onSave?: () => void;
+  /** Starts the editable side read-only; `setReadOnly` changes it later. */
+  readOnly?: boolean;
 }
 
 export interface DiffViewOptions {
@@ -76,6 +93,38 @@ export function codeLanguages(info: string): LanguageDescription | null {
 
 const theme = EditorView.theme(themeSpec);
 
+// CodeMirror picks its light or dark base rules (selection, search panel, merge colours) from
+// a facet, not from CSS, so the facet follows the page's `.dark` class through a compartment.
+const colourScheme = new Compartment();
+const pageIsDark = (): boolean => document.documentElement.classList.contains("dark");
+const schemeExtension = (dark: boolean): Extension => EditorView.darkTheme.of(dark);
+
+/**
+ * Keeps `views` on the base rules that match the page's colour scheme while the page toggles
+ * `.dark`. Returns the stop function; call it when the views are destroyed.
+ */
+function followColourScheme(views: readonly EditorView[]): () => void {
+  let dark = pageIsDark();
+  const observer = new MutationObserver(() => {
+    if (pageIsDark() === dark) return;
+    dark = pageIsDark();
+    for (const view of views) {
+      view.dispatch({ effects: colourScheme.reconfigure(schemeExtension(dark)) });
+    }
+  });
+  observer.observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+  return () => observer.disconnect();
+}
+
+/** The destroy function for views that follow the colour scheme. */
+function destroyWith(views: readonly EditorView[], destroy: () => void): () => void {
+  const stop = followColourScheme(views);
+  return () => {
+    stop();
+    destroy();
+  };
+}
+
 // Colours are design-token variables only, so both colour schemes follow the page.
 const highlightStyle = HighlightStyle.define([
   { tag: tags.heading, fontWeight: "bold", color: "var(--foreground)" },
@@ -97,15 +146,19 @@ const highlightStyle = HighlightStyle.define([
   },
 ]);
 
-const baseExtensions = (): Extension[] => [
+// Tab and Shift-Tab are left to the browser so keyboard users can leave the editor (WCAG
+// 2.1.2); Mod-] and Mod-[ in the default keymap still indent. `label` names the textbox.
+const baseExtensions = (label: string): Extension[] => [
   lineNumbers(),
   history(),
   search({ top: true }),
   syntaxHighlighting(highlightStyle),
   markdown({ codeLanguages }),
   EditorView.lineWrapping,
-  keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap, indentWithTab]),
+  EditorView.contentAttributes.of({ "aria-label": label }),
+  keymap.of([...defaultKeymap, ...historyKeymap, ...searchKeymap]),
   theme,
+  colourScheme.of(schemeExtension(pageIsDark())),
 ];
 
 function changeListener(onChange: Change | undefined): Extension {
@@ -117,6 +170,10 @@ function changeListener(onChange: Change | undefined): Extension {
 function readOnlyExtensions(readOnly: boolean): Extension[] {
   return readOnly ? [EditorState.readOnly.of(true), EditorView.editable.of(false)] : [];
 }
+
+// The merge view's editable side switches read-only without being rebuilt, which would drop
+// the user's edits.
+const editableSide = new Compartment();
 
 function replaceAll(view: EditorView, text: string): void {
   view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text } });
@@ -132,6 +189,14 @@ function scrollToLine(view: EditorView, line: number): void {
   });
 }
 
+// The unified diff's removed lines are a block widget (.cm-deletedChunk) inside the content
+// DOM. posAtDOM does not throw for it: it returns the widget's start position, which would
+// pin a selection in removed text on the kept line below it.
+function inDeletedChunk(node: Node): boolean {
+  const element = node instanceof Element ? node : node.parentElement;
+  return element?.closest(".cm-deletedChunk") != null;
+}
+
 function rangeLines(views: readonly EditorView[], range: Range): LineSpan | null {
   const owner = views.find(
     (view) =>
@@ -139,6 +204,7 @@ function rangeLines(views: readonly EditorView[], range: Range): LineSpan | null
       view.contentDOM.contains(range.endContainer),
   );
   if (!owner) return null;
+  if (inDeletedChunk(range.startContainer) || inDeletedChunk(range.endContainer)) return null;
   try {
     const { doc } = owner.state;
     const from = owner.posAtDOM(range.startContainer, range.startOffset);
@@ -146,15 +212,19 @@ function rangeLines(views: readonly EditorView[], range: Range): LineSpan | null
     const start = doc.lineAt(from).number;
     const last = doc.lineAt(to);
     // A selection that ends at a line start does not cover that line.
-    const end = to === last.from && to > from ? last.number - 1 : last.number;
-    return { start, end: Math.max(start, end) };
+    const end = Math.max(start, to === last.from && to > from ? last.number - 1 : last.number);
+    if (views.length === 1) return { start, end };
+    return { start, end, side: owner === views[0] ? "after" : "before" };
   } catch {
-    // posAtDOM throws for nodes CodeMirror does not map (widgets, deleted-chunk DOM).
+    // posAtDOM throws for DOM nodes CodeMirror does not map (other widgets).
     return null;
   }
 }
 
-/** `others` are extra views whose selections this handle may attribute (diff sides). */
+/**
+ * `others` are extra views whose selections this handle may attribute (the diff's before
+ * side). `destroy` is the full teardown, including `destroyWith`'s observer stop.
+ */
 function viewHandle(
   view: EditorView,
   destroy: () => void,
@@ -226,7 +296,7 @@ export function createSourceEditor(
       doc: options.doc,
       extensions: [
         saveKeymap(options.onSave),
-        ...baseExtensions(),
+        ...baseExtensions("Document source"),
         marksField,
         marksGutter,
         ...readOnlyExtensions(options.readOnly ?? false),
@@ -235,31 +305,47 @@ export function createSourceEditor(
     }),
   });
   return {
-    ...viewHandle(view, () => view.destroy()),
+    ...viewHandle(
+      view,
+      destroyWith([view], () => view.destroy()),
+    ),
     setGutterMarks: (lines) => view.dispatch({ effects: setMarks.of(lines) }),
   };
 }
 
-export function createMergeView(parent: HTMLElement, options: MergeViewOptions): EditorHandle {
+export function createMergeView(parent: HTMLElement, options: MergeViewOptions): MergeHandle {
+  const readOnly = options.readOnly ?? false;
   const merge = new MergeView({
     parent,
     a: {
       doc: options.left,
-      extensions: [...baseExtensions(), ...readOnlyExtensions(true)],
+      extensions: [...baseExtensions("Version on disk"), ...readOnlyExtensions(true)],
     },
     b: {
       doc: options.right,
       extensions: [
         ...(options.onSave ? [saveKeymap(options.onSave)] : []),
-        ...baseExtensions(),
+        ...baseExtensions("Your version"),
+        editableSide.of(readOnlyExtensions(readOnly)),
         changeListener(options.onChange),
       ],
     },
-    revertControls: "a-to-b",
+    revertControls: readOnly ? undefined : "a-to-b",
     highlightChanges: true,
     gutter: true,
   });
-  return viewHandle(merge.b, () => merge.destroy());
+  const handle = viewHandle(
+    merge.b,
+    destroyWith([merge.a, merge.b], () => merge.destroy()),
+  );
+  return {
+    ...handle,
+    setReadOnly(locked) {
+      merge.b.dispatch({ effects: editableSide.reconfigure(readOnlyExtensions(locked)) });
+      // Reverting a chunk edits the right side directly, so the controls go with editing.
+      merge.reconfigure({ revertControls: locked ? undefined : "a-to-b" });
+    },
+  };
 }
 
 export function createDiffView(parent: HTMLElement, options: DiffViewOptions): EditorHandle {
@@ -271,20 +357,24 @@ export function createDiffView(parent: HTMLElement, options: DiffViewOptions): E
       state: EditorState.create({
         doc: options.after,
         extensions: [
-          ...baseExtensions(),
+          ...baseExtensions("Changes"),
           ...readOnly,
           unifiedMergeView({ original: options.before, mergeControls: false, gutter: true }),
         ],
       }),
     });
-    return viewHandle(view, () => view.destroy());
+    return viewHandle(
+      view,
+      destroyWith([view], () => view.destroy()),
+    );
   }
   const merge = new MergeView({
     parent,
-    a: { doc: options.before, extensions: [...baseExtensions(), ...readOnly] },
-    b: { doc: options.after, extensions: [...baseExtensions(), ...readOnly] },
+    a: { doc: options.before, extensions: [...baseExtensions("Before"), ...readOnly] },
+    b: { doc: options.after, extensions: [...baseExtensions("After"), ...readOnly] },
     highlightChanges: true,
     gutter: true,
   });
-  return viewHandle(merge.b, () => merge.destroy(), [merge.a]);
+  const destroy = destroyWith([merge.a, merge.b], () => merge.destroy());
+  return viewHandle(merge.b, destroy, [merge.a]);
 }

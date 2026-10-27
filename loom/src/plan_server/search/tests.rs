@@ -1,12 +1,16 @@
 //! Search indexing and updates.
 
 use std::fs;
+use std::net::SocketAddr;
 use std::path::Path;
+use std::sync::Arc;
 
 use super::index::{Scope, SearchIndex};
+use crate::plan_server::context::{BindInfo, PlanContext};
 use crate::plan_server::files::texts::TextStore;
+use crate::plan_server::prereq::ReadOnly;
 use crate::planning::project::Project;
-use crate::planning::watch::Batch;
+use crate::planning::watch::{Batch, OwnWrites};
 use tempfile::TempDir;
 
 fn write(root: &Path, path: &str, text: &str) {
@@ -116,4 +120,48 @@ fn apply_replaces_and_removes_changed_chunks() {
     texts.apply(temp.path(), &batch);
     index.apply(&project, &texts, &batch);
     assert!(index.query("newword", Scope::All).hits.is_empty());
+}
+
+#[test]
+fn a_fence_the_chunker_and_the_sections_read_differently_keeps_every_anchor() {
+    // The chunker closes the outer four-backtick fence at the inner three-backtick line, so
+    // it splits at `## Fake`; the sections keep that line inside the fence.
+    let text = "# Title\n\n## Alpha\nalphaword\n\n````md\n```\n## Fake\nfakeword\n```\n````\n\n\
+                ## Beta\nbetaword\n\n## Gamma\ngammaword\n";
+    let (_, _, _, index) = setup(&[("doc/product/a.md", text)]);
+    let hit = |word: &str| index.query(word, Scope::All).hits.remove(0);
+    let beta = hit("betaword");
+    assert_eq!(beta.anchor, "beta");
+    assert_eq!(beta.heading_path, ["Title", "Beta"]);
+    let gamma = hit("gammaword");
+    assert_eq!(gamma.anchor, "gamma");
+    assert_eq!(gamma.heading_path, ["Title", "Gamma"]);
+    // The chunk without a heading of its own belongs to the section it sits in.
+    let fake = hit("fakeword");
+    assert_eq!(fake.anchor, "alpha");
+    assert_eq!(fake.heading_path, ["Title", "Alpha"]);
+}
+
+#[test]
+fn a_literal_snippet_shows_the_case_sensitive_match_that_was_counted() {
+    let body = format!("quartz{}Quartz", "x".repeat(400));
+    let text = format!("# A\n\n## Topic\n{body}\n");
+    let (_, _, _, index) = setup(&[("doc/product/a.md", text.as_str())]);
+    let hits = index.query("\"Quartz\"", Scope::All).hits;
+    assert_eq!(hits.len(), 1);
+    assert!(hits[0].snippet.contains("Quartz"), "{}", hits[0].snippet);
+    assert!(!hits[0].snippet.contains("quartz"), "{}", hits[0].snippet);
+}
+
+#[test]
+fn install_without_a_text_store_installs_nothing() {
+    let temp = TempDir::new().unwrap();
+    write(temp.path(), "doc/product/index.md", "# Demo\n");
+    let local = SocketAddr::from(([127, 0, 0, 1], 0));
+    let read_only = ReadOnly::from_problems(Vec::new());
+    let bind = BindInfo::new(local, "t");
+    let root = temp.path().to_path_buf();
+    let ctx = Arc::new(PlanContext::new(root, read_only, bind, OwnWrites::default()).unwrap());
+    super::install(&ctx);
+    assert!(ctx.extensions().get::<SearchIndex>().is_none());
 }

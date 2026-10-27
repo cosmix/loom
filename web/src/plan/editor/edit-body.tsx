@@ -86,7 +86,7 @@ function EditNotices(props: { session: EditSession; stale: boolean }): JSX.Eleme
   return (
     <>
       {flow.state.status === "error" && (
-        <p role="alert" className="px-4 py-1 text-sm text-destructive">
+        <p role="alert" className="px-4 py-1 text-[13px] text-destructive">
           {flow.state.error}
         </p>
       )}
@@ -122,6 +122,7 @@ function EditSurface(props: {
         right={state.text}
         onChange={session.flow.change}
         onSave={save}
+        readOnly={!session.canAuthor}
         handleRef={handle}
       />
     );

@@ -1,8 +1,10 @@
+use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use crate::plan_server::files::plan_view::plan_view;
+use crate::plan_server::files::plan_view::{latest_pressure_date, plan_view, product_sections};
 use crate::plan_server::wire::files::PlanStateView;
+use crate::planning::discover::discover;
 use crate::planning::sections::sections_of;
 
 const PLAN: &str = "# Plan\nImplements: section_1, section_02\n\n<!-- loom METADATA\n```yaml\nloom:\n  version: 1\n  stages:\n    - id: build\n      name: Build\n      working_dir: .\n      description: Make it\n      acceptance:\n        - cargo test\n      files: [src/lib.rs]\n```\n<!-- END loom METADATA -->\n\n## Pressure tests\n- 2025-02-02: first\n- 2024-01-01: older\n";
@@ -15,7 +17,8 @@ fn exposes_parsed_stages_links_and_lines() {
     fs::write(temp.path().join("doc/product/section_1.md"), "# One").unwrap();
     let rel = Path::new("doc/plans/IN_PROGRESS-PLAN-demo.md");
     fs::write(temp.path().join(rel), PLAN).unwrap();
-    let view = plan_view(temp.path(), rel, PLAN, &sections_of(PLAN), None);
+    let sections = product_sections(&discover(temp.path()).unwrap());
+    let view = plan_view(temp.path(), rel, PLAN, &sections_of(PLAN), &sections, None);
     assert_eq!(view.slug, "demo");
     assert_eq!(view.state, PlanStateView::Running);
     assert_eq!(
@@ -41,7 +44,15 @@ fn parse_errors_and_missing_metadata_leave_no_stages() {
     let temp = tempfile::tempdir().unwrap();
     let rel = Path::new("doc/plans/PLAN-demo.md");
     let invalid = "<!-- loom METADATA\n```yaml\nloom: [\n```\n<!-- END loom METADATA -->\n";
-    let view = plan_view(temp.path(), rel, invalid, &sections_of(invalid), None);
+    let none = BTreeMap::new();
+    let view = plan_view(
+        temp.path(),
+        rel,
+        invalid,
+        &sections_of(invalid),
+        &none,
+        None,
+    );
     assert!(view.stages.is_empty());
     assert!(view
         .yaml_error
@@ -50,7 +61,7 @@ fn parse_errors_and_missing_metadata_leave_no_stages() {
         .starts_with("YAML parse error: "));
     assert_eq!(view.metadata_line, Some(1));
     let prose = "# Draft\n";
-    let view = plan_view(temp.path(), rel, prose, &sections_of(prose), None);
+    let view = plan_view(temp.path(), rel, prose, &sections_of(prose), &none, None);
     assert!(view.yaml.is_none());
     assert!(view.yaml_error.is_none());
     assert!(view.metadata_line.is_none());
@@ -64,6 +75,53 @@ fn modification_time_does_not_follow_symlinks() {
     fs::write(temp.path().join("target"), PLAN).unwrap();
     let rel = Path::new("doc/plans/PLAN-demo.md");
     symlink(temp.path().join("target"), temp.path().join(rel)).unwrap();
-    let view = plan_view(temp.path(), rel, PLAN, &sections_of(PLAN), None);
+    let none = BTreeMap::new();
+    let view = plan_view(temp.path(), rel, PLAN, &sections_of(PLAN), &none, None);
     assert!(view.last_change.is_none());
+}
+
+/// Pressure records in document order, neither first nor last the latest.
+pub(super) const OUT_OF_ORDER_PRESSURE: &str =
+    "# Plan\n\n## Pressure tests\n\n- 2025-01-01: a\n- 2025-03-03: b\n- 2025-02-02: c\n";
+
+#[test]
+fn the_pressure_date_is_the_latest_record_not_the_last() {
+    assert_eq!(
+        latest_pressure_date(OUT_OF_ORDER_PRESSURE).as_deref(),
+        Some("2025-03-03")
+    );
+    let rel = Path::new("doc/plans/PLAN-demo.md");
+    let text = OUT_OF_ORDER_PRESSURE;
+    let none = BTreeMap::new();
+    let view = plan_view(
+        Path::new("/nonexistent"),
+        rel,
+        text,
+        &sections_of(text),
+        &none,
+        None,
+    );
+    assert_eq!(view.pressure_date.as_deref(), Some("2025-03-03"));
+}
+
+#[test]
+fn implements_links_resolve_against_the_given_sections_without_walking_the_disk() {
+    let rel = Path::new("doc/plans/PLAN-demo.md");
+    let text = "# Plan\nImplements: section_07\n";
+    let sections = BTreeMap::from([(7, "doc/product/section_07.md".to_owned())]);
+    // The root does not exist: a link can only come from `sections`.
+    let view = plan_view(
+        Path::new("/nonexistent"),
+        rel,
+        text,
+        &sections_of(text),
+        &sections,
+        None,
+    );
+    assert_eq!(view.implements.len(), 1);
+    assert_eq!(view.implements[0].number, 7);
+    assert_eq!(
+        view.implements[0].path.as_deref(),
+        Some("doc/product/section_07.md")
+    );
 }

@@ -4,7 +4,7 @@
 use std::path::Path;
 
 use super::report::VerifyError;
-use crate::plan::inputs::{collect_inputs_with_text, uncommitted_reason, Inputs};
+use crate::plan::inputs::{collect_inputs_with_text, uncommitted_reasons, Inputs};
 
 pub(super) fn error(message: String) -> VerifyError {
     VerifyError {
@@ -52,20 +52,26 @@ pub(super) fn input_findings(
 /// Push an error for each input file that is missing; return the note listing the uncommitted
 /// ones, or no note when there are none or git cannot tell.
 fn file_findings(root: &Path, inputs: &Inputs, errors: &mut Vec<VerifyError>) -> Vec<String> {
-    let mut uncommitted = Vec::new();
-    let mut git_available = true;
+    let mut present = Vec::new();
     for (path, origin) in &inputs.files {
-        match uncommitted_reason(root, path) {
-            Ok(Some("missing file")) => errors.push(error(format!(
+        if root.join(path).is_file() {
+            present.push(path.as_path());
+        } else {
+            errors.push(error(format!(
                 "{} (referenced in {origin}): missing file; loom run refuses to start without it",
                 path.display()
-            ))),
-            Ok(Some(reason)) => uncommitted.push(format!("{} ({reason})", path.display())),
-            Ok(None) => {}
-            Err(_) => git_available = false,
+            )));
         }
     }
-    if git_available && !uncommitted.is_empty() {
+    let Ok(reasons) = uncommitted_reasons(root, &present) else {
+        return Vec::new();
+    };
+    let uncommitted: Vec<String> = present
+        .iter()
+        .zip(reasons)
+        .filter_map(|(path, reason)| Some(format!("{} ({})", path.display(), reason?)))
+        .collect();
+    if !uncommitted.is_empty() {
         vec![format!(
             "{} plan input(s) not committed; loom run refuses to start until they are \
              committed: {}",

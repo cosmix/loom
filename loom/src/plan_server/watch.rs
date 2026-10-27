@@ -1,5 +1,6 @@
 //! The `doc/` watcher feeding the project view, and the 1 s housekeeping tick.
 
+use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::{self, JoinHandle};
@@ -10,7 +11,7 @@ use anyhow::{Context, Result};
 use super::context::PlanContext;
 use super::wire::checklist::ChecklistView;
 use super::wire::message::PlanMessage;
-use crate::planning::watch::{Batch, Watcher};
+use crate::planning::watch::{Batch, OwnWrites, Watcher};
 
 /// How often the watcher walks `doc/`, and how often the tick runs.
 const INTERVAL: Duration = Duration::from_secs(1);
@@ -20,21 +21,35 @@ const STOP_CHECK: Duration = Duration::from_millis(50);
 /// The watcher's failed-walk message, shared with the tick that reports it.
 pub type ErrorSlot = Arc<Mutex<Option<String>>>;
 
-/// Start watching `ctx.root()/doc/` until `stop` is set. Every batch after the initial one
-/// refreshes the project, runs the `on_batch` hooks in order, and broadcasts the checklist
-/// when it changed. Returns the thread and the watcher's error slot, which `Watcher::spawn`
-/// would otherwise hide: hand it to [`spawn_tick`].
+/// A watcher over `root/doc/` that has taken its baseline walk (the `initial` batch, which
+/// lists what is already there). Take it before the project and the stores load: a document
+/// changed after this walk reaches them as a later batch, so an edit made while they load is
+/// not lost; one they already read is applied again, which is harmless. A failed walk leaves
+/// the baseline to the watcher's first poll, whose `initial` batch is then dropped.
+pub fn baseline(root: PathBuf, own_writes: OwnWrites) -> Watcher {
+    let mut watcher = Watcher::new(root, own_writes);
+    if let Err(error) = watcher.poll() {
+        tracing::warn!("loom plan could not take the doc/ baseline: {error:#}");
+    }
+    watcher
+}
+
+/// Poll `watcher` (from [`baseline`], sharing `ctx.own_writes()`) every second until `stop`
+/// is set. Every batch after the initial one refreshes the project, runs the `on_batch` hooks
+/// in order, and broadcasts the checklist when it changed. Returns the thread and the
+/// watcher's error slot, which `Watcher::spawn` would otherwise hide: hand it to
+/// [`spawn_tick`].
 pub fn spawn_watcher(
     ctx: Arc<PlanContext>,
+    watcher: Watcher,
     stop: Arc<AtomicBool>,
 ) -> Result<(JoinHandle<()>, ErrorSlot)> {
-    let watcher = Watcher::new(ctx.root().to_path_buf(), ctx.own_writes().clone());
     let errors = watcher.error_slot();
     let thread = watcher.spawn(INTERVAL, stop, move |batch| apply_batch(&ctx, &batch))?;
     Ok((thread, errors))
 }
 
-fn apply_batch(ctx: &PlanContext, batch: &Batch) {
+pub(super) fn apply_batch(ctx: &PlanContext, batch: &Batch) {
     if batch.initial {
         return;
     }

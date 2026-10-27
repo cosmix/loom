@@ -14,10 +14,15 @@ export function initClient(store: ReturnType<typeof createStore>): void {
 
 const errorSchema = z.object({ error: z.string(), message: z.string().optional() });
 
+/**
+ * `resultStatuses` lists the non-2xx statuses whose JSON body is a typed result, not
+ * an error: parsed with `schema` and returned as `ok`.
+ */
 async function request<T>(
   path: string,
   schema: z.ZodType<T>,
   init: RequestInit,
+  resultStatuses: readonly number[] = [],
 ): Promise<ApiResult<T>> {
   let response: Response;
   try {
@@ -37,7 +42,7 @@ async function request<T>(
   } catch {
     body = undefined;
   }
-  if (!response.ok) {
+  if (!response.ok && !resultStatuses.includes(response.status)) {
     const parsed = errorSchema.safeParse(body);
     return {
       ok: false,
@@ -67,12 +72,17 @@ export function apiPost<T>(
   path: string,
   body: unknown | string,
   schema: z.ZodType<T>,
-  opts: { contentType: "json" | "text" },
+  opts: { contentType: "json" | "text"; resultStatuses?: readonly number[] },
 ): Promise<ApiResult<T>> {
   const json = opts.contentType === "json";
-  return request(path, schema, {
-    method: "POST",
-    headers: { "Content-Type": json ? "application/json" : "text/plain; charset=utf-8" },
-    body: json ? JSON.stringify(body) : String(body),
-  });
+  return request(
+    path,
+    schema,
+    {
+      method: "POST",
+      headers: { "Content-Type": json ? "application/json" : "text/plain; charset=utf-8" },
+      body: json ? JSON.stringify(body) : String(body),
+    },
+    opts.resultStatuses,
+  );
 }

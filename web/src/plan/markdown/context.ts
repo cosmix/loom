@@ -28,7 +28,7 @@ export function headingAnchorLookup(
   return (excerptLine) => byLine.get(excerptLine + lineOffset) ?? null;
 }
 
-function escapeRegExp(term: string): string {
+export function escapeRegExp(term: string): string {
   return term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
 }
 

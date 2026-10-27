@@ -34,6 +34,15 @@ export function treeDocs(tree: FileTree): TreeEntry[] {
   return found;
 }
 
+/** The paths a link may resolve to: every document in the tree, and the open one even if unlisted. */
+export function docPathsOf(tree: FileTree | null, own: string): Set<string> {
+  const paths = new Set([own]);
+  for (const entry of tree ? treeDocs(tree) : []) {
+    if (entry.path !== null) paths.add(entry.path);
+  }
+  return paths;
+}
+
 function matches(entry: TreeEntry, needle: string): boolean {
   return (
     entry.title.toLowerCase().includes(needle) ||
@@ -88,20 +97,14 @@ type Search =
   | { status: "error"; message: string }
   | { status: "ready"; results: Results };
 
-/** The navigation tree under a search box; `open` is the repo path of the open document. */
-export function Tree({ tree, open = null }: { tree: FileTree; open?: string | null }): JSX.Element {
+/** Filter text, scope and the latest text search; a stale response never replaces a newer one. */
+function useTreeSearch() {
   const navigate = useNavigate();
   const [query, setQuery] = useState("");
   const [scope, setScope] = useState<SearchScope>("all");
   const [search, setSearch] = useState<Search>({ status: "idle" });
   const latest = useRef(0);
 
-  const needle = query.trim().toLowerCase();
-  const clear = () => {
-    latest.current += 1;
-    setQuery("");
-    setSearch({ status: "idle" });
-  };
   const submit = (searchScope: SearchScope) => {
     const request = ++latest.current;
     setSearch({ status: "loading" });
@@ -114,47 +117,68 @@ export function Tree({ tree, open = null }: { tree: FileTree; open?: string | nu
       );
     });
   };
-  const openHit = (hit: SearchHit) =>
-    navigate(toAddress(hit.path, hit.anchor), { state: { marks: hit.terms } });
+  const reset = (value: string) => {
+    latest.current += 1;
+    setQuery(value);
+    setSearch({ status: "idle" });
+  };
+  return {
+    query,
+    scope,
+    search,
+    onChange: reset,
+    onClear: () => reset(""),
+    onSubmit: () => submit(scope),
+    onScope: (next: SearchScope) => {
+      setScope(next);
+      // Results on screen belong to the old scope; run them again for the new one.
+      if (search.status !== "idle") submit(next);
+    },
+    onOpen: (hit: SearchHit) =>
+      navigate(toAddress(hit.path, hit.anchor), { state: { marks: hit.terms } }),
+  };
+}
 
+function SearchPane({ search, onOpen }: { search: Search; onOpen: (hit: SearchHit) => void }) {
+  switch (search.status) {
+    case "loading":
+      return <LoadState state="loading" title="Searching" />;
+    case "error":
+      return <LoadState state="error" title="Search failed" message={search.message} />;
+    case "ready":
+      return <SearchResults results={search.results} onOpen={onOpen} />;
+    case "idle":
+      return null;
+  }
+}
+
+type GroupsProps = { tree: FileTree; needle: string; open: string | null };
+
+function Groups({ tree, needle, open }: GroupsProps): JSX.Element {
+  return (
+    <>
+      {GROUPS.map(([key, label]) => {
+        const entries = needle ? filterEntries(tree[key], needle) : tree[key];
+        if (entries.length === 0) return null;
+        return (
+          <Group key={key} label={label} entries={entries} forceOpen={needle !== ""} open={open} />
+        );
+      })}
+    </>
+  );
+}
+
+/** The navigation tree under a search box; `open` is the repo path of the open document. */
+export function Tree({ tree, open = null }: { tree: FileTree; open?: string | null }): JSX.Element {
+  const { query, scope, search, onOpen, ...handlers } = useTreeSearch();
   return (
     <nav aria-label="Documents" className="flex min-h-0 flex-1 flex-col">
-      <SearchBox
-        value={query}
-        scope={scope}
-        onChange={(value) => {
-          latest.current += 1;
-          setQuery(value);
-          setSearch({ status: "idle" });
-        }}
-        onScope={(next) => {
-          setScope(next);
-          // Results on screen belong to the old scope; run them again for the new one.
-          if (search.status !== "idle") submit(next);
-        }}
-        onSubmit={() => submit(scope)}
-        onClear={clear}
-      />
+      <SearchBox value={query} scope={scope} {...handlers} />
       <div className="min-h-0 flex-1 overflow-y-auto">
-        {search.status === "loading" && <LoadState state="loading" title="Searching" />}
-        {search.status === "error" && (
-          <LoadState state="error" title="Search failed" message={search.message} />
+        <SearchPane search={search} onOpen={onOpen} />
+        {search.status === "idle" && (
+          <Groups tree={tree} needle={query.trim().toLowerCase()} open={open} />
         )}
-        {search.status === "ready" && <SearchResults results={search.results} onOpen={openHit} />}
-        {search.status === "idle" &&
-          GROUPS.map(([key, label]) => {
-            const entries = needle ? filterEntries(tree[key], needle) : tree[key];
-            if (entries.length === 0) return null;
-            return (
-              <Group
-                key={key}
-                label={label}
-                entries={entries}
-                forceOpen={needle !== ""}
-                open={open}
-              />
-            );
-          })}
       </div>
     </nav>
   );

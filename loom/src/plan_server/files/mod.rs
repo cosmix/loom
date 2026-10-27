@@ -14,7 +14,8 @@ mod tests;
 
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
-use std::sync::{Arc, Mutex, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::thread;
 
 use super::context::PlanContext;
 use super::request::{ApiRequest, ApiResponse};
@@ -24,7 +25,7 @@ use super::wire::message::PlanMessage;
 use crate::planning::discover::SUMMARIES;
 use crate::planning::watch::Batch;
 use texts::TextStore;
-use validate::{revalidate, validate_all, ValidationCache};
+use validate::ValidationCache;
 
 /// The file-mode routes: tree, document, save and the two diffs.
 pub fn routes() -> Vec<RouteSpec> {
@@ -52,9 +53,9 @@ pub fn routes() -> Vec<RouteSpec> {
     ]
 }
 
-/// Build the text store and the validation cache into `ctx.extensions()`, and register the
-/// batch hook that keeps both current and tells the browsers what changed. Runs before
-/// `search::install`, which reads the text store.
+/// Build the text store and an empty validation cache into `ctx.extensions()`, start the
+/// validation pass, and register the batch hook that keeps all of it current and tells the
+/// browsers what changed. Runs before `search::install`, which reads the text store.
 pub fn install(ctx: &Arc<PlanContext>) {
     let loaded = TextStore::load(ctx.root(), &ctx.project());
     let texts = Arc::new(loaded.unwrap_or_else(|error| {
@@ -62,55 +63,111 @@ pub fn install(ctx: &Arc<PlanContext>) {
         TextStore::default()
     }));
     ctx.extensions().insert(Arc::clone(&texts));
-    let cache: Arc<ValidationCache> = Arc::new(Mutex::new(validate_all(ctx, &texts)));
+    let cache = Arc::new(ValidationCache::default());
     ctx.extensions().insert(Arc::clone(&cache));
-    let last_tree = Mutex::new(current_tree(ctx, &cache));
-    ctx.on_batch(Box::new(move |ctx, batch| {
-        on_batch(ctx, batch, &texts, &cache, &last_tree);
-    }));
+    let state = Arc::new(FileMode::new(texts, cache));
+    spawn_validation(ctx, &state);
+    ctx.on_batch(Box::new(move |ctx, batch| state.follow(ctx, batch)));
+}
+
+/// Validate every plan on a thread of its own, so the server answers while the checks run:
+/// until a plan is validated the tree shows it without an error count and `/api/doc`
+/// validates it on request. Each plan's result is broadcast as `validation`, then the tree as
+/// `tree_changed`. When the thread cannot start, the first batch validates every plan.
+fn spawn_validation(ctx: &Arc<PlanContext>, state: &Arc<FileMode>) {
+    let (ctx, state) = (Arc::clone(ctx), Arc::clone(state));
+    let spawned = thread::Builder::new()
+        .name("loom-plan-validate".into())
+        .spawn(move || state.validate_all(&ctx));
+    if let Err(error) = spawned {
+        tracing::warn!("loom plan validates its plans at the first doc/ change: {error}");
+    }
 }
 
 fn tree_route(req: &ApiRequest<'_>) -> ApiResponse {
+    let texts = match doc::text_store(req.ctx) {
+        Ok(texts) => texts,
+        Err(refusal) => return refusal,
+    };
     match req.ctx.extensions().get::<ValidationCache>() {
-        Some(cache) => ApiResponse::json(200, &current_tree(req.ctx, &cache)),
+        Some(cache) => ApiResponse::json(200, &current_tree(req.ctx, &texts, &cache)),
         None => ApiResponse::error(500, "internal", "file mode is not installed"),
     }
 }
 
-fn current_tree(ctx: &PlanContext, cache: &ValidationCache) -> FileTree {
-    let validation = cache.lock().unwrap_or_else(PoisonError::into_inner).clone();
-    tree::build_tree(&ctx.project(), &validation)
+/// The tree from the project view, the stored texts and the cached error counts; no file is
+/// read while the project is locked.
+fn current_tree(ctx: &PlanContext, texts: &TextStore, cache: &ValidationCache) -> FileTree {
+    let errors = cache.error_counts();
+    tree::build_tree(&ctx.project(), texts, &errors)
 }
 
-/// Follow one watcher batch (the project is already refreshed): texts, then one `doc_changed`
-/// per changed document, then revalidation, then `tree_changed` when the tree differs from
-/// the one last sent.
-fn on_batch(
-    ctx: &PlanContext,
-    batch: &Batch,
-    texts: &TextStore,
-    cache: &ValidationCache,
-    last_tree: &Mutex<FileTree>,
-) {
-    texts.apply(ctx.root(), batch);
-    for rel in changed_documents(batch) {
-        let hash = texts.current(&rel).map(|pinned| pinned.hash);
-        let path = rel.to_string_lossy().into_owned();
-        ctx.hub()
-            .broadcast(&PlanMessage::DocChanged(DocChanged { path, hash }));
-    }
-    revalidate(ctx, cache, texts);
-    let tree = current_tree(ctx, cache);
-    let changed = {
-        let mut last = last_tree.lock().unwrap_or_else(PoisonError::into_inner);
-        let changed = *last != tree;
-        if changed {
-            last.clone_from(&tree);
+/// What file mode keeps current: the texts, the validation cache, and the tree last broadcast
+/// (`None` until the first). The tree's lock also orders validation: the startup pass and
+/// every batch revalidate and publish under it, one at a time.
+struct FileMode {
+    texts: Arc<TextStore>,
+    cache: Arc<ValidationCache>,
+    published: Mutex<Option<FileTree>>,
+}
+
+impl FileMode {
+    fn new(texts: Arc<TextStore>, cache: Arc<ValidationCache>) -> FileMode {
+        FileMode {
+            texts,
+            cache,
+            published: Mutex::new(None),
         }
-        changed
-    };
-    if changed {
-        ctx.hub().broadcast(&PlanMessage::TreeChanged(tree));
+    }
+
+    /// The startup pass: validate every plan, then publish the tree with its error counts.
+    fn validate_all(&self, ctx: &PlanContext) {
+        let mut published = self.publishing();
+        // What `/api/tree` answered so far: the tree before any plan was validated.
+        published.get_or_insert_with(|| current_tree(ctx, &self.texts, &self.cache));
+        self.revalidate(ctx, &mut published, &BTreeSet::new());
+    }
+
+    /// Follow one watcher batch (the project is already refreshed): texts, then one
+    /// `doc_changed` per changed document, then revalidation of the plans the batch can
+    /// affect, then `tree_changed` when the tree differs from the one last sent.
+    fn follow(&self, ctx: &PlanContext, batch: &Batch) {
+        self.texts.apply(ctx.root(), batch);
+        let touched = changed_documents(batch);
+        for rel in &touched {
+            let hash = self.texts.current(rel).map(|pinned| pinned.hash);
+            let path = rel.to_string_lossy().into_owned();
+            ctx.hub()
+                .broadcast(&PlanMessage::DocChanged(DocChanged { path, hash }));
+        }
+        let mut published = self.publishing();
+        self.revalidate(ctx, &mut published, &touched);
+    }
+
+    /// Revalidate the plans `touched` can affect and every plan the cache lacks, then
+    /// broadcast the tree when it differs from `published`. Nothing is published once the
+    /// server is stopping: the pass may have been cut short.
+    fn revalidate(
+        &self,
+        ctx: &PlanContext,
+        published: &mut Option<FileTree>,
+        touched: &BTreeSet<PathBuf>,
+    ) {
+        self.cache.revalidate(ctx, &self.texts, touched);
+        if ctx.is_stopping() {
+            return;
+        }
+        let tree = current_tree(ctx, &self.texts, &self.cache);
+        if published.as_ref() != Some(&tree) {
+            ctx.hub().broadcast(&PlanMessage::TreeChanged(tree.clone()));
+            *published = Some(tree);
+        }
+    }
+
+    fn publishing(&self) -> MutexGuard<'_, Option<FileTree>> {
+        self.published
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner)
     }
 }
 

@@ -84,22 +84,13 @@ fn assert_schema_values<T: Serialize + std::fmt::Debug>(schema: &str, array: &st
     }
 }
 
-/// F2 creates the schema after F1; parity is checked whenever it is present.
-fn schema_source() -> Option<String> {
-    let path = concat!(
-        env!("CARGO_MANIFEST_DIR"),
-        "/../web/src/plan/api/schema-files.ts"
-    );
-    std::fs::read_to_string(path).ok()
-}
+/// The file-mode TypeScript schema; a missing file fails the build, never a test silently.
+const SCHEMA_FILES_TS: &str = include_str!("../../../../web/src/plan/api/schema-files.ts");
 
 #[test]
 fn entry_kinds_are_in_schema() {
-    let Some(schema) = schema_source() else {
-        return;
-    };
     assert_schema_values(
-        &schema,
+        SCHEMA_FILES_TS,
         "ENTRY_KINDS",
         &[
             EntryKind::Vision,
@@ -120,11 +111,8 @@ fn entry_kinds_are_in_schema() {
 
 #[test]
 fn plan_states_are_in_schema() {
-    let Some(schema) = schema_source() else {
-        return;
-    };
     assert_schema_values(
-        &schema,
+        SCHEMA_FILES_TS,
         "PLAN_STATES",
         &[
             PlanStateView::Written,
@@ -137,11 +125,8 @@ fn plan_states_are_in_schema() {
 
 #[test]
 fn lock_kinds_are_in_schema() {
-    let Some(schema) = schema_source() else {
-        return;
-    };
     assert_schema_values(
-        &schema,
+        SCHEMA_FILES_TS,
         "LOCK_KINDS",
         &[
             LockKind::Running,
@@ -156,11 +141,8 @@ fn lock_kinds_are_in_schema() {
 
 #[test]
 fn metadata_states_are_in_schema() {
-    let Some(schema) = schema_source() else {
-        return;
-    };
     assert_schema_values(
-        &schema,
+        SCHEMA_FILES_TS,
         "METADATA_STATES",
         &[MetadataView::Present, MetadataView::Missing],
     );
@@ -168,9 +150,6 @@ fn metadata_states_are_in_schema() {
 
 #[test]
 fn save_results_are_in_schema() {
-    let Some(schema) = schema_source() else {
-        return;
-    };
     let results = [
         SaveResult::Saved {
             hash: String::new(),
@@ -204,7 +183,7 @@ fn save_results_are_in_schema() {
                 .to_owned()
         })
         .collect();
-    assert_schema_values(&schema, "SAVE_RESULTS", &tags);
+    assert_schema_values(SCHEMA_FILES_TS, "SAVE_RESULTS", &tags);
 }
 
 #[test]

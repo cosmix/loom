@@ -1,6 +1,8 @@
 //! The file-mode HTTP routes and the batch broadcasts, over a started server.
 
-use std::path::Path;
+use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::{Duration, Instant};
 
 use serde_json::Value;
 use tempfile::TempDir;
@@ -8,10 +10,43 @@ use tempfile::TempDir;
 use super::validate::{plan, SELF_DEPENDENCY};
 use crate::plan_server::files::validate::ValidationCache;
 use crate::plan_server::tests::support::{
-    bootstrap, connect_ws, get, json_body, origin, read_until, request, send, serve, skip, status,
+    self, bootstrap, connect_ws, get, json_body, origin, read_until, request, send, skip, status,
+    WAIT,
 };
 use crate::plan_server::RunningServer;
 use crate::planning::sections::normalized_hash;
+
+/// A started server, returned once the startup validation pass has stored every
+/// `doc/plans/PLAN-*.md` of `dir` (no test here locks one): the tests read a filled cache,
+/// and the pass's `validation` messages go out before their sockets open.
+fn serve(dir: &TempDir) -> RunningServer {
+    let server = support::serve(dir);
+    let plans = written_plans(dir);
+    let cache = server
+        .ctx
+        .extensions()
+        .get::<ValidationCache>()
+        .expect("installed");
+    let deadline = Instant::now() + WAIT;
+    while !plans.iter().all(|rel| cache.view(rel).is_some()) {
+        assert!(Instant::now() < deadline, "{plans:?} never validated");
+        thread::sleep(Duration::from_millis(10));
+    }
+    server
+}
+
+/// The repo-relative `doc/plans/PLAN-*.md` files under `dir`.
+fn written_plans(dir: &TempDir) -> Vec<PathBuf> {
+    let Ok(entries) = std::fs::read_dir(dir.path().join("doc/plans")) else {
+        return Vec::new();
+    };
+    entries
+        .map(|entry| entry.expect("a plans entry").file_name())
+        .filter_map(|name| name.to_str().map(str::to_owned))
+        .filter(|name| name.starts_with("PLAN-") && name.ends_with(".md"))
+        .map(|name| Path::new("doc/plans").join(name))
+        .collect()
+}
 
 /// The support project (`doc/product/index.md`) plus `files`.
 fn project_with(files: &[(&str, &str)]) -> TempDir {
@@ -195,7 +230,7 @@ fn the_cache_holds_unlocked_plans_only() {
         .extensions()
         .get::<ValidationCache>()
         .expect("installed");
-    let mut paths: Vec<_> = cache.lock().unwrap().keys().cloned().collect();
+    let mut paths: Vec<_> = cache.error_counts().into_keys().collect();
     paths.sort();
     assert_eq!(paths, vec![Path::new("doc/plans/PLAN-x.md").to_path_buf()]);
     server.stop().unwrap();

@@ -1,5 +1,5 @@
 import { SearchIcon } from "lucide-react";
-import { useEffect, useRef, type JSX } from "react";
+import { useEffect, useRef, type JSX, type RefObject } from "react";
 
 import { cn } from "cn";
 
@@ -17,26 +17,8 @@ function isTyping(target: EventTarget | null): boolean {
   return target.isContentEditable || ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName);
 }
 
-type Props = {
-  value: string;
-  scope: SearchScope;
-  onChange: (value: string) => void;
-  onScope: (scope: SearchScope) => void;
-  onSubmit: () => void;
-  onClear: () => void;
-};
-
-/** Filters the tree as you type; Enter searches the text. `/` focuses, Esc clears. */
-export function SearchBox({
-  value,
-  scope,
-  onChange,
-  onScope,
-  onSubmit,
-  onClear,
-}: Props): JSX.Element {
-  const input = useRef<HTMLInputElement>(null);
-
+/** `/` focuses the input unless the keystroke is already going into a field. */
+function useSlashFocus(input: RefObject<HTMLInputElement | null>): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent) => {
       if (event.key !== "/" || event.altKey || event.ctrlKey || event.metaKey) return;
@@ -46,7 +28,59 @@ export function SearchBox({
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [input]);
+}
+
+function ScopePicker({
+  scope,
+  onScope,
+}: {
+  scope: SearchScope;
+  onScope: (scope: SearchScope) => void;
+}): JSX.Element {
+  return (
+    <div role="group" aria-label="Search scope" className="flex gap-1">
+      {SEARCH_SCOPES.map(([id, label]) => (
+        <button
+          key={id}
+          type="button"
+          aria-pressed={scope === id}
+          className={cn(
+            "rounded-md px-2 py-0.5 text-xs font-medium",
+            scope === id ? "bg-muted text-foreground" : "text-muted-foreground",
+          )}
+          onClick={() => onScope(id)}
+        >
+          {label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+type Props = {
+  value: string;
+  scope: SearchScope;
+  onChange: (value: string) => void;
+  onScope: (scope: SearchScope) => void;
+  onSubmit: () => void;
+  onClear: () => void;
+};
+
+/**
+ * Filters the tree as you type; Enter searches the text. `/` focuses, Esc clears. An Esc that
+ * cleared something stops here, so a drawer around the box stays open; on an empty box it passes on.
+ */
+export function SearchBox({
+  value,
+  scope,
+  onChange,
+  onScope,
+  onSubmit,
+  onClear,
+}: Props): JSX.Element {
+  const input = useRef<HTMLInputElement>(null);
+  useSlashFocus(input);
 
   return (
     <div className="flex flex-col gap-2 border-b border-hairline p-3">
@@ -66,28 +100,14 @@ export function SearchBox({
           onChange={(event) => onChange(event.target.value.slice(0, MAX_QUERY))}
           onKeyDown={(event) => {
             if (event.key === "Enter" && value.trim()) onSubmit();
-            else if (event.key === "Escape") onClear();
+            else if (event.key === "Escape" && value !== "") {
+              event.stopPropagation();
+              onClear();
+            }
           }}
         />
       </label>
-      {value.trim() && (
-        <div role="group" aria-label="Search scope" className="flex gap-1">
-          {SEARCH_SCOPES.map(([id, label]) => (
-            <button
-              key={id}
-              type="button"
-              aria-pressed={scope === id}
-              className={cn(
-                "rounded-md px-2 py-0.5 text-xs font-medium",
-                scope === id ? "bg-muted text-foreground" : "text-muted-foreground",
-              )}
-              onClick={() => onScope(id)}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
+      {value.trim() && <ScopePicker scope={scope} onScope={onScope} />}
     </div>
   );
 }

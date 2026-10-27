@@ -9,9 +9,7 @@ use super::{checks, find_repo_root, inputs};
 use crate::plan::parser::{
     extract_plan_name, extract_yaml_metadata_with_ranges, ExtractedMetadata,
 };
-use crate::plan::schema::{
-    base_tree, detect_stage_type, LoomMetadata, StageDefinition, StageType, ValidationError,
-};
+use crate::plan::schema::{base_tree, LoomMetadata, ValidationError};
 
 const MAX_FILE_BYTES: u64 = 1_048_576; // 1 MiB
 
@@ -280,39 +278,4 @@ fn file_location(
         line: lines_before + line,
         column: if line == 1 { column + indent } else { column },
     }
-}
-
-fn stage_type_label(st: StageType) -> &'static str {
-    match st {
-        StageType::Standard => "standard",
-        StageType::Knowledge => "knowledge",
-        StageType::IntegrationVerify => "integration-verify",
-        StageType::KnowledgeDistill => "knowledge-distill",
-    }
-}
-
-pub(super) fn build_levels_output(
-    stages: &[StageDefinition],
-    levels_map: &std::collections::HashMap<String, usize>,
-) -> Vec<Vec<VerifyStageLevel>> {
-    let max_level = levels_map.values().copied().max().unwrap_or(0);
-    let mut result = Vec::new();
-    for level_num in 0..=max_level {
-        let mut level_stages: Vec<&StageDefinition> = stages
-            .iter()
-            .filter(|s| levels_map.get(&s.id).copied().unwrap_or(0) == level_num)
-            .collect();
-        level_stages.sort_by(|a, b| a.id.cmp(&b.id));
-        let json_stages = level_stages
-            .iter()
-            .map(|s| VerifyStageLevel {
-                id: s.id.clone(),
-                name: s.name.clone(),
-                stage_type: stage_type_label(detect_stage_type(s)).to_string(),
-                dependencies: s.dependencies.clone(),
-            })
-            .collect();
-        result.push(json_stages);
-    }
-    result
 }

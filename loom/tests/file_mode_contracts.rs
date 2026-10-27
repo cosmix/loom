@@ -134,7 +134,14 @@ fn verify_text_agrees_with_verify_json() {
     let repo = repo(&[("doc/plans/PLAN-x.md", &text)]);
     let root = repo.path().canonicalize().unwrap();
     let path: PathBuf = root.join("doc/plans/PLAN-x.md");
-    let out = Command::new(env!("CARGO_BIN_EXE_loom"))
+    // No inherited `LOOM_*` variable: a real session's identity must not reach the child.
+    let mut command = Command::new(env!("CARGO_BIN_EXE_loom"));
+    for (key, _) in std::env::vars_os() {
+        if key.to_string_lossy().starts_with("LOOM_") {
+            command.env_remove(key);
+        }
+    }
+    let out = command
         .args(["plan", "verify", "--json"])
         .arg(&path)
         .current_dir(&root)

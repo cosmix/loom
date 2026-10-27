@@ -1,15 +1,15 @@
 import { useAtomValue, useStore } from "jotai/react";
-import { useEffect, useState, type JSX } from "react";
+import type { JSX } from "react";
 import { useLocation } from "react-router";
 
-import { Button } from "@/components/ui/button";
 import { useMediaQuery } from "@/lib/use-media-query";
-import { fetchTree, useFileSocket } from "@/plan/files/api";
+import { useFileSocket } from "@/plan/files/api";
 import { DiffPage } from "@/plan/diff";
 import { parseAddress } from "@/plan/files/address";
 import { treeAtom } from "@/plan/files/atoms";
 import { ReadingColumn } from "@/plan/files/reading-column";
 import { Tree } from "@/plan/files/tree";
+import { DrawerOpener, TreeDrawer, TreeDrawerRoot, useTreeDrawer } from "@/plan/files/tree-drawer";
 import { OfferButton } from "@/plan/offers/offer-button";
 import { checklistAtom } from "@/plan/state/atoms";
 import { LoadState } from "@/plan/ui/load-state";
@@ -39,63 +39,11 @@ function GapView({ title }: { title: string }): JSX.Element {
   );
 }
 
-function Drawer({ onClose, children }: { onClose: () => void; children: JSX.Element }) {
-  useEffect(() => {
-    const onKeyDown = (event: KeyboardEvent) => {
-      if (event.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKeyDown);
-    return () => window.removeEventListener("keydown", onKeyDown);
-  }, [onClose]);
-  return (
-    <>
-      <button
-        type="button"
-        aria-label="Close the document list"
-        className="fixed inset-0 z-30 bg-black/20"
-        onClick={onClose}
-      />
-      <div
-        role="dialog"
-        aria-label="Documents"
-        className="fixed inset-y-0 left-0 z-40 flex w-72 max-w-[85vw] flex-col border-r border-hairline bg-background"
-      >
-        {children}
-      </div>
-    </>
-  );
-}
-
-/** Fetches the tree once when nothing has put it in `treeAtom` yet. */
-function useLoadTree(): void {
-  const store = useStore();
-  useEffect(() => {
-    if (store.get(treeAtom)) return;
-    void fetchTree().then((result) => {
-      if (result.ok && !store.get(treeAtom)) store.set(treeAtom, result.value);
-    });
-  }, [store]);
-}
-
 /** No document open: the drawer control on narrow screens, then the gap view or a hint. */
-function NoDocument({
-  wide,
-  gap,
-  onOpenTree,
-}: {
-  wide: boolean;
-  gap: string | null;
-  onOpenTree: () => void;
-}) {
+function NoDocument({ gap, opener }: { gap: string | null; opener?: JSX.Element }) {
   return (
     <>
-      {!wide && (
-        <div className="border-b border-hairline px-4 py-2">
-          <Button variant="ghost" size="sm" onClick={onOpenTree}>
-            Documents
-          </Button>
-        </div>
-      )}
+      {opener}
       {gap ? (
         <GapView title={gap} />
       ) : (
@@ -112,13 +60,11 @@ export function FileMode(): JSX.Element {
   const tree = useAtomValue(treeAtom);
   const location = useLocation();
   const wide = useMediaQuery(WIDE);
-  const [drawer, setDrawer] = useState(false);
+  const drawer = useTreeDrawer();
   const address = parseAddress(location);
   const hasPath = location.pathname.startsWith("/files/") && location.pathname.length > 7;
   const gap = new URLSearchParams(location.search).get("gap");
-
-  useLoadTree();
-  useEffect(() => setDrawer(false), [location.pathname, location.search]);
+  const opener = wide ? undefined : <DrawerOpener />;
 
   const tab = tree ? (
     <Tree tree={tree} open={hasPath ? address.path : null} />
@@ -127,25 +73,35 @@ export function FileMode(): JSX.Element {
   );
 
   return (
-    <div className="flex h-full min-h-0">
-      {wide && (
-        <aside className="flex w-72 shrink-0 flex-col border-r border-hairline">{tab}</aside>
-      )}
-      {!wide && drawer && <Drawer onClose={() => setDrawer(false)}>{tab}</Drawer>}
-      <div data-reading-scroll className="min-w-0 flex-1 overflow-y-auto">
-        {hasPath && address.diff ? (
-          <DiffPage path={address.path} kind={address.diff} turn={address.turn} />
-        ) : hasPath ? (
-          <ReadingColumn
-            path={address.path}
-            anchor={address.anchor}
-            tree={tree}
-            onOpenTree={wide ? undefined : () => setDrawer(true)}
-          />
+    <TreeDrawerRoot drawer={drawer}>
+      <div className="flex h-full min-h-0">
+        {wide ? (
+          <aside className="flex w-72 shrink-0 flex-col border-r border-hairline">{tab}</aside>
         ) : (
-          <NoDocument wide={wide} gap={gap} onOpenTree={() => setDrawer(true)} />
+          <TreeDrawer drawer={drawer}>{tab}</TreeDrawer>
         )}
+        <div
+          ref={drawer.reading}
+          data-reading-scroll
+          role="region"
+          aria-label="Document"
+          tabIndex={-1}
+          className="min-w-0 flex-1 overflow-y-auto outline-none"
+        >
+          {hasPath && address.diff ? (
+            <DiffPage path={address.path} kind={address.diff} turn={address.turn} />
+          ) : hasPath ? (
+            <ReadingColumn
+              path={address.path}
+              anchor={address.anchor}
+              tree={tree}
+              opener={opener}
+            />
+          ) : (
+            <NoDocument gap={gap} opener={opener} />
+          )}
+        </div>
       </div>
-    </div>
+    </TreeDrawerRoot>
   );
 }

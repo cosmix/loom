@@ -1,6 +1,5 @@
 import { useEffect } from "react";
-import { z } from "@/api/zod";
-import { apiGet, type ApiResult } from "@/plan/api/client";
+import { apiGet, apiPost, type ApiResult } from "@/plan/api/client";
 import {
   diffTextsSchema,
   docViewSchema,
@@ -13,120 +12,122 @@ import {
   type SaveResult,
   type SearchResults,
 } from "@/plan/api/schema-files";
+import type { connectPlanSocket } from "@/plan/api/socket";
+import { docRel } from "@/plan/files/address";
 import { docChangedAtom, openDocAtom, treeAtom, validationAtom } from "@/plan/files/atoms";
-import { planSocketAtom, unauthorizedAtom } from "@/plan/state/atoms";
-import { store as defaultStore, type Store } from "@/state/store";
+import { planSocketAtom } from "@/plan/state/atoms";
+import type { Store } from "@/state/store";
+
+/**
+ * Callers pass repo-relative paths (`doc/...`, the form every response carries); the
+ * server reads a request's `path` relative to `doc/`, so the conversion happens here.
+ */
+const docParam = (path: string): string => encodeURIComponent(docRel(path));
 
 export const fetchTree = (): Promise<ApiResult<FileTree>> => apiGet("/api/tree", fileTreeSchema);
 export const fetchDoc = (path: string): Promise<ApiResult<DocView>> =>
-  apiGet(`/api/doc?path=${encodeURIComponent(path)}`, docViewSchema);
+  apiGet(`/api/doc?path=${docParam(path)}`, docViewSchema);
 export const searchDocs = (q: string, scope: string): Promise<ApiResult<SearchResults>> =>
   apiGet(
     `/api/search?q=${encodeURIComponent(q)}&scope=${encodeURIComponent(scope)}`,
     searchResultsSchema,
   );
 export const fetchHeadDiff = (path: string): Promise<ApiResult<DiffTexts>> =>
-  apiGet(`/api/diff/head?path=${encodeURIComponent(path)}`, diffTextsSchema);
+  apiGet(`/api/diff/head?path=${docParam(path)}`, diffTextsSchema);
 export const fetchTurnDiff = (turn: string, path: string): Promise<ApiResult<DiffTexts>> =>
-  apiGet(
-    `/api/diff/turn?turn=${encodeURIComponent(turn)}&path=${encodeURIComponent(path)}`,
-    diffTextsSchema,
-  );
+  apiGet(`/api/diff/turn?turn=${encodeURIComponent(turn)}&path=${docParam(path)}`, diffTextsSchema);
 
-const errorSchema = z.object({ error: z.string(), message: z.string().optional() });
-
-export async function saveDoc(
+/** A conflict (409) and a refused save (422) answer with a `SaveResult`, not an error. */
+export function saveDoc(
   path: string,
   text: string,
   openedHash: string,
   withErrors: boolean,
 ): Promise<ApiResult<SaveResult>> {
-  const query = `path=${encodeURIComponent(path)}&hash=${encodeURIComponent(openedHash)}`;
-  let response: Response;
-  try {
-    response = await fetch(`/api/save?${query}${withErrors ? "&with_errors=1" : ""}`, {
-      method: "POST",
-      credentials: "same-origin",
-      headers: { "Content-Type": "text/plain; charset=utf-8" },
-      body: text,
-    });
-  } catch (error) {
-    return {
-      ok: false,
-      status: 0,
-      error: "unreachable",
-      message: error instanceof Error ? error.message : String(error),
-    };
-  }
-  if (response.status === 401) defaultStore.set(unauthorizedAtom, true);
-  let body: unknown;
-  try {
-    body = await response.json();
-  } catch {
-    body = undefined;
-  }
-  if (response.ok || response.status === 409 || response.status === 422) {
-    const parsed = saveResultSchema.safeParse(body);
-    return parsed.success
-      ? { ok: true, value: parsed.data }
-      : { ok: false, status: 0, error: "bad_response", message: "Invalid server response" };
-  }
-  const parsed = errorSchema.safeParse(body);
-  return {
-    ok: false,
-    status: response.status,
-    error: parsed.success ? parsed.data.error : "http_error",
-    message: parsed.success
-      ? (parsed.data.message ?? parsed.data.error)
-      : `HTTP ${response.status}`,
-  };
+  const query = `path=${docParam(path)}&hash=${encodeURIComponent(openedHash)}`;
+  const flag = withErrors ? "&with_errors=1" : "";
+  return apiPost(`/api/save?${query}${flag}`, text, saveResultSchema, {
+    contentType: "text",
+    resultStatuses: [409, 422],
+  });
 }
 
+type PlanSocket = ReturnType<typeof connectPlanSocket>;
+
+/** Bumped by every push and every refetch start, so an older response never overwrites a newer push. */
+type Versions = { tree: number; doc: number; validation: number };
+
+/** `null` marks the document gone: the open one refetches and finds it missing. */
+const markChanged = (store: Store, path: string, hash: string | null): void =>
+  store.set(docChangedAtom, (current) => ({ ...current, [path]: hash }));
+
+function subscribeChanges(socket: PlanSocket, store: Store, versions: Versions): (() => void)[] {
+  return [
+    socket.subscribe("tree_changed", ({ type: _type, ...tree }) => {
+      versions.tree += 1;
+      store.set(treeAtom, tree);
+    }),
+    socket.subscribe("doc_changed", ({ path, hash }) => {
+      versions.doc += 1;
+      markChanged(store, path, hash);
+    }),
+    socket.subscribe("validation", ({ path, validation }) => {
+      versions.validation += 1;
+      store.set(validationAtom, (current) => ({ ...current, [path]: validation }));
+    }),
+  ];
+}
+
+function refreshTree(store: Store, versions: Versions, live: () => boolean): void {
+  const started = ++versions.tree;
+  void fetchTree().then((result) => {
+    if (live() && versions.tree === started && result.ok) store.set(treeAtom, result.value);
+  });
+}
+
+function refreshOpenDoc(store: Store, versions: Versions, live: () => boolean): void {
+  const open = store.get(openDocAtom);
+  if (!open) return;
+  const path = open.doc.path;
+  const docStarted = ++versions.doc;
+  const validationStarted = ++versions.validation;
+  void fetchDoc(path).then((result) => {
+    if (!live() || store.get(openDocAtom)?.doc.path !== path) return;
+    if (!result.ok) {
+      if (result.status === 404 && versions.doc === docStarted) markChanged(store, path, null);
+      return;
+    }
+    if (versions.doc === docStarted) markChanged(store, path, result.value.hash);
+    const validation = result.value.plan?.validation;
+    if (validation && versions.validation === validationStarted) {
+      store.set(validationAtom, (current) => ({ ...current, [path]: validation }));
+    }
+  });
+}
+
+/**
+ * Keeps the tree, change marks and validation current while file mode is mounted. The
+ * socket delivers changes only while this runs, so each mount starts from a fresh tree
+ * and no remembered changes, and a reconnect refetches the tree and the open document.
+ */
 export function useFileSocket(store: Store): void {
   useEffect(() => {
-    const socket = store.get(planSocketAtom);
-    if (!socket) return;
     let active = true;
-    let treeVersion = 0;
-    let docVersion = 0;
-    let validationVersion = 0;
-    const cleanups = [
-      socket.subscribe("tree_changed", ({ type: _type, ...tree }) => {
-        treeVersion += 1;
-        store.set(treeAtom, tree);
-      }),
-      socket.subscribe("doc_changed", ({ path, hash }) => {
-        docVersion += 1;
-        store.set(docChangedAtom, (current) => ({ ...current, [path]: hash }));
-      }),
-      socket.subscribe("validation", ({ path, validation }) => {
-        validationVersion += 1;
-        store.set(validationAtom, (current) => ({ ...current, [path]: validation }));
-      }),
-      socket.onResync(() => {
-        const treeAtStart = ++treeVersion;
-        const docAtStart = ++docVersion;
-        const validationAtStart = ++validationVersion;
-        const open = store.get(openDocAtom);
-        void fetchTree().then((result) => {
-          if (active && treeVersion === treeAtStart && result.ok) store.set(treeAtom, result.value);
-        });
-        if (!open) return;
-        void fetchDoc(open.doc.path).then((result) => {
-          if (!active || !result.ok || store.get(openDocAtom)?.doc.path !== open.doc.path) return;
-          if (docVersion === docAtStart) {
-            store.set(docChangedAtom, (current) => ({
-              ...current,
-              [open.doc.path]: result.value.hash,
-            }));
-          }
-          const validation = result.value.plan?.validation;
-          if (validation && validationVersion === validationAtStart) {
-            store.set(validationAtom, (current) => ({ ...current, [open.doc.path]: validation }));
-          }
-        });
-      }),
-    ];
+    const live = () => active;
+    const versions: Versions = { tree: 0, doc: 0, validation: 0 };
+    store.set(docChangedAtom, {});
+    store.set(validationAtom, {});
+    refreshTree(store, versions, live);
+    const socket = store.get(planSocketAtom);
+    const cleanups = socket
+      ? [
+          ...subscribeChanges(socket, store, versions),
+          socket.onResync(() => {
+            refreshTree(store, versions, live);
+            refreshOpenDoc(store, versions, live);
+          }),
+        ]
+      : [];
     return () => {
       active = false;
       cleanups.forEach((cleanup) => cleanup());
