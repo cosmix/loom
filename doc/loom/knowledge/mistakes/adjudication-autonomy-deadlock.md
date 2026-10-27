@@ -198,3 +198,13 @@ prompt spells the schema out.
 **Prevention:** every exit from `NeedsAdjudication` goes through the same retirement boundary. A path that writes a stage status must do it after the agents that no longer own that stage are gone. Adoption may only fill a stage the scheduler would start, which means Queued on disk.
 
 **Fix:** the adjudicator registry returns `Escalation` values, and `Orchestrator::escalate_dispute` retires the agent first, then always escalates, naming any survivor in `review_reason`. Escalation closes the stage's open disputes (`closed.marker`), so none shadows a later dispute. `--approve` refuses while a worker is live. `start_stage` starts or adopts only a Queued or WaitingForDeps stage and resyncs the graph for any other status. See `architecture/adjudication-lifecycle.md#Retirement and Fresh-Session Boundary`.
+
+## Adjudication Resolved source_path One Level Above .loom/work
+
+**What happened:** A freeze-refusal judge's Accept verdict was refused with "the plan .loom/doc/plans/... cannot be read". Every judge attempt hit the same refusal, the judge sat waiting for a human, and the stage stayed in ADJUDICATING until the watchdog spent the attempt budget.
+
+**Why:** `adjudication/mod.rs::resolve_plan_path` and the daemon-startup resolver each re-implemented relative `source_path` resolution as `work_dir.parent()`, which is `.loom/`, not the project root. The verdict check (`verdict_freeze_plan.rs::load`) and verdict apply both use it.
+
+**Prevention:** Resolve the plan's `source_path` from `.loom/work/config.toml` only through `crate::fs::resolve_source_path`, which owns the `.loom/work` layout via `WorkDir::main_project_root`. Never hand-roll a parent walk from the work dir.
+
+**Fix:** Both resolvers now delegate to `crate::fs::resolve_source_path`; regression test `tests_verdicts.rs::a_relative_source_path_resolves_from_the_project_root`.

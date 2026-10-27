@@ -327,16 +327,9 @@ fn locate_stage_site(
     crate::stage_service::contracts::locate(&work_dir, stage)
 }
 
+/// The plan's `source_path`, resolved against the main project root that
+/// `.loom/work` belongs to (two levels up from the work dir, followed through
+/// a worktree's symlink).
 fn resolve_plan_path(work_dir: &Path) -> Option<PathBuf> {
-    let cfg = crate::fs::work_dir::load_config(work_dir).ok().flatten()?;
-    let path = cfg.source_path()?;
-    if path.is_absolute() {
-        Some(path)
-    } else {
-        let root = work_dir
-            .canonicalize()
-            .ok()
-            .and_then(|wd| wd.parent().map(|p| p.to_path_buf()))?;
-        Some(root.join(path))
-    }
+    crate::fs::resolve_source_path(work_dir).ok().flatten()
 }

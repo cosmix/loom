@@ -253,7 +253,10 @@ impl Orchestrator {
     /// the first poll tick reads stage acceptance arrays.
     fn reconcile_plan_amendments(config: &OrchestratorConfig) {
         if let Err(e) = crate::plan::amendment::verify_plan_versions_consistency(
-            &resolve_plan_path_for_startup(&config.work_dir).unwrap_or_default(),
+            &crate::fs::resolve_source_path(&config.work_dir)
+                .ok()
+                .flatten()
+                .unwrap_or_default(),
             &config.work_dir,
         ) {
             tracing::warn!(
@@ -359,22 +362,5 @@ pub(super) fn unretired_detail(retired: Result<Vec<String>>) -> Option<String> {
             survivors.join(", ")
         )),
         Err(error) => Some(format!("its agents could not be retired: {error:#}")),
-    }
-}
-
-/// Resolve the plan source_path from `.loom/work/config.toml` for daemon-
-/// startup recovery. Returns `None` when there is no config yet (e.g.
-/// during a test that doesn't initialise one).
-fn resolve_plan_path_for_startup(work_dir: &std::path::Path) -> Option<PathBuf> {
-    let cfg = crate::fs::work_dir::load_config(work_dir).ok().flatten()?;
-    let path = cfg.source_path()?;
-    if path.is_absolute() {
-        Some(path)
-    } else {
-        let root = work_dir
-            .canonicalize()
-            .ok()
-            .and_then(|wd| wd.parent().map(|p| p.to_path_buf()))?;
-        Some(root.join(path))
     }
 }
