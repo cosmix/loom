@@ -217,46 +217,67 @@
       }
     },
     {
+      "name": "pressure.rounds",
+      "help": "Pressure/address rounds loom pressure runs (at least 1)",
+      "kind": {
+        "type": "number"
+      },
+      "scopes": ["user", "project"],
+      "default": 1,
+      "user": {
+        "value": 1,
+        "set": false
+      },
+      "project": {
+        "value": 1,
+        "set": false
+      },
+      "effective": {
+        "value": 1,
+        "source": "default"
+      }
+    },
+    {
       "name": "models.standard_model",
-      "help": "Model a standard stage's main agent session runs on",
+      "help": "Stage orchestrator model for standard (implementation) stages",
       "kind": {
         "type": "enum",
         "variants": ["haiku", "sonnet", "opus", "fable"]
       },
       "scopes": ["user", "project"],
-      "default": "opus",
+      "default": "sonnet",
       "user": {
-        "value": "opus",
+        "value": "sonnet",
         "set": false
       },
       "project": {
-        "value": "opus",
+        "value": "sonnet",
         "set": false
       },
       "effective": {
-        "value": "opus",
+        "value": "sonnet",
         "source": "default"
       }
     },
     {
       "name": "models.standard_effort",
-      "help": "Reasoning effort a standard stage's main agent session runs at",
+      "help": "Stage orchestrator reasoning effort for standard (implementation) stages",
       "kind": {
         "type": "enum",
         "variants": ["low", "medium", "high", "xhigh", "max"]
       },
       "scopes": ["user", "project"],
-      "default": "medium",
+      "default": "high",
       "user": {
-        "value": "medium",
+        "value": "high",
         "set": false
       },
       "project": {
-        "value": "medium",
+        "value": "high",
         "set": false
       },
       "effective": {
-        "value": "medium",
+        "value": "high",
         "source": "default"
       }
     },
@@ -389,6 +410,50 @@
       },
       "effective": {
         "value": "xhigh",
+        "source": "default"
+      }
+    },
+    {
+      "name": "models.code_reviewer_model",
+      "help": "Model the loom-code-reviewer subagent runs on",
+      "kind": {
+        "type": "enum",
+        "variants": ["haiku", "sonnet", "opus", "fable"]
+      },
+      "scopes": ["user", "project"],
+      "default": "opus",
+      "user": {
+        "value": "opus",
+        "set": false
+      },
+      "project": {
+        "value": "opus",
+        "set": false
+      },
+      "effective": {
+        "value": "opus",
+        "source": "default"
+      }
+    },
+    {
+      "name": "models.code_reviewer_effort",
+      "help": "Reasoning effort the loom-code-reviewer subagent runs at",
+      "kind": {
+        "type": "enum",
+        "variants": ["low", "medium", "high", "xhigh", "max"]
+      },
+      "scopes": ["user", "project"],
+      "default": "high",
+      "user": {
+        "value": "high",
+        "set": false
+      },
+      "project": {
+        "value": "high",
+        "set": false
+      },
+      "effective": {
+        "value": "high",
         "source": "default"
       }
     },

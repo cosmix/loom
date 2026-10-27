@@ -433,9 +433,9 @@ loom pressure <plan-path> [--rounds N] [--claude-model M] [--claude-effort E] [-
 
 When `loom run` stops — every stage settled, or interrupted by `loom stop` — it prints stages by outcome: `Completed`; `Failed` (`Blocked`, `MergeConflict`, `CompletedWithFailures`, `MergeBlocked`, `NeedsHumanReview` — terminal, needing intervention); `Unfinished` (`WaitingForDeps`, `Queued`, `Executing`, `WaitingForInput`, `NeedsAdjudication` — still in progress when the run stopped); and `Needs Handoff`. The run succeeds only when `Failed`, `Unfinished`, and `Needs Handoff` are all empty.
 
-`loom pressure` hardens a plan before you run it by combining two external agents over `--rounds` rounds (default 2). Each round runs both pressure-tests in parallel: Claude `/pressure` edits the plan in place in the foreground (you watch it live), while Codex `$pressure` writes an independent review next to it (`codex-<plan>.md`) in the background (its output is captured to a temp log to keep the terminal clean). Once both finish, Claude `/address` folds the review back in. Claude stays interactive and auto-closes when done; Codex runs from the repo root. Requires both the `claude` and `codex` CLIs on PATH. `--dry-run` prints the exact commands without spawning anything.
+`loom pressure` hardens a plan before you run it by combining two external agents over `--rounds` rounds (default 1, or `pressure.rounds`). Each round runs both pressure-tests in parallel: Claude `/pressure` edits the plan in place in the foreground (you watch it live), while Codex `$pressure` writes an independent review next to it (`codex-<plan>.md`) in the background (its output is captured to a temp log to keep the terminal clean). Once both finish, Claude `/address` folds the review back in. Claude stays interactive and auto-closes when done; Codex runs from the repo root. Requires both the `claude` and `codex` CLIs on PATH. `--dry-run` prints the exact commands without spawning anything.
 
-Each of the three steps spawns with an independently selectable model and reasoning effort: `--claude-model`/`--claude-effort` for `/pressure` (model accepts `haiku`, `sonnet`, `opus`, or `fable`; effort accepts `low`, `medium`, `high`, `xhigh`, or `max`), `--address-model`/`--address-effort` for `/address` (same value sets), and `--codex-model`/`--codex-effort` for `$pressure` (model accepts `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6.1-terra`, or `gpt-6-luna`; effort accepts `low`, `medium`, `high`, or `xhigh` — no `max`, that value is Claude-only). Absent a flag, each key falls back independently: the project config's `.loom/work/config.toml` `[pressure]` section first (if it sets that key), then `~/.loom/config.toml` (`loom config -k pressure.claude_model <value>`), then its built-in default. `[pressure]` resolves per key, so a project section that sets only `claude_model` still lets `codex_effort` fall through to your user config.
+Each of the three steps spawns with an independently selectable model and reasoning effort: `--claude-model`/`--claude-effort` for `/pressure` (model accepts `haiku`, `sonnet`, `opus`, or `fable`; effort accepts `low`, `medium`, `high`, `xhigh`, or `max`), `--address-model`/`--address-effort` for `/address` (same value sets), and `--codex-model`/`--codex-effort` for `$pressure` (model accepts `gpt-6-astra`, `gpt-6.1-sol`, `gpt-6-sol`, `gpt-6.1-terra`, or `gpt-6-luna`; effort accepts `low`, `medium`, `high`, or `xhigh` — no `max`, that value is Claude-only). Absent a flag, each key falls back independently: the project config's `.loom/work/config.toml` `[pressure]` section first (if it sets that key), then `~/.loom/config.toml` (`loom config -k pressure.claude_model <value>`), then its built-in default. `--rounds` resolves the same way: the flag, then the project `[pressure] rounds`, then `~/.loom/config.toml` (`loom config -k pressure.rounds <n>`, at least 1), then 1. `[pressure]` resolves per key, so a project section that sets only `claude_model` still lets `codex_effort` fall through to your user config.
 
 When the codex model is unavailable to the account (codex rejects it as not supported or not found), `loom pressure` retries with the same family's nearest newer version first and then the nearest older one, never another tier; the default `gpt-6.1-sol` falls back to `gpt-6-sol`. The fallback notice prints after the Claude session ends. When every model in the family is unavailable the run fails and shows the codex error.
 
@@ -638,14 +638,17 @@ The keys, with their built-in defaults:
 | `pressure.codex_effort`            | `xhigh`       | `low`, `medium`, `high`, `xhigh`                                         | per key       |
 | `pressure.address_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `pressure.address_effort`          | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
-| `models.standard_model`            | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
-| `models.standard_effort`           | `medium`      | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
+| `pressure.rounds`                  | `1`           | integer, at least 1                                                      | per key       |
+| `models.standard_model`            | `sonnet`      | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
+| `models.standard_effort`           | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 | `models.knowledge_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `models.knowledge_effort`          | `medium`      | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 | `models.knowledge_distill_model`   | `sonnet`      | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `models.knowledge_distill_effort`  | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 | `models.integration_verify_model`  | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `models.integration_verify_effort` | `xhigh`       | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
+| `models.code_reviewer_model`       | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
+| `models.code_reviewer_effort`      | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 
 "Whole section" means a project `[terminal]` or `[context]` section replaces the user tier's section outright, so a key it omits takes the built-in. "Per key" means a project `[pressure]` or `[models]` section overrides only the keys it names and the rest fall through to the user file. The `pressure.*` keys are explained under [Primary Commands](#primary-commands), the `models.*` keys under [Model Allocation](#model-allocation).
 
@@ -1028,27 +1031,29 @@ Every stage's main agent is an **orchestrator**; the model and effort it runs co
 
 | Stage type           | Default model | Default effort |
 | -------------------- | ------------- | -------------- |
-| `standard`           | `opus`        | `medium`       |
+| `standard`           | `sonnet`      | `high`         |
 | `knowledge`          | `opus`        | `medium`       |
 | `knowledge-distill`  | `sonnet`      | `high`         |
 | `integration-verify` | `opus`        | `xhigh`        |
 
-Configure either default per stage type in the `[models]` section of `~/.loom/config.toml` (user tier) or `<repo>/.loom/work/config.toml` (project tier, resolved per key — a project section that sets only one of these eight keys still lets the rest fall through to the user config):
+Configure either default per stage type in the `[models]` section of `~/.loom/config.toml` (user tier) or `<repo>/.loom/work/config.toml` (project tier, resolved per key — a project section that sets only one of these ten keys still lets the rest fall through to the user config):
 
 ```toml
 # ~/.loom/config.toml or .loom/work/config.toml
 [models]
-standard_model = "opus"
-standard_effort = "medium"
+standard_model = "sonnet"
+standard_effort = "high"
 knowledge_model = "opus"
 knowledge_effort = "medium"
 knowledge_distill_model = "sonnet"
 knowledge_distill_effort = "high"
 integration_verify_model = "opus"
 integration_verify_effort = "xhigh"
+code_reviewer_model = "opus"
+code_reviewer_effort = "high"
 ```
 
-A plan stage's `model` / `reasoning_effort` field overrides both config tiers for that one stage. Merge and base-conflict sessions stay pinned at opus/high and adjudication keeps its own `[adjudication] model`; neither is configurable through `[models]`.
+A plan stage's `model` / `reasoning_effort` field overrides both config tiers for that one stage. `standard_model`/`standard_effort` set the orchestrator of standard (implementation) stages. `code_reviewer_model`/`code_reviewer_effort` are not a stage type: they set the model and effort of the `loom-code-reviewer` subagent, applied by the spawn guard to every `loom-code-reviewer` spawn and overriding a model the caller passes. Merge and base-conflict sessions stay pinned at opus/high and adjudication keeps its own `[adjudication] model`; neither is configurable through `[models]`.
 
 The orchestrator decomposes the work, hands each subagent full context, then runs the gate and commits. In a `standard` stage the gate is the orchestrator's single `loom check`, and a fix round re-checks with `--criterion <n>`; an `integration-verify` stage keeps its own gate. Either way the orchestrator owns the fixes and the commit. It makes a change itself only when that is cheaper than a spawn: at most 20 changed lines in at most 2 files it has already read, proven by one command; a fable session delegates even those. Implementation is delegated to as few subagents as the work allows, each spawned **by agent type** so the model choice is explicit:
 

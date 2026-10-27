@@ -116,9 +116,13 @@ impl StageType {
             // subagents — the memories are already compact summaries, so the
             // volume and the judgment both fit a single sonnet session.
             StageType::KnowledgeDistill => "sonnet",
-            // Standard and integration-verify stages: the main agent orchestrates
-            // and delegates implementation/review work to subagents.
-            StageType::Standard | StageType::IntegrationVerify => "opus",
+            // Standard stages: the main agent orchestrates, delegates the
+            // implementation to subagents and runs one gate; sonnet at high
+            // effort covers that coordination.
+            StageType::Standard => "sonnet",
+            // Integration-verify: the final quality gate keeps the strongest
+            // orchestrator.
+            StageType::IntegrationVerify => "opus",
         }
     }
 
@@ -135,10 +139,9 @@ impl StageType {
             // The final quality gate, combining code review and functional
             // verification, gets the highest effort available.
             StageType::IntegrationVerify => "xhigh",
-            // Ordinary orchestration: plan the work, delegate, commit. The
-            // gate is one `loom check` whose output is a short summary, so
-            // the orchestrator itself needs only medium.
-            StageType::Standard => "medium",
+            // Ordinary orchestration: plan the work, delegate, commit. High
+            // effort compensates for the sonnet orchestrator.
+            StageType::Standard => "high",
         }
     }
 }

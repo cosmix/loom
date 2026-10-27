@@ -81,9 +81,37 @@ impl PressureModels {
     }
 }
 
+/// Rounds one pressure run executes: `--rounds`, else project
+/// `[pressure] rounds`, else user `[pressure] rounds`, else the built-in.
+pub(super) fn resolve_rounds(
+    flag: Option<u32>,
+    project: &PressureConfig,
+    user: &UserConfig,
+) -> u32 {
+    flag.or_else(|| project.rounds())
+        .unwrap_or_else(|| user.pressure_rounds())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn rounds_resolve_flag_then_project_then_user_then_default() {
+        let user = crate::user_config::parse_document("[pressure]\nrounds = 3\n").unwrap();
+        let project = PressureConfig::from_section_toml("rounds = 4\n").unwrap();
+        let none = PressureConfig::default();
+        assert_eq!(resolve_rounds(Some(5), &project, &user), 5);
+        assert_eq!(resolve_rounds(None, &project, &user), 4);
+        assert_eq!(resolve_rounds(None, &none, &user), 3);
+        assert_eq!(resolve_rounds(None, &none, &UserConfig::default()), 1);
+    }
+
+    #[test]
+    fn a_zero_project_rounds_falls_through() {
+        let project = PressureConfig::from_section_toml("rounds = 0\n").unwrap();
+        assert_eq!(resolve_rounds(None, &project, &UserConfig::default()), 1);
+    }
 
     fn flags() -> PressureModelFlags {
         PressureModelFlags::default()

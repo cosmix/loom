@@ -31,6 +31,8 @@ struct ModelsConfig {
     knowledge_distill_effort: Option<String>,
     integration_verify_model: Option<String>,
     integration_verify_effort: Option<String>,
+    code_reviewer_model: Option<String>,
+    code_reviewer_effort: Option<String>,
 }
 
 impl ModelsConfig {
@@ -76,6 +78,26 @@ impl ModelsConfig {
             ),
         };
         allowed_value(value.as_ref(), ALLOWED_REASONING_EFFORTS, key)
+    }
+}
+
+impl ModelsConfig {
+    /// The validated `loom-code-reviewer` model this section sets, if any.
+    fn code_reviewer_model(&self) -> Option<&str> {
+        allowed_value(
+            self.code_reviewer_model.as_ref(),
+            crate::claude::CLAUDE_MODELS,
+            "models.code_reviewer_model",
+        )
+    }
+
+    /// The validated `loom-code-reviewer` effort this section sets, if any.
+    fn code_reviewer_effort(&self) -> Option<&str> {
+        allowed_value(
+            self.code_reviewer_effort.as_ref(),
+            ALLOWED_REASONING_EFFORTS,
+            "models.code_reviewer_effort",
+        )
     }
 }
 
@@ -133,6 +155,40 @@ pub fn resolve_stage_model_effort(
     resolve_from(&project, &user, stage_type, stage_model, stage_effort)
 }
 
+/// Pure code-reviewer resolution: project key, else user tier (which already
+/// collapses "user set it" and the built-in).
+fn resolve_code_reviewer_from(project: &ModelsConfig, user: &UserConfig) -> (String, String) {
+    let model = project
+        .code_reviewer_model()
+        .unwrap_or_else(|| user.code_reviewer_model());
+    let effort = project
+        .code_reviewer_effort()
+        .unwrap_or_else(|| user.code_reviewer_effort());
+    (model.to_string(), effort.to_string())
+}
+
+/// The (model, reasoning effort) every `loom-code-reviewer` subagent spawn
+/// runs with: `.loom/work/config.toml` `[models]` -> `~/.loom/config.toml`
+/// `[models]` -> the built-in. Not a stage type, so it has no plan-field tier
+/// and does not go through [`resolve_stage_model_effort`]. Each key falls
+/// through independently; `work_dir` is `None` outside a workspace.
+///
+/// Strict, unlike the stage resolver: the caller is the spawn guard, which
+/// must fail loudly on an unreadable config rather than spawn a reviewer on a
+/// model nobody chose.
+pub fn resolve_code_reviewer_model_effort(
+    work_dir: Option<&Path>,
+) -> anyhow::Result<(String, String)> {
+    let project = match work_dir {
+        Some(dir) => super::read_section::<ModelsConfig>(dir, MODELS_SECTION)?.unwrap_or_default(),
+        None => ModelsConfig::default(),
+    };
+    Ok(resolve_code_reviewer_from(
+        &project,
+        &UserConfig::load_strict()?,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -142,7 +198,7 @@ mod tests {
         let project = ModelsConfig::default();
         let user = UserConfig::default();
         let cases = [
-            (StageType::Standard, "opus", "medium"),
+            (StageType::Standard, "sonnet", "high"),
             (StageType::Knowledge, "opus", "medium"),
             (StageType::KnowledgeDistill, "sonnet", "high"),
             (StageType::IntegrationVerify, "opus", "xhigh"),
@@ -195,7 +251,7 @@ mod tests {
         let user = UserConfig::default();
         assert_eq!(
             resolve_from(&project, &user, StageType::Standard, None, None),
-            ("sonnet".to_string(), "medium".to_string())
+            ("sonnet".to_string(), "high".to_string())
         );
     }
 
@@ -206,7 +262,34 @@ mod tests {
         let user = UserConfig::default();
         assert_eq!(
             resolve_from(&project, &user, StageType::Standard, None, None),
-            ("opus".to_string(), "medium".to_string())
+            ("sonnet".to_string(), "high".to_string())
+        );
+    }
+
+    #[test]
+    fn code_reviewer_defaults_to_opus_high() {
+        let (model, effort) =
+            resolve_code_reviewer_from(&ModelsConfig::default(), &UserConfig::default());
+        assert_eq!((model.as_str(), effort.as_str()), ("opus", "high"));
+    }
+
+    #[test]
+    fn code_reviewer_project_beats_user_beats_default_per_key() {
+        let user = crate::user_config::parse_document(
+            "[models]\ncode_reviewer_model = \"haiku\"\ncode_reviewer_effort = \"low\"\n",
+        )
+        .unwrap();
+        let project =
+            ModelsConfig::from_section_toml("code_reviewer_model = \"sonnet\"\n").unwrap();
+        // Model from the project, effort falls through to the user tier.
+        assert_eq!(
+            resolve_code_reviewer_from(&project, &user),
+            ("sonnet".to_string(), "low".to_string())
+        );
+        // No project keys: the user tier wins over the built-in.
+        assert_eq!(
+            resolve_code_reviewer_from(&ModelsConfig::default(), &user),
+            ("haiku".to_string(), "low".to_string())
         );
     }
 
@@ -236,5 +319,35 @@ mod tests {
             resolve_stage_model_effort(&work_dir, StageType::Standard, None, None),
             ("sonnet".to_string(), "low".to_string())
         );
+    }
+
+    #[test]
+    fn strict_code_reviewer_resolution_reads_both_tiers_and_errors_on_a_bad_file() {
+        let temp = tempfile::TempDir::new().unwrap();
+        let work_dir = temp.path().join("work");
+        std::fs::create_dir_all(&work_dir).unwrap();
+        let user_config_path = temp.path().join("user-config.toml");
+        std::fs::write(
+            &user_config_path,
+            "[models]\ncode_reviewer_effort = \"low\"\n",
+        )
+        .unwrap();
+        let _redirect = crate::user_config::redirect_user_config(user_config_path);
+
+        assert_eq!(
+            resolve_code_reviewer_model_effort(None).unwrap(),
+            ("opus".to_string(), "low".to_string())
+        );
+        std::fs::write(
+            work_dir.join("config.toml"),
+            "[models]\ncode_reviewer_model = \"sonnet\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_code_reviewer_model_effort(Some(&work_dir)).unwrap(),
+            ("sonnet".to_string(), "low".to_string())
+        );
+        std::fs::write(work_dir.join("config.toml"), "[models\n").unwrap();
+        assert!(resolve_code_reviewer_model_effort(Some(&work_dir)).is_err());
     }
 }

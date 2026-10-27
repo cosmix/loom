@@ -15,9 +15,9 @@ pub struct PressureArgs {
     /// resolves under doc/plans/)
     pub plan: String,
 
-    /// Number of pressure/address rounds to run (must be >= 1)
-    #[arg(long, default_value_t = 2, value_parser = clap::value_parser!(u32).range(1..))]
-    pub rounds: u32,
+    /// Number of pressure/address rounds to run, at least 1 (default: 1, or pressure.rounds)
+    #[arg(long, value_parser = clap::value_parser!(u32).range(1..))]
+    pub rounds: Option<u32>,
 
     /// Print the planned steps without spawning Claude or Codex
     #[arg(long)]

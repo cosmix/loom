@@ -41,9 +41,15 @@ pub(super) fn get_u32(doc: &DocumentMut, section: &str, field: &str) -> Result<O
                     item.type_name()
                 )
             })?;
-            u32::try_from(int)
-                .map(Some)
-                .map_err(|_| anyhow::anyhow!("{section}.{field}: {int} is out of range for a u32"))
+            let number = u32::try_from(int).map_err(|_| {
+                anyhow::anyhow!("{section}.{field}: {int} is out of range for a u32")
+            })?;
+            let name = format!("{section}.{field}");
+            let min = super::keys::number_min(&name);
+            if number < min {
+                anyhow::bail!("{name}: {number} is below the minimum of {min}");
+            }
+            Ok(Some(number))
         }
     }
 }
