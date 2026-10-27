@@ -112,6 +112,7 @@ fn dispatch_plan(command: Option<PlanCommands>, serve: PlanServeArgs) -> Result<
             no_color,
         }) => plan::verify::execute(&path, strict, json, no_color),
         Some(PlanCommands::Check { json }) => crate::commands::plan::check::execute(json),
+        Some(PlanCommands::Summary { command }) => plan::summary::execute(command),
     }
 }
 
