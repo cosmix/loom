@@ -18,10 +18,12 @@ use crate::plan_server::routes::{BodyKind, Method, Role};
 use crate::plan_session::bridge::LaunchGuidance;
 use crate::plan_session::kind::SessionDir;
 use crate::planning::checklist::Offer;
-use crate::planning::guidance::{GuidanceModels, ModelEffort};
+use crate::planning::guidance::{GuidanceModels, ModelEffort, StartBlocks};
 use crate::planning::watch::OwnWrites;
 use crate::user_config::UserConfig;
 use crate::web_server::http::parse_head;
+
+mod install;
 
 struct HomeGuard(Option<OsString>);
 
@@ -312,4 +314,22 @@ fn knowledge_is_accepted_without_a_checklist_offer() {
 
     assert!(guidance.opening_message.contains("loom-plan:knowledge"));
     assert_eq!(guidance.model, "spec-model");
+}
+
+#[test]
+#[serial_test::serial]
+fn start_block_refuses_a_provider_created_after_a_restart() {
+    let reason = "session hooks changed; review configuration before starting";
+    let fixture = Fixture::new();
+    StartBlocks::block(fixture.ctx.runtime(), reason, &[]).unwrap();
+    // A restarted server has a provider with nothing in memory; the block lives on disk.
+    let restarted = PlanGuidance::new(models());
+
+    let error = restarted
+        .authoring(&fixture.ctx, &fixture.session, None, None)
+        .unwrap_err();
+
+    assert!(format!("{error:#}").contains(reason), "{error:#}");
+    assert!(!fixture.session.brief().exists());
+    assert!(!fixture.session.plugin().exists());
 }
