@@ -122,7 +122,7 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 230 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 156 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Briefs, bugs | 365 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Briefs, bugs | 375 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift | 353 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
