@@ -8,6 +8,7 @@ use glob::{MatchOptions, Pattern};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
+use super::tests_kinds_fixture::{expected_common, kinds};
 use super::{
     assert_planning_settings, build_settings, ensure_runtime_grants, HookSpec, SandboxInputs,
 };
@@ -17,9 +18,9 @@ use crate::planning::runtime::{runtime_paths_under, RuntimePaths};
 
 pub(super) struct Fixture {
     _temp: TempDir,
-    root: PathBuf,
-    home: PathBuf,
-    runtime: RuntimePaths,
+    pub(super) root: PathBuf,
+    pub(super) home: PathBuf,
+    pub(super) runtime: RuntimePaths,
     session: SessionDir,
 }
 
@@ -92,66 +93,6 @@ impl Fixture {
             self.session.path().display()
         )
     }
-}
-
-fn kinds() -> [SessionKind; 3] {
-    [
-        SessionKind::Authoring,
-        SessionKind::Summary,
-        SessionKind::Pressure {
-            plan: PathBuf::from("doc/plans/PLAN-a.md"),
-        },
-    ]
-}
-
-fn expected_read_denies(f: &Fixture) -> Value {
-    let state = f.root.join(".loom/work");
-    json!([
-        "~/.ssh/**",
-        "~/.aws/**",
-        "~/.config/gcloud/**",
-        "~/.gnupg/**",
-        "~/.claude/.credentials.json",
-        "~/.config/gh/hosts.yml",
-        "~/.netrc",
-        "~/.npmrc",
-        "~/.git-credentials",
-        "~/.docker/config.json",
-        "~/.kube/config",
-        "~/.pypirc",
-        "~/.cargo/credentials.toml",
-        "~/.cargo/credentials",
-        "~/.codex/auth.json",
-        f.runtime.planning_root,
-        f.home.join(".loom/plan"),
-        format!("/{}/admin.token", state.display()),
-        format!("/{}/user.token", state.display()),
-        format!("/{}/completion-attestation.key", state.display()),
-        state.join("terminal-history")
-    ])
-}
-
-pub(super) fn expected_common(f: &Fixture) -> Value {
-    json!({
-        "sandbox": {
-            "enabled": true, "failIfUnavailable": true,
-            "autoAllowBashIfSandboxed": false, "allowUnsandboxedCommands": false,
-            "network": {"strictAllowlist": true},
-            "filesystem": {
-                "denyWrite": [], "allowWrite": [], "denyRead": expected_read_denies(f),
-                "allowRead": [f.runtime.drafts, f.runtime.claims, f.runtime.summaries_lock]
-            }
-        },
-        "permissions": {
-            "defaultMode": "default", "disableBypassPermissionsMode": "disable",
-            "allow": [], "ask": [], "deny": []
-        },
-        "worktree": {"bgIsolation": "none"},
-        "hooks": {"PreToolUse": [{
-            "matcher": "Read|Edit|Write|MultiEdit|NotebookEdit|Grep|Glob",
-            "hooks": [{"type": "command", "command": f.command("PreToolUse"), "timeout": 10}]
-        }]}
-    })
 }
 
 #[test]
@@ -301,7 +242,14 @@ fn no_kind_allows_an_edit_under_doc_loom() {
                 continue;
             };
             let pattern = Pattern::new(pattern.strip_suffix(')').unwrap()).unwrap();
-            for rel in ["doc/loom/knowledge/x.md", "doc/loom/summaries/x.md"] {
+            // Gitignore semantics: a pattern matching an ancestor directory covers the file.
+            for rel in [
+                "doc/loom",
+                "doc/loom/knowledge",
+                "doc/loom/summaries",
+                "doc/loom/knowledge/x.md",
+                "doc/loom/summaries/x.md",
+            ] {
                 assert!(
                     !pattern.matches_path_with(&f.root.join(rel), options),
                     "{kind:?}: {rule}"
@@ -309,6 +257,26 @@ fn no_kind_allows_an_edit_under_doc_loom() {
             }
         }
     }
+}
+
+#[test]
+fn non_utf8_state_root_fails_the_build() {
+    use std::os::unix::ffi::OsStrExt;
+    let f = Fixture::new();
+    let work = f.root.join(".loom/work");
+    let target = f
+        .home
+        .parent()
+        .unwrap()
+        .join(std::ffi::OsStr::from_bytes(b"state-\xff"));
+    fs::create_dir(&target).unwrap();
+    fs::remove_dir(&work).unwrap();
+    std::os::unix::fs::symlink(&target, &work).unwrap();
+    let error = f.build(&SessionKind::Authoring, &[]).unwrap_err();
+    assert!(
+        format!("{error:#}").contains("not valid UTF-8"),
+        "{error:#}"
+    );
 }
 
 #[test]

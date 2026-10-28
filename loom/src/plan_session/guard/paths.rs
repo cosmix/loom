@@ -135,8 +135,8 @@ struct Denied {
     guards_searches: bool,
 }
 
-/// The read denies of one session, recomputed by `sandbox::reads::read_denies` so layer 1 and
-/// layer 3 deny the same paths, each entry in its lexical and canonical forms.
+/// The read denies of one session, recomputed by `sandbox::read_denies` so layer 1 and layer 3
+/// deny the same paths, each entry in its lexical and canonical forms.
 pub(super) struct ReadRules {
     denied: Vec<Denied>,
     /// The session's `allowRead` grants; they win over the denies.
@@ -144,9 +144,12 @@ pub(super) struct ReadRules {
 }
 
 impl ReadRules {
-    pub(super) fn new(policy: &GuardPolicy) -> Self {
+    /// Fails when the denies cannot be computed (a path that is not valid UTF-8); the caller
+    /// denies with that reason.
+    pub(super) fn new(policy: &GuardPolicy) -> Result<Self, String> {
         let home = &policy.home;
-        let reads = read_denies(home, &policy.project_root, &policy.runtime_dir);
+        let reads = read_denies(home, &policy.project_root, &policy.runtime_dir)
+            .map_err(|error| format!("cannot compute the read denies: {error:#}"))?;
         let state_root = resolve_state_root(&policy.project_root);
         let mut denied = Vec::new();
         for entry in &reads.denied {
@@ -172,7 +175,7 @@ impl ReadRules {
             grants.push(SessionDir::new(policy.session_dir.clone()).done());
         }
         let carve_outs = grants.iter().flat_map(|grant| grant_forms(grant)).collect();
-        ReadRules { denied, carve_outs }
+        Ok(ReadRules { denied, carve_outs })
     }
 
     /// Deny a read of `path` (absolute, normalised) when its lexical or canonical form is

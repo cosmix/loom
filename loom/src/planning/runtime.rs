@@ -19,6 +19,8 @@ use crate::fs::safe_fs::{safe_create_dir_all, safe_open_dirfd};
 const STATE_VAR: &str = "LOOM_PLAN_STATE";
 /// Environment variable carrying the planning session id.
 const SESSION_VAR: &str = "LOOM_PLAN_SESSION";
+/// Name of the drafts directory inside the runtime directory.
+pub(crate) const DRAFTS_DIR: &str = "drafts";
 
 /// Every runtime path of one project's planning state.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -45,7 +47,7 @@ impl RuntimePaths {
     fn new(planning_root: PathBuf, dir: PathBuf) -> Self {
         RuntimePaths {
             lock: dir.join("lock"),
-            drafts: dir.join("drafts"),
+            drafts: dir.join(DRAFTS_DIR),
             claims: dir.join("claims"),
             summaries_lock: dir.join("summaries.lock"),
             summary_cost: dir.join("summary-cost.jsonl"),
@@ -136,15 +138,47 @@ fn check_state(state: &Path, session: Option<&str>, key: &str) -> Result<PathBuf
     let parent = state
         .parent()
         .ok_or_else(|| anyhow!("{STATE_VAR} has no parent directory: {}", state.display()))?;
-    // The sandbox makes the real planning root read-only; a writable parent means the
-    // caller made the directory itself and could bypass the server's lock and claims.
-    if access(parent, AccessFlags::W_OK).is_ok() {
-        bail!(
-            "{STATE_VAR} parent {} is writable, so it is not the planning root",
-            parent.display()
-        );
-    }
+    check_parent(state, parent, meta.dev())?;
     Ok(parent.to_path_buf())
+}
+
+/// Refuse a `parent` the caller could have made itself, which could bypass the server's lock
+/// and claims.
+///
+/// Under Seatbelt the real planning root is unwritable, so a write test settles it. Under srt
+/// on Linux the read-denied planning root is a private tmpfs per command and the session's
+/// grants are bound into it from the host, so the parent is writable but `drafts`, `claims` and
+/// `summaries.lock` each sit on another device than the state directory. A directory the caller
+/// made holds no mounts.
+fn check_parent(state: &Path, parent: &Path, state_dev: u64) -> Result<()> {
+    if access(parent, AccessFlags::W_OK).is_err() || grants_mounted(state, parent, state_dev) {
+        return Ok(());
+    }
+    bail!(
+        "{STATE_VAR} parent {} is writable and its runtime grants are not mounted into it, so it \
+         is not the planning root",
+        parent.display()
+    )
+}
+
+/// Whether `drafts/` and `claims/` (directories) and `summaries.lock` (a regular file) under
+/// `state` are all on a device other than `state_dev`. `symlink_metadata` keeps a symlink to
+/// another filesystem from counting; any error counts as not mounted.
+fn grants_mounted(state: &Path, parent: &Path, state_dev: u64) -> bool {
+    let paths = RuntimePaths::new(parent.to_path_buf(), state.to_path_buf());
+    let elsewhere = |path: &Path, is_dir: bool| {
+        std::fs::symlink_metadata(path).is_ok_and(|meta| {
+            let kind = meta.file_type();
+            (if is_dir {
+                kind.is_dir()
+            } else {
+                kind.is_file()
+            }) && meta.dev() != state_dev
+        })
+    };
+    elsewhere(&paths.drafts, true)
+        && elsewhere(&paths.claims, true)
+        && elsewhere(&paths.summaries_lock, false)
 }
 
 fn loom_user_dir() -> Result<PathBuf> {

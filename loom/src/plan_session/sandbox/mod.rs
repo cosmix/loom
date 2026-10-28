@@ -4,13 +4,13 @@
 //! kind") and the guard's `guard.json` into a session directory. It is a builder beside
 //! `sandbox::settings`, never `generate_settings_json`, which adds the package-manager cache
 //! writes, the orchestration-state reads and plan-authored config a planning session must not
-//! have. Layer 1 is `filesystem` and [`reads`], layer 2 and the hooks `permissions`; layer 3
-//! is the guard (`plan_session::guard`) the `PreToolUse` hook runs.
+//! have. Layer 1 is `filesystem` and [`read_denies`], layer 2 and the hooks `permissions`;
+//! layer 3 is the guard (`plan_session::guard`) the `PreToolUse` hook runs.
 
 mod assert;
-mod filesystem;
+pub(crate) mod filesystem;
 mod permissions;
-pub mod reads;
+mod reads;
 
 #[cfg(test)]
 mod tests;
@@ -18,6 +18,8 @@ mod tests;
 mod tests_assert;
 #[cfg(test)]
 mod tests_kinds;
+#[cfg(test)]
+mod tests_kinds_fixture;
 
 use std::borrow::Cow;
 use std::fs::File;
@@ -44,7 +46,7 @@ pub const PRE_TOOL_USE_MATCHER: &str = "Read|Edit|Write|MultiEdit|NotebookEdit|G
 /// Seconds Claude Code waits for the guard.
 pub const PRE_TOOL_USE_TIMEOUT_SECS: u32 = 10;
 /// The hook event plan 6 owns; an extra hook for it is refused.
-const PRE_TOOL_USE: &str = "PreToolUse";
+pub(crate) const PRE_TOOL_USE: &str = "PreToolUse";
 /// `settings.json` and `guard.json` are the host's, readable by the user alone.
 const SANDBOX_FILE_MODE: libc::mode_t = 0o600;
 /// The runtime grant directories and a pressure session's `done/`.
@@ -125,7 +127,7 @@ pub fn build_settings(
         done: inputs.session_dir.done(),
     };
     let (deny_write, allow_write) = filesystem::write_lists(&build)?;
-    let reads = read_denies(inputs.home, inputs.project_root, &inputs.runtime.dir);
+    let reads = read_denies(inputs.home, inputs.project_root, &inputs.runtime.dir)?;
     let mut allow_read = reads.carve_outs;
     if matches!(build.target, Target::Pressure { .. }) {
         allow_read.push(filesystem::text(&build.done)?);
@@ -236,14 +238,16 @@ fn relative<'p>(base: &Path, path: &'p Path) -> Result<&'p Path> {
 /// Every path a rule or list is built from must be absolute and UTF-8: a relative one would
 /// resolve elsewhere, and JSON cannot carry a non-UTF-8 one exactly.
 fn check_paths(inputs: &SandboxInputs<'_>) -> Result<()> {
-    let paths = [
+    // These three are interpolated into permission rules; a rule character in them would make
+    // a rule match a sibling path and miss the real one. `loom_bin` is shell-escaped into the
+    // hook command instead, and `home` only appears in `~/` rules and the guard policy.
+    let in_rules = [
         ("project root", inputs.project_root),
         ("runtime directory", inputs.runtime.dir.as_path()),
         ("session directory", inputs.session_dir.path()),
-        ("loom binary", inputs.loom_bin),
-        ("home", inputs.home),
     ];
-    for (what, path) in paths {
+    let others = [("loom binary", inputs.loom_bin), ("home", inputs.home)];
+    for (what, path) in in_rules.iter().chain(&others) {
         if !path.is_absolute() || path.to_str().is_none() {
             bail!(
                 "the {what} {} must be an absolute UTF-8 path",
@@ -251,10 +255,7 @@ fn check_paths(inputs: &SandboxInputs<'_>) -> Result<()> {
             );
         }
     }
-    // These three are interpolated into permission rules; a rule character in them would make
-    // a rule match a sibling path and miss the real one. `loom_bin` is shell-escaped into the
-    // hook command instead, and `home` only appears in `~/` rules and the guard policy.
-    for (what, path) in &paths[..3] {
+    for (what, path) in in_rules {
         let chars = permissions::rule_syntax_chars(&path.to_string_lossy());
         if !chars.is_empty() {
             bail!(

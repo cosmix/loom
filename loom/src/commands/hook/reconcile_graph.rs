@@ -190,10 +190,10 @@ pub fn spawn_if_needed(pack: &ContextPack, project_root: &Path) {
 /// - `store.root()` (`<main project root>/.loom/cache/context-v1` —
 ///   `context::store::CACHE_RELATIVE_DIR`) already exists on disk, meaning
 ///   loom already maintains a context cache for this checkout. This is
-///   exactly what a `loom map`'d repository has (`commands::map`'s
-///   `load_graph` calls `ContextStore::ensure` before returning), so an
-///   ordinary interactive session in a mapped repository — A.12's own
-///   target use case — is unaffected by this gate.
+///   exactly what a `loom map`'d repository has (the first layer
+///   `commands::map`'s `load_graph` persists creates the directory), so an
+///   ordinary interactive session in a mapped repository — A.12's own target
+///   use case — is unaffected by this gate.
 ///
 /// Reading an index reached by an inferred root is fine (`loom map` itself
 /// does exactly that); starting a job that rewrites one is not.
