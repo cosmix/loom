@@ -1,0 +1,15 @@
+{
+  "kind": "summary",
+  "path": "doc/loom/summaries/plans/plan-server.md",
+  "anchor": "s-3fa9c2d1",
+  "lines": null,
+  "stage": null,
+  "summary_sentence": "s-3fa9c2d1",
+  "rests_on": [
+    "doc/plans/PLAN-plan-server.md#lifetime",
+    "doc/plans/PLAN-token-flow.md#stages"
+  ],
+  "quote": "The planning server runs inside the loom daemon.",
+  "changed_since_selected": false,
+  "locked": null
+}

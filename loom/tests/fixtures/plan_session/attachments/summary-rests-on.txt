@@ -1,0 +1,6 @@
+Is this sentence still true?
+
+<loom-attachments>
+[1] summary doc/loom/summaries/plans/plan-server.md#s-3fa9c2d1 rests-on doc/plans/PLAN-plan-server.md#lifetime,doc/plans/PLAN-token-flow.md#stages
+> The planning server runs inside the loom daemon.
+</loom-attachments>

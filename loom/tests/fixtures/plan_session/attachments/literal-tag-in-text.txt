@@ -1,0 +1,11 @@
+Lines of mine:
+\<loom-attachments>
+\\<loom-attachments>
+  \</loom-attachments>
+end
+
+
+<loom-attachments>
+[1] source doc/product/section_01.md#intro
+> Intro text.
+</loom-attachments>

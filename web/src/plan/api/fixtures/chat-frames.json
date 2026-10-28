@@ -1,0 +1,75 @@
+[
+  {
+    "frame": "snapshot",
+    "session": {
+      "id": "6b84ee8a-c297-43a9-9ec3-b6e38ba01b35",
+      "kind": "authoring",
+      "state": "working",
+      "name": "Draft the bridge plan",
+      "model": "claude-sonnet-4-5",
+      "socket": "/tmp/loom-6b84ee8a.sock",
+      "holder": "Alex",
+      "away_until": null,
+      "queued": 1,
+      "started_at": "2026-10-28T09:00:00Z",
+      "state_since": "2026-10-28T09:01:00Z",
+      "working_since": "2026-10-28T09:01:00Z",
+      "subagents_running": 0,
+      "last_activity": "2026-10-28T09:01:30Z",
+      "failure": null,
+      "offer": null
+    },
+    "turns": [
+      {
+        "id": "t1",
+        "started_at": "2026-10-28T09:01:00Z",
+        "duration_ms": null,
+        "open": true,
+        "tokens": { "input": 1200, "cache_write": 200, "cache_read": 0, "output": 80 },
+        "items": [],
+        "changed_files": [],
+        "summaries_rebuilding": []
+      }
+    ],
+    "queue": [
+      {
+        "id": "b9c17fc0-8e21-4e75-b177-43acdf847d0d",
+        "first_line": "Review the updated plan",
+        "text": "Review the updated plan for missing steps."
+      }
+    ],
+    "previous": null
+  },
+  {
+    "frame": "delta",
+    "op": "item_replaced",
+    "turn_id": "t1",
+    "item": {
+      "type": "tool",
+      "id": "a-40b77e21-d8c8-4b6e-8e32-c7c948c1759d-0",
+      "tool_use_id": "toolu_01BridgeEdit",
+      "name": "Edit",
+      "summary": "Update the bridge plan",
+      "status": "done",
+      "subagent": null,
+      "input": "{\n  \"path\": \"doc/plans/bridge.md\",\n  \"old_text\": \"Draft\",\n  \"new_text\": \"Ready\"\n}",
+      "result": "Updated doc/plans/bridge.md",
+      "result_truncated": false,
+      "error_line": null,
+      "added": 1,
+      "removed": 1,
+      "patch": "--- a/doc/plans/bridge.md\n+++ b/doc/plans/bridge.md\n@@ -1 +1 @@\n-Draft\n+Ready\n",
+      "nested_tools": 0
+    }
+  },
+  {
+    "frame": "result",
+    "client_id": "e5122181-609e-44fd-9c24-85a8576b4fe5",
+    "ok": true,
+    "error": null
+  },
+  {
+    "frame": "queue_returned",
+    "texts": ["Review the updated plan for missing steps."]
+  }
+]
