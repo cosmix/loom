@@ -3,6 +3,14 @@ import type { HelpShortcutGroup } from "@/components/help-topics";
 export const PLAN_HELP_KEYS: HelpShortcutGroup[] = [
   { title: "General", rows: [["?", "Open or close Help"]] },
   {
+    title: "Chat",
+    rows: [
+      ["c", "Focus the chat composer"],
+      ["y", "Allow the pinned permission request"],
+      ["n", "Deny it, with a note"],
+    ],
+  },
+  {
     title: "File mode",
     rows: [
       ["/", "Focus search"],

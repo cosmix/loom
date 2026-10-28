@@ -1,0 +1,59 @@
+import { useAtomValue, useStore } from "jotai";
+import { useEffect, useState } from "react";
+
+import { authorBlockReasonAtom, isHolderAtom } from "@/plan/state/atoms";
+import { DisabledReason } from "@/plan/ui/disabled-reason";
+import { interruptChat } from "./commands";
+import { draftAtom } from "./drafts";
+import { queueReturnedAtom, sessionAtom } from "./model";
+import { Untrusted } from "./visible-controls";
+
+export function StopControl({ confirm }: { confirm?: string }) {
+  const store = useStore();
+  const session = useAtomValue(sessionAtom);
+  const isHolder = useAtomValue(isHolderAtom);
+  const reason = useAtomValue(authorBlockReasonAtom);
+  const [error, setError] = useState<string | null>(null);
+  const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    const refill = () => {
+      const texts = store.get(queueReturnedAtom);
+      if (!texts.length) return;
+      store.set(queueReturnedAtom, []);
+      store.set(draftAtom, (draft) => ({
+        ...draft,
+        text: [draft.text, ...texts].filter((text) => text.length > 0).join("\n\n"),
+      }));
+    };
+    const unsubscribe = store.sub(queueReturnedAtom, refill);
+    refill();
+    return unsubscribe;
+  }, [store]);
+
+  if (!isHolder || (session?.state !== "working" && session?.state !== "permission")) return null;
+  const stop = () => {
+    if (confirm && !window.confirm(confirm)) return;
+    setError(null);
+    setPending(true);
+    void interruptChat(store)
+      .catch((err: unknown) => setError(err instanceof Error ? err.message : String(err)))
+      .finally(() => setPending(false));
+  };
+  return (
+    <div>
+      <DisabledReason
+        reason={reason ?? (pending ? "Stopping the current turn" : null)}
+        onClick={stop}
+        size="sm"
+      >
+        Stop
+      </DisabledReason>
+      {error && (
+        <p role="status" className="text-xs text-muted-foreground">
+          <Untrusted text={error} />
+        </p>
+      )}
+    </div>
+  );
+}

@@ -1,0 +1,328 @@
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { Provider, createStore } from "jotai";
+import { MemoryRouter } from "react-router";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
+
+import docFixture from "@/plan/api/fixtures/files-doc.json";
+import serverFixture from "@/plan/api/fixtures/server-info.json";
+import { serverInfoSchema } from "@/plan/api/schema";
+import { storageKey } from "@/plan/chat/storage";
+import { openDiff } from "@/plan/diff/open-diff";
+import { planSocketAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { ChangedSinceControl } from "./changed-since";
+import { checkpointAtom, type Checkpoint } from "./checkpoint";
+import { hashesAtom, useReviewLive } from "./live";
+
+vi.mock("@/plan/diff/diff-view", () => ({
+  DiffView: ({ before, after }: { before: string | null; after: string | null }) => (
+    <div role="group" aria-label="Loaded diff">
+      {JSON.stringify({ before, after })}
+    </div>
+  ),
+}));
+
+const A = "doc/product/a.md";
+const ADDED = "doc/product/added.md";
+const GONE = "doc/product/gone.md";
+const SAME = "doc/product/same.md";
+const REF = "doc/product/ref-only.md";
+const checkpoint: Checkpoint = {
+  commit: "c1",
+  hashes: { [A]: "old", [GONE]: "gone", [SAME]: "same" },
+};
+const current = { head: "c2", docs: { [A]: "new", [ADDED]: "added", [SAME]: "same" } };
+const server = serverInfoSchema.parse(serverFixture);
+let replies: Record<string, unknown>;
+let failures: Record<string, { status: number; message: string }>;
+let fetchMock: ReturnType<typeof vi.fn>;
+let project = 0;
+
+beforeEach(() => {
+  localStorage.clear();
+  failures = {};
+  replies = {
+    "/api/hashes": current,
+    "/api/open-questions": { counts: {} },
+    "/api/compare?commit=c1": { commit: "c1", available: true, docs: [] },
+    "/api/ref?name=main": { commit: "base" },
+    "/api/compare?commit=base": {
+      commit: "base",
+      available: true,
+      docs: [{ path: REF, change: "changed" }],
+    },
+  };
+  fetchMock = vi.fn(async (input: string) => {
+    const url = new URL(input, "http://localhost");
+    const failed = failures[input];
+    if (failed)
+      return new Response(JSON.stringify({ error: "refused", message: failed.message }), {
+        status: failed.status,
+      });
+    let body = replies[input];
+    if (url.pathname === "/api/at-commit") {
+      body = { path: url.searchParams.get("path"), text: "committed text" };
+    }
+    if (url.pathname === "/api/doc") {
+      const path = `doc/${url.searchParams.get("path")}`;
+      if (path === GONE) return new Response("{}", { status: 404 });
+      body = { ...docFixture, path, text: "current text", hash: "new" };
+    }
+    return new Response(JSON.stringify(body ?? {}));
+  });
+  vi.stubGlobal("fetch", fetchMock);
+});
+
+afterEach(() => {
+  cleanup();
+  vi.unstubAllGlobals();
+  localStorage.clear();
+});
+
+function Live() {
+  useReviewLive();
+  return null;
+}
+
+function mount(
+  options: { checkpoint?: Checkpoint | null; compact?: boolean; live?: boolean } = {},
+) {
+  const store = createStore();
+  const projectKey = `changed-since-${++project}`;
+  store.set(serverInfoAtom, { ...server, project_key: projectKey });
+  if (options.checkpoint !== null) store.set(checkpointAtom, options.checkpoint ?? checkpoint);
+  if (!options.live) store.set(hashesAtom, current);
+  const listeners = new Set<() => void>();
+  const socket = {
+    send: vi.fn(() => true),
+    subscribe: vi.fn(() => () => {}),
+    dispose: vi.fn(),
+    onResync: (handler: () => void) => {
+      listeners.add(handler);
+      return () => {
+        listeners.delete(handler);
+      };
+    },
+  };
+  store.set(planSocketAtom, socket);
+  const view = render(
+    <Provider store={store}>
+      <MemoryRouter>
+        {options.live && <Live />}
+        <ChangedSinceControl compact={options.compact ?? false} />
+      </MemoryRouter>
+    </Provider>,
+  );
+  return { store, projectKey, listeners, view };
+}
+
+async function openList() {
+  fireEvent.click(await screen.findByRole("button", { name: /Changed since you looked/ }));
+  await screen.findByRole("button", { name: `Show diff for ${A}` });
+  return screen.getByRole("list", { name: "Changed documents" });
+}
+
+async function compareRef() {
+  fireEvent.change(screen.getByLabelText("Compare with ref"), { target: { value: "main" } });
+  fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+  return screen.findByText(REF);
+}
+
+it("lists added, changed and removed documents, never unchanged ones", async () => {
+  mount();
+  const list = await openList();
+
+  expect(within(list).queryByText(SAME)).toBeNull();
+  expect(within(list).getByText(A).closest("li")?.textContent).toContain("changed");
+  expect(within(list).getByText(ADDED).closest("li")?.textContent).toContain("added");
+  expect(within(list).getByText(GONE).closest("li")?.textContent).toContain("removed");
+  // The open dialog hides the trigger from the accessibility tree, hence `hidden`.
+  expect(
+    screen.getByRole("button", { name: /Changed since you looked · 3/, hidden: true }),
+  ).toBeTruthy();
+});
+
+it("opening a row's diff marks it seen", async () => {
+  const { store } = mount();
+  await openList();
+
+  fireEvent.click(screen.getByRole("button", { name: `Show diff for ${A}` }));
+  await screen.findByRole("group", { name: "Loaded diff" });
+
+  expect(store.get(checkpointAtom)).toEqual({
+    commit: "c1",
+    hashes: { [A]: "new", [GONE]: "gone", [SAME]: "same" },
+  });
+  expect(within(screen.getByRole("list")).queryByText(A)).toBeNull();
+});
+
+it("diff before from at-commit", async () => {
+  mount();
+  await openList();
+
+  fireEvent.click(screen.getByRole("button", { name: `Show diff for ${A}` }));
+
+  expect((await screen.findByRole("group", { name: "Loaded diff" })).textContent).toBe(
+    JSON.stringify({ before: "committed text", after: "current text" }),
+  );
+  expect(fetchMock).toHaveBeenCalledWith(
+    `/api/at-commit?commit=c1&path=${encodeURIComponent(A)}`,
+    expect.anything(),
+  );
+  expect(fetchMock).toHaveBeenCalledWith("/api/doc?path=product%2Fa.md", expect.anything());
+});
+
+it("ref comparison lists and does not store", async () => {
+  const { store, projectKey } = mount();
+  const stored = localStorage.getItem(storageKey(projectKey, "checkpoint"));
+  await openList();
+
+  await compareRef();
+  expect(within(screen.getByRole("list")).queryByText(A)).toBeNull();
+  fireEvent.click(await screen.findByRole("button", { name: `Show diff for ${REF}` }));
+  await screen.findByRole("group", { name: "Loaded diff" });
+
+  expect(fetchMock).toHaveBeenCalledWith(
+    `/api/at-commit?commit=base&path=${encodeURIComponent(REF)}`,
+    expect.anything(),
+  );
+  expect(store.get(checkpointAtom)).toEqual(checkpoint);
+  expect(localStorage.getItem(storageKey(projectKey, "checkpoint"))).toBe(stored);
+  expect(localStorage.length).toBe(1);
+});
+
+it("uncommitted note on row", async () => {
+  mount();
+  const list = await openList();
+
+  expect(within(list).getByText(A).closest("li")?.textContent).toContain(
+    "uncommitted edits at the checkpoint",
+  );
+  expect(within(list).getByText(A).closest("li")?.textContent).toContain("committed text");
+});
+
+it("unavailable commit offers only uncommitted and ref diffs", async () => {
+  replies["/api/compare?commit=c1"] = { commit: "c1", available: false, docs: [] };
+  mount();
+  fireEvent.click(screen.getByRole("button", { name: /Changed since you looked/ }));
+
+  await screen.findByText(/The checkpoint commit is unavailable/);
+  const list = screen.getByRole("list");
+  expect(within(list).getAllByRole("listitem")).toHaveLength(3);
+  expect(within(list).queryByRole("button", { name: /Show diff/ })).toBeNull();
+  expect(
+    within(list).getAllByRole("link", { name: "Uncommitted diff" })[0].getAttribute("href"),
+  ).toBe(openDiff("head", A));
+  expect(within(list).getAllByText("changed")).toHaveLength(3);
+  await compareRef();
+  expect(await screen.findByRole("button", { name: `Show diff for ${REF}` })).toBeTruthy();
+});
+
+it("limits text shown", async () => {
+  mount();
+  await openList();
+
+  expect(screen.getByText(/Local storage belongs/).textContent).toMatch(/origin.*port.*browser/);
+  expect(screen.getByText(/An unavailable checkpoint commit/)).toBeTruthy();
+  expect(screen.getByText(/Uncommitted edits at the checkpoint/)).toBeTruthy();
+});
+
+it("resync refetches the compare list", async () => {
+  const { listeners, view } = mount();
+  await openList();
+  await compareRef();
+  replies["/api/compare?commit=base"] = {
+    commit: "base",
+    available: true,
+    docs: [{ path: "doc/new.md", change: "added" }],
+  };
+
+  act(() => listeners.forEach((handler) => handler()));
+
+  expect(await screen.findByText("doc/new.md")).toBeTruthy();
+  expect(screen.queryByText(REF)).toBeNull();
+  view.unmount();
+  expect(listeners.size).toBe(0);
+});
+
+it("checkpoint keyed by project key", async () => {
+  const { store, projectKey } = mount();
+  const other = { commit: "other", hashes: { ...current.docs } };
+  localStorage.setItem(storageKey("another-project", "checkpoint"), JSON.stringify(other));
+
+  act(() => store.set(serverInfoAtom, { ...server, project_key: "another-project" }));
+
+  await waitFor(() =>
+    expect(screen.queryByRole("button", { name: /Changed since you looked/ })).toBeNull(),
+  );
+  expect(store.get(checkpointAtom)).toEqual(other);
+  expect(JSON.parse(localStorage.getItem(storageKey(projectKey, "checkpoint"))!)).toEqual(
+    checkpoint,
+  );
+  act(() => store.set(serverInfoAtom, { ...server, project_key: projectKey }));
+  expect(await screen.findByRole("button", { name: /Changed since you looked · 3/ })).toBeTruthy();
+});
+
+it("first-visit checkpoint set silently", async () => {
+  const { store } = mount({ checkpoint: null, live: true });
+
+  await waitFor(() =>
+    expect(store.get(checkpointAtom)).toEqual({ commit: "c2", hashes: current.docs }),
+  );
+
+  expect(screen.queryByRole("button", { name: /Changed since you looked/ })).toBeNull();
+  expect(screen.queryByRole("dialog")).toBeNull();
+});
+
+it("mark all seen", async () => {
+  const { store } = mount();
+  await openList();
+
+  fireEvent.click(screen.getByRole("button", { name: "Mark all seen" }));
+
+  expect(store.get(checkpointAtom)).toEqual({ commit: "c2", hashes: current.docs });
+  expect(await screen.findByText("No changed documents")).toBeTruthy();
+});
+
+it("resolveRef refusal shown", async () => {
+  failures["/api/ref?name=main"] = { status: 404, message: "The ref does not name a known commit" };
+  mount();
+  await openList();
+  fireEvent.change(screen.getByLabelText("Compare with ref"), { target: { value: "main" } });
+
+  fireEvent.click(screen.getByRole("button", { name: "Compare" }));
+
+  expect(await screen.findByText("The ref does not name a known commit")).toBeTruthy();
+});
+
+it("compact shows only a dot and count with the full accessible name", () => {
+  mount({ compact: true });
+
+  const control = screen.getByRole("button", { name: "Changed since you looked · 3" });
+  expect(control.textContent).toBe("● 3");
+});
+
+it("a reviewed removal is marked seen without inventing a current hash", async () => {
+  const { store } = mount();
+  await openList();
+
+  fireEvent.click(screen.getByRole("button", { name: `Show diff for ${GONE}` }));
+
+  expect((await screen.findByRole("group", { name: "Loaded diff" })).textContent).toBe(
+    JSON.stringify({ before: "committed text", after: null }),
+  );
+  expect(store.get(checkpointAtom)?.hashes).toEqual({ [A]: "old", [SAME]: "same" });
+});
+
+it("a failed diff leaves the document unseen", async () => {
+  failures[`/api/at-commit?commit=c1&path=${encodeURIComponent(A)}`] = {
+    status: 500,
+    message: "Cannot read old text",
+  };
+  const { store } = mount();
+  await openList();
+
+  fireEvent.click(screen.getByRole("button", { name: `Show diff for ${A}` }));
+
+  expect(await screen.findByText("Cannot read old text")).toBeTruthy();
+  expect(store.get(checkpointAtom)).toEqual(checkpoint);
+});
