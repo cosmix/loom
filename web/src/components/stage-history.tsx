@@ -41,10 +41,17 @@ export function HistoryCard({
   return (
     <section ref={ref} aria-label="history" className="ledger-card scroll-mt-4">
       <header className="ledger-head">
-        <span className="ledger-icon">
-          <History aria-hidden="true" className="size-3" />
-        </span>
-        <DisclosureHeading label="history" open={open} panel={panel} onToggle={toggle} />
+        <DisclosureHeading
+          label="history"
+          open={open}
+          panel={panel}
+          onToggle={toggle}
+          icon={
+            <span className="ledger-icon">
+              <History aria-hidden="true" className="size-3" />
+            </span>
+          }
+        />
         <span className="ml-auto text-xs text-muted-foreground">
           {events.length} {noun} · newest first
         </span>

@@ -55,22 +55,11 @@ function laneSeries(stage: StageFlow): { lanes: number[][]; max: number } {
   return { lanes, max };
 }
 
-/// A folded chip keeps its label and trend and drops the figure.
-function Chip({
-  value,
-  label,
-  trend,
-  folded = false,
-}: {
-  value: string;
-  label: string;
-  trend: Trend;
-  folded?: boolean;
-}) {
+function Chip({ value, label, trend }: { value: string; label: string; trend: Trend }) {
   return (
     <div className="flex min-w-0 flex-col gap-0.5 rounded-md border border-hairline bg-background px-2.5 py-1.5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-2">
-        {!folded && <span className="font-mono text-sm tabular-nums">{value}</span>}
+        <span className="font-mono text-sm tabular-nums">{value}</span>
         <span className="ml-auto text-right text-[11px] text-muted-foreground">{label}</span>
       </div>
       <Sparkline
@@ -151,17 +140,9 @@ function Lane({
   );
 }
 
-/// The four headline chips, each with the trend of its own statistic; folded,
-/// only the labels and trends.
-function Chips({
-  tokens,
-  flow,
-  folded = false,
-}: {
-  tokens: TokenFlow;
-  flow: StageFlow;
-  folded?: boolean;
-}) {
+/// The four headline chips, each with the trend of its own statistic. They
+/// render the same whether the section is folded or open.
+function Chips({ tokens, flow }: { tokens: TokenFlow; flow: StageFlow }) {
   const hit = cacheHitPercent(flow.total);
   const live = flow.agents.filter((agent) => agent.active).length;
   const trends = chipTrends(tokens, flow);
@@ -170,25 +151,21 @@ function Chips({
       <Chip
         value={`${compactTokens(fresh(flow.rate))}/m`}
         label="fresh, 5 min avg"
-        folded={folded}
         trend={{ values: trends.rate, label: "fresh rate, last 30 min" }}
       />
       <Chip
         value={compactTokens(fresh(flow.total))}
         label="fresh so far"
-        folded={folded}
         trend={{ values: trends.total, label: "fresh so far, last 30 min" }}
       />
       <Chip
         value={hit === null ? "—" : `${hit.toFixed(1)}%`}
         label="cache hit"
-        folded={folded}
         trend={{ values: trends.hit, label: "cache hit per 30 s, last 30 min" }}
       />
       <Chip
         value={`${live} of ${flow.agents.length}`}
         label="agents live"
-        folded={folded}
         trend={{ values: trends.live, label: "agents live, last 30 min" }}
       />
     </div>
@@ -262,7 +239,7 @@ export function StageTokens({ stageId }: { stageId: string }) {
         )}
       </div>
       <div id={open ? panel : undefined} className="flex flex-col gap-2.5">
-        <Chips tokens={tokens} flow={flow} folded={!open} />
+        <Chips tokens={tokens} flow={flow} />
         {open && (
           <ul className="flex flex-col gap-2.5">
             {plain.map(({ agent, series }) => (
