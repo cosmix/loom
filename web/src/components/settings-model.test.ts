@@ -68,6 +68,17 @@ describe("sectionRows", () => {
     expect(models?.caption).toBe("model and effort per session kind");
   });
 
+  it("pairs plan into four rows", () => {
+    const plan = sections[5];
+    expect(plan?.rows).toHaveLength(4);
+    expect(plan?.rows.map((row) => rowLabel(row))).toEqual([
+      "document_summary",
+      "overview",
+      "spec_authoring",
+      "plan_authoring",
+    ]);
+  });
+
   it("projectAllowed matches whether any entry in the section scopes to project", () => {
     // Computed from the fixture's own `scopes` field, not hardcoded: every
     // section but `update` carries at least one project-scoped entry here.

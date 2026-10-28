@@ -624,7 +624,7 @@ Neither file needs to exist: every key has a built-in default. `LOOM_HOME` reloc
 There are three ways to change a setting:
 
 1. **`loom config`.** Run bare in a terminal it opens a settings screen; with flags it is scriptable. `loom config -k <key>` prints one key, `loom config -k <key> <value>` writes it (validated against the key's type and value set), `loom config --list` prints every key with its value and where it came from, and `loom config --print` prints the resolved user config as TOML. It reads and writes the user file only. The settings screen edits each row by its type: `↑↓`/`k`/`j` move, `←→`/`h`/`l`/space cycle an enum's variants or toggle a bool, `Enter` opens a text editor for a number or free-text key (and steps a bool/enum forward otherwise, so no keystroke opens a text field on a closed vocabulary), `s` saves, `Esc`/`q` quits, `*` marks a pending change.
-2. **Edit the files.** Both files use the same `[section]` / `key = value` layout as the table below; project sections may be partial. `loom init` writes a `[context]` section into the project file, everything else is opt-in.
+2. **Edit the files.** Both files use the same `[section]` / `key = value` layout as the table below, except `plan.*` keys use `[plan]` in the user file and `[planning]` in the project file; project sections may be partial. `loom init` writes a `[context]` section into the project file, everything else is opt-in.
 3. **The dashboard.** `loom status --web` has a settings dialog that edits both files, one key at a time, with the resolution shown per key ([Web Dashboard Settings](#web-dashboard-settings)).
 
 The keys, with their built-in defaults:
@@ -642,6 +642,14 @@ The keys, with their built-in defaults:
 | `pressure.address_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `pressure.address_effort`          | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 | `pressure.rounds`                  | `1`           | integer, at least 1                                                      | per key       |
+| `plan.document_summary_model`      | `haiku`       | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
+| `plan.document_summary_effort`     | `medium`      | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
+| `plan.overview_model`              | `sonnet`      | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
+| `plan.overview_effort`             | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
+| `plan.spec_authoring_model`        | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
+| `plan.spec_authoring_effort`       | `medium`      | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
+| `plan.plan_authoring_model`        | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
+| `plan.plan_authoring_effort`       | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 | `models.standard_model`            | `sonnet`      | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `models.standard_effort`           | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 | `models.knowledge_model`           | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
@@ -655,7 +663,7 @@ The keys, with their built-in defaults:
 | `models.contract_writer_model`     | `opus`        | `haiku`, `sonnet`, `opus`, `fable`                                       | per key       |
 | `models.contract_writer_effort`    | `high`        | `low`, `medium`, `high`, `xhigh`, `max`                                  | per key       |
 
-"Whole section" means a project `[terminal]` or `[context]` section replaces the user tier's section outright, so a key it omits takes the built-in. "Per key" means a project `[pressure]` or `[models]` section overrides only the keys it names and the rest fall through to the user file. The `pressure.*` keys are explained under [Primary Commands](#primary-commands), the `models.*` keys under [Model Allocation](#model-allocation).
+"Whole section" means a project `[terminal]` or `[context]` section replaces the user tier's section outright, so a key it omits takes the built-in. "Per key" means a project `[pressure]`, `[planning]`, or `[models]` section overrides only the keys it names and the rest fall through to the user file. The `pressure.*` keys are explained under [Primary Commands](#primary-commands), the `models.*` keys under [Model Allocation](#model-allocation).
 
 ## Web Dashboard
 
