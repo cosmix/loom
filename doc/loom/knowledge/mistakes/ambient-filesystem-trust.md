@@ -1,6 +1,6 @@
 # Ambient Filesystem Trust
 
-> Ambient trust
+>
 
 ## An Ancestor Named `.git` Is Not a Repository (2026-08-29)
 

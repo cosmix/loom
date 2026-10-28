@@ -1,6 +1,6 @@
 # Schema Reuse And Silent Skips
 
-> Silent skips
+>
 
 ## `deny_unknown_fields` on a Type With TWO Deserialization Sources Broke the Second One (2026-08-17)
 

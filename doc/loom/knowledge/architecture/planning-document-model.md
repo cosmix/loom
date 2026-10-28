@@ -128,8 +128,9 @@ planning session the directory is `<loom user dir>/plan/<project key>` (the user
 `summaries.lock`, `summary-cost.jsonl` and `sessions` under it. Inside a session `LOOM_PLAN_STATE` names the directory
 and must pass `check_state`: absolute, a real directory (not a symlink), owned by the current uid (`libc::getuid`;
 `nix::unistd::getuid` needs a feature the tree does not enable), named exactly the key, a well-formed `LOOM_PLAN_SESSION`
-(8 to 64 hex digits or dashes), and a parent the caller cannot write (the sandbox makes the real planning root
-read-only). `server_runtime_paths` ignores `LOOM_PLAN_STATE` and returns its value so the caller can warn.
+(8 to 64 hex digits or dashes), and either a parent the caller cannot write (Seatbelt) or, under srt's private tmpfs over the
+read-denied planning root, `drafts/`, `claims/` and `summaries.lock` mounted from another device than the state
+directory (`runtime.rs::check_parent`). `server_runtime_paths` ignores `LOOM_PLAN_STATE` and returns its value so the caller can warn.
 
 ## Project View and Checklist
 
