@@ -260,7 +260,14 @@ a miss or key stability must be `#[serial]` against tests that rewrite `PATH`.
   (`loom/src/commands/subagents/forward_jobs_wait.rs`) polls every 2 s, default timeout 300 s, and
   never starts, cancels or retries anything. The stage comes from `LOOM_STAGE_ID`, else from a scan
   of `subagents/*/forward-receipts.jsonl` for the id. `wait_exit_code` (`forward_jobs_wait.rs::wait_exit_code`):
-  exit 0 succeeded, 1 failed, canceled or timed out, 2 queued, running or unknown.
+  exit 0 succeeded, 1 failed, canceled or timed out, 2 queued, running or unknown. A direct receipt
+  that has folded to Unknown settles the wait before the deadline; a companion receipt keeps polling,
+  because its printed state comes from the live job record.
+- **Direct unknown in a bound watch.** Watch binding (`wait/codex_binding.rs::receipt_matches`) refuses
+  an Unknown receipt. A watch already bound on a Running direct receipt ends with exit 5 once reconcile
+  has appended the identity's `unknown` lifecycle record (`codex_lifecycle/direct.rs::unknown_fold`,
+  admitted under the journal lock by `subagent_lifecycle/append.rs::append_all_locked`; the engine reads
+  it through `wait/evidence.rs`). A worker with no lifecycle evidence yet still holds to the deadline.
 - **Who waits.** The orchestrator, only, and only through one bound `loom subagents watch --worker
 claude:<agent-id> --worker codex:<unit-id> --timeout 3600` — one `--worker` per worker, `--session`
   naming only the Claude parent UUID. The forwarder makes ONE foreground wrapper call; if the harness

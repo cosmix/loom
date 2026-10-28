@@ -257,3 +257,10 @@ and the contradictory-path-rules lesson as relevant. Eval passes at hit@5 1.00, 
 **Prevention:** Fix stale knowledge the moment it is found, even mid-task. Deferring is not allowed; a report without a fix leaves the error for the next reader.
 
 **Fix:** A full sweep removed the history passages, dated headings and line-number citations from the non-mistakes knowledge files and deleted the concern that tracked them.
+
+## A test fixture's copy of the state-directory list drifted
+
+**What happened:** loom/tests/integration/confinement_status.rs kept its own 10-entry copy of WorkDir's state subdirectories. When terminal-history was added to the production list, loom status began creating it inside the test's write-denied state dir and the test failed wherever srt runs. It was then grouped with checkout-under-/tmp location failures.
+**Why:** the fixture hand-copied a production constant, and the test skips silently in nested sandboxes, so stage gates never ran it.
+**Prevention:** a fixture that must match a production list imports it. Call a failure a location artifact only when its message names /tmp as the refused root, not merely a /tmp path.
+**Fix:** the test builds the state dir from loom::fs::work_dir::STATE_SUBDIRS.

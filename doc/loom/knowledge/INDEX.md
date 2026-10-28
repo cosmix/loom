@@ -53,7 +53,7 @@
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) | Planning sandbox: settings per kind, guard | 135 |
 | [quota-poller](architecture/quota-poller.md) | Polling | 35 |
 | [remote-control](architecture/remote-control.md) | Capability | 81 |
-| [security-and-isolation](architecture/security-and-isolation.md) |  | 186 |
+| [security-and-isolation](architecture/security-and-isolation.md) | config.worktree deny and check | 186 |
 | [signal-generation](architecture/signal-generation.md) | Signals | 241 |
 | [skill-catalog](architecture/skill-catalog.md) |  | 155 |
 | [source-graph](architecture/source-graph.md) | Contract | 369 |
@@ -66,10 +66,10 @@
 | [target-guard](architecture/target-guard.md) | Accepted tip | 127 |
 | [terminal-backends](architecture/terminal-backends.md) |  | 280 |
 | [test-runner-adapters](architecture/test-runner-adapters.md) |  | 57 |
-| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger | 369 |
+| [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger | 376 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) |  | 238 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Daemon-run host jobs for completion, checks and freezes: state, child, apply | 238 |
 | [web-dashboard](architecture/web-dashboard.md) | status --web | 110 |
 | [web-terminal](architecture/web-terminal.md) | Terminals | 181 |
 
@@ -95,7 +95,7 @@
 | [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Poll loop | 117 |
 | [remote-control](patterns/remote-control.md) | RC detection | 51 |
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) |  | 140 |
-| [stage-daemon-channels](patterns/stage-daemon-channels.md) |  | 191 |
+| [stage-daemon-channels](patterns/stage-daemon-channels.md) | routes rather than one. | 191 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage states | 202 |
 | [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out | 100 |
 
@@ -123,13 +123,13 @@
 | [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Briefs, bugs | 325 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift | 353 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
-| [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 157 |
+| [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
 | [codex-navigation](mistakes/codex-navigation.md) | Codex reader | 102 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex briefs | 130 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 196 |
 | [completion-runtime](mistakes/completion-runtime.md) | Cargo churn | 72 |
-| [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) |  | 284 |
+| [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | retrieval-precision work, all real, all the same underlying shape: a piece | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locking races | 47 |
 | [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Chain bypass | 65 |
 | [contract-phase-human-blocking](mistakes/contract-phase-human-blocking.md) | Waits | 11 |
@@ -138,7 +138,7 @@
 | [detached-spawn-in-tests](mistakes/detached-spawn-in-tests.md) | Test orphans | 55 |
 | [doctrine-and-acceptance](mistakes/doctrine-and-acceptance.md) |  | 392 |
 | [hooks-shell-portability](mistakes/hooks-shell-portability.md) | Hook shells | 345 |
-| [knowledge-base-drift](mistakes/knowledge-base-drift.md) | Stale docs | 259 |
+| [knowledge-base-drift](mistakes/knowledge-base-drift.md) | Stale docs | 266 |
 | [knowledge-cli-invariants](mistakes/knowledge-cli-invariants.md) | CLI rules | 206 |
 | [knowledge-write-channel](mistakes/knowledge-write-channel.md) | Writes | 100 |
 | [ledger-tui-rendering](mistakes/ledger-tui-rendering.md) |  | 84 |
@@ -148,10 +148,10 @@
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | Cleanup bug | 171 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Operator git | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) |  | 15 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) |  | 341 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Merge cleanup, daemon singleton, broker, waiting-state incidents | 341 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merged flag | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 322 |
-| [plan-server-delivery](mistakes/plan-server-delivery.md) |  | 195 |
+| [plan-server-delivery](mistakes/plan-server-delivery.md) |  | 199 |
 | [planning-sandbox-delivery](mistakes/planning-sandbox-delivery.md) | Sandbox slips | 73 |
 | [pre-commit-hardening](mistakes/pre-commit-hardening.md) | Staging | 93 |
 | [refactor-stragglers](mistakes/refactor-stragglers.md) | Renames | 319 |
@@ -178,7 +178,7 @@
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Vacuous | 392 |
 | [tmux-backend](mistakes/tmux-backend.md) | tmux | 146 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Dev server | 76 |
-| [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) |  | 252 |
+| [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Unwired stores, schema and address mismatches, visibility, boundary audits | 252 |
 | [verification-harness](mistakes/verification-harness.md) |  | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 misses | 396 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) |  | 141 |
@@ -192,8 +192,8 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 379 |
-| [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) |  | 77 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) |  | 263 |
+| [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | loom pressure smoke and dry-run gaps | 77 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | recovery sync resets a finished node; macOS forward-guard branches unrun | 263 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 49 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) | Contract gaps | 63 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) |  | 49 |
@@ -205,10 +205,10 @@
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Orphans, tmux | 156 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 384 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Graph limits | 79 |
-| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) |  | 327 |
+| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Host-verification review suggestions: open and fixed defects by file:line | 327 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 17 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 349 |
 | [typed-config-values](concerns/typed-config-values.md) | Config gaps | 27 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) |  | 169 |
-| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) |  | 102 |
+| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | deliberately left unchanged — recorded so a later reader does not mistake them… | 102 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 159 |
