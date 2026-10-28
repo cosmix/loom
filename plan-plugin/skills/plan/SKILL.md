@@ -5,11 +5,11 @@ description: Load when a planning session writes one or more missing loom plans 
 
 # Write a loom plan
 
-Write only `doc/plans/PLAN-<slug>.md`, its briefs under
-`doc/plans/briefs/<slug>/`, and the owning metaplan entry when its scope changes.
-For several plans, use those paths for each selected slug. Write nothing else
-directly. Never stage, commit, or branch, and never run `loom init`, `loom run`,
-or `loom pressure`.
+Write `doc/plans/PLAN-<slug>.md`, its briefs under `doc/plans/briefs/<slug>/`,
+and the owning metaplan entry when its scope changes, plus any other editable
+document under `doc/` that a settled decision or an open point binds. For several
+plans, use those paths for each selected slug. Never stage, commit, or branch,
+and never run `loom init`, `loom run`, or `loom pressure`.
 
 Keep plans with an `IN_PROGRESS-`, `DONE-`, or `RETIRED-` prefix, their brief
 bundles, everything under `doc/plans/archive/`, and all `REVIEW-*.md` files
@@ -53,7 +53,10 @@ After establishing these conventions, load loom's `loom-plan-writer` skill.
 Let it own every part of plan authoring, including the structure, stages,
 metadata, briefs, and verification design. Supply the metaplan entry, the
 confirmed product-section mapping, these app conventions, and the decisions
-settled in the chat. Keep the write and execution limits above in force.
+settled in the chat. Keep the write and execution limits above in force. Skip
+`loom-plan-writer`'s `/pressure` self-review step and any `loom init` or `loom run`
+hand-off it suggests: the app's Pressure test and Start run offers cover both, and the
+user starts them.
 
 Write several missing plans in one chat when requested. You may give each plan
 to its own subagent with its metaplan entry, these conventions, and the chat's

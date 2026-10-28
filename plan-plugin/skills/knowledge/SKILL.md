@@ -10,6 +10,8 @@ Do not run `loom memory pending` or `loom memory resolve`.
 
 Write only under `doc/loom/knowledge/`, through `loom knowledge update`,
 `loom knowledge replace-section`, or `loom knowledge annotate`; never use a file tool.
+Run `loom knowledge delete-section` only to remove a section that a `replace-section`
+heading miss appended.
 Let those commands regenerate `doc/loom/knowledge/INDEX.md` automatically.
 Never stage, commit, branch, or run `loom init`, `loom run`, or `loom pressure`.
 
@@ -20,9 +22,13 @@ Never stage, commit, branch, or run `loom init`, `loom run`, or `loom pressure`.
    Convert relative dates to absolute dates.
 2. Apply corrections first. Correct an existing claim in place with
    `loom knowledge replace-section <file> "<heading>" "<body>"`, passing the body
-   without its `##` heading line. Never use `loom knowledge update` to correct an
+   without its `##` heading line. Before running it, read the file's headings and copy
+   the heading verbatim: a heading that does not match makes the command append a new
+   section instead of replacing one. Never use `loom knowledge update` to correct an
    existing claim: appending leaves the wrong claim in place. Read the command's
-   result; if the heading did not match, locate the existing heading and replace it.
+   result; if it reports an append, run
+   `loom knowledge delete-section <file> "<appended heading>"`, then run
+   `replace-section` again with the heading copied exactly from the file.
 3. Keep current truth only outside `mistakes.md` and `mistakes/*`. Rewrite dated
    headings and "was", "used to", or "supersedes" narratives into current-state
    text with `replace-section`. Move history that carries a lesson into a mistakes

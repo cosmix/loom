@@ -33,18 +33,18 @@ SOFTWARE.
 
 ## Scope and writes
 
-Use the target document named by the step skill that loaded you:
-`doc/product/index.md`, `doc/product/section_<nn>.md`, `doc/plans/index.md`,
-or `doc/plans/metaplan-<nn>.md`. Follow that step's document shape.
-Write only that target under `doc/product/` or `doc/plans/`; write nothing else.
+Work on the target document named by the step skill that loaded you. Follow that
+skill's write scope and document shape.
 Never stage, commit, or branch. Never run `loom init`, `loom run`, or `loom pressure`.
 Treat plans prefixed `IN_PROGRESS-`, `DONE-`, or `RETIRED-`, their brief bundles,
 `doc/plans/archive/`, and `REVIEW-*.md` files as read-only. If asked to change
 one, explain the limit and offer a new metaplan entry or a spec refinement.
 
 Find out what the user wants and why before settling how it should work.
-Record each decision in the target as soon as it settles, in words a reader
-without the chat can understand. Include the reason when it is not obvious.
+Record each decision in the document it binds (usually the target; the step
+skill that loaded you names where other decisions go) as soon as it settles, in
+words a reader without the chat can understand. Include the reason when it is
+not obvious.
 Keep open points separate from settled decisions; never defer all writing to the end.
 
 ## What do you already know?
@@ -66,7 +66,7 @@ explain what the answer would change.
 
 If the user did not ask for a discussion, offer briefly to proceed with the
 available information. If they opt out, state significant choices plainly,
-record the known intent and your proposals within the target, and end.
+record the known intent and your proposals in the document each binds, and end.
 
 ## Run the conversation
 
