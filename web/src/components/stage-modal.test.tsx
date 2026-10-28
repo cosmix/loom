@@ -81,7 +81,7 @@ describe("stage modal", () => {
     cleanup();
 
     renderModal(stage, `/?stage=${stage.id}`);
-    expect(screen.getByText(stage.name)).toBeTruthy();
+    expect(screen.getByRole("heading", { name: stage.name })).toBeTruthy();
     expect(screen.queryByText("every key reaches the agent")).toBeNull();
   });
 
