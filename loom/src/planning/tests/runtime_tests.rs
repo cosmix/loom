@@ -67,6 +67,20 @@ fn set_mode(dirs: &[&Path], mode: u32) {
     }
 }
 
+/// Writable lookalikes of a planning root: `rwg/<key>` holds real grants on its own filesystem,
+/// `rwl/<key>` symlinks them to procfs, which is always another device.
+fn grant_lookalikes(r: &Path, key: &str) {
+    let real = r.join("rwg").join(key);
+    fs::create_dir_all(real.join("drafts")).unwrap();
+    fs::create_dir_all(real.join("claims")).unwrap();
+    fs::write(real.join("summaries.lock"), b"").unwrap();
+    let linked = r.join("rwl").join(key);
+    fs::create_dir_all(&linked).unwrap();
+    symlink("/proc", linked.join("drafts")).unwrap();
+    symlink("/proc", linked.join("claims")).unwrap();
+    symlink("/proc/version", linked.join("summaries.lock")).unwrap();
+}
+
 #[test]
 fn session_state_acceptance_and_refusals() {
     let (_temp, r) = tmp();
@@ -83,6 +97,7 @@ fn session_state_acceptance_and_refusals() {
     }
     let good = r.join("ro").join(&key);
     symlink(&good, r.join("lnk").join(&key)).unwrap();
+    grant_lookalikes(&r, &key);
     let guarded = [r.join("ro"), r.join("lnk")];
     let guarded: Vec<&Path> = guarded.iter().map(|p| p.as_path()).collect();
     set_mode(&guarded, 0o555);
@@ -91,6 +106,14 @@ fn session_state_acceptance_and_refusals() {
     let accepted = resolve(&good, sid);
     let refused = [
         ("writable parent", resolve(&r.join("rw").join(&key), sid)),
+        (
+            "writable parent, grants on its filesystem",
+            resolve(&r.join("rwg").join(&key), sid),
+        ),
+        (
+            "writable parent, grants symlinked elsewhere",
+            resolve(&r.join("rwl").join(&key), sid),
+        ),
         ("missing session", resolve(&good, None)),
         ("short session", resolve(&good, Some("abc"))),
         ("non-hex session", resolve(&good, Some("zzzzzzzzzzzz"))),
