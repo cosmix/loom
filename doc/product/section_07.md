@@ -85,6 +85,13 @@ itself. The environment is loom's minimal agent environment
 sets `LOOM_STAGE_ID`, `LOOM_SESSION_ID`, or `LOOM_WORK_DIR`, so loom's global hooks treat a
 planning session as an ordinary user session. The working directory is the project root.
 
+Before the launch the server records the project root as trusted in `$HOME/.claude.json`
+(`projects[<root>].hasTrustDialogAccepted`, `fs/permissions/trust.rs::trust_project`), as loom
+does for stage worktrees. Claude Code runs no hook, `SessionStart` included, while its
+folder-trust dialog is open, and neither a `--settings` key nor a trusted parent directory
+skips that dialog: without the entry a session in an untrusted root stays in `Starting`. A
+failure to write the entry fails the start.
+
 ```text
 claude --session-id <session-id> --name "<display name>"
        --settings <session dir>/settings.json --setting-sources user,project

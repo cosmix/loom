@@ -42,7 +42,7 @@ pub use settings::{
     scrub_stale_work_dir_env, settings_json_has_hooks, SESSION_IDENTITY_ENV_KEYS,
 };
 pub use sync::{sync_worktree_permissions, sync_worktree_permissions_with_working_dir, SyncResult};
-pub use trust::{migrate_legacy_trust, trust_worktree, untrust_worktree};
+pub use trust::{migrate_legacy_trust, trust_project, trust_worktree, untrust_worktree};
 
 /// Loom's global guard-hook registrations with every command under
 /// `hooks_dir`, for the session capsule, which renders hooks against its own
