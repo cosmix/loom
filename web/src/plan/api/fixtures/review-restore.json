@@ -1,0 +1,25 @@
+{
+  "files": [
+    {
+      "path": "doc/product/section_08.md",
+      "result": "restored"
+    },
+    {
+      "path": "doc/product/section_10.md",
+      "result": "refused",
+      "reason": "The document is locked by a running plan."
+    },
+    {
+      "path": "doc/plans/PLAN-review-loop.md",
+      "result": "changed",
+      "current_text": "# Review loop\n\nKeep suggestions until the holder answers.\n",
+      "current_hash": "a54b3c2d1e0f9876543210abcdef9876543210abcdef9876543210abcdef9876543",
+      "turn_start_text": "# Review loop\n\nSend suggestions to the holder.\n"
+    },
+    {
+      "path": "doc/product/section_12.md",
+      "result": "invalid",
+      "errors": ["Missing required heading: Open questions"]
+    }
+  ]
+}

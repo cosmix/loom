@@ -1,0 +1,18 @@
+{
+  "commit": "e4b7c8d92f601a3b5c7d9e0123456789abcdef012",
+  "available": true,
+  "docs": [
+    {
+      "path": "doc/plans/PLAN-review-loop.md",
+      "change": "added"
+    },
+    {
+      "path": "doc/product/section_10.md",
+      "change": "changed"
+    },
+    {
+      "path": "doc/plans/PLAN-review-draft.md",
+      "change": "removed"
+    }
+  ]
+}
