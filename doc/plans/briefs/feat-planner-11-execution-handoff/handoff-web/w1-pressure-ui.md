@@ -1,11 +1,12 @@
 # W1: the pressure dialog and the pressure-run panel
 
+Dispatch: `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, foreground, Bash timeout 600000 ms. The orchestrator partitions this territory into ordered file-sized forwards before dispatch to fit the 540 s deadline; workers never delegate. All test/proof commands below are for the orchestrator; workers run compile-only checks, no git, and never write under `.loom/`.
+
 LANE: codex units write `use-pressure.ts` (CW1) and `src/plan/offers/actions-pressure.ts` (CW3, with `pressureDialogAtom`) before you start; see `doc/plans/briefs/feat-planner-11-execution-handoff/handoff-web/codex-units.md`. Import them; do not write those files.
 
-Stage `handoff-web` of `doc/plans/PLAN-feat-planner-11-execution-handoff.md`. Tier: sonnet
-(`loom-software-engineer`). Load `frontend-design:frontend-design` only for layout questions the
+Stage `handoff-web` of `doc/plans/PLAN-feat-planner-11-execution-handoff.md`. Tier: codex sol/high (`loom-codex-forwarder`). Load `frontend-design:frontend-design` only for layout questions the
 existing components do not answer; reuse the dashboard's and plan 9's components first. Never
-run git, never spawn subagents. One narrow check at the end, from `web/`:
+run git, never spawn subagents. Orchestrator proof after the worker returns, from `web/`:
 `node_modules/.bin/vitest run src/plan/chat/pressure`. Frozen contract files under
 `src/plan/chat/pressure/contracts/` are READ-ONLY.
 

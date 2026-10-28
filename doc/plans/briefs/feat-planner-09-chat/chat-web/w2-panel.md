@@ -1,5 +1,7 @@
 # chat-web W2: panel shell, state line, session line, connection states
 
+Dispatch: `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, foreground, Bash timeout 600000 ms. The orchestrator partitions this territory into ordered file-sized forwards before dispatch to fit the 540 s deadline; workers never delegate. All test/proof commands below are for the orchestrator; workers run compile-only checks, no git, and never write under `.loom/`.
+
 Working dir `web/`. You own `src/plan/chat/{panel.tsx, panel.test.tsx, state-line.tsx,
 state-line.test.tsx, run-header.tsx, connection-banner.tsx, attention.ts, attention.test.ts,
 chat.css}`, the panel's mount in plan 2's `src/plan/dock.tsx` and the header additions in

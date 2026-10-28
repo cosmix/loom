@@ -1,6 +1,8 @@
 # W1a: the discussion and step skills of the `loom-plan` plugin
 
-Stage `guidance-engine` of `doc/plans/PLAN-feat-planner-08-guidance.md`. Tier: sonnet (`loom-software-engineer`).
+Dispatch: `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, foreground, Bash timeout 600000 ms. The orchestrator partitions this territory into ordered file-sized forwards before dispatch to fit the 540 s deadline; workers never delegate. All test/proof commands below are for the orchestrator; workers run compile-only checks, no git, and never write under `.loom/`.
+
+Stage `guidance-engine` of `doc/plans/PLAN-feat-planner-08-guidance.md`. Tier: codex sol/high (`loom-codex-forwarder`).
 You write Markdown only. You never run git, never commit, never spawn subagents.
 
 ## Files you own (write only these)

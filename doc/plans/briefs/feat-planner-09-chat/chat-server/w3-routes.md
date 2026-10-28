@@ -1,5 +1,7 @@
 # chat-server W3: Restore, turn sections, routes, WS commands, registration
 
+Dispatch: `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, foreground, Bash timeout 600000 ms. The orchestrator partitions this territory into ordered file-sized forwards before dispatch to fit the 540 s deadline; workers never delegate. All test/proof commands below are for the orchestrator; workers run compile-only checks, no git, and never write under `.loom/`.
+
 Lane note: codex units own `review/restore.rs` (C5: `restore_file`, `save_path_of`) and
 `review/sections.rs` (C4: `turn_sections`); both are in the tree when you start. The production
 caller `restore_files` and the `turn-sections` handler live in your `routes.rs`; the sections

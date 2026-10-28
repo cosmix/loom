@@ -1,5 +1,7 @@
 # chat-web W4: composer, queue, chips, permission and suggestion cards
 
+Dispatch: `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, foreground, Bash timeout 600000 ms. The orchestrator partitions this territory into ordered file-sized forwards before dispatch to fit the 540 s deadline; workers never delegate. All test/proof commands below are for the orchestrator; workers run compile-only checks, no git, and never write under `.loom/`.
+
 Working dir `web/`. You own `src/plan/chat/{composer.tsx, composer.test.tsx, composer-gate.ts,
 stop-control.tsx, queue-strip.tsx, chips.tsx, chips.test.tsx, permission-card.tsx,
 permission-card.test.tsx, suggestion-cards.tsx}`. W1's atoms, commands and formatter exist.

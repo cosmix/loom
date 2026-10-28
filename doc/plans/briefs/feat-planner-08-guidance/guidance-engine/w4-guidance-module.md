@@ -1,6 +1,8 @@
 # W4: embed `plan-plugin/`, render it per session, generate briefs and messages
 
-Stage `guidance-engine` of `doc/plans/PLAN-feat-planner-08-guidance.md`. Tier: sonnet (`loom-software-engineer`).
+Dispatch: `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, foreground, Bash timeout 600000 ms. The orchestrator partitions this territory into ordered file-sized forwards before dispatch to fit the 540 s deadline; workers never delegate. All test/proof commands below are for the orchestrator; workers run compile-only checks, no git, and never write under `.loom/`.
+
+Stage `guidance-engine` of `doc/plans/PLAN-feat-planner-08-guidance.md`. Tier: codex sol/high (`loom-codex-forwarder`).
 Never run git, never spawn subagents. At most one narrow check, once, at the end:
 `cargo test --lib planning::guidance::` from `loom/`. The frozen contract file
 `tests/planning_guidance_contracts.rs` is READ-ONLY: never edit it; make it pass.

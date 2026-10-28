@@ -1,5 +1,7 @@
 # chat-web W6: Send to author, changed since you looked, open questions, built marker
 
+Dispatch: `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, foreground, Bash timeout 600000 ms. The orchestrator partitions this territory into ordered file-sized forwards before dispatch to fit the 540 s deadline; workers never delegate. All test/proof commands below are for the orchestrator; workers run compile-only checks, no git, and never write under `.loom/`.
+
 Lane note: `checkpoint.ts` and its test are codex unit C7 (`checkpointAtom`, `changedSince`,
 `markSeen`); the section below on it is reference.
 

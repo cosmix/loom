@@ -1,5 +1,7 @@
 # chat-server W1: wire model, suggestions, open questions
 
+Dispatch: `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, foreground, Bash timeout 600000 ms. The orchestrator partitions this territory into ordered file-sized forwards before dispatch to fit the 540 s deadline; workers never delegate. All test/proof commands below are for the orchestrator; workers run compile-only checks, no git, and never write under `.loom/`.
+
 Lane note: codex units own `wire/review.rs` (C1), `review/suggest.rs` (C2) and
 `review/questions.rs` (C3), each with its test file; the sections below on them are the
 reference their briefs build on. C1 is in the tree when you start.

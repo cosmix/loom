@@ -11,7 +11,7 @@ right after the unit, then `git status --short`. Stay 10% under the limits (360 
 per function). Double literal braces inside `format!`; CLI placeholders in rustdoc go in
 backticks. `loom map` answers from the BASE tree, so this file names what earlier work added.
 
-## Wave 1 (foreground, while P1 runs in the background)
+## Wave 1 (foreground, after P1 returns)
 
 ### R1 `src/pressure/record.rs`
 
@@ -20,7 +20,7 @@ backticks. `loom map` answers from the BASE tree, so this file names what earlie
 - Spec: `doc/plans/briefs/feat-planner-11-execution-handoff/pressure-pipeline/p2-record-writer.md`, sections
   "API", "render", "append_to_text placement", "append_record". Implement exactly that API:
   `RecordLine`, `RecordLine::render`, `RecordWrite`, `append_record`, `append_to_text`.
-- Context: P1 (Claude, same stage) creates `loom/src/pressure/mod.rs` with `pub mod record;`. Until
+- Context: P1 (Sol/high, same stage) creates `loom/src/pressure/mod.rs` with `pub mod record;`. Until
   P1 lands, the crate does not see your file; do not create `mod.rs`.
 - Traps: `O_NOFOLLOW` via `std::os::unix::fs::OpenOptionsExt::custom_flags(libc::O_NOFOLLOW)`;
   keep the original mode (`PermissionsExt`); re-check the inode before `rename`; CRLF handling.

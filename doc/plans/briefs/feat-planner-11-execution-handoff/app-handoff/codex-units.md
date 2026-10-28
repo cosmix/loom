@@ -53,7 +53,7 @@ The spec for CF1-CF5 is `doc/plans/briefs/feat-planner-11-execution-handoff/app-
   placeholder from the orchestrator's SEED (stage description), so the crate compiles now. Proof:
   `cargo check --lib` right after the wave.
 
-## Wave 2 (foreground, while A1, A2, A3 run in the background)
+## Wave 2 (foreground, alongside A2 in the foreground, while A1 and A3 run in the background)
 
 Each wave 2 unit's main file exists as a SEED placeholder; replace it whole. Its `tests.rs`
 submodule file is new. The orchestrator runs the unit's proof right after the wave.

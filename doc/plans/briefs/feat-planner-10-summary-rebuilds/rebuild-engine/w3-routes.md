@@ -1,6 +1,8 @@
 # W3: message variants, registration, fixtures, concept-mode hooks (plus the rules C3 and C4 read)
 
-Tier: sonnet (`loom-software-engineer`). Read `doc/plans/briefs/feat-planner-10-summary-rebuilds/common.md`
+Dispatch: `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, foreground, Bash timeout 600000 ms. The orchestrator partitions this territory into ordered file-sized forwards before dispatch to fit the 540 s deadline; workers never delegate. All test/proof commands below are for the orchestrator; workers run compile-only checks, no git, and never write under `.loom/`.
+
+Tier: codex sol/high (`loom-codex-forwarder`). Read `doc/plans/briefs/feat-planner-10-summary-rebuilds/common.md`
 ("Wire", "Consumed interfaces") first. You run beside W2, after W1; you use W2's `Rebuilds` API
 as common.md and the plan's CONTRACT SURFACE give it (build against it; if W2's file is not
 complete when you build, wait and rebuild, never edit it).

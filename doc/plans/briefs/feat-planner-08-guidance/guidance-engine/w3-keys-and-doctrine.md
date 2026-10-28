@@ -1,12 +1,14 @@
 # W3: the dashboard fixture, and the doctrine edits outside the plugin
 
+Dispatch: `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, foreground, Bash timeout 600000 ms. The orchestrator partitions this territory into ordered file-sized forwards before dispatch to fit the 540 s deadline; workers never delegate. All test/proof commands below are for the orchestrator; workers run compile-only checks, no git, and never write under `.loom/`.
+
 LANE SPLIT: the four keys' Rust code (Part 1 below) is written by codex units C1 (`keys.rs`), C2
 (`plan.rs`), C3 (`plan_config.rs`) and C4 (`plan_authoring.rs`, getters and their tests), see
 `doc/plans/briefs/feat-planner-08-guidance/guidance-engine/codex-units.md`, in wave A before you start.
 Part 1 is kept here as the specification they implement; you own only Parts 2 and 3. If a
 Part 1 file is wrong, report it; do not edit it.
 
-Stage `guidance-engine` of `doc/plans/PLAN-feat-planner-08-guidance.md`. Tier: sonnet (`loom-software-engineer`).
+Stage `guidance-engine` of `doc/plans/PLAN-feat-planner-08-guidance.md`. Tier: codex sol/high (`loom-codex-forwarder`).
 Never run git, never spawn subagents. At most one narrow check, once:
 `cargo test --lib user_config::` from `loom/`.
 

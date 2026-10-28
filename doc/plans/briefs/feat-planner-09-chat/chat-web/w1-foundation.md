@@ -1,5 +1,7 @@
 # chat-web W1: model store, commands, API clients, drafts, attachment formatter
 
+Dispatch: `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, foreground, Bash timeout 600000 ms. The orchestrator partitions this territory into ordered file-sized forwards before dispatch to fit the 540 s deadline; workers never delegate. All test/proof commands below are for the orchestrator; workers run compile-only checks, no git, and never write under `.loom/`.
+
 Lane note: codex units own `api/schema-chat.ts` (C1), `api/schema-session-brief.ts` (C2),
 `chat/storage.ts` (C3), `chat/visible-controls.ts` (C4), `review/api.ts` (C5), `chat/drafts.ts`
 (C9) and `chat/prefs.ts` (C10), each with its test; the sections below on them are the reference

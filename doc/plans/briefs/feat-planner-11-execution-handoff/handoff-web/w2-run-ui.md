@@ -1,9 +1,10 @@
 # W2: the run dialog, Abandon run, the run strip, Open dashboard, plan run actions
 
+Dispatch: `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, foreground, Bash timeout 600000 ms. The orchestrator partitions this territory into ordered file-sized forwards before dispatch to fit the 540 s deadline; workers never delegate. All test/proof commands below are for the orchestrator; workers run compile-only checks, no git, and never write under `.loom/`.
+
 LANE: codex units write `use-run.ts` (CW2) and `src/plan/offers/actions-run.ts` (CW4, with `runDialogAtom`) before you start; see `doc/plans/briefs/feat-planner-11-execution-handoff/handoff-web/codex-units.md`. Import them; do not write those files.
 
-Stage `handoff-web` of `doc/plans/PLAN-feat-planner-11-execution-handoff.md`. Tier: sonnet
-(`loom-software-engineer`). Never run git, never spawn subagents. One narrow check at the end,
+Stage `handoff-web` of `doc/plans/PLAN-feat-planner-11-execution-handoff.md`. Tier: codex sol/high (`loom-codex-forwarder`). Never run git, never spawn subagents. Orchestrator proof after the worker returns,
 from `web/`: `node_modules/.bin/vitest run src/plan/run`. Frozen contract files under
 `src/plan/run/contracts/` are READ-ONLY.
 

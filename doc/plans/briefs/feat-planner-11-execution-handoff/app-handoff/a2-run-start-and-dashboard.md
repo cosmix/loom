@@ -1,11 +1,12 @@
 # A2: run state, commit of `doc/` changes, starting a run, the dashboard child, the run strip
 
+Dispatch: `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, foreground, Bash timeout 600000 ms. The orchestrator partitions this territory into ordered file-sized forwards before dispatch to fit the 540 s deadline; workers never delegate. All test/proof commands below are for the orchestrator; workers run compile-only checks, no git, and never write under `.loom/`.
+
 SEED: every file you own already exists as a one-line placeholder (the orchestrator created it so the crate compiles at every wave); replace it whole.
 
 LANE: codex units write `changes.rs` (CB3, `split_changes`), `strip.rs` (CB2, `build_strip` and the strip thread) and `dashboard_parse.rs` (CB1, `parse_dashboard_startup`, `strip_token`) in parallel with you; see `doc/plans/briefs/feat-planner-11-execution-handoff/app-handoff/codex-units.md`. Your `dashboard.rs` re-exports `parse_dashboard_startup` (`pub use super::dashboard_parse::parse_dashboard_startup;`) and your `install.rs` calls `strip::spawn_strip` (CF6's `mod.rs` declares every module). The sections below on those files are their specification.
 
-Stage `app-handoff` of `doc/plans/PLAN-feat-planner-11-execution-handoff.md`. Tier: sonnet
-(`loom-software-engineer`). Never run git yourself, never spawn subagents. One narrow check at
+Stage `app-handoff` of `doc/plans/PLAN-feat-planner-11-execution-handoff.md`. Tier: codex sol/high (`loom-codex-forwarder`). Never run git yourself, never spawn subagents. Orchestrator proof at
 the end: `cargo test --lib plan_server::run::` from `loom/`. Frozen contract files
 `tests/plan_handoff_contracts.rs` and `tests/plan_handoff_contracts/**` are READ-ONLY.
 

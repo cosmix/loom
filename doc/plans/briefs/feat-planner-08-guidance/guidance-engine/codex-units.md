@@ -11,7 +11,7 @@ placeholders inside backticks in rustdoc.
 Codex answers `loom map` from the BASE tree: units below name what earlier units of this stage
 added.
 
-## Wave A (6 units at once, before the Claude workers W3 and W4)
+## Wave A (6 units at once, before the Sol/high workers W3 and W4)
 
 ### C1 `src/user_config/keys.rs`: four KeySpec rows
 

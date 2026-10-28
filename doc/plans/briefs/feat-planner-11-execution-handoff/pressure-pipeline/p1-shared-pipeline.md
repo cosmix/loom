@@ -1,7 +1,8 @@
 # P1: move the pressure pipeline into `loom::pressure`, keep the terminal driver
 
-Stage `pressure-pipeline` of `doc/plans/PLAN-feat-planner-11-execution-handoff.md`. Tier: sonnet
-(`loom-software-engineer`). Never run git, never spawn subagents. One narrow check at the end:
+Dispatch: `loom-codex-forwarder`, `--model gpt-6.1-sol --effort high`, foreground, Bash timeout 600000 ms. The orchestrator partitions this territory into ordered file-sized forwards before dispatch to fit the 540 s deadline; workers never delegate. All test/proof commands below are for the orchestrator; workers run compile-only checks, no git, and never write under `.loom/`.
+
+Stage `pressure-pipeline` of `doc/plans/PLAN-feat-planner-11-execution-handoff.md`. Tier: codex sol/high (`loom-codex-forwarder`). Never run git, never spawn subagents. Orchestrator proof after the worker returns:
 `cargo test --lib pressure::` from `loom/`. The frozen contract file
 `tests/pressure_pipeline_contracts.rs` (and `tests/pressure_pipeline_contracts/**`) is
 READ-ONLY.
