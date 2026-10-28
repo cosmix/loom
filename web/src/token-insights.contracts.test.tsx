@@ -123,7 +123,7 @@ it("token insights stage dialog draws a trend under each chip", () => {
   renderAt("/?stage=server");
 
   const tokens = screen.getByRole("region", { name: "stage tokens" });
-  fireEvent.click(within(tokens).getByRole("button", { name: "tokens" }));
+  // Folded by default: the trends show without opening the section.
   for (const name of [
     "fresh rate, last 30 min",
     "fresh so far, last 30 min",

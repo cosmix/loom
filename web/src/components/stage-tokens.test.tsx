@@ -25,19 +25,30 @@ function renderTokens(stageId: string, mutate?: (raw: typeof fixtureJson) => voi
 }
 
 describe("StageTokens", () => {
-  it("folds to the fresh-rate sparkline until opened, then keeps the reader's choice", () => {
+  it("folds to the four chip trends and labels until opened, then keeps the reader's choice", () => {
     const { store, raw } = renderTokens("server", undefined, false);
 
     const toggle = screen.getByRole("button", { name: "tokens" });
     expect(toggle.getAttribute("aria-expanded")).toBe("false");
-    expect(screen.getAllByRole("img", { name: "fresh rate, last 30 min" })).toHaveLength(1);
+    for (const name of [
+      "fresh rate, last 30 min",
+      "fresh so far, last 30 min",
+      "cache hit per 30 s, last 30 min",
+      "agents live, last 30 min",
+    ]) {
+      expect(screen.getAllByRole("img", { name })).toHaveLength(1);
+    }
+    for (const label of ["fresh, 5 min avg", "fresh so far", "cache hit", "agents live"]) {
+      expect(screen.getByText(label)).toBeTruthy();
+    }
     expect(screen.queryAllByTestId("token-lane")).toHaveLength(0);
-    expect(screen.queryByText("agents live")).toBeNull();
+    expect(screen.queryByText("30 s cells")).toBeNull();
 
     fireEvent.click(toggle);
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getAllByTestId("token-lane")).toHaveLength(3);
     expect(screen.getByText("agents live")).toBeTruthy();
+    expect(screen.getByText("30 s cells")).toBeTruthy();
 
     act(() => applySnapshot(store, snapshotSchema.parse(raw)));
     expect(screen.getAllByTestId("token-lane")).toHaveLength(3);
