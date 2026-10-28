@@ -1,0 +1,17 @@
+{
+  "text": "What did this stage prove?",
+  "attachments": [
+    {
+      "kind": "source",
+      "path": "doc/plans/DONE-PLAN-token-flow.md",
+      "anchor": "stage:integration-verify",
+      "lines": null,
+      "stage": "integration-verify",
+      "summary_sentence": null,
+      "rests_on": [],
+      "quote": "Integration verify runs the dashboard against a live daemon.",
+      "changed_since_selected": false,
+      "locked": null
+    }
+  ]
+}

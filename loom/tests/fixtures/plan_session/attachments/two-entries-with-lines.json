@@ -1,0 +1,32 @@
+{
+  "text": "Compare these two passages.",
+  "attachments": [
+    {
+      "kind": "source",
+      "path": "doc/plans/PLAN-plan-server.md",
+      "anchor": "lifetime",
+      "lines": [
+        40,
+        44
+      ],
+      "stage": null,
+      "summary_sentence": null,
+      "rests_on": [],
+      "quote": "`loom plan` starts the daemon if it is not running and\nregisters the planning server with it.",
+      "changed_since_selected": false,
+      "locked": null
+    },
+    {
+      "kind": "source",
+      "path": "doc/product/section_03.md",
+      "anchor": "goals",
+      "lines": null,
+      "stage": null,
+      "summary_sentence": null,
+      "rests_on": [],
+      "quote": "Goals stay short.",
+      "changed_since_selected": false,
+      "locked": null
+    }
+  ]
+}

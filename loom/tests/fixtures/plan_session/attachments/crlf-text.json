@@ -1,0 +1,17 @@
+{
+  "text": "first\r\nsecond\r\n",
+  "attachments": [
+    {
+      "kind": "source",
+      "path": "doc/product/section_01.md",
+      "anchor": "intro",
+      "lines": null,
+      "stage": null,
+      "summary_sentence": null,
+      "rests_on": [],
+      "quote": "a\n\n> own\n",
+      "changed_since_selected": false,
+      "locked": null
+    }
+  ]
+}

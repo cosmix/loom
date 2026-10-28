@@ -1,0 +1,20 @@
+{
+  "text": "The file moved on since I selected this.",
+  "attachments": [
+    {
+      "kind": "source",
+      "path": "doc/plans/PLAN-plan-server.md",
+      "anchor": "lifetime",
+      "lines": [
+        40,
+        44
+      ],
+      "stage": null,
+      "summary_sentence": null,
+      "rests_on": [],
+      "quote": "Old wording.",
+      "changed_since_selected": true,
+      "locked": "running"
+    }
+  ]
+}

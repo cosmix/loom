@@ -1,0 +1,47 @@
+[
+  {
+    "command": "start",
+    "client_id": "d45528e8-4670-4c50-9fe2-03a7639b17b2",
+    "offer": "b7233bde-279a-4145-86d2-f0f435b2025e",
+    "text": "Review the session bridge plan.",
+    "attachments": [
+      {
+        "kind": "source",
+        "path": "doc/plans/session-bridge.md",
+        "anchor": "chat-model",
+        "lines": [12, 18],
+        "stage": null,
+        "summary_sentence": null,
+        "rests_on": [],
+        "quote": "The bridge sends chat updates to browsers.",
+        "selected_hash": null
+      }
+    ]
+  },
+  {
+    "command": "send",
+    "client_id": "e5122181-609e-44fd-9c24-85a8576b4fe5",
+    "text": "Please clarify the queue behavior.",
+    "attachments": []
+  },
+  {
+    "command": "withdraw",
+    "client_id": "f15597d6-06b5-4a5e-a8f8-cb8b9090c4c1",
+    "queue_id": "5d879c71-ec7a-43a0-9905-2e12f28c4ecf"
+  },
+  {
+    "command": "permission",
+    "client_id": "c47aa3e6-2a03-4879-b3eb-7edbf22b3a39",
+    "request_id": "a5df3215-a909-4f6e-b5e0-973bbd1cb1e3",
+    "allow": false,
+    "note": "Please inspect the plan before editing it."
+  },
+  {
+    "command": "interrupt",
+    "client_id": "5e00db85-c4b1-4e37-b859-491aa8bf2c93"
+  },
+  {
+    "command": "end",
+    "client_id": "985785a6-c6b3-4901-870e-fd9ed044d799"
+  }
+]

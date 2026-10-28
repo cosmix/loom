@@ -1,0 +1,29 @@
+{
+  "text": "Retired plans stay as they are.",
+  "attachments": [
+    {
+      "kind": "source",
+      "path": "doc/plans/RETIRED-PLAN-old-ui.md",
+      "anchor": "goals",
+      "lines": null,
+      "stage": null,
+      "summary_sentence": null,
+      "rests_on": [],
+      "quote": "Replace the old panel.",
+      "changed_since_selected": false,
+      "locked": "retired"
+    },
+    {
+      "kind": "source",
+      "path": "doc/loom/knowledge/architecture.md",
+      "anchor": "overview",
+      "lines": null,
+      "stage": null,
+      "summary_sentence": null,
+      "rests_on": [],
+      "quote": "The daemon owns the server.",
+      "changed_since_selected": false,
+      "locked": "knowledge"
+    }
+  ]
+}
