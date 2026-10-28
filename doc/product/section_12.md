@@ -224,7 +224,10 @@ inside this sandbox; stages keep the knowledge directory writable for the same r
 (`sandbox/config.rs:12-19`). Every entry is a literal existing path, and no entry lies beneath
 another denied directory, since bubblewrap refuses to mount a deny inside a read-only bind
 (`architecture/execution-containment.md`). The read denies above go into `denyRead`, with
-`allowRead` on the session's own three runtime grants.
+`allowRead` on the session's own three runtime grants. On Linux srt covers each `denyRead`
+directory with a private tmpfs for the length of one command and binds those grants back into it,
+so a command can create files under the planning root; they vanish when it exits and never reach
+the host's runtime directory.
 
 **2. Permission rules (file tools).** Rules use the absolute `//` form throughout, because
 the settings file lives outside the project and a single leading `/` would resolve against
@@ -289,10 +292,11 @@ person at the chat should see it. Commands that start sessions or runs
 (`loom run`, `loom init`, `loom pressure`) are not on the list and would fail in this sandbox
 anyway; section 11 runs them from the server.
 
-`loom map` and `loom knowledge context` refresh an overlay under `.loom/work` when they can.
-In a planning session `.loom` is write-denied, as it is for checkout-rooted knowledge stages,
-so both must answer from what exists when the refresh cannot write. Acceptance needs a test
-that runs each inside a planning sandbox.
+`loom map` and `loom knowledge context` refresh the source graph cache under
+`.loom/cache/context-v1` when they can. In a planning session `.loom` is write-denied,
+as it is for checkout-rooted knowledge stages, so a layer either one cannot write is
+kept in memory for the rest of the command and answered from there. Acceptance needs a
+test that runs each inside a planning sandbox.
 
 ### Network and web tools
 
