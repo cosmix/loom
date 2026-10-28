@@ -74,6 +74,7 @@ pub use value::ConfigValue;
 mod models;
 mod parse;
 mod plan;
+mod plan_authoring;
 mod pressure;
 mod render;
 mod write;

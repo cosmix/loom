@@ -1,4 +1,4 @@
-//! Project-tier summary model settings from the `[planning]` table.
+//! Project-tier model settings from the `[planning]` table.
 
 use std::path::Path;
 
@@ -8,7 +8,7 @@ use super::allowed::allowed_value;
 
 const PLANNING_SECTION: &str = "planning";
 
-/// Project-level overrides for summary models and reasoning efforts.
+/// Project-level overrides for models and reasoning efforts.
 #[derive(Debug, Clone, Default, serde::Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct PlanConfig {
@@ -16,6 +16,10 @@ pub struct PlanConfig {
     document_summary_effort: Option<String>,
     overview_model: Option<String>,
     overview_effort: Option<String>,
+    spec_authoring_model: Option<String>,
+    spec_authoring_effort: Option<String>,
+    plan_authoring_model: Option<String>,
+    plan_authoring_effort: Option<String>,
 }
 
 impl PlanConfig {
@@ -60,6 +64,42 @@ impl PlanConfig {
             "plan.overview_effort",
         )
     }
+
+    /// Return the spec authoring model if it is allowed.
+    pub fn spec_authoring_model(&self) -> Option<&str> {
+        allowed_value(
+            self.spec_authoring_model.as_ref(),
+            crate::claude::CLAUDE_MODELS,
+            "plan.spec_authoring_model",
+        )
+    }
+
+    /// Return the spec authoring reasoning effort if it is allowed.
+    pub fn spec_authoring_effort(&self) -> Option<&str> {
+        allowed_value(
+            self.spec_authoring_effort.as_ref(),
+            ALLOWED_REASONING_EFFORTS,
+            "plan.spec_authoring_effort",
+        )
+    }
+
+    /// Return the plan authoring model if it is allowed.
+    pub fn plan_authoring_model(&self) -> Option<&str> {
+        allowed_value(
+            self.plan_authoring_model.as_ref(),
+            crate::claude::CLAUDE_MODELS,
+            "plan.plan_authoring_model",
+        )
+    }
+
+    /// Return the plan authoring reasoning effort if it is allowed.
+    pub fn plan_authoring_effort(&self) -> Option<&str> {
+        allowed_value(
+            self.plan_authoring_effort.as_ref(),
+            ALLOWED_REASONING_EFFORTS,
+            "plan.plan_authoring_effort",
+        )
+    }
 }
 
 /// Read `[planning]`, falling back to an empty config if it cannot be read.
@@ -72,3 +112,54 @@ pub fn read_plan_config(work_dir: &Path) -> PlanConfig {
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod authoring_tests {
+    use super::*;
+
+    #[test]
+    fn authoring_accessors_return_valid_values() {
+        let config = PlanConfig::from_section_toml(
+            "spec_authoring_model = \"sonnet\"\n\
+             spec_authoring_effort = \"medium\"\n\
+             plan_authoring_model = \"opus\"\n\
+             plan_authoring_effort = \"high\"\n",
+        )
+        .unwrap();
+        assert_eq!(config.spec_authoring_model(), Some("sonnet"));
+        assert_eq!(config.spec_authoring_effort(), Some("medium"));
+        assert_eq!(config.plan_authoring_model(), Some("opus"));
+        assert_eq!(config.plan_authoring_effort(), Some("high"));
+    }
+
+    #[test]
+    fn authoring_accessors_drop_invalid_values() {
+        let config = PlanConfig::from_section_toml(
+            "spec_authoring_model = \"bogus\"\n\
+             spec_authoring_effort = \"bogus\"\n\
+             plan_authoring_model = \"bogus\"\n\
+             plan_authoring_effort = \"bogus\"\n",
+        )
+        .unwrap();
+        assert_eq!(config.spec_authoring_model(), None);
+        assert_eq!(config.spec_authoring_effort(), None);
+        assert_eq!(config.plan_authoring_model(), None);
+        assert_eq!(config.plan_authoring_effort(), None);
+    }
+
+    #[test]
+    fn authoring_model_is_read_alongside_run_plan() {
+        let temp = tempfile::TempDir::new().unwrap();
+        std::fs::write(
+            temp.path().join("config.toml"),
+            "[plan]\nsource_path = \"doc/plan.md\"\nplan_id = \"run\"\n\
+             plan_name = \"Run\"\nbase_branch = \"main\"\n\
+             [planning]\nplan_authoring_model = \"sonnet\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            read_plan_config(temp.path()).plan_authoring_model(),
+            Some("sonnet")
+        );
+    }
+}
