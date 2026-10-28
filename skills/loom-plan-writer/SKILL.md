@@ -118,7 +118,7 @@ Skipping exploration causes duplicate code, poor reuse, AND the #1 failure above
 
 ## 3. Plan Structure
 
-Every plan is a markdown document: **human-readable content FIRST** (title, overview, goals, execution diagram, stage prose), **YAML metadata LAST** (wrapped in `<!-- loom METADATA -->` comments).
+Every plan is a markdown document: **human-readable content FIRST** (title, the `Implements:` line directly under the title naming the product sections the plan implements or `none`, overview, goals, execution diagram, stage prose), **YAML metadata LAST** (wrapped in `<!-- loom METADATA -->` comments).
 
 ```text
 FIRST:  knowledge-bootstrap    (unless knowledge already exists)
