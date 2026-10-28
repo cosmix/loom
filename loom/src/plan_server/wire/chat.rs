@@ -26,9 +26,10 @@ pub struct CommandResult {
     pub error: Option<String>,
 }
 
-/// A chat command sent by a browser.
+/// A chat command sent by a browser. A misspelt field is refused: dropped, it would read as
+/// absent (a deny note lost). The outer `type` tag never reaches it.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
-#[serde(tag = "command", rename_all = "snake_case")]
+#[serde(tag = "command", rename_all = "snake_case", deny_unknown_fields)]
 pub enum ChatCommand {
     Start {
         client_id: Option<String>,

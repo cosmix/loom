@@ -1,4 +1,6 @@
-//! Planning sessions of loom plan: kinds, the per-session sandbox settings and the PreToolUse guard; the bridge modules of plan 7 join here.
+//! Planning sessions of loom plan: kinds, the per-session sandbox settings and the PreToolUse
+//! guard, and the session bridge: the chat model, transcript mapping, hook spool and permission
+//! answers, the session state machine, launch and tmux input, and the `Bridge` that runs them.
 
 pub mod attachments;
 pub mod bridge;

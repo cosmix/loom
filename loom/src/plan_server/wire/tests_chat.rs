@@ -4,6 +4,7 @@ use serde::{de::DeserializeOwned, Serialize};
 use serde_json::Value;
 
 use super::chat::{ChatCommand, ChatFrame};
+use super::message::ClientMessage;
 use crate::plan_session::attachments::{AttachmentKind, LockedTag};
 use crate::plan_session::model::{
     ChatDelta, ChatSnapshot, Delivery, DenyReason, FailureKind, Item, NoticeKind, Origin,
@@ -291,4 +292,50 @@ fn item_variants_in_fixtures() {
         "type",
         &["user", "thinking", "text", "tool", "permission", "notice"],
     );
+}
+
+#[test]
+fn a_chat_command_with_a_misspelt_field_is_refused() {
+    let message = |field: &str| {
+        let mut command = serde_json::json!({"type": "chat", "command": "permission",
+            "request_id": "r1", "allow": false, "client_id": null});
+        command[field] = Value::from("ask first");
+        serde_json::from_value::<ClientMessage>(command)
+    };
+
+    assert!(message("notes").is_err());
+    let parsed = message("note").unwrap();
+    assert_eq!(
+        parsed,
+        ClientMessage::Chat(ChatCommand::Permission {
+            client_id: None,
+            request_id: "r1".into(),
+            allow: false,
+            note: Some("ask first".into()),
+        })
+    );
+}
+
+#[test]
+fn a_start_whose_attachment_has_a_misspelt_field_is_refused() {
+    let message = |field: &str| {
+        let mut attachment = serde_json::json!({"kind": "summary", "path": "doc/x.md",
+            "anchor": "s-1", "lines": null, "stage": null, "summary_sentence": "s-1",
+            "rests_on": [], "quote": "A sentence."});
+        attachment[field] = Value::from("sha256:ab");
+        let command = serde_json::json!({"type": "chat", "command": "start", "client_id": null,
+            "offer": null, "text": null, "attachments": [attachment]});
+        serde_json::from_value::<ClientMessage>(command)
+    };
+
+    assert!(message("selectedHash").is_err());
+    let parsed = message("selected_hash").unwrap();
+    let ClientMessage::Chat(ChatCommand::Start { attachments, .. }) = parsed else {
+        panic!("not a start: {parsed:?}");
+    };
+    let hashes: Vec<Option<&str>> = attachments
+        .iter()
+        .map(|attachment| attachment.selected_hash.as_deref())
+        .collect();
+    assert_eq!(hashes, [Some("sha256:ab")]);
 }

@@ -1,8 +1,10 @@
 //! Tool summaries, patch counts and result text for transcript tool items.
 
-use std::path::Path;
+use std::path::{Component, Path};
 
 use serde_json::Value;
+
+use crate::models::dispute::truncate_to_byte_limit;
 
 const TEXT_BYTES: usize = 64 * 1024;
 
@@ -29,13 +31,27 @@ fn field<'a>(input: &'a Value, key: &str) -> &'a str {
     input.get(key).and_then(Value::as_str).unwrap_or("")
 }
 
-fn relative_path(path: &str, project_root: &Path) -> String {
+/// `path` relative to `root`: an absolute path inside `root`, or a relative path, made only of
+/// plain components (no `..`); `None` for anything else, the root itself included.
+pub(super) fn repo_relative(root: &Path, path: &str) -> Option<String> {
     let path = Path::new(path);
-    let relative = path.strip_prefix(project_root).unwrap_or(path);
-    if relative.as_os_str().is_empty() && !path.as_os_str().is_empty() {
-        return ".".to_owned();
+    let relative = path.strip_prefix(root).unwrap_or(path);
+    let plain = relative
+        .components()
+        .all(|part| matches!(part, Component::Normal(_)));
+    if !plain || relative.as_os_str().is_empty() {
+        return None;
     }
-    relative.to_string_lossy().into_owned()
+    Some(relative.to_string_lossy().into_owned())
+}
+
+/// A path as a summary shows it: repo-relative when it can be, `.` for the root, else as given.
+fn relative_path(path: &str, project_root: &Path) -> String {
+    match repo_relative(project_root, path) {
+        Some(relative) => relative,
+        None if !path.is_empty() && Path::new(path) == project_root => ".".to_owned(),
+        None => path.to_owned(),
+    }
 }
 
 fn read_summary(input: &Value, project_root: &Path) -> String {
@@ -134,12 +150,9 @@ pub(crate) fn result_text(content: &Value) -> (String, bool) {
 // Stop at the first cut: later blocks must not fill space left by a partial UTF-8 character.
 fn append_bounded(output: &mut String, text: &str) -> bool {
     let remaining = TEXT_BYTES.saturating_sub(output.len());
-    let mut end = text.len().min(remaining);
-    while !text.is_char_boundary(end) {
-        end -= 1;
-    }
-    output.push_str(&text[..end]);
-    end == text.len()
+    let kept = truncate_to_byte_limit(text, remaining);
+    output.push_str(&kept);
+    kept.len() == text.len()
 }
 
 #[cfg(test)]

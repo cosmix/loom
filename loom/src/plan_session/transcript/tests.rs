@@ -98,6 +98,7 @@ pub(super) fn tool(id: &str, tool_use_id: &str, name: &str, summary: &str, input
         summary: summary.to_owned(),
         status: ToolStatus::Pending,
         subagent: None,
+        parent: None,
         input: serde_json::to_string_pretty(&input).unwrap(),
         result: None,
         result_truncated: false,

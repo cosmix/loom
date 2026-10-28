@@ -4,6 +4,7 @@ use chrono::{DateTime, Utc};
 use serde_json::Value;
 
 use super::records::{self, cap_chars, Assistant, Block, ToolResult};
+use super::tools::repo_relative;
 use super::{Ingest, Mapper, RecordMark, Subagent};
 use crate::plan_session::model::{ChatDelta, Item, NoticeKind, ToolStatus};
 
@@ -79,11 +80,8 @@ impl Mapper {
                 input,
             } => {
                 self.tools.insert(tool_use_id.clone(), (turn, id.clone()));
-                let mut item = records::tool_item(id, (tool_use_id, name, &input), &self.root);
-                if let (Item::Tool { subagent, .. }, Some(sub)) = (&mut item, sub) {
-                    *subagent = Some(sub.agent_id.to_owned());
-                }
-                Some(item)
+                let tool = (tool_use_id, name, &input);
+                Some(records::tool_item(id, tool, &self.root, sub))
             }
             _ => None,
         }
@@ -104,9 +102,13 @@ impl Mapper {
             let Some((turn, id)) = self.tools.get(&outcome.tool_use_id).cloned() else {
                 continue;
             };
+            // A changed path on the wire is repo-relative under doc/: a session's drafts and
+            // temporary files outside it are not reported.
             if let Some(file) = &file {
-                let path = records::repo_relative(&self.root, &file.path);
-                self.state[turn].by_tool.insert(path);
+                let path = repo_relative(&self.root, &file.path);
+                if let Some(path) = path.filter(|path| path.starts_with("doc/")) {
+                    self.state[turn].by_tool.insert(path);
+                }
             }
             self.update_item(turn, &id, deltas, |item| {
                 records::complete_tool(item, &outcome, file.as_ref());
@@ -118,7 +120,10 @@ impl Mapper {
     /// closed (a later `end_turn` for it publishes nothing).
     pub(super) fn interrupt(&mut self, uuid: &str, at: Option<DateTime<Utc>>, out: &mut Ingest) {
         if let Some(at) = at {
-            self.last_interrupt = self.last_interrupt.max(Some(at));
+            #[cfg(test)]
+            {
+                self.last_interrupt = self.last_interrupt.max(Some(at));
+            }
             out.marks.push(RecordMark::Interrupted { at });
         }
         let Some(turn) = self.current_or_last() else {

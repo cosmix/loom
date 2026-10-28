@@ -15,11 +15,11 @@ pub use dispatch::dispatch;
 use std::collections::HashMap;
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
+use std::sync::{Arc, Mutex, MutexGuard, PoisonError, TryLockError};
 use std::thread;
 use std::time::Duration;
 
-use self::guidance::{FixedGuidance, GuidanceSlot};
+use self::guidance::{ChecklistGuidance, GuidanceSlot};
 use self::lease::AuthoringLeases;
 use self::pins::TextPins;
 use super::authoring::{AuthoringEvent, FreeReason};
@@ -33,15 +33,12 @@ use super::wire::message::PlanMessage;
 use crate::plan_session::bridge::host::SessionHost;
 use crate::plan_session::bridge::registry::read_record;
 use crate::plan_session::bridge::{
-    Bridge, BridgeConfig, BridgeEvent, EndCause, EndMode, EndOutcome, TurnPins,
+    Bridge, BridgeConfig, BridgeEvent, EndCause, EndMode, EndOutcome, TurnPins, TEARDOWN_FAILED,
 };
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::{ChatDelta, QueuedMessage, SessionView};
 use crate::plan_session::tmux_host::TmuxHost;
 use crate::planning::runtime::RuntimePaths;
-
-/// The prefix the bridge gives an `EndOutcome::Failed` whose teardown failed (`bridge/ending.rs`).
-const TEARDOWN_FAILED: &str = "teardown failed";
 
 /// What the chat wiring remembers between commands and events.
 #[derive(Default)]
@@ -50,9 +47,26 @@ struct ChatState {
     starters: Mutex<HashMap<String, PublicId>>,
     /// The last browser seen holding authoring: the hub addresses the holder by browser.
     holder: Mutex<Option<BrowserId>>,
+    /// Held by a start from its take of authoring to its give-back, so another start's take,
+    /// reserve and listing check cannot fall in between (dispatch's `give_back`).
+    starting: Mutex<()>,
 }
 
 impl ChatState {
+    /// Never taken by the guidance or a bridge listener, which run inside a start.
+    fn starting(&self) -> MutexGuard<'_, ()> {
+        lock(&self.starting)
+    }
+
+    /// What a bridge listener takes instead: `None` while a start holds it.
+    fn try_starting(&self) -> Option<MutexGuard<'_, ()>> {
+        match self.starting.try_lock() {
+            Ok(guard) => Some(guard),
+            Err(TryLockError::Poisoned(poisoned)) => Some(poisoned.into_inner()),
+            Err(TryLockError::WouldBlock) => None,
+        }
+    }
+
     fn started(&self, id: String, by: PublicId) {
         lock(&self.starters).insert(id, by);
     }
@@ -96,7 +110,7 @@ pub(crate) fn install_with(
     host: Arc<dyn SessionHost>,
     config_overrides: impl FnOnce(&mut BridgeConfig),
 ) {
-    let slot = Arc::new(GuidanceSlot::new(Arc::new(FixedGuidance)));
+    let slot = Arc::new(GuidanceSlot::new(Arc::new(ChecklistGuidance)));
     let leases = Arc::new(AuthoringLeases::default());
     let state = Arc::new(ChatState::default());
     let mut config = bridge_config(ctx, &slot);
@@ -276,10 +290,7 @@ fn follow_sessions(
                 let starter = state.take_starter(id);
                 // Only the starter's hold ends with its chat, and never under a lease (px-state-R02).
                 if let Some(starter) = starter.filter(|_| *kind == SessionKind::Authoring) {
-                    if !leases.held() {
-                        let reason = FreeReason::Released("chat ended");
-                        ctx.authoring().release_if(&starter, reason);
-                    }
+                    dispatch::release_ended(&ctx, &state, &bridge, &leases, starter);
                 }
             }
             _ => {}
@@ -361,7 +372,8 @@ fn spawn_recovery(bridge: &Arc<Bridge>) {
     }
 }
 
-/// Every mutation is a single insert, remove or store, so a poisoned lock is still usable.
+/// Every mutation is a single insert, remove or store (`starting` guards no data), so a
+/// poisoned lock is still usable.
 fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(PoisonError::into_inner)
 }

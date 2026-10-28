@@ -50,7 +50,7 @@ pub struct Attachment {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "snake_case")]
+#[serde(rename_all = "snake_case", deny_unknown_fields)]
 pub struct AttachmentInput {
     pub kind: AttachmentKind,
     pub path: String,

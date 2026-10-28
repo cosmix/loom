@@ -3,12 +3,12 @@
 //! Record bodies are untrusted: nothing here panics on a malformed record, and every string
 //! that reaches the chat model is capped in characters on a char boundary.
 
-use std::path::{Component, Path};
+use std::path::Path;
 
 use chrono::{DateTime, Utc};
 use serde_json::Value;
 
-use super::tools;
+use super::{tools, Subagent};
 use crate::plan_session::model::{Item, ToolStatus};
 
 /// Longest record uuid, message id, tool use id or agent id accepted.
@@ -302,8 +302,14 @@ pub(super) fn item_id(item: &Item) -> &str {
     }
 }
 
-/// A pending tool item for a `tool_use` block.
-pub(super) fn tool_item(id: String, tool: (String, String, &Value), root: &Path) -> Item {
+/// A pending tool item for a `tool_use` block; a subagent's row names its agent and the
+/// spawning tool call.
+pub(super) fn tool_item(
+    id: String,
+    tool: (String, String, &Value),
+    root: &Path,
+    sub: Option<Subagent<'_>>,
+) -> Item {
     let (tool_use_id, name, input) = tool;
     let pretty = serde_json::to_string_pretty(input).unwrap_or_default();
     Item::Tool {
@@ -312,7 +318,8 @@ pub(super) fn tool_item(id: String, tool: (String, String, &Value), root: &Path)
         summary: tools::summary(&name, input, root),
         name,
         status: ToolStatus::Pending,
-        subagent: None,
+        subagent: sub.map(|sub| sub.agent_id.to_owned()),
+        parent: sub.and_then(|sub| sub.spawned_by).map(str::to_owned),
         input: cap_chars(&pretty, ITEM_CHARS),
         result: None,
         result_truncated: false,
@@ -377,20 +384,5 @@ pub(super) fn complete_tool(item: &mut Item, outcome: &ToolResult, file: Option<
             (*added, *removed) = (Some(plus), Some(minus));
         }
         patch.clone_from(&file.patch);
-    }
-}
-
-/// `path` relative to `root` when it lies inside it with plain components, else as given.
-pub(super) fn repo_relative(root: &Path, path: &str) -> String {
-    match Path::new(path).strip_prefix(root) {
-        Ok(relative)
-            if !relative.as_os_str().is_empty()
-                && relative
-                    .components()
-                    .all(|part| matches!(part, Component::Normal(_))) =>
-        {
-            relative.to_string_lossy().into_owned()
-        }
-        _ => path.to_owned(),
     }
 }
