@@ -7,6 +7,7 @@
 
 pub mod authoring;
 pub mod browser;
+pub mod chat;
 pub mod concept;
 pub mod context;
 pub mod extensions;

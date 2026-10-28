@@ -78,6 +78,7 @@ pub fn install_all(ctx: &Arc<PlanContext>) {
     super::files::install(ctx);
     super::search::install(ctx);
     super::concept::install(ctx);
+    crate::plan_server::chat::install(ctx);
 }
 
 /// The outcome of looking a request up in the route table.
