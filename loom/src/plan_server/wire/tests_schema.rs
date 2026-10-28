@@ -123,7 +123,8 @@ fn assert_exhaustive(message: &PlanMessage) {
         | PlanMessage::DocChanged(_)
         | PlanMessage::Validation(_)
         | PlanMessage::ConceptChanged(_)
-        | PlanMessage::Chat(_) => {}
+        | PlanMessage::Chat(_)
+        | PlanMessage::Review(_) => {}
     }
 }
 
@@ -175,7 +176,10 @@ fn all_plan_messages() -> Vec<PlanMessage> {
 
 fn all_client_messages() -> Vec<ClientMessage> {
     match (ClientMessage::Reading { path: None }) {
-        ClientMessage::SetName { .. } | ClientMessage::Reading { .. } | ClientMessage::Chat(_) => {}
+        ClientMessage::SetName { .. }
+        | ClientMessage::Reading { .. }
+        | ClientMessage::Chat(_)
+        | ClientMessage::Review(_) => {}
     }
     vec![
         ClientMessage::SetName {

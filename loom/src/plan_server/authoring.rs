@@ -140,6 +140,14 @@ impl Authoring {
             .is_some_and(|holder| &holder.browser == browser)
     }
 
+    /// The holder's cookie `BrowserId`, for routing frames to its tabs only; never put it on the wire.
+    pub(crate) fn holder_browser(&self) -> Option<BrowserId> {
+        self.lock_state()
+            .holder
+            .as_ref()
+            .map(|holder| holder.browser.clone())
+    }
+
     /// The holder's public id and, while it is away, when its last connection closed.
     pub fn holder(&self) -> Option<(PublicId, Option<SystemTime>)> {
         self.lock_state()

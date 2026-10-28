@@ -20,6 +20,7 @@ pub mod lock;
 pub mod prereq;
 pub mod presence;
 pub mod request;
+pub mod review;
 pub mod root;
 pub mod router;
 pub mod routes;

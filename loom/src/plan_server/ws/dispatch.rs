@@ -24,5 +24,8 @@ pub fn dispatch(ctx: &Arc<PlanContext>, conn: &ConnCtx, msg: ClientMessage) {
             ctx.broadcast_presence();
         }
         ClientMessage::Chat(cmd) => crate::plan_server::chat::dispatch(ctx, conn, cmd),
+        ClientMessage::Review(cmd) => {
+            crate::plan_server::review::commands::dispatch(ctx, conn, cmd)
+        }
     }
 }
