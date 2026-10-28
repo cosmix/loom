@@ -1,6 +1,6 @@
 # Architecture
 
-> Components, data flow, module dependencies
+> Components, data flow, modules
 >
 > **Related files:** [patterns.md](patterns.md) for design patterns, [entry-points.md](entry-points.md) for code navigation, [conventions.md](conventions.md) for coding standards.
 
@@ -247,4 +247,4 @@ integrity, impact tests, and the loom-filed freeze refusal). Rust contracts are 
 `loom::planning` models a project's `doc/` tree: kinds and ids, plan slugs (most advanced state wins), heading anchors and span hashes, the locked set, the polling watcher with `OwnWrites`, the runtime directory, and the checklist behind `loom plan check` (exit 0 clean, 1 problems, 2 cannot check). → [Planning Document Model](architecture/planning-document-model.md)
 `planning/summary/` keeps sentence-level summaries of product sections, plans and the two overviews in `doc/loom/summaries/`; each sentence cites its source by hash, so every summary evaluates `current`, `stale`, `incomplete`, `rebuilding` or `missing`, and `loom plan summary brief|seal|status|release` claims, validates and writes them under one store lock. → [Summary Store](architecture/summary-store.md)
 Concept mode (`plan_server/concept/`, `web/src/plan/concept/`) serves the Product and Engineering reading views: the server resolves each page and drives plan 4's engine from the watcher, the browser renders it, opens sentences down to source passages and carries open runs across rebuilds by the source sections they rest on. → [Plan Server](architecture/plan-server.md#page-route-and-page-model)
-Planning sessions run under `plan_session::sandbox::write_session_sandbox`'s `settings.json` and `guard.json`: OS write/read denies, `Edit(//...)` rules and a `loom plan hook PreToolUse` guard that denies or stays silent, never `allow`. → [Planning Session Sandbox](architecture/planning-session-sandbox.md)
+Planning sessions run under `plan_session::sandbox::write_session_sandbox`'s `settings.json` and `guard.json`: OS write/read denies, `Edit(//...)` rules and a `loom plan hook PreToolUse` guard that denies or stays silent, never `allow`. → [Planning Session Sandbox](architecture/planning-session-sandbox.md). The bridge starts each session in its own tmux server (`loom-plan-<12 hex>`), reads the hook spool and transcript, runs the state machine, delivers chat input only while Idle, answers permission requests through answer files and ends or recovers sessions. → [Planning Session Bridge](architecture/planning-session-bridge.md)

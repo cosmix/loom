@@ -14,7 +14,7 @@
 | [conventions.md](conventions.md) | Coding conventions discovered in the codebase | 250 |
 | [mistakes.md](mistakes.md) | Mistakes made and lessons learned - what to avoid | 177 |
 | [stack.md](stack.md) | Dependencies, frameworks, and tooling used in the project | 125 |
-| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 241 |
+| [concerns.md](concerns.md) | Technical debt, warnings, and issues to address | 245 |
 
 ## Tier 2 — Topics
 
@@ -50,10 +50,11 @@
 | [plan-lifecycle-and-fields](architecture/plan-lifecycle-and-fields.md) |  | 257 |
 | [plan-server](architecture/plan-server.md) |  | 193 |
 | [planning-document-model](architecture/planning-document-model.md) | Doc model | 173 |
-| [planning-session-sandbox](architecture/planning-session-sandbox.md) | Planning sandbox: settings per kind, guard | 135 |
+| [planning-session-bridge](architecture/planning-session-bridge.md) | Planning bridge: tmux, spool, chat model | 185 |
+| [planning-session-sandbox](architecture/planning-session-sandbox.md) | Plan sandbox | 135 |
 | [quota-poller](architecture/quota-poller.md) | Polling | 35 |
 | [remote-control](architecture/remote-control.md) | Capability | 81 |
-| [security-and-isolation](architecture/security-and-isolation.md) | config.worktree deny and check | 186 |
+| [security-and-isolation](architecture/security-and-isolation.md) | Isolation | 187 |
 | [signal-generation](architecture/signal-generation.md) | Signals | 241 |
 | [skill-catalog](architecture/skill-catalog.md) |  | 155 |
 | [source-graph](architecture/source-graph.md) | Contract | 369 |
@@ -69,7 +70,7 @@
 | [token-accounting-and-receipts](architecture/token-accounting-and-receipts.md) | Usage ledger | 376 |
 | [token-flow-sources](architecture/token-flow-sources.md) |  | 75 |
 | [usage-evidence](architecture/usage-evidence.md) |  | 127 |
-| [verification-v2-gates](architecture/verification-v2-gates.md) | Daemon-run host jobs for completion, checks and freezes: state, child, apply | 238 |
+| [verification-v2-gates](architecture/verification-v2-gates.md) | Host jobs | 239 |
 | [web-dashboard](architecture/web-dashboard.md) | status --web | 110 |
 | [web-terminal](architecture/web-terminal.md) | Terminals | 181 |
 
@@ -95,7 +96,7 @@
 | [orchestrator-daemon-loop](patterns/orchestrator-daemon-loop.md) | Poll loop | 117 |
 | [remote-control](patterns/remote-control.md) | RC detection | 51 |
 | [security-sandbox-and-hooks](patterns/security-sandbox-and-hooks.md) |  | 140 |
-| [stage-daemon-channels](patterns/stage-daemon-channels.md) | routes rather than one. | 191 |
+| [stage-daemon-channels](patterns/stage-daemon-channels.md) | Channels | 191 |
 | [stage-lifecycle-and-verification](patterns/stage-lifecycle-and-verification.md) | Stage states | 202 |
 | [subagent-hierarchy](patterns/subagent-hierarchy.md) | Fan-out | 100 |
 
@@ -129,7 +130,7 @@
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
 | [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 196 |
 | [completion-runtime](mistakes/completion-runtime.md) | Cargo churn | 72 |
-| [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | retrieval-precision work, all real, all the same underlying shape: a piece | 284 |
+| [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Couplings | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) | Locking races | 47 |
 | [contract-autonomy-delivery](mistakes/contract-autonomy-delivery.md) | Chain bypass | 65 |
 | [contract-phase-human-blocking](mistakes/contract-phase-human-blocking.md) | Waits | 11 |
@@ -148,7 +149,7 @@
 | [merge-cleanup-boundary](mistakes/merge-cleanup-boundary.md) | Cleanup bug | 171 |
 | [merge-in-operator-checkout](mistakes/merge-in-operator-checkout.md) | Operator git | 70 |
 | [merge-resolver-sandbox](mistakes/merge-resolver-sandbox.md) |  | 15 |
-| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Merge cleanup, daemon singleton, broker, waiting-state incidents | 341 |
+| [parallel-worktree-shared-state](mistakes/parallel-worktree-shared-state.md) | Incidents | 342 |
 | [phantom-merges](mistakes/phantom-merges.md) | Merged flag | 347 |
 | [pinned-literals-ledgers-and-wiring](mistakes/pinned-literals-ledgers-and-wiring.md) | Pins | 322 |
 | [plan-server-delivery](mistakes/plan-server-delivery.md) |  | 199 |
@@ -166,19 +167,19 @@
 | [sessions-and-liveness](mistakes/sessions-and-liveness.md) |  | 382 |
 | [shell-command-matchers](mistakes/shell-command-matchers.md) |  | 246 |
 | [source-graph-delivery](mistakes/source-graph-delivery.md) | Graph misses | 172 |
-| [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 35 |
+| [spurious-waiting-for-input](mistakes/spurious-waiting-for-input.md) | Idle | 43 |
 | [status-broadcast-hardening](mistakes/status-broadcast-hardening.md) |  | 75 |
 | [store-without-consumer](mistakes/store-without-consumer.md) | Unread | 104 |
 | [subagent-briefing](mistakes/subagent-briefing.md) | Briefs | 386 |
 | [subagent-liveness-and-watch](mistakes/subagent-liveness-and-watch.md) | Watch traps | 387 |
-| [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation | 377 |
-| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests | 338 |
+| [subagent-orchestration](mistakes/subagent-orchestration.md) | Delegation | 391 |
+| [test-concurrency-and-fixtures](mistakes/test-concurrency-and-fixtures.md) | Racy tests | 340 |
 | [test-sweep-and-fixture-discipline](mistakes/test-sweep-and-fixture-discipline.md) | Fixtures | 145 |
 | [testing-and-lint](mistakes/testing-and-lint.md) |  | 398 |
 | [tests-that-cannot-fail](mistakes/tests-that-cannot-fail.md) | Vacuous | 392 |
-| [tmux-backend](mistakes/tmux-backend.md) | tmux | 146 |
+| [tmux-backend](mistakes/tmux-backend.md) | tmux | 164 |
 | [typed-config-values-process](mistakes/typed-config-values-process.md) | Dev server | 76 |
-| [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Unwired stores, schema and address mismatches, visibility, boundary audits | 252 |
+| [untrusted-value-boundaries](mistakes/untrusted-value-boundaries.md) | Boundaries | 253 |
 | [verification-harness](mistakes/verification-harness.md) |  | 399 |
 | [verification-v2-delivery](mistakes/verification-v2-delivery.md) | v2 misses | 396 |
 | [visibility-and-reachability](mistakes/visibility-and-reachability.md) |  | 141 |
@@ -192,23 +193,23 @@
 | Topic | Blurb | Lines |
 | --- | --- | --- |
 | [agent-rule-bending-hardening](concerns/agent-rule-bending-hardening.md) |  | 379 |
-| [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | loom pressure smoke and dry-run gaps | 77 |
-| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | recovery sync resets a finished node; macOS forward-guard branches unrun | 263 |
+| [automatic-knowledge-source-graph-followups](concerns/automatic-knowledge-source-graph-followups.md) | Smoke gaps | 78 |
+| [code-quality-and-hook-debt](concerns/code-quality-and-hook-debt.md) | Hook debt | 264 |
 | [codex-heartbeat-starvation](concerns/codex-heartbeat-starvation.md) |  | 49 |
 | [contract-autonomy-followups](concerns/contract-autonomy-followups.md) | Contract gaps | 63 |
 | [iterm2-window-teardown](concerns/iterm2-window-teardown.md) |  | 49 |
 | [knowledge-cli-gaps](concerns/knowledge-cli-gaps.md) |  | 103 |
 | [merge-and-recovery-edge-cases](concerns/merge-and-recovery-edge-cases.md) | Merge edges | 125 |
 | [planning-document-model-followups](concerns/planning-document-model-followups.md) | Planning TODO | 127 |
-| [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 63 |
+| [planning-session-sandbox-limits](concerns/planning-session-sandbox-limits.md) |  | 192 |
 | [platform-and-commit-gaps](concerns/platform-and-commit-gaps.md) |  | 210 |
 | [runtime-and-session-safety](concerns/runtime-and-session-safety.md) | Orphans, tmux | 156 |
 | [sandbox-and-confinement-gaps](concerns/sandbox-and-confinement-gaps.md) |  | 384 |
 | [source-graph-known-gaps](concerns/source-graph-known-gaps.md) | Graph limits | 79 |
-| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Host-verification review suggestions: open and fixed defects by file:line | 327 |
+| [source-graph-review-backlog](concerns/source-graph-review-backlog.md) | Backlog | 328 |
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 17 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 349 |
 | [typed-config-values](concerns/typed-config-values.md) | Config gaps | 27 |
 | [verification-v2-followups](concerns/verification-v2-followups.md) |  | 169 |
-| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | deliberately left unchanged — recorded so a later reader does not mistake them… | 102 |
+| [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Latent | 102 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 159 |
