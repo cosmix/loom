@@ -104,9 +104,10 @@ fn observe(
     config: &Config,
 ) -> Vec<ForwardObservation> {
     let channel = evidence_channel(result, &config.task_roots, &identity.parent_session_id);
-    let (start, end) = match channel {
-        MarkerChannel::Streaming(start) | MarkerChannel::Started(start) => (start, None),
-        MarkerChannel::Finished(start, end) => (start, Some(end)),
+    let (start, end, closed) = match channel {
+        MarkerChannel::Streaming(start) => (start, None, false),
+        MarkerChannel::Started(start) => (start, None, true),
+        MarkerChannel::Finished(start, end) => (start, Some(end), true),
         MarkerChannel::Absent | MarkerChannel::Invalid(_) => return Vec::new(),
     };
     let backend = backend_evidence(&start, config);
@@ -120,7 +121,7 @@ fn observe(
         backend.thread.clone(),
         backend.locator.clone(),
     )];
-    let terminal = terminal_evidence(start.backend, end, backend.authoritative);
+    let terminal = terminal_evidence(start.backend, end, closed, backend.authoritative);
     if let Some((state, exit_code)) = terminal {
         observations.push(observation(
             identity,
@@ -167,13 +168,24 @@ fn backend_evidence(start: &StartMarker, config: &Config) -> BackendEvidence {
     }
 }
 
+/// The closing observation for a forward. `closed` means the wrapper printed
+/// its output separator, which it does only on exit.
 fn terminal_evidence(
     backend: ForwardBackend,
     end: Option<EndMarker>,
+    closed: bool,
     authoritative: Option<ForwardState>,
 ) -> Option<(ForwardState, Option<i32>)> {
     match backend {
-        ForwardBackend::Direct => end.map(|end| (end.outcome, Some(end.exit_code))),
+        // The direct wrapper has exited once the separator is out: an
+        // `unknown` END, or a separator with no END (a fail-closed exit after
+        // START), is a finished forward with no verdict. `Unknown` carries no
+        // exit code; the receipt keeps the thread for token pairing.
+        ForwardBackend::Direct => match end {
+            Some(end) if end.outcome.is_terminal() => Some((end.outcome, Some(end.exit_code))),
+            _ if closed => Some((ForwardState::Unknown, None)),
+            _ => None,
+        },
         // The wrapper cancels a job at its cap, so the record reads `cancelled`
         // (or `running` before the cancel lands) while the END marker says
         // `timed_out`; the END marker is the verdict.

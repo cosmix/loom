@@ -39,6 +39,7 @@ jq -nc --arg ts "$AUTH_TS" --arg stage "$STAGE" --arg session "$SESSION" \
 	 model:$model,effort:$effort,workspace_root:"/",companion_version:"1.0.6",
 	 companion_path:"/unused/codex-companion.mjs",state_root:"/unused/state"}' \
 	>"$WORK_DIR/subagents/$STAGE/codex.jsonl"
+cp -R "$WORK_DIR" "$d/work-template"
 
 cat >"$PERSISTED" <<EOF
 LOOM-FORWARD-START {"v":1,"backend":"direct","thread_id":"thread-exact"}
@@ -47,7 +48,7 @@ LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"thread-exact","outcome":
 {"type":"thread.started","thread_id":"thread-exact"}
 {"type":"turn.started"}
 {"type":"turn.completed","usage":{"input_tokens":10,"cached_input_tokens":2,"output_tokens":3}}
-LOOM-CODEX-DIRECT-RESULT {"v":1,"state":"succeeded","thread_id":"thread-exact","turn_id":null,"terminal_at":"$TERMINAL_AT","exit_code":0,"ownership_retained":false}
+LOOM-CODEX-DIRECT-RESULT {"v":1,"state":"succeeded","thread_id":"thread-exact","turn_id":null,"terminal_at":"$TERMINAL_AT","exit_code":0,"ownership_retained":false,"announced_thread_id":"thread-exact"}
 note: the outer sandbox refuses a nested Seatbelt profile; running codex exec with --sandbox danger-full-access (the outer sandbox is the boundary)
 --- LOOM-CODEX-EVIDENCE ---
 exit: 0
@@ -109,5 +110,46 @@ outside_path="$outside_dir/untrusted.txt"
 printf 'untrusted content\n' >"$outside_path"
 run_hook "$(payload "Full output saved to: $outside_path" false 0)"
 [[ $(wc -l <"$JOURNAL") -eq $before ]]
+
+# Each case below runs against a fresh work dir. Args: case name, result state,
+# exit status, ownership_retained, announced_thread_id (JSON).
+run_direct_case() {
+	local name="$1" state="$2" status="$3" retained="$4" announced="$5" error=true
+	local file="$HOME_DIR/.claude/projects/project/tool-results/$name.txt"
+	cp -R "$d/work-template" "$d/work-$name"
+	cat >"$file" <<EOF
+LOOM-FORWARD-START {"v":1,"backend":"direct","thread_id":"thread-exact"}
+LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"thread-exact","outcome":"$state","exit_code":$status}
+--- LOOM-FORWARD-OUTPUT ---
+{"type":"thread.started","thread_id":"thread-exact"}
+LOOM-CODEX-DIRECT-RESULT {"v":1,"state":"$state","thread_id":"thread-exact","turn_id":null,"terminal_at":"$TERMINAL_AT","exit_code":$status,"ownership_retained":$retained,"announced_thread_id":$announced}
+--- LOOM-CODEX-EVIDENCE ---
+exit: $status
+mode: direct (codex exec --sandbox danger-full-access; nested Seatbelt refused)
+thread: thread-exact
+unit: $UNIT
+invocation: $INVOCATION
+state: $state
+EOF
+	[[ "$status" != 0 ]] || error=false
+	WORK_DIR="$d/work-$name" run_hook "$(payload "Full output saved to: $file" "$error" "$status" "$file")"
+}
+
+# An `unknown` END (exit 125) is a recorded non-success; the detail says whether
+# the supervisor kept ownership of a live descendant.
+for retained in true false; do
+	run_direct_case "unknown-$retained" unknown 125 "$retained" '"thread-exact"'
+	case_journal="$d/work-unknown-$retained/subagents/$STAGE/lifecycle.jsonl"
+	[[ $(wc -l <"$case_journal") -eq 2 ]]
+	detail='incomplete event stream'
+	[[ "$retained" == false ]] || detail='ownership retained'
+	tail -n 1 "$case_journal" | jq -e --arg detail "$detail" '
+		.state == "unknown" and .evidence.outcome == "unknown" and
+		.evidence.detail == $detail and .identity.execution.thread_id == "thread-exact"' >/dev/null
+done
+
+# A result whose announced START thread differs from its thread records nothing.
+run_direct_case announced-mismatch succeeded 0 false '"thread-other"'
+[[ ! -s "$d/work-announced-mismatch/subagents/$STAGE/lifecycle.jsonl" ]]
 
 printf '%s\n' PASS

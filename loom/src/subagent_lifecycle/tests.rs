@@ -243,7 +243,7 @@ fn terminal_turn_id_is_optional_for_direct_records_only() -> Result<()> {
     Ok(())
 }
 
-fn codex_record(
+pub(super) fn codex_record(
     workspace: &Path,
     forwarder: &str,
     unit: &str,
@@ -302,7 +302,7 @@ fn codex_evidence(unit: &str, job: &str, terminal: bool) -> Result<CodexEvidence
     })
 }
 
-fn set_codex_id(record: &mut LifecycleRecord) -> Result<()> {
+pub(super) fn set_codex_id(record: &mut LifecycleRecord) -> Result<()> {
     let evidence: CodexEvidence = serde_json::from_value(record.evidence.clone())?;
     record.event_id = codex_event_id(record, &evidence)?;
     Ok(())
@@ -339,16 +339,16 @@ fn digest(bytes: &[u8]) -> String {
     format!("sha256:{}", hex::encode(Sha256::digest(bytes)))
 }
 
-struct Fixture {
+pub(super) struct Fixture {
     _temp: tempfile::TempDir,
-    root: PathBuf,
-    work: PathBuf,
+    pub(super) root: PathBuf,
+    pub(super) work: PathBuf,
     parent: PathBuf,
     worker: PathBuf,
 }
 
 impl Fixture {
-    fn new(prefix: &str) -> Result<Self> {
+    pub(super) fn new(prefix: &str) -> Result<Self> {
         let temp = tempfile::Builder::new().prefix(prefix).tempdir()?;
         let root = fs::canonicalize(temp.path())?;
         let work = root.join("work");

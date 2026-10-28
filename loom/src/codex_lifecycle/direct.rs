@@ -1,11 +1,12 @@
 //! Direct-mode Codex forwards: `codex exec` run by the forwarding wrapper
 //! without a companion job, so the forward receipt is the only evidence.
 //!
-//! The receipt hook writes a direct forward's `running` and terminal rows
-//! together at PostToolUse, after the run ends; there is no receipt while the
-//! forward runs. Companion forwards get receipts at the same point, so a
-//! missing receipt says nothing about the backend: reconcile looks for a
-//! companion job first and only then applies [`RECEIPT_WINDOW_SECS`].
+//! The receipt hook writes a direct forward's `running` row once the start
+//! marker is visible, which for a backgrounded forward is before the run
+//! ends, and the terminal row once the end marker is. Companion forwards get
+//! receipts at the same points, so a missing receipt says nothing about the
+//! backend: reconcile looks for a companion job first and only then applies
+//! [`RECEIPT_WINDOW_SECS`].
 
 use std::path::Path;
 
@@ -18,7 +19,7 @@ use crate::models::forward_receipt::{
 };
 use crate::subagent_lifecycle::{
     CodexEvidence, CodexEvidenceKind, CodexEvidenceOutcome, CodexExecution, LifecycleProducer,
-    LifecycleState, WorkerIdentity,
+    LifecycleRecord, LifecycleState, WorkerIdentity,
 };
 
 use super::authorization::CodexAuthorization;
@@ -66,9 +67,12 @@ impl StageReceipts {
 
 /// Classify the receipt bound to `row` by its exact receipt id.
 ///
-/// Only the folded receipt state decides the outcome: a conflicting history
-/// folds to `Unknown` without clearing an earlier exit code, so a set
-/// `exit_code` never makes a receipt terminal.
+/// Only the folded receipt state decides the outcome. A reported unknown
+/// outcome or a conflicting history folds to `Unknown` and clears any earlier
+/// exit code; that receipt still names its exact execution, so it becomes an
+/// `unknown` observation. [`unknown_fold`] decides whether reconcile records
+/// it, and a watch bound to the forward settles on the recorded `unknown`
+/// (`commands::subagents::wait::engine`).
 pub(super) fn receipt_outcome(row: &CodexAuthorization, receipts: &ReceiptLoad) -> DirectOutcome {
     if receipts.truncated || receipts.malformed > 0 {
         return DirectOutcome::Unknown("forward receipt journal is damaged".into());
@@ -116,12 +120,19 @@ fn direct_observation(receipt: &ForwardReceipt, row: &CodexAuthorization) -> Dir
             CodexEvidenceOutcome::Cancelled,
             Some(format!("direct Codex forward {}", receipt.state.label())),
         ),
-        ForwardState::Queued | ForwardState::Unknown => {
-            return DirectOutcome::Unknown(format!(
-                "direct forward receipt is {}",
-                receipt.state.label()
-            ))
-        }
+        // The wrapper reports a direct forward as `Running` once Codex names
+        // its thread; a `Queued` direct observation is still that live forward.
+        ForwardState::Queued => (
+            LifecycleState::Running,
+            CodexEvidenceOutcome::Running,
+            // No detail, so a later `Running` observation dedupes with it.
+            None,
+        ),
+        ForwardState::Unknown => (
+            LifecycleState::Unknown,
+            CodexEvidenceOutcome::Unknown,
+            Some("direct forward receipt is unknown".into()),
+        ),
     };
     let terminal_at = (state != LifecycleState::Running).then_some(receipt.observed_at);
     let execution = CodexExecution::Direct {
@@ -137,6 +148,58 @@ fn direct_observation(receipt: &ForwardReceipt, row: &CodexAuthorization) -> Dir
         detail,
     };
     DirectOutcome::Direct(execution, observation)
+}
+
+/// What reconcile does with an observation before appending it.
+#[derive(Debug, PartialEq, Eq)]
+pub(super) enum UnknownFold {
+    /// Append it: any non-`unknown` observation, or a direct `unknown` fold
+    /// that closes an execution the journal already opened.
+    Record,
+    /// The journal already closes this direct execution as `unknown`, e.g.
+    /// with the result hook's record at its own terminal instant, which a
+    /// receipt-derived record would duplicate under another event id.
+    Recorded,
+    /// The journal never opened this direct execution: the fold names it only
+    /// by the receipt's first thread, so nothing is recorded. Accepted gap: a
+    /// forward that goes Running then Unknown between two reconcile ticks is
+    /// never opened, and a watch bound on its raw receipt holds to its deadline.
+    Unopened,
+}
+
+/// Classify a direct `unknown` observation against `journal`, the stage's
+/// lifecycle records as read under the journal lock the append then holds.
+/// A watch binds a direct forward on its raw `running` receipt
+/// (`codex_binding::receipt_matches`) and afterwards reads only the lifecycle
+/// journal, so a later `unknown` fold must reach the journal for that watch
+/// to end.
+pub(super) fn unknown_fold(
+    journal: &[LifecycleRecord],
+    identity: &WorkerIdentity,
+    state: LifecycleState,
+) -> UnknownFold {
+    let direct = matches!(
+        identity,
+        WorkerIdentity::Codex {
+            execution: CodexExecution::Direct { .. },
+            ..
+        }
+    );
+    if !direct || state != LifecycleState::Unknown {
+        return UnknownFold::Record;
+    }
+    let states: Vec<_> = journal
+        .iter()
+        .filter(|record| &record.identity == identity)
+        .map(|record| record.state)
+        .collect();
+    if states.contains(&LifecycleState::Unknown) {
+        UnknownFold::Recorded
+    } else if states.contains(&LifecycleState::Running) {
+        UnknownFold::Record
+    } else {
+        UnknownFold::Unopened
+    }
 }
 
 /// The authorization evidence, carrying the ids the lifecycle validator
@@ -227,6 +290,9 @@ pub(super) fn receipt_window(
     bail!("no forward receipt {RECEIPT_WINDOW_SECS} s after authorization; companion job: {job_error}")
 }
 
+#[cfg(test)]
+#[path = "direct_fold_tests.rs"]
+mod fold_tests;
 #[cfg(test)]
 #[path = "direct_tests.rs"]
 mod tests;

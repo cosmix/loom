@@ -1,5 +1,6 @@
 mod codex_binding;
 mod engine;
+mod evidence;
 mod identity;
 mod lease;
 mod model;
@@ -22,7 +23,8 @@ use std::time::Duration;
 
 use anyhow::{bail, Result};
 
-use engine::{wait_for_workers, EngineResult, LifecycleEvidence, ThreadSleeper, POLL_INTERVAL};
+use engine::{wait_for_workers, EngineResult, ThreadSleeper, POLL_INTERVAL};
+use evidence::LifecycleEvidence;
 use lease::{
     acquire, finish, prune_results, Acquired, LeaseDir, SystemBootClock, SystemOwnerProbe,
 };

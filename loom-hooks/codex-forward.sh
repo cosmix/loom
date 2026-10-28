@@ -254,48 +254,49 @@ fi
 if ! command -v jq >/dev/null 2>&1; then
 	finish_without_end 1 '' 'codex-forward.sh requires jq to decode structured Codex output'
 fi
+# The supervisor writes LOOM-FORWARD-START to fd 3 (stdout) on thread.started, so a
+# backgrounded forward's output file holds START early; END follows at exit.
 run_direct() {
 	local supervisor direct_status=0 result_line result_json fields
-	local state thread_id turn_id terminal_at result_status retained
+	local state thread_id turn_id terminal_at result_status retained announced
 	supervisor="$(dirname "$0")/_codex-direct.py"
 	if [[ ! -f "$supervisor" || -L "$supervisor" ]] || ! command -v python3 >/dev/null 2>&1; then
 		finish_without_end 1 '' 'codex direct supervisor or Python 3 is unavailable'
 	fi
-	python3 "$supervisor" --timeout-ms 540000 -- codex exec --json \
+	python3 "$supervisor" --timeout-ms 540000 --start-fd 3 -- codex exec --json \
 		--sandbox danger-full-access --skip-git-repo-check --model "$model" \
 		-c "model_reasoning_effort=$effort" -- "$task" \
-		>"$provider_log" 2>"$command_log" || direct_status=$?
+		3>&1 >"$provider_log" 2>"$command_log" || direct_status=$?
 	result_line=$(tail -n 1 "$provider_log" 2>/dev/null || true)
 	result_json=${result_line#LOOM-CODEX-DIRECT-RESULT }
+	{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
 	if [[ "$result_json" == "$result_line" ]] ||
 		! fields=$(printf '%s' "$result_json" | jq -er '
 			select(type == "object" and
-			 (keys | sort) == (["exit_code","ownership_retained","state","terminal_at","thread_id","turn_id","v"] | sort) and
+			 (keys | sort) == (["announced_thread_id","exit_code","ownership_retained","state","terminal_at","thread_id","turn_id","v"] | sort) and
 			 .v == 1 and (.state | IN("succeeded","failed","cancelled","unknown")) and
 			 (.thread_id == null or (.thread_id | type == "string")) and
 			 (.turn_id == null or (.turn_id | type == "string")) and
 			 (.terminal_at | type == "string") and (.exit_code | type == "number" and floor == .) and
-			 (.ownership_retained | type == "boolean")) |
+			 (.ownership_retained | type == "boolean") and
+			 (.announced_thread_id == null or (.announced_thread_id | type == "string"))) |
 			[.state, (.thread_id // ""), (.turn_id // "-"), .terminal_at,
-			 (.exit_code | tostring), (.ownership_retained | tostring)] | @tsv' 2>/dev/null); then
-		{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
+			 (.exit_code | tostring), (.ownership_retained | tostring),
+			 (.announced_thread_id // "-")] | @tsv' 2>/dev/null); then
 		finish_without_end 1 '' 'codex direct supervisor returned no valid result line'
 	fi
-	IFS=$'\t' read -r state thread_id turn_id terminal_at result_status retained <<<"$fields"
+	IFS=$'\t' read -r state thread_id turn_id terminal_at result_status retained announced <<<"$fields"
 	if [[ "$result_status" != "$direct_status" || -z "$thread_id" ]] ||
 		! valid_backend_id "$thread_id" || { [[ "$turn_id" != - ]] && ! valid_backend_id "$turn_id"; }; then
-		{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
 		finish_without_end 1 '' 'codex direct supervisor result was incomplete or inconsistent'
 	fi
+	[[ "$announced" != - ]] || finish_without_end 1 '' 'codex direct START marker was never written (announced_thread_id is null)'
+	[[ "$announced" == "$thread_id" ]] || finish_without_end 1 '' 'codex direct START marker thread disagrees with the supervisor result'
+	# unknown:125 also covers a released owner whose stream lacked a valid terminal turn.
 	case "$state:$result_status:$retained" in
-	succeeded:0:false | failed:*:false | cancelled:124:false | unknown:125:true) ;;
-	*)
-		{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
-		finish_without_end 1 '' 'codex direct supervisor state was inconsistent'
-		;;
+	succeeded:0:false | failed:*:false | cancelled:124:false | unknown:125:*) ;;
+	*) finish_without_end 1 "$thread_id" 'codex direct supervisor state was inconsistent' ;;
 	esac
-	{ printf '\n'; command cat "$command_log"; } >>"$provider_log" 2>/dev/null || true
-	printf 'LOOM-FORWARD-START {"v":1,"backend":"direct","thread_id":"%s"}\n' "$thread_id"
 	printf 'LOOM-FORWARD-END {"v":1,"backend":"direct","thread_id":"%s","outcome":"%s","exit_code":%s}\n' \
 		"$thread_id" "$state" "$direct_status"
 	print_separator

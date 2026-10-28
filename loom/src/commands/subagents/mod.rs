@@ -134,7 +134,9 @@ pub enum SubagentsCommand {
         #[arg(long)]
         receipt: String,
 
-        /// Seconds to poll before returning unknown (exit 2)
+        /// Seconds to poll for a terminal state. A direct receipt that folded to
+        /// unknown returns before the deadline; at the deadline, wait returns
+        /// the current state (exit 2 unless terminal)
         #[arg(long, default_value_t = 300)]
         timeout: u64,
 

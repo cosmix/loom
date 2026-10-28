@@ -250,6 +250,9 @@ fn receipt_matches(
         .iter()
         .filter(|receipt| receipt_matches_authorization(receipt, authorization))
     {
+        // An `Unknown` receipt (contradicting observations, or an outcome the
+        // wrapper reported as unknown) never reaches a terminal lifecycle
+        // record, so binding it would block the watch until its timeout.
         ensure!(
             receipt.state != ForwardState::Unknown,
             "invalid exact forward receipt"

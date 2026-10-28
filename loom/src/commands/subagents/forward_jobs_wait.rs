@@ -12,7 +12,9 @@ use serde::Serialize;
 use crate::models::forward_receipt::locator::{
     default_companion_state_roots, default_task_output_roots,
 };
-use crate::models::forward_receipt::{is_safe_id, load_receipts, receipts_path, ForwardState};
+use crate::models::forward_receipt::{
+    is_safe_id, load_receipts, receipts_path, ForwardBackend, ForwardState,
+};
 
 use super::forward_jobs::{load_index_with_roots, receipt_state};
 
@@ -23,6 +25,12 @@ struct WaitOutput {
     receipt_id: String,
     backend_id: Option<String>,
     state: ForwardState,
+    /// A direct receipt whose observations folded to `Unknown`, which absorbs
+    /// every later observation, so polling cannot change the answer. A
+    /// companion receipt's printed state comes from its live job record, so
+    /// an `Unknown` companion receipt keeps polling.
+    #[serde(skip)]
+    settled: bool,
 }
 
 pub(super) fn wait(receipt_id: String, timeout_secs: u64, json: bool) -> Result<()> {
@@ -79,7 +87,7 @@ fn wait_until_with_roots(
     let deadline = Instant::now() + Duration::from_secs(timeout_secs);
     loop {
         let output = read_wait_output(work_dir, stage_id, receipt_id, companion_roots);
-        if output.state.is_terminal() || Instant::now() >= deadline {
+        if output.state.is_terminal() || output.settled || Instant::now() >= deadline {
             return output;
         }
         thread::sleep(POLL_INTERVAL.min(deadline.saturating_duration_since(Instant::now())));
@@ -111,6 +119,8 @@ fn read_wait_output(
             receipt_id: receipt_id.to_owned(),
             backend_id: Some(receipt.backend_id.clone()),
             state: receipt_state(&index, receipt),
+            settled: receipt.backend == ForwardBackend::Direct
+                && receipt.state == ForwardState::Unknown,
         },
         None => unknown_wait(receipt_id),
     }
@@ -137,6 +147,7 @@ fn unknown_wait(receipt_id: &str) -> WaitOutput {
         receipt_id: receipt_id.to_owned(),
         backend_id: None,
         state: ForwardState::Unknown,
+        settled: false,
     }
 }
 

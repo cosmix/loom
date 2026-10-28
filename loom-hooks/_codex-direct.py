@@ -5,7 +5,9 @@ from __future__ import annotations
 
 import argparse
 import ctypes
+import dataclasses
 import errno
+import json
 import os
 import selectors
 import signal
@@ -17,6 +19,41 @@ from _codex_direct_events import DirectResult, EventState, JsonStream, utc_now
 
 POLL_SECONDS = 0.05
 MAX_STDERR_BYTES = 16_384
+START_PREFIX = "LOOM-FORWARD-START "
+
+
+class StartAnnouncer:
+    """Writes the wrapper's LOOM-FORWARD-START line once codex names its thread.
+
+    The line goes to an inherited descriptor (the wrapper's stdout) unbuffered,
+    so a harness that backgrounds a long forward finds it in the task output
+    file within seconds. ``thread_id`` records what was written; the wrapper
+    rejects a result whose thread differs from it.
+    """
+
+    def __init__(self, fd: int | None) -> None:
+        self.fd = fd
+        self.thread_id: str | None = None
+        self.attempted = False
+
+    def __call__(self, thread_id: str) -> None:
+        if self.fd is None or self.attempted:
+            return
+        self.attempted = True
+        body = json.dumps({"v": 1, "backend": "direct", "thread_id": thread_id},
+                          separators=(",", ":"))
+        line = memoryview((START_PREFIX + body + "\n").encode())
+        # os.write may write part of the line; finish it, or leave thread_id
+        # unset so the wrapper fails closed on a START it cannot vouch for.
+        try:
+            while line:
+                written = os.write(self.fd, line)
+                if written <= 0:
+                    return
+                line = line[written:]
+        except OSError:
+            return
+        self.thread_id = thread_id
 
 
 def _linux_snapshot() -> dict[int, tuple[int, str, str]] | None:
@@ -218,7 +255,15 @@ def _close_streams(proc: subprocess.Popen[bytes], selector: selectors.BaseSelect
             pipe.close()
 
 
-def supervise(command: list[str], timeout_ms: int, grace_ms: int = 5000) -> DirectResult:
+def supervise(command: list[str], timeout_ms: int, grace_ms: int = 5000,
+              start_fd: int | None = None) -> DirectResult:
+    announcer = StartAnnouncer(start_fd)
+    result = _supervise(command, timeout_ms, grace_ms, announcer)
+    return dataclasses.replace(result, announced_thread_id=announcer.thread_id)
+
+
+def _supervise(command: list[str], timeout_ms: int, grace_ms: int,
+               announcer: StartAnnouncer) -> DirectResult:
     _enable_subreaper()
     events, stderr = EventState(), [0]
     try:
@@ -233,7 +278,7 @@ def supervise(command: list[str], timeout_ms: int, grace_ms: int = 5000) -> Dire
     except OSError as error:
         print(f"codex direct launch failed: {error}", file=sys.stderr)
         return DirectResult("unknown", None, None, utc_now(), 125, False)
-    tracker, stream = Descendants(proc.pid), JsonStream(events)
+    tracker, stream = Descendants(proc.pid), JsonStream(events, announcer)
     selector = selectors.DefaultSelector()
     for pipe, name in [(proc.stdout, "stdout"), (proc.stderr, "stderr")]:
         if pipe is not None:
@@ -279,6 +324,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser()
     parser.add_argument("--timeout-ms", type=int, required=True)
     parser.add_argument("--grace-ms", type=int, default=5000)
+    parser.add_argument("--start-fd", type=int)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     if args.command[:1] == ["--"]:
@@ -286,6 +332,8 @@ def parse_args() -> argparse.Namespace:
     valid_command = len(args.command) >= 3 and args.command[:2] == ["codex", "exec"]
     if not valid_command or "--json" not in args.command:
         parser.error("command must be codex exec --json ...")
+    if args.start_fd is not None and args.start_fd < 3:
+        parser.error("--start-fd must name an inherited descriptor above stderr")
     if not 1 <= args.timeout_ms <= 540_000 or not 1 <= args.grace_ms <= 5000:
         parser.error("timeouts exceed the direct supervisor bounds")
     return args
@@ -293,7 +341,7 @@ def parse_args() -> argparse.Namespace:
 
 def main() -> int:
     args = parse_args()
-    result = supervise(args.command, args.timeout_ms, args.grace_ms)
+    result = supervise(args.command, args.timeout_ms, args.grace_ms, args.start_fd)
     print(result.line(), flush=True)
     return result.exit_code
 

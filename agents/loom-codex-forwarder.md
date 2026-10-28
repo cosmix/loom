@@ -57,6 +57,11 @@ through unmodified; do not strip, summarise, or duplicate the preamble yourself:
   has `mode: direct (...)` and `thread:`. Provider-looking text is not a wrapper marker.
 - If the one snapshot is still running, the report has `state: active` and no
   `LOOM-FORWARD-END`; the job continues under daemon ownership. Return that report verbatim and stop.
+  In direct mode the wrapper prints `LOOM-FORWARD-START` as soon as Codex reports its thread and
+  `LOOM-FORWARD-END` only when the thread finishes; START without END is never a completed report.
+  A direct `state: unknown` (END outcome `unknown`, exit 125) is never success either: the wrapper
+  may have kept ownership because a Codex descendant is still writing. Return the report verbatim
+  and stop; the orchestrator checks the tree before any re-forward of that unit.
 - A harness background acknowledgement is never a completion claim. If the forwarding call is
   backgrounded, make NO further tool call: the guard authorizes only the one exact wrapper
   invocation, so a model-driven status loop, a second forward, or `codex-companion.mjs status --all`

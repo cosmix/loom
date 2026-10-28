@@ -2,15 +2,17 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context, Result};
+use chrono::{DateTime, Duration, Utc};
 use serde_json::{json, Value};
 use tempfile::TempDir;
 
 use crate::models::forward_receipt::{ForwardIdentity, RECEIPTS_FILE_NAME};
 use crate::models::session::{Session, SessionStatus};
-use crate::subagent_lifecycle::{CodexExecution, WorkerIdentity};
+use crate::subagent_lifecycle::{CodexExecution, LifecycleRecord, WorkerIdentity, WorkerOutcome};
 
 use super::authorization::CodexAuthorization;
 use super::jobs::workspace_state_dir;
+use super::ReconcileReport;
 
 pub(crate) const STAGE: &str = "stage-1";
 pub(super) const SESSION: &str = "session-1";
@@ -279,4 +281,61 @@ fn job_error(status: &str) -> Option<&str> {
         "cancelled" => Some("companion cancelled"),
         _ => None,
     }
+}
+
+pub(crate) const THREAD: &str = "01a169b0-a2fd-7793-9874-db0889fa035c";
+
+/// `secs` after the liquidmon authorization's `ts`.
+pub(crate) fn at(secs: i64) -> DateTime<Utc> {
+    let authorized_at: DateTime<Utc> = "2026-10-23T16:55:45Z".parse().expect("fixture ts");
+    authorized_at + Duration::seconds(secs)
+}
+
+pub(crate) fn run(fixture: &Fixture, now: DateTime<Utc>) -> Result<ReconcileReport> {
+    super::reconcile_at(
+        &fixture.work_dir,
+        std::slice::from_ref(&fixture.session),
+        &fixture.state_root,
+        now,
+    )
+}
+
+/// The liquidmon fixture with `lines` as its receipt journal.
+pub(crate) fn liquidmon<S: AsRef<str>>(lines: &[S]) -> Result<(Fixture, CodexAuthorization)> {
+    let fixture = liquidmon_direct_fixture()?;
+    fixture.write_receipts(lines)?;
+    let authorization =
+        CodexAuthorization::from_v2_value(&fixture.liquidmon_authorization_value()?)?;
+    Ok((fixture, authorization))
+}
+
+pub(crate) fn direct_identity(
+    authorization: &CodexAuthorization,
+    thread_id: &str,
+) -> WorkerIdentity {
+    let execution = CodexExecution::Direct {
+        thread_id: thread_id.into(),
+        tool_use_id: authorization.tool_use_id.clone(),
+    };
+    super::codex_worker_identity(authorization, execution)
+}
+
+pub(crate) fn records(fixture: &Fixture) -> Result<Vec<LifecycleRecord>> {
+    fs::read_to_string(fixture.stage_path("lifecycle.jsonl"))?
+        .lines()
+        .map(|line| serde_json::from_str(line).context("lifecycle record"))
+        .collect()
+}
+
+pub(crate) fn only_outcome(report: &ReconcileReport) -> Result<&WorkerOutcome> {
+    assert_eq!(report.entries.len(), 1, "{report:?}");
+    Ok(&report.entries.first().context("one entry")?.outcome)
+}
+
+pub(crate) fn assert_nothing_written(fixture: &Fixture, authorization: &CodexAuthorization) {
+    assert!(!fixture.stage_path("lifecycle.jsonl").exists());
+    assert!(!super::has_correlated_lifecycle(
+        &fixture.work_dir,
+        authorization
+    ));
 }

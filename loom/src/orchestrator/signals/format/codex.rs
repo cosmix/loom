@@ -202,7 +202,11 @@ fn push_codex_blast_radius_and_evidence(content: &mut String) {
         "  the trailer unit equals the unit you assigned, and its invocation matches that job's authorization.\n",
         "  A report with `state: timed_out` and an END marker carrying `\"outcome\":\"timed_out\"` means the\n",
         "  wrapper cancelled the job at the 540000 ms deadline: the unit was too large; re-split it. In\n",
-        "  `mode: direct (...)` (where the stage sandbox refuses nesting), `thread:` names one exact thread.\n",
+        "  `mode: direct (...)` (where the stage sandbox refuses nesting), `thread:` names one exact thread;\n",
+        "  its START is printed when Codex reports the thread, its END only when the thread finishes.\n",
+        "  A direct `state: unknown` (END outcome `unknown`, exit 125) is never success: retained ownership\n",
+        "  means a Codex descendant may still be writing. Do not re-forward that unit until\n",
+        "  `git status --short` and the unit's files show the tree has settled.\n",
         "  No matching markers, trailer, exact record, or exact thread leaves the forward state unresolved\n",
         "  for orchestrator review.\n",
     ));
