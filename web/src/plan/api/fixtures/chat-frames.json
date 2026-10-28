@@ -52,6 +52,7 @@
       "summary": "Update the bridge plan",
       "status": "done",
       "subagent": null,
+      "parent": null,
       "input": "{\n  \"path\": \"doc/plans/bridge.md\",\n  \"old_text\": \"Draft\",\n  \"new_text\": \"Ready\"\n}",
       "result": "Updated doc/plans/bridge.md",
       "result_truncated": false,

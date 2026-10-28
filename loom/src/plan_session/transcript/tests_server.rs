@@ -93,8 +93,12 @@ fn expected_nested_grep() -> Item {
         input,
     );
     let mut grep = finished(grep, ToolStatus::Done, "doc/plans/PLAN-x.md");
-    if let Item::Tool { subagent, .. } = &mut grep {
+    if let Item::Tool {
+        subagent, parent, ..
+    } = &mut grep
+    {
         *subagent = Some("a7f3".into());
+        *parent = Some("toolu_01Ag".into());
     }
     grep
 }
@@ -137,6 +141,89 @@ fn subagent_tool_rows_nest_under_the_spawning_call_and_add_tokens() {
     );
     let again = mapper.ingest_subagent("a7f3", spawned_by, &main[1]);
     assert!(again.deltas.is_empty());
+}
+
+fn assistant_tools(uuid: &str, secs: u32, calls: &[(&str, &str)]) -> String {
+    let content: Vec<Value> = calls
+        .iter()
+        .map(|(id, name)| {
+            json!({"type": "tool_use", "id": id, "name": name,
+                                 "input": {"description": format!("{name} {id}")}})
+        })
+        .collect();
+    let record = json!({"type": "assistant", "uuid": uuid,
+        "timestamp": format!("2026-10-27T10:00:{secs:02}.000Z"),
+        "message": {"id": format!("msg_{uuid}"), "role": "assistant", "content": content}});
+    record.to_string()
+}
+
+#[test]
+fn subagent_rows_name_their_own_spawning_call_when_one_message_spawns_two() {
+    let mut mapper = mapper();
+    mapper.begin_turn(at(0));
+    let spawn = assistant_tools("a1", 1, &[("toolu_A1", "Agent"), ("toolu_A2", "Agent")]);
+    mapper.ingest_main(&spawn);
+    let first = assistant_tools("s1", 2, &[("toolu_G1", "Grep")]);
+    let second = assistant_tools("s2", 3, &[("toolu_G2", "Glob")]);
+    mapper.ingest_subagent("agent-1", Some("toolu_A1"), &first);
+    mapper.ingest_subagent("agent-2", Some("toolu_A2"), &second);
+
+    let rows: Vec<_> = only_turn(&mapper)
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Tool {
+                tool_use_id,
+                subagent,
+                parent,
+                nested_tools,
+                ..
+            } => Some((
+                tool_use_id.as_str(),
+                subagent.as_deref(),
+                parent.as_deref(),
+                *nested_tools,
+            )),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        rows,
+        [
+            ("toolu_A1", None, None, 1),
+            ("toolu_A2", None, None, 1),
+            ("toolu_G1", Some("agent-1"), Some("toolu_A1"), 0),
+            ("toolu_G2", Some("agent-2"), Some("toolu_A2"), 0),
+        ]
+    );
+}
+
+#[test]
+fn only_paths_under_doc_join_the_changed_paths() {
+    let mut mapper = mapper();
+    mapper.begin_turn(at(0));
+    let paths = [
+        "/home/u/.local/state/loom/drafts/x.md",
+        "/work/proj/src/lib.rs",
+        "/work/proj/doc/../src/lib.rs",
+        "/work/proj/doc/product/x.md",
+        "doc/plans/PLAN-y.md",
+    ];
+    for (n, path) in paths.iter().enumerate() {
+        let id = format!("toolu_W{n}");
+        mapper.ingest_main(&assistant_tools(&format!("a{n}"), 1, &[(&id, "Write")]));
+        let result = json!([{"tool_use_id": id, "type": "tool_result", "content": "ok"}]);
+        let record = json!({"type": "user", "uuid": format!("u{n}"),
+            "timestamp": "2026-10-27T10:00:02.000Z",
+            "message": {"role": "user", "content": result},
+            "toolUseResult": {"filePath": path}});
+        mapper.ingest_main(&record.to_string());
+    }
+
+    assert_eq!(
+        mapper.changed_by_tool("t1"),
+        ["doc/plans/PLAN-y.md", "doc/product/x.md"]
+    );
 }
 
 #[test]
