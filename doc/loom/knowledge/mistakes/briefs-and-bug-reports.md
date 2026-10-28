@@ -363,3 +363,13 @@ sibling's files.
 **Prevention**: Inspect actual completion gates before proposing contextual acceptance as recovery.
 
 **Fix**: Correct the unsupported plan assertion through the supported plan input path while retaining normal completion checks; retry context alone is insufficient.
+
+## Planner takeover told a Claude driver to skip CLAUDE.md
+
+**What happened**: The takeover prompt, written for a codex driver, said "Do not read CLAUDE.md" and pointed at `~/.codex/skills/loom-usage`. The user then told the Claude session taking over to follow CLAUDE.md after all.
+
+**Why**: Codex loads only AGENTS.md, so that prompt's doctrine routing does not fit a Claude driver.
+
+**Prevention**: When a Claude session drives loom from a prompt written for codex, it still follows CLAUDE.md (commit conventions, no attribution, knowledge routing, tool rules) unless the user restates the exclusion for Claude.
+
+**Fix**: Follow CLAUDE.md for the rest of the takeover.
