@@ -75,6 +75,11 @@ pub fn list_loom_sockets(work_dir: &Path) -> Vec<LoomSocket> {
         if session_id.starts_with("view-") {
             continue;
         }
+        // Planning sockets belong to `loom plan`, which tracks them
+        // through its own session records.
+        if session_id.starts_with("plan-") {
+            continue;
+        }
         let attributed = work_dir
             .join("sessions")
             .join(format!("{session_id}.md"))
@@ -309,6 +314,25 @@ pub(crate) mod tests {
             1,
             "exactly the real session socket must come back, not the viewer socket"
         );
+        assert_eq!(sockets[0].session_id, real_session_id);
+    }
+
+    #[test]
+    #[serial]
+    fn list_loom_sockets_ignores_planning_sockets() {
+        let socket_dir = TempDir::new().unwrap();
+        let _guard = TmuxTmpDirGuard::set(socket_dir.path());
+        let tmux_socket_dir = loom_socket_dir();
+        std::fs::create_dir_all(&tmux_socket_dir).unwrap();
+        std::fs::write(tmux_socket_dir.join("loom-plan-3f9a0c41b7e2"), "").unwrap();
+
+        let real_session_id = "session-abcd1234-1111111111";
+        std::fs::write(tmux_socket_dir.join(format!("loom-{real_session_id}")), "").unwrap();
+        let work_dir = TempDir::new().unwrap();
+        std::fs::create_dir_all(work_dir.path().join("sessions")).unwrap();
+
+        let sockets = list_loom_sockets(work_dir.path());
+        assert_eq!(sockets.len(), 1);
         assert_eq!(sockets[0].session_id, real_session_id);
     }
 
