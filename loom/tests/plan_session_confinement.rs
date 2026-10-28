@@ -88,8 +88,8 @@ fn summary_seal_writes_the_summary_with_the_session_environment() {
     let Some((fx, confined)) = confined(name) else {
         return;
     };
-    // Set as plan 7's launch sets them; the in-session check accepts the state only when the
-    // planning root is not writable, which the sandbox must make true.
+    // Set as plan 7's launch sets them; the in-session check accepts the state because the
+    // sandbox binds the runtime grants into the read-denied planning root from the host.
     let state = fx.runtime.dir.display().to_string();
     let envs = [
         ("LOOM_PLAN_SESSION", SESSION_ID),
@@ -110,19 +110,43 @@ fn summary_seal_writes_the_summary_with_the_session_environment() {
     assert!(summary.is_file(), "seal wrote no {}", summary.display());
 }
 
+/// srt covers the read-denied planning root with a private tmpfs per command, so a write there
+/// succeeds inside the command; none may reach the host: no probe file appears, and the server
+/// lock and the session's permission answers keep their content.
 #[test]
 #[serial]
-fn the_planning_root_and_runtime_are_write_denied() {
-    let name = "the_planning_root_and_runtime_are_write_denied";
+fn writes_to_the_planning_root_and_runtime_never_reach_the_host() {
+    let name = "writes_to_the_planning_root_and_runtime_never_reach_the_host";
     let Some((fx, confined)) = confined(name) else {
         return;
     };
+    let answers = fx.session.answers().join("a.json");
     for dir in [&fx.runtime.planning_root, &fx.runtime.dir] {
         let target = dir.join("probe");
-        let probe = confined.run(&format!("touch {}", quote(&target)), &[]);
-        assert_refused(&probe, &format!("touch {}", target.display()));
-        assert!(!target.exists(), "{} was created", target.display());
+        let script = format!(
+            "touch {}; echo x > {}; echo x > {}",
+            quote(&target),
+            quote(&fx.runtime.lock),
+            quote(&answers)
+        );
+        let probe = confined.run(&script, &[]);
+        assert!(
+            probe.rc.is_some(),
+            "the shell did not reach its last line: {}",
+            probe.diag()
+        );
+        assert!(!target.exists(), "{} reached the host", target.display());
     }
+    assert_eq!(
+        fs::read_to_string(&fx.runtime.lock).unwrap(),
+        SECRET,
+        "the server lock was rewritten"
+    );
+    assert_eq!(
+        fs::read_to_string(&answers).unwrap(),
+        SECRET,
+        "the session's permission answers were rewritten"
+    );
 }
 
 #[test]
