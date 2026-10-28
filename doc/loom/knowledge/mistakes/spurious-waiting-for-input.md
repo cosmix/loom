@@ -33,3 +33,11 @@ Two stages of PLAN-loop-recovery (`worker-evidence`, 2026-09-13T22:10:52Z; `comp
 **Prevention:** every writer of a heartbeat file must set `subagent` explicitly, and the reconciler treats only a main-agent heartbeat that names its tool as proof of progress; `rg -n 'heartbeat' loom-hooks/*.sh -l` enumerates the writers.
 
 **Fix:** `loom_lifecycle_refresh_heartbeat` now writes `subagent:true`, and `stale_wait_progress` returns `None` for any heartbeat with `last_tool == None` before its `AskUserQuestion` check; regression coverage in `orchestrator/monitor/tests/input_wait.rs` and `loom-hooks/tests/subagent-stop-heartbeat-subagent-flag.sh`.
+
+## A Planning Session's State Flipped Back to Working After Every Stop (2026-10-28)
+
+**What happened:** `plan_session/state.rs` moved to `Working` on any main `Record` newer than the last idle event. Claude Code writes `stop_hook_summary` and `turn_duration` system records after the Stop hook ran, so every Stop would flip back to `Working`. Separately, a turn that ended in an API error produced `StopFailure`, never `Stop`; the spool did not register it and the bridge stayed `Working` with its queue undelivered.
+
+**Why:** the state machine trusted transcript records without classifying them, and the hook list came from the spec, not from observing Claude Code 2.1.312.
+
+**Prevention:** feed `Record { main: true }` only for `user` and `assistant` records; register and handle every turn-ending hook (`Stop` and `StopFailure`); probe a hook set in a pty before freezing it. Apply the records and spool lines of one tick in time order (records first on a tie): applying them as two blocks let an interrupt record reset the subagent count before the earlier `SubagentStart` lines counted, and a final write never closed (`Batch::in_time_order`).
