@@ -22,7 +22,6 @@ use crate::fs::work_dir::WorkDir;
 pub(super) fn load_current_graph(repo_root: &Path) -> Result<ResolvedGraph> {
     let work_dir = WorkDir::new(repo_root)?;
     let store = ContextStore::open(&work_dir)?;
-    store.ensure()?;
     let graph_store = GraphStore::new(store.root(), work_dir.root());
     let snapshot = ensure_snapshot(
         &store,

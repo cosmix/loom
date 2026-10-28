@@ -168,3 +168,69 @@ fn eval_edges_conflicts_with_census_and_takes_no_root() {
         "--root only applies to --census"
     );
 }
+
+/// Run one git setup command with ambient global/system config neutralized
+/// (same isolation as `context::refresh::tests_source_graph`).
+fn git_setup(root: &Path, args: &[&str]) {
+    let out = std::process::Command::new("git")
+        .args(args)
+        .current_dir(root)
+        .env("GIT_CONFIG_GLOBAL", root.join(".loom-test-no-global"))
+        .env("GIT_CONFIG_SYSTEM", root.join(".loom-test-no-system"))
+        .env("GIT_CONFIG_NOSYSTEM", "1")
+        .output()
+        .unwrap();
+    assert!(
+        out.status.success(),
+        "git {args:?} failed: {}",
+        String::from_utf8_lossy(&out.stderr)
+    );
+}
+
+fn set_mode(path: &Path, mode: u32) {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode)).unwrap();
+}
+
+/// `loom map` run where the sandbox denies writes under `.loom` and the cache directory was
+/// never created: the view still resolves from memory and nothing appears on disk.
+#[test]
+fn load_graph_answers_when_the_cache_directory_cannot_be_created() {
+    let temp = tempfile::TempDir::new().unwrap();
+    let root = temp.path();
+    git_setup(root, &["init", "-b", "main"]);
+    git_setup(root, &["config", "user.email", "t@t.com"]);
+    git_setup(root, &["config", "user.name", "t"]);
+    std::fs::write(root.join("src.rs"), "fn main() {}\n").unwrap();
+    git_setup(root, &["add", "src.rs"]);
+    git_setup(root, &["commit", "-m", "seed"]);
+    let work = root.join(".loom").join("work");
+    std::fs::create_dir_all(&work).unwrap();
+    let work_dir = WorkDir::new(root).unwrap();
+
+    let loom_dir = root.join(".loom");
+    set_mode(&work, 0o555);
+    set_mode(&loom_dir, 0o555);
+    if std::fs::write(loom_dir.join(".write-probe"), b"x").is_ok() {
+        set_mode(&loom_dir, 0o755);
+        set_mode(&work, 0o755);
+        eprintln!(
+            "SKIP load_graph_answers_when_the_cache_directory_cannot_be_created: this \
+             environment does not enforce 0o555 directory permissions"
+        );
+        return;
+    }
+
+    let loaded = load_graph(root, &work_dir, &mut Timings::default());
+
+    // Unlock before asserting so a failure never leaves an undeletable TempDir.
+    set_mode(&loom_dir, 0o755);
+    set_mode(&work, 0o755);
+    let loaded = loaded.expect("a read-only .loom must not fail the view");
+    assert!(
+        loaded.graph.files.contains_key("src.rs"),
+        "files: {:?}",
+        loaded.graph.files.keys().collect::<Vec<_>>()
+    );
+    assert!(!loom_dir.join("cache").exists());
+}
