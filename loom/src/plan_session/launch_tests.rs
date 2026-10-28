@@ -12,7 +12,7 @@ use serial_test::serial;
 use tempfile::TempDir;
 
 use super::*;
-use crate::orchestrator::terminal::tmux::socket::tests::TmuxServerGuard;
+use crate::orchestrator::terminal::tmux::socket::tests::{TmuxServerGuard, TmuxTmpDirGuard};
 use crate::orchestrator::terminal::tmux::socket_path_for;
 use crate::plan_session::bridge::LaunchGuidance;
 use crate::plan_session::kind::{SessionDir, SessionKind};
@@ -30,6 +30,7 @@ const RECORDING_CLAUDE: &str = "printf '%s\\0' \"$@\" > 'OUT/argv'
   printf 'session=%s\\n' \"${LOOM_PLAN_SESSION-}\"
   printf 'state=%s\\n' \"${LOOM_PLAN_STATE-}\"
   printf 'extra=%s\\n' \"${LOOM_PLAN_TEST_EXTRA-}\"
+  printf 'home=%s\\n' \"${HOME-}\"
   printf 'stage=%s%s%s\\n' \"${LOOM_STAGE_ID+id}\" \"${LOOM_SESSION_ID+session}\" \"${LOOM_WORK_DIR+work}\"
 } > 'OUT/env'
 ";
@@ -73,7 +74,10 @@ fn fixture(display_name: &str, body: &str) -> Fixture {
         dir,
         tmux_session: "plan-authoring".to_owned(),
         guidance,
-        extra_env: vec![("LOOM_PLAN_TEST_EXTRA".to_owned(), "extra value".to_owned())],
+        extra_env: vec![
+            ("LOOM_PLAN_TEST_EXTRA".to_owned(), "extra value".to_owned()),
+            ("HOME".to_owned(), "/extra/home".to_owned()),
+        ],
         opening_argv: None,
         project_root: root,
         runtime,
@@ -165,12 +169,16 @@ fn launch_sh_runs_claude_with_the_planning_flags_from_the_project_root() {
             assert!(!dir.join("pwned").exists(), "{name:?} ran a substitution");
         }
         let expected = format!(
-            "cwd={}\nsession={}\nstate={}\nextra=extra value\nstage=\n",
+            "cwd={}\nsession={}\nstate={}\nextra=extra value\nhome={}\nstage=\n",
             f.spec.project_root.display(),
             f.spec.id,
-            f.spec.runtime.dir.display()
+            f.spec.runtime.dir.display(),
+            f.spec.home.display()
         );
-        assert_eq!(env, expected, "planning variables or a stage identity");
+        assert_eq!(
+            env, expected,
+            "planning variables, HOME or a stage identity"
+        );
         let text = fs::read_to_string(&script).unwrap();
         assert!(
             !text.contains("OPENING-c41d"),
@@ -207,6 +215,32 @@ fn launch_sh_is_private_and_settings_register_the_spool_hooks() {
     let permission = &hooks["PermissionRequest"][0];
     assert_eq!(permission["hooks"][0]["timeout"], 3600);
     assert_eq!(permission["matcher"], "*");
+}
+
+#[test]
+fn prepare_trusts_the_project_root_in_the_session_home() {
+    let f = fixture("loom plan: trust", RECORDING_CLAUDE);
+    prepare(&f.spec).unwrap();
+
+    let state = fs::read_to_string(f.spec.home.join(".claude.json")).unwrap();
+    let state: Value = serde_json::from_str(&state).unwrap();
+    let root = f.spec.project_root.canonicalize().unwrap();
+    let entry = &state["projects"][root.to_string_lossy().as_ref()];
+    assert_eq!(entry["hasTrustDialogAccepted"], true, "{state}");
+}
+
+#[test]
+fn prepare_fails_before_writing_anything_when_the_trust_entry_cannot_be_written() {
+    let f = fixture("loom plan: untrusted", RECORDING_CLAUDE);
+    fs::write(f.spec.home.join(".claude.json"), "[]").unwrap();
+
+    let error = format!("{:#}", prepare(&f.spec).unwrap_err());
+    assert!(error.contains("trust dialog"), "{error}");
+    assert!(
+        !f.spec.dir.launch_script().exists(),
+        "launch.sh was written"
+    );
+    assert!(!f.spec.dir.settings().exists(), "settings.json was written");
 }
 
 #[test]
@@ -263,5 +297,31 @@ fn a_launch_whose_claude_exits_at_once_is_torn_down_and_reported() {
     assert!(
         !socket_path_for(&f.spec.socket).exists(),
         "the half-started server's socket survived"
+    );
+}
+
+#[test]
+#[serial]
+fn a_teardown_that_fails_after_a_partial_spawn_is_a_typed_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let _pin = TmuxTmpDirGuard::set(dir.path());
+    let socket = "loom-plan-0123456789ab";
+    let path = socket_path_for(socket);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    // A plain file, no server: kill-server fails whether or not tmux is installed.
+    fs::write(&path, b"").unwrap();
+    let error = abandon(socket, anyhow::anyhow!("no start time"));
+    let failed = error.downcast_ref::<TeardownFailed>();
+    let failed = failed.expect("a failed teardown must be a TeardownFailed");
+    assert_eq!(failed.error.to_string(), "no start time");
+    assert!(
+        format!("{:#}", failed.teardown).contains(socket),
+        "{error:#}"
+    );
+    assert!(path.exists(), "the socket path was removed");
+    let gone = abandon("loom-plan-ba9876543210", anyhow::anyhow!("no start time"));
+    assert!(
+        gone.downcast_ref::<TeardownFailed>().is_none(),
+        "a teardown with nothing to end failed: {gone:#}"
     );
 }

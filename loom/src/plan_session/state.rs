@@ -183,7 +183,8 @@ impl StateMachine {
             "Notification" if is_idle_prompt(payload) => {
                 self.idle(at);
             }
-            "Stop" => {
+            // Claude Code ends a turn whose API call failed with StopFailure, never Stop.
+            "Stop" | "StopFailure" => {
                 if self.idle(at) {
                     self.pending.clear();
                 }
@@ -216,11 +217,7 @@ impl StateMachine {
 
     fn permission_request(&mut self, event: &SpoolEvent) {
         // The hook answered an auto-denied request itself: nobody waits on it.
-        if event
-            .payload
-            .get("auto_denied")
-            .is_some_and(|tag| !tag.is_null())
-        {
+        if event.auto_denied() {
             return;
         }
         let id = event

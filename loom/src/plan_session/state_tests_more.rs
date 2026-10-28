@@ -1,16 +1,23 @@
 use serde_json::json;
 
-use super::tests::{at, event, feed, request, start, stop, subagent, working};
+use super::tests::{at, event, feed, main_record, request, start, stop, subagent, working};
 use super::*;
+
+fn stop_failure(millis: i64) -> SpoolEvent {
+    event("StopFailure", millis, json!({"error": "server_error"}))
+}
 
 #[test]
 fn subagent_stop_with_none_running_stays_at_zero() {
     let mut machine = working();
     feed(&mut machine, subagent("SubagentStop", 1_000));
+    assert_eq!(machine.state(), SessionState::Working);
     assert_eq!(machine.subagents_running(), 0);
     feed(&mut machine, subagent("SubagentStart", 1_100));
     feed(&mut machine, subagent("SubagentStop", 1_200));
+    assert_eq!(machine.state(), SessionState::Working);
     feed(&mut machine, subagent("SubagentStop", 1_300));
+    assert_eq!(machine.state(), SessionState::Working);
     assert_eq!(machine.subagents_running(), 0);
 }
 
@@ -129,4 +136,23 @@ fn a_self_started_turn_counts_only_after_the_last_idle_event() {
         machine.apply(Input::SelfStartedTurn { at: at(2_000) }),
         Some(SessionState::Working)
     );
+}
+
+#[test]
+fn a_stop_failure_moves_working_to_idle_and_clears_pending_requests() {
+    let mut machine = working();
+    feed(&mut machine, request("r1", 1_000));
+    assert_eq!(machine.state(), SessionState::Permission);
+    let changed = feed(&mut machine, stop_failure(1_100));
+    assert_eq!(changed, Some(SessionState::Idle));
+    assert!(machine.pending_requests().is_empty());
+}
+
+#[test]
+fn a_stop_failure_before_a_later_main_record_does_not_win() {
+    let mut machine = working();
+    feed(&mut machine, stop(1_000));
+    machine.apply(main_record(2_000));
+    assert_eq!(feed(&mut machine, stop_failure(1_800)), None);
+    assert_eq!(machine.state(), SessionState::Working);
 }

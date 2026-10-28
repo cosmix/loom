@@ -53,10 +53,11 @@ pub fn sanitize(text: &str) -> String {
 
 /// Check the user's own text as the pane will receive it (after [`sanitize`], so a control
 /// character cannot hide a leading slash command): a slash command is refused unless it is
-/// `/compact`.
+/// `/compact`. A leading U+FEFF is skipped with the whitespace: it is neither a control
+/// character nor Rust whitespace, yet the browser's `String.prototype.trim` strips it.
 pub fn check_send(text: &str) -> Result<(), InputRefusal> {
     let sanitized = sanitize(text);
-    let trimmed = sanitized.trim_start();
+    let trimmed = sanitized.trim_start_matches(|c: char| c.is_whitespace() || c == '\u{feff}');
     if !trimmed.starts_with('/') {
         return Ok(());
     }
@@ -133,6 +134,19 @@ mod tests {
             );
         }
         assert_eq!(check_send("\u{1}/compact"), Ok(()));
+    }
+
+    #[test]
+    fn check_send_skips_a_leading_byte_order_mark() {
+        assert_eq!(
+            check_send("\u{feff}/clear"),
+            Err(InputRefusal::SlashCommand)
+        );
+        assert_eq!(
+            check_send("\u{feff} \u{feff}/exit"),
+            Err(InputRefusal::SlashCommand)
+        );
+        assert_eq!(check_send("\u{feff}/compact"), Ok(()));
     }
 
     #[test]

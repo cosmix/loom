@@ -64,6 +64,17 @@ fn queued_messages_go_out_one_per_idle() {
 }
 
 #[test]
+fn a_turn_ended_by_stop_failure_delivers_the_next_queued_message() {
+    let h = Harness::ready(|_| {});
+    let s = h.idle(Authoring);
+    h.working(&s);
+    assert!(matches!(send(&h, &s, "B"), SendOutcome::Queued { .. }));
+    h.spool(&s, "StopFailure", json!({"error": "server_error"}));
+    wait_until("B", || h.sent(&s) == ["B"]);
+    assert!(h.bridge.chat_snapshot(true).queue.is_empty());
+}
+
+#[test]
 fn an_unconfirmed_paste_turns_undelivered_and_a_late_prompt_delivers_it() {
     let h = Harness::ready(|c| c.delivery_timeout = Duration::from_millis(400));
     let s = h.idle(Authoring);
@@ -162,6 +173,56 @@ fn interrupt_needs_a_running_turn_and_presses_once() {
         .unwrap();
     let ending = h.bridge.interrupt(&s.id);
     assert!(matches!(ending, Err(BridgeError::NotRunning)), "{ending:?}");
+}
+
+#[test]
+fn a_second_interrupt_after_the_press_presses_nothing() {
+    let h = Harness::ready(|_| {});
+    let s = h.idle(Authoring);
+    let press = Call::Interrupt(s.socket.clone());
+    h.working(&s);
+    assert_eq!(h.bridge.interrupt(&s.id).unwrap(), Vec::<String>::new());
+    wait_until("the press", || h.host.count(&press) == 1);
+    assert_eq!(h.bridge.interrupt(&s.id).unwrap(), Vec::<String>::new());
+    settle();
+    assert_eq!(
+        h.host.count(&press),
+        1,
+        "a second Escape opens the rewind picker"
+    );
+}
+
+#[test]
+fn an_interrupt_returns_a_message_accepted_at_idle_and_not_yet_pasted() {
+    let h = Harness::ready(|_| {});
+    let s = h.idle(Authoring);
+    let content = "<task-notification>\n<task-id>b1</task-id>";
+    let notification = json!({"type": "user", "message": {"role": "user", "content": content},
+        "origin": {"kind": "task-notification"}});
+    let line = record_line(notification, &s.id);
+    // One locked step, so the driver cannot paste in between: A is accepted at Idle, then the
+    // notification's turn starts and holds it.
+    let sent = h.bridge.with_session(&s.id, |session, step| {
+        let sent = session.send("A".to_owned(), Vec::new(), step);
+        session.ingest_main(&line, step);
+        sent
+    });
+    h.bridge.flush();
+    assert!(
+        matches!(sent, Some(Ok(SendOutcome::Delivering { .. }))),
+        "{sent:?}"
+    );
+    h.wait_state(&s, SessionState::Working);
+    assert_eq!(h.bridge.interrupt(&s.id).unwrap(), ["A"]);
+    h.record(&s, interrupted());
+    h.wait_state(&s, SessionState::Idle);
+    settle();
+    assert_eq!(
+        h.sent(&s),
+        Vec::<String>::new(),
+        "A was pasted at the interrupt's idle"
+    );
+    assert_eq!(delivery(&h, "A"), Some(Delivery::Undelivered));
 }
 
 #[test]

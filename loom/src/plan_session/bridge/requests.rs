@@ -2,8 +2,9 @@
 //! call it names, its expiry, and the cards closed when the session stops waiting on them.
 //!
 //! The state machine's pending set drives the state; the bridge keeps one `Request` per card
-//! and closes every open card the machine no longer holds (Stop, interrupt record, the bound
-//! tool's result) as denied `session_ended`, with a deny answer file (px-state-05, -R03).
+//! and closes every open card the machine no longer holds (Stop or StopFailure, interrupt
+//! record, the bound tool's result) as denied `session_ended`, with a deny answer file
+//! (px-state-05, -R03).
 
 use std::collections::HashSet;
 
@@ -17,7 +18,7 @@ use crate::plan_session::model::{
     DenyReason, Item, PermissionStatus, SessionState, ToolStatus, Turn,
 };
 use crate::plan_session::permission::{Answer, Behavior};
-use crate::plan_session::spool::SpoolEvent;
+use crate::plan_session::spool::{SpoolEvent, TRUNCATED};
 use crate::plan_session::state::Input;
 
 /// The note and message of a card the session no longer waits on.
@@ -25,6 +26,12 @@ pub(super) const GONE: &str = "the session no longer waits for this answer";
 const EXPIRED: &str = "no answer arrived in time";
 /// A card shows at most this much of the tool input, as the mapper's tool rows do.
 const INPUT_CHARS: usize = 64 * 1024;
+/// The line a card's input ends with when the card cannot show the whole input.
+const CUT_LINE: &str = "\n…[cut: the request is larger than the chat shows]";
+/// Why a request the card cannot show whole is denied on arrival (section 12: the text the
+/// holder approves is the text that runs).
+const TOO_LARGE: &str =
+    "the request is too large to show in the chat in full; ask for it in smaller steps";
 
 impl Session {
     /// After every step: resolve requests by their tool's result, close the cards the machine
@@ -109,11 +116,7 @@ impl Session {
         config: &BridgeConfig,
         step: &mut Step,
     ) {
-        if event
-            .payload
-            .get("auto_denied")
-            .is_some_and(|tag| !tag.is_null())
-        {
+        if event.auto_denied() {
             return;
         }
         let named = event
@@ -147,10 +150,17 @@ impl Session {
         self.answer_on_arrival(&request_id, step);
     }
 
-    /// A recovered session shows the answer its request had at the restart; an ending session
-    /// that denies new requests denies this one at once (px-state-06, -12).
+    /// A recovered session shows the answer its request had at the restart; a request the
+    /// card cannot show whole is denied before anyone can allow it, since Allow would approve
+    /// the uncut call; an ending session that denies new requests denies this one at once
+    /// (px-state-06, -12).
     fn answer_on_arrival(&mut self, request_id: &str, step: &mut Step) {
         let recovered = self.flow.recovered.as_ref();
+        let cut = self
+            .flow
+            .requests
+            .get(request_id)
+            .is_some_and(|request| shown_input(&request.input).1);
         if let Some(answer) = recovered
             .and_then(|answers| answers.get(request_id))
             .cloned()
@@ -158,6 +168,8 @@ impl Session {
             self.close_card(request_id, &answer, step);
             let request_id = request_id.to_owned();
             self.machine.apply(Input::PermissionAnswered { request_id });
+        } else if cut {
+            self.deny(request_id, DenyReason::HookError, TOO_LARGE, step);
         } else if let Some((reason, message)) = self.flow.end.as_ref().and_then(|e| e.deny_new) {
             self.deny(request_id, reason, message, step);
         }
@@ -259,16 +271,39 @@ fn card(
     deny_reason: Option<DenyReason>,
     note: Option<String>,
 ) -> Item {
-    let pretty = serde_json::to_string_pretty(&request.input).unwrap_or_default();
     Item::Permission {
         id: format!("p-{request_id}"),
         request_id: request_id.to_owned(),
         tool: request.tool.clone(),
-        input: pretty.chars().take(INPUT_CHARS).collect(),
+        input: shown_input(&request.input).0,
         status,
         deny_reason,
         note,
         expires_at: stamp(request.expires_at),
+    }
+}
+
+/// The input text a card shows, and whether it is cut: the pretty input is longer than
+/// `INPUT_CHARS` characters, or the spool already cut one of its strings. A cut input shows its
+/// first `INPUT_CHARS` characters and `CUT_LINE`.
+fn shown_input(input: &Value) -> (String, bool) {
+    let pretty = serde_json::to_string_pretty(input).unwrap_or_default();
+    if pretty.chars().nth(INPUT_CHARS).is_none() && !spool_cut(input) {
+        return (pretty, false);
+    }
+    let mut shown: String = pretty.chars().take(INPUT_CHARS).collect();
+    shown.push_str(CUT_LINE);
+    (shown, true)
+}
+
+/// Whether any string in `value` ends with the spool's cut marker. An honest string that
+/// happens to end with it only makes its request denied, the safe direction.
+fn spool_cut(value: &Value) -> bool {
+    match value {
+        Value::String(text) => text.ends_with(TRUNCATED),
+        Value::Array(values) => values.iter().any(spool_cut),
+        Value::Object(fields) => fields.values().any(spool_cut),
+        _ => false,
     }
 }
 

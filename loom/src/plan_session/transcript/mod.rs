@@ -97,6 +97,7 @@ pub struct Mapper {
     opening: Option<Option<Origin>>,
     closing: Option<String>,
     last_main: Option<DateTime<Utc>>,
+    #[cfg(test)]
     last_interrupt: Option<DateTime<Utc>>,
 }
 
@@ -114,6 +115,7 @@ impl Mapper {
             opening: None,
             closing: None,
             last_main: None,
+            #[cfg(test)]
             last_interrupt: None,
         }
     }
@@ -209,7 +211,8 @@ impl Mapper {
         &self.turns
     }
 
-    pub fn open_turn(&self) -> Option<&str> {
+    #[cfg(test)]
+    pub(crate) fn open_turn(&self) -> Option<&str> {
         self.open.map(|turn| self.turns[turn].id.as_str())
     }
 
@@ -218,11 +221,12 @@ impl Mapper {
     }
 
     /// An interrupt record stamped after `at` was seen.
-    pub fn interrupted_since(&self, at: DateTime<Utc>) -> bool {
+    #[cfg(test)]
+    pub(crate) fn interrupted_since(&self, at: DateTime<Utc>) -> bool {
         self.last_interrupt.is_some_and(|seen| seen > at)
     }
 
-    /// The paths the turn's tool results changed, repo-relative when inside the project.
+    /// The paths under `doc/` the turn's tool results changed, repo-relative.
     pub fn changed_by_tool(&self, turn_id: &str) -> Vec<String> {
         let turn = self.turns.iter().position(|turn| turn.id == turn_id);
         turn.map(|turn| self.state[turn].by_tool.iter().cloned().collect())

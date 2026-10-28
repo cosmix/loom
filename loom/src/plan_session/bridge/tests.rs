@@ -283,18 +283,23 @@ fn a_token_transcript_line_adds_to_the_open_turn() {
     });
 }
 
-pub(super) fn append_record(path: &Path, mut record: Value, session: &str) {
-    record["uuid"] = json!(uuid::Uuid::new_v4().to_string());
-    record["parentUuid"] = Value::Null;
-    record["isSidechain"] = json!(false);
-    record["sessionId"] = json!(session);
-    record["timestamp"] = json!(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true));
+pub(super) fn append_record(path: &Path, record: Value, session: &str) {
     let mut file = OpenOptions::new()
         .append(true)
         .create(true)
         .open(path)
         .unwrap();
-    writeln!(file, "{record}").unwrap();
+    writeln!(file, "{}", record_line(record, session)).unwrap();
+}
+
+/// `record` as one line of the session's transcript, stamped now.
+pub(super) fn record_line(mut record: Value, session: &str) -> String {
+    record["uuid"] = json!(uuid::Uuid::new_v4().to_string());
+    record["parentUuid"] = Value::Null;
+    record["isSidechain"] = json!(false);
+    record["sessionId"] = json!(session);
+    record["timestamp"] = json!(Utc::now().to_rfc3339_opts(SecondsFormat::Millis, true));
+    record.to_string()
 }
 
 pub(super) fn assistant_tools(message: &str, tools: &[(&str, &str, Value)]) -> Value {

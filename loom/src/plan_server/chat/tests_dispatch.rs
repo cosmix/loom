@@ -17,6 +17,8 @@ use crate::plan_session::input::InputRefusal;
 use crate::plan_session::kind::SessionDir;
 use crate::plan_session::model::{Item, Origin, SessionState};
 
+mod start;
+
 fn attachment(path: &str) -> AttachmentInput {
     AttachmentInput {
         kind: AttachmentKind::Source,

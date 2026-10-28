@@ -25,6 +25,8 @@ use serde_json::json;
 use serial_test::serial;
 use tempfile::TempDir;
 
+#[path = "plan_session_bridge_e2e/diagnose.rs"]
+mod diagnose;
 #[path = "plan_session_bridge_e2e/operator.rs"]
 mod operator;
 
@@ -147,15 +149,21 @@ fn socket_of(id: &str) -> String {
     format!("loom-plan-{hex}")
 }
 
-fn config(root: &Path, runtime: &RuntimePaths, claude: PathBuf, bound: Duration) -> BridgeConfig {
+/// `home` is the HOME the launch gives the session's claude; the launch records the project
+/// root as trusted in its `.claude.json`.
+fn config(
+    root: &Path,
+    runtime: &RuntimePaths,
+    claude: PathBuf,
+    home: &Path,
+    bound: Duration,
+) -> BridgeConfig {
     BridgeConfig {
         project_root: root.to_path_buf(),
         runtime: runtime.clone(),
         loom_bin: PathBuf::from(env!("CARGO_BIN_EXE_loom")),
         claude_bin: claude,
-        home: std::env::var_os("HOME")
-            .map(PathBuf::from)
-            .unwrap_or_default(),
+        home: home.to_path_buf(),
         closing_message: Arc::new(|| CLOSING.to_owned()),
         delivery_timeout: Duration::from_secs(10),
         final_write_bound: bound,
@@ -215,9 +223,14 @@ fn project(base: &Path) -> (PathBuf, RuntimePaths) {
 
 /// Server A launches a session over a fake claude that only sleeps, then dies without a
 /// teardown; the startup event its hook would have spooled makes the session idle.
-fn abandoned_session(root: &Path, runtime: &RuntimePaths, claude: &Path) -> (String, SessionDir) {
+fn abandoned_session(
+    root: &Path,
+    runtime: &RuntimePaths,
+    claude: &Path,
+    home: &Path,
+) -> (String, SessionDir) {
     let bound = Duration::from_secs(600);
-    let a = Running::new(config(root, runtime, claude.to_path_buf(), bound));
+    let a = Running::new(config(root, runtime, claude.to_path_buf(), home, bound));
     a.bridge.recover();
     let opening = request("Begin.", Some(Origin::Start), false);
     let id = a.bridge.start_session(opening).unwrap();
@@ -275,14 +288,18 @@ fn recovery_closes_a_live_session_and_leaves_an_unverifiable_one() {
     let base = base.path().canonicalize().unwrap();
     let _loom_home = EnvGuard::set("LOOM_HOME", &base.join("loom-home"));
     let (root, runtime) = project(&base);
+    // A temp HOME: the launch writes its trust entry there, never into the developer's own.
+    let home = base.join("home");
+    fs::create_dir_all(&home).unwrap();
     let claude = base.join("claude");
     fs::write(&claude, "#!/bin/sh\nexec sleep 600\n").unwrap();
     fs::set_permissions(&claude, fs::Permissions::from_mode(0o755)).unwrap();
-    let (id, dir) = abandoned_session(&root, &runtime, &claude);
+    let (id, dir) = abandoned_session(&root, &runtime, &claude, &home);
     let _server = ServerGuard(socket_of(&id));
     let (other, other_dir) = unverifiable_session(&runtime);
 
-    let b = Running::new(config(&root, &runtime, claude, Duration::from_secs(2)));
+    let bound = Duration::from_secs(2);
+    let b = Running::new(config(&root, &runtime, claude, &home, bound));
     let report = b.bridge.recover();
     assert!(report.closed.iter().any(|s| s.id == id), "{report:?}");
     assert!(

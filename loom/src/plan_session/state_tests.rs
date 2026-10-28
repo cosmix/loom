@@ -58,7 +58,7 @@ pub(super) fn stop(millis: i64) -> SpoolEvent {
     event("Stop", millis, json!({"stop_hook_active": false}))
 }
 
-fn main_record(millis: i64) -> Input<'static> {
+pub(super) fn main_record(millis: i64) -> Input<'static> {
     Input::Record {
         at: at(millis),
         main: true,

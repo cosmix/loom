@@ -4,7 +4,7 @@ use std::os::fd::AsRawFd;
 use std::path::Path;
 use std::sync::{Arc, PoisonError, RwLock};
 
-use anyhow::Result;
+use anyhow::{bail, Result};
 
 use crate::fs::safe_fs::{
     safe_create_dir_all_in_workdir, safe_open_dirfd, safe_write_with_mode_in_workdir,
@@ -48,7 +48,38 @@ impl GuidanceSlot {
     }
 }
 
-/// Fixed authoring guidance until the guidance engine installs its provider.
+/// The installed provider until the guidance engine replaces it: the fixed guidance, for no
+/// offer or a step the checklist offers now.
+pub struct ChecklistGuidance;
+
+impl GuidanceProvider for ChecklistGuidance {
+    fn authoring(
+        &self,
+        ctx: &PlanContext,
+        dir: &SessionDir,
+        offer: Option<&str>,
+        first_message: Option<&str>,
+    ) -> Result<LaunchGuidance> {
+        if let Some(offer) = offer.filter(|offer| !offered(ctx, offer)) {
+            bail!("the step \"{offer}\" is not offered now");
+        }
+        FixedGuidance.authoring(ctx, dir, offer, first_message)
+    }
+
+    fn closing_message(&self) -> String {
+        FixedGuidance.closing_message()
+    }
+}
+
+/// Whether the checklist offers `offer` now.
+fn offered(ctx: &PlanContext, offer: &str) -> bool {
+    let project = ctx.project();
+    let checklist = &project.checklist;
+    let mut offers = checklist.primary.iter().chain(&checklist.secondary);
+    offers.any(|candidate| candidate.id() == offer)
+}
+
+/// Fixed launch files and opening for any offer id; it accepts every id it is given.
 pub struct FixedGuidance;
 
 impl GuidanceProvider for FixedGuidance {
@@ -188,6 +219,21 @@ mod tests {
         assert_eq!(guidance.display_name, "loom plan: chat");
         assert!(!guidance.opening_on_argv);
         assert_eq!(FixedGuidance.closing_message(), CLOSING);
+    }
+
+    #[test]
+    fn checklist_guidance_refuses_an_offer_the_checklist_does_not_offer() {
+        let (_root, ctx, dir) = fixture();
+        let error = ChecklistGuidance
+            .authoring(&ctx, &dir, Some("offer-id"), None)
+            .unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            "the step \"offer-id\" is not offered now"
+        );
+        assert!(!dir.brief().exists());
+        let guidance = ChecklistGuidance.authoring(&ctx, &dir, None, None).unwrap();
+        assert_eq!(guidance.opening_message, "Start a planning session.");
     }
 
     #[test]

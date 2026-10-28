@@ -5,7 +5,8 @@
 //! step queues its events and chat deltas in the outbox, and `flush` hands them to the
 //! listeners after the lock is released, in order, from one thread at a time. A listener may
 //! call back into the bridge: its own flush returns at once and the running one delivers what
-//! it queued.
+//! it queued. A listener that panics is logged and skipped; the others and the flushing
+//! thread (the driver, a command, recovery, drain) go on.
 
 mod commands;
 mod driver;
@@ -16,13 +17,20 @@ mod recovery;
 pub mod registry;
 mod requests;
 mod session;
+mod start;
+mod stopping;
+mod turns;
 
 #[cfg(test)]
 mod fake_host;
 #[cfg(test)]
+mod harness;
+#[cfg(test)]
 mod tests;
 #[cfg(test)]
 mod tests_end;
+#[cfg(test)]
+mod tests_lifecycle;
 #[cfg(test)]
 mod tests_permission;
 #[cfg(test)]
@@ -37,6 +45,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, MutexGuard, PoisonError};
 use std::thread::{self, JoinHandle};
 use std::time::Duration;
+
+pub use self::ending::TEARDOWN_FAILED;
 
 use self::commands::Out;
 use self::host::SessionHost;
@@ -267,7 +277,8 @@ impl Bridge {
         })
     }
 
-    /// Hear every event. A listener must return quickly and never wait on the bridge.
+    /// Hear every event. A listener must return quickly and never wait on the bridge; one that
+    /// panics misses only the event it panicked on.
     pub fn subscribe(&self, listener: Box<dyn Fn(&BridgeEvent) + Send + Sync>) {
         guard(&self.listeners).push(Arc::from(listener));
     }
@@ -338,7 +349,6 @@ impl Bridge {
             if claimed.is_err() {
                 return;
             }
-            let reset = FlushReset(&self.flushing);
             loop {
                 let batch = std::mem::take(&mut self.lock().outbox);
                 if batch.is_empty() {
@@ -346,7 +356,7 @@ impl Bridge {
                 }
                 self.publish(batch);
             }
-            drop(reset);
+            self.flushing.store(false, Ordering::SeqCst);
             // A step that queued while this call was finishing found the flag still set.
             if self.lock().outbox.is_empty() {
                 return;
@@ -359,19 +369,18 @@ impl Bridge {
         let deltas = guard(&self.chat_listeners).clone();
         for out in batch {
             match out {
-                Out::Event(event) => events.iter().for_each(|listener| listener(&event)),
-                Out::Delta(delta) => deltas.iter().for_each(|listener| listener(&delta)),
+                Out::Event(event) => events.iter().for_each(|listener| hear(listener, &event)),
+                Out::Delta(delta) => deltas.iter().for_each(|listener| hear(listener, &*delta)),
             }
         }
     }
 }
 
-/// Clears the flush flag, also when a listener panics.
-struct FlushReset<'a>(&'a AtomicBool);
-
-impl Drop for FlushReset<'_> {
-    fn drop(&mut self) {
-        self.0.store(false, Ordering::SeqCst);
+/// Call one listener. A panic stays here: unwinding into the flush would drop the rest of the
+/// batch for every listener and stop the flushing thread (recovery would never finish).
+fn hear<T>(listener: &Listener<T>, value: &T) {
+    if catch_unwind(AssertUnwindSafe(|| listener(value))).is_err() {
+        tracing::error!("a session bridge listener panicked");
     }
 }
 

@@ -5,12 +5,14 @@
 //! `queue_returned` (px-state-23).
 
 use std::sync::Arc;
+use std::thread;
 
 use super::guidance::GuidanceSlot;
+use super::lease::AuthoringLeases;
 use super::ChatState;
-use crate::plan_server::authoring::{Refusal, Take};
+use crate::plan_server::authoring::{FreeReason, Refusal, Take};
 use crate::plan_server::context::PlanContext;
-use crate::plan_server::ids::ConnCtx;
+use crate::plan_server::ids::{ConnCtx, PublicId};
 use crate::plan_server::wire::chat::{ChatCommand, ChatFrame, CommandResult};
 use crate::plan_server::wire::message::PlanMessage;
 use crate::plan_session::attachments::{
@@ -21,7 +23,7 @@ use crate::plan_session::bridge::{
 };
 use crate::plan_session::input::{check_delivered, check_send, sanitize, InputRefusal};
 use crate::plan_session::kind::{SessionDir, SessionKind};
-use crate::plan_session::model::Origin;
+use crate::plan_session::model::{Origin, SessionState};
 
 const UNAVAILABLE: &str = "the chat is not available";
 const NO_CHAT: &str = "no chat is running";
@@ -116,15 +118,19 @@ fn start(
     if ctx.read_only().is_read_only() {
         return Err(ctx.refusal_message(&Refusal::ReadOnlyMode));
     }
-    take_authoring(ctx, conn)?;
     let typed = text.is_some() || !inputs.is_empty();
     let text = text.unwrap_or_default();
     let message = typed.then(|| checked(ctx, &text, inputs)).transpose()?;
-    if let Some(offer) = offer.as_deref().filter(|offer| !offered(ctx, offer)) {
-        return Err(format!("the step \"{offer}\" is not offered now"));
+    let (bridge, state) = (bridge(ctx)?, chat_state(ctx)?);
+    let _starting = state.starting();
+    let took = take_authoring(ctx, conn)?;
+    // The offer is the guidance provider's to accept: plan 7's refuses one the checklist
+    // does not offer now, plan 8's also knows its own start ids.
+    let started = launch(ctx, conn, &bridge, &state, offer, message);
+    if started.is_err() {
+        give_back(ctx, conn, &bridge, took);
     }
-    let bridge = bridge(ctx)?;
-    launch(ctx, conn, &bridge, offer, message)
+    started
 }
 
 /// A send to the running chat, or the first message of a new one.
@@ -135,15 +141,26 @@ fn send(
     inputs: Vec<AttachmentInput>,
 ) -> Outcome {
     refuse_new_work(ctx)?;
-    take_authoring(ctx, conn)?;
     let message = checked(ctx, text, inputs)?;
-    let bridge = bridge(ctx)?;
-    match bridge.chat_session_id() {
+    let (bridge, state) = (bridge(ctx)?, chat_state(ctx)?);
+    // Only a send that may start the chat waits behind a start; under the lock the second
+    // look sees the chat that start opened. A chat that ends after the first look refuses
+    // the send, as one ending during the send does.
+    let running = bridge.chat_session_id();
+    let _starting = running.is_none().then(|| state.starting());
+    let took = take_authoring(ctx, conn)?;
+    match running.or_else(|| bridge.chat_session_id()) {
         Some(id) => {
             let sent = bridge.send(&id, message.formatted, message.attachments);
             sent.map(|_| Vec::new()).map_err(|error| error.to_string())
         }
-        None => launch(ctx, conn, &bridge, None, Some(message)),
+        None => {
+            let started = launch(ctx, conn, &bridge, &state, None, Some(message));
+            if started.is_err() {
+                give_back(ctx, conn, &bridge, took);
+            }
+            started
+        }
     }
 }
 
@@ -152,12 +169,11 @@ fn launch(
     ctx: &Arc<PlanContext>,
     conn: &ConnCtx,
     bridge: &Bridge,
+    state: &Arc<ChatState>,
     offer: Option<String>,
     message: Option<Message>,
 ) -> Outcome {
-    let slot = ctx.extensions().get::<GuidanceSlot>();
-    let state = ctx.extensions().get::<ChatState>();
-    let (Some(slot), Some(state)) = (slot, state) else {
+    let Some(slot) = ctx.extensions().get::<GuidanceSlot>() else {
         return Err(UNAVAILABLE.to_owned());
     };
     // px-seams-07: an offer, the user's own first message (no origin), or a New chat.
@@ -168,7 +184,7 @@ fn launch(
     };
     let first_message = message.map(|message| message.formatted);
     let (provider, guide_ctx, guide_offer) = (slot.get(), Arc::clone(ctx), offer.clone());
-    let starter = conn.public_id.clone();
+    let (starter, state) = (conn.public_id.clone(), Arc::clone(state));
     let guidance = Box::new(move |dir: &SessionDir| -> anyhow::Result<LaunchGuidance> {
         let (offer, first) = (guide_offer.as_deref(), first_message.as_deref());
         let guidance = provider.authoring(&guide_ctx, dir, offer, first)?;
@@ -218,11 +234,78 @@ fn refuse_new_work(ctx: &PlanContext) -> Result<(), String> {
     }
 }
 
-fn take_authoring(ctx: &PlanContext, conn: &ConnCtx) -> Result<(), String> {
+/// Take authoring when free; true when this call took it.
+fn take_authoring(ctx: &PlanContext, conn: &ConnCtx) -> Result<bool, String> {
+    let held = ctx.authoring().is_holder(&conn.browser);
     ctx.require_authoring(&conn.browser, Take::TakeIfFree)
         .map_err(|refusal| ctx.refusal_message(&refusal))?;
     remember_holder(ctx, conn);
-    Ok(())
+    Ok(!held)
+}
+
+/// A start that failed frees the authoring it took, unless a chat is reserved or runs by then
+/// (another tab of the same browser started one in between, and that chat keeps the hold).
+/// The caller holds `ChatState::starting` from its take to here, so no other start's take
+/// and reserve lands between this check and the release.
+fn give_back(ctx: &PlanContext, conn: &ConnCtx, bridge: &Bridge, took: bool) {
+    if took && !chat_open(bridge) {
+        let reason = FreeReason::Released("the chat did not start");
+        ctx.authoring().release_if(&conn.public_id, reason);
+    }
+}
+
+/// An ended chat frees its starter's authoring unless a chat is reserved or runs by then: the
+/// bridge drops the ended chat before its `Ended` is heard, so a start can reserve another in
+/// between. Decided under `ChatState::starting`, only tried here because a start's own events
+/// can reach the listener on the start's thread. While a start holds it, a thread of its own
+/// waits for that start to open its chat or give authoring back, then decides; keeping the
+/// hold instead would leave it held with no chat after a start the holder's browser had not
+/// taken authoring for (its `give_back` frees only what it took). A lease keeps the hold at
+/// the moment of the decision, so one taken while the thread waited counts too.
+pub(super) fn release_ended(
+    ctx: &Arc<PlanContext>,
+    state: &Arc<ChatState>,
+    bridge: &Arc<Bridge>,
+    leases: &Arc<AuthoringLeases>,
+    starter: PublicId,
+) {
+    if let Some(_starting) = state.try_starting() {
+        release_unless_open(ctx, bridge, leases, &starter);
+        return;
+    }
+    let (ctx, state, bridge) = (Arc::clone(ctx), Arc::clone(state), Arc::clone(bridge));
+    let leases = Arc::clone(leases);
+    let waiting = thread::Builder::new()
+        .name("loom-plan-release".into())
+        .spawn(move || {
+            let _starting = state.starting();
+            release_unless_open(&ctx, &bridge, &leases, &starter);
+        });
+    if let Err(error) = waiting {
+        tracing::warn!("authoring stays held after its chat ended: {error}");
+    }
+}
+
+fn release_unless_open(
+    ctx: &PlanContext,
+    bridge: &Bridge,
+    leases: &AuthoringLeases,
+    starter: &PublicId,
+) {
+    if !leases.held() && !chat_open(bridge) {
+        ctx.authoring()
+            .release_if(starter, FreeReason::Released("chat ended"));
+    }
+}
+
+/// A chat is reserved or runs. The bridge lists a reserved chat before it names it the chat
+/// session, so the listing decides: `chat_session_id` stays empty while a start runs its
+/// guidance.
+fn chat_open(bridge: &Bridge) -> bool {
+    bridge.sessions().iter().any(|(_, kind, state)| {
+        *kind != SessionKind::Summary
+            && !matches!(state, SessionState::Ended | SessionState::Failed)
+    })
 }
 
 fn remember_holder(ctx: &PlanContext, conn: &ConnCtx) {
@@ -234,6 +317,12 @@ fn remember_holder(ctx: &PlanContext, conn: &ConnCtx) {
 fn bridge(ctx: &PlanContext) -> Result<Arc<Bridge>, String> {
     ctx.extensions()
         .get::<Bridge>()
+        .ok_or_else(|| UNAVAILABLE.to_owned())
+}
+
+fn chat_state(ctx: &PlanContext) -> Result<Arc<ChatState>, String> {
+    ctx.extensions()
+        .get::<ChatState>()
         .ok_or_else(|| UNAVAILABLE.to_owned())
 }
 
@@ -259,12 +348,4 @@ fn checked(ctx: &PlanContext, text: &str, inputs: Vec<AttachmentInput>) -> Resul
         formatted,
         attachments,
     })
-}
-
-/// The browser names an offer; only one the checklist offers now starts a chat.
-fn offered(ctx: &PlanContext, offer: &str) -> bool {
-    let project = ctx.project();
-    let checklist = &project.checklist;
-    let mut offers = checklist.primary.iter().chain(&checklist.secondary);
-    offers.any(|candidate| candidate.id() == offer)
 }

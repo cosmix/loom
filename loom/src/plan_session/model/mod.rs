@@ -118,6 +118,8 @@ pub enum Item {
         summary: String,
         status: ToolStatus,
         subagent: Option<String>,
+        /// A subagent row's spawning tool call (its `tool_use_id`); `None` for the main agent.
+        parent: Option<String>,
         input: String,
         result: Option<String>,
         result_truncated: bool,

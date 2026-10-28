@@ -92,6 +92,7 @@ fn tool_item() -> Item {
         summary: "edit file".into(),
         status: ToolStatus::Done,
         subagent: Some("agent".into()),
+        parent: Some("tool0".into()),
         input: "input".into(),
         result: Some("result".into()),
         result_truncated: true,
