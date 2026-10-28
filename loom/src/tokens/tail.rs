@@ -9,18 +9,18 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// Longest line handed over whole. A longer one is skipped and reported as
 /// [`Line::TooLong`]; a transcript line is a few KB, or a few MB with a large
 /// tool result in it.
-pub(super) const MAX_LINE_BYTES: usize = 32 * 1024 * 1024;
+pub(crate) const MAX_LINE_BYTES: usize = 32 * 1024 * 1024;
 
 /// What a stat of a watched file reports.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) struct FileStat {
-    pub(super) len: u64,
-    pub(super) inode: u64,
+pub(crate) struct FileStat {
+    pub(crate) len: u64,
+    pub(crate) inode: u64,
 }
 
 /// One complete line of the file.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum Line<'a> {
+pub(crate) enum Line<'a> {
     /// The line without its `\n`.
     Text(&'a str),
     /// The line was over [`MAX_LINE_BYTES`] and was skipped unread.
@@ -29,7 +29,7 @@ pub(super) enum Line<'a> {
 
 /// Size and inode of the regular file at `path`; `None` when it is missing, a
 /// symlink (the read opens no-follow), or not a regular file.
-pub(super) fn stat(path: &Path) -> Option<FileStat> {
+pub(crate) fn stat(path: &Path) -> Option<FileStat> {
     let metadata = fs::symlink_metadata(path).ok()?;
     metadata.is_file().then(|| FileStat {
         len: metadata.len(),
@@ -43,7 +43,7 @@ pub(super) fn stat(path: &Path) -> Option<FileStat> {
 /// for a later read. Stops between lines once `stop` is set. `O_NOFOLLOW`
 /// refuses a symlink and `O_NONBLOCK` keeps a FIFO put in the file's place
 /// after [`stat`] from blocking the open.
-pub(super) fn read_lines(
+pub(crate) fn read_lines(
     path: &Path,
     offset: &mut u64,
     len: u64,
