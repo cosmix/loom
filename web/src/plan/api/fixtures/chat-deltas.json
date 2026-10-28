@@ -1,0 +1,229 @@
+[
+  {
+    "op": "session",
+    "session": {
+      "id": "6b84ee8a-c297-43a9-9ec3-b6e38ba01b35",
+      "kind": "authoring",
+      "state": "working",
+      "name": "Draft the bridge plan",
+      "model": "claude-sonnet-4-5",
+      "socket": "/tmp/loom-6b84ee8a.sock",
+      "holder": "Alex",
+      "away_until": null,
+      "queued": 1,
+      "started_at": "2026-10-28T09:00:00Z",
+      "state_since": "2026-10-28T09:01:00Z",
+      "working_since": "2026-10-28T09:01:00Z",
+      "subagents_running": 0,
+      "last_activity": "2026-10-28T09:01:30Z",
+      "failure": null,
+      "offer": null
+    }
+  },
+  {
+    "op": "turn_added",
+    "turn": {
+      "id": "t1",
+      "started_at": "2026-10-28T09:01:00Z",
+      "duration_ms": null,
+      "open": true,
+      "tokens": {
+        "input": 1200,
+        "cache_write": 200,
+        "cache_read": 0,
+        "output": 80
+      },
+      "items": [],
+      "changed_files": [],
+      "summaries_rebuilding": []
+    }
+  },
+  {
+    "op": "turn_updated",
+    "turn_id": "t1",
+    "duration_ms": 32000,
+    "open": false,
+    "tokens": {
+      "input": 1200,
+      "cache_write": 200,
+      "cache_read": 0,
+      "output": 420
+    },
+    "changed_files": [
+      {
+        "path": "doc/plans/bridge.md",
+        "before_hash": "a4e61c3d",
+        "by_tool": true
+      }
+    ],
+    "summaries_rebuilding": []
+  },
+  {
+    "op": "item_added",
+    "turn_id": "t1",
+    "item": {
+      "type": "tool",
+      "id": "a-40b77e21-d8c8-4b6e-8e32-c7c948c1759d-0",
+      "tool_use_id": "toolu_01BridgeEdit",
+      "name": "Edit",
+      "summary": "Update the bridge plan",
+      "status": "pending",
+      "subagent": null,
+      "input": "{\n  \"path\": \"doc/plans/bridge.md\",\n  \"old_text\": \"Draft\",\n  \"new_text\": \"Ready\"\n}",
+      "result": null,
+      "result_truncated": false,
+      "error_line": null,
+      "added": null,
+      "removed": null,
+      "patch": null,
+      "nested_tools": 0
+    }
+  },
+  {
+    "op": "item_replaced",
+    "turn_id": "t1",
+    "item": {
+      "type": "tool",
+      "id": "a-40b77e21-d8c8-4b6e-8e32-c7c948c1759d-0",
+      "tool_use_id": "toolu_01BridgeEdit",
+      "name": "Edit",
+      "summary": "Update the bridge plan",
+      "status": "done",
+      "subagent": null,
+      "input": "{\n  \"path\": \"doc/plans/bridge.md\",\n  \"old_text\": \"Draft\",\n  \"new_text\": \"Ready\"\n}",
+      "result": "Updated doc/plans/bridge.md",
+      "result_truncated": false,
+      "error_line": null,
+      "added": 1,
+      "removed": 1,
+      "patch": "--- a/doc/plans/bridge.md\n+++ b/doc/plans/bridge.md\n@@ -1 +1 @@\n-Draft\n+Ready\n",
+      "nested_tools": 0
+    }
+  },
+  {
+    "op": "item_removed",
+    "turn_id": "t1",
+    "id": "s-1"
+  },
+  {
+    "op": "queue",
+    "queue": [
+      {
+        "id": "b9c17fc0-8e21-4e75-b177-43acdf847d0d",
+        "first_line": "Review the updated plan",
+        "text": "Review the updated plan for missing steps."
+      }
+    ]
+  },
+  {
+    "op": "cleared"
+  },
+  {
+    "op": "session",
+    "session": {
+      "id": "0d5f3a52-6e0b-4c0e-9d57-2f6a1d8b7c11",
+      "kind": "authoring",
+      "state": "starting",
+      "name": "Draft the bridge plan",
+      "model": "claude-sonnet-4-5",
+      "socket": "/tmp/loom-0d5f3a52.sock",
+      "holder": "Alex",
+      "away_until": null,
+      "queued": 0,
+      "started_at": "2026-10-28T10:00:00Z",
+      "state_since": "2026-10-28T10:01:00Z",
+      "working_since": null,
+      "subagents_running": 0,
+      "last_activity": "2026-10-28T10:01:30Z",
+      "failure": null,
+      "offer": null
+    }
+  },
+  {
+    "op": "session",
+    "session": {
+      "id": "e19c4b7a-3a52-4f0d-8a7e-5b2c9d0f6a22",
+      "kind": "authoring",
+      "state": "idle",
+      "name": "Draft the bridge plan",
+      "model": "claude-sonnet-4-5",
+      "socket": "/tmp/loom-e19c4b7a.sock",
+      "holder": "Alex",
+      "away_until": null,
+      "queued": 0,
+      "started_at": "2026-10-28T10:00:00Z",
+      "state_since": "2026-10-28T10:02:00Z",
+      "working_since": null,
+      "subagents_running": 0,
+      "last_activity": "2026-10-28T10:02:30Z",
+      "failure": null,
+      "offer": null
+    }
+  },
+  {
+    "op": "session",
+    "session": {
+      "id": "f3a8d216-7c4e-4b19-a0c3-8e5d1b9f4a33",
+      "kind": "authoring",
+      "state": "ending",
+      "name": "Draft the bridge plan",
+      "model": "claude-sonnet-4-5",
+      "socket": "/tmp/loom-f3a8d216.sock",
+      "holder": "Alex",
+      "away_until": null,
+      "queued": 0,
+      "started_at": "2026-10-28T10:00:00Z",
+      "state_since": "2026-10-28T10:03:00Z",
+      "working_since": null,
+      "subagents_running": 0,
+      "last_activity": "2026-10-28T10:03:30Z",
+      "failure": null,
+      "offer": null
+    }
+  },
+  {
+    "op": "session",
+    "session": {
+      "id": "a52e7c90-1d3b-4e68-b4f7-9c0a6d2e8b44",
+      "kind": "authoring",
+      "state": "ended",
+      "name": "Draft the bridge plan",
+      "model": "claude-sonnet-4-5",
+      "socket": "/tmp/loom-a52e7c90.sock",
+      "holder": "Alex",
+      "away_until": null,
+      "queued": 0,
+      "started_at": "2026-10-28T10:00:00Z",
+      "state_since": "2026-10-28T10:04:00Z",
+      "working_since": null,
+      "subagents_running": 0,
+      "last_activity": "2026-10-28T10:04:30Z",
+      "failure": null,
+      "offer": null
+    }
+  },
+  {
+    "op": "session",
+    "session": {
+      "id": "c4b1e8f5-9a27-4d3c-8e60-1f7b3a5d9c55",
+      "kind": "authoring",
+      "state": "failed",
+      "name": "Draft the bridge plan",
+      "model": "claude-sonnet-4-5",
+      "socket": "/tmp/loom-c4b1e8f5.sock",
+      "holder": "Alex",
+      "away_until": null,
+      "queued": 0,
+      "started_at": "2026-10-28T10:00:00Z",
+      "state_since": "2026-10-28T10:05:00Z",
+      "working_since": null,
+      "subagents_running": 0,
+      "last_activity": "2026-10-28T10:05:30Z",
+      "failure": {
+        "kind": "spawn",
+        "message": "tmux could not start the planning session"
+      },
+      "offer": null
+    }
+  }
+]

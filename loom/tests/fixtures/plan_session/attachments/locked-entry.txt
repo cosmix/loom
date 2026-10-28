@@ -1,0 +1,8 @@
+Retired plans stay as they are.
+
+<loom-attachments>
+[1] source doc/plans/RETIRED-PLAN-old-ui.md#goals locked=retired
+> Replace the old panel.
+[2] source doc/loom/knowledge/architecture.md#overview locked=knowledge
+> The daemon owns the server.
+</loom-attachments>

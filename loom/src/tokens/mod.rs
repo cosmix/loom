@@ -12,7 +12,7 @@ pub mod model;
 mod pass_memo;
 pub mod quota_left;
 mod quota_points;
-mod tail;
+pub(crate) mod tail;
 #[cfg(test)]
 mod tests_fixture;
 pub mod tracker;

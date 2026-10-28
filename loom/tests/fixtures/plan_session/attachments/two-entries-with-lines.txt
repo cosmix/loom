@@ -1,0 +1,9 @@
+Compare these two passages.
+
+<loom-attachments>
+[1] source doc/plans/PLAN-plan-server.md#lifetime lines 40-44
+> `loom plan` starts the daemon if it is not running and
+> registers the planning server with it.
+[2] source doc/product/section_03.md#goals
+> Goals stay short.
+</loom-attachments>

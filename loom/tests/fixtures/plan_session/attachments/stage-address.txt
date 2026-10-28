@@ -1,0 +1,6 @@
+What did this stage prove?
+
+<loom-attachments>
+[1] source doc/plans/DONE-PLAN-token-flow.md#stage:integration-verify
+> Integration verify runs the dashboard against a live daemon.
+</loom-attachments>

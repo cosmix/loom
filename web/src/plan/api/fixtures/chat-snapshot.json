@@ -1,0 +1,430 @@
+{
+  "session": {
+    "id": "00000000-0000-4000-8000-000000000001",
+    "kind": "authoring",
+    "state": "permission",
+    "name": "Planning session",
+    "model": "claude-sonnet",
+    "socket": "session.sock",
+    "holder": "Alex",
+    "away_until": null,
+    "queued": 1,
+    "started_at": "2026-10-17T08:00:00Z",
+    "state_since": "2026-10-17T08:10:00Z",
+    "working_since": "2026-10-17T08:10:00Z",
+    "subagents_running": 0,
+    "last_activity": "2026-10-17T08:11:00Z",
+    "failure": null,
+    "offer": null
+  },
+  "turns": [
+    {
+      "id": "t1",
+      "started_at": "2026-10-17T08:01:00Z",
+      "duration_ms": 42000,
+      "open": false,
+      "tokens": {
+        "input": 1200,
+        "cache_write": 100,
+        "cache_read": 300,
+        "output": 450
+      },
+      "items": [
+        {
+          "type": "user",
+          "id": "u-00000000-0000-4000-8000-000000000010",
+          "text": "Please update the bridge plan.",
+          "attachments": [
+            {
+              "kind": "source",
+              "path": "doc/plans/reference-0.md",
+              "anchor": "overview",
+              "lines": [1, 5],
+              "stage": null,
+              "summary_sentence": null,
+              "rests_on": [],
+              "quote": "Plan the session bridge.",
+              "changed_since_selected": false,
+              "locked": "running"
+            },
+            {
+              "kind": "summary",
+              "path": "doc/loom/summaries/bridge.md",
+              "anchor": "s-1234abcd",
+              "lines": null,
+              "stage": null,
+              "summary_sentence": "s-1234abcd",
+              "rests_on": ["doc/plans/bridge.md#overview"],
+              "quote": "Plan the session bridge.",
+              "changed_since_selected": false,
+              "locked": "done"
+            },
+            {
+              "kind": "source",
+              "path": "doc/plans/reference-2.md",
+              "anchor": "overview",
+              "lines": [1, 5],
+              "stage": null,
+              "summary_sentence": null,
+              "rests_on": [],
+              "quote": "Plan the session bridge.",
+              "changed_since_selected": true,
+              "locked": "retired"
+            },
+            {
+              "kind": "source",
+              "path": "doc/plans/reference-3.md",
+              "anchor": "overview",
+              "lines": [1, 5],
+              "stage": null,
+              "summary_sentence": null,
+              "rests_on": [],
+              "quote": "Plan the session bridge.",
+              "changed_since_selected": false,
+              "locked": "knowledge"
+            },
+            {
+              "kind": "source",
+              "path": "doc/plans/reference-4.md",
+              "anchor": "overview",
+              "lines": [1, 5],
+              "stage": null,
+              "summary_sentence": null,
+              "rests_on": [],
+              "quote": "Plan the session bridge.",
+              "changed_since_selected": false,
+              "locked": "brief"
+            }
+          ],
+          "delivery": "sent",
+          "origin": "offer"
+        },
+        {
+          "type": "user",
+          "id": "u-00000000-0000-4000-8000-000000000011",
+          "text": "Please update the bridge plan.",
+          "attachments": [],
+          "delivery": "delivered",
+          "origin": "start"
+        },
+        {
+          "type": "user",
+          "id": "u-00000000-0000-4000-8000-000000000012",
+          "text": "Please update the bridge plan.",
+          "attachments": [],
+          "delivery": "undelivered",
+          "origin": "closing"
+        },
+        {
+          "type": "thinking",
+          "id": "a-00000000-0000-4000-8000-000000000020-0",
+          "duration_ms": 1500
+        },
+        {
+          "type": "text",
+          "id": "a-00000000-0000-4000-8000-000000000021-0",
+          "markdown": "I will update the plan and check the result."
+        },
+        {
+          "type": "tool",
+          "id": "a-00000000-0000-4000-8000-000000000030-0",
+          "tool_use_id": "toolu_0030",
+          "name": "Read",
+          "summary": "Read doc/plans/bridge.md",
+          "status": "pending",
+          "subagent": null,
+          "input": "{\n  \"file_path\": \"doc/plans/bridge.md\"\n}",
+          "result": null,
+          "result_truncated": false,
+          "error_line": null,
+          "added": null,
+          "removed": null,
+          "patch": null,
+          "nested_tools": 0
+        },
+        {
+          "type": "tool",
+          "id": "a-00000000-0000-4000-8000-000000000031-0",
+          "tool_use_id": "toolu_0031",
+          "name": "Edit",
+          "summary": "Update doc/plans/bridge.md",
+          "status": "done",
+          "subagent": null,
+          "input": "{\n  \"file_path\": \"doc/plans/bridge.md\"\n}",
+          "result": "Updated the plan.",
+          "result_truncated": false,
+          "error_line": null,
+          "added": 1,
+          "removed": 1,
+          "patch": "--- a/doc/plans/bridge.md\n+++ b/doc/plans/bridge.md\n@@ -1 +1 @@\n-Old plan\n+Updated plan\n",
+          "nested_tools": 0
+        },
+        {
+          "type": "tool",
+          "id": "a-00000000-0000-4000-8000-000000000032-0",
+          "tool_use_id": "toolu_0032",
+          "name": "Read",
+          "summary": "Read doc/plans/bridge.md",
+          "status": "error",
+          "subagent": null,
+          "input": "{\n  \"file_path\": \"doc/plans/bridge.md\"\n}",
+          "result": null,
+          "result_truncated": false,
+          "error_line": "Unable to read file",
+          "added": null,
+          "removed": null,
+          "patch": null,
+          "nested_tools": 0
+        },
+        {
+          "type": "tool",
+          "id": "a-00000000-0000-4000-8000-000000000033-0",
+          "tool_use_id": "toolu_0033",
+          "name": "Read",
+          "summary": "Read doc/plans/bridge.md",
+          "status": "denied",
+          "subagent": null,
+          "input": "{\n  \"file_path\": \"doc/plans/bridge.md\"\n}",
+          "result": null,
+          "result_truncated": false,
+          "error_line": null,
+          "added": null,
+          "removed": null,
+          "patch": null,
+          "nested_tools": 0
+        },
+        {
+          "type": "tool",
+          "id": "a-00000000-0000-4000-8000-000000000034-0",
+          "tool_use_id": "toolu_0034",
+          "name": "Read",
+          "summary": "Read doc/plans/bridge.md",
+          "status": "not_finished",
+          "subagent": null,
+          "input": "{\n  \"file_path\": \"doc/plans/bridge.md\"\n}",
+          "result": null,
+          "result_truncated": false,
+          "error_line": null,
+          "added": null,
+          "removed": null,
+          "patch": null,
+          "nested_tools": 0
+        },
+        {
+          "type": "permission",
+          "id": "p-00000000-0000-4000-8000-000000000040",
+          "request_id": "00000000-0000-4000-8000-000000000040",
+          "tool": "Edit",
+          "input": "{\n  \"file_path\": \"doc/plans/bridge.md\"\n}",
+          "status": "pending",
+          "deny_reason": null,
+          "note": null,
+          "expires_at": "2026-10-17T09:00:00Z"
+        },
+        {
+          "type": "permission",
+          "id": "p-00000000-0000-4000-8000-000000000041",
+          "request_id": "00000000-0000-4000-8000-000000000041",
+          "tool": "Edit",
+          "input": "{\n  \"file_path\": \"doc/plans/bridge.md\"\n}",
+          "status": "allowed",
+          "deny_reason": null,
+          "note": "Approved for this update.",
+          "expires_at": "2026-10-17T09:00:00Z"
+        },
+        {
+          "type": "permission",
+          "id": "p-00000000-0000-4000-8000-000000000042",
+          "request_id": "00000000-0000-4000-8000-000000000042",
+          "tool": "Edit",
+          "input": "{\n  \"file_path\": \"doc/plans/bridge.md\"\n}",
+          "status": "denied",
+          "deny_reason": "holder",
+          "note": null,
+          "expires_at": "2026-10-17T09:00:00Z"
+        },
+        {
+          "type": "permission",
+          "id": "p-00000000-0000-4000-8000-000000000043",
+          "request_id": "00000000-0000-4000-8000-000000000043",
+          "tool": "Edit",
+          "input": "{\n  \"file_path\": \"doc/plans/bridge.md\"\n}",
+          "status": "denied",
+          "deny_reason": "timeout",
+          "note": null,
+          "expires_at": "2026-10-17T09:00:00Z"
+        },
+        {
+          "type": "permission",
+          "id": "p-00000000-0000-4000-8000-000000000044",
+          "request_id": "00000000-0000-4000-8000-000000000044",
+          "tool": "Edit",
+          "input": "{\n  \"file_path\": \"doc/plans/bridge.md\"\n}",
+          "status": "denied",
+          "deny_reason": "session_ended",
+          "note": null,
+          "expires_at": "2026-10-17T09:00:00Z"
+        },
+        {
+          "type": "permission",
+          "id": "p-00000000-0000-4000-8000-000000000045",
+          "request_id": "00000000-0000-4000-8000-000000000045",
+          "tool": "Edit",
+          "input": "{\n  \"file_path\": \"doc/plans/bridge.md\"\n}",
+          "status": "denied",
+          "deny_reason": "server_stopping",
+          "note": null,
+          "expires_at": "2026-10-17T09:00:00Z"
+        },
+        {
+          "type": "permission",
+          "id": "p-00000000-0000-4000-8000-000000000046",
+          "request_id": "00000000-0000-4000-8000-000000000046",
+          "tool": "Edit",
+          "input": "{\n  \"file_path\": \"doc/plans/bridge.md\"\n}",
+          "status": "denied",
+          "deny_reason": "hook_error",
+          "note": null,
+          "expires_at": "2026-10-17T09:00:00Z"
+        },
+        {
+          "type": "permission",
+          "id": "p-00000000-0000-4000-8000-000000000047",
+          "request_id": "00000000-0000-4000-8000-000000000047",
+          "tool": "Edit",
+          "input": "{\n  \"file_path\": \"doc/plans/bridge.md\"\n}",
+          "status": "denied",
+          "deny_reason": "interrupt",
+          "note": null,
+          "expires_at": "2026-10-17T09:00:00Z"
+        },
+        {
+          "type": "permission",
+          "id": "p-00000000-0000-4000-8000-000000000048",
+          "request_id": "00000000-0000-4000-8000-000000000048",
+          "tool": "Edit",
+          "input": "{\n  \"file_path\": \"doc/plans/bridge.md\"\n}",
+          "status": "denied",
+          "deny_reason": "summary_session",
+          "note": null,
+          "expires_at": "2026-10-17T09:00:00Z"
+        },
+        {
+          "type": "notice",
+          "id": "n-00000000-0000-4000-8000-000000000060",
+          "kind": "interrupted",
+          "text": "The turn was interrupted."
+        },
+        {
+          "type": "notice",
+          "id": "n-00000000-0000-4000-8000-000000000061",
+          "kind": "compacted",
+          "text": "The conversation was compacted."
+        },
+        {
+          "type": "notice",
+          "id": "n-00000000-0000-4000-8000-000000000062",
+          "kind": "api_error",
+          "text": "The API returned an error."
+        },
+        {
+          "type": "notice",
+          "id": "n-00000000-0000-4000-8000-000000000063",
+          "kind": "stopped",
+          "text": "The session stopped."
+        },
+        {
+          "type": "notice",
+          "id": "n-00000000-0000-4000-8000-000000000064",
+          "kind": "info",
+          "text": "The plan is ready for review."
+        }
+      ],
+      "changed_files": [
+        {
+          "path": "doc/plans/bridge.md",
+          "before_hash": "a1b2c3d4",
+          "by_tool": true
+        }
+      ],
+      "summaries_rebuilding": []
+    },
+    {
+      "id": "t2",
+      "started_at": "2026-10-17T08:02:00Z",
+      "duration_ms": null,
+      "open": true,
+      "tokens": {
+        "input": 1200,
+        "cache_write": 100,
+        "cache_read": 300,
+        "output": 450
+      },
+      "items": [
+        {
+          "type": "user",
+          "id": "s-1",
+          "text": "Check the updated plan.",
+          "attachments": [],
+          "delivery": "sent",
+          "origin": null
+        }
+      ],
+      "changed_files": [],
+      "summaries_rebuilding": []
+    }
+  ],
+  "queue": [
+    {
+      "id": "00000000-0000-4000-8000-000000000070",
+      "first_line": "Review the next section.",
+      "text": "Review the next section.\nCheck its dependencies."
+    }
+  ],
+  "previous": {
+    "session": {
+      "id": "00000000-0000-4000-8000-000000000002",
+      "kind": "authoring",
+      "state": "failed",
+      "name": "Planning session",
+      "model": "claude-sonnet",
+      "socket": "session.sock",
+      "holder": "Alex",
+      "away_until": null,
+      "queued": 0,
+      "started_at": "2026-10-17T08:00:00Z",
+      "state_since": "2026-10-17T08:10:00Z",
+      "working_since": null,
+      "subagents_running": 0,
+      "last_activity": "2026-10-17T08:11:00Z",
+      "failure": {
+        "kind": "died",
+        "message": "The session process exited."
+      },
+      "offer": null
+    },
+    "turns": [
+      {
+        "id": "t1",
+        "started_at": "2026-10-17T08:01:00Z",
+        "duration_ms": 42000,
+        "open": false,
+        "tokens": {
+          "input": 1200,
+          "cache_write": 100,
+          "cache_read": 300,
+          "output": 450
+        },
+        "items": [],
+        "changed_files": [
+          {
+            "path": "doc/plans/bridge.md",
+            "before_hash": "a1b2c3d4",
+            "by_tool": true
+          }
+        ],
+        "summaries_rebuilding": []
+      }
+    ]
+  }
+}
