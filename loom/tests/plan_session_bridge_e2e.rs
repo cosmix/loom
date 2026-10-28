@@ -25,6 +25,8 @@ use serde_json::json;
 use serial_test::serial;
 use tempfile::TempDir;
 
+#[path = "plan_session_bridge_e2e/diagnose.rs"]
+mod diagnose;
 #[path = "plan_session_bridge_e2e/operator.rs"]
 mod operator;
 
