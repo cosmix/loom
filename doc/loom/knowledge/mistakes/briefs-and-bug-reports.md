@@ -323,3 +323,43 @@ sibling's files.
 **Prevention:** quote every validation regex and limit verbatim in the brief, and list the neighbouring cases beside the filed scenario when a fix touches focus identity or delta naming.
 
 **Fix:** the orchestrator corrected `parse`, and the later fix briefs carried the neighbouring cases.
+
+## Planner takeover current-plan correction
+
+**What happened**: The takeover request mentioned finishing plan 07; the user clarified that plan 08 is running.
+
+**Why**: The request included an older plan reference alongside the latest verified state.
+
+**Prevention**: Treat the explicit correction and live Loom status as the current execution position.
+
+**Fix**: Continue plan 08, then plans 09–11 sequentially.
+
+## Planner takeover stopped before investigating recovery
+
+**What happened**: I reported plan 08 blocked after checking CLI help instead of investigating how to unblock it.
+
+**Why**: I treated missing installed amendment support as the end of the task.
+
+**Prevention**: Trace the verification and amendment implementation and prepare a supported fix before handing a blocker back.
+
+**Fix**: Investigate and implement a verified recovery while preserving the prohibition on forced completion and leaving installation to the user.
+
+## Recover an unsupported predecessor check without changing Loom
+
+**What happened**: I proposed updating Loom to recover plan 08 instead of using the operator decision and retry context.
+
+**Why**: I conflated the predecessor static reachability limitation with a failure of integration verification completion checks.
+
+**Prevention**: Distinguish an agent-declared block from a failing completion gate; convey the narrowly scoped operator decision through stage retry while retaining normal verification.
+
+**Fix**: Record the unsupported trait-object reachability check for future Loom work and retry integration-verify with that limitation accepted, without no-verify or forced completion.
+
+## Retry context cannot waive aggregated reachability
+
+**What happened**: I retried integration-verify assuming its predecessor reachability limitation could be accepted through context.
+
+**Why**: I had not traced complete_verification_v2::reverify_reachable, which reruns completed stages reachable assertions.
+
+**Prevention**: Inspect actual completion gates before proposing contextual acceptance as recovery.
+
+**Fix**: Correct the unsupported plan assertion through the supported plan input path while retaining normal completion checks; retry context alone is insufficient.

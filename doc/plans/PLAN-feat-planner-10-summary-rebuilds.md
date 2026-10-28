@@ -91,9 +91,16 @@ loom:
     enabled: true
     auto_allow: true
     filesystem:
-      deny_read: ["~/.ssh/**", "~/.aws/**", "~/.config/gcloud/**", "~/.gnupg/**"]
+      deny_read:
+        ["~/.ssh/**", "~/.aws/**", "~/.config/gcloud/**", "~/.gnupg/**"]
     network:
-      allowed_domains: ["crates.io", "index.crates.io", "static.crates.io", "registry.npmjs.org"]
+      allowed_domains:
+        [
+          "crates.io",
+          "index.crates.io",
+          "static.crates.io",
+          "registry.npmjs.org",
+        ]
       allow_local_binding: false
       allow_unix_sockets: []
   stages:
@@ -108,7 +115,13 @@ loom:
       dependencies: []
       sandbox:
         network:
-          allowed_domains: ["crates.io", "index.crates.io", "static.crates.io", "registry.npmjs.org"]
+          allowed_domains:
+            [
+              "crates.io",
+              "index.crates.io",
+              "static.crates.io",
+              "registry.npmjs.org",
+            ]
           allow_local_binding: true
           allow_unix_sockets: []
       description: |
@@ -260,12 +273,12 @@ loom:
         - id: read-only-starts-nothing
           file: tests/plan_summary_rebuild_contracts.rs
           test: read_only_starts_nothing
-          scenario: "SchedulerConfig { read_only: Some(\"tmux is not installed\"), .. }; on_update with 2 ids and with 9 ids; tick"
+          scenario: 'SchedulerConfig { read_only: Some("tmux is not installed"), .. }; on_update with 2 ids and with 9 ids; tick'
           rejects: "a read-only server that spawns or asks (no Started, no Asked; panel_state().read_only carries the reason)"
         - id: startup-sweeps-dead-claims
           file: tests/plan_summary_rebuild_contracts.rs
           test: startup_sweeps_dead_claims
-          scenario: "a TempDir RuntimePaths holding claims for session dead1 (no live session), live1 (live), left1 (left alone by recovery) and a null-session terminal claim; Attribution::sweep_after_recovery(live: &[\"live1\"], left_alone: &[\"left1\"])"
+          scenario: 'a TempDir RuntimePaths holding claims for session dead1 (no live session), live1 (live), left1 (left alone by recovery) and a null-session terminal claim; Attribution::sweep_after_recovery(live: &["live1"], left_alone: &["left1"])'
           rejects: "a start-up that keeps claims of sessions that died with the last server (dead1's claim must be gone) or deletes live, left-alone or terminal claims (those three remain; the terminal claim id is returned for the panel's release action)"
         - id: turn-suspension-released-on-idle
           file: tests/plan_summary_rebuild_contracts.rs

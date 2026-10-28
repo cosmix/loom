@@ -53,16 +53,16 @@ plan 3's `docRel`/`repoRel` (`@/plan/files/address`); the server with plan 2's
 `plan_server::wire::paths::{to_doc_rel, to_repo_rel}`, wrapped for Restore by
 `review::restore::save_path_of`.
 
-| Role | Producer | Name used here |
-| --- | --- | --- |
-| Loaded project: documents, sections, `Implements:` both ways, open questions, content hashes, locks, path checks | plan 1 | `loom::planning::project::{Project, ProjectDoc}` (`implemented_by`, `content_hash`, `docs[..].open_questions`), `loom::planning::sections::sections_of`, `loom::planning::paths::check_relpath_syntax` |
-| Route registration, request context, roles, identity, presence, hub, WS dispatch | plan 2 | `plan_server::routes::{all_routes, install_all}`, `RouteSpec` (`role: Holder`), `ApiRequest` (`browser`), `PlanContext` (`authoring()`, `presence().name_of`, `hub().send_to_holder`, `send_to_browser`, `on_open`, `on_batch`, `extensions()`), `PlanMessage`/`ClientMessage` in `plan_server/wire/message.rs`, `plan_server/ws/dispatch.rs` |
-| Planning app dock, header slot, WS client, API client, atoms, help keys | plan 2 | `web/src/plan/{dock.tsx, header-extras.tsx, help-keys.ts}`, `web/src/plan/api/{client.ts, socket.ts}`, `web/src/plan/state/atoms.ts` (`isHolderAtom`, `canAuthorAtom`, `presenceAtom`, `authoringAtom`, `serverInfoAtom`, `connectionAtom`) |
-| Save path, turn pins, diff views, renderer, "Add to chat", tree-entry slot | plan 3 | `plan_server::files::save::save_document` (`SaveOutcome::{Saved, Conflict, Invalid}`, `SaveRefusal`), `plan_server::files::texts::TextStore` (`turn_pin`, `turn_end`), `<Markdown>`, `<DiffView>`, `openDiff`, `pendingAttachmentsAtom`, `addAttachmentAtom`, `AttachmentDraft`, `web/src/plan/files/tree-entry-extras.tsx` |
-| Concept page extension points | plan 5 | `web/src/plan/concept/{page-header-extras, key-chip-extras, empty-offer}.tsx` |
-| Chat model, frames, commands, the bridge, the attachment block module | plan 7 | `PlanMessage::Chat(Box<ChatFrame>)` (`ChatFrame { snapshot, delta, result, queue_returned }`), `ClientMessage::Chat(ChatCommand { start, send, withdraw, permission, interrupt, end })`, model types in `doc/plans/briefs/feat-planner-07-session-bridge/common.md` "The chat model", fixtures `web/src/plan/api/fixtures/chat-{snapshot,deltas,commands,frames}.json`, the `Bridge` (`sessions()`, `chat_session_id()`), turn pins keyed `<session id>/<turn id>`, `loom::plan_session::attachments::{format_message, Attachment, AttachmentInput}` with fixtures `loom/tests/fixtures/plan_session/attachments/`, `plan_session::input::check_delivered` (100,000 bytes) |
-| Session brief, label, model and effort | plan 8 | `GET /api/session/brief?session=<id>` (`SessionBriefView { session_id, label, brief, model, effort, display_name }`, fixture `web/src/plan/api/fixtures/session-brief.json`); start ids `refine:<path>`, `refine-passage:<path>`, `knowledge`, `knowledge:<path>` beside plan 1's `Offer::id`s |
-| Offer ids, labels, opening and closing messages | plans 1, 8 | `loom::planning::checklist::Offer::id`, `loom::planning::guidance::{opening_message, CLOSING_MESSAGE}` |
+| Role                                                                                                             | Producer   | Name used here                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                             |
+| ---------------------------------------------------------------------------------------------------------------- | ---------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Loaded project: documents, sections, `Implements:` both ways, open questions, content hashes, locks, path checks | plan 1     | `loom::planning::project::{Project, ProjectDoc}` (`implemented_by`, `content_hash`, `docs[..].open_questions`), `loom::planning::sections::sections_of`, `loom::planning::paths::check_relpath_syntax`                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| Route registration, request context, roles, identity, presence, hub, WS dispatch                                 | plan 2     | `plan_server::routes::{all_routes, install_all}`, `RouteSpec` (`role: Holder`), `ApiRequest` (`browser`), `PlanContext` (`authoring()`, `presence().name_of`, `hub().send_to_holder`, `send_to_browser`, `on_open`, `on_batch`, `extensions()`), `PlanMessage`/`ClientMessage` in `plan_server/wire/message.rs`, `plan_server/ws/dispatch.rs`                                                                                                                                                                                                                                                                                                                              |
+| Planning app dock, header slot, WS client, API client, atoms, help keys                                          | plan 2     | `web/src/plan/{dock.tsx, header-extras.tsx, help-keys.ts}`, `web/src/plan/api/{client.ts, socket.ts}`, `web/src/plan/state/atoms.ts` (`isHolderAtom`, `canAuthorAtom`, `presenceAtom`, `authoringAtom`, `serverInfoAtom`, `connectionAtom`)                                                                                                                                                                                                                                                                                                                                                                                                                                |
+| Save path, turn pins, diff views, renderer, "Add to chat", tree-entry slot                                       | plan 3     | `plan_server::files::save::save_document` (`SaveOutcome::{Saved, Conflict, Invalid}`, `SaveRefusal`), `plan_server::files::texts::TextStore` (`turn_pin`, `turn_end`), `<Markdown>`, `<DiffView>`, `openDiff`, `pendingAttachmentsAtom`, `addAttachmentAtom`, `AttachmentDraft`, `web/src/plan/files/tree-entry-extras.tsx`                                                                                                                                                                                                                                                                                                                                                |
+| Concept page extension points                                                                                    | plan 5     | `web/src/plan/concept/{page-header-extras, key-chip-extras, empty-offer}.tsx`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                              |
+| Chat model, frames, commands, the bridge, the attachment block module                                            | plan 7     | `PlanMessage::Chat(Box<ChatFrame>)` (`ChatFrame { snapshot, delta, result, queue_returned }`), `ClientMessage::Chat(ChatCommand { start, send, withdraw, permission, interrupt, end })`, model types in `doc/plans/briefs/feat-planner-07-session-bridge/common.md` "The chat model", fixtures `web/src/plan/api/fixtures/chat-{snapshot,deltas,commands,frames}.json`, the `Bridge` (`sessions()`, `chat_session_id()`), turn pins keyed `<session id>/<turn id>`, `loom::plan_session::attachments::{format_message, Attachment, AttachmentInput}` with fixtures `loom/tests/fixtures/plan_session/attachments/`, `plan_session::input::check_delivered` (100,000 bytes) |
+| Session brief, label, model and effort                                                                           | plan 8     | `GET /api/session/brief?session=<id>` (`SessionBriefView { session_id, label, brief, model, effort, display_name }`, fixture `web/src/plan/api/fixtures/session-brief.json`); start ids `refine:<path>`, `refine-passage:<path>`, `knowledge`, `knowledge:<path>` beside plan 1's `Offer::id`s                                                                                                                                                                                                                                                                                                                                                                             |
+| Offer ids, labels, opening and closing messages                                                                  | plans 1, 8 | `loom::planning::checklist::Offer::id`, `loom::planning::guidance::{opening_message, CLOSING_MESSAGE}`                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                     |
 
 The `<loom-attachments>` block is a parse contract between plan 7's transcript mapper and this
 plan's composer. Plan 7 owns the single Rust implementation (format and parse) and its fixture
@@ -88,7 +88,7 @@ What this plan publishes for later plans:
   between two sessions' turns (here: "Chat ended at <time>"); plan 11 adds a branch naming the
   pressure step and its model.
 - `web/src/plan/chat/rebuilt-summary-extras.tsx`: `<RebuiltSummaryExtras id={summaryId}
-  turn={turn} />` at the end of each rebuilt-summary footer row, `null` here; plan 10 adds the
+turn={turn} />` at the end of each rebuilt-summary footer row, `null` here; plan 10 adds the
   per-summary tokens.
 - Authoring offer handlers: this plan registers them in plan 2's offer registry
   (`web/src/plan/offers/actions.ts`, `registerOfferAction(kind, handler)`) from its own module
@@ -115,10 +115,10 @@ What this plan publishes for later plans:
    local storage, per project key, as section 10 says. The server supplies current hashes
    (`GET /api/hashes`, from `Project::content_hash`), a ref resolved to a commit (`GET /api/ref?name=`), the changed
    paths against a commit (`GET /api/compare?commit=`, from `git diff --name-status -z
-   <commit> -- doc/` plus untracked files under `doc/`) and a document's text at a commit
+<commit> -- doc/` plus untracked files under `doc/`) and a document's text at a commit
    (`GET /api/at-commit?commit=&path=`). A typed ref is validated (no leading `-`, no
    control characters, at most 256 bytes) and resolved with `git rev-parse --verify --quiet
-   --end-of-options <ref>^{commit}`; every later git call takes the resolved hex and passes paths
+--end-of-options <ref>^{commit}`; every later git call takes the resolved hex and passes paths
    after `--`.
 4. **The "Changed after … was built" marker** reads the plan's run review, found through plan 1's
    discovery as the document of kind `RunReview { slug }` (directly in `doc/plans/` or under
@@ -231,9 +231,16 @@ loom:
     enabled: true
     auto_allow: true
     filesystem:
-      deny_read: ["~/.ssh/**", "~/.aws/**", "~/.config/gcloud/**", "~/.gnupg/**"]
+      deny_read:
+        ["~/.ssh/**", "~/.aws/**", "~/.config/gcloud/**", "~/.gnupg/**"]
     network:
-      allowed_domains: ["crates.io", "index.crates.io", "static.crates.io", "registry.npmjs.org"]
+      allowed_domains:
+        [
+          "crates.io",
+          "index.crates.io",
+          "static.crates.io",
+          "registry.npmjs.org",
+        ]
       allow_local_binding: true
       allow_unix_sockets: []
   stages:
@@ -329,8 +336,8 @@ loom:
         - id: restore-writes-pinned-text
           file: tests/plan_review_contracts.rs
           test: restore_writes_pinned_text
-          scenario: "restore_file with a PinnedFile { start_text: Some(\"old\"), end_hash: Some(\"sha256:e\") }, turn_running false, and a save closure that records its arguments and returns Saved"
-          rejects: "a restore that saves text taken from elsewhere or opens with the current file hash, instead of save called once with (path, \"old\", \"sha256:e\", false) and Restored"
+          scenario: 'restore_file with a PinnedFile { start_text: Some("old"), end_hash: Some("sha256:e") }, turn_running false, and a save closure that records its arguments and returns Saved'
+          rejects: 'a restore that saves text taken from elsewhere or opens with the current file hash, instead of save called once with (path, "old", "sha256:e", false) and Restored'
         - id: restore-refused-while-working
           file: tests/plan_review_contracts.rs
           test: restore_refused_while_working
@@ -344,12 +351,12 @@ loom:
         - id: restore-mismatch-returns-merge-texts
           file: tests/plan_review_contracts.rs
           test: restore_mismatch_returns_merge_texts
-          scenario: "save closure returns HashMismatch { current_text: \"newer\", current_hash: \"sha256:n\" }"
+          scenario: 'save closure returns HashMismatch { current_text: "newer", current_hash: "sha256:n" }'
           rejects: "a mismatch reported as a plain refusal, instead of Changed carrying current_text newer and turn_start_text from the pin so the browser can open the merge view"
         - id: text-at-refuses-escaping-path
           file: tests/plan_review_contracts.rs
           test: text_at_refuses_escaping_path
-          scenario: "git fixture with a committed doc/product/section_01.md and a committed top-level secret.txt; text_at(root, <head hex>, \"../secret.txt\")"
+          scenario: 'git fixture with a committed doc/product/section_01.md and a committed top-level secret.txt; text_at(root, <head hex>, "../secret.txt")'
           rejects: "a text_at that builds <commit>:doc/../secret.txt for git show and returns the file outside doc/, instead of an error from the request-path check"
         - id: note-limit-counts-characters
           file: tests/plan_review_contracts.rs
@@ -394,7 +401,7 @@ loom:
         - id: restore-path-from-changed-file
           file: tests/plan_review_contracts.rs
           test: restore_path_from_changed_file
-          scenario: "save_path_of(\"doc/plans/PLAN-x.md\"), save_path_of(\"planning-omissions.md\") and save_path_of(\"doc/../x\")"
+          scenario: 'save_path_of("doc/plans/PLAN-x.md"), save_path_of("planning-omissions.md") and save_path_of("doc/../x")'
           rejects: "a restore that hands the repo-relative ChangedFile.path to plan 3's doc-relative SaveRequest (doc/doc/plans/PLAN-x.md, NotFound), instead of Some(plans/PLAN-x.md) for the first and None for the other two"
 
     - id: chat-web
@@ -589,7 +596,8 @@ loom:
       name: "Integration Verification"
       summary: "Confirms the chat panel and review loop work end to end on a real loom plan server, the embedded bundle is current, and the full Rust and web suites pass."
       stage_type: integration-verify
-      skills: ["loom-rust", "loom-react", "loom-typescript", "loom-security-audit"]
+      skills:
+        ["loom-rust", "loom-react", "loom-typescript", "loom-security-audit"]
       working_dir: "."
       dependencies: ["chat-web"]
       description: |
