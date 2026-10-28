@@ -9,7 +9,7 @@ mod grant_paths;
 mod host_sockets;
 mod merge_resolver;
 mod package_caches;
-mod settings;
+pub(crate) mod settings;
 
 pub(crate) use config::preflight;
 pub use config::{

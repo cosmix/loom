@@ -9,7 +9,7 @@
 //! `.claude/settings.local.json` any more. [`contents`] builds the document;
 //! this module owns the file and its lifecycle.
 
-mod contents;
+pub(crate) mod contents;
 mod host_sockets;
 
 use anyhow::{Context, Result};

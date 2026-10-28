@@ -22,6 +22,7 @@ pub mod orchestrator;
 pub mod parser;
 pub mod plan;
 pub mod plan_server;
+pub mod plan_session;
 pub mod planning;
 pub mod process;
 pub mod provider_data;

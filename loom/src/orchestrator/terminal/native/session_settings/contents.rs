@@ -32,8 +32,9 @@ const CONTROL_COMPLETE_SCRIPT: &str = "loom-control-complete.sh";
 /// `ListAgents`, `WebFetch` and `WebSearch` stay allowed (agent teams; the
 /// engineer agents list the web tools). `Workflow` is denied unless
 /// [`CapsuleInputs::workflow_licensed`].
-const SESSION_TOOL_DENIES: [&str; 4] = ["LSP", "RemoteTrigger", "CronCreate", "PushNotification"];
-const WORKFLOW_TOOL: &str = "Workflow";
+pub(crate) const SESSION_TOOL_DENIES: [&str; 4] =
+    ["LSP", "RemoteTrigger", "CronCreate", "PushNotification"];
+pub(crate) const WORKFLOW_TOOL: &str = "Workflow";
 
 /// Everything [`capsule_settings`] reads.
 pub(super) struct CapsuleInputs<'a> {

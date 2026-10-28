@@ -14,7 +14,7 @@ use std::collections::HashSet;
 /// licenses the codex lane. `models::stage::sandbox_config::default_deny_read`
 /// supplies the first two lists too, so a plan carrying the defaults adds
 /// nothing here: `deny_read_patterns` dedupes.
-pub(super) fn mandatory_deny_read(codex_licensed: bool) -> Vec<&'static str> {
+pub(crate) fn mandatory_deny_read(codex_licensed: bool) -> Vec<&'static str> {
     let codex_auth = (!codex_licensed).then_some(CODEX_AUTH_DENY_READ_PATH);
     CREDENTIAL_DENY_READ_PATHS
         .into_iter()
