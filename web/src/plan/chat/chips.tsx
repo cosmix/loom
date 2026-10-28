@@ -1,0 +1,329 @@
+import { useAtomValue, useStore } from "jotai/react";
+import { useEffect, useId, useState, type ReactNode } from "react";
+import { Link, useLocation, useNavigate } from "react-router";
+
+import type { Attachment, Item, Turn } from "@/plan/api/schema-chat";
+import type { TreeEntry } from "@/plan/api/schema-files";
+import { pendingAttachmentsAtom, type AttachmentDraft } from "@/plan/attachments";
+import { openDiff } from "@/plan/diff/open-diff";
+import { docRel, toAddress } from "@/plan/files/address";
+import { treeAtom } from "@/plan/files/atoms";
+import { getTurnSections, type TurnSectionsResponse } from "@/plan/review/api";
+import { hashesAtom } from "@/plan/review/live";
+import { connectionEpochAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { LoadState } from "@/plan/ui/load-state";
+import { toAttachmentInput } from "./commands";
+import { draftAtom } from "./drafts";
+import { snapshotAtom } from "./model";
+import { Untrusted, visibleControls } from "./visible-controls";
+
+const LIMIT = 10;
+const LIMIT_NOTE = "At most 10 attachments per message";
+type LabelInput = Pick<
+  Attachment,
+  "path" | "anchor" | "lines" | "stage" | "summary_sentence" | "kind"
+>;
+
+export function chipLabel(a: LabelInput): string {
+  const file = docRel(a.path).split("/").pop() ?? a.path;
+  if (a.kind === "summary") {
+    const stem = file.replace(/\.md$/, "");
+    if (stem === "product") return "Product overview";
+    if (stem === "engineering") return "Engineering overview";
+    return `Summary · ${stem}`;
+  }
+  const passage = a.stage ? ` › stage ${a.stage}` : a.anchor ? ` › ${a.anchor}` : "";
+  const lines = a.lines ? ` · lines ${a.lines[0]}–${a.lines[1]}` : "";
+  return `${file}${passage}${lines}`;
+}
+
+// Both producers remain independent; synchronize synchronously so a batch of adds is capped.
+function usePendingDraft(): string | null {
+  const store = useStore();
+  const project = useAtomValue(serverInfoAtom)?.project_key;
+  const [note, setNote] = useState<string | null>(null);
+  useAtomValue(draftAtom);
+  useEffect(() => {
+    let updating = false;
+    const sync = (attachments: AttachmentDraft[]) => {
+      if (updating) return;
+      updating = true;
+      if (attachments.length > LIMIT) setNote(LIMIT_NOTE);
+      const kept = attachments.length > LIMIT ? attachments.slice(0, LIMIT) : attachments;
+      store.set(pendingAttachmentsAtom, kept);
+      if (store.get(draftAtom).attachments !== kept) {
+        store.set(draftAtom, (draft) => ({ ...draft, attachments: kept }));
+      }
+      updating = false;
+    };
+    const saved = store.get(draftAtom).attachments;
+    const pending = store.get(pendingAttachmentsAtom);
+    const merged = [
+      ...saved,
+      ...pending.filter((a) => !saved.some((b) => JSON.stringify(a) === JSON.stringify(b))),
+    ];
+    const offPending = store.sub(pendingAttachmentsAtom, () =>
+      sync(store.get(pendingAttachmentsAtom)),
+    );
+    const offDraft = store.sub(draftAtom, () => sync(store.get(draftAtom).attachments));
+    sync(merged);
+    return () => {
+      offPending();
+      offDraft();
+    };
+  }, [store, project]);
+  return note;
+}
+
+function lockedPath(path: string, entries: TreeEntry[]): boolean {
+  return entries.some(
+    (entry) => (entry.path === path && entry.locked) || lockedPath(path, entry.children),
+  );
+}
+
+function summaryAddress(path: string, anchor: string | null): string {
+  const stem = docRel(path)
+    .replace(/^loom\/summaries\//, "")
+    .replace(/\.md$/, "");
+  const page = stem.startsWith("plans/")
+    ? `engineering/${stem.slice(6)}`
+    : stem === "product" || stem === "engineering" || stem.startsWith("product/")
+      ? stem
+      : `product/${stem}`;
+  return `/${page.split("/").map(encodeURIComponent).join("/")}${anchor ? `#${encodeURIComponent(anchor)}` : ""}`;
+}
+
+function useOpenChip() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  return (a: LabelInput) => {
+    if (a.kind === "summary") return navigate(summaryAddress(a.path, a.summary_sentence));
+    navigate(toAddress(a.path, a.anchor), { state: { returnTo: location.pathname } });
+  };
+}
+
+function ChipTrailing({
+  label,
+  locked,
+  onRemove,
+}: {
+  label: string;
+  locked: boolean;
+  onRemove?: () => void;
+}) {
+  return (
+    <>
+      {locked && (
+        <span role="img" aria-label="Locked document">
+          🔒
+        </span>
+      )}
+      {onRemove && (
+        <button type="button" aria-label={`Remove ${label}`} onClick={onRemove}>
+          ×
+        </button>
+      )}
+    </>
+  );
+}
+
+function ChipTooltip({ id, quote }: { id: string; quote: string }) {
+  return (
+    <div
+      id={id}
+      role="tooltip"
+      className="fixed z-50 max-h-64 max-w-sm overflow-auto whitespace-pre-wrap rounded border bg-popover p-3 text-sm shadow-(--dialog-shadow)"
+    >
+      <Untrusted text={quote} />
+    </div>
+  );
+}
+
+function Chip({
+  attachment,
+  quote,
+  changed,
+  locked,
+  onOpen,
+  onRemove,
+  children,
+}: {
+  attachment: LabelInput;
+  quote: string;
+  changed: boolean;
+  locked: boolean;
+  onOpen: () => void;
+  onRemove?: () => void;
+  children?: ReactNode;
+}) {
+  const label = visibleControls(chipLabel(attachment));
+  const [preview, setPreview] = useState(false);
+  const previewId = useId();
+  return (
+    <div className="relative min-w-0 rounded border border-border px-2 py-1 text-xs">
+      <div className="flex min-w-0 items-center gap-1">
+        <button
+          type="button"
+          className="min-w-0 flex-1 truncate text-left"
+          aria-label={label}
+          aria-describedby={preview ? previewId : undefined}
+          onClick={onOpen}
+          onMouseEnter={() => setPreview(true)}
+          onMouseLeave={() => setPreview(false)}
+          onFocus={() => setPreview(true)}
+          onBlur={() => setPreview(false)}
+        >
+          <Untrusted text={chipLabel(attachment)} />
+        </button>
+        <ChipTrailing label={label} locked={locked} onRemove={onRemove} />
+      </div>
+      {changed && <span className="text-(--tone-warning)">△ changed</span>}
+      {children}
+      {preview && <ChipTooltip id={previewId} quote={quote} />}
+    </div>
+  );
+}
+
+// Content keys survive removal of an earlier chip; an occurrence counter separates duplicates.
+function chipKeys(drafts: AttachmentDraft[]): string[] {
+  const seen = new Map<string, number>();
+  return drafts.map((draft) => {
+    // The quote can be large; its length plus the identity fields is enough with the counter.
+    const base = JSON.stringify({ ...draft, text: draft.text.length });
+    const occurrence = seen.get(base) ?? 0;
+    seen.set(base, occurrence + 1);
+    return `${occurrence}:${base}`;
+  });
+}
+
+export function PendingChips() {
+  const note = usePendingDraft();
+  const pending = useAtomValue(pendingAttachmentsAtom);
+  const hashes = useAtomValue(hashesAtom);
+  const tree = useAtomValue(treeAtom);
+  const store = useStore();
+  const open = useOpenChip();
+  const [expanded, setExpanded] = useState(false);
+  const count = !expanded && pending.length > 4 ? 3 : pending.length;
+  const keys = chipKeys(pending);
+  if (!pending.length && !note) return null;
+  return (
+    <div aria-label="Pending attachments" className="text-xs">
+      <div className={`grid grid-cols-2 gap-1 ${expanded ? "max-h-32 overflow-y-auto" : ""}`}>
+        {pending.slice(0, count).map((draft, index) => {
+          const a = toAttachmentInput(draft);
+          const hash = hashes?.docs[a.path];
+          const locked =
+            a.path.startsWith("doc/loom/knowledge/") ||
+            lockedPath(a.path, tree ? Object.values(tree).flat() : []);
+          return (
+            <Chip
+              key={keys[index]}
+              attachment={a}
+              quote={draft.text}
+              locked={locked}
+              changed={draft.hash !== null && hash !== undefined && draft.hash !== hash}
+              onOpen={() => open(a)}
+              onRemove={() =>
+                store.set(pendingAttachmentsAtom, (all) => all.filter((_, at) => at !== index))
+              }
+            />
+          );
+        })}
+        {count < pending.length && (
+          <button type="button" aria-expanded={false} onClick={() => setExpanded(true)}>
+            +{pending.length - count} more
+          </button>
+        )}
+      </div>
+      {expanded && pending.length > 4 && (
+        <button type="button" aria-expanded={true} onClick={() => setExpanded(false)}>
+          Show fewer attachments
+        </button>
+      )}
+      {note && <p role="status">{note}</p>}
+    </div>
+  );
+}
+
+function useTurnSections(turn: Turn) {
+  const snapshot = useAtomValue(snapshotAtom);
+  const epoch = useAtomValue(connectionEpochAtom);
+  const matches = (entry: Turn) => entry.id === turn.id && entry.started_at === turn.started_at;
+  // Turn ids and start times can repeat across sessions, so object identity decides first.
+  const session = snapshot.turns.includes(turn)
+    ? snapshot.session?.id
+    : snapshot.previous?.turns.includes(turn)
+      ? snapshot.previous.session.id
+      : snapshot.turns.some(matches)
+        ? snapshot.session?.id
+        : snapshot.previous?.turns.some(matches)
+          ? snapshot.previous.session.id
+          : snapshot.session?.id;
+  const [result, setResult] = useState<{
+    key: string;
+    files?: TurnSectionsResponse["files"];
+    error?: string;
+  } | null>(null);
+  const key = `${session}/${turn.id}/${epoch}/${turn.open}`;
+  useEffect(() => {
+    if (turn.open || !session) return;
+    let live = true;
+    void getTurnSections(session, turn.id).then((response) => {
+      if (live)
+        setResult(
+          response.ok ? { key, files: response.value.files } : { key, error: response.message },
+        );
+    });
+    return () => {
+      live = false;
+    };
+  }, [session, turn.id, turn.open, key]);
+  return { result: result?.key === key ? result : null, session };
+}
+
+export function SentChips({ item, turn }: { item: Extract<Item, { type: "user" }>; turn: Turn }) {
+  const { result, session } = useTurnSections(turn);
+  const open = useOpenChip();
+  if (!item.attachments.length) return null;
+  return (
+    <div aria-label="Sent attachments" className="flex flex-wrap gap-1 text-xs">
+      {item.attachments.map((a, index) => {
+        const changed = result?.files?.some(
+          (file) => file.path === a.path && (a.anchor === null || file.anchors.includes(a.anchor)),
+        );
+        const href =
+          openDiff("turn", a.path, `${session}/${turn.id}`) +
+          (a.anchor ? `#${encodeURIComponent(a.anchor)}` : "");
+        return (
+          <Chip
+            key={index}
+            attachment={a}
+            quote={a.quote}
+            changed={a.changed_since_selected}
+            locked={a.locked !== null}
+            onOpen={() => open(a)}
+          >
+            {result?.files &&
+              (changed ? (
+                <Link to={href} className="text-(--tone-warning)">
+                  △ changed in this turn
+                </Link>
+              ) : (
+                <span className="text-muted-foreground">unchanged</span>
+              ))}
+          </Chip>
+        );
+      })}
+      {!turn.open && !result && <LoadState state="loading" message="Checking attached passages…" />}
+      {result?.error && (
+        <>
+          <LoadState state="error" />
+          <p role="status">
+            <Untrusted text={result.error} />
+          </p>
+        </>
+      )}
+    </div>
+  );
+}

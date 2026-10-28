@@ -1,0 +1,110 @@
+/* Chat uses the dashboard body face. Chrome is compact; transcript prose has a 1.5 rhythm.
+ * Import beside the panel, as concept.css is imported by its reading column.
+ */
+.chat-panel,
+.chat-rail,
+.chat-sheet {
+  box-sizing: border-box;
+  min-width: 0;
+  min-height: 0;
+  background: var(--card);
+  color: var(--foreground);
+  font-family: var(--font-sans), Inter, sans-serif;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.chat-panel {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  border-inline-start: 1px solid var(--hairline);
+}
+
+.chat-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  width: 2.5rem;
+  height: 100%;
+  padding-block: 12px;
+  border-inline-start: 1px solid var(--hairline);
+}
+
+.chat-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  height: 100%;
+  max-height: 100dvh;
+}
+
+.chat-panel [role="log"],
+.chat-sheet [role="log"],
+.chat-message {
+  min-width: 0;
+  font-family: var(--font-sans), Inter, sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.chat-panel header,
+.chat-sheet header,
+.chat-connection-banner,
+.chat-last-update {
+  font-size: 12px;
+  font-weight: 500;
+}
+
+.chat-connection-banner {
+  flex-shrink: 0;
+  padding: 8px 12px;
+  border-block: 1px solid var(--hairline);
+  overflow-wrap: anywhere;
+}
+
+.chat-connection-banner p + p {
+  margin-block-start: 4px;
+}
+
+.chat-dim {
+  opacity: 0.65;
+}
+
+.chat-last-update {
+  padding: 4px 12px;
+  color: var(--muted-foreground);
+}
+
+.chat-resize-handle {
+  position: absolute;
+  z-index: 1;
+  inset-block: 0;
+  inset-inline-start: -4px;
+  width: 8px;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.chat-resize-handle:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: -2px;
+}
+
+@media (max-width: 63.999rem) {
+  .chat-sheet .chat-resize-handle {
+    display: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :is(.chat-panel, .chat-rail, .chat-sheet) .aurora-roundel,
+  :is(.chat-panel, .chat-rail, .chat-sheet) .aurora-roundel[data-busy="true"] {
+    animation: none;
+    transition: none;
+    transform: rotate(0turn);
+  }
+}

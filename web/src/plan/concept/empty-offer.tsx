@@ -1,29 +1,33 @@
-import { useAtomValue } from "jotai/react";
+import { useAtomValue } from "jotai";
 
-import { canAuthorAtom } from "@/plan/state/atoms";
-import { DisabledReason } from "@/plan/ui/disabled-reason";
-
-/** Section 01's offer labels; an id outside the table falls back to a generic label. */
-const OFFER_LABELS: Record<string, string> = {
-  "start-vision": "Start the product vision",
-  "start-metaplan": "Start a metaplan from the product spec",
-};
-
-/** `DisabledReason` never calls it while its reason is set, which is always here. */
-function blockedClick(): void {}
+import { Untrusted } from "@/plan/chat/visible-controls";
+import { OfferButton } from "@/plan/offers/offer-button";
+import { canAuthorAtom, checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 /**
- * An empty-state offer. Chat does not exist yet, so the button stays disabled with its reason
- * as the accessible description (plan 9 replaces the body, keeping `{ offer }`). A browser
- * that cannot author sees the label as text.
+ * The offer as a button for the holder, or while nobody holds authoring; text for viewers and in
+ * read-only mode. The button runs the registered handler, which asks before replacing a running chat.
  */
 export function EmptyOffer({ offer }: { offer: string }) {
+  const checklist = useAtomValue(checklistAtom);
   const canAuthor = useAtomValue(canAuthorAtom);
-  const label = OFFER_LABELS[offer] ?? "Start";
-  if (!canAuthor) return <span className="text-[13px] text-muted-foreground">{label}</span>;
+  const server = useAtomValue(serverInfoAtom);
+  const entry = [
+    checklist?.primary,
+    ...(checklist?.secondary ?? []),
+    ...(checklist?.items.map((item) => item.offer) ?? []),
+  ].find((candidate) => candidate?.id === offer);
+  if (!entry) return null;
+  if (!canAuthor || (server?.read_only.length ?? 0) > 0) {
+    return (
+      <span className="text-[13px] text-muted-foreground">
+        <Untrusted text={entry.label} />
+      </span>
+    );
+  }
   return (
-    <DisabledReason reason="Available once chat is built" onClick={blockedClick}>
-      {label}
-    </DisabledReason>
+    <div className="text-[13px]">
+      <OfferButton offer={entry} />
+    </div>
   );
 }

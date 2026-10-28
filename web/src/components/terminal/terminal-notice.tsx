@@ -54,7 +54,7 @@ function refusedText(reason: string | undefined, terminals: boolean): string {
   return reason ?? "refused";
 }
 
-function Stamp({
+export function Stamp({
   since,
   word,
   action,
