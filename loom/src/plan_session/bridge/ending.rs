@@ -1,19 +1,18 @@
 //! Ending sessions: when an end is due, liveness, the teardown and its failure rules, the
-//! marker end and its release, drain and abort.
+//! marker end and its release.
 //!
 //! Teardown denies what is still pending first, then ends the tmux server; a failed teardown
 //! keeps the record and the directory (never destroy the only handle) and is retried while
 //! the process lives. Only then are verified children terminated and the directory removed,
 //! except after a marker end, which keeps both until `release_session` (px-seams-01).
 
-use std::thread;
 use std::time::{Duration, Instant};
 
 use super::commands::Step;
 use super::registry::{remove_session_dir, terminate_children, ChildRecord};
 use super::requests::GONE;
 use super::session::{Closing, Phase, Session, ENDED_KEPT};
-use super::{Bridge, BridgeError, BridgeEvent, EndCause, EndMode, EndOutcome};
+use super::{Bridge, BridgeError, BridgeEvent, EndMode, EndOutcome};
 use crate::plan_session::kind::{SessionDir, SessionKind};
 use crate::plan_session::model::{DenyReason, Failure, FailureKind, SessionState};
 use crate::plan_session::state::Input;
@@ -22,6 +21,9 @@ use crate::process::IdentityStatus;
 /// How much longer than `final_write_bound` drain and recovery wait for the last teardowns.
 pub(super) const END_SLACK: Duration = Duration::from_secs(5);
 const DIED: &str = "The session stopped unexpectedly";
+/// The start of every `EndOutcome::Failed` message whose teardown failed (the server's
+/// terminal line tells those apart).
+pub const TEARDOWN_FAILED: &str = "teardown failed";
 
 /// What a claimed teardown needs after the lock.
 pub(super) struct Teardown {
@@ -65,7 +67,10 @@ impl Bridge {
     }
 
     /// Every `identity_interval`: a dead process ends or fails the session; a failed
-    /// teardown is retried while the process still verifies alive.
+    /// teardown is retried while the process still verifies alive. A spawn that failed before
+    /// its process was recorded has only its socket: its teardown is retried until it ends
+    /// whatever still listens there (`teardown_socket` succeeds on a gone socket), as recovery
+    /// does with such a record.
     pub(super) fn identity_step(&self, id: &str) {
         let interval = self.config.identity_interval;
         let check = self.with_session(id, |session, _| {
@@ -75,9 +80,15 @@ impl Bridge {
             }
             session.next_identity = Instant::now() + interval;
             let failed = matches!(session.phase, Phase::TeardownFailed);
-            session.record.identity().map(|identity| (identity, failed))
+            Some((session.record.identity(), failed))
         });
         let Some(Some((identity, failed))) = check else {
+            return;
+        };
+        let Some(identity) = identity else {
+            if failed {
+                self.retry_teardown(id);
+            }
             return;
         };
         match (self.host.identity(identity), failed) {
@@ -135,8 +146,8 @@ impl Bridge {
             return;
         };
         if let Err(error) = self.host.teardown(&teardown.socket) {
-            let message = format!("teardown failed: {error:#}");
-            return self.teardown_failed(id, kind, message);
+            // The failure's cause stays in the message the browser and `Ended` carry.
+            return self.teardown_failed(id, kind, format!("{error:#} (after: {message})"));
         }
         terminate_children(&teardown.children);
         self.conclude(id, EndOutcome::Failed(message), Some(Phase::Leftover));
@@ -145,8 +156,7 @@ impl Bridge {
     pub(super) fn finish_teardown(&self, id: &str, outcome: EndOutcome, teardown: Teardown) {
         if teardown.spawned {
             if let Err(error) = self.host.teardown(&teardown.socket) {
-                let message = format!("teardown failed: {error:#}");
-                return self.teardown_failed(id, FailureKind::Died, message);
+                return self.teardown_failed(id, FailureKind::Died, format!("{error:#}"));
             }
         }
         let keep = outcome == EndOutcome::Marker;
@@ -159,8 +169,10 @@ impl Bridge {
         self.conclude(id, outcome, keep.then_some(Phase::AwaitRelease));
     }
 
-    /// Failed, record and directory kept; the event goes out once (px-state-18).
-    pub(super) fn teardown_failed(&self, id: &str, kind: FailureKind, message: String) {
+    /// Failed, record and directory kept; the event goes out once (px-state-18). The failure
+    /// message is [`TEARDOWN_FAILED`] and `detail`.
+    pub(super) fn teardown_failed(&self, id: &str, kind: FailureKind, detail: String) {
+        let message = format!("{TEARDOWN_FAILED}: {detail}");
         tracing::warn!(session = %id, %message, "session teardown failed");
         let first = self.with_session(id, |session, _| {
             let first = session.forced != Some(SessionState::Failed);
@@ -261,68 +273,6 @@ impl Bridge {
         }
         Ok(())
     }
-
-    /// First Ctrl-C: final writes for authoring sessions, summary sessions finish their task,
-    /// pressure sessions are torn down; returns when all ended or the bound passed.
-    pub fn drain(&self) {
-        let running: Vec<(String, SessionKind)> = {
-            let mut inner = self.lock();
-            inner.stopping = true;
-            let active = inner.sessions.values().filter(|session| session.active());
-            active.map(|s| (s.id.clone(), s.kind.clone())).collect()
-        };
-        for (id, kind) in &running {
-            let mode = match kind {
-                SessionKind::Pressure { .. } => EndMode::Teardown,
-                _ => EndMode::FinalWrite,
-            };
-            if let Err(error) = self.end(id, mode, EndCause::Draining) {
-                tracing::debug!(session = %id, %error, "drain did not end the session");
-            }
-        }
-        let ids: Vec<String> = running.into_iter().map(|(id, _)| id).collect();
-        let deadline = Instant::now() + self.config.final_write_bound + END_SLACK;
-        self.wait_ended(&ids, deadline);
-    }
-
-    /// Second Ctrl-C: tear every session down now, from the calling thread.
-    pub fn abort(&self) {
-        let ids: Vec<String> = {
-            let mut inner = self.lock();
-            inner.stopping = true;
-            inner.sessions.keys().cloned().collect()
-        };
-        for id in &ids {
-            let claimed = self.with_session(id, |session, step| match session.phase {
-                Phase::Live | Phase::Spawning(_) | Phase::TeardownFailed => {
-                    Some(session.begin_teardown(DenyReason::ServerStopping, step))
-                }
-                _ => None,
-            });
-            if let Some(Some(teardown)) = claimed {
-                self.finish_teardown(id, EndOutcome::TornDown, teardown);
-            }
-            if let Err(BridgeError::Io(error)) = self.release_session(id) {
-                tracing::warn!(session = %id, %error, "cannot release a marker-ended session");
-            }
-        }
-        self.flush();
-    }
-
-    /// Wait until none of `ids` is still running, or the deadline.
-    pub(super) fn wait_ended(&self, ids: &[String], deadline: Instant) {
-        while Instant::now() < deadline {
-            let running = {
-                let inner = self.lock();
-                ids.iter()
-                    .any(|id| inner.sessions.get(id).is_some_and(Session::active))
-            };
-            if !running {
-                return;
-            }
-            thread::sleep(self.config.tick);
-        }
-    }
 }
 
 impl Session {
@@ -354,7 +304,9 @@ impl Session {
         due.then_some((EndOutcome::TornDown, reason))
     }
 
-    /// Deny what is pending and claim the session for its teardown.
+    /// Deny what is pending, drop what was never pasted and claim the session for its
+    /// teardown. An end nobody asked for (the process died, a `SessionEnd`) has no caller to
+    /// return the queue to: it is cleared, and the tabs hear it.
     pub(super) fn begin_teardown(&mut self, reason: DenyReason, step: &mut Step) -> Teardown {
         let message = match self.flow.end.as_ref().and_then(|plan| plan.deny_new) {
             Some((_, message)) if reason != DenyReason::SessionEnded => message,
@@ -362,6 +314,7 @@ impl Session {
             _ => GONE,
         };
         self.deny_open(reason, message, step);
+        self.return_unsent(step);
         let spawned = matches!(self.phase, Phase::Live | Phase::TeardownFailed);
         self.phase = Phase::TearingDown;
         Teardown {

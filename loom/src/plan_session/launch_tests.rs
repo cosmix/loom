@@ -12,7 +12,7 @@ use serial_test::serial;
 use tempfile::TempDir;
 
 use super::*;
-use crate::orchestrator::terminal::tmux::socket::tests::TmuxServerGuard;
+use crate::orchestrator::terminal::tmux::socket::tests::{TmuxServerGuard, TmuxTmpDirGuard};
 use crate::orchestrator::terminal::tmux::socket_path_for;
 use crate::plan_session::bridge::LaunchGuidance;
 use crate::plan_session::kind::{SessionDir, SessionKind};
@@ -263,5 +263,31 @@ fn a_launch_whose_claude_exits_at_once_is_torn_down_and_reported() {
     assert!(
         !socket_path_for(&f.spec.socket).exists(),
         "the half-started server's socket survived"
+    );
+}
+
+#[test]
+#[serial]
+fn a_teardown_that_fails_after_a_partial_spawn_is_a_typed_error() {
+    let dir = tempfile::tempdir().unwrap();
+    let _pin = TmuxTmpDirGuard::set(dir.path());
+    let socket = "loom-plan-0123456789ab";
+    let path = socket_path_for(socket);
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    // A plain file, no server: kill-server fails whether or not tmux is installed.
+    fs::write(&path, b"").unwrap();
+    let error = abandon(socket, anyhow::anyhow!("no start time"));
+    let failed = error.downcast_ref::<TeardownFailed>();
+    let failed = failed.expect("a failed teardown must be a TeardownFailed");
+    assert_eq!(failed.error.to_string(), "no start time");
+    assert!(
+        format!("{:#}", failed.teardown).contains(socket),
+        "{error:#}"
+    );
+    assert!(path.exists(), "the socket path was removed");
+    let gone = abandon("loom-plan-ba9876543210", anyhow::anyhow!("no start time"));
+    assert!(
+        gone.downcast_ref::<TeardownFailed>().is_none(),
+        "a teardown with nothing to end failed: {gone:#}"
     );
 }

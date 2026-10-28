@@ -5,11 +5,11 @@ pub mod script;
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
 
-use anyhow::{anyhow, Context, Result};
+use anyhow::{Context, Result};
 
 use crate::fs::safe_fs::{safe_open_dirfd, safe_write_with_mode_in_workdir};
 use crate::orchestrator::terminal::tmux::{spawn_in_tmux, teardown_socket};
-use crate::plan_session::bridge::host::{LaunchSpec, Spawned};
+use crate::plan_session::bridge::host::{LaunchSpec, Spawned, TeardownFailed};
 use crate::plan_session::sandbox::{write_session_sandbox, SandboxInputs};
 use crate::plan_session::spool::SPOOL_EVENTS;
 use crate::plan_session::tmux_io::pane_pid;
@@ -20,7 +20,7 @@ const LAUNCH_SCRIPT_MODE: libc::mode_t = 0o700;
 
 /// Write the session's sandbox and `launch.sh`, start its tmux server and read the identity of
 /// the pane's process. A failure once the server may exist tears the server down first, so an
-/// error leaves nothing running (`SessionHost::spawn`).
+/// error leaves nothing running (`SessionHost::spawn`) unless it is a [`TeardownFailed`].
 pub fn launch(spec: &LaunchSpec) -> Result<Spawned> {
     let script = prepare(spec)?;
     match start(spec, &script) {
@@ -79,14 +79,17 @@ fn start(spec: &LaunchSpec, script: &Path) -> Result<ProcessIdentity> {
     })
 }
 
-/// Tear down a half-started server (`mistakes/tmux-backend.md`); a teardown failure joins the
-/// error instead of being swallowed.
+/// Tear down a half-started server (`mistakes/tmux-backend.md`). A failed teardown may leave
+/// the server running: the error is then a [`TeardownFailed`], which the bridge answers by
+/// keeping the session's directory and record instead of clearing them.
 fn abandon(socket: &str, error: anyhow::Error) -> anyhow::Error {
     match teardown_socket(socket) {
         Ok(()) => error,
-        Err(teardown) => anyhow!(
-            "{error:#}; tearing down the tmux server on socket '{socket}' also failed: {teardown:#}"
-        ),
+        Err(teardown) => {
+            let server = format!("the tmux server on socket '{socket}'");
+            let teardown = teardown.context(server);
+            anyhow::Error::new(TeardownFailed { error, teardown })
+        }
     }
 }
 

@@ -10,8 +10,9 @@ type Task = Box<dyn FnOnce() + Send>;
 type Report = Arc<dyn Fn(&str) + Send + Sync>;
 
 /// A component's part in shutdown. `drain` runs on its own thread and may
-/// block until the component has finished its work; `abort` must return
-/// fast and make a running `drain` return.
+/// block until the component has finished its work; `abort` makes a running
+/// `drain` return and must return within a bound it states: the session
+/// bridge's waits up to 30 s (`LAUNCH_WAIT`) for a launch in flight.
 pub struct ShutdownHook {
     pub name: &'static str,
     pub drain: Box<dyn FnOnce() + Send>,

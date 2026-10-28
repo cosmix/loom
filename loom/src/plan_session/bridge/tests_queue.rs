@@ -165,6 +165,56 @@ fn interrupt_needs_a_running_turn_and_presses_once() {
 }
 
 #[test]
+fn a_second_interrupt_after_the_press_presses_nothing() {
+    let h = Harness::ready(|_| {});
+    let s = h.idle(Authoring);
+    let press = Call::Interrupt(s.socket.clone());
+    h.working(&s);
+    assert_eq!(h.bridge.interrupt(&s.id).unwrap(), Vec::<String>::new());
+    wait_until("the press", || h.host.count(&press) == 1);
+    assert_eq!(h.bridge.interrupt(&s.id).unwrap(), Vec::<String>::new());
+    settle();
+    assert_eq!(
+        h.host.count(&press),
+        1,
+        "a second Escape opens the rewind picker"
+    );
+}
+
+#[test]
+fn an_interrupt_returns_a_message_accepted_at_idle_and_not_yet_pasted() {
+    let h = Harness::ready(|_| {});
+    let s = h.idle(Authoring);
+    let content = "<task-notification>\n<task-id>b1</task-id>";
+    let notification = json!({"type": "user", "message": {"role": "user", "content": content},
+        "origin": {"kind": "task-notification"}});
+    let line = record_line(notification, &s.id);
+    // One locked step, so the driver cannot paste in between: A is accepted at Idle, then the
+    // notification's turn starts and holds it.
+    let sent = h.bridge.with_session(&s.id, |session, step| {
+        let sent = session.send("A".to_owned(), Vec::new(), step);
+        session.ingest_main(&line, step);
+        sent
+    });
+    h.bridge.flush();
+    assert!(
+        matches!(sent, Some(Ok(SendOutcome::Delivering { .. }))),
+        "{sent:?}"
+    );
+    h.wait_state(&s, SessionState::Working);
+    assert_eq!(h.bridge.interrupt(&s.id).unwrap(), ["A"]);
+    h.record(&s, interrupted());
+    h.wait_state(&s, SessionState::Idle);
+    settle();
+    assert_eq!(
+        h.sent(&s),
+        Vec::<String>::new(),
+        "A was pasted at the interrupt's idle"
+    );
+    assert_eq!(delivery(&h, "A"), Some(Delivery::Undelivered));
+}
+
+#[test]
 fn sends_and_withdrawals_are_refused_while_ending() {
     let h = Harness::ready(|_| {});
     let s = h.idle(Authoring);
