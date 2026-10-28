@@ -52,6 +52,7 @@
 | [planning-document-model](architecture/planning-document-model.md) | Doc model | 173 |
 | [planning-guidance](architecture/planning-guidance.md) |  | 35 |
 | [planning-session-bridge](architecture/planning-session-bridge.md) | Bridge | 187 |
+| [planning-session-bridge](architecture/planning-session-bridge.md) | Planning bridge: tmux, spool, chat model | 186 |
 | [planning-session-sandbox](architecture/planning-session-sandbox.md) | Plan sandbox | 135 |
 | [quota-poller](architecture/quota-poller.md) | Polling | 35 |
 | [remote-control](architecture/remote-control.md) | Capability | 81 |
@@ -122,7 +123,7 @@
 | --- | --- | --- |
 | [adjudication-autonomy-deadlock](mistakes/adjudication-autonomy-deadlock.md) |  | 230 |
 | [ambient-filesystem-trust](mistakes/ambient-filesystem-trust.md) |  | 156 |
-| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Briefs, bugs | 325 |
+| [briefs-and-bug-reports](mistakes/briefs-and-bug-reports.md) | Briefs, bugs | 365 |
 | [ci-toolchain-and-cargo](mistakes/ci-toolchain-and-cargo.md) | CI drift | 353 |
 | [codex-direct-mode-invisible](mistakes/codex-direct-mode-invisible.md) |  | 23 |
 | [codex-lane-rogue-wrapper](mistakes/codex-lane-rogue-wrapper.md) |  | 177 |
