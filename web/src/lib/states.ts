@@ -4,10 +4,11 @@ import {
   CircleIcon,
   CircleQuestionMarkIcon,
   CircleXIcon,
+  HourglassIcon,
   PauseIcon,
   PlayIcon,
   RotateCwIcon,
-  ScaleIcon,
+  SplitIcon,
   TriangleAlertIcon,
   XIcon,
   ZapIcon,
@@ -26,7 +27,7 @@ export type StageStateMeta = {
 };
 
 const STATE_ICONS: Record<StageStatus, LucideIcon> = {
-  "waiting-for-deps": CircleIcon,
+  "waiting-for-deps": HourglassIcon,
   queued: PlayIcon,
   executing: CircleIcon,
   "waiting-for-input": CircleQuestionMarkIcon,
@@ -38,7 +39,7 @@ const STATE_ICONS: Record<StageStatus, LucideIcon> = {
   "merge-conflict": ZapIcon,
   "merge-blocked": CircleXIcon,
   "needs-human-review": PauseIcon,
-  "needs-adjudication": ScaleIcon,
+  "needs-adjudication": SplitIcon,
 };
 
 // Labels and order follow the Rust fixture; dashboard icons use Lucide.
