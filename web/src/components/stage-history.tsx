@@ -1,15 +1,17 @@
 import { cn } from "cn";
 import { ChevronRight, ChevronUp, History } from "lucide-react";
-import { useState, type Ref } from "react";
+import { useId, useState, type Ref } from "react";
 
 import type { Attention, StageSummary } from "@/api/schema";
 import {
   RECENT_EVENTS,
   historyCounts,
+  hasFailure,
   historyEvents,
   type HistoryEvent,
   type HistoryMark,
 } from "@/components/stage-history-model";
+import { DisclosureHeading, useDisclosure } from "@/components/use-disclosure";
 import { toneClass } from "@/components/state-badge";
 import { LinesBox } from "@/components/text-box";
 import { Button } from "@/components/ui/button";
@@ -18,7 +20,8 @@ import { STAGE_STATES } from "@/lib/states";
 
 /// Every issue the stage has had, newest first on one spine: the live one
 /// marked current, the archived ones with how they ended. Shows the newest
-/// few until asked for all. Renders nothing for a stage with no issues.
+/// few until asked for all. Folded unless the history holds a failure, until
+/// the reader toggles it. Renders nothing for a stage with no issues.
 export function HistoryCard({
   stage,
   entry,
@@ -30,6 +33,8 @@ export function HistoryCard({
 }) {
   const [all, setAll] = useState(false);
   const events = historyEvents(stage, entry);
+  const [open, toggle] = useDisclosure(hasFailure(events));
+  const panel = useId();
   if (events.length === 0) return null;
   const shown = all ? events : events.slice(0, RECENT_EVENTS);
   const noun = events.length === 1 ? "event" : "events";
@@ -39,31 +44,35 @@ export function HistoryCard({
         <span className="ledger-icon">
           <History aria-hidden="true" className="size-3" />
         </span>
-        <h2 className="eyebrow">history</h2>
+        <DisclosureHeading label="history" open={open} panel={panel} onToggle={toggle} />
         <span className="ml-auto text-xs text-muted-foreground">
           {events.length} {noun} · newest first
         </span>
       </header>
-      <ol className="history-list">
-        {shown.map((event, index) => (
-          <HistoryItem key={event.key} event={event} last={index === shown.length - 1} />
-        ))}
-      </ol>
-      <footer className="history-foot">
-        <span className="text-xs text-muted-foreground">{historyCounts(events)}</span>
-        {events.length > RECENT_EVENTS && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            aria-expanded={all}
-            onClick={() => setAll((open) => !open)}
-          >
-            {all ? <ChevronUp aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
-            {all ? "Collapse to recent" : `Show all ${events.length} events`}
-          </Button>
-        )}
-      </footer>
+      {open && (
+        <div id={panel}>
+          <ol className="history-list">
+            {shown.map((event, index) => (
+              <HistoryItem key={event.key} event={event} last={index === shown.length - 1} />
+            ))}
+          </ol>
+          <footer className="history-foot">
+            <span className="text-xs text-muted-foreground">{historyCounts(events)}</span>
+            {events.length > RECENT_EVENTS && (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                aria-expanded={all}
+                onClick={() => setAll((value) => !value)}
+              >
+                {all ? <ChevronUp aria-hidden="true" /> : <ChevronRight aria-hidden="true" />}
+                {all ? "Collapse to recent" : `Show all ${events.length} events`}
+              </Button>
+            )}
+          </footer>
+        </div>
+      )}
     </section>
   );
 }

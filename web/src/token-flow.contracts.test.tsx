@@ -1,4 +1,4 @@
-import { cleanup, render, screen, within } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { createMemoryRouter, RouterProvider } from "react-router";
@@ -78,6 +78,7 @@ it("token flow stage dialog shows one lane per agent including codex jobs", () =
   renderAt("/?stage=server");
 
   const dialog = screen.getByRole("dialog");
+  fireEvent.click(within(dialog).getByRole("button", { name: "tokens" }));
   const lanes = within(dialog).queryAllByTestId("token-lane");
   expect(lanes).toHaveLength(3);
   expect(lanes.filter((lane) => lane.textContent?.includes("codex"))).toHaveLength(1);

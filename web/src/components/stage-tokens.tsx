@@ -1,4 +1,5 @@
 import { useAtomValue } from "jotai/react";
+import { useId } from "react";
 
 import type { AgentFlow, StageFlow, TokenFlow } from "@/api/schema";
 import { HeatStrip, Sparkline } from "@/components/sparkline";
@@ -17,6 +18,7 @@ import {
   rollingRate,
   stageFlow,
 } from "@/lib/tokens";
+import { DisclosureHeading, useDisclosure } from "@/components/use-disclosure";
 import { snapshotAtom } from "@/state/atoms";
 
 const RAMP = [0, 1, 2, 3, 4];
@@ -196,11 +198,14 @@ function CodexCluster({
 }
 
 /// The stage's token flow: headline chips and one heat-strip lane per agent,
-/// each forwarder and its codex job clustered last.
+/// each forwarder and its codex job clustered last. Folded to the fresh-rate
+/// sparkline until the reader opens it.
 /// Renders nothing for a stage the tracker has not seen.
 export function StageTokens({ stageId }: { stageId: string }) {
   const tokens = useAtomValue(snapshotAtom)?.status.tokens;
   const flow = stageFlow(tokens, stageId);
+  const [open, toggle] = useDisclosure(false);
+  const panel = useId();
   if (!tokens || !flow) return null;
 
   const { lanes, max } = laneSeries(flow);
@@ -217,28 +222,43 @@ export function StageTokens({ stageId }: { stageId: string }) {
       className="flex flex-col gap-2.5 rounded-lg border border-hairline bg-card p-4"
     >
       <div className="flex items-center justify-between gap-3">
-        <h2 className="eyebrow">tokens</h2>
-        <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
-          <span>30 s cells</span>
-          <span className="font-mono tabular-nums">0</span>
-          <HeatStrip
-            values={RAMP}
-            max={4}
-            label={`intensity, 0 to ${max} fresh tokens per 30 s`}
-            className="w-16"
-          />
-          <span className="font-mono tabular-nums">{compactTokens(max)}</span>
-        </div>
+        <DisclosureHeading label="tokens" open={open} panel={panel} onToggle={toggle} />
+        {open && (
+          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+            <span>30 s cells</span>
+            <span className="font-mono tabular-nums">0</span>
+            <HeatStrip
+              values={RAMP}
+              max={4}
+              label={`intensity, 0 to ${max} fresh tokens per 30 s`}
+              className="w-16"
+            />
+            <span className="font-mono tabular-nums">{compactTokens(max)}</span>
+          </div>
+        )}
       </div>
-      <Chips tokens={tokens} flow={flow} />
-      <ul className="flex flex-col gap-2.5">
-        {plain.map(({ agent, series }) => (
-          <Lane key={agent.id} agent={agent} series={series} max={max} />
-        ))}
-        {clusters.map((cluster) => (
-          <CodexCluster key={cluster[0]?.agent.id} rows={cluster} max={max} />
-        ))}
-      </ul>
+      {open ? (
+        <div id={panel} className="flex flex-col gap-2.5">
+          <Chips tokens={tokens} flow={flow} />
+          <ul className="flex flex-col gap-2.5">
+            {plain.map(({ agent, series }) => (
+              <Lane key={agent.id} agent={agent} series={series} max={max} />
+            ))}
+            {clusters.map((cluster) => (
+              <CodexCluster key={cluster[0]?.agent.id} rows={cluster} max={max} />
+            ))}
+          </ul>
+        </div>
+      ) : (
+        <Sparkline
+          values={chipTrends(tokens, flow).rate}
+          width={96}
+          height={24}
+          stretch
+          label="fresh rate, last 30 min"
+          className="text-(--tone-executing)"
+        />
+      )}
     </section>
   );
 }

@@ -366,6 +366,31 @@
     rotate: 90deg;
   }
 
+  /* A section heading that folds its card. */
+  .disclosure-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 4px;
+    text-transform: inherit;
+    letter-spacing: inherit;
+    cursor: pointer;
+  }
+  .disclosure-toggle:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 1.5px var(--ring);
+  }
+  .disclosure-chevron {
+    width: 12px;
+    height: 12px;
+    flex-shrink: 0;
+    color: var(--muted-foreground);
+    transition: rotate 150ms ease;
+  }
+  .disclosure-toggle[aria-expanded="true"] .disclosure-chevron {
+    rotate: 90deg;
+  }
+
   /* The hazard strip's detail beside the label wraps instead of being cut; its
    * slot is let shrink with the kit's `actionClassName`. */
   .attention-detail {
@@ -376,6 +401,7 @@
 
 @media (prefers-reduced-motion: reduce) {
   .details-chevron,
+  .disclosure-chevron,
   .thread-chip {
     transition: none;
   }

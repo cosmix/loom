@@ -1,4 +1,4 @@
-import { act, cleanup, render, screen, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
 import { createStore } from "jotai";
 import { Provider } from "jotai/react";
 import { afterEach, describe, expect, it } from "vitest";
@@ -10,23 +10,42 @@ import { applySnapshot } from "@/state/apply";
 
 afterEach(cleanup);
 
-function renderTokens(stageId: string, mutate?: (raw: typeof fixtureJson) => void) {
+function renderTokens(stageId: string, mutate?: (raw: typeof fixtureJson) => void, open = true) {
   const raw = structuredClone(fixtureJson);
   mutate?.(raw);
   const store = createStore();
   applySnapshot(store, snapshotSchema.parse(raw));
-  return {
-    raw,
-    store,
-    ...render(
-      <Provider store={store}>
-        <StageTokens stageId={stageId} />
-      </Provider>,
-    ),
-  };
+  const view = render(
+    <Provider store={store}>
+      <StageTokens stageId={stageId} />
+    </Provider>,
+  );
+  if (open) fireEvent.click(screen.getByRole("button", { name: "tokens" }));
+  return { raw, store, ...view };
 }
 
 describe("StageTokens", () => {
+  it("folds to the fresh-rate sparkline until opened, then keeps the reader's choice", () => {
+    const { store, raw } = renderTokens("server", undefined, false);
+
+    const toggle = screen.getByRole("button", { name: "tokens" });
+    expect(toggle.getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getAllByRole("img", { name: "fresh rate, last 30 min" })).toHaveLength(1);
+    expect(screen.queryAllByTestId("token-lane")).toHaveLength(0);
+    expect(screen.queryByText("agents live")).toBeNull();
+
+    fireEvent.click(toggle);
+    expect(toggle.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getAllByTestId("token-lane")).toHaveLength(3);
+    expect(screen.getByText("agents live")).toBeTruthy();
+
+    act(() => applySnapshot(store, snapshotSchema.parse(raw)));
+    expect(screen.getAllByTestId("token-lane")).toHaveLength(3);
+
+    fireEvent.click(toggle);
+    expect(screen.queryAllByTestId("token-lane")).toHaveLength(0);
+  });
+
   it("renders one lane per agent with a codex marker on the codex job", () => {
     renderTokens("server");
 
@@ -268,7 +287,7 @@ describe("StageTokens", () => {
   });
 
   it("renders nothing for a stage without a flow", () => {
-    renderTokens("not-a-stage");
+    renderTokens("not-a-stage", undefined, false);
 
     expect(screen.queryByRole("region", { name: "stage tokens" })).toBeNull();
     expect(screen.queryAllByTestId("token-lane")).toHaveLength(0);
