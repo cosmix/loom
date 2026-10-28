@@ -164,12 +164,16 @@ c8 and c9 failed with "codex direct supervisor state was inconsistent" while fou
 every file. The sandbox denied outbound network (the stage has none), and the `sandbox_violations` for the MCP hosts were
 noise: c2-front succeeded in direct mode under the same denials.
 
-**Why:** forwarders run from the orchestrator's cwd, not the worktree root; direct mode's supervisor state breaks under
-four concurrent units.
+**Why:** forwarders run from the orchestrator's cwd, not the worktree root. The parallelism was first blamed for the
+supervisor failure; a later identical failure in `planning-sandbox` (2026-10-28, forwarder `a553c87ffd6ab3091`) showed the
+real cause: codex printed over 64 KiB of command output in one `item.completed` event, `_codex_direct_events.py` marked
+the stream invalid, the supervisor returned `unknown`/125 with ownership released, and `codex-forward.sh` accepted only
+`unknown:125:true`. c8 and c9 were not re-examined, but nothing ties the failure to concurrency.
 
-**Prevention:** spawn forwarders with the worktree root as cwd; keep concurrent codex units at two or three; after a
-wrapper exit 1, read the written files and run the narrow test before deciding to resend. A failure naming the
-supervisor, with the files complete and tests green, is a lost status, not lost work.
+**Prevention:** spawn forwarders with the worktree root as cwd. After a wrapper exit 1, read the written files and run
+the narrow test before deciding to resend: a failure naming the supervisor, with the files complete and tests green, is a
+lost status, not lost work. Oversized `item.*` events are now skipped and `unknown:125` with either ownership value is an
+accepted END outcome.
 
 **Fix:** c8 and c9 output was accepted after `cargo test --lib` over their modules passed 170 of 170 and review covered
 them.
