@@ -114,6 +114,15 @@ afterEach(() => {
 });
 
 describe("the now card", () => {
+  it("is absent without an attention entry and present with one", () => {
+    renderModal(fixtureStage("server"), []);
+    expect(screen.queryByRole("region", { name: "now" })).toBeNull();
+    cleanup();
+
+    renderModal(fixtureStage("docs"), [fixtureEntry("docs")]);
+    expect(screen.getByRole("region", { name: "now" })).toBeTruthy();
+  });
+
   it("shows only the current merge conflict, never the archived sandbox failure", () => {
     renderModal(fixtureStage("docs", { history: [issue()] }), [fixtureEntry("docs")]);
 
@@ -143,7 +152,9 @@ describe("the now card", () => {
     "gives no failure time while a retry is %s",
     (status) => {
       const failure = fixtureStage("client").failure_info;
-      renderModal(fixtureStage("server", { status, retry_count: 1, failure_info: failure }), []);
+      renderModal(fixtureStage("server", { status, retry_count: 1, failure_info: failure }), [
+        { ...stashEntry("client"), id: "server" },
+      ]);
 
       expect(region("now").queryByText(/^since/)).toBeNull();
     },
@@ -385,5 +396,20 @@ describe("the details disclosure", () => {
 
     expect(toggle.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByRole("region", { name: "identity" })).toBeTruthy();
+  });
+
+  it("opens the sections inside the details card, under its header", () => {
+    renderModal(fixtureStage("server"), []);
+
+    const card = screen.getByRole("region", { name: "details" });
+    fireEvent.click(within(card).getByRole("button", { name: "details" }));
+
+    const identity = screen.getByRole("region", { name: "identity" });
+    expect(card.contains(identity)).toBe(true);
+    const panel = document.getElementById(
+      within(card).getByRole("button", { name: "details" }).getAttribute("aria-controls") ?? "",
+    );
+    expect(panel?.parentElement).toBe(card);
+    expect(panel?.contains(identity)).toBe(true);
   });
 });

@@ -1,4 +1,5 @@
 import { useAtomValue } from "jotai/react";
+import { Coins } from "lucide-react";
 import { useId } from "react";
 
 import type { AgentFlow, StageFlow, TokenFlow } from "@/api/schema";
@@ -218,14 +219,21 @@ export function StageTokens({ stageId }: { stageId: string }) {
   const clusters = codexPairs(rows);
 
   return (
-    <section
-      aria-label="stage tokens"
-      className="flex flex-col gap-2.5 rounded-lg border border-hairline bg-card p-4"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <DisclosureHeading label="tokens" open={open} panel={panel} onToggle={toggle} />
+    <section aria-label="stage tokens" className="ledger-card">
+      <header className="ledger-head">
+        <DisclosureHeading
+          label="tokens"
+          open={open}
+          panel={panel}
+          onToggle={toggle}
+          icon={
+            <span className="ledger-icon">
+              <Coins aria-hidden="true" className="size-3" />
+            </span>
+          }
+        />
         {open && (
-          <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
+          <div className="ml-auto flex items-center gap-2 text-[11px] text-muted-foreground">
             <span>30 s cells</span>
             <span className="font-mono tabular-nums">0</span>
             <HeatStrip
@@ -237,8 +245,8 @@ export function StageTokens({ stageId }: { stageId: string }) {
             <span className="font-mono tabular-nums">{compactTokens(max)}</span>
           </div>
         )}
-      </div>
-      <div id={open ? panel : undefined} className="flex flex-col gap-2.5">
+      </header>
+      <div id={open ? panel : undefined} className="flex flex-col gap-2.5 p-3.5">
         <Chips tokens={tokens} flow={flow} />
         {open && (
           <ul className="flex flex-col gap-2.5">

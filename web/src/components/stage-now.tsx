@@ -29,14 +29,14 @@ function withFailure(stage: StageSummary, entry: Attention): Attention {
 /// state in one sentence, then what its attention entry carries (evidence,
 /// the block's facts, the reason and note verbatim, the numbered commands,
 /// the cleanup warning). The only place a stage's "what to do" appears. It
-/// wears the entry's tone, as the attention card does; the stage's own
-/// without one. "since" dates the live failure, and only while its evidence
-/// is on the card.
-export function NowCard({ stage, entry }: { stage: StageSummary; entry: Attention | undefined }) {
-  const shown = entry && withFailure(stage, entry);
+/// wears the entry's tone, as the attention card does. The report renders it
+/// only for a stage with an entry. "since" dates the live failure, and only
+/// while its evidence is on the card.
+export function NowCard({ stage, entry }: { stage: StageSummary; entry: Attention }) {
+  const shown = withFailure(stage, entry);
   const failure = currentFailure(stage);
-  const since = shown && shown.evidence.length > 0 ? (failure?.detected_at ?? null) : null;
-  const status = entry ? attentionStatus(entry) : stage.status;
+  const since = shown.evidence.length > 0 ? (failure?.detected_at ?? null) : null;
+  const status = attentionStatus(entry);
   return (
     <section
       aria-label="now"
@@ -47,7 +47,7 @@ export function NowCard({ stage, entry }: { stage: StageSummary; entry: Attentio
           <StateGlyph status={status} className="text-xs" />
         </span>
         <h2 className="eyebrow">now</h2>
-        {entry && <span className="now-label">{entry.label}</span>}
+        <span className="now-label">{entry.label}</span>
         {since !== null && (
           <span className="now-since">
             since <Moment at={since} />
@@ -56,9 +56,7 @@ export function NowCard({ stage, entry }: { stage: StageSummary; entry: Attentio
       </header>
       <div className="now-body">
         <p className="leading-normal">{stateSentence(stage)}</p>
-        {shown && (
-          <AttentionBody entry={shown} notes={reviewNotesFor(shown, stage.review_notes)} heading />
-        )}
+        <AttentionBody entry={shown} notes={reviewNotesFor(shown, stage.review_notes)} heading />
       </div>
     </section>
   );

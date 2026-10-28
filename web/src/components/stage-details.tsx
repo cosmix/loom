@@ -60,35 +60,37 @@ export function StageDetails({
   const panel = useId();
   const summary = useId();
   return (
-    <div className="flex flex-col gap-4">
-      <button
-        type="button"
-        className="ledger-card details-toggle"
-        aria-label="details"
-        aria-describedby={summary}
-        aria-expanded={open}
-        aria-controls={open ? panel : undefined}
-        onClick={() => setOpen((value) => !value)}
-      >
-        <ChevronRight aria-hidden="true" className="disclosure-chevron" />
-        <span className="ledger-icon">
-          <Fingerprint aria-hidden="true" className="size-3" />
-        </span>
-        <span className="eyebrow">details</span>
-        <span id={summary} className="details-facts">
-          {facts(stage, level).map((fact) => (
-            <span key={fact.label} className="details-fact">
-              <span className="eyebrow">{fact.label}</span>
-              <span className="font-mono text-xs wrap-anywhere">{fact.value}</span>
-            </span>
-          ))}
-        </span>
-      </button>
+    <section aria-label="details" className="ledger-card">
+      <header className="ledger-head details-head">
+        <button
+          type="button"
+          className="details-toggle"
+          aria-label="details"
+          aria-describedby={summary}
+          aria-expanded={open}
+          aria-controls={open ? panel : undefined}
+          onClick={() => setOpen((value) => !value)}
+        >
+          <ChevronRight aria-hidden="true" className="disclosure-chevron" />
+          <span className="ledger-icon">
+            <Fingerprint aria-hidden="true" className="size-3" />
+          </span>
+          <span className="eyebrow">details</span>
+          <span id={summary} className="details-facts">
+            {facts(stage, level).map((fact) => (
+              <span key={fact.label} className="details-fact">
+                <span className="eyebrow">{fact.label}</span>
+                <span className="font-mono text-xs wrap-anywhere">{fact.value}</span>
+              </span>
+            ))}
+          </span>
+        </button>
+      </header>
       {open && (
-        <div id={panel}>
+        <div id={panel} className="details-panel">
           <StageSectionGrid stage={stage} level={level} wide={wide} />
         </div>
       )}
-    </div>
+    </section>
   );
 }
