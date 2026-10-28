@@ -152,6 +152,9 @@ cases:
     relevant:
       - "architecture/source-graph.md#the-honesty-contract#0"
 
+  # The section moved to the context-retrieval-state topic when
+  # context-retrieval.md was split; the new id was observed at rank 1 on
+  # 2026-09-30.
   - name: genuine-win-delivery-epoch-suppression
     query: "Delivery Records and Epoch Suppression"
     expect:
