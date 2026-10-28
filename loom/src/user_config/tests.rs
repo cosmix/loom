@@ -109,6 +109,8 @@ fn defaults_when_the_file_is_absent() {
     assert_eq!(config.stage_reasoning_effort(StageType::Standard), "high");
     assert_eq!(config.code_reviewer_model(), "opus");
     assert_eq!(config.code_reviewer_effort(), "high");
+    assert_eq!(config.contract_writer_model(), "opus");
+    assert_eq!(config.contract_writer_effort(), "high");
     assert_eq!(config.pressure_rounds(), 1);
     assert_eq!(config.stage_model(StageType::Knowledge), "opus");
     assert_eq!(
@@ -352,6 +354,8 @@ fn value_of_has_an_arm_for_every_registered_key() {
             "models.standard_effort" => assert_eq!(value, "high"),
             "models.code_reviewer_model" => assert_eq!(value, "opus"),
             "models.code_reviewer_effort" => assert_eq!(value, "high"),
+            "models.contract_writer_model" => assert_eq!(value, "opus"),
+            "models.contract_writer_effort" => assert_eq!(value, "high"),
             "pressure.rounds" => assert_eq!(value, "1"),
             "models.knowledge_model" => assert_eq!(value, "opus"),
             "models.knowledge_effort" => assert_eq!(value, "medium"),
