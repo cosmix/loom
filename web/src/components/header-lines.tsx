@@ -3,8 +3,8 @@ import { useAtomValue } from "jotai/react";
 import {
   Check,
   Circle,
-  Clock3,
   Diamond,
+  Hourglass,
   Play,
   TriangleAlert,
   Zap,
@@ -115,7 +115,7 @@ export function SummaryLine({ snapshot, attention }: { snapshot: Snapshot; atten
       cells={[
         cell("executing", "executing", "executing", Play),
         cell("queued", "queued", "queued", Circle),
-        cell("waiting", "waiting-for-deps", "waiting", Clock3),
+        cell("waiting", "waiting-for-deps", "waiting", Hourglass),
         {
           key: "attention",
           glyph: <TriangleAlert className="inline-block size-3.5 align-[-1px]" />,
