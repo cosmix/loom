@@ -54,8 +54,9 @@ describe("ThreadChips", () => {
     expect(within(waits).getByRole("button", { name: /^a/ })).toBeTruthy();
     expect(within(feeds).getByRole("button", { name: /^z/ })).toBeTruthy();
     expect(within(feeds).getByTitle("Name z · Queued")).toBeTruthy();
-    const self = screen.getByText("Name mid").closest("[aria-current]");
+    const self = screen.getByText("this stage").closest("[aria-current]");
     expect(self?.getAttribute("aria-current")).toBe("true");
+    expect(self?.textContent).toBe("this stage");
     expect(self?.tagName).not.toBe("BUTTON");
   });
 

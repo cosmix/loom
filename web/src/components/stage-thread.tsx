@@ -38,8 +38,7 @@ export function ThreadChips({
       )}
       <ArrowRight aria-hidden="true" className="fulcrum-arrow" />
       <span className="fulcrum-self" aria-current="true">
-        {stage.name}
-        <span className="font-mono">this stage</span>
+        this stage
       </span>
       <ArrowRight aria-hidden="true" className="fulcrum-arrow" />
       {feeds.length === 0 ? (
