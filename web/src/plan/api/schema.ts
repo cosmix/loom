@@ -1,6 +1,8 @@
 import { z } from "@/api/zod";
+import { chatMessageSchema, chatWireCommandSchema } from "./schema-chat";
 import { conceptMessageSchemas } from "./schema-concept";
 import { filesMessageSchemas } from "./schema-files";
+import { reviewWireCommandSchema, reviewWireMessageSchema } from "./schema-review";
 
 export const PREREQ_KINDS = ["tmux", "claude", "claude_login", "sandbox"] as const;
 export const BIND_KINDS = ["loopback", "remote"] as const;
@@ -145,5 +147,17 @@ export type OfferView = z.infer<typeof offerViewSchema>;
 export type ItemView = z.infer<typeof itemViewSchema>;
 export type ChecklistView = z.infer<typeof checklistViewSchema>;
 export type Hello = z.infer<typeof helloSchema>;
-export type PlanMessage = z.infer<typeof planMessageSchema>;
-export type ClientMessage = z.infer<typeof clientMessageSchema>;
+// Chat and review frames share a `type` tag across several wire shapes, so they sit beside the
+// discriminated unions (which the Rust tag-array tests read) rather than inside them.
+export const socketMessageSchema = z.union([
+  planMessageSchema,
+  chatMessageSchema,
+  reviewWireMessageSchema,
+]);
+export const socketCommandSchema = z.union([
+  clientMessageSchema,
+  chatWireCommandSchema,
+  reviewWireCommandSchema,
+]);
+export type PlanMessage = z.infer<typeof socketMessageSchema>;
+export type ClientMessage = z.infer<typeof socketCommandSchema>;
