@@ -6,13 +6,14 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 
 import { initClient } from "@/plan/api/client";
 import authoringFixture from "@/plan/api/fixtures/authoring.json";
+import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
 import filesDocFixture from "@/plan/api/fixtures/files-doc.json";
 import serverInfoFixture from "@/plan/api/fixtures/server-info.json";
-import { authoringViewSchema, serverInfoSchema } from "@/plan/api/schema";
+import { authoringViewSchema, checklistViewSchema, serverInfoSchema } from "@/plan/api/schema";
 import { routes } from "@/plan/router";
-import { authoringAtom, serverInfoAtom } from "@/plan/state/atoms";
+import { authoringAtom, checklistAtom, serverInfoAtom } from "@/plan/state/atoms";
 
 type Store = ReturnType<typeof createStore>;
 type Anchor = { path: string; anchor: string; title?: string };
@@ -137,11 +138,6 @@ function isDashed(element: Element): boolean {
     element.closest('[data-dashed="true"]') !== null ||
     element.querySelector('[data-dashed="true"]') !== null
   );
-}
-
-function descriptionOf(element: Element): string {
-  const ids = (element.getAttribute("aria-describedby") ?? "").split(/\s+/).filter(Boolean);
-  return ids.map((id) => document.getElementById(id)?.textContent?.trim() ?? "").join(" ");
 }
 
 async function loadOpenState(): Promise<OpenStateModule> {
@@ -379,12 +375,23 @@ it("concept empty project shows no product vision yet", async () => {
   renderAt("/product", (store) => {
     store.set(serverInfoAtom, serverInfoSchema.parse({ ...serverInfoFixture, read_only: [] }));
     store.set(authoringAtom, authoringViewSchema.parse({ ...authoringFixture, holder: null }));
+    store.set(
+      checklistAtom,
+      checklistViewSchema.parse({
+        ...checklistFixture,
+        secondary: [
+          {
+            id: "start-vision",
+            kind: "start_vision",
+            label: "Start the product vision",
+            target: null,
+          },
+        ],
+      }),
+    );
   });
   expect(await screen.findByText("No product vision yet")).toBeTruthy();
-  const offers = screen
-    .getAllByRole("button")
-    .filter((button) => button.getAttribute("aria-disabled") === "true")
-    .filter((button) => descriptionOf(button) === "Available once chat is built");
-  expect(offers).toHaveLength(1);
-  expect(offers[0]!.hasAttribute("disabled")).toBe(false);
+  const offer = screen.getByRole("button", { name: "Start the product vision" });
+  expect(offer.hasAttribute("aria-disabled")).toBe(false);
+  expect(offer.hasAttribute("disabled")).toBe(false);
 });

@@ -1,11 +1,28 @@
 import type { JSX } from "react";
 
 import type { TreeEntry } from "@/plan/api/schema-files";
+import { repoRel } from "@/plan/files/address";
+import { useChangedSince } from "@/plan/review/changed-since";
+import { OpenQuestionCount } from "@/plan/review/open-questions";
 
-/**
- * Extension slot at the end of every tree row. Plan 9 fills it with the
- * "changed since you looked" dot; until then there is nothing to show.
- */
-export function TreeEntryExtras(_props: { entry: TreeEntry }): JSX.Element | null {
-  return null;
+export function TreeEntryExtras({ entry }: { entry: TreeEntry }): JSX.Element | null {
+  const changes = useChangedSince();
+  const entryPath = entry.path;
+  if (entryPath === null) return null;
+  const changed = changes.some(({ path }) => path === repoRel(entryPath));
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5 text-[13px]">
+      {changed && (
+        <span
+          role="img"
+          aria-label="changed since you looked"
+          title="changed since you looked"
+          className="shrink-0 text-[12px] text-muted-foreground"
+        >
+          <span aria-hidden="true">●</span>
+        </span>
+      )}
+      <OpenQuestionCount path={entryPath} />
+    </span>
+  );
 }

@@ -1,6 +1,6 @@
 import { apiGet } from "@/plan/api/client";
 import {
-  planMessageSchema,
+  socketMessageSchema,
   serverInfoSchema,
   type ClientMessage,
   type PlanMessage,
@@ -165,7 +165,7 @@ class PlanSocketConnection {
       console.warn("plan socket: invalid frame", error);
       return;
     }
-    const parsed = planMessageSchema.safeParse(value);
+    const parsed = socketMessageSchema.safeParse(value);
     if (!parsed.success) {
       console.warn("plan socket: invalid frame", parsed.error);
       return;
