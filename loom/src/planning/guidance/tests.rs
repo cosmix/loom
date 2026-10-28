@@ -99,6 +99,10 @@ fn knowledge_skill_preserves_every_distill_routing_line() {
     assert_eq!(lines.len(), 6);
     for line in lines {
         assert!(
+            line.starts_with("- "),
+            "distill.md lines 14-19 are no longer routing bullets: {line:?}"
+        );
+        assert!(
             knowledge.contains(line),
             "knowledge skill is missing {line:?}"
         );
