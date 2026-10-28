@@ -49,6 +49,9 @@ pub fn launch_script(spec: &LaunchSpec, settings: &Path, env: &[(OsString, OsStr
 
 fn environment_words(spec: &LaunchSpec, env: &[(OsString, OsString)]) -> Vec<String> {
     // Pin planning identity here too: callers cannot replace it with a stage's identity.
+    // The server's own TMUX, TMUX_PANE and TMUX_TMPDIR name the user's outer tmux server
+    // (when `loom plan` runs inside one); the session reaches no tmux server, so they go too.
+    // The private pane's own values never arrive: `env -i` clears them.
     let planning = [
         (
             OsString::from("LOOM_PLAN_STATE"),
@@ -69,6 +72,9 @@ fn environment_words(spec: &LaunchSpec, env: &[(OsString, OsString)]) -> Vec<Str
                         | "LOOM_WORK_DIR"
                         | "LOOM_PLAN_STATE"
                         | "LOOM_PLAN_SESSION"
+                        | "TMUX"
+                        | "TMUX_PANE"
+                        | "TMUX_TMPDIR"
                 )
             )
         })
@@ -237,6 +243,25 @@ mod tests {
         assert_eq!(script.matches("LOOM_PLAN_SESSION=").count(), 1);
         assert_eq!(script.matches("LOOM_PLAN_STATE=").count(), 1);
         assert!(!spec.project_root.join("pwned").exists());
+    }
+
+    #[test]
+    fn launch_script_drops_the_parent_tmux_environment() {
+        let tmp = tempfile::tempdir().unwrap();
+        let spec = spec(tmp.path());
+        let env: Vec<_> = [
+            ("TMUX", "/tmp/tmux-1000/default,123,0"),
+            ("TMUX_PANE", "%3"),
+            ("TMUX_TMPDIR", "/tmp"),
+            ("HOME", "/home/u"),
+        ]
+        .map(|(name, value)| (name.into(), value.into()))
+        .into();
+
+        let script = launch_script(&spec, &spec.dir.settings(), &env);
+
+        assert!(!script.contains("TMUX"), "{script}");
+        assert!(script.contains("HOME=/home/u"), "{script}");
     }
 
     #[test]

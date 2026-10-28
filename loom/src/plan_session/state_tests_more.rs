@@ -7,10 +7,13 @@ use super::*;
 fn subagent_stop_with_none_running_stays_at_zero() {
     let mut machine = working();
     feed(&mut machine, subagent("SubagentStop", 1_000));
+    assert_eq!(machine.state(), SessionState::Working);
     assert_eq!(machine.subagents_running(), 0);
     feed(&mut machine, subagent("SubagentStart", 1_100));
     feed(&mut machine, subagent("SubagentStop", 1_200));
+    assert_eq!(machine.state(), SessionState::Working);
     feed(&mut machine, subagent("SubagentStop", 1_300));
+    assert_eq!(machine.state(), SessionState::Working);
     assert_eq!(machine.subagents_running(), 0);
 }
 

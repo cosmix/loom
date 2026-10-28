@@ -6,7 +6,6 @@ use std::collections::{BTreeMap, HashMap};
 use std::io::ErrorKind;
 use std::os::fd::AsRawFd;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::AtomicBool;
 
 use anyhow::Context;
 use chrono::{DateTime, Utc};
@@ -17,10 +16,10 @@ use super::Transcripts;
 use crate::fs::safe_fs::{safe_locked_write_in_workdir, safe_open_dirfd};
 use crate::fs::safe_read::read_bounded;
 use crate::plan_session::kind::{SessionDir, SessionKind};
-use crate::plan_session::spool::{SpoolEvent, SpoolReader};
+use crate::plan_session::spool::{SpoolEvent, SpoolReader, Tail};
 use crate::process::{terminate_verified, ProcessIdentity};
 use crate::provider_data::resolve::{agent_id_from_path, list_agent_files};
-use crate::tokens::tail::{self, FileStat, Line};
+use crate::tokens::tail::Line;
 
 /// The record schema this build writes and reads.
 pub const SCHEMA: u32 = 1;
@@ -154,48 +153,18 @@ pub(super) fn transcripts_of(main: Option<PathBuf>) -> Transcripts {
 /// The driver's readers, per session id.
 pub(super) type Feeds = HashMap<String, Feed>;
 
-/// A file tailed line by line; a shrunk or replaced file is read again from the start.
-pub(super) struct Tail {
-    path: PathBuf,
-    offset: u64,
-    previous: Option<FileStat>,
-}
-
-impl Tail {
-    pub(super) fn new(path: PathBuf) -> Self {
-        Tail {
-            path,
-            offset: 0,
-            previous: None,
+/// The text lines a transcript or token file gained; an oversized line is skipped.
+fn read_text(tail: &mut Tail) -> Vec<String> {
+    let mut lines = Vec::new();
+    let read = tail.read_lines(|line| {
+        if let Line::Text(text) = line {
+            lines.push(text.to_owned());
         }
+    });
+    if let Err(error) = read {
+        tracing::warn!(path = %tail.path().display(), %error, "cannot read a transcript");
     }
-
-    pub(super) fn path(&self) -> &Path {
-        &self.path
-    }
-
-    pub(super) fn read_new(&mut self) -> Vec<String> {
-        let Some(stat) = tail::stat(&self.path) else {
-            return Vec::new();
-        };
-        if self.previous.is_some_and(|old| {
-            old.inode != stat.inode || stat.len < old.len || stat.len < self.offset
-        }) {
-            self.offset = 0;
-        }
-        self.previous = Some(stat);
-        let mut lines = Vec::new();
-        let stop = AtomicBool::new(false);
-        let read = tail::read_lines(&self.path, &mut self.offset, stat.len, &stop, |line| {
-            if let Line::Text(text) = line {
-                lines.push(text.to_owned());
-            }
-        });
-        if let Err(error) = read {
-            tracing::warn!(path = %self.path.display(), %error, "cannot read a transcript");
-        }
-        lines
-    }
+    lines
 }
 
 struct AgentFeed {
@@ -313,12 +282,12 @@ impl Feed {
     /// transcript read that follows sees it.
     pub(super) fn read(&mut self) -> Batch {
         let events = self.spool.read_new();
-        let main = self.main.as_mut().map(Tail::read_new).unwrap_or_default();
+        let main = self.main.as_mut().map(read_text).unwrap_or_default();
         for line in &main {
             note_spawner(line, &mut self.spawners);
         }
         let agents = self.read_agents();
-        let tokens = self.tokens.iter_mut().flat_map(Tail::read_new).collect();
+        let tokens = self.tokens.iter_mut().flat_map(read_text).collect();
         Batch {
             main,
             agents,
@@ -350,7 +319,7 @@ impl Feed {
                 feed.spawned_by = spawning_tool(&dir, &feed.agent_id)
                     .or_else(|| self.spawners.get(&feed.agent_id).cloned());
             }
-            let lines = feed.tail.read_new();
+            let lines = read_text(&mut feed.tail);
             if !lines.is_empty() {
                 read.push((feed.agent_id.clone(), feed.spawned_by.clone(), lines));
             }

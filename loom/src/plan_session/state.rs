@@ -216,11 +216,7 @@ impl StateMachine {
 
     fn permission_request(&mut self, event: &SpoolEvent) {
         // The hook answered an auto-denied request itself: nobody waits on it.
-        if event
-            .payload
-            .get("auto_denied")
-            .is_some_and(|tag| !tag.is_null())
-        {
+        if event.auto_denied() {
             return;
         }
         let id = event

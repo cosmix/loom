@@ -10,10 +10,13 @@ use serde_json::{json, Value};
 
 use super::sandbox::HookSpec;
 use crate::fs::safe_fs::safe_append;
+use crate::models::dispute::truncate_to_byte_limit;
 use crate::tokens::tail::{self, FileStat, Line};
 
 const MAX_PAYLOAD_BYTES: u64 = 1024 * 1024;
 const MAX_STRING_BYTES: usize = 64 * 1024;
+/// What ends a payload string cut at `MAX_STRING_BYTES`.
+pub(crate) const TRUNCATED: &str = "…[truncated]";
 
 /// Hook registrations installed beside the session guard.
 pub const SPOOL_EVENTS: [HookSpec; 9] = [
@@ -75,6 +78,15 @@ pub struct SpoolEvent {
     pub payload: Value,
 }
 
+impl SpoolEvent {
+    /// The hook answered this request itself (`auto_denied` set): nobody waits on it.
+    pub(crate) fn auto_denied(&self) -> bool {
+        self.payload
+            .get("auto_denied")
+            .is_some_and(|tag| !tag.is_null())
+    }
+}
+
 /// Appends one JSON line under the safe filesystem's exclusive append lock.
 pub fn append_event(session_dir: &Path, event: &str, payload: &Value) -> anyhow::Result<()> {
     let mut payload = payload.clone();
@@ -100,12 +112,8 @@ pub fn append_event(session_dir: &Path, event: &str, payload: &Value) -> anyhow:
 fn truncate_strings(value: &mut Value) {
     match value {
         Value::String(text) if text.len() > MAX_STRING_BYTES => {
-            let mut end = MAX_STRING_BYTES;
-            while !text.is_char_boundary(end) {
-                end -= 1;
-            }
-            text.truncate(end);
-            text.push_str("…[truncated]");
+            *text = truncate_to_byte_limit(text, MAX_STRING_BYTES);
+            text.push_str(TRUNCATED);
         }
         Value::Array(values) => values.iter_mut().for_each(truncate_strings),
         Value::Object(fields) => fields.values_mut().for_each(truncate_strings),
@@ -115,28 +123,33 @@ fn truncate_strings(value: &mut Value) {
 
 /// Reads at most 1 MiB plus one sentinel byte, rejecting oversized or invalid JSON.
 pub(crate) fn read_payload(stdin: impl Read) -> Option<Value> {
+    try_read_payload(stdin).ok()
+}
+
+/// [`read_payload`] with the reason a payload was refused, for a hook that reports it.
+pub(crate) fn try_read_payload(stdin: impl Read) -> Result<Value, String> {
     let mut raw = Vec::new();
     stdin
         .take(MAX_PAYLOAD_BYTES + 1)
         .read_to_end(&mut raw)
-        .ok()?;
+        .map_err(|error| format!("cannot read the payload: {error}"))?;
     if raw.len() as u64 > MAX_PAYLOAD_BYTES {
-        return None;
+        return Err("the payload is over 1 MiB".into());
     }
-    serde_json::from_slice(&raw).ok()
+    serde_json::from_slice(&raw).map_err(|error| format!("the payload is not JSON: {error}"))
 }
 
-/// Incrementally reads complete spool lines; replay de-duplication belongs to the bridge.
-pub struct SpoolReader {
+/// A file tailed line by line; a shrunk or replaced file is read again from the start.
+pub(crate) struct Tail {
     path: PathBuf,
     offset: u64,
     previous: Option<FileStat>,
     was_reset: bool,
 }
 
-impl SpoolReader {
-    /// Starts at the beginning of the supplied `events.jsonl` file path.
-    pub fn new(path: impl Into<PathBuf>) -> Self {
+impl Tail {
+    /// Starts at the beginning of the file at `path`.
+    pub(crate) fn new(path: impl Into<PathBuf>) -> Self {
         Self {
             path: path.into(),
             offset: 0,
@@ -145,16 +158,20 @@ impl SpoolReader {
         }
     }
 
+    pub(crate) fn path(&self) -> &Path {
+        &self.path
+    }
+
     /// Whether the last read restarted after a shrink or an inode change.
-    pub fn was_reset(&self) -> bool {
+    pub(crate) fn was_reset(&self) -> bool {
         self.was_reset
     }
 
-    /// Returns newly completed events, skipping malformed lines with a warning.
-    pub fn read_new(&mut self) -> Vec<SpoolEvent> {
+    /// Hands `on_line` each complete line the file gained; a missing file reads nothing.
+    pub(crate) fn read_lines(&mut self, on_line: impl FnMut(Line<'_>)) -> std::io::Result<()> {
         self.was_reset = false;
         let Some(stat) = tail::stat(&self.path) else {
-            return Vec::new();
+            return Ok(());
         };
         if self.previous.is_some_and(|old| {
             old.inode != stat.inode || stat.len < old.len || stat.len < self.offset
@@ -163,22 +180,42 @@ impl SpoolReader {
             self.was_reset = true;
         }
         self.previous = Some(stat);
+        let stop = AtomicBool::new(false);
+        tail::read_lines(&self.path, &mut self.offset, stat.len, &stop, on_line)
+    }
+}
+
+/// Incrementally reads complete spool lines; replay de-duplication belongs to the bridge.
+pub struct SpoolReader {
+    tail: Tail,
+}
+
+impl SpoolReader {
+    /// Starts at the beginning of the supplied `events.jsonl` file path.
+    pub fn new(path: impl Into<PathBuf>) -> Self {
+        Self {
+            tail: Tail::new(path),
+        }
+    }
+
+    /// Whether the last read restarted after a shrink or an inode change.
+    pub fn was_reset(&self) -> bool {
+        self.tail.was_reset()
+    }
+
+    /// Returns newly completed events, skipping malformed lines with a warning.
+    pub fn read_new(&mut self) -> Vec<SpoolEvent> {
         let mut events = Vec::new();
-        let read = tail::read_lines(
-            &self.path,
-            &mut self.offset,
-            stat.len,
-            &AtomicBool::new(false),
-            |line| match line {
-                Line::Text(text) => match serde_json::from_str(text) {
-                    Ok(event) => events.push(event),
-                    Err(error) => tracing::warn!(%error, "skipping malformed hook spool line"),
-                },
-                Line::TooLong => tracing::warn!("skipping oversized hook spool line"),
+        let read = self.tail.read_lines(|line| match line {
+            Line::Text(text) => match serde_json::from_str(text) {
+                Ok(event) => events.push(event),
+                Err(error) => tracing::warn!(%error, "skipping malformed hook spool line"),
             },
-        );
+            Line::TooLong => tracing::warn!("skipping oversized hook spool line"),
+        });
         if let Err(error) = read {
-            tracing::warn!(path = %self.path.display(), %error, "cannot read hook spool");
+            let path = self.tail.path().display();
+            tracing::warn!(path = %path, %error, "cannot read hook spool");
         }
         events
     }
