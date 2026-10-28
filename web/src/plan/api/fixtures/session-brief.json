@@ -1,0 +1,8 @@
+{
+  "session_id": "authoring-20261028-182200",
+  "label": "Write implementation plan",
+  "brief": "# Session brief\n\nWrite an implementation plan for the guidance engine.\nRead the product specification and trace the affected code before drafting stages.\n",
+  "model": "opus",
+  "effort": "high",
+  "display_name": "loom plan: plan"
+}

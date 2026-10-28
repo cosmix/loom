@@ -22,3 +22,5 @@ Rank findings by severity: blocks execution > silently ships broken > under-spec
 ⚠️ THE PLAN MUST STAY SELF-CONTAINED. A downstream agent executes this plan reading ONLY the plan file — it sees none of this conversation and none of your scratch files. Fold every fix directly into the plan; never push required detail into a separate document the executor will not read.
 
 Record any omissions, mistakes, or bad assumptions you find in your original plan in planning-omissions.md at the root of the repo. If the file is still there, append to it. Do NOT read planning-omissions.md first: form your critique from the plan and the code, not from a prior round's notes, so each pass is an independent perspective.
+
+Never edit the plan's `## Pressure tests` section: the driver that ran this command writes that record.

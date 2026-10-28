@@ -13,6 +13,7 @@ pub mod context;
 pub mod extensions;
 pub mod files;
 pub mod gate;
+pub mod guidance;
 pub mod ids;
 pub mod lifecycle;
 pub mod lock;

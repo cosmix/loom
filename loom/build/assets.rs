@@ -1,5 +1,5 @@
-//! Embeds every installable asset (agent/command/skill markdown, the
-//! CLAUDE.md/AGENTS.md templates, and the built web dashboard) into the
+//! Embeds agent/command/skill markdown, the plan plugin, the
+//! CLAUDE.md/AGENTS.md templates, and the built web dashboard into the
 //! binary. Each asset root is scanned into a generated `OUT_DIR` file that
 //! `src/` `include!`s or `include_str!`s, and watched with
 //! `cargo:rerun-if-changed` so an edit to any asset triggers a rebuild.
@@ -11,18 +11,20 @@ const AGENTS_ROOT: &str = "agents";
 const COMMANDS_ROOT: &str = "commands";
 const SKILLS_ROOT: &str = "skills";
 const CODEX_SKILLS_ROOT: &str = "codex/skills";
+const PLAN_PLUGIN_ROOT: &str = "plan-plugin";
 const WEB_DIST_ROOT: &str = "web/dist";
 const CLAUDE_TEMPLATE: &str = "CLAUDE.md.template";
 const AGENTS_TEMPLATE: &str = "AGENTS.md.template";
 
-/// The six asset roots embedded into the binary. Named once here so
+/// The seven asset roots embedded into the binary. Named once here so
 /// `emit_asset_rerun_keys` (rerun-if-changed watchers) and
 /// `generate_embedded_assets` (the actual embed) cannot drift apart.
-const ASSET_ROOTS: [&str; 6] = [
+const ASSET_ROOTS: [&str; 7] = [
     AGENTS_ROOT,
     COMMANDS_ROOT,
     SKILLS_ROOT,
     CODEX_SKILLS_ROOT,
+    PLAN_PLUGIN_ROOT,
     CLAUDE_TEMPLATE,
     AGENTS_TEMPLATE,
 ];
@@ -55,6 +57,7 @@ pub(crate) fn generate_embedded_assets(repo_root: &Path) {
     let commands = repo_root.join(COMMANDS_ROOT);
     let skills = repo_root.join(SKILLS_ROOT);
     let codex_skills = repo_root.join(CODEX_SKILLS_ROOT);
+    let plan_plugin = repo_root.join(PLAN_PLUGIN_ROOT);
     let mut generated = String::new();
 
     emit_group(
@@ -85,20 +88,27 @@ pub(crate) fn generate_embedded_assets(repo_root: &Path) {
         walk_files(&codex_skills),
         KeyShape::Nested,
     );
-    emit_scalar(
+    emit_group(
         &mut generated,
-        "CLAUDE_MD_TEMPLATE",
-        &repo_root.join(CLAUDE_TEMPLATE),
+        "PLAN_PLUGIN",
+        &plan_plugin,
+        walk_files(&plan_plugin),
+        KeyShape::Nested,
     );
-    emit_scalar(
-        &mut generated,
-        "AGENTS_MD_TEMPLATE",
-        &repo_root.join(AGENTS_TEMPLATE),
-    );
+    emit_templates(&mut generated, repo_root);
 
     let output = PathBuf::from(std::env::var("OUT_DIR").expect("OUT_DIR must be set"))
         .join("embedded_assets.rs");
     write_if_changed(&output, &generated);
+}
+
+fn emit_templates(output: &mut String, repo_root: &Path) {
+    for (name, template) in [
+        ("CLAUDE_MD_TEMPLATE", CLAUDE_TEMPLATE),
+        ("AGENTS_MD_TEMPLATE", AGENTS_TEMPLATE),
+    ] {
+        emit_scalar(output, name, &repo_root.join(template));
+    }
 }
 
 /// Writes `content` to `path` unless it already holds those exact bytes -
@@ -196,22 +206,36 @@ fn walk_files(root: &Path) -> Vec<PathBuf> {
 
 fn walk_files_with(root: &Path, validate: bool) -> Vec<PathBuf> {
     let mut files = Vec::new();
-    walk_files_inner(root, &mut files, validate);
+    let allow_plugin_manifest =
+        root.file_name().and_then(|name| name.to_str()) == Some(PLAN_PLUGIN_ROOT);
+    walk_files_inner(root, &mut files, validate, allow_plugin_manifest);
     files
 }
 
-fn walk_files_inner(root: &Path, files: &mut Vec<PathBuf>, validate: bool) {
+fn walk_files_inner(
+    root: &Path,
+    files: &mut Vec<PathBuf>,
+    validate: bool,
+    allow_plugin_manifest: bool,
+) {
     for entry in read_dir(root) {
         let entry =
             entry.unwrap_or_else(|error| panic!("failed to read {}: {error}", root.display()));
         let path = entry.path();
-        if is_skipped(&path) {
+        // Only the plan-plugin root may include this metadata dot-directory.
+        let is_plugin_manifest = allow_plugin_manifest
+            && path.file_name().and_then(|name| name.to_str()) == Some(".claude-plugin")
+            && entry
+                .file_type()
+                .expect("asset type must be readable")
+                .is_dir();
+        if is_skipped(&path) && !is_plugin_manifest {
             continue;
         }
 
         let file_type = entry.file_type().expect("asset type must be readable");
         if file_type.is_dir() {
-            walk_files_inner(&path, files, validate);
+            walk_files_inner(&path, files, validate, false);
         } else if file_type.is_file() {
             if validate {
                 validate_utf8(&path);
@@ -240,8 +264,9 @@ fn validate_utf8(path: &Path) {
 
 /// Whether a group's asset keys are bare file names (`CLAUDE_AGENTS`,
 /// `CLAUDE_COMMANDS`) or must be nested inside a directory (`SKILLS`,
-/// `CODEX_SKILLS`). `Nested` enforces the installer's invariant that a key
-/// derived by splitting on the first `/` names a real skill directory. A key
+/// `CODEX_SKILLS`, `PLAN_PLUGIN`). For installed skills, `Nested` enforces
+/// the installer's invariant that splitting a key on the first `/` names a
+/// real skill directory. A key
 /// with no `/` would be embedded here and then silently dropped at install
 /// time, so `Nested` panics the build instead.
 enum KeyShape {

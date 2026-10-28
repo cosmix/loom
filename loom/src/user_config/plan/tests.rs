@@ -43,6 +43,6 @@ fn plan_toml_lists_all_resolved_keys() {
     let rendered = UserConfig::default().plan_toml();
     assert_eq!(
         rendered,
-        "[plan]\ndocument_summary_model = \"haiku\"\ndocument_summary_effort = \"medium\"\noverview_model = \"sonnet\"\noverview_effort = \"high\"\n"
+        "[plan]\ndocument_summary_model = \"haiku\"\ndocument_summary_effort = \"medium\"\noverview_model = \"sonnet\"\noverview_effort = \"high\"\nspec_authoring_model = \"opus\"\nspec_authoring_effort = \"medium\"\nplan_authoring_model = \"opus\"\nplan_authoring_effort = \"high\"\n"
     );
 }

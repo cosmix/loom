@@ -5,6 +5,8 @@ Read when writing plan YAML. Copy and adapt this single-implementation-stage exa
 ````markdown
 # Plan: [Title]
 
+Implements: [section_<nn>, section_<nn>, ... or none]
+
 ## Overview
 [2–3 sentences: what this accomplishes and why.]
 

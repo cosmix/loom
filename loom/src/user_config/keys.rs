@@ -243,6 +243,34 @@ pub const KEYS: &[KeySpec] = &[
         kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
         help: "Reasoning effort for overviews and summary sessions",
     },
+    KeySpec {
+        name: "plan.spec_authoring_model",
+        section: "plan",
+        field: "spec_authoring_model",
+        kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
+        help: "Claude model a loom plan authoring session runs on for spec steps",
+    },
+    KeySpec {
+        name: "plan.spec_authoring_effort",
+        section: "plan",
+        field: "spec_authoring_effort",
+        kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
+        help: "Reasoning effort a loom plan authoring session runs at for spec steps",
+    },
+    KeySpec {
+        name: "plan.plan_authoring_model",
+        section: "plan",
+        field: "plan_authoring_model",
+        kind: ValueKind::Enum(crate::claude::CLAUDE_MODELS),
+        help: "Claude model a loom plan authoring session runs on for plan steps",
+    },
+    KeySpec {
+        name: "plan.plan_authoring_effort",
+        section: "plan",
+        field: "plan_authoring_effort",
+        kind: ValueKind::Enum(crate::models::stage::ALLOWED_REASONING_EFFORTS),
+        help: "Reasoning effort a loom plan authoring session runs at for plan steps",
+    },
 ];
 
 /// The spec for `name`, or an error listing every valid key.
