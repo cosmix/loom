@@ -3,10 +3,13 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import overviewFixture from "@/plan/api/fixtures/concept-overview.json";
 import summaryFixture from "@/plan/api/fixtures/concept-summary.json";
+import checklistFixture from "@/plan/api/fixtures/checklist.json";
 import filesDocFixture from "@/plan/api/fixtures/files-doc.json";
+import { checklistViewSchema } from "@/plan/api/schema";
 import { conceptPageSchema } from "@/plan/api/schema-concept";
 import { pendingAttachmentsAtom } from "@/plan/attachments";
 import { PLAN_HELP_KEYS } from "@/plan/help-keys";
+import { checklistAtom } from "@/plan/state/atoms";
 
 import { conceptPageLabel } from "./concept-route";
 import {
@@ -24,6 +27,7 @@ import {
   renderAt,
   text,
   type Page,
+  type Store,
 } from "./concept-route-support";
 import { conceptPageAtom } from "./page-state";
 
@@ -281,6 +285,35 @@ describe("keys", () => {
   });
 });
 
+/** The offers plan 1 sends in the checklist; `EmptyOffer` looks its offer up there. */
+function withOffers(store: Store): void {
+  store.set(
+    checklistAtom,
+    checklistViewSchema.parse({
+      ...checklistFixture,
+      secondary: [
+        {
+          id: "start-vision",
+          kind: "start_vision",
+          label: "Start the product vision",
+          target: null,
+        },
+        {
+          id: "start-metaplan",
+          kind: "start_metaplan",
+          label: "Start a metaplan from the product spec",
+          target: null,
+        },
+      ],
+    }),
+  );
+}
+
+const authorWithOffers = (store: Store): void => {
+  canAuthor(store);
+  withOffers(store);
+};
+
 describe("empty and partial states", () => {
   const empty = (kind: string, extra: Page = {}) => ({
     ...clone(overviewFixture),
@@ -303,7 +336,7 @@ describe("empty and partial states", () => {
 
   it("No metaplan yet", async () => {
     pages = { engineering: empty("no_metaplan", { offer: "start-metaplan" }) };
-    renderAt("/engineering", canAuthor);
+    renderAt("/engineering", authorWithOffers);
     expect(await screen.findByText("No metaplan yet")).toBeTruthy();
     expect(screen.getByRole("button", { name: /metaplan/ })).toBeTruthy();
   });
@@ -315,7 +348,7 @@ describe("empty and partial states", () => {
         offer: "start-metaplan",
       }),
     };
-    renderAt("/engineering", canAuthor);
+    renderAt("/engineering", authorWithOffers);
     const list = await screen.findByRole("list", { name: "Documents" });
     expect(within(list).getByRole("link", { name: "Alpha" })).toBeTruthy();
     expect(screen.getByRole("button", { name: /metaplan/ })).toBeTruthy();
@@ -341,18 +374,19 @@ describe("empty and partial states", () => {
 
   it("read-only browser sees no offer button", async () => {
     pages = { product: empty("no_vision", { offer: "start-vision" }) };
-    renderAt("/product");
+    renderAt("/product", withOffers);
     expect(await screen.findByText("No product vision yet")).toBeTruthy();
     expect(screen.getByText("Start the product vision")).toBeTruthy();
     expect(screen.queryByRole("button", { name: /Start the product vision/ })).toBeNull();
   });
 
-  it("offer reason is the accessible description", async () => {
+  it("offer button is enabled and undescribed for the holder", async () => {
     pages = { product: empty("no_vision", { offer: "start-vision" }) };
-    renderAt("/product", canAuthor);
+    renderAt("/product", authorWithOffers);
     const button = await screen.findByRole("button", { name: "Start the product vision" });
-    expect(button.getAttribute("aria-disabled")).toBe("true");
-    expect(descriptionOf(button)).toBe("Available once chat is built");
+    expect(button.hasAttribute("aria-disabled")).toBe(false);
+    expect(button.hasAttribute("disabled")).toBe(false);
+    expect(descriptionOf(button)).toBe("");
   });
 
   it("unknown summary shows not-found with file mode link", async () => {

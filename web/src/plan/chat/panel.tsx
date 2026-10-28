@@ -1,0 +1,321 @@
+import { useAtom, useAtomValue, useSetAtom, useStore } from "jotai";
+import { Dialog } from "radix-ui";
+import { useEffect, useRef, type KeyboardEvent, type PointerEvent } from "react";
+
+import { BusyRoundel } from "@/aurora-ui/feedback/BusyRoundel";
+import { useMediaQuery } from "@/lib/use-media-query";
+import type { SessionView } from "@/plan/api/schema-chat";
+import { pendingAttachmentsAtom } from "@/plan/attachments";
+import { useReviewLive } from "@/plan/review/live";
+import { registerSendToAuthor } from "@/plan/review/send-to-author";
+import { useAttention } from "./attention";
+import { ComposerArea } from "./composer";
+import { ConnectionBanner, useConnectionDim } from "./connection-banner";
+import { EndChatMenuItem, useCanEndChat } from "./end-chat";
+import { pendingPermissionsAtom, sessionAtom, useChatSocket } from "./model";
+import { offerErrorAtom } from "./offer-error";
+import { createOfferStarter } from "./offer-flow";
+import { registerAuthoringOffers } from "./offer-handlers";
+import { panelCollapsedAtom, panelWidthAtom } from "./prefs";
+import { RunHeader } from "./run-header";
+import { chatSheetOpenAtom } from "./sheet-state";
+import { NewChatButton } from "./start-chat";
+import { StateLine } from "./state-line";
+import { useComposerShortcut } from "./composer-hooks";
+import { useSuggestionFeed } from "./suggestion-cards";
+import { Transcript } from "./transcript";
+import { Untrusted } from "./visible-controls";
+import "./chat.css";
+
+export { chatSheetOpenAtom } from "./sheet-state";
+
+const DESKTOP = "(min-width: 1024px)";
+
+const STATE_NAME: Record<SessionView["state"], string> = {
+  starting: "Starting session",
+  idle: "Waiting for you",
+  working: "Working",
+  permission: "Needs a decision",
+  ending: "Writing final notes",
+  ended: "Chat ended",
+  failed: "Chat failed",
+};
+const BUSY_STATES: ReadonlySet<SessionView["state"]> = new Set(["starting", "working", "ending"]);
+
+/** Mounts once beside the routed page so offers, Send to author and live review work at every width. */
+export function ChatRegistrations(): null {
+  const store = useStore();
+  useReviewLive();
+  useSuggestionFeed();
+  useComposerShortcut();
+  useEffect(() => {
+    const starter = createOfferStarter(store);
+    const unregisterOffers = registerAuthoringOffers(({ offer }) => starter.start(offer));
+    const unregisterSelection = registerSendToAuthor();
+    return () => {
+      unregisterSelection();
+      unregisterOffers();
+      starter.dispose();
+    };
+  }, [store]);
+  return null;
+}
+
+/** A refused offer start, shown inside the panel's landmark until dismissed. */
+function OfferError() {
+  const [error, setError] = useAtom(offerErrorAtom);
+  if (!error) return null;
+  return (
+    <p role="alert" className="flex items-start gap-2 px-3 text-[12px]">
+      <span className="mr-auto">
+        <Untrusted text={error} />
+      </span>
+      <button type="button" onClick={() => setError(null)}>
+        Dismiss
+      </button>
+    </p>
+  );
+}
+
+function ChatGlyph() {
+  const session = useAtomValue(sessionAtom);
+  const permissions = useAtomValue(pendingPermissionsAtom);
+  const state = session?.state;
+  const label = state ? STATE_NAME[state] : "No chat";
+  if (permissions.length)
+    return (
+      <span role="img" aria-label={STATE_NAME.permission} className="text-(--tone-warning)">
+        !
+      </span>
+    );
+  if (state === "failed" || state === "ended")
+    return (
+      <span role="img" aria-label={label}>
+        {state === "failed" ? "!" : "✓"}
+      </span>
+    );
+  return (
+    <BusyRoundel
+      busy={state !== undefined && BUSY_STATES.has(state)}
+      busyLabel={label}
+      idleLabel={label}
+      size={14}
+    />
+  );
+}
+
+/** The count is drawn for sight; the button's accessible name carries it for everyone else. */
+function PermissionBadge() {
+  const count = useAtomValue(pendingPermissionsAtom).length;
+  return count ? (
+    <span className="chat-permission-badge" aria-hidden="true">
+      {count}
+    </span>
+  ) : null;
+}
+
+/** An aria-label replaces a button's contents, so the state and counts are spelled into the name. */
+function useChatButtonName(verb: string, attachments = 0): string {
+  const session = useAtomValue(sessionAtom);
+  const decisions = useAtomValue(pendingPermissionsAtom).length;
+  const parts = [verb];
+  if (decisions > 0) parts.push(`${decisions} decision${decisions === 1 ? "" : "s"} waiting`);
+  else if (session) parts.push(STATE_NAME[session.state]);
+  if (attachments > 0) parts.push(`${attachments} attachment${attachments === 1 ? "" : "s"}`);
+  return parts.join(", ");
+}
+
+export function ChatSheetButton() {
+  const desktop = useMediaQuery(DESKTOP);
+  const [open, setOpen] = useAtom(chatSheetOpenAtom);
+  const attachments = useAtomValue(pendingAttachmentsAtom).length;
+  const name = useChatButtonName("Open chat", attachments);
+  if (desktop) return null;
+  return (
+    <button
+      type="button"
+      data-chat-sheet-trigger
+      aria-label={name}
+      aria-haspopup="dialog"
+      aria-expanded={open}
+      onClick={() => setOpen(true)}
+      className="inline-flex items-center gap-1.5 text-[13px]"
+    >
+      <ChatGlyph />
+      <span>Chat</span>
+      <PermissionBadge />
+      {attachments > 0 && <span aria-hidden="true">{attachments}</span>}
+    </button>
+  );
+}
+
+function CollapsedRail() {
+  const setCollapsed = useSetAtom(panelCollapsedAtom);
+  const name = useChatButtonName("Expand chat");
+  return (
+    <aside aria-label="Chat" className="chat-rail" style={{ width: "2.5rem", flexShrink: 0 }}>
+      <button
+        type="button"
+        aria-label={name}
+        onClick={() => setCollapsed(false)}
+        className="flex w-full flex-col items-center gap-2 py-3"
+      >
+        <ChatGlyph />
+        <PermissionBadge />
+      </button>
+    </aside>
+  );
+}
+
+type Drag = { x: number; width: number; rem: number; pointer: number };
+
+function useResizeDrag(width: number, setWidth: (width: number) => void) {
+  const drag = useRef<Drag | null>(null);
+  const move = (event: PointerEvent<HTMLDivElement>) => {
+    const start = drag.current;
+    if (start && start.pointer === event.pointerId)
+      setWidth(start.width + (start.x - event.clientX) / start.rem);
+  };
+  return {
+    onPointerDown(event: PointerEvent<HTMLDivElement>) {
+      if (event.button !== 0) return;
+      event.preventDefault();
+      event.currentTarget.setPointerCapture(event.pointerId);
+      drag.current = {
+        x: event.clientX,
+        width,
+        pointer: event.pointerId,
+        rem: Number.parseFloat(getComputedStyle(document.documentElement).fontSize) || 16,
+      };
+    },
+    onPointerMove: move,
+    onPointerUp(event: PointerEvent<HTMLDivElement>) {
+      if (drag.current?.pointer !== event.pointerId) return;
+      move(event);
+      drag.current = null;
+      if (event.currentTarget.hasPointerCapture(event.pointerId))
+        event.currentTarget.releasePointerCapture(event.pointerId);
+    },
+    onPointerCancel() {
+      drag.current = null;
+    },
+    onLostPointerCapture() {
+      drag.current = null;
+    },
+    onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
+      if (event.key !== "ArrowLeft" && event.key !== "ArrowRight") return;
+      event.preventDefault();
+      setWidth(width + (event.key === "ArrowLeft" ? 1 : -1));
+    },
+  };
+}
+
+function ResizeHandle() {
+  const [width, setWidth] = useAtom(panelWidthAtom);
+  const handlers = useResizeDrag(width, setWidth);
+  return (
+    <div
+      role="separator"
+      aria-label="Resize chat"
+      aria-orientation="vertical"
+      tabIndex={0}
+      aria-valuemin={20}
+      aria-valuemax={40}
+      aria-valuenow={width}
+      aria-valuetext={`${width} rem`}
+      className="chat-resize-handle"
+      style={{ touchAction: "none" }}
+      {...handlers}
+    />
+  );
+}
+
+/** The ⋯ menu exists only when it holds an item. */
+function ChatMenu() {
+  const canEnd = useCanEndChat();
+  if (!canEnd) return null;
+  return (
+    <details className="relative">
+      <summary aria-label="Chat menu">⋯</summary>
+      <div className="absolute right-0 z-10 min-w-32 bg-card p-2 shadow-(--dialog-shadow)">
+        <EndChatMenuItem />
+      </div>
+    </details>
+  );
+}
+
+function PanelBody({ sheet }: { sheet: boolean }) {
+  const session = useAtomValue(sessionAtom);
+  const setCollapsed = useSetAtom(panelCollapsedAtom);
+  const setOpen = useSetAtom(chatSheetOpenAtom);
+  const dim = useConnectionDim();
+  return (
+    <>
+      <header className="flex items-center gap-2 p-3 text-[13px]">
+        <h2 className="mr-auto font-medium">Chat</h2>
+        {session && <NewChatButton />}
+        <ChatMenu />
+        <button
+          type="button"
+          aria-label={sheet ? "Close chat" : "Collapse chat"}
+          onClick={() => (sheet ? setOpen(false) : setCollapsed(true))}
+        >
+          {sheet ? "Close" : "Collapse"}
+        </button>
+      </header>
+      <StateLine />
+      <OfferError />
+      {session && <RunHeader session={session} />}
+      <ConnectionBanner />
+      <div className={`flex min-h-0 flex-1 flex-col${dim ? " chat-dim" : ""}`}>
+        {dim && <p className="px-3 text-[12px] text-muted-foreground">{dim}</p>}
+        <Transcript />
+      </div>
+      <ComposerArea />
+    </>
+  );
+}
+
+function ChatSheet() {
+  const [open, setOpen] = useAtom(chatSheetOpenAtom);
+  return (
+    <Dialog.Root open={open} onOpenChange={setOpen}>
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-50 bg-black/20" />
+        <Dialog.Content
+          className="chat-sheet fixed inset-y-0 right-0 z-50 max-w-2xl outline-none"
+          aria-describedby={undefined}
+          onCloseAutoFocus={(event) => {
+            const trigger = document.querySelector<HTMLButtonElement>("[data-chat-sheet-trigger]");
+            if (trigger) {
+              event.preventDefault();
+              trigger.focus();
+            }
+          }}
+        >
+          <aside aria-label="Chat" className="chat-panel">
+            <Dialog.Title className="sr-only">Chat</Dialog.Title>
+            <PanelBody sheet />
+          </aside>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
+export function ChatPanel() {
+  const store = useStore();
+  useChatSocket(store);
+  useAttention();
+  const desktop = useMediaQuery(DESKTOP);
+  const collapsed = useAtomValue(panelCollapsedAtom);
+  const width = useAtomValue(panelWidthAtom);
+  if (!desktop) return <ChatSheet />;
+  if (collapsed) return <CollapsedRail />;
+  return (
+    <aside aria-label="Chat" className="chat-panel" style={{ width: `${width}rem`, flexShrink: 0 }}>
+      <ResizeHandle />
+      <PanelBody sheet={false} />
+    </aside>
+  );
+}

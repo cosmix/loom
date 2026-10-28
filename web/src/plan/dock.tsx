@@ -1,9 +1,17 @@
 import type { JSX } from "react";
 
+import { ChatPanel, ChatRegistrations } from "@/plan/chat/panel";
+
 /**
- * Right-hand dock beside the routed page. Empty in plan 2; plan 9 mounts the
- * chat panel here, so the shell already reserves the slot.
+ * Right-hand dock beside the routed page: the chat panel (a docked region at lg and above, a
+ * sheet below). The registrations mount here too so offers and Send to author work at every
+ * width, whether the sheet is open or closed.
  */
-export function Dock(): JSX.Element | null {
-  return null;
+export function Dock(): JSX.Element {
+  return (
+    <>
+      <ChatRegistrations />
+      <ChatPanel />
+    </>
+  );
 }
