@@ -1,5 +1,13 @@
 # Loom blockages
 
+## Plan 06: missing srt host prerequisite
+
+- Symptom: planning-sandbox's preflight truth check for host-installed `srt` (`@anthropic-ai/sandbox-runtime 0.0.78`) exited 127 before the stage could start.
+- Cause: `srt` was initially absent. Installing it globally still failed preflight: Bun's bin symlink pointed into `.bun/install/global/node_modules`, outside the confined runner's exposed read roots. Before-stage checks are confined even though the plan and knowledge described a host check.
+- Recovery: installed and warmed pinned `0.0.78`, then replaced only `.bun/bin/srt`'s symlink with a pinned `bun x --bun --no-install @anthropic-ai/sandbox-runtime@0.0.78` shim. Host version and `srt -c true` checks passed. Retried planning-sandbox and corrected the stale knowledge claim about preflight confinement.
+- Follow-up: make preflight tool discovery account for Bun global symlink targets, and report a missing or hidden tool distinctly from a failing behavioral check.
+- Prevention: confirm the first stage actually starts after `loom run`; report daemon startup separately from preflight success.
+
 ## Plan 05: test-integrity completion gate
 
 - Symptom: concept-web passed host checks but completion rejected changes to assertions in `file-mode.test.tsx` and `tabs.test.ts` (fingerprint `bae5247c132c`).

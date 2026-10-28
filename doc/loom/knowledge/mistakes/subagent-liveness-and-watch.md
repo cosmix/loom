@@ -378,10 +378,10 @@ applies only below it. Never weaken the refusal to admit a symlinked root.
 
 ## Operator monitoring cadence
 
-**What happened:** Plan monitoring polled too often and restarted the daemon while another agent managed the runtime. The operator subsequently resumed loom and extended the run through plans 06 and 07.
+**What happened:** Plan monitoring polled too often and restarted the daemon while another agent managed the runtime. The operator subsequently resumed loom and extended execution through feat-planner plan 11, provided the sequence remains healthy.
 
 **Why:** Passive monitoring and runtime recovery needed explicit coordination with concurrent work.
 
-**Prevention:** Monitor plans 05–07 every four minutes. The operator now authorizes known recovery actions when a plan gets stuck; preserve concurrent edits and record encountered Loom blockages and workarounds in root blocakges.md.
+**Prevention:** Monitor every four minutes. The operator authorizes known recovery actions when a plan gets stuck; preserve concurrent edits and record encountered Loom blockages and workarounds in root blockages.md.
 
-**Fix:** Continue plan 05, then clean and execute plans 06 and 07 in order, recording blockages.
+**Fix:** Finish plan 06 and continue feat-planner plans 07–11 in order when healthy, cleaning completed resources and committing plan-related changes between plans.
