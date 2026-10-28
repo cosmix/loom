@@ -167,3 +167,7 @@ Reviewer suggestions from the gate-dedup and integration-verify rounds that were
 - `loom/tests/integration/hooks_subagent_verify_guard_cases.rs::BLOCK_CASES`: a stale comment says "expected to still fail until the concurrent hook fix lands". No cases cover `bun test`, `cargo nextest` or bare `jest` as the main agent.
 - `loom/tests/integration/hooks_subagent_verify_guard_main.rs::write_standard_stage`: `write_standard_stage` duplicates `write_stage_file` in the carve-out module and in `gate_dedup_contracts/support.rs::write_standard_stage`.
 - `loom/src/assets/install/claude.rs::write_layout`: the installer never prunes `~/.claude/agents`, and `install.rs` has no pruning of retired agent files either. A retired verifier agent file stays installed on upgraded machines until removed by hand.
+
+## The Subcommand Lint Ignores `working_dir`
+
+`v2_lints/loom_subcommands.rs` treats an unknown `loom` subcommand as one a stage may be adding (a warning, not an error) only when that stage, or a stage it depends on, lists a `files` or `artifacts` entry under `CLI_DIR` (`loom/src/cli`). `stage_touches_dir` (`v2_lints/mod.rs`) matches the entries as written, but entries are relative to the stage's `working_dir`. A stage with `working_dir: loom` that owns `src/cli/**` and adds a subcommand therefore still gets the hard error. Workaround: call the new subcommand through `cargo run --bin loom -- <subcommand>` in that stage's criteria. Fix direction: join each entry with the stage's `working_dir` before matching in `stage_touches_dir`.

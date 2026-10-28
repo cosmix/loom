@@ -129,7 +129,7 @@
 | [codex-navigation](mistakes/codex-navigation.md) | Codex reader | 102 |
 | [codex-worker-briefing](mistakes/codex-worker-briefing.md) | Codex briefs | 130 |
 | [completion-broker-credential](mistakes/completion-broker-credential.md) |  | 225 |
-| [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 196 |
+| [completion-runner-blocks](mistakes/completion-runner-blocks.md) |  | 206 |
 | [completion-runtime](mistakes/completion-runtime.md) | Cargo churn | 72 |
 | [computed-values-and-hidden-couplings](mistakes/computed-values-and-hidden-couplings.md) | Couplings | 284 |
 | [concurrency-and-locking](mistakes/concurrency-and-locking.md) |  | 47 |
@@ -212,6 +212,6 @@
 | [state-confinement-gaps](concerns/state-confinement-gaps.md) | Caches | 17 |
 | [token-accounting-and-proof-defects](concerns/token-accounting-and-proof-defects.md) |  | 349 |
 | [typed-config-values](concerns/typed-config-values.md) | Config gaps | 27 |
-| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 169 |
+| [verification-v2-followups](concerns/verification-v2-followups.md) |  | 173 |
 | [web-dashboard-latent-issues](concerns/web-dashboard-latent-issues.md) | Latent | 102 |
 | [worktree-build-cold-start](concerns/worktree-build-cold-start.md) | Cold | 159 |
