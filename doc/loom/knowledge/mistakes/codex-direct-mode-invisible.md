@@ -1,6 +1,6 @@
 # Codex Direct Mode Invisible
 
-> Direct mode
+>
 
 ## Direct-Mode Codex Forwards Are Invisible to Lifecycle Reconcile and Status
 

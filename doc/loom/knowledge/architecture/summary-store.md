@@ -1,6 +1,6 @@
 # Summary Store
 
-> Summary store
+>
 
 ## Store Layout and Ids
 

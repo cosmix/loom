@@ -1,6 +1,6 @@
 # Codex Plugin
 
-> Codex plugin
+>
 
 ## Install and identity
 

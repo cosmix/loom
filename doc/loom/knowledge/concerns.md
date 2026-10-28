@@ -235,3 +235,7 @@ A new stage worktree has no build state, so its first compile or install is cold
 Reviewer suggestions left open on concept mode: engine-failure and claims-fallback paths that name no pages or call no listener, a summary hash read apart from its evaluation, accessibility and path-rendering gaps, passage provenance scope, and presence not wired to concept pages.
 
 → [Planning Document Model Followups](concerns/planning-document-model-followups.md#concept-mode-server-gaps)
+
+## Planning Session Sandbox Limits
+
+Accepted limits of the planning sandbox (Bash writes inside `doc/loom/`, new top-level paths, locks taken mid-session, the guard's check-to-write race), the untested Seatbelt and provenance paths, and the unimplemented reviewer suggestions. → [Planning Session Sandbox Limits](concerns/planning-session-sandbox-limits.md)

@@ -3,7 +3,7 @@
 
 # Orchestrator Daemon And Sessions
 
-> Daemon
+>
 
 ## Orchestrator Core
 

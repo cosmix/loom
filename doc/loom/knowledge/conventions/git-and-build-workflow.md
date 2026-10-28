@@ -3,7 +3,7 @@
 
 # Git And Build Workflow
 
-> Git, build
+>
 
 ## Git Operations
 

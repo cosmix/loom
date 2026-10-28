@@ -1,6 +1,6 @@
 # Sandbox And Confinement Gaps
 
-> Confinement
+>
 
 ## Sandbox Denial Has No End-to-End CI Canary
 

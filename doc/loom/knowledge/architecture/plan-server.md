@@ -5,7 +5,7 @@ aliases:
 ---
 # Plan Server
 
-> Plan server
+>
 
 ## Module map
 
